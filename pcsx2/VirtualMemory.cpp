@@ -112,6 +112,26 @@ VirtualMemoryManager::VirtualMemoryManager(const char* file_mapping_name, uptr b
 	m_pageuse = new retro_atomic_int_t[m_pages_reserved]();
 }
 
+#ifndef _WIN32
+VirtualMemoryManager::VirtualMemoryManager(u8* image_space, size_t size)
+	: m_file_handle(nullptr)
+	, m_baseptr(0)
+	, m_pageuse(nullptr)
+	, m_pages_reserved(0)
+	, m_in_image(true)
+{
+	const size_t reserved_bytes = pcsx2_page_align(size);
+	void* p = mmap(image_space, reserved_bytes, PROT_READ | PROT_WRITE | PROT_EXEC,
+	               MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+	if (p == MAP_FAILED)
+		return;
+
+	m_baseptr = static_cast<u8*>(p);
+	m_pages_reserved = reserved_bytes / __pagesize;
+	m_pageuse = new retro_atomic_int_t[m_pages_reserved]();
+}
+#endif
+
 VirtualMemoryManager::~VirtualMemoryManager()
 {
 	if (m_pageuse)
@@ -135,6 +155,10 @@ VirtualMemoryManager::~VirtualMemoryManager()
 			host_munmap(m_baseptr, bytes);
 #endif
 		}
+#ifndef _WIN32
+		else if (m_in_image)
+			mmap(m_baseptr, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+#endif
 		else
 			host_munmap(m_baseptr, bytes);
 	}

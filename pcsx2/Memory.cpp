@@ -184,12 +184,34 @@ static VirtualMemoryManagerPtr AllocateNearModule(const char* name, size_t size,
 }
 #endif
 
+#if defined(__x86_64__) && !defined(_WIN32) && !defined(__APPLE__)
+/* Room for the code reservation in this module's own image, for when no hole
+ * near the module is free: a host that has already run another large core can
+ * leave none. Being part of the image, it is always within reach of the
+ * module's globals. */
+alignas(0x10000) static u8 s_code_in_image[HostMemoryMap::CodeSize];
+#endif
+
 /// Attempts to find a spot near this module's globals for the memory maps
 static VirtualMemoryManagerPtr AllocateVirtualMemory(const char* name, size_t size, bool code)
 {
 	VirtualMemoryManagerPtr mgr = AllocateNearModule(name, size, /*allow_high=*/code);
 	if (mgr)
 		return mgr;
+
+#if defined(__x86_64__) && !defined(_WIN32) && !defined(__APPLE__)
+	if (code && size <= sizeof(s_code_in_image))
+	{
+		mgr = std::make_shared<VirtualMemoryManager>(s_code_in_image, size);
+		if (mgr->IsOk())
+		{
+			log_cb(RETRO_LOG_INFO, "No hole near the core for the %zu MB code reservation, so it is "
+			                       "in the core's own image.\n",
+			       size >> 20);
+			return mgr;
+		}
+	}
+#endif
 
 	mgr = std::make_shared<VirtualMemoryManager>(name, 0, size);
 	if (code && mgr->IsOk())

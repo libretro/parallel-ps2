@@ -47,11 +47,19 @@ class VirtualMemoryManager
 	// reserved memory (in pages)
 	u32 m_pages_reserved;
 
+	// The memory is part of the module's own image rather than a mapping of its own
+	bool m_in_image = false;
+
 public:
 	// If upper_bounds is nonzero and the OS fails to allocate memory that is below it,
 	// calls to IsOk() will return false and Alloc() will always return null pointers
 	// strict indicates that the allocation should quietly fail if the memory can't be mapped at `base`
 	VirtualMemoryManager(const char* file_mapping_name, uptr base, size_t size, uptr upper_bounds = 0, bool strict = false);
+#ifndef _WIN32
+	// Executable memory over image_space, which has to be page-aligned space the
+	// module owns, such as a static array. It is handed back as plain memory.
+	VirtualMemoryManager(u8* image_space, size_t size);
+#endif
 	~VirtualMemoryManager();
 
 	void* GetFileHandle() const { return m_file_handle; }
