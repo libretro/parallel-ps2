@@ -126,6 +126,7 @@ set(pcsx2Sources
 	Memory.cpp
 	MemoryCardFile.cpp
 	memcard_ecc.c
+	NearPlace.c
 	MemoryCardProtocol.cpp
 	MMI.cpp
 	MTGS.cpp
@@ -194,6 +195,7 @@ set(pcsx2Headers
 	Memory.h
 	MemoryCardFile.h
 	memcard_ecc.h
+	NearPlace.h
 	MemoryCardProtocol.h
 	MemoryTypes.h
 	MultitapProtocol.h

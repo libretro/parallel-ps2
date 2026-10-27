@@ -229,3 +229,4 @@ tests/ata/*.img
 /tests/cam/cam_test
 /tests/cam/cam_test_tsan
 /tests/usbstate/usbstate
+/tests/nearplace/nearplace_test*

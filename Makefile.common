@@ -109,6 +109,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSRetireRing.c \
 	$(LRPS2_DIR)/USB/libretro-usb/ohci_dma.c \
 	$(LRPS2_DIR)/memcard_ecc.c \
+	$(LRPS2_DIR)/NearPlace.c \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSScratch.c \
 	$(LRPS2_DIR)/GS/Renderers/DX12/GSD3D12Heap.c \
 	$(LIBRETRO_COMM_DIR)/compat/compat_posix_string.c \
