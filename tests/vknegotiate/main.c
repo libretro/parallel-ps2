@@ -37,6 +37,8 @@
  * that builds them - its compile threads are named PGS-Compile - and the
  * longest frame after the first (Linux: thread names), and the graphics
  * ones apart. VN_OPTIONS sets core options, "key=value;key=value".
+ * VN_LATENCY runs tests/latency's case instead (see vn_latency), and
+ * VN_LATENCY_PACE_MS sets the frontend's time between two retro_runs.
  * VN_LATE_READ makes the frontend one that presents from another thread
  * (see vn_late_present): it reads each image it was handed only when the
  * sync index that carried it comes round again, and replays the image it
@@ -116,6 +118,7 @@ typedef bool retro_load_game_t(const struct retro_game_info*);
 typedef size_t retro_serialize_size_t(void);
 typedef bool retro_serialize_t(void*, size_t);
 typedef bool retro_unserialize_t(const void*, size_t);
+typedef void* retro_get_memory_data_t(unsigned);
 
 enum { VN_V2, VN_V2RETRY, VN_V1, VN_V2ALLOC, VN_V1ALLOC };
 #define VN_IS_V1() (s_mode == VN_V1 || s_mode == VN_V1ALLOC)
@@ -287,6 +290,9 @@ static unsigned s_last_w, s_last_h;
 static int s_late;
 static void vn_late_present(const void* d);
 static void vn_late_reclaim(void);
+/* VN_LATENCY (vn_latency, below the readback it uses). */
+static int s_lat_on;
+static void vn_latency_read(const void* d);
 static void vn_video(const void* d, unsigned w, unsigned h, size_t p)
 {
 	(void)p;
@@ -297,6 +303,8 @@ static void vn_video(const void* d, unsigned w, unsigned h, size_t p)
 	}
 	if (s_late)
 		vn_late_present(d);
+	if (s_lat_on)
+		vn_latency_read(d);
 	s_frames++;
 	if (!d)
 		s_dupes++;
@@ -383,7 +391,7 @@ static const char* vn_option(const char* key)
  * in. 0 when it cannot be read back. */
 static int vn_hash_image(VkInstance inst, VkPhysicalDevice gpu, VkDevice dev, VkQueue queue,
 	uint32_t family, const struct retro_vulkan_image* img, unsigned w, unsigned ht,
-	unsigned long long* hash)
+	unsigned long long* hash, unsigned* mid)
 {
 #define VN_DEV(n) PFN_##n p##n = (PFN_##n)pvkGetDeviceProcAddr(dev, #n)
 	VN_DEV(vkCreateBuffer); VN_DEV(vkDestroyBuffer); VN_DEV(vkGetBufferMemoryRequirements);
@@ -499,6 +507,8 @@ static int vn_hash_image(VkInstance inst, VkPhysicalDevice gpu, VkDevice dev, Vk
 		goto out;
 	for (i = 0; i < (VkDeviceSize)w * rows * 4; i++)
 		h = (h ^ p[i]) * 1099511628211ULL;
+	if (mid)
+		*mid = p[((VkDeviceSize)(ht / 2) * w + w / 2) * 4];
 	pvkUnmapMemory(dev, mem);
 	*hash = h;
 	ok = 1;
@@ -545,7 +555,7 @@ static void vn_late_check(const struct vn_held* e, const char* when)
 	if (!e->id || e->pending)
 		return;
 	if (!vn_hash_image(s_late_inst, s_late_gpu, s_late_dev, s_late_queue, s_late_family,
-			&e->img, e->w, e->h, &h))
+			&e->img, e->w, e->h, &h, NULL))
 	{
 		printf("  late reader: image %u (%s) could not be read back\n", e->id, when);
 		s_late_bad++;
@@ -598,7 +608,7 @@ static void vn_late_run_end(void)
 	if (s_held.id && s_held.pending)
 	{
 		if (!vn_hash_image(s_late_inst, s_late_gpu, s_late_dev, s_late_queue, s_late_family,
-				&s_held.img, s_held.w, s_held.h, &s_held.hash))
+				&s_held.img, s_held.w, s_held.h, &s_held.hash, NULL))
 		{
 			printf("  late reader: image %u could not be read back\n", s_held.id);
 			s_late_bad++;
@@ -913,6 +923,92 @@ static int vn_copy(const char *src, const char *dst)
 
 #define VN_FAIL(...) do { fprintf(stderr, "vknegotiate: " __VA_ARGS__); fputc('\n', stderr); return 1; } while (0)
 
+/* VN_LATENCY: tests/latency's case on this frontend (LRPS2_BIOS is the
+ * image tests/latency writes with --bios). Before a retro_run the host
+ * writes a grey to the word the guest reads every vsync, as the core
+ * latches the pad there; after it the host reads the middle of the image
+ * it holds, which a dupe leaves as it was. The grey must be in the
+ * picture of the retro_run it was written before. Between two retro_runs
+ * the host waits VN_LATENCY_PACE_MS, 4 by default, as a frontend does
+ * while it presents. */
+#define VN_LAT_INPUT    0x180000u
+#define VN_LAT_WARMUP   60
+#define VN_LAT_TRIALS   24
+#define VN_LAT_MAX_RUNS 8
+static int s_lat_shown;
+static VkInstance s_lat_inst;
+static const struct retro_vulkan_context* s_lat_ctx;
+
+/* What the frontend shows for a frame: it samples the image it holds
+ * when the frame comes in, so this reads it there, after what the core
+ * has submitted and before what it submits later. A dupe shows the held
+ * image again. */
+static void vn_latency_read(const void* d)
+{
+	unsigned long long h;
+	unsigned mid = 0;
+	(void)d;
+	s_lat_shown = -1;
+	if (s_images_set && vn_hash_image(s_lat_inst, s_lat_ctx->gpu, s_lat_ctx->device, s_lat_ctx->queue,
+			s_lat_ctx->queue_family_index, s_last_image, s_last_w, s_last_h, &h, &mid))
+		s_lat_shown = (int)mid;
+}
+
+static int vn_latency(void (*run)(void), retro_get_memory_data_t* memory_data,
+	VkInstance inst, const struct retro_vulkan_context* ctx)
+{
+	const unsigned pace = getenv("VN_LATENCY_PACE_MS") ? (unsigned)atoi(getenv("VN_LATENCY_PACE_MS")) : 4;
+	unsigned char* ram = memory_data ? (unsigned char*)memory_data(RETRO_MEMORY_SYSTEM_RAM) : NULL;
+	unsigned hist[VN_LAT_MAX_RUNS + 1];
+	unsigned t, n, i, worst = 0, dupes;
+	int shown;
+
+	if (!ram)
+	{
+		fprintf(stderr, "vknegotiate: no main RAM to write the input to\n");
+		return 0;
+	}
+	memset(hist, 0, sizeof(hist));
+	s_lat_inst = inst;
+	s_lat_ctx  = ctx;
+	s_lat_on   = 1;
+	vn_put32(ram + VN_LAT_INPUT, 0x80000000u);
+	for (i = 0; i < VN_LAT_WARMUP; i++)
+		run();
+	dupes = s_dupes;
+	for (t = 0; t < VN_LAT_TRIALS; t++)
+	{
+		/* tests/latency's greys and holds: 8 apart, held 1 to 4
+		 * retro_runs after they show. */
+		const unsigned grey = 16 + 8 * (t % 28);
+		const unsigned hold = 1 + (t % 4);
+		vn_put32(ram + VN_LAT_INPUT, 0x80000000u | grey | (grey << 8) | (grey << 16));
+		for (n = 0; n < VN_LAT_MAX_RUNS; n++)
+		{
+			run();
+			shown = s_lat_shown;
+			vn_pause_ms(pace);
+			if (shown >= (int)grey - 2 && shown <= (int)grey + 2)
+				break;
+		}
+		hist[n]++;
+		if (n > worst)
+			worst = n;
+		for (i = 1; i < hold; i++)
+		{
+			run();
+			vn_pause_ms(pace);
+		}
+	}
+	printf("  latency: retro_runs after the one the input was written before:");
+	for (n = 0; n <= VN_LAT_MAX_RUNS; n++)
+		if (hist[n])
+			printf(" %u%s:%u", n, n == VN_LAT_MAX_RUNS ? "+" : "", hist[n]);
+	printf("  (%u dupes)\n", s_dupes - dupes);
+	s_lat_on = 0;
+	return worst == 0;
+}
+
 int main(int argc, char** argv)
 {
 	char path[1100];
@@ -928,6 +1024,7 @@ int main(int argc, char** argv)
 	retro_serialize_size_t* serialize_size;
 	retro_serialize_t* serialize;
 	retro_unserialize_t* unserialize;
+	retro_get_memory_data_t* memory_data;
 	const char *bios = getenv("LRPS2_BIOS");
 	const VkApplicationInfo *app;
 	VkInstanceCreateInfo ici;
@@ -998,6 +1095,7 @@ int main(int argc, char** argv)
 	set_audio_batch = (retro_set_audio_sample_batch_t*)vn_sym(h, "retro_set_audio_sample_batch");
 	set_poll        = (retro_set_input_poll_t*)vn_sym(h, "retro_set_input_poll");
 	set_input       = (retro_set_input_state_t*)vn_sym(h, "retro_set_input_state");
+	memory_data     = (retro_get_memory_data_t*)vn_sym(h, "retro_get_memory_data");
 	init_fn         = (retro_simple_t*)vn_sym(h, "retro_init");
 	deinit_fn       = (retro_simple_t*)vn_sym(h, "retro_deinit");
 	unload_game     = (retro_simple_t*)vn_sym(h, "retro_unload_game");
@@ -1142,6 +1240,14 @@ int main(int argc, char** argv)
 	if (getenv("VN_LOAD_PAUSE_MS"))
 		vn_pause_ms((unsigned)atoi(getenv("VN_LOAD_PAUSE_MS")));
 
+	/* VN_LATENCY measures and tears down: the guest program does not
+	 * idle, so a state saved after a load is not the one loaded. */
+	if (getenv("VN_LATENCY"))
+	{
+		if (!vn_latency(run, memory_data, instance, &ctx))
+			VN_FAIL("an input reached the picture late");
+		goto teardown;
+	}
 	{
 		double longest = 0.0, first = 0.0;
 		for (frame = 0; frame < frames; frame++)
@@ -1184,7 +1290,7 @@ int main(int argc, char** argv)
 		unsigned long long h;
 		pvkDeviceWaitIdle(ctx.device);
 		if (!s_images_set || !vn_hash_image(instance, ctx.gpu, ctx.device, ctx.queue, ctx.queue_family_index,
-				s_last_image, s_last_w, s_last_h, &h))
+				s_last_image, s_last_w, s_last_h, &h, NULL))
 			VN_FAIL("the last image could not be read back");
 		printf("  image: %ux%u, hash %016llx\n", s_last_w, s_last_h, h);
 	}
@@ -1287,6 +1393,7 @@ int main(int argc, char** argv)
 	if (bios && s_images == 0 && !getenv("VN_IDLE_BIOS"))
 		VN_FAIL("no frame reached the frontend as an image");
 
+teardown:
 	/* RetroArch's order (core_unload_game): context, content, device. */
 	if (s_hw.context_destroy)
 		s_hw.context_destroy();

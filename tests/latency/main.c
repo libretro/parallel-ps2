@@ -21,7 +21,8 @@
  * that retro_run hands over, for every colour, however many retro_runs
  * apart the colours change.
  *
- * Usage: latency <path-to-core> <scratch-dir> */
+ * Usage: latency <path-to-core> <scratch-dir>
+ *        latency --bios <path> [progressive] */
 
 #ifndef _WIN32
 #define _POSIX_C_SOURCE 199309L /* nanosleep */
@@ -260,7 +261,7 @@ static const unsigned s_packet[LT_PACKET_QW][4] = {
  * into the packet's colour and sends the packet down the GIF DMA
  * channel. The ROMDIR follows at 0x1000 and ROMVER holds a USA console
  * version string. */
-static int lt_write_bios(const char* path)
+static int lt_write_bios(const char* path, int progressive)
 {
 	static unsigned char rom[4 * 1024 * 1024];
 	FILE* f;
@@ -274,10 +275,10 @@ static int lt_write_bios(const char* path)
 	pc = lt_emit(rom, 0, LT_LUI(8, 0xB200));                         /* t0 = GS privileged regs */
 	pc = lt_emit_store64(rom, pc, 8, 0x00, 0, 0xFF25u);              /* PMODE: RC1, alpha FF    */
 	pc = lt_emit_store64(rom, pc, 8, 0x10, 0x7, 0x40834504u);        /* SMODE1: NTSC            */
-	pc = lt_emit_store64(rom, pc, 8, 0x20, 0, 1);                    /* SMODE2: interlaced      */
+	pc = lt_emit_store64(rom, pc, 8, 0x20, 0, progressive ? 0 : 1);  /* SMODE2: interlaced      */
 	pc = lt_emit_store64(rom, pc, 8, 0x70, 0, 10u << 9);             /* DISPFB1: FBW 10         */
-	pc = lt_emit_store64(rom, pc, 8, 0x80, 2559u | (447u << 12),     /* DISPLAY1                */
-		636u | (50u << 12) | (3u << 23));
+	pc = lt_emit_store64(rom, pc, 8, 0x80,                           /* DISPLAY1                */
+		2559u | ((progressive ? 223u : 447u) << 12), 636u | ((progressive ? 25u : 50u) << 12) | (3u << 23));
 	/* Copy the packet: t3 = ROM source, t4 = RAM destination, t6 = words. */
 	pc = lt_emit(rom, pc, LT_LUI(11, 0xBFC0));
 	pc = lt_emit(rom, pc, LT_ORI(11, 11, LT_PACKET_ROM));
@@ -363,6 +364,11 @@ int main(int argc, char** argv)
 	unsigned t, n, worst = 0, failed = 0;
 	int i;
 
+	/* --bios <path> [progressive]: write the image alone, for
+	 * tests/vknegotiate's VN_LATENCY to run on the Vulkan device;
+	 * progressive scans out 224 lines a frame instead of interlacing. */
+	if ((argc == 3 || argc == 4) && !strcmp(argv[1], "--bios"))
+		return lt_write_bios(argv[2], argc == 4 && !strcmp(argv[3], "progressive")) ? 0 : 1;
 	if (argc < 3)
 	{
 		fprintf(stderr, "usage: latency <path-to-core> <scratch-dir>\n");
@@ -382,7 +388,7 @@ int main(int argc, char** argv)
 	sprintf(path, "%s/pcsx2/bios", s_system_dir);
 	lt_mkdir(path);
 	sprintf(path, "%s/pcsx2/bios/lrps2_latency.bin", s_system_dir);
-	if (!lt_write_bios(path))
+	if (!lt_write_bios(path, 0))
 	{
 		fprintf(stderr, "latency: cannot write %s\n", path);
 		return 1;

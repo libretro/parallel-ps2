@@ -89,6 +89,10 @@ static retro_vulkan_image vk_present_descs[VK_PRESENT_MAX_SYNC_INDICES];
  * must not be the texture the next frame draws into; see PresentRect. */
 static GSTexture* vk_present_textures[VK_PRESENT_MAX_SYNC_INDICES];
 
+/* Set by a present that submitted the frame ahead of the video callback,
+ * for EndPresent to submit nothing more. */
+static bool vk_present_submitted;
+
 static void vk_free_present_textures(void)
 {
 	unsigned i;
@@ -1870,6 +1874,11 @@ GSDevice::PresentResult GSDeviceVK::BeginPresent(bool frame_skip)
 
 void GSDeviceVK::EndPresent()
 {
+	if (vk_present_submitted)
+	{
+		vk_present_submitted = false;
+		return;
+	}
 	SubmitCommandBuffer();
 	MoveToNextCommandBuffer();
 }
@@ -2214,12 +2223,9 @@ void GSDeviceVK::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 			 * reads it on its own schedule - a frame or more later
 			 * on a threaded video path, many frames later under
 			 * fast-forward - so the handover follows the sync index
-			 * the interface provides: the frontend names the slot,
+			 * the interface provides: the frontend names the slot and
 			 * wait_sync_index() returns once it has finished reading
-			 * what that slot held before, and only then does this
-			 * frame's rendering into the target reach the queue
-			 * (recorded now, submitted at EndPresent below).
-			 * Nothing is copied. */
+			 * what that slot held before. Nothing is copied. */
 			uint32_t sync_index = vulkan->get_sync_index(vulkan->handle);
 			/* A mask, not a count: bit i set means index i can be returned.
 			 * The slots needed are one past the highest set bit. (This
@@ -2246,6 +2252,13 @@ void GSDeviceVK::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 				EndRenderPass();
 				tex->TransitionToLayout(GSTextureVK::Layout::ShaderReadOnly);
 			}
+
+			/* The frontend records its frame inside the video callback
+			 * and submits it to the same queue: the frame drawn into the
+			 * texture is submitted first, or the frontend samples what
+			 * the texture held the last time it was presented. */
+			ExecuteCommandBuffer(false);
+			vk_present_submitted = true;
 
 			retro_vulkan_image &vkimage = vk_present_descs[sync_index];
 			vkimage = {};
