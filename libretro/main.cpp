@@ -21,6 +21,7 @@
 #include <chrono>
 
 #include "libretro_core_options.h"
+#include "CrashHandler.h"
 
 #include <cmath>
 #include "../pcsx2/GS.h"
@@ -2351,6 +2352,12 @@ void retro_init(void)
 	struct retro_log_callback log;
    	bool option_categories          = false;
 	enum retro_pixel_format xrgb888 = RETRO_PIXEL_FORMAT_XRGB8888;
+
+	/* Before anything else, and in particular before vtlb installs the fastmem
+	 * page fault handler: that one takes SIGSEGV and chains back to whatever it
+	 * displaced, so getting in first is what puts this on the end of that chain
+	 * rather than out of it. */
+	CrashHandler_Install();
 
 	environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &xrgb888);
 	if (environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
