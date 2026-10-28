@@ -94,6 +94,8 @@ GSDevice* g_gs_device = NULL;
 
 GSDevice::GSDevice()
 {
+	m_weave_field[0]  = NULL;
+	m_weave_field[1]  = NULL;
 	m_vr_out          = NULL;
 	m_vr_atlas        = NULL;
 	m_vr_reduce[0]    = NULL;
@@ -545,12 +547,16 @@ void GSDevice::ClearCurrent()
 	RetirePresentTexture(m_weavebob);
 	RetirePresentTexture(m_blend);
 	RetirePresentTexture(m_mad);
+	gs_texture_free(m_weave_field[0]);
+	gs_texture_free(m_weave_field[1]);
 	gs_texture_free(m_target_tmp);
 
 	m_merge = nullptr;
 	m_weavebob = nullptr;
 	m_blend = nullptr;
 	m_mad = nullptr;
+	m_weave_field[0] = NULL;
+	m_weave_field[1] = NULL;
 	m_target_tmp = nullptr;
 
 	VRRelease();
@@ -766,23 +772,56 @@ void GSDevice::Interlace(const GSVector2i& ds, int field, int mode, float yoffse
 		DoInterlace(sTex, sRect, dTex, dRect, shader, linear, cb);
 	};
 
+	/* What is presented - the weave, bob and blend outputs, and the
+	 * adaptive reconstruction - is drawn whole here every field, into
+	 * whichever texture the backend gave back for it (SwapPresentTexture):
+	 * the frontend still holds the ones it was handed before. */
 	switch (mode)
 	{
 		case 0: // Weave
-			ResizeRenderTarget(&m_weavebob, ds.x, ds.y, true, false, true);
+		{
+			/* This field's lines from this frame's merge, the other's from
+			 * the merge that last carried that field, which is kept for it;
+			 * the one it replaces is the next merge target. */
+			GSTexture* const other = m_weave_field[field ^ 1];
+			GSTexture* const next  = m_weave_field[field];
+			ResizeRenderTarget(&m_weavebob, ds.x, ds.y, false, false, true);
+			if (!other)
+				ClearRenderTarget(m_weavebob, 0);
 			do_interlace(m_merge, m_weavebob, ShaderInterlace::WEAVE, true, offset, field);
+			if (other)
+				do_interlace(other, m_weavebob, ShaderInterlace::WEAVE, true,
+					GSConfig.DisableInterlaceOffset ? 0.0f : yoffset * static_cast<float>(field ^ 1), field ^ 1);
+			m_weave_field[field] = m_merge;
+			m_merge              = next;
 			m_current = m_weavebob;
 			break;
+		}
 		case 1: // Bob
+		{
 			// Field is reversed here as we are countering the bounce.
-			ResizeRenderTarget(&m_weavebob, ds.x, ds.y, true, false, true);
-			do_interlace(m_merge, m_weavebob, ShaderInterlace::BOB, true, yoffset * (1 - field), 0);
+			/* The rows above the ones the field is moved down to show the
+			 * top of the other field, drawn from the merge that last
+			 * carried it, which is kept as the weave keeps it. */
+			const float bob_offset = yoffset * (1 - field);
+			GSTexture* const other = m_weave_field[field ^ 1];
+			GSTexture* const next  = m_weave_field[field];
+			ResizeRenderTarget(&m_weavebob, ds.x, ds.y, false, false, true);
+			if (bob_offset > 0.0f && other)
+				StretchRect(other, GSVector4(0.0f, 0.0f, 1.0f, bob_offset / static_cast<float>(ds.y)), m_weavebob,
+					GSVector4(0.0f, 0.0f, static_cast<float>(ds.x), bob_offset), ShaderConvert::COPY, true);
+			else if (bob_offset > 0.0f)
+				ClearRenderTarget(m_weavebob, 0);
+			do_interlace(m_merge, m_weavebob, ShaderInterlace::BOB, true, bob_offset, 0);
+			m_weave_field[field] = m_merge;
+			m_merge              = next;
 			m_current = m_weavebob;
 			break;
+		}
 		case 2: // Blend
 			ResizeRenderTarget(&m_weavebob, ds.x, ds.y, true, false, true);
 			do_interlace(m_merge, m_weavebob, ShaderInterlace::WEAVE, true, offset, field);
-			ResizeRenderTarget(&m_blend, ds.x, ds.y, true, false, true);
+			ResizeRenderTarget(&m_blend, ds.x, ds.y, false, false, true);
 			do_interlace(m_weavebob, m_blend, ShaderInterlace::BLEND, false, 0, 0);
 			m_current = m_blend;
 			break;
@@ -804,13 +843,13 @@ void GSDevice::Interlace(const GSVector2i& ds, int field, int mode, float yoffse
 				const GSVector4 dRect = GSVector4(0.0f, slot_h * static_cast<float>(bufIdx), static_cast<float>(mad_size.x), slot_h * static_cast<float>(bufIdx + 1));
 				const InterlaceConstantBuffer cb = {GSVector4(static_cast<float>(bufIdx), 0.0f, 0.0f, block)};
 				DoInterlace(m_merge, sRect, m_mad, dRect, ShaderInterlace::BOB, true, cb);
-				ResizeRenderTarget(&m_weavebob, ds.x, ds.y, true, false, true);
+				ResizeRenderTarget(&m_weavebob, ds.x, ds.y, false, false, true);
 				do_interlace(m_mad, m_weavebob, ShaderInterlace::MAD_RECONSTRUCT, true, 0, bufIdx);
 			}
 			else
 			{
 				do_interlace(m_merge, m_mad, ShaderInterlace::MAD_BUFFER, true, offset, bufIdx);
-				ResizeRenderTarget(&m_weavebob, ds.x, ds.y, true, false, true);
+				ResizeRenderTarget(&m_weavebob, ds.x, ds.y, false, false, true);
 				do_interlace(m_mad, m_weavebob, ShaderInterlace::MAD_RECONSTRUCT, false, 0, bufIdx);
 			}
 			m_current = m_weavebob;

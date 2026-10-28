@@ -37,6 +37,11 @@
  * that builds them - its compile threads are named PGS-Compile - and the
  * longest frame after the first (Linux: thread names), and the graphics
  * ones apart. VN_OPTIONS sets core options, "key=value;key=value".
+ * VN_LATE_READ makes the frontend one that presents from another thread
+ * (see vn_late_present): it reads each image it was handed only when the
+ * sync index that carried it comes round again, and replays the image it
+ * holds now and then as a cached frame; each read must match the hash the
+ * image had at the end of the retro_run that handed it over.
  *
  * Usage: vknegotiate <path-to-core> <scratch-dir> <v2|v2retry|v1> */
 
@@ -278,6 +283,10 @@ static void vn_log(enum retro_log_level level, const char* fmt, ...)
 }
 
 static unsigned s_last_w, s_last_h;
+/* VN_LATE_READ (vn_late_present, below the readback it uses). */
+static int s_late;
+static void vn_late_present(const void* d);
+static void vn_late_reclaim(void);
 static void vn_video(const void* d, unsigned w, unsigned h, size_t p)
 {
 	(void)p;
@@ -286,6 +295,8 @@ static void vn_video(const void* d, unsigned w, unsigned h, size_t p)
 		s_last_w = w;
 		s_last_h = h;
 	}
+	if (s_late)
+		vn_late_present(d);
 	s_frames++;
 	if (!d)
 		s_dupes++;
@@ -314,16 +325,24 @@ static void vn_set_image(void *h, const struct retro_vulkan_image *img,
 	s_images_set = img && img->image_view != VK_NULL_HANDLE;
 	s_last_image = img;
 }
+static unsigned s_late_frame; /* the late reader's frames, its replays among them */
 static uint32_t vn_sync_mask(void *h)
 {
 	(void)h;
-	return (getenv("VN_SYNC_GROW") && s_frames >= 20) ? 7 : 1;
+	return (s_late || (getenv("VN_SYNC_GROW") && s_frames >= 20)) ? 7 : 1;
 }
-static uint32_t vn_sync_index(void *h) { return vn_sync_mask(h) == 7 ? s_frames % 3 : 0; }
+static uint32_t vn_sync_index(void *h)
+{
+	if (s_late)
+		return s_late_frame % 3;
+	return vn_sync_mask(h) == 7 ? s_frames % 3 : 0;
+}
 static void vn_set_cmd(void *h, uint32_t n, const VkCommandBuffer *c) { (void)h; (void)n; (void)c; }
 static void vn_wait_sync(void *h)
 {
 	(void)h;
+	if (s_late)
+		vn_late_reclaim();
 	if (s_last_image)
 	{
 		volatile VkImageView view = s_last_image->image_view;
@@ -363,7 +382,8 @@ static const char* vn_option(const char* key)
  * can read and hashed (FNV-1a over its rows); left in the layout it came
  * in. 0 when it cannot be read back. */
 static int vn_hash_image(VkInstance inst, VkPhysicalDevice gpu, VkDevice dev, VkQueue queue,
-	uint32_t family, unsigned long long* hash)
+	uint32_t family, const struct retro_vulkan_image* img, unsigned w, unsigned ht,
+	unsigned long long* hash)
 {
 #define VN_DEV(n) PFN_##n p##n = (PFN_##n)pvkGetDeviceProcAddr(dev, #n)
 	VN_DEV(vkCreateBuffer); VN_DEV(vkDestroyBuffer); VN_DEV(vkGetBufferMemoryRequirements);
@@ -375,11 +395,10 @@ static int vn_hash_image(VkInstance inst, VkPhysicalDevice gpu, VkDevice dev, Vk
 #undef VN_DEV
 	PFN_vkGetPhysicalDeviceMemoryProperties pmp =
 		(PFN_vkGetPhysicalDeviceMemoryProperties)gipa(inst, "vkGetPhysicalDeviceMemoryProperties");
-	const struct retro_vulkan_image* img = s_last_image;
-	const VkDeviceSize size = (VkDeviceSize)s_last_w * s_last_h * 4;
+	const VkDeviceSize size = (VkDeviceSize)w * ht * 4;
 	/* VN_HASH_ROWS: only the first rows */
-	const unsigned rows = (getenv("VN_HASH_ROWS") && (unsigned)atoi(getenv("VN_HASH_ROWS")) < s_last_h) ?
-		(unsigned)atoi(getenv("VN_HASH_ROWS")) : s_last_h;
+	const unsigned rows = (getenv("VN_HASH_ROWS") && (unsigned)atoi(getenv("VN_HASH_ROWS")) < ht) ?
+		(unsigned)atoi(getenv("VN_HASH_ROWS")) : ht;
 	VkPhysicalDeviceMemoryProperties mp;
 	VkBufferCreateInfo bci;
 	VkMemoryRequirements req;
@@ -401,7 +420,7 @@ static int vn_hash_image(VkInstance inst, VkPhysicalDevice gpu, VkDevice dev, Vk
 	uint32_t t;
 	int ok = 0;
 
-	if (!img || !s_images_set || !size || !pmp || !pvkCreateBuffer || !pvkQueueWaitIdle)
+	if (!img || img->image_view == VK_NULL_HANDLE || !size || !pmp || !pvkCreateBuffer || !pvkQueueWaitIdle)
 		return 0;
 	pmp(gpu, &mp);
 	memset(&bci, 0, sizeof(bci));
@@ -455,8 +474,8 @@ static int vn_hash_image(VkInstance inst, VkPhysicalDevice gpu, VkDevice dev, Vk
 	memset(&bic, 0, sizeof(bic));
 	bic.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	bic.imageSubresource.layerCount = 1;
-	bic.imageExtent.width           = s_last_w;
-	bic.imageExtent.height          = s_last_h;
+	bic.imageExtent.width           = w;
+	bic.imageExtent.height          = ht;
 	bic.imageExtent.depth           = 1;
 	memset(&bb, 0, sizeof(bb));
 	bb.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -478,7 +497,7 @@ static int vn_hash_image(VkInstance inst, VkPhysicalDevice gpu, VkDevice dev, Vk
 	if (pvkEndCommandBuffer(cb) != VK_SUCCESS || pvkQueueSubmit(queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS
 		|| pvkQueueWaitIdle(queue) != VK_SUCCESS || pvkMapMemory(dev, mem, 0, size, 0, (void**)&p) != VK_SUCCESS)
 		goto out;
-	for (i = 0; i < (VkDeviceSize)s_last_w * rows * 4; i++)
+	for (i = 0; i < (VkDeviceSize)w * rows * 4; i++)
 		h = (h ^ p[i]) * 1099511628211ULL;
 	pvkUnmapMemory(dev, mem);
 	*hash = h;
@@ -491,6 +510,146 @@ out:
 	if (mem != VK_NULL_HANDLE)
 		pvkFreeMemory(dev, mem, NULL);
 	return ok;
+}
+
+/* VN_LATE_READ: a frontend that presents from a thread of its own, as
+ * RetroArch's threaded video does. It reads the image a sync index
+ * carried only when that index comes round again - when the core waits on
+ * it, or the frontend reuses it - which is the last moment it may, and
+ * every fourth frame it replays the image it holds as a cached frame on
+ * the next index. Each read must find the image as it was at the end of
+ * the retro_run that handed it over, when a frontend reading straight
+ * away reads it: the core may not draw into an image a slot still
+ * carries. */
+#define VN_LATE_SLOTS 3
+struct vn_held
+{
+	struct retro_vulkan_image img;
+	unsigned long long hash;  /* at the end of the retro_run that handed it over */
+	unsigned id, w, h;        /* id: the handover, counted from 1 */
+	int pending;              /* that retro_run has not ended yet */
+};
+static struct vn_held s_slot[VN_LATE_SLOTS]; /* id 0: the index carries nothing */
+static struct vn_held s_held;                /* what set_image last named, as presented */
+static unsigned s_late_ids, s_late_reads, s_late_replays, s_late_bad;
+static int s_late_dupe; /* a dupe this retro_run, read again at its end */
+static VkInstance s_late_inst;
+static VkPhysicalDevice s_late_gpu;
+static VkDevice s_late_dev;
+static VkQueue s_late_queue;
+static uint32_t s_late_family;
+
+static void vn_late_check(const struct vn_held* e, const char* when)
+{
+	unsigned long long h;
+	if (!e->id || e->pending)
+		return;
+	if (!vn_hash_image(s_late_inst, s_late_gpu, s_late_dev, s_late_queue, s_late_family,
+			&e->img, e->w, e->h, &h))
+	{
+		printf("  late reader: image %u (%s) could not be read back\n", e->id, when);
+		s_late_bad++;
+		return;
+	}
+	s_late_reads++;
+	if (h != e->hash)
+	{
+		if (s_late_bad < 8)
+			printf("  late reader: image %u read %s is %016llx, handed over as %016llx\n",
+				e->id, when, h, e->hash);
+		s_late_bad++;
+	}
+}
+
+/* The frontend is done with what the current index carried. */
+static void vn_late_reclaim(void)
+{
+	struct vn_held* e = &s_slot[s_late_frame % VN_LATE_SLOTS];
+	vn_late_check(e, "when its slot came round");
+	e->id = 0;
+}
+
+/* A frame on the current index: the image just handed over, the one held
+ * again for a dupe, or none. */
+static void vn_late_present(const void* d)
+{
+	vn_late_reclaim();
+	if (d == RETRO_HW_FRAME_BUFFER_VALID && s_images_set)
+	{
+		s_held.img     = *s_last_image;
+		s_held.id      = ++s_late_ids;
+		s_held.w       = s_last_w;
+		s_held.h       = s_last_h;
+		s_held.pending = 1;
+	}
+	else if (d == RETRO_HW_FRAME_BUFFER_VALID)
+		s_held.id = 0;
+	else if (s_held.id)
+		s_late_dupe = 1;
+	s_slot[s_late_frame % VN_LATE_SLOTS] = s_held;
+	s_late_frame++;
+}
+
+/* The end of a retro_run: the image it handed over is complete, and is
+ * hashed as a frontend reading it straight away sees it. */
+static void vn_late_run_end(void)
+{
+	unsigned i;
+	if (s_held.id && s_held.pending)
+	{
+		if (!vn_hash_image(s_late_inst, s_late_gpu, s_late_dev, s_late_queue, s_late_family,
+				&s_held.img, s_held.w, s_held.h, &s_held.hash))
+		{
+			printf("  late reader: image %u could not be read back\n", s_held.id);
+			s_late_bad++;
+		}
+		s_held.pending = 0;
+		for (i = 0; i < VN_LATE_SLOTS; i++)
+			if (s_slot[i].id == s_held.id)
+			{
+				s_slot[i].hash    = s_held.hash;
+				s_slot[i].pending = 0;
+			}
+	}
+	else if (s_late_dupe)
+		vn_late_check(&s_held, "again for a dupe");
+	s_late_dupe = 0;
+}
+
+/* A cached frame between two retro_runs: the frontend shows the image it
+ * holds on the next index, without the core. */
+static void vn_late_replay(void)
+{
+	if (!s_held.id)
+		return;
+	vn_late_reclaim();
+	s_slot[s_late_frame % VN_LATE_SLOTS] = s_held;
+	s_late_frame++;
+	s_late_replays++;
+	vn_late_check(&s_held, "for a replay");
+}
+
+/* retro_run, and with VN_LATE_READ the late reader's part around it. */
+static void vn_run(void (*run)(void))
+{
+	static unsigned runs;
+	run();
+	if (!s_late)
+		return;
+	vn_late_run_end();
+	if ((++runs & 3) == 0)
+		vn_late_replay();
+}
+
+/* The frontend's last reads, before the core goes down. */
+static void vn_late_finish(void)
+{
+	unsigned i;
+	for (i = 0; i < VN_LATE_SLOTS; i++)
+	{
+		vn_late_check(&s_slot[i], "at the end");
+		s_slot[i].id = 0;
+	}
 }
 
 static bool vn_environment(unsigned cmd, void* data)
@@ -969,6 +1128,15 @@ int main(int argc, char** argv)
 	s_vk.lock_queue             = vn_lock;
 	s_vk.unlock_queue           = vn_unlock;
 	s_vk.set_signal_semaphore   = vn_set_sem;
+	if (getenv("VN_LATE_READ"))
+	{
+		s_late        = 1;
+		s_late_inst   = instance;
+		s_late_gpu    = ctx.gpu;
+		s_late_dev    = ctx.device;
+		s_late_queue  = ctx.queue;
+		s_late_family = ctx.queue_family_index;
+	}
 	if (s_hw.context_reset)
 		s_hw.context_reset();
 	if (getenv("VN_LOAD_PAUSE_MS"))
@@ -980,7 +1148,7 @@ int main(int argc, char** argv)
 		{
 			const double t0 = vn_now_ms();
 			double dt;
-			run();
+			vn_run(run);
 			dt = vn_now_ms() - t0;
 			if (frame == 0)
 				first = dt;
@@ -999,11 +1167,24 @@ int main(int argc, char** argv)
 			printf("  blend constants set %ld times in %d frames\n", vn_pipes_read(&vn_blend_sets), frames);
 	}
 	printf("  %d frames run, %u presented, %u duped, %u as images\n", frames, s_frames, s_dupes, s_images);
+	/* The late reader's last reads; the frontend reads straight away from
+	 * here on. */
+	if (s_late)
+	{
+		vn_late_finish();
+		s_late = 0;
+		printf("  late reader: %u images handed over, %u reads, %u replays, %u differed\n",
+			s_late_ids, s_late_reads, s_late_replays, s_late_bad);
+		if (s_late_bad || !s_late_reads)
+			VN_FAIL("an image the frontend held was not the one handed over");
+	}
+
 	if (getenv("VN_HASH_IMAGE"))
 	{
 		unsigned long long h;
 		pvkDeviceWaitIdle(ctx.device);
-		if (!vn_hash_image(instance, ctx.gpu, ctx.device, ctx.queue, ctx.queue_family_index, &h))
+		if (!s_images_set || !vn_hash_image(instance, ctx.gpu, ctx.device, ctx.queue, ctx.queue_family_index,
+				s_last_image, s_last_w, s_last_h, &h))
 			VN_FAIL("the last image could not be read back");
 		printf("  image: %ux%u, hash %016llx\n", s_last_w, s_last_h, h);
 	}

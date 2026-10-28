@@ -60,11 +60,10 @@ extern retro_video_refresh_t video_cb;
  * record and submit that copy on this thread. With version 2 the core
  * keeps a present texture per sync index, says when each is complete (the
  * fence its own submit signals), and is told when it may have it back.
- * When the GS is not deinterlacing, the present texture is the merge
- * target itself and the textures simply change places, so nothing is
- * copied anywhere; otherwise the copy into the present texture rides in
- * the command list that was going to be submitted anyway. Either way
- * nothing extra is submitted and the frontend records nothing here.
+ * The present texture is the device's own target - the merge, a
+ * deinterlacer's output, the VR eyes - and the target and the index's
+ * texture change places, so nothing is copied anywhere, nothing extra is
+ * submitted and the frontend records nothing here.
  *
  * Plain C on purpose: a struct that lives for the process, a function
  * with C linkage main.cpp calls before SET_HW_RENDER, and an array. */
@@ -1275,7 +1274,6 @@ void GSDevice12::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	{
 		const unsigned index = d3d12->get_sync_index(d3d12->handle);
 		const bool     blank = (!sRect.right && !sRect.bottom);
-		GSTexture12*   present;
 		u64            value;
 
 		if (index < GS_D3D12_MAX_SYNC_INDICES)
@@ -1287,77 +1285,33 @@ void GSDevice12::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 					? gs_sync_slots_from_mask(d3d12->get_sync_index_mask(d3d12->handle))
 					: 1);
 
-			/* No copy at all when what is being presented is the merge
-			 * target, which it is whenever the GS is not deinterlacing: hand
-			 * the merge target itself over, and let the texture this index
-			 * carried last time round - the frontend is finished with it,
-			 * that is what the wait above was for - be the merge target from
-			 * here. Merge() rewrites its target in full every frame
-			 * (ResizeRenderTarget with nothing preserved), so it does not
-			 * matter which texture it is handed, and it copes with none, or
-			 * one of another size, as it always has. The deinterlacers do
-			 * not get this: weave writes half the lines of its target a
-			 * field and needs the other half to still be there. */
-			/* GSDevice::m_merge: this class has pipelines of the same name. */
-			if (texture == GSDevice::m_merge)
+			/* Every texture presented is drawn over in full each frame, so
+			 * the one handed over stays with this index until it comes
+			 * round again, and the next frame draws into the one this
+			 * index carried, which the wait above has made ours. Nothing is
+			 * copied. */
+			if (SwapPresentTexture(texture, s_d3d12_present_textures[index]))
 			{
+				s_d3d12_present_textures[index] = texture;
 				if (blank)
 					ClearRenderTarget(texture, 0);
 				texture->CommitClear();
 				texture->TransitionToState(d3d12->required_state);
 
+				/* The value the list being recorded signals when it is
+				 * submitted, which is the next line: the texture is
+				 * complete, and in required_state, once the fence is there. */
 				value = GetCurrentFenceValue();
 				ExecuteCommandList(false);
-
-				GSDevice::m_merge = s_d3d12_present_textures[index];
-				m_current         = GSDevice::m_merge;
-				s_d3d12_present_textures[index] = texture;
 
 				d3d12->set_texture_fenced(d3d12->handle, texture->GetResource(),
 					texture->GetResource()->GetDesc().Format, m_fence.get(), value);
 				video_cb(RETRO_HW_FRAME_BUFFER_VALID, texture->GetWidth(), texture->GetHeight(), 0);
 				return;
 			}
-
-			present = s_d3d12_present_textures[index];
-			if (   !present
-			    || present->GetWidth()  != texture->GetWidth()
-			    || present->GetHeight() != texture->GetHeight()
-			    || present->GetFormat() != texture->GetFormat())
-			{
-				delete present;
-				present = static_cast<GSTexture12*>(CreateSurface(GSTexture::Type::RenderTarget,
-					texture->GetWidth(), texture->GetHeight(), 1, texture->GetFormat()));
-				s_d3d12_present_textures[index] = present;
-			}
-
-			if (present)
-			{
-				/* Blanking enforce, see 'GSRenderer::VSync()' */
-				if (blank)
-					ClearRenderTarget(present, 0);
-				else
-					CopyRect(texture, present, GSVector4i(0, 0, texture->GetWidth(), texture->GetHeight()), 0, 0);
-				present->CommitClear();
-				present->TransitionToState(d3d12->required_state);
-
-				/* The value the list being recorded signals when it is
-				 * submitted, which is the next line: the present texture is
-				 * complete, and in required_state, once the fence is there. */
-				value = GetCurrentFenceValue();
-				ExecuteCommandList(false);
-
-				if (blank)
-					ClearRenderTarget(texture, 0);
-
-				d3d12->set_texture_fenced(d3d12->handle, present->GetResource(),
-					present->GetResource()->GetDesc().Format, m_fence.get(), value);
-				video_cb(RETRO_HW_FRAME_BUFFER_VALID, present->GetWidth(), present->GetHeight(), 0);
-				return;
-			}
 		}
-		/* No present texture to be had: version 1's handoff is still valid
-		 * on a version 2 interface, and costs what it always did. */
+		/* A texture that is none of the device's present targets: version
+		 * 1's handoff is still valid on a version 2 interface. */
 	}
 
 	texture->CommitClear();

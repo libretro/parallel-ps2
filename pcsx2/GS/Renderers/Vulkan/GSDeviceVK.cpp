@@ -86,7 +86,7 @@ static retro_vulkan_image vk_present_descs[VK_PRESENT_MAX_SYNC_INDICES];
 
 /* The texture each sync index was last handed, held here until the index
  * comes round again. The frontend reads it on its own schedule, so it
- * must not be the texture the next frame is merged into; see PresentRect. */
+ * must not be the texture the next frame draws into; see PresentRect. */
 static GSTexture* vk_present_textures[VK_PRESENT_MAX_SYNC_INDICES];
 
 static void vk_free_present_textures(void)
@@ -2265,32 +2265,11 @@ void GSDeviceVK::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 
 			/* The frontend has this texture now, and wait_sync_index only
 			 * says when it is done with what an index carried the time
-			 * before - so handing over the one merge target every frame
-			 * left the texture just handed over to be merged into again a
-			 * frame later, whether or not a frontend presenting from
-			 * another thread had read it yet. When the texture is the
-			 * merge target, which it is whenever the GS is not
-			 * deinterlacing, it changes places with the one this index
-			 * carried last time round, which the wait above has made ours
-			 * again. Merge() rewrites its target in full every frame and
-			 * copes with none, or one of another size. Nothing is copied,
-			 * as nothing was before. The deinterlacers' targets stay as
-			 * they were: weave keeps half of its target from field to
-			 * field. (GSDevice::m_merge: this class has pipelines of the
-			 * same name.) */
-			if (sTex == GSDevice::m_merge && sync_index < VK_PRESENT_MAX_SYNC_INDICES)
-			{
-				GSDevice::m_merge               = vk_present_textures[sync_index];
-				m_current                       = GSDevice::m_merge;
+			 * before: the texture stays with this index until it comes
+			 * round again, and the next frame draws into the one the wait
+			 * above has made ours. Nothing is copied. */
+			if (SwapPresentTexture(sTex, vk_present_textures[sync_index]))
 				vk_present_textures[sync_index] = sTex;
-			}
-			/* The VR eyes the same way: VRCompose draws them over in full,
-			 * and resizes whatever comes back. */
-			else if (sTex == m_vr_out && sync_index < VK_PRESENT_MAX_SYNC_INDICES)
-			{
-				m_vr_out                        = vk_present_textures[sync_index];
-				vk_present_textures[sync_index] = sTex;
-			}
 		}
 	}
 }

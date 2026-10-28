@@ -71,8 +71,9 @@ static bool                                          s_d3d11_device_ready;
 static const struct retro_hw_render_interface_d3d11* s_d3d11_locked;   /* what the outermost begin locked */
 static unsigned                                      s_d3d11_lock_depth;
 
-/* Version 3: a present texture per sync index, so the frontend reads the
- * core's texture itself and copies nothing at video_refresh. */
+/* Version 3: the texture each sync index was last handed, held until the
+ * index comes round again, so the frontend reads the core's texture itself
+ * and copies nothing at video_refresh; see PresentRect. */
 #define GS_D3D11_MAX_SYNC_INDICES 32
 static GSTexture* s_d3d11_present_textures[GS_D3D11_MAX_SYNC_INDICES];
 
@@ -885,8 +886,6 @@ void GSDevice11::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	{
 		const unsigned index = s_d3d11_v2->get_sync_index(s_d3d11_v2->handle);
 		const bool     blank = (!sRect.right && !sRect.bottom);
-		GSTexture*     out   = NULL;
-		GSTexture*     present;
 		ID3D11RenderTargetView* nullView = nullptr;
 		extern retro_video_refresh_t video_cb;
 
@@ -902,60 +901,27 @@ void GSDevice11::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 					? gs_sync_slots_from_mask(s_d3d11_v2->get_sync_index_mask(s_d3d11_v2->handle))
 					: 1);
 
-			/* GSDevice::m_merge: this class has shaders of the same name. */
-			if (sTex == GSDevice::m_merge)
+			/* Every texture presented is drawn over in full each frame, so
+			 * the one handed over stays with this index until it comes
+			 * round again, and the next frame draws into the one this
+			 * index carried, which the wait above has made ours. Nothing is
+			 * copied, here or in the frontend. */
+			if (SwapPresentTexture(sTex, s_d3d11_present_textures[index]))
 			{
-				/* Not deinterlacing: what is presented is the merge target,
-				 * which Merge() rewrites in full every frame and so can be
-				 * any texture. Hand it over as it is, and let the one this
-				 * index carried be the merge target from here. Nothing is
-				 * copied, here or in the frontend. */
+				s_d3d11_present_textures[index] = sTex;
 				if (blank)
 					ClearRenderTarget(sTex, 0);
 				CommitClear(sTex);
-				out                             = sTex;
-				GSDevice::m_merge               = s_d3d11_present_textures[index];
-				m_current                       = GSDevice::m_merge;
-				s_d3d11_present_textures[index] = sTex;
-			}
-			else
-			{
-				/* The deinterlacers keep their target from field to field,
-				 * so that one is copied into the index's own texture. */
-				present = s_d3d11_present_textures[index];
-				if (   !present
-				    || present->GetWidth()  != sTex->GetWidth()
-				    || present->GetHeight() != sTex->GetHeight()
-				    || present->GetFormat() != sTex->GetFormat())
-				{
-					gs_texture_free(present);
-					present = CreateSurface(GSTexture::Type::RenderTarget,
-						sTex->GetWidth(), sTex->GetHeight(), 1, sTex->GetFormat());
-					s_d3d11_present_textures[index] = present;
-				}
-				if (present)
-				{
-					if (blank)
-						ClearRenderTarget(present, 0);
-					else
-						CopyRect(sTex, present, GSVector4i(0, 0, sTex->GetWidth(), sTex->GetHeight()), 0, 0);
-					CommitClear(present);
-					out = present;
-				}
-			}
-
-			if (out)
-			{
 				m_ctx->OMSetRenderTargets(1, &nullView, nullptr);
-				s_d3d11_v2->set_texture(s_d3d11_v2->handle, static_cast<ID3D11Texture2D*>(*(GSTexture11*)out));
+				s_d3d11_v2->set_texture(s_d3d11_v2->handle, static_cast<ID3D11Texture2D*>(*(GSTexture11*)sTex));
 				gs_d3d11_context_end();
-				video_cb(RETRO_HW_FRAME_BUFFER_VALID, out->GetWidth(), out->GetHeight(), 0);
+				video_cb(RETRO_HW_FRAME_BUFFER_VALID, sTex->GetWidth(), sTex->GetHeight(), 0);
 				gs_d3d11_context_begin();
 				return;
 			}
 		}
-		/* No present texture to be had: version 2's handoff below is still
-		 * valid on a version 3 interface. */
+		/* A texture that is none of the device's present targets: version
+		 * 2's handoff below is still valid on a version 3 interface. */
 	}
 
 	CommitClear(sTex);

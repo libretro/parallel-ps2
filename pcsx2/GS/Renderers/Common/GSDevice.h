@@ -921,6 +921,9 @@ protected:
 	GSTexture* m_weavebob = nullptr;
 	GSTexture* m_blend = nullptr;
 	GSTexture* m_mad = nullptr;
+	/* The merge that last carried each field, which the weave and bob read
+	 * the other field's lines from. Never handed to the frontend. */
+	GSTexture* m_weave_field[2];
 	/* Textures that have been handed to the frontend by reference (the
 	 * merge/interlace chain the present registers) cannot be destroyed
 	 * the moment a resize replaces them: the frontend samples the
@@ -1112,6 +1115,32 @@ public:
 	{
 		m_sync_slots = slots;
 		m_sync_waits++;
+	}
+	/* Called by a backend that has just handed the frontend `handed` for a
+	 * sync index, with `released`, what that index carried the time before
+	 * and the wait on it has made ours again. Every texture that reaches
+	 * PresentRect is drawn over in full each frame it is presented - the
+	 * merge, the deinterlacers' outputs, the VR eyes - so the one that
+	 * held `handed` takes `released` in its place, and the next frame
+	 * draws into a texture the frontend has let go of. False when `handed`
+	 * is none of them; the backend keeps nothing for the index then. */
+	__fi bool SwapPresentTexture(GSTexture* handed, GSTexture* released)
+	{
+		GSTexture** owner;
+		if (handed == m_merge)
+			owner = &m_merge;
+		else if (handed == m_weavebob)
+			owner = &m_weavebob;
+		else if (handed == m_blend)
+			owner = &m_blend;
+		else if (handed == m_vr_out)
+			owner = &m_vr_out;
+		else
+			return false;
+		*owner = released;
+		if (m_current == handed)
+			m_current = released;
+		return true;
 	}
 
 	bool IsRBSwapped() { return m_rbswapped; }

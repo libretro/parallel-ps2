@@ -1199,6 +1199,29 @@ static void case_stream_target_corners(void)
 	s_run_frames = 120;
 }
 
+/* A shaded triangle on circuit 1 faded over an empty circuit 2, PMODE.ALP
+ * stepping every vsync, on an interlaced NTSC display: every frame scanned
+ * out differs from the one before it, and the deinterlacers have a new
+ * field to weave each time. SMODE2 frame mode (INT) reads both fields'
+ * lines from one buffer; field mode (INT | FFMD) reads every other line.
+ * The field flips each vsync, as SMODE1.CMOD and an odd SYNCV.VFP make it. */
+static unsigned s_syncv_hi, s_syncv_lo; /* SYNCV, written when set */
+static void interlace_fade(unsigned smode2)
+{
+	frame_draw(0);
+	s_smode1_hi = 0x7;
+	s_smode1_lo = 0x40834504u;
+	s_syncv_hi  = 0x00C78006u;  /* NTSC; VFP odd, so the field flips */
+	s_syncv_lo  = 0x01A01801u;
+	s_smode2    = smode2;
+	s_pmode     = 0x0027u; /* EN1 EN2, MMOD = ALP */
+	s_circuit2  = 1;
+	s_disp2_fbp = 256;
+	s_fade_step = 3;
+}
+static void case_interlace_frame_fade(void) { interlace_fade(1); }
+static void case_interlace_field_fade(void) { interlace_fade(3); }
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -1254,6 +1277,8 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "frame_low",       case_frame_low,     "1" },
 	{ "frame_low_odd",   case_frame_low_odd, "1" },
 	{ "frame_low_odd_2x", case_frame_low_odd, "2" },
+	{ "interlace_frame_fade", case_interlace_frame_fade, "1" },
+	{ "interlace_field_fade", case_interlace_field_fade, "1" },
 };
 
 /* A 4MB image the core's BIOS scan accepts. The reset program turns on a
@@ -1286,6 +1311,8 @@ static int sl_write_bios(const char* path)
 	pc = sl_emit_store64(rom, pc, 8, 0x00, 0, s_display_off ? 0 : s_pmode); /* PMODE                */
 	if (s_smode1_hi || s_smode1_lo)
 		pc = sl_emit_store64(rom, pc, 8, 0x10, s_smode1_hi, s_smode1_lo); /* SMODE1             */
+	if (s_syncv_hi || s_syncv_lo)
+		pc = sl_emit_store64(rom, pc, 8, 0x60, s_syncv_hi, s_syncv_lo); /* SYNCV               */
 	pc = sl_emit_store64(rom, pc, 8, 0x20, 0, s_smode2);             /* SMODE2                  */
 	if (!s_display_off)
 	{
