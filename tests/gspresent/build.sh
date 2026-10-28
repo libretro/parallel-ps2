@@ -8,8 +8,8 @@
 # and every read must be the picture the image held when it was handed
 # over. tests/swdraw's interlaced fades - a new picture every frame, SMODE2
 # frame mode and field mode - run under each deinterlace mode on the
-# Vulkan renderer, and some again at 2x and on the software renderer's
-# output.
+# Vulkan renderer, some again at 2x and on the software renderer's
+# output, and on paraLLEl-GS.
 #
 # Runs the built core: pcsx2_libretro.so/.dll/.dylib at the top of the
 # tree, or LRPS2_CORE. Without one, or without a Vulkan device (lavapipe
@@ -80,8 +80,11 @@ late()
 }
 
 # Every mode on the Vulkan renderer; the TFF ones again at 2x and on the
-# software renderer's output, which goes through the same present.
+# software renderer's output, which goes through the same present; and
+# paraLLEl-GS, whose scanout draws into an image a slot gave back, never
+# into one a repeated frame still shows.
 for c in $CASES; do
+	late $c Automatic paraLLEl-GS 1
 	for m in Off Automatic "Weave TFF" "Weave BFF" "Bob TFF" "Bob BFF" \
 	         "Blend TFF" "Blend BFF" "Adaptive TFF" "Adaptive BFF"; do
 		late $c "$m" Vulkan 1

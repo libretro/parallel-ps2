@@ -55,11 +55,35 @@ static retro_vulkan_image vsync_descs[32];
  * for the next frame's scanout instead of a fresh one each frame. */
 static std::vector<ImageHandle> spare_vsync_images;
 
+/* The slot the last image was handed over on; UINT32_MAX for none. */
+static uint32_t last_handed_slot = UINT32_MAX;
+
 static void pgs_release_vsync_images()
 {
 	vsync_images.clear();
 	memset(vsync_descs, 0, sizeof(vsync_descs));
 	spare_vsync_images.clear();
+	last_handed_slot = UINT32_MAX;
+}
+
+/* An image a slot gives up goes back for the next scanout only when no
+ * other slot still holds it. */
+static void pgs_give_back(ImageHandle& image, uint32_t sync_slots)
+{
+	uint32_t i;
+	if (!image)
+		return;
+	for (i = 0; i < sync_slots; i++)
+		if (vsync_images[i] == image)
+		{
+			image.reset();
+			return;
+		}
+	/* One per slot is enough; past that the list is only holding sizes
+	 * the mode has moved away from. */
+	if (spare_vsync_images.size() > sync_slots)
+		spare_vsync_images.erase(spare_vsync_images.begin());
+	spare_vsync_images.push_back(std::move(image));
 }
 extern retro_environment_t environ_cb;
 extern retro_video_refresh_t video_cb;
@@ -858,6 +882,20 @@ void GSRendererPGS::VSync(u32 field, bool registers_written)
 				sync_index = 0;
 			if (vsync_images.size() < sync_slots)
 				vsync_images.resize(sync_slots);
+			/* The slots the frontend went through since the last image
+			 * was handed over showed that image again - a frame it
+			 * repeated on its own, or a dupe - and hold it until they come
+			 * round, as its own slot does. */
+			if (last_handed_slot < sync_slots && vsync_images[last_handed_slot])
+			{
+				uint32_t i = (last_handed_slot + 1) % sync_slots;
+				for (; i != sync_index && i != last_handed_slot; i = (i + 1) % sync_slots)
+				{
+					ImageHandle shown = std::move(vsync_images[i]);
+					vsync_images[i] = vsync_images[last_handed_slot];
+					pgs_give_back(shown, sync_slots);
+				}
+			}
 			hw_render_iface->wait_sync_index(hw_render_iface->handle);
 
 			dev.flush_frame();
@@ -916,15 +954,12 @@ void GSRendererPGS::VSync(u32 field, bool registers_written)
 			/* The image this slot held is offered back here, after the
 			 * wait above said the frontend is done with it; the one just
 			 * handed over stays until this slot comes round again. */
-			if (vsync_images[sync_index])
 			{
-				/* One per slot is enough; past that the list is only
-				 * holding sizes the mode has moved away from. */
-				if (spare_vsync_images.size() > sync_slots)
-					spare_vsync_images.erase(spare_vsync_images.begin());
-				spare_vsync_images.push_back(std::move(vsync_images[sync_index]));
+				ImageHandle done = std::move(vsync_images[sync_index]);
+				vsync_images[sync_index] = vsync.image;
+				pgs_give_back(done, sync_slots);
 			}
-			vsync_images[sync_index] = vsync.image;
+			last_handed_slot = sync_index;
 			last_base_width  = new_base_width;
 			last_base_height = new_base_height;
 			last_aspect      = geom.aspect_ratio;
