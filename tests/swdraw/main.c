@@ -1058,6 +1058,8 @@ static void case_split_clear_no_display(void)
 #define STREAM_T8       1
 #define STREAM_T8_FLAT  2
 #define STREAM_CT24_AEM 3
+/* What the IMAGE GIFtags claim past the quadwords sent after them. */
+static unsigned s_image_overrun;
 static void stream_image(unsigned dbp, unsigned dbw, unsigned dpsm,
 	unsigned x, unsigned y, unsigned w, unsigned h, unsigned qwc)
 {
@@ -1066,7 +1068,7 @@ static void stream_image(unsigned dbp, unsigned dbw, unsigned dpsm,
 	qw(0, x | (y << 16), GS_TRXPOS, 0);
 	qw(w, h, GS_TRXREG, 0);
 	qw(0, 0, GS_TRXDIR, 0);                                /* host to local */
-	qw(qwc | 0x8000u, 0x08000000u, 0, 0);                  /* IMAGE, EOP */
+	qw((qwc + s_image_overrun) | 0x8000u, 0x08000000u, 0, 0); /* IMAGE, EOP */
 }
 
 static void stream_draw_setup(unsigned nloop, unsigned fpsm)
@@ -1149,6 +1151,17 @@ static void case_stream_t8_flat(void) { stream_texture(STREAM_T8_FLAT, 0); }
 static void case_stream_ct24_aem(void) { stream_texture(STREAM_CT24_AEM, 0); }
 static void case_stream_frame16(void) { stream_texture(STREAM_CT32, 2); }
 
+/* The texture stream with an IMAGE GIFtag whose NLOOP is one more than
+ * the quadwords sent after it: the GIF takes the next transfer's GIFtag
+ * as the image's last quadword and reads on through the stream, its
+ * words taken as GIFtags, none of which ends the packet. The packet runs
+ * on for as long as the frames do. */
+static void case_gif_nloop_past_data(void)
+{
+	s_image_overrun = 1;
+	stream_texture(STREAM_CT32, 0);
+}
+
 /* Round after round: an 8x8 upload to each of two far corners of a
  * drawn 640x448 frame, changed by a word each round, a sprite drawn into
  * the frame between them, and 64x32 of the frame read back. */
@@ -1194,6 +1207,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "stream_ct24_aem", case_stream_ct24_aem, "1" },
 	{ "stream_frame16",  case_stream_frame16, "1" },
 	{ "stream_target_corners", case_stream_target_corners, "1" },
+	{ "gif_nloop_past_data", case_gif_nloop_past_data, "1" },
 	{ "aa1_triangle",    case_aa1_triangle, "1" },
 	{ "aa1_triangle_2x", case_aa1_triangle, "2" },
 	{ "aa1_line",        case_aa1_line,     "1" },

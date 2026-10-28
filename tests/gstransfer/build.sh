@@ -11,6 +11,9 @@
 #    PSMCT16) read back every round;
 #  - stream_target_corners: a target written by the EE in two far
 #    corners every round;
+#  - gif_nloop_past_data: the PSMCT32 stream with an IMAGE GIFtag one
+#    quadword longer than the data sent, the GIF reading on through the
+#    stream as one packet that never ends;
 #  - the cases of tests/swdraw that read back or upload into targets;
 #  - the stream cases again at 2x, where readbacks go through a copy.
 #
@@ -68,7 +71,7 @@ if [ -z "$FULL" ]; then
 fi
 
 CASES="stream_ct32 stream_t8 stream_t8_flat stream_ct24_aem stream_frame16 stream_target_corners
-       dest_alpha copy_then_upload upload_whole dirty_whole_target move_width_change
+       gif_nloop_past_data dest_alpha copy_then_upload upload_whole dirty_whole_target move_width_change
        mip_tw8 depth_texture_far"
 CASES_2X="stream_ct32 stream_t8 stream_ct24_aem stream_frame16 stream_target_corners"
 for c in $CASES; do

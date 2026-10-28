@@ -33,7 +33,8 @@ SCRATCH=$(mktemp -d)
 trap 'rm -rf "$SCRATCH"' EXIT
 failed=0
 for c in aa1_small aa1_triangle aa1_triangle_2x aa1_line aa1_line_2x mip_tw8 mip_tw11 mip_tw11_2x \
-         display_large display_large_2x frame_ct32 frame_after_t4 frame_ct32_2x frame_after_t4_2x copy_then_upload readback_t4hh dest_alpha many_copies upload_short upload_whole upload_split big_triangles present points nine_frames fb_wrap uv_huge offset_reload vram_wrap_read frame_on_depth dirty_whole_target depth_texture_far move_width_change frame_on_depth32 depth_states shuffle_left_of_offset split_clear_no_display frame_low frame_low_odd frame_low_odd_2x; do
+         display_large display_large_2x frame_ct32 frame_after_t4 frame_ct32_2x frame_after_t4_2x copy_then_upload readback_t4hh dest_alpha many_copies upload_short upload_whole upload_split big_triangles present points nine_frames fb_wrap uv_huge offset_reload vram_wrap_read frame_on_depth dirty_whole_target depth_texture_far move_width_change frame_on_depth32 depth_states shuffle_left_of_offset split_clear_no_display frame_low frame_low_odd frame_low_odd_2x \
+         gif_nloop_past_data; do
 	if ! timeout 300 "$DIR/swdraw" "$CORE" "$SCRATCH" "$c" > "$SCRATCH/$c.out" 2>&1; then
 		cat "$SCRATCH/$c.out"
 		echo "  FAIL: $c"

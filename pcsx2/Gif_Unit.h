@@ -360,12 +360,33 @@ struct Gif_Path
 		gsPack.offset = 0;
 	}
 
+	/* Moves the packet to the front of the buffer, out of the way of the
+	 * copy. A packet whose EOP never comes outgrows the buffer: the GIF
+	 * streams on through it, so the part already parsed goes to the GS
+	 * then and only the unparsed tail is kept. */
+	__noinline void MakeRoom(u32 size)
+	{
+		RealignPacket();
+		if (curSize + size <= buffSize || !gsPack.size)
+			return;
+		if (isMTVU())
+		{
+			FinishGSPacketMTVU(false);
+			Gif_MTVU_KickSema();
+		}
+		else
+		{
+			Gif_AddCompletedGSPacket(gsPack, idx);
+			gsPack.offset = curOffset;
+			gsPack.size   = 0;
+		}
+		RealignPacket();
+	}
+
 	void CopyGSPacketData(u8* pMem, u32 size, bool aligned = false)
 	{
 		if (curSize + size > buffSize)
-		{ // Move gsPack to front of buffer
-			RealignPacket();
-		}
+			MakeRoom(size);
 		for (;;)
 		{
 			s32 offset = curOffset - gsPack.size;
