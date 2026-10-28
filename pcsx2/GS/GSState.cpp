@@ -2456,7 +2456,8 @@ int GSState::Freeze(freezeData* fd, bool sizeonly)
 	WriteState(data, &m_v.UV);
 	WriteState(data, &m_v.FOG);
 	WriteState(data, &m_v.XYZ);
-	data += sizeof(GIFReg); // obsolite
+	memset(data, 0, sizeof(GIFReg)); // obsolete
+	data += sizeof(GIFReg);
 	WriteState(data, &m_tr.x);
 	WriteState(data, &m_tr.y);
 	WriteState(data, m_mem.m_vm8, m_mem.m_vmsize);

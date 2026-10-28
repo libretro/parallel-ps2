@@ -71,7 +71,7 @@ if [ -z "$FULL" ]; then
 fi
 
 CASES="stream_ct32 stream_t8 stream_t8_flat stream_ct24_aem stream_frame16 stream_target_corners
-       gif_nloop_past_data dest_alpha copy_then_upload upload_whole dirty_whole_target move_width_change
+       gif_nloop_past_data readback_t4hh dest_alpha copy_then_upload upload_whole dirty_whole_target move_width_change
        mip_tw8 depth_texture_far"
 CASES_2X="stream_ct32 stream_t8 stream_ct24_aem stream_frame16 stream_target_corners"
 for c in $CASES; do

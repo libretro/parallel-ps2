@@ -73,6 +73,9 @@ static_assert(alignof(struct SPU2Savestate_DataBlock) == SPU2_SAVE_ALIGN,
 #define SPU2_AT(field) offsetof(struct SPU2Savestate_DataBlock, field)
 #define SPU2_PUT(b, field, src) memcpy((b) + SPU2_AT(field), (src), sizeof(((struct SPU2Savestate_DataBlock *)0)->field))
 #define SPU2_GET(dst, b, field) memcpy((dst), (b) + SPU2_AT(field), sizeof(((struct SPU2Savestate_DataBlock *)0)->field))
+/* The bytes between the end of @field and @next, which no field covers. */
+#define SPU2_ZERO_GAP(b, field, next) memset((b) + SPU2_AT(field) + sizeof(((struct SPU2Savestate_DataBlock *)0)->field), 0, \
+	SPU2_AT(next) - SPU2_AT(field) - sizeof(((struct SPU2Savestate_DataBlock *)0)->field))
 
 /* A DMA pointer as an offset into IOP memory, -1 for none; and back. */
 static u16 *spu2_ptr_to_offset(const u16 *p)
@@ -124,6 +127,20 @@ void SPU2Savestate_FreezeIt(struct SPU2Savestate_DataBlock *spud)
 	SPU2_PUT(b, PlayMode, &PlayMode);
 	SPU2_PUT(b, DCFilterIn, &DCFilterIn);
 	SPU2_PUT(b, DCFilterOut, &DCFilterOut);
+
+	/* The block's padding goes out as zeros: the buffer is the
+	 * frontend's, and a state is the same bytes whatever it held. */
+	SPU2_ZERO_GAP(b, version, Cores);
+	SPU2_ZERO_GAP(b, Cores, Spdif);
+	SPU2_ZERO_GAP(b, Spdif, OutPos);
+	SPU2_ZERO_GAP(b, OutPos, InputPos);
+	SPU2_ZERO_GAP(b, InputPos, Cycles);
+	SPU2_ZERO_GAP(b, Cycles, lClocks);
+	SPU2_ZERO_GAP(b, lClocks, PlayMode);
+	SPU2_ZERO_GAP(b, PlayMode, DCFilterIn);
+	SPU2_ZERO_GAP(b, DCFilterIn, DCFilterOut);
+	memset(b + SPU2_AT(DCFilterOut) + sizeof(DCFilterOut), 0,
+		sizeof(struct SPU2Savestate_DataBlock) - SPU2_AT(DCFilterOut) - sizeof(DCFilterOut));
 
 	/* note: Don't save the cache.  PCSX2 doesn't offer a safe method of predicting */
 	/* the required size of the savestate prior to saving, plus this is just too */

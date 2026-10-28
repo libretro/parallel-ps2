@@ -1022,10 +1022,14 @@ int main(int argc, char** argv)
 		free(state);
 	}
 	/* A savestate round trip between two frames: the drain the GS takes
-	 * for it, and the frames after it. */
+	 * for it, and the frames after it. The two states go into buffers
+	 * holding different bytes, so a byte the core leaves unwritten shows
+	 * as a difference between them. */
 	{
 		size_t size = serialize_size();
 		void* state = size ? malloc(size) : NULL;
+		if (state)
+			memset(state, 0, size);
 		if (state && serialize(state, size))
 		{
 			for (frame = 0; frame < 10; frame++)
@@ -1037,6 +1041,8 @@ int main(int argc, char** argv)
 			{
 				unsigned char* again = (unsigned char*)malloc(size);
 				size_t i;
+				if (again)
+					memset(again, 0xFF, size);
 				if (!again || !serialize(again, size))
 					VN_FAIL("retro_serialize after the load failed");
 				{
