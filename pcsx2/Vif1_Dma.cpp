@@ -253,7 +253,7 @@ __fi void vif1VUFinish(void)
 	}
 }
 
-__fi void vif1Interrupt(void)
+void vif1Interrupt(void)
 {
 	g_vif1Cycles = 0;
 
