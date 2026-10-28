@@ -310,6 +310,8 @@ void VMManager::LoadSettings()
 	EmuConfig = Host::OptionConfig();
 	EmuConfig.CopyRuntimeConfig(runtime);
 	EmuConfig.ApplyOptionFixups();
+	if (vtlb_fastmem_unavailable)
+		EmuConfig.Cpu.Recompiler.EnableFastmem = false;
 	if (!libretro_content.empty())
 	{
 		snprintf(EmuConfig.Mcd[0].Filename, sizeof(EmuConfig.Mcd[0].Filename), "%s.ps2", libretro_content.c_str());

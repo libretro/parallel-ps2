@@ -56,6 +56,10 @@ extern void vtlb_Shutdown(void);
 extern void vtlb_Reset(void);
 extern void vtlb_ResetFastmem(void);
 
+/* Set when the fastmem area could not be made: fastmem stays off whatever
+ * the options ask for, as nothing is mapped for it. */
+extern bool vtlb_fastmem_unavailable;
+
 extern vtlbHandler vtlb_NewHandler(void);
 
 extern vtlbHandler vtlb_RegisterHandler(

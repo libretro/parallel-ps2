@@ -86,6 +86,7 @@ struct LoadstoreBackpatchInfo
 #define NO_FASTMEM_MAPPING 0xFFFFFFFFu
 
 static memshm_area_t* s_fastmem_area;
+bool vtlb_fastmem_unavailable;
 static u32* s_fastmem_virtual_mapping; // maps vaddr page -> mainmem offset; FASTMEM_PAGE_COUNT entries, NULL until fastmem init
 
 /* mainmem offset -> vaddr reverse multimap. Head table indexed by mainmem
@@ -1377,9 +1378,11 @@ bool vtlb_Core_Alloc(void)
 			 * functional. */
 			log_cb(RETRO_LOG_ERROR, "Failed to allocate fastmem area, disabling fastmem.\n");
 			EmuConfig.Cpu.Recompiler.EnableFastmem = false;
+			vtlb_fastmem_unavailable = true;
 		}
 		else
 		{
+			vtlb_fastmem_unavailable = false;
 			s_fastmem_virtual_mapping = (u32*)malloc(FASTMEM_PAGE_COUNT * sizeof(u32));
 			if (s_fastmem_virtual_mapping) /* NO_FASTMEM_MAPPING is all-ones */
 				memset(s_fastmem_virtual_mapping, 0xFF, FASTMEM_PAGE_COUNT * sizeof(u32));
