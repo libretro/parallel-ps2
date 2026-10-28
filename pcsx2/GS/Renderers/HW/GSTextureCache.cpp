@@ -5324,7 +5324,9 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 			// If we have a source larger than the target, we need to clear it, otherwise we'll read junk
 			const bool outside_target = ((x + w) > dst->m_texture->GetWidth() || (y + h) > dst->m_texture->GetHeight());
 			GSTexture* sTex = dst->m_texture;
-			GSTexture* dTex = outside_target ?
+			/* A target when the copy is a draw (the alpha rescaled), which a
+			 * plain texture cannot take on D3D. */
+			GSTexture* dTex = (outside_target || dst->m_rt_alpha_scale) ?
 								  g_gs_device->CreateRenderTarget(w, h, GSTexture::Format::Color, true) :
 								  g_gs_device->CreateTexture(w, h, tlevels, GSTexture::Format::Color, true);
 			if (!dTex)
@@ -5549,7 +5551,8 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 			// Don't be fooled by the name. 'dst' is the old target (hence the input)
 			// 'src' is the new texture cache entry (hence the output)
 			GSTexture* sTex = dst->m_texture;
-			GSTexture* dTex = use_texture ?
+			/* (a target, too, when the alpha is rescaled: that copy is a draw) */
+			GSTexture* dTex = (use_texture && !dst->m_rt_alpha_scale) ?
 								  g_gs_device->CreateTexture(new_size.x, new_size.y, 1, GSTexture::Format::Color) :
 								  g_gs_device->CreateRenderTarget(new_size.x, new_size.y, GSTexture::Format::Color,
 									  source_rect_empty || destX != 0 || destY != 0);

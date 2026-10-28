@@ -1548,6 +1548,14 @@ void GSDevice12::BeginRenderPassForStretchRect(
 void GSDevice12::DoStretchRect(GSTexture12* sTex, const GSVector4& sRect, GSTexture12* dTex, const GSVector4& dRect,
 	const ID3D12PipelineState* pipeline, bool linear, bool allow_discard)
 {
+	/* A texture made with no render target or depth view cannot be drawn
+	 * into: the render pass would name a descriptor that is not there. */
+	if (dTex && !dTex->GetWriteDescriptor())
+	{
+		ReportRecurring("Drawing into a texture that is not a render target", E_INVALIDARG);
+		return;
+	}
+
 	if (sTex->GetResourceState() != D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 	{
 		// can't transition in a render pass

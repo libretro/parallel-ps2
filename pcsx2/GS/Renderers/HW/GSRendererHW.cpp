@@ -6236,12 +6236,13 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 	const GSVector2i scaled_copy_size = GSVector2i(static_cast<int>(std::ceil(static_cast<float>(copy_size.x) * scale)),
 		static_cast<int>(std::ceil(static_cast<float>(copy_size.y) * scale)));
 
+	/* Both copies below are draws (StretchRect), so the copy is a target:
+	 * a plain texture cannot be drawn into on D3D. */
 	src_copy.reset(src_target->m_texture->IsDepthStencil() ?
 				   g_gs_device->CreateDepthStencil(
 						   scaled_copy_size.x, scaled_copy_size.y, src_target->m_texture->GetFormat(), false) :
-					   (m_downscale_source ? g_gs_device->CreateRenderTarget(scaled_copy_size.x, scaled_copy_size.y, src_target->m_texture->GetFormat(), true) : 
-				   g_gs_device->CreateTexture(
-					   scaled_copy_size.x, scaled_copy_size.y, 1, src_target->m_texture->GetFormat(), true)));
+				   g_gs_device->CreateRenderTarget(
+						   scaled_copy_size.x, scaled_copy_size.y, src_target->m_texture->GetFormat(), true));
 	if (!src_copy)
 	{
 		m_conf.tex = nullptr;
