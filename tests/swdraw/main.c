@@ -214,6 +214,10 @@ static unsigned      s_disp_psm;           /* DISPFB1's (and 2's) format */
 static unsigned      s_circuit2;           /* DISPFB2 and DISPLAY2 as 1's */
 static unsigned      s_disp2_fbp;          /* DISPFB2's base, in 2048-word pages */
 static unsigned      s_fade_step;          /* PMODE.ALP grows by this every vsync, when set */
+/* The kicks from s_loop_kick on run again for as long as the frames do,
+ * the word at quadword s_bump_qw in RAM one higher each round, when
+ * s_loop is set. */
+static unsigned      s_loop, s_loop_kick, s_bump_qw;
 
 /* A case may instead lay out its own quadwords and send them in kicks,
  * each a run of them sent after waiting a number of vsyncs, and then
@@ -1042,8 +1046,154 @@ static void case_split_clear_no_display(void)
 	ad(GS_XYZ2, 0, XY(64, 1024));
 }
 
+/* Round after round, one vsync apart: a texture uploaded, changed by a
+ * word each round, a 256x256 sprite drawn with it into the frame over
+ * a shaded triangle, texels of alpha 0x30 or less left out, and 64x32
+ * of the frame across the sprite's corner read back. The texture is
+ * PSMCT32; PSMT8 on a 256-entry PSMCT32 CLUT of varied alpha, or of one
+ * alpha, uploaded before the first round; or the PSMCT32 words read as
+ * PSMCT24 with TEXA.AEM, some of them black. The frame is PSMCT32, or
+ * PSMCT16. */
+#define STREAM_CT32     0
+#define STREAM_T8       1
+#define STREAM_T8_FLAT  2
+#define STREAM_CT24_AEM 3
+static void stream_image(unsigned dbp, unsigned dbw, unsigned dpsm,
+	unsigned x, unsigned y, unsigned w, unsigned h, unsigned qwc)
+{
+	qw(4 | 0x8000u, 0x10000000u, 0xEu, 0);                 /* A+D, NLOOP 4, EOP */
+	qw(0, dbp | (dbw << 16) | (dpsm << 24), GS_BITBLTBUF, 0);
+	qw(0, x | (y << 16), GS_TRXPOS, 0);
+	qw(w, h, GS_TRXREG, 0);
+	qw(0, 0, GS_TRXDIR, 0);                                /* host to local */
+	qw(qwc | 0x8000u, 0x08000000u, 0, 0);                  /* IMAGE, EOP */
+}
+
+static void stream_draw_setup(unsigned nloop, unsigned fpsm)
+{
+	qw((nloop + 6) | 0x8000u, 0x10000000u, 0xEu, 0);       /* A+D, EOP */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw((10u << 16) | (fpsm << 24), 0, GS_FRAME_1, 0);      /* FBP 0, FBW 10 */
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+}
+
+static void stream_readback(unsigned fpsm)
+{
+	qw(4 | 0x8000u, 0x10000000u, 0xEu, 0);
+	qw((10u << 16) | (fpsm << 24), 0, GS_BITBLTBUF, 0);    /* SBP 0, SBW 10 */
+	qw(224u | (240u << 16), 0, GS_TRXPOS, 0);              /* from 224,240: over a corner of the sprite */
+	qw(64, 32, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);                                /* local to host */
+}
+
+static void stream_texture(unsigned mode, unsigned fpsm)
+{
+	const int t8 = (mode == STREAM_T8 || mode == STREAM_T8_FLAT);
+	const unsigned tpsm = t8 ? 0x13u : (mode == STREAM_CT24_AEM) ? 1u : 0u;
+	const unsigned step = (mode == STREAM_T8);
+	unsigned i, draw, rb, up, clut = 0;
+	if (t8)
+	{
+		stream_image(0x3000u, 1, 0, 0, 0, 16, 16, 64);
+		for (i = 0; i < 64; i++)
+		{
+			const unsigned a = (mode == STREAM_T8_FLAT) ? 0x60u : i * 4;
+			qw(a << 24 | (i * 0x10101u), (a + step) << 24 | 0x40u,
+				(a + 2 * step) << 24 | 0x4000u, (a + 3 * step) << 24 | 0x400000u);
+		}
+		clut = s_qw_count;
+	}
+	draw = s_qw_count;
+	stream_draw_setup(15, fpsm);
+	qw(3 | 0x08, 0, GS_PRIM, 0);                           /* a shaded triangle under it */
+	qw(0x00406080u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(512, 0), 0, GS_XYZ2, 0);
+	qw(0x00ff00ffu, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(0, 512), 0, GS_XYZ2, 0);
+	qw(1u | (6u << 1) | (0x30u << 4) | (1u << 16) | (1u << 17), 0, GS_TEST_1, 0); /* alpha > 0x30, keep */
+	qw(0x2000u | (4u << 14) | (tpsm << 20) | (8u << 26), /* TBP0, TBW 4, TW 8, TH 8 */
+		2u | (1u << 2) | (1u << 3) | (t8 ? (0x3000u << 5) | (1u << 29) : 0), /* TCC, decal, CBP, CLD 1 */
+		GS_TEX0_1, 0);
+	qw(0x40u | ((mode == STREAM_CT24_AEM) ? 0x8000u : 0), 0x70u, 0x3B, 0); /* TEXA: TA0, AEM, TA1 */
+	qw(0, 0, GS_TEX1_1, 0);
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* sprite, TME, FST */
+	qw(0, 0, GS_UV, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((256u << 4) | ((256u << 4) << 16), 0, GS_UV, 0);
+	qw((unsigned)XY(256, 256), 0, GS_XYZ2, 0);
+	rb = s_qw_count;
+	stream_readback(fpsm);
+	up = s_qw_count;
+	stream_image(0x2000u, 4, t8 ? 0x13u : 0u, 0, 0, 256, 256, t8 ? 4096u : 16384u);
+	s_bump_qw = s_qw_count;
+	qw(0x80402010u, 0x7f000000u, 0x01020304u, 0xf0e0d0c0u);
+	s_qw_repeat = (t8 ? 4096u : 16384u) - 1;
+	if (t8)
+		kick(0, clut, 0);
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(up, s_qw_count + s_qw_repeat - up, 1);
+	kick(draw, rb - draw, 0);
+	kick(rb, up - rb, 0);
+	readback(fpsm ? 256 : 512);
+	s_run_frames = 120;
+}
+
+static void case_stream_ct32(void) { stream_texture(STREAM_CT32, 0); }
+static void case_stream_t8(void) { stream_texture(STREAM_T8, 0); }
+static void case_stream_t8_flat(void) { stream_texture(STREAM_T8_FLAT, 0); }
+static void case_stream_ct24_aem(void) { stream_texture(STREAM_CT24_AEM, 0); }
+static void case_stream_frame16(void) { stream_texture(STREAM_CT32, 2); }
+
+/* Round after round: an 8x8 upload to each of two far corners of a
+ * drawn 640x448 frame, changed by a word each round, a sprite drawn into
+ * the frame between them, and 64x32 of the frame read back. */
+static void case_stream_target_corners(void)
+{
+	unsigned i, a, draw, rb;
+	stream_draw_setup(4, 0);
+	qw(0x80406020u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(6, 0, GS_PRIM, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(640, 448), 0, GS_XYZ2, 0);
+	a = s_qw_count;
+	stream_image(0, 10, 0, 0, 0, 8, 8, 16);
+	for (i = 0; i < 16; i++)
+		qw(0x11223344u + i, 0x55667788u, 0x99aabbccu, 0xddeeff00u);
+	stream_image(0, 10, 0, 624, 432, 8, 8, 16);
+	for (i = 0; i < 16; i++)
+		qw(0x01020304u, 0x05060708u + i, 0x090a0b0cu, 0x0d0e0f10u);
+	draw = s_qw_count;
+	stream_draw_setup(4, 0);
+	qw(0x20406080u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(6, 0, GS_PRIM, 0);
+	qw((unsigned)XY(300, 200), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(340, 240), 0, GS_XYZ2, 0);
+	rb = s_qw_count;
+	stream_readback(0);
+	s_bump_qw = a + 6;
+	kick(0, a, 0);
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(a, draw - a, 1);
+	kick(draw, rb - draw, 0);
+	kick(rb, s_qw_count - rb, 0);
+	readback(512);
+	s_run_frames = 120;
+}
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
+	{ "stream_ct32",     case_stream_ct32,  "1" },
+	{ "stream_t8",       case_stream_t8,    "1" },
+	{ "stream_t8_flat",  case_stream_t8_flat, "1" },
+	{ "stream_ct24_aem", case_stream_ct24_aem, "1" },
+	{ "stream_frame16",  case_stream_frame16, "1" },
+	{ "stream_target_corners", case_stream_target_corners, "1" },
 	{ "aa1_triangle",    case_aa1_triangle, "1" },
 	{ "aa1_triangle_2x", case_aa1_triangle, "2" },
 	{ "aa1_line",        case_aa1_line,     "1" },
@@ -1101,7 +1251,7 @@ static int sl_write_bios(const char* path)
 {
 	static unsigned char rom[4 * 1024 * 1024];
 	FILE* f;
-	unsigned pc, loop, i, k;
+	unsigned pc, loop, i, k, top = 0;
 	unsigned char* pk = rom + SL_PACKET_ROM;
 
 	memset(rom, 0, sizeof(rom));
@@ -1176,6 +1326,8 @@ static int sl_write_bios(const char* path)
 	pc = sl_emit(rom, pc, SL_ORI(24, 24, 0x1000));
 	for (k = 0; k < s_kick_count; k++)
 	{
+		if (s_loop && k == s_loop_kick)
+			top = pc;
 		if (s_kick[k][2])
 		{
 			/* Wait for that many vsyncs: CSR.VSINT, cleared by writing it. */
@@ -1235,6 +1387,18 @@ static int sl_write_bios(const char* path)
 			pc = sl_emit_store64(rom, pc, 8, 0x1040, 0, 0);          /* BUSDIR: host to GS      */
 			pc = sl_emit(rom, pc, SL_SW(0, 0, 10));                  /* VIF1_STAT = 0           */
 		}
+	}
+	if (s_loop)
+	{
+		/* s0 = the word to bump, uncached; then round again. */
+		pc = sl_emit(rom, pc, SL_LUI(16, 0xA010));
+		pc = sl_emit(rom, pc, SL_ORI(16, 16, s_bump_qw * 16));
+		pc = sl_emit(rom, pc, SL_LW(17, 0, 16));
+		pc = sl_emit(rom, pc, 0);
+		pc = sl_emit(rom, pc, SL_ADDIU(17, 17, 1));
+		pc = sl_emit(rom, pc, SL_SW(17, 0, 16));
+		pc = sl_emit(rom, pc, SL_B((top - (pc + 4)) >> 2));
+		pc = sl_emit(rom, pc, 0);
 	}
 	if (s_fade_step)
 	{

@@ -34,6 +34,15 @@ std::unique_ptr<GSTextureCache> g_texture_cache;
 
 static u8* s_unswizzle_buffer;
 
+/* GS_TC_FULL_TRANSFERS builds the core that moves every texture and
+ * readback whole, for tests/gstransfer to hold this one's pictures and
+ * local memory against. */
+#ifdef GS_TC_FULL_TRANSFERS
+#define GS_TC_PARTIAL_TRANSFERS 0
+#else
+#define GS_TC_PARTIAL_TRANSFERS 1
+#endif
+
 /// List of candidates for purging when the hash cache gets too large.
 static std::vector<std::pair<GSTextureCache::HashCacheMap::iterator, s32>> s_hash_cache_purge_list;
 
@@ -6411,6 +6420,63 @@ GSTexture* GSTextureCache::LookupPaletteObject(const u32* clut, u16 pal, bool ne
 	return tex;
 }
 
+/* A readback of whole 32-bit words, or of 16-bit pixels, row after row
+ * with no gap, is written as the GIF writes a host to local transfer: a
+ * block at a time where it covers whole blocks. Only where no two pixels
+ * of the rect share an address, so the order of the writes cannot show. */
+static __noinline bool readback_store_image(GSLocalMemory* mem, const u8* src, u32 pitch, const GSVector4i* r,
+	u32 bp, u32 bw, u32 psm, u32 write_mask)
+{
+	const GSLocalMemory::psm_t* p = &GSLocalMemory::m_psm[psm];
+	const u32 w = static_cast<u32>(r->width());
+	const u32 h = static_cast<u32>(r->height());
+	u32 wpsm;
+	GIFRegBITBLTBUF blit;
+	GIFRegTRXPOS pos;
+	GIFRegTRXREG reg;
+	int tx, ty;
+
+	switch (psm)
+	{
+		case PSMCT32:
+		case PSMCT24:
+			wpsm = PSMCT32;
+			break;
+		case PSMZ32:
+		case PSMZ24:
+			wpsm = PSMZ32;
+			break;
+		case PSMCT16:
+		case PSMCT16S:
+		case PSMZ16:
+		case PSMZ16S:
+			wpsm = psm;
+			break;
+		default:
+			return false;
+	}
+	if ((p->bpp == 32 && write_mask != 0xFFFFFFFFu) || pitch != w * (p->bpp >> 3) ||
+		bw == 0 || r->z > static_cast<int>(bw * 64) || r->z > 2048 || r->w > 2048 ||
+		bp + ((static_cast<u32>(r->w - 1) / static_cast<u32>(p->pgs.y)) * bw +
+			static_cast<u32>(r->z - 1) / 64 + 1) * 32 > GS_MAX_BLOCKS)
+		return false;
+
+	blit.U64 = 0;
+	blit.DBP = bp;
+	blit.DBW = bw;
+	blit.DPSM = wpsm;
+	pos.U64 = 0;
+	pos.DSAX = r->x;
+	pos.DSAY = r->y;
+	reg.U64 = 0;
+	reg.RRW = w;
+	reg.RRH = h;
+	tx = r->x;
+	ty = r->y;
+	GSLocalMemory::m_psm[wpsm].wi(*mem, tx, ty, src, static_cast<int>(pitch * h), blit, pos, reg);
+	return true;
+}
+
 bool GSTextureCache::Read(Target* t, const GSVector4i& r)
 {
 	/* A target with no texture has nothing to read back. That used to be
@@ -6537,6 +6603,12 @@ bool GSTextureCache::Read(Target* t, const GSVector4i& r)
 	const GSOffset off = g_gs_renderer->m_mem.GetOffset(TEX0.TBP0, TEX0.TBW, TEX0.PSM);
 	u8* bits = const_cast<u8*>(dltex->get()->GetMapPointer());
 	const u32 pitch = dltex->get()->GetMapPitch();
+
+	if (GS_TC_PARTIAL_TRANSFERS && readback_store_image(&g_gs_renderer->m_mem, bits, pitch, &tr, TEX0.TBP0, TEX0.TBW, TEX0.PSM, write_mask))
+	{
+		dltex->get()->Unmap();
+		return true;
+	}
 
 	switch (TEX0.PSM)
 	{
@@ -7139,8 +7211,20 @@ void GSTextureCache::Target::Update(bool cannot_scale)
 	if (!t)
 		return;
 
+	/* Rects apart from one another go up one by one when that is fewer
+	 * bytes than the rect around them all. */
+	u64 dirty_bytes = 0;
+	for (size_t i = 0; i < m_dirty.size(); i++)
+	{
+		if (m_dirty.GetDirtyRect(i, m_TEX0, total_rect, false).rempty())
+			continue;
+		const GSVector4i read_r = m_dirty.GetDirtyRect(i, m_TEX0, total_rect, true);
+		dirty_bytes += (u64)read_r.width() * (u64)read_r.height();
+	}
+	const bool per_rect = GS_TC_PARTIAL_TRANSFERS && dirty_bytes < (u64)t_size.z * (u64)t_size.w;
+
 	GSTexture::GSMap m;
-	const bool mapped = t->Map(m);
+	const bool mapped = !per_rect && t->Map(m);
 
 	GIFRegTEXA TEXA = {};
 	TEXA.AEM = 0;
@@ -7176,7 +7260,9 @@ void GSTextureCache::Target::Update(bool cannot_scale)
 
 		const GSVector4i read_r = m_dirty.GetDirtyRect(i, m_TEX0, total_rect, true);
 		const GSVector4i t_r(read_r - t_offset);
-		if (mapped)
+		GSTexture::GSMap rm;
+		const bool rect_mapped = per_rect && t->Map(rm, &t_r);
+		if (rect_mapped || mapped)
 		{
 			if ((m_TEX0.PSM & 0xf) != PSMCT24 && m_dirty[i].rgba.c.a && bpp >= 16)
 			{
@@ -7189,8 +7275,14 @@ void GSTextureCache::Target::Update(bool cannot_scale)
 				alpha_minmax.second = pcsx2_max_i(alpha_minmax.second, new_alpha_minmax.second);
 			}
 
-			g_gs_renderer->m_mem.ReadTexture(
-				off, read_r, m.bits + t_r.y * static_cast<u32>(m.pitch) + (t_r.x * sizeof(u32)), m.pitch, TEXA);
+			if (rect_mapped)
+			{
+				g_gs_renderer->m_mem.ReadTexture(off, read_r, rm.bits, rm.pitch, TEXA);
+				t->Unmap();
+			}
+			else
+				g_gs_renderer->m_mem.ReadTexture(
+					off, read_r, m.bits + t_r.y * static_cast<u32>(m.pitch) + (t_r.x * sizeof(u32)), m.pitch, TEXA);
 		}
 		else
 		{
@@ -8171,6 +8263,84 @@ GSTextureCache::HashType GSTextureCache::HashTexture(const GIFRegTEX0& TEX0, con
 	return FinishBlockHash(hash_st);
 }
 
+/* The alpha range of a block aligned rect of a texture as its rtx
+ * expands it, taken from local memory: false where that takes more
+ * than the expanded texels would. */
+static __noinline bool preload_alpha_minmax(GSLocalMemory* mem, const GSOffset* off, const GSVector4i* r,
+	u32 psm, const GIFRegTEXA* TEXA, u8* amin, u8* amax)
+{
+	const u32* pal = mem->m_clut;
+	u32 n = 256;
+	u32 i;
+	switch (psm)
+	{
+		case PSMCT32:
+		case PSMZ32:
+		case PSMCT24:
+		case PSMZ24:
+		{
+			GSOffset::BNHelper bn = off->bnMulti(r->left, r->top);
+			const int right = r->right >> off->blockShiftX();
+			const int bottom = r->bottom >> off->blockShiftY();
+			const bool is24 = (psm == PSMCT24 || psm == PSMZ24);
+			const GSVector4i rgb = GSVector4i::x00ffffff();
+			GSVector4i minc = GSVector4i::xffffffff();
+			GSVector4i maxc = GSVector4i::zero();
+			if (is24 && !TEXA->AEM)
+			{
+				*amin = *amax = static_cast<u8>(TEXA->TA0);
+				return true;
+			}
+			for (; bn.blkY() < bottom; bn.nextBlockY())
+			{
+				for (; bn.blkX() < right; bn.nextBlockX())
+				{
+					const GSVector4i* b = reinterpret_cast<const GSVector4i*>(mem->BlockPtr(bn.value()));
+					for (i = 0; i < 16; i++)
+					{
+						GSVector4i v = b[i];
+						/* 24 bits: 0 for black, TA0 for the rest (AEM). */
+						if (is24)
+							v = (v & rgb) == GSVector4i::zero();
+						minc = minc.min_u32(v);
+						maxc = maxc.max_u32(v);
+					}
+				}
+			}
+			if (is24)
+			{
+				/* All ones in max: some black; all zero in min: some not. */
+				const bool black = maxc.maxv_u32() != 0;
+				const bool other = minc.minv_u32() == 0;
+				*amin = black ? 0 : static_cast<u8>(TEXA->TA0);
+				*amax = other ? static_cast<u8>(TEXA->TA0) : 0;
+			}
+			else
+			{
+				*amin = static_cast<u8>(minc.minv_u32() >> 24);
+				*amax = static_cast<u8>(maxc.maxv_u32() >> 24);
+			}
+			return true;
+		}
+		case PSMT4:
+		case PSMT4HL:
+		case PSMT4HH:
+			n = 16;
+			/* fall through */
+		case PSMT8:
+		case PSMT8H:
+			/* Only a CLUT of one alpha: which entries are used is not
+			 * looked at. */
+			for (i = 1; i < n; i++)
+				if ((pal[i] ^ pal[0]) >> 24)
+					return false;
+			*amin = *amax = static_cast<u8>(pal[0] >> 24);
+			return true;
+		default:
+			return false;
+	}
+}
+
 void GSTextureCache::PreloadTexture(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, SourceRegion region, GSLocalMemory& mem,
 	bool paltex, GSTexture* tex, u32 level, std::pair<u8, u8>* alpha_minmax)
 {
@@ -8196,14 +8366,19 @@ void GSTextureCache::PreloadTexture(const GIFRegTEX0& TEX0, const GIFRegTEXA& TE
 	// If we can stream it directly to GPU memory, do so, otherwise go through a temp buffer.
 	const GSVector4i unoffset_rect(0, 0, tw, th);
 	GSTexture::GSMap map;
-	if (rect.eq(block_rect) && !alpha_minmax && tex->Map(map, &unoffset_rect, level))
+	u8 amin = 0, amax = 0;
+	if (rect.eq(block_rect) &&
+		(!alpha_minmax || (GS_TC_PARTIAL_TRANSFERS && !paltex && preload_alpha_minmax(&mem, &off, &block_rect, TEX0.PSM, &TEXA, &amin, &amax))) &&
+		tex->Map(map, &unoffset_rect, level))
 	{
 		rtx(mem, off, block_rect, map.bits, map.pitch, TEXA);
 		tex->Unmap();
 
-		// Temporary, can't read the texture here so we need to come up with a smarter solution, but this will get around it being broken.
 		if (alpha_minmax)
-			*alpha_minmax = std::make_pair<u8, u8>(0, 255);
+		{
+			alpha_minmax->first = amin;
+			alpha_minmax->second = amax;
+		}
 	}
 	else
 	{
