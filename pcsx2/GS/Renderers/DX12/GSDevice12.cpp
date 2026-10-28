@@ -3721,7 +3721,12 @@ void GSDevice12::RenderHW(GSHWDrawConfig& config)
 	}
 
 	if (stencil_DATE)
+	{
 		SetupDATE(draw_rt, config.ds, config.datm, config.drawarea);
+		// The draw after the depth-only stencil pass binds the vertex
+		// stream again: some drivers drop the binding across that pass.
+		m_dirty_flags |= DIRTY_FLAG_VERTEX_BUFFER;
+	}
 
 	// stream buffer in first, in case we need to exec
 	SetVSConstantBuffer(config.cb_vs);

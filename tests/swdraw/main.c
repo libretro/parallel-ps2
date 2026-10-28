@@ -1306,6 +1306,59 @@ static void case_tlb_store(void)
 	s_run_frames = 90;
 }
 
+/* The destination alpha test in the middle of a scene: over a frame
+ * whose left half has alpha bit 7 set and right half not, with Z cleared
+ * by the same sprites, one shaded triangle, a small one with the test,
+ * then three textured ones with Z greater or equal, an 8x8 upload before
+ * each. On D3D12 the test draws a depth-only stencil pass, and every
+ * triangle after it must still read the vertex stream. */
+static void case_date_mid_scene(void)
+{
+	unsigned i, k, first;
+	first = s_qw_count;
+	stream_draw_setup(19, 0);
+	qw(0x100, 0, GS_ZBUF_1, 0);                          /* ZBP 0x100, Z32, written */
+	qw(6, 0, GS_PRIM, 0);                                /* sprite */
+	qw(0x80404040u, 0x3f800000u, GS_RGBAQ, 0);           /* alpha 0x80, left half, Z 0 */
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(320, 448), 0, GS_XYZ2, 0);
+	qw(0x00606060u, 0x3f800000u, GS_RGBAQ, 0);           /* alpha 0, right half */
+	qw((unsigned)XY(320, 0), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(640, 448), 0, GS_XYZ2, 0);
+	qw((1u << 16) | (2u << 17), 0, GS_TEST_1, 0);        /* ZTE, ZTST GEQUAL */
+	qw(3 | 0x08, 0, GS_PRIM, 0);                         /* triangle, Gouraud */
+	qw(0x800000ffu, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(10, 10), 0x100, GS_XYZ2, 0);
+	qw((unsigned)XY(300, 20), 0x100, GS_XYZ2, 0);
+	qw((unsigned)XY(150, 150), 0x100, GS_XYZ2, 0);
+	qw((1u << 14) | (1u << 16) | (2u << 17), 0, GS_TEST_1, 0); /* DATE, DATM 0 */
+	qw(0x80ffff00u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(400, 20), 0x100, GS_XYZ2, 0);
+	qw((unsigned)XY(440, 20), 0x100, GS_XYZ2, 0);
+	qw((unsigned)XY(420, 60), 0x100, GS_XYZ2, 0);
+	kick(first, s_qw_count - first, 0);
+	for (i = 0; i < 3; i++)
+	{
+		first = s_qw_count;
+		stream_image(0x2000u, 1, 0, 0, 0, 8, 8, 16);
+		for (k = 0; k < 16; k++)
+			qw(0x80102030u + 0x00402000u * i + k, 0x80304050u, 0x80506070u - k, 0x80708090u);
+		qw(9 | 0x8000u, 0x10000000u, 0xEu, 0);           /* A+D, NLOOP 9, EOP */
+		qw((1u << 16) | (2u << 17), 0, GS_TEST_1, 0);
+		qw(0x2000u | (1u << 14) | (3u << 26) | (3u << 30), (1u << 2) | (1u << 3), GS_TEX0_1, 0); /* CT32 8x8, TCC, decal */
+		qw(3 | 0x10 | 0x100, 0, GS_PRIM, 0);             /* triangle, TME, FST */
+		qw(0, 0, GS_UV, 0);
+		qw((unsigned)XY(40 + 200 * i, 200), 0x200, GS_XYZ2, 0);
+		qw(128u, 0, GS_UV, 0);
+		qw((unsigned)XY(200 + 200 * i, 220), 0x200, GS_XYZ2, 0);
+		qw(128u << 16, 0, GS_UV, 0);
+		qw((unsigned)XY(100 + 200 * i, 420), 0x200, GS_XYZ2, 0);
+		kick(first, s_qw_count - first, 0);
+	}
+	s_smode1_hi = 0x7;
+	s_smode1_lo = 0x40834504u;
+}
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -1364,6 +1417,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "interlace_frame_fade", case_interlace_frame_fade, "1" },
 	{ "interlace_field_fade", case_interlace_field_fade, "1" },
 	{ "clut_lines",      case_clut_lines,    "1" },
+	{ "date_mid_scene",  case_date_mid_scene, "1" },
 	{ "clut_lines_ramps", case_clut_lines_ramps, "1" },
 	{ "tlb_store",       case_tlb_store,     "1" },
 };

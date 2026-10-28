@@ -117,6 +117,7 @@ frame_ct32 20
 frame_after_t4 20
 copy_then_upload 20
 dest_alpha 20
+date_mid_scene 20
 upload_whole 20
 present 20
 points 20
