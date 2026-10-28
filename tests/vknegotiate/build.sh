@@ -208,6 +208,40 @@ if ! VN_EXPECT_RUN=3c2b1a09 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/vram_wrap_read.b
 	exit 1
 fi
 
+# Palettes drawn into a page with two lines and loaded as a CLUT straight
+# after, as palette effects do: four whose lines all name one texel and
+# two that read along a row (clut_lines), against the two alone
+# (clut_lines_ramps). paraLLEl-GS takes each palette from the lines'
+# source, so the four add no render passes (indirect dispatches) and no
+# barriers to a frame, and the sprites they colour are the software
+# renderer's.
+calls() { sed -n 's/.*run 40: calls.* '"$2"'=\([0-9]*\).*/\1/p' "$1"; }
+for c in clut_lines clut_lines_ramps; do
+	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+	VN_COUNT_CALLS=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=paraLLEl-GS \
+		timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/$c.log" 2>&1 || true
+done
+for k in dispatch_ind barrier; do
+	all=$(calls "$SCRATCH/clut_lines.log" $k); ramps=$(calls "$SCRATCH/clut_lines_ramps.log" $k)
+	if [ -z "$all" ] || [ -z "$ramps" ] || [ "$all" -gt "$ramps" ]; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: palettes drawn and loaded at once, paraLLEl-GS: ${all:-none} $k a frame, ${ramps:-none} without the one-texel ones"
+		exit 1
+	fi
+done
+pgs=$(VN_HASH_RGB=1 VN_HASH_ROWS=60 VN_HASH_IMAGE=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/clut_lines.bin" \
+	VN_RENDERER=paraLLEl-GS timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 |
+	sed -n 's/.*image: .*, hash \([0-9a-f]*\).*/\1/p') || true
+sw=$(VN_HASH_RGB=1 VN_HASH_ROWS=60 VN_HASH_IMAGE=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/clut_lines.bin" \
+	VN_RENDERER="Software (HW)" timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 |
+	sed -n 's/.*image: .*, hash \([0-9a-f]*\).*/\1/p') || true
+if [ -z "$pgs" ] || [ "$pgs" != "$sw" ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: one-texel palettes, paraLLEl-GS ${pgs:-none}, software renderer ${sw:-none}"
+	exit 1
+fi
+echo "  palettes drawn and loaded at once: no render pass of their own, the software renderer's colours"
+
 # The software renderer on the Vulkan device, which reads its output
 # straight into the texture's upload: a display that ends inside a row of
 # blocks (frame_low_odd) shows the first 445 lines of the one that does

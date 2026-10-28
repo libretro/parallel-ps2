@@ -536,8 +536,11 @@ void GSInterface::rewrite_forwarded_clut_upload(
 		if (attr0.uv.y != attr1.uv.y || attr0.uv.y != attr2.uv.y || attr0.uv.y != attr3.uv.y)
 			return;
 
-		// Make sure the coordinates are increasing.
-		if (attr1.uv.x <= attr0.uv.x || attr3.uv.x <= attr0.uv.x)
+		// The coordinates increase along both lines, or all name the one
+		// texel every entry of the palette then holds.
+		const bool constant_u = attr1.uv.x == attr0.uv.x && attr2.uv.x == attr0.uv.x &&
+		                        attr3.uv.x == attr0.uv.x;
+		if (!constant_u && (attr1.uv.x <= attr0.uv.x || attr3.uv.x <= attr0.uv.x))
 			return;
 
 		// Make sure the sampling is aligned to COU alignment (can be relaxed if need be).
@@ -562,7 +565,7 @@ void GSInterface::rewrite_forwarded_clut_upload(
 		upload.csm1_reference_base = fb_instance.frame.desc.FBP * PGS_BLOCKS_PER_PAGE;
 		upload.csm1_mask = 0xff000000u;
 
-		palette_width = ((attr3.uv.x - 1) >> PGS_SUBPIXEL_BITS) + 1u - upload.csm2_x_bias;
+		palette_width = constant_u ? 1u : ((attr3.uv.x - 1) >> PGS_SUBPIXEL_BITS) + 1u - upload.csm2_x_bias;
 		palette_height = 1;
 
 		// We won't be needing these primitives later. Rendering 1k+ primitives on one tile

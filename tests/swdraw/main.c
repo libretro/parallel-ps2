@@ -223,7 +223,7 @@ static unsigned      s_loop, s_loop_kick, s_bump_qw;
  * each a run of them sent after waiting a number of vsyncs, and then
  * optionally read a number of quadwords back from the GS (a local to host
  * transfer the kick set up) into RAM at 0x200000 + 0x1000 * the kick. */
-#define SL_MAX_QW    128
+#define SL_MAX_QW    192
 #define SL_MAX_KICKS 4
 static unsigned      s_qw_count;
 static unsigned      s_qw[SL_MAX_QW][4];
@@ -1222,6 +1222,73 @@ static void interlace_fade(unsigned smode2)
 static void case_interlace_frame_fade(void) { interlace_fade(1); }
 static void case_interlace_field_fade(void) { interlace_fade(3); }
 
+/* Round after round, one vsync apart: palettes drawn and used straight
+ * away, as a palette effect does. Each time, two lines of 32-bit texels
+ * are drawn with DECAL across the first eight pixels of rows 0 and 1 of
+ * a one-page-wide 32-bit frame whose alpha is masked, the frame is loaded
+ * as the 16-entry CLUT (CSM1) of a 4-bit texture, and a 16x16 sprite is
+ * drawn with it into the displayed frame. The first four times all four
+ * vertices of the lines name one texel, so the palette is that texel
+ * sixteen times; their sprites are the top row, y 40 to 55. The last two
+ * times (only these, in clut_lines_ramps) the lines read 32 texels each,
+ * one after the other along a row of the source, runs of four alike; their
+ * sprites are the row below. */
+#define CLUT_PAGE 400u
+static void clut_lines(unsigned first)
+{
+	unsigned i, setup, loop;
+	/* the source: 64x2 32-bit texels at 0x3000; the 4-bit texture at 0x2000 */
+	stream_image(0x3000u, 1, 0, 0, 0, 64, 2, 32);
+	for (i = 0; i < 32; i++)
+	{
+		const unsigned t = 0x01030507u * (i + 1) ^ 0x10204080u;
+		qw(t, t, t, t);
+	}
+	stream_image(0x2000u, 1, 0x14u, 0, 0, 16, 16, 8);
+	for (i = 0; i < 8; i++)
+		qw(0x76543210u, 0xfedcba98u, 0x01234567u + i, 0x89abcdefu - i);
+	setup = s_qw_count;
+	stream_draw_setup(1 + (6 - first) * 18, 0);
+	qw(0x80808080u, 0x3f800000u, GS_RGBAQ, 0); /* bumped each round */
+	for (i = first; i < 6; i++)
+	{
+		const unsigned flat = i < 4;
+		const unsigned u0 = flat ? (5u + 9u * i) * 16u : 0;
+		const unsigned v = (i & 1) * 16u + 8u;
+		const unsigned x = 40 + 48 * (flat ? i : i - 4), y = flat ? 40 : 64;
+		qw(CLUT_PAGE | (1u << 16), 0xff000000u, GS_FRAME_1, 0);  /* FBW 1, alpha masked */
+		qw(0x3000u | (1u << 14) | (6u << 26) | (1u << 30), (1u << 2) | (1u << 3), GS_TEX0_1, 0); /* CT32 64x2, TCC, decal */
+		qw(1 | 0x10 | 0x100, 0, GS_PRIM, 0);                      /* line, TME, FST */
+		qw(u0 | (v << 16), 0, GS_UV, 0);
+		qw(0, 0, GS_XYZ2, 0);
+		qw((flat ? u0 : 503u) | (v << 16), 0, GS_UV, 0);
+		qw(126u, 0, GS_XYZ2, 0);
+		qw((flat ? u0 : 504u) | (v << 16), 0, GS_UV, 0);
+		qw(16u << 16, 0, GS_XYZ2, 0);
+		qw((flat ? u0 : 1023u) | (v << 16), 0, GS_UV, 0);
+		qw(126u | (16u << 16), 0, GS_XYZ2, 0);
+		qw(10u << 16, 0, GS_FRAME_1, 0);                          /* the displayed frame */
+		qw(0x2000u | (1u << 14) | (0x14u << 20) | (4u << 26),
+			1u | (1u << 2) | (1u << 3) | ((CLUT_PAGE * 32u) << 5) | (1u << 29), GS_TEX0_1, 0); /* T4 16x16, CBP, CLD 1 */
+		qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                      /* sprite, TME, FST */
+		qw(0, 0, GS_UV, 0);
+		qw((unsigned)XY(x, y), 0, GS_XYZ2, 0);
+		qw((16u << 4) | ((16u << 4) << 16), 0, GS_UV, 0);
+		qw((unsigned)XY(x + 16, y + 16), 0, GS_XYZ2, 0);
+	}
+	loop = s_qw_count;
+	s_bump_qw = setup + 7;
+	kick(0, setup, 0);
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(setup, loop - setup, 1);
+	s_smode1_hi = 0x7;          /* NTSC, for a renderer that scans out by mode */
+	s_smode1_lo = 0x40834504u;
+	s_run_frames = 120;
+}
+static void case_clut_lines(void) { clut_lines(0); }
+static void case_clut_lines_ramps(void) { clut_lines(4); }
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -1279,6 +1346,8 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "frame_low_odd_2x", case_frame_low_odd, "2" },
 	{ "interlace_frame_fade", case_interlace_frame_fade, "1" },
 	{ "interlace_field_fade", case_interlace_field_fade, "1" },
+	{ "clut_lines",      case_clut_lines,    "1" },
+	{ "clut_lines_ramps", case_clut_lines_ramps, "1" },
 };
 
 /* A 4MB image the core's BIOS scan accepts. The reset program turns on a
