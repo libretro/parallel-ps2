@@ -27,6 +27,14 @@
  * to be left in COPY_SOURCE, as RetroArch asks, or with D3DSW_SRV_STATE
  * in PIXEL_SHADER_RESOURCE.
  *
+ * D3DSW_CONTENT loads real content, a disc image's path, with the BIOS
+ * image a real one (its .nvm and .mec beside it are taken too), and reads
+ * every frame (see ds_content_frame): D3DSW_PAD scripts the pad,
+ * D3DSW_HASH_LOG reports each picture's hash, D3DSW_DUMP and
+ * D3DSW_DUMP_DIR write chosen pictures out, D3DSW_LOAD_STATE (after
+ * D3DSW_LOAD_AFTER retro_runs) and D3DSW_SAVE_STATE bring a state in and
+ * take one out, and D3DSW_OPTIONS sets core options, "key=value;...".
+ *
  * The frontend is Windows only (MSYS2 MINGW64, or wine with DXVK and
  * vkd3d-proton); --compare builds anywhere. C89. */
 
@@ -226,6 +234,11 @@ static void ds_take(const unsigned char *src, unsigned pitch, unsigned w, unsign
    }
 }
 
+/* D3DSW_CONTENT (ds_content_frame, below the reads it uses). */
+static int      s_content_on;
+static unsigned s_run;   /* retro_runs begun, counted from 1 */
+static void ds_content_frame(void);
+
 static int ds_is_bgra(DXGI_FORMAT f)
 {
    return f == DXGI_FORMAT_B8G8R8A8_UNORM || f == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
@@ -386,6 +399,8 @@ static void ds_video(const void *d, unsigned w, unsigned h, size_t p)
    {
       if (s_read_now)
          ds_take((const unsigned char*)d, (unsigned)p, w, h, 1);
+      if (s_content_on && s_read_now)
+         ds_content_frame();
       return;
    }
    if (s_api == DS_D3D11)
@@ -405,15 +420,91 @@ static void ds_video(const void *d, unsigned w, unsigned h, size_t p)
    }
    else if (s_api == DS_D3D12 && s_read_now && s_tex12)
       ds_read12(s_tex12, s_tex12_fence, s_tex12_value, w, h);
+   if (s_content_on && s_read_now)
+      ds_content_frame();
 }
 
 static void ds_audio(int16_t l, int16_t r) { (void)l; (void)r; }
 static size_t ds_audio_batch(const int16_t *d, size_t f) { (void)d; return f; }
 static void ds_poll(void) { }
+
+/* D3DSW_PAD: a scripted pad on port 0, "first+count=button|button;...":
+ * the buttons are held through the retro_runs first to first + count - 1,
+ * counted from 1. Buttons by their libretro names (b is cross, a circle,
+ * y square, x triangle). */
+static const char *const ds_button_names[16] = {
+   "b", "y", "select", "start", "up", "down", "left", "right",
+   "a", "x", "l", "r", "l2", "r2", "l3", "r3"
+};
+static unsigned ds_pad_mask(unsigned run)
+{
+   const char *s    = getenv("D3DSW_PAD");
+   unsigned    mask = 0;
+   while (s && *s)
+   {
+      char               *end;
+      const unsigned long first = strtoul(s, &end, 10);
+      unsigned long       count = 1;
+      unsigned            held  = 0;
+      s = end;
+      if (*s == '+')
+      {
+         count = strtoul(s + 1, &end, 10);
+         s     = end;
+      }
+      if (*s == '=')
+         s++;
+      while (*s && *s != ';')
+      {
+         size_t   len = strcspn(s, "|;");
+         unsigned b;
+         for (b = 0; b < 16; b++)
+            if (strlen(ds_button_names[b]) == len && !strncmp(s, ds_button_names[b], len))
+               held |= 1u << b;
+         s += len;
+         if (*s == '|')
+            s++;
+      }
+      if (run >= first && run < first + count)
+         mask |= held;
+      if (*s == ';')
+         s++;
+   }
+   return mask;
+}
 static int16_t ds_input(unsigned p, unsigned d, unsigned i, unsigned id)
 {
-   (void)p; (void)d; (void)i; (void)id;
-   return 0;
+   unsigned mask;
+   (void)i;
+   if (p != 0 || d != RETRO_DEVICE_JOYPAD)
+      return 0;
+   mask = ds_pad_mask(s_run);
+   if (id == RETRO_DEVICE_ID_JOYPAD_MASK)
+      return (int16_t)mask;
+   return id < 16 ? (int16_t)((mask >> id) & 1) : 0;
+}
+
+/* D3DSW_OPTIONS: the value of core option @key, "key=value;key=value", or NULL. */
+static const char *ds_option(const char *key)
+{
+   static char     values[8][128];
+   static unsigned next;
+   const char     *opts = getenv("D3DSW_OPTIONS");
+   size_t          klen = strlen(key);
+   while (opts && *opts)
+   {
+      const char *end = strchr(opts, ';');
+      size_t      len = end ? (size_t)(end - opts) : strlen(opts);
+      if (len > klen && opts[klen] == '=' && !strncmp(opts, key, klen) && len - klen - 1 < sizeof(values[0]))
+      {
+         char *v = values[next++ % 8];
+         memcpy(v, opts + klen + 1, len - klen - 1);
+         v[len - klen - 1] = '\0';
+         return v;
+      }
+      opts = end ? end + 1 : NULL;
+   }
+   return NULL;
 }
 
 /* D3D11 version 2 */
@@ -535,10 +626,12 @@ static bool ds_environment(unsigned cmd, void *data)
          if      (!strcmp(var->key, "pcsx2_bios"))     var->value = "lrps2_d3dswdraw.bin";
          else if (!strcmp(var->key, "pcsx2_renderer")) var->value =
             s_api == DS_D3D11 ? "D3D11" : s_api == DS_D3D12 ? "D3D12" : "Software (SW)";
-         else if (!strcmp(var->key, "pcsx2_fastboot")) var->value = "disabled";
+         else if (!strcmp(var->key, "pcsx2_fastboot")) var->value = ds_option(var->key) ? ds_option(var->key) : "disabled";
          else if (!strcmp(var->key, "pcsx2_upscale_multiplier")) var->value = s_scale;
          else if (!strcmp(var->key, "pcsx2_deinterlace_mode")) var->value =
             getenv("D3DSW_DEINTERLACE") ? getenv("D3DSW_DEINTERLACE") : "Automatic";
+         if (!var->value)
+            var->value = ds_option(var->key);
          return var->value != NULL;
       case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
          *(bool*)data = false;
@@ -731,6 +824,86 @@ static int ds_copy(const char *src, const char *dst)
    return fclose(out) == 0;
 }
 
+/* D3DSW_CONTENT: real content (a disc image's path) is loaded instead of
+ * nothing, and every frame is read as the frontend sees it, in the video
+ * callback. D3DSW_HASH_LOG has each picture's hash reported with the
+ * retro_run that handed it over; D3DSW_DUMP names the retro_runs,
+ * "n,n,...", whose picture is written to D3DSW_DUMP_DIR as <run>.ppm.
+ * D3DSW_LOAD_STATE names a state to load before the first retro_run, and
+ * D3DSW_SAVE_STATE "run:path" a state to save after one. */
+typedef size_t retro_serialize_size_t(void);
+typedef bool retro_serialize_t(void*, size_t);
+typedef bool retro_unserialize_t(const void*, size_t);
+
+static int ds_listed(const char *list, unsigned n)
+{
+   while (list && *list)
+   {
+      char *end;
+      if (strtoul(list, &end, 10) == n && end != list)
+         return 1;
+      list = (*end == ',') ? end + 1 : (*end ? end + 1 : end);
+   }
+   return 0;
+}
+
+static void ds_content_frame(void)
+{
+   unsigned long long h = 14695981039346656037ULL;
+   size_t             i, n;
+   if (!s_img.rgb)
+   {
+      if (getenv("D3DSW_HASH_LOG"))
+         printf("  run %u: no picture\n", s_run);
+      return;
+   }
+   n = (size_t)s_img.w * s_img.h * 3;
+   for (i = 0; i < n; i++)
+      h = (h ^ s_img.rgb[i]) * 1099511628211ULL;
+   if (getenv("D3DSW_HASH_LOG"))
+      printf("  run %u: %ux%u, hash %016llx\n", s_run, s_img.w, s_img.h, h);
+   if (ds_listed(getenv("D3DSW_DUMP"), s_run))
+   {
+      char path[1100];
+      sprintf(path, "%.1000s/%u.ppm", getenv("D3DSW_DUMP_DIR") ? getenv("D3DSW_DUMP_DIR") : ".", s_run);
+      ds_write_ppm(path, &s_img);
+   }
+   free(s_img.rgb);
+   s_img.rgb = NULL;
+}
+
+static int ds_state_file(const char *path, int save, retro_serialize_size_t *size_fn,
+      retro_serialize_t *save_fn, retro_unserialize_t *load_fn)
+{
+   FILE  *f;
+   void  *buf;
+   size_t size = 0;
+   int    ok   = 0;
+   if (save)
+   {
+      size = size_fn();
+      buf  = size ? malloc(size) : NULL;
+      if (buf && save_fn(buf, size) && (f = fopen(path, "wb")) != NULL)
+      {
+         ok = fwrite(buf, 1, size, f) == size;
+         ok = (fclose(f) == 0) && ok;
+      }
+      free(buf);
+      return ok;
+   }
+   if (!(f = fopen(path, "rb")))
+      return 0;
+   fseek(f, 0, SEEK_END);
+   size = (size_t)ftell(f);
+   fseek(f, 0, SEEK_SET);
+   buf = size ? malloc(size) : NULL;
+   if (buf && fread(buf, 1, size, f) == size)
+      ok = load_fn(buf, size);
+   fclose(f);
+   free(buf);
+   return ok;
+}
+
 static int ds_fail(const char *what)
 {
    fprintf(stderr, "d3dswdraw: %s\n", what);
@@ -750,6 +923,11 @@ int main(int argc, char **argv)
    retro_simple_t                 *init_fn, *deinit_fn, *unload_game, *run;
    retro_load_game_t              *load_game;
    retro_get_memory_data_t        *memory_data;
+   retro_serialize_size_t         *serialize_size;
+   retro_serialize_t              *serialize;
+   retro_unserialize_t            *unserialize;
+   struct retro_game_info          game;
+   const char                     *save_at = getenv("D3DSW_SAVE_STATE");
    int                             frame, frames, reinit_at;
 
    setvbuf(stdout, NULL, _IONBF, 0);
@@ -782,6 +960,20 @@ int main(int argc, char **argv)
    sprintf(path, "%s/pcsx2/bios/lrps2_d3dswdraw.bin", s_system_dir);
    if (!ds_copy(argv[3], path))
       return ds_fail("cannot copy the BIOS image");
+   /* A real BIOS's NVM and MEC images go beside it, under its new name. */
+   if (strlen(argv[3]) < 1000 && strrchr(argv[3], '.'))
+   {
+      static const char *const ext[2] = { "nvm", "mec" };
+      char     src[1100];
+      unsigned e;
+      for (e = 0; e < 2; e++)
+      {
+         strcpy(src, argv[3]);
+         strcpy(strrchr(src, '.') + 1, ext[e]);
+         sprintf(path, "%s/pcsx2/bios/lrps2_d3dswdraw.%s", s_system_dir, ext[e]);
+         ds_copy(src, path);
+      }
+   }
 
    dc = LoadLibraryA("d3dcompiler_47.dll");
    if (dc)
@@ -812,6 +1004,9 @@ int main(int argc, char **argv)
    run             = (retro_simple_t*)ds_sym(h, "retro_run");
    load_game       = (retro_load_game_t*)ds_sym(h, "retro_load_game");
    memory_data     = (retro_get_memory_data_t*)ds_sym(h, "retro_get_memory_data");
+   serialize_size  = (retro_serialize_size_t*)ds_sym(h, "retro_serialize_size");
+   serialize       = (retro_serialize_t*)ds_sym(h, "retro_serialize");
+   unserialize     = (retro_unserialize_t*)ds_sym(h, "retro_unserialize");
    if (!set_environment || !set_video || !set_audio || !set_audio_batch || !set_poll
          || !set_input || !init_fn || !deinit_fn || !unload_game || !run || !load_game)
       return ds_fail("the core is missing a libretro export");
@@ -823,7 +1018,9 @@ int main(int argc, char **argv)
    set_poll(ds_poll);
    set_input(ds_input);
    init_fn();
-   if (!load_game(NULL))
+   memset(&game, 0, sizeof(game));
+   game.path = getenv("D3DSW_CONTENT");
+   if (!load_game(game.path ? &game : NULL))
       return ds_fail("retro_load_game failed");
    if (s_api != DS_SW)
    {
@@ -841,15 +1038,39 @@ int main(int argc, char **argv)
          return ds_fail("an input reached the picture of a later retro_run");
       frames = 0;
    }
+   if (game.path)
+   {
+      /* (D3DSW_LOAD_AFTER: the state is loaded after that many retro_runs) */
+      for (frame = getenv("D3DSW_LOAD_AFTER") ? atoi(getenv("D3DSW_LOAD_AFTER")) : 0; frame > 0; frame--)
+         run();
+      s_content_on = 1;
+      if (getenv("D3DSW_LOAD_STATE") && (!serialize_size || !ds_state_file(getenv("D3DSW_LOAD_STATE"), 0,
+               serialize_size, serialize, unserialize)))
+         return ds_fail("cannot load the state");
+   }
    for (frame = 0; frame < frames; frame++)
    {
-      s_read_now = (frame == frames - 1);
+      s_read_now = s_content_on || (frame == frames - 1);
+      s_run++;
       run();
+      if (s_content_on && save_at && strchr(save_at, ':') && strtoul(save_at, NULL, 10) == s_run)
+      {
+         if (!serialize_size || !ds_state_file(strchr(save_at, ':') + 1, 1, serialize_size, serialize, unserialize))
+            return ds_fail("cannot save the state");
+         printf("  state saved after retro_run %u\n", s_run);
+      }
       if (s_api != DS_SW && frame + 1 == reinit_at && !ds_reinit())
          return ds_fail("no device after the reinit");
    }
    if (s_lock_depth != 0)
       return ds_fail("the D3D11 context lock is unbalanced");
+   if (s_content_on)
+   {
+      printf("d3dswdraw: %s, %u frames, %u with a picture\n", argv[4], s_frames, s_valid);
+      s_img.rgb = (unsigned char*)malloc(4);
+      s_img.w   = s_img.h = 1;
+      s_img.rgb[0] = s_img.rgb[1] = s_img.rgb[2] = 0;
+   }
    if (!s_img.rgb)
    {
       printf("d3dswdraw: %u frames, %u with a picture\n", s_frames, s_valid);

@@ -45,6 +45,16 @@
  * holds now and then as a cached frame; each read must match the hash the
  * image had at the end of the retro_run that handed it over.
  *
+ * VN_CONTENT loads real content, a disc image's path, instead of nothing,
+ * and runs its frames only (see vn_content_frame): VN_PAD scripts the pad,
+ * VN_HASH_LOG reports each image's hash, VN_DUMP and VN_DUMP_DIR write
+ * chosen images out, VN_LOAD_STATE (after VN_LOAD_AFTER retro_runs) and
+ * VN_SAVE_STATE bring a state in and take one out; the last three work
+ * without content too. VN_HASH_RGB leaves the alpha out of image hashes.
+ * VN_COUNT_CALLS reports, per retro_run, the submissions, waits, passes,
+ * dispatches, barriers, copies and allocations the core makes, and at the
+ * end the CPU time of each thread (Linux).
+ *
  * Usage: vknegotiate <path-to-core> <scratch-dir> <v2|v2retry|v1> */
 
 #ifndef _WIN32
@@ -79,6 +89,7 @@ static void vn_pause_ms(unsigned ms) { Sleep(ms); }
 #include <dlfcn.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <unistd.h>
 #include <time.h>
 static double vn_now_ms(void)
 {
@@ -199,8 +210,129 @@ static VKAPI_ATTR void VKAPI_CALL vn_sbc(VkCommandBuffer cb, const float c[4])
 	vn_real_sbc(cb, c);
 }
 
+
+/* VN_COUNT_CALLS: the core's command recording, submissions, waits and
+ * allocations counted through the same lookups, reported per retro_run. */
+enum { VC_SUBMIT, VC_WAIT_FENCE, VC_WAIT_SEM, VC_QUEUE_IDLE, VC_DEVICE_IDLE, VC_DISPATCH, VC_GROUPS,
+	VC_DISPATCH_IND, VC_RENDER_PASS, VC_DRAW, VC_BARRIER, VC_COPY_B2I, VC_COPY_I2B, VC_COPY_BUF,
+	VC_COPY_IMG, VC_FILL, VC_ALLOC, VC_ALLOC_MB, VC_FREE, VC_CREATE_IMAGE, VC_CREATE_BUFFER,
+	VC_INVALIDATE, VC_FENCE_STATUS, VC_COUNT };
+static const char* const vc_names[VC_COUNT] = { "submit", "waitfence", "waitsem", "qidle", "devidle",
+	"dispatch", "groups", "dispatch_ind", "rpass", "draw", "barrier", "b2i", "i2b", "copybuf", "copyimg",
+	"fill", "alloc", "allocMB", "free", "mkimage", "mkbuffer", "invalidate", "fencepoll" };
+static long vc[VC_COUNT];
+#define VC_ADD(i, n) __sync_fetch_and_add(&vc[i], (long)(n))
+#define VC_REAL(name) static PFN_##name vc_##name
+VC_REAL(vkQueueSubmit); VC_REAL(vkQueueSubmit2); VC_REAL(vkQueueSubmit2KHR); VC_REAL(vkWaitForFences);
+VC_REAL(vkWaitSemaphores); VC_REAL(vkWaitSemaphoresKHR); VC_REAL(vkQueueWaitIdle); VC_REAL(vkDeviceWaitIdle);
+VC_REAL(vkCmdDispatch); VC_REAL(vkCmdDispatchIndirect); VC_REAL(vkCmdBeginRenderPass);
+VC_REAL(vkCmdBeginRendering); VC_REAL(vkCmdBeginRenderingKHR); VC_REAL(vkCmdDraw); VC_REAL(vkCmdDrawIndexed);
+VC_REAL(vkCmdPipelineBarrier); VC_REAL(vkCmdPipelineBarrier2); VC_REAL(vkCmdPipelineBarrier2KHR);
+VC_REAL(vkCmdCopyBufferToImage); VC_REAL(vkCmdCopyImageToBuffer); VC_REAL(vkCmdCopyBuffer);
+VC_REAL(vkCmdCopyImage); VC_REAL(vkCmdFillBuffer); VC_REAL(vkAllocateMemory); VC_REAL(vkFreeMemory);
+VC_REAL(vkCreateImage); VC_REAL(vkCreateBuffer); VC_REAL(vkInvalidateMappedMemoryRanges);
+VC_REAL(vkGetFenceStatus);
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkQueueSubmit(VkQueue q, uint32_t n, const VkSubmitInfo* s, VkFence f)
+{ VC_ADD(VC_SUBMIT, n); return vc_vkQueueSubmit(q, n, s, f); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkQueueSubmit2(VkQueue q, uint32_t n, const VkSubmitInfo2* s, VkFence f)
+{ VC_ADD(VC_SUBMIT, n); return vc_vkQueueSubmit2(q, n, s, f); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkQueueSubmit2KHR(VkQueue q, uint32_t n, const VkSubmitInfo2* s, VkFence f)
+{ VC_ADD(VC_SUBMIT, n); return vc_vkQueueSubmit2KHR(q, n, s, f); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkWaitForFences(VkDevice d, uint32_t n, const VkFence* f, VkBool32 a, uint64_t t)
+{ if (t) VC_ADD(VC_WAIT_FENCE, 1); else VC_ADD(VC_FENCE_STATUS, 1); return vc_vkWaitForFences(d, n, f, a, t); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkWaitSemaphores(VkDevice d, const VkSemaphoreWaitInfo* i, uint64_t t)
+{ VC_ADD(VC_WAIT_SEM, 1); return vc_vkWaitSemaphores(d, i, t); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkWaitSemaphoresKHR(VkDevice d, const VkSemaphoreWaitInfo* i, uint64_t t)
+{ VC_ADD(VC_WAIT_SEM, 1); return vc_vkWaitSemaphoresKHR(d, i, t); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkQueueWaitIdle(VkQueue q)
+{ VC_ADD(VC_QUEUE_IDLE, 1); return vc_vkQueueWaitIdle(q); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkDeviceWaitIdle(VkDevice d)
+{ VC_ADD(VC_DEVICE_IDLE, 1); return vc_vkDeviceWaitIdle(d); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z)
+{ VC_ADD(VC_DISPATCH, 1); VC_ADD(VC_GROUPS, (long)x * y * z); vc_vkCmdDispatch(c, x, y, z); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdDispatchIndirect(VkCommandBuffer c, VkBuffer b, VkDeviceSize o)
+{ VC_ADD(VC_DISPATCH_IND, 1); vc_vkCmdDispatchIndirect(c, b, o); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo* i, VkSubpassContents s)
+{ VC_ADD(VC_RENDER_PASS, 1); vc_vkCmdBeginRenderPass(c, i, s); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo* i)
+{ VC_ADD(VC_RENDER_PASS, 1); vc_vkCmdBeginRendering(c, i); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdBeginRenderingKHR(VkCommandBuffer c, const VkRenderingInfo* i)
+{ VC_ADD(VC_RENDER_PASS, 1); vc_vkCmdBeginRenderingKHR(c, i); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdDraw(VkCommandBuffer c, uint32_t a, uint32_t b, uint32_t d, uint32_t e)
+{ VC_ADD(VC_DRAW, 1); vc_vkCmdDraw(c, a, b, d, e); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdDrawIndexed(VkCommandBuffer c, uint32_t a, uint32_t b, uint32_t d, int32_t e, uint32_t f)
+{ VC_ADD(VC_DRAW, 1); vc_vkCmdDrawIndexed(c, a, b, d, e, f); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags a, VkPipelineStageFlags b,
+	VkDependencyFlags d, uint32_t n1, const VkMemoryBarrier* m, uint32_t n2, const VkBufferMemoryBarrier* bb,
+	uint32_t n3, const VkImageMemoryBarrier* ib)
+{ VC_ADD(VC_BARRIER, 1); vc_vkCmdPipelineBarrier(c, a, b, d, n1, m, n2, bb, n3, ib); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdPipelineBarrier2(VkCommandBuffer c, const VkDependencyInfo* i)
+{ VC_ADD(VC_BARRIER, 1); vc_vkCmdPipelineBarrier2(c, i); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdPipelineBarrier2KHR(VkCommandBuffer c, const VkDependencyInfo* i)
+{ VC_ADD(VC_BARRIER, 1); vc_vkCmdPipelineBarrier2KHR(c, i); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer b, VkImage i, VkImageLayout l, uint32_t n, const VkBufferImageCopy* r)
+{ VC_ADD(VC_COPY_B2I, 1); vc_vkCmdCopyBufferToImage(c, b, i, l, n, r); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdCopyImageToBuffer(VkCommandBuffer c, VkImage i, VkImageLayout l, VkBuffer b, uint32_t n, const VkBufferImageCopy* r)
+{ VC_ADD(VC_COPY_I2B, 1); vc_vkCmdCopyImageToBuffer(c, i, l, b, n, r); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdCopyBuffer(VkCommandBuffer c, VkBuffer a, VkBuffer b, uint32_t n, const VkBufferCopy* r)
+{ VC_ADD(VC_COPY_BUF, 1); vc_vkCmdCopyBuffer(c, a, b, n, r); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdCopyImage(VkCommandBuffer c, VkImage a, VkImageLayout la, VkImage b, VkImageLayout lb, uint32_t n, const VkImageCopy* r)
+{ VC_ADD(VC_COPY_IMG, 1); vc_vkCmdCopyImage(c, a, la, b, lb, n, r); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdFillBuffer(VkCommandBuffer c, VkBuffer b, VkDeviceSize o, VkDeviceSize sz, uint32_t v)
+{ VC_ADD(VC_FILL, 1); vc_vkCmdFillBuffer(c, b, o, sz, v); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkAllocateMemory(VkDevice d, const VkMemoryAllocateInfo* i, const VkAllocationCallbacks* a, VkDeviceMemory* m)
+{ VC_ADD(VC_ALLOC, 1); VC_ADD(VC_ALLOC_MB, (long)(i->allocationSize >> 20)); return vc_vkAllocateMemory(d, i, a, m); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkFreeMemory(VkDevice d, VkDeviceMemory m, const VkAllocationCallbacks* a)
+{ if (m) VC_ADD(VC_FREE, 1); vc_vkFreeMemory(d, m, a); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkCreateImage(VkDevice d, const VkImageCreateInfo* i, const VkAllocationCallbacks* a, VkImage* o)
+{ VC_ADD(VC_CREATE_IMAGE, 1); return vc_vkCreateImage(d, i, a, o); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkCreateBuffer(VkDevice d, const VkBufferCreateInfo* i, const VkAllocationCallbacks* a, VkBuffer* o)
+{ VC_ADD(VC_CREATE_BUFFER, 1); return vc_vkCreateBuffer(d, i, a, o); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkInvalidateMappedMemoryRanges(VkDevice d, uint32_t n, const VkMappedMemoryRange* r)
+{ VC_ADD(VC_INVALIDATE, n); return vc_vkInvalidateMappedMemoryRanges(d, n, r); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkGetFenceStatus(VkDevice d, VkFence f)
+{ VC_ADD(VC_FENCE_STATUS, 1); return vc_vkGetFenceStatus(d, f); }
+
+/* The wrapper for @name, its real entry point fetched through @real; NULL
+ * when the name is not counted. */
+static PFN_vkVoidFunction vc_wrap(const char* name, PFN_vkVoidFunction real)
+{
+#define VC_TRY(n) if (!strcmp(name, #n)) { vc_##n = (PFN_##n)real; return real ? (PFN_vkVoidFunction)vcw_##n : NULL; }
+	if (!getenv("VN_COUNT_CALLS"))
+		return NULL;
+	VC_TRY(vkQueueSubmit) VC_TRY(vkQueueSubmit2) VC_TRY(vkQueueSubmit2KHR) VC_TRY(vkWaitForFences)
+	VC_TRY(vkWaitSemaphores) VC_TRY(vkWaitSemaphoresKHR) VC_TRY(vkQueueWaitIdle) VC_TRY(vkDeviceWaitIdle)
+	VC_TRY(vkCmdDispatch) VC_TRY(vkCmdDispatchIndirect) VC_TRY(vkCmdBeginRenderPass)
+	VC_TRY(vkCmdBeginRendering) VC_TRY(vkCmdBeginRenderingKHR) VC_TRY(vkCmdDraw) VC_TRY(vkCmdDrawIndexed)
+	VC_TRY(vkCmdPipelineBarrier) VC_TRY(vkCmdPipelineBarrier2) VC_TRY(vkCmdPipelineBarrier2KHR)
+	VC_TRY(vkCmdCopyBufferToImage) VC_TRY(vkCmdCopyImageToBuffer) VC_TRY(vkCmdCopyBuffer)
+	VC_TRY(vkCmdCopyImage) VC_TRY(vkCmdFillBuffer) VC_TRY(vkAllocateMemory) VC_TRY(vkFreeMemory)
+	VC_TRY(vkCreateImage) VC_TRY(vkCreateBuffer) VC_TRY(vkInvalidateMappedMemoryRanges)
+	VC_TRY(vkGetFenceStatus)
+#undef VC_TRY
+	return NULL;
+}
+
+/* The counts since the last report, as one line. */
+static void vc_report(unsigned run)
+{
+	static long last[VC_COUNT];
+	unsigned i;
+	printf("  run %u: calls", run);
+	for (i = 0; i < VC_COUNT; i++)
+	{
+		const long now = __sync_fetch_and_add(&vc[i], 0L);
+		if (now != last[i])
+			printf(" %s=%ld", vc_names[i], now - last[i]);
+		last[i] = now;
+	}
+	printf("\n");
+}
 static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_count_gdpa(VkDevice d, const char* name)
 {
+	PFN_vkVoidFunction w = vc_wrap(name, vn_real_gdpa(d, name));
+	if (w)
+		return w;
 	if (!strcmp(name, "vkCmdSetBlendConstants"))
 	{
 		vn_real_sbc = (PFN_vkCmdSetBlendConstants)vn_real_gdpa(d, name);
@@ -223,6 +355,9 @@ static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_count_gdpa(VkDevice d, const 
 
 static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_count_gipa(VkInstance inst, const char* name)
 {
+	PFN_vkVoidFunction w = inst ? vc_wrap(name, gipa(inst, name)) : NULL;
+	if (w)
+		return w;
 	if (inst && !strcmp(name, "vkGetDeviceProcAddr"))
 	{
 		vn_real_gdpa = (PFN_vkGetDeviceProcAddr)gipa(inst, name);
@@ -293,6 +428,10 @@ static void vn_late_reclaim(void);
 /* VN_LATENCY (vn_latency, below the readback it uses). */
 static int s_lat_on;
 static void vn_latency_read(const void* d);
+/* VN_CONTENT (vn_content_frame, below the readback it uses). */
+static int s_content_on;
+static unsigned s_run;  /* retro_runs begun, counted from 1 */
+static void vn_content_frame(const void* d);
 static void vn_video(const void* d, unsigned w, unsigned h, size_t p)
 {
 	(void)p;
@@ -305,6 +444,8 @@ static void vn_video(const void* d, unsigned w, unsigned h, size_t p)
 		vn_late_present(d);
 	if (s_lat_on)
 		vn_latency_read(d);
+	if (s_content_on)
+		vn_content_frame(d);
 	s_frames++;
 	if (!d)
 		s_dupes++;
@@ -314,10 +455,61 @@ static void vn_video(const void* d, unsigned w, unsigned h, size_t p)
 static void vn_audio(int16_t l, int16_t r) { (void)l; (void)r; }
 static size_t vn_audio_batch(const int16_t* d, size_t f) { (void)d; return f; }
 static void vn_poll(void) { }
+
+/* VN_PAD: a scripted pad on port 0, "first+count=button|button;...":
+ * the buttons are held through the retro_runs first to first + count - 1,
+ * counted from 1. Buttons by their libretro names (b is cross, a circle,
+ * y square, x triangle). */
+static const char* const vn_button_names[16] = {
+	"b", "y", "select", "start", "up", "down", "left", "right",
+	"a", "x", "l", "r", "l2", "r2", "l3", "r3"
+};
+static unsigned vn_pad_mask(unsigned run)
+{
+	const char* s = getenv("VN_PAD");
+	unsigned mask = 0;
+	while (s && *s)
+	{
+		char* end;
+		const unsigned long first = strtoul(s, &end, 10);
+		unsigned long count = 1;
+		unsigned held = 0;
+		s = end;
+		if (*s == '+')
+		{
+			count = strtoul(s + 1, &end, 10);
+			s = end;
+		}
+		if (*s == '=')
+			s++;
+		while (*s && *s != ';')
+		{
+			size_t len = strcspn(s, "|;");
+			unsigned b;
+			for (b = 0; b < 16; b++)
+				if (strlen(vn_button_names[b]) == len && !strncmp(s, vn_button_names[b], len))
+					held |= 1u << b;
+			s += len;
+			if (*s == '|')
+				s++;
+		}
+		if (run >= first && run < first + count)
+			mask |= held;
+		if (*s == ';')
+			s++;
+	}
+	return mask;
+}
 static int16_t vn_input(unsigned p, unsigned d, unsigned i, unsigned id)
 {
-	(void)p; (void)d; (void)i; (void)id;
-	return 0;
+	unsigned mask;
+	(void)i;
+	if (p != 0 || d != RETRO_DEVICE_JOYPAD)
+		return 0;
+	mask = vn_pad_mask(s_run);
+	if (id == RETRO_DEVICE_ID_JOYPAD_MASK)
+		return (int16_t)mask;
+	return id < 16 ? (int16_t)((mask >> id) & 1) : 0;
 }
 
 /* The frontend side of the hardware interface: one sync index - or with
@@ -389,6 +581,7 @@ static const char* vn_option(const char* key)
 /* VN_HASH_IMAGE: the last image handed over, copied to a buffer the host
  * can read and hashed (FNV-1a over its rows); left in the layout it came
  * in. 0 when it cannot be read back. */
+static unsigned char* s_rgb_out; /* (vn_hash_image: w * h * 3 RGB, top row first, when set) */
 static int vn_hash_image(VkInstance inst, VkPhysicalDevice gpu, VkDevice dev, VkQueue queue,
 	uint32_t family, const struct retro_vulkan_image* img, unsigned w, unsigned ht,
 	unsigned long long* hash, unsigned* mid)
@@ -407,6 +600,9 @@ static int vn_hash_image(VkInstance inst, VkPhysicalDevice gpu, VkDevice dev, Vk
 	/* VN_HASH_ROWS: only the first rows */
 	const unsigned rows = (getenv("VN_HASH_ROWS") && (unsigned)atoi(getenv("VN_HASH_ROWS")) < ht) ?
 		(unsigned)atoi(getenv("VN_HASH_ROWS")) : ht;
+	/* VN_HASH_RGB: the colour channels only, the alpha a renderer leaves
+	 * in the image it hands over being its own */
+	const int rgb_only = getenv("VN_HASH_RGB") != NULL;
 	VkPhysicalDeviceMemoryProperties mp;
 	VkBufferCreateInfo bci;
 	VkMemoryRequirements req;
@@ -506,7 +702,19 @@ static int vn_hash_image(VkInstance inst, VkPhysicalDevice gpu, VkDevice dev, Vk
 		|| pvkQueueWaitIdle(queue) != VK_SUCCESS || pvkMapMemory(dev, mem, 0, size, 0, (void**)&p) != VK_SUCCESS)
 		goto out;
 	for (i = 0; i < (VkDeviceSize)w * rows * 4; i++)
-		h = (h ^ p[i]) * 1099511628211ULL;
+		if (!rgb_only || (i & 3) != 3)
+			h = (h ^ p[i]) * 1099511628211ULL;
+	if (s_rgb_out)
+	{
+		const int bgra = img->create_info.format == VK_FORMAT_B8G8R8A8_UNORM
+			|| img->create_info.format == VK_FORMAT_B8G8R8A8_SRGB;
+		for (i = 0; i < (VkDeviceSize)w * ht; i++)
+		{
+			s_rgb_out[i * 3 + 0] = p[i * 4 + (bgra ? 2 : 0)];
+			s_rgb_out[i * 3 + 1] = p[i * 4 + 1];
+			s_rgb_out[i * 3 + 2] = p[i * 4 + (bgra ? 0 : 2)];
+		}
+	}
 	if (mid)
 		*mid = p[((VkDeviceSize)(ht / 2) * w + w / 2) * 4];
 	pvkUnmapMemory(dev, mem);
@@ -643,10 +851,15 @@ static void vn_late_replay(void)
 static void vn_run(void (*run)(void))
 {
 	static unsigned runs;
+	s_run++;
 	run();
+	if (getenv("VN_COUNT_CALLS"))
+		vc_report(s_run);
 	if (!s_late)
 		return;
 	vn_late_run_end();
+	if (s_content_on && getenv("VN_HASH_LOG") && s_held.id)
+		printf("  run %u: image %u, hash %016llx\n", s_run, s_held.id, s_held.hash);
 	if ((++runs & 3) == 0)
 		vn_late_replay();
 }
@@ -704,7 +917,7 @@ static bool vn_environment(unsigned cmd, void* data)
 			var->value = NULL;
 			if      (!strcmp(var->key, "pcsx2_bios"))     var->value = s_bios_name;
 			else if (!strcmp(var->key, "pcsx2_renderer")) var->value = getenv("VN_RENDERER") ? getenv("VN_RENDERER") : "Vulkan";
-			else if (!strcmp(var->key, "pcsx2_fastboot")) var->value = "disabled";
+			else if (!strcmp(var->key, "pcsx2_fastboot")) var->value = vn_option(var->key) ? vn_option(var->key) : "disabled";
 			else if (!strcmp(var->key, "pcsx2_upscale_multiplier")) var->value = getenv("VN_SCALE");
 			else if (!strcmp(var->key, "pcsx2_hw_download_mode")) var->value = getenv("VN_HW_DOWNLOAD");
 			if (!var->value)
@@ -921,6 +1134,101 @@ static int vn_copy(const char *src, const char *dst)
 	return fclose(out) == 0;
 }
 
+/* VN_CONTENT: real content (a disc image's path) is loaded instead of
+ * nothing, and the frames are looked at as the frontend sees them: in
+ * the video callback, after what the core has submitted for them.
+ * VN_HASH_LOG has each image's hash reported with the retro_run that
+ * handed it over (with VN_LATE_READ, the hash at the end of that
+ * retro_run, which the late reads are checked against); VN_DUMP names
+ * the retro_runs, "n,n,...", whose image is written to VN_DUMP_DIR as
+ * <run>.ppm. VN_LOAD_STATE names a state to load after VN_LOAD_AFTER
+ * retro_runs (none: before the first), and VN_SAVE_STATE "run:path" a
+ * state to save after one; retro_runs are counted from the load. */
+static VkInstance s_content_inst;
+static const struct retro_vulkan_context* s_content_ctx;
+
+static int vn_listed(const char* list, unsigned n)
+{
+	while (list && *list)
+	{
+		char* end;
+		if (strtoul(list, &end, 10) == n && end != list)
+			return 1;
+		list = (*end == ',') ? end + 1 : (*end ? end + 1 : end);
+	}
+	return 0;
+}
+
+static void vn_content_frame(const void* d)
+{
+	const int dump = vn_listed(getenv("VN_DUMP"), s_run);
+	unsigned long long h;
+	if (d != RETRO_HW_FRAME_BUFFER_VALID || !s_images_set || s_late)
+	{
+		if (getenv("VN_HASH_LOG") && !s_late)
+			printf("  run %u: %s\n", s_run, d ? "no image" : "dupe");
+		return;
+	}
+	if (!getenv("VN_HASH_LOG") && !dump)
+		return;
+	if (dump)
+		s_rgb_out = (unsigned char*)malloc((size_t)s_last_w * s_last_h * 3 + 1);
+	if (vn_hash_image(s_content_inst, s_content_ctx->gpu, s_content_ctx->device, s_content_ctx->queue,
+			s_content_ctx->queue_family_index, s_last_image, s_last_w, s_last_h, &h, NULL))
+	{
+		if (getenv("VN_HASH_LOG"))
+			printf("  run %u: %ux%u, hash %016llx\n", s_run, s_last_w, s_last_h, h);
+
+		if (dump && s_rgb_out)
+		{
+			char path[1100];
+			FILE* f;
+			sprintf(path, "%.1000s/%u.ppm", getenv("VN_DUMP_DIR") ? getenv("VN_DUMP_DIR") : ".", s_run);
+			if ((f = fopen(path, "wb")) != NULL)
+			{
+				fprintf(f, "P6\n%u %u\n255\n", s_last_w, s_last_h);
+				fwrite(s_rgb_out, 1, (size_t)s_last_w * s_last_h * 3, f);
+				fclose(f);
+			}
+		}
+	}
+	free(s_rgb_out);
+	s_rgb_out = NULL;
+}
+
+/* A state file in or out of the core. */
+static int vn_state_file(const char* path, int save, retro_serialize_size_t* size_fn,
+	retro_serialize_t* save_fn, retro_unserialize_t* load_fn)
+{
+	FILE* f;
+	void* buf;
+	size_t size = 0;
+	int ok = 0;
+	if (save)
+	{
+		size = size_fn();
+		buf = size ? malloc(size) : NULL;
+		if (buf && save_fn(buf, size) && (f = fopen(path, "wb")) != NULL)
+		{
+			ok = fwrite(buf, 1, size, f) == size;
+			ok = (fclose(f) == 0) && ok;
+		}
+		free(buf);
+		return ok;
+	}
+	if (!(f = fopen(path, "rb")))
+		return 0;
+	fseek(f, 0, SEEK_END);
+	size = (size_t)ftell(f);
+	fseek(f, 0, SEEK_SET);
+	buf = size ? malloc(size) : NULL;
+	if (buf && fread(buf, 1, size, f) == size)
+		ok = load_fn(buf, size);
+	fclose(f);
+	free(buf);
+	return ok;
+}
+
 #define VN_FAIL(...) do { fprintf(stderr, "vknegotiate: " __VA_ARGS__); fputc('\n', stderr); return 1; } while (0)
 
 /* VN_LATENCY: tests/latency's case on this frontend (LRPS2_BIOS is the
@@ -1057,7 +1365,7 @@ int main(int argc, char** argv)
 		printf("vknegotiate: skip: no Vulkan device\n");
 		return 0;
 	}
-	core_gipa = getenv("VN_COUNT_PIPELINES") ? vn_count_gipa : gipa;
+	core_gipa = (getenv("VN_COUNT_PIPELINES") || getenv("VN_COUNT_CALLS")) ? vn_count_gipa : gipa;
 
 	strcpy(s_system_dir, argv[2]);
 	sprintf(path, "%s/pcsx2", s_system_dir);
@@ -1067,6 +1375,21 @@ int main(int argc, char** argv)
 	sprintf(path, "%s/pcsx2/bios/%s", s_system_dir, s_bios_name);
 	if (bios ? !vn_copy(bios, path) : !vn_write_bios(path))
 		VN_FAIL("cannot write %s", path);
+	/* A real BIOS's NVM and MEC images go beside it, under its new name. */
+	if (bios && strlen(bios) > 4 && strlen(bios) < 1000 && strchr(bios, '.'))
+	{
+		static const char* const ext[2] = { "nvm", "mec" };
+		char src[1100];
+		unsigned e;
+		for (e = 0; e < 2; e++)
+		{
+			strcpy(src, bios);
+			strcpy(strrchr(src, '.') + 1, ext[e]);
+			sprintf(path, "%s/pcsx2/bios/%.*s.%s", s_system_dir,
+				(int)(strrchr(s_bios_name, '.') - s_bios_name), s_bios_name, ext[e]);
+			vn_copy(src, path);
+		}
+	}
 	/* VN_CORRUPT_SHADER_INDEX: every entry of the shader cache index a run
 	 * before this one left in the scratch directory gets a blob that runs
 	 * a long way past the end of the blob file, its offset plus size past
@@ -1116,8 +1439,13 @@ int main(int argc, char** argv)
 	set_poll(vn_poll);
 	set_input(vn_input);
 	init_fn();
-	if (!load_game(NULL))
-		VN_FAIL("retro_load_game failed");
+	{
+		struct retro_game_info game;
+		memset(&game, 0, sizeof(game));
+		game.path = getenv("VN_CONTENT");
+		if (!load_game(game.path ? &game : NULL))
+			VN_FAIL("retro_load_game failed");
+	}
 	if (!s_iface || s_iface->interface_type != RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN)
 		VN_FAIL("no Vulkan negotiation interface");
 	if (s_iface->interface_version != (VN_IS_V1() ? 1u : 2u))
@@ -1216,6 +1544,12 @@ int main(int argc, char** argv)
 	s_vk.device                 = ctx.device;
 	s_vk.get_device_proc_addr   = pvkGetDeviceProcAddr;
 	s_vk.get_instance_proc_addr = gipa;
+	if (getenv("VN_COUNT_CALLS"))
+	{
+		vn_real_gdpa                = pvkGetDeviceProcAddr;
+		s_vk.get_device_proc_addr   = vn_count_gdpa;
+		s_vk.get_instance_proc_addr = vn_count_gipa;
+	}
 	s_vk.queue                  = ctx.queue;
 	s_vk.queue_index            = ctx.queue_family_index;
 	s_vk.set_image              = vn_set_image;
@@ -1248,13 +1582,33 @@ int main(int argc, char** argv)
 			VN_FAIL("an input reached the picture late");
 		goto teardown;
 	}
+	if (getenv("VN_CONTENT") || getenv("VN_DUMP") || getenv("VN_LOAD_STATE") || getenv("VN_SAVE_STATE"))
+	{
+		s_content_on   = 1;
+		s_content_inst = instance;
+		s_content_ctx  = &ctx;
+		/* A state loads before the first retro_run, or after VN_LOAD_AFTER. */
+		if (getenv("VN_LOAD_AFTER"))
+			for (frame = atoi(getenv("VN_LOAD_AFTER")); frame > 0; frame--)
+				run();
+		if (getenv("VN_LOAD_STATE") && !vn_state_file(getenv("VN_LOAD_STATE"), 0,
+				serialize_size, serialize, unserialize))
+			VN_FAIL("cannot load the state %s", getenv("VN_LOAD_STATE"));
+	}
 	{
 		double longest = 0.0, first = 0.0;
+		const char* save_at = getenv("VN_SAVE_STATE");
 		for (frame = 0; frame < frames; frame++)
 		{
 			const double t0 = vn_now_ms();
 			double dt;
 			vn_run(run);
+			if (s_content_on && save_at && strtoul(save_at, NULL, 10) == s_run && strchr(save_at, ':'))
+			{
+				if (!vn_state_file(strchr(save_at, ':') + 1, 1, serialize_size, serialize, unserialize))
+					VN_FAIL("cannot save the state %s", strchr(save_at, ':') + 1);
+				printf("  state saved after retro_run %u\n", s_run);
+			}
 			dt = vn_now_ms() - t0;
 			if (frame == 0)
 				first = dt;
@@ -1294,6 +1648,19 @@ int main(int argc, char** argv)
 			VN_FAIL("the last image could not be read back");
 		printf("  image: %ux%u, hash %016llx\n", s_last_w, s_last_h, h);
 	}
+	/* The CPU time of each of the process's threads, by name. */
+#ifdef __linux__
+	if (getenv("VN_COUNT_CALLS"))
+	{
+		char cmd[256];
+		sprintf(cmd, "for t in /proc/%d/task/*; do printf '  thread %%s %%s\\n' \"$(tr ' ' _ < $t/comm)\" \"$(awk '{print $14+$15}' $t/stat)\"; done", (int)getpid());
+		if (system(cmd) != 0)
+			printf("  (no thread times)\n");
+	}
+#endif
+	/* Real content runs its frames only. */
+	if (getenv("VN_CONTENT"))
+		goto teardown;
 	/* VN_DUMP_STATE: the state after the frames, for another run's to be
 	 * compared with. */
 	if (getenv("VN_DUMP_STATE"))
