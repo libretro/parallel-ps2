@@ -208,6 +208,29 @@ if ! VN_EXPECT_RUN=3c2b1a09 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/vram_wrap_read.b
 	exit 1
 fi
 
+# A state saved after the guest mapped the scratchpad with a TLB entry,
+# loaded before this run's guest has mapped it - before the first
+# retro_run, and after one - as a frontend loading a state at start does:
+# the stores the guest makes through the entry after the load reach the
+# scratchpad.
+"$SCRATCH/swdraw" --bios "$SCRATCH/tlb_store.bin" tlb_store
+if ! VN_FRAMES=25 VN_SAVE_STATE=25:"$SCRATCH/tlb_store.state" VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/tlb_store.bin" \
+		timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/tlb_save.log" 2>&1; then
+	cat "$SCRATCH/tlb_save.log"
+	rm -rf "$SCRATCH"
+	echo "  FAIL: TLB-mapped stores, saving the state"
+	exit 1
+fi
+for after in 0 1; do
+	if ! VN_LOAD_AFTER=$after VN_LOAD_STATE="$SCRATCH/tlb_store.state" VN_EXPECT_RUN=5a5aa5a5 VN_FRAMES=80 \
+			VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/tlb_store.bin" timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: TLB-mapped stores after a state loaded after $after retro_run(s)"
+		exit 1
+	fi
+done
+echo "  a state loaded before the guest mapped its TLB: the mappings are the state's"
+
 # Palettes drawn into a page with two lines and loaded as a CLUT straight
 # after, as palette effects do: four whose lines all name one texel and
 # two that read along a row (clut_lines), against the two alone

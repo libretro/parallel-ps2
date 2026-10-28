@@ -34,6 +34,7 @@
 #include "../pcsx2/DEV9/ATA/HddCreate.h"
 #include "../pcsx2/MTVU.h"
 #include "../pcsx2/Counters.h"
+#include "../pcsx2/COP0.h"
 #include "../pcsx2/Host.h"
 
 #include "HostFS.h"
@@ -3143,6 +3144,9 @@ static bool state_write(void* dst, size_t size)
 	return true;
 }
 
+/* The TLB as it was when the state being loaded was opened. */
+static tlbs s_tlb_before_load[48];
+
 /* Loads the whole machine from a state, stopping at the first block that
  * does not load. Whatever came before that block has already been applied,
  * so a false return leaves the machine half-loaded: the caller restores it.
@@ -3151,6 +3155,8 @@ static bool state_read(const void* data, size_t size)
 {
 	freezeData fP;
 	SaveStateBase loadme;
+	bool ok;
+	int i;
 	/* The emulator's blocks end where the USB block starts, or the
 	 * extension block where a state has no USB block. */
 	const size_t full_size = size;
@@ -3172,7 +3178,20 @@ static bool state_read(const void* data, size_t size)
 	 * state on every load. */
 	SaveState_Init(&loadme, (u8 *)const_cast<void *>(data), size, size, false);
 
-	if (!SaveState_FreezeBios(&loadme) || !SaveState_FreezeInternals(&loadme))
+	/* The virtual mappings follow the TLB: when the state brings entries
+	 * other than the ones the guest has set up, those come out of the
+	 * mappings and the state's go in. */
+	memcpy(s_tlb_before_load, tlb, sizeof(s_tlb_before_load));
+	ok = SaveState_FreezeBios(&loadme) && SaveState_FreezeInternals(&loadme);
+	if (memcmp(s_tlb_before_load, tlb, sizeof(s_tlb_before_load)) != 0)
+	{
+		for (i = 0; i < 48; i++)
+			if (memcmp(&s_tlb_before_load[i], &tlb[i], sizeof(tlb[i])) != 0)
+				UnmapTLB(&s_tlb_before_load[i], i);
+		for (i = 0; i < 48; i++)
+			MapTLB(&tlb[i], i);
+	}
+	if (!ok)
 	{
 		log_cb(RETRO_LOG_ERROR, "state load: CPU or subsystem block rejected "
 			"at offset %d (tag '%.31s')\n", loadme.idx, loadme.tagspace);

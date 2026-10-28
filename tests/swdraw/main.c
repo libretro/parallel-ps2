@@ -176,6 +176,8 @@ static void sl_put32(unsigned char* p, unsigned v)
 #define SL_ANDI(rt, rs, imm)  (0x30000000u | ((rs) << 21) | ((rt) << 16) | ((imm) & 0xFFFFu))
 #define SL_B(off)             (0x10000000u | ((off) & 0xFFFFu))
 #define SL_SLL(rd, rt, sa)    (0x00000000u | ((rt) << 16) | ((rd) << 11) | ((sa) << 6))
+#define SL_MTC0(rt, rd)       (0x40800000u | ((rt) << 16) | ((rd) << 11))
+#define SL_TLBWI              0x42000002u
 
 static unsigned sl_emit(unsigned char* rom, unsigned pc, unsigned op)
 {
@@ -218,6 +220,10 @@ static unsigned      s_fade_step;          /* PMODE.ALP grows by this every vsyn
  * the word at quadword s_bump_qw in RAM one higher each round, when
  * s_loop is set. */
 static unsigned      s_loop, s_loop_kick, s_bump_qw;
+/* When set, the reset program ends by mapping the scratchpad with a TLB
+ * entry ten vsyncs on and, this many vsyncs after that, storing 64 words
+ * through it (see case_tlb_store). */
+static unsigned      s_tlb_store;
 
 /* A case may instead lay out its own quadwords and send them in kicks,
  * each a run of them sent after waiting a number of vsyncs, and then
@@ -1289,6 +1295,17 @@ static void clut_lines(unsigned first)
 static void case_clut_lines(void) { clut_lines(0); }
 static void case_clut_lines_ramps(void) { clut_lines(4); }
 
+/* The scratchpad mapped with a TLB entry ten vsyncs after the frame is
+ * drawn, and 64 words stored through it 40 vsyncs later: the stores reach
+ * the scratchpad however the machine got there, a state loaded before the
+ * entry was mapped in this run among the ways. */
+static void case_tlb_store(void)
+{
+	case_present();
+	s_tlb_store = 40;
+	s_run_frames = 90;
+}
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -1348,6 +1365,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "interlace_field_fade", case_interlace_field_fade, "1" },
 	{ "clut_lines",      case_clut_lines,    "1" },
 	{ "clut_lines_ramps", case_clut_lines_ramps, "1" },
+	{ "tlb_store",       case_tlb_store,     "1" },
 };
 
 /* A 4MB image the core's BIOS scan accepts. The reset program turns on a
@@ -1530,6 +1548,55 @@ static int sl_write_bios(const char* path)
 		pc = sl_emit(rom, pc, SL_ORI(9, 9, s_pmode & 0xFFu));
 		pc = sl_emit(rom, pc, SL_SW(9, 0, 8));                       /* PMODE, low word         */
 		pc = sl_emit(rom, pc, SL_B((fade - (pc + 4)) >> 2));
+		pc = sl_emit(rom, pc, 0);
+	}
+	if (s_tlb_store)
+	{
+		/* Ten vsyncs; TLB entry 0 made the scratchpad at virtual
+		 * 0x70000000, as the kernel maps it; s_tlb_store vsyncs; then 64
+		 * words of 0x5A5AA5A5 stored through it. */
+		unsigned wait, round;
+		pc = sl_emit(rom, pc, SL_ORI(15, 0, 10));
+		for (round = 0; round < 2; round++)
+		{
+			pc = sl_emit(rom, pc, SL_ORI(9, 0, 8));                  /* clear CSR.VSINT         */
+			pc = sl_emit(rom, pc, SL_SW(9, 0, 24));
+			wait = pc;
+			pc = sl_emit(rom, pc, SL_LW(9, 0, 24));
+			pc = sl_emit(rom, pc, 0);
+			pc = sl_emit(rom, pc, SL_ANDI(9, 9, 8));
+			pc = sl_emit(rom, pc, SL_BEQ(9, 0, (wait - (pc + 4)) >> 2));
+			pc = sl_emit(rom, pc, 0);
+			pc = sl_emit(rom, pc, SL_ORI(9, 0, 8));
+			pc = sl_emit(rom, pc, SL_SW(9, 0, 24));
+			pc = sl_emit(rom, pc, SL_ADDIU(15, 15, -1));
+			pc = sl_emit(rom, pc, SL_BNE(15, 0, (wait - (pc + 4)) >> 2));
+			pc = sl_emit(rom, pc, 0);
+			if (round)
+				break;
+			pc = sl_emit(rom, pc, SL_MTC0(0, 0));                    /* Index 0                 */
+			pc = sl_emit(rom, pc, SL_MTC0(0, 5));                    /* PageMask 4KB            */
+			pc = sl_emit(rom, pc, SL_LUI(9, 0x7000));
+			pc = sl_emit(rom, pc, SL_MTC0(9, 10));                   /* EntryHi                 */
+			pc = sl_emit(rom, pc, SL_LUI(9, 0x8000));
+			pc = sl_emit(rom, pc, SL_ORI(9, 9, 0x17u));
+			pc = sl_emit(rom, pc, SL_MTC0(9, 2));                    /* EntryLo0: S, valid      */
+			pc = sl_emit(rom, pc, SL_ORI(9, 0, 0x17u));
+			pc = sl_emit(rom, pc, SL_MTC0(9, 3));                    /* EntryLo1                */
+			pc = sl_emit(rom, pc, 0);
+			pc = sl_emit(rom, pc, SL_TLBWI);
+			pc = sl_emit(rom, pc, 0);
+			pc = sl_emit(rom, pc, SL_ORI(15, 0, s_tlb_store));
+		}
+		pc = sl_emit(rom, pc, SL_LUI(9, 0x7000));                    /* t1 = the scratchpad     */
+		pc = sl_emit(rom, pc, SL_LUI(10, 0x5A5A));
+		pc = sl_emit(rom, pc, SL_ORI(10, 10, 0xA5A5));
+		pc = sl_emit(rom, pc, SL_ORI(15, 0, 64));
+		wait = pc;
+		pc = sl_emit(rom, pc, SL_SW(10, 0, 9));
+		pc = sl_emit(rom, pc, SL_ADDIU(9, 9, 4));
+		pc = sl_emit(rom, pc, SL_ADDIU(15, 15, -1));
+		pc = sl_emit(rom, pc, SL_BNE(15, 0, (wait - (pc + 4)) >> 2));
 		pc = sl_emit(rom, pc, 0);
 	}
 	pc = sl_emit(rom, pc, SL_B(-1));                                 /* spin                    */
