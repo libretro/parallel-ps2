@@ -2718,14 +2718,15 @@ bool GSDevice12::CollectWarmedTFXPipelines(const PipelineSelector* want, TFXPipe
 			*ins.first->second.put() = r.pso;
 		else
 			r.pso->Release();
-		if (want && !hit && r.p == *want)
-		{
-			*found = ins.first;
-			hit    = true;
-		}
+		if (want && r.p == *want)
+			hit = true;
 		r.pso = nullptr;
 		KeepTFXWarmBlobs(r);
 	}
+	/* Looked up once the map has stopped growing: an insertion that
+	 * rehashes it leaves no iterator taken before it valid. */
+	if (hit)
+		*found = m_tfx_pipelines.find(*want);
 	return hit;
 }
 
