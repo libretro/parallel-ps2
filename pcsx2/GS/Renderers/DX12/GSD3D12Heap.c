@@ -59,6 +59,9 @@ static int gs_d3d12_heap_add_block(gs_d3d12_heap_t *heap, uint32_t heap_type,
 {
    gs_d3d12_block_t *b;
    void             *block_heap = NULL;
+   const int         host       = gs_d3d12_type_is_host(heap_type);
+   const uint64_t    held       = host ? heap->bytes_reserved_host
+      : heap->bytes_reserved - heap->bytes_reserved_host;
    unsigned          i_hole;
    unsigned          slot       = heap->block_count;
 
@@ -77,8 +80,10 @@ static int gs_d3d12_heap_add_block(gs_d3d12_heap_t *heap, uint32_t heap_type,
 
    /* The ceiling. Without one the heap hands out blocks until the card
     * is gone. A heap that refuses is a renderer with a missing texture
-    * and a line in the log; a heap that does not is a dead machine. */
-   if (heap->max_bytes && heap->bytes_reserved + size > heap->max_bytes)
+    * and a line in the log; a heap that does not is a dead machine.
+    * The card's memory and the memory the CPU sees each have it: the
+    * upload rings alone fill two blocks, room the targets are owed. */
+   if (heap->max_bytes && held + size > heap->max_bytes)
       return 0;
 
    if (!heap->fns.create_heap(heap->device, size, heap_type, heap_flags,
@@ -103,6 +108,8 @@ static int gs_d3d12_heap_add_block(gs_d3d12_heap_t *heap, uint32_t heap_type,
    if (slot == heap->block_count)
       heap->block_count++;
    heap->bytes_reserved += size;
+   if (host)
+      heap->bytes_reserved_host += size;
    return 1;
 }
 
@@ -246,6 +253,8 @@ unsigned gs_d3d12_heap_trim(gs_d3d12_heap_t *heap)
          free(b->free_spans);
 
       heap->bytes_reserved -= b->size;
+      if (gs_d3d12_type_is_host(b->heap_type))
+         heap->bytes_reserved_host -= b->size;
       freed++;
 
       /* A hole, not a gap closed up. Every live allocation carries the
@@ -287,9 +296,9 @@ int gs_d3d12_heap_alloc(gs_d3d12_heap_t *heap, uint64_t size,
 
    if (!gs_d3d12_heap_add_block(heap, heap_type, heap_flags, block_size))
    {
-      /* No room for another block. Empty ones go back first - a run
-       * that filled the ceiling with upload blocks has nothing for a
-       * target even with most of it free - and then one more try. */
+      /* No room for another block. Empty ones go back first - a
+       * ceiling filled with blocks of another kind has nothing for this
+       * one even with most of it free - and then one more try. */
       if (!gs_d3d12_heap_trim(heap))
          return 0;
       if (!gs_d3d12_heap_add_block(heap, heap_type, heap_flags, block_size))

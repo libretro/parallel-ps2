@@ -109,8 +109,11 @@ typedef struct gs_d3d12_heap
    uint64_t            block_size;
    gs_d3d12_block_t    blocks[GS_D3D12_HEAP_MAX_BLOCKS];
    unsigned            block_count;
-   uint64_t            max_bytes;      /* never asks past this */
+   uint64_t            max_bytes;      /* never asks past this, for
+                                        * DEFAULT and for UPLOAD and
+                                        * READBACK each */
    uint64_t            bytes_reserved; /* asked of the device  */
+   uint64_t            bytes_reserved_host; /* the UPLOAD and READBACK part */
    uint64_t            bytes_used;     /* handed out           */
 
    /* The same total split by what the memory is for. The total alone

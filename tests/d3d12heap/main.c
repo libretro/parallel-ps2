@@ -167,6 +167,51 @@ static void test_ceiling(void)
    gs_d3d12_heap_shutdown(&heap);
 }
 
+/* The device at native: a four-block ceiling, the upload rings made at
+ * startup (64, then 32 + 16 + 8 + 8 MB), a staging buffer and a
+ * readback. The targets still get all four blocks, and the CPU's side
+ * stays bounded on its own. */
+static void test_host_blocks_leave_device_room(void)
+{
+   static const uint64_t rings[5] = { 64 * MB, 32 * MB, 16 * MB, 8 * MB, 8 * MB };
+   gs_d3d12_heap_t heap;
+   gs_d3d12_alloc_t host[8], dev[4], extra;
+   int i;
+
+   printf("upload and readback blocks leave the targets their ceiling\n");
+   reset_stubs();
+   gs_d3d12_heap_init(&heap, NULL, &stub_fns, 64 * MB, 256 * MB);
+
+   for (i = 0; i < 5; i++)
+      CHECK(gs_d3d12_heap_alloc(&heap, rings[i], 64 * 1024,
+               GS_D3D12_HEAP_TYPE_UPLOAD, FLAG_ALL, &host[i]), "upload ring");
+   CHECK(gs_d3d12_heap_alloc(&heap, 1 * MB, 64 * 1024,
+            GS_D3D12_HEAP_TYPE_UPLOAD, FLAG_ALL, &host[5]), "staging buffer");
+   CHECK(gs_d3d12_heap_alloc(&heap, 1 * MB, 64 * 1024,
+            GS_D3D12_HEAP_TYPE_READBACK, FLAG_ALL, &host[6]), "readback");
+   CHECK(heap.bytes_reserved_host == 256 * MB, "four host blocks");
+
+   for (i = 0; i < 4; i++)
+      CHECK(gs_d3d12_heap_alloc(&heap, 64 * MB, 64 * 1024,
+               GS_D3D12_HEAP_TYPE_DEFAULT, FLAG_RT_DS, &dev[i]),
+            "a target block under the ceiling");
+   CHECK(gs_d3d12_heap_alloc(&heap, 64 * MB, 64 * 1024,
+            GS_D3D12_HEAP_TYPE_DEFAULT, FLAG_RT_DS, &extra) == 0,
+         "targets refused past the ceiling");
+   CHECK(gs_d3d12_heap_alloc(&heap, 64 * MB, 64 * 1024,
+            GS_D3D12_HEAP_TYPE_UPLOAD, FLAG_ALL, &extra) == 0,
+         "uploads refused past the ceiling");
+
+   for (i = 0; i < 7; i++)
+      gs_d3d12_heap_free(&heap, &host[i]);
+   for (i = 0; i < 4; i++)
+      gs_d3d12_heap_free(&heap, &dev[i]);
+   gs_d3d12_heap_trim(&heap);
+   CHECK(heap.bytes_reserved == 0 && heap.bytes_reserved_host == 0,
+         "trim gives both sides back");
+   gs_d3d12_heap_shutdown(&heap);
+}
+
 static void test_trim_and_hole_reuse(void)
 {
    gs_d3d12_heap_t heap;
@@ -474,6 +519,7 @@ int main(void)
    test_alignment();
    test_free_merges();
    test_ceiling();
+   test_host_blocks_leave_device_room();
    test_trim_and_hole_reuse();
    test_type_and_flag_segregation();
    test_device_refusal_is_not_a_crash();
