@@ -2,9 +2,9 @@
  *
  * shaders/slangmosh.hpp holds the renderer's SPIR-V modules end to end in
  * one uint32 array, and a table that hands each program its module by word
- * offset and byte size. slangmosh itself is not vendored, so a module built
- * from its source (glslc -O --target-env=vulkan1.1, the same shaderc path
- * slangmosh takes) is put back into the bank with this: the module's words
+ * offset and byte size. A module rebuilt from its source (shaderbank_build.sh
+ * does both, with the toolchain each module is built with) is put back into
+ * the bank with this: the module's words
  * are replaced, the ones after it move, and every table entry is rewritten
  * with its new offset and size. Modules that are not replaced are copied
  * byte for byte, and the reflection bank is untouched, which is right as

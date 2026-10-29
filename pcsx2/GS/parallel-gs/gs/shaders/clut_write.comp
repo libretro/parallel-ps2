@@ -1,0 +1,156 @@
+#version 450
+
+// SPDX-FileCopyrightText: 2024 Arntzen Software AS
+// SPDX-FileContributor: Hans-Kristian Arntzen
+// SPDX-FileContributor: Runar Heyer
+// SPDX-License-Identifier: LGPL-3.0+
+
+#extension GL_EXT_shader_16bit_storage : require
+layout(local_size_x = 256) in;
+layout(constant_id = 0) const uint VRAM_MASK = 4 * 1024 * 1024 - 1;
+
+#include "swizzle_utils.h"
+#include "data_structures.h"
+
+layout(std430, set = 0, binding = 0) readonly buffer VRAM32
+{
+	uint data[];
+} vram32;
+
+layout(std430, set = 0, binding = 0) readonly buffer VRAM16
+{
+	uint16_t data[];
+} vram16;
+
+layout(std140, set = 0, binding = 1) uniform CLUTDesc
+{
+	CLUTDescriptor data[1024];
+} cluts;
+
+layout(std430, set = 0, binding = BINDING_CLUT) buffer CLUT16
+{
+	uint16_t data[];
+} clut16;
+
+layout(push_constant) uniform Registers
+{
+	uint clut_count;
+	uint read_index;
+	uint wg_offset;
+} registers;
+
+shared uint tmp_clut[512];
+
+const uint PGS_CLUT_SIZE_16 = PGS_CLUT_SIZE / 2;
+
+void main()
+{
+	if (registers.read_index != ~0u)
+	{
+		// Copy from previous instance to allow a CLUT entry to be partially overwritten and used later
+		uint read_index = registers.read_index * PGS_CLUT_SIZE_16 + gl_LocalInvocationIndex;
+		tmp_clut[gl_LocalInvocationIndex] = uint(clut16.data[read_index]);
+		tmp_clut[gl_LocalInvocationIndex + 256u] = uint(clut16.data[read_index + 256u]);
+		barrier();
+	}
+
+	for (uint i = 0; i < registers.clut_count; i++)
+	{
+		CLUTDescriptor clut = cluts.data[i + registers.wg_offset];
+
+		bool index4 = clut.tex_format == PSMT4 || clut.tex_format == PSMT4HH || clut.tex_format == PSMT4HL;
+
+		bool active_lane;
+		uint write_coord = gl_LocalInvocationIndex + clut.csa * 16;
+		uint read_coord = gl_LocalInvocationIndex;
+
+		if (index4)
+		{
+			active_lane = gl_LocalInvocationIndex < 16;
+		}
+		else
+		{
+			// For 8-bit palettes, we need to handle CLUT overflow.
+			// This comes up for CSA != 0.
+			// For CSM1, the behavior seems to be that CSA only functions like a write mask.
+			// It does not affect read offsets.
+			// For 32bpp CLUT, bank = [CSA, 16) is the effective range, while for 16bpp, consider [CSA, 32).
+			// For CSM2, CSA should be 0, but upstream behavior seems to not clamp, and it's a raw offset into CLUT.
+			// For safety, do bounds checking on the shared memory write since it may overflow,
+			// especially for the upper 32-bit write.
+
+			if (clut.csm == 0)
+			{
+				uint csa_count = clut.format == PSMCT32 ? 16u : 32u;
+				uint active_csa = csa_count - clut.csa;
+				active_lane = gl_LocalInvocationIndex < active_csa * 16;
+				read_coord += clut.csa * 16;
+			}
+			else
+			{
+				active_lane = true;
+			}
+		}
+
+		// CSM1: Linear coordinate is converted to 2D coordinate. This samples VRAM using clut.format.
+		// CSM2: Linear coordinate is converted to 2D offset + ivec2(linear_coordinate, 0).
+
+		uvec2 coord;
+		if (clut.csm != 0)
+		{
+			coord.x = uint(float(read_coord) * clut.csm2_x_scale + 1.0 / 256.0) + clut.csm2_x_bias + bitfieldExtract(clut.co_uv, 0, 16) * 16;
+			coord.y = bitfieldExtract(clut.co_uv, 16, 16);
+		}
+		else
+		{
+			coord.x = bitfieldExtract(read_coord, 0, 3);
+			coord.y = bitfieldExtract(read_coord, 3, 1);
+			coord.x = bitfieldInsert(coord.x, bitfieldExtract(read_coord, 4, 1), 3, 1);
+			coord.y = bitfieldInsert(coord.y, bitfieldExtract(read_coord, 5, 3), 1, 3);
+		}
+
+		if (active_lane)
+		{
+			if (clut.format == PSMCT32)
+			{
+				uint vram_addr = swizzle_PS2(coord.x, coord.y, clut.base_pointer, clut.cbw, PSMCT32, VRAM_MASK);
+				uint vram_data = vram32.data[vram_addr];
+
+				// See rewrite_forwarded_clut_upload for reference.
+				// Degenerate speed hack where RGB of palette is read from redirected texture to avoid hazard,
+				// and A is read from the original FB because write mask only actually updates RGB,
+				// and thus there is no hazard to read alpha.
+				// The intent it seems is that CLUT entry 15 is alpha transparent color.
+				// We only have a path for PSMCT32, so don't both adding this to PSMCT16 unless proven necessary.
+				if (clut.csm1_mask != 0u)
+				{
+					coord.x = bitfieldExtract(read_coord, 0, 3);
+					coord.y = bitfieldExtract(read_coord, 3, 1);
+					coord.x = bitfieldInsert(coord.x, bitfieldExtract(read_coord, 4, 1), 3, 1);
+					coord.y = bitfieldInsert(coord.y, bitfieldExtract(read_coord, 5, 3), 1, 3);
+					vram_addr = swizzle_PS2(coord.x, coord.y, clut.csm1_reference_base, 0, PSMCT32, VRAM_MASK);
+					uint csm1_data = vram32.data[vram_addr];
+					vram_data = (vram_data & ~clut.csm1_mask) | (csm1_data & clut.csm1_mask);
+				}
+
+				tmp_clut[write_coord] = bitfieldExtract(vram_data, 0, 16);
+				if (write_coord + 256u < 512u)
+					tmp_clut[write_coord + 256u] = bitfieldExtract(vram_data, 16, 16);
+			}
+			else
+			{
+				uint vram_addr = swizzle_PS2(coord.x, coord.y, clut.base_pointer, clut.cbw, clut.format, VRAM_MASK);
+				uint lo_16 = uint(vram16.data[vram_addr]);
+				tmp_clut[write_coord] = lo_16;
+			}
+		}
+
+		// Flush current CLUT state.
+		barrier();
+		clut16.data[gl_LocalInvocationIndex + clut.instance * PGS_CLUT_SIZE_16] =
+			uint16_t(tmp_clut[gl_LocalInvocationIndex]);
+		clut16.data[gl_LocalInvocationIndex + clut.instance * PGS_CLUT_SIZE_16 + 256u] =
+			uint16_t(tmp_clut[gl_LocalInvocationIndex + 256u]);
+		barrier();
+	}
+}
