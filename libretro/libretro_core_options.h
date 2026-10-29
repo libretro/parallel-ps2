@@ -127,6 +127,20 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       NULL
    },
    {
+      "pcsx2_shared_memory_cards",
+      "System > Shared Memory Cards (Restart)",
+      "Shared Memory Cards (Restart)",
+      "Use per-content or shared memory cards.",
+      NULL,
+      "system",
+      {
+         { "disabled", NULL },
+         { "enabled", NULL },
+         { NULL, NULL },
+      },
+      "enabled"
+   },
+   {
       "pcsx2_fastboot",
       "System > Fast Boot (Restart)",
       "Fast Boot (Restart)",
@@ -170,48 +184,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "disabled"
    },
    {
-      "pcsx2_shared_memory_cards",
-      "System > Shared Memory Cards (Restart)",
-      "Shared Memory Cards (Restart)",
-      "Use per-content or shared memory cards.",
-      NULL,
-      "system",
-      {
-         { "disabled", NULL },
-         { "enabled", NULL },
-         { NULL, NULL },
-      },
-      "enabled"
-   },
-   {
-      "pcsx2_enable_cheats",
-      "System > Enable Cheats",
-      "Enable Cheats",
-      "Enable cheat files to be read from the 'cheats' directory in the system folder.",
-      NULL,
-      "system",
-      {
-         { "enabled", NULL },
-         { "disabled", NULL },
-         { NULL, NULL },
-      },
-      "disabled"
-   },
-   {
-      "pcsx2_hint_language_unlock",
-      "System > Language Unlock",
-      "Language Unlock (Restart)",
-      "If enabled, will look inside the internal database for language unlock options. Examples include: forcing an international Japanese version to English, unlocking more European languages, etc",
-      NULL,
-      "system",
-      {
-         { "enabled", NULL },
-         { "disabled", NULL },
-         { NULL, NULL },
-      },
-      "disabled"
-   },
-   {
       "pcsx2_dev9_hdd",
       "System > HDD (DEV9)",
       "HDD (DEV9)",
@@ -248,6 +220,48 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "System > Ethernet (DEV9)",
       "Ethernet (DEV9)",
       "Emulate the SPEED expansion's ethernet adapter through the Sockets backend: a userspace TCP/UDP stack with an internal DHCP server, needing no host network configuration or privileges.",
+      NULL,
+      "system",
+      {
+         { "disabled", NULL },
+         { "enabled", NULL },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
+      "pcsx2_hint_language_unlock",
+      "System > Language Unlock",
+      "Language Unlock (Restart)",
+      "If enabled, will look inside the internal database for language unlock options. Examples include: forcing an international Japanese version to English, unlocking more European languages, etc",
+      NULL,
+      "system",
+      {
+         { "enabled", NULL },
+         { "disabled", NULL },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
+      "pcsx2_enable_cheats",
+      "System > Enable Cheats",
+      "Enable Cheats",
+      "Enable cheat files to be read from the 'cheats' directory in the system folder.",
+      NULL,
+      "system",
+      {
+         { "enabled", NULL },
+         { "disabled", NULL },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
+      "pcsx2_use_external_gameindex",
+      "System > Use External GameIndex Database",
+      "Use External GameIndex Database",
+      "Load the game-compatibility database from <system>/resources/GameIndex.yaml if present, falling back to the built-in database when it is missing. When disabled, always use the database built into the core.",
       NULL,
       "system",
       {
@@ -382,15 +396,18 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "disabled"
    },
    {
-      "pcsx2_pgs_disable_mipmaps",
-      "Video > Force Texture LOD0",
-      "Force Texture LOD0",
-      "Disable this for traditional hardware mipmapping. Enabling this will bypass mipmapping and always use texture LOD0 instead. The result is better image quality. Only a small handful of games have graphics rendering issues with this enabled.",
+      "pcsx2_widescreen_hint",
+      "Video > Widescreen hint (Restart)",
+      "Widescreen hint (Restart)",
+      "Applies a widescreen patch if a patch for the game can be found inside the internal database.",
       NULL,
       "video",
       {
-         { "enabled", NULL },
          { "disabled", NULL },
+         { "enabled (16:9)", NULL },
+         { "enabled (16:10)", NULL },
+         { "enabled (21:9)", NULL },
+         { "enabled (32:9)", NULL },
          { NULL, NULL },
       },
       "disabled"
@@ -418,6 +435,34 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "Automatic"
    },
    {
+      "pcsx2_nointerlacing_hint",
+      "Video > No Interlacing Hint (Restart)",
+      "No Interlacing Hint (Restart)",
+      "If enabled, will look in the internal database if a patch is available for the game to turn the image into either a non-interlaced, full frame, or progressive scan video signal, and/or a combination of all the above. Image will be more stable and Deinterlacing can be turned off.",
+      NULL,
+      "video",
+      {
+         { "enabled", NULL },
+         { "disabled", NULL },
+         { NULL, NULL },
+      },
+      "enabled"
+   },
+   {
+      "pcsx2_disable_interlace_offset",
+      "Video > Disable Interlace Offset",
+      "Disable Interlace Offset",
+      NULL,
+      NULL,
+      "video",
+      {
+         { "enabled", NULL },
+         { "disabled", NULL },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
       "pcsx2_hw_download_mode",
       "Video > Hardware Download Mode",
       "Hardware Download Mode",
@@ -434,10 +479,10 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "Accurate"
    },
    {
-      "pcsx2_nointerlacing_hint",
-      "Video > No interlacing hint (Restart)",
-      "No interlacing hint (Restart)",
-      "If enabled, will look in the internal database if a patch is available for the game to turn the image into either a non-interlaced, full frame, or progressive scan video signal, and/or a combination of all the above. Image will be more stable and Deinterlacing can be turned off.",
+      "pcsx2_pgs_disable_mipmaps",
+      "Video > Force Texture LOD0",
+      "Force Texture LOD0",
+      "Disable this for traditional hardware mipmapping. Enabling this will bypass mipmapping and always use texture LOD0 instead. The result is better image quality. Only a small handful of games have graphics rendering issues with this enabled.",
       NULL,
       "video",
       {
@@ -445,7 +490,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
          { "disabled", NULL },
          { NULL, NULL },
       },
-      "enabled"
+      "disabled"
    },
    {
       "pcsx2_texture_filtering",
@@ -531,18 +576,29 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "Basic"
    },
    {
-      "pcsx2_widescreen_hint",
-      "Video > Widescreen hint (Restart)",
-      "Widescreen hint (Restart)",
-      "Applies a widescreen patch if a patch for the game can be found inside the internal database.",
+      "pcsx2_pcrtc_antiblur",
+      "Video > PCRTC Anti-Blur",
+      "PCRTC Anti-Blur",
+      "Disable this for the most accurate output image. Enabling this will attempt to deblur the image. Most noticeable on software renderer and paraLLEl.",
       NULL,
       "video",
       {
+         { "enabled", NULL },
          { "disabled", NULL },
-         { "enabled (16:9)", NULL },
-         { "enabled (16:10)", NULL },
-         { "enabled (21:9)", NULL },
-         { "enabled (32:9)", NULL },
+         { NULL, NULL },
+      },
+      "enabled"
+   },
+   {
+      "pcsx2_pcrtc_screen_offsets",
+      "Video > PCRTC Screen Offsets",
+      "PCRTC Screen Offsets",
+      NULL,
+      NULL,
+      "video",
+      {
+         { "enabled", NULL },
+         { "disabled", NULL },
          { NULL, NULL },
       },
       "disabled"
@@ -579,48 +635,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
          { NULL, NULL },
       },
       "100%"
-   },
-   {
-      "pcsx2_pcrtc_antiblur",
-      "Video > PCRTC Anti-Blur",
-      "PCRTC Anti-Blur",
-      "Disable this for the most accurate output image. Enabling this will attempt to deblur the image. Most noticeable on software renderer and paraLLEl.",
-      NULL,
-      "video",
-      {
-         { "enabled", NULL },
-         { "disabled", NULL },
-         { NULL, NULL },
-      },
-      "enabled"
-   },
-   {
-      "pcsx2_pcrtc_screen_offsets",
-      "Video > PCRTC Screen Offsets",
-      "PCRTC Screen Offsets",
-      NULL,
-      NULL,
-      "video",
-      {
-         { "enabled", NULL },
-         { "disabled", NULL },
-         { NULL, NULL },
-      },
-      "disabled"
-   },
-   {
-      "pcsx2_disable_interlace_offset",
-      "Video > Disable Interlace Offset",
-      "Disable Interlace Offset",
-      NULL,
-      NULL,
-      "video",
-      {
-         { "enabled", NULL },
-         { "disabled", NULL },
-         { NULL, NULL },
-      },
-      "disabled"
    },
    {
       "pcsx2_auto_flush_software",
@@ -689,20 +703,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "disabled"
    },
    {
-      "pcsx2_ee_accurate_fpu",
-      "Emulation > EE Accurate FPU Arithmetic",
-      "EE Accurate FPU Arithmetic",
-      "Run EE FPU add, sub, mul and the fused chains through the extended-range double pipeline: exact add/sub against the hardware model, near-exact multiplies, correct handling of the huge values the PS2 allows, exact integer conversion, and pure-bitop ABS/NEG. Measured free at workload level (within run noise on frame throughput); enabled by default.",
-      NULL,
-      "emulation",
-      {
-         { "enabled", NULL },
-         { "disabled", NULL },
-         { NULL, NULL },
-      },
-      "enabled"
-   },
-   {
       "pcsx2_vu_exact_mul",
       "Emulation > VU Exact Multiply",
       "VU Exact Multiply",
@@ -731,20 +731,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "disabled"
    },
    {
-      "pcsx2_fpu_softfloat",
-      "Emulation > EE FPU Soft Float (Recompiler)",
-      "EE FPU Soft Float (Recompiler)",
-      "Route recompiled EE FPU arithmetic through the bit-exact software FPU. Interpreted FPU code is always bit-exact; this extends it to the recompiler at some speed cost. Fixes games whose logic depends on exact console FPU results.",
-      NULL,
-      "emulation",
-      {
-         { "disabled", NULL },
-         { "enabled", NULL },
-         { NULL, NULL },
-      },
-      "disabled"
-   },
-   {
       "pcsx2_vu0_softfloat",
       "Emulation > VU0 Soft Float (Micro Programs)",
       "VU0 Soft Float (Micro Programs)",
@@ -763,6 +749,71 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "Emulation > VU1 Soft Float",
       "VU1 Soft Float",
       "Run VU1 on the bit-exact interpreter, whose float ops compute through the console-exact software model, instead of the SSE recompiler. Fixes games whose rendering depends on exact console VU results. Significantly costly and scales with scene complexity; enable per game only when required.",
+      NULL,
+      "emulation",
+      {
+         { "disabled", NULL },
+         { "enabled", NULL },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
+      "pcsx2_mtvu",
+      "Emulation > MTVU (Multi-Threaded VU1) (Restart)",
+      "MTVU (Multi-Threaded VU1) (Restart)",
+      "Runs VU1 on its own thread. Large speedup on multi-core CPUs; a small number of games hang with it. The default matches the platform default (on arm64, MTVU is on whenever the native VU1 recompiler drives VU1).",
+      NULL,
+      "emulation",
+      {
+#ifdef ARCH_ARM64
+         { "enabled", NULL },
+         { "disabled", NULL },
+#else
+         { "disabled", NULL },
+         { "enabled", NULL },
+#endif
+         { NULL, NULL },
+      },
+#ifdef ARCH_ARM64
+      "enabled"
+#else
+      "disabled"
+#endif
+   },
+   {
+      "pcsx2_instant_vu1",
+      "Emulation > Instant VU1 (Restart)",
+      "Instant VU1 (Restart)",
+      "Runs VU1 to completion immediately (ignored while MTVU is enabled). Usually a speedup.",
+      NULL,
+      "emulation",
+      {
+         { "enabled", NULL },
+         { "disabled", NULL },
+         { NULL, NULL },
+      },
+      "enabled"
+   },
+   {
+      "pcsx2_ee_accurate_fpu",
+      "Emulation > EE Accurate FPU Arithmetic",
+      "EE Accurate FPU Arithmetic",
+      "Run EE FPU add, sub, mul and the fused chains through the extended-range double pipeline: exact add/sub against the hardware model, near-exact multiplies, correct handling of the huge values the PS2 allows, exact integer conversion, and pure-bitop ABS/NEG. Measured free at workload level (within run noise on frame throughput); enabled by default.",
+      NULL,
+      "emulation",
+      {
+         { "enabled", NULL },
+         { "disabled", NULL },
+         { NULL, NULL },
+      },
+      "enabled"
+   },
+   {
+      "pcsx2_fpu_softfloat",
+      "Emulation > EE FPU Soft Float (Recompiler)",
+      "EE FPU Soft Float (Recompiler)",
+      "Route recompiled EE FPU arithmetic through the bit-exact software FPU. Interpreted FPU code is always bit-exact; this extends it to the recompiler at some speed cost. Fixes games whose logic depends on exact console FPU results.",
       NULL,
       "emulation",
       {
@@ -806,57 +857,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "Recompiler"
    },
    {
-      "pcsx2_fastmem",
-      "Emulation > Fastmem (Restart)",
-      "Fastmem (Restart)",
-      "Backs guest memory accesses with a direct 4GB mapping and patches out the ones that fault. Disable to route every access through the software memory handlers - slower, but takes the fastmem fault/backpatch machinery out of the picture entirely, which is useful when hunting a hang.",
-      NULL,
-      "emulation",
-      {
-         { "enabled", NULL },
-         { "disabled", NULL },
-         { NULL, NULL },
-      },
-      "enabled"
-   },
-   {
-      "pcsx2_mtvu",
-      "Emulation > MTVU (Multi-Threaded VU1) (Restart)",
-      "MTVU (Multi-Threaded VU1) (Restart)",
-      "Runs VU1 on its own thread. Large speedup on multi-core CPUs; a small number of games hang with it. The default matches the platform default (on arm64, MTVU is on whenever the native VU1 recompiler drives VU1).",
-      NULL,
-      "emulation",
-      {
-#ifdef ARCH_ARM64
-         { "enabled", NULL },
-         { "disabled", NULL },
-#else
-         { "disabled", NULL },
-         { "enabled", NULL },
-#endif
-         { NULL, NULL },
-      },
-#ifdef ARCH_ARM64
-      "enabled"
-#else
-      "disabled"
-#endif
-   },
-   {
-      "pcsx2_instant_vu1",
-      "Emulation > Instant VU1 (Restart)",
-      "Instant VU1 (Restart)",
-      "Runs VU1 to completion immediately (ignored while MTVU is enabled). Usually a speedup.",
-      NULL,
-      "emulation",
-      {
-         { "enabled", NULL },
-         { "disabled", NULL },
-         { NULL, NULL },
-      },
-      "enabled"
-   },
-   {
       "pcsx2_ee_cycle_skip",
       "Emulation > EE Cycle Skipping",
       "EE Cycle Skipping",
@@ -871,6 +871,20 @@ struct retro_core_option_v2_definition option_defs_us[] = {
          { NULL, NULL },
       },
       "disabled"
+   },
+   {
+      "pcsx2_fastmem",
+      "Emulation > Fastmem (Restart)",
+      "Fastmem (Restart)",
+      "Backs guest memory accesses with a direct 4GB mapping and patches out the ones that fault. Disable to route every access through the software memory handlers - slower, but takes the fastmem fault/backpatch machinery out of the picture entirely, which is useful when hunting a hang.",
+      NULL,
+      "emulation",
+      {
+         { "enabled", NULL },
+         { "disabled", NULL },
+         { NULL, NULL },
+      },
+      "enabled"
    },
    {
       "pcsx2_game_enhancements_hint",
@@ -1005,20 +1019,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       NULL,
       NULL,
       "hw_hacks",
-      {
-         { "disabled", NULL },
-         { "enabled", NULL },
-         { NULL, NULL },
-      },
-      "disabled"
-   },
-   {
-      "pcsx2_use_external_gameindex",
-      "Use External GameIndex Database",
-      NULL,
-      "Load the game-compatibility database from <system>/resources/GameIndex.yaml if present, falling back to the built-in database when it is missing. When disabled, always use the database built into the core.",
-      NULL,
-      NULL,
       {
          { "disabled", NULL },
          { "enabled", NULL },
