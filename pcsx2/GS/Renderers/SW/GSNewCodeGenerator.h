@@ -67,7 +67,7 @@ public:
 	using AddressReg = Xbyak::Reg64;
 	using RipType = Xbyak::RegRip;
 
-	const bool hasAVX, hasAVX2, hasFMA;
+	const bool hasAVX, hasAVX2;
 
 	const Xmm xmm0{0}, xmm1{1}, xmm2{2}, xmm3{3}, xmm4{4}, xmm5{5}, xmm6{6}, xmm7{7}, xmm8{8}, xmm9{9}, xmm10{10}, xmm11{11}, xmm12{12}, xmm13{13}, xmm14{14}, xmm15{15};
 	const Ymm ymm0{0}, ymm1{1}, ymm2{2}, ymm3{3}, ymm4{4}, ymm5{5}, ymm6{6}, ymm7{7}, ymm8{8}, ymm9{9}, ymm10{10}, ymm11{11}, ymm12{12}, ymm13{13}, ymm14{14}, ymm15{15};
@@ -83,7 +83,6 @@ public:
 		: actual(*actual)
 		, hasAVX(CPU_HAS_AVX)
 		, hasAVX2(CPU_HAS_AVX2)
-		, hasFMA(CPU_HAS_FMA)
 	{
 	}
 
@@ -100,7 +99,6 @@ public:
 //   SSEONLY: available only on SSE (exception on AVX)
 //   AVX:     available only on AVX (exception on SSE)
 //   AVX2:    available only on AVX2 (exception on AVX/SSE)
-//   FMA:     available only with FMA
 // SFORWARD forwards an SSE-AVX pair where the AVX variant takes the same number of registers (e.g. pshufd dst, src + vpshufd dst, src)
 // AFORWARD forwards an SSE-AVX pair where the AVX variant takes an extra destination register (e.g. shufps dst, src + vshufps dst, src, src)
 
@@ -135,12 +133,6 @@ public:
 
 #define ACTUAL_FORWARD_AVX2(name, ...) \
 	if (hasAVX2) \
-		actual.name(__VA_ARGS__); \
-	else \
-		log_cb(RETRO_LOG_ERROR, "used AVX instruction in SSE code\n");
-
-#define ACTUAL_FORWARD_FMA(name, ...) \
-	if (hasFMA) \
 		actual.name(__VA_ARGS__); \
 	else \
 		log_cb(RETRO_LOG_ERROR, "used AVX instruction in SSE code\n");
@@ -346,6 +338,8 @@ public:
 	AFORWARD(2, punpcklwd, ARGS_XO)
 	AFORWARD(2, pxor,      ARGS_XO)
 	SFORWARD(2, rcpps,     ARGS_XO)
+	SFORWARD(3, roundps,   ARGS_XOI)
+	AFORWARD(3, roundsd,   ARGS_XOI)
 	AFORWARD(3, shufps,    ARGS_XOI)
 	AFORWARD(2, subps,     ARGS_XO)
 	AFORWARD(2, unpcklps,  ARGS_XO)
@@ -356,10 +350,11 @@ public:
 
 	FORWARD(2, AVX,  vbroadcastss,   ARGS_XO)
 	FORWARD(2, AVX,  vbroadcastsd,   const Ymm&, const Address&)
+	FORWARD(2, AVX2, vbroadcastsd,   const Ymm&, const Xmm&)
 	FORWARD(2, AVX2, vbroadcasti128, const Ymm&, const Address&)
 	FORWARD(2, AVX,  vbroadcastf128, const Ymm&, const Address&)
-	FORWARD(3, FMA,  vfmadd213ps,    ARGS_XXO)
 	FORWARD(3, AVX2, vextracti128,   const Operand&, const Ymm&, u8)
+	FORWARD(4, AVX,  vinsertf128,    const Ymm&, const Ymm&, const Operand&, u8);
 	FORWARD(4, AVX2, vinserti128,    const Ymm&, const Ymm&, const Operand&, u8);
 	FORWARD(2, AVX2, vpbroadcastd,   ARGS_XO)
 	FORWARD(2, AVX2, vpbroadcastq,   ARGS_XO)
@@ -389,7 +384,6 @@ public:
 #undef FORWARD3
 #undef FORWARD2
 #undef FORWARD1
-#undef ACTUAL_FORWARD_FMA
 #undef ACTUAL_FORWARD_AVX2
 #undef ACTUAL_FORWARD_AVX
 #undef ACTUAL_FORWARD_SSE

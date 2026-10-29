@@ -233,10 +233,6 @@ struct GSOptions
 	 * again during init. */
 	const Vulkan::Device::GraphicsPipelineRecord *prebuild_graphics = nullptr;
 	unsigned num_prebuild_graphics = 0;
-	/* The software renderer steps a scanline's texture coordinates in
-	 * groups of this many pixels (4 or 8); a palette forwarded from the
-	 * lines that drew it takes the texels those steps land on. */
-	uint32_t line_pixel_group = 8;
 };
 
 // Pragmatic hacks which may or may not be useful.
@@ -356,7 +352,6 @@ private:
 	PageTracker tracker;
 	GSRenderer renderer;
 	uint32_t vram_size = 0;
-	uint32_t line_pixel_group = 8;
 	DebugMode debug_mode;
 	Hacks hacks;
 

@@ -267,10 +267,9 @@ echo "  palettes drawn and loaded at once: no render pass of their own, the soft
 
 # The same with the lines' coordinates stepping at other rates
 # (clut_scales): each entry is the texel the line put there, so every
-# sprite is the software renderer's on whichever pixel grouping its
-# rasterizer uses here, and only the palette whose lines stop short of
-# the eighth pixel adds a render pass (two indirect dispatches) to the
-# ramps' frame.
+# sprite is the software renderer's, and only the palette whose lines
+# stop short of the eighth pixel adds a render pass (two indirect
+# dispatches) to the ramps' frame.
 "$SCRATCH/swdraw" --bios "$SCRATCH/clut_scales.bin" clut_scales
 VN_COUNT_CALLS=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/clut_scales.bin" VN_RENDERER=paraLLEl-GS \
 	timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/clut_scales.log" 2>&1 || true

@@ -262,6 +262,8 @@ protected:
 
 	void DrawEdge(const GSVertexSW& v0, const GSVertexSW& v1, const GSVertexSW& dv, int orientation, int side);
 
+	void SetupPrim(const GSVertexSW* vertex, const u16* index, const GSVertexSW& dscan, int count);
+
 	__forceinline void AddScanline(GSVertexSW* e, int pixels, int left, int top, const GSVertexSW& scan);
 	__forceinline void Flush(const GSVertexSW* vertex, const u16* index, const GSVertexSW& dscan, bool edge = false);
 

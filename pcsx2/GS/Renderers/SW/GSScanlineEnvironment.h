@@ -18,6 +18,14 @@
 #include "../../GSLocalMemory.h"
 #include "../../GSVector.h"
 
+/* A double rounded to the nearest integer, ties to even, whatever the
+ * rounding mode. */
+#if defined(ARCH_ARM64)
+#define GS_ROUND_NEAREST64(v) vget_lane_f64(vrndn_f64(vdup_n_f64(v)), 0)
+#else
+#define GS_ROUND_NEAREST64(v) _mm_cvtsd_f64(_mm_round_sd(_mm_setzero_pd(), _mm_set_sd(v), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC))
+#endif
+
 union GSScanlineSelector
 {
 	struct
@@ -130,8 +138,10 @@ struct alignas(32) GSScanlineGlobalData // per batch variables, this is like a p
 	u32 fm, zm;
 	u32 frb, fga;
 	GSVector8 mxl;
-	GSVector8 k; // TEX1.K * 0x10000
 	GSVector8 l; // TEX1.L * -0x10000
+	/* -log2(Q) * (1 << L) + K, times 0x10000, as a cubic in Q's mantissa
+	 * plus its exponent times l (see GS_SCANLINE_SET_LOD). */
+	GSVector8 lod_c3, lod_c2, lod_c1, lod_c0;
 	struct { GSVector8i i, f; } lod; // lcm == 1
 
 #else
@@ -139,21 +149,46 @@ struct alignas(32) GSScanlineGlobalData // per batch variables, this is like a p
 	GSVector4i fm, zm;
 	GSVector4i frb, fga;
 	GSVector4 mxl;
-	GSVector4 k; // TEX1.K * 0x10000
 	GSVector4 l; // TEX1.L * -0x10000
+	/* -log2(Q) * (1 << L) + K, times 0x10000, as a cubic in Q's mantissa
+	 * plus its exponent times l (see GS_SCANLINE_SET_LOD). */
+	GSVector4 lod_c3, lod_c2, lod_c1, lod_c0;
 	struct { GSVector4i i, f; } lod; // lcm == 1
 
 #endif
 };
 
+/* The LOD the scanline code computes from Q for TEX1.L l_log2 and K k
+ * (K * 0x10000): log2 of a mantissa m in [1, 2) is p(m) * (m - 1), p a
+ * minimax fit of log2(m) / (m - 1), here times l and expanded into a
+ * cubic that evaluates in two short chains. l is a power of two, so
+ * every product with it is exact. */
+#define GS_SCANLINE_LOD_P2 0.204446009836232697516f
+#define GS_SCANLINE_LOD_P1 -1.04913055217340124191f
+#define GS_SCANLINE_LOD_P0 2.28330284476918490682f
+#define GS_SCANLINE_SET_LOD(gd, l_log2, k) \
+	do \
+	{ \
+		const float lod_l_ = (float)(-(0x10000 << (l_log2))); \
+		(gd).l = GSVector4(lod_l_); \
+		(gd).lod_c3 = GSVector4(lod_l_ * GS_SCANLINE_LOD_P2); \
+		(gd).lod_c2 = GSVector4(lod_l_ * (GS_SCANLINE_LOD_P1 - GS_SCANLINE_LOD_P2)); \
+		(gd).lod_c1 = GSVector4(lod_l_ * (GS_SCANLINE_LOD_P0 - GS_SCANLINE_LOD_P1)); \
+		(gd).lod_c0 = GSVector4((float)(k) - lod_l_ * GS_SCANLINE_LOD_P0); \
+	} while (0)
+
 struct alignas(32) GSScanlineLocalData // per prim variables, each thread has its own
 {
 #if _M_SSE >= 0x501
 
-	struct skip { GSVector8 z, s, t, q; GSVector8i rb, ga, f, _pad; } d[8];
+	struct skip { GSVector8 z0, z1, s, t, q; GSVector8i rb, ga, f; } d[8]; /* z0, z1: four doubles each */
 	struct step { GSVector4 stq; struct { u32 rb, ga; } c; struct { u64 z; u32 f; } p; } d8;
 	struct { u32 z, f; } p;
 	struct { GSVector8i rb, ga; } c;
+	/* The primitive's grid for S, T, Q and Z, and its reciprocals: a
+	 * scanline's start snaps to it (see GSRasterizer::SetupPrim). */
+	GSVector4 tgrid, tgrid_rcp;
+	struct { double grid, rcp; } zgrid;
 
 	// these should be stored on stack as normal local variables (no free regs to use, esp cannot be saved to anywhere, and we need an aligned stack)
 
@@ -178,10 +213,14 @@ struct alignas(32) GSScanlineLocalData // per prim variables, each thread has it
 
 #else
 
-	struct skip { GSVector4 z, s, t, q; GSVector4i rb, ga, f, _pad; } d[4];
+	struct skip { GSVector4 z0, z1, s, t, q; GSVector4i rb, ga, f; } d[4]; /* z0, z1: two doubles each */
 	struct step { GSVector4 z, stq; GSVector4i c, f; } d4;
 	struct { GSVector4i rb, ga; } c;
 	struct { GSVector4i z, f; } p;
+	/* The primitive's grid for S, T, Q and Z, and its reciprocals: a
+	 * scanline's start snaps to it (see GSRasterizer::SetupPrim). */
+	GSVector4 tgrid, tgrid_rcp;
+	struct { double grid, rcp; } zgrid;
 
 	// these should be stored on stack as normal local variables (no free regs to use, esp cannot be saved to anywhere, and we need an aligned stack)
 
@@ -243,7 +282,7 @@ struct GSScanlineConstantData : public GSAlignedClass<32>
 		{ -6.0f , -5.0f , -4.0f , -3.0f , -2.0f , -1.0f , 0.0f  , 1.0f},
 		{ -7.0f , -6.0f , -5.0f , -4.0f , -3.0f , -2.0f , -1.0f , 0.0f},
 	};
-	alignas(32) float m_log2_coef_256b[4][8] = {};
+	alignas(32) float m_one_256b[8] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
 
 	alignas(16) u32 m_test_128b[8][4] = {
 		{0x00000000, 0x00000000, 0x00000000, 0x00000000},
@@ -262,27 +301,9 @@ struct GSScanlineConstantData : public GSAlignedClass<32>
 		{ -2.0f , -1.0f , 0.0f  , 1.0f},
 		{ -3.0f , -2.0f , -1.0f , 0.0f},
 	};
-	alignas(16) float m_log2_coef_128b[4][4] = {};
+	alignas(16) float m_one_128b[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 
-	constexpr GSScanlineConstantData()
-	{
-		constexpr float log2_coef[] = {
-			0.204446009836232697516f,
-			-1.04913055217340124191f,
-			2.28330284476918490682f,
-			1.0f
-		};
-
-		for (size_t n = 0; n < C89_ARRAY_SIZE(log2_coef); ++n)
-		{
-			for (size_t i = 0; i < 4; ++i)
-			{
-				m_log2_coef_128b[n][i] = log2_coef[n];
-				m_log2_coef_256b[n][i] = log2_coef[n];
-				m_log2_coef_256b[n][i + 4] = log2_coef[n];
-			}
-		}
-	}
+	constexpr GSScanlineConstantData() {}
 };
 
 extern const GSScanlineConstantData g_const;

@@ -1527,8 +1527,7 @@ bool GSRendererSW::GetScanlineGlobalData(SharedData* data)
 				else
 				{
 					gd.mxl = GSVector4((float)mxl);
-					gd.l = GSVector4((float)(-(0x10000 << context->TEX1.L)));
-					gd.k = GSVector4((float)k);
+					GS_SCANLINE_SET_LOD(gd, context->TEX1.L, k);
 				}
 
 				GIFRegCLAMP MIP_CLAMP = context->CLAMP;

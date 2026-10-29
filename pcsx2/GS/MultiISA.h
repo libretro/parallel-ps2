@@ -81,8 +81,6 @@
 class GSState;
 typedef GSState GSRenderer;
 MULTI_ISA_DEF(GSRenderer* makeGSRendererSW(int threads);)
-/* How many pixels of a scanline the software renderer steps at once. */
-MULTI_ISA_DEF(int GSDrawScanlinePixelGroup();)
 
 namespace MultiISAFunctions
 {

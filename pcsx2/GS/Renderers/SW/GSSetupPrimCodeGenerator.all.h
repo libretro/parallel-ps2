@@ -67,6 +67,9 @@ private:
 	void Depth_YMM();
 	void Texture();
 	void Color();
+	void Color_YMM();
+	void QuadSteps(const Xmm& t4, const Ymm& tmp, const Xbyak::Address& hi, const Xbyak::Address& lo);
+	void QuadOffset(const Ymm& dst, const Ymm& d, int skip, const Xbyak::Address& hi, const Xbyak::Address& lo);
 };
 
 MULTI_ISA_UNSHARED_END

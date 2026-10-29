@@ -760,6 +760,13 @@ DEPS    := $(SOURCES_CXX:.cpp=.d) $(SOURCES_CC:.cc=.d) $(SOURCES_C:.c=.d)
 # header it includes has to rebuild it like any other object.
 DEPS    += $(MULTI_ISA_OBJECTS:.o=.d)
 
+# The software renderer draws the same picture on every instruction set:
+# its objects, and the vertex trace it draws by, get no multiply-adds
+# fused behind the code's back (the avx2 tier's -mfma, aarch64).
+ifeq (,$(findstring msvc,$(platform)))
+   $(filter $(LRPS2_DIR)/GS/Renderers/SW/%.o $(LRPS2_DIR)/GS/Renderers/Common/GSVertexTrace%.o,$(OBJECTS)): CXXFLAGS += -ffp-contract=off
+endif
+
 # VIXL (SOURCES_CC) is third-party; silence its warnings for those objects only
 # (matches cmake's -w on the vixl target) without loosening warnings elsewhere.
 ifeq ($(IS_ARM64), 1)

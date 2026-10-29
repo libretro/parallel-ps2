@@ -696,12 +696,28 @@ void GSDrawScanlineCodeGenerator2::Init()
 			}
 			else if (m_sel.zb)
 			{
-				// z = vp.zzzz() + m_local.d[skip].z;
-				broadcastsd(xym1, ptr[a3 + offsetof(GSVertexSW, p.z)]); // v.p.z
-				cvtps2pd(xym7, ptr[a1 + offsetof(GSScanlineLocalData::skip, z.I8[0])]);
+				// z0 = vp.zzzz() + m_local.d[skip].z0;
+				// z1 = vp.zzzz() + m_local.d[skip].z1;
+				if (m_sel.prim != GS_POINT_CLASS && !m_sel.edge)
+				{
+					// v.p.z snapped to the primitive's grid
+					movsd(xmm1, ptr[a3 + offsetof(GSVertexSW, p.z)]);
+					mulsd(xmm1, _rip_local(zgrid.rcp));
+					roundsd(xmm1, xmm1, Round_NearestInt);
+					mulsd(xmm1, _rip_local(zgrid.grid));
+					if (isYmm)
+						vbroadcastsd(Ymm(1), xmm1);
+					else
+						unpcklpd(xmm1, xmm1);
+				}
+				else
+				{
+					broadcastsd(xym1, ptr[a3 + offsetof(GSVertexSW, p.z)]); // v.p.z
+				}
+				movaps(xym7, ptr[a1 + offsetof(GSScanlineLocalData::skip, z0)]);
 				addpd(xym7, xym1);
 				movaps(_rip_local(temp.z0), xym7);
-				cvtps2pd(_z, ptr[a1 + offsetof(GSScanlineLocalData::skip, z.I8[vecsize/2])]);
+				movaps(_z, ptr[a1 + offsetof(GSScanlineLocalData::skip, z1)]);
 				addpd(_z, xym1);
 			}
 		}
@@ -737,7 +753,21 @@ void GSDrawScanlineCodeGenerator2::Init()
 		{
 			const XYm& vt = xym4;
 
-			broadcastf128(vt, ptr[a3 + offsetof(GSVertexSW, t)]); // v.t
+			if (!m_sel.fst && m_sel.prim != GS_POINT_CLASS && !m_sel.edge)
+			{
+				// v.t snapped to the primitive's grid
+				Xmm vtx(vt.getIdx());
+				movaps(vtx, ptr[a3 + offsetof(GSVertexSW, t)]);
+				mulps(vtx, _rip_local(tgrid_rcp));
+				roundps(vtx, vtx, Round_NearestInt);
+				mulps(vtx, _rip_local(tgrid));
+				if (isYmm)
+					vinsertf128(Ymm(vt.getIdx()), Ymm(vt.getIdx()), vtx, 1);
+			}
+			else
+			{
+				broadcastf128(vt, ptr[a3 + offsetof(GSVertexSW, t)]); // v.t
+			}
 
 			// a1 = &m_local.d[skip]
 
@@ -1592,49 +1622,22 @@ void GSDrawScanlineCodeGenerator2::SampleTextureLOD()
 		pslld(xym4, 9);
 		psrld(xym4, 9);
 
-		auto log2_coeff = [this](int i) -> Address
-		{
-			if (isXmm)
-				return _rip_const(&g_const.m_log2_coef_128b[i]);
-			else
-				return _rip_const(&g_const.m_log2_coef_256b[i]);
-		};
+		orps(xym4, isXmm ? _rip_const(g_const.m_one_128b) : _rip_const(g_const.m_one_256b));
 
-		orps(xym4, log2_coeff(3));
+		// xym4 = m = mant(q) | 1.0f
 
-		// xym4 = mant(q) | 1.0f
+		// lod = (m * c3 + c2) * (m * m) + (m * c1 + (e * L + c0)), each product
+		// and sum rounded, as every vector width computes it.
 
-		if (hasFMA)
-		{
-			movaps(xym5, log2_coeff(0)); // c0
-			vfmadd213ps(xym5, xym4, log2_coeff(1)); // c0 * xym4 + c1
-			vfmadd213ps(xym5, xym4, log2_coeff(2)); // (c0 * xym4 + c1) * xym4 + c2
-			subps(xym4, log2_coeff(3)); // xym4 - 1.0f
-			vfmadd213ps(xym4, xym5, xym0); // ((c0 * xym4 + c1) * xym4 + c2) * (xym4 - 1.0f) + xym0
-		}
-		else
-		{
-			THREEARG(mulps, xym5, xym4, log2_coeff(0));
-			addps(xym5, log2_coeff(1));
-			mulps(xym5, xym4);
-			subps(xym4, log2_coeff(3));
-			addps(xym5, log2_coeff(2));
-			mulps(xym4, xym5);
-			addps(xym4, xym0);
-		}
-
-		// xym4 = log2(Q) = ((((c0 * xym4) + c1) * xym4) + c2) * (xym4 - 1.0f) + xym0
-
-		if (hasFMA)
-		{
-			movaps(xym5, _rip_global(l));
-			vfmadd213ps(xym4, xym5, _rip_global(k));
-		}
-		else
-		{
-			mulps(xym4, _rip_global(l));
-			addps(xym4, _rip_global(k));
-		}
+		THREEARG(mulps, xym5, xym4, xym4);
+		THREEARG(mulps, xym1, xym4, _rip_global(lod_c3));
+		addps(xym1, _rip_global(lod_c2));
+		mulps(xym5, xym1);
+		mulps(xym0, _rip_global(l));
+		addps(xym0, _rip_global(lod_c0));
+		mulps(xym4, _rip_global(lod_c1));
+		addps(xym4, xym0);
+		addps(xym4, xym5);
 
 		// xym4 = (-log2(Q) * (1 << L) + K) * 0x10000
 

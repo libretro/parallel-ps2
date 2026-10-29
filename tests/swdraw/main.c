@@ -12,6 +12,7 @@
  * renderer fails the run.
  *
  * Usage: swdraw <path-to-core> <scratch-dir> <case> [extra rasterizer threads]
+ *        (SWDRAW_FASTMEM=disabled for a run under an emulator of the CPU)
  *        swdraw --bios <image> <case>   writes the case's BIOS image, for
  *                                       another harness to boot */
 
@@ -146,6 +147,7 @@ static bool sl_environment(unsigned cmd, void* data)
 			else if (!strcmp(var->key, "pcsx2_sw_renderer_threads")) var->value = s_opt_threads;
 			else if (!strcmp(var->key, "pcsx2_upscale_multiplier")) var->value = s_opt_scale;
 			else if (!strcmp(var->key, "pcsx2_deinterlace_mode")) var->value = s_opt_deinterlace;
+			else if (!strcmp(var->key, "pcsx2_fastmem"))  var->value = getenv("SWDRAW_FASTMEM");
 			return var->value != NULL;
 		case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
 			*(bool*)data = false;
@@ -229,7 +231,7 @@ static unsigned      s_tlb_store;
  * each a run of them sent after waiting a number of vsyncs, and then
  * optionally read a number of quadwords back from the GS (a local to host
  * transfer the kick set up) into RAM at 0x200000 + 0x1000 * the kick. */
-#define SL_MAX_QW    512
+#define SL_MAX_QW    1024
 #define SL_MAX_KICKS 4
 static unsigned      s_qw_count;
 static unsigned      s_qw[SL_MAX_QW][4];
@@ -294,6 +296,9 @@ static void ad(unsigned reg, unsigned long hi, unsigned long lo)
 #define GS_TRXPOS   0x51
 #define GS_TRXREG   0x52
 #define GS_TRXDIR   0x53
+#define GS_XYZF2    0x04
+#define GS_CLAMP_1  0x08
+#define GS_FOGCOL   0x3D
 
 #define XY(x, y) ((unsigned long)((x) * 16) | ((unsigned long)((y) * 16) << 16))
 
@@ -1302,10 +1307,11 @@ static void clut_lines(unsigned first)
  * pixel over exactly eight pixels, a start half a texel in, U falling
  * along the lines, a ramp of one texel a line, lines ending just past
  * the seventh pixel, lines that stop at it, which leave the last entry
- * of each row as the page had it, and a step whose last texel moves
- * with the number of pixels the software renderer steps at once. The
- * sprites are rows of eight from (40, 96), 24 pixels apart. */
-static const unsigned short s_clut_scales[12][5] = {
+ * of each row as the page had it, one more rate that is no power of
+ * two, and two rates whose texels a step per pixel puts a texel short of
+ * where four- or eight-pixel steps land. The sprites are rows of eight
+ * from (40, 96), 24 pixels apart. */
+static const unsigned short s_clut_scales[13][5] = {
 	{   80,   112,   80,  112, 126 },
 	{  176,   192,  192,  208, 126 },
 	{    0,   503,  504, 1023, 126 },
@@ -1317,7 +1323,8 @@ static const unsigned short s_clut_scales[12][5] = {
 	{  320,   336,  336,  352, 126 },
 	{   16,    48,   48,   80, 113 },
 	{  400,   432,  432,  464, 112 },
-	{    0,   407,  408,  831, 126 }
+	{    0,   407,  408,  831, 126 },
+	{    0,   210,  288,  498, 126 }
 };
 static void case_clut_scales(void)
 {
@@ -1333,9 +1340,9 @@ static void case_clut_scales(void)
 	for (i = 0; i < 8; i++)
 		qw(0x76543210u, 0xfedcba98u, 0x01234567u + i, 0x89abcdefu - i);
 	setup = s_qw_count;
-	stream_draw_setup(1 + 12 * 18, 0);
+	stream_draw_setup(1 + 13 * 18, 0);
 	qw(0x80808080u, 0x3f800000u, GS_RGBAQ, 0); /* bumped each round */
-	for (i = 0; i < 12; i++)
+	for (i = 0; i < 13; i++)
 	{
 		const unsigned short* const u = s_clut_scales[i];
 		const unsigned x = 40 + 24 * (i % 8), y = 96 + 24 * (i / 8);
@@ -1371,6 +1378,166 @@ static void case_clut_scales(void)
 }
 static void case_clut_lines(void) { clut_lines(0); }
 static void case_clut_lines_ramps(void) { clut_lines(4); }
+
+/* Draws whose every pixel depends on how the software renderer steps
+ * texture coordinates, colour, fog and Z along a scanline, at starts
+ * that cover every pixel position in a group: the picture is the same
+ * on every vector width the renderer runs with. */
+static unsigned s_step_head;
+
+static void step_reg(unsigned r, unsigned lo, unsigned hi)
+{
+	qw(lo, hi, r, 0);
+}
+
+/* A+D list opened here and closed by step_close, after a 16x16 32-bit
+ * texture whose texels all differ, at block 0x3000. */
+static void step_open(void)
+{
+	unsigned i;
+	stream_image(0x3000u, 1, 0, 0, 0, 16, 16, 64);
+	for (i = 0; i < 64; i++)
+	{
+		const unsigned t = 0x9e3779b9u * (i + 1);
+		qw(t, t ^ 0x5a5a5a5au, (t >> 3) ^ 0x00ff00ffu, t * 7u);
+	}
+	s_step_head = s_qw_count;
+	stream_draw_setup(0, 0);
+	step_reg(GS_TEX0_1, 0x3000u | (1u << 14) | (4u << 26), (1u << 2)); /* CT32 16x16, TCC, modulate */
+	step_reg(GS_TEX1_1, 0, 0);
+	step_reg(GS_CLAMP_1, 0, 0);                                         /* repeat */
+	step_reg(GS_FOGCOL, 0x203040u, 0);
+	step_reg(GS_RGBAQ, 0x80808080u, 0x3f800000u);
+}
+
+static void step_close(void)
+{
+	s_qw[s_step_head][0] = (s_qw_count - s_step_head - 1) | 0x8000u;
+	kick(0, s_qw_count, 0);
+}
+
+static unsigned step_f(float f)
+{
+	unsigned u;
+	memcpy(&u, &f, sizeof(u));
+	return u;
+}
+
+/* Sprites 5 to 611 pixels wide starting at every pixel of a group of
+ * eight, with U and V stepping at rates that are no power of two:
+ * nearest and bilinear, by UV and by STQ. */
+static void case_step_sprites(void)
+{
+	static const unsigned w[6] = { 5, 13, 37, 97, 250, 611 };
+	static const unsigned rate[4] = { 13, 27, 50, 37 }; /* 1/16 texel per pixel */
+	unsigned i, y = 0;
+	step_open();
+	for (i = 0; i < 48; i++)
+	{
+		const unsigned x0 = i & 7, wi = w[i % 6], r = rate[(i >> 1) & 3];
+		const unsigned u0 = (i * 5u) & 15u, v0 = (i * 3u) & 15u;
+		const unsigned filt = (i >> 3) & 1;
+		const unsigned stq = i >= 24;
+		step_reg(GS_TEX1_1, filt ? ((1u << 5) | (1u << 6)) : 0, 0);
+		step_reg(GS_PRIM, 6 | 0x10 | (stq ? 0 : 0x100), 0);
+		if (stq)
+		{
+			step_reg(GS_ST, step_f(u0 / 256.0f), step_f(v0 / 256.0f));
+			step_reg(GS_RGBAQ, 0x80808080u, step_f(1.0f));
+		}
+		else
+			step_reg(GS_UV, u0 | (v0 << 16), 0);
+		step_reg(GS_XYZ2, (x0 * 16u) | ((y * 16u) << 16), 0);
+		if (stq)
+		{
+			step_reg(GS_ST, step_f((u0 + wi * r) / 256.0f), step_f((v0 + 9u * r) / 256.0f));
+			step_reg(GS_RGBAQ, 0x80808080u, step_f(1.0f));
+		}
+		else
+			step_reg(GS_UV, (u0 + wi * r) & 0x3fffu, ((v0 + 9u * r) & 0x3fffu) << 16);
+		step_reg(GS_XYZ2, ((x0 + wi) * 16u) | (((y + 9u) * 16u) << 16), 0);
+		y += 9;
+	}
+	step_close();
+}
+
+/* Gouraud, fogged, perspective-textured and LOD-mipmapped triangles that
+ * span the frame, starting at every pixel of a group of eight. */
+static void step_gradients(int depth)
+{
+	unsigned i;
+	step_open();
+	if (depth)
+	{
+		/* Z written to the displayed pages, colour to pages past them. */
+		step_reg(GS_FRAME_1, 200u | (10u << 16), 0xffffffffu);
+		step_reg(GS_ZBUF_1, 0, 0);
+		step_reg(GS_TEST_1, (1u << 16) | (2u << 17), 0);                  /* ZTST GEQUAL */
+	}
+	step_reg(GS_MIPTBP1, 0x3002u | (1u << 14) | ((0x3001u & 0xfffu) << 20), (0x3001u >> 12) | (1u << 2)); /* TBP1, TBW1, TBP2, TBW2 */
+	for (i = 0; i < 24; i++)
+	{
+		const unsigned x0 = i & 7, y0 = i * 18u;
+		const unsigned kind = i % 4;
+		unsigned prim = 3 | 0x08;                                         /* triangle, Gouraud */
+		const unsigned z0 = depth ? 0x10000u * (i + 1) : 0, z1 = depth ? 0xfff00000u - i * 0x123457u : 0;
+		if (kind == 1) prim |= 0x20;                                      /* fog */
+		if (kind == 2) prim |= 0x10;                                      /* STQ */
+		if (kind == 3)
+		{
+			prim |= 0x10;
+			step_reg(GS_TEX1_1, (2u << 2) | (2u << 6), 0);                /* LOD from Q, MXL 2, nearest mipmap */
+		}
+		else
+			step_reg(GS_TEX1_1, (1u << 5) | (1u << 6), 0);                /* bilinear */
+		step_reg(GS_PRIM, prim, 0);
+		step_reg(GS_RGBAQ, 0x80000000u | (i * 0x0a1b2cu), step_f(1.0f));
+		step_reg(GS_ST, step_f(0.0f), step_f(0.0f));
+		step_reg(GS_XYZF2, (x0 * 16u + 3u) | ((y0 * 16u) << 16), (z0 >> 8) | (0x10u << 24));
+		step_reg(GS_RGBAQ, 0x80fff0e0u ^ (i * 0x010203u), step_f(0.25f + 0.07f * i));
+		step_reg(GS_ST, step_f(1.7f * (0.25f + 0.07f * i)), step_f(0.3f * (0.25f + 0.07f * i)));
+		step_reg(GS_XYZF2, ((x0 + 633u) * 16u) | (((y0 + 5u) * 16u) << 16), (z1 >> 8) | (0xf0u << 24));
+		step_reg(GS_RGBAQ, 0x80104080u + i, step_f(2.5f));
+		step_reg(GS_ST, step_f(0.2f * 2.5f), step_f(2.9f * 2.5f));
+		step_reg(GS_XYZF2, ((x0 + 211u) * 16u + 9u) | (((y0 + 40u) * 16u) << 16), ((z0 + z1 / 3u) >> 8) | (0x80u << 24));
+		if (depth)
+		{
+			/* 32-bit Z through XYZ2 for a second triangle crossing it */
+			step_reg(GS_PRIM, 3, 0);
+			step_reg(GS_XYZ2, (x0 * 16u) | (((y0 + 30u) * 16u) << 16), z1);
+			step_reg(GS_XYZ2, ((x0 + 639u) * 16u) | ((y0 * 16u) << 16), z0);
+			step_reg(GS_XYZ2, ((x0 + 300u) * 16u) | (((y0 + 2u) * 16u) << 16), 0xffffff00u - i);
+		}
+	}
+	step_close();
+}
+
+static void case_step_gradients(void) { step_gradients(0); }
+static void case_step_depth(void) { step_gradients(1); }
+
+/* Lines at many slopes and level ones from every pixel of a group of
+ * eight, Gouraud, fogged and textured by UV. */
+static void case_step_lines(void)
+{
+	unsigned i;
+	step_open();
+	for (i = 0; i < 64; i++)
+	{
+		const unsigned level = i < 32;
+		const unsigned x0 = level ? (i & 7) : 320u, y0 = level ? 4u + i * 7u : 300u;
+		const int dx = (int)((i * 37u) % 64u) - 32, dy = (int)((i * 23u) % 64u) - 32;
+		const unsigned x1 = level ? x0 + 3u + i * 19u : (unsigned)(320 + 300 * dx / 32);
+		const unsigned y1 = level ? y0 : (unsigned)(300 + 140 * dy / 32);
+		step_reg(GS_PRIM, 1 | 0x08 | 0x10 | 0x20 | 0x100, 0);             /* line, Gouraud, UV, fog */
+		step_reg(GS_RGBAQ, 0x80000000u | (i * 0x030507u), step_f(1.0f));
+		step_reg(GS_UV, (i * 7u) & 0xffu, ((i * 11u) & 0xffu) << 16);
+		step_reg(GS_XYZF2, (x0 * 16u) | ((y0 * 16u) << 16), (0x20u + i) << 24);
+		step_reg(GS_RGBAQ, 0x80ffffffu ^ (i * 0x0f0e0du), step_f(1.0f));
+		step_reg(GS_UV, ((i * 7u) + 8u * (13u + i)) & 0x3fffu, (((i * 11u) + 4u * (29u + i)) & 0x3fffu) << 16);
+		step_reg(GS_XYZF2, (x1 * 16u + (i & 15u)) | ((y1 * 16u) << 16), (0xe0u - i) << 24);
+	}
+	step_close();
+}
 
 /* The scratchpad mapped with a TLB entry ten vsyncs after the frame is
  * drawn, and 64 words stored through it 40 vsyncs later: the stores reach
@@ -1552,6 +1719,11 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "clut_scales",     case_clut_scales,   "1" },
 	{ "tlb_store",       case_tlb_store,     "1" },
 	{ "date_no_depth_full", case_date_no_depth_full, "1" },
+	{ "step_sprites",    case_step_sprites,  "1" },
+	{ "step_gradients",  case_step_gradients, "1" },
+	{ "step_gradients_2x", case_step_gradients, "2" },
+	{ "step_depth",      case_step_depth,    "1" },
+	{ "step_lines",      case_step_lines,    "1" },
 };
 
 /* A 4MB image the core's BIOS scan accepts. The reset program turns on a

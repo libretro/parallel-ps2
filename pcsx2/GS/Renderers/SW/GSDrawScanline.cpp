@@ -152,16 +152,6 @@ bool GSDrawScanline::SetupDraw(GSRasterizerData& data)
 #endif
 }
 
-/* The generated code steps as many pixels at once as its vectors hold. */
-int CURRENT_ISA::GSDrawScanlinePixelGroup()
-{
-#if _M_SSE >= 0x501
-	return 8;
-#else
-	return 4;
-#endif
-}
-
 #ifndef ENABLE_JIT_RASTERIZER
 
 typedef GSVector4i VectorI;
@@ -204,11 +194,11 @@ void GSDrawScanline::CSetupPrim(const GSVertexSW* vertex, const u16* index, cons
 			if (has_z && !sel.zequal)
 			{
 				const GSVector4 dz = GSVector4::broadcast64(&dscan.p.z);
-				const VectorF dzf(static_cast<float>(dscan.p.F64[1]));
 				local.d4.z = dz.mul64(GSVector4::f32to64(shift));
 				for (int i = 0; i < vlen; i++)
 				{
-					local.d[i].z = dzf * shift[i + 1];
+					local.d[i].z0 = dz.mul64(GSVector4::f32to64(&shift[i + 1].F32[0]));
+					local.d[i].z1 = dz.mul64(GSVector4::f32to64(&shift[i + 1].F32[2]));
 				}
 			}
 		}
@@ -328,6 +318,18 @@ void GSDrawScanline::CSetupPrim(const GSVertexSW* vertex, const u16* index, cons
 			local.c.ga = c.zzzz();
 		}
 	}
+}
+
+/* -log2(Q) * (1 << L) + K, times 0x10000, from Q's mantissa m and
+ * exponent e: (m * c3 + c2) * (m * m) + (m * c1 + (e * L + c0)), each
+ * product and sum rounded, as the generated code computes it. */
+static __fi VectorF LodFromQ(const VectorF& q, const GSScanlineGlobalData& global)
+{
+	const VectorI i = VectorI::cast(q);
+	const VectorF e = VectorF(((i << 1) >> 24) - VectorI::x0000007f());
+	const VectorF m = VectorF::cast((i << 9) >> 9) | VectorF::cxpr(1.0f);
+
+	return (m * global.lod_c1 + (e * global.l + global.lod_c0)) + (m * global.lod_c3 + global.lod_c2) * (m * m);
 }
 
 template <class T>
@@ -491,9 +493,12 @@ __ri void GSDrawScanline::CDrawScanline(int pixels, int left, int top, const GSV
 			}
 			else
 			{
-				VectorF zbase = VectorF::broadcast64(&scan.p.z);
-				z0 = zbase.add64(VectorF::f32to64(&local.d[skip].z.F32[0]));
-				z1 = zbase.add64(VectorF::f32to64(&local.d[skip].z.F32[vlen/2]));
+				double z = scan.p.F64[1];
+				if (sel.prim != GS_POINT_CLASS && !sel.edge)
+					z = GS_ROUND_NEAREST64(z * local.zgrid.rcp) * local.zgrid.grid;
+				VectorF zbase = VectorF::broadcast64(&z);
+				z0 = zbase.add64(local.d[skip].z0);
+				z1 = zbase.add64(local.d[skip].z1);
 			}
 		}
 	}
@@ -528,9 +533,12 @@ __ri void GSDrawScanline::CDrawScanline(int pixels, int left, int top, const GSV
 			}
 			else
 			{
-				s = scan.t.xxxx() + local.d[skip].s;
-				t = scan.t.yyyy() + local.d[skip].t;
-				q = scan.t.zzzz() + local.d[skip].q;
+				GSVector4 st = scan.t;
+				if (sel.prim != GS_POINT_CLASS && !sel.edge)
+					st = (st * local.tgrid_rcp).round<Round_NearestInt>() * local.tgrid;
+				s = st.xxxx() + local.d[skip].s;
+				t = st.yyyy() + local.d[skip].t;
+				q = st.zzzz() + local.d[skip].q;
 			}
 		}
 
@@ -654,7 +662,7 @@ __ri void GSDrawScanline::CDrawScanline(int pixels, int left, int top, const GSV
 
 					if (!sel.lcm)
 					{
-						VectorF tmp = q.log2(3) * global.l + global.k; // (-log2(Q) * (1 << L) + K) * 0x10000
+						VectorF tmp = LodFromQ(q, global); // (-log2(Q) * (1 << L) + K) * 0x10000
 
 						VectorI lod = VectorI(tmp.sat(VectorF::zero(), global.mxl), false);
 

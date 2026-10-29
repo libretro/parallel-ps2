@@ -54,7 +54,6 @@ void GSInterface::stop_compilation_tasks()
 bool GSInterface::init(Vulkan::Device *device, const GSOptions &options)
 {
 	vram_size = options.vram_size;
-	line_pixel_group = options.line_pixel_group == 4 ? 4 : 8;
 	uint32_t num_pages = vram_size / PageSize;
 	tracker.set_num_pages(num_pages);
 	uint32_t num_pages_u32 = (num_pages + 31) / 32;
@@ -474,36 +473,37 @@ void GSInterface::sync_shadow_page(uint32_t page_index)
 
 /* The texel column a horizontal line puts on each of the pixels 0 to 7,
  * for a line from x = 0 with U u0 to x1 (1/16 pixel) with U u1 (1/16
- * texel), stepped the way the software rasterizer steps it: coordinates
- * as floats, the start and each pixel's offset within its group of
- * `group` pixels (4 or 8) truncated to 16.16 fixed point, and the second
- * group of four a truncated four-pixel step on. Returns 0 for a
+ * texel), stepped the way the software rasterizer steps it: the start
+ * truncated to 16.16, plus a step per pixel, U's rate as a float
+ * truncated to 16.16 and to 21 significant bits. Returns 0 for a
  * coordinate below the texture. */
-static int pgs_line_texels(int32_t x1, uint32_t u0, uint32_t u1, uint32_t group, uint32_t *texels)
+static int pgs_line_texels(int32_t x1, uint32_t u0, uint32_t u1, uint32_t *texels)
 {
 	PGS_STEP_FLOAT t0 = (float)(int32_t)(u0 << 12);
 	PGS_STEP_FLOAT t1 = (float)(int32_t)(u1 << 12);
 	PGS_STEP_FLOAT du = t1 - t0;
 	PGS_STEP_FLOAT dx = (float)x1 * (1.0f / (float)PGS_SUBPIXELS);
 	PGS_STEP_FLOAT dt = du / dx;
-	PGS_STEP_FLOAT dt_group = dt * (float)group;
 	const int32_t base = (int32_t)t0;
-	const int32_t second = base + (int32_t)dt_group;
 	int32_t sign = 0;
+	int32_t step;
+	float stepf;
+	uint32_t bits;
 	uint32_t k;
 
-	for (k = 0; k < group; k++)
+	if (!(dt > -134217728.0f && dt < 134217728.0f))
+		return 0;
+	/* the float's three low mantissa bits cleared, as eight steps hold */
+	stepf = (float)(int32_t)dt;
+	memcpy(&bits, &stepf, sizeof(bits));
+	bits &= ~7u;
+	memcpy(&stepf, &bits, sizeof(bits));
+	step = (int32_t)stepf;
+	for (k = 0; k < 8; k++)
 	{
-		PGS_STEP_FLOAT d = dt * (float)k;
-		int32_t u = base + (int32_t)d;
+		const int32_t u = (int32_t)((uint32_t)base + (uint32_t)step * k);
 		sign |= u;
 		texels[k] = (uint32_t)u >> 16;
-		if (group == 4)
-		{
-			u = second + (int32_t)d;
-			sign |= u;
-			texels[k + 4] = (uint32_t)u >> 16;
-		}
 	}
 	return sign >= 0;
 }
@@ -626,8 +626,8 @@ void GSInterface::rewrite_forwarded_clut_upload(
 		return;
 
 	uint32_t texels[16];
-	if (!pgs_line_texels(pos1.pos.x, attr0.uv.x, attr1.uv.x, line_pixel_group, texels) ||
-	    !pgs_line_texels(pos3.pos.x, attr2.uv.x, attr3.uv.x, line_pixel_group, texels + 8))
+	if (!pgs_line_texels(pos1.pos.x, attr0.uv.x, attr1.uv.x, texels) ||
+	    !pgs_line_texels(pos3.pos.x, attr2.uv.x, attr3.uv.x, texels + 8))
 		return;
 
 	// The row, stepped the same way: a constant V truncated from its float.

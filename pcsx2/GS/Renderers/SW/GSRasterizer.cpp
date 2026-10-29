@@ -16,6 +16,7 @@
 // TODO: JIT Draw* (flags: depth, texture, color (+iip), scissor)
 
 #include "GSRasterizer.h"
+#include <math.h>
 #include <memalign.h>
 #include "GSDrawScanline.h"
 #include "../../GSExtra.h"
@@ -37,6 +38,11 @@ static int compute_best_thread_height(int threads)
 		return th;
 	return 4;
 }
+
+/* A value rounded to the nearest multiple of a power of two, given it
+ * and its reciprocal. */
+#define SNAP_TO_GRID(v, grid, rcp) (((v) * (rcp)).round<Round_NearestInt>() * (grid))
+#define SNAP_TO_GRID64(v, grid, rcp) (GS_ROUND_NEAREST64((v) * (rcp)) * (grid))
 
 GSRasterizer::GSRasterizer(GSDrawScanline* ds, int id, int threads)
 	: m_ds(ds)
@@ -374,7 +380,7 @@ void GSRasterizer::DrawLineImpl(const GSVertexSW* vertex, const u16* index)
 
 					scan += dscan * (l - scan.p).xxxx();
 
-					m_setup_prim(vertex, index, dscan, m_local);
+					SetupPrim(vertex, index, dscan, 2);
 
 					DrawScanline(pixels, left, p.y, scan);
 				}
@@ -853,7 +859,7 @@ void GSRasterizer::DrawSprite(const GSVertexSW* vertex, const u16* index)
 
 	scan.t = (scan.t + dt * prestep).xyzw(scan.t);
 
-	m_setup_prim(vertex, index, dscan, m_local);
+	SetupPrim(vertex, index, dscan, 2);
 
 	for (;;)
 	{
@@ -1080,7 +1086,7 @@ void GSRasterizer::Flush(const GSVertexSW* vertex, const u16* index, const GSVer
 
 	if (count > 0)
 	{
-		m_setup_prim(vertex, index, dscan, m_local);
+		SetupPrim(vertex, index, dscan, edge ? 0 : m_local.gd->sel.prim == GS_TRIANGLE_CLASS ? 3 : 2);
 
 		const GSVertexSW* RESTRICT e = m_edge.buff;
 		const GSVertexSW* RESTRICT ee = e + count;
@@ -1117,6 +1123,78 @@ void GSRasterizer::Flush(const GSVertexSW* vertex, const u16* index, const GSVer
 #else
 #define PIXELS_PER_LOOP 4
 #endif
+
+/* The GS steps texture coordinates and Z along a line of pixels as a
+ * DDA does: the n-th pixel takes the start plus n steps, exactly,
+ * however many pixels the scanline code handles at once. U and V step
+ * in 16.16 by their truncated step. S, T, Q and Z are floating point:
+ * the step here, and each scanline's start where the scanline code
+ * takes it, snap to a power-of-two grid of the primitive's own, fine
+ * enough that every value along its lines is a multiple of it the
+ * format holds, so every sum is exact. count is the number of vertices
+ * the values lie between, 0 for lines of one pixel only. */
+void GSRasterizer::SetupPrim(const GSVertexSW* vertex, const u16* index, const GSVertexSW& dscan, int count)
+{
+	const GSScanlineSelector sel = m_local.gd->sel;
+	GSVertexSW d;
+	int i;
+
+	if (count == 0)
+	{
+		m_setup_prim(vertex, index, dscan, m_local);
+		return;
+	}
+
+	d = dscan;
+
+	if (sel.fb && sel.tfx != TFX_NONE)
+	{
+		if (sel.fst)
+		{
+			/* Whole 16.16 units, to 21 significant bits so that eight
+			 * steps are exact too. */
+			const GSVector4 uv = GSVector4::cast(GSVector4i::cast(d.t.round<Round_Truncate>()) & GSVector4i::cxpr(~7));
+			d.t = uv.blend32<12>(d.t);
+		}
+		else
+		{
+			/* The vertices' magnitudes and eight steps add up past any
+			 * value a lane reaches; the grid holds that below 2^23 steps. */
+			GSVector4 m = d.t.abs() * GSVector4::cxpr(8.0f);
+			GSVector4i e;
+
+			for (i = 0; i < count; i++)
+				m = m + vertex[index[i]].t.abs();
+
+			e = (GSVector4i::cast(m) & GSVector4i::cxpr(0x7f800000)).max_i32(GSVector4i::cxpr(24 << 23)) - GSVector4i::cxpr(22 << 23);
+			m_local.tgrid = GSVector4::cast(e);
+			m_local.tgrid_rcp = GSVector4::cast(GSVector4i::cxpr(254 << 23) - e);
+			d.t = SNAP_TO_GRID(d.t, m_local.tgrid, m_local.tgrid_rcp).blend32<8>(d.t);
+		}
+	}
+
+	if (sel.zb && sel.prim != GS_SPRITE_CLASS && !sel.zequal)
+	{
+		/* The same with doubles: below 2^52 steps. */
+		double m = 8.0 * fabs(d.p.F64[1]);
+		u64 e;
+
+		for (i = 0; i < count; i++)
+			m += fabs(vertex[index[i]].p.F64[1]);
+
+		memcpy(&e, &m, sizeof(e));
+		e = (e >> 52) & 0x7ff;
+		if (e < 53)
+			e = 53;
+		e = (e - 51) << 52;
+		memcpy(&m_local.zgrid.grid, &e, sizeof(e));
+		e = (2046ull << 52) - e;
+		memcpy(&m_local.zgrid.rcp, &e, sizeof(e));
+		d.p.F64[1] = SNAP_TO_GRID64(d.p.F64[1], m_local.zgrid.grid, m_local.zgrid.rcp);
+	}
+
+	m_setup_prim(vertex, index, d, m_local);
+}
 
 void GSRasterizer::DrawScanline(int pixels, int left, int top, const GSVertexSW& scan)
 {

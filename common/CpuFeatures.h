@@ -16,6 +16,3 @@
 #define CPU_HAS_AVX2  ((cpu_features_get() & RETRO_SIMD_AVX2) != 0)
 #define CPU_HAS_AVX512 ((cpu_features_get() & RETRO_SIMD_AVX512) != 0)
 
-/* Either encoding answers for a caller that only needs a fused
- * multiply-add to exist. */
-#define CPU_HAS_FMA   ((cpu_features_get() & (RETRO_SIMD_FMA3 | RETRO_SIMD_FMA4)) != 0)

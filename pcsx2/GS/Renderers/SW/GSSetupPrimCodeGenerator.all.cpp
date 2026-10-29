@@ -39,6 +39,11 @@ using namespace Xbyak;
 		} \
 	} while (0)
 
+/* Generate() points rax at the shift table of the vector width; these
+ * address the other constants from it. */
+#define _shift256(i, lane) ptr[rax + (int)((i) * sizeof(g_const.m_shift_256b[0]) + (lane) * sizeof(float))]
+#define _shift128(i) ptr[rax + (int)(offsetof(GSScanlineConstantData, m_shift_128b) - offsetof(GSScanlineConstantData, m_shift_256b) + (i) * sizeof(g_const.m_shift_128b[0]))]
+
 #if _M_SSE >= 0x501
 	#define _rip_local_d(x) _rip_local(d8.x)
 	#define _rip_local_d_p(x) _rip_local_d(p.x)
@@ -192,16 +197,17 @@ void GSSetupPrimCodeGenerator2::Depth_XMM()
 			mulpd(xmm1, xmm0);
 			movaps(_rip_local_d_p(z), xmm1);
 
-			cvtpd2ps(xmm0, xmm0);
-			unpcklpd(xmm0, xmm0);
-
 			for (int i = 0; i < (m_sel.notest ? 1 : 4); i++)
 			{
-				// m_local.d[i].z0 = dz.mul64(VectorF::f32to64(half_shift[2 * i + 2]));
-				// m_local.d[i].z1 = dz.mul64(VectorF::f32to64(half_shift[2 * i + 3]));
+				// m_local.d[i].z0 = dz.mul64(GSVector4::f32to64(&shift[i + 1].F32[0]));
+				// m_local.d[i].z1 = dz.mul64(GSVector4::f32to64(&shift[i + 1].F32[2]));
 
-				THREEARG(mulps, xmm1, xmm0, XYm(4 + i));
-				movdqa(_rip_local_di(i, z), xmm1);
+				cvtps2pd(xmm1, ptr[rax + (i + 1) * vecsize]);
+				mulpd(xmm1, xmm0);
+				movaps(_rip_local_di(i, z0), xmm1);
+				cvtps2pd(xmm1, ptr[rax + (i + 1) * vecsize + 8]);
+				mulpd(xmm1, xmm0);
+				movaps(_rip_local_di(i, z1), xmm1);
 			}
 		}
 	}
@@ -249,20 +255,18 @@ void GSSetupPrimCodeGenerator2::Depth_YMM()
 			// GSVector8 df = GSVector8::broadcast32(&dscan.t.w);
 			vbroadcastss(ymm1, ptr[_dscan + offsetof(GSVertexSW, t.w)]);
 
-			// local.d8.p.f = GSVector4i(tstep).extract32<3>();
-			vmulps(xmm0, xmm1, xmm3);
+			// f4 = GSVector4i(df * 4.0f); local.d8.p.f = f4 * 2;
+			vmulps(xmm0, xmm1, _shift128(0));
 			cvttps2dq(xmm0, xmm0);
-			movd(_rip_local_d_p(f), xmm0);
+			vpaddd(xmm2, xmm0, xmm0);
+			movd(_rip_local_d_p(f), xmm2);
+			QuadSteps(xmm0, ymm2, _rip_local(temp.uv[0]), _rip_local(temp.uv[1]));
 
 			for (int i = 0; i < (m_sel.notest ? 1 : dsize); i++)
 			{
-				// m_local.d[i].f = GSVectorI(df * m_shift[i]).xxzzlh();
+				// m_local.d[i].f = QuadOffsets(df, i, f4).xxzzlh();
 
-				if (i < 4 || many_regs)
-					vmulps(ymm0, Ymm(4 + i), ymm1);
-				else
-					vmulps(ymm0, ymm1, ptr[g_const.m_shift_256b[i + 1]]);
-				cvttps2dq(ymm0, ymm0);
+				QuadOffset(ymm0, ymm1, i, _rip_local(temp.uv[0]), _rip_local(temp.uv[1]));
 				pshuflw(ymm0, ymm0, _MM_SHUFFLE(2, 2, 0, 0));
 				pshufhw(ymm0, ymm0, _MM_SHUFFLE(2, 2, 0, 0));
 				movdqa(_rip_local_di(i, f), ymm0);
@@ -279,18 +283,19 @@ void GSSetupPrimCodeGenerator2::Depth_YMM()
 			vmulsd(xmm1, xmm0, xmm1);
 			movsd(_rip_local_d_p(z), xmm1);
 
-			cvtsd2ss(xmm0, xmm0);
-			vbroadcastss(ymm0, xmm0);
+			vbroadcastsd(ymm0, ptr[_dscan + offsetof(GSVertexSW, p.z)]);
 
 			for (int i = 0; i < (m_sel.notest ? 1 : dsize); i++)
 			{
-				// m_local.d[i].z = dzf * shift[i + 1];
+				// m_local.d[i].z0 = dz.mul64(GSVector8::f32to64(&shift[i + 1].F32[0]));
+				// m_local.d[i].z1 = dz.mul64(GSVector8::f32to64(&shift[i + 1].F32[4]));
 
-				if (i < 4 || many_regs)
-					vmulps(ymm1, Ymm(4 + i), ymm0);
-				else
-					vmulps(ymm1, ymm0, ptr[g_const.m_shift_256b[i + 1]]);
-				movaps(_rip_local_di(i, z), ymm1);
+				cvtps2pd(ymm1, _shift256(i + 1, 0));
+				vmulpd(ymm1, ymm1, ymm0);
+				movaps(_rip_local_di(i, z0), ymm1);
+				cvtps2pd(ymm1, _shift256(i + 1, 4));
+				vmulpd(ymm1, ymm1, ymm0);
+				movaps(_rip_local_di(i, z1), ymm1);
 			}
 		}
 	}
@@ -364,7 +369,7 @@ void GSSetupPrimCodeGenerator2::Texture()
 			if (i < 4 || many_regs)
 				THREEARG(mulps, xym2, XYm(4 + i), xym1);
 			else
-				vmulps(ymm2, ymm1, ptr[g_const.m_shift_256b[i + 1]]);
+				vmulps(ymm2, ymm1, _shift256(i + 1, 0));
 
 			if (m_sel.fst)
 			{
@@ -400,14 +405,18 @@ void GSSetupPrimCodeGenerator2::Color()
 		return;
 	}
 
-	if (m_sel.iip)
+	if (m_sel.iip && isYmm)
+	{
+		Color_YMM();
+	}
+	else if (m_sel.iip)
 	{
 		// GSVector4 c = dscan.c;
 
 		broadcastf128(xym0, ptr[_dscan + offsetof(GSVertexSW, c)]);
 
 		// constexpr VectorI mask16 = VectorI::cxpr(0xFFFF);
-		XYm mask16 = XYm(many_regs ? 12 : m_sel.notest ? 6 : 8);
+		XYm mask16 = XYm(m_sel.notest ? 6 : 8);
 		pcmpeqd(mask16, mask16);
 		psrld(mask16, 16);
 
@@ -418,10 +427,7 @@ void GSSetupPrimCodeGenerator2::Color()
 		pshufd(xmm1, xmm1, _MM_SHUFFLE(3, 1, 2, 0));
 		pand(xym1, mask16);
 		packusdw(xmm1, xmm1);
-		if (isXmm)
-			movdqa(_rip_local_d(c), xmm1);
-		else
-			movq(_rip_local_d(c), xmm1);
+		movdqa(_rip_local_d(c), xmm1);
 
 		// xym3 is not needed anymore
 
@@ -431,24 +437,18 @@ void GSSetupPrimCodeGenerator2::Color()
 		THREEARG(shufps, xym2, xym0, xym0, _MM_SHUFFLE(0, 0, 0, 0));
 		THREEARG(shufps, xym3, xym0, xym0, _MM_SHUFFLE(2, 2, 2, 2));
 
-		for (int i = 0; i < (m_sel.notest ? 1 : dsize); i++)
+		for (int i = 0; i < (m_sel.notest ? 1 : 4); i++)
 		{
 			// GSVector4i r = GSVector4i(dr * m_shift[i]).ps32();
 
-			if (i < 4 || many_regs)
-				THREEARG(mulps, xym0, XYm(4 + i), xym2);
-			else
-				vmulps(ymm0, ymm2, ptr[g_const.m_shift_256b[i + 1]]);
+			THREEARG(mulps, xym0, XYm(4 + i), xym2);
 			cvttps2dq(xym0, xym0);
 			pand(xym0, mask16);
 			packusdw(xym0, xym0);
 
 			// GSVector4i b = GSVector4i(db * m_shift[i]).ps32();
 
-			if (i < 4 || many_regs)
-				THREEARG(mulps, xym1, XYm(4 + i), xym3);
-			else
-				vmulps(ymm1, ymm3, ptr[g_const.m_shift_256b[i + 1]]);
+			THREEARG(mulps, xym1, XYm(4 + i), xym3);
 			cvttps2dq(xym1, xym1);
 			pand(xym1, mask16);
 			packusdw(xym1, xym1);
@@ -469,24 +469,18 @@ void GSSetupPrimCodeGenerator2::Color()
 		THREEARG(shufps, xym2, xym0, xym0, _MM_SHUFFLE(1, 1, 1, 1));
 		THREEARG(shufps, xym3, xym0, xym0, _MM_SHUFFLE(3, 3, 3, 3));
 
-		for (int i = 0; i < (m_sel.notest ? 1 : dsize); i++)
+		for (int i = 0; i < (m_sel.notest ? 1 : 4); i++)
 		{
 			// GSVector4i g = GSVector4i(dg * m_shift[i]).ps32();
 
-			if (i < 4 || many_regs)
-				THREEARG(mulps, xym0, XYm(4 + i), xym2);
-			else
-				vmulps(ymm0, ymm2, ptr[g_const.m_shift_256b[i + 1]]);
+			THREEARG(mulps, xym0, XYm(4 + i), xym2);
 			cvttps2dq(xym0, xym0);
 			pand(xym0, mask16);
 			packusdw(xym0, xym1);
 
 			// GSVector4i a = GSVector4i(da * m_shift[i]).ps32();
 
-			if (i < 4 || many_regs)
-				THREEARG(mulps, xym1, XYm(4 + i), xym3);
-			else
-				vmulps(ymm1, ymm3, ptr[g_const.m_shift_256b[i + 1]]);
+			THREEARG(mulps, xym1, XYm(4 + i), xym3);
 			cvttps2dq(xym1, xym1);
 			pand(xym1, mask16);
 			packusdw(xym1, xym1);
@@ -548,5 +542,92 @@ void GSSetupPrimCodeGenerator2::Color()
 
 		movdqa(_rip_local(c.rb), xym1);
 		movdqa(_rip_local(c.ga), xym2);
+	}
+}
+
+/// Colour and fog step by whole 4-pixel quads: t4 holds the quad step in
+/// each of its lanes. Stores it in the upper four lanes of hi, and its
+/// negation in the lower four of lo. Destroys t4's ymm and tmp.
+void GSSetupPrimCodeGenerator2::QuadSteps(const Xmm& t4, const Ymm& tmp, const Address& hi, const Address& lo)
+{
+	const Ymm t4y(t4.getIdx());
+	const Xmm tmpx(tmp.getIdx());
+
+	pxor(tmpx, tmpx);
+	vinserti128(tmp, tmp, t4, 1);
+	movdqa(hi, tmp);
+	vinserti128(t4y, t4y, t4, 1);
+	vpsubd(t4y, tmp, t4y);
+	movdqa(lo, t4y);
+}
+
+/// dst = the offsets of skip's lanes from its first pixel: within the
+/// quad by d times the lane's place in it, and a quad step for the
+/// lanes of the other quad (see QuadSteps).
+void GSSetupPrimCodeGenerator2::QuadOffset(const Ymm& dst, const Ymm& d, int skip, const Address& hi, const Address& lo)
+{
+	vbroadcastf128(dst, _shift128(1 + (skip & 3)));
+	vmulps(dst, dst, d);
+	cvttps2dq(dst, dst);
+	vpaddd(dst, dst, skip < 4 ? hi : lo);
+}
+
+void GSSetupPrimCodeGenerator2::Color_YMM()
+{
+	const Address hi[4] = {_rip_local(temp.uv[0]), _rip_local(temp.trb), _rip_local(temp.uv_minmax[0]), _rip_local(temp.zs)};
+	const Address lo[4] = {_rip_local(temp.uv[1]), _rip_local(temp.tga), _rip_local(temp.uv_minmax[1]), _rip_local(temp.zd)};
+
+	// GSVector4 c = dscan.c;
+
+	broadcastf128(ymm0, ptr[_dscan + offsetof(GSVertexSW, c)]);
+
+	// constexpr VectorI mask16 = VectorI::cxpr(0xFFFF);
+	const Ymm mask16 = Ymm(many_regs ? 12 : m_sel.notest ? 6 : 8);
+	pcmpeqd(mask16, mask16);
+	psrld(mask16, 16);
+
+	// c4 = GSVector4i(dscan.c * 4.0f);
+	// local.d8.c = ((c4 + c4) & mask16).xzyw().pu32();
+
+	vmulps(xmm1, xmm0, _shift128(0));
+	cvttps2dq(xmm1, xmm1);
+	vpaddd(xmm2, xmm1, xmm1);
+	pshufd(xmm2, xmm2, _MM_SHUFFLE(3, 1, 2, 0));
+	pand(xmm2, Xmm(mask16.getIdx()));
+	packusdw(xmm2, xmm2);
+	movq(_rip_local_d(c), xmm2);
+
+	for (int j = 0; j < 4; j++)
+	{
+		pshufd(xmm2, xmm1, _MM_SHUFFLE(j, j, j, j));
+		QuadSteps(xmm2, ymm3, hi[j], lo[j]);
+	}
+
+	for (int k = 0; k < 2; k++)
+	{
+		// r and b, then g and a
+
+		vshufps(ymm2, ymm0, ymm0, _MM_SHUFFLE(k, k, k, k));
+		vshufps(ymm3, ymm0, ymm0, _MM_SHUFFLE(k + 2, k + 2, k + 2, k + 2));
+
+		for (int i = 0; i < (m_sel.notest ? 1 : dsize); i++)
+		{
+			// GSVector8i x = (QuadOffsets(dx, i, c4.x) & mask16).pu32();
+
+			QuadOffset(ymm4, ymm2, i, hi[k], lo[k]);
+			QuadOffset(ymm1, ymm3, i, hi[k + 2], lo[k + 2]);
+			pand(ymm4, mask16);
+			packusdw(ymm4, ymm4);
+			pand(ymm1, mask16);
+			packusdw(ymm1, ymm1);
+
+			// m_local.d[i].rb = r.upl16(b); m_local.d[i].ga = g.upl16(a);
+
+			punpcklwd(ymm4, ymm1);
+			if (k == 0)
+				movdqa(_rip_local_di(i, rb), ymm4);
+			else
+				movdqa(_rip_local_di(i, ga), ymm4);
+		}
 	}
 }
