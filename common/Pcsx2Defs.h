@@ -182,55 +182,24 @@
 #define _inline __inline__ __attribute__((unused))
 #endif
 
-// __forceinline / __fi: the codebase applies these to NON-static, NON-inline
-// function *definitions* in .cpp files, with `extern` declarations in headers.
+// __forceinline / __fi / __ri: forced inlining, with inline linkage as
+// MSVC's builtin has it.  They belong on static functions, header
+// definitions and member functions -- places where every caller sees the
+// body.  A function called from another translation unit stays a plain
+// extern function; when its own TU wants the body inlined, that body is a
+// static __fi helper and the extern entry point calls it.
 //
-// MSVC, Linux gcc, and macOS clang all handle `__forceinline` correctly:
-// the always_inline attribute is applied at every callsite AND an out-of-line
-// copy is still emitted for the cross-TU callers.  On those toolchains the
-// historical decoration is what we want and yields the inlining gains the
-// hot paths (SPU2, vtlb, x86Emitter, dmaSIF...) were designed around.
-//
-// mingw-w64 is the odd one out.  Its `_mingw.h` defines `__forceinline` as
-// `extern __inline__ __attribute__((__always_inline__,__gnu_inline__))`,
-// which under GNU inline rules means "inline at every callsite AND DO NOT
-// emit an out-of-line copy".  That last part breaks the libretro non-LTO
-// Makefile build: every cross-TU call (e.g. dmaSIF1, vtlb_GetPhyPtr,
-// xPUSH, SPU2 Mix/TimeUpdate/spu2M_Write/UpdateSpdifMode...)
-// becomes an undefined reference.  cmake builds avoid this via PCSX2_LTO=ON
-// merging all TUs at link time, but the libretro Makefile builds do not LTO.
-//
-// We must NOT override `__forceinline` on mingw - the system headers
-// (winbase.h, processthreadsapi.h, synchapi.h, _mingw.h) declare and
-// define many functions like strnlen_s / _InterlockedIncrement /
-// NtCurrentTeb as `__forceinline ...` and rely on the gnu_inline
-// semantics for one-definition-rule compliance across TUs.  Redefining
-// `__forceinline` to empty there would cause "multiple definition of
-// strnlen_s" link errors.
-//
-// Instead, leave `__forceinline` alone everywhere, and bind the project's
-// `__fi` / `__ri` / `__releaseinline` decorations to empty ONLY on mingw.
-// On every other toolchain they keep their historical meaning of
-// `__forceinline`, preserving the inlining and the perf characteristics
-// that working PCSX2 builds depend on.
-//
-// Note the absence of an `inline` keyword beside always_inline, and keep it
-// absent.  GCC wants the two together and says so -- `'always_inline'
-// function might not be inlinable` on every __fi function once NDEBUG is
-// set -- but it inlines them anyway at -O2 and above, so the attribute buys
-// the diagnostic and nothing else.  Adding `inline` would cost: __fi sits
-// on 385 definitions that are not static, among them cross-TU entry points
-// like dmacRead32 and COP0_UpdatePCCR, and an inline function defined in
-// one TU is not there to link against from another.  That is the same
-// undefined-reference failure the gnu_inline paragraph above describes,
-// reached by a different route.
+// mingw-w64 defines `__forceinline` itself, as `extern __inline__` with
+// gnu_inline semantics, and its system headers (winbase.h, _mingw.h ...)
+// depend on that definition, so it is left alone there.  The project's
+// own __fi / __ri / __releaseinline expand to nothing on mingw instead.
 #ifdef NDEBUG
 #ifndef __forceinline
-#define __forceinline __attribute__((always_inline, unused))
+#define __forceinline __inline__ __attribute__((always_inline, unused))
 #endif
 #else
 #ifndef __forceinline
-#define __forceinline __attribute__((unused))
+#define __forceinline __inline__ __attribute__((unused))
 #endif
 #endif
 
@@ -281,8 +250,7 @@
 // environment.
 //
 // On mingw these expand to nothing; see the `__forceinline` comment block
-// above for the gnu_inline rationale.  Everywhere else they keep their
-// historical meaning of `__forceinline`.
+// above.  Everywhere else they are `__forceinline`.
 #ifdef __MINGW32__
 #define __releaseinline
 #define __ri
@@ -294,10 +262,8 @@
 #endif
 
 // __forceinline_odr is for inline functions defined in headers (e.g. the
-// GSVertex/quad helpers). MSVC needs __forceinline; GCC/Clang need a plain
-// `inline` alongside the always_inline attribute for ODR correctness across
-// translation units. On MinGW we follow the same gnu_inline rationale as
-// __fi/__ri above and let it collapse to `inline`.
+// GSVertex/quad helpers). It is `__forceinline` except on MinGW, where it
+// collapses to a plain `inline` for the reason given above.
 // Fallthrough annotation that degrades instead of failing to parse:
 // [[fallthrough]] is C++17 syntax and nothing older -- not C89, not C at
 // all, not pre-17 C++ -- so a bare attribute is a landmine for any file
@@ -330,7 +296,7 @@
 #elif defined(__MINGW32__)
 #define __forceinline_odr inline
 #else
-#define __forceinline_odr __forceinline inline
+#define __forceinline_odr __forceinline
 #endif
 #endif
 

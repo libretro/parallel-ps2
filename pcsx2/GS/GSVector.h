@@ -21,11 +21,7 @@
 
 #pragma once
 
-#ifdef _WIN32
-	#define gsforceinline __forceinline
-#else
-	#define gsforceinline __forceinline __inline__
-#endif
+#define gsforceinline __forceinline
 
 enum Align_Mode
 {
