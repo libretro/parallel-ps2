@@ -1171,6 +1171,22 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "disabled"
    },
    {
+      "pcsx2_multitap",
+      "Input > Multitap (Restart)",
+      "Multitap (Restart)",
+      "Plugs a multitap into a console port. Each multitap takes four pads. Frontend ports fill the slots of console port 1 first, then console port 2. Only games that support the multitap use it.",
+      NULL,
+      "input",
+      {
+         { "disabled", NULL },
+         { "port 1", "Port 1" },
+         { "port 2", "Port 2" },
+         { "ports 1 and 2", "Ports 1 and 2" },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
       "pcsx2_axis_deadzone1",
       "Input > Port 1 > Analog Deadzone",
       "Port 1 > Analog Deadzone",

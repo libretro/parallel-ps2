@@ -202,13 +202,44 @@ struct pad_input
 	u8  keys[RETROK_LAST / 8 + 1];
 	u8  mouse_buttons;
 };
-static struct pad_input pad_staged[2];
-static struct pad_input pad_live[2];
+/* Indexed by SIO pad (sioConvertPortAndSlotToPad); see pad_for_port. */
+static struct pad_input pad_staged[NUM_CONTROLLER_PORTS];
+static struct pad_input pad_live[NUM_CONTROLLER_PORTS];
+
+/* The pcsx2_multitap option as it was when the content loaded: bit 0 a
+ * multitap in console port 1, bit 1 one in console port 2. It changes
+ * only on the next load, as the option says. */
+static unsigned pad_multitap;
+
+static void pad_read_multitap_option(void)
+{
+	struct retro_variable var = { "pcsx2_multitap", NULL };
+	const char* tap = environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value ? var.value : "disabled";
+	pad_multitap = 0;
+	if (!strcmp(tap, "port 1") || !strcmp(tap, "ports 1 and 2"))
+		pad_multitap |= 1;
+	if (!strcmp(tap, "port 2") || !strcmp(tap, "ports 1 and 2"))
+		pad_multitap |= 2;
+}
+
+/* The SIO pad that a frontend port drives: the slots of console port 1
+ * first, then those of console port 2. A console port without a multitap
+ * has one slot. NUM_CONTROLLER_PORTS when the frontend port has no pad. */
+static u32 pad_for_port(unsigned port)
+{
+	const unsigned slots0 = (pad_multitap & 1) ? 4 : 1;
+	const unsigned slots1 = (pad_multitap & 2) ? 4 : 1;
+	if (port < slots0)
+		return sioConvertPortAndSlotToPad(0, port);
+	if (port < slots0 + slots1)
+		return sioConvertPortAndSlotToPad(1, port - slots0);
+	return NUM_CONTROLLER_PORTS;
+}
 
 extern "C" void pad_input_latch(void)
 {
 	unsigned port;
-	for (port = 0; port < 2; port++)
+	for (port = 0; port < NUM_CONTROLLER_PORTS; port++)
 	{
 		const int mx = pad_live[port].mouse_x + pad_staged[port].mouse_x;
 		const int my = pad_live[port].mouse_y + pad_staged[port].mouse_y;
@@ -225,10 +256,11 @@ static int16_t pad_latched_input(unsigned port, unsigned device, unsigned index,
 {
 	struct pad_input* in;
 	int v;
+	const u32 pad = pad_for_port(port);
 	(void)index;
-	if (port >= 2)
+	if (pad >= NUM_CONTROLLER_PORTS)
 		return 0;
-	in = &pad_live[port];
+	in = &pad_live[pad];
 	if (device == RETRO_DEVICE_KEYBOARD)
 		return id < RETROK_LAST && ((in->keys[id >> 3] >> (id & 7)) & 1);
 	if (device != RETRO_DEVICE_MOUSE)
@@ -250,7 +282,7 @@ static int16_t pad_latched_input(unsigned port, unsigned device, unsigned index,
 	}
 }
 
-static int pad_type[2] = { -1, -1 };
+static int pad_type[NUM_CONTROLLER_PORTS] = { -1, -1, -1, -1, -1, -1, -1, -1 };
 
 PadSettings pad_settings[2];
 
@@ -416,12 +448,13 @@ namespace Input
 		{ port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, "Right Analog X" }, \
 		{ port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, "Right Analog Y" }
 
-		/* Only ports 0 and 1 are actually polled in Update() and only
-		 * pads[0..1][0..3] are wired through PAD/SIO. Advertising 8
-		 * descriptor ports while polling 2 confuses the frontend's
-		 * input UI: ports 2-7 show up as bindable but never read. */
+		/* Frontend ports 0 and 1 are the console ports; each multitap
+		 * the option plugs in adds three more (pcsx2_multitap). Only the
+		 * ports that have a pad are offered, so the frontend shows no
+		 * port that is never read. */
 		struct retro_input_descriptor desc[] = {
-			JOY_DESC(0), JOY_DESC(1),
+			JOY_DESC(0), JOY_DESC(1), JOY_DESC(2), JOY_DESC(3),
+			JOY_DESC(4), JOY_DESC(5), JOY_DESC(6), JOY_DESC(7),
 			{},
 		};
 
@@ -433,11 +466,29 @@ namespace Input
 			{},
 		};
 
-		static const struct retro_controller_info ports[] = {
-			{ port_devices, sizeof(port_devices) / sizeof(*port_devices) },
-			{ port_devices, sizeof(port_devices) / sizeof(*port_devices) },
+		/* The PS2 has two USB ports; a multitap slot takes only a pad. */
+		static const struct retro_controller_description tap_devices[] = {
+			{ "DualShock 2", RETRO_DEVICE_JOYPAD },
 			{},
 		};
+
+		static const struct retro_controller_info all_ports[] = {
+			{ port_devices, sizeof(port_devices) / sizeof(*port_devices) },
+			{ port_devices, sizeof(port_devices) / sizeof(*port_devices) },
+			{ tap_devices, 1 }, { tap_devices, 1 }, { tap_devices, 1 },
+			{ tap_devices, 1 }, { tap_devices, 1 }, { tap_devices, 1 },
+			{},
+		};
+		/* Static, as the table was: the frontend may keep the pointer. */
+		static struct retro_controller_info ports[NUM_CONTROLLER_PORTS + 1];
+		unsigned nports;
+		const unsigned per_port = 20; /* entries JOY_DESC adds */
+
+		pad_read_multitap_option();
+		nports = 2 + ((pad_multitap & 1) ? 3 : 0) + ((pad_multitap & 2) ? 3 : 0);
+		memcpy(ports, all_ports, nports * sizeof(ports[0]));
+		memset(&ports[nports], 0, sizeof(ports[0]));
+		memset(&desc[nports * per_port], 0, sizeof(desc[0]));
 
 		environ_cb(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &rumble);
 		environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)ports);
@@ -450,8 +501,8 @@ namespace Input
 	void Shutdown()
 	{
 		memset(pad_staged, 0, sizeof(pad_staged));
-		pad_staged[0].buttons = 0xFFFFFFFF;
-		pad_staged[1].buttons = 0xFFFFFFFF;
+		for (unsigned pad = 0; pad < NUM_CONTROLLER_PORTS; pad++)
+			pad_staged[pad].buttons = 0xFFFFFFFF;
 		pad_input_latch();
 	}
 
@@ -459,12 +510,18 @@ namespace Input
 	{
 		poll_cb();
 
-		for (unsigned port = 0; port < 2; port++)
+		for (unsigned port = 0; port < NUM_CONTROLLER_PORTS; port++)
 		{
+			const u32 pad = pad_for_port(port);
+			if (pad >= NUM_CONTROLLER_PORTS)
+				continue;
 			u32 mask            = input_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MASK);
 			u32 new_button_mask = 0xFFFF0000;
 			u32 btn_index       = 0;
-			const auto &conf    = pad_settings[port];
+			const std::tuple<u32, u32> con = sioConvertPadToPortAndSlot(pad);
+			const u32 con_port  = std::get<0>(con);
+			const u32 con_slot  = std::get<1>(con);
+			const auto &conf    = pad_settings[con_port];
 
 			for (int i = 0; i < 16; ++i)
 			{
@@ -475,8 +532,8 @@ namespace Input
 				else
 				{
 					// Apply pressure level if needed/possible and deadzone
-					pad_staged[port].analog[btn_index] = process_button(conf.button_deadzone, port, keymap[i], mask);
-					new_button_mask |= (pad_staged[port].analog[btn_index] == 0) << i;
+					pad_staged[pad].analog[btn_index] = process_button(conf.button_deadzone, port, keymap[i], mask);
+					new_button_mask |= (pad_staged[pad].analog[btn_index] == 0) << i;
 					++btn_index;
 				}
 			}
@@ -500,30 +557,30 @@ namespace Input
 			 || pad_type[port] == RETRO_DEVICE_KEYBOARD_AND_MOUSE)
 			{
 				unsigned k;
-				memset(pad_staged[port].keys, 0, sizeof(pad_staged[port].keys));
+				memset(pad_staged[pad].keys, 0, sizeof(pad_staged[pad].keys));
 				for (k = 0; k < RETROK_LAST; k++)
 					if (input_cb(port, RETRO_DEVICE_KEYBOARD, 0, k))
-						pad_staged[port].keys[k >> 3] |= (u8)(1u << (k & 7));
+						pad_staged[pad].keys[k >> 3] |= (u8)(1u << (k & 7));
 			}
 			if (pad_type[port] == RETRO_DEVICE_MOUSE
 			 || pad_type[port] == RETRO_DEVICE_KEYBOARD_AND_MOUSE)
 			{
-				pad_staged[port].mouse_x += input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
-				pad_staged[port].mouse_y += input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
-				pad_staged[port].mouse_buttons = (u8)(
+				pad_staged[pad].mouse_x += input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
+				pad_staged[pad].mouse_y += input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
+				pad_staged[pad].mouse_buttons = (u8)(
 					  (input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT)   ? 1 : 0)
 					| (input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT)  ? 2 : 0)
 					| (input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE) ? 4 : 0));
 			}
 
-			pad_staged[port].buttons = new_button_mask;
-			pad_staged[port].lx      = new_lx;
-			pad_staged[port].ly      = new_ly;
-			pad_staged[port].rx      = new_rx;
-			pad_staged[port].ry      = new_ry;
+			pad_staged[pad].buttons = new_button_mask;
+			pad_staged[pad].lx      = new_lx;
+			pad_staged[pad].ly      = new_ly;
+			pad_staged[pad].rx      = new_rx;
+			pad_staged[pad].ry      = new_ry;
 
 			if (conf.rumble_scale_q8 > 0)
-				pads[port][0].rumble(conf.rumble_scale_q8, sioConvertPortAndSlotToPad(port, 0));
+				pads[con_port][con_slot].rumble(conf.rumble_scale_q8, port);
 		}
 	}
 
@@ -545,13 +602,17 @@ retro_input_state_t PADGetInputStateCallback(void)
 }
 
 /* The per-port controller type, as the frontend set it through
- * retro_set_controller_port_device; port 0 defaults to a DualShock2 and
- * the others to nothing, as the Pad section's defaults were. The
- * multitap flags and motor scales had no writer and are the defaults. */
+ * retro_set_controller_port_device, indexed by frontend port; port 0
+ * defaults to a DualShock2 and the others to nothing, as the Pad
+ * section's defaults were. The motor scales are the defaults. */
 static const char* s_pad_type_name[NUM_CONTROLLER_PORTS];
 
 void retro_set_controller_port_device(unsigned port, unsigned device)
 {
+	if (port >= NUM_CONTROLLER_PORTS)
+		return;
+	if (port >= 2 && device != RETRO_DEVICE_JOYPAD)
+		device = RETRO_DEVICE_NONE;
 	if (pad_type[port] != (int)device)
 	{
 		pad_type[port] = device;
@@ -560,7 +621,8 @@ void retro_set_controller_port_device(unsigned port, unsigned device)
 		{
 			case RETRO_DEVICE_JOYPAD:
 				s_pad_type_name[port] = "DualShock2";
-				USBSetPortDevice(port, USB_DEV_NONE, port);
+				if (port < 2)
+					USBSetPortDevice(port, USB_DEV_NONE, port);
 				break;
 			case RETRO_DEVICE_KEYBOARD:
 				/* USB HID keyboard coexists with the DualShock on this slot,
@@ -586,7 +648,8 @@ void retro_set_controller_port_device(unsigned port, unsigned device)
 				break;
 			default:
 				s_pad_type_name[port] = "None";
-				USBSetPortDevice(port, USB_DEV_NONE, port);
+				if (port < 2)
+					USBSetPortDevice(port, USB_DEV_NONE, port);
 				break;
 		}
 
@@ -613,7 +676,7 @@ void stop_rumble()
 	if (!rumble.set_rumble_state)
 		return;
 
-	for (int port = 0; port < 2; ++port)
+	for (int port = 0; port < NUM_CONTROLLER_PORTS; ++port)
 	{
 		rumble.set_rumble_state(port, RETRO_RUMBLE_STRONG, 0);
 		rumble.set_rumble_state(port, RETRO_RUMBLE_WEAK, 0);
@@ -1070,12 +1133,16 @@ bool PADcomplete(void) { return query.queryDone; }
 
 void PAD::LoadConfig()
 {
-	EmuConfig.MultitapPort0_Enabled = false;
-	EmuConfig.MultitapPort1_Enabled = false;
+	EmuConfig.MultitapPort0_Enabled = (pad_multitap & 1) != 0;
+	EmuConfig.MultitapPort1_Enabled = (pad_multitap & 2) != 0;
 	for (u32 i = 0; i < NUM_CONTROLLER_PORTS; i++)
+		g_key_status.m_type[i] = NotConnected;
+	for (u32 port = 0; port < NUM_CONTROLLER_PORTS; port++)
 	{
-		const char* type = s_pad_type_name[i] ? s_pad_type_name[i] : ((i == 0) ? "DualShock2" : "None");
-		g_key_status.m_type[i]     = NotConnected;
+		const u32 i = pad_for_port(port);
+		const char* type = s_pad_type_name[port] ? s_pad_type_name[port] : ((port == 0) ? "DualShock2" : "None");
+		if (i >= NUM_CONTROLLER_PORTS)
+			continue;
 		for (const ControllerInfo& info : s_controller_info)
 		{
 			if (!strcmp(type, info.name))
