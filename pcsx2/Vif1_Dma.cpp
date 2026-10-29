@@ -253,19 +253,24 @@ __fi void vif1VUFinish(void)
 	}
 }
 
+/* PATH2 has finished its packet: release the GIF and let any path
+ * waiting on it run. Taken at most once per PATH2 transfer. */
+static __noinline void vif1_path2_done(void)
+{
+	gifRegs.stat.APATH = 0;
+	gifRegs.stat.OPH   = 0;
+	vif1Regs.stat.VGW  = false; //Let vif continue if it's stuck on a flush
+
+	if (gifUnit.checkPaths(1, 0, 1))
+		gifUnit.Execute(false, true);
+}
+
 void vif1Interrupt(void)
 {
 	g_vif1Cycles = 0;
 
 	if (gifRegs.stat.APATH == 2 && gifUnit.gifPath[GIF_PATH_2].isDone())
-	{
-		gifRegs.stat.APATH = 0;
-		gifRegs.stat.OPH   = 0;
-		vif1Regs.stat.VGW  = false; //Let vif continue if it's stuck on a flush
-
-		if (gifUnit.checkPaths(1, 0, 1))
-			gifUnit.Execute(false, true);
-	}
+		vif1_path2_done();
 	//Some games (Fahrenheit being one) start vif first, let it loop through blankness while it sets MFIFO mode, so we need to check it here.
 	if (dmacRegs.ctrl.MFD == MFD_VIF1)
 	{
