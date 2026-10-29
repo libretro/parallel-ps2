@@ -36,7 +36,7 @@ vifOp(vifCode_Null);
 // Vif0/Vif1 Misc Functions
 //------------------------------------------------------------------
 
-__ri void vifExecQueue(int idx)
+static __fi void vifExecQueue_inl(int idx)
 {
 	if (!GetVifX.queued_program || (vuRegs[0].VI[REG_VPU_STAT].UL & 1 << (idx * 8)))
 		return;
@@ -63,6 +63,11 @@ __ri void vifExecQueue(int idx)
 	}*/
 }
 
+void vifExecQueue(int idx)
+{
+	vifExecQueue_inl(idx);
+}
+
 static __fi EE_EventType vif1InternalIrq(void)
 {
 	return (dmacRegs.ctrl.MFD == MFD_VIF1) ? DMAC_MFIFO_VIF : DMAC_VIF1;
@@ -70,14 +75,14 @@ static __fi EE_EventType vif1InternalIrq(void)
 
 static __fi void vifFlush(int idx)
 {
-	vifExecQueue(idx);
+	vifExecQueue_inl(idx);
 
 	if (!idx)
 		vif0FLUSH();
 	else
 		vif1FLUSH();
 
-	vifExecQueue(idx);
+	vifExecQueue_inl(idx);
 }
 
 static __fi void vuExecMicro(int idx, u32 addr, bool requires_wait)
@@ -126,7 +131,7 @@ static __fi void vuExecMicro(int idx, u32 addr, bool requires_wait)
 	GetVifX.queued_gif_wait = requires_wait;
 
 	if (!idx || (!THREAD_VU1 && !INSTANT_VU1))
-		vifExecQueue(idx);
+		vifExecQueue_inl(idx);
 }
 
 //------------------------------------------------------------------
@@ -299,7 +304,7 @@ static __fi void _vifCode_MPG(int idx, u32 addr, const u32* data, int size)
 	vifStruct& vifX = GetVifX;
 	u16 vuMemSize = idx ? 0x4000 : 0x1000;
 
-	vifExecQueue(idx);
+	vifExecQueue_inl(idx);
 
 	if (idx && THREAD_VU1)
 	{
@@ -415,7 +420,7 @@ vifOp(vifCode_MSCAL)
 			if (((data[1] >> 24) & 0x60) == 0x60) // Immediate following Unpack
 			{
 				//Snowblind games only use MSCAL, so other MS kicks force the program directly.
-				vifExecQueue(idx);
+				vifExecQueue_inl(idx);
 			}
 		}
 	}
@@ -445,7 +450,7 @@ vifOp(vifCode_MSCALF)
 		vuExecMicro(idx, (u16)(vifXRegs.code), true);
 		vifX.cmd = 0;
 		vifX.pass = 0;
-		vifExecQueue(idx);
+		vifExecQueue_inl(idx);
 	}
 	return 1;
 }
@@ -470,7 +475,7 @@ vifOp(vifCode_MSCNT)
 		{
 			if (((data[1] >> 24) & 0x60) == 0x60) // Immediate following Unpack
 			{
-				vifExecQueue(idx);
+				vifExecQueue_inl(idx);
 			}
 		}
 	}
@@ -499,7 +504,7 @@ vifOp(vifCode_Nop)
 	{
 		GetVifX.cmd = 0;
 		GetVifX.pass = 0;
-		vifExecQueue(idx);
+		vifExecQueue_inl(idx);
 
 		if (GetVifX.vifpacketsize > 1)
 		{

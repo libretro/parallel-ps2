@@ -573,7 +573,7 @@ __ri void _nVifUnpackLoop(const u8* data)
 	} while (vifRegs.num);
 }
 
-__fi void _nVifUnpack(int idx, const u8* data, uint mode, bool isFill)
+void _nVifUnpack(int idx, const u8* data, uint mode, bool isFill)
 {
 	UnpackLoopTable[idx][!!mode][isFill](data);
 }

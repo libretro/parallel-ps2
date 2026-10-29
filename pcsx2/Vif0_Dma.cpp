@@ -23,7 +23,7 @@ u32 g_vif0Cycles = 0;
 
 // Run VU0 until finish, don't add cycles to EE
 // because its vif stalling not the EE core...
-__fi void vif0FLUSH(void)
+void vif0FLUSH(void)
 {
 	if (vuRegs[0].VI[REG_VPU_STAT].UL & 0x5) // T bit stop or Busy
 	{
@@ -59,7 +59,7 @@ bool _VIF0chain(void)
 	return VIF0transfer(pMem, vif0ch.qwc * 4, false);
 }
 
-__fi void vif0SetupTransfer(void)
+static __fi void vif0SetupTransfer(void)
 {
 	tDMA_TAG *ptag = dmaGetAddr(vif0ch.tadr, false); //Set memory pointer to TADR
 
@@ -116,7 +116,9 @@ __fi void vif0SetupTransfer(void)
 	}
 }
 
-__fi void vif0VUFinish(void)
+static __fi void vif0Interrupt_inl(void);
+
+void vif0VUFinish(void)
 {
 	// Sync up VU0 so we don't errantly wait.
 	while (vuRegs[0].VI[REG_VPU_STAT].UL & 0x1)
@@ -150,11 +152,11 @@ __fi void vif0VUFinish(void)
 		vif0.waitforvu = false;
 		//Make sure VIF0 isnt already scheduled to spin.
 		if(!(cpuRegs.interrupt & 0x1) && vif0ch.chcr.STR && !VIF_TEST(vif0Regs.stat, VIF0_STAT_VSS | VIF0_STAT_VIS | VIF0_STAT_VFS))
-			vif0Interrupt();
+			vif0Interrupt_inl();
 	}
 }
 
-__fi void vif0Interrupt(void)
+static __fi void vif0Interrupt_inl(void)
 {
 	g_vif0Cycles = 0;
 
@@ -243,6 +245,11 @@ __fi void vif0Interrupt(void)
 	hwDmacIrq(DMAC_VIF0);
 	cpuRegs.dmastall &= ~(1 << DMAC_VIF0);
 	vif0Regs.stat.FQC = 0;
+}
+
+void vif0Interrupt(void)
+{
+	vif0Interrupt_inl();
 }
 
 void dmaVIF0(void)

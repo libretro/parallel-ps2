@@ -50,7 +50,7 @@ void COP2_Unknown(void) { }
 
 //****************************************************************************
 
-__fi void _vu0run(bool breakOnMbit, bool addCycles, bool sync_only) {
+static __fi void _vu0run(bool breakOnMbit, bool addCycles, bool sync_only) {
 
 	if (!(vuRegs[0].VI[REG_VPU_STAT].UL & 1)) return;
 

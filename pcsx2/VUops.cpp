@@ -230,7 +230,7 @@ void _vuFlushAll(VURegs* VU)
 	}
 }
 
-__fi void _vuTestPipes(VURegs* VU)
+static __fi void _vuTestPipes_inl(VURegs* VU)
 {
 	bool flushed;
 
@@ -248,6 +248,11 @@ __fi void _vuTestPipes(VURegs* VU)
 		if (vuRegs[1].xgkickenable)
 			_vuXGKICKTransfer((vuRegs[1].cycle - vuRegs[1].xgkicklastcycle) - 1, false);
 	}
+}
+
+void _vuTestPipes(VURegs* VU)
+{
+	_vuTestPipes_inl(VU);
 }
 
 static void _vuFMACTestStall(VURegs* VU, u32 reg, u32 xyzw)
@@ -334,14 +339,14 @@ static __fi void _vuTestALUStalls(VURegs* VU, _VURegsNum* VUregsn)
 	}
 }
 
-__fi void _vuTestUpperStalls(VURegs* VU, _VURegsNum* VUregsn)
+void _vuTestUpperStalls(VURegs* VU, _VURegsNum* VUregsn)
 {
 	if (VUregsn->pipe == VUPIPE_FMAC)
 		_vuTestFMACStalls(VU, VUregsn);
 }
 
 
-__fi void _vuTestLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
+void _vuTestLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
 {
 	switch (VUregsn->pipe)
 	{
@@ -352,7 +357,7 @@ __fi void _vuTestLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
 	}
 }
 
-__fi void _vuClearFMAC(VURegs* VU)
+void _vuClearFMAC(VURegs* VU)
 {
 	int i = VU->fmacwritepos;
 
@@ -431,13 +436,13 @@ static __fi void _vuAddEFUStalls(VURegs* VU, _VURegsNum* VUregsn)
 		_vuEFUAdd(VU, VUregsn->cycles);
 }
 
-__fi void _vuAddUpperStalls(VURegs* VU, _VURegsNum* VUregsn)
+void _vuAddUpperStalls(VURegs* VU, _VURegsNum* VUregsn)
 {
 	if (VUregsn->pipe == VUPIPE_FMAC)
 		_vuAddFMACStalls(VU, VUregsn, true);
 }
 
-__fi void _vuAddLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
+void _vuAddLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
 {
 	switch (VUregsn->pipe)
 	{
@@ -448,7 +453,7 @@ __fi void _vuAddLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
 	}
 }
 
-__fi void _vuBackupVI(VURegs* VU, u32 reg)
+static __fi void _vuBackupVI(VURegs* VU, u32 reg)
 {
 #ifdef VI_BACKUP
 	if (VU->VIBackupCycles && reg == VU->VIRegNumber)
@@ -503,14 +508,14 @@ void __fi applyUnaryFunction(VURegs* VU)
 	if (_W) { VU->VF[_Ft_].i.w = Fn(VU->VF[_Fs_].i.w); }
 }
 
-u32 __fi vuOpABS(u32 fs)
+static __fi u32 vuOpABS(u32 fs)
 {
 	// VU ABS clears the sign bit; this is a pure bit operation, not a float
 	// fabs(), so NaN payloads and the sign bit are handled exactly as hardware.
 	return fs & 0x7fffffff;
 }
 
-void __fi _vuABS(VURegs* VU)
+static __fi void _vuABS(VURegs* VU)
 {
 	return applyUnaryFunction<vuOpABS>(VU);
 }
@@ -1945,7 +1950,7 @@ static __fi void _vuMR32(VURegs* VU)
 //  Load / Store Instructions (VU Interpreter)
 // --------------------------------------------------------------------------------------
 
-__fi u32* GET_VU_MEM(VURegs* VU, u32 addr) // non-static, also used by sVU for now.
+static __fi u32* GET_VU_MEM(VURegs* VU, u32 addr)
 {
 	if (VU == &vuRegs[1])
 		return (u32*)(vuRegs[1].Mem + (addr & 0x3fff));
@@ -2778,7 +2783,7 @@ void _vuXGKICKTransfer(s32 cycles, bool flush)
 	}
 	if (flush)
 	{
-		_vuTestPipes(&vuRegs[1]);
+		_vuTestPipes_inl(&vuRegs[1]);
 	}
 }
 

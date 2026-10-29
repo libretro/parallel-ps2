@@ -337,7 +337,7 @@ _vifT __fi nVifBlock* dVifCompile(nVifBlock* block, int isFill)
 	return block;
 }
 
-_vifT __fi void dVifUnpack(const u8* data, int isFill)
+_vifT void dVifUnpack(const u8* data, int isFill)
 {
 	nVifStruct&   v       = nVif[idx];
 	vifStruct&    vif     = MTVU_VifX;

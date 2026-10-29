@@ -179,7 +179,7 @@ void IPU0dma(void)
 	}
 }
 
-__fi void dmaIPU0(void) // fromIPU
+void dmaIPU0(void) // fromIPU
 {
 	if (dmacRegs.ctrl.STS == STS_fromIPU)   // STS == fromIPU - Initial settings
 		dmacRegs.stadr.ADDR = ipu0ch.madr;
@@ -206,7 +206,7 @@ __fi void dmaIPU0(void) // fromIPU
 	}
 }
 
-__fi void dmaIPU1(void) // toIPU
+void dmaIPU1(void) // toIPU
 {
 	cpuRegs.dmastall &= ~(1 << DMAC_TO_IPU);
 
@@ -250,7 +250,7 @@ void ipu0Interrupt(void)
 	cpuRegs.dmastall &= ~(1 << DMAC_FROM_IPU);
 }
 
-__fi void ipu1Interrupt(void)
+void ipu1Interrupt(void)
 {
 	if(!IPU1Status.DMAFinished || IPU1Status.InProgress)  //Sanity Check
 	{

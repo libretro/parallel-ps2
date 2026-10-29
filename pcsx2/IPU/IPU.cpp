@@ -85,7 +85,7 @@ void tIPU_cmd::clear()
 	current = 0xffffffff;
 }
 
-__fi void IPUProcessInterrupt(void)
+void IPUProcessInterrupt(void)
 {
 	if (ipuRegs.ctrl.BUSY)
 		IPUWorker();
@@ -193,7 +193,7 @@ bool ipuFreeze(SaveStateBase *s)
 }
 
 
-__fi u32 ipuRead32(u32 mem)
+u32 ipuRead32(u32 mem)
 {
 	mem &= 0xff;	// ipu repeats every 0x100
 
@@ -231,7 +231,7 @@ __fi u32 ipuRead32(u32 mem)
 	return psHu32(IPU_CMD + mem);
 }
 
-__fi u64 ipuRead64(u32 mem)
+u64 ipuRead64(u32 mem)
 {
 	mem &= 0xff;	// ipu repeats every 0x100
 
@@ -318,14 +318,16 @@ void ipuSoftReset(void)
 	hwIntcIrq(INTC_IPU); // required for FightBox
 }
 
-__fi bool ipuWrite32(u32 mem, u32 value)
+static __fi void IPUCMD_WRITE_inl(u32 val);
+
+bool ipuWrite32(u32 mem, u32 value)
 {
 	mem &= 0xfff;
 
 	switch (mem)
 	{
 		ipucase(IPU_CMD): // IPU_CMD
-			IPUCMD_WRITE(value);
+			IPUCMD_WRITE_inl(value);
 			return false;
 
 		ipucase(IPU_CTRL): // IPU_CTRL
@@ -344,14 +346,14 @@ __fi bool ipuWrite32(u32 mem, u32 value)
 
 // returns FALSE when the writeback is handled, TRUE if the caller should do the
 // writeback itself.
-__fi bool ipuWrite64(u32 mem, u64 value)
+bool ipuWrite64(u32 mem, u64 value)
 {
 	mem &= 0xfff;
 
 	switch (mem)
 	{
 		ipucase(IPU_CMD):
-			IPUCMD_WRITE((u32)value);
+			IPUCMD_WRITE_inl((u32)value);
 		return false;
 	}
 
@@ -424,7 +426,7 @@ static void ipuSETTH(u32 val)
 
 // When a command is written, we set some various busy flags and clear some other junk.
 // The actual decoding will be handled by IPUworker.
-__fi void IPUCMD_WRITE(u32 val)
+static __fi void IPUCMD_WRITE_inl(u32 val)
 {
 	ipuRegs.ctrl.ECD = 0;
 	ipuRegs.ctrl.SCD = 0;
@@ -497,4 +499,9 @@ __fi void IPUCMD_WRITE(u32 val)
 	}
 	else
 		IPUWorker();
+}
+
+void IPUCMD_WRITE(u32 val)
+{
+	IPUCMD_WRITE_inl(val);
 }

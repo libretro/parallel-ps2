@@ -23,7 +23,7 @@
 
 u32 g_vif1Cycles = 0;
 
-__fi void vif1FLUSH(void)
+void vif1FLUSH(void)
 {
 	if (vuRegs[0].VI[REG_VPU_STAT].UL & 0x500) // T bit stop or Busy
 	{
@@ -130,7 +130,7 @@ bool _VIF1chain(void)
 	return VIF1transfer(pMem, vif1ch.qwc * 4, false);
 }
 
-__fi void vif1SetupTransfer(void)
+static __fi void vif1SetupTransfer(void)
 {
 	tDMA_TAG* ptag = dmaGetAddr(vif1ch.tadr, false); //Set memory pointer to TADR
 
@@ -201,7 +201,7 @@ __fi void vif1SetupTransfer(void)
 	}
 }
 
-__fi void vif1VUFinish(void)
+void vif1VUFinish(void)
 {
 	// Sync up VU1 so we don't errantly wait.
 	while (!THREAD_VU1 && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
