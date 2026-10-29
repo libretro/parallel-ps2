@@ -59,7 +59,7 @@ void hwReset(void)
 	USBreset();
 }
 
-__fi uint intcInterrupt(void)
+uint intcInterrupt(void)
 {
 	u32 intc_stat = psHu32(INTC_STAT);
 	if (intc_stat == 0)
@@ -76,7 +76,7 @@ __fi uint intcInterrupt(void)
 	return 0x400;
 }
 
-__fi uint dmacInterrupt(void)
+uint dmacInterrupt(void)
 {
 	if( ((psHu16(DMAC_STAT + 2) & psHu16(DMAC_STAT)) == 0 ) &&
 		( psHu16(DMAC_STAT) & 0x8000) == 0 )
@@ -109,7 +109,7 @@ void FireMFIFOEmpty(void)
 }
 
 // Write 'size' bytes to memory address 'addr' from 'data'.
-__ri bool hwMFIFOWrite(u32 addr, const u128* data, uint qwc)
+bool hwMFIFOWrite(u32 addr, const u128* data, uint qwc)
 {
 	// DMAC Address resolution:  FIFO can be placed anywhere in the *physical* memory map
 	// for the PS2.  Its probably a serious error for a PS2 app to have the buffer cross
@@ -126,7 +126,7 @@ __ri bool hwMFIFOWrite(u32 addr, const u128* data, uint qwc)
 	return false;
 }
 
-__ri void hwMFIFOResume(u32 transferred)
+void hwMFIFOResume(u32 transferred)
 {
 	if (transferred == 0)
 		return; //Nothing got put in the MFIFO, we don't care
@@ -157,7 +157,7 @@ __ri void hwMFIFOResume(u32 transferred)
 	}
 }
 
-__ri bool hwDmacSrcChainWithStack(DMACh *dma, int id) {
+bool hwDmacSrcChainWithStack(DMACh *dma, int id) {
 	switch (id) {
 		case TAG_REFE: 
 			// Refe - Transfer Packet According to ADDR field

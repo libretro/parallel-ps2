@@ -85,7 +85,7 @@ tDMA_TAG *DMACh::DMAtransfer(u32 addr, u32 num)
 }
 
 // Note: Dma addresses are guaranteed to be aligned to 16 bytes (128 bits)
-__ri tDMA_TAG *dmaGetAddr(u32 addr, bool write)
+tDMA_TAG *dmaGetAddr(u32 addr, bool write)
 {
 	tDMA_TAG tmp;
 	tmp._u32 = addr;
@@ -199,7 +199,7 @@ static __ri void DmaExec( void (*func)(), u32 mem, u32 value )
 }
 
 template< uint page >
-__fi u32 dmacRead32( u32 mem )
+u32 dmacRead32( u32 mem )
 {
 	// Fixme: OPH hack. Toggle the flag on GIF_STAT access. (rama)
 	if ((CHECK_OPHFLAGHACK) && (page << 12) == (mem & (0xf << 12)) && (mem == GIF_STAT))
@@ -217,7 +217,7 @@ __fi u32 dmacRead32( u32 mem )
 // Returns TRUE if the caller should do writeback of the register to eeHw; false if the
 // register has no writeback, or if the writeback is handled internally.
 template< uint page >
-__fi bool dmacWrite32( u32 mem, mem32_t& value )
+bool dmacWrite32( u32 mem, mem32_t& value )
 {
 	// DMA Writes are invalid to everything except the STR on CHCR when it is busy
 	// However this isn't completely confirmed and this might vary depending on if

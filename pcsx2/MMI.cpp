@@ -154,7 +154,7 @@ void PLZCW() {
 	cpuRegs.GPR.r[_Rd_].UL[1] = count_leading_sign_bits(cpuRegs.GPR.r[_Rs_].SL[1]) - 1;
 }
 
-__fi void PMFHL_CLAMP(u16& dst, s32 src)
+static __fi void PMFHL_CLAMP(u16& dst, s32 src)
 {
     if      (src >  0x7fff)	dst = 0x7fff;
     else if (src < -0x8000)	dst = 0x8000;
@@ -520,7 +520,7 @@ void PPACW() {
 	cpuRegs.GPR.r[_Rd_].UL[3] = Rs.UL[2];
 }
 
-__fi void  _PADDSH(int n)
+static __fi void  _PADDSH(int n)
 {
 	s32 sTemp32;
 	sTemp32 = (s32)cpuRegs.GPR.r[_Rs_].SS[n] + (s32)cpuRegs.GPR.r[_Rt_].SS[n];
@@ -540,7 +540,7 @@ void PADDSH() {
 	_PADDSH(4); _PADDSH(5); _PADDSH(6); _PADDSH(7);
 }
 
-__fi void  _PSUBSH(int n)
+static __fi void  _PSUBSH(int n)
 {
 	s32 sTemp32;
 	sTemp32 = (s32)cpuRegs.GPR.r[_Rs_].SS[n] - (s32)cpuRegs.GPR.r[_Rt_].SS[n];
@@ -592,7 +592,7 @@ void PPACH() {
 	cpuRegs.GPR.r[_Rd_].US[7] = Rs.US[6];
 }
 
-__fi void  _PADDSB(int n)
+static __fi void  _PADDSB(int n)
 {
 	s16 sTemp16;
 	sTemp16 = (s16)cpuRegs.GPR.r[_Rs_].SC[n] + (s16)cpuRegs.GPR.r[_Rt_].SC[n];
@@ -688,7 +688,7 @@ void PPACB() {
 	cpuRegs.GPR.r[_Rd_].UC[15] = Rs.UC[14];
 }
 
-__fi void  _PEXT5(int n)
+static __fi void  _PEXT5(int n)
 {
 	cpuRegs.GPR.r[_Rd_].UL[n] =
 		((cpuRegs.GPR.r[_Rt_].UL[n] & 0x0000001F) <<  3) |
@@ -703,7 +703,7 @@ void PEXT5() {
 	_PEXT5(0); _PEXT5(1); _PEXT5(2); _PEXT5(3);
 }
 
-__fi void  _PPAC5(int n)
+static __fi void  _PPAC5(int n)
 {
 	cpuRegs.GPR.r[_Rd_].UL[n] =
 		((cpuRegs.GPR.r[_Rt_].UL[n] >>  3) & 0x0000001F) |
@@ -819,7 +819,7 @@ void PMINH() {
 	_PMINH(4); _PMINH(5); _PMINH(6); _PMINH(7);
 }
 
-__fi void  _PCEQB(int n)
+static __fi void  _PCEQB(int n)
 {
 	if (cpuRegs.GPR.r[_Rs_].UC[n] == cpuRegs.GPR.r[_Rt_].UC[n])
 		cpuRegs.GPR.r[_Rd_].UC[n] = 0xFF;
@@ -835,7 +835,7 @@ void PCEQB() {
 		_PCEQB(i);
 }
 
-__fi void  _PADDUW(int n)
+static __fi void  _PADDUW(int n)
 {
 	s64 tmp;
 	tmp = (s64)cpuRegs.GPR.r[_Rs_].UL[n] + (s64)cpuRegs.GPR.r[_Rt_].UL[n];
@@ -852,7 +852,7 @@ void PADDUW () {
 	_PADDUW(0); _PADDUW(1); _PADDUW(2); _PADDUW(3);
 }
 
-__fi void  _PSUBUW(int n)
+static __fi void  _PSUBUW(int n)
 {
 	s64 sTemp64;
 	sTemp64 = (s64)cpuRegs.GPR.r[_Rs_].UL[n] - (s64)cpuRegs.GPR.r[_Rt_].UL[n];
@@ -881,7 +881,7 @@ void PEXTUW() {
 	cpuRegs.GPR.r[_Rd_].UL[3] = Rs.UL[3];
 }
 
-__fi void  _PADDUH(int n)
+static __fi void  _PADDUH(int n)
 {
 	s32 sTemp32;
 	sTemp32 = (s32)cpuRegs.GPR.r[_Rs_].US[n] + (s32)cpuRegs.GPR.r[_Rt_].US[n];
@@ -899,7 +899,7 @@ void PADDUH() {
 	_PADDUH(4); _PADDUH(5); _PADDUH(6); _PADDUH(7);
 }
 
-__fi void  _PSUBUH(int n)
+static __fi void  _PSUBUH(int n)
 {
 	s32 sTemp32;
 	sTemp32 = (s32)cpuRegs.GPR.r[_Rs_].US[n] - (s32)cpuRegs.GPR.r[_Rt_].US[n];
@@ -934,7 +934,7 @@ void PEXTUH() {
 	cpuRegs.GPR.r[_Rd_].US[7] = Rs.US[7];
 }
 
-__fi void  _PADDUB(int n)
+static __fi void  _PADDUB(int n)
 {
 	u16 Temp16;
 	Temp16 = (u16)cpuRegs.GPR.r[_Rs_].UC[n] + (u16)cpuRegs.GPR.r[_Rt_].UC[n];
@@ -953,7 +953,7 @@ void PADDUB() {
 		 _PADDUB(i);
 }
 
-__fi void  _PSUBUB(int n) {
+static __fi void  _PSUBUB(int n) {
 	s16 sTemp16;
 	sTemp16 = (s16)cpuRegs.GPR.r[_Rs_].UC[n] - (s16)cpuRegs.GPR.r[_Rt_].UC[n];
 
@@ -1080,7 +1080,7 @@ void PSRLVW() {
 										  (cpuRegs.GPR.r[_Rs_].UL[2] & 0x1F));
 }
 
-__fi void  _PMSUBW(int dd, int ss)
+static __fi void  _PMSUBW(int dd, int ss)
 {
 	// Same single 64-bit accumulator as _PMADDW above, subtracting instead.
 	const s64 product = (s64)cpuRegs.GPR.r[_Rs_].SL[ss] * (s64)cpuRegs.GPR.r[_Rt_].SL[ss];
@@ -1132,7 +1132,7 @@ void PINTH() {
 	cpuRegs.GPR.r[_Rd_].US[7] = Rs.US[7];
 }
 
-__fi void  _PMULTW(int dd, int ss)
+static __fi void  _PMULTW(int dd, int ss)
 {
 	s64 temp = (s64)cpuRegs.GPR.r[_Rs_].SL[ss] * (s64)cpuRegs.GPR.r[_Rt_].SL[ss];
 
@@ -1147,7 +1147,7 @@ void PMULTW() {
 	_PMULTW(1, 2);
 }
 
-__fi void  _PDIVW(int dd, int ss)
+static __fi void  _PDIVW(int dd, int ss)
 {
 	if (cpuRegs.GPR.r[_Rs_].UL[ss] == 0x80000000 && cpuRegs.GPR.r[_Rt_].UL[ss] == 0xffffffff)
 	{
@@ -1221,7 +1221,7 @@ void PMADDH() {			// JayteeMaster: changed a bit to avoid screw up
 }
 
 // JayteeMaster: changed a bit to avoid screw up
-__fi void  _PHMADH_LO(int dd, int n)
+static __fi void  _PHMADH_LO(int dd, int n)
 {
 	s32 firsttemp =		   (s32)cpuRegs.GPR.r[_Rs_].SS[n+1] * (s32)cpuRegs.GPR.r[_Rt_].SS[n+1];
 	s32 temp = firsttemp + (s32)cpuRegs.GPR.r[_Rs_].SS[n]   * (s32)cpuRegs.GPR.r[_Rt_].SS[n];
@@ -1230,7 +1230,7 @@ __fi void  _PHMADH_LO(int dd, int n)
 	cpuRegs.LO.UL[dd+1] = firsttemp;
 }
 
-__fi void  _PHMADH_HI(int dd, int n)
+static __fi void  _PHMADH_HI(int dd, int n)
 {
 	s32 firsttemp =		   (s32)cpuRegs.GPR.r[_Rs_].SS[n+1] * (s32)cpuRegs.GPR.r[_Rt_].SS[n+1];
 	s32 temp = firsttemp + (s32)cpuRegs.GPR.r[_Rs_].SS[n]   * (s32)cpuRegs.GPR.r[_Rt_].SS[n];
@@ -1407,7 +1407,7 @@ void PMULTH() {			// JayteeMaster: changed a bit to avoid screw up
 	}
 }
 
-__fi void  _PDIVBW(int n)
+static __fi void  _PDIVBW(int n)
 {
 	if (cpuRegs.GPR.r[_Rs_].UL[n] == 0x80000000 && cpuRegs.GPR.r[_Rt_].US[0] == 0xffff)
 	{
@@ -1509,7 +1509,7 @@ void PINTEH() {
 	cpuRegs.GPR.r[_Rd_].US[7] = Rs.US[6];
 }
 
-__fi void  _PMULTUW(int dd, int ss)
+static __fi void  _PMULTUW(int dd, int ss)
 {
    u64 tempu = (u64)cpuRegs.GPR.r[_Rs_].UL[ss] * (u64)cpuRegs.GPR.r[_Rt_].UL[ss];
 
@@ -1525,7 +1525,7 @@ void PMULTUW() {
 	_PMULTUW(1, 2);
 }
 
-__fi void  _PDIVUW(int dd, int ss)
+static __fi void  _PDIVUW(int dd, int ss)
 {
 	if (cpuRegs.GPR.r[_Rt_].UL[ss] != 0) {
 		cpuRegs.LO.SD[dd] = (s32)(cpuRegs.GPR.r[_Rs_].UL[ss] / cpuRegs.GPR.r[_Rt_].UL[ss]);

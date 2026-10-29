@@ -515,6 +515,8 @@ static __fi void _cpuTestOverflow(int i)
 	counters[i].target &= 0xffff;
 }
 
+static __fi u32 rcntRcount_inl(int index);
+
 // mode - 0 means hblank source, 8 means vblank source.
 static __fi void rcntStartGate(bool isVblank, u64 sCycle)
 {
@@ -549,7 +551,7 @@ static __fi void rcntStartGate(bool isVblank, u64 sCycle)
 				// Just set the start cycle -- counting will be done as needed
 				// for events (overflows, targets, mode changes, and the gate off below)
 
-				counters[i].count = rcntRcount(i);
+				counters[i].count = rcntRcount_inl(i);
 				counters[i].mode.IsCounting = 0;
 				counters[i].startCycle = sCycle;
 				break;
@@ -734,10 +736,7 @@ static __fi void rcntUpdate_vSync(void)
 	}
 }
 
-// forceinline note: this method is called from two locations, but one
-// of them is the interpreter, which doesn't count. ;)  So might as
-// well forceinline it!
-__fi void rcntUpdate(void)
+void rcntUpdate(void)
 {
 	if (cpuTestCycle(vsyncCounter.startCycle, vsyncCounter.deltaCycles))
 		rcntUpdate_vSync();
@@ -876,7 +875,7 @@ static __fi void rcntWtarget(int index, u32 value)
 
 #define rcntWhold(index, value) (counters[(index)].hold = (value))
 
-__fi u32 rcntRcount(int index)
+static __fi u32 rcntRcount_inl(int index)
 {
 	u32 ret;
 
@@ -923,7 +922,12 @@ __fi u32 rcntRcount(int index)
 	return ret;
 }
 
-__fi u16 rcntRead32(u32 mem)
+u32 rcntRcount(int index)
+{
+	return rcntRcount_inl(index);
+}
+
+u16 rcntRead32(u32 mem)
 {
 	// Important DevNote:
 	// Yes this uses a u16 return value on purpose!  The upper bits 16 of the counter registers
@@ -933,7 +937,7 @@ __fi u16 rcntRead32(u32 mem)
 	switch(mem)
 	{
 		case(RCNT0_COUNT):
-			return (u16)rcntRcount(0);
+			return (u16)rcntRcount_inl(0);
 		case(RCNT0_MODE):
 			return (u16)counters[0].modeval;
 		case(RCNT0_TARGET):
@@ -942,7 +946,7 @@ __fi u16 rcntRead32(u32 mem)
 			return (u16)counters[0].hold;
 
 		case(RCNT1_COUNT):
-			return (u16)rcntRcount(1);
+			return (u16)rcntRcount_inl(1);
 		case(RCNT1_MODE):
 			return (u16)counters[1].modeval;
 		case(RCNT1_TARGET):
@@ -951,14 +955,14 @@ __fi u16 rcntRead32(u32 mem)
 			return (u16)counters[1].hold;
 
 		case(RCNT2_COUNT):
-			return (u16)rcntRcount(2);
+			return (u16)rcntRcount_inl(2);
 		case(RCNT2_MODE):
 			return (u16)counters[2].modeval;
 		case(RCNT2_TARGET):
 			return (u16)counters[2].target;
 
 		case(RCNT3_COUNT):
-			return (u16)rcntRcount(3);
+			return (u16)rcntRcount_inl(3);
 		case(RCNT3_MODE):
 			return (u16)counters[3].modeval;
 		case(RCNT3_TARGET):
@@ -968,7 +972,7 @@ __fi u16 rcntRead32(u32 mem)
 	return psHu16(mem);
 }
 
-__fi bool rcntWrite32(u32 mem, mem32_t *value)
+bool rcntWrite32(u32 mem, mem32_t *value)
 {
 	// [TODO] : counters should actually just use the EE's hw register space for storing
 	// count, mode, target, and hold. This will allow for a simplified handler for register

@@ -152,7 +152,7 @@ static void incGifChAddr(u32 qwc)
 	}
 }
 
-__fi void gifCheckPathStatus(bool calledFromGIF)
+static __fi void gifCheckPathStatus_inl(bool calledFromGIF)
 {
 	// If GIF is running on it's own, let it handle its own timing.
 	if (calledFromGIF && gifch.chcr.STR)
@@ -198,9 +198,14 @@ __fi void gifCheckPathStatus(bool calledFromGIF)
 	}
 }
 
-__fi void gifInterrupt(void)
+void gifCheckPathStatus(bool calledFromGIF)
 {
-	gifCheckPathStatus(false);
+	gifCheckPathStatus_inl(calledFromGIF);
+}
+
+static __fi void gifInterrupt_inl(void)
+{
+	gifCheckPathStatus_inl(false);
 
 	if (gifUnit.gifPath[GIF_PATH_3].state == GIF_PATH_IDLE)
 	{
@@ -286,6 +291,11 @@ __fi void gifInterrupt(void)
 
 	if (gif_fifo.fifoSize)
 		GifDMAInt(8 * BIAS);
+}
+
+void gifInterrupt(void)
+{
+	gifInterrupt_inl();
 }
 
 static u32 WRITERING_DMA(u32* pMem, u32 qwc)
@@ -449,7 +459,7 @@ void dmaGIF(void)
 			gif.gspath3done = true;
 	}
 
-	gifInterrupt();
+	gifInterrupt_inl();
 }
 
 static u32 QWCinGIFMFIFO(u32 DrainADDR)
@@ -638,12 +648,12 @@ void gifMFIFOInterrupt(void)
 
 	if (dmacRegs.ctrl.MFD != MFD_GIF) // GIF not in MFIFO anymore, come out.
 	{
-		gifInterrupt();
+		gifInterrupt_inl();
 		cpuRegs.dmastall |= 1 << DMAC_MFIFO_GIF;
 		return;
 	}
 
-	gifCheckPathStatus(false);
+	gifCheckPathStatus_inl(false);
 
 	if (gifUnit.gifPath[GIF_PATH_3].state == GIF_PATH_IDLE)
 	{

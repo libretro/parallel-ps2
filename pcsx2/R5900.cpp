@@ -112,7 +112,7 @@ void cpuReset()
 	g_eeloadMain = 0, g_eeloadExec = 0, g_osdsys_str = 0;
 }
 
-__ri void cpuException(u32 code, u32 bd)
+void cpuException(u32 code, u32 bd)
 {
 	bool checkStatus;
 	u32 offset          = 0;
@@ -181,7 +181,7 @@ void cpuTlbMiss(u32 addr, u32 bd, u32 excode)
 	cpuException(excode, bd);
 }
 
-__fi int cpuGetCycles(void)
+int cpuGetCycles(void)
 {
 	const int cycles = (cpuRegs.sCycle[VU_MTVU_BUSY] + cpuRegs.eCycle[VU_MTVU_BUSY]) - cpuRegs.cycle;
 	return ((!THREAD_VU1 || INSTANT_VU1)) ? 1 : pcsx2_max_i(1, cycles);
@@ -189,7 +189,7 @@ __fi int cpuGetCycles(void)
 
 // tests the cpu cycle against the given start and delta values.
 // Returns true if the delta time has passed.
-__fi int cpuTestCycle(u64 startCycle, s32 delta)
+int cpuTestCycle(u64 startCycle, s32 delta)
 {
 	// typecast the conditional to signed so that things don't explode
 	// if the startCycle is ahead of our current cpu cycle.
@@ -315,7 +315,7 @@ static bool cpuIntsEnabled(int Interrupt)
 
 // Shared portion of the branch test, called from both the Interpreter
 // and the recompiler.  (moved here to help alleviate redundant code)
-__fi void _cpuEventTest_Shared(void)
+void _cpuEventTest_Shared(void)
 {
 	retro_atomic_store_release_int(&eeEventTestIsActive, 1);
 	cpuRegs.nextEventCycle = cpuRegs.cycle + EE_WAIT_CYCLES;
@@ -436,7 +436,7 @@ __fi void _cpuEventTest_Shared(void)
 	retro_atomic_store_release_int(&eeEventTestIsActive, 0);
 }
 
-__ri void cpuTestINTCInts(void)
+void cpuTestINTCInts(void)
 {
 	// Check the COP0's Status register for general interrupt disables, and the 0x400
 	// bit (which is INTC master toggle).
@@ -456,7 +456,7 @@ __ri void cpuTestINTCInts(void)
 	}
 }
 
-__fi void cpuTestDMACInts(void)
+void cpuTestDMACInts(void)
 {
 	// Check the COP0's Status register for general interrupt disables, and the 0x800
 	// bit (which is the DMAC master toggle).
@@ -477,7 +477,7 @@ __fi void cpuTestDMACInts(void)
 	}
 }
 
-__fi void CPU_INT( EE_EventType n, s32 ecycle)
+void CPU_INT( EE_EventType n, s32 ecycle)
 {
 	// If it's retunning too quick, just rerun the DMA, there's no point in running the EE for < 4 cycles.
 	// This causes a huge uplift in performance for ONI FMV's.

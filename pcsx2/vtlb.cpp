@@ -660,7 +660,7 @@ static void TAKES_R128 vtlbDefaultPhyWrite128(u32 addr, r128 data) { }
 //
 // Note: All handlers persist across calls to vtlb_Reset(), but are wiped/invalidated by calls to vtlb_Init()
 //
-__ri void vtlb_ReassignHandler(vtlbHandler rv,
+void vtlb_ReassignHandler(vtlbHandler rv,
 	vtlbMemR8FP* r8, vtlbMemR16FP* r16, vtlbMemR32FP* r32, vtlbMemR64FP* r64, vtlbMemR128FP* r128,
 	vtlbMemW8FP* w8, vtlbMemW16FP* w16, vtlbMemW32FP* w32, vtlbMemW64FP* w64, vtlbMemW128FP* w128)
 {
@@ -691,7 +691,7 @@ vtlbHandler vtlb_NewHandler(void)
 //
 // Returns a handle for the newly created handler  See vtlb_MapHandler for use of the return value.
 //
-__ri vtlbHandler vtlb_RegisterHandler(vtlbMemR8FP* r8, vtlbMemR16FP* r16, vtlbMemR32FP* r32, vtlbMemR64FP* r64, vtlbMemR128FP* r128,
+vtlbHandler vtlb_RegisterHandler(vtlbMemR8FP* r8, vtlbMemR16FP* r16, vtlbMemR32FP* r32, vtlbMemR64FP* r64, vtlbMemR128FP* r128,
 	vtlbMemW8FP* w8, vtlbMemW16FP* w16, vtlbMemW32FP* w32, vtlbMemW64FP* w64, vtlbMemW128FP* w128)
 {
 	vtlbHandler rv = vtlb_NewHandler();
@@ -742,14 +742,14 @@ void vtlb_MapBlock(void* base, u32 start, u32 size, u32 blocksize)
 	}
 }
 
-__fi void* vtlb_GetPhyPtr(u32 paddr)
+void* vtlb_GetPhyPtr(u32 paddr)
 {
 	if (paddr >= VTLB_PMAP_SZ || vtlb_phys_is_handler(vtlbdata.pmap[paddr >> VTLB_PAGE_BITS]))
 		return NULL;
 	return (void*)(vtlb_phys_ptr(vtlbdata.pmap[paddr >> VTLB_PAGE_BITS]) + (paddr & VTLB_PAGE_MASK));
 }
 
-__fi u32 vtlb_V2P(u32 vaddr)
+u32 vtlb_V2P(u32 vaddr)
 {
 	u32 paddr = vtlbdata.ppmap[vaddr >> VTLB_PAGE_BITS];
 	paddr    |= vaddr & VTLB_PAGE_MASK;

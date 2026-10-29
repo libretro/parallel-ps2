@@ -19,9 +19,11 @@
 /* Protect the read-only ICacheSize (IC) and DataCacheSize (DC) bits */
 #define _WriteCP0Config(value) (cpuRegs.CP0.n.Config = (((value) & ~0xFC0) | 0x440))
 
+static __fi void COP0_UpdatePCCR_inl(void);
+
 #define _WriteCP0Status(value) \
 { \
-       COP0_UpdatePCCR(); \
+       COP0_UpdatePCCR_inl(); \
        cpuRegs.CP0.n.Status.val = (value); \
        if ((int)(cpuRegs.nextEventCycle - cpuRegs.cycle) > 4) cpuRegs.nextEventCycle = cpuRegs.cycle + 4; \
 }
@@ -79,7 +81,7 @@ void WriteCP0Config(u32 value)
 
 #define PERF_ShouldCountEvent(evt) ((evt >= 1  && evt <= 3) || (evt >= 12 && evt <= 15))
 
-__fi void COP0_UpdatePCCR(void)
+static __fi void COP0_UpdatePCCR_inl(void)
 {
 	// Counting and counter exceptions are not performed if we are 
 	// currently executing a Level 2 exception (ERL)
@@ -128,6 +130,11 @@ __fi void COP0_UpdatePCCR(void)
 	}
 	cpuRegs.lastPERFCycle[0] = cpuRegs.cycle;
 	cpuRegs.lastPERFCycle[1] = cpuRegs.cycle;
+}
+
+void COP0_UpdatePCCR(void)
+{
+	COP0_UpdatePCCR_inl();
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -332,12 +339,12 @@ namespace COP0 {
 					cpuRegs.GPR.r[_Rt_].SD[0] = (s32)cpuRegs.PERF.n.pccr.val;
 				else if (0 == (_Imm_ & 2)) // MFPC 0, only LSB of register matters
 				{
-					COP0_UpdatePCCR();
+					COP0_UpdatePCCR_inl();
 					cpuRegs.GPR.r[_Rt_].SD[0] = (s32)cpuRegs.PERF.n.pcr0;
 				}
 				else // MFPC 1
 				{
-					COP0_UpdatePCCR();
+					COP0_UpdatePCCR_inl();
 					cpuRegs.GPR.r[_Rt_].SD[0] = (s32)cpuRegs.PERF.n.pcr1;
 				}
 				break;
@@ -388,7 +395,7 @@ namespace COP0 {
 					if (0 != (_Imm_ & 0x3E)) // only effective when the register is 0
 						break;
 					// Updates PCRs and sets the PCCR.
-					COP0_UpdatePCCR();
+					COP0_UpdatePCCR_inl();
 					/* PCCR has implemented bits 1-9 and 11-19 (the two
 					 * counters' mode and event fields) plus CTE at 31; the
 					 * rest read back as zero. ps2autotests

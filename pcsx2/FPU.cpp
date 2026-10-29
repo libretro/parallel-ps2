@@ -108,12 +108,12 @@ static bool checkDivideByZeroInvalidSoft(u64 res, u32 cFlagsToSet1, u32 cFlagsTo
 	return false;
 }
 
-__fi u32 fp_max(u32 a, u32 b)
+static __fi u32 fp_max(u32 a, u32 b)
 {
 	return ((s32)a < 0 && (s32)b < 0) ? pcsx2_min_i(a, b) : pcsx2_max_i(a, b);
 }
 
-__fi u32 fp_min(u32 a, u32 b)
+static __fi u32 fp_min(u32 a, u32 b)
 {
 	return ((s32)a < 0 && (s32)b < 0) ? pcsx2_max_i(a, b) : pcsx2_min_i(a, b);
 }

@@ -98,7 +98,7 @@ static __fi void IMRwrite(u32 value)
 	GSIMR._u32 = (value & 0x1f00)|0x6000;
 }
 
-__fi void gsWrite8(u32 mem, u8 value)
+void gsWrite8(u32 mem, u8 value)
 {
 	tGS_CSR tmp;
 	tmp.FIFO = CSR_FIFO_EMPTY;
@@ -131,7 +131,7 @@ __fi void gsWrite8(u32 mem, u8 value)
 //////////////////////////////////////////////////////////////////////////
 // GS Write 16 bit
 
-__fi void gsWrite16(u32 mem, u16 value)
+void gsWrite16(u32 mem, u16 value)
 {
 	tGS_CSR tmp;
 	tmp.FIFO = CSR_FIFO_EMPTY;
@@ -160,7 +160,7 @@ __fi void gsWrite16(u32 mem, u16 value)
 //////////////////////////////////////////////////////////////////////////
 // GS Write 32 bit
 
-__fi void gsWrite32(u32 mem, u32 value)
+void gsWrite32(u32 mem, u32 value)
 {
 	tGS_CSR tmp;
 	tmp.FIFO = CSR_FIFO_EMPTY;
@@ -296,7 +296,7 @@ void TAKES_R128 gsWrite128_generic(u32 mem, r128 value)
 }
 #endif
 
-__fi u8 gsRead8(u32 mem)
+u8 gsRead8(u32 mem)
 {
 	if ((mem & ~0xF) == GS_SIGLBLID)
 		return *(u8*)PS2GS_BASE(mem);
@@ -304,7 +304,7 @@ __fi u8 gsRead8(u32 mem)
 	return *(u8*)PS2GS_BASE(GS_CSR + (mem & 0xF));
 }
 
-__fi u16 gsRead16(u32 mem)
+u16 gsRead16(u32 mem)
 {
 	if ((mem & ~0xF) == GS_SIGLBLID)
 		return *(u16*)PS2GS_BASE(mem);
@@ -312,7 +312,7 @@ __fi u16 gsRead16(u32 mem)
 	return *(u16*)PS2GS_BASE(GS_CSR + (mem & 0x7));
 }
 
-__fi u32 gsRead32(u32 mem)
+u32 gsRead32(u32 mem)
 {
 	if ((mem & ~0xF) == GS_SIGLBLID)
 		return *(u32*)PS2GS_BASE(mem);
@@ -320,7 +320,7 @@ __fi u32 gsRead32(u32 mem)
 	return *(u32*)PS2GS_BASE(GS_CSR + (mem & 0xC));
 }
 
-__fi u64 gsRead64(u32 mem)
+u64 gsRead64(u32 mem)
 {
 	if ((mem & ~0xF) == GS_SIGLBLID)
 		return *(u64*)PS2GS_BASE(mem);

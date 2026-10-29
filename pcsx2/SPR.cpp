@@ -189,7 +189,7 @@ int  _SPR0chain(void)
 	return (partialqwc); // Bus is 1/2 the ee speed
 }
 
-__fi void SPR0chain(void)
+static __fi void SPR0chain(void)
 {
 	int cycles = _SPR0chain() * BIAS;
 	CPU_INT(DMAC_FROM_SPR, cycles);
@@ -386,7 +386,7 @@ int  _SPR1chain(void)
 	return (partialqwc);
 }
 
-__fi void SPR1chain(void)
+static __fi void SPR1chain(void)
 {
 	int cycles =  _SPR1chain() * BIAS;
 	CPU_INT(DMAC_TO_SPR, cycles);
