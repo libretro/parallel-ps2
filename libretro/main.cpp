@@ -72,7 +72,7 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...)
 	vfprintf(stderr, fmt, ap);
 	va_end(ap);
 }
-extern "C" retro_log_printf_t log_cb = fallback_log;
+retro_log_printf_t log_cb;
 static retro_audio_sample_batch_t batch_cb;
 struct retro_hw_render_callback hw_render;
 
@@ -2573,7 +2573,7 @@ bool retro_load_game(const struct retro_game_info* game)
 
 	if (setting_bios.empty())
 	{
-		log_cb(RETRO_LOG_ERROR, "Could not find any valid PS2 BIOS File in %s\n", EmuFolders::Bios);
+		log_cb(RETRO_LOG_ERROR, "Could not find any valid PS2 BIOS File in \"%s\".\n", EmuFolders::Bios);
 		libretro_teardown_cpu_thread();
 		return false;
 	}
@@ -3193,8 +3193,8 @@ static bool state_read(const void* data, size_t size)
 	}
 	if (!ok)
 	{
-		log_cb(RETRO_LOG_ERROR, "state load: CPU or subsystem block rejected "
-			"at offset %d (tag '%.31s')\n", loadme.idx, loadme.tagspace);
+		log_cb(RETRO_LOG_ERROR, "%s: CPU or subsystem block rejected "
+			"at offset %d (tag '%.31s')\n", __func__, loadme.idx, loadme.tagspace);
 		return false;
 	}
 
@@ -3210,7 +3210,7 @@ static bool state_read(const void* data, size_t size)
 	SaveState_FreezeMem(&loadme, vuRegs[1].Micro, VU1_PROGSIZE);
 	if (!SaveState_IsOkay(&loadme))
 	{
-		log_cb(RETRO_LOG_ERROR, "state load: memory blocks short (size=%zu)\n", size);
+		log_cb(RETRO_LOG_ERROR, "%s: memory blocks short (size=%zu)\n", __func__, size);
 		return false;
 	}
 
@@ -3221,7 +3221,7 @@ static bool state_read(const void* data, size_t size)
 	fP.data = SaveState_BlockPtr(&loadme);
 	if (!SaveState_IsOkay(&loadme) || SPU2freeze(FREEZE_LOAD, &fP) != 0)
 	{
-		log_cb(RETRO_LOG_ERROR, "state load: SPU2 block rejected\n");
+		log_cb(RETRO_LOG_ERROR, "%s: SPU2 block rejected.\n", __func__);
 		return false;
 	}
 	SaveState_CommitBlock(&loadme, fP.size);
@@ -3233,7 +3233,7 @@ static bool state_read(const void* data, size_t size)
 	fP.data = SaveState_BlockPtr(&loadme);
 	if (!SaveState_IsOkay(&loadme) || PADfreeze(FREEZE_LOAD, &fP) != 0)
 	{
-		log_cb(RETRO_LOG_ERROR, "state load: PAD block rejected\n");
+		log_cb(RETRO_LOG_ERROR, "%s: PAD block rejected.\n", __func__);
 		return false;
 	}
 	SaveState_CommitBlock(&loadme, fP.size);
@@ -3247,15 +3247,15 @@ static bool state_read(const void* data, size_t size)
 	fP.size = static_cast<int>(size) - loadme.idx;
 	if (fP.size <= 0)
 	{
-		log_cb(RETRO_LOG_ERROR, "state load: no GS payload left "
-			"(offset=%d size=%zu)\n", loadme.idx, size);
+		log_cb(RETRO_LOG_ERROR, "%s: no GS payload left "
+			"(offset=%d size=%zu)\n", __func__, loadme.idx, size);
 		return false;
 	}
 	fP.data = SaveState_BlockPtr(&loadme);
 	if (GSfreeze(FREEZE_LOAD, &fP) != 0)
 	{
-		log_cb(RETRO_LOG_ERROR, "state load: GS block rejected "
-			"(payload=%d bytes)\n", fP.size);
+		log_cb(RETRO_LOG_ERROR, "%s: GS block rejected "
+			"(payload=%d bytes)\n", __func__, fP.size);
 		return false;
 	}
 	SaveState_CommitBlock(&loadme, fP.size);
@@ -3290,8 +3290,8 @@ bool retro_serialize(void* data, size_t size)
 	 * state that would not fit is refused rather than grown into. */
 	ok = state_write(data, size);
 	if (!ok)
-		log_cb(RETRO_LOG_ERROR, "retro_serialize: the state does not fit "
-			"the %zu bytes given\n", size);
+		log_cb(RETRO_LOG_ERROR, "%s: the state does not fit "
+			"the %zu bytes given.\n", __func__, size);
 
 	/* The EE stays paused: the next retro_run presents the frame the
 	 * pause left pending and lets it go, so taking a state does not
@@ -3326,11 +3326,11 @@ bool retro_unserialize(const void* data, size_t size)
 	if (!ok)
 	{
 		if (have_backup && state_read(backup, backup_size))
-			log_cb(RETRO_LOG_ERROR, "retro_unserialize: state not loaded; "
-				"the running game is unchanged\n");
+			log_cb(RETRO_LOG_ERROR, "%s: state not loaded; "
+				"the running game is unchanged.\n", __func__);
 		else
-			log_cb(RETRO_LOG_ERROR, "retro_unserialize: state not loaded "
-				"and the running game could not be restored\n");
+			log_cb(RETRO_LOG_ERROR, "%s: state not loaded "
+				"and the running game could not be restored.\n", __func__);
 	}
 
 	if (ok)
@@ -3388,7 +3388,7 @@ std::optional<std::vector<u8>> Host::ReadResourceFile(const char* filename)
 		free(fbuf);
 	}
 	if (!ret.has_value())
-		log_cb(RETRO_LOG_ERROR, "Failed to read resource file '%s', path '%s'\n", filename, path);
+		log_cb(RETRO_LOG_ERROR, "Failed to read resource file \"%s\", path \"%s\".\n", filename, path);
 	return ret;
 }
 
@@ -3421,7 +3421,7 @@ std::optional<std::string> Host::ReadResourceFileToString(const char* filename)
 			if (ext.has_value())
 				return ext;
 			log_cb(RETRO_LOG_INFO,
-				"External GameIndex.yaml not found at '%s', using built-in database.\n",
+				"External GameIndex.yaml not found at \"%s\", using built-in database.\n",
 				path);
 		}
 		return std::string(reinterpret_cast<const char*>(g_gameDatabaseBuiltin),
@@ -3470,7 +3470,7 @@ std::optional<std::string> Host::ReadResourceFileToString(const char* filename)
 		}
 
 		// OSD messages should be kept pretty short, but let's give the user a bit more info in logs.
-		log_cb(RETRO_LOG_ERROR, "Failed to read resource file to string '%s', path '%s'\n", filename, path);
+		log_cb(RETRO_LOG_ERROR, "Failed to read resource file to string \"%s\", path \"%s\"\n", filename, path);
 		log_cb(RETRO_LOG_WARN, "Please check the docs for more informations: https://docs.libretro.com/library/lrps2/\n");
 	}
 	return ret;
@@ -3496,7 +3496,7 @@ void Host::OnGameChanged(const std::string& disc_path,
 	if (!serial[0])
 		return;
 
-	log_cb(RETRO_LOG_INFO, "[GameDB] Serial: %s\n", serial);
+	log_cb(RETRO_LOG_INFO, "[GameDB] Serial: \"%s\"\n", serial);
 
 	ret = lrps2_ingame_patches(game_serial.c_str(),
 			game_crc,

@@ -351,7 +351,7 @@ bool GSDevice11::Create()
 
 	for (size_t i = 0; i < C89_ARRAY_SIZE(m_merge.ps); i++)
 	{
-		const std::string entry_point(FormatString::Format("ps_main%d", i));
+		const std::string entry_point(FormatString::Format("ps_main%lld", i));
 		m_merge.ps[i] = m_shader_cache.GetPixelShader(m_dev.get(), merge_fx_shader_raw, sm_model.GetPtr(), entry_point.c_str());
 		if (!m_merge.ps[i])
 			return false;
@@ -382,7 +382,7 @@ bool GSDevice11::Create()
 
 	for (size_t i = 0; i < C89_ARRAY_SIZE(m_interlace.ps); i++)
 	{
-		const std::string entry_point(FormatString::Format("ps_main%d", i));
+		const std::string entry_point(FormatString::Format("ps_main%lld", i));
 		m_interlace.ps[i] = m_shader_cache.GetPixelShader(m_dev.get(), interlace_fx_shader_raw, sm_model.GetPtr(), entry_point.c_str());
 		if (!m_interlace.ps[i])
 			return false;
@@ -522,7 +522,7 @@ bool GSDevice11::Create()
 
 	for (size_t i = 0; i < C89_ARRAY_SIZE(m_date.primid_init_ps); i++)
 	{
-		const std::string entry_point(FormatString::Format("ps_stencil_image_init_%d", i));
+		const std::string entry_point(FormatString::Format("ps_stencil_image_init_%lld", i));
 		m_date.primid_init_ps[i] = m_shader_cache.GetPixelShader(m_dev.get(), convert_fx_shader_raw, sm_model.GetPtr(), entry_point.c_str());
 		if (!m_date.primid_init_ps[i])
 			return false;

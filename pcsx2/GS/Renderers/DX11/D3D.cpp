@@ -119,17 +119,19 @@ static wil::com_ptr_nothrow<ID3DBlob> D3D_CompileShader(D3D::ShaderType type, D3
 	if (error_blob)
 	{
 		error_string.append(static_cast<const char*>(error_blob->GetBufferPointer()), error_blob->GetBufferSize());
+		/* Remove trailing newline */
+		error_string.erase(std::remove(error_string.begin(), error_string.end(), '\n'), error_string.cend());
 		error_blob.reset();
 	}
 
 	if (FAILED(hr))
 	{
-		log_cb(RETRO_LOG_INFO, "Failed to compile '%s':\n%s\n", target, error_string.c_str());
+		log_cb(RETRO_LOG_INFO, "Failed to compile \"%s\":\n%s\n", target, error_string.c_str());
 		return {};
 	}
 
 	if (!error_string.empty())
-		log_cb(RETRO_LOG_WARN, "'%s' compiled with warnings:\n%s\n", target, error_string.c_str());
+		log_cb(RETRO_LOG_WARN, "\"%s\" compiled with warnings:\n%s\n", target, error_string.c_str());
 
 	return blob;
 }
