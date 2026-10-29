@@ -229,7 +229,7 @@ static unsigned      s_tlb_store;
  * each a run of them sent after waiting a number of vsyncs, and then
  * optionally read a number of quadwords back from the GS (a local to host
  * transfer the kick set up) into RAM at 0x200000 + 0x1000 * the kick. */
-#define SL_MAX_QW    320
+#define SL_MAX_QW    512
 #define SL_MAX_KICKS 4
 static unsigned      s_qw_count;
 static unsigned      s_qw[SL_MAX_QW][4];
@@ -1436,6 +1436,59 @@ static void case_date_mid_scene(void)
 	s_smode1_lo = 0x40834504u;
 }
 
+/* Destination alpha with depth masked, so the stencil it is tested
+ * through is a depth target made for the draw, after a frame that has
+ * read the target back and read 72 different 1024x512 32-bit textures:
+ * more than half the memory the textures and targets are owed at 1x,
+ * on top of the upload and readback buffers. A clear leaves the left
+ * half of the frame alpha 0x80 and the right half alpha 0; the sprite
+ * then passes only on the right. */
+static void case_date_no_depth_full(void)
+{
+	unsigned i, k, first;
+	first = s_qw_count;
+	stream_draw_setup(7, 0);
+	qw(6, 0, GS_PRIM, 0);                                  /* sprite */
+	qw(0x80404040u, 0x3f800000u, GS_RGBAQ, 0);             /* alpha 0x80, left half */
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(320, 448), 0, GS_XYZ2, 0);
+	qw(0x00606060u, 0x3f800000u, GS_RGBAQ, 0);             /* alpha 0, right half */
+	qw((unsigned)XY(320, 0), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(640, 448), 0, GS_XYZ2, 0);
+	kick(first, s_qw_count - first, 0);
+	first = s_qw_count;
+	qw(4 | 0x8000u, 0x10000000u, 0xEu, 0);
+	qw((10u << 16), 0, GS_BITBLTBUF, 0);                   /* SBP 0, SBW 10, PSMCT32 */
+	qw(316u | (8u << 16), 0, GS_TRXPOS, 0);                /* from 316,8 */
+	qw(8, 8, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);                                /* local to host */
+	kick(first, s_qw_count - first, 2);
+	readback(16);
+	first = s_qw_count;
+	stream_image(0x3000u, 1, 0, 0, 0, 16, 16, 64);         /* inside every texture below, somewhere else */
+	for (k = 0; k < 64; k++)
+		qw(0x10305070u * (k + 1), 0x20406080u + k, 0x0f0e0d0cu ^ (k << 8), 0x80000000u | k);
+	qw((2 + 72 * 4 + 5) | 0x8000u, 0x10000000u, 0xEu, 0); /* A+D, EOP */
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* sprite, TME, FST */
+	qw(0, 0, GS_UV, 0);
+	for (i = 0; i < 72; i++)
+	{
+		/* TBP 0x1200 + 0x20 i, TBW 16, CT32, TW 10, TH 9, TCC, decal;
+		 * the corners' UVs swap from one sprite to the next */
+		qw((0x1200u + 0x20u * i) | (16u << 14) | (10u << 26) | (1u << 30), 2u | (1u << 2) | (1u << 3), GS_TEX0_1, 0);
+		qw((unsigned)XY(8 * i, 432 + (i & 1) * 8), 0, GS_XYZ2, 0);
+		qw((i & 1) ? 0 : 16383u | (8192u << 16), 0, GS_UV, 0);
+		qw((unsigned)XY(8 * i + 8, 440 + (i & 1) * 8), 0, GS_XYZ2, 0);
+	}
+	qw((1u << 14) | (1u << 16) | (1u << 17), 0, GS_TEST_1, 0); /* DATE, DATM 0, ZTE, ZTST always */
+	qw(6, 0, GS_PRIM, 0);
+	qw(0x8000ffffu, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(100, 100), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(540, 300), 0, GS_XYZ2, 0);
+	kick(first, s_qw_count - first, 1);
+	s_run_frames = 60;
+}
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -1498,6 +1551,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "clut_lines_ramps", case_clut_lines_ramps, "1" },
 	{ "clut_scales",     case_clut_scales,   "1" },
 	{ "tlb_store",       case_tlb_store,     "1" },
+	{ "date_no_depth_full", case_date_no_depth_full, "1" },
 };
 
 /* A 4MB image the core's BIOS scan accepts. The reset program turns on a

@@ -6942,6 +6942,10 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 		m_conf.destination_alpha <= GSHWDrawConfig::DestinationAlphaMode::StencilOne && !m_conf.ds)
 	{
 		temp_ds.reset(g_gs_device->CreateDepthStencil(m_conf.rt->GetWidth(), m_conf.rt->GetHeight(), GSTexture::Format::DepthStencil, false));
+		/* (no stencil to test against: the draw is dropped, as a draw
+		 * whose source copy could not be made is) */
+		if (!temp_ds)
+			return;
 		m_conf.ds = temp_ds.get();
 	}
 

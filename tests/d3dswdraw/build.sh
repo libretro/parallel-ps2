@@ -8,7 +8,8 @@
 # not - and the D3D11 and D3D12 pictures each other's. Version 1 of the
 # interfaces, three sync slots, a frontend rebuilding its driver and
 # tests/latency's case run too, and a D3D12 log that reports a draw into
-# a texture that is not a render target fails the run.
+# a texture that is not a render target, or a heap with no room for a
+# resource, fails the run.
 #
 # MSYS2 MINGW64 runs it on the system's D3D. Elsewhere it runs under wine
 # with DXVK and vkd3d-proton, any Vulkan device (lavapipe will do), and
@@ -79,6 +80,10 @@ draw() {
 		echo "  FAIL: $out draws into a texture that is not a render target"
 		failed=1
 	fi
+	if grep -q "no room for a" "$SCRATCH/$out.log"; then
+		echo "  FAIL: $out ran out of the heap a case at this scale is owed"
+		failed=1
+	fi
 	if grep -q "skip: no D3D1" "$SCRATCH/$out.log"; then
 		echo "skip: $(grep 'skip:' "$SCRATCH/$out.log" | tr -d '\r')"
 		exit 0
@@ -118,6 +123,7 @@ frame_after_t4 20
 copy_then_upload 20
 dest_alpha 20
 date_mid_scene 20
+date_no_depth_full 20
 upload_whole 20
 present 20
 points 20
