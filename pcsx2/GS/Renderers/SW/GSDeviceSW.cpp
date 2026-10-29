@@ -47,6 +47,23 @@ namespace
 	 * time, is sufficient and cheapest.
 	 * ==================================================================== */
 
+	/* One channel of s over d at alpha a (0..255): each product +128
+	 * and >>8 on its own, the sum saturated, as the SSE code does. */
+	__fi u32 BlendChannel(u32 s, u32 d, u32 a)
+	{
+		const u32 v = ((s * a + 128u) >> 8) + ((d * (255u - a) + 128u) >> 8);
+		return v > 255u ? 255u : v;
+	}
+
+	/* PS2-ABGR s over d at alpha a, d's alpha kept. */
+	__fi u32 BlendPx(u32 s, u32 d, u32 a)
+	{
+		return (d & 0xFF000000u)
+			| (BlendChannel((s >> 16) & 0xFFu, (d >> 16) & 0xFFu, a) << 16)
+			| (BlendChannel((s >>  8) & 0xFFu, (d >>  8) & 0xFFu, a) << 8)
+			|  BlendChannel( s        & 0xFFu,  d        & 0xFFu, a);
+	}
+
 #if _M_SSE >= 0x401	/* x86 SSE 4.1 - the de-facto baseline for PCSX2
 			 * (GSVector4i uses _mm_shuffle_epi8 unconditionally,
 			 * which is SSSE3, and the build system sets _M_SSE
@@ -274,8 +291,7 @@ namespace
 		__m128i di_lo = _mm_mullo_epi16(dst_lo, inv_alpha_lo);
 		__m128i di_hi = _mm_mullo_epi16(dst_hi, inv_alpha_hi);
 
-		/* +128 then >>8 approximates /255 with at most 1-ulp error,
-		 * matching the scalar implementation's +127 then >>8. */
+		/* Each product +128, >>8, as BlendPx. */
 		sa_lo = _mm_srli_epi16(_mm_add_epi16(sa_lo, bias), 8);
 		sa_hi = _mm_srli_epi16(_mm_add_epi16(sa_hi, bias), 8);
 		di_lo = _mm_srli_epi16(_mm_add_epi16(di_lo, bias), 8);
@@ -429,20 +445,7 @@ namespace
 						const u32 raw = (s >> 24) & 0xFFu;
 						a = pcsx2_min_u(raw * 2u, 255u);
 					}
-					const u32 ia = 255u - a;
-
-					const u32 sr = (s      ) & 0xFFu;
-					const u32 sg = (s >>  8) & 0xFFu;
-					const u32 sb = (s >> 16) & 0xFFu;
-					const u32 dr = (d      ) & 0xFFu;
-					const u32 dg = (d >>  8) & 0xFFu;
-					const u32 db = (d >> 16) & 0xFFu;
-
-					const u32 r = ((sr * a + dr * ia + 127u) >> 8) & 0xFFu;
-					const u32 g = ((sg * a + dg * ia + 127u) >> 8) & 0xFFu;
-					const u32 b = ((sb * a + db * ia + 127u) >> 8) & 0xFFu;
-
-					StorePx(dst_row, dx, (d & 0xFF000000u) | (b << 16) | (g << 8) | r);
+					StorePx(dst_row, dx, BlendPx(s, d, a));
 				}
 				continue;
 			}
@@ -470,22 +473,7 @@ namespace
 					const u32 raw = (s >> 24) & 0xFFu;
 					a = pcsx2_min_u(raw * 2u, 255u);
 				}
-				const u32 ia = 255u - a;
-
-				const u32 sr = (s      ) & 0xFFu;
-				const u32 sg = (s >>  8) & 0xFFu;
-				const u32 sb = (s >> 16) & 0xFFu;
-				const u32 dr = (d      ) & 0xFFu;
-				const u32 dg = (d >>  8) & 0xFFu;
-				const u32 db = (d >> 16) & 0xFFu;
-
-				/* +127 for rounding before the /255 (approximated as
-				 * >>8; with the +127 the max error is <1 ulp). */
-				const u32 r = ((sr * a + dr * ia + 127u) >> 8) & 0xFFu;
-				const u32 g = ((sg * a + dg * ia + 127u) >> 8) & 0xFFu;
-				const u32 b = ((sb * a + db * ia + 127u) >> 8) & 0xFFu;
-
-				StorePx(dst_row, dx, (d & 0xFF000000u) | (b << 16) | (g << 8) | r);
+				StorePx(dst_row, dx, BlendPx(s, d, a));
 			}
 		}
 	}
