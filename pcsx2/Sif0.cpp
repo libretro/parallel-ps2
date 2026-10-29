@@ -253,7 +253,7 @@ static __fi void Sif0End(void)
 }
 
 // Transfer IOP to EE, putting data in the fifo as an intermediate step.
-__fi void SIF0Dma(void)
+static __fi void SIF0Dma_inl(void)
 {
 	int BusyCheck = 0;
 	Sif0Init();
@@ -291,19 +291,24 @@ __fi void SIF0Dma(void)
 	Sif0End();
 }
 
-__fi void  sif0Interrupt(void)
+void SIF0Dma(void)
+{
+	SIF0Dma_inl();
+}
+
+void  sif0Interrupt(void)
 {
 	HW_DMA9_CHCR &= ~0x01000000;
 	psxDmaInterrupt2(2);
 }
 
-__fi void  EEsif0Interrupt(void)
+void  EEsif0Interrupt(void)
 {
 	hwDmacIrq(DMAC_SIF0);
 	sif0ch.chcr.STR = false;
 }
 
-__fi void dmaSIF0(void)
+void dmaSIF0(void)
 {
 	psHu32(SBUS_F240) |= 0x2000;
 	sif0.ee.busy = true;
@@ -320,6 +325,6 @@ __fi void dmaSIF0(void)
 	// Legend of Legaia doesn't throw a warning either :)
 	sif0.ee.end = false;
 	cpuRegs.dmastall &= ~(1 << DMAC_SIF0);
-	SIF0Dma();
+	SIF0Dma_inl();
 
 }

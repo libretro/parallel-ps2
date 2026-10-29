@@ -206,7 +206,7 @@ static __fi void HandleIOPTransfer(void)
 }
 
 // Transfer EE to IOP, putting data in the fifo as an intermediate step.
-__fi void SIF1Dma(void)
+static __fi void SIF1Dma_inl(void)
 {
 	int BusyCheck = 0;
 
@@ -249,13 +249,18 @@ __fi void SIF1Dma(void)
 	psHu32(SBUS_F240) &= ~0x4000;
 }
 
-__fi void  sif1Interrupt(void)
+void SIF1Dma(void)
+{
+	SIF1Dma_inl();
+}
+
+void  sif1Interrupt(void)
 {
 	HW_DMA10_CHCR &= ~0x01000000; //reset TR flag
 	psxDmaInterrupt2(3);
 }
 
-__fi void EEsif1Interrupt(void)
+void EEsif1Interrupt(void)
 {
 	hwDmacIrq(DMAC_SIF1);
 	sif1ch.chcr.STR = false;
@@ -263,7 +268,7 @@ __fi void EEsif1Interrupt(void)
 
 // Do almost exactly the same thing as psxDma10 in IopDma.cpp.
 // Main difference is this checks for IOP, where psxDma10 checks for ee.
-__fi void dmaSIF1(void)
+void dmaSIF1(void)
 {
 	psHu32(SBUS_F240) |= 0x4000;
 	sif1.ee.busy       = true;
@@ -289,6 +294,6 @@ __fi void dmaSIF1(void)
 			sif1.ee.end = true;
 	}
 
-	SIF1Dma();
+	SIF1Dma_inl();
 
 }

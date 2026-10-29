@@ -90,7 +90,7 @@ void psxException(u32 code, u32 bd)
 		((psxRegs.CP0.n.Status & 0xf) << 2);
 }
 
-__fi void psxSetNextBranch( u32 startCycle, s32 delta )
+void psxSetNextBranch( u32 startCycle, s32 delta )
 {
 	// typecast the conditional to signed so that things don't blow up
 	// if startCycle is greater than our next branch cycle.
@@ -99,12 +99,12 @@ __fi void psxSetNextBranch( u32 startCycle, s32 delta )
 		psxRegs.iopNextEventCycle = startCycle + delta;
 }
 
-__fi void psxSetNextBranchDelta( s32 delta )
+void psxSetNextBranchDelta( s32 delta )
 {
 	psxSetNextBranch( psxRegs.cycle, delta );
 }
 
-__fi int psxTestCycle( u32 startCycle, s32 delta )
+static __fi int psxTestCycle( u32 startCycle, s32 delta )
 {
 	// typecast the conditional to signed so that things don't explode
 	// if the startCycle is ahead of our current cpu cycle.
@@ -112,14 +112,14 @@ __fi int psxTestCycle( u32 startCycle, s32 delta )
 	return (int)(psxRegs.cycle - startCycle) >= delta;
 }
 
-__fi int psxRemainingCycles(IopEventId n)
+int psxRemainingCycles(IopEventId n)
 {
 	if (psxRegs.interrupt & (1 << n))
 		return ((psxRegs.cycle - psxRegs.sCycle[n]) + psxRegs.eCycle[n]);
 	return 0;
 }
 
-__fi void PSX_INT( IopEventId n, s32 ecycle )
+void PSX_INT( IopEventId n, s32 ecycle )
 {
 	psxRegs.interrupt |= 1 << n;
 
@@ -192,7 +192,7 @@ static __fi void _psxTestInterrupts(void)
 	}
 }
 
-__ri void iopEventTest(void)
+void iopEventTest(void)
 {
 	psxRegs.iopNextEventCycle = psxRegs.cycle + iopWaitCycles;
 

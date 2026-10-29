@@ -115,8 +115,6 @@ extern u16 * const regtable[0x401];
 #define spu2Rs16(mmem) (*(s16*)((s8*)spu2regs + ((mmem)&0x1fff)))
 #define spu2Ru16(mmem) (*(u16*)((s8*)spu2regs + ((mmem)&0x1fff)))
 
-extern void spu2M_Write(u32 addr, s16 value);
-
 typedef struct V_VolumeLR
 {
 	s32 Left;
@@ -469,14 +467,6 @@ static __fi u16 V_Core_DmaRead(V_Core *c)
 	c->ActiveTSA &= 0xfffff;
 	c->TSA = c->ActiveTSA;
 	return ret;
-}
-
-static __fi void V_Core_DmaWrite(V_Core *c, u16 value)
-{
-	spu2M_Write(c->ActiveTSA, value);
-	++c->ActiveTSA;
-	c->ActiveTSA &= 0xfffff;
-	c->TSA = c->ActiveTSA;
 }
 
 StereoOut32 ReverbUpsample(V_Core *core);

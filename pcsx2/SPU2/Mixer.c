@@ -652,11 +652,6 @@ static StereoOut32 V_Core_Mix(V_Core *c, const VoiceMixSet *inVoices, const Ster
 	return TD;
 }
 
-/* GCC does not want to inline it when lto is enabled because some functions growth too much.
- * The function is big enough to see any speed impact. -- Gregory */
-#ifndef __POSIX__
-__fi
-#endif
 void Mix(short *out_left, short *out_right)
 {
 	StereoOut32 Out;

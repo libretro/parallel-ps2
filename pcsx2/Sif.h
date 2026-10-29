@@ -192,7 +192,6 @@ extern void sifReset(void);
 
 extern void SIF0Dma(void);
 extern void SIF1Dma(void);
-extern void SIF2Dma(void);
 
 extern void dmaSIF0(void);
 extern void dmaSIF1(void);

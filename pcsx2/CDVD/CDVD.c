@@ -98,10 +98,12 @@ static void CDVDREAD_INT(u32 eCycle)
 	PSX_INT(IopEvt_CdvdRead, eCycle);
 }
 
+static __fi void cdvdActionInterrupt_inl(void);
+
 static void CDVD_INT(int eCycle)
 {
 	if (eCycle == 0)
-		cdvdActionInterrupt();
+		cdvdActionInterrupt_inl();
 	else
 		PSX_INT(IopEvt_Cdvd, eCycle);
 }
@@ -1038,8 +1040,7 @@ static int cdvdReadSector(const u8* src)
 	return 0;
 }
 
-/* inlined due to being referenced in only one place. */
-__fi void cdvdActionInterrupt(void)
+static __fi void cdvdActionInterrupt_inl(void)
 {
 	u8 ready_status = CDVD_DRIVE_READY;
 	if (cdvd.AbortRequested)
@@ -1090,7 +1091,12 @@ __fi void cdvdActionInterrupt(void)
 	cdvdSetIrq((1 << Irq_CommandComplete));
 }
 
-__fi void cdvdSectorReady(void)
+void cdvdActionInterrupt(void)
+{
+	cdvdActionInterrupt_inl();
+}
+
+void cdvdSectorReady(void)
 {
 	if (cdvd.nextSectorsBuffered < 16)
 		cdvd.nextSectorsBuffered++;
@@ -1101,8 +1107,7 @@ __fi void cdvdSectorReady(void)
 		cdvdUpdateStatus(CDVD_STATUS_PAUSE);
 }
 
-/* inlined due to being referenced in only one place. */
-__fi void cdvdReadInterrupt(void)
+void cdvdReadInterrupt(void)
 {
 	bool direct = false; /* the sector went straight to IOP memory */
 

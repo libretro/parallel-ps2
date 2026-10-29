@@ -58,7 +58,7 @@ static bool psxmode = false;
 
 /* writes a signed value to the SPU2 ram */
 /* Invalidates the ADPCM cache in the process. */
-__fi void spu2M_Write(u32 addr, s16 value)
+static __fi void spu2M_Write(u32 addr, s16 value)
 {
 	/* Make sure the cache is invalidated: */
 	/* (note to self : addr address WORDs, not bytes) */
@@ -70,6 +70,14 @@ __fi void spu2M_Write(u32 addr, s16 value)
 		pcm_cache_data[cacheIdx].Generation = 0;
 	}
 	*GetMemPtr(addr) = value;
+}
+
+static __fi void V_Core_DmaWrite(V_Core *c, u16 value)
+{
+	spu2M_Write(c->ActiveTSA, value);
+	++c->ActiveTSA;
+	c->ActiveTSA &= 0xfffff;
+	c->TSA = c->ActiveTSA;
 }
 
 void V_Core_Init(V_Core *c, int index)
@@ -205,7 +213,7 @@ const size_t spu2_layout_probe[5] =
 	offsetof(V_Core, Regs)
 };
 
-__fi void TimeUpdate(u64 cClocks)
+void TimeUpdate(u64 cClocks)
 {
 	int i;
 	int c;
@@ -457,7 +465,7 @@ __fi void TimeUpdate(u64 cClocks)
 	}
 }
 
-__fi void UpdateSpdifMode(void)
+static __fi void UpdateSpdifMode(void)
 {
 	if (Spdif.Out & 0x4) /* use 24/32bit PCM data streaming */
 	{

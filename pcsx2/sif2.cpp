@@ -28,7 +28,9 @@ static __fi void Sif2Init(void)
 	sif2.iop.cycles = 0;
 }
 
-__fi void ReadFifoSingleWord(void)
+static __fi void SIF2Dma(void);
+
+void ReadFifoSingleWord(void)
 {
 	u32 ptag[4];
 
@@ -246,7 +248,7 @@ static __fi void Sif2End(void)
 }
 
 // Transfer IOP to EE, putting data in the fifo as an intermediate step.
-__fi void SIF2Dma(void)
+static __fi void SIF2Dma(void)
 {
 	int BusyCheck = 0;
 	Sif2Init();
@@ -277,7 +279,7 @@ __fi void SIF2Dma(void)
 	Sif2End();
 }
 
-__fi void  sif2Interrupt(void)
+void  sif2Interrupt(void)
 {
 	if (!sif2.iop.end || sif2.iop.counter > 0)
 	{
@@ -289,7 +291,7 @@ __fi void  sif2Interrupt(void)
 	psxDmaInterrupt2(2);
 }
 
-__fi void dmaSIF2(void)
+void dmaSIF2(void)
 {
 	psHu32(SBUS_F240) |= 0x8000;
 	sif2.ee.busy = true;

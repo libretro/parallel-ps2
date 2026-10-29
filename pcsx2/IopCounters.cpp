@@ -509,7 +509,7 @@ void psxRcntWcount32(int index, u32 value)
 	_rcntSet(index);
 }
 
-__fi void psxRcntWmode16(int index, u32 value)
+void psxRcntWmode16(int index, u32 value)
 {
 	psxCounter& counter = psxCounters[index];
 
@@ -568,7 +568,7 @@ __fi void psxRcntWmode16(int index, u32 value)
 	_rcntSet(index);
 }
 
-__fi void psxRcntWmode32(int index, u32 value)
+void psxRcntWmode32(int index, u32 value)
 {
 	psxCounter& counter = psxCounters[index];
 

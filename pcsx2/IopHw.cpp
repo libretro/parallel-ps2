@@ -42,14 +42,14 @@ void psxHwReset(void) {
 	sio2.FullReset();
 }
 
-__fi u8 psxHw4Read8(u32 add)
+u8 psxHw4Read8(u32 add)
 {
 	u16 mem = add & 0xFF;
 	u8 ret = cdvdRead(mem);
 	return ret;
 }
 
-__fi void psxHw4Write8(u32 add, u8 value)
+void psxHw4Write8(u32 add, u8 value)
 {
 	u8 mem = (u8)add;	// only lower 8 bits are relevant (cdvd regs mirror across the page)
 	cdvdWrite(mem, value);
