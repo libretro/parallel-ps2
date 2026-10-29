@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cfloat>
 // SPDX-FileCopyrightText: 2024 Arntzen Software AS
 // SPDX-FileContributor: Hans-Kristian Arntzen
 // SPDX-FileContributor: Runar Heyer
@@ -53,6 +54,7 @@ void GSInterface::stop_compilation_tasks()
 bool GSInterface::init(Vulkan::Device *device, const GSOptions &options)
 {
 	vram_size = options.vram_size;
+	line_pixel_group = options.line_pixel_group == 4 ? 4 : 8;
 	uint32_t num_pages = vram_size / PageSize;
 	tracker.set_num_pages(num_pages);
 	uint32_t num_pages_u32 = (num_pages + 31) / 32;
@@ -339,7 +341,8 @@ void GSInterface::flush_render_pass(FlushReason reason)
 	render_pass.texture_map.clear();
 	render_pass.tex_infos.clear();
 	render_pass.tex_infos_has_super_samples = false;
-	render_pass.tex0_infos.clear();
+	render_pass.tex_sources.clear();
+	render_pass.forwarded_palette_lines = UINT32_MAX;
 	render_pass.state_vector_map.clear();
 	render_pass.state_vectors.clear();
 	render_pass.primitive_count = 0;
@@ -459,122 +462,224 @@ void GSInterface::sync_shadow_page(uint32_t page_index)
 	renderer.mark_shadow_page_sync(page_index);
 }
 
+/* A float rounded to float at every step even where the FPU keeps more
+ * (x87), so no wider intermediate decides a texel. */
+#if defined(FLT_EVAL_METHOD) && FLT_EVAL_METHOD != 0
+#define PGS_STEP_FLOAT volatile float
+#else
+#define PGS_STEP_FLOAT float
+#endif
+
+/* The texel column a horizontal line puts on each of the pixels 0 to 7,
+ * for a line from x = 0 with U u0 to x1 (1/16 pixel) with U u1 (1/16
+ * texel), stepped the way the software rasterizer steps it: coordinates
+ * as floats, the start and each pixel's offset within its group of
+ * `group` pixels (4 or 8) truncated to 16.16 fixed point, and the second
+ * group of four a truncated four-pixel step on. Returns 0 for a
+ * coordinate below the texture. */
+static int pgs_line_texels(int32_t x1, uint32_t u0, uint32_t u1, uint32_t group, uint32_t *texels)
+{
+	PGS_STEP_FLOAT t0 = (float)(int32_t)(u0 << 12);
+	PGS_STEP_FLOAT t1 = (float)(int32_t)(u1 << 12);
+	PGS_STEP_FLOAT du = t1 - t0;
+	PGS_STEP_FLOAT dx = (float)x1 * (1.0f / (float)PGS_SUBPIXELS);
+	PGS_STEP_FLOAT dt = du / dx;
+	PGS_STEP_FLOAT dt_group = dt * (float)group;
+	const int32_t base = (int32_t)t0;
+	const int32_t second = base + (int32_t)dt_group;
+	int32_t sign = 0;
+	uint32_t k;
+
+	for (k = 0; k < group; k++)
+	{
+		PGS_STEP_FLOAT d = dt * (float)k;
+		int32_t u = base + (int32_t)d;
+		sign |= u;
+		texels[k] = (uint32_t)u >> 16;
+		if (group == 4)
+		{
+			u = second + (int32_t)d;
+			sign |= u;
+			texels[k + 4] = (uint32_t)u >> 16;
+		}
+	}
+	return sign >= 0;
+}
+
+/* Whether a texel coordinate reads itself under a wrap mode, for a texture
+ * of 1 << size_log2 texels. */
+static int pgs_texel_unwrapped(uint32_t t, uint32_t mode, uint32_t size_log2, uint32_t lo, uint32_t hi)
+{
+	if (size_log2 > 10)
+		return 0;
+	if (mode == CLAMPBits::REGION_CLAMP)
+		return t >= lo && t <= hi;
+	if (mode == CLAMPBits::REGION_REPEAT)
+		return ((t & lo) | hi) == t && t < (1u << size_log2);
+	return t < (1u << size_log2);
+}
+
 void GSInterface::rewrite_forwarded_clut_upload(
 		const ContextState &ctx, PaletteUploadDescriptor &upload,
 		uint32_t &palette_width, uint32_t &palette_height)
 {
-	// Horrible engine-specific speed hack. Try to forward some extreme edge cases where
-	// game renders to FB only to use that as a palette.
-	// It's basically CSM2 mode with a scaled palette coordinate, so attempt to rewrite the descriptor to that style.
-	// Absolute insanity, but what you gonna do *shrug*.
-	// Without this, we end up with one full flush per primitive almost, making everything sub 5 fps ...
+	// A palette drawn into the frame as two lines of eight pixels, DECAL
+	// from a 32-bit texture, and loaded as the CLUT straight after is read
+	// from the lines' texture instead: each entry from the texel the line
+	// put there. Without this, every such palette ends the render pass.
 
 	auto &fb_instance = render_pass.instances[render_pass.current_instance];
 	auto &desc = ctx.tex0.desc;
 
-	// Match an extremely specific code pattern.
-	if (uint32_t(ctx.tex0.desc.CBP) == fb_instance.frame.desc.FBP * PGS_BLOCKS_PER_PAGE &&
-	    fb_instance.frame.desc.PSM == PSMCT32 &&
-	    ctx.tex0.desc.CSM == TEX0Bits::CSM_LAYOUT_RECT &&
-	    fb_instance.color_write_mask == 0xffffff && render_pass.primitive_count >= 2 &&
-	    desc.CPSM == PSMCT32 && desc.PSM == PSMT4)
+	if (uint32_t(ctx.tex0.desc.CBP) != fb_instance.frame.desc.FBP * PGS_BLOCKS_PER_PAGE ||
+	    fb_instance.frame.desc.PSM != PSMCT32 ||
+	    ctx.tex0.desc.CSM != TEX0Bits::CSM_LAYOUT_RECT ||
+	    fb_instance.color_write_mask != 0xffffff || render_pass.primitive_count < 2 ||
+	    desc.CPSM != PSMCT32 || desc.PSM != PSMT4)
+		return;
+
+	uint32_t a_index = render_pass.primitive_count - 2;
+	auto &prim_a = render_pass.prim[a_index];
+	auto &prim_b = render_pass.prim[a_index + 1];
+
+	if (prim_a.state != prim_b.state || prim_a.tex != prim_b.tex)
+		return;
+
+	if ((prim_a.state & (1u << STATE_BIT_LINE)) == 0)
+		return;
+
+	if ((prim_a.state & ((1u << STATE_BIT_PERSPECTIVE) | (1u << STATE_BIT_Z_TEST) | (1u << STATE_BIT_Z_WRITE))) != 0)
+		return;
+
+	// The lines draw into the current frame.
+	if ((prim_a.state >> STATE_VERTEX_RENDER_PASS_INSTANCE_OFFSET) != render_pass.current_instance)
+		return;
+
+	// Point sampled, at level 0.
+	if ((prim_a.tex & (TEX_SAMPLER_MAG_LINEAR_BIT | TEX_SAMPLER_MIN_LINEAR_BIT | TEX_SAMPLER_MIPMAP_LINEAR_BIT |
+	                   (((1u << TEX_MAX_MIP_LEVEL_BITS) - 1u) << TEX_MAX_MIP_LEVEL_OFFSET))) != 0)
+		return;
 	{
-		auto &prim_a = render_pass.prim[render_pass.primitive_count - 2];
-		auto &prim_b = render_pass.prim[render_pass.primitive_count - 1];
-
-		if (prim_a.state != prim_b.state || prim_a.tex != prim_b.tex)
+		const TEX1Bits *tex1 = &registers.ctx[registers.prim.desc.CTXT].tex1.desc;
+		if (tex1->MMAG != TEX1Bits::NEAREST || tex1->MMIN == TEX1Bits::LINEAR ||
+		    tex1->MMIN == TEX1Bits::LINEAR_MIPMAP_NEAREST || tex1->MMIN == TEX1Bits::LINEAR_MIPMAP_LINEAR)
 			return;
-
-		// This engine renders two horizontal lines, representing the palette.
-		if ((prim_a.state & (1u << STATE_BIT_LINE)) == 0)
-			return;
-
-		// Check for any unexpected state which could cause the heuristic to fail.
-		if ((prim_a.state & ((1u << STATE_BIT_PERSPECTIVE) | (1u << STATE_BIT_Z_TEST) | (1u << STATE_BIT_Z_WRITE))) != 0)
-			return;
-
-		// Make sure the primitive we're testing targets the current FB.
-		auto a_fb_index = prim_a.state >> STATE_VERTEX_RENDER_PASS_INSTANCE_OFFSET;
-		if (a_fb_index != render_pass.current_instance)
-			return;
-
-		// And that it's sampling from a texture.
-		auto a_state_index = prim_a.state & ((1u << STATE_INDEX_BIT_COUNT) - 1u);
-		auto &state = render_pass.state_vectors[a_state_index];
-		if ((state.combiner & COMBINER_TME_BIT) == 0)
-			return;
-
-		if (((state.combiner >> COMBINER_MODE_OFFSET) & ((1u << COMBINER_MODE_BITS) - 1u)) != COMBINER_DECAL)
-			return;
-
-		// Sanity check, ignore any blending-like state.
-		// Allow ATE, since the engine does that, but it always passes the test, so *shrug*.
-		if ((state.blend_mode & (BLEND_MODE_ABE_BIT | BLEND_MODE_DATE_BIT | BLEND_MODE_DATM_BIT)) != 0)
-			return;
-
-		auto &pos0 = render_pass.positions[3 * render_pass.primitive_count - 5];
-		auto &pos1 = render_pass.positions[3 * render_pass.primitive_count - 6];
-		auto &pos2 = render_pass.positions[3 * render_pass.primitive_count - 2];
-		auto &pos3 = render_pass.positions[3 * render_pass.primitive_count - 3];
-
-		// Ensure the full 16 color palette is written as expected.
-		if (pos0.pos.x != 0 || pos0.pos.y != 0)
-			return;
-		if (pos1.pos.x <= 7 * PGS_SUBPIXELS || pos1.pos.y != 0)
-			return;
-		if (pos2.pos.x != 0 || pos2.pos.y != PGS_SUBPIXELS)
-			return;
-		if (pos3.pos.x <= 7 * PGS_SUBPIXELS || pos3.pos.y != PGS_SUBPIXELS)
-			return;
-
-		auto &attr0 = render_pass.attributes[3 * render_pass.primitive_count - 5];
-		auto &attr1 = render_pass.attributes[3 * render_pass.primitive_count - 6];
-		auto &attr2 = render_pass.attributes[3 * render_pass.primitive_count - 2];
-		auto &attr3 = render_pass.attributes[3 * render_pass.primitive_count - 3];
-
-		// CSM2 can only sample from a single line.
-		if (attr0.uv.y != attr1.uv.y || attr0.uv.y != attr2.uv.y || attr0.uv.y != attr3.uv.y)
-			return;
-
-		// The coordinates increase along both lines, or all name the one
-		// texel every entry of the palette then holds.
-		const bool constant_u = attr1.uv.x == attr0.uv.x && attr2.uv.x == attr0.uv.x &&
-		                        attr3.uv.x == attr0.uv.x;
-		if (!constant_u && (attr1.uv.x <= attr0.uv.x || attr3.uv.x <= attr0.uv.x))
-			return;
-
-		// Make sure the sampling is aligned to COU alignment (can be relaxed if need be).
-		if ((attr0.uv.x & (PGS_SUBPIXELS - 1)))
-			return;
-
-		// Only a 32-bit palette source is forwarded; anything else leaves
-		// the upload as it came.
-		uint32_t tex_index = prim_a.tex & ((1u << TEX_TEXTURE_INDEX_BITS) - 1u);
-		if (render_pass.tex0_infos[tex_index].PSM != PSMCT32)
-			return;
-
-		// Rewrite the upload.
-		upload.csm2_x_scale = float(attr3.uv.x - attr0.uv.x) / (float(pos3.pos.x) + 8 * PGS_SUBPIXELS);
-		upload.csm2_x_bias = attr0.uv.x >> PGS_SUBPIXEL_BITS;
-		upload.tex0.desc.CSM = TEX0Bits::CSM_LAYOUT_LINE;
-
-		upload.tex0.desc.CBP = render_pass.tex0_infos[tex_index].TBP0;
-		upload.texclut.desc.CBW = render_pass.tex0_infos[tex_index].TBW;
-		upload.texclut.desc.COU = 0;
-		upload.texclut.desc.COV = attr0.uv.y >> PGS_SUBPIXEL_BITS;
-		upload.csm1_reference_base = fb_instance.frame.desc.FBP * PGS_BLOCKS_PER_PAGE;
-		upload.csm1_mask = 0xff000000u;
-
-		palette_width = constant_u ? 1u : ((attr3.uv.x - 1) >> PGS_SUBPIXEL_BITS) + 1u - upload.csm2_x_bias;
-		palette_height = 1;
-
-		// We won't be needing these primitives later. Rendering 1k+ primitives on one tile
-		// is a serious performance drain.
-		prim_a.bb = i16vec4{ 0, 0, -1, -1 };
-		prim_b.bb = i16vec4{ 0, 0, -1, -1 };
 	}
-}
 
+	uint32_t a_state_index = prim_a.state & ((1u << STATE_INDEX_BIT_COUNT) - 1u);
+	auto &state = render_pass.state_vectors[a_state_index];
+	if ((state.combiner & (COMBINER_TME_BIT | COMBINER_FOG_BIT)) != COMBINER_TME_BIT)
+		return;
+
+	if (((state.combiner >> COMBINER_MODE_OFFSET) & ((1u << COMBINER_MODE_BITS) - 1u)) != COMBINER_DECAL)
+		return;
+
+	if ((state.blend_mode & (BLEND_MODE_ABE_BIT | BLEND_MODE_DATE_BIT | BLEND_MODE_DATM_BIT)) != 0)
+		return;
+
+	// Every pixel's RGB is written: the test passes, or it fails onto
+	// RGB, with alpha masked either way.
+	if ((state.blend_mode & BLEND_MODE_ATE_BIT) != 0)
+	{
+		uint32_t atst = (state.blend_mode >> BLEND_MODE_ATE_MODE_OFFSET) & ((1u << BLEND_MODE_ATE_MODE_BITS) - 1u);
+		uint32_t afail = (state.blend_mode >> BLEND_MODE_AFAIL_MODE_OFFSET) & ((1u << BLEND_MODE_AFAIL_MODE_BITS) - 1u);
+		if (atst != ATST_ALWAYS && !(atst == ATST_NEVER && (afail == AFAIL_FB_ONLY || afail == AFAIL_RGB_ONLY)))
+			return;
+	}
+
+	auto &pos0 = render_pass.positions[3 * a_index + 1];
+	auto &pos1 = render_pass.positions[3 * a_index];
+	auto &pos2 = render_pass.positions[3 * a_index + 4];
+	auto &pos3 = render_pass.positions[3 * a_index + 3];
+
+	// Rows 0 and 1, each from x = 0 to past the seventh pixel.
+	if (pos0.pos.x != 0 || pos0.pos.y != 0 || pos1.pos.x <= 7 * PGS_SUBPIXELS || pos1.pos.y != 0 ||
+	    pos2.pos.x != 0 || pos2.pos.y != PGS_SUBPIXELS || pos3.pos.x <= 7 * PGS_SUBPIXELS || pos3.pos.y != PGS_SUBPIXELS)
+		return;
+
+	// They write pixels 0 to 7 of both rows and nothing else, so the next
+	// palette drawn there replaces all of this one.
+	if (render_pass.scissor_lo.x > 0 || render_pass.scissor_lo.y > 0 || render_pass.scissor_hi.y < 1 ||
+	    render_pass.scissor_hi.x < 7)
+		return;
+	if (render_pass.scissor_hi.x > 7 &&
+	    (((pos1.pos.x + PGS_SUBPIXELS - 1) >> PGS_SUBPIXEL_BITS) != 8 ||
+	     ((pos3.pos.x + PGS_SUBPIXELS - 1) >> PGS_SUBPIXEL_BITS) != 8))
+		return;
+
+	auto &attr0 = render_pass.attributes[3 * a_index + 1];
+	auto &attr1 = render_pass.attributes[3 * a_index];
+	auto &attr2 = render_pass.attributes[3 * a_index + 4];
+	auto &attr3 = render_pass.attributes[3 * a_index + 3];
+
+	// All entries come from one row of the source.
+	if (attr0.uv.y != attr1.uv.y || attr0.uv.y != attr2.uv.y || attr0.uv.y != attr3.uv.y)
+		return;
+
+	uint32_t tex_index = prim_a.tex & ((1u << TEX_TEXTURE_INDEX_BITS) - 1u);
+	if (tex_index >= render_pass.tex_sources.size())
+		return;
+	const TextureSource *source = &render_pass.tex_sources[tex_index];
+	if (source->tex0.PSM != PSMCT32)
+		return;
+
+	uint32_t texels[16];
+	if (!pgs_line_texels(pos1.pos.x, attr0.uv.x, attr1.uv.x, line_pixel_group, texels) ||
+	    !pgs_line_texels(pos3.pos.x, attr2.uv.x, attr3.uv.x, line_pixel_group, texels + 8))
+		return;
+
+	// The row, stepped the same way: a constant V truncated from its float.
+	PGS_STEP_FLOAT v_float = (float)(int32_t)((uint32_t)attr0.uv.y << 12);
+	uint32_t row = (uint32_t)(int32_t)v_float >> 16;
+	if (!pgs_texel_unwrapped(row, source->clamp.WMT, source->tex0.TH, source->clamp.MINV, source->clamp.MAXV))
+		return;
+
+	uint32_t lo = texels[0], hi = texels[0];
+	uint32_t i;
+	for (i = 0; i < 16; i++)
+	{
+		if (!pgs_texel_unwrapped(texels[i], source->clamp.WMS, source->tex0.TW, source->clamp.MINU, source->clamp.MAXU))
+			return;
+		lo = texels[i] < lo ? texels[i] : lo;
+		hi = texels[i] > hi ? texels[i] : hi;
+	}
+	if (hi - lo > 255)
+		return;
+
+	upload.tex0.desc.CSM = TEX0Bits::CSM_LAYOUT_LINE;
+	upload.tex0.desc.CBP = source->tex0.TBP0;
+	upload.texclut.desc.CBW = source->tex0.TBW;
+	upload.texclut.desc.COU = 0;
+	upload.texclut.desc.COV = row;
+	upload.csm2_x_bias = lo;
+	for (i = 0; i < 4; i++)
+		upload.csm2_x_offsets[i] = (texels[4 * i] - lo) | ((texels[4 * i + 1] - lo) << 8) |
+		                           ((texels[4 * i + 2] - lo) << 16) | ((texels[4 * i + 3] - lo) << 24);
+	// Alpha is masked, so it stays the page's own.
+	upload.csm1_reference_base = fb_instance.frame.desc.FBP * PGS_BLOCKS_PER_PAGE;
+	upload.csm1_mask = 0xff000000u;
+
+	palette_width = hi - lo + 1;
+	palette_height = 1;
+
+	// These lines replace every pixel the previous forwarded pair wrote,
+	// so that pair need not be drawn, unless something of the same frame
+	// was drawn in between. Only the last pair reaches memory.
+	uint32_t prev = render_pass.forwarded_palette_lines;
+	if (prev != UINT32_MAX && a_index - prev <= 256 &&
+	    (render_pass.prim[prev].state >> STATE_VERTEX_RENDER_PASS_INSTANCE_OFFSET) == render_pass.current_instance)
+	{
+		for (i = prev + 2; i < a_index; i++)
+			if ((render_pass.prim[i].state >> STATE_VERTEX_RENDER_PASS_INSTANCE_OFFSET) == render_pass.current_instance)
+				break;
+		if (i == a_index)
+		{
+			render_pass.prim[prev].bb = i16vec4{ 0, 0, -1, -1 };
+			render_pass.prim[prev + 1].bb = i16vec4{ 0, 0, -1, -1 };
+		}
+	}
+	render_pass.forwarded_palette_lines = a_index;
+}
 void GSInterface::handle_clut_upload(uint32_t ctx_index)
 {
 	auto &ctx = registers.ctx[ctx_index];
@@ -687,12 +792,12 @@ void GSInterface::handle_clut_upload(uint32_t ctx_index)
 	palette_desc.tex0.desc.TBW = 0;
 	palette_desc.tex0.desc.CLD = 0;
 	palette_desc.tex0.desc.CSA = csa;
-	palette_desc.csm2_x_scale = 1.0f;
 
 	rewrite_forwarded_clut_upload(ctx, palette_desc, palette_width, palette_height);
 
-	uint32_t x_offset = desc.CSM == TEX0Bits::CSM_LAYOUT_LINE ? palette_desc.texclut.desc.COU * TEX0Bits::COU_SCALE : 0;
-	uint32_t y_offset = desc.CSM == TEX0Bits::CSM_LAYOUT_LINE ? palette_desc.texclut.desc.COV : 0;
+	bool csm2 = palette_desc.tex0.desc.CSM == TEX0Bits::CSM_LAYOUT_LINE;
+	uint32_t x_offset = csm2 ? palette_desc.texclut.desc.COU * TEX0Bits::COU_SCALE : 0;
+	uint32_t y_offset = csm2 ? palette_desc.texclut.desc.COV : 0;
 	x_offset += palette_desc.csm2_x_bias;
 
 	auto clut_page = compute_page_rect(uint32_t(palette_desc.tex0.desc.CBP), x_offset, y_offset,
@@ -739,8 +844,11 @@ void GSInterface::handle_clut_upload(uint32_t ctx_index)
 		if (memoized.csa_mask == page.csa_mask &&
 		    memoized.upload.texclut.bits == palette_desc.texclut.bits &&
 		    memoized.upload.tex0.bits == palette_desc.tex0.bits &&
-		    memoized.upload.csm2_x_scale == palette_desc.csm2_x_scale &&
 		    memoized.upload.csm2_x_bias == palette_desc.csm2_x_bias &&
+		    memoized.upload.csm2_x_offsets[0] == palette_desc.csm2_x_offsets[0] &&
+		    memoized.upload.csm2_x_offsets[1] == palette_desc.csm2_x_offsets[1] &&
+		    memoized.upload.csm2_x_offsets[2] == palette_desc.csm2_x_offsets[2] &&
+		    memoized.upload.csm2_x_offsets[3] == palette_desc.csm2_x_offsets[3] &&
 		    memoized.upload.csm1_mask == palette_desc.csm1_mask &&
 		    memoized.upload.csm1_reference_base == palette_desc.csm1_reference_base)
 		{
@@ -1832,7 +1940,12 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 			info.info.flags |= TEX_INFO_FORCE_SAMPLE_MAPPING;
 
 		render_pass.tex_infos.push_back(info);
-		render_pass.tex0_infos.push_back(ctx.tex0.desc);
+		{
+			TextureSource source;
+			source.tex0 = ctx.tex0.desc;
+			source.clamp = desc.clamp.desc;
+			render_pass.tex_sources.push_back(source);
+		}
 		render_pass.held_images.push_back(std::move(image));
 	}
 

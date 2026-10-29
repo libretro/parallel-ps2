@@ -112,10 +112,13 @@ struct CLUTDescriptor
 	uint co_uv;
 	uint cbw;
 	uint csa;
-	float csm2_x_scale;
 	uint csm2_x_bias;
 	uint csm1_reference_base;
 	uint csm1_mask;
+	uint padding;
+	// With csm1_mask set, the column of each of the 16 entries, a byte each
+	// counted from csm2_x_bias.
+	uvec4 csm2_x_offsets;
 };
 
 struct TexInfo

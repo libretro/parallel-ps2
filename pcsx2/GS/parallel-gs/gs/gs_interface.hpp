@@ -233,6 +233,10 @@ struct GSOptions
 	 * again during init. */
 	const Vulkan::Device::GraphicsPipelineRecord *prebuild_graphics = nullptr;
 	unsigned num_prebuild_graphics = 0;
+	/* The software renderer steps a scanline's texture coordinates in
+	 * groups of this many pixels (4 or 8); a palette forwarded from the
+	 * lines that drew it takes the texels those steps land on. */
+	uint32_t line_pixel_group = 8;
 };
 
 // Pragmatic hacks which may or may not be useful.
@@ -352,6 +356,7 @@ private:
 	PageTracker tracker;
 	GSRenderer renderer;
 	uint32_t vram_size = 0;
+	uint32_t line_pixel_group = 8;
 	DebugMode debug_mode;
 	Hacks hacks;
 
@@ -382,6 +387,14 @@ private:
 	RegisterState registers = {};
 	PrivRegisterState priv_registers = {};
 
+	// What a texture of the render pass reads: its TEX0 and the CLAMP it is
+	// sampled with.
+	struct TextureSource
+	{
+		TEX0Bits tex0;
+		CLAMPBits clamp;
+	};
+
 	// Tracks state for a render pass
 	enum { NumMemoizedPalettes = 16 };
 	struct RenderPassState
@@ -394,7 +407,7 @@ private:
 		std::vector<StateVector> state_vectors;
 		std::vector<Vulkan::ImageHandle> held_images;
 		std::vector<TextureInfo> tex_infos;
-		std::vector<TEX0Bits> tex0_infos;
+		std::vector<TextureSource> tex_sources;
 
 		bool tex_infos_has_super_samples = false;
 
@@ -415,6 +428,9 @@ private:
 		Util::IntrusiveHashMap<TextureStateToLocalIndex> texture_map;
 
 		uint32_t pending_palette_updates = 0;
+		// The first of the two lines of the last palette forwarded from the
+		// lines that drew it, or UINT32_MAX.
+		uint32_t forwarded_palette_lines = UINT32_MAX;
 
 		struct MemoizedPaletteState
 		{

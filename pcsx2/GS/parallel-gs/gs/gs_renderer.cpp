@@ -3977,7 +3977,10 @@ void GSRenderer::flush_palette_upload()
 		clut_desc.csa = uint32_t(upload.tex0.desc.CSA);
 		clut_desc.csm = uint32_t(upload.tex0.desc.CSM);
 		clut_desc.csm2_x_bias = upload.csm2_x_bias;
-		clut_desc.csm2_x_scale = upload.csm2_x_scale;
+		clut_desc.csm2_x_offsets.x = upload.csm2_x_offsets[0];
+		clut_desc.csm2_x_offsets.y = upload.csm2_x_offsets[1];
+		clut_desc.csm2_x_offsets.z = upload.csm2_x_offsets[2];
+		clut_desc.csm2_x_offsets.w = upload.csm2_x_offsets[3];
 		clut_desc.csm1_reference_base = upload.csm1_reference_base;
 		clut_desc.csm1_mask = upload.csm1_mask;
 
@@ -4014,7 +4017,7 @@ void GSRenderer::flush_palette_upload()
 		for (size_t i = 0, n = palette_uploads.size(); i < n; i++)
 		{
 			auto &upload = palette_uploads[i];
-			insert_label(cmd, "Bank %u - 0x%x - %s - %u colors - CSA %u - CSM %u - COU/V %u, %u - S/B %.3f, %u, incoming %u",
+			insert_label(cmd, "Bank %u - 0x%x - %s - %u colors - CSA %u - CSM %u - COU/V %u, %u - bias %u, incoming %u",
 			             uint32_t(base_clut_instance + 1 + i) % CLUTInstances,
 			             uint32_t(upload.tex0.desc.CBP) * PGS_BLOCK_ALIGNMENT_BYTES,
 			             psm_to_str(uint32_t(upload.tex0.desc.CPSM)),
@@ -4024,7 +4027,7 @@ void GSRenderer::flush_palette_upload()
 			             uint32_t(upload.tex0.desc.CSM),
 			             upload.texclut.desc.COU * 16,
 			             upload.texclut.desc.COV,
-			             upload.csm2_x_scale, upload.csm2_x_bias, upload.incoming_clut_instance);
+			             upload.csm2_x_bias, upload.incoming_clut_instance);
 		}
 	}
 

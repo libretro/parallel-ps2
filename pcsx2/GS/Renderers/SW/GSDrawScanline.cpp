@@ -162,6 +162,12 @@ typedef GSVector4  VectorF;
 #define LOCAL_STEP local.d4
 #endif
 
+/* The generated code steps as many pixels at once as these vectors hold. */
+int CURRENT_ISA::GSDrawScanlinePixelGroup()
+{
+	return (int)(sizeof(VectorF) / sizeof(float));
+}
+
 void GSDrawScanline::CSetupPrim(const GSVertexSW* vertex, const u16* index, const GSVertexSW& dscan, GSScanlineLocalData& local)
 {
 	const GSScanlineGlobalData& global = GlobalFromLocal(local);

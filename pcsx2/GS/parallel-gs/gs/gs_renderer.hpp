@@ -122,7 +122,7 @@ struct PaletteUploadDescriptor
 	Reg64<TEXCLUTBits> texclut;
 	// Allows for certain FB forwarding techniques.
 	uint32_t csm2_x_bias;
-	float csm2_x_scale;
+	uint32_t csm2_x_offsets[4];
 	uint32_t csm1_reference_base;
 	uint32_t csm1_mask;
 	uint32_t incoming_clut_instance;

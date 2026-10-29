@@ -7,6 +7,7 @@
 #include "thread_id.hpp"
 #include "common/Pcsx2Defs.h"
 #include "GS/GSState.h"
+#include "GS/MultiISA.h"
 #include "GS.h"
 #include "PerformanceMetrics.h"
 #ifdef ENABLE_PCSX2_PROFILER
@@ -570,6 +571,7 @@ bool GSRendererPGS::Init()
 	opts.num_prebuild           = pipeline_list_count;
 	opts.prebuild_graphics      = pipeline_list_graphics;
 	opts.num_prebuild_graphics  = pipeline_list_graphics_count;
+	opts.line_pixel_group       = uint32_t(MULTI_ISA_SELECT(GSDrawScanlinePixelGroup)());
 	if (!iface.init(&dev, opts))
 		return false;
 	pipelines_persist = true;

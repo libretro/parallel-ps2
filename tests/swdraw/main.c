@@ -229,7 +229,7 @@ static unsigned      s_tlb_store;
  * each a run of them sent after waiting a number of vsyncs, and then
  * optionally read a number of quadwords back from the GS (a local to host
  * transfer the kick set up) into RAM at 0x200000 + 0x1000 * the kick. */
-#define SL_MAX_QW    192
+#define SL_MAX_QW    320
 #define SL_MAX_KICKS 4
 static unsigned      s_qw_count;
 static unsigned      s_qw[SL_MAX_QW][4];
@@ -1292,6 +1292,83 @@ static void clut_lines(unsigned first)
 	s_smode1_lo = 0x40834504u;
 	s_run_frames = 120;
 }
+/* Palettes drawn and loaded at once as in clut_lines, with the lines'
+ * texture coordinates stepping at other rates. Every texel of the source
+ * differs from its neighbours, so each entry shows which texel the line
+ * put there. Per palette: the U (1/16 texel) at the four ends of the two
+ * lines, and the X (1/16 pixel) the lines end at. In order: a two-texel
+ * ramp on each line, both lines over the same two texels, two texels
+ * over both lines, 31.5, 24.5 and 18.5 texels a line, a texel to the
+ * pixel over exactly eight pixels, a start half a texel in, U falling
+ * along the lines, a ramp of one texel a line, lines ending just past
+ * the seventh pixel, lines that stop at it, which leave the last entry
+ * of each row as the page had it, and a step whose last texel moves
+ * with the number of pixels the software renderer steps at once. The
+ * sprites are rows of eight from (40, 96), 24 pixels apart. */
+static const unsigned short s_clut_scales[12][5] = {
+	{   80,   112,   80,  112, 126 },
+	{  176,   192,  192,  208, 126 },
+	{    0,   503,  504, 1023, 126 },
+	{    0,   391,  392,  799, 126 },
+	{    0,   295,  296,  607, 126 },
+	{  256,   384,  384,  512, 128 },
+	{   72,   200,  200,  328, 126 },
+	{ 1000,   600,  592,  200, 126 },
+	{  320,   336,  336,  352, 126 },
+	{   16,    48,   48,   80, 113 },
+	{  400,   432,  432,  464, 112 },
+	{    0,   407,  408,  831, 126 }
+};
+static void case_clut_scales(void)
+{
+	unsigned i, setup, loop;
+	/* the source: 64x2 32-bit texels at 0x3000; the 4-bit texture at 0x2000 */
+	stream_image(0x3000u, 1, 0, 0, 0, 64, 2, 32);
+	for (i = 0; i < 32; i++)
+	{
+		const unsigned t = 0x01030507u * (i + 1) ^ 0x10204080u;
+		qw(t, t ^ 0x00402010u, t ^ 0x00104020u, t ^ 0x00201040u);
+	}
+	stream_image(0x2000u, 1, 0x14u, 0, 0, 16, 16, 8);
+	for (i = 0; i < 8; i++)
+		qw(0x76543210u, 0xfedcba98u, 0x01234567u + i, 0x89abcdefu - i);
+	setup = s_qw_count;
+	stream_draw_setup(1 + 12 * 18, 0);
+	qw(0x80808080u, 0x3f800000u, GS_RGBAQ, 0); /* bumped each round */
+	for (i = 0; i < 12; i++)
+	{
+		const unsigned short* const u = s_clut_scales[i];
+		const unsigned x = 40 + 24 * (i % 8), y = 96 + 24 * (i / 8);
+		qw(CLUT_PAGE | (1u << 16), 0xff000000u, GS_FRAME_1, 0);  /* FBW 1, alpha masked */
+		qw(0x3000u | (1u << 14) | (6u << 26) | (1u << 30), (1u << 2) | (1u << 3), GS_TEX0_1, 0); /* CT32 64x2, TCC, decal */
+		qw(1 | 0x10 | 0x100, 0, GS_PRIM, 0);                      /* line, TME, FST */
+		qw(u[0] | (8u << 16), 0, GS_UV, 0);
+		qw(0, 0, GS_XYZ2, 0);
+		qw(u[1] | (8u << 16), 0, GS_UV, 0);
+		qw(u[4], 0, GS_XYZ2, 0);
+		qw(u[2] | (8u << 16), 0, GS_UV, 0);
+		qw(16u << 16, 0, GS_XYZ2, 0);
+		qw(u[3] | (8u << 16), 0, GS_UV, 0);
+		qw(u[4] | (16u << 16), 0, GS_XYZ2, 0);
+		qw(10u << 16, 0, GS_FRAME_1, 0);                          /* the displayed frame */
+		qw(0x2000u | (1u << 14) | (0x14u << 20) | (4u << 26),
+			1u | (1u << 2) | (1u << 3) | ((CLUT_PAGE * 32u) << 5) | (1u << 29), GS_TEX0_1, 0); /* T4 16x16, CBP, CLD 1 */
+		qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                      /* sprite, TME, FST */
+		qw(0, 0, GS_UV, 0);
+		qw((unsigned)XY(x, y), 0, GS_XYZ2, 0);
+		qw((16u << 4) | ((16u << 4) << 16), 0, GS_UV, 0);
+		qw((unsigned)XY(x + 16, y + 16), 0, GS_XYZ2, 0);
+	}
+	loop = s_qw_count;
+	s_bump_qw = setup + 7;
+	kick(0, setup, 0);
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(setup, loop - setup, 1);
+	s_smode1_hi = 0x7;          /* NTSC, for a renderer that scans out by mode */
+	s_smode1_lo = 0x40834504u;
+	s_run_frames = 120;
+}
 static void case_clut_lines(void) { clut_lines(0); }
 static void case_clut_lines_ramps(void) { clut_lines(4); }
 
@@ -1419,6 +1496,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "clut_lines",      case_clut_lines,    "1" },
 	{ "date_mid_scene",  case_date_mid_scene, "1" },
 	{ "clut_lines_ramps", case_clut_lines_ramps, "1" },
+	{ "clut_scales",     case_clut_scales,   "1" },
 	{ "tlb_store",       case_tlb_store,     "1" },
 };
 

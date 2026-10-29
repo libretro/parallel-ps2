@@ -98,7 +98,12 @@ void main()
 		uvec2 coord;
 		if (clut.csm != 0)
 		{
-			coord.x = uint(float(read_coord) * clut.csm2_x_scale + 1.0 / 256.0) + clut.csm2_x_bias + bitfieldExtract(clut.co_uv, 0, 16) * 16;
+			// A palette forwarded from the lines that drew it names the
+			// column each of its 16 entries came from.
+			uint x = read_coord;
+			if (clut.csm1_mask != 0u)
+				x = bitfieldExtract(clut.csm2_x_offsets[(read_coord >> 2u) & 3u], int(read_coord & 3u) * 8, 8);
+			coord.x = x + clut.csm2_x_bias + bitfieldExtract(clut.co_uv, 0, 16) * 16;
 			coord.y = bitfieldExtract(clut.co_uv, 16, 16);
 		}
 		else

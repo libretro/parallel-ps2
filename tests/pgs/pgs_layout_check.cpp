@@ -57,6 +57,13 @@ PINF(StateVector, combiner, 0);
 PINF(StateVector, blend_mode, 4);
 PINF(StateVector, dimx, 8);
 
+/* An array of these is a std140 uniform block: the uvec4 starts on 16
+ * bytes and the size is a multiple of 16, which is the array stride. */
+PIN(CLUTDescriptor, 64);
+PINF(CLUTDescriptor, csm2_x_bias, 32);
+PINF(CLUTDescriptor, csm1_mask, 40);
+PINF(CLUTDescriptor, csm2_x_offsets, 48);
+
 int main(void)
 {
 	/* Print them too, so a change shows the numbers rather than only a
@@ -75,6 +82,9 @@ int main(void)
 	       offsetof(PrimitiveAttribute, fbmsk), offsetof(PrimitiveAttribute, fogcol));
 	printf("PrimitiveSetup      %2zu  TransformedAttributes %2zu  StateVector %2zu\n",
 	       sizeof(PrimitiveSetup), sizeof(TransformedAttributes), sizeof(StateVector));
+	printf("CLUTDescriptor      %2zu  csm2_x_bias %zu csm1_mask %zu csm2_x_offsets %zu\n",
+	       sizeof(CLUTDescriptor), offsetof(CLUTDescriptor, csm2_x_bias),
+	       offsetof(CLUTDescriptor, csm1_mask), offsetof(CLUTDescriptor, csm2_x_offsets));
 	printf("PASS: shared struct layout\n");
 	return 0;
 }

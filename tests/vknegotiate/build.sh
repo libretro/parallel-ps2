@@ -252,18 +252,46 @@ for k in dispatch_ind barrier; do
 		exit 1
 	fi
 done
-pgs=$(VN_HASH_RGB=1 VN_HASH_ROWS=60 VN_HASH_IMAGE=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/clut_lines.bin" \
+pgs=$(VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/clut_lines.bin" \
 	VN_RENDERER=paraLLEl-GS timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 |
 	sed -n 's/.*image: .*, hash \([0-9a-f]*\).*/\1/p') || true
-sw=$(VN_HASH_RGB=1 VN_HASH_ROWS=60 VN_HASH_IMAGE=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/clut_lines.bin" \
+sw=$(VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/clut_lines.bin" \
 	VN_RENDERER="Software (HW)" timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 |
 	sed -n 's/.*image: .*, hash \([0-9a-f]*\).*/\1/p') || true
 if [ -z "$pgs" ] || [ "$pgs" != "$sw" ]; then
 	rm -rf "$SCRATCH"
-	echo "  FAIL: one-texel palettes, paraLLEl-GS ${pgs:-none}, software renderer ${sw:-none}"
+	echo "  FAIL: palettes drawn and loaded at once, paraLLEl-GS ${pgs:-none}, software renderer ${sw:-none}"
 	exit 1
 fi
 echo "  palettes drawn and loaded at once: no render pass of their own, the software renderer's colours"
+
+# The same with the lines' coordinates stepping at other rates
+# (clut_scales): each entry is the texel the line put there, so every
+# sprite is the software renderer's on whichever pixel grouping its
+# rasterizer uses here, and only the palette whose lines stop short of
+# the eighth pixel adds a render pass (two indirect dispatches) to the
+# ramps' frame.
+"$SCRATCH/swdraw" --bios "$SCRATCH/clut_scales.bin" clut_scales
+VN_COUNT_CALLS=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/clut_scales.bin" VN_RENDERER=paraLLEl-GS \
+	timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/clut_scales.log" 2>&1 || true
+scales=$(calls "$SCRATCH/clut_scales.log" dispatch_ind); ramps=$(calls "$SCRATCH/clut_lines_ramps.log" dispatch_ind)
+if [ -z "$scales" ] || [ -z "$ramps" ] || [ "$scales" -gt $((ramps + 2)) ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: palettes at other steps, paraLLEl-GS: ${scales:-none} indirect dispatches a frame, ${ramps:-none} for the ramps alone"
+	exit 1
+fi
+pgs=$(VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/clut_scales.bin" \
+	VN_RENDERER=paraLLEl-GS timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 |
+	sed -n 's/.*image: .*, hash \([0-9a-f]*\).*/\1/p') || true
+sw=$(VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/clut_scales.bin" \
+	VN_RENDERER="Software (HW)" timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 |
+	sed -n 's/.*image: .*, hash \([0-9a-f]*\).*/\1/p') || true
+if [ -z "$pgs" ] || [ "$pgs" != "$sw" ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: palettes at other steps, paraLLEl-GS ${pgs:-none}, software renderer ${sw:-none}"
+	exit 1
+fi
+echo "  palettes at other steps: each entry the texel its line put there, the software renderer's colours"
 
 # The software renderer on the Vulkan device, which reads its output
 # straight into the texture's upload: a display that ends inside a row of
