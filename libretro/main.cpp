@@ -72,7 +72,7 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...)
 	vfprintf(stderr, fmt, ap);
 	va_end(ap);
 }
-retro_log_printf_t log_cb;
+retro_log_printf_t log_cb = fallback_log;
 static retro_audio_sample_batch_t batch_cb;
 struct retro_hw_render_callback hw_render;
 
