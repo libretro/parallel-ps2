@@ -12,6 +12,7 @@ THREADED_RECOMPILER = 1
 
 CORE_DIR := .
 HAVE_GRIFFIN = 0
+SILENT := 0
 
 SPACE :=
 SPACE := $(SPACE) $(SPACE)
@@ -986,12 +987,21 @@ else
 endif
 
 %.o: %.cpp
+	@if [ $(SILENT) -ne 1 ]; then\
+		$(if $@, $(shell echo echo CXX $<),);\
+	fi
 	$(CXX) -c $(OBJOUT)$@ $< $(CXXFLAGS)
 
 %.o: %.cc
+	@if [ $(SILENT) -ne 1 ]; then\
+		$(if $@, $(shell echo echo CXX $<),);\
+	fi
 	$(CXX) -c $(OBJOUT)$@ $< $(CXXFLAGS)
 
 %.o: %.c
+	@if [ $(SILENT) -ne 1 ]; then\
+		$(if $@, $(shell echo echo CC $<),);\
+	fi
 	$(CC) -c $(OBJOUT)$@ $< $(CFLAGS)
 
 %.o: %.S
