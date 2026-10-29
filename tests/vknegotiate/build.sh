@@ -316,6 +316,25 @@ for scale in 1 2; do
 	echo "  software renderer output, ${scale}x: a display ending inside a block row shows what the other does"
 done
 
+# A texture streamed and drawn every frame (stream_ct32) on paraLLEl-GS:
+# once the pipelines it builds ahead are built - only those its draws
+# look up - the heap stays where it is (Linux, glibc). A super-sampling
+# rate set while they are being built has its own built ahead instead.
+"$SCRATCH/swdraw" --bios "$SCRATCH/stream_ct32.bin" stream_ct32
+if ! VN_HEAP_FLAT=300 VN_FRAMES=6000 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/stream_ct32.bin" VN_RENDERER=paraLLEl-GS \
+		timeout 1800 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: heap after the pipelines built ahead, paraLLEl-GS"
+	exit 1
+fi
+if ! VN_OPTIONS_AT="30:pcsx2_pgs_ssaa=4x SSAA (ordered, can high-res)" VN_FRAMES=90 VN_IDLE_BIOS=1 \
+		LRPS2_BIOS="$SCRATCH/stream_ct32.bin" VN_RENDERER=paraLLEl-GS timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: super-sampling rate set while pipelines are built ahead, paraLLEl-GS"
+	exit 1
+fi
+echo "  pipelines built ahead: the heap stays flat after, and a rate set meanwhile has its own"
+
 # Cases whose failure is an out-of-bounds read or an overflow: they only
 # fail on their own against a core built with
 # SANITIZER=address,undefined,float-cast-overflow (GCC's undefined leaves

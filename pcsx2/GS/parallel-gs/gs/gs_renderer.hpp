@@ -318,6 +318,12 @@ public:
 	void set_enable_timestamps(bool enable);
 
 	void invalidate_super_sampling_state(uint32_t sampling_rate_x_log2, uint32_t sampling_rate_y_log2, bool copies_only);
+	/* Builds ahead the pipelines draws at this sampling rate and at the
+	 * native one look up, the recorded ones of @options first; without
+	 * @options, again only once a rate other than the one built for is
+	 * set, and only what is not built yet. */
+	void kick_compilation_tasks(const GSOptions *options,
+	                            uint32_t sampling_rate_x_log2, uint32_t sampling_rate_y_log2);
 
 	SuperSampling get_max_supported_super_sampling() const;
 
@@ -561,7 +567,8 @@ private:
 
 	void drain_compilation_tasks();
 	void drain_compilation_tasks_nonblock();
-	void kick_compilation_tasks(const GSOptions &options);
+	/* The rate kick_compilation_tasks built for, x | y << 4. */
+	uint32_t prebuilt_sampling_rate = UINT32_MAX;
 	PGS::atomic_bool compilation_tasks_active;
 	/* The device's pipeline handoff is open until every builder is
 	 * joined. */

@@ -36,7 +36,10 @@
  * VN_COUNT_PIPELINES counts the pipelines the core builds by the thread
  * that builds them - its compile threads are named PGS-Compile - and the
  * longest frame after the first (Linux: thread names), and the graphics
- * ones apart. VN_OPTIONS sets core options, "key=value;key=value".
+ * ones apart. VN_OPTIONS sets core options, "key=value;key=value", and
+ * VN_OPTIONS_AT "run:key=value;..." changes them at a retro_run.
+ * VN_HEAP_FLAT=n has the heap checked over n retro_runs once the core's
+ * pipeline builders are done (see vn_heap_frame; Linux, glibc).
  * VN_LATENCY runs tests/latency's case instead (see vn_latency), and
  * VN_LATENCY_PACE_MS sets the frontend's time between two retro_runs.
  * VN_LATE_READ makes the frontend one that presents from another thread
@@ -91,6 +94,11 @@ static void vn_pause_ms(unsigned ms) { Sleep(ms); }
 #include <pthread.h>
 #include <unistd.h>
 #include <time.h>
+#if defined(__linux__) && defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 33))
+#include <malloc.h>
+#include <dirent.h>
+#define VN_HEAP_CHECK
+#endif
 static double vn_now_ms(void)
 {
 	struct timespec t;
@@ -189,6 +197,83 @@ static long vn_pipes_read(long* counter)
 	return *counter;
 #endif
 }
+
+#ifdef VN_HEAP_CHECK
+/* VN_HEAP_FLAT=n: the heap in use, in KB, must stay within
+ * VN_HEAP_SLACK_KB (1024) of what it was when the core's pipeline
+ * builders (its PGS-Compile threads) had built and all finished, over the n
+ * retro_runs that follow; within VN_FRAMES retro_runs they must have
+ * finished and the n have run. */
+static unsigned long vn_heap_kb(void)
+{
+	/* A sanitizer's allocator, when one is in the process, else glibc's. */
+	typedef size_t vn_san_bytes_t(void);
+	void* sym = dlsym(RTLD_DEFAULT, "__sanitizer_get_current_allocated_bytes");
+	struct mallinfo2 mi;
+	if (sym)
+	{
+		vn_san_bytes_t* fn;
+		memcpy(&fn, &sym, sizeof(fn));
+		return (unsigned long)(fn() >> 10);
+	}
+	mi = mallinfo2();
+	return (unsigned long)((mi.uordblks + mi.hblkhd) >> 10);
+}
+
+static int vn_builders_running(void)
+{
+	DIR* dir = opendir("/proc/self/task");
+	struct dirent* e;
+	int running = 0;
+	if (!dir)
+		return 0;
+	while (!running && (e = readdir(dir)) != NULL)
+	{
+		char path[300], name[32] = "";
+		FILE* f;
+		if (e->d_name[0] == '.')
+			continue;
+		sprintf(path, "/proc/self/task/%.250s/comm", e->d_name);
+		if ((f = fopen(path, "r")) != NULL)
+		{
+			running = fgets(name, sizeof(name), f) && !strncmp(name, "PGS-Compile", 11);
+			fclose(f);
+		}
+	}
+	closedir(dir);
+	return running;
+}
+
+/* After retro_run @run: 1 when the heap has grown past the slack, 2
+ * when the n retro_runs have run and it has not. */
+static int vn_heap_frame(unsigned run, unsigned flat, unsigned* warm_run, unsigned long* warm)
+{
+	unsigned long now, slack;
+	if (!*warm_run)
+	{
+		/* A builder names itself once it runs: none running counts
+		 * only after one has built. */
+		if (!vn_pipes_read(&vn_pipes_compile) || vn_builders_running())
+			return 0;
+		*warm_run = run;
+		*warm     = vn_heap_kb();
+		printf("  pipeline builders done after retro_run %u: heap %lu KB\n", run, *warm);
+		return 0;
+	}
+	if (run != *warm_run + flat)
+		return 0;
+	now   = vn_heap_kb();
+	slack = getenv("VN_HEAP_SLACK_KB") ? strtoul(getenv("VN_HEAP_SLACK_KB"), NULL, 10) : 1024;
+	printf("  heap after %u more retro_runs: %lu KB\n", flat, now);
+	if (now > *warm + slack)
+	{
+		fprintf(stderr, "vknegotiate: the heap grew %lu KB in %u retro_runs after the builders finished\n",
+			now - *warm, flat);
+		return 1;
+	}
+	return 2;
+}
+#endif
 
 static VKAPI_ATTR VkResult VKAPI_CALL vn_ccp(VkDevice d, VkPipelineCache c, uint32_t n,
 	const VkComputePipelineCreateInfo* ci, const VkAllocationCallbacks* a, VkPipeline* out)
@@ -556,11 +641,10 @@ static void vn_unlock(void *h) { (void)h; s_queue_locked--; }
 static void vn_set_sem(void *h, VkSemaphore s) { (void)h; (void)s; }
 
 /* VN_OPTIONS: the value of core option @key, or NULL. */
-static const char* vn_option(const char* key)
+static const char* vn_option_in(const char* opts, const char* key)
 {
 	static char values[8][128];
 	static unsigned next;
-	const char* opts = getenv("VN_OPTIONS");
 	size_t klen = strlen(key);
 	while (opts && *opts)
 	{
@@ -576,6 +660,22 @@ static const char* vn_option(const char* key)
 		opts = end ? end + 1 : NULL;
 	}
 	return NULL;
+}
+
+/* VN_OPTIONS_AT, "run:key=value;key=value": those values from retro_run
+ * run on, the frontend saying in that retro_run that options changed. */
+static unsigned vn_options_at_run(void)
+{
+	const char* at = getenv("VN_OPTIONS_AT");
+	return (at && strchr(at, ':')) ? (unsigned)strtoul(at, NULL, 10) : 0;
+}
+
+static const char* vn_option(const char* key)
+{
+	const char* v = NULL;
+	if (vn_options_at_run() && s_run >= vn_options_at_run())
+		v = vn_option_in(strchr(getenv("VN_OPTIONS_AT"), ':') + 1, key);
+	return v ? v : vn_option_in(getenv("VN_OPTIONS"), key);
 }
 
 /* VN_HASH_IMAGE: the last image handed over, copied to a buffer the host
@@ -928,7 +1028,7 @@ static bool vn_environment(unsigned cmd, void* data)
 			*(enum retro_hw_context_type*)data = RETRO_HW_CONTEXT_VULKAN;
 			return true;
 		case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
-			*(bool*)data = false;
+			*(bool*)data = vn_options_at_run() && s_run == vn_options_at_run();
 			return true;
 		default:
 			return false;
@@ -1346,6 +1446,11 @@ int main(int argc, char** argv)
 	int frame;
 	int frames = getenv("VN_FRAMES") ? atoi(getenv("VN_FRAMES")) : VN_FRAMES;
 	PFN_vkGetInstanceProcAddr core_gipa;
+#ifdef VN_HEAP_CHECK
+	const unsigned heap_flat = getenv("VN_HEAP_FLAT") ? (unsigned)atoi(getenv("VN_HEAP_FLAT")) : 0;
+	unsigned heap_warm_run = 0;
+	unsigned long heap_warm = 0, heap_first = 0;
+#endif
 
 	setvbuf(stdout, NULL, _IONBF, 0);
 	if (argc < 4)
@@ -1365,7 +1470,7 @@ int main(int argc, char** argv)
 		printf("vknegotiate: skip: no Vulkan device\n");
 		return 0;
 	}
-	core_gipa = (getenv("VN_COUNT_PIPELINES") || getenv("VN_COUNT_CALLS")) ? vn_count_gipa : gipa;
+	core_gipa = (getenv("VN_COUNT_PIPELINES") || getenv("VN_COUNT_CALLS") || getenv("VN_HEAP_FLAT")) ? vn_count_gipa : gipa;
 
 	strcpy(s_system_dir, argv[2]);
 	sprintf(path, "%s/pcsx2", s_system_dir);
@@ -1595,6 +1700,10 @@ int main(int argc, char** argv)
 				serialize_size, serialize, unserialize))
 			VN_FAIL("cannot load the state %s", getenv("VN_LOAD_STATE"));
 	}
+#ifdef VN_HEAP_CHECK
+	if (heap_flat)
+		heap_first = vn_heap_kb();
+#endif
 	{
 		double longest = 0.0, first = 0.0;
 		const char* save_at = getenv("VN_SAVE_STATE");
@@ -1603,6 +1712,16 @@ int main(int argc, char** argv)
 			const double t0 = vn_now_ms();
 			double dt;
 			vn_run(run);
+#ifdef VN_HEAP_CHECK
+			if (heap_flat)
+			{
+				const int heap = vn_heap_frame(frame + 1, heap_flat, &heap_warm_run, &heap_warm);
+				if (heap == 1)
+					return 1;
+				if (heap == 2)
+					frames = frame + 1;
+			}
+#endif
 			if (s_content_on && save_at && strtoul(save_at, NULL, 10) == s_run && strchr(save_at, ':'))
 			{
 				if (!vn_state_file(strchr(save_at, ':') + 1, 1, serialize_size, serialize, unserialize))
@@ -1627,6 +1746,11 @@ int main(int argc, char** argv)
 			printf("  blend constants set %ld times in %d frames\n", vn_pipes_read(&vn_blend_sets), frames);
 	}
 	printf("  %d frames run, %u presented, %u duped, %u as images\n", frames, s_frames, s_dupes, s_images);
+#ifdef VN_HEAP_CHECK
+	if (heap_flat && (!heap_warm_run || (int)(heap_warm_run + heap_flat) > frames))
+		VN_FAIL("pipelines still being built ahead after %d frames: heap %lu KB at the first, %lu KB now",
+			frames, heap_first, vn_heap_kb());
+#endif
 	/* The late reader's last reads; the frontend reads straight away from
 	 * here on. */
 	if (s_late)

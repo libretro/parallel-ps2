@@ -350,6 +350,8 @@ public:
 	/* Keeps @pipeline for a later miss, or destroys it when the table
 	 * or the staged set already has one for @hash. */
 	void stage_pipeline(Util::Hash hash, const Pipeline &pipeline);
+	/* Whether the table or the staged set has one for @hash. */
+	bool has_pipeline(Util::Hash hash) const;
 
 
 private:

@@ -1165,6 +1165,11 @@ void Program::stage_pipeline(Hash hash, const Pipeline &pipeline)
 		staged.emplace_yield(hash, pipeline);
 }
 
+bool Program::has_pipeline(Hash hash) const
+{
+	return pipelines.find(hash) || staged.find(hash);
+}
+
 void Program::destroy_pipeline(const Pipeline &pipeline)
 {
 	device->get_device_table().vkDestroyPipeline(device->get_device(), pipeline.pipeline, nullptr);

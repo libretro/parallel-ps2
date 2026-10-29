@@ -565,12 +565,20 @@ bool GSRenderer::can_potentially_super_sample() const
 	return buffers.gpu->get_create_info().size > vram_size * 2;
 }
 
-void GSRenderer::kick_compilation_tasks(const GSOptions &options)
+void GSRenderer::kick_compilation_tasks(const GSOptions *options,
+                                        uint32_t sampling_rate_x_log2, uint32_t sampling_rate_y_log2)
 {
-	const Vulkan::Device::ComputePipelineRecord *prebuild = options.prebuild;
-	const Vulkan::Device::GraphicsPipelineRecord *prebuild_graphics = options.prebuild_graphics;
-	const unsigned num_prebuild = options.num_prebuild;
-	const unsigned num_prebuild_graphics = options.num_prebuild_graphics;
+	const uint32_t rate = sampling_rate_x_log2 | (sampling_rate_y_log2 << 4);
+	const Vulkan::Device::ComputePipelineRecord *prebuild = options ? options->prebuild : nullptr;
+	const Vulkan::Device::GraphicsPipelineRecord *prebuild_graphics = options ? options->prebuild_graphics : nullptr;
+	const unsigned num_prebuild = options ? options->num_prebuild : 0;
+	const unsigned num_prebuild_graphics = options ? options->num_prebuild_graphics : 0;
+
+	if (!options && (prebuilt_sampling_rate == UINT32_MAX || prebuilt_sampling_rate == rate))
+		return;
+	/* What the builders have not reached yet is enumerated again below. */
+	drain_compilation_tasks();
+	prebuilt_sampling_rate = rate;
 
 	// Pre-prime all potential shader variants early.
 	std::vector<Vulkan::DeferredPipelineCompile> tasks;
@@ -581,15 +589,15 @@ void GSRenderer::kick_compilation_tasks(const GSOptions &options)
 		cmd->set_program(shaders.ubershader[0][0]);
 		Vulkan::DeferredPipelineCompile deferred = {};
 
-		static const struct { uint32_t sample_x, sample_y; } sampling_rates[] = {
-			{ 0, 0 },
-			{ 0, 1 },
-			{ 1, 1 },
-			{ 0, 2 },
-			{ 1, 2 },
-			{ 2, 2 },
-			{ 1, 3 },
-		};
+		/* The native rate, which a pass that cannot super-sample drops
+		 * to, and the one set. */
+		struct pgs_sampling_rate { uint32_t sample_x, sample_y; } sampling_rates[2];
+		const unsigned num_rates = rate ? 2 : 1;
+		unsigned r;
+		sampling_rates[0].sample_x = 0;
+		sampling_rates[0].sample_y = 0;
+		sampling_rates[1].sample_x = sampling_rate_x_log2;
+		sampling_rates[1].sample_y = sampling_rate_y_log2;
 
 		static const uint32_t variant_flags[] = {
 			0,
@@ -634,20 +642,15 @@ void GSRenderer::kick_compilation_tasks(const GSOptions &options)
 		cmd->set_specialization_constant_mask(0xff);
 		cmd->enable_subgroup_size_control(true);
 
-		static const struct
+		/* Each rate with the subgroup size its shading pass asks for. */
+		for (r = 0; r < num_rates; r++)
 		{
-			uint32_t lo, hi;
-		} subgroup_configs[] = {
-			{ 6, 6 },
-			{ 4, 6 },
-			{ 3, 6 },
-			{ 2, 6 },
-		};
-
-		for (auto &subgroup_config : subgroup_configs)
-		{
-			if (device->supports_subgroup_size_log2(true, subgroup_config.lo, subgroup_config.hi))
-				cmd->set_subgroup_size_log2(true, subgroup_config.lo, subgroup_config.hi);
+			const struct pgs_sampling_rate *rates = &sampling_rates[r];
+			const uint32_t minimum_subgroup_size_log2 = rates->sample_x + rates->sample_y;
+			if (device->supports_subgroup_size_log2(true, 6, 6))
+				cmd->set_subgroup_size_log2(true, 6, 6);
+			else if (device->supports_subgroup_size_log2(true, minimum_subgroup_size_log2, 6))
+				cmd->set_subgroup_size_log2(true, minimum_subgroup_size_log2, 6);
 			else
 				continue;
 
@@ -655,55 +658,48 @@ void GSRenderer::kick_compilation_tasks(const GSOptions &options)
 			{
 				for (auto &flags : variant_flags)
 				{
-					for (auto &rates : sampling_rates)
+					for (auto &feedback : feedbacks)
 					{
-						for (auto &feedback : feedbacks)
+						if ((flags & VARIANT_FLAG_FEEDBACK_BIT) != 0)
 						{
-							if ((flags & VARIANT_FLAG_FEEDBACK_BIT) != 0)
-							{
-								if (swizzle_compat_key(feedback.feedback_psm) != swizzle_compat_key(format.color_psm))
-									continue;
-							}
-							else if (feedback.feedback_psm != 0 || feedback.feedback_cpsm != 0)
+							if (swizzle_compat_key(feedback.feedback_psm) != swizzle_compat_key(format.color_psm))
 								continue;
+						}
+						else if (feedback.feedback_psm != 0 || feedback.feedback_cpsm != 0)
+							continue;
 
-							cmd->set_specialization_constant(0, rates.sample_x);
-							cmd->set_specialization_constant(1, rates.sample_y);
-							cmd->set_specialization_constant(2, format.color_psm);
-							cmd->set_specialization_constant(3, format.depth_psm);
-							cmd->set_specialization_constant(4, vram_size - 1);
-							cmd->set_specialization_constant(6, feedback.feedback_psm);
-							cmd->set_specialization_constant(7, feedback.feedback_cpsm);
+						cmd->set_specialization_constant(0, rates->sample_x);
+						cmd->set_specialization_constant(1, rates->sample_y);
+						cmd->set_specialization_constant(2, format.color_psm);
+						cmd->set_specialization_constant(3, format.depth_psm);
+						cmd->set_specialization_constant(4, vram_size - 1);
+						cmd->set_specialization_constant(6, feedback.feedback_psm);
+						cmd->set_specialization_constant(7, feedback.feedback_cpsm);
 
-							uint32_t active_flags =
-									flags | (rates.sample_y ? VARIANT_FLAG_HAS_SUPER_SAMPLE_REFERENCE_BIT : 0);
+						uint32_t active_flags =
+								flags | (rates->sample_y ? VARIANT_FLAG_HAS_SUPER_SAMPLE_REFERENCE_BIT : 0);
+						cmd->set_specialization_constant(5, active_flags);
+						cmd->extract_pipeline_state(deferred);
+						tasks.push_back(deferred);
+
+						if (rates->sample_y != 0)
+						{
+							active_flags |= VARIANT_FLAG_HAS_TEXTURE_ARRAY_BIT;
 							cmd->set_specialization_constant(5, active_flags);
 							cmd->extract_pipeline_state(deferred);
 							tasks.push_back(deferred);
+						}
 
-							if (rates.sample_y != 0)
-							{
-								active_flags |= VARIANT_FLAG_HAS_TEXTURE_ARRAY_BIT;
-								cmd->set_specialization_constant(5, active_flags);
-								cmd->extract_pipeline_state(deferred);
-								tasks.push_back(deferred);
-							}
-
-							if (rates.sample_x == 0 && rates.sample_y == 0 && can_potentially_super_sample())
-							{
-								cmd->set_specialization_constant(
-									5, flags | VARIANT_FLAG_HAS_SUPER_SAMPLE_REFERENCE_BIT);
-								cmd->extract_pipeline_state(deferred);
-								tasks.push_back(deferred);
-							}
+						if (rates->sample_x == 0 && rates->sample_y == 0 && can_potentially_super_sample())
+						{
+							cmd->set_specialization_constant(
+								5, flags | VARIANT_FLAG_HAS_SUPER_SAMPLE_REFERENCE_BIT);
+							cmd->extract_pipeline_state(deferred);
+							tasks.push_back(deferred);
 						}
 					}
 				}
 			}
-
-			// If device has wave64, we always use it.
-			if (device->supports_subgroup_size_log2(true, 6, 6))
-				break;
 		}
 
 		device->submit_discard(cmd);
@@ -937,10 +933,12 @@ void GSRenderer::kick_compilation_tasks(const GSOptions &options)
 	if (num_first)
 		qsort(first, num_first, sizeof(*first), compare_hash);
 	for (i = 0; i < scanout_tasks.size(); i++)
-		if (!num_first || !bsearch(&scanout_tasks[i].hash, first, num_first, sizeof(*first), compare_hash))
+		if ((!num_first || !bsearch(&scanout_tasks[i].hash, first, num_first, sizeof(*first), compare_hash)) &&
+		    !scanout_tasks[i].program->has_pipeline(scanout_tasks[i].hash))
 			ordered.push_back(scanout_tasks[i]);
 	for (i = 0; i < tasks.size(); i++)
-		if (!num_first || !bsearch(&tasks[i].hash, first, num_first, sizeof(*first), compare_hash))
+		if ((!num_first || !bsearch(&tasks[i].hash, first, num_first, sizeof(*first), compare_hash)) &&
+		    !tasks[i].program->has_pipeline(tasks[i].hash))
 			ordered.push_back(tasks[i]);
 	free(first);
 	tasks.swap(ordered);
@@ -1098,11 +1096,10 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 			std::max<VkDeviceSize>(16, device->get_gpu_properties().limits.minStorageBufferOffsetAlignment);
 
 	init_vram(options);
+	prebuilt_sampling_rate = UINT32_MAX;
 	timeline = device->request_semaphore(VK_SEMAPHORE_TYPE_TIMELINE);
 	descriptor_timeline = device->request_semaphore(VK_SEMAPHORE_TYPE_TIMELINE);
 	init_luts();
-
-	kick_compilation_tasks(options);
 
 	// Reserve 1/3 of our budget to slab-allocate image handles.
 	Vulkan::HeapBudget budgets[VK_MAX_MEMORY_HEAPS] = {};
