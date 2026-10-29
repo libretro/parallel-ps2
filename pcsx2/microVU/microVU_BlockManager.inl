@@ -74,7 +74,7 @@ static void mVUbm_destroy(struct microBlockManager* m)
 	m->quickCapacity = 0;
 }
 
-__ri microBlock* mVUbm_search(struct microBlockManager* m, microVU* mVU, microRegInfo* pState)
+static __ri microBlock* mVUbm_search(struct microBlockManager* m, microVU* mVU, microRegInfo* pState)
 {
 	if (pState->needExactMatch) /* Needs Detailed Search (Exact Match of Pipeline State) */
 	{

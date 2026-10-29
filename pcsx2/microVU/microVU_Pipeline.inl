@@ -21,7 +21,7 @@
 //------------------------------------------------------------------
 
 // Used by mVUsetupRange
-__fi void mVUcheckIsSame(mV)
+static __fi void mVUcheckIsSame(mV)
 {
 	if (mVU->prog.isSame == -1)
 		mVU->prog.isSame = !memcmp((u8*)mVUcurProg.data, vuRegs[mVU->index].Micro, mVU->microMemSize);
@@ -108,8 +108,8 @@ void mVUsetupRange(microVU* mVU, s32 pc, bool isStartPC)
 //------------------------------------------------------------------
 // Cycles / Pipeline State
 //------------------------------------------------------------------
-__fi u8 optimizeReg(u8 rState) { return (rState == 1) ? 0 : rState; }
-__fi u8 calcCycles(u8 reg, u8 x) { return ((reg > x) ? (reg - x) : 0); }
+static __fi u8 optimizeReg(u8 rState) { return (rState == 1) ? 0 : rState; }
+static __fi u8 calcCycles(u8 reg, u8 x) { return ((reg > x) ? (reg - x) : 0); }
 #define incP(mV) mVU->p ^= 1
 #define incQ(mV) mVU->q ^= 1
 

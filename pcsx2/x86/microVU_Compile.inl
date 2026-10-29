@@ -177,7 +177,7 @@ void mVUexecuteInstruction(mV)
 //this happens, so we will bomb out without warning.
 #define mVUcheckBadOp(mV) if (mVUinfo.isBadOp && mVU->code != 0x8000033c) mVUinfo.isEOB = 1
 
-__ri void branchWarning(mV)
+static __ri void branchWarning(mV)
 {
 	incPC(-2);
 	incPC(2);
@@ -265,7 +265,7 @@ void mVUtestCycles(microVU* mVU, microFlagCycles* mFC)
 //------------------------------------------------------------------
 
 // Initialize Variables
-__fi void mVUinitFirstPass(microVU* mVU, uptr pState, u8* thisPtr)
+static __fi void mVUinitFirstPass(microVU* mVU, uptr pState, u8* thisPtr)
 {
 	mVUstartPC = iPC; // Block Start PC
 	mVUbranch  = 0;   // Branch Type
@@ -694,7 +694,7 @@ void* mVUcompile(microVU* mVU, u32 startPC, uptr pState)
 
 
 /* Returns the entry point of the block (compiles it if not found) */
-__fi void* mVUentryGet(microVU* mVU, microBlockManager* block, u32 startPC, uptr pState)
+static __fi void* mVUentryGet(microVU* mVU, microBlockManager* block, u32 startPC, uptr pState)
 {
 	microBlock* pBlock = mVUbm_search(block, mVU, (microRegInfo*)pState);
 	if (pBlock)
@@ -704,7 +704,7 @@ __fi void* mVUentryGet(microVU* mVU, microBlockManager* block, u32 startPC, uptr
 
 /* Search for Existing Compiled Block (if found, return x86ptr;
  * else, compile and return x86ptr) */
-__fi void* mVUblockFetch(microVU* mVU, u32 startPC, uptr pState)
+static __fi void* mVUblockFetch(microVU* mVU, u32 startPC, uptr pState)
 {
 	startPC &= mVU->microMemSize - 8;
 

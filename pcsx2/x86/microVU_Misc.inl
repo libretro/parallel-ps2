@@ -153,7 +153,7 @@ static void mVUexactDivC(microVU* mVU)
 static void mVUexactDivVU0() { mVUexactDivC(&microVU0); }
 static void mVUexactDivVU1() { mVUexactDivC(&microVU1); }
 
-__fi void mVUbackupRegs(microVU* mVU, int toMemory, int onlyNeeded)
+static __fi void mVUbackupRegs(microVU* mVU, int toMemory, int onlyNeeded)
 {
 	if (toMemory)
 	{
@@ -214,7 +214,7 @@ __fi void mVUbackupRegs(microVU* mVU, int toMemory, int onlyNeeded)
 }
 
 /* Restore Volatile Regs */
-__fi void mVUrestoreRegs(microVU* mVU, int fromMemory, int onlyNeeded)
+static __fi void mVUrestoreRegs(microVU* mVU, int fromMemory, int onlyNeeded)
 {
 	if (fromMemory)
 	{
@@ -297,7 +297,7 @@ static inline u32 branchAddr(const mV)
 static void mVUwaitMTVU(void) { mtvu_wait_vu(); }
 
 /* Transforms the Address in gprReg to valid VU0/VU1 Address */
-__fi void mVUaddrFix(mV, int gprReg)
+static __fi void mVUaddrFix(mV, int gprReg)
 {
 	if (isVU1)
 	{
@@ -322,7 +322,7 @@ __fi void mVUaddrFix(mV, int gprReg)
 	}
 }
 
-__fi struct e_memopt mVUoptimizeConstantAddr(mV, u32 srcreg, s32 offset, s32 offsetSS_)
+static __fi struct e_memopt mVUoptimizeConstantAddr(mV, u32 srcreg, s32 offset, s32 offsetSS_)
 {
 	/* The comment below asked for VI const prop; the tracker in the
 	 * compile pass now provides it, so a known source register folds

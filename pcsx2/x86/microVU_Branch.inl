@@ -21,7 +21,7 @@
 
 extern void mVUincCycles(microVU* mVU, int x);
 extern void* mVUcompile(microVU* mVU, u32 startPC, uptr pState);
-__fi int getLastFlagInst(microRegInfo* pState, int* xFlag, int flagType, int isEbit)
+static __fi int getLastFlagInst(microRegInfo* pState, int* xFlag, int flagType, int isEbit)
 {
 	if (isEbit)
 		return findFlagInst(xFlag, 0x7fffffff);

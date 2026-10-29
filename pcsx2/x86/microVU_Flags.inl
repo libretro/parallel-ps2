@@ -17,7 +17,7 @@
 #pragma once
 
 /* Sets FDIV Flags at the proper time */
-__fi void mVUdivSet(mV)
+static __fi void mVUdivSet(mV)
 {
 	if (mVUinfo.doDivFlag)
 	{
@@ -30,7 +30,7 @@ __fi void mVUdivSet(mV)
 
 /* Optimizes out unneeded status flag updates
  * This can safely be done when there is an FSSET opcode */
-__fi void mVUstatusFlagOp(mV)
+static __fi void mVUstatusFlagOp(mV)
 {
 	int curPC = iPC;
 	int i = mVUcount;
@@ -106,7 +106,7 @@ int sortFlag(int* fFlag, int* bFlag, int cycles)
 
 /* Note: Flag handling is 'very' complex, it requires full knowledge 
  * of how microVU recs work, so don't touch! */
-__fi void mVUsetFlags(mV, microFlagCycles* mFC)
+static __fi void mVUsetFlags(mV, microFlagCycles* mFC)
 {
 	int xS = 0, xM = 0, xC = 0;
 	int endPC = iPC;
@@ -242,7 +242,7 @@ __fi void mVUsetFlags(mV, microFlagCycles* mFC)
 #define shuffleClip    ((bClip[3] << 6) | (bClip[2] << 4) | (bClip[1] << 2) | bClip[0])
 
 /* Recompiles Code for Proper Flags on Block Linkings */
-__fi void mVUsetupFlags(mV, microFlagCycles* mFC)
+static __fi void mVUsetupFlags(mV, microFlagCycles* mFC)
 {
 	if (doSFlagInsts && __Status)
 	{

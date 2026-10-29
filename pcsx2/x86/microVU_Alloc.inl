@@ -30,7 +30,7 @@ __fi static int getFlagReg(uint fInst)
 	return gprFlags[fInst];
 }
 
-__fi void setBitSFLAG(int reg, int regT, int bitTest, int bitSet)
+static __fi void setBitSFLAG(int reg, int regT, int bitTest, int bitSet)
 {
 	xe_test32_ri(regT, bitTest);
 	uint8_t* skip; xe_fwd_jcc8(Jcc_Zero, skip);
@@ -38,7 +38,7 @@ __fi void setBitSFLAG(int reg, int regT, int bitTest, int bitSet)
 	xe_fwd_set8(skip);
 }
 
-__fi void setBitFSEQ(int reg, int bitX)
+static __fi void setBitFSEQ(int reg, int bitX)
 {
 	xe_test32_ri(reg, bitX);
 	uint8_t* skip; xe_fwd_jcc8(Jcc_Zero, skip);
@@ -46,18 +46,18 @@ __fi void setBitFSEQ(int reg, int bitX)
 	xe_fwd_set8(skip);
 }
 
-__fi void mVUallocSFLAGa(int reg, int fInstance)
+static __fi void mVUallocSFLAGa(int reg, int fInstance)
 {
 	xe_mov32_rr(reg, getFlagReg(fInstance));
 }
 
-__fi void mVUallocSFLAGb(int reg, int fInstance)
+static __fi void mVUallocSFLAGb(int reg, int fInstance)
 {
 	xe_mov32_rr(getFlagReg(fInstance), reg);
 }
 
 // Normalize Status Flag
-__ri void mVUallocSFLAGc(int reg, int regT, int fInstance)
+static __ri void mVUallocSFLAGc(int reg, int regT, int fInstance)
 {
 	xe_xor32_rr(reg, reg);
 	mVUallocSFLAGa(regT, fInstance);
@@ -71,7 +71,7 @@ __ri void mVUallocSFLAGc(int reg, int regT, int fInstance)
 }
 
 // Denormalizes Status Flag; destroys tmp1/tmp2
-__ri void mVUallocSFLAGd(u32* memAddr, int reg, int tmp1, int tmp2)
+static __ri void mVUallocSFLAGd(u32* memAddr, int reg, int tmp1, int tmp2)
 {
 	xe_mov32_rm(tmp2, memAddr);
 	xe_mov32_rr(reg, tmp2);
@@ -88,25 +88,25 @@ __ri void mVUallocSFLAGd(u32* memAddr, int reg, int tmp1, int tmp2)
 	xe_or32_rr(reg, tmp2);
 }
 
-__fi void mVUallocMFLAGa(mV, int reg, int fInstance)
+static __fi void mVUallocMFLAGa(mV, int reg, int fInstance)
 {
 	xe_movzx32_rm16(reg, &mVU->macFlag[fInstance]);
 }
 
-__fi void mVUallocMFLAGb(mV, int reg, int fInstance)
+static __fi void mVUallocMFLAGb(mV, int reg, int fInstance)
 {
 	//xAND(reg, 0xffff);
 	if (fInstance < 4) xe_mov32_mr(&mVU->macFlag[fInstance], reg);         // microVU
 	else               xe_mov32_mr(&vuRegs[mVU->index].VI[REG_MAC_FLAG].UL, reg); // macroVU
 }
 
-__fi void mVUallocCFLAGa(mV, int reg, int fInstance)
+static __fi void mVUallocCFLAGa(mV, int reg, int fInstance)
 {
 	if (fInstance < 4) xe_mov32_rm(reg, &mVU->clipFlag[fInstance]);         // microVU
 	else               xe_mov32_rm(reg, &vuRegs[mVU->index].VI[REG_CLIP_FLAG].UL); // macroVU
 }
 
-__fi void mVUallocCFLAGb(mV, int reg, int fInstance)
+static __fi void mVUallocCFLAGb(mV, int reg, int fInstance)
 {
 	if (fInstance < 4) xe_mov32_mr(&mVU->clipFlag[fInstance], reg);         // microVU
 	else               xe_mov32_mr(&vuRegs[mVU->index].VI[REG_CLIP_FLAG].UL, reg); // macroVU

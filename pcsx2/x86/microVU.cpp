@@ -177,7 +177,7 @@ void mVUclose(microVU* mVU)
 }
 
 // Clears Block Data in specified range
-__fi void mVUclear(mV, u32 addr, u32 size)
+static __fi void mVUclear(mV, u32 addr, u32 size)
 {
 	if (!mVU->prog.cleared)
 	{
@@ -196,7 +196,7 @@ __fi void mVUclear(mV, u32 addr, u32 size)
 //------------------------------------------------------------------
 
 // Deletes a program
-__ri void mVUdeleteProg(microVU* mVU, microProgram** prog)
+static __ri void mVUdeleteProg(microVU* mVU, microProgram** prog)
 {
 	for (u32 i = 0; i < (mVU->progSize / 2); i++)
 	{
@@ -210,7 +210,7 @@ __ri void mVUdeleteProg(microVU* mVU, microProgram** prog)
 }
 
 // Creates a new Micro Program
-__ri microProgram* mVUcreateProg(microVU* mVU, int startPC)
+static __ri microProgram* mVUcreateProg(microVU* mVU, int startPC)
 {
 	microProgram* prog = (microProgram*)memalign_alloc(64, sizeof(microProgram));
 	memset(prog, 0, sizeof(microProgram));
@@ -223,7 +223,7 @@ __ri microProgram* mVUcreateProg(microVU* mVU, int startPC)
 }
 
 // Caches Micro Program
-__ri void mVUcacheProg(microVU* mVU, microProgram* prog)
+static __ri void mVUcacheProg(microVU* mVU, microProgram* prog)
 {
 	if (!doWholeProgCompare)
 	{
@@ -262,7 +262,7 @@ u64 mVUrangesHash(microVU* mVU, microProgram* prog)
 }
 
 // Compare Cached microProgram to vuRegs[mVU->index].Micro
-__fi int mVUcmpProg(microVU* mVU, microProgram* prog)
+static __fi int mVUcmpProg(microVU* mVU, microProgram* prog)
 {
 	if (doWholeProgCompare)
 	{
