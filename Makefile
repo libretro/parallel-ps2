@@ -13,6 +13,10 @@ THREADED_RECOMPILER = 1
 CORE_DIR := .
 HAVE_GRIFFIN = 0
 
+ifeq ($(ECHO),1)
+    E := 1
+endif
+
 SPACE :=
 SPACE := $(SPACE) $(SPACE)
 BACKSLASH :=
@@ -986,15 +990,19 @@ else
 endif
 
 %.o: %.cpp
+	@$(if $(E), $(shell echo echo CXX $<),)
 	$(CXX) -c $(OBJOUT)$@ $< $(CXXFLAGS)
 
 %.o: %.cc
+	@$(if $(E), $(shell echo echo CXX $<),)
 	$(CXX) -c $(OBJOUT)$@ $< $(CXXFLAGS)
 
 %.o: %.c
+	@$(if $(E), $(shell echo echo CC $<),)
 	$(CC) -c $(OBJOUT)$@ $< $(CFLAGS)
 
 %.o: %.S
+	@$(if $(E), $(shell echo echo CC $<),)
 	$(CC) -c $(OBJOUT)$@ $< $(CFLAGS)
 
 clean:
