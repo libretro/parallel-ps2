@@ -262,6 +262,12 @@ else()
 	set(DEFAULT_WARNINGS -Wall -Wextra -Wno-attributes -Wno-unused-function -Wno-unused-parameter -Wno-missing-field-initializers -Wno-format -Wno-format-security -Wno-unused-value)
 endif()
 
+# An undeclared call in a C file is an error on Clang and GCC 14, a warning
+# on older GCC. Make it an error everywhere so no lane waves one through.
+if (NOT MSVC)
+	add_compile_options($<$<COMPILE_LANGUAGE:C>:-Werror=implicit-function-declaration>)
+endif()
+
 if (USE_GCC)
 	list(APPEND DEFAULT_WARNINGS -Wno-stringop-truncation -Wno-stringop-overflow -Wno-maybe-uninitialized )
 endif()

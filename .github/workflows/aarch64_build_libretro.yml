@@ -1,0 +1,75 @@
+name: LRPS2-libretro aarch64
+
+# The x86-64 lanes cannot see what only arm64 compiles: on x86 the SSE
+# intrinsics headers pull in <stdlib.h> and friends behind every C file's
+# back, so a missing include only fails on arm64. These two rows match the
+# GitLab android-arm64-v8a and webos-aarch64 jobs.
+
+on:
+  push:
+    branches: [master, libretroization]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: android-arm64-v8a
+          - name: linux-aarch64-gles
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install the cross toolchain
+        if: matrix.name == 'linux-aarch64-gles'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-aarch64-linux-gnu ninja-build
+
+      - name: Install ninja
+        if: matrix.name == 'android-arm64-v8a'
+        run: sudo apt-get install -y ninja-build
+
+      - name: Configure (Android, NDK preinstalled on the runner)
+        if: matrix.name == 'android-arm64-v8a'
+        run: |
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.18 \
+            -DANDROID_PLATFORM=android-21 -DANDROID_STL=c++_static -DANDROID_ABI=arm64-v8a \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake" \
+            -B build
+
+      # webOS shape: aarch64 GCC, no desktop GL, no Vulkan.
+      - name: Configure (aarch64 GCC, webOS shape)
+        if: matrix.name == 'linux-aarch64-gles'
+        run: |
+          cat > "$RUNNER_TEMP/aarch64.cmake" <<'TC'
+          set(CMAKE_SYSTEM_NAME Linux)
+          set(CMAKE_SYSTEM_PROCESSOR aarch64)
+          set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
+          set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
+          set(CMAKE_FIND_ROOT_PATH /usr/aarch64-linux-gnu)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+          TC
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.18 \
+            -DCMAKE_TOOLCHAIN_FILE="$RUNNER_TEMP/aarch64.cmake" \
+            -DWEBOS=ON -DUSE_VULKAN=OFF -B build
+
+      - name: Build
+        run: cmake --build build --target pcsx2_libretro -- -j"$(nproc)"
