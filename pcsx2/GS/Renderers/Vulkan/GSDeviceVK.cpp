@@ -507,6 +507,12 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			SupportsExtension(VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME, false);
 		m_optional_extensions.vk_ext_extended_dynamic_state =
 			SupportsExtension(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME, false);
+		m_optional_extensions.vk_ext_extended_dynamic_state3 =
+			SupportsExtension(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME, false);
+		/* (the libraries extension needs VK_KHR_pipeline_library) */
+		m_optional_extensions.vk_ext_graphics_pipeline_library =
+			SupportsExtension(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME, false)
+			&& SupportsExtension(VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME, false);
 
 		return true;
 	}
@@ -631,6 +637,56 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 				Vulkan::AddPointerToChain(&device_info, &eds_feature);
 		}
 
+		/* Blend state on the command buffer, and pipelines linked from
+		 * libraries: each only with all of what it needs (fast linking for
+		 * the libraries, or linking a sibling is no cheaper than building
+		 * it). LRPS2_TEST_VK_NO_EDS3 / _NO_GPL leave either off, for the
+		 * tests (tests/vkpipewarm). */
+		VkPhysicalDeviceExtendedDynamicState3FeaturesEXT eds3_feature = {
+			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT};
+		VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gpl_feature = {
+			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT};
+		if (getenv("LRPS2_TEST_VK_NO_EDS3"))
+			m_optional_extensions.vk_ext_extended_dynamic_state3 = false;
+		if (getenv("LRPS2_TEST_VK_NO_GPL"))
+			m_optional_extensions.vk_ext_graphics_pipeline_library = false;
+		if (m_optional_extensions.vk_ext_extended_dynamic_state3 || m_optional_extensions.vk_ext_graphics_pipeline_library)
+		{
+			VkPhysicalDeviceExtendedDynamicState3FeaturesEXT eds3 = {
+				VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT};
+			VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gpl = {
+				VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT};
+			VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT gpl_props = {
+				VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT};
+			VkPhysicalDeviceFeatures2 features2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+			VkPhysicalDeviceProperties2 properties2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+			if (m_optional_extensions.vk_ext_extended_dynamic_state3)
+				Vulkan::AddPointerToChain(&features2, &eds3);
+			if (m_optional_extensions.vk_ext_graphics_pipeline_library)
+			{
+				Vulkan::AddPointerToChain(&features2, &gpl);
+				Vulkan::AddPointerToChain(&properties2, &gpl_props);
+				vkGetPhysicalDeviceProperties2(vk_init_info.gpu, &properties2);
+			}
+			vkGetPhysicalDeviceFeatures2(vk_init_info.gpu, &features2);
+			m_optional_extensions.vk_ext_extended_dynamic_state3 &= eds3.extendedDynamicState3ColorBlendEnable
+				&& eds3.extendedDynamicState3ColorBlendEquation && eds3.extendedDynamicState3ColorWriteMask;
+			m_optional_extensions.vk_ext_graphics_pipeline_library &= gpl.graphicsPipelineLibrary
+				&& gpl_props.graphicsPipelineLibraryFastLinking;
+		}
+		if (m_optional_extensions.vk_ext_extended_dynamic_state3)
+		{
+			eds3_feature.extendedDynamicState3ColorBlendEnable   = VK_TRUE;
+			eds3_feature.extendedDynamicState3ColorBlendEquation = VK_TRUE;
+			eds3_feature.extendedDynamicState3ColorWriteMask     = VK_TRUE;
+			Vulkan::AddPointerToChain(&device_info, &eds3_feature);
+		}
+		if (m_optional_extensions.vk_ext_graphics_pipeline_library)
+		{
+			gpl_feature.graphicsPipelineLibrary = VK_TRUE;
+			Vulkan::AddPointerToChain(&device_info, &gpl_feature);
+		}
+
 		if (m_optional_extensions.vk_ext_provoking_vertex)
 		{
 			provoking_vertex_feature.provokingVertexLast = VK_TRUE;
@@ -674,6 +730,12 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		m_dss_key     = 0;
 		m_dss_applied = 0;
 		m_dss_target  = m_optional_extensions.vk_ext_extended_dynamic_state ? &m_dss_key : &m_pipeline_selector.dss.key;
+		m_optional_extensions.vk_ext_extended_dynamic_state3 = m_optional_extensions.vk_ext_extended_dynamic_state3
+			&& vkCmdSetColorBlendEnableEXT && vkCmdSetColorBlendEquationEXT && vkCmdSetColorWriteMaskEXT;
+		/* (without it the key stays 0, which is what is applied) */
+		m_blend_dynamic = m_optional_extensions.vk_ext_extended_dynamic_state3 ? ~0u : 0u;
+		m_blend_key     = 0;
+		m_blend_applied = m_blend_dynamic;
 
 		// Grab the graphics and present queues.
 		vkGetDeviceQueue(vk_init_info.device, m_graphics_queue_family_index, 0, &m_graphics_queue);
@@ -748,6 +810,10 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			m_optional_extensions.vk_ext_rasterization_order_attachment_access ? "supported" : "NOT supported");
 		log_cb(RETRO_LOG_INFO, "Extended dynamic state (depth/stencil) is %s\n",
 			m_optional_extensions.vk_ext_extended_dynamic_state ? "in use" : "NOT in use");
+		log_cb(RETRO_LOG_INFO, "Extended dynamic state 3 (blend) is %s\n",
+			m_optional_extensions.vk_ext_extended_dynamic_state3 ? "in use" : "NOT in use");
+		log_cb(RETRO_LOG_INFO, "Graphics pipeline libraries are %s\n",
+			m_optional_extensions.vk_ext_graphics_pipeline_library ? "in use" : "NOT in use");
 
 		return true;
 	}
@@ -1810,8 +1876,8 @@ void GSDeviceVK::Destroy()
 		log_cb(RETRO_LOG_INFO, "Vulkan pipelines: %u built on the render thread, %u ahead on the warm-up thread, %u of those handed over, %u of them while a sibling drew\n",
 			m_pipelines_built_here, m_pipelines_built_ahead, m_pipelines_taken, m_pipelines_async);
 	if (m_sibling_draws || m_siblings_built_here || m_siblings_built_ahead)
-		log_cb(RETRO_LOG_INFO, "Vulkan dynamic siblings: %u built on the render thread, %u on the warm-up thread, %u draws drawn with one\n",
-			m_siblings_built_here, m_siblings_built_ahead, m_sibling_draws);
+		log_cb(RETRO_LOG_INFO, "Vulkan dynamic siblings: %u built on the render thread (%u of them linked from libraries), %u on the warm-up thread, %u draws drawn with one; libraries: %u built on the render thread, %u on the warm-up thread\n",
+			m_siblings_built_here, m_siblings_linked, m_siblings_built_ahead, m_sibling_draws, m_libs_built_here, m_libs_built_ahead);
 	if (m_util_built_here || m_util_built_ahead)
 		log_cb(RETRO_LOG_INFO, "Vulkan utility pipelines: %u built on the render thread creating the device, %u at first use, %u on the warm-up thread\n",
 			m_util_built_creating, m_util_built_here - m_util_built_creating, m_util_built_ahead);
@@ -1821,7 +1887,8 @@ void GSDeviceVK::Destroy()
 	m_plist = nullptr;
 	m_plist_count = m_plist_cap = 0;
 	m_pipelines_built_here = m_pipelines_built_ahead = m_pipelines_taken = m_pipelines_async = 0;
-	m_sibling_draws = m_siblings_built_here = m_siblings_built_ahead = 0;
+	m_sibling_draws = m_siblings_built_here = m_siblings_built_ahead = m_siblings_linked = 0;
+	m_libs_built_here = m_libs_built_ahead = 0;
 
 	DestroyBase();
 	/* With the pool's textures, and like them ahead of the wait for the
@@ -3582,6 +3649,15 @@ void GSDeviceVK::DestroyResources()
 		if (it.second != VK_NULL_HANDLE)
 			vkDestroyPipeline(m_device, it.second, nullptr);
 	m_tfx_siblings.clear();
+	for (auto& it : m_tfx_fs_libs)
+		if (it.second != VK_NULL_HANDLE)
+			vkDestroyPipeline(m_device, it.second, nullptr);
+	m_tfx_fs_libs.clear();
+	for (auto& it : m_tfx_state_libs)
+		if (it.second != VK_NULL_HANDLE)
+			vkDestroyPipeline(m_device, it.second, nullptr);
+	m_tfx_state_libs.clear();
+	m_gpl_failed = false;
 	m_tfx_pending.clear();
 	m_tfx_dynamic = false;
 	DestroyModules(&m_modules);
@@ -3644,6 +3720,39 @@ void GSDeviceVK::DestroyResources()
 	}
 }
 
+// clang-format off
+static constexpr std::array<VkBlendFactor, 16> vk_blend_factors = { {
+	VK_BLEND_FACTOR_SRC_COLOR, VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR, VK_BLEND_FACTOR_DST_COLOR, VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
+	VK_BLEND_FACTOR_SRC1_COLOR, VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR, VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+	VK_BLEND_FACTOR_DST_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA, VK_BLEND_FACTOR_SRC1_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA,
+	VK_BLEND_FACTOR_CONSTANT_COLOR, VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO
+}};
+/* [3]: the destination alpha test's first pass, which keeps the least */
+static constexpr std::array<VkBlendOp, 4> vk_blend_ops = {{
+	VK_BLEND_OP_ADD, VK_BLEND_OP_SUBTRACT, VK_BLEND_OP_REVERSE_SUBTRACT, VK_BLEND_OP_MIN
+}};
+// clang-format on
+
+/* The blend a selector draws with, as one word: enable (bit 0), colour
+ * source and destination factor (1-4, 5-8, indexes of vk_blend_factors),
+ * op (9-10, of vk_blend_ops), alpha source and destination factor (11-14,
+ * 15-18), colour write mask (19-22). What BuildTFXPipeline bakes without
+ * VK_EXT_extended_dynamic_state3, and ApplyBlendState sets with it. */
+#define BLEND_ONE  14u
+#define BLEND_ZERO 15u
+static u32 TFXBlendWord(const GSDeviceVK::PipelineSelector& p)
+{
+	if (IsDATEModePrimIDInit(p.ps.date))
+		return 1u | (BLEND_ONE << 1) | (BLEND_ZERO << 5) | (3u << 9) | (BLEND_ONE << 11) | (BLEND_ZERO << 15)
+			| (static_cast<u32>(VK_COLOR_COMPONENT_R_BIT) << 19);
+	if (!p.bs.IsEffective(p.cms))
+		return (BLEND_ONE << 1) | (BLEND_ZERO << 5) | (BLEND_ONE << 11) | (BLEND_ZERO << 15)
+			| (static_cast<u32>(p.cms.wrgba) << 19);
+	return 1u | (static_cast<u32>(p.bs.src_factor) << 1) | (static_cast<u32>(p.bs.dst_factor) << 5)
+		| (static_cast<u32>(p.bs.op) << 9) | (static_cast<u32>(p.bs.src_factor_alpha) << 11)
+		| (static_cast<u32>(p.bs.dst_factor_alpha) << 15) | (static_cast<u32>(p.cms.wrgba) << 19);
+}
+
 /* The pixel shader a pipeline is made with: blending is off, and its second
  * output unused, when the colours are masked. */
 static GSHWDrawConfig::PSSelector TFXPipelinePS(const GSDeviceVK::PipelineSelector& p)
@@ -3655,20 +3764,13 @@ static GSHWDrawConfig::PSSelector TFXPipelinePS(const GSDeviceVK::PipelineSelect
 }
 
 VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods, VkPipelineCache cache,
-	bool dynamic) const
+	bool dynamic, VkGraphicsPipelineLibraryFlagsEXT library) const
 {
 	static constexpr std::array<VkPrimitiveTopology, 3> topology_lookup = {{
 		VK_PRIMITIVE_TOPOLOGY_POINT_LIST, // Point
 		VK_PRIMITIVE_TOPOLOGY_LINE_LIST, // Line
 		VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, // Triangle
 	}};
-
-	GSHWDrawConfig::BlendState pbs{p.bs};
-	if (!p.bs.IsEffective(p.cms))
-	{
-		// disable blending when colours are masked
-		pbs = {};
-	}
 
 	Vulkan::GraphicsPipelineBuilder gpb;
 	SetPipelineProvokingVertex(m_features, gpb);
@@ -3708,19 +3810,24 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 	// Shaders: the modules of the selector's interface, its fields as
 	// their specialization constants (a dynamic sibling's pixel shader
 	// reads them from the push constants)
-	const GSHWDrawConfig::PSSelector pps = TFXPipelinePS(p);
-	const VkShaderModule vs = TFXVertexModule(mods, p.vs);
-	const VkShaderModule fs = TFXFragmentModule(mods, pps, dynamic);
+	const GSHWDrawConfig::PSSelector pps = m_optional_extensions.vk_ext_extended_dynamic_state3 ? p.ps : TFXPipelinePS(p);
+	// (a library's: only those of its parts)
+	const bool with_vs = !library || (library & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT);
+	const bool with_fs = !library || (library & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT);
+	const VkShaderModule vs = with_vs ? TFXVertexModule(mods, p.vs) : VK_NULL_HANDLE;
+	const VkShaderModule fs = with_fs ? TFXFragmentModule(mods, pps, dynamic) : VK_NULL_HANDLE;
 	u32 vs_spec[VKSC_VS_COUNT];
 	u32 ps_spec[VKSC_PS_COUNT];
-	if (vs == VK_NULL_HANDLE || fs == VK_NULL_HANDLE)
+	if ((with_vs && vs == VK_NULL_HANDLE) || (with_fs && fs == VK_NULL_HANDLE))
 		return VK_NULL_HANDLE;
 	VKTFXSpecVS(p.vs, vs_spec);
 	VKTFXSpecPS(pps, ps_spec);
 	const VkSpecializationInfo vs_si = {VKSC_VS_COUNT, vkspv_tfx_vs_spec_map, sizeof(vs_spec), vs_spec};
 	const VkSpecializationInfo ps_si = {VKSC_PS_COUNT, vkspv_tfx_fs_spec_map, sizeof(ps_spec), ps_spec};
-	gpb.SetVertexShader(vs, &vs_si);
-	gpb.SetFragmentShader(fs, dynamic ? nullptr : &ps_si);
+	if (with_vs)
+		gpb.SetVertexShader(vs, &vs_si);
+	if (with_fs)
+		gpb.SetFragmentShader(fs, dynamic ? nullptr : &ps_si);
 
 	// IA
 	if (p.vs.expand == GSHWDrawConfig::VSExpand::None)
@@ -3755,35 +3862,19 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 		gpb.SetStencilState(true, sos, sos);
 	}
 
-	// Blending
-	if (IsDATEModePrimIDInit(p.ps.date))
+	// Blending: the word's, or from the command buffer
+	if (m_optional_extensions.vk_ext_extended_dynamic_state3)
 	{
-		// image DATE prepass
-		gpb.SetBlendAttachment(0, true, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_MIN, VK_BLEND_FACTOR_ONE,
-			VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD, VK_COLOR_COMPONENT_R_BIT);
-	}
-	else if (pbs.enable)
-	{
-		// clang-format off
-		static constexpr std::array<VkBlendFactor, 16> vk_blend_factors = { {
-			VK_BLEND_FACTOR_SRC_COLOR, VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR, VK_BLEND_FACTOR_DST_COLOR, VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
-			VK_BLEND_FACTOR_SRC1_COLOR, VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR, VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-			VK_BLEND_FACTOR_DST_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA, VK_BLEND_FACTOR_SRC1_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA,
-			VK_BLEND_FACTOR_CONSTANT_COLOR, VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO
-		}};
-		static constexpr std::array<VkBlendOp, 3> vk_blend_ops = {{
-				VK_BLEND_OP_ADD, VK_BLEND_OP_SUBTRACT, VK_BLEND_OP_REVERSE_SUBTRACT
-		}};
-		// clang-format on
-
-		gpb.SetBlendAttachment(0, true, vk_blend_factors[pbs.src_factor], vk_blend_factors[pbs.dst_factor],
-			vk_blend_ops[pbs.op], vk_blend_factors[pbs.src_factor_alpha], vk_blend_factors[pbs.dst_factor_alpha],
-			VK_BLEND_OP_ADD, p.cms.wrgba);
+		gpb.AddDynamicState(VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT);
+		gpb.AddDynamicState(VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT);
+		gpb.AddDynamicState(VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT);
 	}
 	else
 	{
-		gpb.SetBlendAttachment(0, false, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD,
-			VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD, p.cms.wrgba);
+		const u32 w = TFXBlendWord(p);
+		gpb.SetBlendAttachment(0, (w & 1u) != 0, vk_blend_factors[(w >> 1) & 15u], vk_blend_factors[(w >> 5) & 15u],
+			vk_blend_ops[(w >> 9) & 3u], vk_blend_factors[(w >> 11) & 15u], vk_blend_factors[(w >> 15) & 15u],
+			VK_BLEND_OP_ADD, (w >> 19) & 15u);
 	}
 
 	// Tests have shown that it's faster to just enable rast order on the entire pass, rather than alternating
@@ -3792,14 +3883,18 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 	if (m_features.framebuffer_fetch && p.IsRTFeedbackLoop())
 		gpb.AddBlendFlags(VK_PIPELINE_COLOR_BLEND_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_BIT_EXT);
 
+	/* (a library: the parts asked for, the rest left out) */
+	if (library)
+		gpb.SetLibrary(library);
 	return gpb.Create(vk_init_info.device, cache);
 }
 
 /* The key of the pipeline a draw's selector needs: what BuildTFXPipeline
  * does not read zeroed, as the shaders' fields are (VKPipelineKey.h). The
- * line width and the blend constant are dynamic state; blending the
- * colour mask leaves without effect is built as none. */
-static GSDeviceVK::PipelineSelector TFXPipelineKey(const GSDeviceVK::PipelineSelector& p)
+ * line width and the blend constant are dynamic state, and the blend and
+ * colour mask too with VK_EXT_extended_dynamic_state3; blending the colour
+ * mask leaves without effect is built as none. */
+static GSDeviceVK::PipelineSelector TFXPipelineKey(const GSDeviceVK::PipelineSelector& p, bool dynamic_blend)
 {
 	GSDeviceVK::PipelineSelector k{p};
 	k.line_width         = 0;
@@ -3809,6 +3904,13 @@ static GSDeviceVK::PipelineSelector TFXPipelineKey(const GSDeviceVK::PipelineSel
 	{
 		k.bs.key      = 0;
 		k.ps.no_color1 = 1;
+	}
+	/* (with the blend on the command buffer, none of it; the shader's
+	 * second output is kept above) */
+	if (dynamic_blend)
+	{
+		k.bs.key  = 0;
+		k.cms.key = 0;
 	}
 	VKCanonicalPS(k.ps);
 	VKCanonicalVS(k.vs, k.topology);
@@ -3822,7 +3924,7 @@ VkPipeline GSDeviceVK::GetTFXPipeline(const PipelineSelector& p)
 	if (m_last_tfx_pipeline != VK_NULL_HANDLE && m_last_tfx_pipeline_selector == p)
 		return m_last_tfx_pipeline;
 
-	const PipelineSelector key = TFXPipelineKey(p);
+	const PipelineSelector key = TFXPipelineKey(p, m_optional_extensions.vk_ext_extended_dynamic_state3);
 	const auto it = m_tfx_pipelines.find(key);
 	VkPipeline pipeline;
 	if (it == m_tfx_pipelines.end())
@@ -3844,6 +3946,65 @@ VkPipeline GSDeviceVK::GetTFXPipeline(const PipelineSelector& p)
 /* The dynamic sibling of a key's pipeline: from the table; else, with
  * build, built here, or without, asked of the warm-up thread for the next
  * draw that wants it. VK_NULL_HANDLE while there is none to draw with. */
+/* What a sibling's library depends on, as its key: for the pixel shader
+ * part the module (the sibling's pixel selector), the render pass and the
+ * depth/stencil state; for the rest (vertex input, vertex shader, output)
+ * the topology, the vertex selector, the render pass and the blend. */
+static GSDeviceVK::PipelineSelector TFXLibraryKey(const GSDeviceVK::PipelineSelector& sibling, bool fragment)
+{
+	GSDeviceVK::PipelineSelector k{sibling};
+	k.line_width = 0;
+	if (fragment)
+	{
+		k.topology = 0;
+		k.vs.key   = 0;
+		k.bs.key   = 0;
+		k.cms.key  = 0;
+	}
+	else
+	{
+		/* the render pass's (and the alpha test's first pass's blend) */
+		GSHWDrawConfig::PSSelector ps;
+		ps.date       = k.ps.date;
+		ps.colclip_hw = k.ps.colclip_hw;
+		k.ps          = ps;
+	}
+	return k;
+}
+
+/* A sibling's library, from the table or built here. The pixel shader
+ * part, the dynamic pixel shader compiled, costs more than a key's own
+ * pipeline: with the warm-up thread there (and but for =async, which
+ * builds every sibling here) it is asked of the thread instead, and is
+ * none until it comes back. */
+VkPipeline GSDeviceVK::GetTFXLibrary(const PipelineSelector& sibling, bool fragment)
+{
+	const PipelineSelector lk = TFXLibraryKey(sibling, fragment);
+	auto& table = fragment ? m_tfx_fs_libs : m_tfx_state_libs;
+	const auto it = table.find(lk);
+	VkPipeline lib;
+	if (it != table.end() && (it->second != VK_NULL_HANDLE || fragment))
+		return it->second;
+	if (fragment && m_warm && m_test_pipelines != 3)
+	{
+		/* (a null entry: asked for, or the thread could not take it) */
+		if (PipelineWarmQueue(lk, 2))
+			table.emplace(lk, VK_NULL_HANDLE);
+		return VK_NULL_HANDLE;
+	}
+	lib = BuildTFXPipeline(lk, &m_modules, m_pipeline_cache, true,
+		fragment ? VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT :
+				   (VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT
+					| VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT
+					| VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT));
+	if (lib != VK_NULL_HANDLE)
+	{
+		table[lk] = lib;
+		m_libs_built_here++;
+	}
+	return lib;
+}
+
 VkPipeline GSDeviceVK::GetTFXSibling(const PipelineSelector& key, bool build)
 {
 	PipelineSelector sk{key};
@@ -3855,11 +4016,41 @@ VkPipeline GSDeviceVK::GetTFXSibling(const PipelineSelector& key, bool build)
 	if (!build)
 	{
 		/* (a null entry: asked for, or the thread could not take it) */
-		if (PipelineWarmQueue(sk, true))
+		if (PipelineWarmQueue(sk, 1))
 			m_tfx_siblings.emplace(sk, VK_NULL_HANDLE);
 		return VK_NULL_HANDLE;
 	}
-	sibling = BuildTFXPipeline(sk, &m_modules, m_pipeline_cache, true);
+	/* Linked from its libraries, fast, where there are some: the pixel
+	 * shader part, the costly one, is shared by every sibling of a module
+	 * and render pass. A device whose libraries cannot be made or linked
+	 * builds them whole from then on. */
+	sibling = VK_NULL_HANDLE;
+	if (m_optional_extensions.vk_ext_graphics_pipeline_library && !m_gpl_failed)
+	{
+		const VkPipeline fs_lib = GetTFXLibrary(sk, true);
+		const VkPipeline libs[2] = {fs_lib != VK_NULL_HANDLE ? GetTFXLibrary(sk, false) : VK_NULL_HANDLE, fs_lib};
+		/* the pixel shader part not there yet: the key's own pipeline is
+		 * built here as without libraries, the part on the way (or asked
+		 * for again by the next key, if the thread had no room) */
+		if (fs_lib == VK_NULL_HANDLE && m_warm && m_test_pipelines != 3)
+			return VK_NULL_HANDLE;
+		if (libs[0] != VK_NULL_HANDLE && libs[1] != VK_NULL_HANDLE)
+		{
+			Vulkan::GraphicsPipelineBuilder gpb;
+			gpb.SetPipelineLayout(m_tfx_pipeline_layout);
+			gpb.SetLinkedLibraries(libs, 2);
+			sibling = gpb.Create(vk_init_info.device, m_pipeline_cache);
+		}
+		if (sibling != VK_NULL_HANDLE)
+			m_siblings_linked++;
+		else
+		{
+			log_cb(RETRO_LOG_WARN, "Vulkan: a pipeline could not be linked from libraries; building them whole\n");
+			m_gpl_failed = true;
+		}
+	}
+	if (sibling == VK_NULL_HANDLE)
+		sibling = BuildTFXPipeline(sk, &m_modules, m_pipeline_cache, true);
 	m_tfx_siblings[sk] = sibling;
 	if (sibling != VK_NULL_HANDLE)
 		m_siblings_built_here++;
@@ -3895,9 +4086,12 @@ __noinline VkPipeline GSDeviceVK::GetTFXPipelineMissed(const PipelineSelector& p
 			return it->second;
 		if (m_test_pipelines != 1)
 		{
-			pipeline = GetTFXSibling(p, m_test_pipelines == 3);
+			/* (linking one is cheap where libraries are: a new state
+			 * draws at once too) */
+			pipeline = GetTFXSibling(p, m_test_pipelines == 3
+				|| (m_optional_extensions.vk_ext_graphics_pipeline_library && !m_gpl_failed));
 			if (pipeline != VK_NULL_HANDLE
-				&& (m_tfx_pending.find(p) != m_tfx_pending.end() || (PipelineWarmQueue(p, false)
+				&& (m_tfx_pending.find(p) != m_tfx_pending.end() || (PipelineWarmQueue(p, 0)
 					&& m_tfx_pending.emplace(p, 1).second)))
 				goto sibling;
 		}
@@ -4054,6 +4248,8 @@ void GSDeviceVK::PipelineCacheClose()
 #define PLIST_MAX     65536u
 /* flags: the selectors leave out the depth/stencil state (dss is zero) */
 #define PLIST_FLAG_DYNAMIC_DS 1u
+/* flags: and the blend state (bs and cms are zero) */
+#define PLIST_FLAG_DYNAMIC_BLEND 2u
 
 typedef struct PipelineListHeader
 {
@@ -4073,10 +4269,10 @@ static void PipelineListPath(char* path, size_t size)
 /* A selector a list may hold: a key (TFXPipelineKey), whose fields index
  * tables of the size they have here, and with the depth/stencil state
  * dynamic it has none. */
-static bool PipelineSelectorValid(const GSDeviceVK::PipelineSelector& p, bool dynamic_ds)
+static bool PipelineSelectorValid(const GSDeviceVK::PipelineSelector& p, bool dynamic_ds, bool dynamic_blend)
 {
 	return p.topology < 3 && (!p.bs.enable || p.bs.op < 3) && (!dynamic_ds || p.dss.key == 0)
-		&& TFXPipelineKey(p) == p;
+		&& TFXPipelineKey(p, dynamic_blend) == p;
 }
 
 void GSDeviceVK::PipelineListAdd(const PipelineSelector& p)
@@ -4112,6 +4308,7 @@ void GSDeviceVK::PipelineListLoad()
 	u64 hash;
 	u32 i;
 	const bool dynamic_ds = m_optional_extensions.vk_ext_extended_dynamic_state;
+	const bool dynamic_blend = m_optional_extensions.vk_ext_extended_dynamic_state3;
 
 	m_plist_count = 0;
 	m_plist_dirty = false;
@@ -4125,7 +4322,7 @@ void GSDeviceVK::PipelineListLoad()
 	memcpy(&h, data, sizeof(h));
 	if (h.magic != PLIST_MAGIC || h.version != PLIST_VERSION || h.shader_version != VKSPV_VERSION
 		|| h.entry_size != sizeof(PipelineSelector) || h.count > PLIST_MAX
-		|| h.flags != (dynamic_ds ? PLIST_FLAG_DYNAMIC_DS : 0u)
+		|| h.flags != ((dynamic_ds ? PLIST_FLAG_DYNAMIC_DS : 0u) | (dynamic_blend ? PLIST_FLAG_DYNAMIC_BLEND : 0u))
 		|| (int64_t)(sizeof(h) + (u64)h.count * sizeof(PipelineSelector) + sizeof(hash)) != len)
 		goto refuse;
 	memcpy(&hash, (const u8*)data + len - sizeof(hash), sizeof(hash));
@@ -4143,7 +4340,7 @@ void GSDeviceVK::PipelineListLoad()
 	{
 		PipelineSelector p;
 		memcpy(&p, (const u8*)data + sizeof(h) + i * sizeof(p), sizeof(p));
-		if (!PipelineSelectorValid(p, dynamic_ds))
+		if (!PipelineSelectorValid(p, dynamic_ds, dynamic_blend))
 			goto refuse;
 		memcpy(&m_plist[i], &p, sizeof(p));
 	}
@@ -4174,7 +4371,8 @@ void GSDeviceVK::PipelineListSave()
 	h.shader_version = VKSPV_VERSION;
 	h.entry_size     = sizeof(PipelineSelector);
 	h.count          = m_plist_count;
-	h.flags          = m_optional_extensions.vk_ext_extended_dynamic_state ? PLIST_FLAG_DYNAMIC_DS : 0u;
+	h.flags          = (m_optional_extensions.vk_ext_extended_dynamic_state ? PLIST_FLAG_DYNAMIC_DS : 0u)
+		| (m_optional_extensions.vk_ext_extended_dynamic_state3 ? PLIST_FLAG_DYNAMIC_BLEND : 0u);
 	size = sizeof(h) + (size_t)m_plist_count * sizeof(PipelineSelector) + sizeof(hash);
 	if (!(buf = (u8*)malloc(size)))
 		return;
@@ -4201,7 +4399,8 @@ typedef struct PipelineWarmResult
 	GSDeviceVK::PipelineSelector sel;
 	VkPipeline pipeline;
 	u32 util;    /* the utility pipeline's id, or UP_COUNT for a TFX one */
-	u8 dynamic;  /* a sibling (sel its VKDynamicPS selector) */
+	u8 dynamic;  /* 1 a sibling (sel its VKDynamicPS selector), 2 a sibling's
+	              * pixel shader library (sel its TFXLibraryKey) */
 	u8 job;      /* asked for by the render thread (PipelineWarmQueue) */
 } PipelineWarmResult;
 
@@ -4220,6 +4419,9 @@ struct GSDeviceVK::PipelineWarm
 	u32 built;                /* the thread's; read once it is joined */
 	u32 util_built;           /* likewise */
 	u32 siblings_built;       /* likewise */
+	u32 libs_built;           /* likewise */
+	bool libs_only;           /* LRPS2_TEST_VK_WARM_LIBS_ONLY: the list's
+	                           * libraries, not its pipelines */
 	Modules mods;             /* the thread's own */
 	retro_spsc_t results;     /* thread -> render thread */
 	retro_spsc_t jobs;        /* render thread -> thread */
@@ -4264,10 +4466,13 @@ static bool PipelineWarmDoJob(GSDeviceVK::PipelineWarm* w)
 	res.util     = GSDeviceVK::UP_COUNT;
 	res.dynamic  = (u8)job.dynamic;
 	res.job      = 1;
-	res.pipeline = w->dev->BuildTFXPipeline(job.sel, &w->mods, w->cache, job.dynamic != 0);
+	res.pipeline = w->dev->BuildTFXPipeline(job.sel, &w->mods, w->cache, job.dynamic != 0,
+		(job.dynamic == 2) ? VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT : 0);
 	if (res.pipeline != VK_NULL_HANDLE)
 	{
-		if (job.dynamic)
+		if (job.dynamic == 2)
+			w->libs_built++;
+		else if (job.dynamic)
 			w->siblings_built++;
 		else
 			w->built++;
@@ -4305,7 +4510,7 @@ static void PipelineWarmThread(void* data)
 
 	res.util    = GSDeviceVK::UP_COUNT;
 	res.dynamic = 0;
-	for (i = 0; i < w->count; i++)
+	for (i = 0; i < (w->libs_only ? 0u : w->count); i++)
 	{
 		while (PipelineWarmDoJob(w))
 			;
@@ -4320,12 +4525,18 @@ static void PipelineWarmThread(void* data)
 	}
 
 	/* the siblings, each once: the list's own copy is turned into their
-	 * selectors, in front, as it goes */
-	res.dynamic = 1;
+	 * selectors, in front, as it goes; where they are linked from
+	 * libraries, their pixel shader parts instead, which the render thread
+	 * links new siblings from in a fraction of a build */
+	{
+	const bool libs = w->dev->GetOptionalExtensions().vk_ext_graphics_pipeline_library;
+	res.dynamic = libs ? 2 : 1;
 	for (i = 0, n = 0; i < w->count; i++)
 	{
 		GSDeviceVK::PipelineSelector sk{w->list[i]};
 		VKDynamicPS(sk.ps);
+		if (libs)
+			sk = TFXLibraryKey(sk, true);
 		for (j = 0; j < n; j++)
 			if (w->list[w->count + j] == sk)
 				break;
@@ -4337,11 +4548,16 @@ static void PipelineWarmThread(void* data)
 		if (retro_atomic_load_acquire_int(&w->stop))
 			goto done;
 		res.sel      = sk;
-		res.pipeline = w->dev->BuildTFXPipeline(sk, &w->mods, w->cache, true);
+		res.pipeline = w->dev->BuildTFXPipeline(sk, &w->mods, w->cache, true,
+			libs ? VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT : 0);
 		if (res.pipeline == VK_NULL_HANDLE)
 			continue;
-		w->siblings_built++;
+		if (libs)
+			w->libs_built++;
+		else
+			w->siblings_built++;
 		PipelineWarmResultPut(w, &res);
+	}
 	}
 
 	/* the render thread's, as it asks */
@@ -4380,6 +4596,8 @@ void GSDeviceVK::PipelineWarmStart()
 		return;
 	w->dev   = this;
 	w->count = m_plist_count;
+	/* (tests/vkpipewarm: every key a miss whose pixel shader part is there) */
+	w->libs_only = getenv("LRPS2_TEST_VK_WARM_LIBS_ONLY") != NULL;
 	retro_atomic_int_init(&w->stop, 0);
 	/* A cache of the thread's own: no object is used by both threads but
 	 * the device. */
@@ -4420,13 +4638,13 @@ fail:
 
 /* Asks the thread for a pipeline (a sibling, with dynamic); false when it
  * has as many asked of it as it has room to answer. */
-bool GSDeviceVK::PipelineWarmQueue(const PipelineSelector& sel, bool dynamic)
+bool GSDeviceVK::PipelineWarmQueue(const PipelineSelector& sel, u32 dynamic)
 {
 	PipelineWarmJob job = PipelineWarmJob();
 	if (!m_warm || m_jobs_in_flight >= PIPELINE_JOBS)
 		return false;
 	job.sel     = sel;
-	job.dynamic = dynamic ? 1u : 0u;
+	job.dynamic = dynamic;
 	if (retro_spsc_write_avail(&m_warm->jobs) < sizeof(job)
 		|| retro_spsc_write(&m_warm->jobs, &job, sizeof(job)) != sizeof(job))
 		return false;
@@ -4451,6 +4669,14 @@ bool GSDeviceVK::PipelineWarmTake()
 			if (m_util[res.util] == VK_NULL_HANDLE)
 				m_util[res.util] = res.pipeline;
 			else
+				vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
+		}
+		else if (res.dynamic == 2)
+		{
+			VkPipeline& lib = m_tfx_fs_libs[res.sel];
+			if (lib == VK_NULL_HANDLE)
+				lib = res.pipeline;
+			else if (res.pipeline != VK_NULL_HANDLE)
 				vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
 		}
 		else if (res.dynamic)
@@ -4506,8 +4732,9 @@ void GSDeviceVK::PipelineWarmStop()
 	m_pipelines_built_ahead = w->built;
 	m_util_built_ahead      = w->util_built;
 	m_siblings_built_ahead  = w->siblings_built;
+	m_libs_built_ahead      = w->libs_built;
 	/* what the thread built goes to disk with the rest */
-	if ((w->built || w->util_built || w->siblings_built) && m_pipeline_cache != VK_NULL_HANDLE)
+	if ((w->built || w->util_built || w->siblings_built || w->libs_built) && m_pipeline_cache != VK_NULL_HANDLE)
 		vkMergePipelineCaches(vk_init_info.device, m_pipeline_cache, 1, &w->cache);
 	vkDestroyPipelineCache(vk_init_info.device, w->cache, nullptr);
 	retro_spsc_free(&w->jobs);
@@ -4525,7 +4752,7 @@ void GSDeviceVK::PipelineWarmStop()
 void GSDeviceVK::PipelineWarmStart() { }
 void GSDeviceVK::PipelineWarmStop() { }
 bool GSDeviceVK::PipelineWarmTake() { return false; }
-bool GSDeviceVK::PipelineWarmQueue(const PipelineSelector&, bool) { return false; }
+bool GSDeviceVK::PipelineWarmQueue(const PipelineSelector&, u32) { return false; }
 
 #endif
 
@@ -4536,6 +4763,9 @@ bool GSDeviceVK::BindDrawPipeline(const PipelineSelector& p)
 		return false;
 
 	SetPipeline(pipeline);
+	/* (without dynamic blend it matches what applied holds: never set) */
+	if (m_optional_extensions.vk_ext_extended_dynamic_state3)
+		m_blend_key = TFXBlendWord(p);
 
 	return ApplyTFXState();
 }
@@ -4687,6 +4917,33 @@ __noinline void GSDeviceVK::ApplyDepthStencilState(VkCommandBuffer cmdbuf)
 		vkCmdSetStencilOpEXT(cmdbuf, VK_STENCIL_FACE_FRONT_AND_BACK, VK_STENCIL_OP_KEEP,
 			want.date_one ? VK_STENCIL_OP_ZERO : VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_EQUAL);
 	m_dss_applied = m_dss_key;
+}
+
+/* Sets what differs between the blend the command buffer holds and the
+ * one the draw wants (TFXBlendWord), with VK_EXT_extended_dynamic_state3:
+ * all of it when nothing is known. */
+__noinline void GSDeviceVK::ApplyBlendState(VkCommandBuffer cmdbuf)
+{
+	const u32 want = m_blend_key, have = m_blend_applied;
+	const bool all = (have == ~0u);
+	if (all || ((want ^ have) & 1u))
+	{
+		const VkBool32 enable = want & 1u;
+		vkCmdSetColorBlendEnableEXT(cmdbuf, 0, 1, &enable);
+	}
+	if (all || ((want ^ have) & 0x7FFFEu))
+	{
+		const VkColorBlendEquationEXT eq = {vk_blend_factors[(want >> 1) & 15u], vk_blend_factors[(want >> 5) & 15u],
+			vk_blend_ops[(want >> 9) & 3u], vk_blend_factors[(want >> 11) & 15u], vk_blend_factors[(want >> 15) & 15u],
+			VK_BLEND_OP_ADD};
+		vkCmdSetColorBlendEquationEXT(cmdbuf, 0, 1, &eq);
+	}
+	if (all || ((want ^ have) & (15u << 19)))
+	{
+		const VkColorComponentFlags mask = (want >> 19) & 15u;
+		vkCmdSetColorWriteMaskEXT(cmdbuf, 0, 1, &mask);
+	}
+	m_blend_applied = want;
 }
 
 void GSDeviceVK::PSSetShaderResource(int i, GSTexture* sr, bool check_state)
@@ -4908,7 +5165,8 @@ __noinline bool GSDeviceVK::RetryTFXState(bool already_execed, const char* what)
 
 bool GSDeviceVK::ApplyTFXState(bool already_execed)
 {
-	if (m_current_pipeline_layout == PipelineLayout::TFX && m_dirty_flags == 0 && m_dss_key == m_dss_applied)
+	if (m_current_pipeline_layout == PipelineLayout::TFX && m_dirty_flags == 0 && m_dss_key == m_dss_applied
+		&& m_blend_key == m_blend_applied)
 		return true;
 
 	const VkCommandBuffer cmdbuf = GetCurrentCommandBuffer();
@@ -5014,7 +5272,8 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 	{
 		m_current_pipeline_layout = PipelineLayout::TFX;
 		/* a new command buffer, or a utility pipeline's own state */
-		m_dss_applied = m_dss_dynamic;
+		m_dss_applied   = m_dss_dynamic;
+		m_blend_applied = m_blend_dynamic;
 
 		dsets[0] = m_tfx_ubo_descriptor_set;
 		dsets[1] = m_tfx_texture_descriptor_set;
@@ -5046,6 +5305,8 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 
 	if (m_dss_key != m_dss_applied)
 		ApplyDepthStencilState(cmdbuf);
+	if (m_blend_key != m_blend_applied)
+		ApplyBlendState(cmdbuf);
 
 	ApplyBaseState(flags, cmdbuf);
 	return true;

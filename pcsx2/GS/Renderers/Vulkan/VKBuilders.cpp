@@ -162,6 +162,12 @@ namespace Vulkan
 		m_line_rasterization_state = {};
 		m_line_rasterization_state.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO_EXT;
 
+		m_library = {};
+		m_library.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT;
+		m_linked = {};
+		m_linked.sType = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR;
+		m_linked_libraries = {};
+
 		// set defaults
 		SetNoCullRasterizationState();
 		SetNoDepthTestState();
@@ -172,6 +178,36 @@ namespace Vulkan
 		SetViewport(0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f);
 		SetScissorRect(0, 0, 1, 1);
 		SetMultisamples(VK_SAMPLE_COUNT_1_BIT);
+	}
+
+	void GraphicsPipelineBuilder::SetLibrary(VkGraphicsPipelineLibraryFlagsEXT parts)
+	{
+		u32 i, n = 0;
+		m_library.flags = parts;
+		m_ci.flags |= VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
+		Vulkan::AddPointerToChain(&m_ci, &m_library);
+		for (i = 0; i < m_ci.stageCount; i++)
+		{
+			const bool keep = (m_shader_stages[i].stage == VK_SHADER_STAGE_FRAGMENT_BIT) ?
+				(parts & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) != 0 :
+				(parts & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) != 0;
+			if (keep)
+				m_shader_stages[n++] = m_shader_stages[i];
+		}
+		m_ci.stageCount = n;
+		m_ci.pStages    = n ? m_shader_stages.data() : nullptr;
+	}
+
+	void GraphicsPipelineBuilder::SetLinkedLibraries(const VkPipeline* libraries, u32 count)
+	{
+		u32 i;
+		for (i = 0; i < count && i < MAX_LIBRARIES; i++)
+			m_linked_libraries[i] = libraries[i];
+		m_linked.libraryCount = i;
+		m_linked.pLibraries   = m_linked_libraries.data();
+		Vulkan::AddPointerToChain(&m_ci, &m_linked);
+		m_ci.stageCount = 0;
+		m_ci.pStages    = nullptr;
 	}
 
 	VkPipeline GraphicsPipelineBuilder::Create(VkDevice device, VkPipelineCache pipeline_cache, bool clear /* = true */)

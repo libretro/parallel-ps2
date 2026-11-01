@@ -79,6 +79,15 @@ public:
 		 * TFX pipelines: VK_EXT_extended_dynamic_state, or the same
 		 * commands of Vulkan 1.3. */
 		bool vk_ext_extended_dynamic_state : 1;
+		/* Blend enable, blend equation and colour write mask are set on
+		 * the command buffer too, and left out of the TFX keys:
+		 * VK_EXT_extended_dynamic_state3. */
+		bool vk_ext_extended_dynamic_state3 : 1;
+		/* The dynamic siblings are linked from graphics pipeline libraries
+		 * (VK_EXT_graphics_pipeline_library with fast linking): a pixel
+		 * shader part built once per module and render pass, a vertex and
+		 * output part per state, linked in a fraction of a build. */
+		bool vk_ext_graphics_pipeline_library : 1;
 	};
 
 	struct alignas(8) PipelineSelector
@@ -508,6 +517,20 @@ private:
 	/* The keys whose pipelines the warm-up thread is building while their
 	 * draws draw with a sibling. */
 	std::unordered_map<PipelineSelector, u8, PipelineSelectorHash> m_tfx_pending;
+	/* The siblings' libraries (vk_ext_graphics_pipeline_library): the pixel
+	 * shader parts by TFXLibraryKey(.., true), the vertex input, vertex
+	 * shader and output parts by TFXLibraryKey(.., false); a null pixel
+	 * shader part is being built on the warm-up thread. */
+	std::unordered_map<PipelineSelector, VkPipeline, PipelineSelectorHash> m_tfx_fs_libs;
+	std::unordered_map<PipelineSelector, VkPipeline, PipelineSelectorHash> m_tfx_state_libs;
+	VkPipeline GetTFXLibrary(const PipelineSelector& sibling, bool fragment);
+	bool m_gpl_failed = false; /* a library or a link failed: build whole */
+	/* The blend the draw wants (TFXBlendWord) and what the command buffer
+	 * holds, with vk_ext_extended_dynamic_state3; ~0 for nothing known. */
+	u32 m_blend_key = 0;
+	u32 m_blend_applied = 0;
+	u32 m_blend_dynamic = 0; /* what applied is reset to: ~0, or 0 without */
+	void ApplyBlendState(VkCommandBuffer cmdbuf);
 	/* The draw's pipeline is a sibling: the key it reads, pushed by
 	 * ApplyTFXState. */
 	bool m_tfx_dynamic = false;
@@ -562,7 +585,7 @@ public:
 	 * call it with modules of its own (the warm-up thread, see
 	 * PipelineWarm). */
 	VkPipeline BuildTFXPipeline(const PipelineSelector& p, Modules* mods, VkPipelineCache cache,
-		bool dynamic = false) const;
+		bool dynamic = false, VkGraphicsPipelineLibraryFlagsEXT library = 0) const;
 	/* Utility pipeline id; as above. */
 	VkPipeline BuildUtilityPipeline(u32 id, Modules* mods, VkPipelineCache cache) const;
 	/* The module a pipeline is made with, made now if mods has none yet;
@@ -595,8 +618,13 @@ private:
 	u32 m_sibling_draws = 0;         /* draws a sibling drew */
 	u32 m_siblings_built_here = 0;
 	u32 m_siblings_built_ahead = 0;
+	u32 m_siblings_linked = 0;       /* of those built here, linked from libraries */
+	u32 m_libs_built_here = 0;       /* libraries */
+	u32 m_libs_built_ahead = 0;
 	u32 m_jobs_in_flight = 0;        /* asked of the warm-up thread, not yet back */
-	bool PipelineWarmQueue(const PipelineSelector& sel, bool dynamic);
+	/* dynamic: 0 a key's pipeline, 1 a sibling, 2 a sibling's pixel
+	 * shader library */
+	bool PipelineWarmQueue(const PipelineSelector& sel, u32 dynamic);
 	void PipelineListLoad();
 	void PipelineListSave();
 	void PipelineListAdd(const PipelineSelector& p);

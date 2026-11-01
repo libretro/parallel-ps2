@@ -79,7 +79,8 @@ namespace Vulkan
 			MAX_VERTEX_ATTRIBUTES = 16,
 			MAX_VERTEX_BUFFERS = 8,
 			MAX_ATTACHMENTS = 2,
-			MAX_DYNAMIC_STATE = 12
+			MAX_DYNAMIC_STATE = 16,
+			MAX_LIBRARIES = 2
 		};
 
 		GraphicsPipelineBuilder();
@@ -146,6 +147,14 @@ namespace Vulkan
 
 		void SetProvokingVertex(VkProvokingVertexModeEXT mode);
 
+		/* A graphics pipeline library of these parts (VK_EXT_graphics_
+		 * pipeline_library) instead of a pipeline: the shader stages of
+		 * other parts are left out, the rest of their state is ignored. */
+		void SetLibrary(VkGraphicsPipelineLibraryFlagsEXT parts);
+		/* A pipeline linked from libraries that hold all its parts, without
+		 * link-time optimization; its own stages and state are unused. */
+		void SetLinkedLibraries(const VkPipeline* libraries, u32 count);
+
 	private:
 		VkGraphicsPipelineCreateInfo m_ci;
 		std::array<VkPipelineShaderStageCreateInfo, MAX_SHADER_STAGES> m_shader_stages;
@@ -173,6 +182,10 @@ namespace Vulkan
 
 		VkPipelineRasterizationProvokingVertexStateCreateInfoEXT m_provoking_vertex;
 		VkPipelineRasterizationLineStateCreateInfoEXT m_line_rasterization_state;
+
+		VkGraphicsPipelineLibraryCreateInfoEXT m_library;
+		VkPipelineLibraryCreateInfoKHR m_linked;
+		std::array<VkPipeline, MAX_LIBRARIES> m_linked_libraries;
 	};
 
 	class ComputePipelineBuilder

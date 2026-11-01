@@ -27,7 +27,13 @@
 #    sibling), and each from nothing drawing every new key with its
 #    sibling while the warm-up thread builds its own (=async), presents
 #    the same picture as from nothing; the second ends in the same state,
-#    and its pipelines come from the thread while siblings drew.
+#    and its pipelines come from the thread while siblings drew;
+#  - with graphics pipeline libraries (and the dynamic blend), a key whose
+#    sibling's pixel shader part is there draws with a sibling linked from
+#    it, nothing built on the render thread, and from nothing no more is
+#    built there than without them; without either (LRPS2_TEST_VK_NO_GPL,
+#    _NO_EDS3) every pipeline is built whole as before; the picture is the
+#    same every way.
 #
 # Runs the built core: pcsx2_libretro.so/.dll/.dylib at the top of the
 # tree, or LRPS2_CORE. Without one, or without a Vulkan device, the
@@ -74,10 +80,12 @@ CACHE="$S/pcsx2/cache"
 LIST="$CACHE/vulkan_pipeline_list.bin"
 fail=0
 
-# $1 log name, $2 case, $3 scratch; extra environment from the caller
+# $1 log name, $2 case, $3 scratch; extra environment from the caller,
+# and RUN_ENV's (NAME=value words)
+RUN_ENV=
 run()
 {
-	if ! VN_VERBOSE=1 VN_TIMING=1 VN_HASH_IMAGE=1 VN_IDLE_BIOS=1 LRPS2_BIOS="$WORK/$2.bin" \
+	if ! env $RUN_ENV VN_VERBOSE=1 VN_TIMING=1 VN_HASH_IMAGE=1 VN_IDLE_BIOS=1 LRPS2_BIOS="$WORK/$2.bin" \
 			VN_LOAD_PAUSE_MS=${VKPW_PAUSE_MS:-1000} \
 			timeout 300 "$FE" "$CORE" "$3" v2 > "$WORK/$1.log" 2>&1; then
 		cat "$WORK/$1.log"
@@ -120,6 +128,11 @@ if grep -q "skip:" "$WORK/probe.log"; then
 	cat "$WORK/probe.log"
 	exit 0
 fi
+
+# Steps 1-4 are the list's: without graphics pipeline libraries, so a
+# pipeline missed is one built on the render thread, not a sibling linked
+# (step 6 has them).
+RUN_ENV=LRPS2_TEST_VK_NO_GPL=1
 
 # 1. From nothing: every case lists its pipelines; the utility ones are
 # built on the warm-up thread.
@@ -237,6 +250,8 @@ for how in short byte version junk; do
 	echo "  damaged list ($how): ignored, written again, used"
 done
 
+RUN_ENV=
+
 # 5. The dynamic siblings: drawn with alone, and drawn with while the
 # thread builds; each in a scratch directory of its own, from nothing.
 landed=0
@@ -262,6 +277,44 @@ done
 # (a key a case draws with only at its end may land after it: over all of
 # them, some must)
 [ "$landed" -gt 0 ] || { echo "  FAIL: no pipeline built while a sibling drew came back from the thread"; fail=1; }
+
+# 6. Where the device has graphics pipeline libraries (lavapipe does):
+#  - from nothing, a key whose sibling's pixel shader part is not built yet
+#    is built whole on the render thread as without them, and the part is
+#    asked of the thread; no more is built there than without libraries;
+#  - with the parts there (the list's, built by the thread: and only those,
+#    LRPS2_TEST_VK_WARM_LIBS_ONLY, so every key is a miss), every key draws
+#    at once with a sibling linked from them while the thread builds its
+#    own: none is built on the render thread;
+#  - the picture is the same either way.
+# 7. Where it has neither the libraries nor the dynamic blend, every
+# pipeline is built whole as before them, and the picture is the same too.
+linked=0
+for c in $CASES; do
+	rm -rf "$WORK/libs" "$WORK/whole"
+	mkdir -p "$WORK/libs" "$WORK/whole"
+	run "$c.libs" $c "$WORK/libs"
+	grep -q "Graphics pipeline libraries are in use" "$WORK/$c.libs.log" || { echo "  skip: no graphics pipeline libraries on this device"; break; }
+	rm -f "$WORK/libs/pcsx2/cache/vulkan_pipelines.bin"
+	RUN_ENV=LRPS2_TEST_VK_WARM_LIBS_ONLY=1 run "$c.linked" $c "$WORK/libs"
+	RUN_ENV="LRPS2_TEST_VK_NO_GPL=1 LRPS2_TEST_VK_NO_EDS3=1" run "$c.whole" $c "$WORK/whole"
+	a=$(image "$c.cold")
+	for r in libs linked whole; do
+		b=$(image "$c.$r")
+		if [ -z "$a" ] || [ "$a" != "$b" ]; then
+			echo "  FAIL: $c ($r) presents another picture (${a:-none}, ${b:-none})"
+			fail=1
+		fi
+	done
+	l=$(sed -n 's/.*(\([0-9]*\) of them linked from libraries).*/\1/p' "$WORK/$c.linked.log")
+	[ "$(here "$c.libs")" -le "$(here "$c.whole")" ] ||
+		{ echo "  FAIL: $c built $(here "$c.libs") on the render thread from nothing with libraries, $(here "$c.whole") without"; fail=1; }
+	[ "$(here "$c.linked")" = 0 ] || { echo "  FAIL: $c built $(here "$c.linked") on the render thread with libraries to link from"; fail=1; }
+	[ "${l:-0}" -gt 0 ] || { echo "  FAIL: $c linked no sibling from its libraries"; fail=1; }
+	grep -q "Extended dynamic state 3 (blend) is NOT in use" "$WORK/$c.whole.log" || { echo "  FAIL: $c: the dynamic blend was not left off"; fail=1; }
+	printf '  %s: from nothing %s built on the render thread, %s without libraries; with the libraries %s siblings linked, none built (longest frame %s)\n' \
+		$c "$(here "$c.libs")" "$(here "$c.whole")" "${l:-0}" "$(longest "$c.linked")"
+done
 
 [ $fail = 0 ] || exit 1
 echo "vkpipewarm: ok"
