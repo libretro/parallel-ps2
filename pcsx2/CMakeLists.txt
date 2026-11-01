@@ -353,6 +353,7 @@ set(pcsx2GSSources
 	GS/Renderers/HW/GSRendererHW.cpp
 	GS/Renderers/HW/GSObjectPool.c
 	GS/Renderers/HW/GSHashTable.c
+	GS/Renderers/HW/GSAlphaRange.h
 	GS/Renderers/HW/GSHashTable.h
 	GS/Renderers/HW/GSSpriteSnap.c
 	GS/Renderers/HW/GSSpriteSnap.h

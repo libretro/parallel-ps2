@@ -408,6 +408,7 @@
     <ClInclude Include="GS\Renderers\Common\GSTexture.h" />
     <ClInclude Include="GS\Renderers\DX11\GSTexture11.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GSTextureOGL.h" />
+    <ClInclude Include="GS\Renderers\HW\GSAlphaRange.h" />
     <ClInclude Include="GS\Renderers\HW\GSTextureCache.h" />
     <ClInclude Include="GS\Renderers\SW\GSTextureCacheSW.h" />
     <ClInclude Include="GS\GSUtil.h" />

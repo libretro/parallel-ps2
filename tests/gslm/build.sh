@@ -1,5 +1,6 @@
 #!/bin/sh
-# GS local memory, with real data moved through it.
+# GS local memory, with real data moved through it, and the alpha range
+# read from it without expanding (alpha_range.cpp).
 #
 # GSLocalMemory is the swizzle: the PS2's 4MB of video memory addressed
 # through pages, blocks and columns, in a pattern that differs per format.
@@ -69,5 +70,16 @@ for CXX in g++ clang++; do
 	     $INC -c "$DIR/gs_block_range.cpp" -o "$TMP/brange.o"
 	$CXX -O1 "$TMP"/*.o -o "$TMP/gs_block_range"
 	"$TMP/gs_block_range"
+	rm -f "$TMP/brange.o"
+
+	# The alpha range Target::Update and PreloadTexture take from local
+	# memory, against the range of what ReadTexture expands. SANFLAGS on
+	# the g++ lane only: clang's sanitizer runtime is not always there.
+	SAN=""
+	[ "$CXX" = g++ ] && SAN="$SANFLAGS"
+	$CXX -O1 -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 -Wall $SAN \
+	     $INC -c "$DIR/alpha_range.cpp" -o "$TMP/alpha.o"
+	$CXX -O1 $SAN "$TMP"/*.o -o "$TMP/alpha_range"
+	"$TMP/alpha_range"
 	rm -f "$TMP"/*.o
 done
