@@ -291,6 +291,9 @@ bool GSHwHack::GSC_BurnoutGames(GSRendererHW& r, int& skip)
 
 		case 1: // reverse blend to extract bright pixels
 		{
+			// At the main framebuffer's width, as the clear was. At the column's, the target lookup
+			// moves the target's pages to that width, and this draw only reaches the first of them.
+			r.m_cached_ctx.FRAME.FBW = main_fb.TBW;
 			r.ReplaceVerticesWithSprite(GSVector4i::loadh(main_fb_size), main_fb_size);
 			r.m_cached_ctx.ZBUF.ZMSK = true;
 			state = 2;
