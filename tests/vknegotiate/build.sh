@@ -355,6 +355,39 @@ for c in upload_short big_triangles present nine_frames fb_wrap uv_huge frame_on
 done
 rm -rf "$SCRATCH"
 
+# Runahead: each frame run once from a same-instance savestate, the
+# state loaded and the frame run again (VN_RUNAHEAD). tests/swdraw's
+# draw_once draws most of the frame once, which only the GPU holds; the
+# load gives it back, so the last frame is the one a straight run shows,
+# at 1x and at 2x.
+SCRATCH=$(mktemp -d)
+${CC:-cc} -std=c89 -pedantic -Wall -Wno-long-long -O2 -I "$ROOT/libretro/libretro-common/include" \
+	-o "$SCRATCH/swdraw" "$ROOT/tests/swdraw/main.c" $LIBS
+"$SCRATCH/swdraw" --bios "$SCRATCH/draw_once.bin" draw_once >/dev/null
+for sc in 1 2; do
+	for ra in 0 1; do
+		S2=$(mktemp -d)
+		if [ $ra = 1 ]; then RA="VN_RUNAHEAD=1"; else RA=""; fi
+		if ! env $RA VN_SCALE=$sc VN_HASH_IMAGE=1 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/draw_once.bin" VN_FRAMES=20 \
+				timeout 300 "$DIR/vknegotiate" "$CORE" "$S2" v2 > "$SCRATCH/ra$ra.log" 2>&1; then
+			cat "$SCRATCH/ra$ra.log"
+			rm -rf "$S2" "$SCRATCH"
+			echo "  FAIL: draw_once at ${sc}x, runahead $ra"
+			exit 1
+		fi
+		rm -rf "$S2"
+	done
+	straight=$(sed -n 's/^ *image: .*hash \([0-9a-f]*\)$/\1/p' "$SCRATCH/ra0.log" | tail -n 1)
+	ahead=$(sed -n 's/^ *image: .*hash \([0-9a-f]*\)$/\1/p' "$SCRATCH/ra1.log" | tail -n 1)
+	if [ -z "$straight" ] || [ "$straight" != "$ahead" ]; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: draw_once at ${sc}x pictures ${ahead:-?} under runahead, ${straight:-?} straight"
+		exit 1
+	fi
+done
+rm -rf "$SCRATCH"
+echo "  runahead: a same-instance load gives back what only the GPU held"
+
 # A driver that runs out of device memory while the renderer comes up, at
 # each allocation the renderer makes before it is up: the device is
 # refused cleanly or the renderer comes up and runs. vkshim.c stands in for

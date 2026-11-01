@@ -63,6 +63,9 @@ struct gs_state_ops
 	 * each page (GS_MAX_PAGES) whose contents it changed. The others hold
 	 * what they held, so what a renderer made from them can stay. */
 	void       (*mem_restored)(GSState* gs, const u32* changed);
+	/* A savestate taken in this instance (GSSnapshotSave): keep a copy
+	 * of what is drawn on the GPU under the key. */
+	void       (*snapshot_targets)(GSState* gs, u64 key);
 };
 
 class GSState : public GSAlignedClass<32>

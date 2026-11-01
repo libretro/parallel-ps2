@@ -54,6 +54,15 @@ enum class GSDisplayAlignment
 
 extern Pcsx2Config::GSOptions GSConfig;
 
+/* Set by the frontend's thread around the GS part of a savestate it takes
+ * or loads in this same instance (runahead): the renderer keeps what it
+ * holds on the GPU at the save, under GSSnapshotKey, and puts it back at
+ * a load with the same key. The key is the machine's time, the EE cycle,
+ * which the state carries anyway. */
+extern bool GSSnapshotSave;
+extern bool GSSnapshotLoad;
+extern u64  GSSnapshotKey;
+
 // Returns the ID for the specified function, otherwise -1.
 s16 GSLookupGetSkipCountFunctionId(const std::string_view& name);
 s16 GSLookupBeforeDrawFunctionId(const std::string_view& name);

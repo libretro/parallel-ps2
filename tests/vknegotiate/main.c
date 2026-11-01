@@ -54,6 +54,8 @@
  * chosen images out, VN_LOAD_STATE (after VN_LOAD_AFTER retro_runs) and
  * VN_SAVE_STATE bring a state in and take one out; the last three work
  * without content too. VN_HASH_RGB leaves the alpha out of image hashes.
+ * VN_RUNAHEAD has each frame run twice, a same-instance savestate taken
+ * before and loaded between, as runahead does.
  * VN_COUNT_CALLS reports, per retro_run, the submissions, waits, passes,
  * dispatches, barriers, copies and allocations the core makes, and at the
  * end the CPU time of each thread (Linux).
@@ -980,6 +982,15 @@ static bool vn_environment(unsigned cmd, void* data)
 	struct retro_variable* var;
 	switch (cmd)
 	{
+		/* VN_RUNAHEAD: the states taken and loaded around each retro_run
+		 * stay in this instance, as RetroArch's single-instance runahead
+		 * says. */
+		case RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT:
+			if (!getenv("VN_RUNAHEAD"))
+				return false;
+			if (data)
+				*(int*)data = RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE;
+			return true;
 		case RETRO_ENVIRONMENT_GET_LOG_INTERFACE:
 			((struct retro_log_callback*)data)->log = vn_log;
 			return true;
@@ -1711,6 +1722,23 @@ int main(int argc, char** argv)
 		{
 			const double t0 = vn_now_ms();
 			double dt;
+			if (getenv("VN_RUNAHEAD"))
+			{
+				/* Each frame run once from a state, the state loaded and
+				 * the frame run again: what is shown is the second run. */
+				static unsigned char* ra_state;
+				static size_t ra_size;
+				if (!ra_state)
+				{
+					ra_size  = serialize_size();
+					ra_state = (unsigned char*)malloc(ra_size);
+				}
+				if (!ra_state || !serialize(ra_state, ra_size))
+					VN_FAIL("runahead: cannot take a state");
+				vn_run(run);
+				if (!unserialize(ra_state, ra_size))
+					VN_FAIL("runahead: cannot load the state");
+			}
 			vn_run(run);
 #ifdef VN_HEAP_CHECK
 			if (heap_flat)

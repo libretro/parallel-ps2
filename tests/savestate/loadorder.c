@@ -97,10 +97,13 @@ int main(int argc, char** argv)
 	{
 		const char* g = strstr(src, "static bool state_load_needs_rollback(");
 		const char* ge = g ? strstr(g, "\n}\n") : NULL;
-		if (!g || !ge
-		 || !within(g, ge, "RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT")
-		 || !within(g, ge, "return true;")
-		 || !within(g, ge, "ctx != RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE")
+		const char* c = strstr(src, "static bool state_same_instance(");
+		const char* ce = c ? strstr(c, "\n}\n") : NULL;
+		if (!g || !ge || !c || !ce
+		 || !within(c, ce, "RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT")
+		 || !within(c, ce, "return false;")
+		 || !within(c, ce, "ctx == RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE")
+		 || !within(g, ge, "!state_same_instance()")
 		 || !within(g, ge, "size != retro_serialize_size()"))
 		{
 			printf("  the rollback copy is not kept for every state but this session's own\n");

@@ -40,6 +40,7 @@ static void       hw_draw(GSState* gs)                     { HW(gs)->Draw(); }
 static void       hw_move(GSState* gs)                     { HW(gs)->Move(); }
 static void       hw_purge_texture_cache(GSState* gs, bool sources, bool targets, bool hash_cache) { HW(gs)->PurgeTextureCache(sources, targets, hash_cache); }
 static void       hw_readback_texture_cache(GSState* gs)   { HW(gs)->ReadbackTextureCache(); }
+static void       hw_snapshot_targets(GSState* gs, u64 key) { (void)gs; g_texture_cache->SnapshotTargets(key); }
 static void       hw_invalidate_video_mem(GSState* gs, const GIFRegBITBLTBUF* b, const GSVector4i* r) { HW(gs)->InvalidateVideoMem(*b, *r); }
 static void       hw_invalidate_local_mem(GSState* gs, const GIFRegBITBLTBUF* b, const GSVector4i* r, bool clut) { HW(gs)->InvalidateLocalMem(*b, *r, clut); }
 static bool       hw_can_upscale(GSState* gs)              { return HW(gs)->CanUpscale(); }
@@ -70,7 +71,9 @@ static const struct gs_state_ops s_hw_ops = {
 	hw_lookup_palette_source,
 	hw_get_output,
 	hw_get_feedback_output,
-	hw_get_vr_depth
+	hw_get_vr_depth,
+	NULL, /* mem_restored */
+	hw_snapshot_targets
 };
 
 GSRendererHW::GSRendererHW()
@@ -155,8 +158,11 @@ void GSRendererHW::Reset(bool hardware_reset)
 
 	/* The hash cache stays: its entries are found by the bytes and
 	 * registers that made them, so a reset or a state load cannot make
-	 * one wrong. The sources dropped here give their references back. */
-	g_texture_cache->RemoveAll(true, true, false);
+	 * one wrong. The sources dropped here give their references back.
+	 * A load of a state this instance took gets the targets back as they
+	 * were when it was taken; any other reset or load starts without. */
+	if (!(m_state_loading && GSSnapshotLoad && g_texture_cache->RestoreTargets(GSSnapshotKey)))
+		g_texture_cache->RemoveAll(true, true, false);
 
 	ResetBase(hardware_reset);
 }

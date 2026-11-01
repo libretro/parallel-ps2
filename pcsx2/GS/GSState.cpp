@@ -2415,6 +2415,11 @@ int GSState::Freeze(freezeData* fd, bool sizeonly)
 	if (GSConfig.UserHacks_ReadTCOnClose)
 		ReadbackTextureCache();
 
+	/* The GPU's part of the state, which local memory does not hold, kept
+	 * on the GPU for a load in this instance. */
+	if (GSSnapshotSave && m_ops && m_ops->snapshot_targets)
+		m_ops->snapshot_targets(this, GSSnapshotKey);
+
 	u8* data = fd->data;
 	const u32 version = STATE_VERSION;
 

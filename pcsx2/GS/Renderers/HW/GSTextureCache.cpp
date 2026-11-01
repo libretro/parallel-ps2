@@ -151,6 +151,10 @@ void GSTextureCache::RemoveAll(bool sources, bool targets, bool hash_cache)
 		m_surface_offset_cache.clear();
 		m_target_memory_usage = 0;
 		ClearMoveRemaps();
+
+		if (!m_snap_keep)
+			for (u32 slot = 0; slot < TARGET_SNAPSHOTS; slot++)
+				DiscardSnapshot(slot);
 	}
 
 	if (hash_cache)
@@ -6343,6 +6347,110 @@ void GSTextureCache::AgeHashCache()
 			RemoveFromHashCache(s_hash_cache_purge_list[i].first);
 		}
 	}
+}
+
+GSTextureCache::Target* GSTextureCache::Target::Clone() const
+{
+	const int w = m_texture->GetWidth();
+	const int h = m_texture->GetHeight();
+	GSTexture* texture = (m_type == RenderTarget) ?
+							 g_gs_device->CreateRenderTarget(w, h, m_texture->GetFormat(), false) :
+							 g_gs_device->CreateDepthStencil(w, h, m_texture->GetFormat(), false);
+	if (!texture)
+		return nullptr;
+
+	g_gs_device->CopyRect(m_texture, texture, GSVector4i(0, 0, w, h), 0, 0);
+
+	Target* t = new Target(*this);
+	t->m_texture = texture;
+	return t;
+}
+
+/* The destructor takes a target's texture off the cache's target memory,
+ * which a snapshot's never counted in. */
+void GSTextureCache::DiscardSnapshot(u32 slot)
+{
+	for (int type = 0; type < 2; type++)
+	{
+		for (auto t : m_snap[slot][type])
+		{
+			m_target_memory_usage += t->m_texture->GetMemUsage();
+			delete t;
+		}
+		m_snap[slot][type].clear();
+	}
+	m_snap_used[slot] = false;
+}
+
+void GSTextureCache::SnapshotTargets(u64 key)
+{
+	const u32 slot = m_snap_next;
+	bool ok = true;
+
+	m_snap_next = (m_snap_next + 1) % TARGET_SNAPSHOTS;
+	DiscardSnapshot(slot);
+
+	/* Back to front, each to the front: the order of the lists, which
+	 * lookups walk, is kept. */
+	for (int type = 0; type < 2 && ok; type++)
+	{
+		for (auto it = m_dst[type].rbegin(); it != m_dst[type].rend(); ++it)
+		{
+			Target* const t = (*it)->Clone();
+			if (!t)
+			{
+				ok = false;
+				break;
+			}
+			m_snap[slot][type].push_front(t);
+		}
+	}
+
+	/* A snapshot missing a target is no snapshot. */
+	if (ok)
+	{
+		m_snap_key[slot]  = key;
+		m_snap_used[slot] = true;
+	}
+	else
+		DiscardSnapshot(slot);
+}
+
+bool GSTextureCache::RestoreTargets(u64 key)
+{
+	u32 slot = TARGET_SNAPSHOTS, i;
+
+	/* The newest with the key, should two have it. */
+	for (i = 1; i <= TARGET_SNAPSHOTS; i++)
+	{
+		const u32 s = (m_snap_next + TARGET_SNAPSHOTS - i) % TARGET_SNAPSHOTS;
+		if (m_snap_used[s] && m_snap_key[s] == key)
+		{
+			slot = s;
+			break;
+		}
+	}
+	if (slot == TARGET_SNAPSHOTS)
+		return false;
+
+	m_snap_keep = true;
+	RemoveAll(true, true, false);
+	m_snap_keep = false;
+
+	/* The snapshot's targets become the cache's: the state is loaded once
+	 * into what follows it, and a second load of it starts without. */
+	for (int type = 0; type < 2; type++)
+	{
+		for (auto it = m_snap[slot][type].rbegin(); it != m_snap[slot][type].rend(); ++it)
+		{
+			Target* const t = *it;
+			m_target_memory_usage += t->m_texture->GetMemUsage();
+			m_dst[type].push_front(t);
+		}
+		m_snap[slot][type].clear();
+	}
+	m_snap_used[slot] = false;
+	return true;
 }
 
 GSTextureCache::Target* GSTextureCache::Target::Create(GIFRegTEX0 TEX0, int w, int h, float scale, int type, bool clear)

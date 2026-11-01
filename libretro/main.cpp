@@ -3318,6 +3318,9 @@ static bool state_read(const void* data, size_t size, bool keep_code)
 		return false;
 	}
 	fP.data = SaveState_BlockPtr(&loadme);
+	/* The state's EE time, loaded above: the key of what the GS kept on
+	 * the GPU when this instance took it (retro_serialize). */
+	GSSnapshotKey = cpuRegs.cycle;
 	if (GSfreeze(FREEZE_LOAD, &fP) != 0)
 	{
 		log_cb(RETRO_LOG_ERROR, "%s: GS block rejected "
@@ -3344,6 +3347,17 @@ static void state_quiesce(void)
 	MTGS::WaitGS(false);
 }
 
+/* The frontend says the state stays in this instance, to be loaded
+ * here again. */
+static bool state_same_instance(void)
+{
+	enum retro_savestate_context ctx = RETRO_SAVESTATE_CONTEXT_NORMAL;
+
+	if (!environ_cb(RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT, &ctx))
+		return false;
+	return ctx == RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE;
+}
+
 bool retro_serialize(void* data, size_t size)
 {
 	bool ok;
@@ -3352,9 +3366,14 @@ bool retro_serialize(void* data, size_t size)
 	if (GSHasStopped())
 		return false;
 	state_quiesce();
+	/* A state this instance will load again (runahead) has the GS keep
+	 * its targets on the GPU, under the EE's time, which the state holds. */
+	GSSnapshotSave = state_same_instance();
+	GSSnapshotKey  = cpuRegs.cycle;
 	/* Straight into the frontend's buffer, which is bounded by size: a
 	 * state that would not fit is refused rather than grown into. */
 	ok = state_write(data, size);
+	GSSnapshotSave = false;
 	if (!ok)
 		log_cb(RETRO_LOG_ERROR, "%s: the state does not fit "
 			"the %zu bytes given.\n", __func__, size);
@@ -3371,12 +3390,7 @@ bool retro_serialize(void* data, size_t size)
  * cannot be rejected partway. */
 static bool state_load_needs_rollback(size_t size)
 {
-	enum retro_savestate_context ctx = RETRO_SAVESTATE_CONTEXT_NORMAL;
-
-	if (!environ_cb(RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT, &ctx))
-		return true;
-	return ctx != RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE
-		|| size != retro_serialize_size();
+	return !state_same_instance() || size != retro_serialize_size();
 }
 
 bool retro_unserialize(const void* data, size_t size)
@@ -3408,7 +3422,9 @@ bool retro_unserialize(const void* data, size_t size)
 	/* A state this session wrote, loaded without the rollback copy, keeps
 	 * the compiled code its memory did not change; runahead loads one
 	 * every frame. */
+	GSSnapshotLoad = same_instance;
 	ok = state_read(data, size, same_instance);
+	GSSnapshotLoad = false;
 	if (!ok)
 	{
 		if (have_backup && state_read(backup, backup_size, false))

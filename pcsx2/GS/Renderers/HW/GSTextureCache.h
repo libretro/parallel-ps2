@@ -324,6 +324,11 @@ public:
 
 		/// Resizes target texture, DOES NOT RESCALE.
 		bool ResizeTexture(int new_unscaled_width, int new_unscaled_height, bool recycle_old = true);
+
+		/* A target as this one is, on a texture of its own with a GPU copy
+		 * of this one's; nullptr when no texture can be had. Not in any
+		 * list, and not counted in the cache's target memory. */
+		Target* Clone() const;
 	};
 
 	/* How many sources exist at once, and so how many the pool holds.
@@ -525,6 +530,16 @@ protected:
 
 	FastList<Target*> m_dst[2];
 	FastList<TargetHeightElem> m_target_heights;
+
+	/* Targets as savestates taken in this instance left them, by the
+	 * state's key (SnapshotTargets), each slot replaced oldest first. */
+	enum { TARGET_SNAPSHOTS = 2 };
+	FastList<Target*> m_snap[TARGET_SNAPSHOTS][2];
+	u64 m_snap_key[TARGET_SNAPSHOTS] = {};
+	bool m_snap_used[TARGET_SNAPSHOTS] = {};
+	u32 m_snap_next = 0;
+	bool m_snap_keep = false; /* RemoveAll leaves the snapshots */
+	void DiscardSnapshot(u32 slot);
 	u64 m_target_memory_usage = 0;
 	/* The usage, in MB, the over-budget warning last named. */
 	u64 m_budget_warned_mb = 0;
@@ -658,6 +673,13 @@ public:
 	void Read(Source* t, const GSVector4i& r);
 	void RemoveAll(bool sources, bool targets, bool hash_cache);
 	void ReadbackAll();
+
+	/* Copies every target, on the GPU, under `key`. */
+	void SnapshotTargets(u64 key);
+	/* The targets as SnapshotTargets(key) kept them, in place of all the
+	 * cache holds (sources and targets, as RemoveAll); false, and nothing
+	 * changed, when there is no such snapshot. */
+	bool RestoreTargets(u64 key);
 	static void AddDirtyRectTarget(Target* target, GSVector4i rect, u32 psm, u32 bw, RGBAMask rgba, bool req_linear = false);
 	void ResizeTarget(Target* t, GSVector4i rect, u32 tbp, u32 psm, u32 tbw);
 	bool RelayoutTarget(Target* t, u32 tbw);

@@ -1314,6 +1314,43 @@ static void case_texture_rewind(void)
 	s_rewind = 1;
 }
 
+/* A shaded triangle drawn once across the frame, then a small one, a
+ * colour on each vsync: the frame keeps changing, and most of it holds
+ * what was drawn once. The hardware renderer holds that on the GPU only,
+ * so a state loaded in the same instance (runahead) must give it back:
+ * the frames come out as they do without the loads (tests/vknegotiate,
+ * VN_RUNAHEAD). */
+static void case_draw_once(void)
+{
+	unsigned d;
+	qw(12 | 0x8000u, 0x10000000u, 0xEu, 0);                /* A+D, NLOOP 12, EOP */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(10u << 16, 0, GS_FRAME_1, 0);                       /* FBP 0, FBW 10 */
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw(3 | 0x08, 0, GS_PRIM, 0);                           /* triangle, shaded */
+	qw(0x00406080u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(600, 0), 0, GS_XYZ2, 0);
+	qw(0x00ff00ffu, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(0, 440), 0, GS_XYZ2, 0);
+	kick(0, s_qw_count, 0);
+	d = s_qw_count;
+	qw(5 | 0x8000u, 0x10000000u, 0xEu, 0);
+	qw(3, 0, GS_PRIM, 0);                                  /* triangle, flat */
+	qw(0x10203040u, 0x3f800000u, GS_RGBAQ, 0);             /* one higher each round */
+	qw((unsigned)XY(600, 400), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(630, 400), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(600, 430), 0, GS_XYZ2, 0);
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	s_bump_qw = d + 2;
+	kick(d, s_qw_count - d, 1);
+	s_run_frames = 30;
+}
+
 static void case_t4_from_target(void) { t4_from_target(0, 0); }
 static void case_t4_from_target_page(void) { t4_from_target(0, 1); }
 static void case_t4_from_target_shaded(void) { t4_from_target(1, 0); }
@@ -1862,6 +1899,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "reset_readback_one", case_reset_readback_one, "1" },
 	{ "t4_from_target",  case_t4_from_target, "1" },
 	{ "texture_rewind",  case_texture_rewind, "1" },
+	{ "draw_once",       case_draw_once,     "1" },
 	{ "t4_from_target_page", case_t4_from_target_page, "1" },
 	{ "t4_from_target_shaded", case_t4_from_target_shaded, "1" },
 	{ "depth_texture_far", case_depth_texture_far, "1" },

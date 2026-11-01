@@ -523,6 +523,10 @@ void GSvsync(u32 field, bool registers_written)
 		ops->vsync(field, registers_written);
 }
 
+bool GSSnapshotSave;
+bool GSSnapshotLoad;
+u64  GSSnapshotKey;
+
 int GSfreeze(FreezeAction mode, freezeData* data)
 {
 	const struct gs_renderer_ops* ops = GS_OPS();
