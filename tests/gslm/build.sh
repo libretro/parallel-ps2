@@ -72,6 +72,14 @@ for CXX in g++ clang++; do
 	"$TMP/gs_block_range"
 	rm -f "$TMP/brange.o"
 
+	# The 4-bit view of a 32-bit target the Vulkan indexed conversion
+	# builds, its tables read out of the shader source, against ReadPixel4.
+	$CXX -O1 -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 -Wall $([ "$CXX" = g++ ] && echo "$SANFLAGS") \
+	     $INC -c "$DIR/indexed4_view.cpp" -o "$TMP/view4.o"
+	$CXX -O1 $([ "$CXX" = g++ ] && echo "$SANFLAGS") "$TMP"/*.o -o "$TMP/indexed4_view"
+	"$TMP/indexed4_view" "$ROOT/pcsx2/GS/Renderers/Vulkan/convert.glsl"
+	rm -f "$TMP/view4.o"
+
 	# The alpha range Target::Update and PreloadTexture take from local
 	# memory, against the range of what ReadTexture expands. SANFLAGS on
 	# the g++ lane only: clang's sanitizer runtime is not always there.

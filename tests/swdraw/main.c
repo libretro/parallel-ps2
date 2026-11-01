@@ -1198,6 +1198,71 @@ static void case_stream_ct32(void) { stream_texture(STREAM_CT32, 0); }
 static void case_stream_t8(void) { stream_texture(STREAM_T8, 0); }
 static void case_stream_t8_flat(void) { stream_texture(STREAM_T8_FLAT, 0); }
 static void case_stream_ct24_aem(void) { stream_texture(STREAM_CT24_AEM, 0); }
+
+/* A 4-bit texture read straight off a 32-bit render target through a
+ * 16-entry PSMCT32 CLUT. The target, at page 200 and 128 pixels wide, is
+ * a triangle (a sprite would be a clear, which goes to local memory as it
+ * is drawn), so its pixels are on the GPU only; the sprite into the frame
+ * reads it as PSMT4 with nothing written back in between. The flat case
+ * fills the target with 0x77777777, every nibble 7, so the frame read back
+ * is 64 words and more of entry 7; a texture made from local memory as it
+ * was gives entry 0, and so does the same read from the target's second
+ * page (TBP0 one page on). The shaded case reads two 4-bit pages, 128x256, of a
+ * shaded target, for its picture to be compared with the CPU
+ * conversion's. */
+#define T4_CLUT(i) (0x80000000u | ((i) * 0x10u) << 16 | (0xF0u - (i) * 0x0Fu) << 8 | (i) * 3u)
+static void t4_from_target(int shaded, unsigned tbp_page)
+{
+	const unsigned w = shaded ? 128 : 32, h = shaded ? 256 : 16;
+	const unsigned tw = shaded ? 7 : 5, th = shaded ? 8 : 4;
+	unsigned head, i;
+	stream_image(0x3000u, 1, 0, 0, 0, 8, 2, 4);            /* the CLUT, 8x2 */
+	for (i = 0; i < 16; i += 4)
+		qw(T4_CLUT(i), T4_CLUT(i + 1), T4_CLUT(i + 2), T4_CLUT(i + 3));
+	kick(0, s_qw_count, 0);
+	head = s_qw_count;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);                     /* A+D, EOP, NLOOP below */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(200u | (2u << 16), 0, GS_FRAME_1, 0);               /* FBP 200, FBW 2 */
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(127u << 16, 63u << 16, GS_SCISSOR, 0);
+	qw(shaded ? 3 | 0x08 : 3, 0, GS_PRIM, 0);              /* triangle, flat or shaded */
+	qw(shaded ? 0x10305070u : 0x77777777u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw(shaded ? 0xF0D0B090u : 0x77777777u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(400, 0), 0, GS_XYZ2, 0);
+	qw(shaded ? 0x4080C0E0u : 0x77777777u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(0, 400), 0, GS_XYZ2, 0);
+	qw(10u << 16, 0, GS_FRAME_1, 0);                       /* FBP 0, FBW 10 */
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	/* TBP0 0x1900 (page 200) or a page on, TBW 2, PSMT4; TCC, decal, CBP 0x3000, CLD 1. */
+	qw((0x1900u + tbp_page * 32u) | (2u << 14) | (0x14u << 20) | (tw << 26) | ((th & 3u) << 30),
+		(th >> 2) | (1u << 2) | (1u << 3) | (0x3000u << 5) | (1u << 29), GS_TEX0_1, 0);
+	qw(0, 0, GS_TEX1_1, 0);
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* sprite, TME, FST */
+	qw(0, 0, GS_UV, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((w << 4) | ((h << 4) << 16), 0, GS_UV, 0);
+	qw((unsigned)XY(w, h), 0, GS_XYZ2, 0);
+	s_qw[head][0] = (s_qw_count - head - 1) | 0x8000u;
+	kick(head, s_qw_count - head, 0);
+	qw(4 | 0x8000u, 0x10000000u, 0xEu, 0);
+	qw((10u << 16), 0, GS_BITBLTBUF, 0);                   /* SBP 0, SBW 10, PSMCT32 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(32, 16, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);                                /* local to host */
+	kick(s_qw_count - 5, 5, 5);
+	readback(128);
+	s_run_frames = 60;
+	if (!shaded)
+		s_expect_run[0] = T4_CLUT(7);
+}
+
+static void case_t4_from_target(void) { t4_from_target(0, 0); }
+static void case_t4_from_target_page(void) { t4_from_target(0, 1); }
+static void case_t4_from_target_shaded(void) { t4_from_target(1, 0); }
 static void case_stream_frame16(void) { stream_texture(STREAM_CT32, 2); }
 
 /* The texture stream with an IMAGE GIFtag whose NLOOP is one more than
@@ -1741,6 +1806,9 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "dirty_whole_target", case_dirty_whole_target, "1" },
 	{ "reset_readback",  case_reset_readback, "1" },
 	{ "reset_readback_one", case_reset_readback_one, "1" },
+	{ "t4_from_target",  case_t4_from_target, "1" },
+	{ "t4_from_target_page", case_t4_from_target_page, "1" },
+	{ "t4_from_target_shaded", case_t4_from_target_shaded, "1" },
 	{ "depth_texture_far", case_depth_texture_far, "1" },
 	{ "move_width_change", case_move_width_change, "1" },
 	{ "shuffle_left_of_offset", case_shuffle_left_of_offset, "1" },

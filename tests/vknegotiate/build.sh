@@ -411,4 +411,57 @@ if [ -z "$three" ] || [ "$three" != "$one" ]; then
 	exit 1
 fi
 echo "  GS reset, three targets written back: $three submissions, as with one"
+
+# A 4-bit texture read off a 32-bit render target (tests/swdraw's
+# t4_from_target): converted on the GPU, without the target going through
+# local memory. The flat cases' frame holds the CLUT entry of the nibble
+# the target was filled with, read from its first page and from its
+# second, at 1x and at 2x (a texture made from local memory as it was
+# gives entry 0); the shaded case's picture is the CPU
+# conversion's, made with one queue submission fewer.
+for c in t4_from_target t4_from_target_page t4_from_target_shaded; do
+	"$SHIM/swdraw" --bios "$SHIM/$c.bin" $c >/dev/null
+done
+for c in t4_from_target t4_from_target_page; do
+	for sc in 1 2; do
+		SCRATCH=$(mktemp -d)
+		if ! VN_SCALE=$sc VN_EXPECT_RUN=80708715 VN_IDLE_BIOS=1 LRPS2_BIOS="$SHIM/$c.bin" VN_FRAMES=60 \
+				timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SHIM/t4.log" 2>&1; then
+			cat "$SHIM/t4.log"
+			rm -rf "$SCRATCH" "$SHIM"
+			echo "  FAIL: $c at ${sc}x"
+			exit 1
+		fi
+		rm -rf "$SCRATCH"
+	done
+done
+for conv in gpu cpu; do
+	opts=""
+	[ $conv = cpu ] && opts="pcsx2_enable_hw_hacks=enabled;pcsx2_framebuffer_conversion=enabled"
+	SCRATCH=$(mktemp -d)
+	if ! LD_LIBRARY_PATH="$SHIM" VN_REAL_VULKAN="$REAL" VN_COUNT_SUBMITS=1 VN_HASH_IMAGE=1 VN_OPTIONS="$opts" \
+			VN_IDLE_BIOS=1 LRPS2_BIOS="$SHIM/t4_from_target_shaded.bin" VN_FRAMES=60 \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SHIM/t4_$conv.log" 2>&1; then
+		cat "$SHIM/t4_$conv.log"
+		rm -rf "$SCRATCH" "$SHIM"
+		echo "  FAIL: t4_from_target_shaded, $conv conversion"
+		exit 1
+	fi
+	rm -rf "$SCRATCH"
+done
+gpu_hash=$(sed -n 's/^ *image: .*hash \([0-9a-f]*\)$/\1/p' "$SHIM/t4_gpu.log" | tail -n 1)
+cpu_hash=$(sed -n 's/^ *image: .*hash \([0-9a-f]*\)$/\1/p' "$SHIM/t4_cpu.log" | tail -n 1)
+gpu_sub=$(sed -n 's/^vkshim: \([0-9]*\) queue submissions$/\1/p' "$SHIM/t4_gpu.log")
+cpu_sub=$(sed -n 's/^vkshim: \([0-9]*\) queue submissions$/\1/p' "$SHIM/t4_cpu.log")
+if [ -z "$gpu_hash" ] || [ "$gpu_hash" != "$cpu_hash" ]; then
+	rm -rf "$SHIM"
+	echo "  FAIL: a 4-bit read of a target pictures ${gpu_hash:-?} on the GPU, ${cpu_hash:-?} on the CPU"
+	exit 1
+fi
+if [ -z "$gpu_sub" ] || [ -z "$cpu_sub" ] || [ "$gpu_sub" -ge "$cpu_sub" ]; then
+	rm -rf "$SHIM"
+	echo "  FAIL: the GPU 4-bit conversion made ${gpu_sub:-?} submissions, the CPU one ${cpu_sub:-?}"
+	exit 1
+fi
+echo "  4-bit read of a target: the CPU conversion's picture, $gpu_sub submissions against $cpu_sub"
 rm -rf "$SHIM"

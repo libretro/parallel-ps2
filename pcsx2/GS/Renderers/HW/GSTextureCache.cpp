@@ -1282,7 +1282,10 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 #ifdef DISABLE_HW_TEXTURE_CACHE
 	if (0)
 #else
-	if (!src && (GSConfig.UserHacks_CPUFBConversion || TEX0.PSM != PSMT4))
+	/* A 4-bit read looks at the targets only where something can make the
+	 * 4-bit view of one: the CPU conversion, or a device whose indexed
+	 * conversion has the PSMT4 layout. */
+	if (!src && (GSConfig.UserHacks_CPUFBConversion || TEX0.PSM != PSMT4 || g_gs_device->Features().indexed4_conversion))
 #endif
 	{
 		const u32 bp = TEX0.TBP0;
@@ -1318,6 +1321,15 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 				// If the BP is block offset it's unlikely to be a target, but a target can be made by a HW move, so we need to check for a match.
 				// Good for Baldurs Gate Dark Alliance (HW Move), bad for Tomb Raider Legends (just offset).
 				if (((bp & (GS_BLOCKS_PER_PAGE - 1)) != (t->m_TEX0.TBP0 & (GS_BLOCKS_PER_PAGE - 1))) && (bp & (GS_BLOCKS_PER_PAGE - 1)))
+					continue;
+
+				/* Without the CPU conversion, a 4-bit read only looks at a
+				 * target the GPU conversion can read: a 32-bit one holding
+				 * the texture's first page. Any other is left as it was
+				 * before 4-bit reads looked at targets at all. */
+				if (psm == PSMT4 && !GSConfig.UserHacks_CPUFBConversion &&
+					(GSLocalMemory::m_psm[t->m_TEX0.PSM].bpp != 32 || bp < t->m_TEX0.TBP0 || bp >= t->UnwrappedEndBlock() ||
+						((bp - t->m_TEX0.TBP0) & (GS_BLOCKS_PER_PAGE - 1))))
 					continue;
 
 				const bool overlaps = t->Overlaps(bp, bw, psm, block_boundary_rect);
@@ -1581,10 +1593,11 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 						// 1/ it just works :)
 						// 2/ even with upscaling
 						// 3/ for both Direct3D and OpenGL
-						if (psm == PSMT4 || (GSConfig.UserHacks_CPUFBConversion && psm == PSMT8))
+						if (GSConfig.UserHacks_CPUFBConversion && (psm == PSMT4 || psm == PSMT8))
 						{
 							// Forces 4-bit and 8-bit frame buffer conversion to be done on the CPU instead of the GPU, but performance will be slower.
-							// There is no dedicated shader to handle 4-bit conversion (Stuntman has been confirmed to use 4-bit).
+							// Stuntman has been confirmed to use 4-bit. Only Vulkan has the 4-bit conversion shader; elsewhere
+							// a 4-bit read gets here only with the hack, as the lookup is skipped for it otherwise.
 							// Direct3D10/11 and OpenGL support 8-bit fb conversion but don't render some corner cases properly (Harry Potter games).
 							// The hack can fix glitches in some games.
 							if (!t->m_drawn_since_read.rempty())
@@ -1604,6 +1617,12 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 
 							// We don't have a shader for this.
 							if (!possible_shuffle && TEX0.PSM == PSMT8 && ((GSLocalMemory::m_psm[t->m_TEX0.PSM].bpp != 32) || outside_target))
+								continue;
+
+							/* The 4-bit view is of a 32-bit target from its first
+							 * page (a later page is the branch for pages inside). */
+							if (TEX0.PSM == PSMT4 && (possible_shuffle || GSLocalMemory::m_psm[t->m_TEX0.PSM].bpp != 32 || outside_target ||
+								bp != t->m_TEX0.TBP0))
 								continue;
 
 							{
@@ -1643,7 +1662,8 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 						}
 					}
 				}
-				else if ((t->m_TEX0.TBW >= 16) && GSUtil::HasSharedBits(bp, psm, t->m_TEX0.TBP0 + t->m_TEX0.TBW * 0x10, t->m_TEX0.PSM))
+				else if ((t->m_TEX0.TBW >= 16) && GSUtil::HasSharedBits(bp, psm, t->m_TEX0.TBP0 + t->m_TEX0.TBW * 0x10, t->m_TEX0.PSM) &&
+					(psm != PSMT4 || GSConfig.UserHacks_CPUFBConversion)) /* (the 4-bit conversion reads from a page, not a half) */
 				{
 					// Detect half of the render target (fix snow engine game)
 					// Target Page (8KB) have always a width of 64 pixels
@@ -1908,8 +1928,10 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 				}
 				// An 8-bit read of a page inside a 32-bit target: the indexed
 				// conversion works in page addresses, so it only needs to know
-				// which page of the target the texture starts on.
-				else if (!GSConfig.UserHacks_CPUFBConversion && psm == PSMT8 &&
+				// which page of the target the texture starts on. A 4-bit read
+				// is the same, where the device can convert it.
+				else if (!GSConfig.UserHacks_CPUFBConversion &&
+					(psm == PSMT8 || (psm == PSMT4 && !possible_shuffle && g_gs_device->Features().indexed4_conversion)) &&
 					GSLocalMemory::m_psm[t->m_TEX0.PSM].bpp == 32 && bp > t->m_TEX0.TBP0 && bp < t->UnwrappedEndBlock() &&
 					((bp - t->m_TEX0.TBP0) & (GS_BLOCKS_PER_PAGE - 1)) == 0 &&
 					t->m_age <= 1 && (!found_t || t->m_last_draw > dst->m_last_draw))
@@ -1983,7 +2005,8 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 						}
 						else
 						{
-							if (!possible_shuffle && TEX0.PSM == PSMT8 && GSLocalMemory::m_psm[t->m_TEX0.PSM].bpp != 32)
+							/* (no 4-bit view of a depth buffer) */
+							if ((!possible_shuffle && TEX0.PSM == PSMT8 && GSLocalMemory::m_psm[t->m_TEX0.PSM].bpp != 32) || (TEX0.PSM == PSMT4 && !GSConfig.UserHacks_CPUFBConversion))
 							{
 								continue;
 							}
@@ -5274,7 +5297,8 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 
 	// An indexed read of a target is converted below, offset and all; only
 	// a colour read (or a channel shuffle) can sample the target in place.
-	const bool indexed_from_target = dst && TEX0.PSM == PSMT8 && !GSRendererHW::GetInstance()->TestChannelShuffle(dst);
+	const bool indexed_from_target = dst && (TEX0.PSM == PSMT8 || (TEX0.PSM == PSMT4 && g_gs_device->Features().indexed4_conversion)) &&
+		!GSRendererHW::GetInstance()->TestChannelShuffle(dst);
 
 	if (dst && page_gather)
 	{
@@ -5456,7 +5480,9 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 		ShaderConvert shader = dst->m_type != RenderTarget ? ShaderConvert::FLOAT32_TO_RGBA8 : ShaderConvert::COPY;
 		channel_shuffle = GSRendererHW::GetInstance()->TestChannelShuffle(dst);
 
-		const bool is_8bits = TEX0.PSM == PSMT8 && !channel_shuffle;
+		/* A 4-bit read of a target comes here only where the device converts
+		 * it (indexed4_conversion), through the same pass as an 8-bit one. */
+		const bool is_8bits = (TEX0.PSM == PSMT8 || (TEX0.PSM == PSMT4 && g_gs_device->Features().indexed4_conversion)) && !channel_shuffle;
 		if (is_8bits)
 			shader = ShaderConvert::RGBA_TO_8I;
 

@@ -1964,6 +1964,7 @@ bool GSDeviceVK::CheckFeatures()
 #endif
 	m_features.prefer_new_textures   = true;
 	m_features.provoking_vertex_last = m_optional_extensions.vk_ext_provoking_vertex;
+	m_features.indexed4_conversion = true;
 	m_features.clip_control          = true;
 #ifdef __APPLE__
 	m_features.vs_expand             = false;
@@ -2534,12 +2535,12 @@ void GSDeviceVK::ConvertToIndexedTexture(GSTexture* sTex, float sScale, u32 offs
 		u32 SBW;
 		u32 DBW;
 		u32 PageOffset;
-		u32 pad1;
+		u32 DPSM; /* PSMT4 takes the 4-bit view, anything else the 8-bit one */
 		float ScaleFactor;
 		float pad2[3];
 	};
 
-	const Uniforms uniforms = {SBW, DBW, IndexedConversionPageOffset(offsetX, offsetY, SBW), 0, sScale, {}};
+	const Uniforms uniforms = {SBW, DBW, IndexedConversionPageOffset(offsetX, offsetY, SBW), DPSM, sScale, {}};
 	SetUtilityPushConstants(&uniforms, sizeof(uniforms));
 
 	const ShaderConvert shader = ShaderConvert::RGBA_TO_8I;
