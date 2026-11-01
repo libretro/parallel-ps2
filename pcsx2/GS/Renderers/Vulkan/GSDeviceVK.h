@@ -486,8 +486,20 @@ private:
 	bool UtilPrepare();
 	bool UtilBuildAll();
 
-	std::unordered_map<u32, VkShaderModule> m_tfx_vertex_shaders;
-	std::unordered_map<GSHWDrawConfig::PSSelector, VkShaderModule, GSHWDrawConfig::PSSelectorHash> m_tfx_fragment_shaders;
+public:
+	/* The shader modules, made from the SPIR-V in VKShaders.inc as each is
+	 * first asked for: one set a thread (the render thread's, and the
+	 * warm-up thread's own), so neither waits on the other. */
+	struct Modules
+	{
+		VkShaderModule util_vs[3];        /* convert, interlace, merge */
+		VkShaderModule util_fs[UP_COUNT]; /* by UtilityFragmentOf() */
+		VkShaderModule tfx_vs[2 * 2];     /* [expand][iip] */
+		VkShaderModule tfx_fs[3 * 16];    /* [how the target is read][VKSPV_DROP_* bits] */
+	};
+
+private:
+	Modules m_modules = {};
 	std::unordered_map<PipelineSelector, VkPipeline, PipelineSelectorHash> m_tfx_pipelines;
 	/* See GSDevice12: the last pipeline, so a run of draws that share one
 	 * does not hash its selector again. */
@@ -516,29 +528,39 @@ private:
 	VkSampler GetSampler(GSHWDrawConfig::SamplerSelector ss);
 	void ClearSamplerCache();
 
-	VkShaderModule GetTFXVertexShader(GSHWDrawConfig::VSSelector sel);
-	VkShaderModule GetTFXFragmentShader(const GSHWDrawConfig::PSSelector& sel);
-	VkPipeline CreateTFXPipeline(const PipelineSelector& p);
 	VkPipeline GetTFXPipeline(const PipelineSelector& p);
 	VkPipeline GetTFXPipelineMissed(const PipelineSelector& p);
 
+	/* The driver's pipeline cache, kept on disk between sessions. */
+	VkPipelineCache m_pipeline_cache = VK_NULL_HANDLE;
+	u64 m_pipeline_cache_disk_hash = 0; /* of the file, when on_disk */
+	bool m_pipeline_cache_on_disk = false;
+	void PipelineCacheOpen();
+	void PipelineCacheClose();
+
 public:
-	/* The pipeline of p from its two shaders, into cache. Reads only what
-	 * the device holds from its creation on, so another thread may call
-	 * it (the warm-up thread, see PipelineWarm). */
-	VkPipeline BuildTFXPipeline(const PipelineSelector& p, VkShaderModule vs, VkShaderModule fs,
-		VkPipelineCache cache) const;
-	/* Utility pipeline id from its two shaders, into cache; as above. */
-	VkPipeline BuildUtilityPipeline(u32 id, VkShaderModule vs, VkShaderModule fs, VkPipelineCache cache) const;
+	/* The pipeline of p, with its shaders from mods, into cache. Reads only
+	 * what the device holds from its creation on, so another thread may
+	 * call it with modules of its own (the warm-up thread, see
+	 * PipelineWarm). */
+	VkPipeline BuildTFXPipeline(const PipelineSelector& p, Modules* mods, VkPipelineCache cache) const;
+	/* Utility pipeline id; as above. */
+	VkPipeline BuildUtilityPipeline(u32 id, Modules* mods, VkPipelineCache cache) const;
+	/* The module a pipeline is made with, made now if mods has none yet;
+	 * VK_NULL_HANDLE if the driver will not have it. */
+	VkShaderModule UtilityModule(Modules* mods, u32 id, bool vertex) const;
+	VkShaderModule TFXVertexModule(Modules* mods, GSHWDrawConfig::VSSelector sel) const;
+	VkShaderModule TFXFragmentModule(Modules* mods, const GSHWDrawConfig::PSSelector& sel) const;
+	static void DestroyModules(Modules* mods);
 	struct PipelineWarm;
 
 private:
 	/* The TFX pipelines a session builds are listed by their selectors, in
-	 * a file of their own beside the shader cache that no driver change
+	 * a file of their own beside the pipeline cache that no driver change
 	 * makes stale. The next device hands the list to a thread of its own,
-	 * which builds each one into the pipeline cache from the SPIR-V cache
-	 * and passes it back without a lock; a pipeline missed at draw time
-	 * takes what the thread has finished before it is built here. */
+	 * which builds each one into a pipeline cache of its own and passes it
+	 * back without a lock; a pipeline missed at draw time takes what the
+	 * thread has finished before it is built here. */
 	PipelineWarm* m_warm = nullptr;
 	PipelineSelector* m_plist = nullptr;
 	u32 m_plist_count = 0;

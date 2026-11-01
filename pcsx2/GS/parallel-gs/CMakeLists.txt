@@ -62,9 +62,9 @@ set(GRANITE_VULKAN_DXGI_INTEROP OFF CACHE BOOL "" FORCE)
 # per-commit both-build-systems rule exists to prevent.
 #
 # parallel-gs gets its shaders from slangmosh as pre-compiled SPIR-V, so the
-# shader manager and the runtime compiler have nothing to do; glslang's only
-# consumer in this tree is pcsx2's own GS/Renderers/Vulkan/VKShaderCache.cpp,
-# not Granite.  GRANITE_PLATFORM is "libretro" rather than "null" or "SDL":
+# shader manager and the runtime compiler have nothing to do; pcsx2's own
+# GS/Renderers/Vulkan gets its SPIR-V pre-compiled too (tools/vk_spirv.py), and
+# there is no glslang in the tree.  GRANITE_PLATFORM is "libretro" rather than "null" or "SDL":
 # Granite's own CMakeLists already knows that platform, and it is what selects
 # -fvisibility=hidden and position-independent code for a core.
 set(GRANITE_RENDERER OFF CACHE BOOL "" FORCE)

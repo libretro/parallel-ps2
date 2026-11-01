@@ -25,7 +25,8 @@
  * Vulkan device), VN_SCALE its upscale multiplier and VN_HW_DOWNLOAD its
  * hardware download mode; VN_EXPECT_RUN names
  * 32-bit words the state at the end must hold 64 of each in a row, and
- * VN_CORRUPT_SHADER_INDEX damages the shader cache a previous run left.
+ * VN_CORRUPT_PIPELINE_CACHE damages the pipeline cache a previous run left
+ * and leaves an old build's SPIR-V cache beside it.
  * VN_DUMP_STATE names a file the state after the frames is written to,
  * and VN_TIMING has the longest frame after the first reported.
  * VN_LOAD_PAUSE_MS leaves that long between the context reset and the
@@ -1506,23 +1507,35 @@ int main(int argc, char** argv)
 			vn_copy(src, path);
 		}
 	}
-	/* VN_CORRUPT_SHADER_INDEX: every entry of the shader cache index a run
-	 * before this one left in the scratch directory gets a blob that runs
-	 * a long way past the end of the blob file, its offset plus size past
-	 * what 32 bits hold. The core must drop the cache, not read it. */
-	if (getenv("VN_CORRUPT_SHADER_INDEX"))
+	/* VN_CORRUPT_PIPELINE_CACHE: the pipeline cache a run before this one
+	 * left in the scratch directory keeps its header (this device's) and
+	 * has junk after it, and beside it is the SPIR-V cache a build that
+	 * compiled its shaders at run time kept. The core must hand the
+	 * driver the cache and go on whatever the driver makes of it, and
+	 * take the SPIR-V cache away (build.sh looks). */
+	if (getenv("VN_CORRUPT_PIPELINE_CACHE"))
 	{
-		static const unsigned char entry_tail[8] = { 0x10, 0, 0, 0, 0xF0, 0xFF, 0xFF, 0xFF };
-		long at, size;
+		static const char* const stale[2] = { "vulkan_shaders.idx", "vulkan_shaders.bin" };
+		long size, at;
 		FILE* f;
-		sprintf(path, "%s/pcsx2/cache/vulkan_shaders.idx", s_system_dir);
+		int i;
+		sprintf(path, "%s/pcsx2/cache/vulkan_pipelines.bin", s_system_dir);
 		f = fopen(path, "r+b");
 		if (!f || fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) < 32)
 			VN_FAIL("cannot corrupt %s", path);
-		for (at = 36 + 24; at + 8 <= size; at += 32)   /* past the version and device header */
-			if (fseek(f, at, SEEK_SET) != 0 || fwrite(entry_tail, 1, 8, f) != 8)
+		/* past the header, all there is and as much again (a driver
+		 * that keeps nothing writes the header alone) */
+		for (at = 32; at < size + 256; at++)
+			if (fseek(f, at, SEEK_SET) != 0 || fputc((int)((at * 131) & 0xFF), f) == EOF)
 				VN_FAIL("cannot corrupt %s", path);
 		fclose(f);
+		for (i = 0; i < 2; i++)
+		{
+			sprintf(path, "%s/pcsx2/cache/%s", s_system_dir, stale[i]);
+			if (!(f = fopen(path, "wb")) || fputs("an old SPIR-V cache", f) == EOF)
+				VN_FAIL("cannot write %s", path);
+			fclose(f);
+		}
 	}
 
 	h = vn_dlopen(argv[1]);

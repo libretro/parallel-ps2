@@ -1,0 +1,636 @@
+// The utility pipelines' shaders (convert). Compiled ahead of time by
+// tools/vk_spirv.py into VKShaders.inc, one module an entry point.
+
+#version 460 core
+#extension GL_EXT_samplerless_texture_functions : require
+
+#ifdef VERTEX_SHADER
+
+layout(location = 0) in vec4 a_pos;
+layout(location = 1) in vec2 a_tex;
+
+layout(location = 0) out vec2 v_tex;
+
+void main()
+{
+	gl_Position = vec4(a_pos.x, -a_pos.y, a_pos.z, a_pos.w);
+	v_tex = a_tex;
+}
+
+#endif
+
+#ifdef FRAGMENT_SHADER
+
+layout(location = 0) in vec2 v_tex;
+
+#if defined(ps_convert_rgba8_16bits) || defined(ps_convert_float32_32bits)
+layout(location = 0) out uint o_col0;
+#elif !defined(ps_datm1) && !defined(ps_datm0) && !defined(ps_datm1_rta_correction) && !defined(ps_datm0_rta_correction) && !defined(ps_convert_rgba8_float32) && !defined(ps_convert_rgba8_float24) && !defined(ps_convert_rgba8_float16) && !defined(ps_convert_rgb5a1_float16) && !defined(ps_convert_rgba8_float32_biln) && !defined(ps_convert_rgba8_float24_biln) && !defined(ps_convert_rgba8_float16_biln) && !defined(ps_convert_rgb5a1_float16_biln) && !defined(ps_depth_copy)
+layout(location = 0) out vec4 o_col0;
+#endif
+
+layout(set = 0, binding = 0) uniform sampler2D samp0;
+
+vec4 sample_c(vec2 uv)
+{
+	return texture(samp0, uv);
+}
+
+#ifdef ps_copy
+void ps_copy()
+{
+	o_col0 = sample_c(v_tex);
+}
+#endif
+
+#ifdef ps_depth_copy
+void ps_depth_copy()
+{
+  gl_FragDepth = sample_c(v_tex).r;
+}
+#endif
+
+#ifdef ps_downsample_copy
+layout(push_constant) uniform cb10
+{
+	ivec2 ClampMin;
+	int DownsampleFactor;
+	int pad0;
+	float Weight;
+	vec3 pad1;
+};
+void ps_downsample_copy()
+{
+	ivec2 coord = max(ivec2(gl_FragCoord.xy) * DownsampleFactor, ClampMin);
+	vec4 result = vec4(0);
+	for (int yoff = 0; yoff < DownsampleFactor; yoff++)
+	{
+		for (int xoff = 0; xoff < DownsampleFactor; xoff++)
+			result += texelFetch(samp0, coord + ivec2(xoff, yoff), 0);
+	}
+	o_col0 = result / Weight;
+}
+#endif
+
+#ifdef ps_move_texels
+layout(push_constant) uniform cb10
+{
+	uvec4 MoveA;
+	uvec4 MoveB;
+};
+
+uint move_word(ivec2 p)
+{
+	uvec4 c = uvec4(texelFetch(samp0, p, 0) * 255.0f + 0.5f);
+	return c.r | (c.g << 8) | (c.b << 16) | (c.a << 24);
+}
+
+ivec2 move_xy(uint v)
+{
+	return ivec2(int(v & 0xFFFFu), int(v >> 16));
+}
+
+void ps_move_texels()
+{
+	// A local-memory move worked out on the targets, one sample at a time:
+	// the word of each native pixel is rebuilt from the elements the move
+	// puts there, each taken from the same sample of the source pixel its
+	// remap entry names, so every sample moves as its own memory would.
+	int scale = int(MoveB.x & 0xFFu);
+	uint nibbles = (MoveB.x >> 8) & 0xFFu;
+	int entries = int((MoveB.x >> 16) & 0xFFu);
+	bool has_old = ((MoveB.x >> 24) & 1u) != 0u;
+	ivec2 rel = ivec2(gl_FragCoord.xy) - move_xy(MoveA.x) * scale;
+	ivec2 native = rel / scale;
+	ivec2 sub = rel - native * scale;
+	uint word = has_old ? move_word(move_xy(MoveA.y) + rel) : 0u;
+	uint mask = (nibbles >= 8u) ? 0xFFFFFFFFu : ((1u << (nibbles * 4u)) - 1u);
+	for (int e = 0; e < entries; e++)
+	{
+		// Entry: valid << 31 | source nibble << 26 | y << 13 | x, the
+		// source pixel in native texels of the source block.
+		uint ent = move_word(move_xy(MoveA.w) + ivec2(native.x * entries + e, native.y));
+		if ((ent & 0x80000000u) == 0u)
+			continue;
+		ivec2 sp = ivec2(int(ent & 0x1FFFu), int((ent >> 13) & 0x1FFFu));
+		uint v = (move_word(move_xy(MoveA.z) + sp * scale + sub) >> (((ent >> 26) & 7u) * 4u)) & mask;
+		uint shift = uint(e) * nibbles * 4u;
+		word = (word & ~(mask << shift)) | (v << shift);
+	}
+	o_col0 = vec4(uvec4(word & 0xFFu, (word >> 8) & 0xFFu, (word >> 16) & 0xFFu, word >> 24)) / 255.0f;
+}
+#endif
+
+#ifdef ps_filter_transparency
+void ps_filter_transparency()
+{
+	vec4 c = sample_c(v_tex);
+	o_col0 = vec4(c.rgb, 1.0);
+}
+#endif
+
+#ifdef ps_convert_rgba8_16bits
+// Need to be careful with precision here, it can break games like Spider-Man 3 and Dogs Life
+void ps_convert_rgba8_16bits()
+{
+	uvec4 i = uvec4(sample_c(v_tex) * vec4(255.5f, 255.5f, 255.5f, 255.5f));
+
+	o_col0 = ((i.x & 0x00F8u) >> 3) | ((i.y & 0x00F8u) << 2) | ((i.z & 0x00f8u) << 7) | ((i.w & 0x80u) << 8);
+}
+#endif
+
+#ifdef ps_datm1
+void ps_datm1()
+{
+	if(sample_c(v_tex).a < (127.5f / 255.0f)) // >= 0x80 pass
+		discard;
+
+}
+#endif
+
+#ifdef ps_datm0
+void ps_datm0()
+{
+	if((127.5f / 255.0f) < sample_c(v_tex).a) // < 0x80 pass (== 0x80 should not pass)
+		discard;
+}
+#endif
+
+#ifdef ps_datm1_rta_correction
+void ps_datm1_rta_correction()
+{
+	if(sample_c(v_tex).a < (254.5f / 255.0f)) // >= 0x80 pass
+		discard;
+}
+#endif
+
+#ifdef ps_datm0_rta_correction
+void ps_datm0_rta_correction()
+{
+	if((254.5f / 255.0f) < sample_c(v_tex).a) // < 0x80 pass (== 0x80 should not pass)
+		discard;
+}
+#endif
+
+#ifdef ps_rta_correction
+void ps_rta_correction()
+{
+	vec4 value = sample_c(v_tex);
+	o_col0 = vec4(value.rgb, value.a / (128.25f / 255.0f));
+}
+#endif
+
+#ifdef ps_rta_decorrection
+void ps_rta_decorrection()
+{
+	vec4 value = sample_c(v_tex);
+	o_col0 = vec4(value.rgb, value.a * (128.25f / 255.0f));
+}
+#endif
+
+#ifdef ps_colclip_init
+void ps_colclip_init()
+{
+	vec4 value = sample_c(v_tex);
+	o_col0 = vec4(roundEven(value.rgb * 255.0f) / 65535.0f, value.a);
+}
+#endif
+
+#ifdef ps_colclip_resolve
+void ps_colclip_resolve()
+{
+	vec4 value = sample_c(v_tex);
+	o_col0 = vec4(vec3(uvec3(value.rgb * 65535.5f) & 255u) / 255.0f, value.a);
+}
+#endif
+
+#ifdef ps_convert_float32_32bits
+void ps_convert_float32_32bits()
+{
+	// Convert a vec32 depth texture into a 32 bits UINT texture
+	o_col0 = uint(exp2(32.0f) * sample_c(v_tex).r);
+}
+#endif
+
+#ifdef ps_convert_float32_rgba8
+void ps_convert_float32_rgba8()
+{
+	// Convert a vec32 depth texture into a RGBA color texture
+	uint d = uint(sample_c(v_tex).r * exp2(32.0f));
+	o_col0 = vec4(uvec4((d & 0xFFu), ((d >> 8) & 0xFFu), ((d >> 16) & 0xFFu), (d >> 24))) / vec4(255.0);
+}
+#endif
+
+#ifdef ps_convert_float16_rgb5a1
+void ps_convert_float16_rgb5a1()
+{
+	// Convert a vec32 (only 16 lsb) depth into a RGB5A1 color texture
+	uint d = uint(sample_c(v_tex).r * exp2(32.0f));
+	o_col0 = vec4(uvec4(d << 3, d >> 2, d >> 7, d >> 8) & uvec4(0xf8, 0xf8, 0xf8, 0x80)) / 255.0f;
+}
+#endif
+
+float rgba8_to_depth32(vec4 unorm)
+{
+	uvec4 c = uvec4(unorm * vec4(255.5f));
+	return float(c.r | (c.g << 8) | (c.b << 16) | (c.a << 24)) * exp2(-32.0f);
+}
+
+float rgba8_to_depth24(vec4 unorm)
+{
+	uvec3 c = uvec3(unorm.rgb * vec3(255.5f));
+	return float(c.r | (c.g << 8) | (c.b << 16)) * exp2(-32.0f);
+}
+
+float rgba8_to_depth16(vec4 unorm)
+{
+	uvec2 c = uvec2(unorm.rg * vec2(255.5f));
+	return float(c.r | (c.g << 8)) * exp2(-32.0f);
+}
+
+float rgb5a1_to_depth16(vec4 unorm)
+{
+	uvec4 c = uvec4(unorm * vec4(255.5f));
+	return float(((c.r & 0xF8u) >> 3) | ((c.g & 0xF8u) << 2) | ((c.b & 0xF8u) << 7) | ((c.a & 0x80u) << 8)) * exp2(-32.0f);
+}
+
+#ifdef ps_convert_float32_float24
+void ps_convert_float32_float24()
+{
+	// Truncates depth value to 24bits
+	uint d = uint(sample_c(v_tex).r * exp2(32.0f)) & 0xFFFFFFu;
+	gl_FragDepth = float(d) * exp2(-32.0f);
+}
+#endif
+
+#ifdef ps_convert_rgba8_float32
+void ps_convert_rgba8_float32()
+{
+	// Convert an RGBA texture into a float depth texture
+	gl_FragDepth = rgba8_to_depth32(sample_c(v_tex));
+}
+#endif
+
+#ifdef ps_convert_rgba8_float24
+void ps_convert_rgba8_float24()
+{
+	// Same as above but without the alpha channel (24 bits Z)
+
+	// Convert an RGBA texture into a float depth texture
+	gl_FragDepth = rgba8_to_depth24(sample_c(v_tex));
+}
+#endif
+
+#ifdef ps_convert_rgba8_float16
+void ps_convert_rgba8_float16()
+{
+	// Same as above but without the A/B channels (16 bits Z)
+
+	// Convert an RGBA texture into a float depth texture
+	gl_FragDepth = rgba8_to_depth16(sample_c(v_tex));
+}
+#endif
+
+#ifdef ps_convert_rgb5a1_float16
+void ps_convert_rgb5a1_float16()
+{
+	// Convert an RGB5A1 (saved as RGBA8) color to a 16 bit Z
+	gl_FragDepth = rgb5a1_to_depth16(sample_c(v_tex));
+}
+#endif
+
+#define SAMPLE_RGBA_DEPTH_BILN(CONVERT_FN) ivec2 dims = textureSize(samp0, 0); vec2 top_left_f = v_tex * vec2(dims) - 0.5f; ivec2 top_left = ivec2(floor(top_left_f)); ivec4 coords = clamp(ivec4(top_left, top_left + 1), ivec4(0), dims.xyxy - 1); vec2 mix_vals = fract(top_left_f); float depthTL = CONVERT_FN(texelFetch(samp0, coords.xy, 0)); float depthTR = CONVERT_FN(texelFetch(samp0, coords.zy, 0)); float depthBL = CONVERT_FN(texelFetch(samp0, coords.xw, 0)); float depthBR = CONVERT_FN(texelFetch(samp0, coords.zw, 0)); gl_FragDepth = mix(mix(depthTL, depthTR, mix_vals.x), mix(depthBL, depthBR, mix_vals.x), mix_vals.y);
+
+#ifdef ps_convert_rgba8_float32_biln
+void ps_convert_rgba8_float32_biln()
+{
+	// Convert an RGBA texture into a float depth texture
+	SAMPLE_RGBA_DEPTH_BILN(rgba8_to_depth32);
+}
+#endif
+
+#ifdef ps_convert_rgba8_float24_biln
+void ps_convert_rgba8_float24_biln()
+{
+	// Same as above but without the alpha channel (24 bits Z)
+
+	// Convert an RGBA texture into a float depth texture
+	SAMPLE_RGBA_DEPTH_BILN(rgba8_to_depth24);
+}
+#endif
+
+#ifdef ps_convert_rgba8_float16_biln
+void ps_convert_rgba8_float16_biln()
+{
+	// Same as above but without the A/B channels (16 bits Z)
+
+	// Convert an RGBA texture into a float depth texture
+	SAMPLE_RGBA_DEPTH_BILN(rgba8_to_depth16);
+}
+#endif
+
+#ifdef ps_convert_rgb5a1_float16_biln
+void ps_convert_rgb5a1_float16_biln()
+{
+	// Convert an RGB5A1 (saved as RGBA8) color to a 16 bit Z
+	SAMPLE_RGBA_DEPTH_BILN(rgb5a1_to_depth16);
+}
+#endif
+
+#ifdef ps_convert_rgba_8i
+layout(push_constant) uniform cb10
+{
+	uint SBW;
+	uint DBW;
+	uint PageOffset;
+	uint DPSM;
+	float ScaleFactor;
+	vec3 cb_pad2;
+};
+
+// A PSMT4 page is a PSMCT32 page read as 4-bit texels: the texel's place
+// in the page is block4 * 512 + column4 nibbles, nibble N of word N/8,
+// and that word's pixel in the PSMCT32 page is invblock32 (the block, x
+// in the low three bits, y above) and invcolumn32 (the pixel in the
+// block, packed the same way). From the GS block and column tables.
+const uint block4[32] = uint[32](
+	0u, 2u, 8u, 10u, 1u, 3u, 9u, 11u,
+	4u, 6u, 12u, 14u, 5u, 7u, 13u, 15u,
+	16u, 18u, 24u, 26u, 17u, 19u, 25u, 27u,
+	20u, 22u, 28u, 30u, 21u, 23u, 29u, 31u
+);
+const uint column4[512] = uint[512](
+	0u, 8u, 32u, 40u, 64u, 72u, 96u, 104u, 2u, 10u, 34u, 42u, 66u, 74u, 98u, 106u,
+	4u, 12u, 36u, 44u, 68u, 76u, 100u, 108u, 6u, 14u, 38u, 46u, 70u, 78u, 102u, 110u,
+	16u, 24u, 48u, 56u, 80u, 88u, 112u, 120u, 18u, 26u, 50u, 58u, 82u, 90u, 114u, 122u,
+	20u, 28u, 52u, 60u, 84u, 92u, 116u, 124u, 22u, 30u, 54u, 62u, 86u, 94u, 118u, 126u,
+	65u, 73u, 97u, 105u, 1u, 9u, 33u, 41u, 67u, 75u, 99u, 107u, 3u, 11u, 35u, 43u,
+	69u, 77u, 101u, 109u, 5u, 13u, 37u, 45u, 71u, 79u, 103u, 111u, 7u, 15u, 39u, 47u,
+	81u, 89u, 113u, 121u, 17u, 25u, 49u, 57u, 83u, 91u, 115u, 123u, 19u, 27u, 51u, 59u,
+	85u, 93u, 117u, 125u, 21u, 29u, 53u, 61u, 87u, 95u, 119u, 127u, 23u, 31u, 55u, 63u,
+	192u, 200u, 224u, 232u, 128u, 136u, 160u, 168u, 194u, 202u, 226u, 234u, 130u, 138u, 162u, 170u,
+	196u, 204u, 228u, 236u, 132u, 140u, 164u, 172u, 198u, 206u, 230u, 238u, 134u, 142u, 166u, 174u,
+	208u, 216u, 240u, 248u, 144u, 152u, 176u, 184u, 210u, 218u, 242u, 250u, 146u, 154u, 178u, 186u,
+	212u, 220u, 244u, 252u, 148u, 156u, 180u, 188u, 214u, 222u, 246u, 254u, 150u, 158u, 182u, 190u,
+	129u, 137u, 161u, 169u, 193u, 201u, 225u, 233u, 131u, 139u, 163u, 171u, 195u, 203u, 227u, 235u,
+	133u, 141u, 165u, 173u, 197u, 205u, 229u, 237u, 135u, 143u, 167u, 175u, 199u, 207u, 231u, 239u,
+	145u, 153u, 177u, 185u, 209u, 217u, 241u, 249u, 147u, 155u, 179u, 187u, 211u, 219u, 243u, 251u,
+	149u, 157u, 181u, 189u, 213u, 221u, 245u, 253u, 151u, 159u, 183u, 191u, 215u, 223u, 247u, 255u,
+	256u, 264u, 288u, 296u, 320u, 328u, 352u, 360u, 258u, 266u, 290u, 298u, 322u, 330u, 354u, 362u,
+	260u, 268u, 292u, 300u, 324u, 332u, 356u, 364u, 262u, 270u, 294u, 302u, 326u, 334u, 358u, 366u,
+	272u, 280u, 304u, 312u, 336u, 344u, 368u, 376u, 274u, 282u, 306u, 314u, 338u, 346u, 370u, 378u,
+	276u, 284u, 308u, 316u, 340u, 348u, 372u, 380u, 278u, 286u, 310u, 318u, 342u, 350u, 374u, 382u,
+	321u, 329u, 353u, 361u, 257u, 265u, 289u, 297u, 323u, 331u, 355u, 363u, 259u, 267u, 291u, 299u,
+	325u, 333u, 357u, 365u, 261u, 269u, 293u, 301u, 327u, 335u, 359u, 367u, 263u, 271u, 295u, 303u,
+	337u, 345u, 369u, 377u, 273u, 281u, 305u, 313u, 339u, 347u, 371u, 379u, 275u, 283u, 307u, 315u,
+	341u, 349u, 373u, 381u, 277u, 285u, 309u, 317u, 343u, 351u, 375u, 383u, 279u, 287u, 311u, 319u,
+	448u, 456u, 480u, 488u, 384u, 392u, 416u, 424u, 450u, 458u, 482u, 490u, 386u, 394u, 418u, 426u,
+	452u, 460u, 484u, 492u, 388u, 396u, 420u, 428u, 454u, 462u, 486u, 494u, 390u, 398u, 422u, 430u,
+	464u, 472u, 496u, 504u, 400u, 408u, 432u, 440u, 466u, 474u, 498u, 506u, 402u, 410u, 434u, 442u,
+	468u, 476u, 500u, 508u, 404u, 412u, 436u, 444u, 470u, 478u, 502u, 510u, 406u, 414u, 438u, 446u,
+	385u, 393u, 417u, 425u, 449u, 457u, 481u, 489u, 387u, 395u, 419u, 427u, 451u, 459u, 483u, 491u,
+	389u, 397u, 421u, 429u, 453u, 461u, 485u, 493u, 391u, 399u, 423u, 431u, 455u, 463u, 487u, 495u,
+	401u, 409u, 433u, 441u, 465u, 473u, 497u, 505u, 403u, 411u, 435u, 443u, 467u, 475u, 499u, 507u,
+	405u, 413u, 437u, 445u, 469u, 477u, 501u, 509u, 407u, 415u, 439u, 447u, 471u, 479u, 503u, 511u
+);
+const uint invblock32[32] = uint[32](
+	0u, 1u, 8u, 9u, 2u, 3u, 10u, 11u,
+	16u, 17u, 24u, 25u, 18u, 19u, 26u, 27u,
+	4u, 5u, 12u, 13u, 6u, 7u, 14u, 15u,
+	20u, 21u, 28u, 29u, 22u, 23u, 30u, 31u
+);
+const uint invcolumn32[64] = uint[64](
+	0u, 1u, 8u, 9u, 2u, 3u, 10u, 11u, 4u, 5u, 12u, 13u, 6u, 7u, 14u, 15u,
+	16u, 17u, 24u, 25u, 18u, 19u, 26u, 27u, 20u, 21u, 28u, 29u, 22u, 23u, 30u, 31u,
+	32u, 33u, 40u, 41u, 34u, 35u, 42u, 43u, 36u, 37u, 44u, 45u, 38u, 39u, 46u, 47u,
+	48u, 49u, 56u, 57u, 50u, 51u, 58u, 59u, 52u, 53u, 60u, 61u, 54u, 55u, 62u, 63u
+);
+
+void ps_convert_rgba_8i()
+{
+	// Convert a RGBA texture into a 8 bits packed texture
+	// Input column: 8x2 RGBA pixels
+	// 0: 8 RGBA
+	// 1: 8 RGBA
+	// Output column: 16x4 Index pixels
+	// 0: 8 R | 8 B
+	// 1: 8 R | 8 B
+	// 2: 8 G | 8 A
+	// 3: 8 G | 8 A
+	uvec2 pos = uvec2(gl_FragCoord.xy);
+
+	// At an integer scale the output is the scaled index texture: the
+	// texel index picks the source pixel and the position inside the
+	// texel picks the sample inside that pixel.
+	uvec2 sub = uvec2(0u);
+	uvec2 iscale = uvec2(1u);
+	if (floor(ScaleFactor) == ScaleFactor && ScaleFactor > 1.0f)
+	{
+		iscale = uvec2(ScaleFactor);
+		sub = pos % iscale;
+		pos /= iscale;
+	}
+
+	if (DPSM == 0x14u)
+	{
+		// PSMT4: a page is 128x128 texels, DBW / 128 pages to a row.
+		uvec2 t = pos & uvec2(127u);
+		uint page = (pos.y >> 7) * (DBW / 128u) + (pos.x >> 7) + PageOffset;
+		uint col = column4[((t.y & 15u) << 5) | (t.x & 31u)];
+		uint word = block4[((t.y >> 4) << 2) | (t.x >> 5)] * 64u + (col >> 3);
+		uint bxy = invblock32[word >> 6];
+		uint pxy = invcolumn32[word & 63u];
+		uvec2 coord4 = uvec2(((bxy & 7u) << 3) | (pxy & 7u), ((bxy >> 3) << 3) | (pxy >> 3));
+		coord4 += uvec2((page % (SBW / 64u)) * 64u, (page / (SBW / 64u)) * 32u);
+
+		if (floor(ScaleFactor) != ScaleFactor)
+			coord4 = uvec2(vec2(coord4) * ScaleFactor);
+		else
+			coord4 = coord4 * iscale + sub;
+
+		// Nibble N of the word: the low or high half of byte N / 2.
+		uint nib = col & 7u;
+		uint byte4 = uint(texelFetch(samp0, ivec2(coord4), 0)[nib >> 1] * 255.0f + 0.5f);
+		o_col0 = vec4(float((byte4 >> ((nib & 1u) << 2)) & 15u) / 255.0f);
+		return;
+	}
+
+	// Collapse separate R G B A areas into their base pixel
+	uvec2 block = (pos & ~uvec2(15u, 3u)) >> 1;
+	uvec2 subblock = pos & uvec2(7u, 1u);
+	uvec2 coord = block | subblock;
+
+	// Compensate for potentially differing page pitch.
+	uvec2 block_xy = coord / uvec2(64u, 32u);
+	uint block_num = (block_xy.y * (DBW / 128u)) + block_xy.x + PageOffset;
+	uvec2 block_offset = uvec2((block_num % (SBW / 64u)) * 64u, (block_num / (SBW / 64u)) * 32u);
+	coord = (coord % uvec2(64u, 32u)) + block_offset;
+
+	// Apply offset to cols 1 and 2
+	uint is_col23 = pos.y & 4u;
+	uint is_col13 = pos.y & 2u;
+	uint is_col12 = is_col23 ^ (is_col13 << 1);
+	coord.x ^= is_col12; // If cols 1 or 2, flip bit 3 of x
+
+	if (floor(ScaleFactor) != ScaleFactor)
+		coord = uvec2(vec2(coord) * ScaleFactor);
+	else
+		coord = coord * iscale + sub;
+
+	vec4 pixel = texelFetch(samp0, ivec2(coord), 0);
+	vec2  sel0 = (pos.y & 2u) == 0u ? pixel.rb : pixel.ga;
+	float sel1 = (pos.x & 8u) == 0u ? sel0.x : sel0.y;
+	o_col0 = vec4(sel1); // Divide by something here?
+}
+#endif
+
+#ifdef ps_convert_clut_4
+layout(push_constant) uniform cb10
+{
+	uvec2 offset;
+	uint doffset;
+	uint samples;
+	float scale;
+	vec3 cb_pad2;
+};
+
+void ps_convert_clut_4()
+{
+	// Sixteen consecutive entries from the block DOFFSET selects, so the
+	// offset goes on the index. Past the first block that index leaves the
+	// leading two rows, so it needs the same group layout the 8-bit path uses.
+	// A palette of a target drawn at an integer scale keeps its samples: an
+	// entry is SAMPLES texels wide and the palette SAMPLES rows tall, each
+	// texel the entry's sample at that place in the native pixel.
+	uint n = max(samples, 1u);
+	uvec2 sub = uvec2(uint(gl_FragCoord.x) % n, uint(gl_FragCoord.y));
+	uint index = uint(gl_FragCoord.x) / n + doffset;
+	uint subgroup = (index / 8u) % 4u;
+	uvec2 pos;
+	pos.x = (index % 8u) + ((subgroup >= 2u) ? 8u : 0u);
+	pos.y = ((index / 32u) * 2u) + (subgroup % 2u);
+
+	ivec2 final = (n > 1u) ? ivec2((offset + pos) * n + sub) : ivec2(floor(vec2(offset + pos) * vec2(scale)));
+	o_col0 = texelFetch(samp0, final, 0);
+}
+#endif
+
+#ifdef ps_convert_clut_8
+layout(push_constant) uniform cb10
+{
+	uvec2 offset;
+	uint doffset;
+	uint samples;
+	float scale;
+	vec3 cb_pad2;
+};
+
+void ps_convert_clut_8()
+{
+	// The CLUT address clamps at the last sixteen-entry block, and the low four
+	// bits still select within it, matching GSClut::ReadCLUT_T32_I8.
+	// A palette of a target drawn at an integer scale keeps its samples: an
+	// entry is SAMPLES texels wide and the palette SAMPLES rows tall, each
+	// texel the entry's sample at that place in the native pixel.
+	uint n = max(samples, 1u);
+	uvec2 sub = uvec2(uint(gl_FragCoord.x) % n, uint(gl_FragCoord.y));
+	uint clut_x = uint(gl_FragCoord.x) / n;
+	uint index = (min((clut_x >> 4u) + (doffset >> 4u), 15u) << 4u) | (clut_x & 15u);
+
+	// CLUT is arranged into 8 groups of 16x2, with the top-right and bottom-left quadrants swapped.
+	// This can probably be done better..
+	uint subgroup = (index / 8u) % 4u;
+	uvec2 pos;
+	pos.x = (index % 8u) + ((subgroup >= 2u) ? 8u : 0u);
+	pos.y = ((index / 32u) * 2u) + (subgroup % 2u);
+
+	ivec2 final = (n > 1u) ? ivec2((offset + pos) * n + sub) : ivec2(floor(vec2(offset + pos) * vec2(scale)));
+	o_col0 = texelFetch(samp0, final, 0);
+}
+#endif
+
+#ifdef ps_yuv
+layout(push_constant) uniform cb10
+{
+	int EMODA;
+	int EMODC;
+};
+
+void ps_yuv()
+{
+	vec4 i = sample_c(v_tex);
+	vec4 o = vec4(0.0f);
+
+	mat3 rgb2yuv;
+	rgb2yuv[0] = vec3(0.587, -0.311, -0.419);
+	rgb2yuv[1] = vec3(0.114, 0.500, -0.081);
+	rgb2yuv[2] = vec3(0.299, -0.169, 0.500);
+
+	vec3 yuv = rgb2yuv * i.gbr;
+
+	float Y = float(0xDB)/255.0f * yuv.x + float(0x10)/255.0f;
+	float Cr = float(0xE0)/255.0f * yuv.y + float(0x80)/255.0f;
+	float Cb = float(0xE0)/255.0f * yuv.z + float(0x80)/255.0f;
+
+	switch(EMODA)
+	{
+		case 0:
+			o.a = i.a;
+			break;
+		case 1:
+			o.a = Y;
+			break;
+		case 2:
+			o.a = Y/2.0f;
+			break;
+		case 3:
+			o.a = 0.0f;
+			break;
+	}
+
+	switch(EMODC)
+	{
+		case 0:
+			o.rgb = i.rgb;
+			break;
+		case 1:
+			o.rgb = vec3(Y);
+			break;
+		case 2:
+			o.rgb = vec3(Y, Cb, Cr);
+			break;
+		case 3:
+			o.rgb = vec3(i.a);
+			break;
+	}
+
+	o_col0 = o;
+}
+#endif
+
+#if defined(ps_stencil_image_init_0) || defined(ps_stencil_image_init_1) || defined(ps_stencil_image_init_2) || defined(ps_stencil_image_init_3)
+
+void main()
+{
+	o_col0 = vec4(0x7FFFFFFF);
+
+	#ifdef ps_stencil_image_init_0
+		if((127.5f / 255.0f) < sample_c(v_tex).a) // < 0x80 pass (== 0x80 should not pass)
+			o_col0 = vec4(-1);
+	#endif
+	#ifdef ps_stencil_image_init_1
+		if(sample_c(v_tex).a < (127.5f / 255.0f)) // >= 0x80 pass
+			o_col0 = vec4(-1);
+	#endif
+	#ifdef ps_stencil_image_init_2
+		if((254.5f / 255.0f) < sample_c(v_tex).a) // < 0x80 pass (== 0x80 should not pass)
+			o_col0 = vec4(-1);
+	#endif
+	#ifdef ps_stencil_image_init_3
+		if(sample_c(v_tex).a < (254.5f / 255.0f)) // >= 0x80 pass
+			o_col0 = vec4(-1);
+	#endif
+}
+#endif
+
+#endif

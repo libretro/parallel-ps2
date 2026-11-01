@@ -88,10 +88,18 @@ namespace Vulkan
 
 		VkPipeline Create(VkDevice device, VkPipelineCache pipeline_cache = VK_NULL_HANDLE, bool clear = true);
 
-		void SetShaderStage(VkShaderStageFlagBits stage, VkShaderModule module, const char* entry_point);
-		void SetVertexShader(VkShaderModule module) { SetShaderStage(VK_SHADER_STAGE_VERTEX_BIT, module, "main"); }
-		void SetGeometryShader(VkShaderModule module) { SetShaderStage(VK_SHADER_STAGE_GEOMETRY_BIT, module, "main"); }
-		void SetFragmentShader(VkShaderModule module) { SetShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, module, "main"); }
+		/* spec: the stage's specialization constants, or none; held, not
+		 * copied, until Create() */
+		void SetShaderStage(VkShaderStageFlagBits stage, VkShaderModule module, const char* entry_point,
+			const VkSpecializationInfo* spec = nullptr);
+		void SetVertexShader(VkShaderModule module, const VkSpecializationInfo* spec = nullptr)
+		{
+			SetShaderStage(VK_SHADER_STAGE_VERTEX_BIT, module, "main", spec);
+		}
+		void SetFragmentShader(VkShaderModule module, const VkSpecializationInfo* spec = nullptr)
+		{
+			SetShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, module, "main", spec);
+		}
 
 		void AddVertexBuffer(u32 binding, u32 stride, VkVertexInputRate input_rate = VK_VERTEX_INPUT_RATE_VERTEX);
 		void AddVertexAttribute(u32 location, u32 binding, VkFormat format, u32 offset);

@@ -38,8 +38,6 @@ endif
 ifeq ($(HAVE_VULKAN), 1)
 	INCFLAGS += \
 		-I$(DEPS_DIR)/vulkan-headers/include \
-		-I$(DEPS_DIR)/glslang/glslang \
-		-I$(DEPS_DIR)/glslang/include \
 		-I$(GRANITE_DIR)/util \
 		-I$(GRANITE_DIR)/vulkan \
 		-I$(GRANITE_DIR)/application/global \
@@ -515,14 +513,15 @@ endif
 
 # pcsx2/GS/Renderers/Vulkan + parallel-gs
 ifeq ($(HAVE_VULKAN), 1)
-SOURCES_C += $(LRPS2_DIR)/GS/Renderers/Vulkan/GSVulkanHeap.c
+SOURCES_C += \
+	$(LRPS2_DIR)/GS/Renderers/Vulkan/GSVulkanHeap.c \
+	$(LRPS2_DIR)/GS/Renderers/Vulkan/VKSpirvPatch.c
 
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/Vulkan/GSDeviceVK.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Vulkan/GSTextureVK.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Vulkan/VKBuilders.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Vulkan/VKLoader.cpp \
-	$(LRPS2_DIR)/GS/Renderers/Vulkan/VKShaderCache.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Vulkan/VKStreamBuffer.cpp \
 	\
 	$(LRPS2_DIR)/GS/Renderers/parallel-gs/GSRendererPGS.cpp
@@ -682,61 +681,6 @@ endif
 # glad (OpenGL)
 ifeq ($(HAVE_OPENGL), 1)
 SOURCES_C += $(DEPS_DIR)/glad/src/glad.c
-endif
-
-# glslang (Vulkan only)
-ifeq ($(HAVE_VULKAN), 1)
-SOURCES_CXX += \
-	$(DEPS_DIR)/glslang/glslang/glslang/CInterface/glslang_c_interface.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/GenericCodeGen/CodeGen.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/GenericCodeGen/Link.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/attribute.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/Constant.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/glslang_tab.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/InfoSink.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/Initialize.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/Intermediate.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/intermOut.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/IntermTraverse.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/iomapper.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/limits.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/linkValidate.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/parseConst.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/ParseContextBase.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/ParseHelper.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/PoolAlloc.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/preprocessor/Pp.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/preprocessor/PpAtom.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/preprocessor/PpContext.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/preprocessor/PpScanner.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/preprocessor/PpTokens.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/propagateNoContraction.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/reflection.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/RemoveTree.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/Scan.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/ShaderLang.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/SpirvIntrinsics.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/SymbolTable.cpp \
-	$(DEPS_DIR)/glslang/glslang/glslang/MachineIndependent/Versions.cpp \
-	$(DEPS_DIR)/glslang/glslang/OGLCompilersDLL/InitializeDll.cpp \
-	$(DEPS_DIR)/glslang/glslang/SPIRV/disassemble.cpp \
-	$(DEPS_DIR)/glslang/glslang/SPIRV/doc.cpp \
-	$(DEPS_DIR)/glslang/glslang/SPIRV/GlslangToSpv.cpp \
-	$(DEPS_DIR)/glslang/glslang/SPIRV/InReadableOrder.cpp \
-	$(DEPS_DIR)/glslang/glslang/SPIRV/Logger.cpp \
-	$(DEPS_DIR)/glslang/glslang/SPIRV/SpvBuilder.cpp \
-	$(DEPS_DIR)/glslang/glslang/SPIRV/SpvPostProcess.cpp \
-	$(DEPS_DIR)/glslang/glslang/SPIRV/SPVRemapper.cpp \
-	$(DEPS_DIR)/glslang/glslang/SPIRV/SpvTools.cpp \
-	$(DEPS_DIR)/glslang/glslang/StandAlone/ResourceLimits.cpp \
-	$(DEPS_DIR)/glslang/glslang/StandAlone/resource_limits_c.cpp
-
-# glslang OS bindings: Windows variant on win32, Unix variant elsewhere.
-ifeq ($(IS_WINDOWS), 1)
-SOURCES_CXX += $(DEPS_DIR)/glslang/glslang/glslang/OSDependent/Windows/ossource.cpp
-else
-SOURCES_CXX += $(DEPS_DIR)/glslang/glslang/glslang/OSDependent/Unix/ossource.cpp
-endif
 endif
 
 # Dynamically loaded builds only: statically linked frontends share one

@@ -44,13 +44,20 @@ for mode in v2 v2retry v1; do
 	rm -rf "$SCRATCH"
 done
 
-# A shader cache whose index names blobs past the end of the blob file,
-# left by a run before: the next run drops it and builds a new one.
+# A pipeline cache with junk after its header, left by a run before, and
+# the SPIR-V cache a build that compiled its shaders at run time kept: the
+# next run goes on with whatever the driver makes of the one, and takes
+# the other away.
 SCRATCH=$(mktemp -d)
 if ! timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 ||
-   ! VN_CORRUPT_SHADER_INDEX=1 timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+   ! VN_CORRUPT_PIPELINE_CACHE=1 timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
 	rm -rf "$SCRATCH"
-	echo "  FAIL: Vulkan negotiation, corrupt shader cache index"
+	echo "  FAIL: Vulkan negotiation, corrupt pipeline cache"
+	exit 1
+fi
+if [ -e "$SCRATCH/pcsx2/cache/vulkan_shaders.idx" ] || [ -e "$SCRATCH/pcsx2/cache/vulkan_shaders.bin" ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: the old SPIR-V cache was left"
 	exit 1
 fi
 rm -rf "$SCRATCH"

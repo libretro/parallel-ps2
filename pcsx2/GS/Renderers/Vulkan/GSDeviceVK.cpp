@@ -25,12 +25,11 @@
 #include "GS/GSUtil.h"
 #include "Host.h"
 #include "GS.h"
-#include "ShaderCacheVersion.h"
 
 #include "common/Align.h"
 #include "common/General.h"
 #include "VKBuilders.h"
-#include "VKShaderCache.h"
+#include "VKSpirvPatch.h"
 
 #include <file/file_path.h>
 #include <retro_miscellaneous.h>
@@ -42,7 +41,6 @@
 #include <rthreads/rthreads.h>
 #endif
 
-#include <sstream>
 #include <limits>
 #include <algorithm>
 #include <array>
@@ -66,11 +64,18 @@ extern retro_video_refresh_t video_cb;
 #define VK_NO_PROTOTYPES
 #include <libretro_vulkan.h>
 
-#include "convert.glsl"
-#include "vr.glsl"
-#include "interlace.glsl"
-#include "merge.glsl"
-#include "tfx.glsl"
+/* A module's SPIR-V, as tools/vk_spirv.py wrote it into VKShaders.inc */
+struct VKSpirv
+{
+	const u32* words;
+	u32 count;
+};
+struct VKSpirvNamed
+{
+	const char* name;
+	VKSpirv spv;
+};
+#include "VKShaders.inc"
 
 static retro_hw_render_interface_vulkan *vulkan;
 
@@ -375,15 +380,6 @@ enum : u32
 	MAX_INPUT_ATTACHMENT_IMAGE_DESCRIPTORS_PER_FRAME = MAX_DRAW_CALLS_PER_FRAME,
 	MAX_DESCRIPTOR_SETS_PER_FRAME = MAX_DRAW_CALLS_PER_FRAME * 2
 };
-
-static void SafeDestroyShaderModule(VkDevice dev, VkShaderModule& sm)
-{
-	if (sm != VK_NULL_HANDLE)
-	{
-		vkDestroyShaderModule(dev, sm, nullptr);
-		sm = VK_NULL_HANDLE;
-	}
-}
 
 static void SafeDestroyPipelineLayout(VkDevice dev, VkPipelineLayout& pl)
 {
@@ -1724,8 +1720,7 @@ bool GSDeviceVK::Create()
 	if (!CreateDeviceAndSwapChain())
 		return false;
 
-	VKShaderCache::Create(GSConfig.DisableShaderCache ? std::string_view() : std::string_view(EmuFolders::Cache),
-		SHADER_CACHE_VERSION, GSConfig.UseDebugDevice);
+	PipelineCacheOpen();
 
 	if (!CheckFeatures())
 	{
@@ -1835,7 +1830,7 @@ void GSDeviceVK::Destroy()
 	}
 
 	DestroyResources();
-	VKShaderCache::Destroy();
+	PipelineCacheClose();
 
 	VkDevice m_device = vk_init_info.device;
 
@@ -2998,36 +2993,6 @@ void GSDeviceVK::ClearSamplerCache()
 	m_tfx_sampler     = m_point_sampler;
 }
 
-static void AddMacro(std::stringstream& ss, const char* name, int value)
-{
-	ss << "#define " << name << " " << value << "\n";
-}
-
-static void AddShaderHeader(std::stringstream& ss)
-{
-	const GSDeviceVK* dev = GSDeviceVK::GetInstance();
-	const GSDevice::FeatureSupport features = dev->Features();
-
-	ss << "#version 460 core\n";
-	ss << "#extension GL_EXT_samplerless_texture_functions : require\n";
-
-	if (features.vs_expand)
-		ss << "#extension GL_ARB_shader_draw_parameters : require\n";
-
-	if (!features.texture_barrier)
-		ss << "#define DISABLE_TEXTURE_BARRIER 1\n";
-}
-
-static void AddShaderStageMacro(std::stringstream& ss, bool vs, bool gs, bool fs)
-{
-	if (vs)
-		ss << "#define VERTEX_SHADER 1\n";
-	else if (gs)
-		ss << "#define GEOMETRY_SHADER 1\n";
-	else if (fs)
-		ss << "#define FRAGMENT_SHADER 1\n";
-}
-
 static void AddUtilityVertexAttributes(Vulkan::GraphicsPipelineBuilder& gpb)
 {
 	gpb.AddVertexBuffer(0, sizeof(GSVertexPT1));
@@ -3261,55 +3226,222 @@ static u32 UtilityVertexOf(u32 id)
 	return (id >= GSDeviceVK::UP_MERGE) ? 2 : (id >= GSDeviceVK::UP_INTERLACE) ? 1 : 0;
 }
 
-/* The source of utility pipeline id's vertex or fragment shader, as the
- * SPIR-V cache knows it. */
-static void UtilityShaderSource(std::stringstream& ss, u32 id, bool vertex)
-{
-	static const char* const vs_src[3] = {convert_glsl_shader_raw, interlace_glsl_shader_raw, merge_glsl_shader_raw};
-	const char* src;
-	char entry[64];
+/* ------------------------------------------------------------------------
+ *  The shader modules
+ * ------------------------------------------------------------------------ */
 
-	AddShaderHeader(ss);
-	AddShaderStageMacro(ss, vertex, false, !vertex);
-	if (vertex)
+/* A module of spv's words, without what drop takes out of its interface
+ * (VKSpirvPatch.h); made straight from the core's own words when that is
+ * nothing. */
+static VkShaderModule MakeModule(const VKSpirv& spv, unsigned drop)
+{
+	VkShaderModuleCreateInfo ci;
+	VkShaderModule mod = VK_NULL_HANDLE;
+	u32* patched       = NULL;
+
+	memset(&ci, 0, sizeof(ci));
+	ci.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	ci.codeSize = spv.count * sizeof(u32);
+	ci.pCode    = spv.words;
+	if (drop)
 	{
-		ss << vs_src[UtilityVertexOf(id)];
-		return;
+		size_t n;
+		if (!(patched = (u32*)malloc((spv.count + VKSPV_PATCH_EXTRA) * sizeof(u32))))
+			return VK_NULL_HANDLE;
+		if (!(n = vkspv_patch(spv.words, spv.count, drop, patched)))
+		{
+			log_cb(RETRO_LOG_ERROR, "Vulkan: a shader module's SPIR-V could not be patched (%u)\n", drop);
+			free(patched);
+			return VK_NULL_HANDLE;
+		}
+		ci.codeSize = n * sizeof(u32);
+		ci.pCode    = patched;
 	}
+	if (vkCreateShaderModule(vk_init_info.device, &ci, nullptr, &mod) != VK_SUCCESS)
+		mod = VK_NULL_HANDLE;
+	free(patched);
+	return mod;
+}
+
+/* The SPIR-V of utility pipeline id's vertex or fragment shader. */
+static const VKSpirv* UtilitySpirv(u32 id, bool vertex)
+{
+	u32 i;
+	if (vertex)
+		return &vkspv_util_vs_mod[UtilityVertexOf(id)];
 	id = UtilityFragmentOf(id);
 	if (id < GSDeviceVK::UP_COPY)
 	{
-		src = convert_glsl_shader_raw;
-		snprintf(entry, sizeof(entry), "%s", shaderName(static_cast<ShaderConvert>(id - GSDeviceVK::UP_CONVERT)));
+		const char* name = shaderName(static_cast<ShaderConvert>(id - GSDeviceVK::UP_CONVERT));
+		for (i = 0; i < sizeof(vkspv_convert_mod) / sizeof(vkspv_convert_mod[0]); i++)
+			if (!strcmp(vkspv_convert_mod[i].name, name))
+				return &vkspv_convert_mod[i].spv;
+		return NULL;
 	}
-	else if (id < GSDeviceVK::UP_DATE)
+	if (id < GSDeviceVK::UP_DATE)
+		return &vkspv_vr_mod[id - GSDeviceVK::UP_VR];
+	if (id < GSDeviceVK::UP_INTERLACE)
+		return &vkspv_stencil_init_mod[(id - GSDeviceVK::UP_DATE) & 3u];
+	if (id < GSDeviceVK::UP_MERGE)
 	{
-		src = vr_glsl_shader_raw;
-		snprintf(entry, sizeof(entry), "%s", (id == GSDeviceVK::UP_VR) ? "ps_vr_range" : "ps_vr_eye");
+		i = id - GSDeviceVK::UP_INTERLACE;
+		return (i < sizeof(vkspv_interlace_mod) / sizeof(vkspv_interlace_mod[0])) ? &vkspv_interlace_mod[i] : NULL;
 	}
-	else if (id < GSDeviceVK::UP_INTERLACE)
-	{
-		src = convert_glsl_shader_raw;
-		snprintf(entry, sizeof(entry), "ps_stencil_image_init_%u", (id - GSDeviceVK::UP_DATE) & 3u);
-	}
-	else if (id < GSDeviceVK::UP_MERGE)
-	{
-		src = interlace_glsl_shader_raw;
-		snprintf(entry, sizeof(entry), "ps_main%u", id - GSDeviceVK::UP_INTERLACE);
-	}
-	else
-	{
-		src = merge_glsl_shader_raw;
-		snprintf(entry, sizeof(entry), "ps_main%u", id - GSDeviceVK::UP_MERGE);
-	}
-	ss << "#define " << entry << " main\n";
-	ss << src;
+	return &vkspv_merge_mod[id - GSDeviceVK::UP_MERGE];
 }
 
-VkPipeline GSDeviceVK::BuildUtilityPipeline(u32 id, VkShaderModule vs, VkShaderModule fs, VkPipelineCache cache) const
+VkShaderModule GSDeviceVK::UtilityModule(Modules* mods, u32 id, bool vertex) const
+{
+	VkShaderModule* slot = vertex ? &mods->util_vs[UtilityVertexOf(id)] : &mods->util_fs[UtilityFragmentOf(id)];
+	if (*slot == VK_NULL_HANDLE)
+	{
+		const VKSpirv* spv = UtilitySpirv(id, vertex);
+		if (spv)
+			*slot = MakeModule(*spv, 0);
+	}
+	return *slot;
+}
+
+/* Whether a draw's fragment shader reads its target: as tfx.glsl calls
+ * sample_from_rt(), the module that reads it as nothing otherwise. */
+static bool TFXReadsRT(const GSHWDrawConfig::PSSelector& sel)
+{
+	const bool sw_blend          = sel.blend_a || sel.blend_b || sel.blend_d;
+	const bool sw_blend_needs_rt = sw_blend &&
+		(sel.blend_a == 1 || sel.blend_b == 1 || sel.blend_c == 1 || sel.blend_d == 1);
+	const bool sw_ad_to_hw       = sel.blend_c == 1 && sel.a_masked;
+	return sel.tex_is_fb || sel.fbmask || sw_blend_needs_rt || sw_ad_to_hw || sel.date >= 5;
+}
+
+/* What of the fragment module's interface a draw does without: the second
+ * output when it does not blend with it (or the device cannot), the
+ * primitive ID outside the destination alpha tests 1-3, the depth output
+ * when it does not clamp depth (or is the alpha test's first pass, which
+ * never wrote it), the flat colour when it interpolates. */
+static unsigned TFXFragmentDrop(const GSDevice::FeatureSupport& f, const GSHWDrawConfig::PSSelector& sel)
+{
+	unsigned drop = 0;
+	if (sel.no_color || sel.no_color1 || !f.dual_source_blend)
+		drop |= VKSPV_DROP_COLOR1;
+	if (sel.date < 1 || sel.date > 3)
+		drop |= VKSPV_DROP_PRIMID;
+	if (!sel.zclamp || sel.date == 1 || sel.date == 2)
+		drop |= VKSPV_DROP_FRAGDEPTH;
+	if (sel.iip)
+		drop |= VKSPV_DROP_FLAT;
+	return drop;
+}
+
+VkShaderModule GSDeviceVK::TFXVertexModule(Modules* mods, GSHWDrawConfig::VSSelector sel) const
+{
+	const u32 expand     = (sel.expand != GSHWDrawConfig::VSExpand::None) ? 1u : 0u;
+	VkShaderModule* slot = &mods->tfx_vs[expand * 2 + sel.iip];
+	if (*slot == VK_NULL_HANDLE)
+		*slot = MakeModule(vkspv_tfx_vs_mod[expand], sel.iip ? VKSPV_DROP_FLAT : 0u);
+	return *slot;
+}
+
+VkShaderModule GSDeviceVK::TFXFragmentModule(Modules* mods, const GSHWDrawConfig::PSSelector& sel) const
+{
+	/* not read, an input attachment, a sampled image */
+	const u32 rt         = TFXReadsRT(sel) ? (m_features.texture_barrier ? 1u : 2u) : 0u;
+	const unsigned drop  = TFXFragmentDrop(m_features, sel);
+	VkShaderModule* slot = &mods->tfx_fs[rt * 16 + drop];
+	if (*slot == VK_NULL_HANDLE)
+		*slot = MakeModule(vkspv_tfx_fs_mod[rt], drop);
+	return *slot;
+}
+
+void GSDeviceVK::DestroyModules(Modules* mods)
+{
+	VkShaderModule* m = &mods->util_vs[0];
+	const size_t count = sizeof(*mods) / sizeof(VkShaderModule);
+	size_t i;
+	static_assert(sizeof(Modules) % sizeof(VkShaderModule) == 0, "Modules is handles only");
+	for (i = 0; i < count; i++)
+		if (m[i] != VK_NULL_HANDLE)
+			vkDestroyShaderModule(vk_init_info.device, m[i], nullptr);
+	memset(mods, 0, sizeof(*mods));
+}
+
+/* The draw's selector fields, as tfx.glsl's specialization constants. */
+static void TFXSpecVS(GSHWDrawConfig::VSSelector sel, u32* v)
+{
+	static_assert(VKSC_VS_COUNT == 4, "a VS_ constant of tfx.glsl has no value here");
+	v[VKSC_VS_TME]         = sel.tme;
+	v[VKSC_VS_FST]         = sel.fst;
+	v[VKSC_VS_POINT_SIZE]  = sel.point_size;
+	v[VKSC_VS_EXPAND_MODE] = static_cast<u32>(sel.expand);
+}
+
+static void TFXSpecPS(const GSHWDrawConfig::PSSelector& sel, u32* v)
+{
+	static_assert(VKSC_PS_COUNT == 54, "a PS_ constant of tfx.glsl has no value here");
+	v[VKSC_PS_FST]                = sel.fst;
+	v[VKSC_PS_WMS]                = sel.wms;
+	v[VKSC_PS_WMT]                = sel.wmt;
+	v[VKSC_PS_ADJS]               = sel.adjs;
+	v[VKSC_PS_ADJT]               = sel.adjt;
+	v[VKSC_PS_AEM_FMT]            = sel.aem_fmt;
+	v[VKSC_PS_PAL_FMT]            = sel.pal_fmt;
+	v[VKSC_PS_DST_FMT]            = sel.dst_fmt;
+	v[VKSC_PS_DEPTH_FMT]          = sel.depth_fmt;
+	v[VKSC_PS_CHANNEL_FETCH]      = sel.channel;
+	v[VKSC_PS_URBAN_CHAOS_HLE]    = sel.urban_chaos_hle;
+	v[VKSC_PS_TALES_OF_ABYSS_HLE] = sel.tales_of_abyss_hle;
+	v[VKSC_PS_AEM]                = sel.aem;
+	v[VKSC_PS_TFX]                = sel.tfx;
+	v[VKSC_PS_TCC]                = sel.tcc;
+	v[VKSC_PS_ATST]               = static_cast<u32>(sel.atst);
+	v[VKSC_PS_AFAIL]              = static_cast<u32>(sel.afail);
+	v[VKSC_PS_FOG]                = sel.fog;
+	v[VKSC_PS_BLEND_HW]           = sel.blend_hw;
+	v[VKSC_PS_A_MASKED]           = sel.a_masked;
+	v[VKSC_PS_FBA]                = sel.fba;
+	v[VKSC_PS_LTF]                = sel.ltf;
+	v[VKSC_PS_AUTOMATIC_LOD]      = sel.automatic_lod;
+	v[VKSC_PS_MANUAL_LOD]         = sel.manual_lod;
+	v[VKSC_PS_COLCLIP]            = sel.colclip;
+	v[VKSC_PS_DATE]               = sel.date;
+	v[VKSC_PS_TCOFFSETHACK]       = sel.tcoffsethack;
+	v[VKSC_PS_REGION_RECT]        = sel.region_rect;
+	v[VKSC_PS_BLEND_A]            = sel.blend_a;
+	v[VKSC_PS_BLEND_B]            = sel.blend_b;
+	v[VKSC_PS_BLEND_C]            = sel.blend_c;
+	v[VKSC_PS_BLEND_D]            = sel.blend_d;
+	v[VKSC_PS_BLEND_MIX]          = sel.blend_mix;
+	v[VKSC_PS_ROUND_INV]          = sel.round_inv;
+	v[VKSC_PS_FIXED_ONE_A]        = sel.fixed_one_a;
+	v[VKSC_PS_SHUFFLE]            = sel.shuffle;
+	v[VKSC_PS_SHUFFLE_SAME]       = sel.shuffle_same;
+	v[VKSC_PS_PROCESS_BA]         = sel.process_ba;
+	v[VKSC_PS_PROCESS_RG]         = sel.process_rg;
+	v[VKSC_PS_SHUFFLE_ACROSS]     = sel.shuffle_across;
+	v[VKSC_PS_READ16_SRC]         = sel.real16src;
+	v[VKSC_PS_WRITE_RG]           = sel.write_rg;
+	v[VKSC_PS_FBMASK]             = sel.fbmask;
+	v[VKSC_PS_COLCLIP_HW]         = sel.colclip_hw;
+	v[VKSC_PS_RTA_CORRECTION]     = sel.rta_correction;
+	v[VKSC_PS_RTA_SRC_CORRECTION] = sel.rta_source_correction;
+	v[VKSC_PS_DITHER]             = sel.dither;
+	v[VKSC_PS_DITHER_ADJUST]      = sel.dither_adjust;
+	v[VKSC_PS_PABE]               = sel.pabe;
+	v[VKSC_PS_SCANMSK]            = sel.scanmsk;
+	v[VKSC_PS_SAMPLE_MAP]         = sel.sample_map;
+	v[VKSC_PS_NATIVE_TAPS]        = sel.native_taps;
+	v[VKSC_PS_TEX_IS_FB]          = sel.tex_is_fb;
+	v[VKSC_PS_NO_COLOR]           = sel.no_color;
+}
+
+VkPipeline GSDeviceVK::BuildUtilityPipeline(u32 id, Modules* mods, VkPipelineCache cache) const
 {
 	Vulkan::GraphicsPipelineBuilder gpb;
+	VkShaderModule vs, fs;
 	if (m_test_util_fail)
+		return VK_NULL_HANDLE;
+	vs = UtilityModule(mods, id, true);
+	fs = UtilityModule(mods, id, false);
+	if (vs == VK_NULL_HANDLE || fs == VK_NULL_HANDLE)
 		return VK_NULL_HANDLE;
 	SetPipelineProvokingVertex(m_features, gpb);
 	AddUtilityVertexAttributes(gpb);
@@ -3434,30 +3566,13 @@ bool GSDeviceVK::UtilPrepare()
  * a device without those shows the plain frame. */
 bool GSDeviceVK::UtilBuildAll()
 {
-	const VkDevice dev = vk_init_info.device;
-	VkShaderModule vs[3] = {};
-	VkShaderModule* fs = (VkShaderModule*)calloc(UP_COUNT, sizeof(VkShaderModule));
-	bool ok = (fs != NULL);
+	bool ok = true;
 	u32 id;
 
 	m_vr_ops = &s_vulkan_vr_ops;
 	for (id = 0; ok && id < UP_COUNT; id++)
 	{
-		const u32 v = UtilityVertexOf(id), f = UtilityFragmentOf(id);
-		if (vs[v] == VK_NULL_HANDLE)
-		{
-			std::stringstream ss;
-			UtilityShaderSource(ss, id, true);
-			vs[v] = g_vulkan_shader_cache->GetVertexShader(ss.str());
-		}
-		if (fs[f] == VK_NULL_HANDLE)
-		{
-			std::stringstream ss;
-			UtilityShaderSource(ss, id, false);
-			fs[f] = g_vulkan_shader_cache->GetFragmentShader(ss.str());
-		}
-		if (vs[v] != VK_NULL_HANDLE && fs[f] != VK_NULL_HANDLE)
-			m_util[id] = BuildUtilityPipeline(id, vs[v], fs[f], g_vulkan_shader_cache->GetPipelineCache(true));
+		m_util[id] = BuildUtilityPipeline(id, &m_modules, m_pipeline_cache);
 		if (m_util[id] == VK_NULL_HANDLE)
 		{
 			m_util_failed[id] = 1;
@@ -3473,12 +3588,6 @@ bool GSDeviceVK::UtilBuildAll()
 		else
 			m_util_built_here++;
 	}
-	for (id = 0; id < 3; id++)
-		SafeDestroyShaderModule(dev, vs[id]);
-	if (fs)
-		for (id = 0; id < UP_COUNT; id++)
-			SafeDestroyShaderModule(dev, fs[id]);
-	free(fs);
 	return ok;
 }
 
@@ -3493,9 +3602,7 @@ bool GSDeviceVK::s_util_build_failed = false;
  * at creation. Out of line, so Util() stays a load and a test. */
 __noinline VkPipeline GSDeviceVK::UtilMissed(u32 id)
 {
-	const VkDevice dev = vk_init_info.device;
-	VkShaderModule vs, fs;
-	VkPipeline p = VK_NULL_HANDLE;
+	VkPipeline p;
 
 	if (m_util_failed[id])
 		return VK_NULL_HANDLE;
@@ -3505,20 +3612,7 @@ __noinline VkPipeline GSDeviceVK::UtilMissed(u32 id)
 		if (m_util[id] != VK_NULL_HANDLE)
 			return m_util[id];
 	}
-	{
-		std::stringstream ss;
-		UtilityShaderSource(ss, id, true);
-		vs = g_vulkan_shader_cache->GetVertexShader(ss.str());
-	}
-	{
-		std::stringstream ss;
-		UtilityShaderSource(ss, id, false);
-		fs = g_vulkan_shader_cache->GetFragmentShader(ss.str());
-	}
-	if (vs != VK_NULL_HANDLE && fs != VK_NULL_HANDLE)
-		p = BuildUtilityPipeline(id, vs, fs, g_vulkan_shader_cache->GetPipelineCache(true));
-	SafeDestroyShaderModule(dev, fs);
-	SafeDestroyShaderModule(dev, vs);
+	p = BuildUtilityPipeline(id, &m_modules, m_pipeline_cache);
 	if (p == VK_NULL_HANDLE)
 	{
 		m_util_failed[id] = 1;
@@ -3560,10 +3654,8 @@ void GSDeviceVK::DestroyResources()
 			p = VK_NULL_HANDLE;
 		}
 	}
-	for (auto& it : m_tfx_fragment_shaders)
-		SafeDestroyShaderModule(m_device, it.second);
-	for (auto& it : m_tfx_vertex_shaders)
-		SafeDestroyShaderModule(m_device, it.second);
+	m_tfx_pipelines.clear();
+	DestroyModules(&m_modules);
 	{
 		u32 i;
 		for (i = 0; i < UP_COUNT; i++)
@@ -3623,114 +3715,6 @@ void GSDeviceVK::DestroyResources()
 	}
 }
 
-/* The source of a TFX vertex shader. Reads only the device's features, so
- * the warm-up thread builds it too. */
-static void TFXVertexShaderSource(std::stringstream& ss, GSHWDrawConfig::VSSelector sel, bool provoking_vertex_last)
-{
-	AddShaderHeader(ss);
-	AddShaderStageMacro(ss, true, false, false);
-	AddMacro(ss, "VS_TME", sel.tme);
-	AddMacro(ss, "VS_FST", sel.fst);
-	AddMacro(ss, "VS_IIP", sel.iip);
-	AddMacro(ss, "VS_POINT_SIZE", sel.point_size);
-	AddMacro(ss, "VS_EXPAND", static_cast<int>(sel.expand));
-	AddMacro(ss, "VS_PROVOKING_VERTEX_LAST", static_cast<int>(provoking_vertex_last));
-	ss << tfx_glsl_shader_raw;
-}
-
-VkShaderModule GSDeviceVK::GetTFXVertexShader(GSHWDrawConfig::VSSelector sel)
-{
-	const auto it = m_tfx_vertex_shaders.find(sel.key);
-	if (it != m_tfx_vertex_shaders.end())
-		return it->second;
-
-	std::stringstream ss;
-	TFXVertexShaderSource(ss, sel, m_features.provoking_vertex_last);
-	VkShaderModule mod = g_vulkan_shader_cache->GetVertexShader(ss.str());
-
-	m_tfx_vertex_shaders.emplace(sel.key, mod);
-	return mod;
-}
-
-/* The source of a TFX fragment shader; as TFXVertexShaderSource. */
-static void TFXFragmentShaderSource(std::stringstream& ss, const GSHWDrawConfig::PSSelector& sel)
-{
-	AddShaderHeader(ss);
-	AddShaderStageMacro(ss, false, false, true);
-	AddMacro(ss, "PS_FST", sel.fst);
-	AddMacro(ss, "PS_WMS", sel.wms);
-	AddMacro(ss, "PS_WMT", sel.wmt);
-	AddMacro(ss, "PS_ADJS", sel.adjs);
-	AddMacro(ss, "PS_ADJT", sel.adjt);
-	AddMacro(ss, "PS_AEM_FMT", sel.aem_fmt);
-	AddMacro(ss, "PS_PAL_FMT", sel.pal_fmt);
-	AddMacro(ss, "PS_DST_FMT", sel.dst_fmt);
-	AddMacro(ss, "PS_DEPTH_FMT", sel.depth_fmt);
-	AddMacro(ss, "PS_CHANNEL_FETCH", sel.channel);
-	AddMacro(ss, "PS_URBAN_CHAOS_HLE", sel.urban_chaos_hle);
-	AddMacro(ss, "PS_TALES_OF_ABYSS_HLE", sel.tales_of_abyss_hle);
-	AddMacro(ss, "PS_AEM", sel.aem);
-	AddMacro(ss, "PS_TFX", sel.tfx);
-	AddMacro(ss, "PS_TCC", sel.tcc);
-	AddMacro(ss, "PS_ATST", static_cast<u32>(sel.atst));
-	AddMacro(ss, "PS_AFAIL", static_cast<u32>(sel.afail));
-	AddMacro(ss, "PS_FOG", sel.fog);
-	AddMacro(ss, "PS_BLEND_HW", sel.blend_hw);
-	AddMacro(ss, "PS_A_MASKED", sel.a_masked);
-	AddMacro(ss, "PS_FBA", sel.fba);
-	AddMacro(ss, "PS_LTF", sel.ltf);
-	AddMacro(ss, "PS_AUTOMATIC_LOD", sel.automatic_lod);
-	AddMacro(ss, "PS_MANUAL_LOD", sel.manual_lod);
-	AddMacro(ss, "PS_COLCLIP", sel.colclip);
-	AddMacro(ss, "PS_DATE", sel.date);
-	AddMacro(ss, "PS_TCOFFSETHACK", sel.tcoffsethack);
-	AddMacro(ss, "PS_REGION_RECT", sel.region_rect);
-	AddMacro(ss, "PS_BLEND_A", sel.blend_a);
-	AddMacro(ss, "PS_BLEND_B", sel.blend_b);
-	AddMacro(ss, "PS_BLEND_C", sel.blend_c);
-	AddMacro(ss, "PS_BLEND_D", sel.blend_d);
-	AddMacro(ss, "PS_BLEND_MIX", sel.blend_mix);
-	AddMacro(ss, "PS_ROUND_INV", sel.round_inv);
-	AddMacro(ss, "PS_FIXED_ONE_A", sel.fixed_one_a);
-	AddMacro(ss, "PS_IIP", sel.iip);
-	AddMacro(ss, "PS_SHUFFLE", sel.shuffle);
-	AddMacro(ss, "PS_SHUFFLE_SAME", sel.shuffle_same);
-	AddMacro(ss, "PS_PROCESS_BA", sel.process_ba);
-	AddMacro(ss, "PS_PROCESS_RG", sel.process_rg);
-	AddMacro(ss, "PS_SHUFFLE_ACROSS", sel.shuffle_across);
-	AddMacro(ss, "PS_READ16_SRC", sel.real16src);
-	AddMacro(ss, "PS_WRITE_RG", sel.write_rg);
-	AddMacro(ss, "PS_FBMASK", sel.fbmask);
-	AddMacro(ss, "PS_COLCLIP_HW", sel.colclip_hw);
-	AddMacro(ss, "PS_RTA_CORRECTION", sel.rta_correction);
-	AddMacro(ss, "PS_RTA_SRC_CORRECTION", sel.rta_source_correction);
-	AddMacro(ss, "PS_DITHER", sel.dither);
-	AddMacro(ss, "PS_DITHER_ADJUST", sel.dither_adjust);
-	AddMacro(ss, "PS_ZCLAMP", sel.zclamp);
-	AddMacro(ss, "PS_PABE", sel.pabe);
-	AddMacro(ss, "PS_SCANMSK", sel.scanmsk);
-	AddMacro(ss, "PS_SAMPLE_MAP", sel.sample_map);
-	AddMacro(ss, "PS_NATIVE_TAPS", sel.native_taps);
-	AddMacro(ss, "PS_TEX_IS_FB", sel.tex_is_fb);
-	AddMacro(ss, "PS_NO_COLOR", sel.no_color);
-	AddMacro(ss, "PS_NO_COLOR1", sel.no_color1);
-	ss << tfx_glsl_shader_raw;
-}
-
-VkShaderModule GSDeviceVK::GetTFXFragmentShader(const GSHWDrawConfig::PSSelector& sel)
-{
-	const auto it = m_tfx_fragment_shaders.find(sel);
-	if (it != m_tfx_fragment_shaders.end())
-		return it->second;
-
-	std::stringstream ss;
-	TFXFragmentShaderSource(ss, sel);
-	VkShaderModule mod = g_vulkan_shader_cache->GetFragmentShader(ss.str());
-
-	m_tfx_fragment_shaders.emplace(sel, mod);
-	return mod;
-}
-
 /* The pixel shader a pipeline is made with: blending is off, and its second
  * output unused, when the colours are masked. */
 static GSHWDrawConfig::PSSelector TFXPipelinePS(const GSDeviceVK::PipelineSelector& p)
@@ -3741,18 +3725,7 @@ static GSHWDrawConfig::PSSelector TFXPipelinePS(const GSDeviceVK::PipelineSelect
 	return pps;
 }
 
-VkPipeline GSDeviceVK::CreateTFXPipeline(const PipelineSelector& p)
-{
-	VkShaderModule vs = GetTFXVertexShader(p.vs);
-	VkShaderModule fs = GetTFXFragmentShader(TFXPipelinePS(p));
-	if (vs == VK_NULL_HANDLE || fs == VK_NULL_HANDLE)
-		return VK_NULL_HANDLE;
-
-	return BuildTFXPipeline(p, vs, fs, g_vulkan_shader_cache->GetPipelineCache(true));
-}
-
-VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, VkShaderModule vs, VkShaderModule fs,
-	VkPipelineCache cache) const
+VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods, VkPipelineCache cache) const
 {
 	static constexpr std::array<VkPrimitiveTopology, 3> topology_lookup = {{
 		VK_PRIMITIVE_TOPOLOGY_POINT_LIST, // Point
@@ -3802,9 +3775,21 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, VkShaderModul
 		gpb.AddDynamicState(VK_DYNAMIC_STATE_STENCIL_OP_EXT);
 	}
 
-	// Shaders
-	gpb.SetVertexShader(vs);
-	gpb.SetFragmentShader(fs);
+	// Shaders: the modules of the selector's interface, its fields as
+	// their specialization constants
+	const GSHWDrawConfig::PSSelector pps = TFXPipelinePS(p);
+	const VkShaderModule vs = TFXVertexModule(mods, p.vs);
+	const VkShaderModule fs = TFXFragmentModule(mods, pps);
+	u32 vs_spec[VKSC_VS_COUNT];
+	u32 ps_spec[VKSC_PS_COUNT];
+	if (vs == VK_NULL_HANDLE || fs == VK_NULL_HANDLE)
+		return VK_NULL_HANDLE;
+	TFXSpecVS(p.vs, vs_spec);
+	TFXSpecPS(pps, ps_spec);
+	const VkSpecializationInfo vs_si = {VKSC_VS_COUNT, vkspv_tfx_vs_spec_map, sizeof(vs_spec), vs_spec};
+	const VkSpecializationInfo ps_si = {VKSC_PS_COUNT, vkspv_tfx_fs_spec_map, sizeof(ps_spec), ps_spec};
+	gpb.SetVertexShader(vs, &vs_si);
+	gpb.SetFragmentShader(fs, &ps_si);
 
 	// IA
 	if (p.vs.expand == GSHWDrawConfig::VSExpand::None)
@@ -3910,7 +3895,7 @@ __noinline VkPipeline GSDeviceVK::GetTFXPipelineMissed(const PipelineSelector& p
 			return it->second;
 	}
 
-	pipeline = CreateTFXPipeline(p);
+	pipeline = BuildTFXPipeline(p, &m_modules, m_pipeline_cache);
 	m_tfx_pipelines.emplace(p, pipeline);
 	if (pipeline != VK_NULL_HANDLE)
 	{
@@ -3921,17 +3906,129 @@ __noinline VkPipeline GSDeviceVK::GetTFXPipelineMissed(const PipelineSelector& p
 }
 
 /* ------------------------------------------------------------------------
+ *  The driver's pipeline cache
+ * ------------------------------------------------------------------------ */
+
+/* The header every driver puts at the start of its cache data. */
+#pragma pack(push, 4)
+typedef struct VKPipelineCacheHeader
+{
+	u32 header_length;
+	u32 header_version;
+	u32 vendor_id;
+	u32 device_id;
+	u8 uuid[VK_UUID_SIZE];
+} VKPipelineCacheHeader;
+#pragma pack(pop)
+
+static void CachePath(char* path, size_t size, const char* name)
+{
+	fill_pathname_join(path, EmuFolders::Cache, name, size);
+}
+
+/* The pipeline cache, with what the file holds when this device wrote it;
+ * the file is handed to the driver as it was read. Also takes away the
+ * SPIR-V cache builds that compiled their shaders at run time kept. */
+void GSDeviceVK::PipelineCacheOpen()
+{
+	static const char* const stale[] = {
+		"vulkan_shaders.idx", "vulkan_shaders.bin", "vulkan_shaders_debug.idx", "vulkan_shaders_debug.bin"};
+	char path[PATH_MAX_LENGTH];
+	VkPipelineCacheCreateInfo ci;
+	void* data  = NULL;
+	int64_t len = 0;
+	u32 i;
+
+	m_pipeline_cache_on_disk   = false;
+	m_pipeline_cache_disk_hash = 0;
+	memset(&ci, 0, sizeof(ci));
+	ci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+	if (!GSConfig.DisableShaderCache)
+	{
+		for (i = 0; i < sizeof(stale) / sizeof(stale[0]); i++)
+		{
+			CachePath(path, sizeof(path), stale[i]);
+			if (path_is_valid(path))
+				filestream_delete(path);
+		}
+		CachePath(path, sizeof(path), GSConfig.UseDebugDevice ? "vulkan_pipelines_debug.bin" : "vulkan_pipelines.bin");
+		if (path_is_valid(path) && filestream_read_file(path, &data, &len))
+		{
+			VKPipelineCacheHeader h;
+			if (len >= (int64_t)sizeof(h))
+				memcpy(&h, data, sizeof(h));
+			if (len >= (int64_t)sizeof(h) && h.header_length >= sizeof(h)
+				&& h.header_version == VK_PIPELINE_CACHE_HEADER_VERSION_ONE
+				&& h.vendor_id == m_device_properties.vendorID && h.device_id == m_device_properties.deviceID
+				&& !memcmp(h.uuid, m_device_properties.pipelineCacheUUID, VK_UUID_SIZE))
+			{
+				ci.initialDataSize = (size_t)len;
+				ci.pInitialData    = data;
+			}
+			else
+				log_cb(RETRO_LOG_WARN, "Ignoring the pipeline cache '%s': another device's or driver's\n", path);
+		}
+	}
+	if (vkCreatePipelineCache(vk_init_info.device, &ci, nullptr, &m_pipeline_cache) != VK_SUCCESS)
+	{
+		/* (a driver may refuse data it once wrote) */
+		ci.initialDataSize = 0;
+		ci.pInitialData    = NULL;
+		if (vkCreatePipelineCache(vk_init_info.device, &ci, nullptr, &m_pipeline_cache) != VK_SUCCESS)
+			m_pipeline_cache = VK_NULL_HANDLE;
+	}
+	else if (ci.initialDataSize)
+	{
+		m_pipeline_cache_disk_hash = XXH3_64bits(data, (size_t)len);
+		m_pipeline_cache_on_disk   = true;
+	}
+	free(data);
+}
+
+/* Writes the pipeline cache out, unless the file holds it already, and
+ * lets it go. */
+void GSDeviceVK::PipelineCacheClose()
+{
+	char path[PATH_MAX_LENGTH];
+	size_t size = 0;
+	void* data  = NULL;
+
+	if (m_pipeline_cache == VK_NULL_HANDLE)
+		return;
+	if (!GSConfig.DisableShaderCache
+		&& vkGetPipelineCacheData(vk_init_info.device, m_pipeline_cache, &size, nullptr) == VK_SUCCESS
+		&& size && (data = malloc(size))
+		&& vkGetPipelineCacheData(vk_init_info.device, m_pipeline_cache, &size, data) == VK_SUCCESS)
+	{
+		/* Compared by content: a file of the same length is not the
+		 * file, and a truncated one is what a later run would hand the
+		 * driver. */
+		const u64 hash = XXH3_64bits(data, size);
+		if (!m_pipeline_cache_on_disk || hash != m_pipeline_cache_disk_hash)
+		{
+			CachePath(path, sizeof(path), GSConfig.UseDebugDevice ? "vulkan_pipelines_debug.bin" : "vulkan_pipelines.bin");
+			log_cb(RETRO_LOG_INFO, "Writing %zu bytes to '%s'\n", size, path);
+			if (!filestream_write_file_atomic(path, data, (int64_t)size))
+				log_cb(RETRO_LOG_ERROR, "Failed to write the pipeline cache '%s'\n", path);
+		}
+	}
+	free(data);
+	vkDestroyPipelineCache(vk_init_info.device, m_pipeline_cache, nullptr);
+	m_pipeline_cache = VK_NULL_HANDLE;
+}
+
+/* ------------------------------------------------------------------------
  *  The pipeline list, and the thread that builds it ahead
  * ------------------------------------------------------------------------ */
 
 /* The list file: a header, the selectors as the device holds them, and a
- * hash of all that comes before it. A version or a shader cache version of
+ * hash of all that comes before it. A version or shaders (VKSPV_VERSION) of
  * another build, a selector of another size, selectors keyed for another
  * depth/stencil state (dynamic or baked), a count the file does not hold
  * or a hash that does not match: the list is not read, and the one this
  * session makes replaces it. */
 #define PLIST_MAGIC   0x4C505653u /* "SVPL" */
-#define PLIST_VERSION 2u
+#define PLIST_VERSION 3u
 #define PLIST_MAX     65536u
 /* flags: the selectors leave out the depth/stencil state (dss is zero) */
 #define PLIST_FLAG_DYNAMIC_DS 1u
@@ -3948,8 +4045,7 @@ typedef struct PipelineListHeader
 
 static void PipelineListPath(char* path, size_t size)
 {
-	fill_pathname_join(path, EmuFolders::Cache,
-		GSConfig.UseDebugDevice ? "vulkan_pipeline_list_debug.bin" : "vulkan_pipeline_list.bin", size);
+	CachePath(path, size, GSConfig.UseDebugDevice ? "vulkan_pipeline_list_debug.bin" : "vulkan_pipeline_list.bin");
 }
 
 /* A selector a list may hold: its fields index tables of the size they
@@ -4003,7 +4099,7 @@ void GSDeviceVK::PipelineListLoad()
 	if (len < (int64_t)(sizeof(h) + sizeof(hash)))
 		goto refuse;
 	memcpy(&h, data, sizeof(h));
-	if (h.magic != PLIST_MAGIC || h.version != PLIST_VERSION || h.shader_version != SHADER_CACHE_VERSION
+	if (h.magic != PLIST_MAGIC || h.version != PLIST_VERSION || h.shader_version != VKSPV_VERSION
 		|| h.entry_size != sizeof(PipelineSelector) || h.count > PLIST_MAX
 		|| h.flags != (dynamic_ds ? PLIST_FLAG_DYNAMIC_DS : 0u)
 		|| (int64_t)(sizeof(h) + (u64)h.count * sizeof(PipelineSelector) + sizeof(hash)) != len)
@@ -4051,7 +4147,7 @@ void GSDeviceVK::PipelineListSave()
 	PipelineListPath(path, sizeof(path));
 	h.magic          = PLIST_MAGIC;
 	h.version        = PLIST_VERSION;
-	h.shader_version = SHADER_CACHE_VERSION;
+	h.shader_version = VKSPV_VERSION;
 	h.entry_size     = sizeof(PipelineSelector);
 	h.count          = m_plist_count;
 	h.flags          = m_optional_extensions.vk_ext_extended_dynamic_state ? PLIST_FLAG_DYNAMIC_DS : 0u;
@@ -4079,14 +4175,6 @@ typedef struct PipelineWarmResult
 	u32 util; /* the utility pipeline's id, or UP_COUNT for a TFX one */
 } PipelineWarmResult;
 
-/* SPIR-V the thread compiled, for the render thread to put in the cache. */
-typedef struct PipelineWarmSPV
-{
-	ShaderType type;
-	std::string* source;
-	SPIRVCodeVector* spv;
-} PipelineWarmSPV;
-
 struct GSDeviceVK::PipelineWarm
 {
 	const GSDeviceVK* dev;
@@ -4095,70 +4183,11 @@ struct GSDeviceVK::PipelineWarm
 	u32 count;
 	u32 built;                /* the thread's; read once it is joined */
 	u32 util_built;           /* likewise */
-	bool debug;               /* shaders compiled with debug info */
-	VKShaderCache::Reader reader;
+	Modules mods;             /* the thread's own */
 	retro_spsc_t results;     /* thread -> render thread */
-	retro_spsc_t spvs;        /* thread -> render thread */
 	retro_atomic_int_t stop;
 	sthread_t* thread;
 };
-
-/* A shader module from the SPIR-V cache of the source, or none. */
-static VkShaderModule PipelineWarmModule(VKShaderCache::Reader* r, ShaderType type,
-	const std::stringstream& ss, SPIRVCodeVector* spv)
-{
-	VkShaderModuleCreateInfo ci;
-	VkShaderModule mod = VK_NULL_HANDLE;
-	if (!VKShaderCache::ReaderGetSPV(r, type, ss.str(), spv))
-		return VK_NULL_HANDLE;
-	memset(&ci, 0, sizeof(ci));
-	ci.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	ci.codeSize = spv->size() * sizeof(SPIRVCodeType);
-	ci.pCode    = spv->data();
-	if (vkCreateShaderModule(vk_init_info.device, &ci, nullptr, &mod) != VK_SUCCESS)
-		return VK_NULL_HANDLE;
-	return mod;
-}
-
-/* A utility shader module: from the SPIR-V cache, else compiled here and
- * the SPIR-V passed back for the cache. */
-static VkShaderModule PipelineWarmUtilityModule(GSDeviceVK::PipelineWarm* w, u32 id, bool vertex,
-	SPIRVCodeVector* spv)
-{
-	const ShaderType type = vertex ? ShaderType::Vertex : ShaderType::Fragment;
-	std::stringstream ss;
-	VkShaderModuleCreateInfo ci;
-	VkShaderModule mod = VK_NULL_HANDLE;
-	PipelineWarmSPV out;
-
-	UtilityShaderSource(ss, id, vertex);
-	if (VKShaderCache::ReaderGetSPV(&w->reader, type, ss.str(), spv))
-		out.spv = NULL;
-	else
-	{
-		std::optional<SPIRVCodeVector> code = CompileShader(type, ss.str(), w->debug);
-		if (!code.has_value())
-			return VK_NULL_HANDLE;
-		*spv     = std::move(*code);
-		out.type = type;
-		out.spv  = new SPIRVCodeVector(*spv);
-		out.source = new std::string(ss.str());
-	}
-	memset(&ci, 0, sizeof(ci));
-	ci.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	ci.codeSize = spv->size() * sizeof(SPIRVCodeType);
-	ci.pCode    = spv->data();
-	if (vkCreateShaderModule(vk_init_info.device, &ci, nullptr, &mod) != VK_SUCCESS)
-		mod = VK_NULL_HANDLE;
-	/* (room for every one was made at the start) */
-	if (out.spv && (retro_spsc_write_avail(&w->spvs) < sizeof(out)
-		|| retro_spsc_write(&w->spvs, &out, sizeof(out)) != sizeof(out)))
-	{
-		delete out.spv;
-		delete out.source;
-	}
-	return mod;
-}
 
 /* The utility pipelines in the order the thread builds them: what the
  * first frame presents with first. */
@@ -4171,128 +4200,53 @@ static u32 PipelineWarmUtilityJob(u32 k)
 	return k - 2 - (GSDeviceVK::UP_MERGE - GSDeviceVK::UP_INTERLACE);
 }
 
-/* Builds the utility pipelines, then the list in order, each pipeline from
- * shaders the SPIR-V cache holds (a utility shader it does not hold is
- * compiled here, a TFX one is left to the render thread), and passes them
- * back. Never waits: that is all there is to do. */
+/* Passes a pipeline back: room for every one was made at the start. */
+static void PipelineWarmResultPut(GSDeviceVK::PipelineWarm* w, const PipelineWarmResult* res)
+{
+	if (retro_spsc_write_avail(&w->results) < sizeof(*res)
+		|| retro_spsc_write(&w->results, res, sizeof(*res)) != sizeof(*res))
+		vkDestroyPipeline(vk_init_info.device, res->pipeline, nullptr);
+}
+
+/* Builds the utility pipelines, then the list in order, with modules of
+ * its own made from the core's SPIR-V, and passes them back. Never waits:
+ * that is all there is to do. */
 static void PipelineWarmThread(void* data)
 {
 	GSDeviceVK::PipelineWarm* w = (GSDeviceVK::PipelineWarm*)data;
-	const GSDevice::FeatureSupport features = w->dev->Features();
-	/* the modules made, by vertex selector and by the list's index of the
-	 * first pipeline that asked for each pixel shader */
-	VkShaderModule vs_mod[256];
-	u8 vs_tried[256];
-	VkShaderModule util_vs[3];
-	u8 util_vs_tried[3];
-	VkShaderModule* util_fs = (VkShaderModule*)calloc(GSDeviceVK::UP_COUNT, sizeof(VkShaderModule));
-	u8* util_fs_tried = (u8*)calloc(GSDeviceVK::UP_COUNT, 1);
-	VkShaderModule* ps_mod = (VkShaderModule*)calloc(w->count ? w->count : 1, sizeof(VkShaderModule));
-	GSHWDrawConfig::PSSelector* ps_sel = (GSHWDrawConfig::PSSelector*)calloc(w->count ? w->count : 1, sizeof(*ps_sel));
-	SPIRVCodeVector spv;
-	u32 ps_count = 0;
-	u32 i, j;
-
-	memset(vs_mod, 0, sizeof(vs_mod));
-	memset(vs_tried, 0, sizeof(vs_tried));
-	memset(util_vs, 0, sizeof(util_vs));
-	memset(util_vs_tried, 0, sizeof(util_vs_tried));
-	if (!util_fs || !util_fs_tried || !ps_mod || !ps_sel)
-		goto done;
+	u32 i;
 
 	for (i = 0; i < GSDeviceVK::UP_COUNT; i++)
 	{
-		const u32 id = PipelineWarmUtilityJob(i);
-		const u32 v = UtilityVertexOf(id), f = UtilityFragmentOf(id);
 		PipelineWarmResult res;
-
 		if (retro_atomic_load_acquire_int(&w->stop))
 			goto done;
-		if (!util_vs_tried[v])
-		{
-			util_vs_tried[v] = 1;
-			util_vs[v] = PipelineWarmUtilityModule(w, id, true, &spv);
-		}
-		if (!util_fs_tried[f])
-		{
-			util_fs_tried[f] = 1;
-			util_fs[f] = PipelineWarmUtilityModule(w, id, false, &spv);
-		}
-		if (util_vs[v] == VK_NULL_HANDLE || util_fs[f] == VK_NULL_HANDLE)
-			continue;
-
 		res.sel      = GSDeviceVK::PipelineSelector();
-		res.util     = id;
-		res.pipeline = w->dev->BuildUtilityPipeline(id, util_vs[v], util_fs[f], w->cache);
+		res.util     = PipelineWarmUtilityJob(i);
+		res.pipeline = w->dev->BuildUtilityPipeline(res.util, &w->mods, w->cache);
 		if (res.pipeline == VK_NULL_HANDLE)
 			continue;
 		w->util_built++;
-		if (retro_spsc_write_avail(&w->results) < sizeof(res)
-			|| retro_spsc_write(&w->results, &res, sizeof(res)) != sizeof(res))
-			vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
+		PipelineWarmResultPut(w, &res);
 	}
 
 	for (i = 0; i < w->count; i++)
 	{
-		const GSDeviceVK::PipelineSelector& p = w->list[i];
-		const GSHWDrawConfig::PSSelector pps = TFXPipelinePS(p);
-		VkShaderModule fs = VK_NULL_HANDLE;
 		PipelineWarmResult res;
-
 		if (retro_atomic_load_acquire_int(&w->stop))
 			break;
-		if (!vs_tried[p.vs.key])
-		{
-			std::stringstream ss;
-			vs_tried[p.vs.key] = 1;
-			TFXVertexShaderSource(ss, p.vs, features.provoking_vertex_last);
-			vs_mod[p.vs.key] = PipelineWarmModule(&w->reader, ShaderType::Vertex, ss, &spv);
-		}
-		for (j = 0; j < ps_count; j++)
-			if (ps_sel[j] == pps)
-				break;
-		if (j == ps_count)
-		{
-			std::stringstream ss;
-			ps_sel[ps_count] = pps;
-			TFXFragmentShaderSource(ss, pps);
-			ps_mod[ps_count++] = PipelineWarmModule(&w->reader, ShaderType::Fragment, ss, &spv);
-		}
-		fs = ps_mod[j];
-		if (vs_mod[p.vs.key] == VK_NULL_HANDLE || fs == VK_NULL_HANDLE)
-			continue;
-
-		res.sel      = p;
+		res.sel      = w->list[i];
 		res.util     = GSDeviceVK::UP_COUNT;
-		res.pipeline = w->dev->BuildTFXPipeline(p, vs_mod[p.vs.key], fs, w->cache);
+		res.pipeline = w->dev->BuildTFXPipeline(res.sel, &w->mods, w->cache);
 		if (res.pipeline == VK_NULL_HANDLE)
 			continue;
 		w->built++;
-		/* (room for every one was made at the start) */
-		if (retro_spsc_write_avail(&w->results) < sizeof(res)
-			|| retro_spsc_write(&w->results, &res, sizeof(res)) != sizeof(res))
-			vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
+		PipelineWarmResultPut(w, &res);
 	}
 
 done:
 	/* a pipeline needs its modules only to be made */
-	for (i = 0; i < 256; i++)
-		if (vs_mod[i] != VK_NULL_HANDLE)
-			vkDestroyShaderModule(vk_init_info.device, vs_mod[i], nullptr);
-	for (i = 0; i < ps_count; i++)
-		if (ps_mod[i] != VK_NULL_HANDLE)
-			vkDestroyShaderModule(vk_init_info.device, ps_mod[i], nullptr);
-	for (i = 0; i < 3; i++)
-		if (util_vs[i] != VK_NULL_HANDLE)
-			vkDestroyShaderModule(vk_init_info.device, util_vs[i], nullptr);
-	if (util_fs)
-		for (i = 0; i < GSDeviceVK::UP_COUNT; i++)
-			if (util_fs[i] != VK_NULL_HANDLE)
-				vkDestroyShaderModule(vk_init_info.device, util_fs[i], nullptr);
-	free(util_fs);
-	free(util_fs_tried);
-	free(ps_mod);
-	free(ps_sel);
+	GSDeviceVK::DestroyModules(&w->mods);
 }
 
 void GSDeviceVK::PipelineWarmStart()
@@ -4301,18 +4255,12 @@ void GSDeviceVK::PipelineWarmStart()
 	VkPipelineCacheCreateInfo ci;
 	const u32 jobs = m_plist_count + UP_COUNT;
 
-	if (m_warm || !g_vulkan_shader_cache)
-		return;
-	/* A thread compiles beside this one only once the compiler is set up
-	 * for the process. */
-	if (!InitializeShaderCompiler())
+	if (m_warm)
 		return;
 	if (!(w = (PipelineWarm*)calloc(1, sizeof(*w))))
 		return;
-	new (&w->reader) VKShaderCache::Reader();
 	w->dev   = this;
 	w->count = m_plist_count;
-	w->debug = GSConfig.UseDebugDevice;
 	retro_atomic_int_init(&w->stop, 0);
 	/* A cache of the thread's own: no object is used by both threads but
 	 * the device. */
@@ -4320,23 +4268,15 @@ void GSDeviceVK::PipelineWarmStart()
 	ci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
 	if (vkCreatePipelineCache(vk_init_info.device, &ci, nullptr, &w->cache) != VK_SUCCESS)
 		w->cache = VK_NULL_HANDLE;
-	/* (no SPIR-V cache to read: every shader is compiled) */
-	g_vulkan_shader_cache->OpenReader(&w->reader);
 	if (w->cache == VK_NULL_HANDLE
 		|| (m_plist_count && !(w->list = (PipelineSelector*)malloc(m_plist_count * sizeof(*w->list)))))
 		goto fail;
 	if (!retro_spsc_init(&w->results, (size_t)jobs * sizeof(PipelineWarmResult)))
 		goto fail;
-	if (!retro_spsc_init(&w->spvs, (size_t)(UP_COUNT + 3) * sizeof(PipelineWarmSPV)))
-	{
-		retro_spsc_free(&w->results);
-		goto fail;
-	}
 	if (m_plist_count)
 		memcpy(w->list, m_plist, m_plist_count * sizeof(*w->list));
 	if (!(w->thread = sthread_create(PipelineWarmThread, w)))
 	{
-		retro_spsc_free(&w->spvs);
 		retro_spsc_free(&w->results);
 		goto fail;
 	}
@@ -4346,23 +4286,8 @@ void GSDeviceVK::PipelineWarmStart()
 fail:
 	if (w->cache != VK_NULL_HANDLE)
 		vkDestroyPipelineCache(vk_init_info.device, w->cache, nullptr);
-	VKShaderCache::CloseReader(&w->reader);
-	w->reader.~Reader();
 	free(w->list);
 	free(w);
-}
-
-/* The SPIR-V the thread compiled, into the cache. */
-static void PipelineWarmTakeSPV(GSDeviceVK::PipelineWarm* w)
-{
-	PipelineWarmSPV out;
-	while (retro_spsc_read_avail(&w->spvs) >= sizeof(out))
-	{
-		retro_spsc_read(&w->spvs, &out, sizeof(out));
-		g_vulkan_shader_cache->AddSPV(out.type, *out.source, *out.spv);
-		delete out.spv;
-		delete out.source;
-	}
 }
 
 /* Takes what the thread has finished into the tables; true if anything. */
@@ -4371,7 +4296,6 @@ bool GSDeviceVK::PipelineWarmTake()
 	PipelineWarmResult res;
 	bool took = false;
 
-	PipelineWarmTakeSPV(m_warm);
 	while (retro_spsc_read_avail(&m_warm->results) >= sizeof(res))
 	{
 		retro_spsc_read(&m_warm->results, &res, sizeof(res));
@@ -4400,7 +4324,6 @@ void GSDeviceVK::PipelineWarmStop()
 		return;
 	retro_atomic_store_release_int(&w->stop, 1);
 	sthread_join(w->thread);
-	PipelineWarmTakeSPV(w);
 	/* what the render thread never asked for */
 	while (retro_spsc_read_avail(&w->results) >= sizeof(res))
 	{
@@ -4410,17 +4333,10 @@ void GSDeviceVK::PipelineWarmStop()
 	m_pipelines_built_ahead = w->built;
 	m_util_built_ahead      = w->util_built;
 	/* what the thread built goes to disk with the rest */
-	if (w->built || w->util_built)
-	{
-		VkPipelineCache main_cache = g_vulkan_shader_cache->GetPipelineCache(true);
-		if (main_cache != VK_NULL_HANDLE)
-			vkMergePipelineCaches(vk_init_info.device, main_cache, 1, &w->cache);
-	}
+	if ((w->built || w->util_built) && m_pipeline_cache != VK_NULL_HANDLE)
+		vkMergePipelineCaches(vk_init_info.device, m_pipeline_cache, 1, &w->cache);
 	vkDestroyPipelineCache(vk_init_info.device, w->cache, nullptr);
-	retro_spsc_free(&w->spvs);
 	retro_spsc_free(&w->results);
-	VKShaderCache::CloseReader(&w->reader);
-	w->reader.~Reader();
 	free(w->list);
 	free(w);
 	m_warm = nullptr;

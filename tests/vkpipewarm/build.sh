@@ -6,13 +6,13 @@
 # over from run to run:
 #
 #  - every run builds no utility pipeline on the render thread while it
-#    creates the device - the warm-up thread builds them all, compiling
-#    what the SPIR-V cache does not hold yet;
+#    creates the device - the warm-up thread builds them all, from the
+#    SPIR-V the core was built with;
 #  - each case run once from nothing builds its TFX pipelines on the
 #    render thread and lists them;
-#  - with the driver's pipeline cache deleted, as a driver update makes it
-#    useless, and the SPIR-V index stamped with another device, each case
-#    again builds none on the render thread - the warm-up thread built
+#  - with the driver's pipeline cache deleted, or stamped with another
+#    device, as a driver update makes it useless, each case again builds
+#    none on the render thread - the warm-up thread built
 #    them all from the list, in the second a frontend leaves between
 #    loading and the first frame (VKPW_PAUSE_MS) - and ends in the same
 #    state (but for the sections that hold the clock and the GIF's
@@ -116,8 +116,8 @@ if grep -q "skip:" "$WORK/probe.log"; then
 	exit 0
 fi
 
-# 1. From nothing: every case lists its pipelines; the first compiles the
-# utility shaders on the warm-up thread.
+# 1. From nothing: every case lists its pipelines; the utility ones are
+# built on the warm-up thread.
 for c in $CASES; do
 	VN_DUMP_STATE="$WORK/$c.cold.state" run "$c.cold" $c "$S"
 	[ "$(here "$c.cold")" -gt 0 ] || { echo "  FAIL: $c built no pipeline from nothing"; fail=1; }
@@ -154,13 +154,30 @@ same_state()
 	fi
 }
 
-# The driver's cache gone, the SPIR-V index stamped with another device.
+# The driver's cache gone, or stamped with another device: every other
+# driver change, the cache is another device's (the first byte of the
+# header's UUID), and is not handed to the driver.
+changes=0
 driver_change()
 {
-	rm -f "$CACHE/vulkan_pipelines.bin"
-	# (the index: a version word, then the pipeline cache header the
-	# device wrote; the first byte of its UUID)
-	printf '\377' | dd of="$CACHE/vulkan_shaders.idx" bs=1 seek=20 count=1 conv=notrunc 2>/dev/null
+	changes=$((changes + 1))
+	if [ $((changes % 2)) = 0 ] || [ ! -f "$CACHE/vulkan_pipelines.bin" ]; then
+		rm -f "$CACHE/vulkan_pipelines.bin"
+		stamped=
+	else
+		printf '\377' | dd of="$CACHE/vulkan_pipelines.bin" bs=1 seek=16 count=1 conv=notrunc 2>/dev/null
+		stamped=1
+	fi
+}
+# $1 log name: a stamped cache was refused (by the first run after the
+# stamp; that run writes the cache again)
+check_stamped()
+{
+	if [ -n "$stamped" ] && ! grep -q "Ignoring the pipeline cache" "$WORK/$1.log"; then
+		echo "  FAIL: $1: another device's pipeline cache was handed to the driver"
+		fail=1
+	fi
+	stamped=
 }
 
 # 2. After a driver change: none built on the render thread, utility
@@ -172,6 +189,7 @@ for c in $CASES; do
 		$c "$(here "$c.cold")" "$(longest "$c.cold")" "$(here "$c.warm")" "$(longest "$c.warm")" "$(ahead "$c.warm")"
 	[ "$(here "$c.warm")" = 0 ] || { echo "  FAIL: $c still built $(here "$c.warm") on the render thread"; fail=1; }
 	check_util "$c.warm"
+	check_stamped "$c.warm"
 	same_state $c $c.warm
 done
 
@@ -199,6 +217,7 @@ for how in short byte version junk; do
 	driver_change
 	damage $how
 	run "damaged_$how" dest_alpha "$S"
+	check_stamped "damaged_$how"
 	if ! grep -q "Ignoring the pipeline list" "$WORK/damaged_$how.log"; then
 		echo "  FAIL: a list damaged ($how) was read"
 		fail=1
@@ -207,6 +226,7 @@ for how in short byte version junk; do
 		{ echo "  FAIL: damaged ($how): $(here "damaged_$how") built, not $(here dest_alpha.cold)"; fail=1; }
 	driver_change
 	run "damaged_${how}_after" dest_alpha "$S"
+	check_stamped "damaged_${how}_after"
 	[ "$(here "damaged_${how}_after")" = 0 ] ||
 		{ echo "  FAIL: the list written after a damaged one ($how) was not used"; fail=1; }
 	echo "  damaged list ($how): ignored, written again, used"

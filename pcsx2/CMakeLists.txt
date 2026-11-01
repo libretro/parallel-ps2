@@ -456,11 +456,11 @@ if(USE_VULKAN)
 	list(APPEND pcsx2GSSources
 		GS/Renderers/Vulkan/GSDeviceVK.cpp
 		GS/Renderers/Vulkan/GSTextureVK.cpp
-		GS/Renderers/Vulkan/VKShaderCache.cpp
 		GS/Renderers/Vulkan/VKLoader.cpp
 		GS/Renderers/Vulkan/VKStreamBuffer.cpp
 		GS/Renderers/Vulkan/VKBuilders.cpp
 		GS/Renderers/Vulkan/GSVulkanHeap.c
+		GS/Renderers/Vulkan/VKSpirvPatch.c
 	)
 	list(APPEND pcsx2GSHeaders
 		GS/Renderers/Vulkan/GSVulkanHeap.h
@@ -468,7 +468,8 @@ if(USE_VULKAN)
 		GS/Renderers/Vulkan/GSTextureVK.h
 		GS/Renderers/Vulkan/VKBuilders.h
 		GS/Renderers/Vulkan/VKStreamBuffer.h
-		GS/Renderers/Vulkan/VKShaderCache.h
+		GS/Renderers/Vulkan/VKShaders.inc
+		GS/Renderers/Vulkan/VKSpirvPatch.h
 		GS/Renderers/Vulkan/VKEntryPoints.h
 		GS/Renderers/Vulkan/VKLoader.h
 		GS/Renderers/Vulkan/VKLoaderPlatformDefines.h
@@ -484,7 +485,7 @@ if(USE_VULKAN)
 	list(APPEND pcsx2GSHeaders GS/Renderers/parallel-gs/GSRendererPGS.h GS/Renderers/parallel-gs/PGSStateVRAM.h)
 
 	target_link_libraries(common INTERFACE
-		Vulkan-Headers glslang
+		Vulkan-Headers
 	)
 	if(APPLE)
 		# Needed for Metal surface creation.

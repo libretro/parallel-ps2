@@ -188,7 +188,7 @@ namespace Vulkan
 	}
 
 	void GraphicsPipelineBuilder::SetShaderStage(
-		VkShaderStageFlagBits stage, VkShaderModule module, const char* entry_point)
+		VkShaderStageFlagBits stage, VkShaderModule module, const char* entry_point, const VkSpecializationInfo* spec)
 	{
 		u32 index = 0;
 		for (; index < m_ci.stageCount; index++)
@@ -207,6 +207,7 @@ namespace Vulkan
 		s.stage = stage;
 		s.module = module;
 		s.pName = entry_point;
+		s.pSpecializationInfo = spec;
 	}
 
 	void GraphicsPipelineBuilder::AddVertexBuffer(

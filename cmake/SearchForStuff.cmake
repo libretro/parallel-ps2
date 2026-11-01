@@ -45,6 +45,5 @@ if(USE_OPENGL)
 endif()
 
 if(USE_VULKAN)
-	add_subdirectory(3rdparty/glslang EXCLUDE_FROM_ALL)
 	add_subdirectory(3rdparty/vulkan-headers EXCLUDE_FROM_ALL)
 endif()
