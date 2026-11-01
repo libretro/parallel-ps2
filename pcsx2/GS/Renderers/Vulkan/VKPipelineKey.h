@@ -228,3 +228,36 @@ static inline void VKTFXSpecPS(const GSHWDrawConfig::PSSelector& sel, u32* v)
 	v[VKSC_PS_TEX_IS_FB]          = sel.tex_is_fb;
 	v[VKSC_PS_NO_COLOR]           = sel.no_color;
 }
+
+/* The selector of a pipeline's dynamic sibling (the fragment module's
+ * DYNAMIC build, which reads the selector from push constants): the one
+ * pipeline every selector with the same fixed state and the same module
+ * draws with until its own is built. What it keeps is what the pipeline's
+ * state and its module are made from: the destination alpha test (the
+ * render pass and blend of its first pass, the primitive ID), the colour
+ * clip render pass, the outputs, the flat colour and the depth clamp;
+ * and FBMASK stands for whether the module reads the target. */
+static inline void VKDynamicPS(GSHWDrawConfig::PSSelector& ps)
+{
+	GSHWDrawConfig::PSSelector d;
+	d.date       = ps.date;
+	d.colclip_hw = ps.colclip_hw;
+	d.no_color   = ps.no_color;
+	d.no_color1  = ps.no_color1;
+	d.iip        = ps.iip;
+	d.zclamp     = ps.zclamp;
+	d.fbmask     = VKTFXReadsRT(ps);
+	ps = d;
+}
+
+/* The key the dynamic sibling reads the selector from: each field where
+ * vkspv_tfx_fs_key_at puts it. */
+static inline void VKTFXDynamicKey(const GSHWDrawConfig::PSSelector& sel, u32* key)
+{
+	u32 v[VKSC_PS_COUNT];
+	u32 i;
+	VKTFXSpecPS(sel, v);
+	key[0] = key[1] = key[2] = key[3] = 0;
+	for (i = 0; i < VKSC_PS_COUNT; i++)
+		key[vkspv_tfx_fs_key_at[i] >> 5] |= (v[i] & ((1u << vkspv_tfx_fs_key_bits[i]) - 1u)) << (vkspv_tfx_fs_key_at[i] & 31u);
+}

@@ -3,9 +3,12 @@
  * selector:
  *
  *   P <54 constants> | <54 constants of its key> | <reads the target> <its key does> <dropped>
+ *     | <its sibling reads the target> <the sibling drops> <the sibling's 4 key words>
  *   V <expand> <4 constants> | <4 constants of its key>
  *
- * Fails (exit 1) on a key that is not its own key. The selectors are any
+ * Fails (exit 1) on a key that is not its own key, and on a field whose
+ * value the sibling's key has no room for (tfx.glsl's bits for it are
+ * fewer than the selector's). The selectors are any
  * bits at all: specialization constants take any value, and a key must
  * hold for every one. Half the fields are drawn from 0 more often, so the
  * rules' conditions come out both ways. */
@@ -97,11 +100,25 @@ int main(int argc, char** argv)
 		}
 		VKTFXSpecPS(ps, a);
 		VKTFXSpecPS(key, b);
+		for (u32 f = 0; f < VKSC_PS_COUNT; f++)
+		{
+			if (a[f] >> vkspv_tfx_fs_key_bits[f])
+			{
+				printf("FAIL: constant %u holds %u, more than the sibling key's %u bits\n", f, a[f],
+					vkspv_tfx_fs_key_bits[f]);
+				return 1;
+			}
+		}
+		GSHWDrawConfig::PSSelector sib = key;
+		u32 k[4];
+		VKDynamicPS(sib);
+		VKTFXDynamicKey(ps, k);
 		printf("P");
 		print("", a, VKSC_PS_COUNT);
 		printf(" |");
 		print("", b, VKSC_PS_COUNT);
-		printf(" | %d %d %u\n", VKTFXReadsRT(ps) ? 1 : 0, VKTFXReadsRT(key) ? 1 : 0, VKTFXFragmentDrop(true, key));
+		printf(" | %d %d %u | %d %u %u %u %u %u\n", VKTFXReadsRT(ps) ? 1 : 0, VKTFXReadsRT(key) ? 1 : 0,
+			VKTFXFragmentDrop(true, key), VKTFXReadsRT(sib) ? 1 : 0, VKTFXFragmentDrop(true, sib), k[0], k[1], k[2], k[3]);
 	}
 	for (i = 0; i < count / 4; i++)
 	{

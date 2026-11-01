@@ -7,9 +7,9 @@
  *    instruction's length, the one entry point main;
  *  - a TFX module patched with nothing dropped is its own words, so a
  *    draw that drops nothing gets the module the compiler wrote;
- *  - for every fragment module and all sixteen combinations of what may
- *    be dropped (the vertex modules: the flat colour), the patched module
- *    is SPIR-V again, and:
+ *  - for every fragment module, and its dynamic sibling, and all sixteen
+ *    combinations of what may be dropped (the vertex modules: the flat
+ *    colour), the patched module is SPIR-V again, and:
  *      - a dropped variable is private, of a private pointer type to what
  *        it was, has no decoration and is not in the entry point's
  *        interface; one kept is still Output or Input and still there;
@@ -37,6 +37,7 @@
 #include "VKSpirvPatch.h"
 
 typedef uint32_t u32;
+typedef uint8_t u8;
 typedef struct VKSpirv
 {
    const u32 *words;
@@ -455,10 +456,14 @@ static void check_refused(void)
 int main(void)
 {
    static const char *const fs_names[3] = {"fragment (target unread)", "fragment (input attachment)", "fragment (sampled target)"};
+   static const char *const dyn_names[3] = {"dynamic sibling (target unread)", "dynamic sibling (input attachment)",
+      "dynamic sibling (sampled target)"};
    unsigned i;
 
    for (i = 0; i < 3; i++)
       check_fragment(&vkspv_tfx_fs_mod[i], fs_names[i]);
+   for (i = 0; i < 3; i++)
+      check_fragment(&vkspv_tfx_fs_dynamic_mod[i], dyn_names[i]);
    check_vertex(&vkspv_tfx_vs_mod[0], "vertex");
    check_vertex(&vkspv_tfx_vs_mod[1], "vertex (expand)");
    for (i = 0; i < 3; i++)
@@ -477,7 +482,7 @@ int main(void)
 
    if (s_fail)
       return 1;
-   printf("  ok: %u fragment modules x 16 interfaces, 2 vertex modules, %u utility modules, the refusals\n", 3u,
+   printf("  ok: %u fragment modules x 16 interfaces, 2 vertex modules, %u utility modules, the refusals\n", 6u,
       (unsigned)(3 + sizeof(vkspv_convert_mod) / sizeof(vkspv_convert_mod[0]) + 4
          + sizeof(vkspv_interlace_mod) / sizeof(vkspv_interlace_mod[0]) + 4));
    return 0;

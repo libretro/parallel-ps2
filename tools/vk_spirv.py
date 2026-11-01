@@ -20,7 +20,11 @@
 #    vertex shader with and without VS_EXPAND, the fragment shader for
 #    each way of reading the target (none, RT_SUBPASS, RT_FETCH). The
 #    constants' IDs are written out as an enum (VKSC_*), so the C++ cannot
-#    disagree with the shader about them. What the renderer drops from a
+#    disagree with the shader about them. Each fragment module has a
+#    dynamic sibling (DYNAMIC) reading the PS_ fields from a key in push
+#    constants instead; where each field sits in the key is decided here,
+#    written into the sibling's source and out as a table
+#    (vkspv_tfx_fs_key_at/_bits) for the C++ to pack the key by. What the renderer drops from a
 #    module's words (VKSpirvPatch.c) is checked to be droppable: the
 #    colour varying's one Flat member decoration; in a fragment module
 #    the second colour output, gl_PrimitiveID and gl_FragDepth, each
@@ -199,13 +203,32 @@ class Compiler:
 
 def spec_ids(text):
     vs, ps = [], []
-    for m in re.finditer(r"layout\(constant_id\s*=\s*(\d+)\)\s*const\s+\w+\s+(\w+)", text):
-        (vs if m.group(2).startswith("VS_") else ps).append((int(m.group(1)), m.group(2)))
+    for m in re.finditer(r"layout\(constant_id\s*=\s*(\d+)\)\s*const\s+(\w+)\s+(\w+)[^;]*;(?:[ \t]*// (\d+) bits)?", text):
+        bits = 1 if m.group(2) == "bool" else int(m.group(4) or 0)
+        if m.group(3).startswith("PS_") and not bits:
+            sys.exit("error: %s: an int field without its bits (// N bits)" % m.group(3))
+        (vs if m.group(3).startswith("VS_") else ps).append((int(m.group(1)), m.group(3), m.group(2), bits))
     for lst in (vs, ps):
-        ids = [i for i, _ in lst]
+        ids = [e[0] for e in lst]
         if ids != list(range(len(ids))):
             sys.exit("error: specialization constant IDs not 0..n-1 in order")
     return vs, ps
+
+
+def dynamic_key(ps_ids):
+    """The dynamic sibling's key: each field at a bit of a uvec4, none
+    across a word; the places, and tfx.glsl's #defines reading them."""
+    at, places, defines = 0, [], []
+    for i, name, typ, bits in ps_ids:
+        if at // 32 != (at + bits - 1) // 32:
+            at = (at // 32 + 1) * 32
+        places.append((at, bits))
+        get = "bitfieldExtract(ps_key[%d], %d, %d)" % (at // 32, at % 32, bits)
+        defines.append("#define %s %s" % (name, ("(%s != 0u)" if typ == "bool" else "int(%s)") % get))
+        at += bits
+    if at > 128:
+        sys.exit("error: the dynamic key is %d bits, more than its 128" % at)
+    return places, "\n".join(defines)
 
 
 def entries(text):
@@ -225,6 +248,10 @@ def generate(glslang):
     try:
         tfx = read(SRC / "tfx.glsl")
         vs_ids, ps_ids = spec_ids(tfx)
+        key_places, key_defines = dynamic_key(ps_ids)
+        if tfx.count("// @DYNAMIC_KEY") != 1:
+            sys.exit("error: tfx.glsl has no one place for the dynamic key")
+        tfx_dyn = tfx.replace("// @DYNAMIC_KEY", key_defines)
         mods = []   # (name, words)
 
         for expand in (0, 1):
@@ -240,6 +267,14 @@ def generate(glslang):
             droppable(w, name)
             mods.append((name, w))
             fs_names.append(name)
+        dyn_names = []
+        for rt_name, rt_def in RT_AXIS:
+            name = "vkspv_tfx_fs_dynamic" + ("_" + rt_name if rt_name else "")
+            w = c.compile(tfx_dyn, "frag", ["FRAGMENT_SHADER", "DYNAMIC"] + ([rt_def] if rt_def else []), name)
+            flat_decoration(w)
+            droppable(w, name)
+            mods.append((name, w))
+            dyn_names.append(name)
 
         util_vs = []
         for src in ("convert", "interlace", "merge"):
@@ -280,10 +315,10 @@ def generate(glslang):
     out.append("/* Specialization constant IDs: tfx.glsl's VS_ and PS_ fields */")
     out.append("enum")
     out.append("{")
-    for i, n in vs_ids:
+    for i, n, _, _ in vs_ids:
         out.append("\tVKSC_%s = %d," % (n, i))
     out.append("\tVKSC_VS_COUNT = %d," % len(vs_ids))
-    for i, n in ps_ids:
+    for i, n, _, _ in ps_ids:
         out.append("\tVKSC_%s = %d," % (n, i))
     out.append("\tVKSC_PS_COUNT = %d" % len(ps_ids))
     out.append("};")
@@ -298,15 +333,20 @@ def generate(glslang):
     out.append("/* Each constant a u32 at 4 * its ID */")
     for stage, ids in (("vs", vs_ids), ("fs", ps_ids)):
         out.append("static const VkSpecializationMapEntry vkspv_tfx_%s_spec_map[%d] = {" % (stage, len(ids)))
-        for i, _ in ids:
-            out.append("\t{%d, %d, 4}," % (i, 4 * i))
+        for e in ids:
+            out.append("\t{%d, %d, 4}," % (e[0], 4 * e[0]))
         out.append("};")
+    out.append("/* The dynamic sibling's key: each PS_ field's first bit and bits */")
+    out.append("static const u8 vkspv_tfx_fs_key_at[%d] = {%s};" % (len(key_places), ", ".join(str(a) for a, _ in key_places)))
+    out.append("static const u8 vkspv_tfx_fs_key_bits[%d] = {%s};" % (len(key_places), ", ".join(str(b) for _, b in key_places)))
     out.append("/* The TFX vertex shaders: [VS_EXPAND] */")
     out.append("static const VKSpirv vkspv_tfx_vs_mod[2] = {%s, %s};" %
                (ref("vkspv_tfx_vs"), ref("vkspv_tfx_vs_expand")))
     out.append("/* The TFX fragment shaders: [how the target is read]: not at all,")
     out.append(" * as an input attachment, as a sampled image */")
     out.append("static const VKSpirv vkspv_tfx_fs_mod[%d] = {%s};" % (len(fs_names), ", ".join(ref(n) for n in fs_names)))
+    out.append("/* Their dynamic siblings, likewise */")
+    out.append("static const VKSpirv vkspv_tfx_fs_dynamic_mod[%d] = {%s};" % (len(dyn_names), ", ".join(ref(n) for n in dyn_names)))
     out.append("/* The utility vertex shaders: convert, interlace, merge */")
     out.append("static const VKSpirv vkspv_util_vs_mod[3] = {%s};" % ", ".join(ref(n) for n in util_vs))
     out.append("/* convert.glsl's entries, by name (shaderName()) */")

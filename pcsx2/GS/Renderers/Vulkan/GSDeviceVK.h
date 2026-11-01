@@ -496,11 +496,28 @@ public:
 		VkShaderModule util_fs[UP_COUNT]; /* by UtilityFragmentOf() */
 		VkShaderModule tfx_vs[2 * 2];     /* [expand][iip] */
 		VkShaderModule tfx_fs[3 * 16];    /* [how the target is read][VKSPV_DROP_* bits] */
+		VkShaderModule tfx_fs_dynamic[3 * 16]; /* their dynamic siblings, likewise */
 	};
 
 private:
 	Modules m_modules = {};
 	std::unordered_map<PipelineSelector, VkPipeline, PipelineSelectorHash> m_tfx_pipelines;
+	/* The dynamic siblings, by their selectors (VKDynamicPS); a null one
+	 * is being built on the warm-up thread, or could not be. */
+	std::unordered_map<PipelineSelector, VkPipeline, PipelineSelectorHash> m_tfx_siblings;
+	/* The keys whose pipelines the warm-up thread is building while their
+	 * draws draw with a sibling. */
+	std::unordered_map<PipelineSelector, u8, PipelineSelectorHash> m_tfx_pending;
+	/* The draw's pipeline is a sibling: the key it reads, pushed by
+	 * ApplyTFXState. */
+	bool m_tfx_dynamic = false;
+	u32 m_tfx_key[4] = {};
+	u32 m_tfx_key_pushed[4] = {};
+	/* LRPS2_TEST_VK_PIPELINES: 1 "sync" builds every pipeline on the render
+	 * thread as it is first drawn with, 2 "sibling" draws everything with
+	 * siblings, 3 "async" every new key with its sibling while its own is
+	 * built (tests/vkpipewarm) */
+	u8 m_test_pipelines = 0;
 	/* See GSDevice12: the last pipeline, so a run of draws that share one
 	 * does not hash its selector again. */
 	PipelineSelector m_last_tfx_pipeline_selector;
@@ -530,6 +547,7 @@ private:
 
 	VkPipeline GetTFXPipeline(const PipelineSelector& p);
 	VkPipeline GetTFXPipelineMissed(const PipelineSelector& p);
+	VkPipeline GetTFXSibling(const PipelineSelector& key, bool build);
 
 	/* The driver's pipeline cache, kept on disk between sessions. */
 	VkPipelineCache m_pipeline_cache = VK_NULL_HANDLE;
@@ -543,24 +561,28 @@ public:
 	 * what the device holds from its creation on, so another thread may
 	 * call it with modules of its own (the warm-up thread, see
 	 * PipelineWarm). */
-	VkPipeline BuildTFXPipeline(const PipelineSelector& p, Modules* mods, VkPipelineCache cache) const;
+	VkPipeline BuildTFXPipeline(const PipelineSelector& p, Modules* mods, VkPipelineCache cache,
+		bool dynamic = false) const;
 	/* Utility pipeline id; as above. */
 	VkPipeline BuildUtilityPipeline(u32 id, Modules* mods, VkPipelineCache cache) const;
 	/* The module a pipeline is made with, made now if mods has none yet;
 	 * VK_NULL_HANDLE if the driver will not have it. */
 	VkShaderModule UtilityModule(Modules* mods, u32 id, bool vertex) const;
 	VkShaderModule TFXVertexModule(Modules* mods, GSHWDrawConfig::VSSelector sel) const;
-	VkShaderModule TFXFragmentModule(Modules* mods, const GSHWDrawConfig::PSSelector& sel) const;
+	VkShaderModule TFXFragmentModule(Modules* mods, const GSHWDrawConfig::PSSelector& sel, bool dynamic) const;
 	static void DestroyModules(Modules* mods);
 	struct PipelineWarm;
 
 private:
-	/* The TFX pipelines a session builds are listed by their selectors, in
-	 * a file of their own beside the pipeline cache that no driver change
+	/* The TFX pipelines a session builds are listed by their keys, in a
+	 * file of their own beside the pipeline cache that no driver change
 	 * makes stale. The next device hands the list to a thread of its own,
-	 * which builds each one into a pipeline cache of its own and passes it
-	 * back without a lock; a pipeline missed at draw time takes what the
-	 * thread has finished before it is built here. */
+	 * which builds each one into a pipeline cache of its own, then their
+	 * dynamic siblings, and passes them back without a lock; a pipeline
+	 * missed at draw time takes what the thread has finished before it is
+	 * built here. The thread stays for the device's life: a new key whose
+	 * sibling is there draws with it while the thread builds the key's own
+	 * (GetTFXPipelineMissed), the thread asleep on an eventcount between. */
 	PipelineWarm* m_warm = nullptr;
 	PipelineSelector* m_plist = nullptr;
 	u32 m_plist_count = 0;
@@ -569,6 +591,12 @@ private:
 	u32 m_pipelines_built_here = 0;
 	u32 m_pipelines_built_ahead = 0; /* by the warm-up thread */
 	u32 m_pipelines_taken = 0;       /* of those, the ones a draw took */
+	u32 m_pipelines_async = 0;       /* of those, built for draws a sibling drew */
+	u32 m_sibling_draws = 0;         /* draws a sibling drew */
+	u32 m_siblings_built_here = 0;
+	u32 m_siblings_built_ahead = 0;
+	u32 m_jobs_in_flight = 0;        /* asked of the warm-up thread, not yet back */
+	bool PipelineWarmQueue(const PipelineSelector& sel, bool dynamic);
 	void PipelineListLoad();
 	void PipelineListSave();
 	void PipelineListAdd(const PipelineSelector& p);
@@ -721,10 +749,12 @@ private:
 		DIRTY_FLAG_PIPELINE = (1 << 9),
 		DIRTY_FLAG_VS_CONSTANT_BUFFER = (1 << 10),
 		DIRTY_FLAG_PS_CONSTANT_BUFFER = (1 << 11),
+		DIRTY_FLAG_TFX_KEY = (1 << 12), /* a sibling's key (m_tfx_key) */
 
 		DIRTY_BASE_STATE = DIRTY_FLAG_INDEX_BUFFER | DIRTY_FLAG_PIPELINE | DIRTY_FLAG_TFX_UBO |
 						   DIRTY_FLAG_VIEWPORT | DIRTY_FLAG_SCISSOR | DIRTY_FLAG_BLEND_CONSTANTS | DIRTY_FLAG_LINE_WIDTH,
-		DIRTY_TFX_STATE = DIRTY_BASE_STATE | DIRTY_FLAG_TFX_SAMPLERS_DS | DIRTY_FLAG_TFX_RT_TEXTURE_DS,
+		DIRTY_TFX_STATE = DIRTY_BASE_STATE | DIRTY_FLAG_TFX_SAMPLERS_DS | DIRTY_FLAG_TFX_RT_TEXTURE_DS |
+						  DIRTY_FLAG_TFX_KEY,
 		DIRTY_UTILITY_STATE = DIRTY_BASE_STATE | DIRTY_FLAG_UTILITY_TEXTURE,
 		DIRTY_CONSTANT_BUFFER_STATE = DIRTY_FLAG_VS_CONSTANT_BUFFER | DIRTY_FLAG_PS_CONSTANT_BUFFER,
 		ALL_DIRTY_STATE = DIRTY_BASE_STATE | DIRTY_TFX_STATE | DIRTY_UTILITY_STATE | DIRTY_CONSTANT_BUFFER_STATE,

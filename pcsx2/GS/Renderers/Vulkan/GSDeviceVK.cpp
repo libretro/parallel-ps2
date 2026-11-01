@@ -38,6 +38,7 @@
 #ifdef HAVE_THREADS
 #include <retro_atomic.h>
 #include <retro_spsc.h>
+#include <rthreads/retro_eventcount.h>
 #include <rthreads/rthreads.h>
 #endif
 
@@ -1749,6 +1750,15 @@ bool GSDeviceVK::Create()
 		s_devices_created++;
 		m_test_util_fail = fail && (!strcmp(fail, "always") || (!strcmp(fail, "first") && s_devices_created == 1));
 	}
+	/* LRPS2_TEST_VK_PIPELINES=sync: every TFX pipeline built on the render
+	 * thread as it is first drawn with; =sibling: every draw drawn with a
+	 * dynamic sibling; =async: every new key drawn with its sibling while
+	 * the warm-up thread builds its own. */
+	{
+		const char* mode = getenv("LRPS2_TEST_VK_PIPELINES");
+		m_test_pipelines = !mode ? 0 : !strcmp(mode, "sync") ? 1 : !strcmp(mode, "sibling") ? 2
+			: !strcmp(mode, "async") ? 3 : 0;
+	}
 
 	if (!CreateRenderPasses() || !UtilPrepare())
 	{
@@ -1797,8 +1807,11 @@ void GSDeviceVK::Destroy()
 	/* First: the thread reads what the rest of this tears down. */
 	PipelineWarmStop();
 	if (m_pipelines_built_here || m_pipelines_built_ahead)
-		log_cb(RETRO_LOG_INFO, "Vulkan pipelines: %u built on the render thread, %u ahead on the warm-up thread, %u of those handed over\n",
-			m_pipelines_built_here, m_pipelines_built_ahead, m_pipelines_taken);
+		log_cb(RETRO_LOG_INFO, "Vulkan pipelines: %u built on the render thread, %u ahead on the warm-up thread, %u of those handed over, %u of them while a sibling drew\n",
+			m_pipelines_built_here, m_pipelines_built_ahead, m_pipelines_taken, m_pipelines_async);
+	if (m_sibling_draws || m_siblings_built_here || m_siblings_built_ahead)
+		log_cb(RETRO_LOG_INFO, "Vulkan dynamic siblings: %u built on the render thread, %u on the warm-up thread, %u draws drawn with one\n",
+			m_siblings_built_here, m_siblings_built_ahead, m_sibling_draws);
 	if (m_util_built_here || m_util_built_ahead)
 		log_cb(RETRO_LOG_INFO, "Vulkan utility pipelines: %u built on the render thread creating the device, %u at first use, %u on the warm-up thread\n",
 			m_util_built_creating, m_util_built_here - m_util_built_creating, m_util_built_ahead);
@@ -1807,7 +1820,8 @@ void GSDeviceVK::Destroy()
 	free(m_plist);
 	m_plist = nullptr;
 	m_plist_count = m_plist_cap = 0;
-	m_pipelines_built_here = m_pipelines_built_ahead = m_pipelines_taken = 0;
+	m_pipelines_built_here = m_pipelines_built_ahead = m_pipelines_taken = m_pipelines_async = 0;
+	m_sibling_draws = m_siblings_built_here = m_siblings_built_ahead = 0;
 
 	DestroyBase();
 	/* With the pool's textures, and like them ahead of the wait for the
@@ -1862,6 +1876,11 @@ void GSDeviceVK::Destroy()
 GSDevice::PresentResult GSDeviceVK::BeginPresent(bool frame_skip)
 {
 	EndRenderPass();
+
+	/* What the warm-up thread built for draws a sibling drew is taken once
+	 * a frame too, for keys not drawn with again meanwhile. */
+	if (m_warm && m_jobs_in_flight)
+		PipelineWarmTake();
 
 	if (m_device_lost)
 		return PresentResult::DeviceLost;
@@ -3112,6 +3131,8 @@ bool GSDeviceVK::CreatePipelineLayouts()
 	plb.AddDescriptorSet(m_tfx_ubo_ds_layout);
 	plb.AddDescriptorSet(m_tfx_sampler_ds_layout);
 	plb.AddDescriptorSet(m_tfx_rt_texture_ds_layout);
+	/* the dynamic siblings' key */
+	plb.AddPushConstants(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(m_tfx_key));
 	if ((m_tfx_pipeline_layout = plb.Create(dev)) == VK_NULL_HANDLE)
 		return false;
 	return true;
@@ -3312,14 +3333,14 @@ VkShaderModule GSDeviceVK::TFXVertexModule(Modules* mods, GSHWDrawConfig::VSSele
 	return *slot;
 }
 
-VkShaderModule GSDeviceVK::TFXFragmentModule(Modules* mods, const GSHWDrawConfig::PSSelector& sel) const
+VkShaderModule GSDeviceVK::TFXFragmentModule(Modules* mods, const GSHWDrawConfig::PSSelector& sel, bool dynamic) const
 {
 	/* not read, an input attachment, a sampled image */
 	const u32 rt         = VKTFXReadsRT(sel) ? (m_features.texture_barrier ? 1u : 2u) : 0u;
 	const unsigned drop  = VKTFXFragmentDrop(m_features.dual_source_blend, sel);
-	VkShaderModule* slot = &mods->tfx_fs[rt * 16 + drop];
+	VkShaderModule* slot = dynamic ? &mods->tfx_fs_dynamic[rt * 16 + drop] : &mods->tfx_fs[rt * 16 + drop];
 	if (*slot == VK_NULL_HANDLE)
-		*slot = MakeModule(vkspv_tfx_fs_mod[rt], drop);
+		*slot = MakeModule(dynamic ? vkspv_tfx_fs_dynamic_mod[rt] : vkspv_tfx_fs_mod[rt], drop);
 	return *slot;
 }
 
@@ -3557,6 +3578,12 @@ void GSDeviceVK::DestroyResources()
 		}
 	}
 	m_tfx_pipelines.clear();
+	for (auto& it : m_tfx_siblings)
+		if (it.second != VK_NULL_HANDLE)
+			vkDestroyPipeline(m_device, it.second, nullptr);
+	m_tfx_siblings.clear();
+	m_tfx_pending.clear();
+	m_tfx_dynamic = false;
 	DestroyModules(&m_modules);
 	{
 		u32 i;
@@ -3627,7 +3654,8 @@ static GSHWDrawConfig::PSSelector TFXPipelinePS(const GSDeviceVK::PipelineSelect
 	return pps;
 }
 
-VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods, VkPipelineCache cache) const
+VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods, VkPipelineCache cache,
+	bool dynamic) const
 {
 	static constexpr std::array<VkPrimitiveTopology, 3> topology_lookup = {{
 		VK_PRIMITIVE_TOPOLOGY_POINT_LIST, // Point
@@ -3678,10 +3706,11 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 	}
 
 	// Shaders: the modules of the selector's interface, its fields as
-	// their specialization constants
+	// their specialization constants (a dynamic sibling's pixel shader
+	// reads them from the push constants)
 	const GSHWDrawConfig::PSSelector pps = TFXPipelinePS(p);
 	const VkShaderModule vs = TFXVertexModule(mods, p.vs);
-	const VkShaderModule fs = TFXFragmentModule(mods, pps);
+	const VkShaderModule fs = TFXFragmentModule(mods, pps, dynamic);
 	u32 vs_spec[VKSC_VS_COUNT];
 	u32 ps_spec[VKSC_PS_COUNT];
 	if (vs == VK_NULL_HANDLE || fs == VK_NULL_HANDLE)
@@ -3691,7 +3720,7 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 	const VkSpecializationInfo vs_si = {VKSC_VS_COUNT, vkspv_tfx_vs_spec_map, sizeof(vs_spec), vs_spec};
 	const VkSpecializationInfo ps_si = {VKSC_PS_COUNT, vkspv_tfx_fs_spec_map, sizeof(ps_spec), ps_spec};
 	gpb.SetVertexShader(vs, &vs_si);
-	gpb.SetFragmentShader(fs, &ps_si);
+	gpb.SetFragmentShader(fs, dynamic ? nullptr : &ps_si);
 
 	// IA
 	if (p.vs.expand == GSHWDrawConfig::VSExpand::None)
@@ -3788,34 +3817,90 @@ static GSDeviceVK::PipelineSelector TFXPipelineKey(const GSDeviceVK::PipelineSel
 
 VkPipeline GSDeviceVK::GetTFXPipeline(const PipelineSelector& p)
 {
+	/* (only a pipeline of its own is kept as the last: a draw a sibling
+	 * draws looks again, until its own is there) */
 	if (m_last_tfx_pipeline != VK_NULL_HANDLE && m_last_tfx_pipeline_selector == p)
 		return m_last_tfx_pipeline;
 
 	const PipelineSelector key = TFXPipelineKey(p);
 	const auto it = m_tfx_pipelines.find(key);
 	VkPipeline pipeline;
-	if (it != m_tfx_pipelines.end())
-		pipeline = it->second;
-	else
+	if (it == m_tfx_pipelines.end())
 		pipeline = GetTFXPipelineMissed(key);
+	else
+	{
+		pipeline      = it->second;
+		m_tfx_dynamic = false;
+	}
 
-	m_last_tfx_pipeline_selector = p;
-	m_last_tfx_pipeline          = pipeline;
+	if (!m_tfx_dynamic)
+	{
+		m_last_tfx_pipeline_selector = p;
+		m_last_tfx_pipeline          = pipeline;
+	}
 	return pipeline;
 }
 
-/* A pipeline the map has no entry for, by its key: one the warm-up thread
- * finished, else built here and listed for the next device. Out of line,
- * so the lookup above stays as small as it was. */
+/* The dynamic sibling of a key's pipeline: from the table; else, with
+ * build, built here, or without, asked of the warm-up thread for the next
+ * draw that wants it. VK_NULL_HANDLE while there is none to draw with. */
+VkPipeline GSDeviceVK::GetTFXSibling(const PipelineSelector& key, bool build)
+{
+	PipelineSelector sk{key};
+	VKDynamicPS(sk.ps);
+	const auto it = m_tfx_siblings.find(sk);
+	VkPipeline sibling;
+	if (it != m_tfx_siblings.end() && (it->second != VK_NULL_HANDLE || !build))
+		return it->second;
+	if (!build)
+	{
+		/* (a null entry: asked for, or the thread could not take it) */
+		if (PipelineWarmQueue(sk, true))
+			m_tfx_siblings.emplace(sk, VK_NULL_HANDLE);
+		return VK_NULL_HANDLE;
+	}
+	sibling = BuildTFXPipeline(sk, &m_modules, m_pipeline_cache, true);
+	m_tfx_siblings[sk] = sibling;
+	if (sibling != VK_NULL_HANDLE)
+		m_siblings_built_here++;
+	return sibling;
+}
+
+/* A pipeline the map has no entry for, by its key. With the warm-up
+ * thread there: what it finished; else, when the key's sibling is there,
+ * the draw draws with that while the thread builds the key's own (the
+ * draw is drawn as its own pipeline would draw it, only with a pixel
+ * shader that reads the selector instead of having it folded in); else
+ * the pipeline is built here, and the thread is asked for the sibling so
+ * the next new key with the same state need not wait. Built here, a
+ * pipeline is listed for the next device. Out of line, so the lookup
+ * above stays as small as it was. */
 __noinline VkPipeline GSDeviceVK::GetTFXPipelineMissed(const PipelineSelector& p)
 {
 	VkPipeline pipeline;
 
-	if (m_warm && PipelineWarmTake())
+	m_tfx_dynamic = false;
+	if (m_test_pipelines == 2)
 	{
-		const auto it = m_tfx_pipelines.find(p);
+		pipeline = GetTFXSibling(p, true);
+		if (pipeline != VK_NULL_HANDLE)
+			goto sibling;
+	}
+	/* (=async: a key with no sibling yet has one built here, so every new
+	 * key draws with one while its own is built on the thread) */
+	else if (m_warm)
+	{
+		const auto it = PipelineWarmTake() ? m_tfx_pipelines.find(p) : m_tfx_pipelines.end();
 		if (it != m_tfx_pipelines.end())
 			return it->second;
+		if (m_test_pipelines != 1)
+		{
+			pipeline = GetTFXSibling(p, m_test_pipelines == 3);
+			if (pipeline != VK_NULL_HANDLE
+				&& (m_tfx_pending.find(p) != m_tfx_pending.end() || (PipelineWarmQueue(p, false)
+					&& m_tfx_pending.emplace(p, 1).second)))
+				goto sibling;
+		}
 	}
 
 	pipeline = BuildTFXPipeline(p, &m_modules, m_pipeline_cache);
@@ -3825,6 +3910,20 @@ __noinline VkPipeline GSDeviceVK::GetTFXPipelineMissed(const PipelineSelector& p
 		m_pipelines_built_here++;
 		PipelineListAdd(p);
 	}
+	return pipeline;
+
+sibling:
+	{
+		u32 k[4];
+		VKTFXDynamicKey(p.ps, k);
+		if (memcmp(k, m_tfx_key, sizeof(k)))
+		{
+			memcpy(m_tfx_key, k, sizeof(k));
+			m_dirty_flags |= DIRTY_FLAG_TFX_KEY;
+		}
+	}
+	m_tfx_dynamic = true;
+	m_sibling_draws++;
 	return pipeline;
 }
 
@@ -4093,12 +4192,24 @@ void GSDeviceVK::PipelineListSave()
 
 #ifdef HAVE_THREADS
 
+/* What the render thread may ask of the thread at once: room for its
+ * results is made at the start, so a result never waits for room. */
+#define PIPELINE_JOBS 64u
+
 typedef struct PipelineWarmResult
 {
 	GSDeviceVK::PipelineSelector sel;
 	VkPipeline pipeline;
-	u32 util; /* the utility pipeline's id, or UP_COUNT for a TFX one */
+	u32 util;    /* the utility pipeline's id, or UP_COUNT for a TFX one */
+	u8 dynamic;  /* a sibling (sel its VKDynamicPS selector) */
+	u8 job;      /* asked for by the render thread (PipelineWarmQueue) */
 } PipelineWarmResult;
+
+typedef struct PipelineWarmJob
+{
+	GSDeviceVK::PipelineSelector sel;
+	u32 dynamic;
+} PipelineWarmJob;
 
 struct GSDeviceVK::PipelineWarm
 {
@@ -4108,8 +4219,11 @@ struct GSDeviceVK::PipelineWarm
 	u32 count;
 	u32 built;                /* the thread's; read once it is joined */
 	u32 util_built;           /* likewise */
+	u32 siblings_built;       /* likewise */
 	Modules mods;             /* the thread's own */
 	retro_spsc_t results;     /* thread -> render thread */
+	retro_spsc_t jobs;        /* render thread -> thread */
+	retro_eventcount_t wake;  /* a job, or stop */
 	retro_atomic_int_t stop;
 	sthread_t* thread;
 };
@@ -4130,20 +4244,54 @@ static void PipelineWarmResultPut(GSDeviceVK::PipelineWarm* w, const PipelineWar
 {
 	if (retro_spsc_write_avail(&w->results) < sizeof(*res)
 		|| retro_spsc_write(&w->results, res, sizeof(*res)) != sizeof(*res))
-		vkDestroyPipeline(vk_init_info.device, res->pipeline, nullptr);
+	{
+		if (res->pipeline != VK_NULL_HANDLE)
+			vkDestroyPipeline(vk_init_info.device, res->pipeline, nullptr);
+	}
 }
 
-/* Builds the utility pipelines, then the list in order, with modules of
- * its own made from the core's SPIR-V, and passes them back. Never waits:
- * that is all there is to do. */
+/* Builds what the render thread asked for, if it asked; true if it did.
+ * Each is answered, built or not, so the render thread does not wait on a
+ * key forever. */
+static bool PipelineWarmDoJob(GSDeviceVK::PipelineWarm* w)
+{
+	PipelineWarmResult res = PipelineWarmResult();
+	PipelineWarmJob job;
+	if (retro_spsc_read_avail(&w->jobs) < sizeof(job))
+		return false;
+	retro_spsc_read(&w->jobs, &job, sizeof(job));
+	res.sel      = job.sel;
+	res.util     = GSDeviceVK::UP_COUNT;
+	res.dynamic  = (u8)job.dynamic;
+	res.job      = 1;
+	res.pipeline = w->dev->BuildTFXPipeline(job.sel, &w->mods, w->cache, job.dynamic != 0);
+	if (res.pipeline != VK_NULL_HANDLE)
+	{
+		if (job.dynamic)
+			w->siblings_built++;
+		else
+			w->built++;
+	}
+	PipelineWarmResultPut(w, &res);
+	return true;
+}
+
+/* Builds the utility pipelines, the listed keys (what the last session
+ * drew with, so most likely what this one draws with first), then their
+ * siblings (so a new key of a state the list knows draws at once), all
+ * with modules of its own made from the core's SPIR-V, and passes them
+ * back; what the render thread asks for (for a draw drawing now) goes
+ * before the next of those, and once they are done the thread sleeps
+ * until it asks. Never waits on the render thread otherwise. */
 static void PipelineWarmThread(void* data)
 {
 	GSDeviceVK::PipelineWarm* w = (GSDeviceVK::PipelineWarm*)data;
-	u32 i;
+	PipelineWarmResult res = PipelineWarmResult();
+	PipelineWarmJob job;
+	u32 i, j, n;
 
 	for (i = 0; i < GSDeviceVK::UP_COUNT; i++)
 	{
-		PipelineWarmResult res;
 		if (retro_atomic_load_acquire_int(&w->stop))
 			goto done;
 		res.sel      = GSDeviceVK::PipelineSelector();
@@ -4155,18 +4303,62 @@ static void PipelineWarmThread(void* data)
 		PipelineWarmResultPut(w, &res);
 	}
 
+	res.util    = GSDeviceVK::UP_COUNT;
+	res.dynamic = 0;
 	for (i = 0; i < w->count; i++)
 	{
-		PipelineWarmResult res;
+		while (PipelineWarmDoJob(w))
+			;
 		if (retro_atomic_load_acquire_int(&w->stop))
-			break;
+			goto done;
 		res.sel      = w->list[i];
-		res.util     = GSDeviceVK::UP_COUNT;
 		res.pipeline = w->dev->BuildTFXPipeline(res.sel, &w->mods, w->cache);
 		if (res.pipeline == VK_NULL_HANDLE)
 			continue;
 		w->built++;
 		PipelineWarmResultPut(w, &res);
+	}
+
+	/* the siblings, each once: the list's own copy is turned into their
+	 * selectors, in front, as it goes */
+	res.dynamic = 1;
+	for (i = 0, n = 0; i < w->count; i++)
+	{
+		GSDeviceVK::PipelineSelector sk{w->list[i]};
+		VKDynamicPS(sk.ps);
+		for (j = 0; j < n; j++)
+			if (w->list[w->count + j] == sk)
+				break;
+		if (j < n)
+			continue;
+		w->list[w->count + n++] = sk;
+		while (PipelineWarmDoJob(w))
+			;
+		if (retro_atomic_load_acquire_int(&w->stop))
+			goto done;
+		res.sel      = sk;
+		res.pipeline = w->dev->BuildTFXPipeline(sk, &w->mods, w->cache, true);
+		if (res.pipeline == VK_NULL_HANDLE)
+			continue;
+		w->siblings_built++;
+		PipelineWarmResultPut(w, &res);
+	}
+
+	/* the render thread's, as it asks */
+	for (;;)
+	{
+		int key;
+		if (retro_atomic_load_acquire_int(&w->stop))
+			break;
+		if (PipelineWarmDoJob(w))
+			continue;
+		key = retro_eventcount_prepare_wait(&w->wake);
+		if (retro_spsc_read_avail(&w->jobs) >= sizeof(job) || retro_atomic_load_acquire_int(&w->stop))
+		{
+			retro_eventcount_cancel_wait(&w->wake);
+			continue;
+		}
+		retro_eventcount_commit_wait(&w->wake, key);
 	}
 
 done:
@@ -4178,7 +4370,9 @@ void GSDeviceVK::PipelineWarmStart()
 {
 	PipelineWarm* w;
 	VkPipelineCacheCreateInfo ci;
-	const u32 jobs = m_plist_count + UP_COUNT;
+	/* the utility pipelines, the list's siblings and the list, and the
+	 * render thread's jobs */
+	const u32 results = UP_COUNT + 2 * m_plist_count + PIPELINE_JOBS;
 
 	if (m_warm)
 		return;
@@ -4193,26 +4387,52 @@ void GSDeviceVK::PipelineWarmStart()
 	ci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
 	if (vkCreatePipelineCache(vk_init_info.device, &ci, nullptr, &w->cache) != VK_SUCCESS)
 		w->cache = VK_NULL_HANDLE;
+	/* (twice the list: the siblings' selectors go after it) */
 	if (w->cache == VK_NULL_HANDLE
-		|| (m_plist_count && !(w->list = (PipelineSelector*)malloc(m_plist_count * sizeof(*w->list)))))
+		|| (m_plist_count && !(w->list = (PipelineSelector*)malloc(2 * m_plist_count * sizeof(*w->list)))))
 		goto fail;
-	if (!retro_spsc_init(&w->results, (size_t)jobs * sizeof(PipelineWarmResult)))
+	if (!retro_eventcount_init(&w->wake))
 		goto fail;
+	if (!retro_spsc_init(&w->results, (size_t)results * sizeof(PipelineWarmResult)))
+		goto fail_wake;
+	if (!retro_spsc_init(&w->jobs, (size_t)PIPELINE_JOBS * sizeof(PipelineWarmJob)))
+		goto fail_results;
 	if (m_plist_count)
 		memcpy(w->list, m_plist, m_plist_count * sizeof(*w->list));
 	if (!(w->thread = sthread_create(PipelineWarmThread, w)))
-	{
-		retro_spsc_free(&w->results);
-		goto fail;
-	}
-	m_warm = w;
+		goto fail_jobs;
+	m_warm           = w;
+	m_jobs_in_flight = 0;
 	return;
 
+fail_jobs:
+	retro_spsc_free(&w->jobs);
+fail_results:
+	retro_spsc_free(&w->results);
+fail_wake:
+	retro_eventcount_free(&w->wake);
 fail:
 	if (w->cache != VK_NULL_HANDLE)
 		vkDestroyPipelineCache(vk_init_info.device, w->cache, nullptr);
 	free(w->list);
 	free(w);
+}
+
+/* Asks the thread for a pipeline (a sibling, with dynamic); false when it
+ * has as many asked of it as it has room to answer. */
+bool GSDeviceVK::PipelineWarmQueue(const PipelineSelector& sel, bool dynamic)
+{
+	PipelineWarmJob job = PipelineWarmJob();
+	if (!m_warm || m_jobs_in_flight >= PIPELINE_JOBS)
+		return false;
+	job.sel     = sel;
+	job.dynamic = dynamic ? 1u : 0u;
+	if (retro_spsc_write_avail(&m_warm->jobs) < sizeof(job)
+		|| retro_spsc_write(&m_warm->jobs, &job, sizeof(job)) != sizeof(job))
+		return false;
+	m_jobs_in_flight++;
+	retro_eventcount_notify(&m_warm->wake);
+	return true;
 }
 
 /* Takes what the thread has finished into the tables; true if anything. */
@@ -4224,6 +4444,8 @@ bool GSDeviceVK::PipelineWarmTake()
 	while (retro_spsc_read_avail(&m_warm->results) >= sizeof(res))
 	{
 		retro_spsc_read(&m_warm->results, &res, sizeof(res));
+		if (res.job)
+			m_jobs_in_flight--;
 		if (res.util < UP_COUNT)
 		{
 			if (m_util[res.util] == VK_NULL_HANDLE)
@@ -4231,10 +4453,34 @@ bool GSDeviceVK::PipelineWarmTake()
 			else
 				vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
 		}
-		else if (!m_tfx_pipelines.emplace(res.sel, res.pipeline).second)
-			vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
+		else if (res.dynamic)
+		{
+			VkPipeline& sibling = m_tfx_siblings[res.sel];
+			if (sibling == VK_NULL_HANDLE)
+				sibling = res.pipeline;
+			else if (res.pipeline != VK_NULL_HANDLE)
+				vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
+		}
 		else
-			m_pipelines_taken++;
+		{
+			if (res.job)
+				m_tfx_pending.erase(res.sel);
+			/* (a key built here meanwhile keeps that one) */
+			if (!m_tfx_pipelines.emplace(res.sel, res.pipeline).second)
+			{
+				if (res.pipeline != VK_NULL_HANDLE)
+					vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
+			}
+			else if (res.pipeline != VK_NULL_HANDLE)
+			{
+				m_pipelines_taken++;
+				if (res.job)
+				{
+					m_pipelines_async++;
+					PipelineListAdd(res.sel);
+				}
+			}
+		}
 		took = true;
 	}
 	return took;
@@ -4248,23 +4494,30 @@ void GSDeviceVK::PipelineWarmStop()
 	if (!w)
 		return;
 	retro_atomic_store_release_int(&w->stop, 1);
+	retro_eventcount_notify(&w->wake);
 	sthread_join(w->thread);
 	/* what the render thread never asked for */
 	while (retro_spsc_read_avail(&w->results) >= sizeof(res))
 	{
 		retro_spsc_read(&w->results, &res, sizeof(res));
-		vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
+		if (res.pipeline != VK_NULL_HANDLE)
+			vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
 	}
 	m_pipelines_built_ahead = w->built;
 	m_util_built_ahead      = w->util_built;
+	m_siblings_built_ahead  = w->siblings_built;
 	/* what the thread built goes to disk with the rest */
-	if ((w->built || w->util_built) && m_pipeline_cache != VK_NULL_HANDLE)
+	if ((w->built || w->util_built || w->siblings_built) && m_pipeline_cache != VK_NULL_HANDLE)
 		vkMergePipelineCaches(vk_init_info.device, m_pipeline_cache, 1, &w->cache);
 	vkDestroyPipelineCache(vk_init_info.device, w->cache, nullptr);
+	retro_spsc_free(&w->jobs);
 	retro_spsc_free(&w->results);
+	retro_eventcount_free(&w->wake);
 	free(w->list);
 	free(w);
-	m_warm = nullptr;
+	m_warm           = nullptr;
+	m_jobs_in_flight = 0;
+	m_tfx_pending.clear();
 }
 
 #else
@@ -4272,6 +4525,7 @@ void GSDeviceVK::PipelineWarmStop()
 void GSDeviceVK::PipelineWarmStart() { }
 void GSDeviceVK::PipelineWarmStop() { }
 bool GSDeviceVK::PipelineWarmTake() { return false; }
+bool GSDeviceVK::PipelineWarmQueue(const PipelineSelector&, bool) { return false; }
 
 #endif
 
@@ -4745,6 +4999,15 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 
 			dsets[num_dsets++] = m_tfx_rt_descriptor_set;
 		}
+	}
+
+	/* A sibling's key: pushed when it changes, and again in a new command
+	 * buffer or after a utility pipeline's push constants. */
+	if (m_tfx_dynamic && (layout_changed || (flags & DIRTY_FLAG_TFX_KEY)
+			|| memcmp(m_tfx_key, m_tfx_key_pushed, sizeof(m_tfx_key))))
+	{
+		vkCmdPushConstants(cmdbuf, m_tfx_pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(m_tfx_key), m_tfx_key);
+		memcpy(m_tfx_key_pushed, m_tfx_key, sizeof(m_tfx_key));
 	}
 
 	if (layout_changed)

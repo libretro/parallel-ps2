@@ -15,7 +15,11 @@
 #    likewise);
 #  - a selector VKTFXReadsRT says reads no target never loads it, nor does
 #    its key, so the module without the target is enough for both;
-#  - a key whose primitive ID VKTFXFragmentDrop drops never loads it.
+#  - a key whose primitive ID VKTFXFragmentDrop drops never loads it;
+#  - the dynamic sibling's selector (VKDynamicPS) is made the same module
+#    as the key, and its key (VKTFXDynamicKey) holds each field where
+#    vkspv_tfx_fs_key_at/_bits, which the sibling's source was written
+#    from, say it is.
 #
 # The constant folding covers the operations glslang makes of tfx.glsl's
 # constant expressions; anything else it meets with constant operands it
@@ -77,6 +81,11 @@ FOLD = {
     197: (2, lambda a, b: (a | b) & M32), 198: (2, lambda a, b: (a ^ b) & M32),
     199: (2, lambda a, b: (a & b) & M32), 200: (1, lambda a: (~a) & M32),
 }
+
+
+def load_table(name):
+    m = re.search(r"static const u8 %s\[\d+\] = \{([^}]*)\};" % name, INC.read_text())
+    return [int(x) for x in m.group(1).split(",")]
 
 
 def load_modules():
@@ -274,6 +283,7 @@ def main():
     mods = load_modules()
     fs = Module(mods["vkspv_tfx_fs_fetch"])
     vs = [Module(mods["vkspv_tfx_vs"]), Module(mods["vkspv_tfx_vs_expand"])]
+    key_at, key_bits = load_table("vkspv_tfx_fs_key_at"), load_table("vkspv_tfx_fs_key_bits")
     rt = fs.binding.get((2, 0))
     primid = fs.builtin.get(7)
     if rt is None or primid is None:
@@ -291,6 +301,7 @@ def main():
             a = list(map(int, part[0].split()[1:]))
             b = list(map(int, part[1].split()))
             reads_a, reads_b, drop = map(int, part[2].split())
+            sib = list(map(int, part[3].split()))
             la = fs.specialize(dict(enumerate(a)))
             lb = fs.specialize(dict(enumerate(b)))
             what = []
@@ -303,6 +314,12 @@ def main():
                 what.append("its key reads the target VKTFXReadsRT says it does not")
             if (drop & 2) and loads(lb, primid):
                 what.append("its key loads the primitive ID it drops")
+            if sib[0] != reads_b or sib[1] != drop:
+                what.append("its sibling is another module (target %d, drops %d; the key %d, %d)" % (sib[0], sib[1], reads_b, drop))
+            words = sib[2:6]
+            unpacked = [(words[at >> 5] >> (at & 31)) & ((1 << bits) - 1) for at, bits in zip(key_at, key_bits)]
+            if unpacked != a:
+                what.append("its sibling's key holds %s, not its fields" % unpacked)
             if what:
                 failed += 1
                 if failed <= 10:

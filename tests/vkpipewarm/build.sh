@@ -22,7 +22,12 @@
 #    building, ends clean and keeps the list;
 #  - a list cut short, with a byte changed, of another version, or not a
 #    list at all is ignored, the run builds as one from nothing does, and
-#    the list is written again and used by the run after.
+#    the list is written again and used by the run after;
+#  - each case drawn with dynamic siblings only (LRPS2_TEST_VK_PIPELINES=
+#    sibling), and each from nothing drawing every new key with its
+#    sibling while the warm-up thread builds its own (=async), presents
+#    the same picture as from nothing; the second ends in the same state,
+#    and its pipelines come from the thread while siblings drew.
 #
 # Runs the built core: pcsx2_libretro.so/.dll/.dylib at the top of the
 # tree, or LRPS2_CORE. Without one, or without a Vulkan device, the
@@ -231,6 +236,32 @@ for how in short byte version junk; do
 		{ echo "  FAIL: the list written after a damaged one ($how) was not used"; fail=1; }
 	echo "  damaged list ($how): ignored, written again, used"
 done
+
+# 5. The dynamic siblings: drawn with alone, and drawn with while the
+# thread builds; each in a scratch directory of its own, from nothing.
+landed=0
+for c in $CASES; do
+	for mode in sibling async; do
+		rm -rf "$WORK/$mode"
+		mkdir -p "$WORK/$mode"
+		LRPS2_TEST_VK_PIPELINES=$mode VN_DUMP_STATE="$WORK/$c.$mode.state" run "$c.$mode" $c "$WORK/$mode"
+		a=$(image "$c.cold"); b=$(image "$c.$mode")
+		if [ -z "$a" ] || [ "$a" != "$b" ]; then
+			echo "  FAIL: $c drawn with siblings ($mode) presents another picture (${a:-none}, ${b:-none})"
+			fail=1
+		fi
+	done
+	same_state $c $c.async
+	n=$(sed -n 's/.*, \([0-9]*\) of them while a sibling drew.*/\1/p' "$WORK/$c.async.log")
+	d=$(sed -n 's/.*Vulkan dynamic siblings: .*, \([0-9]*\) draws drawn with one.*/\1/p' "$WORK/$c.async.log")
+	[ "$(here "$c.async")" = 0 ] || { echo "  FAIL: $c built $(here "$c.async") on the render thread with siblings to draw with"; fail=1; }
+	[ "${d:-0}" -gt 0 ] || { echo "  FAIL: $c drew nothing with a sibling (async)"; fail=1; }
+	landed=$((landed + ${n:-0}))
+	printf '  %s with siblings: the same picture; %s draws drawn with one, %s pipelines built meanwhile\n' $c "${d:-0}" "${n:-0}"
+done
+# (a key a case draws with only at its end may land after it: over all of
+# them, some must)
+[ "$landed" -gt 0 ] || { echo "  FAIL: no pipeline built while a sibling drew came back from the thread"; fail=1; }
 
 [ $fail = 0 ] || exit 1
 echo "vkpipewarm: ok"

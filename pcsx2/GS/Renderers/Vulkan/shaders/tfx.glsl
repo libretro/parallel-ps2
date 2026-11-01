@@ -16,6 +16,11 @@
 //    depth replacing (early depth testing stays);
 //  - the colour varying is flat, and the decoration is dropped from the
 //    words for a draw that interpolates it.
+// Each fragment module has a dynamic sibling (DYNAMIC), compiled from this
+// same source: the selector comes from push constants, not from
+// specialization. One sibling pipeline serves every selector of a
+// pipeline's fixed state, so a draw whose selector is new draws with it
+// while its own pipeline is built on the warm-up thread.
 
 #version 460 core
 #extension GL_EXT_samplerless_texture_functions : require
@@ -260,46 +265,51 @@ void main()
 #define SHUFFLE_WRITE 2
 #define SHUFFLE_READWRITE 3
 
-// GSHWDrawConfig::PSSelector, a constant a field
+// GSHWDrawConfig::PSSelector, a constant a field; an int's bits are the
+// selector field's. The dynamic sibling (DYNAMIC) reads the same fields
+// from a key in the push constants instead, packed as tools/vk_spirv.py
+// writes in place of @DYNAMIC_KEY below and GSDeviceVK packs them
+// (VKTFXDynamicKey).
+#ifndef DYNAMIC
 layout(constant_id = 0) const bool PS_FST = false;
-layout(constant_id = 1) const int PS_WMS = 0;
-layout(constant_id = 2) const int PS_WMT = 0;
+layout(constant_id = 1) const int PS_WMS = 0; // 2 bits
+layout(constant_id = 2) const int PS_WMT = 0; // 2 bits
 layout(constant_id = 3) const bool PS_ADJS = false;
 layout(constant_id = 4) const bool PS_ADJT = false;
-layout(constant_id = 5) const int PS_AEM_FMT = 0;
-layout(constant_id = 6) const int PS_PAL_FMT = 0;
-layout(constant_id = 7) const int PS_DST_FMT = 0;
-layout(constant_id = 8) const int PS_DEPTH_FMT = 0;
-layout(constant_id = 9) const int PS_CHANNEL_FETCH = 0;
+layout(constant_id = 5) const int PS_AEM_FMT = 0; // 2 bits
+layout(constant_id = 6) const int PS_PAL_FMT = 0; // 2 bits
+layout(constant_id = 7) const int PS_DST_FMT = 0; // 2 bits
+layout(constant_id = 8) const int PS_DEPTH_FMT = 0; // 2 bits
+layout(constant_id = 9) const int PS_CHANNEL_FETCH = 0; // 3 bits
 layout(constant_id = 10) const bool PS_URBAN_CHAOS_HLE = false;
 layout(constant_id = 11) const bool PS_TALES_OF_ABYSS_HLE = false;
 layout(constant_id = 12) const bool PS_AEM = false;
-layout(constant_id = 13) const int PS_TFX = 0;
+layout(constant_id = 13) const int PS_TFX = 0; // 3 bits
 layout(constant_id = 14) const bool PS_TCC = true;
-layout(constant_id = 15) const int PS_ATST = 0;
-layout(constant_id = 16) const int PS_AFAIL = 0;
+layout(constant_id = 15) const int PS_ATST = 0; // 3 bits
+layout(constant_id = 16) const int PS_AFAIL = 0; // 3 bits
 layout(constant_id = 17) const bool PS_FOG = false;
-layout(constant_id = 18) const int PS_BLEND_HW = 0;
+layout(constant_id = 18) const int PS_BLEND_HW = 0; // 3 bits
 layout(constant_id = 19) const bool PS_A_MASKED = false;
 layout(constant_id = 20) const bool PS_FBA = false;
 layout(constant_id = 21) const bool PS_LTF = false;
 layout(constant_id = 22) const bool PS_AUTOMATIC_LOD = false;
 layout(constant_id = 23) const bool PS_MANUAL_LOD = false;
 layout(constant_id = 24) const bool PS_COLCLIP = false;
-layout(constant_id = 25) const int PS_DATE = 0;
+layout(constant_id = 25) const int PS_DATE = 0; // 3 bits
 layout(constant_id = 26) const bool PS_TCOFFSETHACK = false;
 layout(constant_id = 27) const bool PS_REGION_RECT = false;
-layout(constant_id = 28) const int PS_BLEND_A = 0;
-layout(constant_id = 29) const int PS_BLEND_B = 0;
-layout(constant_id = 30) const int PS_BLEND_C = 0;
-layout(constant_id = 31) const int PS_BLEND_D = 0;
-layout(constant_id = 32) const int PS_BLEND_MIX = 0;
+layout(constant_id = 28) const int PS_BLEND_A = 0; // 2 bits
+layout(constant_id = 29) const int PS_BLEND_B = 0; // 2 bits
+layout(constant_id = 30) const int PS_BLEND_C = 0; // 2 bits
+layout(constant_id = 31) const int PS_BLEND_D = 0; // 2 bits
+layout(constant_id = 32) const int PS_BLEND_MIX = 0; // 2 bits
 layout(constant_id = 33) const bool PS_ROUND_INV = false;
 layout(constant_id = 34) const bool PS_FIXED_ONE_A = false;
 layout(constant_id = 35) const bool PS_SHUFFLE = false;
 layout(constant_id = 36) const bool PS_SHUFFLE_SAME = false;
-layout(constant_id = 37) const int PS_PROCESS_BA = 0;
-layout(constant_id = 38) const int PS_PROCESS_RG = 0;
+layout(constant_id = 37) const int PS_PROCESS_BA = 0; // 2 bits
+layout(constant_id = 38) const int PS_PROCESS_RG = 0; // 2 bits
 layout(constant_id = 39) const bool PS_SHUFFLE_ACROSS = false;
 layout(constant_id = 40) const bool PS_READ16_SRC = false;
 layout(constant_id = 41) const bool PS_WRITE_RG = false;
@@ -307,20 +317,35 @@ layout(constant_id = 42) const bool PS_FBMASK = false;
 layout(constant_id = 43) const bool PS_COLCLIP_HW = false;
 layout(constant_id = 44) const bool PS_RTA_CORRECTION = false;
 layout(constant_id = 45) const bool PS_RTA_SRC_CORRECTION = false;
-layout(constant_id = 46) const int PS_DITHER = 0;
+layout(constant_id = 46) const int PS_DITHER = 0; // 2 bits
 layout(constant_id = 47) const bool PS_DITHER_ADJUST = false;
 layout(constant_id = 48) const bool PS_PABE = false;
-layout(constant_id = 49) const int PS_SCANMSK = 0;
+layout(constant_id = 49) const int PS_SCANMSK = 0; // 2 bits
 layout(constant_id = 50) const bool PS_SAMPLE_MAP = false;
 layout(constant_id = 51) const bool PS_NATIVE_TAPS = false;
 layout(constant_id = 52) const bool PS_TEX_IS_FB = false;
 layout(constant_id = 53) const bool PS_NO_COLOR = false;
+#else
+layout(push_constant) uniform PSKey
+{
+	uvec4 ps_key;
+};
+// @DYNAMIC_KEY
+#endif
 
+#ifndef DYNAMIC
 const bool SW_BLEND = (PS_BLEND_A != 0 || PS_BLEND_B != 0 || PS_BLEND_D != 0);
 const bool SW_BLEND_NEEDS_RT = SW_BLEND && (PS_BLEND_A == 1 || PS_BLEND_B == 1 || PS_BLEND_C == 1 || PS_BLEND_D == 1);
 const bool SW_AD_TO_HW = (PS_BLEND_C == 1 && PS_A_MASKED);
 const bool NEEDS_TEX = (PS_TFX != 4);
 const bool DITHER_ON = (PS_DITHER > 0 && PS_DITHER < 3);
+#else
+#define SW_BLEND (PS_BLEND_A != 0 || PS_BLEND_B != 0 || PS_BLEND_D != 0)
+#define SW_BLEND_NEEDS_RT (SW_BLEND && (PS_BLEND_A == 1 || PS_BLEND_B == 1 || PS_BLEND_C == 1 || PS_BLEND_D == 1))
+#define SW_AD_TO_HW (PS_BLEND_C == 1 && PS_A_MASKED)
+#define NEEDS_TEX (PS_TFX != 4)
+#define DITHER_ON (PS_DITHER > 0 && PS_DITHER < 3)
+#endif
 
 layout(std140, set = 0, binding = 1) uniform cb1
 {
