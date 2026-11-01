@@ -245,6 +245,7 @@ tests/ata/*.img
 /tests/gsinterlace/sw_fields
 /tests/gspool/gspool_test
 /tests/gstc/target_budget
+/tests/gstc/hash_keep
 /tests/gsupscale/hires_mem
 /tests/gsupscale/native_taps
 /tests/gsupscale/sprite_centre

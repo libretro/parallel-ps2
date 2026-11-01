@@ -153,7 +153,10 @@ void GSRendererHW::Reset(bool hardware_reset)
 	if (!hardware_reset)
 		g_texture_cache->ReadbackAll();
 
-	g_texture_cache->RemoveAll(true, true, true);
+	/* The hash cache stays: its entries are found by the bytes and
+	 * registers that made them, so a reset or a state load cannot make
+	 * one wrong. The sources dropped here give their references back. */
+	g_texture_cache->RemoveAll(true, true, false);
 
 	ResetBase(hardware_reset);
 }
