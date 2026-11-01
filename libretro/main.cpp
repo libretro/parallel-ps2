@@ -3299,19 +3299,25 @@ bool retro_serialize(void* data, size_t size)
 	return ok;
 }
 
+/* Whether a load needs the rollback copy. A same-instance state was
+ * written by this session, whose block layout is fixed from load to
+ * unload (the renderer is chosen on the first run only), so reading it
+ * cannot be rejected partway. */
+static bool state_load_needs_rollback(size_t size)
+{
+	enum retro_savestate_context ctx = RETRO_SAVESTATE_CONTEXT_NORMAL;
+
+	if (!environ_cb(RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT, &ctx))
+		return true;
+	return ctx != RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE
+		|| size != retro_serialize_size();
+}
+
 bool retro_unserialize(const void* data, size_t size)
 {
 	const size_t backup_size = retro_serialize_size();
-	u8* backup;
-	bool have_backup, ok;
-
-	if (s_unserialize_backup_size != backup_size)
-	{
-		free(s_unserialize_backup);
-		s_unserialize_backup      = (u8 *)malloc(backup_size);
-		s_unserialize_backup_size = s_unserialize_backup ? backup_size : 0;
-	}
-	backup = s_unserialize_backup;
+	u8* backup = NULL;
+	bool have_backup = false, ok;
 
 	state_quiesce();
 
@@ -3320,7 +3326,17 @@ bool retro_unserialize(const void* data, size_t size)
 	 * block, and every block after it would read as zeros. Running on from
 	 * that wipes main memory under live CPU state. Snapshot the machine
 	 * first and put it back if the load does not complete. */
-	have_backup = backup && state_write(backup, backup_size);
+	if (state_load_needs_rollback(size))
+	{
+		if (s_unserialize_backup_size != backup_size)
+		{
+			free(s_unserialize_backup);
+			s_unserialize_backup      = (u8 *)malloc(backup_size);
+			s_unserialize_backup_size = s_unserialize_backup ? backup_size : 0;
+		}
+		backup      = s_unserialize_backup;
+		have_backup = backup && state_write(backup, backup_size);
+	}
 
 	ok = state_read(data, size);
 	if (!ok)

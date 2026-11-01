@@ -8,6 +8,10 @@
  *  state_write before it calls state_read on the frontend's data, and on a
  *  failed read puts the snapshot back with state_read.
  *
+ *  A state this session wrote (the frontend says it stays in this
+ *  instance, and it is this session's size) cannot be rejected partway,
+ *  so state_load_needs_rollback lets it load without the copy.
+ *
  *  This checks that shape in libretro/main.cpp.
  *
  *  Usage: tests/savestate/loadorder <libretro/main.cpp>
@@ -86,10 +90,43 @@ int main(int argc, char** argv)
 		printf("  a failed load does not restore the snapshot\n");
 		bad++;
 	}
-	if (!within(s, e, "SaveState_FreezeInternals") && !within(src, src + strlen(src), "!SaveState_FreezeInternals(&loadme)"))
+	/* The copy is skipped only for a state this session wrote: the
+	 * frontend says it stays in this instance and it is this session's
+	 * size. Anything else - including no answer - keeps it. */
 	{
-		printf("  state_read does not stop at a rejected internals block\n");
-		bad++;
+		const char* g = strstr(src, "static bool state_load_needs_rollback(");
+		const char* ge = g ? strstr(g, "\n}\n") : NULL;
+		if (!g || !ge
+		 || !within(g, ge, "RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT")
+		 || !within(g, ge, "return true;")
+		 || !within(g, ge, "ctx != RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE")
+		 || !within(g, ge, "size != retro_serialize_size()"))
+		{
+			printf("  the rollback copy is not kept for every state but this session's own\n");
+			bad++;
+		}
+		if (!within(s, e, "if (state_load_needs_rollback(size))")
+		 || (snap && within(s, e, "if (state_load_needs_rollback(size))") > snap))
+		{
+			printf("  the snapshot is not taken whenever state_load_needs_rollback asks\n");
+			bad++;
+		}
+	}
+	/* state_read takes FreezeInternals' answer and returns on a refusal
+	 * before the first memory block is read. */
+	{
+		const char* r = strstr(src, "static bool state_read(");
+		const char* re = r ? strstr(r, "\n}\n") : NULL;
+		const char* fi = r ? within(r, re, "SaveState_FreezeInternals(&loadme)") : NULL;
+		const char* mem = fi ? within(fi, re, "SaveState_FreezeMem(&loadme") : NULL;
+		const char* chk = fi ? within(fi, re, "if (!ok)") : NULL;
+		const char* ret = chk ? within(chk, re, "return false;") : NULL;
+		if (!fi || !mem || !chk || !ret || ret > mem
+		 || !within(r, fi, "ok = "))
+		{
+			printf("  state_read does not stop at a rejected internals block\n");
+			bad++;
+		}
 	}
 
 	free(src);

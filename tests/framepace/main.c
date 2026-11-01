@@ -18,9 +18,10 @@
  *     sample for sample, and the same savestate at the end, as running
  *     on from where it was taken - straight, with a savestate taken
  *     before every frame, with every frame run twice and rolled back
- *     between (as runahead and netplay do), with a state the core
+ *     between (as runahead and netplay do, also with the frontend
+ *     saying the state stays in this instance), with a state the core
  *     rejects partway offered before every frame (cut short, so its
- *     memory blocks are only partly there), and with option changes
+ *     memory blocks are only partly there, in either context), and with option changes
  *     between frames (audio only: an option may change the picture).
  *
  * Usage: framepace <path-to-core> <scratch-dir> */
@@ -100,6 +101,8 @@ static unsigned        s_runs;
 static unsigned long   s_rng = 1;
 static int             s_antiblur;
 static int             s_option_changed;
+/* What GET_SAVESTATE_CONTEXT answers; 0 is RETRO_SAVESTATE_CONTEXT_NORMAL. */
+static int             s_state_ctx;
 static unsigned        s_pixel_bytes = 4;
 static struct fp_frame s_cur;
 
@@ -238,6 +241,11 @@ static bool fp_environment(unsigned cmd, void* data)
 		case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
 			*(bool*)data = s_option_changed != 0;
 			s_option_changed = 0;
+			return true;
+		case RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT:
+			if (data)
+				*(enum retro_savestate_context*)data =
+					(enum retro_savestate_context)s_state_ctx;
 			return true;
 		default:
 			return false;
@@ -550,6 +558,23 @@ int main(int argc, char** argv)
 	fp_compare("rolled back every frame", straight, again, 1);
 	fp_compare_state("rolled back every frame", end, other, size);
 
+	/* The same, as runahead does it: the frontend says the state stays
+	 * in this instance, so the core loads it without a rollback copy. */
+	s_rng = 23;
+	fp_load(start, size);
+	s_state_ctx = RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE;
+	for (i = 0; i < FP_FRAMES; i++)
+	{
+		fp_save(scratch, size);
+		fp_run(NULL);
+		fp_load(scratch, size);
+		fp_run(&again[i]);
+	}
+	s_state_ctx = RETRO_SAVESTATE_CONTEXT_NORMAL;
+	fp_save(other, size);
+	fp_compare("rolled back every frame, same instance", straight, again, 1);
+	fp_compare_state("rolled back every frame, same instance", end, other, size);
+
 	/* A state cut short, rejected before every frame: the running
 	 * machine is put back each time and runs on as if it was never
 	 * offered. */
@@ -566,6 +591,25 @@ int main(int argc, char** argv)
 	fp_save(other, size);
 	fp_compare("a rejected state before every frame", straight, again, 1);
 	fp_compare_state("a rejected state before every frame", end, other, size);
+
+	/* The same with the frontend claiming the same instance: a state of
+	 * the wrong size is still not one this session wrote, so it is still
+	 * loaded with the rollback copy and the machine is still put back. */
+	s_rng = 29;
+	fp_load(start, size);
+	s_state_ctx = RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE;
+	for (i = 0; i < FP_FRAMES; i++)
+	{
+		fp_save(scratch, size);
+		fp_jitter();
+		if (s_load(scratch, size / 2))
+			fp_fail("a state cut to half its size was loaded, same instance\n");
+		fp_run(&again[i]);
+	}
+	s_state_ctx = RETRO_SAVESTATE_CONTEXT_NORMAL;
+	fp_save(other, size);
+	fp_compare("a rejected state before every frame, same instance", straight, again, 1);
+	fp_compare_state("a rejected state before every frame, same instance", end, other, size);
 
 	/* An option change, applied with the EE paused, on random frames. */
 	s_rng = 17;
