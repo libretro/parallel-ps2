@@ -105,6 +105,13 @@ public:
 	NetAdapter();
 	virtual bool isInitialised() = 0;
 	virtual bool recv(NetPacket* pkt) = 0; //gets a packet from the host, on the RX thread
+	/* On the RX thread, once recv has nothing: return when it may have
+	 * something, or after a bound. This default polls, every millisecond;
+	 * an adapter that can sleep on its host handles does. */
+	virtual void wait_recv();
+	/* Ends a wait_recv early, from any thread: what recv would find, or
+	 * whether it is called at all, may have changed. */
+	virtual void wake_recv() {}
 	virtual bool send(NetPacket* pkt); //sends the packet and deletes it when done
 	virtual void reset(){};
 	virtual void reloadSettings() = 0;

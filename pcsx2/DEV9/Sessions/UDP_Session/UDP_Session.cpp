@@ -70,6 +70,18 @@ namespace Sessions
 	{
 	}
 
+	/* A fixed port's session receives through the port; its idle clock
+	 * is minutes, which the receive thread's bounded wait covers. */
+	bool UDP_Session::PollInterest(uintptr_t* fd, int* events)
+	{
+		*events = 0;
+		if (!open || isFixedPort)
+			return true;
+		*fd     = (uintptr_t)client;
+		*events = SESSION_POLL_READ;
+		return true;
+	}
+
 	IP_Payload* UDP_Session::Recv()
 	{
 		if (!open)

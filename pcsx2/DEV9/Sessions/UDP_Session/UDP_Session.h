@@ -57,6 +57,8 @@ namespace Sessions
 	public:
 		//Normal Port
 		UDP_Session(ConnectionKey parKey, PacketReader::IP::IP_Address parAdapterIP);
+
+		virtual bool PollInterest(uintptr_t* fd, int* events);
 		//Fixed Port
 #ifdef _WIN32
 		UDP_Session(ConnectionKey parKey, PacketReader::IP::IP_Address parAdapterIP, bool parIsBroadcast, bool parIsMulticast, SOCKET parClient);

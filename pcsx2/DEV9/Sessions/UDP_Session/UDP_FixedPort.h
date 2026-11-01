@@ -55,6 +55,7 @@ namespace Sessions
 		virtual PacketReader::IP::IP_Payload* Recv();
 		virtual bool Send(PacketReader::IP::IP_Payload* payload);
 		virtual void Reset();
+		virtual bool PollInterest(uintptr_t* fd, int* events);
 
 		UDP_Session* NewClientSession(ConnectionKey parNewKey, bool parIsBrodcast, bool parIsMulticast);
 

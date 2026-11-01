@@ -97,6 +97,16 @@ namespace Sessions
 #endif
 	}
 
+	bool UDP_FixedPort::PollInterest(uintptr_t* fd, int* events)
+	{
+		*events = 0;
+		if (!retro_atomic_load_acquire_int(&open))
+			return true;
+		*fd     = (uintptr_t)client;
+		*events = SESSION_POLL_READ;
+		return true;
+	}
+
 	IP_Payload* UDP_FixedPort::Recv()
 	{
 		if (!retro_atomic_load_acquire_int(&open))

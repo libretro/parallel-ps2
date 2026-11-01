@@ -57,6 +57,19 @@ namespace Sessions
 		void AddConnectionClosedHandler(ConnectionClosedEventHandler handler);
 
 		virtual PacketReader::IP::IP_Payload* Recv() = 0;
+
+		/* What Recv waits on, for the receive thread to sleep on it: a
+		 * socket in *fd and SESSION_POLL_READ / _WRITE in *events, or 0
+		 * events for nothing. False when Recv may have something whatever
+		 * the sockets do (a queue, a timer), so it is called again soon.
+		 * Called on the receive thread, as Recv is. */
+		enum { SESSION_POLL_READ = 1, SESSION_POLL_WRITE = 2 };
+		virtual bool PollInterest(uintptr_t* fd, int* events)
+		{
+			(void)fd;
+			*events = 0;
+			return false;
+		}
 		virtual bool Send(PacketReader::IP::IP_Payload* payload) = 0;
 		virtual void Reset() = 0;
 

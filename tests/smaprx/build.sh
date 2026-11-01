@@ -29,7 +29,7 @@ CXX_SRC="$DIR/glue.cpp $P/DEV9/net.cpp $P/DEV9/smap.cpp \
   $P/DEV9/PacketReader/IP/UDP/DNS/DNS_Packet.cpp $P/DEV9/PacketReader/IP/UDP/DNS/DNS_Classes.cpp \
   $P/Pcsx2Config.cpp $P/MemoryCardFile.cpp $P/FormatString.cpp $P/StringView.cpp"
 C_SRC="$DIR/main.c $P/memcard_ecc.c \
-  $LC/rthreads/rthreads.c $LC/rthreads/retro_procbarrier.c $LC/queues/retro_spsc.c \
+  $LC/rthreads/rthreads.c $LC/rthreads/retro_eventcount.c $LC/rthreads/retro_procbarrier.c $LC/queues/retro_spsc.c \
   $LC/string/stdstring.c $LC/string/rstrtod.c $LC/file/file_path.c $LC/file/file_path_io.c \
   $LC/compat/compat_strl.c $LC/compat/fopen_utf8.c $LC/encodings/encoding_utf.c \
   $LC/time/rtime.c $LC/streams/file_stream.c $LC/vfs/vfs_implementation.c"
@@ -62,4 +62,29 @@ fi
 if [ "$WINDOWS" != "1" ]; then
 	build smaprx_test_tsan "-O1 -g -fsanitize=thread"
 	"$DIR/smaprx_test_tsan" 5000
+fi
+
+# The sockets backend itself (sockrx.c): datagrams from the PS2 through
+# the real adapter and its sessions to an echo server on this host, and a
+# receive thread that sleeps while nothing comes.
+SOCK_CXX="$P/DEV9/sockets.cpp $P/DEV9/Sessions/BaseSession.cpp \
+  $P/DEV9/Sessions/ICMP_Session/ICMP_Session.cpp $P/DEV9/Sessions/TCP_Session/TCP_Session.cpp \
+  $P/DEV9/Sessions/TCP_Session/TCP_Session_In.cpp $P/DEV9/Sessions/TCP_Session/TCP_Session_Out.cpp \
+  $P/DEV9/Sessions/UDP_Session/UDP_FixedPort.cpp $P/DEV9/Sessions/UDP_Session/UDP_Session.cpp \
+  $P/DEV9/PacketReader/ARP/ARP_Packet.cpp $P/DEV9/PacketReader/IP/ICMP/ICMP_Packet.cpp \
+  $P/DEV9/PacketReader/IP/TCP/TCP_Options.cpp $P/DEV9/PacketReader/IP/TCP/TCP_Packet.cpp"
+sock_build() { # output, extra flags
+	OBJ="$DIR/.obj_$1"
+	rm -rf "$OBJ" && mkdir -p "$OBJ"
+	for src in $(echo "$C_SRC" | sed "s#$DIR/main.c#$DIR/sockrx.c#") $LC/features/features_cpu.c; do
+		"$CC" -std=gnu99 -w $DEFS $2 $INC -c "$src" -o "$OBJ/$(basename "$src" .c).o"
+	done
+	"$CXX" -std=c++17 -w $DEFS -DSMAPRX_REAL_SOCKETS $2 $INC -o "$DIR/$1$EXE" $CXX_SRC $SOCK_CXX "$OBJ"/*.o $LIBS
+	rm -rf "$OBJ"
+}
+sock_build sockrx_test "-O2 -g $SANFLAGS"
+"$DIR/sockrx_test$EXE"
+if [ "$WINDOWS" != "1" ]; then
+	sock_build sockrx_test "-O1 -g -fsanitize=thread"
+	"$DIR/sockrx_test"
 fi

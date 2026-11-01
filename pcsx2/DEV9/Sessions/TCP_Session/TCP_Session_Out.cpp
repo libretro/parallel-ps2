@@ -66,12 +66,12 @@ namespace Sessions
 			//PS2 sent RST
 			//clearly not expecting
 			//more data
-			state = TCP_State::CloseCompleted;
+			SetState(TCP_State::CloseCompleted);
 			RaiseEventConnectionClosed();
 			return true;
 		}
 
-		switch (state)
+		switch (GetState())
 		{
 			case TCP_State::None:
 				return SendConnect(&tcp);
@@ -125,7 +125,7 @@ namespace Sessions
 			log_cb(RETRO_LOG_ERROR, "DEV9: TCP: Attempt To Send Data On Non Connected Connection\n");
 			return true;
 		}
-		expectedSeqNumber = tcp->sequenceNumber + 1;
+		SetExpectedSeq(tcp->sequenceNumber + 1);
 		//Fill out last received numbers
 		receivedPS2SeqNumbers.clear();
 		for (int i = 0; i < receivedPS2SeqNumberCount; i++)
@@ -247,7 +247,7 @@ namespace Sessions
 			//Compleation of socket connection checked in recv
 		}
 
-		state = TCP_State::SendingSYN_ACK;
+		SetState(TCP_State::SendingSYN_ACK);
 		return true;
 	}
 
@@ -288,7 +288,7 @@ namespace Sessions
 			}
 		}
 		//Next packet will be data
-		state = TCP_State::Connected;
+		SetState(TCP_State::Connected);
 		return true;
 	}
 
@@ -325,7 +325,7 @@ namespace Sessions
 		retro_atomic_store_release_int(&windowSize, tcp->windowSize << windowScale);
 
 		const NumCheckResult Result = CheckNumbers(tcp);
-		const uint delta = GetDelta(expectedSeqNumber, tcp->sequenceNumber);
+		const uint delta = GetDelta(GetExpectedSeq(), tcp->sequenceNumber);
 		//if (Result == NumCheckResult::GotOldData)
 		//{
 		//	log_cb(RETRO_LOG_DEBUG, "[PS2] New Data Offset: %d bytes\n", delta);
@@ -344,7 +344,7 @@ namespace Sessions
 				log_cb(RETRO_LOG_DEBUG, "DEV9: TCP: [PS2] Sending: %d bytes\n", tcp->GetPayload()->GetLength());
 
 				receivedPS2SeqNumbers.erase(receivedPS2SeqNumbers.begin());
-				receivedPS2SeqNumbers.push_back(expectedSeqNumber);
+				receivedPS2SeqNumbers.push_back(GetExpectedSeq());
 
 				//Send the Data
 				int sent = 0;
@@ -374,11 +374,11 @@ namespace Sessions
 						sent += ret;
 				}
 
-				expectedSeqNumber += ((uint)tcp->GetPayload()->GetLength() - delta);
+				SetExpectedSeq(GetExpectedSeq() + ((uint)tcp->GetPayload()->GetLength() - delta));
 				//Done send
 			}
 			//ACK data
-			//log_cb(RETRO_LOG_DEBUG, "[SRV] ACK Data: %d\n", expectedSeqNumber);
+			//log_cb(RETRO_LOG_DEBUG, "[SRV] ACK Data: %d\n", GetExpectedSeq());
 			TCP_Packet* ret = CreateBasePacket();
 			ret->SetACK(true);
 
@@ -419,11 +419,11 @@ namespace Sessions
 	TCP_Session::NumCheckResult TCP_Session::CheckRepeatSYNNumbers(TCP_Packet* tcp)
 	{
 		//log_cb(RETRO_LOG_DEBUG, "DEV9: TCP: CHECK_REPEAT_SYN_NUMBERS\n");
-		//log_cb(RETRO_LOG_DEBUG, "DEV9: TCP: [SRV]CurrAckNumber = %d [PS2]Seq Number = %d\n", expectedSeqNumber, tcp->sequenceNumber);
+		//log_cb(RETRO_LOG_DEBUG, "DEV9: TCP: [SRV]CurrAckNumber = %d [PS2]Seq Number = %d\n", GetExpectedSeq(), tcp->sequenceNumber);
 
-		if (tcp->sequenceNumber != expectedSeqNumber - 1)
+		if (tcp->sequenceNumber != GetExpectedSeq() - 1)
 		{
-			log_cb(RETRO_LOG_ERROR, "DEV9: TCP: [PS2] Sent Unexpected Sequence Number From Repeated SYN Packet, Got %d Expected %d\n", tcp->sequenceNumber, (expectedSeqNumber - 1));
+			log_cb(RETRO_LOG_ERROR, "DEV9: TCP: [PS2] Sent Unexpected Sequence Number From Repeated SYN Packet, Got %d Expected %d\n", tcp->sequenceNumber, (GetExpectedSeq() - 1));
 			return NumCheckResult::Bad;
 		}
 		return NumCheckResult::OK;
@@ -437,7 +437,7 @@ namespace Sessions
 
 		//log_cb(RETRO_LOG_DEBUG, "DEV9: TCP: CHECK_NUMBERS\n");
 		//log_cb(RETRO_LOG_DEBUG, "DEV9: TCP: [SRV]CurrSeqNumber = %d [PS2]Ack Number = %d\n", seqNum, tcp->acknowledgementNumber);
-		//log_cb(RETRO_LOG_DEBUG, "DEV9: TCP: [SRV]CurrAckNumber = %d [PS2]Seq Number = %d\n", expectedSeqNumber, tcp->sequenceNumber);
+		//log_cb(RETRO_LOG_DEBUG, "DEV9: TCP: [SRV]CurrAckNumber = %d [PS2]Seq Number = %d\n", GetExpectedSeq(), tcp->sequenceNumber);
 		//log_cb(RETRO_LOG_DEBUG, "DEV9: TCP: [PS2]Data Length = %d\n",  tcp->GetPayload()->GetLength());
 
 		if (tcp->acknowledgementNumber != seqNum)
@@ -457,23 +457,23 @@ namespace Sessions
 			retro_atomic_store_release_int(&myNumberACKed, 1);
 		}
 
-		if (tcp->sequenceNumber != expectedSeqNumber)
+		if (tcp->sequenceNumber != GetExpectedSeq())
 		{
 			if (tcp->GetPayload()->GetLength() == 0)
 			{
-				log_cb(RETRO_LOG_ERROR, "DEV9: TCP: [PS2] Sent Unexpected Sequence Number From ACK Packet, Got %d Expected %d\n", tcp->sequenceNumber, expectedSeqNumber);
+				log_cb(RETRO_LOG_ERROR, "DEV9: TCP: [PS2] Sent Unexpected Sequence Number From ACK Packet, Got %d Expected %d\n", tcp->sequenceNumber, GetExpectedSeq());
 			}
 			else
 			{
 				//Check if receivedPS2SeqNumbers contains tcp->sequenceNumber
 				if (!ScanContainsU32(receivedPS2SeqNumbers.data(), receivedPS2SeqNumbers.size(), tcp->sequenceNumber))
 				{
-					log_cb(RETRO_LOG_ERROR, "DEV9: TCP: [PS2] Sent an Old Seq Number on an Data packet, Got %d Expected %d\n", tcp->sequenceNumber, expectedSeqNumber);
+					log_cb(RETRO_LOG_ERROR, "DEV9: TCP: [PS2] Sent an Old Seq Number on an Data packet, Got %d Expected %d\n", tcp->sequenceNumber, GetExpectedSeq());
 					return NumCheckResult::GotOldData;
 				}
 				else
 				{
-					log_cb(RETRO_LOG_ERROR, "DEV9: TCP: [PS2] Sent Unexpected Sequence Number From Data Packet, Got %d Expected %d\n", tcp->sequenceNumber, expectedSeqNumber);
+					log_cb(RETRO_LOG_ERROR, "DEV9: TCP: [PS2] Sent Unexpected Sequence Number From Data Packet, Got %d Expected %d\n", tcp->sequenceNumber, GetExpectedSeq());
 					return NumCheckResult::Bad;
 				}
 			}
@@ -507,7 +507,7 @@ namespace Sessions
 		}
 		if (tcp->GetPayload()->GetLength() > 0)
 		{
-			uint delta = GetDelta(expectedSeqNumber, tcp->sequenceNumber);
+			uint delta = GetDelta(GetExpectedSeq(), tcp->sequenceNumber);
 			if (delta == 0)
 				return false;
 
@@ -527,10 +527,10 @@ namespace Sessions
 			return true;
 
 		receivedPS2SeqNumbers.erase(receivedPS2SeqNumbers.begin());
-		receivedPS2SeqNumbers.push_back(expectedSeqNumber);
-		expectedSeqNumber += 1;
+		receivedPS2SeqNumbers.push_back(GetExpectedSeq());
+		SetExpectedSeq(GetExpectedSeq() + 1);
 
-		state = TCP_State::Closing_ClosedByPS2;
+		SetState(TCP_State::Closing_ClosedByPS2);
 
 		const int result = shutdown(client, SD_SEND);
 		if (result == SOCKET_ERROR)
@@ -563,7 +563,7 @@ namespace Sessions
 		{
 			//log_cb(RETRO_LOG_INFO, "DEV9: TCP: ACK was for FIN\n");
 			CloseSocket();
-			state = TCP_State::CloseCompleted;
+			SetState(TCP_State::CloseCompleted);
 			//recv buffer should be empty
 			RaiseEventConnectionClosed();
 		}
@@ -582,7 +582,7 @@ namespace Sessions
 		{
 			//log_cb(RETRO_LOG_INFO, "DEV9: TCP: ACK was for FIN\n");
 			CloseSocket();
-			state = TCP_State::CloseCompletedFlushBuffer;
+			SetState(TCP_State::CloseCompletedFlushBuffer);
 			//Recive buffer may not be empty
 		}
 		return true;
@@ -596,8 +596,8 @@ namespace Sessions
 			return true;
 
 		receivedPS2SeqNumbers.erase(receivedPS2SeqNumbers.begin());
-		receivedPS2SeqNumbers.push_back(expectedSeqNumber);
-		expectedSeqNumber += 1;
+		receivedPS2SeqNumbers.push_back(GetExpectedSeq());
+		SetExpectedSeq(GetExpectedSeq() + 1);
 
 		int result = shutdown(client, SD_SEND);
 		if (result == SOCKET_ERROR)
@@ -618,11 +618,11 @@ namespace Sessions
 		{
 			//log_cb(RETRO_LOG_INFO, "DEV9: TCP: ACK was for FIN\n");
 			CloseSocket();
-			state = TCP_State::CloseCompletedFlushBuffer;
+			SetState(TCP_State::CloseCompletedFlushBuffer);
 			//Recive buffer may not be empty
 		}
 		else
-			state = TCP_State::Closing_ClosedByRemoteThenPS2_WaitingForAck;
+			SetState(TCP_State::Closing_ClosedByRemoteThenPS2_WaitingForAck);
 
 		return true;
 	}
@@ -635,6 +635,6 @@ namespace Sessions
 		PushRecvBuff(reterr);
 
 		CloseSocket();
-		state = TCP_State::CloseCompletedFlushBuffer;
+		SetState(TCP_State::CloseCompletedFlushBuffer);
 	}
 } // namespace Sessions

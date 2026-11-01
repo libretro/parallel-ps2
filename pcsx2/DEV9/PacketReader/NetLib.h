@@ -27,6 +27,10 @@
 #include <arpa/inet.h>
 #endif
 
+/* Fields of a packet sit wherever its layout puts them, an IPv4 address
+ * at byte 26 of a frame: read and written through memcpy, which is a
+ * plain load or store where that is allowed and a correct one where an
+ * unaligned access is not. */
 namespace PacketReader::NetLib
 {
 	// Write.
@@ -37,24 +41,26 @@ namespace PacketReader::NetLib
 	}
 	inline void WriteUInt16(u8* data, int* index, u16 value)
 	{
-		*(u16*)&data[*index] = htons(value);
+		const u16 v = htons(value);
+		memcpy(&data[*index], &v, sizeof(v));
 		*index += sizeof(u16);
 	}
 	inline void WriteUInt32(u8* data, int* index, u32 value)
 	{
-		*(u32*)&data[*index] = htonl(value);
+		const u32 v = htonl(value);
+		memcpy(&data[*index], &v, sizeof(v));
 		*index += sizeof(u32);
 	}
 
 	// Special write.
 	inline void WriteMACAddress(u8* data, int* index, PacketReader::MAC_Address value)
 	{
-		*(PacketReader::MAC_Address*)&data[*index] = value;
+		memcpy(&data[*index], &value, sizeof(value));
 		*index += sizeof(PacketReader::MAC_Address);
 	}
 	inline void WriteIPAddress(u8* data, int* index, PacketReader::IP::IP_Address value)
 	{
-		*(PacketReader::IP::IP_Address*)&data[*index] = value;
+		memcpy(&data[*index], &value, sizeof(value));
 		*index += sizeof(PacketReader::IP::IP_Address);
 	}
 	inline void WriteByteArray(u8* data, int* index, int length, u8* value)
@@ -71,24 +77,28 @@ namespace PacketReader::NetLib
 	}
 	inline void ReadUInt16(u8* data, int* index, u16* value)
 	{
-		*value = ntohs(*(u16*)&data[*index]);
+		u16 v;
+		memcpy(&v, &data[*index], sizeof(v));
+		*value = ntohs(v);
 		*index += sizeof(u16);
 	}
 	inline void ReadUInt32(u8* data, int* index, u32* value)
 	{
-		*value = ntohl(*(u32*)&data[*index]);
+		u32 v;
+		memcpy(&v, &data[*index], sizeof(v));
+		*value = ntohl(v);
 		*index += sizeof(u32);
 	}
 
 	// Special read.
 	inline void ReadMACAddress(u8* data, int* index, PacketReader::MAC_Address* value)
 	{
-		*value = *(PacketReader::MAC_Address*)&data[*index];
+		memcpy(value, &data[*index], sizeof(*value));
 		*index += sizeof(PacketReader::MAC_Address);
 	}
 	inline void ReadIPAddress(u8* data, int* index, PacketReader::IP::IP_Address* value)
 	{
-		*value = *(PacketReader::IP::IP_Address*)&data[*index];
+		memcpy(value, &data[*index], sizeof(*value));
 		*index += sizeof(PacketReader::IP::IP_Address);
 	}
 	inline void ReadByteArray(u8* data, int* index, int length, u8* value)

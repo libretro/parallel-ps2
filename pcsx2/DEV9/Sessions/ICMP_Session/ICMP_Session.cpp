@@ -674,6 +674,18 @@ namespace Sessions
 		connections = parConnections;
 	}
 
+	/* A ping waits on its reply or its timeout, which are polled. */
+	bool ICMP_Session::PollInterest(uintptr_t* fd, int* events)
+	{
+		bool idle;
+		(void)fd;
+		*events = 0;
+		slock_lock(ping_mutex);
+		idle = pings.empty();
+		slock_unlock(ping_mutex);
+		return idle;
+	}
+
 	IP_Payload* ICMP_Session::Recv()
 	{
 		SLockGuard lock(ping_mutex);

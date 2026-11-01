@@ -36,6 +36,7 @@
 #include "PacketReader/IP/IP_Packet.h"
 #include "PacketReader/IP/UDP/UDP_Packet.h"
 #include <rthreads/rthreads.h>
+#include <rthreads/retro_eventcount.h>
 
 NetAdapter* nif;
 static sthread_t* rx_thread = NULL;
@@ -67,6 +68,22 @@ static bool s_rx_ring_ok;
  * start/stop.  volatile gives neither atomicity nor ordering in
  * C++; use release/acquire atomics for the cross-thread handshake. */
 static retro_atomic_int_t RxRunning;
+
+/* The EE took records out of the ring (net_rx_deliver), or the RX thread
+ * is to stop (TermNet): the RX thread waits on it for room. */
+static retro_eventcount_t s_rx_room_ec;
+static bool s_rx_room_ec_ok;
+
+static bool rx_ring_has_room(size_t bytes)
+{
+	return retro_spsc_write_avail(&s_rx_ring) >= bytes;
+}
+
+void NetAdapter::wait_recv()
+{
+	retro_sleep(1);
+}
+
 //rx thread
 void NetRxThread()
 {
@@ -74,6 +91,8 @@ void NetRxThread()
 	const size_t largest = NET_RX_RECORD_BYTES(sizeof(tmp.buffer));
 	while (retro_atomic_load_acquire_int(&RxRunning))
 	{
+		bool full = false;
+
 		/* Receive only with room for the largest record, so a packet
 		 * taken from the host always fits; the rest wait in the host's
 		 * own buffers while the EE catches up. */
@@ -83,10 +102,13 @@ void NetRxThread()
 			NetPacket* pkt;
 			if (retro_spsc_write_begin(&s_rx_ring, &span) >= largest)
 				pkt = (NetPacket*)span;
-			else if (retro_spsc_write_avail(&s_rx_ring) >= largest)
+			else if (rx_ring_has_room(largest))
 				pkt = &tmp; /* room, but split by the end of the ring */
 			else
+			{
+				full = true;
 				break;
+			}
 			if (!nif->recv(pkt))
 				break;
 			if (pkt->size <= 0 || pkt->size > (int)sizeof(pkt->buffer))
@@ -97,7 +119,21 @@ void NetRxThread()
 				retro_spsc_write_end(&s_rx_ring, NET_RX_RECORD_BYTES(pkt->size));
 		}
 
-		retro_sleep(1);
+		if (!full)
+		{
+			/* The host has nothing: until the adapter may have. */
+			nif->wait_recv();
+			continue;
+		}
+
+		/* No room: asleep until the EE takes records out. */
+		{
+			const int key = retro_eventcount_prepare_wait(&s_rx_room_ec);
+			if (rx_ring_has_room(largest) || !retro_atomic_load_acquire_int(&RxRunning))
+				retro_eventcount_cancel_wait(&s_rx_room_ec);
+			else
+				retro_eventcount_commit_wait(&s_rx_room_ec, key);
+		}
 	}
 }
 
@@ -105,6 +141,7 @@ bool net_rx_deliver()
 {
 	NetPacket tmp;
 	bool delivered = false;
+	bool taken = false;
 
 	if (nif == nullptr)
 		return false;
@@ -119,6 +156,7 @@ bool net_rx_deliver()
 			size_t bytes;
 			memcpy(&size, span, sizeof(size));
 			bytes = NET_RX_RECORD_BYTES(size);
+			taken = true;
 			if (contiguous >= bytes)
 			{
 				/* rx_process only reads the packet. */
@@ -132,6 +170,9 @@ bool net_rx_deliver()
 			break;
 		delivered |= rx_process(&tmp);
 	}
+	/* Room for an RX thread waiting for it. */
+	if (taken)
+		retro_eventcount_notify(&s_rx_room_ec);
 	return delivered;
 }
 
@@ -205,6 +246,15 @@ void InitNet()
 		return;
 	}
 	retro_spsc_clear(&s_rx_ring);
+	if (!s_rx_room_ec_ok)
+		s_rx_room_ec_ok = retro_eventcount_init(&s_rx_room_ec);
+	if (!s_rx_room_ec_ok)
+	{
+		log_cb(RETRO_LOG_ERROR, "DEV9: Failed to set up the receive thread's wait\n");
+		delete na;
+		EmuConfig.DEV9.EthEnable = false;
+		return;
+	}
 
 	nif = na;
 	retro_atomic_store_release_int(&RxRunning, 1);
@@ -243,6 +293,8 @@ void TermNet()
 	if (retro_atomic_load_acquire_int(&RxRunning))
 	{
 		retro_atomic_store_release_int(&RxRunning, 0);
+		retro_eventcount_notify(&s_rx_room_ec);
+		nif->wake_recv();
 		nif->close();
 		log_cb(RETRO_LOG_INFO, "DEV9: Waiting for RX-net thread to terminate..\n");
 		sthread_join(rx_thread);

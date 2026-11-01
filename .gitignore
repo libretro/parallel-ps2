@@ -202,6 +202,7 @@ tests/ata/*.img
 /tests/smaprx/smaprx_test
 /tests/smaprx/smaprx_test_tsan
 /tests/smaprx/smaprx_test_plain
+/tests/smaprx/sockrx_test
 /tests/smaprx/*.exe
 /tests/framepace/framepace
 /tests/gsgroup/gsgroup

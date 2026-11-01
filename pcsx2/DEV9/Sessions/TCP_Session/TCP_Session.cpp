@@ -96,7 +96,7 @@ namespace Sessions
 
 		ret->sequenceNumber = GetMyNumber();
 		//log_cb(RETRO_LOG_DEBUG, "With MySeq: %d\n", ret->sequenceNumber);
-		ret->acknowledgementNumber = expectedSeqNumber;
+		ret->acknowledgementNumber = GetExpectedSeq();
 		//log_cb(RETRO_LOG_DEBUG, "With MyAck: %d\n", ret->acknowledgementNumber);
 
 		ret->windowSize = 2 * maxSegmentSize;

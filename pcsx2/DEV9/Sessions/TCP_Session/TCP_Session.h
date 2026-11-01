@@ -64,7 +64,12 @@ namespace Sessions
 		int client = INVALID_SOCKET;
 #endif
 
-		TCP_State state = TCP_State::None;
+		/* The state and the next sequence number the PS2 is to send are
+		 * set on the EE thread (Send) and read on the receive thread (Recv),
+		 * and Recv sets the state too: atomics, as windowSize is. */
+		retro_atomic_int_t stateWord = RETRO_ATOMIC_INT_INITIALIZER((int)TCP_State::None);
+		TCP_State GetState() { return (TCP_State)retro_atomic_load_acquire_int(&stateWord); }
+		void SetState(TCP_State s) { retro_atomic_store_release_int(&stateWord, (int)s); }
 
 		u16 srcPort = 0;
 		u16 destPort = 0;
@@ -78,7 +83,9 @@ namespace Sessions
 		bool sendTimeStamps = false; //Accesed By Out Thread Only
 
 		const int receivedPS2SeqNumberCount = 5;
-		u32 expectedSeqNumber; //Accesed By Out Thread Only
+		retro_atomic_int_t expectedSeqWord = RETRO_ATOMIC_INT_INITIALIZER(0); /* set by Out, read by In too */
+		u32 GetExpectedSeq() { return (u32)retro_atomic_load_acquire_int(&expectedSeqWord); }
+		void SetExpectedSeq(u32 v) { retro_atomic_store_release_int(&expectedSeqWord, (int)v); }
 		std::vector<u32> receivedPS2SeqNumbers; //Accesed By Out Thread Only
 
 		slock_t* myNumberSentry;
@@ -93,6 +100,7 @@ namespace Sessions
 		virtual PacketReader::IP::IP_Payload* Recv();
 		virtual bool Send(PacketReader::IP::IP_Payload* payload);
 		virtual void Reset();
+		virtual bool PollInterest(uintptr_t* fd, int* events);
 
 		virtual ~TCP_Session();
 

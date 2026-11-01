@@ -93,6 +93,7 @@ namespace Sessions
 		ICMP_Session(ConnectionKey parKey, PacketReader::IP::IP_Address parAdapterIP, ThreadSafeMap<Sessions::ConnectionKey, Sessions::BaseSession*>* parConnections);
 
 		virtual PacketReader::IP::IP_Payload* Recv();
+		virtual bool PollInterest(uintptr_t* fd, int* events);
 		virtual bool Send(PacketReader::IP::IP_Payload* payload);
 		bool Send(PacketReader::IP::IP_Payload* payload, PacketReader::IP::IP_Packet* packet);
 		virtual void Reset();

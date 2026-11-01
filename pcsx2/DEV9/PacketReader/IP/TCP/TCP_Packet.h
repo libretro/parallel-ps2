@@ -85,6 +85,8 @@ namespace PacketReader::IP::TCP
 		TCP_Packet(Payload* data);
 		TCP_Packet(u8* buffer, int bufferSize);
 		TCP_Packet(const TCP_Packet&);
+		/* The options are the packet's, as IP_Packet's are. */
+		~TCP_Packet();
 
 		Payload* GetPayload();
 

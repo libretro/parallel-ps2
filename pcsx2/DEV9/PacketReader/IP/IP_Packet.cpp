@@ -160,7 +160,7 @@ namespace PacketReader::IP
 	{
 		//Clone options
 		options.reserve(original.options.size());
-		for (size_t i = 0; i < options.size(); i++)
+		for (size_t i = 0; i < original.options.size(); i++)
 			options.push_back(original.options[i]->Clone());
 	}
 

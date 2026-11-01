@@ -36,6 +36,13 @@ class SocketAdapter : public NetAdapter
 #endif
 	bool initialized = false;
 	PacketReader::IP::IP_Address adapterIP;
+	/* A UDP socket connected to itself: a byte sent to it ends the
+	 * receive thread's poll (wake_recv). ~0 when there is none. */
+	uintptr_t wakeSocket = ~(uintptr_t)0;
+	/* The last poll ended on a session's socket and recv has found
+	 * nothing since: the next wait paces itself, rather than spin on a
+	 * socket its Recv leaves ready. Receive thread only. */
+	bool rxReadyUnread = false;
 
 	//Sentrys replaced by the requirment for each session class to have thread safe destructor
 
@@ -49,6 +56,8 @@ public:
 	virtual bool recv(NetPacket* pkt);
 	//sends the packet and deletes it when done (if successful).rv :true success
 	virtual bool send(NetPacket* pkt);
+	virtual void wait_recv();
+	virtual void wake_recv();
 	virtual void reset();
 	virtual void reloadSettings();
 	virtual void close();
@@ -57,6 +66,9 @@ public:
 	static AdapterOptions GetAdapterOptions();
 
 private:
+	bool SendFrame(NetPacket* pkt);
+	void OpenWakeSocket();
+	void CloseWakeSocket();
 	bool SendIP(PacketReader::IP::IP_Packet* ipPkt);
 	bool SendICMP(Sessions::ConnectionKey Key, PacketReader::IP::IP_Packet* ipPkt);
 	bool SendIGMP(Sessions::ConnectionKey Key, PacketReader::IP::IP_Packet* ipPkt);

@@ -186,8 +186,14 @@ namespace PacketReader::IP::TCP
 	{
 		//Clone options
 		options.reserve(original.options.size());
-		for (size_t i = 0; i < options.size(); i++)
+		for (size_t i = 0; i < original.options.size(); i++)
 			options.push_back(original.options[i]->Clone());
+	}
+
+	TCP_Packet::~TCP_Packet()
+	{
+		for (size_t i = 0; i < options.size(); i++)
+			delete options[i];
 	}
 
 	Payload* TCP_Packet::GetPayload()

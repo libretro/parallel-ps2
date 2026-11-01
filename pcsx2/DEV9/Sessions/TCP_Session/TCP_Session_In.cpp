@@ -36,13 +36,43 @@ using namespace PacketReader::IP::TCP;
 
 namespace Sessions
 {
+	/* As Recv decides what to do: the queue first, then by the state. A
+	 * window or an ACK that lets data be read again comes from the PS2,
+	 * whose packets wake the receive thread (SocketAdapter::send). */
+	bool TCP_Session::PollInterest(uintptr_t* fd, int* events)
+	{
+		*events = 0;
+		if (!_recvBuff.IsQueueEmpty())
+			return false;
+		switch (GetState())
+		{
+			case TCP_State::SendingSYN_ACK:
+				*fd     = (uintptr_t)client;
+				*events = SESSION_POLL_WRITE;
+				return true;
+			case TCP_State::CloseCompletedFlushBuffer:
+				return false;
+			case TCP_State::Connected:
+			case TCP_State::Closing_ClosedByPS2:
+				if (retro_atomic_load_acquire_int(&windowSize) != 0 &&
+					retro_atomic_load_acquire_int(&myNumberACKed))
+				{
+					*fd     = (uintptr_t)client;
+					*events = SESSION_POLL_READ;
+				}
+				return true;
+			default:
+				return true;
+		}
+	}
+
 	PacketReader::IP::IP_Payload* TCP_Session::Recv()
 	{
 		TCP_Packet* ret = PopRecvBuff();
 		if (ret != nullptr)
 			return ret;
 
-		switch (state)
+		switch (GetState())
 		{
 			case TCP_State::SendingSYN_ACK:
 			{
@@ -72,7 +102,7 @@ namespace Sessions
 				//When TCP connection is closed by the server
 				//the server is the last to send a packet
 				//so the event must be raised here
-				state = TCP_State::CloseCompleted;
+				SetState(TCP_State::CloseCompleted);
 				RaiseEventConnectionClosed();
 				return nullptr;
 			case TCP_State::Connected:
@@ -157,7 +187,7 @@ namespace Sessions
 							errno);
 #endif
 
-					switch (state)
+					switch (GetState())
 					{
 						case TCP_State::Connected:
 							return CloseByRemoteStage1();
@@ -194,7 +224,7 @@ namespace Sessions
 	{
 		if (success)
 		{
-			state = TCP_State::SentSYN_ACK;
+			SetState(TCP_State::SentSYN_ACK);
 
 			TCP_Packet* ret = new TCP_Packet(new PayloadData(0));
 			//Return the fact we connected
@@ -204,7 +234,7 @@ namespace Sessions
 			ret->sequenceNumber = GetMyNumber();
 			IncrementMyNumber(1);
 
-			ret->acknowledgementNumber = expectedSeqNumber;
+			ret->acknowledgementNumber = GetExpectedSeq();
 
 			ret->SetSYN(true);
 			ret->SetACK(true);
@@ -241,7 +271,7 @@ namespace Sessions
 			else
 				log_cb(RETRO_LOG_ERROR, "DEV9: TCP: Send Error: %d\n", error);
 
-			state = TCP_State::CloseCompleted;
+			SetState(TCP_State::CloseCompleted);
 			RaiseEventConnectionClosed();
 			return nullptr;
 		}
@@ -260,7 +290,7 @@ namespace Sessions
 		retro_atomic_store_release_int(&myNumberACKed, 0);
 		//log_cb(RETRO_LOG_DEBUG, "myNumberACKed Reset\n");
 
-		state = TCP_State::Closing_ClosedByPS2ThenRemote_WaitingForAck;
+		SetState(TCP_State::Closing_ClosedByPS2ThenRemote_WaitingForAck);
 		return ret;
 	}
 
@@ -277,7 +307,7 @@ namespace Sessions
 		retro_atomic_store_release_int(&myNumberACKed, 0);
 		//log_cb(RETRO_LOG_DEBUG, "myNumberACKed Reset\n");
 
-		state = TCP_State::Closing_ClosedByRemote;
+		SetState(TCP_State::Closing_ClosedByRemote);
 		return ret;
 	}
 } // namespace Sessions

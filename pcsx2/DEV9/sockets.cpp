@@ -19,6 +19,9 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <iphlpapi.h>
+typedef WSAPOLLFD rx_pollfd;
+#define RX_POLL(fds, n, ms) WSAPoll((fds), (ULONG)(n), (ms))
+#define RX_SOCKET SOCKET
 #elif defined(__POSIX__)
 #include <sys/types.h>
 #include <compat/ifaddrs.h>
@@ -26,7 +29,20 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <net/if.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <unistd.h>
+typedef struct pollfd rx_pollfd;
+#define RX_POLL(fds, n, ms) poll((fds), (nfds_t)(n), (ms))
+#define RX_SOCKET int
 #endif
+
+/* The receive thread's sleep, bounded: what no socket says, a session's
+ * idle clock, is minutes. */
+#define RX_WAIT_MS 100
+/* Sockets one poll takes; past that, sessions are polled as before. */
+#define RX_POLL_MAX 64
 
 #include "sockets.h"
 #include "AdapterUtils.h"
@@ -256,7 +272,129 @@ SocketAdapter::SocketAdapter()
 		wsa_init = true;
 #endif
 
+	OpenWakeSocket();
 	initialized = true;
+}
+
+void SocketAdapter::OpenWakeSocket()
+{
+	sockaddr_in addr;
+#ifdef _WIN32
+	int len = sizeof(addr);
+#else
+	socklen_t len = sizeof(addr);
+#endif
+	RX_SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+#ifdef _WIN32
+	u_long nonblocking = 1;
+	if (s == INVALID_SOCKET)
+		return;
+#else
+	if (s < 0)
+		return;
+#endif
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family      = AF_INET;
+	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_port        = 0;
+	if (bind(s, (sockaddr*)&addr, sizeof(addr)) != 0
+	 || getsockname(s, (sockaddr*)&addr, &len) != 0
+	 || connect(s, (sockaddr*)&addr, sizeof(addr)) != 0
+#ifdef _WIN32
+	 || ioctlsocket(s, FIONBIO, &nonblocking) != 0)
+	{
+		closesocket(s);
+		return;
+	}
+#else
+	 || fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK) != 0)
+	{
+		::close(s);
+		return;
+	}
+#endif
+	wakeSocket = (uintptr_t)s;
+}
+
+void SocketAdapter::CloseWakeSocket()
+{
+	if (wakeSocket == ~(uintptr_t)0)
+		return;
+#ifdef _WIN32
+	closesocket((SOCKET)wakeSocket);
+#else
+	::close((int)wakeSocket);
+#endif
+	wakeSocket = ~(uintptr_t)0;
+}
+
+void SocketAdapter::wake_recv()
+{
+	const char b = 0;
+	if (wakeSocket != ~(uintptr_t)0)
+		::send((RX_SOCKET)wakeSocket, &b, 1, 0);
+}
+
+/* Asleep until a session's socket is ready for what its Recv does, or the
+ * PS2 sends (send() wakes it: a new session, a window, an ACK, an ARP
+ * reply queued), or the bound passes. A session that can say nothing of
+ * the sort (a ping) makes it the old millisecond poll. */
+void SocketAdapter::wait_recv()
+{
+	rx_pollfd fds[RX_POLL_MAX];
+	int n = 0, timeout = RX_WAIT_MS;
+	char drain[16];
+
+	if (wakeSocket == ~(uintptr_t)0 || rxReadyUnread)
+	{
+		rxReadyUnread = false;
+		NetAdapter::wait_recv();
+		return;
+	}
+	if (!vRecBuffer.IsQueueEmpty())
+		return;
+
+	fds[n].fd      = (RX_SOCKET)wakeSocket;
+	fds[n].events  = POLLIN;
+	fds[n].revents = 0;
+	n++;
+
+	std::vector<ConnectionKey> keys = connections.GetKeys();
+	for (size_t i = 0; i < keys.size(); i++)
+	{
+		BaseSession* session;
+		uintptr_t fd = 0;
+		int events = 0;
+		if (!connections.TryGetValue(keys[i], &session))
+			continue;
+		if (!session->PollInterest(&fd, &events))
+		{
+			timeout = 1;
+			continue;
+		}
+		if (!events)
+			continue;
+		if (n == RX_POLL_MAX)
+		{
+			timeout = 1;
+			continue;
+		}
+		fds[n].fd      = (RX_SOCKET)fd;
+		fds[n].events  = (short)(((events & BaseSession::SESSION_POLL_READ) ? POLLIN : 0) |
+			((events & BaseSession::SESSION_POLL_WRITE) ? POLLOUT : 0));
+		fds[n].revents = 0;
+		n++;
+	}
+
+	if (RX_POLL(fds, n, timeout) <= 0)
+		return;
+	if (fds[0].revents & POLLIN)
+		while (::recv((RX_SOCKET)wakeSocket, drain, sizeof(drain), 0) > 0)
+		{
+		}
+	for (int i = 1; i < n; i++)
+		if (fds[i].revents)
+			rxReadyUnread = true;
 }
 
 bool SocketAdapter::isInitialised()
@@ -293,6 +431,7 @@ bool SocketAdapter::recv(NetPacket* pkt)
 
 				frame.WritePacket(pkt);
 				InspectRecv(pkt);
+				rxReadyUnread = false;
 				return true;
 			}
 		}
@@ -303,12 +442,21 @@ bool SocketAdapter::recv(NetPacket* pkt)
 		InspectRecv(pkt);
 
 		delete bFrame;
+		rxReadyUnread = false;
 		return true;
 	}
 	return false;
 }
 
+/* Whatever the PS2 sends can give the receive thread something to do. */
 bool SocketAdapter::send(NetPacket* pkt)
+{
+	const bool ret = SendFrame(pkt);
+	wake_recv();
+	return ret;
+}
+
+bool SocketAdapter::SendFrame(NetPacket* pkt)
 {
 	InspectSend(pkt);
 	if (NetAdapter::send(pkt))
@@ -387,6 +535,7 @@ void SocketAdapter::reset()
 
 		session->Reset();
 	}
+	wake_recv();
 }
 
 void SocketAdapter::reloadSettings()
@@ -617,6 +766,7 @@ void SocketAdapter::HandleFixedPortClosed(BaseSession* sender)
 
 void SocketAdapter::close()
 {
+	wake_recv();
 }
 
 SocketAdapter::~SocketAdapter()
@@ -634,6 +784,7 @@ SocketAdapter::~SocketAdapter()
 	}
 	connections.Clear();
 	fixedUDPPorts.Clear(); //fixedUDP sessions already deleted via connections
+	CloseWakeSocket();
 
 	//Clear out vRecBuffer
 	while (!vRecBuffer.IsQueueEmpty())

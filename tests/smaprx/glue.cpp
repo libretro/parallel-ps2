@@ -42,7 +42,21 @@ void smaprx_open(void)
 	for (i = 0; i < SMAP_BD_SIZE / 8; i++)
 		smap_write16(SMAP_BD_RX_BASE + i * 8, SMAP_BD_RX_EMPTY);
 	EmuConfig.DEV9.EthApi = Pcsx2Config::DEV9Options::NetApi::Sockets;
+	EmuConfig.DEV9.EthDevice = "Auto";
+	EmuConfig.DEV9.EthEnable = true;
 	InitNet();
+}
+
+/* Whether the adapter came up (InitNet turns Ethernet off when not). */
+int smaprx_net_up(void) { return EmuConfig.DEV9.EthEnable ? 1 : 0; }
+
+/* A frame from the PS2, as the SMAP's transmit path hands it on. */
+void smaprx_tx(const unsigned char* frame, int len)
+{
+	NetPacket pkt;
+	memcpy(pkt.buffer, frame, len);
+	pkt.size = len;
+	tx_put(&pkt);
 }
 
 void smaprx_close(void) { TermNet(); }
@@ -74,6 +88,7 @@ void smaprx_dma_read(unsigned* words, int bytes)
 
 } /* extern "C" */
 
+#ifndef SMAPRX_REAL_SOCKETS
 /* The host adapter, standing in for the sockets backend. */
 SocketAdapter::SocketAdapter() { initialized = true; }
 SocketAdapter::~SocketAdapter() {}
@@ -82,6 +97,9 @@ bool SocketAdapter::send(NetPacket* pkt) { (void)pkt; return true; }
 void SocketAdapter::reset() {}
 void SocketAdapter::reloadSettings() {}
 void SocketAdapter::close() {}
+/* The stub's recv polls, as the base adapter's wait does. */
+void SocketAdapter::wait_recv() { NetAdapter::wait_recv(); }
+void SocketAdapter::wake_recv() {}
 
 bool SocketAdapter::recv(NetPacket* pkt)
 {
@@ -91,3 +109,4 @@ bool SocketAdapter::recv(NetPacket* pkt)
 	pkt->size = n;
 	return true;
 }
+#endif
