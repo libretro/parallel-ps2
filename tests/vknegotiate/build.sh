@@ -381,4 +381,34 @@ for mode in v2alloc v1alloc; do
 		rm -rf "$SCRATCH"
 	done
 done
+
+# A GS reset with three render targets drawn (tests/swdraw's
+# reset_readback) writes all three back to local memory, waiting for the
+# GPU once: as many queue submissions as the same with one target. The
+# shim counts them (VN_COUNT_SUBMITS).
+${CC:-cc} -std=c89 -pedantic -Wall -Wno-long-long -O2 \
+	-I "$ROOT/libretro/libretro-common/include" \
+	-o "$SHIM/swdraw" "$ROOT/tests/swdraw/main.c" $LIBS
+for c in reset_readback reset_readback_one; do
+	"$SHIM/swdraw" --bios "$SHIM/$c.bin" $c >/dev/null
+	case $c in reset_readback) want=5A3C1E0F,0F1E3C5A,44332211 ;; *) want=5A3C1E0F ;; esac
+	SCRATCH=$(mktemp -d)
+	if ! LD_LIBRARY_PATH="$SHIM" VN_REAL_VULKAN="$REAL" VN_COUNT_SUBMITS=1 VN_EXPECT_RUN=$want \
+			VN_IDLE_BIOS=1 LRPS2_BIOS="$SHIM/$c.bin" VN_FRAMES=30 \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SHIM/$c.log" 2>&1; then
+		cat "$SHIM/$c.log"
+		rm -rf "$SCRATCH" "$SHIM"
+		echo "  FAIL: $c"
+		exit 1
+	fi
+	rm -rf "$SCRATCH"
+done
+three=$(sed -n 's/^vkshim: \([0-9]*\) queue submissions$/\1/p' "$SHIM/reset_readback.log")
+one=$(sed -n 's/^vkshim: \([0-9]*\) queue submissions$/\1/p' "$SHIM/reset_readback_one.log")
+if [ -z "$three" ] || [ "$three" != "$one" ]; then
+	rm -rf "$SHIM"
+	echo "  FAIL: a GS reset with three targets made ${three:-?} submissions, with one ${one:-?}"
+	exit 1
+fi
+echo "  GS reset, three targets written back: $three submissions, as with one"
 rm -rf "$SHIM"

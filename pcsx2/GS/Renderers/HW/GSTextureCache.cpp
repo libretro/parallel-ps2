@@ -77,13 +77,47 @@ GSTextureCache::~GSTextureCache()
 	gs_scratch_free(&s_scratch_dirty);
 }
 
+/* Every target's copy back is recorded first and the GPU waited for
+ * once, not once a target; the stores follow in the same order. A batch
+ * is bounded in reads and in bytes, so the download textures it adds are
+ * too, and they go with it. */
+#define READBACK_BATCH_READS 16
+#define READBACK_BATCH_BYTES (32u * 1024u * 1024u)
+
 void GSTextureCache::ReadbackAll()
 {
-	for (int type = 0; type < 2; type++)
+	GSDownloadTexturePtr own[READBACK_BATCH_READS];
+	PendingRead pending[READBACK_BATCH_READS];
+	u32 count = 0, shared_used = 0, i;
+	u64 queued = 0;
+	int type;
+
+	for (type = 0; type < 2; type++)
 	{
 		for (auto t : m_dst[type])
-			Read(t, t->m_drawn_since_read);
+		{
+			const GSVector4i& r = t->m_drawn_since_read;
+			const u64 bytes = static_cast<u64>(pcsx2_max_i(r.width(), 0)) * static_cast<u64>(pcsx2_max_i(r.height(), 0)) * 4;
+
+			if (count == READBACK_BATCH_READS || (count && queued + bytes > READBACK_BATCH_BYTES))
+			{
+				for (i = 0; i < count; i++)
+					ReadStore(pending[i]);
+				for (i = 0; i < READBACK_BATCH_READS; i++)
+					own[i].reset();
+				count = 0;
+				queued = 0;
+				shared_used = 0;
+			}
+			if (ReadQueue(t, r, &own[count], &shared_used, &pending[count]))
+			{
+				count++;
+				queued += bytes;
+			}
+		}
 	}
+	for (i = 0; i < count; i++)
+		ReadStore(pending[i]);
 }
 
 void GSTextureCache::RemoveAll(bool sources, bool targets, bool hash_cache)
@@ -6483,6 +6517,14 @@ static __noinline bool readback_store_image(GSLocalMemory* mem, const u8* src, u
 
 bool GSTextureCache::Read(Target* t, const GSVector4i& r)
 {
+	PendingRead p;
+	return ReadQueue(t, r, nullptr, nullptr, &p) && ReadStore(p);
+}
+
+bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexturePtr* own, u32* shared_used, PendingRead* out)
+{
+	u32 shared_bit;
+
 	/* A target with no texture has nothing to read back. That used to be
 	 * impossible - every path that makes one checks the allocation and
 	 * gives up - and now it is not, because the heap has a ceiling and
@@ -6560,6 +6602,15 @@ bool GSTextureCache::Read(Target* t, const GSVector4i& r)
 			return false;
 	}
 
+	shared_bit = (dltex == &m_color_download_texture) ? 1u : (dltex == &m_uint16_download_texture) ? 2u : 4u;
+	if (own && shared_used)
+	{
+		if (*shared_used & shared_bit)
+			dltex = own;
+		else
+			*shared_used |= shared_bit;
+	}
+
 	// Don't overwrite bits which aren't used in the target's format.
 	// Stops Burnout 3's sky from breaking when flushing targets to local memory.
 	const u32 write_mask = (t->m_valid_rgb ? 0x00FFFFFFu : 0) | (t->m_valid_alpha_low ? 0x0F000000u : 0) | (t->m_valid_alpha_high ? 0xF0000000u : 0);
@@ -6599,18 +6650,33 @@ bool GSTextureCache::Read(Target* t, const GSVector4i& r)
 			return false;
 	}
 
-	dltex->get()->Flush();
-	if (!dltex->get()->Map(drc))
+	out->dl         = dltex->get();
+	out->TEX0       = TEX0;
+	out->tr         = tr;
+	out->drc        = drc;
+	out->write_mask = write_mask;
+	return true;
+}
+
+bool GSTextureCache::ReadStore(const PendingRead& p)
+{
+	GSDownloadTexture* const dl = p.dl;
+	const GIFRegTEX0& TEX0 = p.TEX0;
+	const GSVector4i& tr = p.tr;
+	const u32 write_mask = p.write_mask;
+
+	dl->Flush();
+	if (!dl->Map(p.drc))
 		return false;
 
 	// Why does WritePixelNN() not take a const pointer?
 	const GSOffset off = g_gs_renderer->m_mem.GetOffset(TEX0.TBP0, TEX0.TBW, TEX0.PSM);
-	u8* bits = const_cast<u8*>(dltex->get()->GetMapPointer());
-	const u32 pitch = dltex->get()->GetMapPitch();
+	u8* bits = const_cast<u8*>(dl->GetMapPointer());
+	const u32 pitch = dl->GetMapPitch();
 
 	if (GS_TC_PARTIAL_TRANSFERS && readback_store_image(&g_gs_renderer->m_mem, bits, pitch, &tr, TEX0.TBP0, TEX0.TBW, TEX0.PSM, write_mask))
 	{
-		dltex->get()->Unmap();
+		dl->Unmap();
 		return true;
 	}
 
@@ -6631,11 +6697,11 @@ bool GSTextureCache::Read(Target* t, const GSVector4i& r)
 
 		default:
 			log_cb(RETRO_LOG_ERROR, "Unknown PSM %u on Read\n", TEX0.PSM);
-			dltex->get()->Unmap();
+			dl->Unmap();
 			return false;
 	}
 
-	dltex->get()->Unmap();
+	dl->Unmap();
 	return true;
 }
 

@@ -613,6 +613,23 @@ private:
 	/// Resizes the download texture if needed.
 	bool PrepareDownloadTexture(u32 width, u32 height, GSTexture::Format format, GSDownloadTexturePtr* tex);
 
+	/* A readback with its copy recorded and not yet waited for. */
+	struct PendingRead
+	{
+		GSDownloadTexture* dl;
+		GIFRegTEX0 TEX0;
+		GSVector4i tr;
+		GSVector4i drc;
+		u32 write_mask;
+	};
+
+	/* Records the copy of r back from t. With own given, a download
+	 * texture this cache holds is used the first time in shared_used
+	 * and own after that, so the copies of one batch do not share one. */
+	bool ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexturePtr* own, u32* shared_used, PendingRead* out);
+	/* Waits for the copy, unless done, and writes it to local memory. */
+	bool ReadStore(const PendingRead& p);
+
 	HashCacheEntry* LookupHashCache(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, bool& paltex, const u32* clut, const GSVector2i* lod, SourceRegion region);
 	void RemoveFromHashCache(HashCacheMap::iterator it);
 	void AgeHashCache();

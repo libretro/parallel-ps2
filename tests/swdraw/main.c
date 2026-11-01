@@ -249,6 +249,9 @@ static void qw(unsigned a, unsigned b, unsigned c, unsigned d)
 	s_qw_count++;
 }
 
+/* Kicks that write CSR.RESET first, after their vsync wait. */
+static unsigned      s_kick_csr_reset[SL_MAX_KICKS];
+
 static void kick(unsigned first, unsigned count, unsigned vsyncs)
 {
 	s_kick[s_kick_count][0] = first;
@@ -892,6 +895,41 @@ static void case_dirty_whole_target(void)
 	kick(i, s_qw_count - i, 5);
 	s_run_frames = 40;
 }
+
+/* Render targets drawn, each a flat triangle of its own colour (a sprite
+ * would be a clear, which goes to local memory as it is drawn), then a
+ * GS reset (CSR.RESET) two vsyncs on: the reset writes every target back
+ * to local memory, which then holds every colour. The one-target case is
+ * the same with one, for the number of submissions to compare. */
+static void reset_readback(unsigned targets)
+{
+	static const unsigned color[3] = { 0x5A3C1E0Fu, 0x0F1E3C5Au, 0x44332211u };
+	unsigned t, i;
+	qw((5 + targets * 6) | 0x8000u, 0x10000000u, 0xEu, 0); /* A+D, EOP */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	for (t = 0; t < targets; t++)
+	{
+		qw((t * 32u) | (4u << 16), 0, GS_FRAME_1, 0);      /* FBP 0, 32, 64; FBW 4 */
+		qw(3, 0, GS_PRIM, 0);                              /* triangle, flat */
+		qw(color[t], 0x3f800000u, GS_RGBAQ, 0);
+		qw(0, 0, GS_XYZ2, 0);
+		qw((unsigned)XY(256, 0), 0, GS_XYZ2, 0);
+		qw((unsigned)XY(0, 256), 0, GS_XYZ2, 0);
+	}
+	kick(0, s_qw_count, 0);
+	i = s_qw_count;
+	qw(0x8000u, 0, 0, 0);                                  /* NLOOP 0, EOP */
+	kick(i, 1, 2);
+	s_kick_csr_reset[s_kick_count - 1] = 1;
+	s_run_frames = 30;
+}
+
+static void case_reset_readback(void) { reset_readback(3); }
+static void case_reset_readback_one(void) { reset_readback(1); }
 
 /* Depth written at page 50, then two sprites textured from it as Z32
  * with S a long way negative at their far corners: the texel distance
@@ -1701,6 +1739,8 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "vram_wrap_read",  case_vram_wrap_read, "1" },
 	{ "frame_on_depth",  case_frame_on_depth, "1" },
 	{ "dirty_whole_target", case_dirty_whole_target, "1" },
+	{ "reset_readback",  case_reset_readback, "1" },
+	{ "reset_readback_one", case_reset_readback_one, "1" },
 	{ "depth_texture_far", case_depth_texture_far, "1" },
 	{ "move_width_change", case_move_width_change, "1" },
 	{ "shuffle_left_of_offset", case_shuffle_left_of_offset, "1" },
@@ -1832,6 +1872,11 @@ static int sl_write_bios(const char* path)
 			pc = sl_emit(rom, pc, SL_ADDIU(15, 15, -1));
 			pc = sl_emit(rom, pc, SL_BNE(15, 0, (wait - (pc + 4)) >> 2));
 			pc = sl_emit(rom, pc, 0);
+		}
+		if (s_kick_csr_reset[k])
+		{
+			pc = sl_emit(rom, pc, SL_ORI(9, 0, 0x200));               /* CSR.RESET               */
+			pc = sl_emit(rom, pc, SL_SW(9, 0, 24));
 		}
 		pc = sl_emit(rom, pc, SL_LUI(12, 0x0010));                   /* MADR                    */
 		pc = sl_emit(rom, pc, SL_ORI(12, 12, s_kick[k][0] * 16));

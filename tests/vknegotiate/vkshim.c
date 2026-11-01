@@ -6,8 +6,10 @@
  * it, so that is the one export.
  *
  * VN_ALLOC_OK is read at each allocation: the harness lifts it once the
- * renderer is up. */
+ * renderer is up. With VN_COUNT_SUBMITS set, the queue submissions the
+ * core makes are counted and the count printed when the process ends. */
 #include <dlfcn.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,6 +21,8 @@ static PFN_vkGetInstanceProcAddr s_real_gipa;
 static PFN_vkGetDeviceProcAddr   s_real_gdpa;
 static PFN_vkAllocateMemory      s_real_alloc;
 static long                      s_calls;
+static PFN_vkQueueSubmit         s_real_submit;
+static long                      s_submits;
 
 static int shim_load(void)
 {
@@ -46,8 +50,37 @@ static VKAPI_ATTR VkResult VKAPI_CALL shim_alloc(VkDevice d, const VkMemoryAlloc
 	return s_real_alloc(d, ai, cb, out);
 }
 
+static void shim_report(void)
+{
+	printf("vkshim: %ld queue submissions\n", s_submits);
+	fflush(stdout);
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL shim_submit(VkQueue q, uint32_t n, const VkSubmitInfo* si, VkFence f)
+{
+	s_submits++;
+	return s_real_submit(q, n, si, f);
+}
+
+/* The submit entry point, counted when VN_COUNT_SUBMITS asks. */
+static PFN_vkVoidFunction shim_wrap_submit(PFN_vkVoidFunction real)
+{
+	static int registered;
+	if (!real || !getenv("VN_COUNT_SUBMITS"))
+		return real;
+	s_real_submit = (PFN_vkQueueSubmit)real;
+	if (!registered)
+	{
+		registered = 1;
+		atexit(shim_report);
+	}
+	return (PFN_vkVoidFunction)shim_submit;
+}
+
 static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL shim_gdpa(VkDevice d, const char* name)
 {
+	if (!strcmp(name, "vkQueueSubmit"))
+		return shim_wrap_submit(s_real_gdpa(d, name));
 	if (!strcmp(name, "vkGetDeviceProcAddr"))
 		return (PFN_vkVoidFunction)shim_gdpa;
 	if (!strcmp(name, "vkAllocateMemory"))
@@ -75,5 +108,7 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instan
 		s_real_alloc = (PFN_vkAllocateMemory)s_real_gipa(instance, name);
 		return (PFN_vkVoidFunction)shim_alloc;
 	}
+	if (instance && !strcmp(name, "vkQueueSubmit"))
+		return shim_wrap_submit(s_real_gipa(instance, name));
 	return s_real_gipa(instance, name);
 }
