@@ -35,6 +35,11 @@
 #include "../pcsx2/MTVU.h"
 #include "../pcsx2/Counters.h"
 #include "../pcsx2/COP0.h"
+#include "../pcsx2/Elfheader.h"
+#include "../pcsx2/R3000A.h"
+#include "../pcsx2/R5900.h"
+#include "../pcsx2/VUmicro.h"
+#include "../pcsx2/vtlb.h"
 #include "../pcsx2/Host.h"
 
 #include "HostFS.h"
@@ -3147,11 +3152,48 @@ static bool state_write(void* dst, size_t size)
 /* The TLB as it was when the state being loaded was opened. */
 static tlbs s_tlb_before_load[48];
 
+/* Code memory from a state, page by page: a page that changes is
+ * cleared of its compiled code and written, one that does not is left
+ * with its code. The CPU threads are parked outside their recompilers. */
+#define STATE_CODE_PAGE 4096u
+
+static void state_clear_ee_ram(u32 addr, u32 bytes)
+{
+	mmap_UnprotectRamRange(addr, bytes);
+	Cpu->Clear(addr, bytes / 4);
+}
+static void state_clear_ee_scratch(u32 addr, u32 bytes) { Cpu->Clear(0x70000000u + addr, bytes / 4); }
+static void state_clear_iop_ram(u32 addr, u32 bytes)    { psxCpu->Clear(addr, bytes / 4); }
+static void state_clear_vu0_micro(u32 addr, u32 bytes)  { CpuVU0->Clear(addr, bytes); }
+static void state_clear_vu1_micro(u32 addr, u32 bytes)  { CpuVU1->Clear(addr, bytes); }
+
+static void state_read_code(SaveStateBase* s, u8* dst, u32 size, void (*clear)(u32 addr, u32 bytes))
+{
+	const u8* src;
+	u32 off;
+
+	SaveState_PrepBlock(s, (int)size);
+	if (!SaveState_IsOkay(s))
+		return;
+	src = SaveState_BlockPtr(s);
+	for (off = 0; off < size; off += STATE_CODE_PAGE)
+	{
+		if (memcmp(dst + off, src + off, STATE_CODE_PAGE) == 0)
+			continue;
+		clear(off, STATE_CODE_PAGE);
+		memcpy(dst + off, src + off, STATE_CODE_PAGE);
+	}
+	SaveState_CommitBlock(s, size);
+}
+
 /* Loads the whole machine from a state, stopping at the first block that
  * does not load. Whatever came before that block has already been applied,
  * so a false return leaves the machine half-loaded: the caller restores it.
+ * With keep_code, compiled code survives where the code memory under it
+ * does not change; the recompilers are reset whole when what they build
+ * into code from outside memory (the boot and game-start hooks) changes.
  * The CPU thread must be paused and the VU1 and GS threads quiesced. */
-static bool state_read(const void* data, size_t size)
+static bool state_read(const void* data, size_t size, bool keep_code)
 {
 	freezeData fP;
 	SaveStateBase loadme;
@@ -3182,6 +3224,8 @@ static bool state_read(const void* data, size_t size)
 	 * other than the ones the guest has set up, those come out of the
 	 * mappings and the state's go in. */
 	memcpy(s_tlb_before_load, tlb, sizeof(s_tlb_before_load));
+	const bool    started_before = g_GameStarted, loading_before = g_GameLoading;
+	const u32     entry_before = ElfEntry, eeload_main_before = g_eeloadMain, eeload_exec_before = g_eeloadExec;
 	ok = SaveState_FreezeBios(&loadme) && SaveState_FreezeInternals(&loadme);
 	if (memcmp(s_tlb_before_load, tlb, sizeof(s_tlb_before_load)) != 0)
 	{
@@ -3198,16 +3242,38 @@ static bool state_read(const void* data, size_t size)
 		return false;
 	}
 
-	VMManager::Internal::ClearCPUExecutionCaches();
-	SaveState_FreezeMem(&loadme, eeMem->Main, sizeof(eeMem->Main));
-	SaveState_FreezeMem(&loadme, iopMem->Main, sizeof(iopMem->Main));
+	if (keep_code && (g_GameStarted != started_before || g_GameLoading != loading_before
+			|| ElfEntry != entry_before || g_eeloadMain != eeload_main_before
+			|| g_eeloadExec != eeload_exec_before))
+		keep_code = false;
+	if (!keep_code)
+		VMManager::Internal::ClearCPUExecutionCaches();
+	if (keep_code)
+		state_read_code(&loadme, eeMem->Main, sizeof(eeMem->Main), state_clear_ee_ram);
+	else
+		SaveState_FreezeMem(&loadme, eeMem->Main, sizeof(eeMem->Main));
+	if (keep_code)
+		state_read_code(&loadme, iopMem->Main, sizeof(iopMem->Main), state_clear_iop_ram);
+	else
+		SaveState_FreezeMem(&loadme, iopMem->Main, sizeof(iopMem->Main));
 	SaveState_FreezeMem(&loadme, eeHw, sizeof(eeHw));
 	SaveState_FreezeMem(&loadme, iopHw, sizeof(iopHw));
-	SaveState_FreezeMem(&loadme, eeMem->Scratch, sizeof(eeMem->Scratch));
+	if (keep_code)
+		state_read_code(&loadme, eeMem->Scratch, sizeof(eeMem->Scratch), state_clear_ee_scratch);
+	else
+		SaveState_FreezeMem(&loadme, eeMem->Scratch, sizeof(eeMem->Scratch));
 	SaveState_FreezeMem(&loadme, vuRegs[0].Mem, VU0_MEMSIZE);
 	SaveState_FreezeMem(&loadme, vuRegs[1].Mem, VU1_MEMSIZE);
-	SaveState_FreezeMem(&loadme, vuRegs[0].Micro, VU0_PROGSIZE);
-	SaveState_FreezeMem(&loadme, vuRegs[1].Micro, VU1_PROGSIZE);
+	if (keep_code)
+	{
+		state_read_code(&loadme, vuRegs[0].Micro, VU0_PROGSIZE, state_clear_vu0_micro);
+		state_read_code(&loadme, vuRegs[1].Micro, VU1_PROGSIZE, state_clear_vu1_micro);
+	}
+	else
+	{
+		SaveState_FreezeMem(&loadme, vuRegs[0].Micro, VU0_PROGSIZE);
+		SaveState_FreezeMem(&loadme, vuRegs[1].Micro, VU1_PROGSIZE);
+	}
 	if (!SaveState_IsOkay(&loadme))
 	{
 		log_cb(RETRO_LOG_ERROR, "%s: memory blocks short (size=%zu)\n", __func__, size);
@@ -3326,7 +3392,8 @@ bool retro_unserialize(const void* data, size_t size)
 	 * block, and every block after it would read as zeros. Running on from
 	 * that wipes main memory under live CPU state. Snapshot the machine
 	 * first and put it back if the load does not complete. */
-	if (state_load_needs_rollback(size))
+	const bool same_instance = !state_load_needs_rollback(size);
+	if (!same_instance)
 	{
 		if (s_unserialize_backup_size != backup_size)
 		{
@@ -3338,10 +3405,13 @@ bool retro_unserialize(const void* data, size_t size)
 		have_backup = backup && state_write(backup, backup_size);
 	}
 
-	ok = state_read(data, size);
+	/* A state this session wrote, loaded without the rollback copy, keeps
+	 * the compiled code its memory did not change; runahead loads one
+	 * every frame. */
+	ok = state_read(data, size, same_instance);
 	if (!ok)
 	{
-		if (have_backup && state_read(backup, backup_size))
+		if (have_backup && state_read(backup, backup_size, false))
 			log_cb(RETRO_LOG_ERROR, "%s: state not loaded; "
 				"the running game is unchanged.\n", __func__);
 		else

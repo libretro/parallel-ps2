@@ -10,7 +10,8 @@
  *
  *  A state this session wrote (the frontend says it stays in this
  *  instance, and it is this session's size) cannot be rejected partway,
- *  so state_load_needs_rollback lets it load without the copy.
+ *  so state_load_needs_rollback lets it load without the copy, and
+ *  only such a state keeps the compiled code its memory did not change.
  *
  *  This checks that shape in libretro/main.cpp.
  *
@@ -105,10 +106,19 @@ int main(int argc, char** argv)
 			printf("  the rollback copy is not kept for every state but this session's own\n");
 			bad++;
 		}
-		if (!within(s, e, "if (state_load_needs_rollback(size))")
-		 || (snap && within(s, e, "if (state_load_needs_rollback(size))") > snap))
+		if (!within(s, e, "const bool same_instance = !state_load_needs_rollback(size);")
+		 || !within(s, e, "if (!same_instance)")
+		 || (snap && within(s, e, "if (!same_instance)") > snap))
 		{
 			printf("  the snapshot is not taken whenever state_load_needs_rollback asks\n");
+			bad++;
+		}
+		/* Compiled code is kept only through the same gate, never on the
+		 * restore of the rollback copy. */
+		if (!within(s, e, "state_read(data, size, same_instance)")
+		 || !within(s, e, "state_read(backup, backup_size, false)"))
+		{
+			printf("  compiled code is kept for a state other than this session's own\n");
 			bad++;
 		}
 	}

@@ -59,6 +59,9 @@ static void fp_sleep_us(unsigned us)
 }
 #endif
 
+#ifndef FP_SMC_THRESHOLD
+#define FP_SMC_THRESHOLD 4000000u
+#endif
 #define FP_WARMUP  30
 #define FP_FRAMES  60
 /* One frame of 48 kHz audio is 801 stereo samples at NTSC's rate and 960
@@ -76,6 +79,7 @@ typedef void   retro_simple_t(void);
 typedef bool   retro_load_game_t(const struct retro_game_info*);
 typedef size_t retro_serialize_size_t(void);
 typedef bool   retro_serialize_t(void*, size_t);
+typedef void*  retro_get_memory_data_t(unsigned);
 typedef bool   retro_unserialize_t(const void*, size_t);
 
 /* What one retro_run handed over. */
@@ -91,6 +95,7 @@ static retro_simple_t*         s_run;
 static retro_simple_t*         s_reset;
 static retro_serialize_size_t* s_state_size;
 static retro_serialize_t*      s_save;
+static retro_get_memory_data_t* s_memory;
 static retro_unserialize_t*    s_load;
 
 static char            s_system_dir[1024];
@@ -270,6 +275,34 @@ static void fp_put32(unsigned char* p, unsigned v)
 #define FP_ANDI(rt, rs, imm)  (0x30000000u | ((rs) << 21) | ((rt) << 16) | ((imm) & 0xFFFFu))
 #define FP_BNE(rs, rt, off)   (0x14000000u | ((rs) << 21) | ((rt) << 16) | ((off) & 0xFFFFu))
 #define FP_B(off)             (0x10000000u | ((off) & 0xFFFFu))
+#define FP_ADDIU(rt, rs, imm) (0x24000000u | ((rs) << 21) | ((rt) << 16) | ((imm) & 0xFFFFu))
+#define FP_JALR(rs)           (0x0000F809u | ((rs) << 21))   /* rd = ra */
+#define FP_JR(rs)             (0x00000008u | ((rs) << 21))
+
+/* The routine the loop calls, copied to RAM at boot (s0 s1 s2, t9 its
+ * own address): it adds one to a counter in RAM and, the time the count
+ * reaches FP_SMC_AT, rewrites its own add to add three. A state taken
+ * before that and loaded after it brings back the add of one, which the
+ * recompiler must then run, not the add of three it compiled last. */
+#define FP_SMC_CODE    0x80110000u
+#define FP_SMC_COUNTER 0x80120000u
+#define FP_SMC_AT      FP_SMC_THRESHOLD
+static const unsigned fp_smc_routine[] = {
+	FP_LUI(16, FP_SMC_COUNTER >> 16),        /* 0  s0 = &counter      */
+	FP_LW(17, 0, 16),                        /* 1  s1 = counter       */
+	0,                                       /* 2                     */
+	FP_ADDIU(17, 17, 1),                     /* 3  rewritten to +3    */
+	FP_SW(17, 0, 16),                        /* 4                     */
+	FP_LUI(18, FP_SMC_AT >> 16),             /* 5  s2 = FP_SMC_AT     */
+	FP_ORI(18, 18, FP_SMC_AT),               /* 6                     */
+	FP_BNE(17, 18, 4),                       /* 7  -> 12              */
+	0,                                       /* 8                     */
+	FP_LUI(18, FP_ADDIU(17, 17, 3) >> 16),   /* 9                     */
+	FP_ORI(18, 18, FP_ADDIU(17, 17, 3)),     /* 10                    */
+	FP_SW(18, 12, 25),                       /* 11 the add, rewritten */
+	FP_JR(31),                               /* 12                    */
+	0                                        /* 13                    */
+};
 
 static unsigned fp_emit(unsigned char* rom, unsigned pc, unsigned op)
 {
@@ -299,7 +332,7 @@ static int fp_write_bios(const char* path)
 {
 	static unsigned char rom[4 * 1024 * 1024];
 	FILE* f;
-	unsigned pc, loop, wait;
+	unsigned pc, loop, wait, i;
 	memset(rom, 0, sizeof(rom));
 	pc = fp_emit(rom, 0, FP_LUI(8, 0xB200));
 	pc = fp_emit_store64(rom, pc, 8, 0x00, 0, 0xFF25u);
@@ -321,7 +354,17 @@ static int fp_write_bios(const char* path)
 	pc = fp_emit(rom, pc, FP_LUI(12, 0x0010));
 	pc = fp_emit(rom, pc, FP_ORI(14, 0, 2));
 	pc = fp_emit(rom, pc, FP_ORI(15, 0, 0x101));
+	/* The routine into RAM, word by word; t9 holds its address. */
+	pc = fp_emit(rom, pc, FP_LUI(25, FP_SMC_CODE >> 16));
+	for (i = 0; i < sizeof(fp_smc_routine) / sizeof(fp_smc_routine[0]); i++)
+	{
+		pc = fp_emit(rom, pc, FP_LUI(24, fp_smc_routine[i] >> 16));
+		pc = fp_emit(rom, pc, FP_ORI(24, 24, fp_smc_routine[i]));
+		pc = fp_emit(rom, pc, FP_SW(24, i * 4, 25));
+	}
 	loop = pc;
+	pc = fp_emit(rom, pc, FP_JALR(25));
+	pc = fp_emit(rom, pc, 0);
 	pc = fp_emit(rom, pc, FP_SW(12, 0x10, 13));
 	pc = fp_emit(rom, pc, FP_SW(14, 0x20, 13));
 	pc = fp_emit(rom, pc, FP_SW(15, 0x00, 13));
@@ -366,6 +409,15 @@ static void fp_run(struct fp_frame* out)
 			s_runs, s_cur.audio_frames);
 	if (out)
 		*out = s_cur;
+}
+
+/* The routine's counter, read with the EE paused (straight after a
+ * save). */
+static unsigned fp_smc_count(void)
+{
+	const unsigned char* ram = (const unsigned char*)s_memory(RETRO_MEMORY_SYSTEM_RAM);
+	const unsigned char* c = ram + (FP_SMC_COUNTER & 0x01FFFFFFu);
+	return (unsigned)c[0] | ((unsigned)c[1] << 8) | ((unsigned)c[2] << 16) | ((unsigned)c[3] << 24);
 }
 
 static void fp_save(void* buf, size_t size)
@@ -434,6 +486,7 @@ int main(int argc, char** argv)
 	unsigned char *start, *end, *other, *scratch;
 	size_t size;
 	int i;
+	unsigned smc_before, smc_after;
 
 	if (argc < 3)
 	{
@@ -481,9 +534,10 @@ int main(int argc, char** argv)
 	s_state_size    = (retro_serialize_size_t*)fp_sym(h, "retro_serialize_size");
 	s_save          = (retro_serialize_t*)fp_sym(h, "retro_serialize");
 	s_load          = (retro_unserialize_t*)fp_sym(h, "retro_unserialize");
+	s_memory        = (retro_get_memory_data_t*)fp_sym(h, "retro_get_memory_data");
 	if (!set_environment || !set_video || !set_audio || !set_audio_batch || !set_poll
 	 || !set_input || !init_fn || !deinit_fn || !unload_game || !load_game || !s_run
-	 || !s_reset || !s_state_size || !s_save || !s_load)
+	 || !s_reset || !s_state_size || !s_save || !s_load || !s_memory)
 	{
 		fprintf(stderr, "framepace: core is missing a libretro export\n");
 		return 2;
@@ -516,11 +570,19 @@ int main(int argc, char** argv)
 		return 4;
 	}
 
-	/* Straight on from a savestate: the reference. */
+	/* Straight on from a savestate: the reference. The routine rewrites
+	 * itself inside it, so every rerun below goes back across that. */
 	fp_save(start, size);
+	smc_before = fp_smc_count();
 	for (i = 0; i < FP_FRAMES; i++)
 		fp_run(&straight[i]);
 	fp_save(end, size);
+	smc_after = fp_smc_count();
+	printf("  routine counter %u -> %u, rewritten at %u\n", smc_before, smc_after, (unsigned)FP_SMC_AT);
+	if (getenv("FP_SMC_PROBE"))
+		return 0;
+	if (!(smc_before < FP_SMC_AT && smc_after > FP_SMC_AT))
+		fp_fail("the routine is not rewritten inside the frames run\n");
 	printf("  straight on: %d frames, %u samples in the first\n", FP_FRAMES, straight[0].audio_frames);
 
 	/* Loaded and run on again. */
