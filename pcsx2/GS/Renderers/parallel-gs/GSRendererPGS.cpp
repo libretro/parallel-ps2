@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0+
 
 #include "GSRendererPGS.h"
+#include "PGSStateVRAM.h"
 
 #include <string.h>
 #include "thread_id.hpp"
@@ -793,9 +794,22 @@ int GSRendererPGS::Defrost(freezeData* data)
 	// Dummy transfer X/Y
 	ptr += 2 * sizeof(uint32_t);
 
-	void *vram = iface.map_vram_write(0, GSLocalMemory::m_vmsize);
-	read_data(ptr, vram, GSLocalMemory::m_vmsize);
-	iface.end_vram_write(0, GSLocalMemory::m_vmsize);
+	/* Only the pages the state changes are written: an unchanged page
+	 * keeps its texture cache and super samples, and is not uploaded. */
+	{
+		const u8* next = ptr;
+		const u8* cur = static_cast<const u8*>(iface.map_vram_read(0, GSLocalMemory::m_vmsize));
+		size_t offset = 0, size;
+
+		while (cur && (offset = pgs_next_changed_run(cur, next, GSLocalMemory::m_vmsize, PageSize,
+				offset, &size)) < GSLocalMemory::m_vmsize)
+		{
+			memcpy(iface.map_vram_write(offset, size), next + offset, size);
+			iface.end_vram_write(offset, size);
+			offset += size;
+		}
+		ptr += GSLocalMemory::m_vmsize;
+	}
 
 	// 4 GIF paths: the tag as Freeze wrote it, NLOOP counting what was
 	// left of the packet, so the path resumes with none of it done.

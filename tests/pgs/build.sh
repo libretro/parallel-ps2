@@ -18,6 +18,7 @@
 # pgs_palette_samples : a palette read of a super-sampled texture takes the
 #                     texel's own sample, as neighbouring texels of an 8-bit
 #                     view are other bytes.
+# pgs_page_runs     : a state load writes exactly the VRAM pages it changes.
 # pgs_vertex_oracle : the C89 kernels must write bytes identical to the
 #                     muglm field-by-field bodies they replace.
 # pgs_queue_equiv   : a ring-buffer vertex queue must deliver the same
@@ -71,6 +72,8 @@ for CC in gcc clang; do
 	"$DIR/pgs_empty_instance"
 	$CC -std=c89 -pedantic -Wall -Wextra -O2 $SANFLAGS -o "$DIR/pgs_palette_samples" "$DIR/pgs_palette_samples.c"
 	"$DIR/pgs_palette_samples"
+	$CC -std=c89 -pedantic -Wall -Wextra -O2 $SANFLAGS -o "$DIR/pgs_page_runs" "$DIR/pgs_page_runs.c"
+	"$DIR/pgs_page_runs"
 	# The bank tools: a splice with nothing to replace must give the bank
 	# back byte for byte.
 	$CC -std=c89 -pedantic -Wall -Wextra -O2 $SANFLAGS -o "$DIR/pgs_bank_splice" "$DIR/pgs_bank_splice.c"

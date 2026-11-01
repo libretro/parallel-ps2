@@ -481,7 +481,7 @@ if(USE_VULKAN)
 	target_link_libraries(PCSX2_FLAGS INTERFACE parallel-gs)
 	target_compile_definitions(PCSX2_FLAGS INTERFACE HAVE_PARALLEL_GS)
 	list(APPEND pcsx2GSSources GS/Renderers/parallel-gs/GSRendererPGS.cpp)
-	list(APPEND pcsx2GSHeaders GS/Renderers/parallel-gs/GSRendererPGS.h)
+	list(APPEND pcsx2GSHeaders GS/Renderers/parallel-gs/GSRendererPGS.h GS/Renderers/parallel-gs/PGSStateVRAM.h)
 
 	target_link_libraries(common INTERFACE
 		Vulkan-Headers glslang
