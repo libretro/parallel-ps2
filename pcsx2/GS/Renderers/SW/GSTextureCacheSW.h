@@ -64,6 +64,7 @@ public:
 	Texture* Lookup(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, u32 tw0 = 0);
 
 	void InvalidatePages(const GSOffset::PageLooper& pages, u32 psm);
+	void InvalidatePage(u32 page);
 
 	void RemoveAll();
 	void IncAge();

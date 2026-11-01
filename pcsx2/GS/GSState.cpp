@@ -2504,7 +2504,9 @@ int GSState::Defrost(const freezeData* fd)
 
 	Flush(GSFlushReason::LOADSTATE);
 
+	m_state_loading = true;
 	Reset(true);
+	m_state_loading = false;
 
 	ReadState(&m_env.PRIM, data);
 
@@ -2563,8 +2565,27 @@ int GSState::Defrost(const freezeData* fd)
 	data += sizeof(GIFReg); // obsolite
 	ReadState(&m_tr.x, data);
 	ReadState(&m_tr.y, data);
-	ReadState(m_mem.m_vm8, data, m_mem.m_vmsize);
-	m_mem_restores++;
+	/* A page at a time: one that already holds what the state does is
+	 * left alone, and the renderer hears which ones changed. */
+	{
+		u32 changed[GS_MAX_PAGES / 32];
+		u32 page;
+
+		memset(changed, 0, sizeof(changed));
+		for (page = 0; page < GS_MAX_PAGES; page++)
+		{
+			u8* const dst = m_mem.m_vm8 + page * GS_PAGE_SIZE;
+			if (memcmp(dst, data, GS_PAGE_SIZE) != 0)
+			{
+				memcpy(dst, data, GS_PAGE_SIZE);
+				changed[page >> 5] |= 1u << (page & 31);
+			}
+			data += GS_PAGE_SIZE;
+		}
+		m_mem_restores++;
+		if (m_ops && m_ops->mem_restored)
+			m_ops->mem_restored(this, changed);
+	}
 
 	m_tr.total = 0; // TODO: restore transfer state
 

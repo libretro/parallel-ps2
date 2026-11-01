@@ -50,6 +50,7 @@ typedef void retro_simple_t(void);
 typedef bool retro_load_game_t(const struct retro_game_info*);
 typedef size_t retro_serialize_size_t(void);
 typedef bool retro_serialize_t(void*, size_t);
+typedef bool retro_unserialize_t(const void*, size_t);
 
 static char s_system_dir[1024];
 /* The case's rasterizer threads and scale. */
@@ -63,6 +64,9 @@ static unsigned s_drawn;
  * memory it filled or a readback it took does. */
 static int s_run_frames = SL_FRAMES;
 static unsigned long s_expect_run[2];
+/* A case may ask for its frames to be run again from a savestate taken
+ * partway, and to come out the same (see sl_rewind). */
+static int s_rewind;
 
 /* GetProcAddress already returns a function pointer; POSIX dlsym returns
  * an object pointer, copied across as lrps2_smoke does. */
@@ -1260,6 +1264,56 @@ static void t4_from_target(int shaded, unsigned tbp_page)
 		s_expect_run[0] = T4_CLUT(7);
 }
 
+/* A 64x64 PSMCT32 texture drawn, uploaded again one texel different,
+ * and drawn again beside the first, every vsync. Between two rounds the software
+ * renderer holds the texture as the round left it; a savestate from an
+ * earlier round has another texel there, and the round after its load
+ * draws before it uploads. Run with s_rewind: the frames after the load
+ * must be the frames the first time, which a texture kept from before
+ * the load, its changed page not read again, is not. */
+static void texture_rewind_draw(unsigned x)
+{
+	qw(7 | 0x8000u, 0x10000000u, 0xEu, 0);
+	/* TBP0 0x2000, TBW 1, PSMCT32, TW 6, TH 6; TCC, decal. */
+	qw(0x2000u | (1u << 14) | (6u << 26) | (2u << 30), 1u | (1u << 2) | (1u << 3), GS_TEX0_1, 0);
+	qw(0, 0, GS_TEX1_1, 0);
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* sprite, TME, FST */
+	qw(0, 0, GS_UV, 0);
+	qw((unsigned)XY(x, 0), 0, GS_XYZ2, 0);
+	qw((64u << 4) | ((64u << 4) << 16), 0, GS_UV, 0);
+	qw((unsigned)XY(x + 64, 64), 0, GS_XYZ2, 0);
+}
+
+static void case_texture_rewind(void)
+{
+	unsigned draw, draw2, up;
+	qw(6 | 0x8000u, 0x10000000u, 0xEu, 0);                 /* A+D, NLOOP 6, EOP */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(10u << 16, 0, GS_FRAME_1, 0);                       /* FBP 0, FBW 10 */
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	kick(0, s_qw_count, 0);
+	draw = s_qw_count;
+	texture_rewind_draw(0);
+	draw2 = s_qw_count;
+	texture_rewind_draw(128);
+	up = s_qw_count;
+	stream_image(0x2000u, 1, 0, 0, 0, 64, 64, 1024);
+	s_bump_qw = s_qw_count;
+	qw(0x11223344u, 0x55667788u, 0x99AABBCCu, 0xDDEEFF00u);
+	qw(0x80402010u, 0x7f000000u, 0x01020304u, 0xf0e0d0c0u);
+	s_qw_repeat = 1022;
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(draw, draw2 - draw, 1);
+	kick(up, s_qw_count + s_qw_repeat - up, 0);
+	kick(draw2, up - draw2, 0);
+	s_run_frames = 20;
+	s_rewind = 1;
+}
+
 static void case_t4_from_target(void) { t4_from_target(0, 0); }
 static void case_t4_from_target_page(void) { t4_from_target(0, 1); }
 static void case_t4_from_target_shaded(void) { t4_from_target(1, 0); }
@@ -1807,6 +1861,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "reset_readback",  case_reset_readback, "1" },
 	{ "reset_readback_one", case_reset_readback_one, "1" },
 	{ "t4_from_target",  case_t4_from_target, "1" },
+	{ "texture_rewind",  case_texture_rewind, "1" },
 	{ "t4_from_target_page", case_t4_from_target_page, "1" },
 	{ "t4_from_target_shaded", case_t4_from_target_shaded, "1" },
 	{ "depth_texture_far", case_depth_texture_far, "1" },
@@ -2111,6 +2166,50 @@ static int sl_state_has_run(retro_serialize_size_t* serialize_size,
 	return run >= 64;
 }
 
+/* From a savestate taken now, the next SL_REWIND_FRAMES frames are run,
+ * the state loaded, and the frames run again: each must hash as it did. */
+#define SL_REWIND_FRAMES 30
+static int sl_rewind(retro_simple_t* run, retro_serialize_size_t* serialize_size,
+	retro_serialize_t* serialize, retro_unserialize_t* unserialize)
+{
+	unsigned long first[SL_REWIND_FRAMES];
+	const size_t size = serialize_size();
+	unsigned char* state = size ? (unsigned char*)malloc(size) : NULL;
+	int i, bad = 0;
+	if (!state || !serialize(state, size))
+	{
+		free(state);
+		fprintf(stderr, "swdraw: no savestate to rewind to\n");
+		return 0;
+	}
+	for (i = 0; i < SL_REWIND_FRAMES; i++)
+	{
+		run();
+		first[i] = s_hash;
+	}
+	if (!unserialize(state, size))
+	{
+		free(state);
+		fprintf(stderr, "swdraw: the savestate did not load\n");
+		return 0;
+	}
+	for (i = 0; i < SL_REWIND_FRAMES; i++)
+	{
+		run();
+		if (s_hash != first[i])
+		{
+			if (!bad)
+				fprintf(stderr, "swdraw: frame %d after the load is %08lx, was %08lx\n",
+					i, s_hash, first[i]);
+			bad++;
+		}
+	}
+	free(state);
+	if (bad)
+		fprintf(stderr, "swdraw: %d of %d frames differ after the load\n", bad, SL_REWIND_FRAMES);
+	return !bad;
+}
+
 int main(int argc, char** argv)
 {
 	char path[1100];
@@ -2219,6 +2318,15 @@ int main(int argc, char** argv)
 	}
 	for (frame = 0; frame < s_run_frames; frame++)
 		run();
+	if (s_rewind)
+	{
+		retro_unserialize_t* unserialize = (retro_unserialize_t*)sl_sym(h, "retro_unserialize");
+		if (!unserialize || !sl_rewind(run, serialize_size, serialize, unserialize))
+		{
+			fprintf(stderr, "swdraw: %s: the frames after a savestate load differ\n", s_cases[c].name);
+			return 6;
+		}
+	}
 	for (i = 0; i < 2; i++)
 		if (s_expect_run[i] && !sl_state_has_run(serialize_size, serialize, s_expect_run[i]))
 		{

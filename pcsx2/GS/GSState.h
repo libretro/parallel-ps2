@@ -59,6 +59,10 @@ struct gs_state_ops
 	 * the bytes of its Z when *encoded, and the scale that takes those to
 	 * [0, 1]. NULL, or false, where there is none. */
 	bool       (*get_vr_depth)(GSState* gs, GSTexture* color, GSTexture** depth, bool* encoded, float* z_scale);
+	/* A savestate has replaced local memory: `changed` has a bit set for
+	 * each page (GS_MAX_PAGES) whose contents it changed. The others hold
+	 * what they held, so what a renderer made from them can stay. */
+	void       (*mem_restored)(GSState* gs, const u32* changed);
 };
 
 class GSState : public GSAlignedClass<32>
@@ -280,6 +284,9 @@ public:
 	GSVector4i temp_draw_rect = {};
 	/* Counts the times a savestate replaced local memory as a whole. */
 	u32 m_mem_restores = 0;
+	/* Set for the reset a savestate load makes before it replaces local
+	 * memory, which it then reports through mem_restored. */
+	bool m_state_loading = false;
 
 	// Vertex / quad utility functions (ported from upstream refactor 26bd916e3),
 	// used by the texture-shuffle detection refactor. The triangle-class path of

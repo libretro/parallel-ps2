@@ -73,6 +73,23 @@ GSTextureCacheSW::Texture* GSTextureCacheSW::Lookup(const GIFRegTEX0& TEX0, cons
 	return t;
 }
 
+/* The blocks of `page` in `t` are read again at its next update. */
+static void sw_texture_invalidate_page(GSTextureCacheSW::Texture* t, u32 page)
+{
+	u32* RESTRICT valid = t->m_valid;
+
+	if (t->m_repeating)
+	{
+		for (const GSVector2i* j = t->m_p2t->begin(page),
+				*je = t->m_p2t->end(page); j != je; j++)
+			valid[j->x] &= j->y;
+	}
+	else
+		valid[page] = 0;
+
+	t->m_complete = false;
+}
+
 void GSTextureCacheSW::InvalidatePages(const GSOffset::PageLooper& pages, u32 psm)
 {
 	pages.loopPages([this, psm](u32 page)
@@ -80,22 +97,16 @@ void GSTextureCacheSW::InvalidatePages(const GSOffset::PageLooper& pages, u32 ps
 		for (Texture* t : m_map[page])
 		{
 			if (GSUtil::HasSharedBits(psm, t->m_sharedbits))
-			{
-				u32* RESTRICT valid = t->m_valid;
-
-				if (t->m_repeating)
-				{
-					for (const GSVector2i* j = t->m_p2t->begin(page),
-							*je = t->m_p2t->end(page); j != je; j++)
-						valid[j->x] &= j->y;
-				}
-				else
-					valid[page] = 0;
-
-				t->m_complete = false;
-			}
+				sw_texture_invalidate_page(t, page);
 		}
 	});
+}
+
+/* Every texture on `page`, whatever the format its contents changed in. */
+void GSTextureCacheSW::InvalidatePage(u32 page)
+{
+	for (Texture* t : m_map[page])
+		sw_texture_invalidate_page(t, page);
 }
 
 void GSTextureCacheSW::RemoveAll()

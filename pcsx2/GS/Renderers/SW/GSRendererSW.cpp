@@ -43,6 +43,7 @@ static void       sw_invalidate_local_mem(GSState* gs, const GIFRegBITBLTBUF* b,
 static GSTexture* sw_get_output(GSState* gs, int i, float* scale, int* y_offset) { return SW(gs)->GetOutput(i, *scale, *y_offset); }
 static GSTexture* sw_get_feedback_output(GSState* gs, float* scale) { return SW(gs)->GetFeedbackOutput(*scale); }
 static float      sw_get_upscale_multiplier(GSState* gs) { return static_cast<float>(SW(gs)->m_hr_scale); }
+static void       sw_mem_restored(GSState* gs, const u32* changed) { SW(gs)->MemRestored(changed); }
 #undef SW
 
 static const struct gs_state_ops s_sw_ops = {
@@ -63,7 +64,9 @@ static const struct gs_state_ops s_sw_ops = {
 	NULL, /* get_texture_scale_factor */
 	NULL, /* lookup_palette_source */
 	sw_get_output,
-	sw_get_feedback_output
+	sw_get_feedback_output,
+	NULL, /* get_vr_depth */
+	sw_mem_restored
 };
 
 static void HiresTexRelease(GSRendererSW::HiresTex* t)
@@ -119,9 +122,22 @@ void GSRendererSW::Reset(bool hardware_reset)
 {
 	Sync(-1);
 
-	m_tc->RemoveAll();
+	/* A savestate load keeps the textures: MemRestored drops what it
+	 * changes under them. */
+	if (!m_state_loading)
+		m_tc->RemoveAll();
 
 	ResetBase(hardware_reset);
+}
+
+/* The textures of each page a savestate load changed are read again. */
+void GSRendererSW::MemRestored(const u32* changed)
+{
+	u32 page;
+
+	for (page = 0; page < GS_MAX_PAGES; page++)
+		if (changed[page >> 5] & (1u << (page & 31)))
+			m_tc->InvalidatePage(page);
 }
 
 void GSRendererSW::Destroy()

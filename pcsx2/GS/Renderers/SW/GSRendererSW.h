@@ -117,6 +117,7 @@ public: /* called through gs_state_ops (GSRendererSW.cpp); these were protected 
 	u16 m_hr_touched[GS_HR_PAGES] = {}; // the pages with blocks asked for
 
 	void Reset(bool hardware_reset);
+	void MemRestored(const u32* changed);
 	void VSync(u32 field, bool registers_written, bool idle_frame);
 	GSTexture* GetOutput(int i, float& scale, int& y_offset);
 	GSTexture* GetFeedbackOutput(float& scale);
