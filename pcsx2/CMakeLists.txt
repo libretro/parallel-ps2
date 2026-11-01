@@ -469,6 +469,7 @@ if(USE_VULKAN)
 		GS/Renderers/Vulkan/VKBuilders.h
 		GS/Renderers/Vulkan/VKStreamBuffer.h
 		GS/Renderers/Vulkan/VKShaders.inc
+		GS/Renderers/Vulkan/VKPipelineKey.h
 		GS/Renderers/Vulkan/VKSpirvPatch.h
 		GS/Renderers/Vulkan/VKEntryPoints.h
 		GS/Renderers/Vulkan/VKLoader.h

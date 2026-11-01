@@ -76,6 +76,7 @@ struct VKSpirvNamed
 	VKSpirv spv;
 };
 #include "VKShaders.inc"
+#include "VKPipelineKey.h"
 
 static retro_hw_render_interface_vulkan *vulkan;
 
@@ -3302,36 +3303,6 @@ VkShaderModule GSDeviceVK::UtilityModule(Modules* mods, u32 id, bool vertex) con
 	return *slot;
 }
 
-/* Whether a draw's fragment shader reads its target: as tfx.glsl calls
- * sample_from_rt(), the module that reads it as nothing otherwise. */
-static bool TFXReadsRT(const GSHWDrawConfig::PSSelector& sel)
-{
-	const bool sw_blend          = sel.blend_a || sel.blend_b || sel.blend_d;
-	const bool sw_blend_needs_rt = sw_blend &&
-		(sel.blend_a == 1 || sel.blend_b == 1 || sel.blend_c == 1 || sel.blend_d == 1);
-	const bool sw_ad_to_hw       = sel.blend_c == 1 && sel.a_masked;
-	return sel.tex_is_fb || sel.fbmask || sw_blend_needs_rt || sw_ad_to_hw || sel.date >= 5;
-}
-
-/* What of the fragment module's interface a draw does without: the second
- * output when it does not blend with it (or the device cannot), the
- * primitive ID outside the destination alpha tests 1-3, the depth output
- * when it does not clamp depth (or is the alpha test's first pass, which
- * never wrote it), the flat colour when it interpolates. */
-static unsigned TFXFragmentDrop(const GSDevice::FeatureSupport& f, const GSHWDrawConfig::PSSelector& sel)
-{
-	unsigned drop = 0;
-	if (sel.no_color || sel.no_color1 || !f.dual_source_blend)
-		drop |= VKSPV_DROP_COLOR1;
-	if (sel.date < 1 || sel.date > 3)
-		drop |= VKSPV_DROP_PRIMID;
-	if (!sel.zclamp || sel.date == 1 || sel.date == 2)
-		drop |= VKSPV_DROP_FRAGDEPTH;
-	if (sel.iip)
-		drop |= VKSPV_DROP_FLAT;
-	return drop;
-}
-
 VkShaderModule GSDeviceVK::TFXVertexModule(Modules* mods, GSHWDrawConfig::VSSelector sel) const
 {
 	const u32 expand     = (sel.expand != GSHWDrawConfig::VSExpand::None) ? 1u : 0u;
@@ -3344,8 +3315,8 @@ VkShaderModule GSDeviceVK::TFXVertexModule(Modules* mods, GSHWDrawConfig::VSSele
 VkShaderModule GSDeviceVK::TFXFragmentModule(Modules* mods, const GSHWDrawConfig::PSSelector& sel) const
 {
 	/* not read, an input attachment, a sampled image */
-	const u32 rt         = TFXReadsRT(sel) ? (m_features.texture_barrier ? 1u : 2u) : 0u;
-	const unsigned drop  = TFXFragmentDrop(m_features, sel);
+	const u32 rt         = VKTFXReadsRT(sel) ? (m_features.texture_barrier ? 1u : 2u) : 0u;
+	const unsigned drop  = VKTFXFragmentDrop(m_features.dual_source_blend, sel);
 	VkShaderModule* slot = &mods->tfx_fs[rt * 16 + drop];
 	if (*slot == VK_NULL_HANDLE)
 		*slot = MakeModule(vkspv_tfx_fs_mod[rt], drop);
@@ -3362,75 +3333,6 @@ void GSDeviceVK::DestroyModules(Modules* mods)
 		if (m[i] != VK_NULL_HANDLE)
 			vkDestroyShaderModule(vk_init_info.device, m[i], nullptr);
 	memset(mods, 0, sizeof(*mods));
-}
-
-/* The draw's selector fields, as tfx.glsl's specialization constants. */
-static void TFXSpecVS(GSHWDrawConfig::VSSelector sel, u32* v)
-{
-	static_assert(VKSC_VS_COUNT == 4, "a VS_ constant of tfx.glsl has no value here");
-	v[VKSC_VS_TME]         = sel.tme;
-	v[VKSC_VS_FST]         = sel.fst;
-	v[VKSC_VS_POINT_SIZE]  = sel.point_size;
-	v[VKSC_VS_EXPAND_MODE] = static_cast<u32>(sel.expand);
-}
-
-static void TFXSpecPS(const GSHWDrawConfig::PSSelector& sel, u32* v)
-{
-	static_assert(VKSC_PS_COUNT == 54, "a PS_ constant of tfx.glsl has no value here");
-	v[VKSC_PS_FST]                = sel.fst;
-	v[VKSC_PS_WMS]                = sel.wms;
-	v[VKSC_PS_WMT]                = sel.wmt;
-	v[VKSC_PS_ADJS]               = sel.adjs;
-	v[VKSC_PS_ADJT]               = sel.adjt;
-	v[VKSC_PS_AEM_FMT]            = sel.aem_fmt;
-	v[VKSC_PS_PAL_FMT]            = sel.pal_fmt;
-	v[VKSC_PS_DST_FMT]            = sel.dst_fmt;
-	v[VKSC_PS_DEPTH_FMT]          = sel.depth_fmt;
-	v[VKSC_PS_CHANNEL_FETCH]      = sel.channel;
-	v[VKSC_PS_URBAN_CHAOS_HLE]    = sel.urban_chaos_hle;
-	v[VKSC_PS_TALES_OF_ABYSS_HLE] = sel.tales_of_abyss_hle;
-	v[VKSC_PS_AEM]                = sel.aem;
-	v[VKSC_PS_TFX]                = sel.tfx;
-	v[VKSC_PS_TCC]                = sel.tcc;
-	v[VKSC_PS_ATST]               = static_cast<u32>(sel.atst);
-	v[VKSC_PS_AFAIL]              = static_cast<u32>(sel.afail);
-	v[VKSC_PS_FOG]                = sel.fog;
-	v[VKSC_PS_BLEND_HW]           = sel.blend_hw;
-	v[VKSC_PS_A_MASKED]           = sel.a_masked;
-	v[VKSC_PS_FBA]                = sel.fba;
-	v[VKSC_PS_LTF]                = sel.ltf;
-	v[VKSC_PS_AUTOMATIC_LOD]      = sel.automatic_lod;
-	v[VKSC_PS_MANUAL_LOD]         = sel.manual_lod;
-	v[VKSC_PS_COLCLIP]            = sel.colclip;
-	v[VKSC_PS_DATE]               = sel.date;
-	v[VKSC_PS_TCOFFSETHACK]       = sel.tcoffsethack;
-	v[VKSC_PS_REGION_RECT]        = sel.region_rect;
-	v[VKSC_PS_BLEND_A]            = sel.blend_a;
-	v[VKSC_PS_BLEND_B]            = sel.blend_b;
-	v[VKSC_PS_BLEND_C]            = sel.blend_c;
-	v[VKSC_PS_BLEND_D]            = sel.blend_d;
-	v[VKSC_PS_BLEND_MIX]          = sel.blend_mix;
-	v[VKSC_PS_ROUND_INV]          = sel.round_inv;
-	v[VKSC_PS_FIXED_ONE_A]        = sel.fixed_one_a;
-	v[VKSC_PS_SHUFFLE]            = sel.shuffle;
-	v[VKSC_PS_SHUFFLE_SAME]       = sel.shuffle_same;
-	v[VKSC_PS_PROCESS_BA]         = sel.process_ba;
-	v[VKSC_PS_PROCESS_RG]         = sel.process_rg;
-	v[VKSC_PS_SHUFFLE_ACROSS]     = sel.shuffle_across;
-	v[VKSC_PS_READ16_SRC]         = sel.real16src;
-	v[VKSC_PS_WRITE_RG]           = sel.write_rg;
-	v[VKSC_PS_FBMASK]             = sel.fbmask;
-	v[VKSC_PS_COLCLIP_HW]         = sel.colclip_hw;
-	v[VKSC_PS_RTA_CORRECTION]     = sel.rta_correction;
-	v[VKSC_PS_RTA_SRC_CORRECTION] = sel.rta_source_correction;
-	v[VKSC_PS_DITHER]             = sel.dither;
-	v[VKSC_PS_DITHER_ADJUST]      = sel.dither_adjust;
-	v[VKSC_PS_PABE]               = sel.pabe;
-	v[VKSC_PS_SCANMSK]            = sel.scanmsk;
-	v[VKSC_PS_SAMPLE_MAP]         = sel.sample_map;
-	v[VKSC_PS_NATIVE_TAPS]        = sel.native_taps;
-	v[VKSC_PS_TEX_IS_FB]          = sel.tex_is_fb;
-	v[VKSC_PS_NO_COLOR]           = sel.no_color;
 }
 
 VkPipeline GSDeviceVK::BuildUtilityPipeline(u32 id, Modules* mods, VkPipelineCache cache) const
@@ -3784,8 +3686,8 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 	u32 ps_spec[VKSC_PS_COUNT];
 	if (vs == VK_NULL_HANDLE || fs == VK_NULL_HANDLE)
 		return VK_NULL_HANDLE;
-	TFXSpecVS(p.vs, vs_spec);
-	TFXSpecPS(pps, ps_spec);
+	VKTFXSpecVS(p.vs, vs_spec);
+	VKTFXSpecPS(pps, ps_spec);
 	const VkSpecializationInfo vs_si = {VKSC_VS_COUNT, vkspv_tfx_vs_spec_map, sizeof(vs_spec), vs_spec};
 	const VkSpecializationInfo ps_si = {VKSC_PS_COUNT, vkspv_tfx_fs_spec_map, sizeof(ps_spec), ps_spec};
 	gpb.SetVertexShader(vs, &vs_si);
@@ -3864,26 +3766,47 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 	return gpb.Create(vk_init_info.device, cache);
 }
 
+/* The key of the pipeline a draw's selector needs: what BuildTFXPipeline
+ * does not read zeroed, as the shaders' fields are (VKPipelineKey.h). The
+ * line width and the blend constant are dynamic state; blending the
+ * colour mask leaves without effect is built as none. */
+static GSDeviceVK::PipelineSelector TFXPipelineKey(const GSDeviceVK::PipelineSelector& p)
+{
+	GSDeviceVK::PipelineSelector k{p};
+	k.line_width         = 0;
+	k.bs.constant        = 0;
+	k.bs.constant_enable = 0;
+	if (!k.bs.IsEffective(k.cms))
+	{
+		k.bs.key      = 0;
+		k.ps.no_color1 = 1;
+	}
+	VKCanonicalPS(k.ps);
+	VKCanonicalVS(k.vs, k.topology);
+	return k;
+}
+
 VkPipeline GSDeviceVK::GetTFXPipeline(const PipelineSelector& p)
 {
 	if (m_last_tfx_pipeline != VK_NULL_HANDLE && m_last_tfx_pipeline_selector == p)
 		return m_last_tfx_pipeline;
 
-	const auto it = m_tfx_pipelines.find(p);
+	const PipelineSelector key = TFXPipelineKey(p);
+	const auto it = m_tfx_pipelines.find(key);
 	VkPipeline pipeline;
 	if (it != m_tfx_pipelines.end())
 		pipeline = it->second;
 	else
-		pipeline = GetTFXPipelineMissed(p);
+		pipeline = GetTFXPipelineMissed(key);
 
 	m_last_tfx_pipeline_selector = p;
 	m_last_tfx_pipeline          = pipeline;
 	return pipeline;
 }
 
-/* A pipeline the map has no entry for: one the warm-up thread finished,
- * else built here and listed for the next device. Out of line, so the
- * lookup above stays as small as it was. */
+/* A pipeline the map has no entry for, by its key: one the warm-up thread
+ * finished, else built here and listed for the next device. Out of line,
+ * so the lookup above stays as small as it was. */
 __noinline VkPipeline GSDeviceVK::GetTFXPipelineMissed(const PipelineSelector& p)
 {
 	VkPipeline pipeline;
@@ -4028,7 +3951,7 @@ void GSDeviceVK::PipelineCacheClose()
  * or a hash that does not match: the list is not read, and the one this
  * session makes replaces it. */
 #define PLIST_MAGIC   0x4C505653u /* "SVPL" */
-#define PLIST_VERSION 3u
+#define PLIST_VERSION 4u
 #define PLIST_MAX     65536u
 /* flags: the selectors leave out the depth/stencil state (dss is zero) */
 #define PLIST_FLAG_DYNAMIC_DS 1u
@@ -4048,11 +3971,13 @@ static void PipelineListPath(char* path, size_t size)
 	CachePath(path, size, GSConfig.UseDebugDevice ? "vulkan_pipeline_list_debug.bin" : "vulkan_pipeline_list.bin");
 }
 
-/* A selector a list may hold: its fields index tables of the size they
- * have here, and with the depth/stencil state dynamic it has none. */
+/* A selector a list may hold: a key (TFXPipelineKey), whose fields index
+ * tables of the size they have here, and with the depth/stencil state
+ * dynamic it has none. */
 static bool PipelineSelectorValid(const GSDeviceVK::PipelineSelector& p, bool dynamic_ds)
 {
-	return p.topology < 3 && (!p.bs.enable || p.bs.op < 3) && (!dynamic_ds || p.dss.key == 0);
+	return p.topology < 3 && (!p.bs.enable || p.bs.op < 3) && (!dynamic_ds || p.dss.key == 0)
+		&& TFXPipelineKey(p) == p;
 }
 
 void GSDeviceVK::PipelineListAdd(const PipelineSelector& p)

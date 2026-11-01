@@ -119,6 +119,9 @@ build*/
 /tests/vkheap/vkheap_test
 /tests/vkspirv/vkspirv
 /tests/vkspirv/vkspirv.exe
+/tests/vkpipekey/selectors
+/tests/vkpipekey/selectors.exe
+/tests/vkpipekey/__pycache__/
 /tests/emitter/emitter_reach
 /tests/isofs/isofs_test
 /tests/gsalign/gsalign_test

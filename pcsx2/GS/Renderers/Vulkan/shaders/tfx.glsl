@@ -317,6 +317,7 @@ layout(constant_id = 52) const bool PS_TEX_IS_FB = false;
 layout(constant_id = 53) const bool PS_NO_COLOR = false;
 
 const bool SW_BLEND = (PS_BLEND_A != 0 || PS_BLEND_B != 0 || PS_BLEND_D != 0);
+const bool SW_BLEND_NEEDS_RT = SW_BLEND && (PS_BLEND_A == 1 || PS_BLEND_B == 1 || PS_BLEND_C == 1 || PS_BLEND_D == 1);
 const bool SW_AD_TO_HW = (PS_BLEND_C == 1 && PS_A_MASKED);
 const bool NEEDS_TEX = (PS_TFX != 4);
 const bool DITHER_ON = (PS_DITHER > 0 && PS_DITHER < 3);
@@ -912,7 +913,7 @@ vec4 tfx(vec4 T, vec4 C)
 		C_out = C;
 	}
 
-	if (!PS_TCC)
+	if (!PS_TCC && NEEDS_TEX)
 		C_out.a = C.a;
 
 	// Clamp only when it is useful
@@ -946,23 +947,25 @@ vec4 fog(vec4 c, float f)
 	return c;
 }
 
+// The texture coordinates, where the texture is sampled
+vec2 tex_st()
+{
+	// The GS holds S/Q and T/Q in a signed 12-bit range; past it the
+	// coordinate saturates rather than wrapping (parallel-gs does the same).
+	if (!PS_FST)
+		return clamp(vsIn.t.xy / vsIn.t.w, vec2(-2047.0f), vec2(2047.0f));
+	return vsIn.ti.xy;
+}
+
+vec2 tex_st_int()
+{
+	if (!PS_FST)
+		return vsIn.ti.zw / vsIn.t.w;
+	return vsIn.ti.zw;
+}
+
 vec4 ps_color()
 {
-	vec2 st;
-	vec2 st_int;
-	if (!PS_FST)
-	{
-		// The GS holds S/Q and T/Q in a signed 12-bit range; past it the
-		// coordinate saturates rather than wrapping (parallel-gs does the same).
-		st = clamp(vsIn.t.xy / vsIn.t.w, vec2(-2047.0f), vec2(2047.0f));
-		st_int = vsIn.ti.zw / vsIn.t.w;
-	}
-	else
-	{
-		st = vsIn.ti.xy;
-		st_int = vsIn.ti.zw;
-	}
-
 	vec4 T;
 	ivec2 fetch_pos = ivec2(gl_FragCoord.xy + ChannelOffset.xy);
 	if (!NEEDS_TEX)
@@ -980,9 +983,9 @@ vec4 ps_color()
 	else if (PS_CHANNEL_FETCH == 6)
 		T = fetch_gXbY(fetch_pos);
 	else if (PS_DEPTH_FMT > 0)
-		T = sample_depth(st_int, ivec2(gl_FragCoord.xy));
+		T = sample_depth(tex_st_int(), ivec2(gl_FragCoord.xy));
 	else
-		T = sample_color(st);
+		T = sample_color(tex_st());
 
 	if (PS_SHUFFLE && !PS_READ16_SRC && !PS_SHUFFLE_SAME)
 	{
@@ -1106,9 +1109,10 @@ void ps_blend(inout vec4 Color, inout vec4 As_rgba)
 			As_rgba.rgb = vec3(1.0f);
 		}
 
-		// The target, where the draw reads it (a module that does not
-		// gives zero)
-		vec4 RT = sample_from_rt();
+		// The target, where the blend reads it
+		vec4 RT = vec4(0.0f);
+		if (SW_BLEND_NEEDS_RT)
+			RT = sample_from_rt();
 
 		float Ad;
 		if (PS_RTA_CORRECTION)
