@@ -19,7 +19,7 @@
 #include "GLStreamBuffer.h"
 #include "GLProgram.h"
 #include "GLShaderCache.h"
-#include "common/HashCombine.h"
+#include "GS/Renderers/Common/GSKeyHash.h"
 #include "GS/Renderers/Common/GSDevice.h"
 #include "GSTextureOGL.h"
 #include "GLState.h"
@@ -154,9 +154,8 @@ public:
 	{
 		__fi std::size_t operator()(const ProgramSelector& p) const noexcept
 		{
-			std::size_t h = 0;
-			HashCombine(h, p.vs.key, p.ps.key_hi, p.ps.key_lo);
-			return h;
+			/* Compared bit for bit: hashed over every byte. */
+			return gs_key_hash(&p, sizeof(p));
 		}
 	};
 

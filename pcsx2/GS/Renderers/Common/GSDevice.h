@@ -19,7 +19,7 @@
 
 #include <array>
 
-#include "common/HashCombine.h"
+#include "GSKeyHash.h"
 #include "common/WindowInfo.h"
 
 #include "../../GS.h"
@@ -477,9 +477,9 @@ struct alignas(16) GSHWDrawConfig
 	{
 		std::size_t operator()(const PSSelector& p) const
 		{
-			std::size_t h = 0;
-			HashCombine(h, p.key_lo, p.key_hi);
-			return h;
+			/* Equality is key_lo and key_hi alone: hash exactly those. */
+			const u64 words[2] = {p.key_lo, p.key_hi};
+			return gs_key_hash(words, sizeof(words));
 		}
 	};
 #pragma pack(push, 1)

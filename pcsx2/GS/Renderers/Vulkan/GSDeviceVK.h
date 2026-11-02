@@ -20,7 +20,7 @@
 #include "GS/Renderers/Common/GSDevice.h"
 #include "GSVulkanHeap.h"
 #include "VKStreamBuffer.h"
-#include "common/HashCombine.h"
+#include "GS/Renderers/Common/GSKeyHash.h"
 #include <array>
 #include <functional>
 #include <map>
@@ -128,9 +128,8 @@ public:
 	{
 		std::size_t operator()(const PipelineSelector& e) const noexcept
 		{
-			std::size_t hash = 0;
-			HashCombine(hash, e.vs.key, e.ps.key_hi, e.ps.key_lo, e.dss.key, e.cms.key, e.bs.key, e.key);
-			return hash;
+			/* Compared bit for bit: hashed over every byte. */
+			return gs_key_hash(&e, sizeof(e));
 		}
 	};
 

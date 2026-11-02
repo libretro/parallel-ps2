@@ -16,7 +16,7 @@
 #pragma once
 
 #include "common/Pcsx2Defs.h"
-#include "common/HashCombine.h"
+#include "GS/Renderers/Common/GSKeyHash.h"
 #include "common/RedtapeWindows.h"
 #include "common/RedtapeWilCom.h"
 
@@ -134,10 +134,7 @@ class D3D12GroupedSamplerAllocator : private D3D12DescriptorAllocator
 	{
 		__fi std::size_t operator()(const Key& key) const
 		{
-			size_t seed = 0;
-			for (u32 key : key.idx)
-				HashCombine(seed, key);
-			return seed;
+			return gs_key_hash(key.idx, sizeof(key.idx));
 		}
 	};
 

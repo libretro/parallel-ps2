@@ -15,7 +15,7 @@
 #endif
 
 #include "common/Align.h"
-#include "common/HashCombine.h"
+#include "GS/Renderers/Common/GSKeyHash.h"
 #include "common/MathUtils.h"
 
 #include "GSTextureCache.h"
@@ -8654,8 +8654,6 @@ void GSTextureCache::HashCacheKey::RemoveCLUTHash()
 
 u64 GSTextureCache::HashCacheKeyHash::operator()(const HashCacheKey& key) const
 {
-	std::size_t h = 0;
-	HashCombine(h, key.TEX0Hash, key.CLUTHash, key.TEX0.U64, key.TEXA.U64,
-		static_cast<u64>(key.region_width) | (static_cast<u64>(key.region_height) << 16));
-	return h;
+	/* operator== compares every byte (memcmp): hashed over every byte. */
+	return gs_key_hash(&key, sizeof(key));
 }
