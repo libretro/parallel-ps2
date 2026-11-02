@@ -71,7 +71,12 @@ int main()
 	 *
 	 * paraLLEl-GS cannot have this bug, because it owns images through a
 	 * refcounted handle and a second free is not something a call site
-	 * can express. Sources and targets here are raw pointers. */
+	 * can express. Sources and targets here are raw pointers.
+	 *
+	 * Not with an address sanitizer: the pool hands out nothing then,
+	 * so that the sanitizer sees every object, and this checked takes
+	 * that could not succeed. */
+#if !GS_OBJECT_POOL_SANITIZED
 	{
 		gs_object_pool_t dbl;
 		void* x;
@@ -88,6 +93,55 @@ int main()
 		z = gs_object_pool_take(&dbl, 64);
 		CHECK(y != z, "two takes never hand out one slot");
 		gs_object_pool_free(&dbl);
+	}
+#endif
+
+	/* Node pools (GSNodeAllocator's): nodes come out aligned, distinct
+	 * and not overlapping, across more than one slab; given back they
+	 * are taken again; and release frees the slabs only once every node
+	 * is back, so a node still in a map is never freed under it. */
+	{
+		static gs_node_pool_t np = GS_NODE_POOL_INIT(88, 8);
+		static gs_node_pool_t wide = GS_NODE_POOL_INIT(40, 64);
+		enum { NODES = 1000 };
+		static unsigned char* n[NODES];
+		int j;
+		CHECK(np.stride == 88, "an 88-byte node keeps its size");
+		CHECK(wide.stride == 64, "a 64-aligned node rounds up to 64");
+		for (i = 0; i < NODES; i++)
+		{
+			n[i] = (unsigned char*)gs_node_pool_take(&np);
+			CHECK(n[i] && ((size_t)n[i] & 7) == 0, "node aligned");
+			memset(n[i], i & 0xff, 88);
+		}
+		CHECK(np.capacity >= NODES && np.slabs && *(void**)np.slabs, "more than one slab");
+		for (i = 0; i < NODES; i++)
+		{
+			CHECK(n[i][0] == (i & 0xff) && n[i][87] == (i & 0xff), "nodes do not overlap");
+			for (j = 0; j < i && j < 8; j++)
+				CHECK(n[i] != n[i - 1 - j], "nodes are distinct");
+		}
+		for (i = 0; i < 64; i++)
+		{
+			unsigned char* w = (unsigned char*)gs_node_pool_take(&wide);
+			CHECK(((size_t)w & 63) == 0, "64-aligned node aligned");
+			gs_node_pool_give(&wide, w);
+		}
+		gs_node_pool_give(&np, n[5]);
+		CHECK(gs_node_pool_take(&np) == n[5], "a node given back is the next taken");
+		for (i = 1; i < NODES; i++)
+			gs_node_pool_give(&np, n[i]);
+		gs_node_pools_release();
+		CHECK(np.slabs != NULL, "release keeps the slabs while a node is out");
+		CHECK(n[0][0] == 0 && n[0][87] == 0, "and that node is untouched");
+		gs_node_pool_give(&np, n[0]);
+		gs_node_pools_release();
+		CHECK(np.slabs == NULL && np.capacity == 0 && np.free_head == NULL, "release frees them once all are back");
+		CHECK(wide.slabs == NULL, "every pool with all its nodes back is released");
+		n[0] = (unsigned char*)gs_node_pool_take(&np);
+		CHECK(n[0] != NULL && np.slabs != NULL, "a released pool refills");
+		gs_node_pool_give(&np, n[0]);
+		gs_node_pools_release();
 	}
 
 	printf(fails ? "pool: FAILED (%d)\n" : "pool: ok\n", fails);

@@ -126,6 +126,60 @@ static int gs_object_pool_give(gs_object_pool_t *pool, void *p)
    return 1;
 }
 
+/* --- node pools --------------------------------------------------------
+ * The texture cache's hash maps and sets allocate a node per entry and
+ * give it back on erase: a texture or palette made and dropped every
+ * frame was a heap allocation and a free every frame. A node pool keeps
+ * nodes of one size on a free list, linked through their first word, and
+ * carves them out of slabs: filling a cache costs a heap call a slab
+ * rather than a node, and nodes made together sit together.
+ *
+ * Take and give are the inlined part and are three and two instructions
+ * past the call; refilling is out of line and cold. GS thread only, like
+ * the object pool. With an address sanitizer the C++ side does not use
+ * these (see GSNodeAllocator), so the sanitizer sees every node. */
+typedef struct gs_node_pool
+{
+   void                *free_head; /* first free node; its first word links on */
+   unsigned char       *bump;      /* next never-used node of the newest slab */
+   unsigned char       *bump_end;  /* end of the newest slab                  */
+   void                *slabs;     /* slab chain, linked through first words  */
+   size_t               stride;    /* node size, a multiple of its alignment  */
+   size_t               capacity;  /* nodes in all the slabs                  */
+   struct gs_node_pool *next_pool; /* every pool that has a slab              */
+} gs_node_pool_t;
+
+/* A pool for nodes of `size` bytes aligned to `align` (a power of two,
+ * at most GS_OBJECT_POOL_ALIGN); a constant expression, so a pool can be
+ * initialised statically. */
+#define GS_NODE_POOL_STRIDE(size, align) \
+   ((((size) < sizeof(void*) ? sizeof(void*) : (size)) + ((align) - 1)) & ~((size_t)(align) - 1))
+#define GS_NODE_POOL_INIT(size, align) { NULL, NULL, NULL, NULL, GS_NODE_POOL_STRIDE(size, align), 0, NULL }
+
+/* Cold, out of line: the free list is empty. The next node the newest
+ * slab has never handed out, or a new slab's first. Out of memory it
+ * aborts, as operator new does without exceptions. */
+void *gs_node_pool_refill(gs_node_pool_t *pool);
+
+/* Frees the slabs of every pool whose nodes are all back. A pool with
+ * any still out keeps its slabs. Cold: when the texture cache goes. */
+void gs_node_pools_release(void);
+
+static void *gs_node_pool_take(gs_node_pool_t *pool)
+{
+   void *node = pool->free_head;
+   if (!node)
+      return gs_node_pool_refill(pool);
+   pool->free_head = *(void**)node;
+   return node;
+}
+
+static void gs_node_pool_give(gs_node_pool_t *pool, void *node)
+{
+   *(void**)node   = pool->free_head;
+   pool->free_head = node;
+}
+
 #ifdef __cplusplus
 }
 #endif

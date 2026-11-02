@@ -118,6 +118,8 @@ void GSRendererHW::SetTCOffset()
 GSRendererHW::~GSRendererHW()
 {
 	g_texture_cache.reset();
+	/* Its maps' nodes are all back now: the slabs can go. */
+	gs_node_pools_release();
 }
 
 void GSRendererHW::Destroy()

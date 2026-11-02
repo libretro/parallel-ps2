@@ -29,15 +29,15 @@
 
 class GSHwHack;
 
-/* Allocator for the texture cache's hash maps and sets. A node given back
- * goes on a free list for its type and the next insert takes it, so a
- * cache that makes and drops textures and palettes every frame stops
- * asking the heap for a node each time once it has seen as many at once
- * as it ever holds. GS thread only, like gs_object_pool; with an address
- * sanitizer it is new and delete, so the sanitizer sees every node. */
+/* Allocator for the texture cache's hash maps and sets: a gs_node_pool
+ * (GSObjectPool.h) per node type, which the standard containers need
+ * wrapped as a C++ allocator. Single nodes come from the pool; bucket
+ * arrays, and everything with an address sanitizer, from new. */
 template <typename T>
 class GSNodeAllocator
 {
+	static constexpr bool POOLED = !GS_OBJECT_POOL_SANITIZED && alignof(T) <= GS_OBJECT_POOL_ALIGN;
+
 public:
 	using value_type = T;
 
@@ -47,32 +47,20 @@ public:
 
 	T* allocate(std::size_t n)
 	{
-#if !GS_OBJECT_POOL_SANITIZED
-		if (n == 1 && s_free)
+		if (POOLED && n == 1)
 		{
-			FreeNode* f = s_free;
-			s_free = f->next;
-			return reinterpret_cast<T*>(f);
+			return static_cast<T*>(gs_node_pool_take(&s_pool));
 		}
-#endif
-		const std::size_t bytes = (n == 1 && sizeof(T) < sizeof(FreeNode)) ? sizeof(FreeNode) : n * sizeof(T);
 		if (alignof(T) > alignof(std::max_align_t))
-			return static_cast<T*>(::operator new(bytes, std::align_val_t(alignof(T))));
-		return static_cast<T*>(::operator new(bytes));
+			return static_cast<T*>(::operator new(n * sizeof(T), std::align_val_t(alignof(T))));
+		return static_cast<T*>(::operator new(n * sizeof(T)));
 	}
 
 	void deallocate(T* p, std::size_t n) noexcept
 	{
-#if !GS_OBJECT_POOL_SANITIZED
-		if (n == 1)
-		{
-			FreeNode* f = reinterpret_cast<FreeNode*>(p);
-			f->next = s_free;
-			s_free = f;
-			return;
-		}
-#endif
-		if (alignof(T) > alignof(std::max_align_t))
+		if (POOLED && n == 1)
+			gs_node_pool_give(&s_pool, p);
+		else if (alignof(T) > alignof(std::max_align_t))
 			::operator delete(p, std::align_val_t(alignof(T)));
 		else
 			::operator delete(p);
@@ -84,11 +72,7 @@ public:
 	bool operator!=(const GSNodeAllocator<U>&) const noexcept { return false; }
 
 private:
-	struct FreeNode
-	{
-		FreeNode* next;
-	};
-	static inline FreeNode* s_free = nullptr;
+	static inline gs_node_pool_t s_pool = GS_NODE_POOL_INIT(sizeof(T), alignof(T));
 };
 
 // Only for debugging. Reads back every target to local memory after drawing, effectively

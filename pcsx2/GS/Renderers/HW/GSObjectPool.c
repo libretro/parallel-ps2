@@ -80,3 +80,86 @@ void gs_object_pool_free(gs_object_pool_t *pool)
    pool->count        = 0;
    pool->free_count   = 0;
 }
+
+/* --- node pools -------------------------------------------------------- */
+
+/* A slab is this many bytes, the first GS_OBJECT_POOL_ALIGN of them the
+ * link to the next slab, so nodes keep the slab's alignment. */
+#define GS_NODE_SLAB_BYTES 16384
+
+static gs_node_pool_t *gs_node_pools;
+
+void *gs_node_pool_refill(gs_node_pool_t *pool)
+{
+   size_t         count;
+   unsigned char *slab;
+   unsigned char *node;
+
+   /* Nodes are handed out from the newest slab in address order, each
+    * touched first by whoever takes it: no pass linking a whole slab
+    * onto the free list before any of it is used. */
+   if (pool->bump != pool->bump_end)
+   {
+      node        = pool->bump;
+      pool->bump += pool->stride;
+      return node;
+   }
+
+   count = (GS_NODE_SLAB_BYTES - GS_OBJECT_POOL_ALIGN) / pool->stride;
+   if (count < 8)
+      count = 8;
+   slab = (unsigned char*)memalign_alloc(GS_OBJECT_POOL_ALIGN,
+         GS_OBJECT_POOL_ALIGN + count * pool->stride);
+   /* Out of memory is what operator new does in a build without
+    * exceptions: the end. Never NULL, so take needs no check after it. */
+   if (!slab)
+      abort();
+
+   if (!pool->slabs)
+   {
+      pool->next_pool = gs_node_pools;
+      gs_node_pools   = pool;
+   }
+   *(void**)slab   = pool->slabs;
+   pool->slabs     = slab;
+   pool->capacity += count;
+
+   node           = slab + GS_OBJECT_POOL_ALIGN;
+   pool->bump     = node + pool->stride;
+   pool->bump_end = node + count * pool->stride;
+   return node;
+}
+
+void gs_node_pools_release(void)
+{
+   gs_node_pool_t **link = &gs_node_pools;
+
+   while (*link)
+   {
+      gs_node_pool_t *pool = *link;
+      size_t          free_nodes = 0;
+      void           *node;
+
+      for (node = pool->free_head; node; node = *(void**)node)
+         free_nodes++;
+      /* Nodes the newest slab never handed out are not out either. */
+      free_nodes += (size_t)(pool->bump_end - pool->bump) / pool->stride;
+      if (free_nodes != pool->capacity)
+      {
+         link = &pool->next_pool;
+         continue;
+      }
+      while (pool->slabs)
+      {
+         void *slab  = pool->slabs;
+         pool->slabs = *(void**)slab;
+         memalign_free(slab);
+      }
+      pool->free_head = NULL;
+      pool->bump      = NULL;
+      pool->bump_end  = NULL;
+      pool->capacity  = 0;
+      *link           = pool->next_pool;
+      pool->next_pool = NULL;
+   }
+}
