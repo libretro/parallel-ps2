@@ -742,6 +742,16 @@ void GSDevice::Interlace(const GSVector2i& ds, int field, int mode, float yoffse
 	if (!half_fields)
 		block = -block;
 	static int bufIdx = 0;
+
+	/* No merge (its target could not be made): nothing to deinterlace,
+	 * and the frame is skipped. A target of the deinterlacer's that could
+	 * not be made below shows the merge as it is instead: drawing into it
+	 * was a null texture's size read and the core's end. */
+	if (!m_merge)
+	{
+		m_current = nullptr;
+		return;
+	}
 	float offset = yoffset * static_cast<float>(field);
 	offset = GSConfig.DisableInterlaceOffset ? 0.0f : offset;
 
@@ -785,7 +795,11 @@ void GSDevice::Interlace(const GSVector2i& ds, int field, int mode, float yoffse
 			 * the one it replaces is the next merge target. */
 			GSTexture* const other = m_weave_field[field ^ 1];
 			GSTexture* const next  = m_weave_field[field];
-			ResizeRenderTarget(&m_weavebob, ds.x, ds.y, false, false, true);
+			if (!ResizeRenderTarget(&m_weavebob, ds.x, ds.y, false, false, true))
+			{
+				m_current = m_merge;
+				break;
+			}
 			if (!other)
 				ClearRenderTarget(m_weavebob, 0);
 			do_interlace(m_merge, m_weavebob, ShaderInterlace::WEAVE, true, offset, field);
@@ -806,7 +820,11 @@ void GSDevice::Interlace(const GSVector2i& ds, int field, int mode, float yoffse
 			const float bob_offset = yoffset * (1 - field);
 			GSTexture* const other = m_weave_field[field ^ 1];
 			GSTexture* const next  = m_weave_field[field];
-			ResizeRenderTarget(&m_weavebob, ds.x, ds.y, false, false, true);
+			if (!ResizeRenderTarget(&m_weavebob, ds.x, ds.y, false, false, true))
+			{
+				m_current = m_merge;
+				break;
+			}
 			if (bob_offset > 0.0f && other)
 				StretchRect(other, GSVector4(0.0f, 0.0f, 1.0f, bob_offset / static_cast<float>(ds.y)), m_weavebob,
 					GSVector4(0.0f, 0.0f, static_cast<float>(ds.x), bob_offset), ShaderConvert::COPY, true);
@@ -819,9 +837,13 @@ void GSDevice::Interlace(const GSVector2i& ds, int field, int mode, float yoffse
 			break;
 		}
 		case 2: // Blend
-			ResizeRenderTarget(&m_weavebob, ds.x, ds.y, true, false, true);
+			if (!ResizeRenderTarget(&m_weavebob, ds.x, ds.y, true, false, true)
+				|| !ResizeRenderTarget(&m_blend, ds.x, ds.y, false, false, true))
+			{
+				m_current = m_merge;
+				break;
+			}
 			do_interlace(m_merge, m_weavebob, ShaderInterlace::WEAVE, true, offset, field);
-			ResizeRenderTarget(&m_blend, ds.x, ds.y, false, false, true);
 			do_interlace(m_weavebob, m_blend, ShaderInterlace::BLEND, false, 0, 0);
 			m_current = m_blend;
 			break;
@@ -830,7 +852,12 @@ void GSDevice::Interlace(const GSVector2i& ds, int field, int mode, float yoffse
 			bufIdx &= ~1;
 			bufIdx |= field;
 			bufIdx &= 3;
-			ResizeRenderTarget(&m_mad, ds.x, ds.y * 2.0f, true, false, true);
+			if (!ResizeRenderTarget(&m_mad, ds.x, ds.y * 2.0f, true, false, true)
+				|| !ResizeRenderTarget(&m_weavebob, ds.x, ds.y, false, false, true))
+			{
+				m_current = m_merge;
+				break;
+			}
 			if (half_fields)
 			{
 				/* The last four fields, each whole at its own height (the merge
@@ -843,13 +870,11 @@ void GSDevice::Interlace(const GSVector2i& ds, int field, int mode, float yoffse
 				const GSVector4 dRect = GSVector4(0.0f, slot_h * static_cast<float>(bufIdx), static_cast<float>(mad_size.x), slot_h * static_cast<float>(bufIdx + 1));
 				const InterlaceConstantBuffer cb = {GSVector4(static_cast<float>(bufIdx), 0.0f, 0.0f, block)};
 				DoInterlace(m_merge, sRect, m_mad, dRect, ShaderInterlace::BOB, true, cb);
-				ResizeRenderTarget(&m_weavebob, ds.x, ds.y, false, false, true);
 				do_interlace(m_mad, m_weavebob, ShaderInterlace::MAD_RECONSTRUCT, true, 0, bufIdx);
 			}
 			else
 			{
 				do_interlace(m_merge, m_mad, ShaderInterlace::MAD_BUFFER, true, offset, bufIdx);
-				ResizeRenderTarget(&m_weavebob, ds.x, ds.y, false, false, true);
 				do_interlace(m_mad, m_weavebob, ShaderInterlace::MAD_RECONSTRUCT, false, 0, bufIdx);
 			}
 			m_current = m_weavebob;

@@ -9,7 +9,8 @@
 # over. tests/swdraw's interlaced fades - a new picture every frame, SMODE2
 # frame mode and field mode - run under each deinterlace mode on the
 # Vulkan renderer, some again at 2x and on the software renderer's
-# output, and on paraLLEl-GS.
+# output, and on paraLLEl-GS. Then the deinterlacer with a heap that
+# refuses its targets.
 #
 # Runs the built core: pcsx2_libretro.so/.dll/.dylib at the top of the
 # tree, or LRPS2_CORE. Without one, or without a Vulkan device (lavapipe
@@ -94,5 +95,30 @@ for c in $CASES; do
 		late $c "$m" "Software (HW)" 1
 	done
 done
+# A heap that refuses (LRPS2_TEST_VK_HEAP_CEILING, 420 MB at 8x, where a
+# frame is 73 MB): a deinterlacer target that cannot be made shows the
+# merge as it is, or no frame, for as long as it cannot. Drawing into it
+# anyway was a null texture's size read, and the core's end - Ridge Racer
+# V at 2x did that once its textures had filled the heap.
+for c in $CASES; do
+	for m in "Weave TFF" "Bob TFF" "Blend TFF" "Adaptive TFF"; do
+		mkdir -p "$WORK/run"
+		log="$WORK/refused.log"
+		if ! LRPS2_TEST_VK_HEAP_CEILING=420000000 VN_IDLE_BIOS=1 LRPS2_BIOS="$WORK/$c.bin" VN_SCALE=8 \
+				VN_OPTIONS="pcsx2_deinterlace_mode=$m" VN_FRAMES=8 \
+				timeout 300 "$FE" "$CORE" "$WORK/run" v2 > "$log" 2>&1; then
+			tail -5 "$log"
+			echo "  FAIL: $c, $m: a heap that refused targets ended the core"
+			fail=1
+		elif ! grep -q "no room for a" "$log"; then
+			echo "  FAIL: $c, $m: the heap refused nothing, so this checked nothing"
+			fail=1
+		else
+			echo "  $c, $m, a heap that refuses: $(grep -c 'no room for a' "$log") refused, the core runs on"
+		fi
+		rm -rf "$WORK/run"
+	done
+done
+
 [ $fail = 0 ] || exit 1
 echo "gspresent: ok"

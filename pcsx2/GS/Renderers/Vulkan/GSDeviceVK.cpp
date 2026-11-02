@@ -901,7 +901,11 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		const u64 fixed = (u64)TEXTURE_BUFFER_SIZE + VERTEX_BUFFER_SIZE + INDEX_BUFFER_SIZE
 			+ VERTEX_UNIFORM_BUFFER_SIZE + FRAGMENT_UNIFORM_BUFFER_SIZE
 			+ 2u * (u64)EXPAND_BUFFER_SIZE;
-		const u64 ceiling = gs_vk_heap_ceiling(working_set, block, fixed);
+		u64 ceiling = gs_vk_heap_ceiling(working_set, block, fixed);
+		/* (LRPS2_TEST_VK_HEAP_CEILING, in bytes: a heap that refuses, for
+		 * the tests of what does when it does) */
+		if (getenv("LRPS2_TEST_VK_HEAP_CEILING"))
+			ceiling = strtoull(getenv("LRPS2_TEST_VK_HEAP_CEILING"), NULL, 10);
 
 		if (!gs_vk_heap_init(&m_heap, vk_init_info.device, &mem_props, &fns, block,
 				dev_props.limits.nonCoherentAtomSize, ceiling))
