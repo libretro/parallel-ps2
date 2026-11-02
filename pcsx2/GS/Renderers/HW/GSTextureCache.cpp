@@ -55,6 +55,12 @@ static std::vector<std::pair<GSTextureCache::HashCacheMap::iterator, s32>> s_has
 GSTextureCache::GSTextureCache()
 {
 	s_unswizzle_buffer = (u8*)memalign_alloc(VECTOR_ALIGNMENT, GS_UNSWIZZLE_BUFFER_SIZE);
+	gs_flat_map_init(&m_palette_seen, sizeof(HashCacheKey), sizeof(HashType));
+	/* (all of it now, for none of it mid-game) */
+	gs_flat_map_reserve(&m_palette_seen, PALETTE_SEEN_MAX);
+	/* (LRPS2_TEST_NO_AUTO_INDEX: every palette expanded, as before, for
+	 * the tests to hold the index textures against) */
+	m_auto_index = !getenv("LRPS2_TEST_NO_AUTO_INDEX");
 }
 
 /* Where the copy builders put their lists of copies, which are sized by
@@ -68,6 +74,7 @@ static struct gs_scratch s_scratch_dirty;
 GSTextureCache::~GSTextureCache()
 {
 	RemoveAll(true, true, true);
+	gs_flat_map_free(&m_palette_seen);
 
 	s_hash_cache_purge_list = {};
 	memalign_free(s_unswizzle_buffer);
@@ -165,6 +172,7 @@ void GSTextureCache::RemoveAll(bool sources, bool targets, bool hash_cache)
 		m_hash_cache.clear();
 		m_hash_cache_memory_usage = 0;
 		m_hash_cache_replacement_memory_usage = 0;
+		gs_flat_map_clear(&m_palette_seen);
 	}
 }
 
@@ -6079,6 +6087,34 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 	const bool needs_second_lookup = paltex && (replace);
 	if (needs_second_lookup && it == m_hash_cache.end())
 		it = m_hash_cache.find(key.WithRemovedCLUTHash());
+
+	/* A paletted texture seen before with another palette: its index
+	 * texture, shared by every palette (m_palette_seen). Not with
+	 * replacements, which are looked up by palette. */
+	if (it == m_hash_cache.end() && !paltex && !replace && clut && can_cache && m_auto_index
+		&& GSLocalMemory::m_psm[TEX0.PSM].pal > 0)
+	{
+		const HashCacheKey index_key{key.WithRemovedCLUTHash()};
+		const auto iit = m_hash_cache.find(index_key);
+		if (iit != m_hash_cache.end() && iit->second.texture->GetFormat() == GSTexture::Format::UNorm8)
+		{
+			paltex = true;
+			it     = iit;
+		}
+		else
+		{
+			int inserted;
+			HashType* first;
+			if (m_palette_seen.count >= PALETTE_SEEN_MAX)
+				gs_flat_map_clear(&m_palette_seen);
+			first = static_cast<HashType*>(gs_flat_map_insert(&m_palette_seen, &index_key,
+				gs_key_hash(&index_key, sizeof(index_key)), &inserted));
+			if (first && inserted)
+				*first = key.CLUTHash;
+			else if (first && *first != key.CLUTHash)
+				paltex = true; /* made below as the index texture */
+		}
+	}
 
 	// did we find either a replacement, cached/indexed texture?
 	if (it != m_hash_cache.end())

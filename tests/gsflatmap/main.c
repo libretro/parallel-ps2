@@ -98,6 +98,22 @@ static void run(unsigned spread)
    CHECK(m.slots == NULL && m.count == 0, "free frees");
    CHECK(gs_flat_map_insert(&m, &s_keys[0], 0, &inserted) != NULL && inserted, "a freed map takes inserts again");
    gs_flat_map_free(&m);
+
+   /* Reserved for KEYS: as many inserts move the slots nowhere (none
+    * grows them), every one is found after, and a clear keeps them. */
+   CHECK(gs_flat_map_reserve(&m, KEYS), "reserve");
+   {
+      const unsigned char* slots = m.slots;
+      for (k = 0; k < KEYS; k++)
+         CHECK(gs_flat_map_insert(&m, &s_keys[k], hash_of(k, spread), &inserted) != NULL && inserted, "insert into the reserve");
+      CHECK(m.slots == slots, "inserts up to the reserve never grow the slots");
+      for (k = 0; k < KEYS; k++)
+         CHECK(gs_flat_map_find(&m, &s_keys[k], sizeof(key_t_), hash_of(k, spread)) != NULL, "each found");
+      CHECK(gs_flat_map_reserve(&m, KEYS / 2) && m.slots == slots, "a smaller reserve leaves them");
+      gs_flat_map_clear(&m);
+      CHECK(m.slots == slots, "and so does a clear");
+   }
+   gs_flat_map_free(&m);
 }
 
 int main(void)

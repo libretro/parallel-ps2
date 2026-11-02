@@ -5995,7 +5995,11 @@ __ri void GSRendererHW::EmulateTextureSampler(const GSTextureCache::Target* rt, 
 	const bool sampled_palette = tex->m_palette && tex->m_palette->GetHeight() > 1;
 	m_conf.ps.sample_map = ((tex->m_scaled_indexed && tex->m_palette && !target_region) || sampled_palette || IsSampleMapDraw(tex)) &&
 		!bilinear && !need_mipmap && !m_conf.ps.tex_is_fb;
-	m_conf.ps.point_sampler = g_gs_device->Features().broken_point_sampler && GSConfig.GPUPaletteConversion && !target_region && (!bilinear || shader_emulated_sampler);
+	/* (an index texture: every one with GPU palette conversion, and those
+	 * the hash cache indexed because they came with a second palette) */
+	const bool indexed = GSConfig.GPUPaletteConversion
+		|| (tex->m_palette && tex->m_texture && tex->m_texture->GetFormat() == GSTexture::Format::UNorm8);
+	m_conf.ps.point_sampler = g_gs_device->Features().broken_point_sampler && indexed && !target_region && (!bilinear || shader_emulated_sampler);
 
 	const int tw = static_cast<int>(1 << m_cached_ctx.TEX0.TW);
 	const int th = static_cast<int>(1 << m_cached_ctx.TEX0.TH);

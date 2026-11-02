@@ -1678,6 +1678,57 @@ static void case_sibling_key_after_clut(void)
 	kick(setup, loop - setup, 1);
 	s_run_frames = 60;
 }
+/* One 1024x512 4-bit texture drawn through 48 palettes in a frame, each
+ * a 48x48 sprite of the whole texture, point sampled. A renderer that
+ * expands a paletted texture to 32 bits once for each palette holds 48
+ * expansions of 2 MB; one that reads it through the palette on the GPU
+ * holds the indices once (512 KB as 8 bits) and the palettes. Each
+ * palette is 16 CT32 entries (CSM1, 8x2) in a block of its own, eight
+ * blocks across a 64-wide buffer at 0x3000 and six down. */
+#define MANY_PAL 48u
+static unsigned many_pal_cbp(unsigned k)
+{
+	static const unsigned char block[4][8] = {
+		{0, 1, 4, 5, 16, 17, 20, 21}, {2, 3, 6, 7, 18, 19, 22, 23},
+		{8, 9, 12, 13, 24, 25, 28, 29}, {10, 11, 14, 15, 26, 27, 30, 31}};
+	const unsigned bx = k % 8u, by = k / 8u;
+	return 0x3000u + (by / 4u) * 32u + block[by % 4u][bx];
+}
+static void case_t4_many_palettes(void)
+{
+	unsigned k, i, up;
+	for (k = 0; k < MANY_PAL; k++)
+	{
+		stream_image(0x3000u, 1, 0, 8u * (k % 8u), 8u * (k / 8u), 8, 2, 4);
+		for (i = 0; i < 4; i++)
+		{
+			const unsigned e = 0x80000000u | ((k * 0x050301u + i * 0x102030u) & 0xffffffu);
+			qw(e, e ^ 0x00400000u, e ^ 0x00004000u, e ^ 0x00000040u);
+		}
+	}
+	stream_draw_setup(2 + MANY_PAL * 5, 0);
+	qw(0, 0, GS_TEX1_1, 0);                                       /* nearest */
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                          /* sprite, TME, FST */
+	for (k = 0; k < MANY_PAL; k++)
+	{
+		const unsigned x = 32u + 64u * (k % 8u), y = 32u + 64u * (k / 8u);
+		/* TBP0 0x2000, TBW 16, PSMT4, TW 10, TH 9; TCC, decal, CBP, CLD 1 */
+		qw(0x2000u | (16u << 14) | (0x14u << 20) | (10u << 26) | ((9u & 3u) << 30),
+			(9u >> 2) | (1u << 2) | (1u << 3) | (many_pal_cbp(k) << 5) | (1u << 29), GS_TEX0_1, 0);
+		qw(0, 0, GS_UV, 0);
+		qw((unsigned)XY(x, y), 0, GS_XYZ2, 0);
+		qw((1023u << 4) | ((511u << 4) << 16), 0, GS_UV, 0);
+		qw((unsigned)XY(x + 48u, y + 48u), 0, GS_XYZ2, 0);
+	}
+	up = s_qw_count;
+	stream_image(0x2000u, 16, 0x14u, 0, 0, 1024, 512, 16384);
+	qw(0x76543210u, 0xfedcba98u, 0x01234567u, 0x89abcdefu);
+	s_qw_repeat = 16384 - 1;
+	kick(up, s_qw_count + s_qw_repeat - up, 0);
+	kick(0, up, 0);
+	s_run_frames = 30;
+}
+
 static void case_clut_lines(void) { clut_lines(0); }
 static void case_clut_lines_ramps(void) { clut_lines(4); }
 
@@ -2019,6 +2070,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "frame_on_depth32", case_frame_on_depth32, "1" },
 	{ "depth_states",    case_depth_states,  "1" },
 	{ "sibling_key_after_clut", case_sibling_key_after_clut, "1" },
+	{ "t4_many_palettes", case_t4_many_palettes, "1" },
 	{ "display_large_2x", case_display_large, "2" },
 	{ "frame_low",       case_frame_low,     "1" },
 	{ "frame_low_odd",   case_frame_low_odd, "1" },

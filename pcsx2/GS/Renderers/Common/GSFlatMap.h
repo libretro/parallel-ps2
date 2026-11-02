@@ -49,6 +49,9 @@ void gs_flat_map_init(gs_flat_map_t *map, size_t key_size, size_t value_size);
 void gs_flat_map_free(gs_flat_map_t *map);
 /* Empties the map and keeps its slots. */
 void gs_flat_map_clear(gs_flat_map_t *map);
+/* Slots for this many entries, made now: inserts up to that many never
+ * allocate. Zero if the slots could not grow (the map is as it was). */
+int  gs_flat_map_reserve(gs_flat_map_t *map, size_t entries);
 
 /* The value under key, or, if there is none, a new entry's value, zeroed;
  * *inserted says which. NULL only if the slots could not grow. */

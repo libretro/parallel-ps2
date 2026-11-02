@@ -77,6 +77,17 @@ static int gs_flat_map_grow(gs_flat_map_t *map)
    return 1;
 }
 
+int gs_flat_map_reserve(gs_flat_map_t *map, size_t entries)
+{
+   /* (half full at most, as an insert keeps it) */
+   while (!map->slots || entries * 2 > map->mask + 1)
+   {
+      if (!gs_flat_map_grow(map))
+         return 0;
+   }
+   return 1;
+}
+
 void *gs_flat_map_insert(gs_flat_map_t *map, const void *key, size_t hash, int *inserted)
 {
    unsigned char *slot;

@@ -26,6 +26,7 @@
 #include "GSObjectPool.h"
 #include "../Common/GSFastList.h"
 #include "../Common/GSDirtyRect.h"
+#include "../Common/GSFlatMap.h"
 
 class GSHwHack;
 
@@ -576,6 +577,20 @@ protected:
 	SourceMap m_src;
 	u64 m_source_memory_usage = 0;
 	HashCacheMap m_hash_cache;
+	/* The palette each paletted texture in the hash cache was first
+	 * expanded with, by its key without one (HashCacheKey -> HashType),
+	 * in a GSFlatMap. An 8-bit texture expanded to 32 bits is four times
+	 * its size, sixteen for 4-bit, and one drawn with several palettes is
+	 * that once for each: Ridge Racer V's intro has 27 textures, 7 MB of
+	 * indices, as 370 MB of expansions. The second palette a texture is
+	 * seen with makes it an index texture, shared by every palette and
+	 * read through them on the GPU, as GPU palette conversion does for
+	 * all of them; a texture only ever drawn with one stays expanded.
+	 * Forgotten all at once when full: a texture drawn on is expanded
+	 * once more, and indexed at its next palette again. */
+	gs_flat_map_t m_palette_seen;
+	static constexpr size_t PALETTE_SEEN_MAX = 1024;
+	bool m_auto_index = true;
 	u64 m_hash_cache_memory_usage = 0;
 	u64 m_hash_cache_replacement_memory_usage = 0;
 
