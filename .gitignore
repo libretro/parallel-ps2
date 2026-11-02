@@ -116,6 +116,7 @@ build*/
 /tests/spsc/spsc_test
 /tests/d3d12warm/d3d12warm_test*
 /tests/gshash/gshash_test
+/tests/gsflatmap/gsflatmap_test
 /tests/vkheap/vkheap_test
 /tests/vkspirv/vkspirv
 /tests/vkspirv/vkspirv.exe

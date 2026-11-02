@@ -21,12 +21,11 @@
 #include "GSVulkanHeap.h"
 #include "VKStreamBuffer.h"
 #include "GS/Renderers/Common/GSKeyHash.h"
+#include "GS/Renderers/Common/GSFlatMap.h"
 #include <array>
 #include <functional>
-#include <map>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 struct vk_init_info_t
@@ -124,14 +123,6 @@ public:
 		__fi bool IsTestingAndSamplingDepth() const { return ((feedback_loop_flags & FeedbackLoopFlag_ReadDS) != 0); }
 	};
 
-	struct PipelineSelectorHash
-	{
-		std::size_t operator()(const PipelineSelector& e) const noexcept
-		{
-			/* Compared bit for bit: hashed over every byte. */
-			return gs_key_hash(&e, sizeof(e));
-		}
-	};
 
 	enum : u32
 	{
@@ -450,7 +441,11 @@ private:
 
        bool m_last_submit_failed = false;
 
-       std::map<u32, VkRenderPass> m_render_pass_cache;
+       /* Render passes by RenderPassCacheKey (u32 -> VkRenderPass), and
+        * the other way (VkRenderPass -> u32), so a pass restarted after a
+        * submit finds its key without a walk over all of them. GSFlatMap. */
+       gs_flat_map_t m_render_pass_cache;
+       gs_flat_map_t m_render_pass_keys;
 
        VkPhysicalDeviceFeatures m_device_features = {};
        VkPhysicalDeviceProperties m_device_properties = {};
@@ -474,7 +469,7 @@ private:
 	VkSampler m_point_sampler = VK_NULL_HANDLE;
 	VkSampler m_linear_sampler = VK_NULL_HANDLE;
 
-	std::unordered_map<u32, VkSampler> m_samplers;
+	gs_flat_map_t m_samplers; /* SamplerSelector key (u32) -> VkSampler */
 
 public:
 	/* The utility pipelines: one table, by these. */
@@ -530,19 +525,23 @@ public:
 
 private:
 	Modules m_modules = {};
-	std::unordered_map<PipelineSelector, VkPipeline, PipelineSelectorHash> m_tfx_pipelines;
+	/* The maps below are GSFlatMaps from a PipelineSelector to a
+	 * VkPipeline (a null one, VK_NULL_HANDLE, is all zeroes as a new
+	 * entry's value is), but for m_tfx_pending, whose entries are only
+	 * there or not. */
+	gs_flat_map_t m_tfx_pipelines;
 	/* The dynamic siblings, by their selectors (VKDynamicPS); a null one
 	 * is being built on the warm-up thread, or could not be. */
-	std::unordered_map<PipelineSelector, VkPipeline, PipelineSelectorHash> m_tfx_siblings;
+	gs_flat_map_t m_tfx_siblings;
 	/* The keys whose pipelines the warm-up thread is building while their
 	 * draws draw with a sibling. */
-	std::unordered_map<PipelineSelector, u8, PipelineSelectorHash> m_tfx_pending;
+	gs_flat_map_t m_tfx_pending;
 	/* The siblings' libraries (vk_ext_graphics_pipeline_library): the pixel
 	 * shader parts by TFXLibraryKey(.., true), the vertex input, vertex
 	 * shader and output parts by TFXLibraryKey(.., false); a null pixel
 	 * shader part is being built on the warm-up thread. */
-	std::unordered_map<PipelineSelector, VkPipeline, PipelineSelectorHash> m_tfx_fs_libs;
-	std::unordered_map<PipelineSelector, VkPipeline, PipelineSelectorHash> m_tfx_state_libs;
+	gs_flat_map_t m_tfx_fs_libs;
+	gs_flat_map_t m_tfx_state_libs;
 	VkPipeline GetTFXLibrary(const PipelineSelector& sibling, bool fragment);
 	bool m_gpl_failed = false; /* a library or a link failed: build whole */
 	/* The blend the draw wants (TFXBlendWord) and what the command buffer
@@ -587,6 +586,7 @@ private:
 
 	VkSampler GetSampler(GSHWDrawConfig::SamplerSelector ss);
 	void ClearSamplerCache();
+	void DestroySamplers();
 
 	VkPipeline GetTFXPipeline(const PipelineSelector& p);
 	VkPipeline GetTFXPipelineMissed(const PipelineSelector& p);

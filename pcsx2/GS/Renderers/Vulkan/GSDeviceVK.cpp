@@ -79,6 +79,46 @@ struct VKSpirvNamed
 #include "VKShaders.inc"
 #include "VKPipelineKey.h"
 
+/* The device's GSFlatMaps, by their key types. Each hashes its key at
+ * its constant size, so XXH3's fixed-length path inlines. */
+static VkPipeline* vk_pipe_find(const gs_flat_map_t* map, const GSDeviceVK::PipelineSelector& key)
+{
+	return static_cast<VkPipeline*>(gs_flat_map_find(map, &key, sizeof(key), gs_key_hash(&key, sizeof(key))));
+}
+
+/* The entry for key, made (null) if there was none; *inserted says
+ * which. NULL only if the map could not grow. */
+static VkPipeline* vk_pipe_entry(gs_flat_map_t* map, const GSDeviceVK::PipelineSelector& key, int* inserted)
+{
+	return static_cast<VkPipeline*>(gs_flat_map_insert(map, &key, gs_key_hash(&key, sizeof(key)), inserted));
+}
+
+/* Every pipeline in a map destroyed, and the map emptied. */
+static void vk_pipe_destroy_all(gs_flat_map_t* map)
+{
+	size_t i;
+	for (i = 0; i < GS_FLAT_MAP_SLOTS(map); i++)
+	{
+		if (!GS_FLAT_MAP_USED(map, i))
+			continue;
+		VkPipeline p = *static_cast<VkPipeline*>(GS_FLAT_MAP_VALUE(map, i));
+		if (p != VK_NULL_HANDLE)
+			vkDestroyPipeline(vk_init_info.device, p, nullptr);
+	}
+	gs_flat_map_free(map);
+}
+
+static void* vk_u32_find(const gs_flat_map_t* map, u32 key)
+{
+	return gs_flat_map_find(map, &key, sizeof(key), gs_key_hash(&key, sizeof(key)));
+}
+
+static void* vk_u32_entry(gs_flat_map_t* map, u32 key, int* inserted)
+{
+	return gs_flat_map_insert(map, &key, gs_key_hash(&key, sizeof(key)), inserted);
+}
+
+
 static retro_hw_render_interface_vulkan *vulkan;
 
 #define VK_PRESENT_MAX_SYNC_INDICES 32
@@ -1113,40 +1153,39 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		key.color_feedback_loop = color_feedback_loop;
 		key.depth_sampling = depth_sampling;
 
-		auto it = m_render_pass_cache.find(key.key);
-		if (it != m_render_pass_cache.end())
-			return it->second;
+		const VkRenderPass* rp = static_cast<const VkRenderPass*>(vk_u32_find(&m_render_pass_cache, key.key));
+		if (rp)
+			return *rp;
 
 		return CreateCachedRenderPass(key);
 	}
 
 	VkRenderPass GSDeviceVK::GetRenderPassForRestarting(VkRenderPass pass)
 	{
-		for (const auto& it : m_render_pass_cache)
-		{
-			if (it.second != pass)
-				continue;
+		/* The pass's key, from the reverse map rather than a walk over
+		 * every pass made. */
+		const u32* key = static_cast<const u32*>(
+			gs_flat_map_find(&m_render_pass_keys, &pass, sizeof(pass), gs_key_hash(&pass, sizeof(pass))));
+		if (!key)
+			return pass;
 
-			RenderPassCacheKey modified_key;
-			modified_key.key = it.first;
-			if (modified_key.color_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR)
-				modified_key.color_load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
-			if (modified_key.depth_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR)
-				modified_key.depth_load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
-			if (modified_key.stencil_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR)
-				modified_key.stencil_load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+		RenderPassCacheKey modified_key;
+		modified_key.key = *key;
+		if (modified_key.color_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR)
+			modified_key.color_load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+		if (modified_key.depth_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR)
+			modified_key.depth_load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+		if (modified_key.stencil_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR)
+			modified_key.stencil_load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
 
-			if (modified_key.key == it.first)
-				return pass;
+		if (modified_key.key == *key)
+			return pass;
 
-			auto fit = m_render_pass_cache.find(modified_key.key);
-			if (fit != m_render_pass_cache.end())
-				return fit->second;
+		const VkRenderPass* rp = static_cast<const VkRenderPass*>(vk_u32_find(&m_render_pass_cache, modified_key.key));
+		if (rp)
+			return *rp;
 
-			return CreateCachedRenderPass(modified_key);
-		}
-
-		return pass;
+		return CreateCachedRenderPass(modified_key);
 	}
 
 	VkCommandBuffer GSDeviceVK::GetCurrentInitCommandBuffer()
@@ -1675,7 +1714,18 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		if (res != VK_SUCCESS)
 			return VK_NULL_HANDLE;
 
-		m_render_pass_cache.emplace(key.key, pass);
+		{
+			int inserted;
+			VkRenderPass* rp = static_cast<VkRenderPass*>(vk_u32_entry(&m_render_pass_cache, key.key, &inserted));
+			u32* back = static_cast<u32*>(gs_flat_map_insert(&m_render_pass_keys, &pass, gs_key_hash(&pass, sizeof(pass)), &inserted));
+			if (!rp || !back)
+			{
+				vkDestroyRenderPass(vk_init_info.device, pass, nullptr);
+				return VK_NULL_HANDLE;
+			}
+			*rp   = pass;
+			*back = key.key;
+		}
 		return pass;
 	}
 
@@ -1762,10 +1812,27 @@ GSDeviceVK::GSDeviceVK()
 {
 	m_ops = &s_vulkan_device_ops;
 	memset(&m_pipeline_selector, 0, sizeof(m_pipeline_selector));
+	gs_flat_map_init(&m_tfx_pipelines, sizeof(PipelineSelector), sizeof(VkPipeline));
+	gs_flat_map_init(&m_tfx_siblings, sizeof(PipelineSelector), sizeof(VkPipeline));
+	gs_flat_map_init(&m_tfx_pending, sizeof(PipelineSelector), 1);
+	gs_flat_map_init(&m_tfx_fs_libs, sizeof(PipelineSelector), sizeof(VkPipeline));
+	gs_flat_map_init(&m_tfx_state_libs, sizeof(PipelineSelector), sizeof(VkPipeline));
+	gs_flat_map_init(&m_samplers, sizeof(u32), sizeof(VkSampler));
+	gs_flat_map_init(&m_render_pass_cache, sizeof(u32), sizeof(VkRenderPass));
+	gs_flat_map_init(&m_render_pass_keys, sizeof(VkRenderPass), sizeof(u32));
 }
 
 GSDeviceVK::~GSDeviceVK()
 {
+	/* (the handles in them went with the device; these are the slots) */
+	gs_flat_map_free(&m_tfx_pipelines);
+	gs_flat_map_free(&m_tfx_siblings);
+	gs_flat_map_free(&m_tfx_pending);
+	gs_flat_map_free(&m_tfx_fs_libs);
+	gs_flat_map_free(&m_tfx_state_libs);
+	gs_flat_map_free(&m_samplers);
+	gs_flat_map_free(&m_render_pass_cache);
+	gs_flat_map_free(&m_render_pass_keys);
 }
 
 void GSDeviceVK::GetAdapters(std::vector<std::string>* adapters)
@@ -1960,9 +2027,13 @@ void GSDeviceVK::Destroy()
 
 	m_texture_upload_buffer.Destroy(false);
 
-	for (auto& it : m_render_pass_cache)
-		vkDestroyRenderPass(m_device, it.second, nullptr);
-	m_render_pass_cache.clear();
+	for (size_t i = 0; i < GS_FLAT_MAP_SLOTS(&m_render_pass_cache); i++)
+	{
+		if (GS_FLAT_MAP_USED(&m_render_pass_cache, i))
+			vkDestroyRenderPass(m_device, *static_cast<VkRenderPass*>(GS_FLAT_MAP_VALUE(&m_render_pass_cache, i)), nullptr);
+	}
+	gs_flat_map_free(&m_render_pass_cache);
+	gs_flat_map_free(&m_render_pass_keys);
 
 	if (m_global_descriptor_pool != VK_NULL_HANDLE)
 		vkDestroyDescriptorPool(m_device, m_global_descriptor_pool, nullptr);
@@ -3071,9 +3142,9 @@ void GSDeviceVK::OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVector
 
 VkSampler GSDeviceVK::GetSampler(GSHWDrawConfig::SamplerSelector ss)
 {
-	const auto it = m_samplers.find(ss.key);
-	if (it != m_samplers.end())
-		return it->second;
+	const VkSampler* found = static_cast<const VkSampler*>(vk_u32_find(&m_samplers, ss.key));
+	if (found)
+		return *found;
 
 	const bool aniso = (ss.aniso && GSConfig.MaxAnisotropy > 1 && m_device_features.samplerAnisotropy);
 
@@ -3102,20 +3173,34 @@ VkSampler GSDeviceVK::GetSampler(GSHWDrawConfig::SamplerSelector ss)
 	VkSampler sampler = VK_NULL_HANDLE;
 	vkCreateSampler(vk_init_info.device, &ci, nullptr, &sampler);
 
-	m_samplers.emplace(ss.key, sampler);
+	{
+		int inserted;
+		VkSampler* slot = static_cast<VkSampler*>(vk_u32_entry(&m_samplers, ss.key, &inserted));
+		if (slot)
+			*slot = sampler;
+	}
 	return sampler;
+}
+
+void GSDeviceVK::DestroySamplers()
+{
+	size_t i;
+	for (i = 0; i < GS_FLAT_MAP_SLOTS(&m_samplers); i++)
+	{
+		if (!GS_FLAT_MAP_USED(&m_samplers, i))
+			continue;
+		const VkSampler samp = *static_cast<VkSampler*>(GS_FLAT_MAP_VALUE(&m_samplers, i));
+		if (samp != VK_NULL_HANDLE)
+			vkDestroySampler(vk_init_info.device, samp, nullptr);
+	}
+	gs_flat_map_free(&m_samplers);
 }
 
 void GSDeviceVK::ClearSamplerCache()
 {
 	VkDevice m_device = vk_init_info.device;
 	ExecuteCommandBuffer(true);
-	for (const auto& it : m_samplers)
-	{
-		if (it.second != VK_NULL_HANDLE)
-			vkDestroySampler(m_device, it.second, nullptr);
-	}
-	m_samplers.clear();
+	DestroySamplers();
 	m_point_sampler   = GetSampler(GSHWDrawConfig::SamplerSelector::Point());
 	m_linear_sampler  = GetSampler(GSHWDrawConfig::SamplerSelector::Linear());
 	m_utility_sampler = m_point_sampler;
@@ -3677,30 +3762,12 @@ void GSDeviceVK::DestroyResources()
 		FreeGlobalDescriptorSet(m_tfx_ubo_descriptor_set);
 
 	m_last_tfx_pipeline = VK_NULL_HANDLE;
-	for (auto& it : m_tfx_pipelines)
-	{
-		VkPipeline& p = it.second;
-		if (p != VK_NULL_HANDLE)
-		{
-			vkDestroyPipeline(m_device, p, nullptr);
-			p = VK_NULL_HANDLE;
-		}
-	}
-	m_tfx_pipelines.clear();
-	for (auto& it : m_tfx_siblings)
-		if (it.second != VK_NULL_HANDLE)
-			vkDestroyPipeline(m_device, it.second, nullptr);
-	m_tfx_siblings.clear();
-	for (auto& it : m_tfx_fs_libs)
-		if (it.second != VK_NULL_HANDLE)
-			vkDestroyPipeline(m_device, it.second, nullptr);
-	m_tfx_fs_libs.clear();
-	for (auto& it : m_tfx_state_libs)
-		if (it.second != VK_NULL_HANDLE)
-			vkDestroyPipeline(m_device, it.second, nullptr);
-	m_tfx_state_libs.clear();
+	vk_pipe_destroy_all(&m_tfx_pipelines);
+	vk_pipe_destroy_all(&m_tfx_siblings);
+	vk_pipe_destroy_all(&m_tfx_fs_libs);
+	vk_pipe_destroy_all(&m_tfx_state_libs);
 	m_gpl_failed = false;
-	m_tfx_pending.clear();
+	gs_flat_map_free(&m_tfx_pending);
 	m_tfx_dynamic = false;
 	DestroyModules(&m_modules);
 	{
@@ -3715,15 +3782,9 @@ void GSDeviceVK::DestroyResources()
 	}
 	m_vr_ops = NULL;
 
-	for (auto& it : m_samplers)
-	{
-		VkSampler& samp = it.second;
-		if (samp != VK_NULL_HANDLE)
-		{
-			vkDestroySampler(m_device, samp, nullptr);
-			samp = VK_NULL_HANDLE;
-		}
-	}
+	/* Emptied too: the entries used to stay, each a null sampler that
+	 * GetSampler would have handed out. */
+	DestroySamplers();
 
 	m_linear_sampler = VK_NULL_HANDLE;
 	m_point_sampler = VK_NULL_HANDLE;
@@ -3967,13 +4028,13 @@ VkPipeline GSDeviceVK::GetTFXPipeline(const PipelineSelector& p)
 		return m_last_tfx_pipeline;
 
 	const PipelineSelector key = TFXPipelineKey(p, m_optional_extensions.vk_ext_extended_dynamic_state3);
-	const auto it = m_tfx_pipelines.find(key);
+	const VkPipeline* found = vk_pipe_find(&m_tfx_pipelines, key);
 	VkPipeline pipeline;
-	if (it == m_tfx_pipelines.end())
+	if (!found)
 		pipeline = GetTFXPipelineMissed(key);
 	else
 	{
-		pipeline      = it->second;
+		pipeline      = *found;
 		m_tfx_dynamic = false;
 	}
 
@@ -4022,16 +4083,17 @@ static GSDeviceVK::PipelineSelector TFXLibraryKey(const GSDeviceVK::PipelineSele
 VkPipeline GSDeviceVK::GetTFXLibrary(const PipelineSelector& sibling, bool fragment)
 {
 	const PipelineSelector lk = TFXLibraryKey(sibling, fragment);
-	auto& table = fragment ? m_tfx_fs_libs : m_tfx_state_libs;
-	const auto it = table.find(lk);
+	gs_flat_map_t* table = fragment ? &m_tfx_fs_libs : &m_tfx_state_libs;
+	const VkPipeline* found = vk_pipe_find(table, lk);
 	VkPipeline lib;
-	if (it != table.end() && (it->second != VK_NULL_HANDLE || fragment))
-		return it->second;
+	int inserted;
+	if (found && (*found != VK_NULL_HANDLE || fragment))
+		return *found;
 	if (fragment && m_warm && m_test_pipelines != 3)
 	{
 		/* (a null entry: asked for, or the thread could not take it) */
 		if (PipelineWarmQueue(lk, 2))
-			table.emplace(lk, VK_NULL_HANDLE);
+			vk_pipe_entry(table, lk, &inserted);
 		return VK_NULL_HANDLE;
 	}
 	lib = BuildTFXPipeline(lk, &m_modules, m_pipeline_cache, true,
@@ -4041,7 +4103,13 @@ VkPipeline GSDeviceVK::GetTFXLibrary(const PipelineSelector& sibling, bool fragm
 					| VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT));
 	if (lib != VK_NULL_HANDLE)
 	{
-		table[lk] = lib;
+		VkPipeline* slot = vk_pipe_entry(table, lk, &inserted);
+		if (!slot)
+		{
+			vkDestroyPipeline(vk_init_info.device, lib, nullptr);
+			return VK_NULL_HANDLE;
+		}
+		*slot = lib;
 		m_libs_built_here++;
 	}
 	return lib;
@@ -4051,15 +4119,17 @@ VkPipeline GSDeviceVK::GetTFXSibling(const PipelineSelector& key, bool build)
 {
 	PipelineSelector sk{key};
 	VKDynamicPS(sk.ps);
-	const auto it = m_tfx_siblings.find(sk);
+	const VkPipeline* found = vk_pipe_find(&m_tfx_siblings, sk);
 	VkPipeline sibling;
-	if (it != m_tfx_siblings.end() && (it->second != VK_NULL_HANDLE || !build))
-		return it->second;
+	VkPipeline* slot;
+	int inserted;
+	if (found && (*found != VK_NULL_HANDLE || !build))
+		return *found;
 	if (!build)
 	{
 		/* (a null entry: asked for, or the thread could not take it) */
 		if (PipelineWarmQueue(sk, 1))
-			m_tfx_siblings.emplace(sk, VK_NULL_HANDLE);
+			vk_pipe_entry(&m_tfx_siblings, sk, &inserted);
 		return VK_NULL_HANDLE;
 	}
 	/* Linked from its libraries, fast, where there are some: the pixel
@@ -4093,7 +4163,14 @@ VkPipeline GSDeviceVK::GetTFXSibling(const PipelineSelector& key, bool build)
 	}
 	if (sibling == VK_NULL_HANDLE)
 		sibling = BuildTFXPipeline(sk, &m_modules, m_pipeline_cache, true);
-	m_tfx_siblings[sk] = sibling;
+	slot = vk_pipe_entry(&m_tfx_siblings, sk, &inserted);
+	if (!slot)
+	{
+		if (sibling != VK_NULL_HANDLE)
+			vkDestroyPipeline(vk_init_info.device, sibling, nullptr);
+		return VK_NULL_HANDLE;
+	}
+	*slot = sibling;
 	if (sibling != VK_NULL_HANDLE)
 		m_siblings_built_here++;
 	return sibling;
@@ -4123,24 +4200,35 @@ __noinline VkPipeline GSDeviceVK::GetTFXPipelineMissed(const PipelineSelector& p
 	 * key draws with one while its own is built on the thread) */
 	else if (m_warm)
 	{
-		const auto it = PipelineWarmTake() ? m_tfx_pipelines.find(p) : m_tfx_pipelines.end();
-		if (it != m_tfx_pipelines.end())
-			return it->second;
+		const VkPipeline* found = PipelineWarmTake() ? vk_pipe_find(&m_tfx_pipelines, p) : nullptr;
+		if (found)
+			return *found;
 		if (m_test_pipelines != 1)
 		{
 			/* (linking one is cheap where libraries are: a new state
 			 * draws at once too) */
 			pipeline = GetTFXSibling(p, m_test_pipelines == 3
 				|| (m_optional_extensions.vk_ext_graphics_pipeline_library && !m_gpl_failed));
+			int inserted;
 			if (pipeline != VK_NULL_HANDLE
-				&& (m_tfx_pending.find(p) != m_tfx_pending.end() || (PipelineWarmQueue(p, 0)
-					&& m_tfx_pending.emplace(p, 1).second)))
+				&& (gs_flat_map_find(&m_tfx_pending, &p, sizeof(p), gs_key_hash(&p, sizeof(p))) || (PipelineWarmQueue(p, 0)
+					&& gs_flat_map_insert(&m_tfx_pending, &p, gs_key_hash(&p, sizeof(p)), &inserted))))
 				goto sibling;
 		}
 	}
 
 	pipeline = BuildTFXPipeline(p, &m_modules, m_pipeline_cache);
-	m_tfx_pipelines.emplace(p, pipeline);
+	{
+		int inserted;
+		VkPipeline* slot = vk_pipe_entry(&m_tfx_pipelines, p, &inserted);
+		if (!slot)
+		{
+			if (pipeline != VK_NULL_HANDLE)
+				vkDestroyPipeline(vk_init_info.device, pipeline, nullptr);
+			return VK_NULL_HANDLE;
+		}
+		*slot = pipeline;
+	}
 	if (pipeline != VK_NULL_HANDLE)
 	{
 		m_pipelines_built_here++;
@@ -4715,26 +4803,33 @@ bool GSDeviceVK::PipelineWarmTake()
 		}
 		else if (res.dynamic == 2)
 		{
-			VkPipeline& lib = m_tfx_fs_libs[res.sel];
-			if (lib == VK_NULL_HANDLE)
-				lib = res.pipeline;
+			int inserted;
+			VkPipeline* lib = vk_pipe_entry(&m_tfx_fs_libs, res.sel, &inserted);
+			if (lib && *lib == VK_NULL_HANDLE)
+				*lib = res.pipeline;
 			else if (res.pipeline != VK_NULL_HANDLE)
 				vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
 		}
 		else if (res.dynamic)
 		{
-			VkPipeline& sibling = m_tfx_siblings[res.sel];
-			if (sibling == VK_NULL_HANDLE)
-				sibling = res.pipeline;
+			int inserted;
+			VkPipeline* sibling = vk_pipe_entry(&m_tfx_siblings, res.sel, &inserted);
+			if (sibling && *sibling == VK_NULL_HANDLE)
+				*sibling = res.pipeline;
 			else if (res.pipeline != VK_NULL_HANDLE)
 				vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
 		}
 		else
 		{
+			int inserted = 0;
+			VkPipeline* slot;
 			if (res.job)
-				m_tfx_pending.erase(res.sel);
+				gs_flat_map_erase(&m_tfx_pending, &res.sel, gs_key_hash(&res.sel, sizeof(res.sel)));
 			/* (a key built here meanwhile keeps that one) */
-			if (!m_tfx_pipelines.emplace(res.sel, res.pipeline).second)
+			slot = vk_pipe_entry(&m_tfx_pipelines, res.sel, &inserted);
+			if (slot && inserted)
+				*slot = res.pipeline;
+			if (!inserted)
 			{
 				if (res.pipeline != VK_NULL_HANDLE)
 					vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
@@ -4786,7 +4881,7 @@ void GSDeviceVK::PipelineWarmStop()
 	free(w);
 	m_warm           = nullptr;
 	m_jobs_in_flight = 0;
-	m_tfx_pending.clear();
+	gs_flat_map_clear(&m_tfx_pending);
 }
 
 #else
