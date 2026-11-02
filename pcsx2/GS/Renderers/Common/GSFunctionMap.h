@@ -20,6 +20,8 @@
 
 #include "GSCodeReserve.h"
 
+#include <unordered_map>
+
 template <class KEY, class VALUE>
 class GSFunctionMap
 {

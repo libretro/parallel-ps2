@@ -15,10 +15,12 @@
 
 #include <algorithm>
 #include <memalign.h>
-#include <unordered_set>
+#include <stdlib.h>
 
 #include "GS.h"
 #include "GSLocalMemory.h"
+#include "GSPage2Tile.h"
+#include "Renderers/Common/GSKeyHash.h"
 #include "GSExtra.h"
 
 template <typename Fn>
@@ -65,6 +67,9 @@ GSLocalMemory::GSLocalMemory()
 {
 	m_vm8 = (u8*)GSAllocateWrappedMemory(m_vmsize, 4);
 	memset(m_vm8, 0, m_vmsize);
+
+	gs_flat_map_init(&m_po4map, sizeof(u64), sizeof(GSPixelOffset4*));
+	gs_flat_map_init(&m_p2tmap, sizeof(u64), sizeof(GSPage2TileMap*));
 
 	MULTI_ISA_SELECT(GSLocalMemoryPopulateFunctions)(*this);
 
@@ -248,11 +253,15 @@ GSLocalMemory::~GSLocalMemory()
 	if (m_vm8)
 		GSFreeWrappedMemory(m_vm8, m_vmsize, 4);
 
-	for (auto& i : m_po4map)
-		memalign_free(i.second);
+	for (size_t i = 0; i < GS_FLAT_MAP_SLOTS(&m_po4map); i++)
+		if (GS_FLAT_MAP_USED(&m_po4map, i))
+			memalign_free(*static_cast<GSPixelOffset4**>(GS_FLAT_MAP_VALUE(&m_po4map, i)));
+	gs_flat_map_free(&m_po4map);
 
-	for (auto& i : m_p2tmap)
-		memalign_free(i.second);
+	for (size_t i = 0; i < GS_FLAT_MAP_SLOTS(&m_p2tmap); i++)
+		if (GS_FLAT_MAP_USED(&m_p2tmap, i))
+			memalign_free(*static_cast<GSPage2TileMap**>(GS_FLAT_MAP_VALUE(&m_p2tmap, i)));
+	gs_flat_map_free(&m_p2tmap);
 }
 
 GSPixelOffset4* GSLocalMemory::GetPixelOffset4(const GIFRegFRAME& FRAME, const GIFRegZBUF& ZBUF)
@@ -268,12 +277,10 @@ GSPixelOffset4* GSLocalMemory::GetPixelOffset4(const GIFRegFRAME& FRAME, const G
 	const u64 hash = (u64)FRAME.FBP | ((u64)ZBUF.ZBP << 9) | ((u64)bw << 18)
 		| ((u64)fpsm << 24) | ((u64)zpsm << 30);
 
-	auto it = m_po4map.find(hash);
-
-	if (it != m_po4map.end())
-	{
-		return it->second;
-	}
+	const size_t key_hash = gs_key_hash(&hash, sizeof(hash));
+	GSPixelOffset4** const found = static_cast<GSPixelOffset4**>(gs_flat_map_find(&m_po4map, &hash, sizeof(hash), key_hash));
+	if (found)
+		return *found;
 
 	GSPixelOffset4* off = (GSPixelOffset4*)memalign_alloc(VECTOR_ALIGNMENT, sizeof(GSPixelOffset4));
 
@@ -299,19 +306,23 @@ GSPixelOffset4* GSLocalMemory::GetPixelOffset4(const GIFRegFRAME& FRAME, const G
 		off->col[i].y = (m_psm[zpsm].info.pa(i * 4, 0, 0, 32) - m_psm[zpsm].info.pa(0, 0, 0, 32)) << zs;
 	}
 
-	m_po4map[hash] = off;
+	int inserted;
+	GSPixelOffset4** const slot = static_cast<GSPixelOffset4**>(gs_flat_map_insert(&m_po4map, &hash, key_hash, &inserted));
+	if (slot)
+		*slot = off;
+	else
+		abort(); /* out of memory, as the map's operator[] did without exceptions */
 
 	return off;
 }
 
 GSPage2TileMap* GSLocalMemory::GetPage2TileMap(const GIFRegTEX0& TEX0)
 {
-	u64 hash = TEX0.U64 & 0x3ffffffffull; // TBP0 TBW PSM TW TH
-
-	auto it = m_p2tmap.find(hash);
-
-	if (it != m_p2tmap.end())
-		return it->second;
+	const u64 hash = TEX0.U64 & 0x3ffffffffull; // TBP0 TBW PSM TW TH
+	const size_t key_hash = gs_key_hash(&hash, sizeof(hash));
+	GSPage2TileMap** const found = static_cast<GSPage2TileMap**>(gs_flat_map_find(&m_p2tmap, &hash, sizeof(hash), key_hash));
+	if (found)
+		return *found;
 
 	GSVector2i bs = m_psm[TEX0.PSM].bs;
 
@@ -328,7 +339,14 @@ GSPage2TileMap* GSLocalMemory::GetPage2TileMap(const GIFRegTEX0& TEX0)
 	GSOffset off = GetOffset(TEX0.TBP0, TEX0.TBW, TEX0.PSM);
 	GSOffset::BNHelper bn = off.bnMulti(0, 0);
 
-	std::unordered_map<u32, std::unordered_set<u32>> tmp; // key = page, value = y:x, 7 bits each, max 128x128 tiles for the worst case (1024x1024 32bpp 8x8 blocks)
+	/* A key a block: its page, and y:x, 7 bits each (max 128x128 tiles
+	 * for the worst case, 1024x1024 32bpp 8x8 blocks), then sorted and
+	 * merged into each page's rows (GSPage2Tile.c). */
+	const size_t blocks = static_cast<size_t>(th >> off.blockShiftY()) * static_cast<size_t>(tw >> off.blockShiftX());
+	unsigned* const keys = static_cast<unsigned*>(malloc(2 * blocks * sizeof(unsigned) + 1));
+	if (!keys)
+		abort();
+	size_t n = 0;
 
 	for (; bn.blkY() < (th >> off.blockShiftY()); bn.nextBlockY())
 	{
@@ -336,69 +354,31 @@ GSPage2TileMap* GSLocalMemory::GetPage2TileMap(const GIFRegTEX0& TEX0)
 		{
 			u32 page = (bn.value() >> 5) % GS_MAX_PAGES;
 
-			tmp[page].insert((bn.blkY() << 7) + bn.blkX());
+			keys[n++] = GS_PAGE2TILE_KEY(page, (bn.blkY() << 7) + bn.blkX());
 		}
 	}
 
 	// combine the lower 5 bits of the address into a 9:5 pointer:mask form, so the "valid bits" can be tested against an u32 array
-
-	/* Two passes into one block: count each page's entries, lay the pages
-	 * out back to back, then fill. What this replaced allocated a vector
-	 * per page - up to GS_MAX_PAGES of them, a handful of entries each. */
-	std::vector<std::vector<GSVector2i>> rows(GS_MAX_PAGES);
-
-	for (const auto& i : tmp)
-	{
-		const u32 page = i.first;
-		const auto& tiles = i.second;
-
-		std::unordered_map<u32, u32> m;
-
-		for (const auto addr : tiles)
-		{
-			u32 row = addr >> 5;
-			u32 col = 1 << (addr & 31);
-
-			auto k = m.find(row);
-
-			if (k != m.end())
-				k->second |= col;
-			else
-				m[row] = col;
-		}
-
-		rows[page].reserve(m.size());
-
-		// sort by x and flip the mask (it will be used to erase a lot of bits in a loop, [x] &= ~y)
-
-		for (const auto& j : m)
-			rows[page].push_back(GSVector2i(j.first, ~j.second));
-
-		std::sort(rows[page].begin(), rows[page].end(), [](const GSVector2i& a, const GSVector2i& b) { return a.x < b.x; });
-	}
-
-	u32 total = 0;
-	for (u32 page = 0; page < GS_MAX_PAGES; page++)
-		total += static_cast<u32>(rows[page].size());
+	// (sorted by x, the mask flipped: it is used to erase a lot of bits in a loop, [x] &= ~y)
+	const size_t total = gs_page2tile_sort(keys, keys + blocks, n);
 
 	/* The header and the entries in one allocation, so a page's run and
 	 * the next page's are neighbours in memory. */
-	const size_t entries_bytes = static_cast<size_t>(total) * sizeof(GSVector2i);
+	const size_t entries_bytes = total * sizeof(GSVector2i);
 	u8* block = static_cast<u8*>(memalign_alloc(16, sizeof(GSPage2TileMap) + entries_bytes));
 	GSPage2TileMap* p2t = reinterpret_cast<GSPage2TileMap*>(block);
 	GSVector2i* entries = reinterpret_cast<GSVector2i*>(block + sizeof(GSPage2TileMap));
 	p2t->entries = entries;
+	static_assert(sizeof(GSVector2i) == 2 * sizeof(int), "entries are int pairs");
+	gs_page2tile_fill(keys, n, GS_MAX_PAGES, reinterpret_cast<int*>(entries), p2t->first);
+	free(keys);
 
-	u32 at = 0;
-	for (u32 page = 0; page < GS_MAX_PAGES; page++)
-	{
-		p2t->first[page] = at;
-		for (const GSVector2i& e : rows[page])
-			entries[at++] = e;
-	}
-	p2t->first[GS_MAX_PAGES] = at;
-
-	m_p2tmap[hash] = p2t;
+	int inserted;
+	GSPage2TileMap** const slot = static_cast<GSPage2TileMap**>(gs_flat_map_insert(&m_p2tmap, &hash, key_hash, &inserted));
+	if (slot)
+		*slot = p2t;
+	else
+		abort(); /* out of memory, as the map's operator[] did without exceptions */
 
 	return p2t;
 }

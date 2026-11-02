@@ -20,8 +20,8 @@
 #include "GSClut.h"
 #include "MultiISA.h"
 #include <array>
-#include <unordered_map>
 #include <vector>
+#include "Renderers/Common/GSFlatMap.h"
 
 /* Which tiles of a texture live in each GS page, for the repeating-texture
  * invalidation in both texture caches. It was an array of GS_MAX_PAGES
@@ -513,8 +513,10 @@ protected:
 
 	//
 
-	std::unordered_map<u64, GSPixelOffset4*> m_po4map;
-	std::unordered_map<u64, GSPage2TileMap*> m_p2tmap;
+	/* u64 key -> GSPixelOffset4* / GSPage2TileMap*, in GSFlatMaps: made
+	 * once each, kept until the local memory goes. */
+	gs_flat_map_t m_po4map;
+	gs_flat_map_t m_p2tmap;
 
 public:
 	GSLocalMemory();

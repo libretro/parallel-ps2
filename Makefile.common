@@ -101,6 +101,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSObjectPool.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSFlatMap.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSStableMap.c \
+	$(LRPS2_DIR)/GS/GSPage2Tile.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSHiresMem.c \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSHashTable.c \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSSpriteSnap.c \
