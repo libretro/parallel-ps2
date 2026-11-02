@@ -1609,6 +1609,75 @@ static void case_clut_scales(void)
 	s_smode1_lo = 0x40834504u;
 	s_run_frames = 120;
 }
+/* Round after round, one vsync apart, four draws of three pipelines: a
+ * line drawn into a frame that a 4-bit texture's CLUT (CSM1) is loaded
+ * from next, as in clut_lines; a sprite of the line's 64x2 source
+ * stretched bilinear over 64x64 pixels of the displayed frame; the 4-bit
+ * sprite, its palette converted from the line's frame on the GPU by a
+ * utility draw that pushes constants of its own; and the stretched
+ * sprite again, beside the first. A renderer that draws every other key
+ * with a pipeline reading its selector from push constants and the rest
+ * with pipelines of their own (LRPS2_TEST_VK_PIPELINES=mixed, which
+ * takes the keys in the order first drawn) draws the stretched sprites
+ * so, the others not: the second must have its key pushed again after
+ * the palette's constants, though nothing in between drew with a key. */
+static void case_sibling_key_after_clut(void)
+{
+	unsigned i, setup, loop;
+	stream_image(0x3000u, 1, 0, 0, 0, 64, 2, 32);
+	for (i = 0; i < 32; i++)
+	{
+		const unsigned t = 0x01030507u * (i + 1) ^ 0x10204080u;
+		qw(t, t ^ 0x00ff00ffu, t * 3u, t ^ 0xff00ff00u);
+	}
+	stream_image(0x2000u, 1, 0x14u, 0, 0, 16, 16, 8);
+	for (i = 0; i < 8; i++)
+		qw(0x76543210u, 0xfedcba98u, 0x01234567u + i, 0x89abcdefu - i);
+	setup = s_qw_count;
+	stream_draw_setup(1 + 33, 0);
+	qw(0x80808080u, 0x3f800000u, GS_RGBAQ, 0); /* bumped each round */
+	/* the line, into the CLUT's frame */
+	qw(CLUT_PAGE | (1u << 16), 0xff000000u, GS_FRAME_1, 0);      /* FBW 1, alpha masked */
+	qw(0x3000u | (1u << 14) | (6u << 26) | (1u << 30), (1u << 2) | (1u << 3), GS_TEX0_1, 0); /* CT32 64x2, TCC, decal */
+	qw(0, 0, GS_TEX1_1, 0);
+	qw(1 | 0x10 | 0x100, 0, GS_PRIM, 0);                          /* line, TME, FST */
+	qw(0 | (8u << 16), 0, GS_UV, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw(503u | (8u << 16), 0, GS_UV, 0);
+	qw(126u, 0, GS_XYZ2, 0);
+	/* the stretched sprite */
+	qw(10u << 16, 0, GS_FRAME_1, 0);                              /* the displayed frame */
+	qw(0x60u, 0, GS_TEX1_1, 0);                                   /* MMAG, MMIN linear */
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                          /* sprite, TME, FST */
+	qw(0, 0, GS_UV, 0);
+	qw((unsigned)XY(40, 40), 0, GS_XYZ2, 0);
+	qw((64u << 4) | ((2u << 4) << 16), 0, GS_UV, 0);
+	qw((unsigned)XY(104, 104), 0, GS_XYZ2, 0);
+	/* the 4-bit sprite, its CLUT from the line's frame */
+	qw(0x2000u | (1u << 14) | (0x14u << 20) | (4u << 26),
+		1u | (1u << 2) | (1u << 3) | ((CLUT_PAGE * 32u) << 5) | (1u << 29), GS_TEX0_1, 0); /* T4 16x16, CBP, CLD 1 */
+	qw(0, 0, GS_TEX1_1, 0);
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);
+	qw(0, 0, GS_UV, 0);
+	qw((unsigned)XY(120, 40), 0, GS_XYZ2, 0);
+	qw((16u << 4) | ((16u << 4) << 16), 0, GS_UV, 0);
+	qw((unsigned)XY(184, 104), 0, GS_XYZ2, 0);
+	/* the stretched sprite again */
+	qw(0x3000u | (1u << 14) | (6u << 26) | (1u << 30), (1u << 2) | (1u << 3), GS_TEX0_1, 0);
+	qw(0x60u, 0, GS_TEX1_1, 0);
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);
+	qw(0, 0, GS_UV, 0);
+	qw((unsigned)XY(200, 40), 0, GS_XYZ2, 0);
+	qw((64u << 4) | ((2u << 4) << 16), 0, GS_UV, 0);
+	qw((unsigned)XY(264, 104), 0, GS_XYZ2, 0);
+	loop = s_qw_count;
+	s_bump_qw = setup + 7;
+	kick(0, setup, 0);
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(setup, loop - setup, 1);
+	s_run_frames = 60;
+}
 static void case_clut_lines(void) { clut_lines(0); }
 static void case_clut_lines_ramps(void) { clut_lines(4); }
 
@@ -1949,6 +2018,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "split_clear_no_display", case_split_clear_no_display, "1" },
 	{ "frame_on_depth32", case_frame_on_depth32, "1" },
 	{ "depth_states",    case_depth_states,  "1" },
+	{ "sibling_key_after_clut", case_sibling_key_after_clut, "1" },
 	{ "display_large_2x", case_display_large, "2" },
 	{ "frame_low",       case_frame_low,     "1" },
 	{ "frame_low_odd",   case_frame_low_odd, "1" },

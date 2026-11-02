@@ -1819,6 +1819,7 @@ GSDeviceVK::GSDeviceVK()
 	gs_flat_map_init(&m_tfx_pipelines, sizeof(PipelineSelector), sizeof(VkPipeline));
 	gs_flat_map_init(&m_tfx_siblings, sizeof(PipelineSelector), sizeof(VkPipeline));
 	gs_flat_map_init(&m_tfx_pending, sizeof(PipelineSelector), 1);
+	gs_flat_map_init(&m_tfx_test_order, sizeof(PipelineSelector), 1);
 	gs_flat_map_init(&m_tfx_fs_libs, sizeof(PipelineSelector), sizeof(VkPipeline));
 	gs_flat_map_init(&m_tfx_state_libs, sizeof(PipelineSelector), sizeof(VkPipeline));
 	gs_flat_map_init(&m_samplers, sizeof(u32), sizeof(VkSampler));
@@ -1832,6 +1833,7 @@ GSDeviceVK::~GSDeviceVK()
 	gs_flat_map_free(&m_tfx_pipelines);
 	gs_flat_map_free(&m_tfx_siblings);
 	gs_flat_map_free(&m_tfx_pending);
+	gs_flat_map_free(&m_tfx_test_order);
 	gs_flat_map_free(&m_tfx_fs_libs);
 	gs_flat_map_free(&m_tfx_state_libs);
 	gs_flat_map_free(&m_samplers);
@@ -1928,11 +1930,12 @@ bool GSDeviceVK::Create()
 	/* LRPS2_TEST_VK_PIPELINES=sync: every TFX pipeline built on the render
 	 * thread as it is first drawn with; =sibling: every draw drawn with a
 	 * dynamic sibling; =async: every new key drawn with its sibling while
-	 * the warm-up thread builds its own. */
+	 * the warm-up thread builds its own; =mixed: every other key drawn
+	 * with its sibling, the rest with pipelines of their own. */
 	{
 		const char* mode = getenv("LRPS2_TEST_VK_PIPELINES");
 		m_test_pipelines = !mode ? 0 : !strcmp(mode, "sync") ? 1 : !strcmp(mode, "sibling") ? 2
-			: !strcmp(mode, "async") ? 3 : 0;
+			: !strcmp(mode, "async") ? 3 : !strcmp(mode, "mixed") ? 4 : 0;
 	}
 
 	if (!CreateRenderPasses() || !UtilPrepare())
@@ -3772,7 +3775,8 @@ void GSDeviceVK::DestroyResources()
 	vk_pipe_destroy_all(&m_tfx_state_libs);
 	m_gpl_failed = false;
 	gs_flat_map_free(&m_tfx_pending);
-	m_tfx_dynamic = false;
+	m_tfx_dynamic   = false;
+	m_tfx_key_stale = true;
 	DestroyModules(&m_modules);
 	{
 		u32 i;
@@ -4093,7 +4097,7 @@ VkPipeline GSDeviceVK::GetTFXLibrary(const PipelineSelector& sibling, bool fragm
 	int inserted;
 	if (found && (*found != VK_NULL_HANDLE || fragment))
 		return *found;
-	if (fragment && m_warm && m_test_pipelines != 3)
+	if (fragment && m_warm && m_test_pipelines < 3)
 	{
 		/* (a null entry: asked for, or the thread could not take it) */
 		if (PipelineWarmQueue(lk, 2))
@@ -4148,7 +4152,7 @@ VkPipeline GSDeviceVK::GetTFXSibling(const PipelineSelector& key, bool build)
 		/* the pixel shader part not there yet: the key's own pipeline is
 		 * built here as without libraries, the part on the way (or asked
 		 * for again by the next key, if the thread had no room) */
-		if (fs_lib == VK_NULL_HANDLE && m_warm && m_test_pipelines != 3)
+		if (fs_lib == VK_NULL_HANDLE && m_warm && m_test_pipelines < 3)
 			return VK_NULL_HANDLE;
 		if (libs[0] != VK_NULL_HANDLE && libs[1] != VK_NULL_HANDLE)
 		{
@@ -4199,6 +4203,23 @@ __noinline VkPipeline GSDeviceVK::GetTFXPipelineMissed(const PipelineSelector& p
 		pipeline = GetTFXSibling(p, true);
 		if (pipeline != VK_NULL_HANDLE)
 			goto sibling;
+	}
+	/* (=mixed: every other key, in the order first drawn, drawn with its
+	 * sibling only and the rest with their own, built here: draws of
+	 * both in every command buffer, as the thread's make them now and
+	 * then) */
+	else if (m_test_pipelines == 4)
+	{
+		int inserted;
+		u8* odd = static_cast<u8*>(gs_flat_map_insert(&m_tfx_test_order, &p, gs_key_hash(&p, sizeof(p)), &inserted));
+		if (odd && inserted)
+			*odd = (u8)((m_tfx_test_order.count + 1) & 1);
+		if (odd && *odd)
+		{
+			pipeline = GetTFXSibling(p, true);
+			if (pipeline != VK_NULL_HANDLE)
+				goto sibling;
+		}
 	}
 	/* (=async: a key with no sibling yet has one built here, so every new
 	 * key draws with one while its own is built on the thread) */
@@ -5401,12 +5422,18 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 	}
 
 	/* A sibling's key: pushed when it changes, and again in a new command
-	 * buffer or after a utility pipeline's push constants. */
-	if (m_tfx_dynamic && (layout_changed || (flags & DIRTY_FLAG_TFX_KEY)
-			|| memcmp(m_tfx_key, m_tfx_key_pushed, sizeof(m_tfx_key))))
+	 * buffer or after a utility pipeline's push constants. A draw of a
+	 * pipeline of its own pushes none, so what those asked for is kept
+	 * for the next sibling's: else a sibling drawn after one, with the
+	 * key it pushed before them, read what they left (a palette's
+	 * conversion's constants, say: Ridge Racer V's backgrounds). */
+	if (layout_changed || (flags & DIRTY_FLAG_TFX_KEY))
+		m_tfx_key_stale = true;
+	if (m_tfx_dynamic && (m_tfx_key_stale || memcmp(m_tfx_key, m_tfx_key_pushed, sizeof(m_tfx_key))))
 	{
 		vkCmdPushConstants(cmdbuf, m_tfx_pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(m_tfx_key), m_tfx_key);
 		memcpy(m_tfx_key_pushed, m_tfx_key, sizeof(m_tfx_key));
+		m_tfx_key_stale = false;
 	}
 
 	if (layout_changed)

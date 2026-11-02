@@ -536,6 +536,9 @@ private:
 	/* The keys whose pipelines the warm-up thread is building while their
 	 * draws draw with a sibling. */
 	gs_flat_map_t m_tfx_pending;
+	/* (LRPS2_TEST_VK_PIPELINES=mixed: the keys in the order first drawn,
+	 * each with its place's parity: odd ones drawn with siblings) */
+	gs_flat_map_t m_tfx_test_order;
 	/* The siblings' libraries (vk_ext_graphics_pipeline_library): the pixel
 	 * shader parts by TFXLibraryKey(.., true), the vertex input, vertex
 	 * shader and output parts by TFXLibraryKey(.., false); a null pixel
@@ -555,10 +558,12 @@ private:
 	bool m_tfx_dynamic = false;
 	u32 m_tfx_key[4] = {};
 	u32 m_tfx_key_pushed[4] = {};
+	bool m_tfx_key_stale = true; /* the key to push before the next sibling's draw */
 	/* LRPS2_TEST_VK_PIPELINES: 1 "sync" builds every pipeline on the render
 	 * thread as it is first drawn with, 2 "sibling" draws everything with
 	 * siblings, 3 "async" every new key with its sibling while its own is
-	 * built (tests/vkpipewarm) */
+	 * built, 4 "mixed" every other key with its sibling and the rest with
+	 * their own (tests/vkpipewarm) */
 	u8 m_test_pipelines = 0;
 	/* See GSDevice12: the last pipeline, so a run of draws that share one
 	 * does not hash its selector again. */

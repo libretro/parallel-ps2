@@ -27,7 +27,13 @@
 #    sibling), and each from nothing drawing every new key with its
 #    sibling while the warm-up thread builds its own (=async), presents
 #    the same picture as from nothing; the second ends in the same state,
-#    and its pipelines come from the thread while siblings drew;
+#    and its pipelines come from the thread while siblings drew; and
+#    with every other key drawn with its sibling and the rest with their
+#    own (=mixed), in every frame, as the thread's arrival makes them now
+#    and then, each case presents the picture pipelines of their own do
+#    (=sync): a sibling drawn after a utility draw's push constants and
+#    then a pipeline of its own reads its own key, pushed again
+#    (sibling_key_after_clut);
 #  - with graphics pipeline libraries (and the dynamic blend), a key whose
 #    sibling's pixel shader part is there draws with a sibling linked from
 #    it, nothing built on the render thread, and from nothing no more is
@@ -71,7 +77,11 @@ if [ ! -f "$CORE" ]; then
 fi
 
 CASES="dest_alpha mip_tw8 points aa1_line depth_states"
-for c in $CASES; do
+# (step 5's too, drawn with siblings and pipelines of their own mixed:
+# with more than one key, and frames with a utility draw's push constants
+# between a sibling's draws)
+MIXED_CASES="sibling_key_after_clut clut_lines"
+for c in $CASES $MIXED_CASES; do
 	"$WORK/swdraw$EXE" --bios "$WORK/$c.bin" $c >/dev/null
 done
 
@@ -277,6 +287,30 @@ done
 # (a key a case draws with only at its end may land after it: over all of
 # them, some must)
 [ "$landed" -gt 0 ] || { echo "  FAIL: no pipeline built while a sibling drew came back from the thread"; fail=1; }
+
+# Every other key drawn with its sibling, the rest with pipelines of
+# their own, each frame (=mixed): the picture every pipeline of its own
+# draws (=sync), in the cases of the list's that draw with more than one
+# key, and the ones whose frames put a utility draw's push constants
+# between a sibling's draws.
+for c in dest_alpha mip_tw8 depth_states $MIXED_CASES; do
+	for mode in sync mixed; do
+		rm -rf "$WORK/$mode"
+		mkdir -p "$WORK/$mode"
+		LRPS2_TEST_VK_PIPELINES=$mode run "$c.$mode" $c "$WORK/$mode"
+	done
+	a=$(image "$c.sync"); b=$(image "$c.mixed")
+	d=$(sed -n 's/.*Vulkan dynamic siblings: .*, \([0-9]*\) draws drawn with one.*/\1/p' "$WORK/$c.mixed.log")
+	if [ -z "$a" ] || [ "$a" != "$b" ]; then
+		echo "  FAIL: $c drawn with siblings and pipelines of their own mixed presents another picture (${a:-none}, ${b:-none})"
+		fail=1
+	elif [ "${d:-0}" = 0 ]; then
+		echo "  FAIL: $c drew nothing with a sibling (mixed)"
+		fail=1
+	else
+		printf '  %s mixed: the same picture; %s draws drawn with a sibling\n' $c "$d"
+	fi
+done
 
 # 6. Where the device has graphics pipeline libraries (lavapipe does):
 #  - from nothing, a key whose sibling's pixel shader part is not built yet
