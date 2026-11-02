@@ -77,7 +77,7 @@ for CXX in g++ clang++; do
 	$CXX -O1 -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 -Wall $([ "$CXX" = g++ ] && echo "$SANFLAGS") \
 	     $INC -c "$DIR/indexed4_view.cpp" -o "$TMP/view4.o"
 	$CXX -O1 $([ "$CXX" = g++ ] && echo "$SANFLAGS") "$TMP"/*.o -o "$TMP/indexed4_view"
-	"$TMP/indexed4_view" "$ROOT/pcsx2/GS/Renderers/Vulkan/convert.glsl"
+	"$TMP/indexed4_view" "$ROOT/pcsx2/GS/Renderers/Vulkan/shaders/convert.glsl"
 	rm -f "$TMP/view4.o"
 
 	# The alpha range Target::Update and PreloadTexture take from local

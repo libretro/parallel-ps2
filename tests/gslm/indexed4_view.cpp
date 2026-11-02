@@ -21,7 +21,7 @@
  * Two negative controls: a swapped column4 entry, and a PageOffset one
  * page out, must both be caught.
  *
- * Usage: indexed4_view path/to/Vulkan/convert.glsl
+ * Usage: indexed4_view path/to/Vulkan/shaders/convert.glsl
  */
 #include <cstdio>
 #include <cstdlib>

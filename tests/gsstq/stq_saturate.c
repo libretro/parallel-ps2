@@ -148,7 +148,7 @@ int main(void)
       fail++;
    }
 
-   fail += check_source("../../pcsx2/GS/Renderers/Vulkan/tfx.glsl",
+   fail += check_source("../../pcsx2/GS/Renderers/Vulkan/shaders/tfx.glsl",
       "clamp(vsIn.t.xy / vsIn.t.w, vec2(-2047.0f), vec2(2047.0f))");
    fail += check_source("../../pcsx2/GS/Renderers/OpenGL/tfx_fs.glsl",
       "clamp(PSin.t_float.xy / vec2(PSin.t_float.w), vec2(-2047.0f), vec2(2047.0f))");

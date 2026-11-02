@@ -1,7 +1,7 @@
 /*
  * Native taps for a texture at native size (the PS_NATIVE_TAPS branch of
  * the hardware renderer's pixel shaders: DX11/tfx.fx, which DX12 builds
- * too, OpenGL/tfx_fs.glsl and Vulkan/tfx.glsl).
+ * too, OpenGL/tfx_fs.glsl and Vulkan/shaders/tfx.glsl).
  *
  * A bilinear read at scale takes the native pixel's two taps, a native
  * texel apart, with the native pixel's weights. From a target at the same
@@ -120,8 +120,9 @@ int main(int argc, char **argv)
          "float2 p0 = (gi + (un - un0) / rx * step(1.0001f, ts)) * ts + 0.5f;");
    fail += check_shader(dir, "OpenGL/tfx_fs.glsl",
          "vec2 p0 = (gi + (un - un0) / rx * step(1.0001f, ts)) * ts + 0.5f;");
-   fail += check_shader(dir, "Vulkan/tfx.glsl",
-         "vec2 p0 = (gi + (un - un0) / rx * step(1.0001f, ts)) * ts + 0.5f;");
+   /* Vulkan declares p0 before the palette branch. */
+   fail += check_shader(dir, "Vulkan/shaders/tfx.glsl",
+         "p0 = (gi + (un - un0) / rx * step(1.0001f, ts)) * ts + 0.5f;");
 
    printf("native taps read a native-size texture's own texels: %s\n", fail ? "FAIL" : "ok");
    return fail != 0;
