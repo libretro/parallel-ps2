@@ -44,8 +44,19 @@ static u8* s_unswizzle_buffer;
 #define GS_TC_PARTIAL_TRANSFERS 1
 #endif
 
-/// List of candidates for purging when the hash cache gets too large.
-static std::vector<std::pair<GSTextureCache::HashCacheMap::iterator, s32>> s_hash_cache_purge_list;
+/* The hash cache's entries, in their GSStableMap's nodes. */
+static gs_node_pool_t s_hash_cache_nodes = GS_NODE_POOL_INIT(
+	GS_STABLE_MAP_NODE_SIZE(sizeof(GSTextureCache::HashCacheKey), sizeof(GSTextureCache::HashCacheEntry)), 16);
+/* The entries AgeHashCache may purge, oldest first once sorted: as many
+ * as the cache has held at most, so a frame's walk allocates nothing
+ * once the cache has been that full. */
+struct HashCachePurge
+{
+	GSTextureCache::HashCacheEntry* e;
+	s32 age;
+};
+static HashCachePurge* s_hash_cache_purge_list;
+static size_t s_hash_cache_purge_capacity;
 
 /* The largest read through the unswizzle buffer: a whole target, up to
  * 2048x2048 pixels of four bytes, block aligned and at a vector-aligned
@@ -56,6 +67,9 @@ GSTextureCache::GSTextureCache()
 {
 	s_unswizzle_buffer = (u8*)memalign_alloc(VECTOR_ALIGNMENT, GS_UNSWIZZLE_BUFFER_SIZE);
 	gs_flat_map_init(&m_palette_seen, sizeof(HashCacheKey), sizeof(HashType));
+	gs_stable_map_init(&m_hash_cache, sizeof(HashCacheKey), sizeof(HashCacheEntry), &s_hash_cache_nodes);
+	/* (slots for what a frame purges down to, made now) */
+	gs_stable_map_reserve(&m_hash_cache, MAX_HASH_CACHE_SIZE);
 	/* (all of it now, for none of it mid-game) */
 	gs_flat_map_reserve(&m_palette_seen, PALETTE_SEEN_MAX);
 	/* (LRPS2_TEST_NO_AUTO_INDEX: every palette expanded, as before, for
@@ -75,8 +89,11 @@ GSTextureCache::~GSTextureCache()
 {
 	RemoveAll(true, true, true);
 	gs_flat_map_free(&m_palette_seen);
+	gs_stable_map_free(&m_hash_cache);
 
-	s_hash_cache_purge_list = {};
+	free(s_hash_cache_purge_list);
+	s_hash_cache_purge_list     = nullptr;
+	s_hash_cache_purge_capacity = 0;
 	memalign_free(s_unswizzle_buffer);
 	gs_scratch_free(&s_scratch_copy_pages);
 	gs_scratch_free(&s_scratch_merged_done);
@@ -166,10 +183,10 @@ void GSTextureCache::RemoveAll(bool sources, bool targets, bool hash_cache)
 
 	if (hash_cache)
 	{
-		for (auto it : m_hash_cache)
-			g_gs_device->Recycle(it.second.texture);
+		for (size_t i = 0; i < GS_STABLE_MAP_COUNT(&m_hash_cache); i++)
+			g_gs_device->Recycle(static_cast<HashCacheEntry*>(gs_stable_map_at(&m_hash_cache, i))->texture);
 
-		m_hash_cache.clear();
+		gs_stable_map_clear(&m_hash_cache);
 		m_hash_cache_memory_usage = 0;
 		m_hash_cache_replacement_memory_usage = 0;
 		gs_flat_map_clear(&m_palette_seen);
@@ -6081,25 +6098,25 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 	HashCacheKey key{HashCacheKey::Create(TEX0, TEXA, (replace || !paltex) ? clut : nullptr, lod, region)};
 
 	// check with the full key
-	auto it = m_hash_cache.find(key);
+	HashCacheEntry* found = FindHashCache(key);
 
 	// if this fails, and paltex is on, try indexed texture
 	const bool needs_second_lookup = paltex && (replace);
-	if (needs_second_lookup && it == m_hash_cache.end())
-		it = m_hash_cache.find(key.WithRemovedCLUTHash());
+	if (needs_second_lookup && !found)
+		found = FindHashCache(key.WithRemovedCLUTHash());
 
 	/* A paletted texture seen before with another palette: its index
 	 * texture, shared by every palette (m_palette_seen). Not with
 	 * replacements, which are looked up by palette. */
-	if (it == m_hash_cache.end() && !paltex && !replace && clut && can_cache && m_auto_index
+	if (!found && !paltex && !replace && clut && can_cache && m_auto_index
 		&& GSLocalMemory::m_psm[TEX0.PSM].pal > 0)
 	{
 		const HashCacheKey index_key{key.WithRemovedCLUTHash()};
-		const auto iit = m_hash_cache.find(index_key);
-		if (iit != m_hash_cache.end() && iit->second.texture->GetFormat() == GSTexture::Format::UNorm8)
+		HashCacheEntry* const indexed = FindHashCache(index_key);
+		if (indexed && indexed->texture->GetFormat() == GSTexture::Format::UNorm8)
 		{
 			paltex = true;
-			it     = iit;
+			found  = indexed;
 		}
 		else
 		{
@@ -6117,10 +6134,10 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 	}
 
 	// did we find either a replacement, cached/indexed texture?
-	if (it != m_hash_cache.end())
+	if (found)
 	{
 		// super easy, cache hit. remove paltex if it's a replacement texture.
-		HashCacheEntry* entry = &it->second;
+		HashCacheEntry* entry = found;
 		paltex &= (entry->texture->GetFormat() == GSTexture::Format::UNorm8);
 		entry->refcount++;
 		return entry;
@@ -6138,8 +6155,10 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 			// found a replacement texture! insert it into the hash cache, and clear paltex (since it's not indexed)
 			paltex = false;
 			const HashCacheEntry entry{replacement_tex, 1u, 0u, alpha_minmax, true, true};
-			m_hash_cache_replacement_memory_usage += entry.texture->GetMemUsage();
-			return &m_hash_cache.emplace(key, entry).first->second;
+			HashCacheEntry* const e = InsertHashCache(key, entry);
+			if (e)
+				m_hash_cache_replacement_memory_usage += entry.texture->GetMemUsage();
+			return e;
 		}
 		else if (
 			replacement_texture_pending ||
@@ -6220,20 +6239,43 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 
 	// insert into the cache cache, and we're done
 	const HashCacheEntry entry{tex, 1u, 0u, alpha_minmax, compute_alpha_minmax, false};
+	HashCacheEntry* const e = InsertHashCache(key, entry);
+	if (!e)
+	{
+		/* (no room for the entry: the draw goes without, as above) */
+		g_gs_device->Recycle(tex);
+		return nullptr;
+	}
 	m_hash_cache_memory_usage += tex->GetMemUsage();
-	return &m_hash_cache.emplace(key, entry).first->second;
+	return e;
 }
 
-void GSTextureCache::RemoveFromHashCache(HashCacheMap::iterator it)
+GSTextureCache::HashCacheEntry* GSTextureCache::FindHashCache(const HashCacheKey& key) const
 {
-	HashCacheEntry& e = it->second;
-	const u32 mem_usage = e.texture->GetMemUsage();
-	if (e.is_replacement)
+	return static_cast<HashCacheEntry*>(gs_stable_map_find(&m_hash_cache, &key, sizeof(key), gs_key_hash(&key, sizeof(key))));
+}
+
+/* The entry under key, as it is if there is one already (as emplace
+ * did), else a copy of this one. NULL only out of memory. */
+GSTextureCache::HashCacheEntry* GSTextureCache::InsertHashCache(const HashCacheKey& key, const HashCacheEntry& entry)
+{
+	int inserted;
+	HashCacheEntry* const e = static_cast<HashCacheEntry*>(
+		gs_stable_map_insert(&m_hash_cache, &key, gs_key_hash(&key, sizeof(key)), &inserted));
+	if (e && inserted)
+		*e = entry;
+	return e;
+}
+
+void GSTextureCache::RemoveFromHashCache(HashCacheEntry* e)
+{
+	const u32 mem_usage = e->texture->GetMemUsage();
+	if (e->is_replacement)
 		m_hash_cache_replacement_memory_usage -= mem_usage;
 	else
 		m_hash_cache_memory_usage -= mem_usage;
-	g_gs_device->Recycle(e.texture);
-	m_hash_cache.erase(it);
+	g_gs_device->Recycle(e->texture);
+	gs_stable_map_erase(&m_hash_cache, e);
 }
 
 /* For the device's allocation failure message: who is holding the video
@@ -6337,11 +6379,6 @@ void GSTextureCache::EnforceTargetBudget()
 
 void GSTextureCache::AgeHashCache()
 {
-	// Where did this number come from?
-	// A game called Corvette draws its background FMVs with a ton of 17x17 tiles, which ends up
-	// being about 600 texture uploads per frame. We'll use 800 as an upper bound for a bit of
-	// a buffer, hopefully nothing's going to end up with more textures than that.
-	constexpr u32 MAX_HASH_CACHE_SIZE = 800;
 	constexpr u32 MAX_HASH_CACHE_AGE = 30;
 
 	/* And the same number in bytes, because eight hundred bounds nothing
@@ -6355,51 +6392,66 @@ void GSTextureCache::AgeHashCache()
 	constexpr u64 MAX_HASH_CACHE_BYTES = 8ull * VM_SIZE;
 
 	const u64 hash_bytes = m_hash_cache_memory_usage + m_hash_cache_replacement_memory_usage;
-	bool might_need_cache_purge = (m_hash_cache.size() > MAX_HASH_CACHE_SIZE
+	bool might_need_cache_purge = (GS_STABLE_MAP_COUNT(&m_hash_cache) > MAX_HASH_CACHE_SIZE
 			|| hash_bytes > MAX_HASH_CACHE_BYTES);
-	if (might_need_cache_purge)
-		s_hash_cache_purge_list.clear();
-
-	for (auto it = m_hash_cache.begin(); it != m_hash_cache.end();)
+	size_t purge_count = 0;
+	if (might_need_cache_purge && s_hash_cache_purge_capacity < GS_STABLE_MAP_COUNT(&m_hash_cache))
 	{
-		HashCacheEntry& e = it->second;
-		if (e.refcount > 0)
+		/* (room for every entry, the most it can list: grown only when
+		 * the cache is fuller than it has been) */
+		const size_t capacity = GS_STABLE_MAP_COUNT(&m_hash_cache);
+		HashCachePurge* const list = static_cast<HashCachePurge*>(
+			realloc(s_hash_cache_purge_list, capacity * sizeof(HashCachePurge)));
+		if (list)
 		{
-			++it;
-			continue;
+			s_hash_cache_purge_list     = list;
+			s_hash_cache_purge_capacity = capacity;
 		}
+		else
+			might_need_cache_purge = false;
+	}
 
-		if (++e.age > MAX_HASH_CACHE_AGE)
+	/* Last to first: an entry taken out has the last one moved into its
+	 * place, one already walked. */
+	for (size_t i = GS_STABLE_MAP_COUNT(&m_hash_cache); i-- > 0;)
+	{
+		HashCacheEntry* const e = static_cast<HashCacheEntry*>(gs_stable_map_at(&m_hash_cache, i));
+		if (e->refcount > 0)
+			continue;
+
+		if (++e->age > MAX_HASH_CACHE_AGE)
 		{
-			RemoveFromHashCache(it++);
+			RemoveFromHashCache(e);
 			continue;
 		}
 
 		// We might free up enough just with "normal" removals above.
 		if (might_need_cache_purge)
 		{
-			might_need_cache_purge = (m_hash_cache.size() > MAX_HASH_CACHE_SIZE
+			might_need_cache_purge = (GS_STABLE_MAP_COUNT(&m_hash_cache) > MAX_HASH_CACHE_SIZE
 					|| (m_hash_cache_memory_usage + m_hash_cache_replacement_memory_usage)
 						> MAX_HASH_CACHE_BYTES);
 			if (might_need_cache_purge)
-				s_hash_cache_purge_list.emplace_back(it, static_cast<s32>(e.age));
+			{
+				s_hash_cache_purge_list[purge_count].e   = e;
+				s_hash_cache_purge_list[purge_count].age = static_cast<s32>(e->age);
+				purge_count++;
+			}
 		}
-
-		++it;
 	}
 
 	// Pushing to a list, sorting, and removing ends up faster than re-iterating the map.
 	if (might_need_cache_purge)
 	{
-		std::sort(s_hash_cache_purge_list.begin(), s_hash_cache_purge_list.end(),
-			[](const auto& lhs, const auto& rhs) { return lhs.second > rhs.second; });
+		std::sort(s_hash_cache_purge_list, s_hash_cache_purge_list + purge_count,
+			[](const HashCachePurge& lhs, const HashCachePurge& rhs) { return lhs.age > rhs.age; });
 
 		/* Oldest first, as before, but stopping on either bound rather
 		 * than only on the count - over the byte budget with a count
 		 * under eight hundred, the old code purged nothing at all. */
-		const u32 over_count = (m_hash_cache.size() > MAX_HASH_CACHE_SIZE)
-			? static_cast<u32>(m_hash_cache.size() - MAX_HASH_CACHE_SIZE) : 0;
-		const u32 purgeable = static_cast<u32>(s_hash_cache_purge_list.size());
+		const u32 over_count = (GS_STABLE_MAP_COUNT(&m_hash_cache) > MAX_HASH_CACHE_SIZE)
+			? static_cast<u32>(GS_STABLE_MAP_COUNT(&m_hash_cache) - MAX_HASH_CACHE_SIZE) : 0;
+		const u32 purgeable = static_cast<u32>(purge_count);
 		u32 i;
 
 		for (i = 0; i < purgeable; i++)
@@ -6409,7 +6461,7 @@ void GSTextureCache::AgeHashCache()
 					> MAX_HASH_CACHE_BYTES;
 			if (i >= over_count && !over_bytes)
 				break;
-			RemoveFromHashCache(s_hash_cache_purge_list[i].first);
+			RemoveFromHashCache(s_hash_cache_purge_list[i].e);
 		}
 	}
 }
@@ -8125,8 +8177,8 @@ void GSTextureCache::InjectHashCacheTexture(const HashCacheKey& key, GSTexture* 
 	// When we insert we update memory usage. Old texture gets removed below.
 	m_hash_cache_replacement_memory_usage += tex->GetMemUsage();
 
-	auto it = m_hash_cache.find(key);
-	if (it == m_hash_cache.end())
+	HashCacheEntry* const e = FindHashCache(key);
+	if (!e)
 	{
 		// We must've got evicted before we finished loading. No matter, add it in there anyway;
 		// if it's not used again, it'll get tossed out later.
@@ -8142,25 +8194,25 @@ void GSTextureCache::InjectHashCacheTexture(const HashCacheKey& key, GSTexture* 
 		// At zero it ages like any unused entry, and LookupHashCache
 		// raises it the moment something does pick it up.
 		const HashCacheEntry entry{tex, 0u, 0u, alpha_minmax, true, true};
-		m_hash_cache.emplace(key, entry);
+		InsertHashCache(key, entry);
 		return;
 	}
 
 	// Reset age so we don't get thrown out too early.
-	it->second.age = 0;
-	it->second.alpha_minmax = alpha_minmax;
-	it->second.valid_alpha_minmax = true;
+	e->age = 0;
+	e->alpha_minmax = alpha_minmax;
+	e->valid_alpha_minmax = true;
 
 	// Update memory usage, swap the textures, and recycle the old one for reuse.
-	if (!it->second.is_replacement)
-		m_hash_cache_memory_usage -= it->second.texture->GetMemUsage();
+	if (!e->is_replacement)
+		m_hash_cache_memory_usage -= e->texture->GetMemUsage();
 	else
-		m_hash_cache_replacement_memory_usage -= it->second.texture->GetMemUsage();
+		m_hash_cache_replacement_memory_usage -= e->texture->GetMemUsage();
 
-	it->second.is_replacement = true;
-	m_src.SwapTexture(it->second.texture, tex);
-	g_gs_device->Recycle(it->second.texture);
-	it->second.texture = tex;
+	e->is_replacement = true;
+	m_src.SwapTexture(e->texture, tex);
+	g_gs_device->Recycle(e->texture);
+	e->texture = tex;
 }
 
 // GSTextureCache::Palette

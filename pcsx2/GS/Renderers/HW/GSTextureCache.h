@@ -27,6 +27,7 @@
 #include "../Common/GSFastList.h"
 #include "../Common/GSDirtyRect.h"
 #include "../Common/GSFlatMap.h"
+#include "../Common/GSStableMap.h"
 
 class GSHwHack;
 
@@ -182,8 +183,6 @@ public:
 		bool is_replacement;
 	};
 
-	using HashCacheMap = std::unordered_map<HashCacheKey, HashCacheEntry, HashCacheKeyHash, std::equal_to<HashCacheKey>,
-		GSNodeAllocator<std::pair<const HashCacheKey, HashCacheEntry>>>;
 
 	class Surface : public GSAlignedClass<32>
 	{
@@ -576,7 +575,9 @@ protected:
 	PaletteMap m_palette_map;
 	SourceMap m_src;
 	u64 m_source_memory_usage = 0;
-	HashCacheMap m_hash_cache;
+	/* HashCacheKey -> HashCacheEntry, in a GSStableMap: sources point at
+	 * their entries, which stay put. */
+	gs_stable_map_t m_hash_cache;
 	/* The palette each paletted texture in the hash cache was first
 	 * expanded with, by its key without one (HashCacheKey -> HashType),
 	 * in a GSFlatMap. An 8-bit texture expanded to 32 bits is four times
@@ -590,6 +591,11 @@ protected:
 	 * once more, and indexed at its next palette again. */
 	gs_flat_map_t m_palette_seen;
 	static constexpr size_t PALETTE_SEEN_MAX = 1024;
+	/* Where did this number come from? A game called Corvette draws its
+	 * background FMVs with a ton of 17x17 tiles, about 600 texture uploads
+	 * a frame; 800 is an upper bound with a bit of a buffer. What the hash
+	 * cache is purged down to each frame. */
+	static constexpr u32 MAX_HASH_CACHE_SIZE = 800;
 	bool m_auto_index = true;
 	u64 m_hash_cache_memory_usage = 0;
 	u64 m_hash_cache_replacement_memory_usage = 0;
@@ -731,7 +737,9 @@ private:
 	void InvalidateLocalMemReads(const GSOffset& off, const GSVector4i& r, bool full_flush, ReadBatch* b);
 
 	HashCacheEntry* LookupHashCache(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, bool& paltex, const u32* clut, const GSVector2i* lod, SourceRegion region);
-	void RemoveFromHashCache(HashCacheMap::iterator it);
+	HashCacheEntry* FindHashCache(const HashCacheKey& key) const;
+	HashCacheEntry* InsertHashCache(const HashCacheKey& key, const HashCacheEntry& entry);
+	void RemoveFromHashCache(HashCacheEntry* e);
 	void AgeHashCache();
 
 	static void PreloadTexture(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, SourceRegion region, GSLocalMemory& mem, bool paltex, GSTexture* tex, u32 level, std::pair<u8, u8>* alpha_minmax);

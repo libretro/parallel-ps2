@@ -117,6 +117,8 @@ build*/
 /tests/d3d12warm/d3d12warm_test*
 /tests/gshash/gshash_test
 /tests/gsflatmap/gsflatmap_test
+/tests/gsstablemap/gsstablemap_test
+/tests/gsstablemap/gsstablemap_bench
 /tests/vkheap/vkheap_test
 /tests/vkspirv/vkspirv
 /tests/vkspirv/vkspirv.exe

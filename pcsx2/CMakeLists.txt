@@ -353,6 +353,7 @@ set(pcsx2GSSources
 	GS/Renderers/HW/GSRendererHW.cpp
 	GS/Renderers/HW/GSObjectPool.c
 	GS/Renderers/Common/GSFlatMap.c
+	GS/Renderers/Common/GSStableMap.c
 	GS/Renderers/HW/GSHashTable.c
 	GS/Renderers/HW/GSAlphaRange.h
 	GS/Renderers/HW/GSHashTable.h
@@ -405,6 +406,7 @@ set(pcsx2GSHeaders
 	GS/Renderers/Common/GSFastList.h
 	GS/Renderers/Common/GSKeyHash.h
 	GS/Renderers/Common/GSFlatMap.h
+	GS/Renderers/Common/GSStableMap.h
 	GS/Renderers/Common/GSCodeReserve.h
 	GS/Renderers/Common/GSFunctionMap.h
 	GS/Renderers/Common/GSRenderer.h
