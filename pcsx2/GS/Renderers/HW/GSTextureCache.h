@@ -626,7 +626,7 @@ private:
 	void ScaleTargetForDisplay(Target* t, const GIFRegTEX0& dispfb, int real_w, int real_h);
 
 	/// Resizes the download texture if needed.
-	bool PrepareDownloadTexture(u32 width, u32 height, GSTexture::Format format, GSDownloadTexturePtr* tex);
+	bool PrepareDownloadTexture(u32 width, u32 height, GSTexture::Format format, GSDownloadTexturePtr* tex, u32 extent_w = 0, u32 extent_h = 0);
 
 	/* A readback with its copy recorded and not yet waited for. */
 	struct PendingRead
@@ -644,6 +644,24 @@ private:
 	bool ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexturePtr* own, u32* shared_used, PendingRead* out);
 	/* Waits for the copy, unless done, and writes it to local memory. */
 	bool ReadStore(const PendingRead& p);
+
+	/* The reads one InvalidateLocalMem takes: every copy recorded, then
+	 * one wait and the stores in the same order. A read retires its
+	 * drawn area when queued, as the loop deciding the next read needs
+	 * to see it; a store that fails puts the area back. */
+	static constexpr u32 READ_BATCH_MAX = 8;
+	struct ReadBatch
+	{
+		PendingRead pending[READ_BATCH_MAX];
+		Target* target[READ_BATCH_MAX];
+		GSVector4i drawn_before[READ_BATCH_MAX];
+		u32 count;
+		u32 shared_used;
+	};
+	GSDownloadTexturePtr m_read_batch_download[READ_BATCH_MAX];
+	bool ReadBatchQueue(ReadBatch* b, Target* t, const GSVector4i& r);
+	void ReadBatchStore(ReadBatch* b);
+	void InvalidateLocalMemReads(const GSOffset& off, const GSVector4i& r, bool full_flush, ReadBatch* b);
 
 	HashCacheEntry* LookupHashCache(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, bool& paltex, const u32* clut, const GSVector2i* lod, SourceRegion region);
 	void RemoveFromHashCache(HashCacheMap::iterator it);

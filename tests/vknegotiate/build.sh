@@ -452,6 +452,35 @@ if [ -z "$three" ] || [ "$three" != "$one" ]; then
 fi
 echo "  GS reset, three targets written back: $three submissions, as with one"
 
+# One local to host transfer across two render targets, one under the
+# other in local memory (tests/swdraw's readback_two_targets): RAM gets
+# both colours, and the reads of both wait for the GPU once, so as many
+# submissions as the one-target case. The second target used to be left
+# unread: the first, met again in the loose pass, counted as a second
+# read with nothing drawn, and its empty read rect ended the search.
+for c in readback_two_targets readback_one_target; do
+	"$SHIM/swdraw" --bios "$SHIM/$c.bin" $c >/dev/null
+	case $c in readback_two_targets) want=5A3C1E0F,0F1E3C5A ;; *) want=5A3C1E0F ;; esac
+	SCRATCH=$(mktemp -d)
+	if ! LD_LIBRARY_PATH="$SHIM" VN_REAL_VULKAN="$REAL" VN_COUNT_SUBMITS=1 VN_EXPECT_RUN=$want \
+			VN_IDLE_BIOS=1 LRPS2_BIOS="$SHIM/$c.bin" VN_FRAMES=30 \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SHIM/$c.log" 2>&1; then
+		cat "$SHIM/$c.log"
+		rm -rf "$SCRATCH" "$SHIM"
+		echo "  FAIL: $c"
+		exit 1
+	fi
+	rm -rf "$SCRATCH"
+done
+two=$(sed -n 's/^vkshim: \([0-9]*\) queue submissions$/\1/p' "$SHIM/readback_two_targets.log")
+one=$(sed -n 's/^vkshim: \([0-9]*\) queue submissions$/\1/p' "$SHIM/readback_one_target.log")
+if [ -z "$two" ] || [ "$two" != "$one" ]; then
+	rm -rf "$SHIM"
+	echo "  FAIL: a read across two targets made ${two:-?} submissions, across one ${one:-?}"
+	exit 1
+fi
+echo "  read across two targets: both in RAM, $two submissions, as with one"
+
 # A 4-bit texture read off a 32-bit render target (tests/swdraw's
 # t4_from_target): converted on the GPU, without the target going through
 # local memory. The flat cases' frame holds the CLUT entry of the nibble

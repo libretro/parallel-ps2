@@ -935,6 +935,45 @@ static void reset_readback(unsigned targets)
 static void case_reset_readback(void) { reset_readback(3); }
 static void case_reset_readback_one(void) { reset_readback(1); }
 
+/* Two render targets one under the other in local memory, 256x128 each
+ * at FBW 4 (pages 0-15 and 16-31), each a flat colour, then one local to
+ * host transfer of the 256x256 they make up together, a vsync on. The
+ * read takes both targets back, waiting for the GPU once: as many
+ * submissions as the one-target case, whose read is the same size. */
+static void readback_targets(unsigned targets)
+{
+	static const unsigned color[2] = { 0x5A3C1E0Fu, 0x0F1E3C5Au };
+	unsigned t, i;
+	qw((5 + targets * 6) | 0x8000u, 0x10000000u, 0xEu, 0); /* A+D, EOP */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(255u << 16, 127u << 16, GS_SCISSOR, 0);             /* 256x128 */
+	for (t = 0; t < targets; t++)
+	{
+		qw((t * 16u) | (4u << 16), 0, GS_FRAME_1, 0);      /* FBP 0, 16; FBW 4 */
+		qw(3, 0, GS_PRIM, 0);                              /* triangle, flat */
+		qw(color[t], 0x3f800000u, GS_RGBAQ, 0);
+		qw(0, 0, GS_XYZ2, 0);
+		qw((unsigned)XY(512, 0), 0, GS_XYZ2, 0);
+		qw((unsigned)XY(0, 512), 0, GS_XYZ2, 0);
+	}
+	kick(0, s_qw_count, 0);
+	i = s_qw_count;
+	qw(4 | 0x8000u, 0x10000000u, 0xEu, 0);
+	qw(4u << 16, 0, GS_BITBLTBUF, 0);                      /* SBP 0, SBW 4, CT32 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(256, 256, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);                                /* local to host */
+	kick(i, 5, 2);
+	readback(256 * 256 / 4);
+	s_run_frames = 30;
+}
+
+static void case_readback_two_targets(void) { readback_targets(2); }
+static void case_readback_one_target(void) { readback_targets(1); }
+
 /* Depth written at page 50, then two sprites textured from it as Z32
  * with S a long way negative at their far corners: the texel distance
  * across each sprite, checked to see whether the draw unswizzles a
@@ -1897,6 +1936,8 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "dirty_whole_target", case_dirty_whole_target, "1" },
 	{ "reset_readback",  case_reset_readback, "1" },
 	{ "reset_readback_one", case_reset_readback_one, "1" },
+	{ "readback_two_targets", case_readback_two_targets, "1" },
+	{ "readback_one_target", case_readback_one_target, "1" },
 	{ "t4_from_target",  case_t4_from_target, "1" },
 	{ "texture_rewind",  case_texture_rewind, "1" },
 	{ "draw_once",       case_draw_once,     "1" },

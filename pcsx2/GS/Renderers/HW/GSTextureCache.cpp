@@ -3378,15 +3378,24 @@ bool GSTextureCache::CopyRGBFromDepthToColor(Target* dst, Target* depth_src)
 	return true;
 }
 
-bool GSTextureCache::PrepareDownloadTexture(u32 width, u32 height, GSTexture::Format format, GSDownloadTexturePtr* tex)
+bool GSTextureCache::PrepareDownloadTexture(u32 width, u32 height, GSTexture::Format format, GSDownloadTexturePtr* tex, u32 extent_w, u32 extent_h)
 {
 	GSDownloadTexture* ctex = tex->get();
 	if (ctex && ctex->GetWidth() >= width && ctex->GetHeight() >= height)
 		return true;
 
-	// In the case of oddly sized texture reads, we'll keep the larger dimension.
-	const u32 new_width = ctex ? pcsx2_max_i(ctex->GetWidth(), width) : width;
-	const u32 new_height = ctex ? pcsx2_max_i(ctex->GetHeight(), height) : height;
+	/* Grown, it takes the whole of what is being read from, so the reads
+	 * of that surface that follow fit: a strip across and then one down
+	 * made three textures on the way to the size of both. */
+	u32 new_width  = width > extent_w ? width : extent_w;
+	u32 new_height = height > extent_h ? height : extent_h;
+	if (ctex)
+	{
+		if (ctex->GetWidth() > new_width)
+			new_width = ctex->GetWidth();
+		if (ctex->GetHeight() > new_height)
+			new_height = ctex->GetHeight();
+	}
 	tex->reset();
 	*tex = g_gs_device->CreateDownloadTexture(new_width, new_height, format);
 	if (!*tex)
@@ -3690,6 +3699,15 @@ void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& r
 // full_flush is set when it's a Local->Local stransfer and both src and destination are the same.
 void GSTextureCache::InvalidateLocalMem(const GSOffset& off, const GSVector4i& r, bool full_flush)
 {
+	ReadBatch b;
+	b.count       = 0;
+	b.shared_used = 0;
+	InvalidateLocalMemReads(off, r, full_flush, &b);
+	ReadBatchStore(&b);
+}
+
+void GSTextureCache::InvalidateLocalMemReads(const GSOffset& off, const GSVector4i& r, bool full_flush, ReadBatch* b)
+{
 	const u32 bp = off.bp();
 	const u32 psm = off.psm();
 	[[maybe_unused]] const u32 bw = off.bw();
@@ -3782,9 +3800,12 @@ void GSTextureCache::InvalidateLocalMem(const GSOffset& off, const GSVector4i& r
 				if (draw_rect.rintersect(dirty_rect).eq(draw_rect))
 					return;
 
+				/* Nothing drawn since the last read: done if the read is all
+				 * in what this target holds. An empty rect, which is what a
+				 * second read gets, says nothing of where the read is. */
 				if (t->m_drawn_since_read.eq(GSVector4i::zero()))
 				{
-					if (draw_rect.rintersect(t->m_valid).eq(draw_rect))
+					if (!draw_rect.rempty() && draw_rect.rintersect(t->m_valid).eq(draw_rect))
 						return;
 					else
 						continue;
@@ -3794,10 +3815,13 @@ void GSTextureCache::InvalidateLocalMem(const GSOffset& off, const GSVector4i& r
 				{
 					// The draw rect and read rect overlap somewhat, we should update the target before downloading it.
 					if (t->m_TEX0.TBP0 == bp && !dirty_rect.rintersect(targetr).rempty())
+					{
+						/* The update reads local memory: the reads before it first. */
+						ReadBatchStore(b);
 						t->Update();
+					}
 
-					// Only retire what actually reached local memory.
-					const bool did_read = Read(t, draw_rect);
+					const bool did_read = ReadBatchQueue(b, t, draw_rect);
 
 					// Getaway (J) stores a Z texture at 0x2800 which it uses and the next frame it stores the reflection map in
 					// 0x2800, so this will misdetect. So if it's not expecting a Z, check for RT's too.
@@ -3909,9 +3933,12 @@ void GSTextureCache::InvalidateLocalMem(const GSOffset& off, const GSVector4i& r
 				targetr = t->m_drawn_since_read;
 			}
 
+			/* As above. A target matched in both passes is on its second
+			 * read in the second, and returning there left the targets
+			 * after it in local memory unread. */
 			if (t->m_drawn_since_read.eq(GSVector4i::zero()))
 			{
-				if (targetr.rintersect(t->m_valid).eq(targetr) && exact_bp)
+				if (!targetr.rempty() && targetr.rintersect(t->m_valid).eq(targetr) && exact_bp)
 					return;
 				continue;
 			}
@@ -3960,10 +3987,12 @@ void GSTextureCache::InvalidateLocalMem(const GSOffset& off, const GSVector4i& r
 
 				// The draw rect and read rect overlap somewhat, we should update the target before downloading it.
 				if (exact_bp && !dirty_rect.rintersect(targetr).rempty())
+				{
+					ReadBatchStore(b);
 					t->Update();
+				}
 
-				// Only retire what actually reached local memory.
-				const bool did_read = Read(t, targetr);
+				const bool did_read = ReadBatchQueue(b, t, targetr);
 
 				// Try to cut down how much we read next, if we can.
 				// Fatal Frame reads in vertical strips, SOCOM 2 does horizontal, so we can handle that below.
@@ -6655,6 +6684,36 @@ bool GSTextureCache::Read(Target* t, const GSVector4i& r)
 	return ReadQueue(t, r, nullptr, nullptr, &p) && ReadStore(p);
 }
 
+bool GSTextureCache::ReadBatchQueue(ReadBatch* b, Target* t, const GSVector4i& r)
+{
+	if (b->count == READ_BATCH_MAX)
+		ReadBatchStore(b);
+	if (!ReadQueue(t, r, &m_read_batch_download[b->count], &b->shared_used, &b->pending[b->count]))
+		return false;
+	b->target[b->count]       = t;
+	b->drawn_before[b->count] = t->m_drawn_since_read;
+	b->count++;
+	return true;
+}
+
+void GSTextureCache::ReadBatchStore(ReadBatch* b)
+{
+	u32 i;
+	for (i = 0; i < b->count; i++)
+	{
+		Target* t = b->target[i];
+		if (ReadStore(b->pending[i]))
+			continue;
+		/* Not in local memory after all: drawn again until read. */
+		if (t->m_drawn_since_read.rempty())
+			t->m_drawn_since_read = b->drawn_before[i];
+		else if (!b->drawn_before[i].rempty())
+			t->m_drawn_since_read = t->m_drawn_since_read.runion(b->drawn_before[i]);
+	}
+	b->count       = 0;
+	b->shared_used = 0;
+}
+
 bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexturePtr* own, u32* shared_used, PendingRead* out)
 {
 	u32 shared_bit;
@@ -6764,7 +6823,14 @@ bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture
 	const GSVector4i drc(0, 0, tr.width(), tr.height());
 	const bool direct_read = t->m_type == RenderTarget && t->m_scale == 1.0f && ps_shader == ShaderConvert::COPY;
 
-	if (!PrepareDownloadTexture(drc.z, drc.w, fmt, dltex))
+	/* The textures this cache keeps take the target's size when they
+	 * grow; a batch's own go with the batch and take the read's. */
+	const bool kept = dltex == &m_color_download_texture || dltex == &m_uint16_download_texture
+		|| dltex == &m_uint32_download_texture
+		|| (dltex >= &m_read_batch_download[0] && dltex < &m_read_batch_download[READ_BATCH_MAX]);
+	const u32 extent_w = kept ? static_cast<u32>(pcsx2_max_i(t->m_unscaled_size.x, 0)) : 0;
+	const u32 extent_h = kept ? static_cast<u32>(pcsx2_max_i(t->m_unscaled_size.y, 0)) : 0;
+	if (!PrepareDownloadTexture(drc.z, drc.w, fmt, dltex, extent_w, extent_h))
 		return false;
 
 	if (direct_read)
