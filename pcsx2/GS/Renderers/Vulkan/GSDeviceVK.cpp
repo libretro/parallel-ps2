@@ -650,6 +650,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			m_optional_extensions.vk_ext_extended_dynamic_state3 = false;
 		if (getenv("LRPS2_TEST_VK_NO_GPL"))
 			m_optional_extensions.vk_ext_graphics_pipeline_library = false;
+		m_test_mem_cap = getenv("LRPS2_TEST_VK_MEM_CAP") ? strtoull(getenv("LRPS2_TEST_VK_MEM_CAP"), NULL, 10) : 0;
 		if (m_optional_extensions.vk_ext_extended_dynamic_state3 || m_optional_extensions.vk_ext_graphics_pipeline_library)
 		{
 			VkPhysicalDeviceExtendedDynamicState3FeaturesEXT eds3 = {
@@ -1314,6 +1315,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 				m_staging_inflight_bytes = 0;
 		}
 		resources.staging_in_flight.clear();
+		resources.staging_bytes = 0;
 
 		if (m_deferred_bytes >= resources.cleanup_bytes)
 			m_deferred_bytes -= resources.cleanup_bytes;
@@ -1430,15 +1432,11 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 	{
 		/* All of GS memory at this upscale is more than a frame's
 		 * uploads can need; under that the free list keeps everything. */
-		const float scale = GSConfig.UpscaleMultiplier > 0.0f ? GSConfig.UpscaleMultiplier : 1.0f;
-		u64 ceiling = (u64)((float)VM_SIZE * scale * scale);
+		const u64 ceiling = MemCeiling(1);
 		u32 want = 64 * 1024;
 		size_t i;
 		StagingBuffer sb;
 		VkBufferCreateInfo bci = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-
-		if (ceiling < 64ull * 1024ull * 1024ull)
-			ceiling = 64ull * 1024ull * 1024ull;
 
 		while (want < size)
 			want <<= 1;
@@ -1463,8 +1461,14 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		 * to buy back the framerate the sync below costs - is why used
 		 * went from 2687 MB to 3199 MB rather than down. The sync is
 		 * slow; it is not as bad as running out. */
+		/* Short of that, a command buffer holding its third goes now
+		 * rather than at the ceiling, and the ring gives its buffers
+		 * back as it completes, with no wait for idle. */
+		if (m_frame_resources[m_current_frame].staging_bytes
+				&& m_frame_resources[m_current_frame].staging_bytes + want > ceiling / NUM_COMMAND_BUFFERS)
+			RelieveMemPressure(MEM_PRESSURE_SUBMIT);
 		if (m_staging_bytes + m_staging_inflight_bytes + want > ceiling)
-			ExecuteCommandBufferAndRestartRenderPass(true);
+			RelieveMemPressure(MEM_PRESSURE_WAIT);
 
 		for (i = 0; i < m_staging_free.size(); i++)
 		{
@@ -1475,6 +1479,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			m_staging_free.pop_back();
 			m_staging_bytes -= sb.size;
 			m_staging_inflight_bytes += sb.size;
+			m_frame_resources[m_current_frame].staging_bytes += sb.size;
 			m_frame_resources[m_current_frame].staging_in_flight.push_back(sb);
 			*mapped    = sb.mapped;
 			*alloc_out = sb.alloc;
@@ -1494,6 +1499,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 
 		sb.size = want;
 		m_staging_inflight_bytes += sb.size;
+		m_frame_resources[m_current_frame].staging_bytes += sb.size;
 		m_frame_resources[m_current_frame].staging_in_flight.push_back(sb);
 
 		/* Trim the free list against the same total. */
@@ -1533,24 +1539,49 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 				gs_vk_heap_free(&m_heap, &v[i].alloc);
 			}
 			v.clear();
+			m_frame_resources[f].staging_bytes = 0;
 			m_staging_inflight_bytes = 0;
 		}
 		m_staging_bytes = 0;
 	}
 
-	bool GSDeviceVK::DeferredDestructionOverBudget(u64 bytes)
+	u64 GSDeviceVK::MemCeiling(u32 times) const
 	{
-		/* All of GS memory at this upscale, which is more than a frame
-		 * has any business destroying. */
+		/* All of GS memory at this upscale is more than a frame has any
+		 * business uploading, or destroying twice over. */
 		const float scale = GSConfig.UpscaleMultiplier > 0.0f ? GSConfig.UpscaleMultiplier : 1.0f;
-		u64 budget = (u64)((float)VM_SIZE * scale * scale) * 2u;
+		u64 ceiling = (u64)((float)VM_SIZE * scale * scale) * times;
 
-		if (budget < 64ull * 1024ull * 1024ull)
-			budget = 64ull * 1024ull * 1024ull;
+		if (m_test_mem_cap)
+			return m_test_mem_cap;
+		if (ceiling < 64ull * 1024ull * 1024ull)
+			ceiling = 64ull * 1024ull * 1024ull;
+		return ceiling;
+	}
 
-		m_frame_resources[m_current_frame].cleanup_bytes += bytes;
+	u32 GSDeviceVK::DeferredDestructionPressure(u64 bytes)
+	{
+		const u64 budget = MemCeiling(2);
+		FrameResources& fr = m_frame_resources[m_current_frame];
+
+		fr.cleanup_bytes += bytes;
 		m_deferred_bytes += bytes;
-		return m_deferred_bytes > budget;
+		if (m_deferred_bytes > budget)
+			return MEM_PRESSURE_WAIT;
+		if (fr.cleanup_bytes > budget / NUM_COMMAND_BUFFERS)
+			return MEM_PRESSURE_SUBMIT;
+		return MEM_PRESSURE_NONE;
+	}
+
+	void GSDeviceVK::RelieveMemPressure(u32 pressure)
+	{
+		if (pressure == MEM_PRESSURE_NONE)
+			return;
+		if (pressure == MEM_PRESSURE_WAIT)
+			m_mem_waits++;
+		else
+			m_mem_submits++;
+		ExecuteCommandBufferAndRestartRenderPass(pressure == MEM_PRESSURE_WAIT);
 	}
 
 	void GSDeviceVK::DeferImageViewDestruction(VkImageView object)
@@ -1878,6 +1909,10 @@ void GSDeviceVK::Destroy()
 	if (m_sibling_draws || m_siblings_built_here || m_siblings_built_ahead)
 		log_cb(RETRO_LOG_INFO, "Vulkan dynamic siblings: %u built on the render thread (%u of them linked from libraries), %u on the warm-up thread, %u draws drawn with one; libraries: %u built on the render thread, %u on the warm-up thread\n",
 			m_siblings_built_here, m_siblings_linked, m_siblings_built_ahead, m_sibling_draws, m_libs_built_here, m_libs_built_ahead);
+	if (m_mem_submits || m_mem_waits)
+		log_cb(RETRO_LOG_INFO, "Vulkan memory ceilings: %u submits early, %u waits for idle\n",
+			m_mem_submits, m_mem_waits);
+	m_mem_submits = m_mem_waits = 0;
 	if (m_util_built_here || m_util_built_ahead)
 		log_cb(RETRO_LOG_INFO, "Vulkan utility pipelines: %u built on the render thread creating the device, %u at first use, %u on the warm-up thread\n",
 			m_util_built_creating, m_util_built_here - m_util_built_creating, m_util_built_ahead);

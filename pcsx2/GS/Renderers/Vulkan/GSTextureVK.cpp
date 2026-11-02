@@ -240,8 +240,8 @@ void GSTextureVK::Destroy(bool defer)
 			 * a second destroy of an image already on a cleanup list,
 			 * and its memory handed back while the GPU was still
 			 * reading it. Mine, from the commit that added the budget. */
-			if (GSDeviceVK::GetInstance()->DeferredDestructionOverBudget(GetMemUsage()))
-				GSDeviceVK::GetInstance()->ExecuteCommandBufferAndRestartRenderPass(true);
+			GSDeviceVK::GetInstance()->RelieveMemPressure(
+				GSDeviceVK::GetInstance()->DeferredDestructionPressure(GetMemUsage()));
 		}
 		else
 		{

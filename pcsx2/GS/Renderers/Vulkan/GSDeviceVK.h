@@ -185,9 +185,19 @@ public:
 
 
        /* Called when an image is put on a cleanup list, with what it
-        * costs. Returns true when so much is waiting that the caller
-        * should get the GPU to a point where it can be freed. */
-       bool DeferredDestructionOverBudget(u64 bytes);
+        * costs. Returns MEM_PRESSURE_SUBMIT when the command buffer being
+        * recorded holds its share of the budget, so submitting it lets
+        * the ring free it, and MEM_PRESSURE_WAIT when so much is waiting
+        * that the GPU has to get to where all of it can be freed. */
+       enum : u32
+       {
+	       MEM_PRESSURE_NONE = 0,
+	       MEM_PRESSURE_SUBMIT,
+	       MEM_PRESSURE_WAIT
+       };
+       u32 DeferredDestructionPressure(u64 bytes);
+       /* Acts on a pressure: submits, or submits and waits. */
+       void RelieveMemPressure(u32 pressure);
 
        /* An upload buffer of at least this many bytes, mapped. Taken from
         * the free list when one fits and made only when none does; given
@@ -347,6 +357,8 @@ private:
 	       /* Bytes of image on this buffer's cleanup list, so the total
 		* waiting to be freed can be bounded. */
 	       u64 cleanup_bytes = 0;
+	       /* Bytes of the staging buffers below. */
+	       u64 staging_bytes = 0;
 
 	       /* Staging buffers this command buffer is reading from. They
 		* go back to the free list when it completes; they are not
@@ -413,6 +425,15 @@ private:
        /* Bytes of image sitting in the cleanup lists, waiting for the
         * command buffer that might still be reading them to finish. */
        u64 m_deferred_bytes = 0;
+
+       /* The ceilings on both at this upscale. A command buffer that
+        * holds a third of one is submitted, so that the ring frees it as
+        * buffers complete; only past all of it does the GPU go idle.
+        * LRPS2_TEST_VK_MEM_CAP sets both, in bytes, for the tests. */
+       u64 m_test_mem_cap = 0;
+       u64 MemCeiling(u32 times) const;
+       u32 m_mem_submits = 0;
+       u32 m_mem_waits = 0;
 
        VkCommandBuffer m_current_command_buffer = VK_NULL_HANDLE;
 

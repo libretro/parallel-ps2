@@ -481,6 +481,42 @@ if [ -z "$two" ] || [ "$two" != "$one" ]; then
 fi
 echo "  read across two targets: both in RAM, $two submissions, as with one"
 
+# The memory ceilings (LRPS2_TEST_VK_MEM_CAP brings them down to a few
+# megabytes): with an image that is over a third of the ceiling put on
+# a cleanup list, the command buffer is submitted, without waiting for
+# the GPU to go idle; past all of it the GPU is waited for. Either way
+# the picture is the one drawn with no ceiling.
+"$SHIM/swdraw" --bios "$SHIM/texture_rewind.bin" texture_rewind >/dev/null
+for cap in none 3000000 1000000; do
+	SCRATCH=$(mktemp -d)
+	capenv=""
+	[ $cap = none ] || capenv="LRPS2_TEST_VK_MEM_CAP=$cap"
+	if ! env $capenv VN_VERBOSE=1 VN_HASH_IMAGE=1 VN_IDLE_BIOS=1 LRPS2_BIOS="$SHIM/texture_rewind.bin" VN_FRAMES=60 \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SHIM/cap_$cap.log" 2>&1; then
+		cat "$SHIM/cap_$cap.log"
+		rm -rf "$SCRATCH" "$SHIM"
+		echo "  FAIL: texture_rewind, ceiling $cap"
+		exit 1
+	fi
+	rm -rf "$SCRATCH"
+done
+hash_of() { sed -n 's/^ *image: .*hash \([0-9a-f]*\)$/\1/p' "$SHIM/cap_$1.log" | tail -n 1; }
+ceil_of() { sed -n 's/.*Vulkan memory ceilings: \([0-9]*\) submits early, \([0-9]*\) waits for idle.*/\1 \2/p' "$SHIM/cap_$1.log"; }
+want=$(hash_of none)
+for cap in 3000000 1000000; do
+	if [ -z "$want" ] || [ "$(hash_of $cap)" != "$want" ]; then
+		rm -rf "$SHIM"
+		echo "  FAIL: texture_rewind pictures $(hash_of $cap) with a ceiling of $cap, ${want:-?} without"
+		exit 1
+	fi
+done
+if [ "$(ceil_of 3000000)" != "1 0" ] || [ "$(ceil_of 1000000)" != "0 1" ]; then
+	rm -rf "$SHIM"
+	echo "  FAIL: ceilings of 3 MB and 1 MB gave '$(ceil_of 3000000)' and '$(ceil_of 1000000)' (submits, waits), not '1 0' and '0 1'"
+	exit 1
+fi
+echo "  memory ceilings: a third submits without waiting, all of it waits, the picture the same"
+
 # A 4-bit texture read off a 32-bit render target (tests/swdraw's
 # t4_from_target): converted on the GPU, without the target going through
 # local memory. The flat cases' frame holds the CLUT entry of the nibble
