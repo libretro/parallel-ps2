@@ -47,6 +47,41 @@ static u8* s_unswizzle_buffer;
 /* The hash cache's entries, in their GSStableMap's nodes. */
 static gs_node_pool_t s_hash_cache_nodes = GS_NODE_POOL_INIT(
 	GS_STABLE_MAP_NODE_SIZE(sizeof(GSTextureCache::HashCacheKey), sizeof(GSTextureCache::HashCacheEntry)), 16);
+/* The palette maps' nodes: a 16-entry CLUT and a 256-entry one, each
+ * with its Palette*. */
+static gs_node_pool_t s_palette_nodes_16 = GS_NODE_POOL_INIT(GS_STABLE_MAP_NODE_SIZE(16 * sizeof(u32), sizeof(void*)), 16);
+static gs_node_pool_t s_palette_nodes_256 = GS_NODE_POOL_INIT(GS_STABLE_MAP_NODE_SIZE(256 * sizeof(u32), sizeof(void*)), 16);
+
+/* The surface offset cache's key and value, packed: no padding in the
+ * key, which the map compares byte for byte, and nothing in the value
+ * that wants more alignment than the map's slots give. */
+struct SurfaceOffsetCacheKey
+{
+	u32 w[14]; /* per element: psm, bp, bw, rect x y z w */
+};
+struct SurfaceOffsetCacheValue
+{
+	u32 is_valid;
+	s32 b2a[4];
+};
+
+static SurfaceOffsetCacheKey SurfaceOffsetCachePack(const GSTextureCache::SurfaceOffsetKey& sok)
+{
+	SurfaceOffsetCacheKey k;
+	for (u32 i = 0; i < 2; i++)
+	{
+		const GSTextureCache::SurfaceOffsetKeyElem& e = sok.elems[i];
+		k.w[i * 7 + 0] = e.psm;
+		k.w[i * 7 + 1] = e.bp;
+		k.w[i * 7 + 2] = e.bw;
+		k.w[i * 7 + 3] = static_cast<u32>(e.rect.x);
+		k.w[i * 7 + 4] = static_cast<u32>(e.rect.y);
+		k.w[i * 7 + 5] = static_cast<u32>(e.rect.z);
+		k.w[i * 7 + 6] = static_cast<u32>(e.rect.w);
+	}
+	return k;
+}
+
 /* The entries AgeHashCache may purge, oldest first once sorted: as many
  * as the cache has held at most, so a frame's walk allocates nothing
  * once the cache has been that full. */
@@ -68,6 +103,7 @@ GSTextureCache::GSTextureCache()
 	s_unswizzle_buffer = (u8*)memalign_alloc(VECTOR_ALIGNMENT, GS_UNSWIZZLE_BUFFER_SIZE);
 	gs_flat_map_init(&m_palette_seen, sizeof(HashCacheKey), sizeof(HashType));
 	gs_stable_map_init(&m_hash_cache, sizeof(HashCacheKey), sizeof(HashCacheEntry), &s_hash_cache_nodes);
+	gs_flat_map_init(&m_surface_offset_cache, sizeof(SurfaceOffsetCacheKey), sizeof(SurfaceOffsetCacheValue));
 	/* (slots for what a frame purges down to, made now) */
 	gs_stable_map_reserve(&m_hash_cache, MAX_HASH_CACHE_SIZE);
 	/* (all of it now, for none of it mid-game) */
@@ -90,6 +126,7 @@ GSTextureCache::~GSTextureCache()
 	RemoveAll(true, true, true);
 	gs_flat_map_free(&m_palette_seen);
 	gs_stable_map_free(&m_hash_cache);
+	gs_flat_map_free(&m_surface_offset_cache);
 
 	free(s_hash_cache_purge_list);
 	s_hash_cache_purge_list     = nullptr;
@@ -172,7 +209,7 @@ void GSTextureCache::RemoveAll(bool sources, bool targets, bool hash_cache)
 		}
 
 		m_target_heights.clear();
-		m_surface_offset_cache.clear();
+		gs_flat_map_clear(&m_surface_offset_cache);
 		m_target_memory_usage = 0;
 		ClearMoveRemaps();
 
@@ -5167,9 +5204,10 @@ void GSTextureCache::InvalidateSourcesFromTarget(const Target* t)
 	if (m_temporary_source && m_temporary_source->m_from_target == t)
 		InvalidateTemporarySource();
 
-	for (auto it = m_src.m_surfaces.begin(); it != m_src.m_surfaces.end();)
+	/* (downwards: a source taken out has the last moved into its place) */
+	for (u32 i = m_src.m_surfaces_count; i-- > 0;)
 	{
-		Source* src = *it++;
+		Source* src = m_src.m_surfaces[i];
 		if (src->m_from_target == t)
 			m_src.RemoveAt(src);
 	}
@@ -5207,11 +5245,10 @@ void GSTextureCache::IncAge()
 	static constexpr int max_preload_age = 30;
 
 	// You can't use m_map[page] because Source* are duplicated on several pages.
-	for (auto i = m_src.m_surfaces.begin(); i != m_src.m_surfaces.end();)
+	for (u32 i = m_src.m_surfaces_count; i-- > 0;)
 	{
-		Source* s = *i;
+		Source* s = m_src.m_surfaces[i];
 
-		++i;
 		if (++s->m_age > ((!s->m_from_hash_cache && s->CanPreload()) ? max_preload_age : max_age))
 			m_src.RemoveAt(s);
 	}
@@ -7900,9 +7937,24 @@ bool GSTextureCache::Target::ResizeTexture(int new_unscaled_width, int new_unsca
 
 // GSTextureCache::SourceMap
 
+GSTextureCache::SourceMap::~SourceMap()
+{
+	free(m_surfaces);
+}
+
 void GSTextureCache::SourceMap::Add(Source* s, const GIFRegTEX0& TEX0)
 {
-	m_surfaces.insert(s);
+	if (m_surfaces_count == m_surfaces_capacity)
+	{
+		const u32 capacity = m_surfaces_capacity ? m_surfaces_capacity * 2 : SOURCE_POOL_SIZE;
+		Source** const grown = static_cast<Source**>(realloc(m_surfaces, capacity * sizeof(Source*)));
+		if (!grown)
+			abort(); /* out of memory, as the set's insert was without exceptions */
+		m_surfaces          = grown;
+		m_surfaces_capacity = capacity;
+	}
+	s->m_surface_index             = m_surfaces_count;
+	m_surfaces[m_surfaces_count++] = s;
 
 	// The source pointer will be stored/duplicated in all m_map[array of pages]
 	s->m_pages.loopPages([this, s](u32 page)
@@ -7913,17 +7965,18 @@ void GSTextureCache::SourceMap::Add(Source* s, const GIFRegTEX0& TEX0)
 
 void GSTextureCache::SourceMap::SwapTexture(GSTexture* old_tex, GSTexture* new_tex)
 {
-	for (auto s : m_surfaces)
+	for (u32 i = 0; i < m_surfaces_count; i++)
 	{
-		if (s->m_texture == old_tex)
-			s->m_texture = new_tex;
+		if (m_surfaces[i]->m_texture == old_tex)
+			m_surfaces[i]->m_texture = new_tex;
 	}
 }
 
 void GSTextureCache::SourceMap::RemoveAll()
 {
-	for (auto s : m_surfaces)
+	for (u32 i = 0; i < m_surfaces_count; i++)
 	{
+		Source* const s = m_surfaces[i];
 		if (s->m_from_hash_cache)
 		{
 			if ((--s->m_from_hash_cache->refcount) == 0)
@@ -7933,12 +7986,29 @@ void GSTextureCache::SourceMap::RemoveAll()
 		delete s;
 	}
 
-	m_surfaces.clear();
+	m_surfaces_count = 0;
 
 	for (FastList<Source*>& item : m_map)
 	{
 		item.clear();
 	}
+}
+
+/* Takes s out of m_surfaces, the last one into its place. Its index
+ * is checked against the list before it is believed: a source already
+ * destroyed has none to trust, and is looked for instead. */
+void GSTextureCache::SourceMap::Unlist(Source* s)
+{
+	u32 i = s->m_surface_index;
+	if (i >= m_surfaces_count || m_surfaces[i] != s)
+	{
+		for (i = 0; i < m_surfaces_count && m_surfaces[i] != s; i++)
+			;
+		if (i == m_surfaces_count)
+			return;
+	}
+	m_surfaces[i]                   = m_surfaces[--m_surfaces_count];
+	m_surfaces[i]->m_surface_index = i;
 }
 
 void GSTextureCache::SourceMap::RemoveAt(Source* s)
@@ -7949,11 +8019,11 @@ void GSTextureCache::SourceMap::RemoveAt(Source* s)
 	 * address destroyed over and over until the game stopped. */
 	if (s->m_alive != Source::ALIVE)
 	{
-		m_surfaces.erase(s);
+		Unlist(s);
 		return;
 	}
 
-	m_surfaces.erase(s);
+	Unlist(s);
 
 	s->m_pages.loopPages([this, s](u32 page)
 	{
@@ -8065,9 +8135,17 @@ GSTextureCache::SurfaceOffset GSTextureCache::ComputeSurfaceOffset(const Surface
 		return {false}; // A and B do not overlap.
 
 	// Key parameter is valid.
-	const auto it = m_surface_offset_cache.find(sok);
-	if (it != m_surface_offset_cache.end())
-		return it->second; // Cache HIT.
+	const SurfaceOffsetCacheKey key = SurfaceOffsetCachePack(sok);
+	const size_t key_hash = gs_key_hash(&key, sizeof(key));
+	const SurfaceOffsetCacheValue* const hit = static_cast<const SurfaceOffsetCacheValue*>(
+		gs_flat_map_find(&m_surface_offset_cache, &key, sizeof(key), key_hash));
+	if (hit) // Cache HIT.
+	{
+		SurfaceOffset cached;
+		cached.is_valid   = hit->is_valid != 0;
+		cached.b2a_offset = GSVector4i(hit->b2a[0], hit->b2a[1], hit->b2a[2], hit->b2a[3]);
+		return cached;
+	}
 
 	// Cache MISS.
 	// Search for a valid <x,y> offset from B to A in B coordinates.
@@ -8149,9 +8227,22 @@ GSTextureCache::SurfaceOffset GSTextureCache::ComputeSurfaceOffset(const Surface
 	so.b2a_offset = b2a_offset;
 
 	// Clear cache if size too big.
-	if (m_surface_offset_cache.size() + 1 > S_SURFACE_OFFSET_CACHE_MAX_SIZE)
-		m_surface_offset_cache.clear();
-	m_surface_offset_cache.emplace(std::make_pair(sok, so));
+	if (m_surface_offset_cache.count + 1 > S_SURFACE_OFFSET_CACHE_MAX_SIZE)
+		gs_flat_map_clear(&m_surface_offset_cache);
+	{
+		int inserted;
+		SurfaceOffsetCacheValue* const v = static_cast<SurfaceOffsetCacheValue*>(
+			gs_flat_map_insert(&m_surface_offset_cache, &key, key_hash, &inserted));
+		/* (no room: computed again next time) */
+		if (v)
+		{
+			v->is_valid = so.is_valid ? 1u : 0u;
+			v->b2a[0]   = so.b2a_offset.x;
+			v->b2a[1]   = so.b2a_offset.y;
+			v->b2a[2]   = so.b2a_offset.z;
+			v->b2a[3]   = so.b2a_offset.w;
+		}
+	}
 	return so;
 }
 
@@ -8311,6 +8402,15 @@ bool GSTextureCache::PaletteKeyEqual::operator()(const PaletteKey& lhs, const Pa
 
 GSTextureCache::PaletteMap::PaletteMap()
 {
+	gs_stable_map_init(&m_maps[0], 16 * sizeof(u32), sizeof(Palette*), &s_palette_nodes_16);
+	gs_stable_map_init(&m_maps[1], 256 * sizeof(u32), sizeof(Palette*), &s_palette_nodes_256);
+}
+
+GSTextureCache::PaletteMap::~PaletteMap()
+{
+	Clear();
+	gs_stable_map_free(&m_maps[0]);
+	gs_stable_map_free(&m_maps[1]);
 }
 
 GSTextureCache::Palette* GSTextureCache::PaletteMap::LookupPalette(u16 pal, bool need_gs_texture)
@@ -8323,57 +8423,54 @@ GSTextureCache::Palette* GSTextureCache::PaletteMap::LookupPalette(const u32* cl
 	// Choose which hash map search into:
 	//    pal == 16  : index 0
 	//    pal == 256 : index 1
-	auto& map = m_maps[pal == 16 ? 0 : 1];
+	gs_stable_map_t* const map = &m_maps[pal == 16 ? 0 : 1];
 
-	// Create PaletteKey for searching into map (clut is actually not copied, so do not store this key into the map)
-	const PaletteKey palette_key = {clut, pal};
+	/* (the key is the CLUT's contents, hashed as PaletteKeyHash does) */
+	const size_t hash = static_cast<size_t>(PaletteKeyHash()({clut, pal}));
+	Palette** const found = static_cast<Palette**>((pal == 16) ?
+		gs_stable_map_find(map, clut, 16 * sizeof(u32), hash) :
+		gs_stable_map_find(map, clut, 256 * sizeof(u32), hash));
 
-	const auto& it1 = map.find(palette_key);
-
-	if (it1 != map.end())
+	if (found)
 	{
 		// Clut content match, HIT
-		if (need_gs_texture && !it1->second->GetPaletteGSTexture())
+		if (need_gs_texture && !(*found)->GetPaletteGSTexture())
 		{
 			// Generate GSTexture and upload clut content if needed and not done yet
-			it1->second->InitializeTexture();
+			(*found)->InitializeTexture();
 		}
-		it1->second->AddRef();
-		return it1->second;
+		(*found)->AddRef();
+		return *found;
 	}
 
 	// No palette with matching clut content, MISS
 
-	if (map.size() > MAX_SIZE)
+	if (GS_STABLE_MAP_COUNT(map) > MAX_SIZE)
 	{
-		// If the map is too big, try to clean it by disposing and removing unused palettes, before adding the new one
-
-		for (auto it = map.begin(); it != map.end();)
+		/* If the map is too big, the palettes nobody is using (the map
+		 * owns them and no Source holds a reference) are dropped before
+		 * the new one is added; downwards, so each erase moves an entry
+		 * already looked at into the place it frees. */
+		for (size_t i = GS_STABLE_MAP_COUNT(map); i-- > 0;)
 		{
-			// Nobody is using this one: the map owns it and no Source
-			// holds a reference.
-			if (it->second->m_refs == 0)
+			Palette** const entry = static_cast<Palette**>(gs_stable_map_at(map, i));
+			if ((*entry)->m_refs == 0)
 			{
-				/* Erase first, delete after. The key in the map is
-				 * {clut, pal} and its clut points into the palette's own
-				 * m_clut, so the key is only readable while the palette
-				 * is: erase has to unlink the node, and whether that
-				 * reads the key back depends on whether the container
-				 * cached the hash - which is not something to rely on.
-				 * shared_ptr hid this, because the node's destruction
-				 * during erase was what released the object. */
-				Palette* dead = it->second;
-				it = map.erase(it);
+				Palette* const dead = *entry;
+				gs_stable_map_erase(map, entry);
 				delete dead;
 			}
-			else
-				++it;
 		}
 	}
 
 	Palette* palette = new Palette(clut, pal, need_gs_texture);
 
-	map.emplace(palette->GetPaletteKey(), palette);
+	int inserted;
+	Palette** const slot = static_cast<Palette**>(gs_stable_map_insert(map, clut, hash, &inserted));
+	if (slot)
+		*slot = palette;
+	else
+		abort(); /* out of memory, as the map's emplace was without exceptions */
 
 	/* One for the map's own ownership is not counted - m_refs counts the
 	 * users, and the caller is the first. */
@@ -8383,52 +8480,14 @@ GSTextureCache::Palette* GSTextureCache::PaletteMap::LookupPalette(const u32* cl
 
 void GSTextureCache::PaletteMap::Clear()
 {
-	for (auto& map : m_maps)
+	for (gs_stable_map_t& map : m_maps)
 	{
-		/* Same order as the prune above: the keys point into the palettes,
-		 * so the map has to be emptied before any of them is freed. */
-		std::vector<Palette*> dead;
-		dead.reserve(map.size());
-		for (auto& it : map)
-			dead.push_back(it.second);
-		map.clear();
-		for (Palette* p : dead)
-			delete p;
+		/* (the keys are copies in the map's nodes: the palettes can go in
+		 * any order) */
+		for (size_t i = 0; i < GS_STABLE_MAP_COUNT(&map); i++)
+			delete *static_cast<Palette**>(gs_stable_map_at(&map, i));
+		gs_stable_map_clear(&map);
 	}
-}
-
-std::size_t GSTextureCache::SurfaceOffsetKeyHash::operator()(const GSTextureCache::SurfaceOffsetKey& key) const
-{
-	std::hash<u32> hash_fn_u32;
-	std::hash<int> hash_fn_int;
-	std::hash<size_t> hash_fn_szt;
-	size_t hash = 0x9e3779b9;
-	for (const SurfaceOffsetKeyElem& elem : key.elems)
-	{
-		hash = hash ^ hash_fn_u32(elem.bp) << 1;
-		hash = hash ^ hash_fn_u32(elem.bw) << 1;
-		hash = hash ^ hash_fn_u32(elem.psm) << 1;
-		hash = hash ^ hash_fn_int(elem.rect.x) << 1;
-		hash = hash ^ hash_fn_int(elem.rect.y) << 1;
-		hash = hash ^ hash_fn_int(elem.rect.z) << 1;
-		hash = hash ^ hash_fn_int(elem.rect.w) << 1;
-	}
-	return hash_fn_szt(hash);
-}
-
-bool GSTextureCache::SurfaceOffsetKeyEqual::operator()(const GSTextureCache::SurfaceOffsetKey& lhs, const GSTextureCache::SurfaceOffsetKey& rhs) const
-{
-	for (size_t i = 0; i < lhs.elems.size(); ++i)
-	{
-		const SurfaceOffsetKeyElem& lhs_elem = lhs.elems[i];
-		const SurfaceOffsetKeyElem& rhs_elem = rhs.elems[i];
-		if (lhs_elem.bp != rhs_elem.bp
-			|| lhs_elem.bw != rhs_elem.bw
-			|| lhs_elem.psm != rhs_elem.psm
-			|| !lhs_elem.rect.eq(rhs_elem.rect))
-			return false;
-	}
-	return true;
 }
 
 bool GSTextureCache::SourceRegion::IsFixedTEX0(GIFRegTEX0 TEX0) const

@@ -127,7 +127,7 @@ static int gs_object_pool_give(gs_object_pool_t *pool, void *p)
 }
 
 /* --- node pools --------------------------------------------------------
- * The texture cache's hash maps and sets allocate a node per entry and
+ * The texture cache's maps (GSStableMap) allocate a node per entry and
  * give it back on erase: a texture or palette made and dropped every
  * frame was a heap allocation and a free every frame. A node pool keeps
  * nodes of one size on a free list, linked through their first word, and
@@ -136,8 +136,8 @@ static int gs_object_pool_give(gs_object_pool_t *pool, void *p)
  *
  * Take and give are the inlined part and are three and two instructions
  * past the call; refilling is out of line and cold. GS thread only, like
- * the object pool. With an address sanitizer the C++ side does not use
- * these (see GSNodeAllocator), so the sanitizer sees every node. */
+ * the object pool. With an address sanitizer GSStableMap does not use
+ * these, so the sanitizer sees every node. */
 typedef struct gs_node_pool
 {
    void                *free_head; /* first free node; its first word links on */

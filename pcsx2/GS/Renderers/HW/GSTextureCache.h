@@ -15,7 +15,6 @@
 
 #pragma once
 
-#include <unordered_set>
 #include <new>
 #include <cstddef>
 #include <functional>
@@ -30,52 +29,6 @@
 #include "../Common/GSStableMap.h"
 
 class GSHwHack;
-
-/* Allocator for the texture cache's hash maps and sets: a gs_node_pool
- * (GSObjectPool.h) per node type, which the standard containers need
- * wrapped as a C++ allocator. Single nodes come from the pool; bucket
- * arrays, and everything with an address sanitizer, from new. */
-template <typename T>
-class GSNodeAllocator
-{
-	static constexpr bool POOLED = !GS_OBJECT_POOL_SANITIZED && alignof(T) <= GS_OBJECT_POOL_ALIGN;
-
-public:
-	using value_type = T;
-
-	GSNodeAllocator() noexcept = default;
-	template <typename U>
-	GSNodeAllocator(const GSNodeAllocator<U>&) noexcept {}
-
-	T* allocate(std::size_t n)
-	{
-		if (POOLED && n == 1)
-		{
-			return static_cast<T*>(gs_node_pool_take(&s_pool));
-		}
-		if (alignof(T) > alignof(std::max_align_t))
-			return static_cast<T*>(::operator new(n * sizeof(T), std::align_val_t(alignof(T))));
-		return static_cast<T*>(::operator new(n * sizeof(T)));
-	}
-
-	void deallocate(T* p, std::size_t n) noexcept
-	{
-		if (POOLED && n == 1)
-			gs_node_pool_give(&s_pool, p);
-		else if (alignof(T) > alignof(std::max_align_t))
-			::operator delete(p, std::align_val_t(alignof(T)));
-		else
-			::operator delete(p);
-	}
-
-	template <typename U>
-	bool operator==(const GSNodeAllocator<U>&) const noexcept { return true; }
-	template <typename U>
-	bool operator!=(const GSNodeAllocator<U>&) const noexcept { return false; }
-
-private:
-	static inline gs_node_pool_t s_pool = GS_NODE_POOL_INIT(sizeof(T), alignof(T));
-};
 
 // Only for debugging. Reads back every target to local memory after drawing, effectively
 // disabling caching between draws.
@@ -451,6 +404,8 @@ public:
 		// Deliberately not initialized to save cycles.
 		u16 m_erase_it[GS_MAX_PAGES];
 		GSOffset::PageLooper m_pages;
+		/* Its place in SourceMap::m_surfaces. */
+		u32 m_surface_index = 0;
 
 	public:
 		/* Out of a pool fixed at startup, not the allocator: a source is
@@ -493,14 +448,14 @@ public:
 		 * the maps grow into what they need. */
 		static const u16 MAX_SIZE = 1024; // Max size of each map.
 
-		// Array of 2 maps, the first for 64B palettes and the second for 1024B palettes.
-		// Each map stores the key PaletteKey (clut copy, pal value) pointing to the relevant shared pointer to Palette object.
-		// There is one PaletteKey per Palette, and the hashing and comparison of PaletteKey is done with custom operators PaletteKeyHash and PaletteKeyEqual.
-		std::array<std::unordered_map<PaletteKey, Palette*, PaletteKeyHash, PaletteKeyEqual,
-			GSNodeAllocator<std::pair<const PaletteKey, Palette*>>>, 2> m_maps;
+		/* Two GSStableMaps, the first for 16-entry palettes and the second
+		 * for 256: the CLUT's contents (64 or 1024 bytes, a copy in the
+		 * node, compared whole) -> Palette*. */
+		gs_stable_map_t m_maps[2];
 
 	public:
 		PaletteMap();
+		~PaletteMap();
 
 		// Retrieves a shared pointer to a valid Palette from m_maps or creates a new one adding it to the data structure
 		/* Both return a reference the caller owns and must Release. */
@@ -513,13 +468,23 @@ public:
 	class SourceMap
 	{
 	public:
-		std::unordered_set<Source*, std::hash<Source*>, std::equal_to<Source*>, GSNodeAllocator<Source*>> m_surfaces;
+		/* Every source, in no order: m_surfaces[i] holds
+		 * m_surface_index i, and a source taken out has the last one
+		 * moved into its place, so a walk downwards may take out the
+		 * source it is at and go on. Room for as many as there have been
+		 * at once; grown, rarely, by doubling. */
+		Source** m_surfaces = nullptr;
+		u32 m_surfaces_count = 0;
+		u32 m_surfaces_capacity = 0;
 		std::array<FastList<Source*>, GS_MAX_PAGES> m_map;
+
+		~SourceMap();
 
 		void Add(Source* s, const GIFRegTEX0& TEX0);
 		void SwapTexture(GSTexture* old_tex, GSTexture* new_tex);
 		void RemoveAll();
 		void RemoveAt(Source* s);
+		void Unlist(Source* s);
 	};
 
 	struct TargetHeightElem
@@ -559,16 +524,6 @@ public:
 	{
 		bool is_valid;
 		GSVector4i b2a_offset;  // B to A offset in B coords.
-	};
-
-	struct SurfaceOffsetKeyHash
-	{
-		std::size_t operator()(const SurfaceOffsetKey& key) const;
-	};
-
-	struct SurfaceOffsetKeyEqual
-	{
-		bool operator()(const SurfaceOffsetKey& lhs, const SurfaceOffsetKey& rhs) const;
 	};
 
 protected:
@@ -675,8 +630,10 @@ private:
 	 * grows into what it needs, and 4096 is still far more than a frame
 	 * asks for. */
 	constexpr static size_t S_SURFACE_OFFSET_CACHE_MAX_SIZE = 4096;
-	std::unordered_map<SurfaceOffsetKey, SurfaceOffset, SurfaceOffsetKeyHash, SurfaceOffsetKeyEqual,
-		GSNodeAllocator<std::pair<const SurfaceOffsetKey, SurfaceOffset>>> m_surface_offset_cache;
+	/* SurfaceOffsetKey -> SurfaceOffset in a GSFlatMap, the key packed
+	 * into fourteen words (SurfaceOffsetCacheKey: the elements' psm, bp,
+	 * bw and rect, no padding to compare), the offset into five. */
+	gs_flat_map_t m_surface_offset_cache;
 
 	Source* m_temporary_source = nullptr; // invalidated after the draw
 
