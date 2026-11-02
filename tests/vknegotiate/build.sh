@@ -517,6 +517,43 @@ if [ "$(ceil_of 3000000)" != "1 0" ] || [ "$(ceil_of 1000000)" != "0 1" ]; then
 fi
 echo "  memory ceilings: a third submits without waiting, all of it waits, the picture the same"
 
+# No heap allocation by the core once a game is running: cases that make
+# a texture or palette every frame, or rewind one, run 600 frames with
+# alloccount.c preloaded, which counts what the core allocates over
+# frames 120 to 600 (the Vulkan driver's own allocations are not
+# counted). Each new texture used to cost a hash cache node and a source
+# set node, and a stream buffer's fence list a deque chunk now and then.
+# A core built with an address sanitizer allocates every node itself,
+# so that the sanitizer sees it, and is not counted.
+if LC_ALL=C grep -q __asan_init "$CORE"; then
+	alloc_cases=""
+	echo "  steady state allocations: not counted, the core is built with ASan"
+else
+	alloc_cases="stream_t8 stream_ct32 clut_scales texture_rewind"
+fi
+${CC:-cc} -std=gnu99 -Wall -O2 -shared -fPIC -o "$SHIM/alloccount.so" "$DIR/alloccount.c" -ldl
+for c in $alloc_cases; do
+	"$SHIM/swdraw" --bios "$SHIM/$c.bin" $c >/dev/null
+	SCRATCH=$(mktemp -d)
+	if ! LD_PRELOAD="$SHIM/alloccount.so" VN_ALLOC_CORE="$CORE" VN_ALLOC_WINDOW=120,600 \
+			VN_IDLE_BIOS=1 LRPS2_BIOS="$SHIM/$c.bin" VN_FRAMES=600 \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SHIM/alloc_$c.log" 2>&1; then
+		cat "$SHIM/alloc_$c.log"
+		rm -rf "$SCRATCH" "$SHIM"
+		echo "  FAIL: $c with allocations counted"
+		exit 1
+	fi
+	rm -rf "$SCRATCH"
+	n=$(sed -n 's/^alloccount: \([0-9]*\) core allocations$/\1/p' "$SHIM/alloc_$c.log")
+	if [ "$n" != 0 ]; then
+		grep '^alloccount:' "$SHIM/alloc_$c.log"
+		rm -rf "$SHIM"
+		echo "  FAIL: $c: the core allocated ${n:-?} times over frames 120-600, not 0"
+		exit 1
+	fi
+done
+[ -z "$alloc_cases" ] || echo "  steady state: no core heap allocations over 480 frames of new textures and palettes"
+
 # A 4-bit texture read off a 32-bit render target (tests/swdraw's
 # t4_from_target): converted on the GPU, without the target going through
 # local memory. The flat cases' frame holds the CLUT entry of the nibble

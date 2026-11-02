@@ -16,6 +16,9 @@
 #pragma once
 
 #include <unordered_set>
+#include <new>
+#include <cstddef>
+#include <functional>
 #include <utility> /* std::pair */
 #include <limits>
 
@@ -25,6 +28,68 @@
 #include "../Common/GSDirtyRect.h"
 
 class GSHwHack;
+
+/* Allocator for the texture cache's hash maps and sets. A node given back
+ * goes on a free list for its type and the next insert takes it, so a
+ * cache that makes and drops textures and palettes every frame stops
+ * asking the heap for a node each time once it has seen as many at once
+ * as it ever holds. GS thread only, like gs_object_pool; with an address
+ * sanitizer it is new and delete, so the sanitizer sees every node. */
+template <typename T>
+class GSNodeAllocator
+{
+public:
+	using value_type = T;
+
+	GSNodeAllocator() noexcept = default;
+	template <typename U>
+	GSNodeAllocator(const GSNodeAllocator<U>&) noexcept {}
+
+	T* allocate(std::size_t n)
+	{
+#if !GS_OBJECT_POOL_SANITIZED
+		if (n == 1 && s_free)
+		{
+			FreeNode* f = s_free;
+			s_free = f->next;
+			return reinterpret_cast<T*>(f);
+		}
+#endif
+		const std::size_t bytes = (n == 1 && sizeof(T) < sizeof(FreeNode)) ? sizeof(FreeNode) : n * sizeof(T);
+		if (alignof(T) > alignof(std::max_align_t))
+			return static_cast<T*>(::operator new(bytes, std::align_val_t(alignof(T))));
+		return static_cast<T*>(::operator new(bytes));
+	}
+
+	void deallocate(T* p, std::size_t n) noexcept
+	{
+#if !GS_OBJECT_POOL_SANITIZED
+		if (n == 1)
+		{
+			FreeNode* f = reinterpret_cast<FreeNode*>(p);
+			f->next = s_free;
+			s_free = f;
+			return;
+		}
+#endif
+		if (alignof(T) > alignof(std::max_align_t))
+			::operator delete(p, std::align_val_t(alignof(T)));
+		else
+			::operator delete(p);
+	}
+
+	template <typename U>
+	bool operator==(const GSNodeAllocator<U>&) const noexcept { return true; }
+	template <typename U>
+	bool operator!=(const GSNodeAllocator<U>&) const noexcept { return false; }
+
+private:
+	struct FreeNode
+	{
+		FreeNode* next;
+	};
+	static inline FreeNode* s_free = nullptr;
+};
 
 // Only for debugging. Reads back every target to local memory after drawing, effectively
 // disabling caching between draws.
@@ -132,7 +197,8 @@ public:
 		bool is_replacement;
 	};
 
-	using HashCacheMap = std::unordered_map<HashCacheKey, HashCacheEntry, HashCacheKeyHash>;
+	using HashCacheMap = std::unordered_map<HashCacheKey, HashCacheEntry, HashCacheKeyHash, std::equal_to<HashCacheKey>,
+		GSNodeAllocator<std::pair<const HashCacheKey, HashCacheEntry>>>;
 
 	class Surface : public GSAlignedClass<32>
 	{
@@ -446,7 +512,8 @@ public:
 		// Array of 2 maps, the first for 64B palettes and the second for 1024B palettes.
 		// Each map stores the key PaletteKey (clut copy, pal value) pointing to the relevant shared pointer to Palette object.
 		// There is one PaletteKey per Palette, and the hashing and comparison of PaletteKey is done with custom operators PaletteKeyHash and PaletteKeyEqual.
-		std::array<std::unordered_map<PaletteKey, Palette*, PaletteKeyHash, PaletteKeyEqual>, 2> m_maps;
+		std::array<std::unordered_map<PaletteKey, Palette*, PaletteKeyHash, PaletteKeyEqual,
+			GSNodeAllocator<std::pair<const PaletteKey, Palette*>>>, 2> m_maps;
 
 	public:
 		PaletteMap();
@@ -462,7 +529,7 @@ public:
 	class SourceMap
 	{
 	public:
-		std::unordered_set<Source*> m_surfaces;
+		std::unordered_set<Source*, std::hash<Source*>, std::equal_to<Source*>, GSNodeAllocator<Source*>> m_surfaces;
 		std::array<FastList<Source*>, GS_MAX_PAGES> m_map;
 
 		void Add(Source* s, const GIFRegTEX0& TEX0);
@@ -603,7 +670,8 @@ private:
 	 * grows into what it needs, and 4096 is still far more than a frame
 	 * asks for. */
 	constexpr static size_t S_SURFACE_OFFSET_CACHE_MAX_SIZE = 4096;
-	std::unordered_map<SurfaceOffsetKey, SurfaceOffset, SurfaceOffsetKeyHash, SurfaceOffsetKeyEqual> m_surface_offset_cache;
+	std::unordered_map<SurfaceOffsetKey, SurfaceOffset, SurfaceOffsetKeyHash, SurfaceOffsetKeyEqual,
+		GSNodeAllocator<std::pair<const SurfaceOffsetKey, SurfaceOffset>>> m_surface_offset_cache;
 
 	Source* m_temporary_source = nullptr; // invalidated after the draw
 

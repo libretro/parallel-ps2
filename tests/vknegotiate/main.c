@@ -1753,6 +1753,26 @@ int main(int argc, char** argv)
 					VN_FAIL("runahead: cannot load the state");
 			}
 			vn_run(run);
+#ifndef _WIN32
+			/* VN_ALLOC_WINDOW=from,to: tells tests/vknegotiate/alloccount.c
+			 * (preloaded) to count the core's heap allocations over those
+			 * frames, and to print what it counted at the end of them. */
+			if (getenv("VN_ALLOC_WINDOW"))
+			{
+				const char* w = getenv("VN_ALLOC_WINDOW");
+				const int from = atoi(w);
+				const int to = strchr(w, ',') ? atoi(strchr(w, ',') + 1) : from;
+				void (*hook)(void) = NULL;
+				if (frame + 1 == from)
+					*(void**)&hook = dlsym(RTLD_DEFAULT, "vn_alloc_begin");
+				else if (frame + 1 == to)
+					*(void**)&hook = dlsym(RTLD_DEFAULT, "vn_alloc_end");
+				if ((frame + 1 == from || frame + 1 == to) && !hook)
+					VN_FAIL("VN_ALLOC_WINDOW needs alloccount.so preloaded");
+				if (hook)
+					hook();
+			}
+#endif
 #ifdef VN_HEAP_CHECK
 			if (heap_flat)
 			{

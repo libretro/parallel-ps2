@@ -19,7 +19,6 @@
 #include "GSVulkanHeap.h"
 #include <utility>
 #include "VKLoader.h"
-#include <deque>
 #include <memory>
 
 class VKStreamBuffer
@@ -63,6 +62,29 @@ class VKStreamBuffer
 		VkBuffer m_buffer = VK_NULL_HANDLE;
 		u8* m_host_pointer = nullptr;
 
-		// List of fences and the corresponding positions in the buffer
-		std::deque<std::pair<u64, u32>> m_tracked_fences;
+		/* The fences and the buffer positions they free up to, oldest
+		 * first, in a ring: a deque allocated as entries came and went,
+		 * every frame. One entry per command buffer that wrote here and
+		 * is not known complete, so a few; if it ever fills, the newest
+		 * two merge, which frees later and never early. */
+		struct TrackedFence
+		{
+			u64 counter;
+			u32 offset;
+		};
+		static constexpr u32 MAX_TRACKED_FENCES = 16;
+		TrackedFence m_fences[MAX_TRACKED_FENCES] = {};
+		u32 m_fence_head = 0;
+		u32 m_fence_count = 0;
+		TrackedFence& Fence(u32 i) { return m_fences[(m_fence_head + i) % MAX_TRACKED_FENCES]; }
+		void PopFences(u32 n)
+		{
+			m_fence_head = (m_fence_head + n) % MAX_TRACKED_FENCES;
+			m_fence_count -= n;
+		}
+		void ClearFences()
+		{
+			m_fence_head  = 0;
+			m_fence_count = 0;
+		}
 };

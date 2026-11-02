@@ -49,7 +49,7 @@ bool VKStreamBuffer::Create(VkBufferUsageFlags usage, u32 size)
 	m_size = size;
 	m_current_offset = 0;
 	m_current_gpu_position = 0;
-	m_tracked_fences.clear();
+	ClearFences();
 	m_alloc = new_alloc;
 	m_buffer = new_buffer;
 	m_host_pointer = static_cast<u8*>(mapped);
@@ -72,7 +72,7 @@ void VKStreamBuffer::Destroy(bool defer)
 	m_size = 0;
 	m_current_offset = 0;
 	m_current_gpu_position = 0;
-	m_tracked_fences.clear();
+	ClearFences();
 	m_buffer = VK_NULL_HANDLE;
 	m_alloc = gs_vk_alloc_t{};
 	m_host_pointer = nullptr;
@@ -162,32 +162,34 @@ void VKStreamBuffer::UpdateCurrentFencePosition()
 {
 	// Has the offset changed since the last fence?
 	const u64 counter = GSDeviceVK::GetInstance()->GetCurrentFenceCounter();
-	if (!m_tracked_fences.empty() && m_tracked_fences.back().first == counter)
+	if (m_fence_count && (Fence(m_fence_count - 1).counter == counter || m_fence_count == MAX_TRACKED_FENCES))
 	{
 		// Still haven't executed a command buffer, so just update the offset.
-		m_tracked_fences.back().second = m_current_offset;
+		Fence(m_fence_count - 1).counter = counter;
+		Fence(m_fence_count - 1).offset  = m_current_offset;
 		return;
 	}
 
 	// New buffer, so update the GPU position while we're at it.
-	m_tracked_fences.emplace_back(counter, m_current_offset);
+	Fence(m_fence_count).counter = counter;
+	Fence(m_fence_count).offset  = m_current_offset;
+	m_fence_count++;
 }
 
 void VKStreamBuffer::UpdateGPUPosition()
 {
-	auto start = m_tracked_fences.begin();
-	auto end = start;
+	u32 done = 0;
 
 	const u64 completed_counter = GSDeviceVK::GetInstance()->GetCompletedFenceCounter();
-	while (end != m_tracked_fences.end() && completed_counter >= end->first)
+	while (done < m_fence_count && completed_counter >= Fence(done).counter)
 	{
-		m_current_gpu_position = end->second;
-		++end;
+		m_current_gpu_position = Fence(done).offset;
+		++done;
 	}
 
-	if (start != end)
+	if (done)
 	{
-		m_tracked_fences.erase(start, end);
+		PopFences(done);
 		if (m_current_offset == m_current_gpu_position)
 		{
 			// GPU is all caught up now.
@@ -204,14 +206,14 @@ bool VKStreamBuffer::WaitForClearSpace(u32 num_bytes)
 	u32 new_space = 0;
 	u32 new_gpu_position = 0;
 
-	auto iter = m_tracked_fences.begin();
-	for (; iter != m_tracked_fences.end(); ++iter)
+	u32 i = 0;
+	for (; i < m_fence_count; ++i)
 	{
 		// Would this fence bring us in line with the GPU?
 		// This is the "last resort" case, where a command buffer execution has been forced
 		// after no additional data has been written to it, so we can assume that after the
 		// fence has been signaled the entire buffer is now consumed.
-		u32 gpu_position = iter->second;
+		u32 gpu_position = Fence(i).offset;
 		if (m_current_offset == gpu_position)
 		{
 			new_offset = 0;
@@ -265,13 +267,12 @@ bool VKStreamBuffer::WaitForClearSpace(u32 num_bytes)
 
 	// Did any fences satisfy this condition?
 	// Has the command buffer been executed yet? If not, the caller should execute it.
-	if (iter == m_tracked_fences.end() || iter->first == GSDeviceVK::GetInstance()->GetCurrentFenceCounter())
+	if (i == m_fence_count || Fence(i).counter == GSDeviceVK::GetInstance()->GetCurrentFenceCounter())
 		return false;
 
 	// Wait until this fence is signaled. This will fire the callback, updating the GPU position.
-	GSDeviceVK::GetInstance()->WaitForFenceCounter(iter->first);
-	m_tracked_fences.erase(
-			m_tracked_fences.begin(), m_current_offset == iter->second ? m_tracked_fences.end() : ++iter);
+	GSDeviceVK::GetInstance()->WaitForFenceCounter(Fence(i).counter);
+	PopFences(m_current_offset == Fence(i).offset ? m_fence_count : i + 1);
 	m_current_offset = new_offset;
 	m_current_space = new_space;
 	m_current_gpu_position = new_gpu_position;

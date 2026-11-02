@@ -995,6 +995,13 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			res = vkCreateFence(m_device, &fence_info, nullptr, &resources.fence);
 			if (res != VK_SUCCESS)
 				return false;
+
+			/* Room for what a busy frame puts on these up front, so the
+			 * lists grow at startup rather than in the middle of a game
+			 * the first time it destroys or uploads that much. They keep
+			 * their capacity when cleared. */
+			resources.cleanup_resources.reserve(512);
+			resources.staging_in_flight.reserve(64);
 			// TODO: A better way to choose the number of descriptors.
 			VkDescriptorPoolSize pool_sizes[] = {
 				{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,	MAX_COMBINED_IMAGE_SAMPLER_DESCRIPTORS_PER_FRAME},
