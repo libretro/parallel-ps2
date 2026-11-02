@@ -900,6 +900,33 @@ static void case_dirty_whole_target(void)
 	s_run_frames = 40;
 }
 
+/* A frame 640 wide drawn 2047 high: local memory holds 1638 rows of it,
+ * so rows 1638 on land on the rows at the top, which the display shows.
+ * Two shaded triangles, a colour ramp down the height, every row its
+ * own colour: the console draws in order, the rows below last. Drawn on
+ * several rasterizer threads, rows a thread's band apart reach one
+ * address, and the picture must still be the one drawn on one. */
+static void case_wrap_gradient(void)
+{
+	qw(14 | 0x8000u, 0x10000000u, 0xEu, 0);                /* A+D, NLOOP 14, EOP */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(10u << 16, 0, GS_FRAME_1, 0);                       /* FBP 0, FBW 10 */
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(639u << 16, 2046u << 16, GS_SCISSOR, 0);
+	qw(4 | 0x08, 0, GS_PRIM, 0);                           /* a shaded triangle strip */
+	qw(0x00ff1000u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(640, 0), 0, GS_XYZ2, 0);
+	qw(0x0010ff40u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(0, 2047), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(640, 2047), 0, GS_XYZ2, 0);            /* (the strip's second) */
+	qw(0, 0, GS_TEST_1, 0);
+	kick(0, s_qw_count, 0);
+	s_run_frames = 20;
+}
+
 /* Render targets drawn, each a flat triangle of its own colour (a sprite
  * would be a clear, which goes to local memory as it is drawn), then a
  * GS reset (CSR.RESET) two vsyncs on: the reset writes every target back
@@ -2054,6 +2081,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "vram_wrap_read",  case_vram_wrap_read, "1" },
 	{ "frame_on_depth",  case_frame_on_depth, "1" },
 	{ "dirty_whole_target", case_dirty_whole_target, "1" },
+	{ "wrap_gradient",   case_wrap_gradient, "1" },
 	{ "reset_readback",  case_reset_readback, "1" },
 	{ "reset_readback_one", case_reset_readback_one, "1" },
 	{ "readback_two_targets", case_readback_two_targets, "1" },

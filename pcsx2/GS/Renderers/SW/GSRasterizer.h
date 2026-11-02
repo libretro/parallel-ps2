@@ -197,6 +197,11 @@ public:
 	u16* index;
 	int index_count;
 	u8 scanmsk_value;
+	/* Drawn by one thread, every row, in order, the others idle: a draw
+	 * whose frame or depth buffer wraps local memory, or which writes
+	 * one over the other, has rows far apart at one address, which the
+	 * threads' bands would write in no set order (GSRendererSW). */
+	bool whole;
 
 	GSScanlineGlobalData global;
 
@@ -214,6 +219,7 @@ public:
 		, index(NULL)
 		, index_count(0)
 		, scanmsk_value(0)
+		, whole(false)
 	{
 	}
 
@@ -232,6 +238,11 @@ protected:
 	int m_threads;
 	int m_thread_height;
 	u8* m_scanline;
+	/* m_scanline and m_threads for this thread's bands, and for every
+	 * row (DrawWhole) */
+	u8* m_scanline_own;
+	u8* m_scanline_all;
+	int m_threads_own;
 	u8 m_scanmsk_value;
 	GSVector4i m_scissor;
 	GSVector4 m_fscissor_x;
@@ -279,6 +290,9 @@ public:
 	__forceinline int FindMyNextScanline(int top) const;
 
 	void Draw(GSRasterizerData& data);
+	/* Every row of it, on the calling thread, while no other thread
+	 * draws (GSRasterizerData::whole). */
+	void DrawWhole(GSRasterizerData& data);
 };
 
 class IRasterizer : public GSVirtualAlignedClass<32>

@@ -78,6 +78,55 @@ static void HiresTexRelease(GSRendererSW::HiresTex* t)
 	}
 }
 
+/* The pages a buffer's rect spans, from the one its top left is in:
+ * [*first, *first + span), in pages from the buffer's base, the span
+ * past GS_MAX_PAGES where rows wrap local memory onto rows above them.
+ * Without a width every row is the first, so the span is all of it
+ * once the rect is more than a page row high. */
+static u32 BufferPageSpan(u32 bw, u32 psm, const GSVector4i& r, u32* first)
+{
+	const GSVector2i& pgs = GSLocalMemory::m_psm[psm].pgs;
+	const u32 top = static_cast<u32>(r.top) / pgs.y, bottom = static_cast<u32>(r.bottom - 1) / pgs.y;
+	const u32 left = static_cast<u32>(r.left) / pgs.x, right = static_cast<u32>(r.right - 1) / pgs.x;
+	if (bw == 0)
+	{
+		*first = left;
+		return (bottom > top) ? GS_MAX_PAGES + 1 : right - left + 1;
+	}
+	*first = top * bw + left;
+	return (bottom * bw + right) - *first + 1;
+}
+
+/* Whether the rect's rows reach one another's memory, so threads drawing
+ * bands of rows would write (or read what another writes) at one address
+ * in no set order: the frame or the depth buffer wrapping local memory,
+ * or the two overlapping where one is written. The console draws in
+ * order; drawn whole, so does this. */
+static bool DrawsOverItself(const GSDrawingContext* context, bool fb, bool zb, bool write, const GSVector4i& r)
+{
+	u32 ff = 0, zf = 0, fspan = 0, zspan = 0;
+	if (r.rempty())
+		return false;
+	if (fb)
+	{
+		fspan = BufferPageSpan(context->FRAME.FBW, context->FRAME.PSM, r, &ff);
+		if (fspan > GS_MAX_PAGES)
+			return true;
+		ff = (ff + context->FRAME.FBP) % GS_MAX_PAGES;
+	}
+	if (zb)
+	{
+		zspan = BufferPageSpan(context->FRAME.FBW, context->ZBUF.PSM, r, &zf);
+		if (zspan > GS_MAX_PAGES)
+			return true;
+		zf = (zf + context->ZBUF.ZBP) % GS_MAX_PAGES;
+	}
+	/* two runs of pages round the 512 overlap where either starts in the
+	 * other */
+	return fb && zb && write
+		&& (((zf - ff) % GS_MAX_PAGES) < fspan || ((ff - zf) % GS_MAX_PAGES) < zspan);
+}
+
 GSRendererSW::GSRendererSW(int threads)
 	: GSRenderer(), m_fzb(NULL)
 {
@@ -549,6 +598,9 @@ void GSRendererSW::Draw()
 
 	if (!GetScanlineGlobalData(sd))
 		return;
+
+	sd->whole = DrawsOverItself(context, sd->global.sel.fb, sd->global.sel.zb,
+		sd->global.sel.fwrite || sd->global.sel.zwrite, r);
 
 	GSOffset::PageLooper* fb_pages = NULL;
 	GSOffset::PageLooper* zb_pages = NULL;
@@ -1295,6 +1347,7 @@ void GSRendererSW::DrawHires(SharedData* sd)
 	hd->scanmsk_value = sd->scanmsk_value;
 	hd->scissor = sd->scissor << 1;
 	hd->bbox = sd->bbox << 1;
+	hd->whole = sd->whole;
 
 	memcpy(static_cast<void*>(hd->vertex), sd->vertex, sizeof(GSVertexSW) * sd->vertex_count);
 	memcpy(hd->index, sd->index, sizeof(u16) * sd->index_count);

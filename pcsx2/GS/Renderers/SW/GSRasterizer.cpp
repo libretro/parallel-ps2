@@ -56,15 +56,21 @@ GSRasterizer::GSRasterizer(GSDrawScanline* ds, int id, int threads)
 	m_edge.buff     = static_cast<GSVertexSW*>(memalign_alloc(VECTOR_ALIGNMENT, sizeof(GSVertexSW) * 4096));
 	m_edge.count    = 0;
 	int rows        = (4096 >> m_thread_height) + 16;
-	m_scanline      = (u8*)memalign_alloc(64, rows);
+	m_scanline_own  = (u8*)memalign_alloc(64, 2 * rows);
+	m_scanline_all  = m_scanline_own + rows;
+	m_scanline      = m_scanline_own;
+	m_threads_own   = threads;
 
 	for (int i = 0; i < rows; i++)
-		m_scanline[i] = (i % threads) == id ? 1 : 0;
+	{
+		m_scanline_own[i] = (i % threads) == id ? 1 : 0;
+		m_scanline_all[i] = 1;
+	}
 }
 
 GSRasterizer::~GSRasterizer()
 {
-	memalign_free(m_scanline);
+	memalign_free(m_scanline_own);
 	memalign_free(m_edge.buff);
 }
 
@@ -107,6 +113,15 @@ int GSRasterizer::FindMyNextScanline(int top) const
 	}
 
 	return top;
+}
+
+void GSRasterizer::DrawWhole(GSRasterizerData& data)
+{
+	m_scanline = m_scanline_all;
+	m_threads  = 1;
+	Draw(data);
+	m_scanline = m_scanline_own;
+	m_threads  = m_threads_own;
 }
 
 void GSRasterizer::Draw(GSRasterizerData& data)
@@ -1294,6 +1309,15 @@ void GSRasterizerList::Queue(const GSRingHeap::SharedPtr<GSRasterizerData>& data
 		m_ds.ResetCodeCache();
 		if (!m_ds.SetupDraw(*data.get()))
 			return;
+	}
+
+	/* After every queued draw, on this thread, before the next is queued:
+	 * the draws before and after it keep their order on every row. */
+	if (data->whole)
+	{
+		Sync();
+		m_r[0]->DrawWhole(*data.get());
+		return;
 	}
 
 	int top = r.top >> m_thread_height;
