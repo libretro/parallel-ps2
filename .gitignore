@@ -271,3 +271,5 @@ tests/ata/*.img
 /tests/patch/*.o
 /tests/gsarray/gsarray_test
 /tests/gsstring/gsstring_test
+/tests/parsenumber/parsenumber_test
+/tests/parsenumber/*.o

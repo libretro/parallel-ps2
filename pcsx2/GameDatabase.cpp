@@ -245,7 +245,9 @@ void GameDatabase::parseAndInsert(const char *serial, const ryaml_t *yaml, int n
 			const std::string_view id_view = yamlKeyView(yaml, n);
 			const std::string_view value_view = yamlValView(yaml, n);
 			const std::optional<SpeedHack> id = Pcsx2Config::SpeedhackOptions::ParseSpeedHackName(id_view);
-			const std::optional<int> value = ParseNumber::FromChars<int>(value_view);
+			s32 parsed = 0;
+			const std::optional<int> value = parse_number_s32(value_view.data(), value_view.size(), 10, &parsed)
+				? std::optional<int>(parsed) : std::nullopt;
 
 			bool inserted = false;
 			if (id.has_value() && value.has_value())
@@ -295,10 +297,15 @@ void GameDatabase::parseAndInsert(const char *serial, const ryaml_t *yaml, int n
 					continue;
 				}
 			}
+			else if (!ryaml_has_val(yaml, n))
+				value = 1;
 			else
-				value = ryaml_has_val(yaml, n)
-					? ParseNumber::FromChars<s32>(yamlValView(yaml, n))
-					: std::optional<s32>(1);
+			{
+				const std::string_view str_value = yamlValView(yaml, n);
+				s32 parsed = 0;
+				if (parse_number_s32(str_value.data(), str_value.size(), 10, &parsed))
+					value = parsed;
+			}
 
 			if (!id.has_value() || !value.has_value())
 			{
@@ -327,7 +334,10 @@ void GameDatabase::parseAndInsert(const char *serial, const ryaml_t *yaml, int n
 		{
 			// use a crc of 0 for default patches
 			const std::string_view crc_str = yamlKeyView(yaml, n);
-			const std::optional<u32> crc = ((crc_str.length() == 7) && (Strncasecmp(crc_str.data(), "default", 7) == 0)) ? std::optional<u32>(0) : ParseNumber::FromChars<u32>(crc_str, 16);
+			std::optional<u32> crc = ((crc_str.length() == 7) && (Strncasecmp(crc_str.data(), "default", 7) == 0)) ? std::optional<u32>(0) : std::nullopt;
+			u32 crc_parsed = 0;
+			if (!crc.has_value() && parse_number_u32(crc_str.data(), crc_str.size(), 16, &crc_parsed))
+				crc = crc_parsed;
 			if (!crc.has_value())
 			{
 				log_cb(RETRO_LOG_ERROR, "[GameDB] Invalid CRC '{%s}' found for serial: '{%s}'. Skipping!\n", std::string(crc_str).c_str(), serial);

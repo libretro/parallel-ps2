@@ -1,34 +1,20 @@
-/*  PCSX2 - PS2 Emulator for PCs
- *  Copyright (C) 2002-2023 PCSX2 Dev Team
- *
- *  PCSX2 is free software: you can redistribute it and/or modify it under the terms
- *  of the GNU Lesser General Public License as published by the Free Software Found-
- *  ation, either version 3 of the License, or (at your option) any later version.
- *
- *  PCSX2 is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
- *  without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- *  PURPOSE.  See the GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License along with PCSX2.
- *  If not, see <http://www.gnu.org/licenses/>.
- */
-
-/* Parse a number out of a string view, empty on anything the whole view
- * is not. The integer form takes a base, the floating one does not, and
- * both have a variant that reports where they stopped. Used by the
- * core-option parsing and the patch and cheat readers. */
+/* Parse a number out of a run of text (pointer and length): zero when
+ * the run does not start with one. As std::from_chars did: no leading
+ * whitespace or '+', a '-' only for the signed forms, no base prefix,
+ * letters for digits past 9 in either case, and the parse stops at the
+ * first character that is not a digit - "12ab" in base 10 is 12. A
+ * value out of the type's range is no value. Used by the core-option
+ * parsing and the patch and game database readers. C89. */
 
 #ifndef PCSX2_PARSENUMBER_H
 #define PCSX2_PARSENUMBER_H
 
-#include <optional>
-#include <system_error>
-#include <string_view>
-#include <string>
-#include <charconv>
-#include <cstdlib>
-#include <type_traits>
-#include "common/Pcsx2Defs.h"
+#include <stddef.h>
+#include <string.h>
+#include <stdint.h>
+#include <boolean.h>
+#include <retro_inline.h>
+#include <string/rstrtod.h>   /* rstrtof_len */
 
 /* Case-insensitive compare of a bounded run, by the platform's name. */
 #ifndef Strncasecmp
@@ -39,90 +25,106 @@
 #define Strncasecmp(s1, s2, n) strncasecmp(s1, s2, n)
 #endif
 #endif
-#include <string/rstrtod.h>   /* rstrtof_len, rstrtod_len */
 
-namespace ParseNumber
+/* The digits at the start of s[0..n) in base, into *out; zero when there
+ * are none or the value passes max. */
+static INLINE int parse_number_digits(const char* s, size_t n, int base, uint64_t max, uint64_t* out)
 {
-	template <typename T, std::enable_if_t<std::is_integral<T>::value, bool> = true>
-inline std::optional<T> FromChars(const std::string_view& str, int base = 10)
-{
-	T value;
-
-	const std::from_chars_result result = std::from_chars(str.data(), str.data() + str.length(), value, base);
-	if (result.ec != std::errc())
-		return std::nullopt;
-
-	return value;
+	uint64_t value = 0;
+	size_t i  = 0;
+	for (; i < n; i++)
+	{
+		const char c = s[i];
+		int digit;
+		if (c >= '0' && c <= '9')
+			digit = c - '0';
+		else if (c >= 'a' && c <= 'z')
+			digit = c - 'a' + 10;
+		else if (c >= 'A' && c <= 'Z')
+			digit = c - 'A' + 10;
+		else
+			break;
+		if (digit >= base)
+			break;
+		if (value > (max - (uint64_t)digit) / (uint64_t)base)
+			return 0;
+		value = value * (uint64_t)base + (uint64_t)digit;
+	}
+	if (i == 0)
+		return 0;
+	*out = value;
+	return 1;
 }
 
-	template <typename T, std::enable_if_t<std::is_integral<T>::value, bool> = true>
-inline std::optional<T> FromChars(const std::string_view& str, int base, std::string_view* endptr)
+static INLINE int parse_number_u64(const char* s, size_t n, int base, uint64_t* out)
 {
-	T value;
-
-	const char* ptr = str.data();
-	const char* end = ptr + str.length();
-	const std::from_chars_result result = std::from_chars(ptr, end, value, base);
-	if (result.ec != std::errc())
-		return std::nullopt;
-
-	if (endptr)
-		*endptr = (result.ptr < end) ? std::string_view(result.ptr, end - result.ptr) : std::string_view();
-
-	return value;
+	return parse_number_digits(s, n, base, ~(uint64_t)0, out);
 }
 
-	template <typename T, std::enable_if_t<std::is_floating_point<T>::value, bool> = true>
-inline std::optional<T> FromChars(const std::string_view& str)
+static INLINE int parse_number_u32(const char* s, size_t n, int base, uint32_t* out)
 {
-	static_assert(std::is_same_v<T, float> || std::is_same_v<T, double>);
+	uint64_t v;
+	if (!parse_number_digits(s, n, base, 0xFFFFFFFFu, &v))
+		return 0;
+	*out = (uint32_t)v;
+	return 1;
+}
 
+static INLINE int parse_number_u8(const char* s, size_t n, int base, uint8_t* out)
+{
+	uint64_t v;
+	if (!parse_number_digits(s, n, base, 0xFFu, &v))
+		return 0;
+	*out = (uint8_t)v;
+	return 1;
+}
+
+static INLINE int parse_number_s32(const char* s, size_t n, int base, int32_t* out)
+{
+	uint64_t v;
+	if (n && s[0] == '-')
+	{
+		if (!parse_number_digits(s + 1, n - 1, base, 0x80000000u, &v))
+			return 0;
+		*out = (int32_t)(0 - (int64_t)v);
+		return 1;
+	}
+	if (!parse_number_digits(s, n, base, 0x7FFFFFFFu, &v))
+		return 0;
+	*out = (int32_t)v;
+	return 1;
+}
+
+/* A float at the start of the run; zero when there is none. */
+static INLINE int parse_number_float(const char* s, size_t n, float* out)
+{
 	size_t used = 0;
-	T value;
-	if constexpr (std::is_same_v<T, float>)
-		value = rstrtof_len(str.data(), str.length(), &used);
-	else
-		value = rstrtod_len(str.data(), str.length(), &used);
+	const float value = rstrtof_len(s, n, &used);
 	if (used == 0)
-		return std::nullopt;
-
-	return value;
+		return 0;
+	*out = value;
+	return 1;
 }
 
-	template <typename T, std::enable_if_t<std::is_floating_point<T>::value, bool> = true>
-inline std::optional<T> FromChars(const std::string_view& str, std::string_view* endptr)
+/* "true"/"yes"/"on"/"1"/"enabled" and their negatives, matched as the
+ * leading part of each word, as before; nothing else. */
+static INLINE int parse_number_bool(const char* s, size_t n, bool* out)
 {
-	static_assert(std::is_same_v<T, float> || std::is_same_v<T, double>);
-
-	size_t used = 0;
-	T value;
-	if constexpr (std::is_same_v<T, float>)
-		value = rstrtof_len(str.data(), str.length(), &used);
-	else
-		value = rstrtod_len(str.data(), str.length(), &used);
-	if (used == 0)
-		return std::nullopt;
-
-	if (endptr)
-		*endptr = (used < str.length()) ? std::string_view(str.data() + used, str.length() - used) : std::string_view();
-
-	return value;
-}
-
-/* "true"/"yes"/"on"/"1"/"enabled" and their negatives; nothing else. */
-template <>
-inline std::optional<bool> FromChars(const std::string_view& str, int base)
-{
-	if (Strncasecmp("true", str.data(), str.length()) == 0 || Strncasecmp("yes", str.data(), str.length()) == 0 ||
-		Strncasecmp("on", str.data(), str.length()) == 0 || Strncasecmp("1", str.data(), str.length()) == 0 ||
-		Strncasecmp("enabled", str.data(), str.length()) == 0 || Strncasecmp("1", str.data(), str.length()) == 0)
-		return true;
-	if (Strncasecmp("false", str.data(), str.length()) == 0 || Strncasecmp("no", str.data(), str.length()) == 0 ||
-		Strncasecmp("off", str.data(), str.length()) == 0 || Strncasecmp("0", str.data(), str.length()) == 0 ||
-		Strncasecmp("disabled", str.data(), str.length()) == 0 || Strncasecmp("0", str.data(), str.length()) == 0)
-		return false;
-	return std::nullopt;
-}
+	if (Strncasecmp("true", s, n) == 0 || Strncasecmp("yes", s, n) == 0 ||
+		Strncasecmp("on", s, n) == 0 || Strncasecmp("1", s, n) == 0 ||
+		Strncasecmp("enabled", s, n) == 0)
+	{
+		*out = true;
+		return 1;
+	}
+	if (Strncasecmp("false", s, n) == 0 || Strncasecmp("no", s, n) == 0 ||
+		Strncasecmp("off", s, n) == 0 || Strncasecmp("0", s, n) == 0 ||
+		Strncasecmp("disabled", s, n) == 0)
+	{
+		*out = false;
+		return 1;
+	}
+	return 0;
 }
 
 #endif

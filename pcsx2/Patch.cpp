@@ -1041,7 +1041,11 @@ namespace PatchFunc
 
 		IniPatch iPatch = {0};
 		iPatch.enabled = 0;
-		iPatch.placetopatch = ParseNumber::FromChars<u32>(pieces[0]).value_or(_PPT_END_MARKER);
+		{
+			u32 place = _PPT_END_MARKER;
+			parse_number_u32(pieces[0].data(), pieces[0].size(), 10, &place);
+			iPatch.placetopatch = place;
+		}
 
 		if (iPatch.placetopatch >= _PPT_END_MARKER)
 		{
@@ -1051,7 +1055,8 @@ namespace PatchFunc
 		}
 
 		iPatch.cpu = (patch_cpu_type)PatchTableExecute(pieces[1], std::string_view(), cpuCore);
-		iPatch.addr = ParseNumber::FromChars<u32>(pieces[2], 16).value_or(0);
+		iPatch.addr = 0;
+		parse_number_u32(pieces[2].data(), pieces[2].size(), 16, &iPatch.addr);
 		iPatch.type = (patch_data_type)PatchTableExecute(pieces[3], std::string_view(), dataType);
 
 		if (iPatch.type == BYTES_T)
@@ -1072,20 +1077,22 @@ namespace PatchFunc
 			iPatch.bytes.reserve(hex.size() / 2);
 			for (i = 0; i < hex.size(); i += 2)
 			{
-				const std::optional<u8> b =
-					ParseNumber::FromChars<u8>(hex.substr(i, 2), 16);
-				if (!b.has_value())
+				u8 b;
+				if (!parse_number_u8(hex.data() + i, 2, 16, &b))
 				{
 					PATCH_ERROR("'bytes' payload is not hex: '%.*s'",
 					            static_cast<int>(hex.size()), hex.data());
 					return;
 				}
-				iPatch.bytes.push_back(b.value());
+				iPatch.bytes.push_back(b);
 			}
 			iPatch.data = 0;
 		}
 		else
-			iPatch.data = ParseNumber::FromChars<u64>(pieces[4], 16).value_or(0);
+		{
+			iPatch.data = 0;
+			parse_number_u64(pieces[4].data(), pieces[4].size(), 16, &iPatch.data);
+		}
 
 		if (iPatch.cpu == 0)
 		{

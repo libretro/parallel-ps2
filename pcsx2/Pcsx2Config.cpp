@@ -56,53 +56,80 @@ const char* SettingInfo::StringDefaultValue() const
 
 bool SettingInfo::BooleanDefaultValue() const
 {
-	return default_value ? ParseNumber::FromChars<bool>(default_value).value_or(false) : false;
+	bool value = false;
+	if (default_value)
+		parse_number_bool(default_value, strlen(default_value), &value);
+	return value;
 }
 
 s32 SettingInfo::IntegerDefaultValue() const
 {
-	return default_value ? ParseNumber::FromChars<s32>(default_value).value_or(0) : 0;
+	s32 value = 0;
+	if (default_value)
+		parse_number_s32(default_value, strlen(default_value), 10, &value);
+	return value;
 }
 
 s32 SettingInfo::IntegerMinValue() const
 {
 	static constexpr s32 fallback_value = INT32_MIN;
-	return min_value ? ParseNumber::FromChars<s32>(min_value).value_or(fallback_value) : fallback_value;
+	s32 value = fallback_value;
+	if (min_value)
+		parse_number_s32(min_value, strlen(min_value), 10, &value);
+	return value;
 }
 
 s32 SettingInfo::IntegerMaxValue() const
 {
 	static constexpr s32 fallback_value = INT32_MAX;
-	return max_value ? ParseNumber::FromChars<s32>(max_value).value_or(fallback_value) : fallback_value;
+	s32 value = fallback_value;
+	if (max_value)
+		parse_number_s32(max_value, strlen(max_value), 10, &value);
+	return value;
 }
 
 s32 SettingInfo::IntegerStepValue() const
 {
 	static constexpr s32 fallback_value = 1;
-	return step_value ? ParseNumber::FromChars<s32>(step_value).value_or(fallback_value) : fallback_value;
+	s32 value = fallback_value;
+	if (step_value)
+		parse_number_s32(step_value, strlen(step_value), 10, &value);
+	return value;
 }
 
 float SettingInfo::FloatDefaultValue() const
 {
-	return default_value ? ParseNumber::FromChars<float>(default_value).value_or(0.0f) : 0.0f;
+	float value = 0.0f;
+	if (default_value)
+		parse_number_float(default_value, strlen(default_value), &value);
+	return value;
 }
 
 float SettingInfo::FloatMinValue() const
 {
 	static constexpr float fallback_value = FLT_MIN;
-	return min_value ? ParseNumber::FromChars<float>(min_value).value_or(fallback_value) : fallback_value;
+	float value = fallback_value;
+	if (min_value)
+		parse_number_float(min_value, strlen(min_value), &value);
+	return value;
 }
 
 float SettingInfo::FloatMaxValue() const
 {
 	static constexpr float fallback_value = FLT_MAX;
-	return max_value ? ParseNumber::FromChars<float>(max_value).value_or(fallback_value) : fallback_value;
+	float value = fallback_value;
+	if (max_value)
+		parse_number_float(max_value, strlen(max_value), &value);
+	return value;
 }
 
 float SettingInfo::FloatStepValue() const
 {
 	static constexpr float fallback_value = 0.1f;
-	return step_value ? ParseNumber::FromChars<float>(step_value).value_or(fallback_value) : fallback_value;
+	float value = fallback_value;
+	if (step_value)
+		parse_number_float(step_value, strlen(step_value), &value);
+	return value;
 }
 
 namespace EmuFolders
