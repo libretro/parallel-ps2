@@ -16,13 +16,8 @@
 #pragma once
 #include "common/Pcsx2Defs.h"
 #include "HostFS.h"
-#include "common/HashCombine.h"
 
 #include "GLProgram.h"
-#include <functional>
-#include <optional>
-#include <string>
-#include <string_view>
 #include "GS/Renderers/Common/GSFlatMap.h"
 #include "GS/Renderers/Common/GSKeyHash.h"
 #include "GS/Renderers/Common/GSArray.h"
@@ -30,19 +25,16 @@
 class GLShaderCache
 {
 	public:
-		using PreLinkCallback = std::function<void(GLProgram&)>;
-
 		GLShaderCache();
 		~GLShaderCache();
 
 		bool Open(bool is_gles);
 		void Close();
 
-		std::optional<GLProgram> GetProgram(const std::string_view vertex_shader, const std::string_view fragment_shader, const PreLinkCallback& callback = {});
-		bool GetProgram(GLProgram* out_program, const std::string_view vertex_shader, const std::string_view fragment_shader, const PreLinkCallback& callback = {});
-
-		std::optional<GLProgram> GetComputeProgram(const std::string_view glsl, const PreLinkCallback& callback = {});
-		bool GetComputeProgram(GLProgram* out_program, const std::string_view glsl, const PreLinkCallback& callback = {});
+		/* The program of the two sources (each with its length), from the
+		 * cache on disk or compiled and added to it; into *out_program. */
+		bool GetProgram(GLProgram* out_program, const char* vertex_shader, size_t vertex_length,
+			const char* fragment_shader, size_t fragment_length);
 
 	private:
 		/* The key of a program in the index: the two sources' hashes and
@@ -64,28 +56,25 @@ class GLShaderCache
 			u32 blob_format;
 		};
 
-		static CacheIndexKey GetCacheKey(const std::string_view& vertex_shader, const std::string_view& fragment_shader);
+		static CacheIndexKey GetCacheKey(const char* vertex_shader, size_t vertex_length,
+			const char* fragment_shader, size_t fragment_length);
 
-		std::string GetIndexFileName() const;
-		std::string GetBlobFileName() const;
+		static void GetIndexFileName(char* path, size_t size);
+		static void GetBlobFileName(char* path, size_t size);
 
-		bool CreateNew(const std::string& index_filename, const std::string& blob_filename);
-		bool ReadExisting(const std::string& index_filename, const std::string& blob_filename);
+		bool CreateNew(const char* index_filename, const char* blob_filename);
+		bool ReadExisting(const char* index_filename, const char* blob_filename);
 		bool Recreate();
 
 		bool WriteToBlobFile(const CacheIndexKey& key, const void* prog_data, u32 prog_size, u32 prog_format);
 		const CacheIndexData* Find(const CacheIndexKey& key) const;
 		void Add(const CacheIndexKey& key, const CacheIndexData& data);
-		std::optional<GLProgram> LoadProgram(const CacheIndexData& data);
+		bool LoadProgram(GLProgram* prog, const CacheIndexData& data);
 
-		std::optional<GLProgram> CompileProgram(const std::string_view& vertex_shader,
-				const std::string_view& fragment_shader, const PreLinkCallback& callback,
-				bool set_retrievable);
-		std::optional<GLProgram> CompileAndAddProgram(const CacheIndexKey& key, const std::string_view& vertex_shader,
-				const std::string_view& fragment_shader, const PreLinkCallback& callback);
-
-		std::optional<GLProgram> CompileComputeProgram(const std::string_view& glsl, const PreLinkCallback& callback, bool set_retrievable);
-		std::optional<GLProgram> CompileAndAddComputeProgram(const CacheIndexKey& key, const std::string_view& glsl, const PreLinkCallback& callback);
+		static bool CompileProgram(GLProgram* prog, const char* vertex_shader, size_t vertex_length,
+				const char* fragment_shader, size_t fragment_length, bool set_retrievable);
+		bool CompileAndAddProgram(GLProgram* prog, const CacheIndexKey& key, const char* vertex_shader, size_t vertex_length,
+				const char* fragment_shader, size_t fragment_length);
 
 		RFILE* m_index_file = nullptr;
 		RFILE* m_blob_file = nullptr;

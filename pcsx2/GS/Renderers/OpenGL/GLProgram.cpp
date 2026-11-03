@@ -13,15 +13,12 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "../../../FormatString.h"
 #include "common/Pcsx2Defs.h"
-#include <fstream>
-#include <utility>
+#include <stdlib.h>
 
 #include "GLProgram.h"
 
 static u32 s_last_program_id = 0;
-static GLuint s_next_bad_shader_id = 1;
 
 GLProgram::GLProgram()
 {
@@ -46,48 +43,52 @@ GLProgram::~GLProgram()
 	gs_array_free(&m_uniform_locations);
 }
 
-GLuint GLProgram::CompileShader(GLenum type, const std::string_view source)
+/* The info log of shader or program object id, malloc'd, or NULL when
+ * there is none worth printing. */
+static char* GLProgramInfoLog(GLuint id, bool program)
+{
+	GLint info_log_length = 0;
+	char* info_log;
+	if (program)
+		glGetProgramiv(id, GL_INFO_LOG_LENGTH, &info_log_length);
+	else
+		glGetShaderiv(id, GL_INFO_LOG_LENGTH, &info_log_length);
+	// Log will create a new line when there are no warnings so let's set a minimum log length of 1.
+	if (info_log_length <= 1)
+		return nullptr;
+	info_log = static_cast<char*>(malloc(static_cast<size_t>(info_log_length) + 1));
+	if (!info_log)
+		return nullptr;
+	if (program)
+		glGetProgramInfoLog(id, info_log_length, &info_log_length, info_log);
+	else
+		glGetShaderInfoLog(id, info_log_length, &info_log_length, info_log);
+	info_log[info_log_length < 0 ? 0 : info_log_length] = 0;
+	return info_log;
+}
+
+GLuint GLProgram::CompileShader(GLenum type, const char* source, size_t length)
 {
 	GLuint id = glCreateShader(type);
 
-	const GLchar* sources[1] = {source.data()};
-	GLint source_lengths[1] = {static_cast<GLint>(source.size())};
+	const GLchar* sources[1] = {source};
+	GLint source_lengths[1] = {static_cast<GLint>(length)};
 	glShaderSource(id, 1, sources, source_lengths);
 	glCompileShader(id);
 
 	GLint status = GL_FALSE;
 	glGetShaderiv(id, GL_COMPILE_STATUS, &status);
 
-	GLint info_log_length = 0;
-	glGetShaderiv(id, GL_INFO_LOG_LENGTH, &info_log_length);
-
-	// Log will create a new line when there are no warnings so let's set a minimum log length of 1.
-	constexpr int info_log_min_length = 1;
-
-	if (status == GL_FALSE || info_log_length > info_log_min_length)
+	char* info_log = GLProgramInfoLog(id, false);
+	if (status == GL_FALSE || info_log)
 	{
-		std::string info_log;
-		info_log.resize(info_log_length + 1);
-		glGetShaderInfoLog(id, info_log_length, &info_log_length, &info_log[0]);
-
 		if (status == GL_TRUE)
-		{
-			log_cb(RETRO_LOG_WARN, "Shader compiled with warnings:\n%s\n", info_log.c_str());
-		}
+			log_cb(RETRO_LOG_WARN, "Shader compiled with warnings:\n%s\n", info_log);
 		else
+			log_cb(RETRO_LOG_ERROR, "Shader failed to compile:\n%s\n", info_log ? info_log : "");
+		free(info_log);
+		if (status == GL_FALSE)
 		{
-			log_cb(RETRO_LOG_ERROR, "Shader failed to compile:\n%s\n", info_log.c_str());
-
-			std::ofstream ofs(FormatString::Format("pcsx2_bad_shader_%u.txt", s_next_bad_shader_id++).c_str(),
-					std::ofstream::out | std::ofstream::binary);
-			if (ofs.is_open())
-			{
-				ofs.write(sources[0], source_lengths[0]);
-				ofs << "\n\nCompile failed, info log:\n";
-				ofs << info_log;
-				ofs.close();
-			}
-
 			glDeleteShader(id);
 			return 0;
 		}
@@ -101,18 +102,18 @@ void GLProgram::ResetLastProgram()
 	s_last_program_id = 0;
 }
 
-bool GLProgram::Compile(const std::string_view vertex_shader, const std::string_view fragment_shader)
+bool GLProgram::Compile(const char* vertex_shader, size_t vertex_length, const char* fragment_shader, size_t fragment_length)
 {
-	if (!vertex_shader.empty())
+	if (vertex_length)
 	{
-		m_vertex_shader_id = CompileShader(GL_VERTEX_SHADER, vertex_shader);
+		m_vertex_shader_id = CompileShader(GL_VERTEX_SHADER, vertex_shader, vertex_length);
 		if (m_vertex_shader_id == 0)
 			return false;
 	}
 
-	if (!fragment_shader.empty())
+	if (fragment_length)
 	{
-		m_fragment_shader_id = CompileShader(GL_FRAGMENT_SHADER, fragment_shader);
+		m_fragment_shader_id = CompileShader(GL_FRAGMENT_SHADER, fragment_shader, fragment_length);
 		if (m_fragment_shader_id == 0)
 			return false;
 	}
@@ -122,17 +123,6 @@ bool GLProgram::Compile(const std::string_view vertex_shader, const std::string_
 		glAttachShader(m_program_id, m_vertex_shader_id);
 	if (m_fragment_shader_id != 0)
 		glAttachShader(m_program_id, m_fragment_shader_id);
-	return true;
-}
-
-bool GLProgram::CompileCompute(const std::string_view glsl)
-{
-	GLuint id = CompileShader(GL_COMPUTE_SHADER, glsl);
-	if (id == 0)
-		return false;
-
-	m_program_id = glCreateProgram();
-	glAttachShader(m_program_id, id);
 	return true;
 }
 
@@ -239,26 +229,16 @@ bool GLProgram::Link()
 	GLint status = GL_FALSE;
 	glGetProgramiv(m_program_id, GL_LINK_STATUS, &status);
 
-	GLint info_log_length = 0;
-
-	// Log will create a new line when there are no warnings so let's set a minimum log length of 1.
-	constexpr int info_log_min_length = 1;
-
-	glGetProgramiv(m_program_id, GL_INFO_LOG_LENGTH, &info_log_length);
-
-	if (status == GL_FALSE || info_log_length > info_log_min_length)
+	char* info_log = GLProgramInfoLog(m_program_id, true);
+	if (status == GL_FALSE || info_log)
 	{
-		std::string info_log;
-		info_log.resize(info_log_length + 1);
-		glGetProgramInfoLog(m_program_id, info_log_length, &info_log_length, &info_log[0]);
-
 		if (status == GL_TRUE)
-		{
-			log_cb(RETRO_LOG_ERROR, "Program linked with warnings:\n%s\n", info_log.c_str());
-		}
+			log_cb(RETRO_LOG_ERROR, "Program linked with warnings:\n%s\n", info_log);
 		else
+			log_cb(RETRO_LOG_ERROR, "Program failed to link:\n%s\n", info_log ? info_log : "");
+		free(info_log);
+		if (status == GL_FALSE)
 		{
-			log_cb(RETRO_LOG_ERROR, "Program failed to link:\n%s\n", info_log.c_str());
 			glDeleteProgram(m_program_id);
 			m_program_id = 0;
 			return false;

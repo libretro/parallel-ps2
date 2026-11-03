@@ -16,7 +16,6 @@
 #pragma once
 #include "common/Pcsx2Defs.h"
 #include "glad.h"
-#include <string_view>
 #include "GS/Renderers/Common/GSArray.h"
 
 class GLProgram
@@ -27,12 +26,11 @@ class GLProgram
 		GLProgram(GLProgram&& prog);
 		~GLProgram();
 
-		static GLuint CompileShader(GLenum type, const std::string_view source);
+		/* A compiled shader of type from source (length bytes), or 0. */
+		static GLuint CompileShader(GLenum type, const char* source, size_t length);
 		static void ResetLastProgram();
 
-		bool Compile(const std::string_view vertex_shader, const std::string_view fragment_shader);
-
-		bool CompileCompute(const std::string_view glsl);
+		bool Compile(const char* vertex_shader, size_t vertex_length, const char* fragment_shader, size_t fragment_length);
 
 		bool CreateFromBinary(const void* data, u32 data_length, u32 data_format);
 

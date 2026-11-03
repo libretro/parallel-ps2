@@ -405,6 +405,7 @@ set(pcsx2GSHeaders
 	GS/Renderers/Common/GSFastList.h
 	GS/Renderers/Common/GSKeyHash.h
 	GS/Renderers/Common/GSArray.h
+	GS/Renderers/Common/GSString.h
 	GS/Renderers/Common/GSFlatMap.h
 	GS/Renderers/Common/GSStableMap.h
 	GS/GSPage2Tile.h

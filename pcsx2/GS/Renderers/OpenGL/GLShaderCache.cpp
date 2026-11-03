@@ -15,7 +15,6 @@
 
 #include "GLShaderCache.h"
 #include "common/Pcsx2Defs.h"
-#include <cerrno>
 
 #include "GS/Renderers/OpenGL/GLShaderCache.h"
 #include "GS/GS.h"
@@ -82,21 +81,18 @@ void GLShaderCache::Add(const CacheIndexKey& key, const CacheIndexData& data)
 }
 
 /* The program whose binary the index entry names, from the blob file. */
-std::optional<GLProgram> GLShaderCache::LoadProgram(const CacheIndexData& data)
+bool GLShaderCache::LoadProgram(GLProgram* prog, const CacheIndexData& data)
 {
 	if (!gs_array_reserve(&m_blob, data.blob_size))
-		return {};
+		return false;
 	if (filestream_seek(m_blob_file, data.file_offset, RETRO_VFS_SEEK_POSITION_START) != 0 ||
 			filestream_read(m_blob_file, m_blob.items, data.blob_size) != (int64_t)data.blob_size)
 	{
 		log_cb(RETRO_LOG_ERROR, "Read blob from file failed\n");
-		return {};
+		return false;
 	}
 
-	GLProgram prog;
-	if (prog.CreateFromBinary(m_blob.items, data.blob_size, data.blob_format))
-		return std::optional<GLProgram>(std::move(prog));
-	return {};
+	return prog->CreateFromBinary(m_blob.items, data.blob_size, data.blob_format);
 }
 
 bool GLShaderCache::Open(bool is_gles)
@@ -120,8 +116,10 @@ bool GLShaderCache::Open(bool is_gles)
 
 	if (!GSConfig.DisableShaderCache)
 	{
-		const std::string index_filename = GetIndexFileName();
-		const std::string blob_filename = GetBlobFileName();
+		char index_filename[PATH_MAX_LENGTH];
+		char blob_filename[PATH_MAX_LENGTH];
+		GetIndexFileName(index_filename, sizeof(index_filename));
+		GetBlobFileName(blob_filename, sizeof(blob_filename));
 
 		if (ReadExisting(index_filename, blob_filename))
 			return true;
@@ -132,52 +130,52 @@ bool GLShaderCache::Open(bool is_gles)
 	return true;
 }
 
-bool GLShaderCache::CreateNew(const std::string& index_filename, const std::string& blob_filename)
+bool GLShaderCache::CreateNew(const char* index_filename, const char* blob_filename)
 {
-	if (path_is_valid(index_filename.c_str()))
+	if (path_is_valid(index_filename))
 	{
-		log_cb(RETRO_LOG_WARN, "Removing existing index file '%s'\n", index_filename.c_str());
-		filestream_delete(index_filename.c_str());
+		log_cb(RETRO_LOG_WARN, "Removing existing index file '%s'\n", index_filename);
+		filestream_delete(index_filename);
 	}
-	if (path_is_valid(blob_filename.c_str()))
+	if (path_is_valid(blob_filename))
 	{
-		log_cb(RETRO_LOG_WARN, "Removing existing blob file '%s'\n", blob_filename.c_str());
-		filestream_delete(blob_filename.c_str());
+		log_cb(RETRO_LOG_WARN, "Removing existing blob file '%s'\n", blob_filename);
+		filestream_delete(blob_filename);
 	}
 
-	m_index_file = filestream_open(index_filename.c_str(), RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+	m_index_file = filestream_open(index_filename, RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
 	if (!m_index_file)
 	{
-		log_cb(RETRO_LOG_ERROR, "Failed to open index file '%s' for writing\n", index_filename.c_str());
+		log_cb(RETRO_LOG_ERROR, "Failed to open index file '%s' for writing\n", index_filename);
 		return false;
 	}
 
 	const u32 file_version = SHADER_CACHE_VERSION;
 	if (filestream_write(m_index_file, &file_version, sizeof(file_version)) != (int64_t)(sizeof(file_version)))
 	{
-		log_cb(RETRO_LOG_ERROR, "Failed to write version to index file '%s'\n", index_filename.c_str());
+		log_cb(RETRO_LOG_ERROR, "Failed to write version to index file '%s'\n", index_filename);
 		filestream_close(m_index_file);
 		m_index_file = nullptr;
-		filestream_delete(index_filename.c_str());
+		filestream_delete(index_filename);
 		return false;
 	}
 
-	m_blob_file = filestream_open(blob_filename.c_str(), RETRO_VFS_FILE_ACCESS_READ_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+	m_blob_file = filestream_open(blob_filename, RETRO_VFS_FILE_ACCESS_READ_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
 	if (!m_blob_file)
 	{
-		log_cb(RETRO_LOG_ERROR, "Failed to open blob file '%s' for writing\n", blob_filename.c_str());
+		log_cb(RETRO_LOG_ERROR, "Failed to open blob file '%s' for writing\n", blob_filename);
 		filestream_close(m_index_file);
 		m_index_file = nullptr;
-		filestream_delete(index_filename.c_str());
+		filestream_delete(index_filename);
 		return false;
 	}
 
 	return true;
 }
 
-bool GLShaderCache::ReadExisting(const std::string& index_filename, const std::string& blob_filename)
+bool GLShaderCache::ReadExisting(const char* index_filename, const char* blob_filename)
 {
-	m_index_file = filestream_open(index_filename.c_str(), RETRO_VFS_FILE_ACCESS_READ_WRITE | RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+	m_index_file = filestream_open(index_filename, RETRO_VFS_FILE_ACCESS_READ_WRITE | RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING, RETRO_VFS_FILE_ACCESS_HINT_NONE);
 	if (!m_index_file)
 	{
 		// special case here: when there's a sharing violation (i.e. two instances running),
@@ -194,20 +192,20 @@ bool GLShaderCache::ReadExisting(const std::string& index_filename, const std::s
 	u32 file_version = 0;
 	if (filestream_read(m_index_file, &file_version, sizeof(file_version)) != (int64_t)(sizeof(file_version)) || file_version != SHADER_CACHE_VERSION)
 	{
-		log_cb(RETRO_LOG_ERROR, "Bad file/data version in '%s'\n", index_filename.c_str());
+		log_cb(RETRO_LOG_ERROR, "Bad file/data version in '%s'\n", index_filename);
 		filestream_close(m_index_file);
 		m_index_file = nullptr;
 		return false;
 	}
 
-	m_blob_file = filestream_open(blob_filename.c_str(),
+	m_blob_file = filestream_open(blob_filename,
 		RETRO_VFS_FILE_ACCESS_READ_WRITE | RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING,
 		RETRO_VFS_FILE_ACCESS_HINT_NONE);
 	if (m_blob_file) /* "a+b": append semantics = start at the end */
 		filestream_seek(m_blob_file, 0, RETRO_VFS_SEEK_POSITION_END);
 	if (!m_blob_file)
 	{
-		log_cb(RETRO_LOG_ERROR, "Blob file '%s' is missing\n", blob_filename.c_str());
+		log_cb(RETRO_LOG_ERROR, "Blob file '%s' is missing\n", blob_filename);
 		filestream_close(m_index_file);
 		m_index_file = nullptr;
 		return false;
@@ -225,7 +223,7 @@ bool GLShaderCache::ReadExisting(const std::string& index_filename, const std::s
 			if (filestream_eof(m_index_file))
 				break;
 
-			log_cb(RETRO_LOG_ERROR, "Failed to read entry from '%s', corrupt file?\n", index_filename.c_str());
+			log_cb(RETRO_LOG_ERROR, "Failed to read entry from '%s', corrupt file?\n", index_filename);
 			gs_flat_map_clear(&m_index);
 			filestream_close(m_blob_file);
 			m_blob_file = nullptr;
@@ -242,7 +240,7 @@ bool GLShaderCache::ReadExisting(const std::string& index_filename, const std::s
 		Add(key, data);
 	}
 
-	log_cb(RETRO_LOG_INFO, "Read %zu entries from '%s'\n", (size_t)m_index.count, index_filename.c_str());
+	log_cb(RETRO_LOG_INFO, "Read %zu entries from '%s'\n", (size_t)m_index.count, index_filename);
 	return true;
 }
 
@@ -265,77 +263,59 @@ bool GLShaderCache::Recreate()
 {
 	Close();
 
-	const std::string index_filename = GetIndexFileName();
-	const std::string blob_filename = GetBlobFileName();
+	char index_filename[PATH_MAX_LENGTH];
+	char blob_filename[PATH_MAX_LENGTH];
+	GetIndexFileName(index_filename, sizeof(index_filename));
+	GetBlobFileName(blob_filename, sizeof(blob_filename));
 
 	return CreateNew(index_filename, blob_filename);
 }
 
-GLShaderCache::CacheIndexKey GLShaderCache::GetCacheKey(const std::string_view& vertex_shader,
-		const std::string_view& fragment_shader)
+GLShaderCache::CacheIndexKey GLShaderCache::GetCacheKey(const char* vertex_shader, size_t vertex_length,
+		const char* fragment_shader, size_t fragment_length)
 {
 	XXH128_hash_t vertex_hash   = {};
 	XXH128_hash_t fragment_hash = {};
 
-	if (!vertex_shader.empty())
-		vertex_hash = XXH3_128bits(vertex_shader.data(), vertex_shader.length());
+	if (vertex_length)
+		vertex_hash = XXH3_128bits(vertex_shader, vertex_length);
 
-	if (!fragment_shader.empty())
-		fragment_hash = XXH3_128bits(fragment_shader.data(), fragment_shader.length());
+	if (fragment_length)
+		fragment_hash = XXH3_128bits(fragment_shader, fragment_length);
 
 	return CacheIndexKey{vertex_hash.low64, vertex_hash.high64, fragment_hash.low64, fragment_hash.high64,
-		static_cast<u32>(vertex_shader.length()), static_cast<u32>(fragment_shader.length())};
+		static_cast<u32>(vertex_length), static_cast<u32>(fragment_length)};
 }
 
-std::string GLShaderCache::GetIndexFileName() const
+void GLShaderCache::GetIndexFileName(char* path, size_t size)
 {
-	{
-		char path[PATH_MAX_LENGTH];
-		fill_pathname_join(path, EmuFolders::Cache, "gl_programs.idx", sizeof(path));
-		return path;
-	}
+	fill_pathname_join(path, EmuFolders::Cache, "gl_programs.idx", size);
 }
 
-std::string GLShaderCache::GetBlobFileName() const
+void GLShaderCache::GetBlobFileName(char* path, size_t size)
 {
-	{
-		char path[PATH_MAX_LENGTH];
-		fill_pathname_join(path, EmuFolders::Cache, "gl_programs.bin", sizeof(path));
-		return path;
-	}
+	fill_pathname_join(path, EmuFolders::Cache, "gl_programs.bin", size);
 }
 
-std::optional<GLProgram> GLShaderCache::GetProgram(const std::string_view vertex_shader,
-		const std::string_view fragment_shader, const PreLinkCallback& callback)
+bool GLShaderCache::GetProgram(GLProgram* out_program, const char* vertex_shader, size_t vertex_length,
+		const char* fragment_shader, size_t fragment_length)
 {
 	if (!m_program_binary_supported || !m_blob_file)
-		return CompileProgram(vertex_shader, fragment_shader, callback, false);
+		return CompileProgram(out_program, vertex_shader, vertex_length, fragment_shader, fragment_length, false);
 
-	const auto key = GetCacheKey(vertex_shader, fragment_shader);
+	const CacheIndexKey key = GetCacheKey(vertex_shader, vertex_length, fragment_shader, fragment_length);
 	const CacheIndexData* found = Find(key);
 	if (!found)
-		return CompileAndAddProgram(key, vertex_shader, fragment_shader, callback);
+		return CompileAndAddProgram(out_program, key, vertex_shader, vertex_length, fragment_shader, fragment_length);
 
-	std::optional<GLProgram> prog = LoadProgram(*found);
-	if (prog)
-		return prog;
+	if (LoadProgram(out_program, *found))
+		return true;
 
 	log_cb(RETRO_LOG_WARN, "Failed to create program from binary, this may be due to a driver or GPU Change. Recreating cache.\n");
 	if (!Recreate())
-		return CompileProgram(vertex_shader, fragment_shader, callback, false);
+		return CompileProgram(out_program, vertex_shader, vertex_length, fragment_shader, fragment_length, false);
 	else
-		return CompileAndAddProgram(key, vertex_shader, fragment_shader, callback);
-}
-
-bool GLShaderCache::GetProgram(GLProgram* out_program, const std::string_view vertex_shader,
-		const std::string_view fragment_shader, const PreLinkCallback& callback /* = */)
-{
-	auto prog = GetProgram(vertex_shader, fragment_shader, callback);
-	if (!prog)
-		return false;
-
-	*out_program = std::move(*prog);
-	return true;
+		return CompileAndAddProgram(out_program, key, vertex_shader, vertex_length, fragment_shader, fragment_length);
 }
 
 bool GLShaderCache::WriteToBlobFile(const CacheIndexKey& key, const void* prog_data, u32 prog_size, u32 prog_format)
@@ -382,102 +362,28 @@ bool GLShaderCache::WriteToBlobFile(const CacheIndexKey& key, const void* prog_d
 	return true;
 }
 
-std::optional<GLProgram> GLShaderCache::CompileProgram(const std::string_view& vertex_shader,
-		const std::string_view& fragment_shader, const PreLinkCallback& callback, bool set_retrievable)
+bool GLShaderCache::CompileProgram(GLProgram* prog, const char* vertex_shader, size_t vertex_length,
+		const char* fragment_shader, size_t fragment_length, bool set_retrievable)
 {
-	GLProgram prog;
-	if (!prog.Compile(vertex_shader, fragment_shader))
-		return std::nullopt;
-
-	if (callback)
-		callback(prog);
-
-	if (set_retrievable)
-		prog.SetBinaryRetrievableHint();
-
-	if (!prog.Link())
-		return std::nullopt;
-
-	return std::optional<GLProgram>(std::move(prog));
-}
-
-std::optional<GLProgram> GLShaderCache::CompileComputeProgram(const std::string_view& glsl,
-		const PreLinkCallback& callback, bool set_retrievable)
-{
-	GLProgram prog;
-	if (!prog.CompileCompute(glsl))
-		return std::nullopt;
-
-	if (callback)
-		callback(prog);
-
-	if (set_retrievable)
-		prog.SetBinaryRetrievableHint();
-
-	if (!prog.Link())
-		return std::nullopt;
-
-	return std::optional<GLProgram>(std::move(prog));
-}
-
-std::optional<GLProgram> GLShaderCache::CompileAndAddProgram(const CacheIndexKey& key,
-		const std::string_view& vertex_shader, const std::string_view& fragment_shader,
-		const PreLinkCallback& callback)
-{
-	std::optional<GLProgram> prog = CompileProgram(vertex_shader, fragment_shader, callback, true);
-	if (!prog)
-		return std::nullopt;
-
-	u32 prog_format = 0;
-	if (!prog->GetBinary(&m_blob, &prog_format))
-		return std::nullopt;
-
-	WriteToBlobFile(key, m_blob.items, static_cast<u32>(m_blob.count), prog_format);
-	return prog;
-}
-
-std::optional<GLProgram> GLShaderCache::GetComputeProgram(const std::string_view glsl, const PreLinkCallback& callback)
-{
-	if (!m_program_binary_supported || !m_blob_file)
-		return CompileComputeProgram(glsl, callback, false);
-
-	const auto key = GetCacheKey(glsl, std::string_view());
-	const CacheIndexData* found = Find(key);
-	if (!found)
-		return CompileAndAddComputeProgram(key, glsl, callback);
-
-	std::optional<GLProgram> prog = LoadProgram(*found);
-	if (prog)
-		return prog;
-
-	log_cb(RETRO_LOG_WARN, "Failed to create program from binary, this may be due to a driver or GPU Change. Recreating cache.\n");
-	if (!Recreate())
-		return CompileComputeProgram(glsl, callback, false);
-	return CompileAndAddComputeProgram(key, glsl, callback);
-}
-
-bool GLShaderCache::GetComputeProgram(GLProgram* out_program, const std::string_view glsl, const PreLinkCallback& callback)
-{
-	auto prog = GetComputeProgram(glsl, callback);
-	if (!prog)
+	if (!prog->Compile(vertex_shader, vertex_length, fragment_shader, fragment_length))
 		return false;
 
-	*out_program = std::move(*prog);
-	return true;
+	if (set_retrievable)
+		prog->SetBinaryRetrievableHint();
+
+	return prog->Link();
 }
 
-std::optional<GLProgram> GLShaderCache::CompileAndAddComputeProgram(
-		const CacheIndexKey& key, const std::string_view& glsl, const PreLinkCallback& callback)
+bool GLShaderCache::CompileAndAddProgram(GLProgram* prog, const CacheIndexKey& key, const char* vertex_shader, size_t vertex_length,
+		const char* fragment_shader, size_t fragment_length)
 {
-	std::optional<GLProgram> prog = CompileComputeProgram(glsl, callback, true);
-	if (!prog)
-		return std::nullopt;
+	if (!CompileProgram(prog, vertex_shader, vertex_length, fragment_shader, fragment_length, true))
+		return false;
 
 	u32 prog_format = 0;
 	if (!prog->GetBinary(&m_blob, &prog_format))
-		return std::nullopt;
+		return true; /* (the program is good; only the cache misses it) */
 
 	WriteToBlobFile(key, m_blob.items, static_cast<u32>(m_blob.count), prog_format);
-
-	return prog;
+	return true;
 }

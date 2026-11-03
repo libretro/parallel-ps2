@@ -19,6 +19,7 @@
 #include "GLStreamBuffer.h"
 #include "GLProgram.h"
 #include "GLShaderCache.h"
+#include "GS/Renderers/Common/GSString.h"
 #include "GS/Renderers/Common/GSKeyHash.h"
 #include "GS/Renderers/Common/GSFlatMap.h"
 #include "GS/Renderers/Common/GSDevice.h"
@@ -189,7 +190,7 @@ private:
 
 	struct
 	{
-		std::string vs;
+		gs_str_t vs; // its source, the vertex shader of several passes
 		GLProgram ps[static_cast<int>(ShaderConvert::Count)]; // program object
 		GLuint ln = 0; // sampler object
 		GLuint pt = 0; // sampler object
@@ -321,13 +322,17 @@ public:
 	void SetScissor(const GSVector4i& scissor);
 
 	bool CreateTextureFX();
-	std::string GetShaderSource(const std::string_view& entry, GLenum type, const char *glsl_h_code,
-		const std::string_view& macro_sel = std::string_view());
-	std::string GetShaderSource(const std::string_view& entry, GLenum type, const std::string_view& glsl_h_code,
-		const std::string_view& macro_sel = std::string_view());
-	std::string GenGlslHeader(const std::string_view& entry, GLenum type, const std::string_view& macro);
-	std::string GetVSSource(VSSelector sel);
-	std::string GetPSSource(const PSSelector& sel);
+	/* A shader's source into out: the GLSL header for entry and type,
+	 * the macros, then the shader file's code. */
+	bool GetShaderSource(gs_str_t* out, const char* entry, GLenum type, const char* glsl_h_code, const char* macro = nullptr);
+	bool GenGlslHeader(gs_str_t* out, const char* entry, GLenum type, const char* macro);
+	bool GetVSSource(gs_str_t* out, VSSelector sel);
+	bool GetPSSource(gs_str_t* out, const PSSelector& sel);
+	/* prog from the sources vs and ps, through the program cache. */
+	bool GetProgram(GLProgram* prog, const gs_str_t* vs, const gs_str_t* ps);
+	/* The sources of the program being made, kept at the largest. */
+	gs_str_t m_src_vs;
+	gs_str_t m_src_ps;
 	GLuint CreateSampler(PSSamplerSelector sel);
 	GSDepthStencilOGL* CreateDepthStencil(OMDepthStencilSelector dssel);
 
