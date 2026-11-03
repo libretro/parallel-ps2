@@ -17,7 +17,6 @@
 #include "common/Pcsx2Defs.h"
 #include <memalign.h>
 #include <limits>
-#include <algorithm> /* clamp */
 #include <cfloat> /* FLT_MAX */
 #include <cmath>
 
@@ -281,7 +280,8 @@ void GSState::SetPrimHandlers()
 
 void GSState::ResetHandlers()
 {
-	std::fill(std::begin(m_fpGIFPackedRegHandlers), std::end(m_fpGIFPackedRegHandlers), &GSState::GIFPackedRegHandlerNull);
+	for (size_t i = 0; i < C89_ARRAY_SIZE(m_fpGIFPackedRegHandlers); i++)
+		m_fpGIFPackedRegHandlers[i] = &GSState::GIFPackedRegHandlerNull;
 
 	m_fpGIFPackedRegHandlers[GIF_REG_PRIM] = (GIFPackedRegHandler)(GIFRegHandler)&GSState::GIFRegHandlerPRIM;
 	m_fpGIFPackedRegHandlers[GIF_REG_RGBA] = &GSState::GIFPackedRegHandlerRGBA;
@@ -301,7 +301,8 @@ void GSState::ResetHandlers()
 	else
 		IsFirstProvokingVertex() ? SetPrimHandlers<false, true>() : SetPrimHandlers<false, false>();
 
-	std::fill(std::begin(m_fpGIFRegHandlers), std::end(m_fpGIFRegHandlers), &GSState::GIFRegHandlerNull);
+	for (size_t i = 0; i < C89_ARRAY_SIZE(m_fpGIFRegHandlers); i++)
+		m_fpGIFRegHandlers[i] = &GSState::GIFRegHandlerNull;
 
 	m_fpGIFRegHandlers[GIF_A_D_REG_PRIM] = &GSState::GIFRegHandlerPRIM;
 	m_fpGIFRegHandlers[GIF_A_D_REG_RGBAQ] = &GSState::GIFRegHandlerRGBAQ;

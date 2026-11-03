@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2002-2023 PCSX2 Dev Team
 // SPDX-License-Identifier: LGPL-3.0+
 
-#include <algorithm>
 #include "common/Pcsx2Defs.h"
 #include <memalign.h>
 #include <climits>
@@ -91,6 +90,13 @@ struct HashCachePurge
 };
 static HashCachePurge* s_hash_cache_purge_list;
 static size_t s_hash_cache_purge_capacity;
+/* (qsort order: the oldest entry first) */
+static int HashCachePurgeOldestFirst(const void* a, const void* b)
+{
+	const s32 age_a = static_cast<const HashCachePurge*>(a)->age;
+	const s32 age_b = static_cast<const HashCachePurge*>(b)->age;
+	return (age_a < age_b) - (age_a > age_b);
+}
 
 /* The largest read through the unswizzle buffer: a whole target, up to
  * 2048x2048 pixels of four bytes, block aligned and at a vector-aligned
@@ -2451,7 +2457,11 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVe
 				if (!tex)
 					return nullptr;
 
-				std::swap(dst->m_texture, tex);
+				{
+					GSTexture* const was = dst->m_texture;
+					dst->m_texture = tex;
+					tex = was;
+				}
 				PreloadTarget(TEX0, size, GSVector2i(dst->m_valid.z, dst->m_valid.w), is_frame, preload,
 					preserve_target, draw_rect, dst);
 				g_gs_device->StretchRect(tex, GSVector4::cxpr(0.0f, 0.0f, 1.0f, 1.0f), dst->m_texture,
@@ -6445,8 +6455,7 @@ void GSTextureCache::AgeHashCache()
 	// Pushing to a list, sorting, and removing ends up faster than re-iterating the map.
 	if (might_need_cache_purge)
 	{
-		std::sort(s_hash_cache_purge_list, s_hash_cache_purge_list + purge_count,
-			[](const HashCachePurge& lhs, const HashCachePurge& rhs) { return lhs.age > rhs.age; });
+		qsort(s_hash_cache_purge_list, purge_count, sizeof(HashCachePurge), HashCachePurgeOldestFirst);
 
 		/* Oldest first, as before, but stopping on either bound rather
 		 * than only on the count - over the byte budget with a count
@@ -7082,7 +7091,9 @@ bool GSTextureCache::Surface::Overlaps(u32 bp, u32 bw, u32 psm, const GSVector4i
 	// Due to block ordering, end can be below start in a page, so if it's within a page, swap them.
 	else if (end_block < start_block && ((start_block - end_block) < (1 << 5)))
 	{
-		std::swap(start_block, end_block);
+		const u32 was = start_block;
+		start_block = end_block;
+		end_block = was;
 	}
 
 	// Wrapping around to the beginning of memory.

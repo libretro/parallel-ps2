@@ -541,7 +541,7 @@ int GSfreeze(FreezeAction mode, freezeData* data)
 
 void GSUpdateConfig(const Pcsx2Config::GSOptions& new_config, enum retro_hw_context_type api)
 {
-	Pcsx2Config::GSOptions old_config(std::move(GSConfig));
+	Pcsx2Config::GSOptions old_config(GSConfig);
 	GSConfig = new_config;
 
 	const struct gs_renderer_ops* ops = GS_OPS();

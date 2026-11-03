@@ -40,7 +40,6 @@
 #endif
 
 #include <limits>
-#include <algorithm>
 #include <cstring>
 
 #include <libretro.h>

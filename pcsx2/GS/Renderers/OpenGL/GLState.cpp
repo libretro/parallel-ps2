@@ -13,8 +13,7 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <algorithm>
-#include <iterator> /* std::begin(), std::end() */
+#include <string.h>
 #include "GLState.h"
 
 namespace GLState
@@ -79,7 +78,7 @@ namespace GLState
 
 		rt = nullptr;
 		ds = nullptr;
-		std::fill(std::begin(tex_unit), std::end(tex_unit), 0);
-		std::fill(std::begin(tex_handle), std::end(tex_handle), 0);
+		memset(tex_unit, 0, sizeof(tex_unit));
+		memset(tex_handle, 0, sizeof(tex_handle));
 	}
 } // namespace GLState

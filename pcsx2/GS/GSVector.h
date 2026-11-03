@@ -15,7 +15,6 @@
 
 #include <cstring>
 #include <cmath>     /* sqrtf in the vector fragments below */
-#include <algorithm> /* std::min, std::max */
 
 #include "../../common/VectorIntrin.h"
 

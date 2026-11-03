@@ -13,7 +13,6 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <algorithm>
 #include <type_traits>
 #include "common/Pcsx2Defs.h"
 #include <cmath>

@@ -16,7 +16,6 @@
 #pragma once
 
 #include "GSRegs.h"
-#include <utility>
 #include "GSTables.h"
 #include "GSVector.h"
 #include "MultiISA.h"
@@ -1622,7 +1621,11 @@ public:
 		p3 = V::broadcast128(p[3]).shuffle8(V::broadcast128(m_palvec_mask));
 		V::sw32(p0, p1, p2, p3);
 		V::sw64(p0, p1, p2, p3);
-		std::swap(p1, p2);
+		{
+			const V was = p1;
+			p1 = p2;
+			p2 = was;
+		}
 	}
 
 	template <typename V>

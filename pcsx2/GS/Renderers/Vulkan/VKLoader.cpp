@@ -18,7 +18,6 @@
 #include <cstdarg>
 #include <cstdlib>
 #include <cstring>
-#include <string>
 
 
 #include "VKLoader.h"
@@ -131,28 +130,31 @@ namespace Vulkan
 		// Check if a path to a specific Vulkan library has been specified.
 		if (!vulkan_module)
 		{
+			/* The executable's directory, with the longer of the two
+			 * library names after it. */
+			static const char lib_vulkan[]   = "/../Frameworks/libvulkan.dylib";
+			static const char lib_moltenvk[] = "/../Frameworks/libMoltenVK.dylib";
 			unsigned path_size = 0;
+			char* path;
 			_NSGetExecutablePath(nullptr, &path_size);
-			std::string path;
-			path.resize(path_size);
-			if (_NSGetExecutablePath(path.data(), &path_size) == 0)
+			path = static_cast<char*>(malloc(static_cast<size_t>(path_size) + sizeof(lib_moltenvk) + 1));
+			if (path && _NSGetExecutablePath(path, &path_size) == 0)
 			{
+				char* slash;
 				path[path_size] = 0;
-
-				size_t pos = path.rfind('/');
-				if (pos != std::string::npos)
+				slash = strrchr(path, '/');
+				if (slash)
 				{
-					path.erase(pos);
-					path += "/../Frameworks/libvulkan.dylib";
-					vulkan_module = dlopen(path.c_str(), RTLD_NOW);
+					strcpy(slash, lib_vulkan);
+					vulkan_module = dlopen(path, RTLD_NOW);
 					if (!vulkan_module)
 					{
-						path.erase(pos);
-						path += "/../Frameworks/libMoltenVK.dylib";
-						vulkan_module = dlopen(path.c_str(), RTLD_NOW);
+						strcpy(slash, lib_moltenvk);
+						vulkan_module = dlopen(path, RTLD_NOW);
 					}
 				}
 			}
+			free(path);
 		}
 		if (!vulkan_module)
 		{

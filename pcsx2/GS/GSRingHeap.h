@@ -18,7 +18,6 @@
 #include <retro_atomic.h>
 #include <new>
 #include <utility>
-#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 
