@@ -92,11 +92,11 @@ namespace Host
  * database unchecked, and they are the ones most likely to break on a GS
  * refactor, so it is worth knowing they are not covered rather than
  * assuming a green run includes them. */
-std::optional<int> GSLookupGetSkipCountFunctionId(const std::string_view&)
+s16 GSLookupGetSkipCountFunctionId(const char*, size_t)
 { return 0; }
-std::optional<int> GSLookupBeforeDrawFunctionId(const std::string_view&)
+s16 GSLookupBeforeDrawFunctionId(const char*, size_t)
 { return 0; }
-std::optional<int> GSLookupMoveHandlerFunctionId(const std::string_view&)
+s16 GSLookupMoveHandlerFunctionId(const char*, size_t)
 { return 0; }
 
 /* Memory card naming, reached for the memcardFilters field. */

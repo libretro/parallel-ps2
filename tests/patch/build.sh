@@ -3,8 +3,9 @@
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
-SANFLAGS=""
-[ -n "$SANITIZER" ] && SANFLAGS="-fsanitize=$SANITIZER"
+# SANFLAGS is what CI passes; SANITIZER is the run-all.sh shorthand.
+SANFLAGS=${SANFLAGS:-}
+[ -n "${SANITIZER:-}" ] && SANFLAGS="$SANFLAGS -fsanitize=$SANITIZER"
 
 echo "== game database patch lines vs the real parser =="
 ${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
@@ -20,15 +21,26 @@ LC="$ROOT/libretro/libretro-common"
 ${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 	-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 	-I "$LC/include" \
-	-o "$DIR/patch_dbload" "$DIR/dbload.cpp" \
-	"$ROOT/pcsx2/GameDatabase.cpp" "$ROOT/pcsx2/Pcsx2Config.cpp" \
-	"$ROOT/pcsx2/FormatString.cpp" "$ROOT/pcsx2/StringView.cpp" \
-	"$LC/rthreads/retro_eventcount.c" "$LC/rthreads/retro_procbarrier.c" \
-	"$LC/rthreads/retro_asym_eventcount.c" \
-	"$LC/formats/yaml/ryaml.c" "$LC/rthreads/rthreads.c" \
-	"$LC/file/file_path.c" "$LC/string/rstrtod.c" "$LC/string/stdstring.c" \
-	"$LC/compat/fopen_utf8.c" "$LC/compat/compat_strl.c" \
-	"$LC/encodings/encoding_utf.c" "$LC/time/rtime.c" -lpthread
+	-c -o "$DIR/dbload.o" "$DIR/dbload.cpp"
+for f in GameDatabase Pcsx2Config FormatString StringView; do
+	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
+		-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
+		-I "$LC/include" -c -o "$DIR/dbload_$f.o" "$ROOT/pcsx2/$f.cpp"
+done
+# libretro-common is C: built by the C compiler, as in the core. Through
+# the C++ driver its TSan annotations get C++ linkage and do not link.
+LCOBJS=""
+for f in rthreads/retro_eventcount rthreads/retro_procbarrier \
+	rthreads/retro_asym_eventcount formats/yaml/ryaml rthreads/rthreads \
+	file/file_path string/rstrtod string/stdstring compat/fopen_utf8 \
+	compat/compat_strl encodings/encoding_utf time/rtime; do
+	o="$DIR/dbload_lc_$(echo "$f" | tr / _).o"
+	${CC:-cc} -O1 -w $SANFLAGS -I "$LC/include" -c -o "$o" "$LC/$f.c"
+	LCOBJS="$LCOBJS $o"
+done
+${CXX:-c++} $SANFLAGS -o "$DIR/patch_dbload" "$DIR/dbload.o" \
+	"$DIR/dbload_GameDatabase.o" "$DIR/dbload_Pcsx2Config.o" \
+	"$DIR/dbload_FormatString.o" "$DIR/dbload_StringView.o" $LCOBJS -lpthread
 "$DIR/patch_dbload" "$ROOT/bin/resources/GameIndex.yaml"
 
 echo "== the core's built-in game patches, every serial and hint =="
