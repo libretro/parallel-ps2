@@ -23,7 +23,6 @@
 #include "GS/Renderers/Common/GSKeyHash.h"
 #include "GS/Renderers/Common/GSFlatMap.h"
 #include "GS/Renderers/Common/GSArray.h"
-#include <functional>
 #include <memory>
 
 struct vk_init_info_t
@@ -275,7 +274,7 @@ public:
 
        // Allocates a temporary CPU staging buffer, fires the callback with it to populate, then copies to a GPU buffer.
        bool AllocatePreinitializedGPUBuffer(u32 size, VkBuffer* gpu_buffer, gs_vk_alloc_t* gpu_alloc,
-		       VkBufferUsageFlags gpu_usage, const std::function<void(void*)>& fill_callback);
+		       VkBufferUsageFlags gpu_usage, void (*fill_callback)(void* mapped));
 
 private:
        union RenderPassCacheKey

@@ -1268,8 +1268,9 @@ GSRasterizerList::GSRasterizerList(int threads)
 {
 	m_r         = static_cast<GSRasterizer**>(calloc(static_cast<size_t>(threads), sizeof(GSRasterizer*)));
 	m_workers   = static_cast<GSWorker**>(calloc(static_cast<size_t>(threads), sizeof(GSWorker*)));
+	m_worker_ctx = static_cast<Worker*>(calloc(static_cast<size_t>(threads), sizeof(Worker)));
 	m_threads   = static_cast<u32>(threads);
-	if (!m_r || !m_workers)
+	if (!m_r || !m_workers || !m_worker_ctx)
 		abort();
 	m_thread_height = compute_best_thread_height(threads);
 
@@ -1288,11 +1289,13 @@ GSRasterizerList::~GSRasterizerList()
 		delete m_r[i];
 	free(m_workers);
 	free(m_r);
+	free(m_worker_ctx);
 	memalign_free(m_scanline);
 }
 
-void GSRasterizerList::OnWorkerStartup(int i, u64 affinity)
+void GSRasterizerList::OnWorkerStartup(void* context)
 {
+	const u64 affinity = static_cast<const Worker*>(context)->affinity;
 	/* The affinity mask is computed on the spawning thread at Create()
 	 * and captured by value: reading EmuConfig (AffinityControlMode,
 	 * THREAD_VU1) from inside the freshly started worker raced
@@ -1305,8 +1308,9 @@ void GSRasterizerList::OnWorkerStartup(int i, u64 affinity)
 	}
 }
 
-void GSRasterizerList::OnWorkerShutdown(int i)
+void GSRasterizerList::OnWorkerDraw(void* context, GSRingHeap::SharedPtr<GSRasterizerData>& item)
 {
+	static_cast<Worker*>(context)->r->Draw(*item.get());
 }
 
 void GSRasterizerList::Queue(const GSRingHeap::SharedPtr<GSRasterizerData>& data)
@@ -1380,10 +1384,9 @@ std::unique_ptr<IRasterizer> GSRasterizerList::Create(int threads)
 		if (affinity_on && (worker_proc_base + i) < procs.size())
 			affinity = static_cast<u64>(1) << procs[worker_proc_base + i];
 		rl->m_r[i] = new GSRasterizer(&rl->m_ds, i, threads);
-		GSRasterizer& r = *rl->m_r[i];
-		rl->m_workers[i] = new GSWorker([i, affinity]() { GSRasterizerList::OnWorkerStartup(i, affinity); },
-			[&r](GSRingHeap::SharedPtr<GSRasterizerData>& item) { r.Draw(*item.get()); },
-			[i]() { GSRasterizerList::OnWorkerShutdown(i); });
+		rl->m_worker_ctx[i].r        = rl->m_r[i];
+		rl->m_worker_ctx[i].affinity = affinity;
+		rl->m_workers[i] = new GSWorker(GSRasterizerList::OnWorkerStartup, GSRasterizerList::OnWorkerDraw, nullptr, &rl->m_worker_ctx[i]);
 	}
 
 	return rl;

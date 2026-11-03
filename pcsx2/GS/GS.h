@@ -19,9 +19,6 @@
 #include "../SaveState.h"
 #include "../Config.h"
 
-#include <optional>
-#include <string>
-#include <string_view>
 
 #include <libretro.h>
 
@@ -64,9 +61,9 @@ extern bool GSSnapshotLoad;
 extern u64  GSSnapshotKey;
 
 // Returns the ID for the specified function, otherwise -1.
-s16 GSLookupGetSkipCountFunctionId(const std::string_view& name);
-s16 GSLookupBeforeDrawFunctionId(const std::string_view& name);
-s16 GSLookupMoveHandlerFunctionId(const std::string_view& name);
+s16 GSLookupGetSkipCountFunctionId(const char* name, size_t length);
+s16 GSLookupBeforeDrawFunctionId(const char* name, size_t length);
+s16 GSLookupMoveHandlerFunctionId(const char* name, size_t length);
 
 void GSinit(void);
 void GSshutdown(void);
@@ -110,7 +107,7 @@ namespace Host
 {
 	/// Called when the GS is creating a render device.
 	/// This could also be fullscreen transition.
-	std::optional<WindowInfo> AcquireRenderWindow(void);
+	WindowInfo AcquireRenderWindow(void);
 }
 
 extern int m_disp_fb_sprite_blits;

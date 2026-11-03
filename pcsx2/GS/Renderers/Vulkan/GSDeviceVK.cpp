@@ -1765,7 +1765,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 	}
 
 	bool GSDeviceVK::AllocatePreinitializedGPUBuffer(u32 size, VkBuffer* gpu_buffer, gs_vk_alloc_t* gpu_alloc,
-		VkBufferUsageFlags gpu_usage, const std::function<void(void*)>& fill_callback)
+		VkBufferUsageFlags gpu_usage, void (*fill_callback)(void* mapped))
 	{
 		// Try to place the fixed index buffer in GPU local memory.
 		// Use the staging buffer to copy into it.

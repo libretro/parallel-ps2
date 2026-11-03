@@ -17,8 +17,6 @@
 
 #include <new>
 #include <cstddef>
-#include <functional>
-#include <utility> /* std::pair */
 #include <limits>
 
 #include "../Common/GSRenderer.h"
@@ -132,7 +130,7 @@ public:
 		GSTexture* texture;
 		u32 refcount;
 		u16 age;
-		std::pair<u8, u8> alpha_minmax;
+		GSAlphaMinMax alpha_minmax;
 		bool valid_alpha_minmax;
 	};
 
@@ -223,14 +221,14 @@ public:
 		alignas(GS_OBJECT_POOL_ALIGN) u32 m_clut[256];
 		GSTexture* m_tex_palette;
 		u16 m_pal;
-		std::pair<u8, u8> m_alpha_minmax;
+		GSAlphaMinMax m_alpha_minmax;
 
 	public:
 		Palette(const u32* clut, u16 pal, bool need_gs_texture);
 		~Palette();
 
-		__fi std::pair<u8, u8> GetAlphaMinMax() const { return m_alpha_minmax; }
-		std::pair<u8, u8> GetAlphaMinMax(u8 min_index, u8 max_index) const;
+		__fi GSAlphaMinMax GetAlphaMinMax() const { return m_alpha_minmax; }
+		GSAlphaMinMax GetAlphaMinMax(u8 min_index, u8 max_index) const;
 
 		// Disable copy constructor and copy operator
 		Palette(const Palette&) = delete;
@@ -391,7 +389,7 @@ public:
 		bool m_scaled_indexed = false;
 		bool m_repeating = false;
 		bool m_valid_alpha_minmax = false;
-		std::pair<u8, u8> m_alpha_minmax = {0u, 255u};
+		GSAlphaMinMax m_alpha_minmax = {0u, 255u};
 		GSPage2TileMap* m_p2t = nullptr;
 		// Keep a trace of the target origin. There is no guarantee that pointer will
 		// still be valid on future. However it ought to be good when the source is created
@@ -426,7 +424,7 @@ public:
 		__fi const SourceRegion& GetRegion() const { return m_region; }
 		__fi GSVector2i GetRegionSize() const { return m_region.GetSize(m_unscaled_size.x, m_unscaled_size.y); }
 		__fi GSVector4i GetRegionRect() const { return m_region.GetRect(m_unscaled_size.x, m_unscaled_size.y); }
-		__fi const std::pair<u8, u8> GetAlphaMinMax() const { return m_alpha_minmax; }
+		__fi GSAlphaMinMax GetAlphaMinMax() const { return m_alpha_minmax; }
 
 		void SetPages();
 
@@ -698,7 +696,7 @@ private:
 	void RemoveFromHashCache(HashCacheEntry* e);
 	void AgeHashCache();
 
-	static void PreloadTexture(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, SourceRegion region, GSLocalMemory& mem, bool paltex, GSTexture* tex, u32 level, std::pair<u8, u8>* alpha_minmax);
+	static void PreloadTexture(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, SourceRegion region, GSLocalMemory& mem, bool paltex, GSTexture* tex, u32 level, GSAlphaMinMax* alpha_minmax);
 	static HashType HashTexture(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, SourceRegion region);
 
 	// TODO: virtual void Write(Source* s, const GSVector4i& r) = 0;

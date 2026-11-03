@@ -798,7 +798,7 @@ void GSFreeWrappedMemory(void* ptr, size_t size, size_t repeat)
 
 #endif
 
-std::pair<u8, u8> GSGetRGBA8AlphaMinMax(const void* data, u32 width, u32 height, u32 stride)
+GSAlphaMinMax GSGetRGBA8AlphaMinMax(const void* data, u32 width, u32 height, u32 stride)
 {
 	GSVector4i minc = GSVector4i::xffffffff();
 	GSVector4i maxc = GSVector4i::zero();
@@ -866,6 +866,6 @@ std::pair<u8, u8> GSGetRGBA8AlphaMinMax(const void* data, u32 width, u32 height,
 		}
 	}
 
-	return std::make_pair<u8, u8>(static_cast<u8>(minc.minv_u32() >> 24),
-		static_cast<u8>(maxc.maxv_u32() >> 24));
+	const GSAlphaMinMax range = {static_cast<u8>(minc.minv_u32() >> 24), static_cast<u8>(maxc.maxv_u32() >> 24)};
+	return range;
 }

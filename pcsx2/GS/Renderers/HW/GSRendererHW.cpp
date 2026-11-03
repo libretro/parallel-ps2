@@ -3476,7 +3476,7 @@ void GSRendererHW::Draw()
 			// since it's not really an indexed texture.
 			if (!IsPossibleChannelShuffle() && src->m_valid_alpha_minmax)
 			{
-				CalcAlphaMinMax(src->m_alpha_minmax.first, src->m_alpha_minmax.second);
+				CalcAlphaMinMax(src->m_alpha_minmax.min, src->m_alpha_minmax.max);
 
 				u32 new_fm = m_context->FRAME.FBMSK;
 				u32 new_zm = (m_cached_ctx.ZBUF.ZMSK || m_cached_ctx.TEST.ZTE == 0 ||
@@ -3731,8 +3731,8 @@ void GSRendererHW::Draw()
 				src->m_target = true;
 				src->m_target_direct = true;
 				src->m_valid_rect = rt->m_valid;
-				src->m_alpha_minmax.first = rt->m_alpha_min;
-				src->m_alpha_minmax.second = rt->m_alpha_max;
+				src->m_alpha_minmax.min = rt->m_alpha_min;
+				src->m_alpha_minmax.max = rt->m_alpha_max;
 			}
 
 			m_channel_shuffle = true;

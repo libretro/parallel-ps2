@@ -3048,7 +3048,7 @@ void retro_run(void)
 	audio_queue_upload(mtgs_presented_mark, batch_cb);
 }
 
-std::optional<WindowInfo> Host::AcquireRenderWindow(void)
+WindowInfo Host::AcquireRenderWindow(void)
 {
 	WindowInfo wi;
 	retro_system_av_info av_info;

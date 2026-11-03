@@ -22,7 +22,6 @@
 #include "common/General.h"
 #include "WorkEventCount.h"
 
-#include <functional>
 
 #include "GSVertexSW.h"
 #include "GSDrawScanline.h"
@@ -55,9 +54,11 @@ class GSJobQueue final
 private:
 	sthread_t* m_thread;
 	static void ThreadEntry(void* self) { static_cast<GSJobQueue*>(self)->ThreadProc(); }
-	std::function<void()> m_startup;
-	std::function<void(T&)> m_func;
-	std::function<void()> m_shutdown;
+	/* The worker's callbacks, with the context they are given. */
+	void (*m_startup)(void* context);
+	void (*m_func)(void* context, T& item);
+	void (*m_shutdown)(void* context);
+	void* m_context;
 	retro_atomic_int_t m_exit;
 	retro_spsc_t m_queue;
 	bool m_queue_ok;
@@ -67,7 +68,7 @@ private:
 	void ThreadProc()
 	{
 		if (m_startup)
-			m_startup();
+			m_startup(m_context);
 
 		for (;;)
 		{
@@ -91,7 +92,7 @@ private:
 					 * read side hands out const. */
 					T* item = reinterpret_cast<T*>(const_cast<u8*>(
 						static_cast<const u8*>(span_ptr) + consumed));
-					m_func(*item);
+					m_func(m_context, *item);
 					item->~T();
 					consumed += sizeof(T);
 				}
@@ -100,14 +101,15 @@ private:
 		}
 
 		if (m_shutdown)
-			m_shutdown();
+			m_shutdown(m_context);
 	}
 
 public:
-	GSJobQueue(std::function<void()> startup, std::function<void(T&)> func, std::function<void()> shutdown)
-		: m_startup(std::move(startup))
-		, m_func(std::move(func))
-		, m_shutdown(std::move(shutdown))
+	GSJobQueue(void (*startup)(void*), void (*func)(void*, T&), void (*shutdown)(void*), void* context)
+		: m_startup(startup)
+		, m_func(func)
+		, m_shutdown(shutdown)
+		, m_context(context)
 		, m_exit(RETRO_ATOMIC_INT_INITIALIZER(0))
 	{
 		work_eventcount_init(&m_sema);
@@ -160,7 +162,7 @@ public:
 			 * failure: run the job synchronously rather than
 			 * dropping a draw. */
 			T local(item);
-			m_func(local);
+			m_func(m_context, local);
 			return;
 		}
 		while (retro_spsc_write_begin(&m_queue, &dst) < sizeof(T))
@@ -339,8 +341,15 @@ protected:
 
 	GSRasterizerList(int threads);
 
-	static void OnWorkerStartup(int i, u64 affinity);
-	static void OnWorkerShutdown(int i);
+	/* A worker's context: its rasterizer and the CPU affinity it takes. */
+	struct Worker
+	{
+		GSRasterizer* r;
+		u64 affinity;
+	};
+	Worker* m_worker_ctx;
+	static void OnWorkerStartup(void* context);
+	static void OnWorkerDraw(void* context, GSRingHeap::SharedPtr<GSRasterizerData>& item);
 
 public:
 	~GSRasterizerList() override;

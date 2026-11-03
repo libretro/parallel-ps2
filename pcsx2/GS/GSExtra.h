@@ -19,7 +19,6 @@
 #include "../Config.h"
 #include "../../common/Align.h"
 
-#include <utility> /* std::pair */
 
 /// Like `memcmp(&a, &b, sizeof(T)) == 0` but faster
 template <typename T>
@@ -128,8 +127,15 @@ __fi static T VectorAlign(T value)
 	return pcsx2_align_up_pow2_u32(value, VECTOR_ALIGNMENT);
 }
 
-/// Returns the maximum alpha value across a range of data. Assumes stride is 16 byte aligned.
-std::pair<u8, u8> GSGetRGBA8AlphaMinMax(const void* data, u32 width, u32 height, u32 stride);
+/* The least and greatest alpha of a run of RGBA8 texels. */
+struct GSAlphaMinMax
+{
+	u8 min;
+	u8 max;
+};
+
+/// Returns the alpha range across a range of data. Assumes stride is 16 byte aligned.
+GSAlphaMinMax GSGetRGBA8AlphaMinMax(const void* data, u32 width, u32 height, u32 stride);
 
 // clang-format off
 

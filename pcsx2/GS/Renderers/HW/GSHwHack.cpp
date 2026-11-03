@@ -1122,33 +1122,36 @@ const GSHwHack::Entry<GSRendererHW::MV_Ptr> GSHwHack::s_move_handler_functions[]
 
 #undef CRC_F
 
-s16 GSLookupGetSkipCountFunctionId(const std::string_view& name)
+s16 GSLookupGetSkipCountFunctionId(const char* name, size_t length)
 {
 	for (u32 i = 0; i < C89_ARRAY_SIZE(GSHwHack::s_get_skip_count_functions); i++)
 	{
-		if (name == GSHwHack::s_get_skip_count_functions[i].name)
+		const char* const candidate = GSHwHack::s_get_skip_count_functions[i].name;
+		if (strlen(candidate) == length && memcmp(candidate, name, length) == 0)
 			return static_cast<s16>(i);
 	}
 
 	return -1;
 }
 
-s16 GSLookupBeforeDrawFunctionId(const std::string_view& name)
+s16 GSLookupBeforeDrawFunctionId(const char* name, size_t length)
 {
 	for (u32 i = 0; i < C89_ARRAY_SIZE(GSHwHack::s_before_draw_functions); i++)
 	{
-		if (name == GSHwHack::s_before_draw_functions[i].name)
+		const char* const candidate = GSHwHack::s_before_draw_functions[i].name;
+		if (strlen(candidate) == length && memcmp(candidate, name, length) == 0)
 			return static_cast<s16>(i);
 	}
 
 	return -1;
 }
 
-s16 GSLookupMoveHandlerFunctionId(const std::string_view& name)
+s16 GSLookupMoveHandlerFunctionId(const char* name, size_t length)
 {
 	for (u32 i = 0; i < C89_ARRAY_SIZE(GSHwHack::s_move_handler_functions); i++)
 	{
-		if (name == GSHwHack::s_move_handler_functions[i].name)
+		const char* const candidate = GSHwHack::s_move_handler_functions[i].name;
+		if (strlen(candidate) == length && memcmp(candidate, name, length) == 0)
 			return static_cast<s16>(i);
 	}
 

@@ -2130,21 +2130,21 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 
 			if ((src->m_TEX0.PSM & 0xf) == PSMCT24)
 			{
-				src->m_alpha_minmax.first = TEXA.AEM ? 0 : TEXA.TA0;
-				src->m_alpha_minmax.second = TEXA.TA0;
+				src->m_alpha_minmax.min = TEXA.AEM ? 0 : TEXA.TA0;
+				src->m_alpha_minmax.max = TEXA.TA0;
 			}
 			else
 			{
-				src->m_alpha_minmax.first = src->m_from_target->m_alpha_min;
-				src->m_alpha_minmax.second = src->m_from_target->m_alpha_max;
+				src->m_alpha_minmax.min = src->m_from_target->m_alpha_min;
+				src->m_alpha_minmax.max = src->m_from_target->m_alpha_max;
 
 				if (!src->m_32_bits_fmt)
 				{
-					const bool using_both = (src->m_alpha_minmax.first ^ src->m_alpha_minmax.second) & 128;
-					const bool using_ta1 = (src->m_alpha_minmax.second & 128);
+					const bool using_both = (src->m_alpha_minmax.min ^ src->m_alpha_minmax.max) & 128;
+					const bool using_ta1 = (src->m_alpha_minmax.max & 128);
 
-					src->m_alpha_minmax.first = TEXA.AEM ? 0 : (using_both ? pcsx2_min_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
-					src->m_alpha_minmax.second = (using_both ? pcsx2_max_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
+					src->m_alpha_minmax.min = TEXA.AEM ? 0 : (using_both ? pcsx2_min_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
+					src->m_alpha_minmax.max = (using_both ? pcsx2_max_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
 				}
 			}
 		}
@@ -2776,7 +2776,9 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 	// but normally few RT are miss so it must remain reasonable.
 	const GSLocalMemory::psm_t& psm_s = GSLocalMemory::m_psm[TEX0.PSM];
 	const bool supported_fmt = !GSConfig.UserHacks_DisableDepthSupport || psm_s.depth == 0;
-	std::optional<bool> hw_clear;
+	/* Whether the writes amount to a clear the GPU can do: unknown until
+	 * a write is seen, then the conjunction of their zero_clear. */
+	enum { HW_CLEAR_UNKNOWN, HW_CLEAR_NO, HW_CLEAR_YES } hw_clear = HW_CLEAR_UNKNOWN;
 	const bool valid_draw_size = TEX0.TBW > 0 || (psm_s.pgs.x >= size.x && psm_s.pgs.y >= size.y);
 
 	if (valid_draw_size && supported_fmt)
@@ -2861,7 +2863,7 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 							eerect = eerect.runion(targetr);
 
 						// Later writes might be partial over a previously cleared area. We want to upload in these cases.
-						hw_clear = hw_clear.has_value() ? (hw_clear.value() && iter->zero_clear) : iter->zero_clear;
+						hw_clear = (hw_clear == HW_CLEAR_UNKNOWN ? iter->zero_clear : (hw_clear == HW_CLEAR_YES && iter->zero_clear)) ? HW_CLEAR_YES : HW_CLEAR_NO;
 
 						// When the write covers the entire target, don't bother checking any earlier writes.
 						if (iter->blit.DBP <= TEX0.TBP0 && transfer_end >= rect_end)
@@ -2885,7 +2887,7 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 				{
 					const GSVector4i save_rect = preserve_target ? newrect : eerect;
 
-					if (!hw_clear)
+					if (hw_clear == HW_CLEAR_UNKNOWN) /* (an optional with no value, as it was) */
 						dst->UpdateValidity(save_rect);
 					AddDirtyRectTarget(dst, save_rect, TEX0.PSM, TEX0.TBW, rgba, GSLocalMemory::m_psm[TEX0.PSM].trbpp >= 16);
 				}
@@ -2898,7 +2900,7 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 				const GSState::GSUploadQueue& last_draw = GSRendererHW::GetInstance()->LastDrawTransfer();
 				if (last_draw.zero_clear && last_draw.blit.DBP == TEX0.TBP0 && last_draw.blit.DBW == TEX0.TBW)
 				{
-					hw_clear = true;
+					hw_clear = HW_CLEAR_YES;
 					GSRendererHW::GetInstance()->PopDrawTransfer();
 				}
 			}
@@ -2941,7 +2943,7 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 							GSVector4i new_valid = t->m_valid;
 							new_valid.w /= 2;
 							t->ResizeValidity(new_valid);
-							return hw_clear.value_or(false);
+							return hw_clear == HW_CLEAR_YES;
 						}
 						// The new texture is behind it but engulfs the whole thing, shrink the new target so it grows in the HW Draw resize.
 						else if (dst->m_TEX0.TBP0 < t->m_TEX0.TBP0 && (dst->UnwrappedEndBlock() + 1) > t->m_TEX0.TBP0)
@@ -2973,7 +2975,7 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 							const int dst_offset_scaled_height = dst_offset_height * dst->m_scale;
 							const GSVector4i dst_rect_scale = GSVector4i(t->m_valid.x, dst_offset_height, t->m_valid.z, texture_height);
 
-							if (((!hw_clear && (preserve_target || preload)) || dst_rect_scale.rintersect(draw_rect).rempty()) && dst->GetScale() == t->GetScale())
+							if (((hw_clear == HW_CLEAR_UNKNOWN && (preserve_target || preload)) || dst_rect_scale.rintersect(draw_rect).rempty()) && dst->GetScale() == t->GetScale())
 							{
 								int copy_width = ((t->m_texture->GetWidth()) > (dst->m_texture->GetWidth()) ? (dst->m_texture->GetWidth()) : t->m_texture->GetWidth()) - dst_offset_scaled_width;
 								int copy_height = (texture_height - dst_offset_height) * t->m_scale;
@@ -3026,7 +3028,7 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 		}
 	}
 
-	return hw_clear.value_or(false);
+	return hw_clear == HW_CLEAR_YES;
 }
 
 // Field-buffer alias coherence.
@@ -5480,12 +5482,12 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 		src->m_from_target_TEX0 = dst->m_TEX0;
 		src->m_32_bits_fmt = dst->m_32_bits_fmt;
 		src->m_valid_alpha_minmax = true;
-		src->m_alpha_minmax.first = dst->m_alpha_min;
-		src->m_alpha_minmax.second = dst->m_alpha_max;
+		src->m_alpha_minmax.min = dst->m_alpha_min;
+		src->m_alpha_minmax.max = dst->m_alpha_max;
 		if ((src->m_TEX0.PSM & 0xf) == PSMCT24)
 		{
-			src->m_alpha_minmax.first = TEXA.AEM ? 0 : TEXA.TA0;
-			src->m_alpha_minmax.second = TEXA.TA0;
+			src->m_alpha_minmax.min = TEXA.AEM ? 0 : TEXA.TA0;
+			src->m_alpha_minmax.max = TEXA.TA0;
 		}
 		if (GSRendererHW::GetInstance()->IsTBPFrameOrZ(dst->m_TEX0.TBP0))
 			m_temporary_source = src;
@@ -5571,21 +5573,21 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 		src->m_valid_alpha_minmax = true;
 		if ((src->m_TEX0.PSM & 0xf) == PSMCT24)
 		{
-			src->m_alpha_minmax.first = TEXA.AEM ? 0 : TEXA.TA0;
-			src->m_alpha_minmax.second = TEXA.TA0;
+			src->m_alpha_minmax.min = TEXA.AEM ? 0 : TEXA.TA0;
+			src->m_alpha_minmax.max = TEXA.TA0;
 		}
 		else
 		{
-			src->m_alpha_minmax.first = dst->m_alpha_min;
-			src->m_alpha_minmax.second = dst->m_alpha_max;
+			src->m_alpha_minmax.min = dst->m_alpha_min;
+			src->m_alpha_minmax.max = dst->m_alpha_max;
 
 			if (!dst->m_32_bits_fmt)
 			{
-				const bool using_both = (src->m_alpha_minmax.first ^ src->m_alpha_minmax.second) & 128;
-				const bool using_ta1 = (src->m_alpha_minmax.second & 128);
+				const bool using_both = (src->m_alpha_minmax.min ^ src->m_alpha_minmax.max) & 128;
+				const bool using_ta1 = (src->m_alpha_minmax.max & 128);
 
-				src->m_alpha_minmax.first = TEXA.AEM ? 0 : (using_both ? pcsx2_min_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
-				src->m_alpha_minmax.second = (using_both ? pcsx2_max_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
+				src->m_alpha_minmax.min = TEXA.AEM ? 0 : (using_both ? pcsx2_min_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
+				src->m_alpha_minmax.max = (using_both ? pcsx2_max_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
 			}
 		}
 		src->m_32_bits_fmt = dst->m_32_bits_fmt;
@@ -5628,21 +5630,21 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 		src->m_valid_alpha_minmax = true;
 		if ((src->m_TEX0.PSM & 0xf) == PSMCT24)
 		{
-			src->m_alpha_minmax.first = TEXA.AEM ? 0 : TEXA.TA0;
-			src->m_alpha_minmax.second = TEXA.TA0;
+			src->m_alpha_minmax.min = TEXA.AEM ? 0 : TEXA.TA0;
+			src->m_alpha_minmax.max = TEXA.TA0;
 		}
 		else
 		{
-			src->m_alpha_minmax.first = dst->m_alpha_min;
-			src->m_alpha_minmax.second = dst->m_alpha_max;
+			src->m_alpha_minmax.min = dst->m_alpha_min;
+			src->m_alpha_minmax.max = dst->m_alpha_max;
 
 			if (!dst->m_32_bits_fmt)
 			{
-				const bool using_both = (src->m_alpha_minmax.first ^ src->m_alpha_minmax.second) & 128;
-				const bool using_ta1 = (src->m_alpha_minmax.second & 128);
+				const bool using_both = (src->m_alpha_minmax.min ^ src->m_alpha_minmax.max) & 128;
+				const bool using_ta1 = (src->m_alpha_minmax.max & 128);
 
-				src->m_alpha_minmax.first = TEXA.AEM ? 0 : (using_both ? pcsx2_min_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
-				src->m_alpha_minmax.second = (using_both ? pcsx2_max_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
+				src->m_alpha_minmax.min = TEXA.AEM ? 0 : (using_both ? pcsx2_min_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
+				src->m_alpha_minmax.max = (using_both ? pcsx2_max_i(TEXA.TA1, TEXA.TA0) : (using_ta1 ? TEXA.TA1 : TEXA.TA0));
 			}
 		}
 		src->m_32_bits_fmt = dst->m_32_bits_fmt;
@@ -6215,7 +6217,7 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 
 	// compute alpha minmax on all textures, unless paltex is on, because not all CLUT colors are used.
 	const bool compute_alpha_minmax = !paltex;
-	std::pair<u8, u8> alpha_minmax = {0u, 255u};
+	GSAlphaMinMax alpha_minmax = {0u, 255u};
 
 	// upload base level
 	PreloadTexture(TEX0, TEXA, region, g_gs_renderer->m_mem, paltex, tex, 0, compute_alpha_minmax ? &alpha_minmax : nullptr);
@@ -6228,13 +6230,13 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 		for (int mip = 1; mip < nmips; mip++)
 		{
 			const GIFRegTEX0 MIP_TEX0{g_gs_renderer->GetTex0Layer(basemip + mip)};
-			std::pair<u8, u8> mip_alpha_minmax;
+			GSAlphaMinMax mip_alpha_minmax;
 			PreloadTexture(MIP_TEX0, TEXA, region.AdjustForMipmap(mip), g_gs_renderer->m_mem, paltex, tex, mip,
 				compute_alpha_minmax ? &mip_alpha_minmax : nullptr);
 			if (compute_alpha_minmax)
 			{
-				alpha_minmax.first = pcsx2_min_i(alpha_minmax.first, mip_alpha_minmax.first);
-				alpha_minmax.second = pcsx2_max_i(alpha_minmax.second, mip_alpha_minmax.second);
+				alpha_minmax.min = pcsx2_min_i(alpha_minmax.min, mip_alpha_minmax.min);
+				alpha_minmax.max = pcsx2_max_i(alpha_minmax.max, mip_alpha_minmax.max);
 			}
 		}
 	}
@@ -7467,12 +7469,12 @@ void GSTextureCache::Source::PreloadLevel(int level)
 	}
 	else
 	{
-		std::pair<u8, u8> mip_alpha_minmax;
+		GSAlphaMinMax mip_alpha_minmax;
 		PreloadTexture(m_TEX0, m_TEXA, m_region.AdjustForMipmap(level), g_gs_renderer->m_mem, m_palette != nullptr,
 			m_texture, level, &mip_alpha_minmax);
 		// The entire alpha is always recalculated
-		m_alpha_minmax.first = pcsx2_min_i(m_alpha_minmax.first, mip_alpha_minmax.first);
-		m_alpha_minmax.second = pcsx2_max_i(m_alpha_minmax.second, mip_alpha_minmax.second);
+		m_alpha_minmax.min = pcsx2_min_i(m_alpha_minmax.min, mip_alpha_minmax.min);
+		m_alpha_minmax.max = pcsx2_max_i(m_alpha_minmax.max, mip_alpha_minmax.max);
 	}
 }
 
@@ -7598,7 +7600,7 @@ void GSTextureCache::Target::Update(bool cannot_scale)
 	const GSOffset off(g_gs_renderer->m_mem.GetOffset(m_TEX0.TBP0, m_TEX0.TBW, m_TEX0.PSM));
 	const u32 bpp = GSLocalMemory::m_psm[m_TEX0.PSM].bpp;
 
-	std::pair<u8, u8> alpha_minmax = {255, 0};
+	GSAlphaMinMax alpha_minmax = {255, 0};
 	bool transferring_alpha = false;
 
 	for (size_t i = 0; i < m_dirty.size(); i++)
@@ -7624,18 +7626,18 @@ void GSTextureCache::Target::Update(bool cannot_scale)
 			{
 				/* The alpha range from local memory, so the rect is
 				 * expanded once, into the mapped texture. */
-				std::pair<u8, u8> new_alpha_minmax;
+				GSAlphaMinMax new_alpha_minmax;
 				if (!(GS_TC_PARTIAL_TRANSFERS
 						&& read_r.eq(read_r.ralign<Align_Outside>(GSLocalMemory::m_psm[m_TEX0.PSM].bs))
 						&& gs_local_alpha_minmax(&g_gs_renderer->m_mem, &off, &read_r, m_TEX0.PSM, &TEXA,
-							&new_alpha_minmax.first, &new_alpha_minmax.second)))
+							&new_alpha_minmax.min, &new_alpha_minmax.max)))
 				{
 					const int pitch = VectorAlign(read_r.width() * sizeof(u32));
 					g_gs_renderer->m_mem.ReadTexture(off, read_r, s_unswizzle_buffer, pitch, TEXA);
 					new_alpha_minmax = GSGetRGBA8AlphaMinMax(s_unswizzle_buffer, read_r.width(), read_r.height(), pitch);
 				}
-				alpha_minmax.first = pcsx2_min_i(alpha_minmax.first, new_alpha_minmax.first);
-				alpha_minmax.second = pcsx2_max_i(alpha_minmax.second, new_alpha_minmax.second);
+				alpha_minmax.min = pcsx2_min_i(alpha_minmax.min, new_alpha_minmax.min);
+				alpha_minmax.max = pcsx2_max_i(alpha_minmax.max, new_alpha_minmax.max);
 			}
 
 			if (rect_mapped)
@@ -7654,9 +7656,9 @@ void GSTextureCache::Target::Update(bool cannot_scale)
 
 			if ((m_TEX0.PSM & 0xf) != PSMCT24 && m_dirty[i].rgba.c.a && bpp >= 16)
 			{
-				std::pair<u8, u8> new_alpha_minmax = GSGetRGBA8AlphaMinMax(s_unswizzle_buffer, read_r.width(), read_r.height(), pitch);
-				alpha_minmax.first = pcsx2_min_i(alpha_minmax.first, new_alpha_minmax.first);
-				alpha_minmax.second = pcsx2_max_i(alpha_minmax.second, new_alpha_minmax.second);
+				GSAlphaMinMax new_alpha_minmax = GSGetRGBA8AlphaMinMax(s_unswizzle_buffer, read_r.width(), read_r.height(), pitch);
+				alpha_minmax.min = pcsx2_min_i(alpha_minmax.min, new_alpha_minmax.min);
+				alpha_minmax.max = pcsx2_max_i(alpha_minmax.max, new_alpha_minmax.max);
 			}
 
 			t->Update(t_r, s_unswizzle_buffer, pitch);
@@ -7682,7 +7684,7 @@ void GSTextureCache::Target::Update(bool cannot_scale)
 	{
 		if (m_type == RenderTarget && transferring_alpha && bpp >= 16)
 		{
-			if (alpha_minmax.second > 128 || (m_TEX0.PSM & 0xf) == PSMCT24)
+			if (alpha_minmax.max > 128 || (m_TEX0.PSM & 0xf) == PSMCT24)
 				UnscaleRTAlpha();
 			else if (!cannot_scale && total_rect.eq(m_valid))
 				m_rt_alpha_scale = true;
@@ -7715,16 +7717,16 @@ void GSTextureCache::Target::Update(bool cannot_scale)
 	{
 		if (m_dirty.size() != 1 || !total_rect.eq(m_valid))
 		{
-			m_alpha_min = pcsx2_min_i(static_cast<int>(alpha_minmax.first), m_alpha_min);
-			m_alpha_max = pcsx2_max_i(static_cast<int>(alpha_minmax.second), m_alpha_max);
+			m_alpha_min = pcsx2_min_i(static_cast<int>(alpha_minmax.min), m_alpha_min);
+			m_alpha_max = pcsx2_max_i(static_cast<int>(alpha_minmax.max), m_alpha_max);
 		}
 		else
 		{
-			m_alpha_min = alpha_minmax.first;
-			m_alpha_max = alpha_minmax.second;
+			m_alpha_min = alpha_minmax.min;
+			m_alpha_max = alpha_minmax.max;
 		}
 
-		m_alpha_range |= alpha_minmax.first != alpha_minmax.second;
+		m_alpha_range |= alpha_minmax.min != alpha_minmax.max;
 	}
 	g_gs_device->Recycle(t);
 	m_dirty.clear();
@@ -8026,8 +8028,8 @@ void GSTextureCache::AttachPaletteToSource(Source* s, GSTexture* gpu_clut)
 
 	// Unknown.
 	s->m_valid_alpha_minmax = false;
-	s->m_alpha_minmax.first = 0;
-	s->m_alpha_minmax.second = 255;
+	s->m_alpha_minmax.min = 0;
+	s->m_alpha_minmax.max = 255;
 }
 
 GSTextureCache::SurfaceOffset GSTextureCache::ComputeSurfaceOffset(const GSOffset& off, const GSVector4i& r, const Target* t)
@@ -8262,7 +8264,7 @@ GSTextureCache::Palette::~Palette()
 	}
 }
 
-std::pair<u8, u8> GSTextureCache::Palette::GetAlphaMinMax(u8 min_index, u8 max_index) const
+GSAlphaMinMax GSTextureCache::Palette::GetAlphaMinMax(u8 min_index, u8 max_index) const
 {
 	return GSGetRGBA8AlphaMinMax(m_clut + min_index, max_index - min_index + 1, 1, 0);
 }
@@ -8606,7 +8608,7 @@ GSTextureCache::HashType GSTextureCache::HashTexture(const GIFRegTEX0& TEX0, con
 }
 
 void GSTextureCache::PreloadTexture(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, SourceRegion region, GSLocalMemory& mem,
-	bool paltex, GSTexture* tex, u32 level, std::pair<u8, u8>* alpha_minmax)
+	bool paltex, GSTexture* tex, u32 level, GSAlphaMinMax* alpha_minmax)
 {
 	// m_TEX0 is adjusted for mips (messy, should be changed).
 	const GSLocalMemory::psm_t& psm = GSLocalMemory::m_psm[TEX0.PSM];
@@ -8640,8 +8642,8 @@ void GSTextureCache::PreloadTexture(const GIFRegTEX0& TEX0, const GIFRegTEXA& TE
 
 		if (alpha_minmax)
 		{
-			alpha_minmax->first = amin;
-			alpha_minmax->second = amax;
+			alpha_minmax->min = amin;
+			alpha_minmax->max = amax;
 		}
 	}
 	else

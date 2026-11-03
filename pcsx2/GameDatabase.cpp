@@ -283,11 +283,11 @@ void GameDatabase::parseAndInsert(const char *serial, const ryaml_t *yaml, int n
 			{
 				const std::string_view str_value = yamlValView(yaml, n);
 				if (id.value() == GameDatabaseSchema::GSHWFixId::GetSkipCount)
-					value = GSLookupGetSkipCountFunctionId(str_value);
+					value = GSLookupGetSkipCountFunctionId(str_value.data(), str_value.size());
 				else if (id.value() == GameDatabaseSchema::GSHWFixId::BeforeDraw)
-					value = GSLookupBeforeDrawFunctionId(str_value);
+					value = GSLookupBeforeDrawFunctionId(str_value.data(), str_value.size());
 				else if (id.value() == GameDatabaseSchema::GSHWFixId::MoveHandler)
-					value = GSLookupMoveHandlerFunctionId(str_value);
+					value = GSLookupMoveHandlerFunctionId(str_value.data(), str_value.size());
 
 				if (value.value_or(-1) < 0)
 				{
