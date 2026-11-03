@@ -116,15 +116,19 @@ bool GLShaderCache::Open(bool is_gles)
 
 	if (!GSConfig.DisableShaderCache)
 	{
-		char index_filename[PATH_MAX_LENGTH];
-		char blob_filename[PATH_MAX_LENGTH];
-		GetIndexFileName(index_filename, sizeof(index_filename));
-		GetBlobFileName(blob_filename, sizeof(blob_filename));
+		/* both names in one allocation: two paths on the stack pass the
+		 * 4 KiB frame limit (tests/stackframe) */
+		char* names = static_cast<char*>(malloc(2 * PATH_MAX_LENGTH));
+		bool ok;
+		if (!names)
+			return false;
+		GetIndexFileName(names, PATH_MAX_LENGTH);
+		GetBlobFileName(names + PATH_MAX_LENGTH, PATH_MAX_LENGTH);
 
-		if (ReadExisting(index_filename, blob_filename))
-			return true;
-
-		return CreateNew(index_filename, blob_filename);
+		ok = ReadExisting(names, names + PATH_MAX_LENGTH)
+			|| CreateNew(names, names + PATH_MAX_LENGTH);
+		free(names);
+		return ok;
 	}
 
 	return true;
@@ -263,12 +267,17 @@ bool GLShaderCache::Recreate()
 {
 	Close();
 
-	char index_filename[PATH_MAX_LENGTH];
-	char blob_filename[PATH_MAX_LENGTH];
-	GetIndexFileName(index_filename, sizeof(index_filename));
-	GetBlobFileName(blob_filename, sizeof(blob_filename));
+	/* one allocation for both names, as in Open */
+	char* names = static_cast<char*>(malloc(2 * PATH_MAX_LENGTH));
+	bool ok;
+	if (!names)
+		return false;
+	GetIndexFileName(names, PATH_MAX_LENGTH);
+	GetBlobFileName(names + PATH_MAX_LENGTH, PATH_MAX_LENGTH);
 
-	return CreateNew(index_filename, blob_filename);
+	ok = CreateNew(names, names + PATH_MAX_LENGTH);
+	free(names);
+	return ok;
 }
 
 GLShaderCache::CacheIndexKey GLShaderCache::GetCacheKey(const char* vertex_shader, size_t vertex_length,
