@@ -14,8 +14,8 @@
  */
 
 #include <cstring> /* memset/memcpy */
-#include <iterator>
 #include <cmath>
+#include <memalign.h>
 
 #include "common/Align.h"
 #include "common/MathUtils.h"
@@ -107,6 +107,25 @@ GSRendererHW::GSRendererHW()
 	ResetStates();
 }
 
+/* Room for count software vertices; the buffer is kept at the largest
+ * count asked for. */
+GSVertexSW* GSRendererHW::SWVertexBuffer(u32 count)
+{
+	if (count > m_sw_vertex_capacity)
+	{
+		u32 capacity = m_sw_vertex_capacity ? m_sw_vertex_capacity : 256;
+		while (capacity < count)
+			capacity *= 2;
+		GSVertexSW* grown = static_cast<GSVertexSW*>(memalign_alloc(32, sizeof(GSVertexSW) * capacity));
+		if (!grown)
+			abort();
+		memalign_free(m_sw_vertex_buffer);
+		m_sw_vertex_buffer   = grown;
+		m_sw_vertex_capacity = capacity;
+	}
+	return m_sw_vertex_buffer;
+}
+
 void GSRendererHW::SetTCOffset()
 {
 	m_userhacks_tcoffset_x = pcsx2_max_i(GSConfig.UserHacks_TCOffsetX, 0) / -1000.0f;
@@ -116,6 +135,9 @@ void GSRendererHW::SetTCOffset()
 
 GSRendererHW::~GSRendererHW()
 {
+	memalign_free(m_sw_vertex_buffer);
+	m_sw_vertex_buffer   = nullptr;
+	m_sw_vertex_capacity = 0;
 	g_texture_cache.reset();
 	/* Its maps' nodes are all back now: the slabs can go. */
 	gs_node_pools_release();

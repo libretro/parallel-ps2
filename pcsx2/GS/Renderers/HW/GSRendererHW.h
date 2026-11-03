@@ -360,8 +360,11 @@ private:
 	GSHWDrawConfig m_conf = {};
 	HWCachedCtx m_cached_ctx;
 
-	// software sprite renderer state
-	std::vector<GSVertexSW> m_sw_vertex_buffer;
+	/* software sprite renderer state: the vertices of the draw in hand,
+	 * grown to the largest draw and kept (32-byte aligned, as the type) */
+	GSVertexSW* m_sw_vertex_buffer = nullptr;
+	u32 m_sw_vertex_capacity = 0;
+	GSVertexSW* SWVertexBuffer(u32 count);
 	std::unique_ptr<GSTextureCacheSW::Texture> m_sw_texture[7 + 1];
 	std::unique_ptr<GSVirtualAlignedClass<32>> m_sw_rasterizer;
 

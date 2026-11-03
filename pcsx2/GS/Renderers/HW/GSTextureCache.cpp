@@ -104,6 +104,7 @@ GSTextureCache::GSTextureCache()
 	gs_flat_map_init(&m_palette_seen, sizeof(HashCacheKey), sizeof(HashType));
 	gs_stable_map_init(&m_hash_cache, sizeof(HashCacheKey), sizeof(HashCacheEntry), &s_hash_cache_nodes);
 	gs_flat_map_init(&m_surface_offset_cache, sizeof(SurfaceOffsetCacheKey), sizeof(SurfaceOffsetCacheValue));
+	gs_array_init(&m_move_remaps, sizeof(MoveRemap));
 	/* (slots for what a frame purges down to, made now) */
 	gs_stable_map_reserve(&m_hash_cache, MAX_HASH_CACHE_SIZE);
 	/* (all of it now, for none of it mid-game) */
@@ -120,10 +121,18 @@ static struct gs_scratch s_scratch_copy_pages;
 static struct gs_scratch s_scratch_merged_done;
 static struct gs_scratch s_scratch_merged_queue;
 static struct gs_scratch s_scratch_dirty;
+/* BuildMoveRemap's element records, remap table and coverage bytes, and
+ * its nibble marks (a bit per nibble of local memory, 1 MiB), kept
+ * between builds rather than made for each. */
+static struct gs_scratch s_scratch_move_recs;
+static struct gs_scratch s_scratch_move_table;
+static struct gs_scratch s_scratch_move_covered;
+static u64* s_move_marks;
 
 GSTextureCache::~GSTextureCache()
 {
 	RemoveAll(true, true, true);
+	gs_array_free(&m_move_remaps);
 	gs_flat_map_free(&m_palette_seen);
 	gs_stable_map_free(&m_hash_cache);
 	gs_flat_map_free(&m_surface_offset_cache);
@@ -136,6 +145,11 @@ GSTextureCache::~GSTextureCache()
 	gs_scratch_free(&s_scratch_merged_done);
 	gs_scratch_free(&s_scratch_merged_queue);
 	gs_scratch_free(&s_scratch_dirty);
+	gs_scratch_free(&s_scratch_move_recs);
+	gs_scratch_free(&s_scratch_move_table);
+	gs_scratch_free(&s_scratch_move_covered);
+	free(s_move_marks);
+	s_move_marks = nullptr;
 }
 
 /* Every target's copy back is recorded first and the GPU waited for
@@ -268,19 +282,19 @@ void GSTextureCache::AddDirtyRectTarget(Target* target, GSVector4i rect, u32 psm
 	if (rect.rempty())
 		return;
 
-	std::vector<GSDirtyRect>::iterator it = target->m_dirty.end();
-	while (it != target->m_dirty.begin())
+	size_t n = target->m_dirty.size();
+	while (n > 0)
 	{
-		--it;
-		if (it[0].bw == bw && it[0].psm == psm && it[0].rgba._u32 == rgba._u32)
+		GSDirtyRect& it = target->m_dirty[--n];
+		if (it.bw == bw && it.psm == psm && it.rgba._u32 == rgba._u32)
 		{
-			if (it[0].r.rintersect(rect).eq(rect) && canskip)
+			if (it.r.rintersect(rect).eq(rect) && canskip)
 			{
 				skipdirty = true;
 				break;
 			}
 			const GSVector4i new_dirty_rect = rect.rintersect(target->m_valid);
-			const GSVector4i existing_dirty_rect = it[0].r.rintersect(target->m_valid);
+			const GSVector4i existing_dirty_rect = it.r.rintersect(target->m_valid);
 			const int dirty_overlap_top = (existing_dirty_rect.wwww().gt32(new_dirty_rect.yyyy()) | existing_dirty_rect.wwww().eq32(new_dirty_rect.yyyy())).mask() & existing_dirty_rect.yyyy().lt32(new_dirty_rect.yyyy()).mask();
 			const int dirty_overlap_bottom = (existing_dirty_rect.yyyy().lt32(new_dirty_rect.wwww()) | existing_dirty_rect.yyyy().eq32(new_dirty_rect.wwww())).mask() & existing_dirty_rect.wwww().gt32(new_dirty_rect.wwww()).mask();
 			const int dirty_overlap_left = (existing_dirty_rect.zzzz().gt32(new_dirty_rect.xxxx()) | existing_dirty_rect.zzzz().eq32(new_dirty_rect.xxxx())).mask() & existing_dirty_rect.xxxx().lt32(new_dirty_rect.xxxx()).mask();
@@ -290,8 +304,8 @@ void GSTextureCache::AddDirtyRectTarget(Target* target, GSVector4i rect, u32 psm
 				(existing_dirty_rect.ywyw().eq(new_dirty_rect.ywyw()) && (dirty_overlap_left == 0xFFFF || dirty_overlap_right == 0xFFFF)) ||
 				existing_dirty_rect.rintersect(new_dirty_rect).eq(existing_dirty_rect)) // If the new rect completely envelops the old one.
 			{
-				rect = rect.runion(it[0].r);
-				it = target->m_dirty.erase(it);
+				rect = rect.runion(it.r);
+				target->m_dirty.erase(n);
 				canskip = false;
 				continue;
 			}
@@ -2462,7 +2476,7 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVe
 					for (s32 i = static_cast<s32>(dst->m_dirty.size()) - 1; i >= 0; i--)
 					{
 						if (!dst->m_dirty[i].rgba.c.a)
-							dst->m_dirty.erase(dst->m_dirty.begin() + static_cast<size_t>(i));
+							dst->m_dirty.erase(static_cast<size_t>(i));
 					}
 				}
 			}
@@ -2610,8 +2624,7 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVe
 				if (dst->m_TEX0.PSM != dst_match->m_TEX0.PSM)
 					dst_match->Update();
 
-				dst->m_dirty = std::move(dst_match->m_dirty);
-				dst_match->m_dirty = {};
+				dst->m_dirty.take(dst_match->m_dirty);
 				dst->m_alpha_max = dst_match->m_alpha_max;
 				dst->m_alpha_min = dst_match->m_alpha_min;
 
@@ -3398,7 +3411,7 @@ bool GSTextureCache::CopyRGBFromDepthToColor(Target* dst, Target* depth_src)
 		if (!drc.rintersect(clear_dirty_rc).rempty())
 		{
 			if ((dr.rgba._u32 &= ~0x7) == 0)
-				dst->m_dirty.erase(dst->m_dirty.begin() + i);
+				dst->m_dirty.erase(i);
 		}
 	}
 
@@ -4434,9 +4447,9 @@ namespace
 
 void GSTextureCache::ClearMoveRemaps()
 {
-	for (MoveRemap& r : m_move_remaps)
-		g_gs_device->Recycle(r.texture);
-	m_move_remaps.clear();
+	for (size_t n = 0; n < m_move_remaps.count; n++)
+		g_gs_device->Recycle(GS_ARRAY_AT(&m_move_remaps, MoveRemap, n).texture);
+	m_move_remaps.count = 0;
 }
 
 GSTextureCache::MoveRemap* GSTextureCache::BuildMoveRemap(const u32 move[12], Target* src, Target* dst)
@@ -4453,8 +4466,11 @@ GSTextureCache::MoveRemap* GSTextureCache::BuildMoveRemap(const u32 move[12], Ta
 	const u16* d_inv = MovePageInverse(GSLocalMemory::m_psm[dst->m_TEX0.PSM].depth != 0);
 	const u32 entries = 8u / dl.nibbles;
 
-	std::vector<MoveRecord> recs;
-	recs.reserve(static_cast<size_t>(w) * static_cast<size_t>(h));
+	MoveRecord* recs = static_cast<MoveRecord*>(gs_scratch_get(&s_scratch_move_recs,
+		sizeof(MoveRecord) * static_cast<size_t>(w) * static_cast<size_t>(h)));
+	size_t rec_count = 0;
+	if (!recs)
+		return nullptr;
 	GSVector4i drect(INT_MAX, INT_MAX, INT_MIN, INT_MIN), srect(INT_MAX, INT_MAX, INT_MIN, INT_MIN);
 	u32 s_lo = 0xFFFFFFFFu, s_hi = 0, d_lo = 0xFFFFFFFFu, d_hi = 0;
 	for (int j = 0; j < h; j++)
@@ -4479,14 +4495,14 @@ GSTextureCache::MoveRemap* GSTextureCache::BuildMoveRemap(const u32 move[12], Ta
 			r.sy = static_cast<u16>(tsy);
 			r.slot = static_cast<u8>(dn / dl.nibbles);
 			r.sn = static_cast<u8>(sn);
-			recs.push_back(r);
+			recs[rec_count++] = r;
 			drect = drect.runion(GSVector4i(tdx, tdy, tdx + 1, tdy + 1));
 			srect = srect.runion(GSVector4i(tsx, tsy, tsx + 1, tsy + 1));
 			s_lo = pcsx2_min_u(s_lo, sw); s_hi = pcsx2_max_u(s_hi, sw);
 			d_lo = pcsx2_min_u(d_lo, dw); d_hi = pcsx2_max_u(d_hi, dw);
 		}
 	}
-	if (recs.empty())
+	if (rec_count == 0)
 		return nullptr;
 
 	/* The GS moves one pixel after another, and a move whose destination
@@ -4494,9 +4510,13 @@ GSTextureCache::MoveRemap* GSTextureCache::BuildMoveRemap(const u32 move[12], Ta
 	 * stay in local memory. */
 	if (s_lo <= d_hi && d_lo <= s_hi)
 	{
-		static std::vector<u64> s_marks;
-		if (s_marks.empty())
-			s_marks.resize((1u << 20) * 8u / 64u);
+		if (!s_move_marks)
+		{
+			s_move_marks = static_cast<u64*>(calloc((1u << 20) * 8u / 64u, sizeof(u64)));
+			if (!s_move_marks)
+				return nullptr;
+		}
+		u64* const s_marks = s_move_marks;
 		bool overlap = false;
 		for (int pass = 0; pass < 3 && !overlap; pass++)
 		{
@@ -4544,10 +4564,17 @@ GSTextureCache::MoveRemap* GSTextureCache::BuildMoveRemap(const u32 move[12], Ta
 	if (srect.width() > 8191 || srect.height() > 8191 || rw * static_cast<int>(entries) > 16384)
 		return nullptr;
 
-	std::vector<u32> table(static_cast<size_t>(rw) * entries * static_cast<size_t>(rh), 0u);
-	std::vector<u8> covered(static_cast<size_t>(rw) * static_cast<size_t>(rh), 0u);
-	for (const MoveRecord& r : recs)
+	const size_t table_count = static_cast<size_t>(rw) * entries * static_cast<size_t>(rh);
+	const size_t covered_count = static_cast<size_t>(rw) * static_cast<size_t>(rh);
+	u32* table = static_cast<u32*>(gs_scratch_get(&s_scratch_move_table, table_count * sizeof(u32)));
+	u8* covered = static_cast<u8*>(gs_scratch_get(&s_scratch_move_covered, covered_count));
+	if (!table || !covered)
+		return nullptr;
+	memset(table, 0, table_count * sizeof(u32));
+	memset(covered, 0, covered_count);
+	for (size_t n = 0; n < rec_count; n++)
 	{
+		const MoveRecord& r = recs[n];
 		const int x = r.dx - drect.x, y = r.dy - drect.y;
 		table[static_cast<size_t>(y) * rw * entries + static_cast<size_t>(x) * entries + r.slot] =
 			0x80000000u | (static_cast<u32>(r.sn) << 26) | (static_cast<u32>(r.sy - srect.y) << 13) | static_cast<u32>(r.sx - srect.x);
@@ -4555,10 +4582,10 @@ GSTextureCache::MoveRemap* GSTextureCache::BuildMoveRemap(const u32 move[12], Ta
 	}
 	bool has_old = false;
 	u8 written = 0;
-	for (u8 c : covered)
+	for (size_t n = 0; n < covered_count; n++)
 	{
-		has_old |= (c != 0xFF);
-		written |= c;
+		has_old |= (covered[n] != 0xFF);
+		written |= covered[n];
 	}
 	/* Bits the move leaves come from the target, which has to hold them. */
 	if (has_old && !dst->m_valid.rintersect(drect).eq(drect))
@@ -4567,19 +4594,25 @@ GSTextureCache::MoveRemap* GSTextureCache::BuildMoveRemap(const u32 move[12], Ta
 	GSTexture* tex = g_gs_device->CreateTexture(rw * static_cast<int>(entries), rh, 1, GSTexture::Format::Color);
 	if (!tex)
 		return nullptr;
-	tex->Update(GSVector4i(0, 0, rw * static_cast<int>(entries), rh), table.data(), rw * static_cast<int>(entries) * 4);
+	tex->Update(GSVector4i(0, 0, rw * static_cast<int>(entries), rh), table, rw * static_cast<int>(entries) * 4);
 
-	if (m_move_remaps.size() >= MAX_MOVE_REMAPS)
+	if (m_move_remaps.count >= MAX_MOVE_REMAPS)
 	{
-		auto oldest = m_move_remaps.begin();
-		for (auto it = m_move_remaps.begin(); it != m_move_remaps.end(); ++it)
-			if (it->last_use < oldest->last_use)
-				oldest = it;
-		g_gs_device->Recycle(oldest->texture);
-		m_move_remaps.erase(oldest);
+		size_t oldest = 0;
+		for (size_t n = 1; n < m_move_remaps.count; n++)
+			if (GS_ARRAY_AT(&m_move_remaps, MoveRemap, n).last_use < GS_ARRAY_AT(&m_move_remaps, MoveRemap, oldest).last_use)
+				oldest = n;
+		g_gs_device->Recycle(GS_ARRAY_AT(&m_move_remaps, MoveRemap, oldest).texture);
+		gs_array_erase(&m_move_remaps, oldest);
 	}
 
-	MoveRemap m;
+	MoveRemap* slot = static_cast<MoveRemap*>(gs_array_push(&m_move_remaps));
+	if (!slot)
+	{
+		g_gs_device->Recycle(tex);
+		return nullptr;
+	}
+	MoveRemap& m = *slot;
 	m.texture = tex;
 	m.dst_rect = drect;
 	m.src_rect = srect;
@@ -4593,8 +4626,7 @@ GSTextureCache::MoveRemap* GSTextureCache::BuildMoveRemap(const u32 move[12], Ta
 	m.has_old = has_old;
 	m.writes_rgb = (written & 0x3F) != 0;
 	m.writes_alpha = (written & 0xC0) != 0;
-	m_move_remaps.push_back(m);
-	return &m_move_remaps.back();
+	return slot;
 }
 
 bool GSTextureCache::MoveInTargets(u32 SBP, u32 SBW, u32 SPSM, int sx, int sy, u32 DBP, u32 DBW, u32 DPSM, int dx, int dy, int w, int h)
@@ -4618,8 +4650,9 @@ bool GSTextureCache::MoveInTargets(u32 SBP, u32 SBW, u32 SPSM, int sx, int sy, u
 	MoveRemap* remap = nullptr;
 	Target* src = nullptr;
 	Target* dst = nullptr;
-	for (MoveRemap& r : m_move_remaps)
+	for (size_t n = 0; n < m_move_remaps.count; n++)
 	{
+		MoveRemap& r = GS_ARRAY_AT(&m_move_remaps, MoveRemap, n);
 		if (memcmp(r.move, move, sizeof(move)) != 0)
 			continue;
 		src = find_target(r.src_type, r.src_tex0);

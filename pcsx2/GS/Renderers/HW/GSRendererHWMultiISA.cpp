@@ -52,11 +52,11 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 	GSRasterizerData data;
 	GSScanlineGlobalData& gd = data.global;
 
-	hw.m_sw_vertex_buffer.resize(((hw.m_vertex.next + 1) & ~1));
+	GSVertexSW* const sw_vertices = hw.SWVertexBuffer((hw.m_vertex.next + 1) & ~1);
 
 	data.primclass = vt.m_primclass;
 	data.buff = nullptr;
-	data.vertex = hw.m_sw_vertex_buffer.data();
+	data.vertex = sw_vertices;
 	data.vertex_count = hw.m_vertex.next;
 	data.index = hw.m_index.buff;
 	data.index_count = hw.m_index.tail;

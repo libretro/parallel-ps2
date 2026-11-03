@@ -42,7 +42,7 @@ if [ ! -f "$CORE" ]; then
 	exit 0
 fi
 
-SAME="dest_alpha points aa1_line dual_blend mip_tw8 depth_states frame_ct32 date_no_depth_full clut_lines sibling_key_after_clut upload_whole"
+SAME="dest_alpha points aa1_line dual_blend mip_tw8 depth_states frame_ct32 date_no_depth_full clut_lines sibling_key_after_clut upload_whole many_copies"
 RUNS="t4_from_target_shaded"
 for c in $SAME $RUNS; do
 	"$WORK/swdraw$EXE" --bios "$WORK/$c.bin" $c >/dev/null
@@ -87,6 +87,39 @@ for c in $SAME $RUNS; do
 		printf '  %s: the same picture on both renderers (%s)\n' $c "$g"
 	fi
 done
+
+# The CPU sprite renderer (a hardware hack) draws many_copies' sprites
+# on the CPU, through the software rasterizer's vertex buffer, on both
+# renderers; its picture is its own, and the same on both.
+if [ $vulkan = 1 ]; then
+	c=many_copies
+	CPU_SPRITES="pcsx2_enable_hw_hacks=enabled;pcsx2_cpu_sprite_size=5;pcsx2_cpu_sprite_level=Blended Sprites/Triangles"
+	rm -rf "$WORK/gl" "$WORK/vk"
+	mkdir -p "$WORK/gl" "$WORK/vk"
+	if ! GN_RGB=1 GN_OPTIONS="$CPU_SPRITES" LRPS2_BIOS="$WORK/$c.bin" timeout 300 "$WORK/glnegotiate$EXE" "$CORE" "$WORK/gl" > "$WORK/$c.cpu.gl.log" 2>&1; then
+		cat "$WORK/$c.cpu.gl.log"
+		echo "  FAIL: $c with CPU sprites on the OpenGL renderer"
+		fail=1
+	elif ! VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_IDLE_BIOS=1 VN_OPTIONS="$CPU_SPRITES" LRPS2_BIOS="$WORK/$c.bin" VN_FRAMES=30 \
+			timeout 300 "$WORK/vknegotiate$EXE" "$CORE" "$WORK/vk" v2 > "$WORK/$c.cpu.vk.log" 2>&1; then
+		cat "$WORK/$c.cpu.vk.log"
+		echo "  FAIL: $c with CPU sprites on the Vulkan renderer"
+		fail=1
+	else
+		g=$(sed -n 's/.*image: .*hash \([0-9a-f]*\)$/\1/p' "$WORK/$c.cpu.gl.log")
+		v=$(sed -n 's/.*image: .*hash \([0-9a-f]*\)$/\1/p' "$WORK/$c.cpu.vk.log" | tail -n 1)
+		p=$(sed -n 's/.*image: .*hash \([0-9a-f]*\)$/\1/p' "$WORK/$c.vk.log" | tail -n 1)
+		if [ -z "$g" ] || [ "$g" != "$v" ]; then
+			echo "  FAIL: $c with CPU sprites: the OpenGL renderer draws ${g:-nothing}, the Vulkan renderer ${v:-nothing}"
+			fail=1
+		elif [ "$v" = "$p" ]; then
+			echo "  FAIL: $c with CPU sprites draws the GPU's picture ($v): the CPU sprite renderer did not run"
+			fail=1
+		else
+			printf '  %s with CPU sprites: the same picture on both renderers (%s)\n' $c "$g"
+		fi
+	fi
+fi
 
 [ $fail = 0 ] || exit 1
 echo "glnegotiate: ok"

@@ -25,6 +25,7 @@
 #include "GSObjectPool.h"
 #include "../Common/GSFastList.h"
 #include "../Common/GSDirtyRect.h"
+#include "../Common/GSArray.h"
 #include "../Common/GSFlatMap.h"
 #include "../Common/GSStableMap.h"
 
@@ -617,7 +618,7 @@ private:
 		bool writes_alpha;
 	};
 	static constexpr size_t MAX_MOVE_REMAPS = 256;
-	std::vector<MoveRemap> m_move_remaps;
+	gs_array_t m_move_remaps; /* of MoveRemap */
 	u32 m_move_remap_clock = 0;
 
 	void ClearMoveRemaps();
