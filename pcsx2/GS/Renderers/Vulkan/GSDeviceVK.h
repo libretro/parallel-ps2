@@ -25,8 +25,6 @@
 #include "GS/Renderers/Common/GSArray.h"
 #include <functional>
 #include <memory>
-#include <string>
-#include <vector>
 
 struct vk_init_info_t
 {
@@ -153,9 +151,6 @@ public:
 	};
 
        // Returns a list of Vulkan-compatible GPUs.
-       using GPUList = std::vector<VkPhysicalDevice>;
-       using GPUNameList = std::vector<std::string>;
-       static GPUNameList EnumerateGPUNames(VkInstance instance);
 
        // Global state accessors
        __fi gs_vk_heap_t* GetHeap() { return &m_heap; }
@@ -302,7 +297,16 @@ private:
 	       u32 key;
        };
 
-       using ExtensionList = std::vector<const char*>;
+       /* The extension names a device is created with: the frontend's
+        * required ones, then those of ours the device supports. */
+       struct ExtensionList
+       {
+	       static constexpr u32 MAX_NAMES = 32;
+	       const char* names[MAX_NAMES];
+	       u32 count;
+	       bool Has(const char* name) const;
+	       bool Add(const char* name);
+       };
        bool SelectDeviceExtensions(ExtensionList* extension_list);
        void SelectDeviceFeatures(const VkPhysicalDeviceFeatures* required_features);
        bool CreateDevice(const char** required_device_extensions,
@@ -663,10 +667,8 @@ public:
 
 	__fi static GSDeviceVK* GetInstance() { return static_cast<GSDeviceVK*>(g_gs_device); }
 
-	static void GetAdapters(std::vector<std::string>* adapters);
 
 	/// Returns true if Vulkan is suitable as a default for the devices in the system.
-	static bool IsSuitableDefaultRenderer();
 
 	__fi VkRenderPass GetTFXRenderPass(bool rt, bool ds, bool hdr, bool stencil, bool fbl, bool dsp,
 		VkAttachmentLoadOp rt_op, VkAttachmentLoadOp ds_op) const

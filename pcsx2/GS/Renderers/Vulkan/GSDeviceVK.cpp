@@ -14,11 +14,8 @@
  */
 
 #include <cstring>
-#include "../../../StringView.h"
-#include "../../../FormatString.h"
 #include "common/Pcsx2Defs.h"
 #include <cassert>
-#include <vector>
 
 #include "GS/GS.h"
 #include "GS/Renderers/Vulkan/GSDeviceVK.h"
@@ -291,12 +288,13 @@ const VkApplicationInfo *get_application_info_vulkan(void)
 	return &app_info;
 }
 
-static void add_name_unique(std::vector<const char *> &list, const char *value) {
-	for (const char *name : list)
-		if (!strcmp(value, name))
+/* value onto a list of names unless it is already there. */
+static void add_name_unique(const char** list, u32* count, const char* value)
+{
+	for (u32 i = 0; i < *count; i++)
+		if (!strcmp(value, list[i]))
 			return;
-
-	list.push_back(value);
+	list[(*count)++] = value;
 }
 static VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice_libretro(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDevice *pDevice)
 {
@@ -309,17 +307,33 @@ static VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice_libretro(VkPhysicalDevice p
 	}
 
 	VkDeviceCreateInfo info = *pCreateInfo;
-	std::vector<const char *> EnabledLayerNames(info.ppEnabledLayerNames, info.ppEnabledLayerNames + info.enabledLayerCount);
-	std::vector<const char *> EnabledExtensionNames(info.ppEnabledExtensionNames, info.ppEnabledExtensionNames + info.enabledExtensionCount);
 	VkPhysicalDeviceFeatures EnabledFeatures = *info.pEnabledFeatures;
+	/* The lists as given plus the frontend's, each name once. */
+	const u32 max_layers     = info.enabledLayerCount + vk_init_info.num_required_device_layers;
+	const u32 max_extensions = info.enabledExtensionCount + vk_init_info.num_required_device_extensions + 1;
+	const char** EnabledLayerNames     = static_cast<const char**>(malloc(sizeof(const char*) * (max_layers ? max_layers : 1)));
+	const char** EnabledExtensionNames = static_cast<const char**>(malloc(sizeof(const char*) * max_extensions));
+	u32 layer_count = 0, extension_count = 0;
+	VkResult res;
 
+	if (!EnabledLayerNames || !EnabledExtensionNames)
+	{
+		free(EnabledLayerNames);
+		free(EnabledExtensionNames);
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
+
+	for (unsigned i = 0; i < info.enabledLayerCount; i++)
+		add_name_unique(EnabledLayerNames, &layer_count, info.ppEnabledLayerNames[i]);
 	for (unsigned i = 0; i < vk_init_info.num_required_device_layers; i++)
-		add_name_unique(EnabledLayerNames, vk_init_info.required_device_layers[i]);
+		add_name_unique(EnabledLayerNames, &layer_count, vk_init_info.required_device_layers[i]);
 
+	for (unsigned i = 0; i < info.enabledExtensionCount; i++)
+		add_name_unique(EnabledExtensionNames, &extension_count, info.ppEnabledExtensionNames[i]);
 	for (unsigned i = 0; i < vk_init_info.num_required_device_extensions; i++)
-		add_name_unique(EnabledExtensionNames, vk_init_info.required_device_extensions[i]);
+		add_name_unique(EnabledExtensionNames, &extension_count, vk_init_info.required_device_extensions[i]);
 
-	add_name_unique(EnabledExtensionNames, VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME);
+	add_name_unique(EnabledExtensionNames, &extension_count, VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME);
 	if (vk_init_info.required_features)
 	{
 		for (unsigned i = 0; i < sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32); i++)
@@ -329,13 +343,16 @@ static VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice_libretro(VkPhysicalDevice p
 		}
 	}
 
-	info.enabledLayerCount       = (uint32_t)EnabledLayerNames.size();
-	info.ppEnabledLayerNames     = info.enabledLayerCount ? EnabledLayerNames.data() : nullptr;
-	info.enabledExtensionCount   = (uint32_t)EnabledExtensionNames.size();
-	info.ppEnabledExtensionNames = info.enabledExtensionCount ? EnabledExtensionNames.data() : nullptr;
+	info.enabledLayerCount       = layer_count;
+	info.ppEnabledLayerNames     = layer_count ? EnabledLayerNames : nullptr;
+	info.enabledExtensionCount   = extension_count;
+	info.ppEnabledExtensionNames = extension_count ? EnabledExtensionNames : nullptr;
 	info.pEnabledFeatures        = &EnabledFeatures;
 
-	return vkCreateDevice_org(physicalDevice, &info, pAllocator, pDevice);
+	res = vkCreateDevice_org(physicalDevice, &info, pAllocator, pDevice);
+	free(EnabledLayerNames);
+	free(EnabledExtensionNames);
+	return res;
 }
 
 static VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit_libretro(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits, VkFence fence)
@@ -440,48 +457,22 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 	}
 }
 
-	GSDeviceVK::GPUNameList GSDeviceVK::EnumerateGPUNames(VkInstance instance)
+	bool GSDeviceVK::ExtensionList::Has(const char* name) const
 	{
-		u32 gpu_count = 0;
-		VkResult res = vkEnumeratePhysicalDevices(instance, &gpu_count, nullptr);
-		if (res != VK_SUCCESS || gpu_count == 0)
-			return {};
+		for (u32 i = 0; i < count; i++)
+			if (!strcmp(names[i], name))
+				return true;
+		return false;
+	}
 
-		GPUList gpus;
-		gpus.resize(gpu_count);
-
-		res = vkEnumeratePhysicalDevices(instance, &gpu_count, gpus.data());
-		if (res != VK_SUCCESS)
-			return {};
-
-		GPUNameList gpu_names;
-		gpu_names.reserve(gpu_count);
-		for (u32 i = 0; i < gpu_count; i++)
-		{
-			VkPhysicalDeviceProperties props = {};
-			vkGetPhysicalDeviceProperties(gpus[i], &props);
-
-			std::string gpu_name(props.deviceName);
-
-			// handle duplicate adapter names
-			if (std::any_of(gpu_names.begin(), gpu_names.end(),
-					[&gpu_name](const std::string& other) { return (gpu_name == other); }))
-			{
-				std::string original_adapter_name = std::move(gpu_name);
-
-				u32 current_extra = 2;
-				do
-				{
-					gpu_name = FormatString::Format("%s (%u)", original_adapter_name.c_str(), current_extra);
-					current_extra++;
-				} while (std::any_of(gpu_names.begin(), gpu_names.end(),
-					[&gpu_name](const std::string& other) { return (gpu_name == other); }));
-			}
-
-			gpu_names.push_back(std::move(gpu_name));
-		}
-
-		return gpu_names;
+	bool GSDeviceVK::ExtensionList::Add(const char* name)
+	{
+		if (Has(name))
+			return true;
+		if (count >= MAX_NAMES)
+			return false;
+		names[count++] = name;
+		return true;
 	}
 
 	bool GSDeviceVK::SelectDeviceExtensions(ExtensionList* extension_list)
@@ -497,22 +488,31 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			return false;
 		}
 
-		std::vector<VkExtensionProperties> available_extension_list(extension_count);
+		VkExtensionProperties* available = static_cast<VkExtensionProperties*>(calloc(extension_count, sizeof(VkExtensionProperties)));
+		if (!available)
+			return false;
 		res = vkEnumerateDeviceExtensionProperties(
-			vk_init_info.gpu, nullptr, &extension_count, available_extension_list.data());
+			vk_init_info.gpu, nullptr, &extension_count, available);
+		if (res != VK_SUCCESS && res != VK_INCOMPLETE)
+		{
+			free(available);
+			return false;
+		}
 
-		auto SupportsExtension = [&available_extension_list, extension_list](const char* name, bool required) {
-			if (std::find_if(available_extension_list.begin(), available_extension_list.end(),
-					[name](const VkExtensionProperties& properties) { return !strcmp(name, properties.extensionName); }) !=
-				available_extension_list.end())
+		auto SupportsExtension = [available, extension_count, extension_list](const char* name, bool required) {
+			for (u32 i = 0; i < extension_count; i++)
 			{
-				if (std::none_of(extension_list->begin(), extension_list->end(),
-						[name](const char* existing_name) { return (strcmp(existing_name, name) == 0); }))
+				if (strcmp(name, available[i].extensionName) != 0)
+					continue;
+				if (!extension_list->Has(name))
 				{
 					log_cb(RETRO_LOG_INFO, "Enabling extension: %s\n", name);
-					extension_list->push_back(name);
+					if (!extension_list->Add(name))
+					{
+						log_cb(RETRO_LOG_ERROR, "Vulkan: more than %u device extensions.\n", (unsigned)ExtensionList::MAX_NAMES);
+						return false;
+					}
 				}
-
 				return true;
 			}
 
@@ -551,6 +551,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			SupportsExtension(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME, false)
 			&& SupportsExtension(VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME, false);
 
+		free(available);
 		return true;
 	}
 
@@ -585,9 +586,11 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			return false;
 		}
 
-		std::vector<VkQueueFamilyProperties> queue_family_properties(queue_family_count);
+		VkQueueFamilyProperties* queue_family_properties = static_cast<VkQueueFamilyProperties*>(calloc(queue_family_count, sizeof(VkQueueFamilyProperties)));
+		if (!queue_family_properties)
+			return false;
 		vkGetPhysicalDeviceQueueFamilyProperties(
-			vk_init_info.gpu, &queue_family_count, queue_family_properties.data());
+			vk_init_info.gpu, &queue_family_count, queue_family_properties);
 		log_cb(RETRO_LOG_INFO, "%u vulkan queue families\n", queue_family_count);
 
 		// Find graphics and present queues.
@@ -603,6 +606,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 				break;
 			}
 		}
+		free(queue_family_properties);
 
 		if (m_graphics_queue_family_index == queue_family_count)
 		{
@@ -630,15 +634,22 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		device_info.pQueueCreateInfos                = queue_infos;
 
 		ExtensionList enabled_extensions;
+		enabled_extensions.count = 0;
 		for (u32 i = 0; i < num_required_device_extensions; i++)
-			enabled_extensions.emplace_back(required_device_extensions[i]);
+		{
+			if (!enabled_extensions.Add(required_device_extensions[i]))
+			{
+				log_cb(RETRO_LOG_ERROR, "Vulkan: more than %u required device extensions.\n", (unsigned)ExtensionList::MAX_NAMES);
+				return false;
+			}
+		}
 		if (!SelectDeviceExtensions(&enabled_extensions))
 			return false;
 
 		device_info.enabledLayerCount       = num_required_device_layers;
 		device_info.ppEnabledLayerNames     = required_device_layers;
-		device_info.enabledExtensionCount   = static_cast<uint32_t>(enabled_extensions.size());
-		device_info.ppEnabledExtensionNames = enabled_extensions.data();
+		device_info.enabledExtensionCount   = enabled_extensions.count;
+		device_info.ppEnabledExtensionNames = enabled_extensions.names;
 
 		// Check for required features before creating.
 		SelectDeviceFeatures(required_features);
@@ -1871,51 +1882,6 @@ GSDeviceVK::~GSDeviceVK()
 	gs_flat_map_free(&m_samplers);
 	gs_flat_map_free(&m_render_pass_cache);
 	gs_flat_map_free(&m_render_pass_keys);
-}
-
-void GSDeviceVK::GetAdapters(std::vector<std::string>* adapters)
-{
-	VkInstance instance = vk_init_info.instance;
-	if (Vulkan::LoadVulkanLibrary())
-	{
-		if (instance != VK_NULL_HANDLE)
-		{
-			if (adapters && Vulkan::LoadVulkanInstanceFunctions(instance))
-				*adapters = EnumerateGPUNames(instance);
-		}
-		Vulkan::UnloadVulkanLibrary();
-	}
-}
-
-bool GSDeviceVK::IsSuitableDefaultRenderer()
-{
-	std::vector<std::string> adapters;
-	GetAdapters(&adapters);
-	if (adapters.empty())
-		return false;
-
-	// Check the first GPU, should be enough.
-	const std::string& name = adapters.front();
-	log_cb(RETRO_LOG_INFO, "Using Vulkan GPU '{%s}' for automatic renderer check.\n", name.c_str());
-
-	// Any software rendering (LLVMpipe, SwiftShader).
-	if (       StringView::StartsWithNoCase(name, "llvmpipe")
-		|| StringView::StartsWithNoCase(name, "SwiftShader"))
-	{
-		log_cb(RETRO_LOG_WARN, "Not using Vulkan for software renderer.\n");
-		return false;
-	}
-
-	// For Intel, OpenGL usually ends up faster on Linux, because of fbfetch.
-	// Plus, the Ivy Bridge and Haswell drivers are incomplete.
-	if (StringView::StartsWithNoCase(name, "Intel"))
-	{
-		log_cb(RETRO_LOG_WARN, "Not using Vulkan for Intel GPU.\n");
-		return false;
-	}
-
-	log_cb(RETRO_LOG_INFO, "Allowing Vulkan as default renderer.\n");
-	return true;
 }
 
 RenderAPI GSDeviceVK::GetRenderAPI() const
