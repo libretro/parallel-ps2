@@ -134,7 +134,7 @@ GSRendererSW::GSRendererSW(int threads)
 	m_ops = &s_sw_ops;
 	m_nativeres = true; // ignore ini, sw is always native
 
-	m_tc = std::make_unique<GSTextureCacheSW>();
+	m_tc = new GSTextureCacheSW();
 	m_rl = GSRasterizerList::Create(threads);
 
 	m_output_size = 1024 * 1024 * sizeof(u32);
@@ -195,8 +195,10 @@ void GSRendererSW::Destroy()
 {
 	int i;
 	// Need to destroy worker queue first to stop any pending thread work
-	m_rl.reset();
-	m_tc.reset();
+	delete m_rl;
+	m_rl = nullptr;
+	delete m_tc;
+	m_tc = nullptr;
 
 	for (i = 0; i < 3; i++)
 	{

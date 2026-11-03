@@ -17,7 +17,6 @@
 
 #include "common/Pcsx2Defs.h"
 
-#include <memory>
 
 class GLContext
 {
@@ -28,7 +27,8 @@ class GLContext
 		/* Whether the frontend's context is OpenGL ES: GSDeviceOGL then
 		 * takes the ES road for its feature checks and shader headers. */
 		__fi bool IsGLES() const { return m_gles; }
-		static std::unique_ptr<GLContext> Create();
+		/* A context on the frontend's GL, loaded, or NULL; the caller deletes it. */
+	static GLContext* Create();
 	protected:
 		bool m_gles = false;
 };

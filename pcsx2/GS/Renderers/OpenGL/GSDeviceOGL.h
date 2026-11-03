@@ -155,7 +155,7 @@ public:
 private:
 	static constexpr u8 NUM_TIMESTAMP_QUERIES = 5;
 
-	std::unique_ptr<GLContext> m_gl_context;
+	GLContext* m_gl_context = nullptr;
 
 	bool m_is_gles = false;
 	bool m_colclip_float = false;
@@ -165,17 +165,17 @@ private:
 	GLuint m_fbo_read = 0; // frame buffer container only for reading
 	GLuint m_fbo_write = 0;	// frame buffer container only for writing
 	
-	std::unique_ptr<GLStreamBuffer> m_texture_upload_buffer;
+	GLStreamBuffer* m_texture_upload_buffer = nullptr;
 	
-	std::unique_ptr<GLStreamBuffer> m_vertex_stream_buffer;
-	std::unique_ptr<GLStreamBuffer> m_index_stream_buffer;
+	GLStreamBuffer* m_vertex_stream_buffer = nullptr;
+	GLStreamBuffer* m_index_stream_buffer = nullptr;
 	GLuint m_expand_ibo = 0;
 	GLuint m_vao = 0;
 	GLuint m_expand_vao = 0;
 	GLenum m_draw_topology = 0;
 
-	std::unique_ptr<GLStreamBuffer> m_vertex_uniform_stream_buffer;
-	std::unique_ptr<GLStreamBuffer> m_fragment_uniform_stream_buffer;
+	GLStreamBuffer* m_vertex_uniform_stream_buffer = nullptr;
+	GLStreamBuffer* m_fragment_uniform_stream_buffer = nullptr;
 	GLint m_uniform_buffer_alignment = 0;
 
 	struct
@@ -258,7 +258,7 @@ public:
 	GLenum GLBlendFactor(u8 factor) const;
 	__fi u32 GetFBORead() const { return m_fbo_read; }
 	__fi u32 GetFBOWrite() const { return m_fbo_write; }
-	__fi GLStreamBuffer* GetTextureUploadBuffer() const { return m_texture_upload_buffer.get(); }
+	__fi GLStreamBuffer* GetTextureUploadBuffer() const { return m_texture_upload_buffer; }
 	void CommitClear(GSTexture* t, bool use_write_fbo);
 
 	RenderAPI GetRenderAPI() const;

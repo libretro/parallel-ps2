@@ -1366,14 +1366,14 @@ bool GSRasterizerList::IsSynced() const
 	return true;
 }
 
-std::unique_ptr<IRasterizer> GSRasterizerList::Create(int threads)
+IRasterizer* GSRasterizerList::Create(int threads)
 {
 	threads = pcsx2_max_i(threads, 0);
 
 	if (threads == 0)
-		return std::make_unique<GSSingleRasterizer>();
+		return new GSSingleRasterizer();
 
-	std::unique_ptr<GSRasterizerList> rl(new GSRasterizerList(threads));
+	GSRasterizerList* rl = new GSRasterizerList(threads);
 
 	const bool affinity_on = EmuConfig.Cpu.AffinityControlMode != 0;
 	const std::vector<u32>& procs = VMManager::GetSortedProcessorList();

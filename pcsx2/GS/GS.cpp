@@ -31,7 +31,7 @@
 
 #ifdef HAVE_PARALLEL_GS
 #include "Renderers/parallel-gs/GSRendererPGS.h"
-std::unique_ptr<GSRendererPGS> g_pgs_renderer;
+GSRendererPGS* g_pgs_renderer = nullptr;
 #endif
 
 #ifdef ENABLE_OPENGL
@@ -323,7 +323,7 @@ static bool OpenGSRenderer(GSRendererType renderer, u8* basemem)
 #ifdef HAVE_PARALLEL_GS
 	if (renderer == GSRendererType::ParallelGS)
 	{
-		g_pgs_renderer = std::make_unique<GSRendererPGS>(basemem);
+		g_pgs_renderer = new GSRendererPGS(basemem);
 		if (!g_pgs_renderer->Init())
 			return false;
 		GS_OPS_SET(&pgs_renderer_ops);
@@ -350,7 +350,8 @@ static void CloseGSRenderer(void)
 	GS_OPS_SET(NULL);
 
 #ifdef HAVE_PARALLEL_GS
-	g_pgs_renderer.reset();
+	delete g_pgs_renderer;
+	g_pgs_renderer = nullptr;
 #endif
 
 	if (g_gs_renderer)
@@ -389,7 +390,9 @@ bool GSreopen(bool recreate_device, bool recreate_renderer, const Pcsx2Config::G
 	u8* basemem = ops->regs_mem();
 
 	freezeData fd = {};
-	std::unique_ptr<u8[]> fd_data;
+	/* The old renderer's state, carried to the new one. */
+	u8* fd_data = nullptr;
+	bool ok = true;
 	if (recreate_renderer)
 	{
 		if (ops->freeze(static_cast<int>(FREEZE_SIZE), &fd) != 0)
@@ -398,12 +401,15 @@ bool GSreopen(bool recreate_device, bool recreate_renderer, const Pcsx2Config::G
 			return false;
 		}
 
-		fd_data = std::make_unique<u8[]>(fd.size);
-		fd.data = fd_data.get();
+		fd_data = static_cast<u8*>(malloc(fd.size ? fd.size : 1));
+		if (!fd_data)
+			return false;
+		fd.data = fd_data;
 
 		if (ops->freeze(static_cast<int>(FREEZE_SAVE), &fd) != 0)
 		{
 			log_cb(RETRO_LOG_ERROR, "(GSreopen) Failed to freeze GS\n");
+			free(fd_data);
 			return false;
 		}
 
@@ -425,27 +431,27 @@ bool GSreopen(bool recreate_device, bool recreate_renderer, const Pcsx2Config::G
 			{
 				log_cb(RETRO_LOG_ERROR, "Failed to reopen GS on old config\n");
 				GSStopWithoutDevice();
-				return false;
+				ok = false;
 			}
 		}
 	}
 
-	if (recreate_renderer)
+	if (ok && recreate_renderer)
 	{
 		if (!OpenGSRenderer(GSConfig.Renderer, basemem))
 		{
 			log_cb(RETRO_LOG_ERROR, "(GSreopen) Failed to create new renderer\n");
-			return false;
+			ok = false;
 		}
-
-		if (GS_OPS()->freeze(static_cast<int>(FREEZE_LOAD), &fd) != 0)
+		else if (GS_OPS()->freeze(static_cast<int>(FREEZE_LOAD), &fd) != 0)
 		{
 			log_cb(RETRO_LOG_ERROR, "(GSreopen) Failed to defrost\n");
-			return false;
+			ok = false;
 		}
 	}
 
-	return true;
+	free(fd_data);
+	return ok;
 }
 
 void GSopen(const Pcsx2Config::GSOptions& config, GSRendererType renderer, enum retro_hw_context_type api, u8* basemem)

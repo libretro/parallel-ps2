@@ -81,8 +81,8 @@ public:
 	};
 
 public: /* called through gs_state_ops (GSRendererSW.cpp); these were protected virtuals */
-	std::unique_ptr<IRasterizer> m_rl;
-	std::unique_ptr<GSTextureCacheSW> m_tc;
+	IRasterizer* m_rl = nullptr;
+	GSTextureCacheSW* m_tc = nullptr;
 	GSRingHeap m_vertex_heap;
 	GSTexture *m_texture[3] = {};
 	/* The display's picture as read out of local memory, 32 bits a

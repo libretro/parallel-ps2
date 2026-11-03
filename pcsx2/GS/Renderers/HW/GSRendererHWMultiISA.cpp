@@ -200,7 +200,7 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 			const GSVector4i r = hw.GetTextureMinMax(TEX0, context->CLAMP, gd.sel.ltf, true).coverage;
 
 			if (!hw.m_sw_texture[0])
-				hw.m_sw_texture[0] = std::make_unique<GSTextureCacheSW::Texture>(0, TEX0, env.TEXA);
+				hw.m_sw_texture[0] = new GSTextureCacheSW::Texture(0, TEX0, env.TEXA);
 			else
 				hw.m_sw_texture[0]->Reset(0, TEX0, env.TEXA);
 
@@ -282,7 +282,7 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 					vt.m_max.t *= 0.5f;
 
 					if (!hw.m_sw_texture[i])
-						hw.m_sw_texture[i] = std::make_unique<GSTextureCacheSW::Texture>(gd.sel.tw + 3, MIP_TEX0, env.TEXA);
+						hw.m_sw_texture[i] = new GSTextureCacheSW::Texture(gd.sel.tw + 3, MIP_TEX0, env.TEXA);
 					else
 						hw.m_sw_texture[i]->Reset(gd.sel.tw + 3, MIP_TEX0, env.TEXA);
 
@@ -536,9 +536,9 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 	// GSSingleRasterizer is part of the x86 SW renderer, which isn't built on
 	// arm64; the HW renderer's CPU-side draw fallback is unavailable there.
 	if (!hw.m_sw_rasterizer)
-		hw.m_sw_rasterizer = std::make_unique<GSSingleRasterizer>();
+		hw.m_sw_rasterizer = new GSSingleRasterizer();
 
-	static_cast<GSSingleRasterizer*>(hw.m_sw_rasterizer.get())->Draw(data);
+	static_cast<GSSingleRasterizer*>(hw.m_sw_rasterizer)->Draw(data);
 #endif
 
 	if (invalidate_tc)

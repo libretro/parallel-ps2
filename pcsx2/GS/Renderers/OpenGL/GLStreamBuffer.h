@@ -16,7 +16,6 @@
 #pragma once
 #include "common/Pcsx2Defs.h"
 #include "glad.h"
-#include <memory>
 #include <tuple>
 
 /// Provides a buffer for streaming data to the GPU, ideally in write-combined memory.
@@ -45,7 +44,8 @@ class GLStreamBuffer
 		/// Returns the minimum granularity of blocks which sync objects will be created around.
 		virtual u32 GetChunkSize() const = 0;
 
-		static std::unique_ptr<GLStreamBuffer> Create(GLenum target, u32 size);
+		/* A stream buffer of size on target, or NULL; the caller deletes it. */
+	static GLStreamBuffer* Create(GLenum target, u32 size);
 
 	protected:
 		GLStreamBuffer(GLenum target, GLuint buffer_id, u32 size);

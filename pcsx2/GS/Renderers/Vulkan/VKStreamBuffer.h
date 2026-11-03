@@ -19,7 +19,6 @@
 #include "GSVulkanHeap.h"
 #include <utility>
 #include "VKLoader.h"
-#include <memory>
 
 class VKStreamBuffer
 {

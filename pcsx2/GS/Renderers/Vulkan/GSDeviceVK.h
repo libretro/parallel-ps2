@@ -23,7 +23,6 @@
 #include "GS/Renderers/Common/GSKeyHash.h"
 #include "GS/Renderers/Common/GSFlatMap.h"
 #include "GS/Renderers/Common/GSArray.h"
-#include <memory>
 
 struct vk_init_info_t
 {
@@ -860,7 +859,7 @@ private:
 	PipelineLayout m_current_pipeline_layout = PipelineLayout::Undefined;
 	VkPipeline m_current_pipeline = VK_NULL_HANDLE;
 
-	std::unique_ptr<GSTextureVK> m_null_texture;
+	GSTextureVK* m_null_texture = nullptr;
 
 	// current pipeline selector - we save this in the struct to avoid re-zeroing it every draw
 	PipelineSelector m_pipeline_selector = {};

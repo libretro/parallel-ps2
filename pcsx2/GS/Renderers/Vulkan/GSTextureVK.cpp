@@ -73,7 +73,7 @@ GSTextureVK::~GSTextureVK()
 	gs_array_free(&m_framebuffers);
 }
 
-std::unique_ptr<GSTextureVK> GSTextureVK::Create(Type type, Format format, int width, int height, int levels)
+GSTextureVK* GSTextureVK::Create(Type type, Format format, int width, int height, int levels)
 {
 	const VkFormat vk_format = GSDeviceVK::GetInstance()->LookupNativeFormat(format);
 
@@ -120,7 +120,7 @@ std::unique_ptr<GSTextureVK> GSTextureVK::Create(Type type, Format format, int w
 			break;
 
 		default:
-			return {};
+			return nullptr;
 	}
 
 	VkImage image = VK_NULL_HANDLE;
@@ -146,7 +146,7 @@ std::unique_ptr<GSTextureVK> GSTextureVK::Create(Type type, Format format, int w
 			(unsigned long long)GSDeviceVK::GetInstance()->GetImagesDestroyed(),
 			(unsigned long long)(GSDeviceVK::GetInstance()->GetImagesMade()
 				- GSDeviceVK::GetInstance()->GetImagesDestroyed()));
-		return {};
+		return nullptr;
 	}
 
 	VkImageView view = VK_NULL_HANDLE;
@@ -156,14 +156,13 @@ std::unique_ptr<GSTextureVK> GSTextureVK::Create(Type type, Format format, int w
 		log_cb(RETRO_LOG_ERROR, "vkCreateImageView failed: \n");
 		vkDestroyImage(vk_init_info.device, image, nullptr);
 		gs_vk_heap_free(GSDeviceVK::GetInstance()->GetHeap(), &alloc);
-		return {};
+		return nullptr;
 	}
 
-	return std::unique_ptr<GSTextureVK>(
-		new GSTextureVK(type, format, width, height, levels, image, alloc, view, vk_format));
+	return new GSTextureVK(type, format, width, height, levels, image, alloc, view, vk_format);
 }
 
-std::unique_ptr<GSTextureVK> GSTextureVK::Adopt(
+GSTextureVK* GSTextureVK::Adopt(
 	VkImage image, Type type, Format format, int width, int height, int levels, VkFormat vk_format)
 {
 	// Only need to create the image view, this is mainly for swap chains.
@@ -179,11 +178,10 @@ std::unique_ptr<GSTextureVK> GSTextureVK::Adopt(
 	if (res != VK_SUCCESS)
 	{
 		log_cb(RETRO_LOG_ERROR, "vkCreateImageView failed: \n");
-		return {};
+		return nullptr;
 	}
 
-	return std::unique_ptr<GSTextureVK>(
-		new GSTextureVK(type, format, width, height, levels, image, gs_vk_alloc_t{}, view, vk_format));
+	return new GSTextureVK(type, format, width, height, levels, image, gs_vk_alloc_t{}, view, vk_format);
 }
 
 void GSTextureVK::Destroy(bool defer)
@@ -798,7 +796,7 @@ GSDownloadTextureVK::~GSDownloadTextureVK()
 		GSDeviceVK::GetInstance()->DeferBufferDestruction(m_buffer, m_alloc);
 }
 
-std::unique_ptr<GSDownloadTextureVK> GSDownloadTextureVK::Create(u32 width, u32 height, GSTexture::Format format)
+GSDownloadTextureVK* GSDownloadTextureVK::Create(u32 width, u32 height, GSTexture::Format format)
 {
 	const u32 buffer_size = GetBufferSize(width, height, format, GSDeviceVK::GetInstance()->GetBufferCopyRowPitchAlignment());
 
@@ -814,9 +812,9 @@ std::unique_ptr<GSDownloadTextureVK> GSDownloadTextureVK::Create(u32 width, u32 
 	if (!GSDeviceVK::GetInstance()->CreateBufferInHeap(&bci,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 			&buffer, &alloc, &mapped))
-		return {};
+		return nullptr;
 
-	std::unique_ptr<GSDownloadTextureVK> tex = std::unique_ptr<GSDownloadTextureVK>(new GSDownloadTextureVK(width, height, format));
+	GSDownloadTextureVK* tex = new GSDownloadTextureVK(width, height, format);
 	tex->m_alloc = alloc;
 	tex->m_buffer = buffer;
 	tex->m_buffer_size = buffer_size;

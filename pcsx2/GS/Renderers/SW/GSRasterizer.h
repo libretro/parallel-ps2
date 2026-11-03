@@ -354,7 +354,8 @@ protected:
 public:
 	~GSRasterizerList() override;
 
-	static std::unique_ptr<IRasterizer> Create(int threads);
+	/* A rasterizer on threads worker threads (none: a single one); the caller deletes it. */
+	static IRasterizer* Create(int threads);
 
 	// IRasterizer
 

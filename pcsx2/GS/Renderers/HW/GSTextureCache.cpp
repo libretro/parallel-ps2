@@ -30,7 +30,7 @@
 #include "../../GSUtil.h"
 #include "../../GSXXH.h"
 
-std::unique_ptr<GSTextureCache> g_texture_cache;
+GSTextureCache* g_texture_cache = nullptr;
 
 static u8* s_unswizzle_buffer;
 

@@ -20,7 +20,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 
 #include <libretro.h>
 

@@ -2273,7 +2273,7 @@ GSTexture* GSDeviceVK::CreateSurface(GSTexture::Type type, int width, int height
 	const u32 clamped_width  = static_cast<u32>(pcsx2_clamp_i(width, 1, max_img_dim));
 	const u32 clamped_height = static_cast<u32>(pcsx2_clamp_i(height, 1, max_img_dim));
 
-	std::unique_ptr<GSTextureVK> tex(GSTextureVK::Create(type, format, clamped_width, clamped_height, levels));
+	GSTextureVK* tex = GSTextureVK::Create(type, format, clamped_width, clamped_height, levels);
 	if (!tex)
 	{
 		// We're probably out of vram, try flushing the command buffer to release pending textures.
@@ -2283,12 +2283,12 @@ GSTexture* GSDeviceVK::CreateSurface(GSTexture::Type type, int width, int height
 		tex = GSTextureVK::Create(type, format, clamped_width, clamped_height, levels);
 	}
 
-	return tex.release();
+	return tex;
 }
 
 GSDownloadTexturePtr GSDeviceVK::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
 {
-	return GSDownloadTexturePtr(GSDownloadTextureVK::Create(width, height, format).release());
+	return GSDownloadTexturePtr(GSDownloadTextureVK::Create(width, height, format));
 }
 
 void GSDeviceVK::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r, u32 destX, u32 destY)
@@ -3825,7 +3825,8 @@ void GSDeviceVK::DestroyResources()
 	if (m_null_texture)
 	{
 		m_null_texture->Destroy(false);
-		m_null_texture.reset();
+		delete m_null_texture;
+		m_null_texture = nullptr;
 	}
 }
 
@@ -4907,9 +4908,9 @@ void GSDeviceVK::InitializeState()
 	m_current_render_pass = VK_NULL_HANDLE;
 
 	for (u32 i = 0; i < NUM_TFX_TEXTURES; i++)
-		m_tfx_textures[i] = m_null_texture.get();
+		m_tfx_textures[i] = m_null_texture;
 
-	m_utility_texture = m_null_texture.get();
+	m_utility_texture = m_null_texture;
 
 	m_point_sampler   = GetSampler(GSHWDrawConfig::SamplerSelector::Point());
 	m_linear_sampler  = GetSampler(GSHWDrawConfig::SamplerSelector::Linear());
@@ -4984,8 +4985,8 @@ void GSDeviceVK::InvalidateCachedState()
 	m_dirty_flags |= ALL_DIRTY_STATE;
 
 	for (u32 i = 0; i < NUM_TFX_TEXTURES; i++)
-		m_tfx_textures[i] = m_null_texture.get();
-	m_utility_texture = m_null_texture.get();
+		m_tfx_textures[i] = m_null_texture;
+	m_utility_texture = m_null_texture;
 	m_current_framebuffer = VK_NULL_HANDLE;
 	m_current_render_target = nullptr;
 	m_current_depth_target = nullptr;
@@ -5066,7 +5067,7 @@ void GSDeviceVK::PSSetShaderResource(int i, GSTexture* sr, bool check_state)
 		vkTex->m_use_fence_counter = GetCurrentFenceCounter();
 	}
 	else
-		vkTex = m_null_texture.get();
+		vkTex = m_null_texture;
 
 	if (m_tfx_textures[i] == vkTex)
 		return;
@@ -5096,7 +5097,7 @@ void GSDeviceVK::SetUtilityTexture(GSTexture* tex, VkSampler sampler)
 		vkTex->m_use_fence_counter = GetCurrentFenceCounter();
 	}
 	else
-		vkTex = m_null_texture.get();
+		vkTex = m_null_texture;
 
 	if (m_utility_texture == vkTex && m_utility_sampler == sampler)
 		return;
@@ -5118,13 +5119,13 @@ void GSDeviceVK::UnbindTexture(GSTextureVK* tex)
 	{
 		if (m_tfx_textures[i] == tex)
 		{
-			m_tfx_textures[i] = m_null_texture.get();
+			m_tfx_textures[i] = m_null_texture;
 			m_dirty_flags |= (i < 2) ? DIRTY_FLAG_TFX_SAMPLERS_DS : DIRTY_FLAG_TFX_RT_TEXTURE_DS;
 		}
 	}
 	if (m_utility_texture == tex)
 	{
-		m_utility_texture = m_null_texture.get();
+		m_utility_texture = m_null_texture;
 		m_dirty_flags |= DIRTY_FLAG_UTILITY_TEXTURE;
 	}
 	if (m_current_render_target == tex || m_current_depth_target == tex)
@@ -5559,7 +5560,7 @@ GSTextureVK* GSDeviceVK::SetupPrimitiveTrackingDATE(GSHWDrawConfig& config)
 	UploadHWDrawVerticesAndIndices(config);
 
 	// primid texture will get re-bound, so clear it since we're using push descriptors
-	PSSetShaderResource(3, m_null_texture.get(), false);
+	PSSetShaderResource(3, m_null_texture, false);
 
 	// cut down the configuration for the prepass, we don't need blending or any feedback loop
 	PipelineSelector& pipe = m_pipeline_selector;

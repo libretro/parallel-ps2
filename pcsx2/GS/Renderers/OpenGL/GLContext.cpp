@@ -36,12 +36,9 @@ static void *gl_retro_proc_addr(const char *name)
 	return (void*)(hw_render.get_proc_address(name));
 }
 
-std::unique_ptr<GLContext> GLContext::Create()
+GLContext* GLContext::Create()
 {
-	std::unique_ptr<GLContext> context = std::make_unique<GLContext>();
-
-	if (!context)
-		return nullptr;
+	GLContext* context = new GLContext();
 
 	/* The profile is the context type the frontend accepted, and it picks
 	 * the loader: the desktop one would read an ES context's version as a
@@ -52,6 +49,7 @@ std::unique_ptr<GLContext> GLContext::Create()
 	if (!(context->m_gles ? gladLoadGLES2Loader(gl_retro_proc_addr) : gladLoadGLLoader(gl_retro_proc_addr)))
 	{
 		log_cb(RETRO_LOG_ERROR, "Failed to load %s functions for GLAD\n", context->m_gles ? "OpenGL ES" : "GL");
+		delete context;
 		return nullptr;
 	}
 

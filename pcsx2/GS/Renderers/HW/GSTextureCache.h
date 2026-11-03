@@ -820,4 +820,4 @@ public:
 	/// Injects a texture into the hash cache, by using GSTexture::Swap(), transitively applying to all sources. Ownership of tex is transferred.
 };
 
-extern std::unique_ptr<GSTextureCache> g_texture_cache;
+extern GSTextureCache* g_texture_cache;

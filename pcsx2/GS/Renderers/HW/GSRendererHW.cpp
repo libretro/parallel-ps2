@@ -96,7 +96,7 @@ GSRendererHW::GSRendererHW()
 	m_mipmap = (GSConfig.HWMipmapMode >= GSHWMipmapMode::Enabled);
 	SetTCOffset();
 
-	g_texture_cache = std::make_unique<GSTextureCache>();
+	g_texture_cache = new GSTextureCache();
 
 	// Hope nothing requires too many draw calls.
 
@@ -136,7 +136,15 @@ GSRendererHW::~GSRendererHW()
 	memalign_free(m_sw_vertex_buffer);
 	m_sw_vertex_buffer   = nullptr;
 	m_sw_vertex_capacity = 0;
-	g_texture_cache.reset();
+	for (size_t i = 0; i < C89_ARRAY_SIZE(m_sw_texture); i++)
+	{
+		delete m_sw_texture[i];
+		m_sw_texture[i] = nullptr;
+	}
+	delete m_sw_rasterizer;
+	m_sw_rasterizer = nullptr;
+	delete g_texture_cache;
+	g_texture_cache = nullptr;
 	/* Its maps' nodes are all back now: the slabs can go. */
 	gs_node_pools_release();
 }
@@ -5762,7 +5770,7 @@ __ri static constexpr u8 EffectiveClamp(u8 clamp, bool has_region)
 }
 
 __ri void GSRendererHW::EmulateTextureSampler(const GSTextureCache::Target* rt, const GSTextureCache::Target* ds, GSTextureCache::Source* tex,
-	const TextureMinMaxResult& tmm, GSDevice::RecycledTexture& src_copy)
+	const TextureMinMaxResult& tmm, GSTexture*& src_copy)
 {
 	// don't overwrite the texture when using channel shuffle, but keep the palette
 	if (!m_channel_shuffle)
@@ -6137,7 +6145,7 @@ __ri void GSRendererHW::EmulateTextureSampler(const GSTextureCache::Target* rt, 
 
 __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, const GSTextureCache::Target* ds,
 	const GSTextureCache::Source* tex, const TextureMinMaxResult& tmm, GSTextureCache::SourceRegion& source_region,
-	bool& target_region, GSVector2i& unscaled_size, float& scale, GSDevice::RecycledTexture& src_copy)
+	bool& target_region, GSVector2i& unscaled_size, float& scale, GSTexture*& src_copy)
 {
 	// Detect framebuffer read that will need special handling
 	const GSTextureCache::Target* src_target = nullptr;
@@ -6273,11 +6281,12 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 
 	/* Both copies below are draws (StretchRect), so the copy is a target:
 	 * a plain texture cannot be drawn into on D3D. */
-	src_copy.reset(src_target->m_texture->IsDepthStencil() ?
+	g_gs_device->Recycle(src_copy);
+	src_copy = src_target->m_texture->IsDepthStencil() ?
 				   g_gs_device->CreateDepthStencil(
 						   scaled_copy_size.x, scaled_copy_size.y, src_target->m_texture->GetFormat(), false) :
 				   g_gs_device->CreateRenderTarget(
-						   scaled_copy_size.x, scaled_copy_size.y, src_target->m_texture->GetFormat(), true));
+						   scaled_copy_size.x, scaled_copy_size.y, src_target->m_texture->GetFormat(), true);
 	if (!src_copy)
 	{
 		m_conf.tex = nullptr;
@@ -6294,7 +6303,7 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 		{
 			const GSVector4 dst_rect = GSVector4(GSVector4i::loadh(src_unscaled_size));
 			g_gs_device->StretchRect(src_target->m_texture,
-			GSVector4::cxpr(0.0f, 0.0f, 1.0f, 1.0f), src_copy.get(),
+			GSVector4::cxpr(0.0f, 0.0f, 1.0f, 1.0f), src_copy,
 			dst_rect, src_target->m_texture->IsDepthStencil() 
 			? ShaderConvert::DEPTH_COPY : ShaderConvert::COPY, false);
 		}
@@ -6309,7 +6318,7 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 			if (target_region)
 				copy_rect += GSVector4i(source_region.GetMinX(), source_region.GetMinY()).xyxy();
 			const GSVector4 dRect = GSVector4((copy_rect + GSVector4i(-1, 1).xxyy()).rintersect(src_target->GetUnscaledRect()));
-			g_gs_device->FilteredDownsampleTexture(src_target->m_texture, src_copy.get(), downsample_factor, clamp_min, dRect);
+			g_gs_device->FilteredDownsampleTexture(src_target->m_texture, src_copy, downsample_factor, clamp_min, dRect);
 		}
 #endif
 	}
@@ -6326,10 +6335,10 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 
 		const GSVector4 src_rect = GSVector4(copy_range) / GSVector4(src_unscaled_size).xyxy();
 		const GSVector4 dst_rect = (GSVector4(copy_range) - GSVector4(offset).xyxy()) * scale;
-		g_gs_device->StretchRect(src_target->m_texture, src_rect, src_copy.get(), dst_rect,
+		g_gs_device->StretchRect(src_target->m_texture, src_rect, src_copy, dst_rect,
 			src_target->m_texture->IsDepthStencil() ? ShaderConvert::DEPTH_COPY : ShaderConvert::COPY, false);
 	}
-	m_conf.tex = src_copy.get();
+	m_conf.tex = src_copy;
 }
 
 bool GSRendererHW::CanUseTexIsFB(const GSTextureCache::Target* rt, const GSTextureCache::Source* tex,
@@ -6972,16 +6981,17 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 		m_conf.datm = static_cast<SetDATM>(m_cached_ctx.TEST.DATM);
 
 	// If we're doing stencil DATE and we don't have a depth buffer, we need to allocate a temporary one.
-	GSDevice::RecycledTexture temp_ds;
+	// (it and the texture copy below go back to the pool when the draw is done)
+	GSTexture* temp_ds = nullptr;
 	if (m_conf.destination_alpha >= GSHWDrawConfig::DestinationAlphaMode::Stencil &&
 		m_conf.destination_alpha <= GSHWDrawConfig::DestinationAlphaMode::StencilOne && !m_conf.ds)
 	{
-		temp_ds.reset(g_gs_device->CreateDepthStencil(m_conf.rt->GetWidth(), m_conf.rt->GetHeight(), GSTexture::Format::DepthStencil, false));
+		temp_ds = g_gs_device->CreateDepthStencil(m_conf.rt->GetWidth(), m_conf.rt->GetHeight(), GSTexture::Format::DepthStencil, false);
 		/* (no stencil to test against: the draw is dropped, as a draw
 		 * whose source copy could not be made is) */
 		if (!temp_ds)
 			return;
-		m_conf.ds = temp_ds.get();
+		m_conf.ds = temp_ds;
 	}
 
 	// vs
@@ -7086,7 +7096,7 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 		m_conf.cb_ps.FogColor_AREF = fc.blend32<8>(m_conf.cb_ps.FogColor_AREF);
 	}
 
-	GSDevice::RecycledTexture tex_copy;
+	GSTexture* tex_copy = nullptr;
 	if (tex)
 	{
 		EmulateTextureSampler(rt, ds, tex, tmm, tex_copy);
@@ -7194,7 +7204,11 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 	if (!ate_first_pass)
 	{
 		if (!m_conf.alpha_second_pass.enable)
+		{
+			g_gs_device->Recycle(tex_copy);
+			g_gs_device->Recycle(temp_ds);
 			return;
+		}
 
 		// RenderHW always renders first pass, replace first pass with second
 		memcpy(&m_conf.ps, &m_conf.alpha_second_pass.ps, sizeof(m_conf.ps));
@@ -7208,6 +7222,8 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 	m_conf.drawlist_count = m_conf.drawlist ? static_cast<u32>(m_drawlist.count) : 0;
 
 	g_gs_device->RenderHW(m_conf);
+	g_gs_device->Recycle(tex_copy);
+	g_gs_device->Recycle(temp_ds);
 }
 
 // If the EE uploaded a new CLUT since the last draw, use that.

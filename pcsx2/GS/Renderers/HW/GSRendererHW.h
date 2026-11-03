@@ -161,10 +161,10 @@ private:
 	void CleanupDraw(bool invalidate_temp_src);
 
 	void EmulateTextureSampler(const GSTextureCache::Target* rt, const GSTextureCache::Target* ds,
-			GSTextureCache::Source* tex, const TextureMinMaxResult& tmm, GSDevice::RecycledTexture& src_copy);
+			GSTextureCache::Source* tex, const TextureMinMaxResult& tmm, GSTexture*& src_copy);
 	void HandleTextureHazards(const GSTextureCache::Target* rt, const GSTextureCache::Target* ds,
 		const GSTextureCache::Source* tex, const TextureMinMaxResult& tmm, GSTextureCache::SourceRegion& source_region,
-		bool& target_region, GSVector2i& unscaled_size, float& scale, GSDevice::RecycledTexture& src_copy);
+		bool& target_region, GSVector2i& unscaled_size, float& scale, GSTexture*& src_copy);
 	bool CanUseTexIsFB(const GSTextureCache::Target* rt, const GSTextureCache::Source* tex,
 		const TextureMinMaxResult& tmm);
 
@@ -365,8 +365,8 @@ private:
 	GSVertexSW* m_sw_vertex_buffer = nullptr;
 	u32 m_sw_vertex_capacity = 0;
 	GSVertexSW* SWVertexBuffer(u32 count);
-	std::unique_ptr<GSTextureCacheSW::Texture> m_sw_texture[7 + 1];
-	std::unique_ptr<GSVirtualAlignedClass<32>> m_sw_rasterizer;
+	GSTextureCacheSW::Texture* m_sw_texture[7 + 1] = {};
+	GSVirtualAlignedClass<32>* m_sw_rasterizer = nullptr;
 
 public:
 	GSRendererHW();

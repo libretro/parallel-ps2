@@ -529,11 +529,14 @@ bool GSDeviceOGL::Create()
 			// Still need the vertex buffer bound, because uploads happen to GL_ARRAY_BUFFER.
 			m_vertex_stream_buffer->Bind();
 
-			std::unique_ptr<u8[]> expand_data = std::make_unique<u8[]>(EXPAND_BUFFER_SIZE);
-			GenerateExpansionIndexBuffer(expand_data.get());
+			u8* expand_data = static_cast<u8*>(malloc(EXPAND_BUFFER_SIZE));
+			if (!expand_data)
+				return false;
+			GenerateExpansionIndexBuffer(expand_data);
 			glGenBuffers(1, &m_expand_ibo);
 			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_expand_ibo);
-			glBufferData(GL_ELEMENT_ARRAY_BUFFER, EXPAND_BUFFER_SIZE, expand_data.get(), GL_STATIC_DRAW);
+			glBufferData(GL_ELEMENT_ARRAY_BUFFER, EXPAND_BUFFER_SIZE, expand_data, GL_STATIC_DRAW);
+			free(expand_data);
 
 			// We can bind it once when using gl_BaseVertexARB.
 			if (GLAD_GL_ARB_shader_draw_parameters)
@@ -768,7 +771,8 @@ void GSDeviceOGL::Destroy()
 	if (m_gl_context)
 	{
 		DestroyResources();
-		m_gl_context.reset();
+		delete m_gl_context;
+		m_gl_context = nullptr;
 	}
 }
 
@@ -830,8 +834,10 @@ void GSDeviceOGL::DestroyResources()
 	for (GLProgram& prog : m_merge_obj.ps)
 		prog.Destroy();
 
-	m_fragment_uniform_stream_buffer.reset();
-	m_vertex_uniform_stream_buffer.reset();
+	delete m_fragment_uniform_stream_buffer;
+	m_fragment_uniform_stream_buffer = nullptr;
+	delete m_vertex_uniform_stream_buffer;
+	m_vertex_uniform_stream_buffer = nullptr;
 
 	glBindVertexArray(0);
 	if (m_expand_ibo != 0)
@@ -839,9 +845,12 @@ void GSDeviceOGL::DestroyResources()
 	if (m_vao != 0)
 		glDeleteVertexArrays(1, &m_vao);
 
-	m_index_stream_buffer.reset();
-	m_vertex_stream_buffer.reset();
-	m_texture_upload_buffer.reset();
+	delete m_index_stream_buffer;
+	m_index_stream_buffer = nullptr;
+	delete m_vertex_stream_buffer;
+	m_vertex_stream_buffer = nullptr;
+	delete m_texture_upload_buffer;
+	m_texture_upload_buffer = nullptr;
 	if (m_expand_ibo)
 		glDeleteBuffers(1, &m_expand_ibo);
 
@@ -1079,7 +1088,7 @@ void GSDeviceOGL::CommitClear(GSTexture* t, bool use_write_fbo)
 
 GSDownloadTexturePtr GSDeviceOGL::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
 {
-	return GSDownloadTexturePtr(GSDownloadTextureOGL::Create(width, height, format).release());
+	return GSDownloadTexturePtr(GSDownloadTextureOGL::Create(width, height, format));
 }
 
 GLuint GSDeviceOGL::CreateSampler(PSSamplerSelector sel)
@@ -2336,12 +2345,12 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 
 	if (m_vs_cb_cache.Update(config.cb_vs))
 	{
-		WriteToStreamBuffer(m_vertex_uniform_stream_buffer.get(), g_vs_cb_index,
+		WriteToStreamBuffer(m_vertex_uniform_stream_buffer, g_vs_cb_index,
 			m_uniform_buffer_alignment, &config.cb_vs, sizeof(config.cb_vs));
 	}
 	if (m_ps_cb_cache.Update(config.cb_ps))
 	{
-		WriteToStreamBuffer(m_fragment_uniform_stream_buffer.get(), g_ps_cb_index,
+		WriteToStreamBuffer(m_fragment_uniform_stream_buffer, g_ps_cb_index,
 			m_uniform_buffer_alignment, &config.cb_ps, sizeof(config.cb_ps));
 	}
 
@@ -2462,7 +2471,7 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 		if (config.cb_ps.FogColor_AREF.a != config.alpha_second_pass.ps_aref)
 		{
 			config.cb_ps.FogColor_AREF.a = config.alpha_second_pass.ps_aref;
-			WriteToStreamBuffer(m_fragment_uniform_stream_buffer.get(), g_ps_cb_index,
+			WriteToStreamBuffer(m_fragment_uniform_stream_buffer, g_ps_cb_index,
 				m_uniform_buffer_alignment, &config.cb_ps, sizeof(config.cb_ps));
 		}
 

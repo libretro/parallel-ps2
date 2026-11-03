@@ -16,11 +16,11 @@
 #pragma once
 
 #include <retro_atomic.h>
+#include <new>
 #include <utility>
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
-#include <memory>
 
 /// A ring buffer pretending to be a heap (screams if you don't actually use it like a ring buffer)
 /// Meant for one producer thread creating data and sharing it with multiple consumer threads
@@ -69,9 +69,10 @@ public:
 	template <typename T, typename... Args>
 	T* make(Args&&... args)
 	{
-		std::unique_ptr<void, void(*)(void*)> ptr(alloc(sizeof(T), alignof(T)), GSRingHeap::free);
-		new (ptr.get()) T(std::forward<Args>(args)...);
-		return static_cast<T*>(ptr.release());
+		/* (no exceptions: the constructor cannot fail past this point) */
+		void* ptr = alloc(sizeof(T), alignof(T));
+		new (ptr) T(std::forward<Args>(args)...);
+		return static_cast<T*>(ptr);
 	}
 
 	/// Free a pointer allocated with `alloc`
@@ -194,14 +195,12 @@ public:
 		static constexpr size_t alloc_size = sizeof(T) + sizeof(Header);
 
 		void* ptr = alloc_internal(sizeof(T), getAlignMask(alignof(T)), sizeof(Header));
-		std::unique_ptr<void, void(*)(void*)> guard(ptr, [](void* p){ free_internal(p, alloc_size); });
 		Header* header = static_cast<Header*>(ptr);
 		header->size = static_cast<uint32_t>(alloc_size);
 		retro_atomic_store_release_int(&header->refcnt, 1);
 
 		T* tptr = reinterpret_cast<T*>(header + 1);
 		new (tptr) T(std::forward<Args>(args)...);
-		guard.release();
 		return SharedPtr<T>(tptr);
 	}
 };

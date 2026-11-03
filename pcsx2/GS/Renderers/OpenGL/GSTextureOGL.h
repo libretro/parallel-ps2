@@ -70,7 +70,7 @@ class GSDownloadTextureOGL final : public GSDownloadTexture
 public:
 	~GSDownloadTextureOGL();
 
-	static std::unique_ptr<GSDownloadTextureOGL> Create(u32 width, u32 height, GSTexture::Format format);
+	static GSDownloadTextureOGL* Create(u32 width, u32 height, GSTexture::Format format);
 
 	void CopyFromTexture(const GSVector4i& drc, GSTexture* stex, const GSVector4i& src, u32 src_level, bool use_transfer_pitch);
 

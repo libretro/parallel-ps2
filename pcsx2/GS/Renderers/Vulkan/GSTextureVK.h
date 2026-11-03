@@ -50,8 +50,9 @@ public:
 
 	~GSTextureVK();
 
-	static std::unique_ptr<GSTextureVK> Create(Type type, Format format, int width, int height, int levels);
-	static std::unique_ptr<GSTextureVK> Adopt(
+	/* A new texture, or NULL; the device frees it through its ops. */
+	static GSTextureVK* Create(Type type, Format format, int width, int height, int levels);
+	static GSTextureVK* Adopt(
 		VkImage image, Type type, Format format, int width, int height, int levels, VkFormat vk_format);
 
 	void Destroy(bool defer);
@@ -136,7 +137,7 @@ class GSDownloadTextureVK final : public GSDownloadTexture
 public:
 	~GSDownloadTextureVK();
 
-	static std::unique_ptr<GSDownloadTextureVK> Create(u32 width, u32 height, GSTexture::Format format);
+	static GSDownloadTextureVK* Create(u32 width, u32 height, GSTexture::Format format);
 
 	void CopyFromTexture(const GSVector4i& drc, GSTexture* stex, const GSVector4i& src, u32 src_level, bool use_transfer_pitch);
 

@@ -349,7 +349,7 @@ GSDownloadTextureOGL::~GSDownloadTextureOGL()
 	}
 }
 
-std::unique_ptr<GSDownloadTextureOGL> GSDownloadTextureOGL::Create(u32 width, u32 height, GSTexture::Format format)
+GSDownloadTextureOGL* GSDownloadTextureOGL::Create(u32 width, u32 height, GSTexture::Format format)
 {
 	const u32 buffer_size = GetBufferSize(width, height, format, TEXTURE_UPLOAD_PITCH_ALIGNMENT);
 
@@ -376,10 +376,10 @@ std::unique_ptr<GSDownloadTextureOGL> GSDownloadTextureOGL::Create(u32 width, u3
 		if (!buffer_map)
 		{
 			glDeleteBuffers(1, &buffer_id);
-			return {};
+			return nullptr;
 		}
 
-		std::unique_ptr<GSDownloadTextureOGL> ret(new GSDownloadTextureOGL(width, height, format));
+		GSDownloadTextureOGL* ret = new GSDownloadTextureOGL(width, height, format);
 		ret->m_buffer_id = buffer_id;
 		ret->m_buffer_size = buffer_size;
 		ret->m_map_pointer = buffer_map;
@@ -389,9 +389,9 @@ std::unique_ptr<GSDownloadTextureOGL> GSDownloadTextureOGL::Create(u32 width, u3
 	// Fallback to glReadPixels() + CPU buffer.
 	u8* cpu_buffer = static_cast<u8*>(memalign_alloc(VECTOR_ALIGNMENT, buffer_size));
 	if (!cpu_buffer)
-		return {};
+		return nullptr;
 
-	std::unique_ptr<GSDownloadTextureOGL> ret(new GSDownloadTextureOGL(width, height, format));
+	GSDownloadTextureOGL* ret = new GSDownloadTextureOGL(width, height, format);
 	ret->m_cpu_buffer = cpu_buffer;
 	ret->m_map_pointer = cpu_buffer;
 	return ret;
