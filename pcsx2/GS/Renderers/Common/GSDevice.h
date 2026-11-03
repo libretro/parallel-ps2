@@ -736,7 +736,8 @@ struct alignas(16) GSHWDrawConfig
 	u32 nverts;           ///< Number of vertices
 	u32 nindices;         ///< Number of indices
 	u32 indices_per_prim; ///< Number of indices that make up one primitive
-	const std::vector<size_t>* drawlist; ///< For reducing barriers on sprites
+	const u32* drawlist; ///< For reducing barriers on sprites: a sprite count a run, drawlist_count runs
+	u32 drawlist_count;
 	GSVector4i scissor; ///< Scissor rect
 	GSVector4i drawarea; ///< Area in the framebuffer which will be modified.
 	Topology topology;  ///< Draw topology

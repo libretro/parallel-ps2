@@ -1409,18 +1409,18 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 				const bool width_match = (pcsx2_max_i(64U, bw * 64U) >> GSLocalMemory::m_psm[psm].info.pageShiftX()) ==
 										 (pcsx2_max_i(64U, t->m_TEX0.TBW * 64U) >> GSLocalMemory::m_psm[t->m_TEX0.PSM].info.pageShiftX());
 
-				if (bp == t->m_TEX0.TBP0 && !t->m_dirty.empty() && GSUtil::GetChannelMask(psm) == GSUtil::GetChannelMask(t->m_TEX0.PSM) && GSRendererHW::GetInstance()->m_draw_transfers.size() > 0)
+				if (bp == t->m_TEX0.TBP0 && !t->m_dirty.empty() && GSUtil::GetChannelMask(psm) == GSUtil::GetChannelMask(t->m_TEX0.PSM) && GSRendererHW::GetInstance()->DrawTransferCount() > 0)
 				{
 					bool can_use = true;
 
 					if (!possible_shuffle && !(GSLocalMemory::m_psm[TEX0.PSM].bpp == 16 && GSLocalMemory::m_psm[t->m_TEX0.PSM].bpp == 32) && !width_match && t->m_dirty.size() >= 1 && !t->m_dirty.GetTotalRect(t->m_TEX0, t->m_unscaled_size).eq(t->m_valid))
 					{
-						std::vector<GSState::GSUploadQueue>::reverse_iterator iter;
+						const GSState::GSUploadQueue* const transfers = GSRendererHW::GetInstance()->DrawTransfers();
+						const int start_draw = GSRendererHW::GetInstance()->LastDrawTransfer().draw;
 
-						const int start_draw = GSRendererHW::GetInstance()->m_draw_transfers.back().draw;
-
-						for (iter = GSRendererHW::GetInstance()->m_draw_transfers.rbegin(); iter != GSRendererHW::GetInstance()->m_draw_transfers.rend();)
+						for (u32 n = GSRendererHW::GetInstance()->DrawTransferCount(); n-- > 0;)
 						{
+							const GSState::GSUploadQueue* const iter = &transfers[n];
 							if (TEX0.TBP0 == iter->blit.DBP && GSUtil::HasCompatibleBits(iter->blit.DPSM, TEX0.PSM) && req_rect.rintersect(iter->rect).eq(req_rect))
 							{
 								can_use = false;
@@ -1430,8 +1430,6 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 							// Give up after checking recent draws
 							if (start_draw - iter->draw > 0)
 								break;
-
-							++iter;
 						}
 					}
 
@@ -2715,11 +2713,12 @@ GSTextureCache::Target* GSTextureCache::CreateTarget(GIFRegTEX0 TEX0, const GSVe
 			}
 			else
 			{
-				std::vector<GSState::GSUploadQueue>::reverse_iterator iter;
+				const GSState::GSUploadQueue* const transfers = GSRendererHW::GetInstance()->DrawTransfers();
 				const int start_transfer = g_gs_renderer->s_transfer_n;
 				const u32 tex_end = GSLocalMemory::GetUnwrappedEndBlockAddress(TEX0.TBP0, TEX0.TBW, TEX0.PSM, GSVector4i::loadh(size));
-				for (iter = GSRendererHW::GetInstance()->m_draw_transfers.rbegin(); iter != GSRendererHW::GetInstance()->m_draw_transfers.rend();)
+				for (u32 n = GSRendererHW::GetInstance()->DrawTransferCount(); n-- > 0;)
 				{
+					const GSState::GSUploadQueue* const iter = &transfers[n];
 					const u32 transfer_end = GSLocalMemory::GetUnwrappedEndBlockAddress(iter->blit.DBP, iter->blit.DBW, iter->blit.DPSM, iter->rect);
 					// If the format, and location doesn't overlap
 					if (TEX0.TBP0 == iter->blit.DBP && GSUtil::HasCompatibleBits(iter->blit.DPSM, TEX0.PSM) && (iter->blit.DBW == dst->m_TEX0.TBW || (transfer_end >= tex_end && (iter->blit.DBW * 64) == iter->rect.z)))
@@ -2731,8 +2730,6 @@ GSTextureCache::Target* GSTextureCache::CreateTarget(GIFRegTEX0 TEX0, const GSVe
 
 					if ((start_transfer - iter->draw) > 100)
 						break;
-
-					++iter;
 				}
 			}
 		}
@@ -2782,14 +2779,16 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 
 		if (!is_frame && !preload && !(src && src->m_TEX0.TBP0 == dst->m_TEX0.TBP0))
 		{
-			if ((preserve_target || !draw_rect.eq(dst->m_valid)) && GSRendererHW::GetInstance()->m_draw_transfers.size() > 0)
+			if ((preserve_target || !draw_rect.eq(dst->m_valid)) && GSRendererHW::GetInstance()->DrawTransferCount() > 0)
 			{
-				auto& transfers = GSRendererHW::GetInstance()->m_draw_transfers;
-				const int last_draw = transfers.back().draw;
+				GSRendererHW* const hw = GSRendererHW::GetInstance();
+				const GSState::GSUploadQueue* const transfers = hw->DrawTransfers();
+				const int last_draw = hw->LastDrawTransfer().draw;
 				GSVector4i eerect = GSVector4i::zero();
 
-				for (auto iter = transfers.rbegin(); iter != transfers.rend(); ++iter)
+				for (u32 n = hw->DrawTransferCount(); n-- > 0;)
 				{
+					const GSState::GSUploadQueue* const iter = &transfers[n];
 					// Would be nice to make this 100, but B-Boy seems to rely on data uploaded ~200 draws ago. Making it bigger for now to be safe.
 					if (last_draw - iter->draw > 500)
 						break;
@@ -2858,7 +2857,7 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 						{
 							// Some games clear RT and Z at the same time, only erase if it's specifically this target.
 							if (iter->blit.DBP == TEX0.TBP0 && transfer_end == rect_end)
-								transfers.erase(iter.base() - 1);
+								hw->EraseDrawTransfer(n);
 
 							break;
 						}
@@ -2883,13 +2882,13 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 		}
 		else
 		{
-			if (GSRendererHW::GetInstance()->m_draw_transfers.size() > 0)
+			if (GSRendererHW::GetInstance()->DrawTransferCount() > 0)
 			{
-				GSState::GSUploadQueue last_draw = GSRendererHW::GetInstance()->m_draw_transfers.back();
+				const GSState::GSUploadQueue& last_draw = GSRendererHW::GetInstance()->LastDrawTransfer();
 				if (last_draw.zero_clear && last_draw.blit.DBP == TEX0.TBP0 && last_draw.blit.DBW == TEX0.TBW)
 				{
 					hw_clear = true;
-					GSRendererHW::GetInstance()->m_draw_transfers.pop_back();
+					GSRendererHW::GetInstance()->PopDrawTransfer();
 				}
 			}
 
@@ -3148,17 +3147,21 @@ GSTextureCache::Target* GSTextureCache::LookupDisplayTarget(GIFRegTEX0 TEX0, con
 
 	bool can_create = is_feedback;
 
-	if (!is_feedback && GSRendererHW::GetInstance()->m_draw_transfers.size() > 0)
+	if (!is_feedback && GSRendererHW::GetInstance()->DrawTransferCount() > 0)
 	{
 		const GSVector4i newrect = GSVector4i::loadh(size);
 		const u32 rect_end = GSLocalMemory::GetUnwrappedEndBlockAddress(TEX0.TBP0, TEX0.TBW, TEX0.PSM, newrect);
 
-		std::vector<GSState::GSUploadQueue>::reverse_iterator iter;
+		GSRendererHW* const hw = GSRendererHW::GetInstance();
+		const GSState::GSUploadQueue* const transfers = hw->DrawTransfers();
 		GSVector4i eerect = GSVector4i::zero();
-		const int last_draw = GSRendererHW::GetInstance()->m_draw_transfers.back().draw;
+		const int last_draw = hw->LastDrawTransfer().draw;
 
-		for (iter = GSRendererHW::GetInstance()->m_draw_transfers.rbegin(); iter != GSRendererHW::GetInstance()->m_draw_transfers.rend();)
+		/* (backwards; a transfer erased is the one just looked at, so the
+		 * walk goes on with the one before it as it would) */
+		for (u32 n = hw->DrawTransferCount(); n-- > 0;)
 		{
+			const GSState::GSUploadQueue* const iter = &transfers[n];
 			// Would be nice to make this 100, but B-Boy seems to rely on data uploaded ~200 draws ago. Making it bigger for now to be safe.
 			if (last_draw - iter->draw > 500)
 				break;
@@ -3182,19 +3185,13 @@ GSTextureCache::Target* GSTextureCache::LookupDisplayTarget(GIFRegTEX0 TEX0, con
 				}
 
 				if (iter->blit.DBP == TEX0.TBP0 && transfer_end == rect_end)
-				{
-					iter = std::vector<GSState::GSUploadQueue>::reverse_iterator(GSRendererHW::GetInstance()->m_draw_transfers.erase(iter.base() - 1));
-				}
-				else
-					++iter;
+					hw->EraseDrawTransfer(n);
 
 				// In theory it might not be a full rect, but it should be enough to display *something*.
 				// It's also possible we haven't saved enough of the transfers to fill the rect if the game draws the picture in lots of small transfers.
 				can_create = true;
 				break;
 			}
-			else
-				++iter;
 		}
 	}
 

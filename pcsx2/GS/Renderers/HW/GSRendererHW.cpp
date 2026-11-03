@@ -101,7 +101,6 @@ GSRendererHW::GSRendererHW()
 	GSTextureReplacements::Initialize();
 
 	// Hope nothing requires too many draw calls.
-	m_drawlist.reserve(2048);
 
 	memset(&m_conf, 0, sizeof(m_conf));
 
@@ -187,17 +186,20 @@ void GSRendererHW::VSync(u32 field, bool registers_written, bool idle_frame)
 		// Rocky Legend does this with the main menu FMV's.
 		if (s_last_transfer_draw_n > (s_n - 5))
 		{
-			for (auto iter = m_draw_transfers.rbegin(); iter != m_draw_transfers.rend(); iter++)
+			/* (from the last: the first that is older than fifty draws
+			 * goes, and everything before it) */
+			const GSUploadQueue* const transfers = DrawTransfers();
+			for (u32 i = DrawTransferCount(); i-- > 0;)
 			{
-				if ((s_n - iter->draw) > 50)
+				if ((s_n - transfers[i].draw) > 50)
 				{
-					m_draw_transfers.erase(m_draw_transfers.begin(), std::next(iter).base());
+					gs_array_erase_front(&m_draw_transfers, i + 1);
 					break;
 				}
 			}
 		}
 		else
-			m_draw_transfers.clear();
+			ClearDrawTransfers();
 
 		g_texture_cache->IncAge();
 	}
@@ -2307,13 +2309,13 @@ void GSRendererHW::InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GS
 	if (clut)
 		return; // FIXME
 
-	auto iter = m_draw_transfers.end();
+	const GSUploadQueue* const transfers = DrawTransfers();
 	bool skip = false;
 	// If the EE write overlaps the readback and was done since the last draw, there's no need to read it back.
 	// Dog's life does this.
-	while (iter != m_draw_transfers.begin())
+	for (u32 i = DrawTransferCount(); i-- > 0;)
 	{
-		--iter;
+		const GSUploadQueue* const iter = &transfers[i];
 
 		if (!(iter->draw == s_n && BITBLTBUF.SBP == iter->blit.DBP && iter->blit.DPSM == BITBLTBUF.SPSM && r.eq(iter->rect)))
 			continue;
@@ -5155,7 +5157,7 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 				// Initial idea was to enable accurate blending for sprite rendering to handle
 				// correctly post-processing effect. Some games (ZoE) use tons of sprites as particles.
 				// In order to keep it fast, let's limit it to smaller draw call.
-				sw_blending |= m_vt.m_primclass == GS_SPRITE_CLASS && m_drawlist.size() < 100;
+				sw_blending |= m_vt.m_primclass == GS_SPRITE_CLASS && m_drawlist.count < 100;
 				/* fallthrough */
 			case AccBlendLevel::Basic:
 				// Prefer sw blend if possible.
@@ -6680,7 +6682,7 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 				// Only first pixel (write 1) will pass (alpha is 0)
 				DATE_one = true;
 			}
-			else if (features.texture_barrier && ((m_vt.m_primclass == GS_SPRITE_CLASS && m_drawlist.size() < 10) || (m_index.tail < 30)))
+			else if (features.texture_barrier && ((m_vt.m_primclass == GS_SPRITE_CLASS && m_drawlist.count < 10) || (m_index.tail < 30)))
 			{
 				// texture barrier will split the draw call into n draw call. It is very efficient for
 				// few primitive draws. Otherwise it sucks.
@@ -7184,7 +7186,8 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 		m_conf.alpha_second_pass.enable = false;
 	}
 
-	m_conf.drawlist = (m_conf.require_full_barrier && m_vt.m_primclass == GS_SPRITE_CLASS) ? &m_drawlist : nullptr;
+	m_conf.drawlist       = (m_conf.require_full_barrier && m_vt.m_primclass == GS_SPRITE_CLASS) ? GS_ARRAY_ITEMS(&m_drawlist, const u32) : nullptr;
+	m_conf.drawlist_count = m_conf.drawlist ? static_cast<u32>(m_drawlist.count) : 0;
 
 	g_gs_device->RenderHW(m_conf);
 }
@@ -7192,8 +7195,10 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 // If the EE uploaded a new CLUT since the last draw, use that.
 bool GSRendererHW::HasEEUpload(GSVector4i r)
 {
-	for (auto iter = m_draw_transfers.begin(); iter != m_draw_transfers.end(); ++iter)
+	const GSUploadQueue* const transfers = DrawTransfers();
+	for (u32 n = 0; n < DrawTransferCount(); n++)
 	{
+		const GSUploadQueue* const iter = &transfers[n];
 		if (iter->draw == (s_n - 1) && iter->blit.DBP == m_cached_ctx.TEX0.TBP0 && GSUtil::HasSharedBits(iter->blit.DPSM, m_cached_ctx.TEX0.PSM))
 		{
 			GSVector4i rect = r;
@@ -7872,7 +7877,7 @@ bool GSRendererHW::TryGSMemClear(bool no_rt, bool preserve_rt, bool invalidate_r
 			clear_queue.blit.DBW = m_cached_ctx.FRAME.FBW;
 			clear_queue.blit.DPSM = m_cached_ctx.FRAME.PSM;
 			clear_queue.zero_clear = true;
-			m_draw_transfers.push_back(clear_queue);
+			PushDrawTransfer(clear_queue);
 		}
 	}
 
@@ -8311,7 +8316,7 @@ void GSRendererHW::ReplaceVerticesWithSprite(const GSVector4i& unscaled_rect, co
 	m_context->scissor.in = scissor;
 	m_vt.m_primclass = GS_SPRITE_CLASS;
 
-	m_drawlist.clear();
+	m_drawlist.count = 0;
 	m_prim_overlap = PRIM_OVERLAP_NO;
 }
 
@@ -8387,7 +8392,8 @@ GSHWDrawConfig& GSRendererHW::BeginHLEHardwareDraw(
 	config.nverts = static_cast<u32>(C89_ARRAY_SIZE(vertices));
 	config.nindices = static_cast<u32>(C89_ARRAY_SIZE(indices));
 	config.indices_per_prim = 3;
-	config.drawlist = nullptr;
+	config.drawlist       = nullptr;
+	config.drawlist_count = 0;
 	config.scissor = rt_or_ds->GetRect();
 	config.drawarea = config.scissor;
 	config.topology = GSHWDrawConfig::Topology::Triangle;

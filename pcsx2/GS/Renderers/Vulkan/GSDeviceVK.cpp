@@ -6018,14 +6018,14 @@ void GSDeviceVK::SendHWDraw(const GSHWDrawConfig& config, GSTextureVK* draw_rt, 
 	if (config.drawlist)
 	{
 		const u32 indices_per_prim = config.indices_per_prim;
-		const u32 draw_list_size = static_cast<u32>(config.drawlist->size());
+		const u32 draw_list_size = config.drawlist_count;
 		const VkImageMemoryBarrier barrier = GetColorBufferBarrier(draw_rt);
 		u32 p = 0;
 		u32 n = 0;
 
 		if (skip_first_barrier)
 		{
-			const u32 count = (*config.drawlist)[n] * indices_per_prim;
+			const u32 count = config.drawlist[n] * indices_per_prim;
 			DrawIndexedPrimitive(p, count);
 			p += count;
 			++n;
@@ -6037,7 +6037,7 @@ void GSDeviceVK::SendHWDraw(const GSHWDrawConfig& config, GSTextureVK* draw_rt, 
 				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_DEPENDENCY_BY_REGION_BIT, 0,
 				nullptr, 0, nullptr, 1, &barrier);
 
-			const u32 count = (*config.drawlist)[n] * indices_per_prim;
+			const u32 count = config.drawlist[n] * indices_per_prim;
 			DrawIndexedPrimitive(p, count);
 			p += count;
 		}

@@ -2492,11 +2492,11 @@ void GSDeviceOGL::SendHWDraw(const GSHWDrawConfig& config, bool needs_barrier)
 	if (config.drawlist)
 	{
 		const u32 indices_per_prim = config.indices_per_prim;
-		const u32 draw_list_size = static_cast<u32>(config.drawlist->size());
+		const u32 draw_list_size = config.drawlist_count;
 
 		for (u32 n = 0, p = 0; n < draw_list_size; n++)
 		{
-			const u32 count = (*config.drawlist)[n] * indices_per_prim;
+			const u32 count = config.drawlist[n] * indices_per_prim;
 			glTextureBarrier();
 			DrawIndexedPrimitive(p, count);
 			p += count;

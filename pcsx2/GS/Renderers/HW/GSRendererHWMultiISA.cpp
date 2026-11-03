@@ -555,7 +555,7 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 		uq.draw      = GSState::s_n;
 		uq.rect      = bbox;
 		uq.zero_clear = false;
-		hw.m_draw_transfers.push_back(uq);
+		hw.PushDrawTransfer(uq);
 	}
 
 	return true;

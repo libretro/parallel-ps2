@@ -129,6 +129,11 @@ GSState::GSState()
 	memset(m_mem.m_vm8, 0, m_mem.m_vmsize);
 
 	m_v.RGBAQ.Q = 1.0f;
+	gs_array_init(&m_draw_transfers, sizeof(GSUploadQueue));
+	gs_array_init(&m_drawlist, sizeof(u32));
+	/* (room for the runs of a full vertex buffer of sprites, made now) */
+	if (!gs_array_reserve(&m_drawlist, 2048))
+		abort();
 
 	GrowVertexBuffer();
 
@@ -148,6 +153,16 @@ GSState::~GSState()
 		memalign_free(m_vertex.buff);
 	if (m_index.buff)
 		memalign_free(m_index.buff);
+	gs_array_free(&m_draw_transfers);
+	gs_array_free(&m_drawlist);
+}
+
+void GSState::PushDrawTransfer(const GSUploadQueue& transfer)
+{
+	GSUploadQueue* const slot = static_cast<GSUploadQueue*>(gs_array_push(&m_draw_transfers));
+	if (!slot)
+		abort(); /* out of memory, as the vector's push_back was without exceptions */
+	*slot = transfer;
 }
 
 void GSState::ResetBase(bool hardware_reset)
@@ -1415,8 +1430,8 @@ void GSState::FlushWrite()
 			// Just setting the height should be okay...
 			r.w = pcsx2_max_i(r.y + calculated_height, psm_s.bs.y);
 
-			if (m_draw_transfers.size() > 0 && m_env.BITBLTBUF.DBP == m_draw_transfers.back().blit.DBP)
-				m_draw_transfers.back().rect = m_draw_transfers.back().rect.runion(r);
+			if (DrawTransferCount() > 0 && m_env.BITBLTBUF.DBP == LastDrawTransfer().blit.DBP)
+				LastDrawTransfer().rect = LastDrawTransfer().rect.runion(r);
 		}
 	}
 
@@ -1846,20 +1861,18 @@ void GSState::Write(const u8* mem, int len)
 
 		s_last_transfer_draw_n = s_n;
 		// Store the transfer for preloading new RT's.
-		if ((m_draw_transfers.size() > 0 && blit.DBP == m_draw_transfers.back().blit.DBP))
+		if ((DrawTransferCount() > 0 && blit.DBP == LastDrawTransfer().blit.DBP))
 		{
 			// Same BP, let's update the rect.
-			GSUploadQueue transfer = m_draw_transfers.back();
-			m_draw_transfers.pop_back();
+			GSUploadQueue& transfer = LastDrawTransfer();
 			transfer.rect = transfer.rect.runion(r);
 			transfer.draw = s_n;
 			transfer.zero_clear = false;
-			m_draw_transfers.push_back(transfer);
 		}
 		else
 		{
 			GSUploadQueue new_transfer = { blit, r, s_n, false };
-			m_draw_transfers.push_back(new_transfer);
+			PushDrawTransfer(new_transfer);
 		}
 
 		if (len >= m_tr.total)
@@ -2020,20 +2033,18 @@ void GSState::MoveBase()
 
 	s_last_transfer_draw_n = s_n;
 	// Store the transfer for preloading new RT's.
-	if ((m_draw_transfers.size() > 0 && m_env.BITBLTBUF.DBP == m_draw_transfers.back().blit.DBP))
+	if ((DrawTransferCount() > 0 && m_env.BITBLTBUF.DBP == LastDrawTransfer().blit.DBP))
 	{
 		// Same BP, let's update the rect.
-		GSUploadQueue transfer = m_draw_transfers.back();
-		m_draw_transfers.pop_back();
+		GSUploadQueue& transfer = LastDrawTransfer();
 		transfer.rect = transfer.rect.runion(r);
 		transfer.draw = s_n;
 		transfer.zero_clear = false;
-		m_draw_transfers.push_back(transfer);
 	}
 	else
 	{
 		GSUploadQueue new_transfer = { m_env.BITBLTBUF, r, s_n, false };
-		m_draw_transfers.push_back(new_transfer);
+		PushDrawTransfer(new_transfer);
 	}
 
 	auto copy = [this, sbp, dbp, sx, sy, dx, dy, w, h, yinc, xinc](const GSOffset& dpo, const GSOffset& spo, auto&& pxCopyFn)
@@ -2920,7 +2931,7 @@ GSState::PRIM_OVERLAP GSState::PrimitiveOverlap()
 	PRIM_OVERLAP overlap = PRIM_OVERLAP_NO;
 	const GSVertex* v = m_vertex.buff;
 
-	m_drawlist.clear();
+	m_drawlist.count = 0;
 	u32 i = 0;
 	while (i < count)
 	{
@@ -2950,7 +2961,12 @@ GSState::PRIM_OVERLAP GSState::PrimitiveOverlap()
 			}
 			j += 2;
 		}
-		m_drawlist.push_back((j - i) >> 1); // Sprite count
+		{
+			u32* const run = static_cast<u32*>(gs_array_push(&m_drawlist));
+			if (!run)
+				abort(); /* out of memory, as the vector's push_back was without exceptions */
+			*run = (j - i) >> 1; // Sprite count
+		}
 		i = j;
 	}
 

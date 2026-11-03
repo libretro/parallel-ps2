@@ -22,6 +22,7 @@
 #include "Renderers/Common/GSVertex.h"
 #include "Renderers/Common/GSVertexTrace.h"
 #include "Renderers/Common/GSDevice.h"
+#include "Renderers/Common/GSArray.h"
 #include "GSVector.h"
 
 class GSState;
@@ -322,7 +323,18 @@ public:
 	bool m_channel_shuffle = false;
 	u8 m_scanmask_used = 0;
 	int m_backed_up_ctx = 0;
-	std::vector<GSUploadQueue> m_draw_transfers;
+	/* The EE's transfers into local memory since the draws stopped
+	 * preloading them, in order (GSUploadQueue), for the targets made
+	 * from them: pushed, read back from the end, walked backwards and
+	 * cut at the front. In a gs_array. */
+	gs_array_t m_draw_transfers;
+	__fi GSUploadQueue* DrawTransfers() { return GS_ARRAY_ITEMS(&m_draw_transfers, GSUploadQueue); }
+	__fi u32 DrawTransferCount() const { return static_cast<u32>(m_draw_transfers.count); }
+	__fi GSUploadQueue& LastDrawTransfer() { return DrawTransfers()[m_draw_transfers.count - 1]; }
+	__fi void PopDrawTransfer() { m_draw_transfers.count--; }
+	__fi void EraseDrawTransfer(u32 i) { gs_array_erase(&m_draw_transfers, i); }
+	__fi void ClearDrawTransfers() { m_draw_transfers.count = 0; }
+	void PushDrawTransfer(const GSUploadQueue& transfer);
 	NoGapsType m_primitive_covers_without_gaps;
 	GSVector4i m_r = {};
 	GSVector4i m_r_no_scissor = {};
@@ -388,7 +400,9 @@ public:
 	};
 
 	PRIM_OVERLAP m_prim_overlap = PRIM_OVERLAP_UNKNOW;
-	std::vector<size_t> m_drawlist;
+	/* The sprites of a draw in runs that do not overlap, a count a run
+	 * (u32), for the device to draw a run at a time between barriers. */
+	gs_array_t m_drawlist;
 
 	struct GSPCRTCRegs
 	{

@@ -268,3 +268,4 @@ tests/ata/*.img
 /tests/patch/patch_dbload
 /tests/patch/patch_dbparse
 /tests/patch/patch_ingame
+/tests/gsarray/gsarray_test
