@@ -19,6 +19,7 @@
 #include <cstring> /* memcpy/memset */
 
 #include "GSRendererSW.h"
+#include "../Common/GSKeyHash.h"
 
 MULTI_ISA_UNSHARED_IMPL;
 
@@ -152,6 +153,7 @@ GSRendererSW::GSRendererSW(int threads)
 		}
 	}
 	gs_hr_pages_reset(&m_hr_pages);
+	gs_flat_map_init(&m_hr_offsets, sizeof(u64), sizeof(HiresOffset*));
 
 	for (retro_atomic_int_t& p : m_fzb_pages)
 		retro_atomic_store_release_int(&p, 0);
@@ -206,9 +208,10 @@ void GSRendererSW::Destroy()
 	m_output      = nullptr;
 	m_output_size = 0;
 
-	for (auto& it : m_hr_offsets)
-		memalign_free(it.second);
-	m_hr_offsets.clear();
+	for (size_t slot = 0; slot < GS_FLAT_MAP_SLOTS(&m_hr_offsets); slot++)
+		if (GS_FLAT_MAP_USED(&m_hr_offsets, slot))
+			memalign_free(*static_cast<HiresOffset**>(GS_FLAT_MAP_VALUE(&m_hr_offsets, slot)));
+	gs_flat_map_free(&m_hr_offsets);
 	for (i = 0; i < 64; i++)
 	{
 		free(m_hr_layout[i]);
@@ -1012,14 +1015,17 @@ const GSRendererSW::HiresOffset* GSRendererSW::HiresOffsets()
 	const GIFRegFRAME& FRAME = m_context->FRAME;
 	const GIFRegZBUF& ZBUF = m_context->ZBUF;
 	const u64 hash = m_context->offset.fzb4->hash;
-	const auto it = m_hr_offsets.find(hash);
+	const size_t key_hash = gs_key_hash(&hash, sizeof(hash));
+	HiresOffset** const found = static_cast<HiresOffset**>(gs_flat_map_find(&m_hr_offsets, &hash, sizeof(hash), key_hash));
 	const gs_hr_layout_t* fl;
 	const gs_hr_layout_t* zl;
 	HiresOffset* o;
+	HiresOffset** slot;
+	int inserted;
 	int i;
 
-	if (it != m_hr_offsets.end())
-		return it->second;
+	if (found)
+		return *found;
 
 	o = static_cast<HiresOffset*>(memalign_alloc(VECTOR_ALIGNMENT, sizeof(HiresOffset)));
 	if (!o)
@@ -1038,7 +1044,10 @@ const GSRendererSW::HiresOffset* GSRendererSW::HiresOffsets()
 		o->col[i].y = zl ? static_cast<int>(gs_hr_col(zl, i * 4) * (zl->elem_bytes / 2)) : 0;
 	}
 
-	m_hr_offsets[hash] = o;
+	slot = static_cast<HiresOffset**>(gs_flat_map_insert(&m_hr_offsets, &hash, key_hash, &inserted));
+	if (!slot)
+		abort(); /* out of memory, as the map's operator[] did without exceptions */
+	*slot = o;
 	return o;
 }
 

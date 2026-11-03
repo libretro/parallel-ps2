@@ -15,6 +15,7 @@
 
 #include "GSTextureCacheSW.h"
 #include <memalign.h>
+#include <stdlib.h>
 #include "../../GSExtra.h"
 #include "../../GSUtil.h"
 
@@ -23,6 +24,15 @@ GSTextureCacheSW::GSTextureCacheSW() = default;
 GSTextureCacheSW::~GSTextureCacheSW()
 {
 	RemoveAll();
+	free(m_textures);
+}
+
+/* Takes t out of m_textures, the last one into its place. */
+void GSTextureCacheSW::Unlist(Texture* t)
+{
+	const u32 i = t->m_index;
+	m_textures[i]          = m_textures[--m_textures_count];
+	m_textures[i]->m_index = i;
 }
 
 GSTextureCacheSW::Texture* GSTextureCacheSW::Lookup(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, u32 tw0)
@@ -61,9 +71,20 @@ GSTextureCacheSW::Texture* GSTextureCacheSW::Lookup(const GIFRegTEX0& TEX0, cons
 	}
 
 	// Lookup miss
+	if (m_textures_count == m_textures_capacity)
+	{
+		const u32 capacity = m_textures_capacity ? m_textures_capacity * 2 : 64;
+		Texture** const grown = static_cast<Texture**>(realloc(m_textures, capacity * sizeof(Texture*)));
+		if (!grown)
+			abort(); /* out of memory, as the set's insert was without exceptions */
+		m_textures          = grown;
+		m_textures_capacity = capacity;
+	}
+
 	Texture* t = new Texture(tw0, TEX0, TEXA);
 
-	m_textures.insert(t);
+	t->m_index                     = m_textures_count;
+	m_textures[m_textures_count++] = t;
 
 	t->m_pages.loopPages([this, t](u32 page)
 	{
@@ -111,10 +132,10 @@ void GSTextureCacheSW::InvalidatePage(u32 page)
 
 void GSTextureCacheSW::RemoveAll()
 {
-	for (auto i : m_textures)
-		delete i;
+	for (u32 i = 0; i < m_textures_count; i++)
+		delete m_textures[i];
 
-	m_textures.clear();
+	m_textures_count = 0;
 
 	for (auto& l : m_map)
 	{
@@ -124,13 +145,14 @@ void GSTextureCacheSW::RemoveAll()
 
 void GSTextureCacheSW::IncAge()
 {
-	for (auto i = m_textures.begin(); i != m_textures.end();)
+	/* (downwards: a texture taken out has the last moved into its place) */
+	for (u32 i = m_textures_count; i-- > 0;)
 	{
-		Texture* const t = *i;
+		Texture* const t = m_textures[i];
 
 		if (++t->m_age > 10)
 		{
-			i = m_textures.erase(i);
+			Unlist(t);
 
 			t->m_pages.loopPages([this, t](u32 page)
 			{
@@ -138,10 +160,6 @@ void GSTextureCacheSW::IncAge()
 			});
 
 			delete t;
-		}
-		else
-		{
-			++i;
 		}
 	}
 }

@@ -21,8 +21,7 @@
 #include "../../GSRingHeap.h"
 #include "../../MultiISA.h"
 #include "GSHiresMem.h"
-
-#include <unordered_map>
+#include "../Common/GSFlatMap.h"
 
 MULTI_ISA_UNSHARED_START
 
@@ -106,7 +105,7 @@ public: /* called through gs_state_ops (GSRendererSW.cpp); these were protected 
 	HiresTex* m_hr_tex = nullptr; // the last 2x texture, for the draws after it
 	gs_hr_layout_t* m_hr_layout[64] = {};
 	u64 m_hr_tex_key[3] = {};     // its TEX0, TEXA and the sum of its pages' generations
-	std::unordered_map<u64, HiresOffset*> m_hr_offsets;
+	gs_flat_map_t m_hr_offsets = {}; /* fzb4 hash -> HiresOffset* */
 	std::vector<u32> m_hr_colbuf;
 	size_t m_hr_output_size = 0;
 	gs_hr_pages_t m_hr_pages;

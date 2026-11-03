@@ -18,8 +18,6 @@
 #include "../Common/GSRenderer.h"
 #include "../Common/GSFastList.h"
 
-#include <unordered_set>
-
 class GSTextureCacheSW
 {
 public:
@@ -39,6 +37,7 @@ public:
 		GSPage2TileMap* m_p2t;
 		u32 m_valid[GS_MAX_PAGES];
 		u16 m_erase_it[GS_MAX_PAGES];
+		u32 m_index; /* in the cache's m_textures */
 		const u32* RESTRICT m_sharedbits;
 
 		// m_valid
@@ -54,8 +53,14 @@ public:
 	};
 
 protected:
-	std::unordered_set<Texture*> m_textures;
+	/* Every texture, in a dense array (the cache owns them): a texture
+	 * taken out has the last moved into its place, m_index following. */
+	Texture** m_textures = nullptr;
+	u32 m_textures_count = 0;
+	u32 m_textures_capacity = 0;
 	std::array<FastList<Texture*>, GS_MAX_PAGES> m_map;
+
+	void Unlist(Texture* t);
 
 public:
 	GSTextureCacheSW();

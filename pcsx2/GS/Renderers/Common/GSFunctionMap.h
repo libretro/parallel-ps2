@@ -19,99 +19,29 @@
 #include "../../GSExtra.h"
 
 #include "GSCodeReserve.h"
+#include "GSFlatMap.h"
+#include "GSKeyHash.h"
 
-#include <unordered_map>
+#include <stdlib.h>
 
-template <class KEY, class VALUE>
-class GSFunctionMap
-{
-protected:
-	struct ActivePtr
-	{
-		u64 frame;
-		VALUE f;
-	};
-
-	std::unordered_map<KEY, ActivePtr*> m_map_active;
-
-	ActivePtr* m_active;
-
-	virtual VALUE GetDefaultFunction(KEY key) = 0;
-
-public:
-	GSFunctionMap()
-		: m_active(NULL)
-	{
-	}
-
-	virtual ~GSFunctionMap()
-	{
-		for (auto& i : m_map_active)
-			delete i.second;
-	}
-
-	VALUE operator[](KEY key)
-	{
-		m_active = NULL;
-
-		auto it = m_map_active.find(key);
-
-		if (it != m_map_active.end())
-			m_active = it->second;
-		else
-		{
-			ActivePtr* p = new ActivePtr();
-
-			memset(p, 0, sizeof(*p));
-
-			p->frame = (u64)-1;
-
-			p->f = GetDefaultFunction(key);
-
-			m_map_active[key] = p;
-
-			m_active = p;
-		}
-
-		return m_active->f;
-	}
-};
-
-
+/* The functions a code generator has made, by the selector each was made
+ * for, in a GSFlatMap from the selector to the function: a draw's lookup
+ * reads one slot. A selector the generator could not make a function for
+ * (the code reserve full) is kept with none, so it is not tried again
+ * until Clear. One map per rasterizer, as before: not shared. */
 template <class CG, class KEY, class VALUE>
-class GSCodeGeneratorFunctionMap : public GSFunctionMap<KEY, VALUE>
+class GSCodeGeneratorFunctionMap
 {
-	std::unordered_map<u64, VALUE> m_cgmap;
+	gs_flat_map_t m_map;
 
 	/* The room a function is generated into first, and the most it is
 	 * given: a generator stops writing at the end of its room, so a
 	 * function that fills it is generated again in twice the room. */
 	enum { MIN_SIZE = 8192, MAX_SIZE = 65536 };
 
-public:
-	GSCodeGeneratorFunctionMap() { }
-
-	~GSCodeGeneratorFunctionMap() = default;
-
-	/* Forgets every function, for a reset of the code reserve: none of
-	 * them is handed out again. */
-	void Clear()
-	{
-		m_cgmap.clear();
-		for (auto& i : this->m_map_active)
-			delete i.second;
-		this->m_map_active.clear();
-		this->m_active = NULL;
-	}
-
 	/* NULL when the code reserve has no room left for the function. */
-	VALUE GetDefaultFunction(KEY key)
+	VALUE Generate(KEY key)
 	{
-		auto i = m_cgmap.find(key);
-
-		if (i != m_cgmap.end())
-			return i->second;
-
 		for (size_t room = MIN_SIZE; room <= MAX_SIZE; room *= 2)
 		{
 			u8* code_ptr = gs_code_reserve_reserve(room);
@@ -123,11 +53,44 @@ public:
 				continue; /* cut short at the end of its room */
 
 			gs_code_reserve_commit(cg.getSize());
-
-			VALUE ret = (VALUE)cg.getCode();
-			m_cgmap[key] = ret;
-			return ret;
+			return (VALUE)cg.getCode();
 		}
 		return nullptr;
+	}
+
+public:
+	GSCodeGeneratorFunctionMap()
+	{
+		static_assert(sizeof(KEY) % sizeof(size_t) == 0, "the key fills whole words");
+		gs_flat_map_init(&m_map, sizeof(KEY), sizeof(VALUE));
+	}
+
+	~GSCodeGeneratorFunctionMap()
+	{
+		gs_flat_map_free(&m_map);
+	}
+
+	/* Forgets every function, for a reset of the code reserve: none of
+	 * them is handed out again. */
+	void Clear()
+	{
+		gs_flat_map_clear(&m_map);
+	}
+
+	VALUE operator[](KEY key)
+	{
+		const size_t hash = gs_key_hash(&key, sizeof(key));
+		VALUE* const found = static_cast<VALUE*>(gs_flat_map_find(&m_map, &key, sizeof(key), hash));
+		if (found)
+			return *found;
+		{
+			const VALUE f = Generate(key);
+			int inserted;
+			VALUE* const slot = static_cast<VALUE*>(gs_flat_map_insert(&m_map, &key, hash, &inserted));
+			if (!slot)
+				abort(); /* out of memory, as the map's operator[] did without exceptions */
+			*slot = f;
+			return f;
+		}
 	}
 };
