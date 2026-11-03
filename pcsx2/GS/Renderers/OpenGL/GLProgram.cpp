@@ -155,7 +155,8 @@ bool GLProgram::CreateFromBinary(const void* data, u32 data_length, u32 data_for
 	return true;
 }
 
-bool GLProgram::GetBinary(std::vector<u8>* out_data, u32* out_data_format)
+/* The program's binary, into out_data (a byte array, grown as needed). */
+bool GLProgram::GetBinary(gs_array_t* out_data, u32* out_data_format)
 {
 	GLint binary_size = 0;
 	glGetProgramiv(m_program_id, GL_PROGRAM_BINARY_LENGTH, &binary_size);
@@ -166,17 +167,20 @@ bool GLProgram::GetBinary(std::vector<u8>* out_data, u32* out_data_format)
 	}
 
 	GLenum format = 0;
-	out_data->resize(static_cast<size_t>(binary_size));
-	glGetProgramBinary(m_program_id, binary_size, &binary_size, &format, out_data->data());
+	if (!gs_array_reserve(out_data, static_cast<size_t>(binary_size)))
+		return false;
+	out_data->count = static_cast<size_t>(binary_size);
+	glGetProgramBinary(m_program_id, binary_size, &binary_size, &format, out_data->items);
 	if (binary_size == 0)
 	{
 		log_cb(RETRO_LOG_WARN, "glGetProgramBinary() failed\n");
 		return false;
 	}
-	else if (static_cast<size_t>(binary_size) != out_data->size())
+	else if (static_cast<size_t>(binary_size) != out_data->count)
 	{
-		log_cb(RETRO_LOG_WARN, "Size changed from %zu to %d after glGetProgramBinary()\n", out_data->size(), binary_size);
-		out_data->resize(static_cast<size_t>(binary_size));
+		/* (never more than asked for: the driver got that much room) */
+		log_cb(RETRO_LOG_WARN, "Size changed from %zu to %d after glGetProgramBinary()\n", out_data->count, binary_size);
+		out_data->count = static_cast<size_t>(binary_size);
 	}
 
 	*out_data_format = static_cast<u32>(format);

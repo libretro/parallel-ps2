@@ -23,8 +23,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
-#include <vector>
+#include "GS/Renderers/Common/GSFlatMap.h"
+#include "GS/Renderers/Common/GSKeyHash.h"
+#include "GS/Renderers/Common/GSArray.h"
 
 class GLShaderCache
 {
@@ -44,29 +45,16 @@ class GLShaderCache
 		bool GetComputeProgram(GLProgram* out_program, const std::string_view glsl, const PreLinkCallback& callback = {});
 
 	private:
+		/* The key of a program in the index: the two sources' hashes and
+		 * lengths, laid out without padding so the bytes are the key. */
 		struct CacheIndexKey
 		{
 			u64 vertex_source_hash_low;
 			u64 vertex_source_hash_high;
-			u32 vertex_source_length;
 			u64 fragment_source_hash_low;
 			u64 fragment_source_hash_high;
+			u32 vertex_source_length;
 			u32 fragment_source_length;
-
-			bool operator==(const CacheIndexKey& key) const;
-			bool operator!=(const CacheIndexKey& key) const;
-		};
-
-		struct CacheIndexEntryHasher
-		{
-			std::size_t operator()(const CacheIndexKey& e) const noexcept
-			{
-				std::size_t h = 0;
-				HashCombine(h,
-						e.vertex_source_hash_low, e.vertex_source_hash_high, e.vertex_source_length,
-						e.fragment_source_hash_low, e.fragment_source_hash_high, e.fragment_source_length);
-				return h;
-			}
 		};
 
 		struct CacheIndexData
@@ -75,8 +63,6 @@ class GLShaderCache
 			u32 blob_size;
 			u32 blob_format;
 		};
-
-		using CacheIndex = std::unordered_map<CacheIndexKey, CacheIndexData, CacheIndexEntryHasher>;
 
 		static CacheIndexKey GetCacheKey(const std::string_view& vertex_shader, const std::string_view& fragment_shader);
 
@@ -87,7 +73,10 @@ class GLShaderCache
 		bool ReadExisting(const std::string& index_filename, const std::string& blob_filename);
 		bool Recreate();
 
-		bool WriteToBlobFile(const CacheIndexKey& key, const std::vector<u8>& prog_data, u32 prog_format);
+		bool WriteToBlobFile(const CacheIndexKey& key, const void* prog_data, u32 prog_size, u32 prog_format);
+		const CacheIndexData* Find(const CacheIndexKey& key) const;
+		void Add(const CacheIndexKey& key, const CacheIndexData& data);
+		std::optional<GLProgram> LoadProgram(const CacheIndexData& data);
 
 		std::optional<GLProgram> CompileProgram(const std::string_view& vertex_shader,
 				const std::string_view& fragment_shader, const PreLinkCallback& callback,
@@ -101,6 +90,7 @@ class GLShaderCache
 		RFILE* m_index_file = nullptr;
 		RFILE* m_blob_file = nullptr;
 
-		CacheIndex m_index;
+		gs_flat_map_t m_index; /* CacheIndexKey -> CacheIndexData */
+		gs_array_t m_blob;     /* of u8: a program's binary, read or retrieved, kept at the largest */
 		bool m_program_binary_supported = false;
 };

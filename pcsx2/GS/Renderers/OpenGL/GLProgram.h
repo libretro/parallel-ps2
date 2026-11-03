@@ -17,7 +17,6 @@
 #include "common/Pcsx2Defs.h"
 #include "glad.h"
 #include <string_view>
-#include <vector>
 #include "GS/Renderers/Common/GSArray.h"
 
 class GLProgram
@@ -37,7 +36,7 @@ class GLProgram
 
 		bool CreateFromBinary(const void* data, u32 data_length, u32 data_format);
 
-		bool GetBinary(std::vector<u8>* out_data, u32* out_data_format);
+		bool GetBinary(gs_array_t* out_data, u32* out_data_format);
 		void SetBinaryRetrievableHint();
 
 		void BindAttribute(GLuint index, const char* name);

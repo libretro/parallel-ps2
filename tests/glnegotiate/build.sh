@@ -121,5 +121,33 @@ if [ $vulkan = 1 ]; then
 	fi
 fi
 
+# The program cache on disk: a second run in the same directory reads
+# the index the first wrote and builds its programs from the binaries,
+# and draws the same picture.
+c=upload_whole
+rm -rf "$WORK/gl"
+mkdir -p "$WORK/gl"
+first=
+for run in 1 2; do
+	if ! GN_RGB=1 GN_VERBOSE=1 LRPS2_BIOS="$WORK/$c.bin" timeout 300 "$WORK/glnegotiate$EXE" "$CORE" "$WORK/gl" > "$WORK/$c.cache$run.log" 2>&1; then
+		cat "$WORK/$c.cache$run.log"
+		echo "  FAIL: $c, run $run on the program cache"
+		fail=1
+		break
+	fi
+	h=$(sed -n 's/.*image: .*hash \([0-9a-f]*\)$/\1/p' "$WORK/$c.cache$run.log")
+	if [ $run = 1 ]; then
+		first=$h
+	elif ! grep -q "Read [1-9][0-9]* entries from" "$WORK/$c.cache$run.log"; then
+		echo "  FAIL: $c: the second run did not read the program cache's index"
+		fail=1
+	elif [ -z "$h" ] || [ "$h" != "$first" ]; then
+		echo "  FAIL: $c from the program cache draws ${h:-nothing}, not $first"
+		fail=1
+	else
+		printf '  %s: the same picture from the program cache (%s)\n' $c "$h"
+	fi
+done
+
 [ $fail = 0 ] || exit 1
 echo "glnegotiate: ok"
