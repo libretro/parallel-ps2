@@ -16,8 +16,7 @@
 #pragma once
 
 #include <new>
-#include <cstddef>
-#include <limits>
+#include <stddef.h>
 
 #include "../Common/GSRenderer.h"
 #include "GSObjectPool.h"
@@ -115,9 +114,9 @@ public:
 		HashCacheKey WithRemovedCLUTHash() const;
 		void RemoveCLUTHash();
 
-		__fi bool operator==(const HashCacheKey& e) const { return std::memcmp(this, &e, sizeof(*this)) == 0; }
-		__fi bool operator!=(const HashCacheKey& e) const { return std::memcmp(this, &e, sizeof(*this)) != 0; }
-		__fi bool operator<(const HashCacheKey& e) const { return std::memcmp(this, &e, sizeof(*this)) < 0; }
+		__fi bool operator==(const HashCacheKey& e) const { return memcmp(this, &e, sizeof(*this)) == 0; }
+		__fi bool operator!=(const HashCacheKey& e) const { return memcmp(this, &e, sizeof(*this)) != 0; }
+		__fi bool operator<(const HashCacheKey& e) const { return memcmp(this, &e, sizeof(*this)) < 0; }
 	};
 
 	struct HashCacheKeyHash
@@ -474,7 +473,7 @@ public:
 		Source** m_surfaces = nullptr;
 		u32 m_surfaces_count = 0;
 		u32 m_surfaces_capacity = 0;
-		std::array<FastList<Source*>, GS_MAX_PAGES> m_map;
+		FastList<Source*> m_map[GS_MAX_PAGES];
 
 		~SourceMap();
 
@@ -515,7 +514,7 @@ public:
 
 	struct SurfaceOffsetKey
 	{
-		std::array<SurfaceOffsetKeyElem, 2> elems;  // A and B elems.
+		SurfaceOffsetKeyElem elems[2];  // A and B elems.
 	};
 
 	struct SurfaceOffset
@@ -634,9 +633,9 @@ private:
 
 	Source* m_temporary_source = nullptr; // invalidated after the draw
 
-	GSDownloadTexturePtr m_color_download_texture;
-	GSDownloadTexturePtr m_uint16_download_texture;
-	GSDownloadTexturePtr m_uint32_download_texture;
+	GSDownloadTexture* m_color_download_texture = nullptr;
+	GSDownloadTexture* m_uint16_download_texture = nullptr;
+	GSDownloadTexture* m_uint32_download_texture = nullptr;
 
 	Source* CreateSource(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, Target* t, bool half_right, int x_offset, int y_offset, const GSVector2i* lod, const GSVector4i* src_range, GSTexture* gpu_clut, SourceRegion region, int page_gather);
 	static int ReadEndX(u32 bw, u32 psm, const GSVector4i& r);
@@ -653,7 +652,7 @@ private:
 	void ScaleTargetForDisplay(Target* t, const GIFRegTEX0& dispfb, int real_w, int real_h);
 
 	/// Resizes the download texture if needed.
-	bool PrepareDownloadTexture(u32 width, u32 height, GSTexture::Format format, GSDownloadTexturePtr* tex, u32 extent_w = 0, u32 extent_h = 0);
+	bool PrepareDownloadTexture(u32 width, u32 height, GSTexture::Format format, GSDownloadTexture** tex, u32 extent_w = 0, u32 extent_h = 0);
 
 	/* A readback with its copy recorded and not yet waited for. */
 	struct PendingRead
@@ -668,7 +667,7 @@ private:
 	/* Records the copy of r back from t. With own given, a download
 	 * texture this cache holds is used the first time in shared_used
 	 * and own after that, so the copies of one batch do not share one. */
-	bool ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexturePtr* own, u32* shared_used, PendingRead* out);
+	bool ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture** own, u32* shared_used, PendingRead* out);
 	/* Waits for the copy, unless done, and writes it to local memory. */
 	bool ReadStore(const PendingRead& p);
 
@@ -685,7 +684,7 @@ private:
 		u32 count;
 		u32 shared_used;
 	};
-	GSDownloadTexturePtr m_read_batch_download[READ_BATCH_MAX];
+	GSDownloadTexture* m_read_batch_download[READ_BATCH_MAX] = {};
 	bool ReadBatchQueue(ReadBatch* b, Target* t, const GSVector4i& r);
 	void ReadBatchStore(ReadBatch* b);
 	void InvalidateLocalMemReads(const GSOffset& off, const GSVector4i& r, bool full_flush, ReadBatch* b);
@@ -770,7 +769,7 @@ public:
 	Target* FindOverlappingTarget(u32 BP, u32 BW, u32 PSM, GSVector4i rc) const;
 
 	GSVector2i GetTargetSize(u32 bp, u32 fbw, u32 psm, s32 min_width, s32 min_height, bool can_expand = true);
-	bool HasTargetInHeightCache(u32 bp, u32 fbw, u32 psm, u32 max_age = std::numeric_limits<u32>::max(), bool move_front = true);
+	bool HasTargetInHeightCache(u32 bp, u32 fbw, u32 psm, u32 max_age = 0xFFFFFFFFu, bool move_front = true);
 	bool Has32BitTarget(u32 bp);
 
 	void InvalidateContainedTargets(u32 start_bp, u32 end_bp, u32 write_psm = PSMCT32);

@@ -13,9 +13,9 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cstring>
+#include <string.h>
 #include "common/Pcsx2Defs.h"
-#include <cassert>
+#include <assert.h>
 
 #include "GS/GS.h"
 #include "GS/Renderers/Vulkan/GSDeviceVK.h"
@@ -39,8 +39,7 @@
 #include <rthreads/rthreads.h>
 #endif
 
-#include <limits>
-#include <cstring>
+#include <string.h>
 
 #include <libretro.h>
 #ifdef ENABLE_PCSX2_PROFILER
@@ -2285,9 +2284,9 @@ GSTexture* GSDeviceVK::CreateSurface(GSTexture::Type type, int width, int height
 	return tex;
 }
 
-GSDownloadTexturePtr GSDeviceVK::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
+GSDownloadTexture* GSDeviceVK::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
 {
-	return GSDownloadTexturePtr(GSDownloadTextureVK::Create(width, height, format));
+	return GSDownloadTextureVK::Create(width, height, format);
 }
 
 void GSDeviceVK::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r, u32 destX, u32 destY)
@@ -5195,7 +5194,7 @@ void GSDeviceVK::EndRenderPass()
 
 void GSDeviceVK::SetViewport(const VkViewport& viewport)
 {
-	if (std::memcmp(&viewport, &m_viewport, sizeof(VkViewport)) == 0)
+	if (memcmp(&viewport, &m_viewport, sizeof(VkViewport)) == 0)
 		return;
 
 	memcpy(&m_viewport, &viewport, sizeof(VkViewport));

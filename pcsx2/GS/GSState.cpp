@@ -13,12 +13,11 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cstring> /* memset/memcpy */
+#include <string.h> /* memset/memcpy */
 #include "common/Pcsx2Defs.h"
 #include <memalign.h>
-#include <limits>
-#include <cfloat> /* FLT_MAX */
-#include <cmath>
+#include <float.h> /* FLT_MAX */
+#include <math.h>
 
 #include "common/MathUtils.h"
 
@@ -37,7 +36,7 @@ int GSState::s_transfer_n = 0;
 template <class T2, class T1>
 static T2 cpp11_bit_cast(T1 t1) {
   T2 t2;
-  memcpy( std::addressof(t2), std::addressof(t1), sizeof(T1) );
+  memcpy(&t2, &t1, sizeof(T1));
   return t2;
 }
 
@@ -98,7 +97,7 @@ int GSState::GetSaveStateSize()
 	size += sizeof(m_tr.x);
 	size += sizeof(m_tr.y);
 	size += GSLocalMemory::m_vmsize;
-	size += (sizeof(GIFPath::tag) + sizeof(GIFPath::reg)) * 4 /* C89_ARRAY_SIZE(GSState::m_path) */; // std::size won't work without an instance.
+	size += (sizeof(GIFPath::tag) + sizeof(GIFPath::reg)) * 4; /* the four paths of m_path */
 	size += sizeof(m_q);
 
 	return size;
@@ -1743,8 +1742,8 @@ void GSState::CheckWriteOverlap(bool req_write, bool req_read)
 						 * for a NaN and for an infinity and bounds s above.
 						 * Nothing bounds it below: a zero Q with a negative
 						 * S gives -inf, and the cast is undefined there. */
-						tex_coord.x = f32_to_s32_sat(std::round((1 << m_context->TEX0.TW) * s));
-						tex_coord.y = f32_to_s32_sat(std::round((1 << m_context->TEX0.TH) * t));
+						tex_coord.x = f32_to_s32_sat(roundf((1 << m_context->TEX0.TW) * s));
+						tex_coord.y = f32_to_s32_sat(roundf((1 << m_context->TEX0.TH) * t));
 					}
 
 					if (i == 0)
@@ -3115,17 +3114,17 @@ static constexpr u32 MaxVerticesForPrim(u32 prim)
 		// Indices are shifted left by 2 to form quads.
 		case GS_LINELIST:
 		case GS_LINESTRIP:
-			return (std::numeric_limits<u16>::max() / 4) - 4;
+			return (0xFFFF / 4) - 4;
 
 		// Four indices per two vertices.
 		case GS_SPRITE:
-			return (std::numeric_limits<u16>::max() / 2) - 2;
+			return (0xFFFF / 2) - 2;
 
 		case GS_TRIANGLELIST:
 		case GS_TRIANGLESTRIP:
 		case GS_TRIANGLEFAN:
 		default:
-			return (std::numeric_limits<u16>::max() - 3);
+			return (0xFFFF - 3);
 	}
 }
 
@@ -3236,8 +3235,8 @@ __noinline void GSState::HandleAutoFlush()
 				const float s = pcsx2_min_f((v->ST.S / v->RGBAQ.Q), 1.0f);
 				const float t = pcsx2_min_f((v->ST.T / v->RGBAQ.Q), 1.0f);
 
-				tex_coord.x = f32_to_s32_sat(std::round((1 << m_context->TEX0.TW) * s));
-				tex_coord.y = f32_to_s32_sat(std::round((1 << m_context->TEX0.TH) * t));
+				tex_coord.x = f32_to_s32_sat(roundf((1 << m_context->TEX0.TW) * s));
+				tex_coord.y = f32_to_s32_sat(roundf((1 << m_context->TEX0.TH) * t));
 			}
 
 			tex_rect.x = pcsx2_min_f(tex_rect.x, tex_coord.x);
@@ -3266,8 +3265,8 @@ __noinline void GSState::HandleAutoFlush()
 			const float s = pcsx2_min_f((v->ST.S / v->RGBAQ.Q), 1.0f);
 			const float t = pcsx2_min_f((v->ST.T / v->RGBAQ.Q), 1.0f);
 
-			tex_coord.x = f32_to_s32_sat(std::round((1 << m_context->TEX0.TW) * s));
-			tex_coord.y = f32_to_s32_sat(std::round((1 << m_context->TEX0.TH) * t));
+			tex_coord.x = f32_to_s32_sat(roundf((1 << m_context->TEX0.TW) * s));
+			tex_coord.y = f32_to_s32_sat(roundf((1 << m_context->TEX0.TH) * t));
 		}
 
 		const int clamp_minu = m_context->CLAMP.MINU;

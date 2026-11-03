@@ -116,7 +116,8 @@ namespace VMManager
 
 	/// Returns a list of processors in the system, and their corresponding affinity mask.
 	/// This list is ordered by most performant to least performant for pinning threads to.
-	const std::vector<u32>& GetSortedProcessorList();
+	/* The processors in affinity order, *count of them. */
+	const u32* GetSortedProcessorList(u32* count);
 
 	/// Internal callbacks, implemented in the emu core.
 	namespace Internal

@@ -13,9 +13,8 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <type_traits>
 #include "common/Pcsx2Defs.h"
-#include <cmath>
+#include <math.h>
 
 #include "common/Align.h"
 
@@ -130,7 +129,7 @@ void GSDevice::GenerateExpansionIndexBuffer(void* buffer)
 
 int GSDevice::GetMipmapLevelsForSize(int width, int height)
 {
-	return pcsx2_min_i(static_cast<int>(std::log2(pcsx2_max_i(width, height))) + 1, MAXIMUM_TEXTURE_MIPMAP_LEVELS);
+	return pcsx2_min_i(static_cast<int>(log2(static_cast<double>(pcsx2_max_i(width, height)))) + 1, MAXIMUM_TEXTURE_MIPMAP_LEVELS);
 }
 
 bool GSDevice::CreateBase()
@@ -515,7 +514,7 @@ static int multi_stretch_rect_same(const void* a, const void* b)
  * in memory (GSStableGroup.h). */
 void GSDevice::SortMultiStretchRects(MultiStretchRect* rects, u32 num_rects)
 {
-	static_assert(std::is_trivially_copyable<MultiStretchRect>::value,
+	static_assert(__is_trivially_copyable(MultiStretchRect),
 		"gs_stable_group moves the rects bytewise");
 	gs_stable_group(rects, num_rects, sizeof(*rects), multi_stretch_rect_same);
 }

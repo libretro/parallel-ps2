@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0+
 
 #include "../../common/Pcsx2Defs.h"
-#include <cstring>
+#include <string.h>
 #include "../../common/Pcsx2Types.h"
 
 class alignas(16) GSVector4i

@@ -250,7 +250,7 @@ public:
 	void DrawIndexedPrimitive(int offset, int count);
 
 	GSTexture* CreateSurface(GSTexture::Type type, int width, int height, int levels, GSTexture::Format format);
-	GSDownloadTexturePtr CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format);
+	GSDownloadTexture* CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format);
 
 	void CommitClear(GSTexture* t);
 	void CloneTexture(GSTexture* src, GSTexture** dest, const GSVector4i& rect);

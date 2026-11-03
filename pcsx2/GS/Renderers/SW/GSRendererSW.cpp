@@ -16,7 +16,7 @@
 #include <retro_atomic.h>
 #include "common/Pcsx2Defs.h"
 #include <memalign.h>
-#include <cstring> /* memcpy/memset */
+#include <string.h> /* memcpy/memset */
 
 #include "GSRendererSW.h"
 #include "../Common/GSKeyHash.h"

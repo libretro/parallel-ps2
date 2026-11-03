@@ -328,7 +328,7 @@ public:
 	void DrawIndexedPrimitive();
 	void DrawIndexedPrimitive(int offset, int count);
 
-	GSDownloadTexturePtr CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format);
+	GSDownloadTexture* CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format);
 
 	void CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r, u32 destX, u32 destY);
 

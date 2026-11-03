@@ -276,7 +276,7 @@ public:
 	void DrawIndexedPrimitive();
 	void DrawIndexedPrimitive(int offset, int count);
 
-	GSDownloadTexturePtr CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format);
+	GSDownloadTexture* CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format);
 
 	GSTexture* InitPrimDateTexture(GSTexture* rt, const GSVector4i& area, SetDATM datm);
 

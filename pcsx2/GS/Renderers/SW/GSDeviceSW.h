@@ -95,7 +95,7 @@ public:
 	PresentResult BeginPresent(bool frame_skip);
 	void EndPresent();
 
-	GSDownloadTexturePtr CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format);
+	GSDownloadTexture* CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format);
 
 	void CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r, u32 destX, u32 destY);
 	void StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect,

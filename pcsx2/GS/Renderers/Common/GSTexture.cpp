@@ -18,7 +18,6 @@
 
 #include "common/Align.h"
 
-#include <bitset>
 
 GSTexture::GSTexture() = default;
 

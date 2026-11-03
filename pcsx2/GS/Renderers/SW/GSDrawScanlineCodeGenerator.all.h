@@ -36,8 +36,8 @@ class GSDrawScanlineCodeGenerator2 : public GSNewCodeGenerator
 	using _parent = GSNewCodeGenerator;
 	using XYm = DRAW_SCANLINE_VECTOR_REGISTER;
 
-	constexpr static bool isXmm = std::is_same<XYm, Xbyak::Xmm>::value;
-	constexpr static bool isYmm = std::is_same<XYm, Xbyak::Ymm>::value;
+	constexpr static bool isXmm = GSSameType<XYm, Xbyak::Xmm>::value;
+	constexpr static bool isYmm = GSSameType<XYm, Xbyak::Ymm>::value;
 	constexpr static int wordsize = 8;
 	constexpr static int vecsize = isXmm ? 16 : 32;
 	constexpr static int vecsizelog = isXmm ? 4 : 5;

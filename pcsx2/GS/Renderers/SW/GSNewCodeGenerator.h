@@ -39,6 +39,10 @@
 
 /// Code generator that automatically selects between SSE and AVX, x86 and x64 so you don't have to
 /// Should make combined SSE and AVX codegen much easier
+/* Whether two types are one: value is true only for the same type twice. */
+template <class A, class B> struct GSSameType { static constexpr bool value = false; };
+template <class A> struct GSSameType<A, A> { static constexpr bool value = true; };
+
 class GSNewCodeGenerator
 {
 public:
@@ -218,7 +222,7 @@ public:
 	const u8 *getCurr() { return actual.getCurr(); }
 	void align(int x = 16) { return actual.align(x); }
 	void db(int code) { actual.db(code); }
-	void L(const std::string& label) { actual.L(label); }
+	void L(const char* label) { actual.L(label); }
 
 	void cdqe() { actual.cdqe(); }
 	void ret(int imm = 0) { actual.ret(imm); }

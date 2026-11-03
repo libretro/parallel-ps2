@@ -473,7 +473,7 @@ struct alignas(16) GSHWDrawConfig
 #pragma pack(pop)
 	struct PSSelectorHash
 	{
-		std::size_t operator()(const PSSelector& p) const
+		size_t operator()(const PSSelector& p) const
 		{
 			/* Equality is key_lo and key_hi alone: hash exactly those. */
 			const u64 words[2] = {p.key_lo, p.key_hi};
@@ -1038,7 +1038,8 @@ public:
 	GSTexture* CreateDepthStencil(int w, int h, GSTexture::Format format, bool clear = true);
 	GSTexture* CreateTexture(int w, int h, int mipmap_levels, GSTexture::Format format, bool prefer_reuse = false);
 
-	GSDownloadTexturePtr CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format);
+	/* A new download texture, or NULL; freed with gs_download_texture_free. */
+	GSDownloadTexture* CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format);
 
 	void CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r, u32 destX, u32 destY);
 	void StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect, ShaderConvert shader = ShaderConvert::COPY, bool linear = true);
@@ -1157,8 +1158,6 @@ public:
 	__ri static u16 GetBlendFlags(u32 index) { return m_blendMap[index].flags; }
 };
 
-template <>
-struct std::hash<GSHWDrawConfig::PSSelector> : public GSHWDrawConfig::PSSelectorHash {};
 
 /* The open device, or NULL. A plain pointer: a device is disposed of with
  * Free(), through its table, since its destructor is not virtual. */
@@ -1213,8 +1212,8 @@ __forceinline_odr GSDevice::PresentResult GSDevice::BeginPresent(bool frame_skip
 __forceinline_odr void GSDevice::EndPresent()          { GS_DEVICE_CALL(end_present); }
 __forceinline_odr GSTexture* GSDevice::CreateSurface(GSTexture::Type type, int width, int height, int levels, GSTexture::Format format)
 { return GS_DEVICE_CALL(create_surface, type, width, height, levels, format); }
-__forceinline_odr GSDownloadTexturePtr GSDevice::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
-{ return GSDownloadTexturePtr(GS_DEVICE_CALL(create_download_texture, width, height, format)); }
+__forceinline_odr GSDownloadTexture* GSDevice::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
+{ return GS_DEVICE_CALL(create_download_texture, width, height, format); }
 __forceinline_odr void GSDevice::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, u32 c, const bool linear)
 { GS_DEVICE_CALL(do_merge, sTex, sRect, dTex, dRect, &PMODE, &EXTBUF, c, linear); }
 __forceinline_odr void GSDevice::DoInterlace(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect, ShaderInterlace shader, bool linear, const InterlaceConstantBuffer& cb)
@@ -1267,7 +1266,7 @@ struct klass##_ops_access { \
 	static int        tag##_begin_present(GSDevice* d, bool frame_skip) { return static_cast<int>(static_cast<klass*>(d)->BeginPresent(frame_skip)); } \
 	static void       tag##_end_present(GSDevice* d) { static_cast<klass*>(d)->EndPresent(); } \
 	static GSTexture* tag##_create_surface(GSDevice* d, GSTexture::Type type, int w, int h, int levels, GSTexture::Format format) { return static_cast<klass*>(d)->CreateSurface(type, w, h, levels, format); } \
-	static GSDownloadTexture* tag##_create_download_texture(GSDevice* d, u32 w, u32 h, GSTexture::Format format) { return static_cast<klass*>(d)->CreateDownloadTexture(w, h, format).release(); } \
+	static GSDownloadTexture* tag##_create_download_texture(GSDevice* d, u32 w, u32 h, GSTexture::Format format) { return static_cast<klass*>(d)->CreateDownloadTexture(w, h, format); } \
 	static void       tag##_do_merge(GSDevice* d, GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE* PMODE, const GSRegEXTBUF* EXTBUF, u32 c, bool linear) { static_cast<klass*>(d)->DoMerge(sTex, sRect, dTex, dRect, *PMODE, *EXTBUF, c, linear); } \
 	static void       tag##_do_interlace(GSDevice* d, GSTexture* sTex, const GSVector4* sRect, GSTexture* dTex, const GSVector4* dRect, ShaderInterlace shader, bool linear, const InterlaceConstantBuffer* cb) { static_cast<klass*>(d)->DoInterlace(sTex, *sRect, dTex, *dRect, shader, linear, *cb); } \
 	static void       tag##_copy_rect(GSDevice* d, GSTexture* sTex, GSTexture* dTex, const GSVector4i* r, u32 destX, u32 destY) { static_cast<klass*>(d)->CopyRect(sTex, dTex, *r, destX, destY); } \

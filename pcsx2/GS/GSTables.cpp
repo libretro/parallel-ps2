@@ -17,8 +17,7 @@
 
 #include "../../common/Pcsx2Defs.h"
 
-#include <cstddef>
-#include <iterator> /* C89_ARRAY_SIZE() TODO/FIXME - C++17, find way to downgrade */
+#include <stddef.h>
 
 #include "GSTables.h"
 

@@ -21,7 +21,7 @@
 #include "GS/Renderers/Common/GSTexture.h"
 #include "GS/Renderers/Common/GSArray.h"
 #include "GS/Renderers/Vulkan/VKLoader.h"
-#include <climits>
+#include <limits.h>
 
 class GSTextureVK final : public GSTexture
 {

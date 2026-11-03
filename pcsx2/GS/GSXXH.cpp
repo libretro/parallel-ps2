@@ -21,8 +21,8 @@
 // else included them globally yet), their ::abs/::div_t/... land in the
 // namespace and <cstdlib>'s `using ::abs;` fails. Including them here sets the
 // guards so the in-namespace include is a no-op.
-#include <cstdlib>
-#include <cstring>
+#include <stdlib.h>
+#include <string.h>
 
 #define XXH_STATIC_LINKING_ONLY 1
 #define XXH_INLINE_ALL 1

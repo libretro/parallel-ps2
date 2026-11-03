@@ -17,7 +17,6 @@
 
 #include "common/Pcsx2Defs.h"
 #include "GSVulkanHeap.h"
-#include <utility>
 #include "VKLoader.h"
 
 class VKStreamBuffer

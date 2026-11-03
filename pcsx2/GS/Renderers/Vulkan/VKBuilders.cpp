@@ -13,7 +13,7 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <limits>
+#include <float.h>
 
 #include "VKBuilders.h"
 
@@ -589,8 +589,8 @@ namespace Vulkan
 
 		if (mipmaps)
 		{
-			m_ci.minLod = std::numeric_limits<float>::min();
-			m_ci.maxLod = std::numeric_limits<float>::max();
+			m_ci.minLod = FLT_MIN;
+			m_ci.maxLod = FLT_MAX;
 		}
 	}
 

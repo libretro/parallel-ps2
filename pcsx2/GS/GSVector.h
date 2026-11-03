@@ -13,8 +13,8 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cstring>
-#include <cmath>     /* sqrtf in the vector fragments below */
+#include <string.h>
+#include <math.h>     /* sqrtf in the vector fragments below */
 
 #include "../../common/VectorIntrin.h"
 
@@ -61,12 +61,12 @@ public:
 
 	constexpr bool operator==(const GSVector2T& v) const
 	{
-		return (std::memcmp(this, &v, sizeof(*this)) == 0);
+		return (memcmp(this, &v, sizeof(*this)) == 0);
 	}
 
 	constexpr bool operator!=(const GSVector2T& v) const
 	{
-		return (std::memcmp(this, &v, sizeof(*this)) != 0);
+		return (memcmp(this, &v, sizeof(*this)) != 0);
 	}
 
 	constexpr GSVector2T operator*(const GSVector2T& v) const

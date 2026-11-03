@@ -1376,12 +1376,13 @@ IRasterizer* GSRasterizerList::Create(int threads)
 	GSRasterizerList* rl = new GSRasterizerList(threads);
 
 	const bool affinity_on = EmuConfig.Cpu.AffinityControlMode != 0;
-	const std::vector<u32>& procs = VMManager::GetSortedProcessorList();
+	u32 proc_count;
+	const u32* procs = VMManager::GetSortedProcessorList(&proc_count);
 	const u32 worker_proc_base = THREAD_VU1 ? 3 : 2;
 	for (int i = 0; i < threads; i++)
 	{
 		u64 affinity = 0;
-		if (affinity_on && (worker_proc_base + i) < procs.size())
+		if (affinity_on && (worker_proc_base + i) < proc_count)
 			affinity = static_cast<u64>(1) << procs[worker_proc_base + i];
 		rl->m_r[i] = new GSRasterizer(&rl->m_ds, i, threads);
 		rl->m_worker_ctx[i].r        = rl->m_r[i];

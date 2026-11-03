@@ -16,7 +16,6 @@
 #pragma once
 #include "common/Pcsx2Defs.h"
 #include "glad.h"
-#include <tuple>
 
 /// Provides a buffer for streaming data to the GPU, ideally in write-combined memory.
 class GLStreamBuffer

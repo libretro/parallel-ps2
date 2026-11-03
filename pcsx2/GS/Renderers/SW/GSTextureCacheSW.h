@@ -58,7 +58,7 @@ protected:
 	Texture** m_textures = nullptr;
 	u32 m_textures_count = 0;
 	u32 m_textures_capacity = 0;
-	std::array<FastList<Texture*>, GS_MAX_PAGES> m_map;
+	FastList<Texture*> m_map[GS_MAX_PAGES];
 
 	void Unlist(Texture* t);
 

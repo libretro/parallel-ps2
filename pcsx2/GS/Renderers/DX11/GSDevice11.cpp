@@ -736,9 +736,9 @@ GSTexture* GSDevice11::CreateSurface(GSTexture::Type type, int width, int height
 	return new GSTexture11(std::move(texture), desc, type, format);
 }
 
-GSDownloadTexturePtr GSDevice11::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
+GSDownloadTexture* GSDevice11::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
 {
-	return GSDownloadTexturePtr(GSDownloadTexture11::Create(width, height, format).release());
+	return GSDownloadTexture11::Create(width, height, format).release();
 }
 
 void GSDevice11::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r, u32 destX, u32 destY)

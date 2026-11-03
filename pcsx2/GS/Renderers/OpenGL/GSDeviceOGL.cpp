@@ -13,9 +13,9 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cinttypes>
+#include <inttypes.h>
 #include "common/Pcsx2Defs.h"
-#include <cstring>
+#include <string.h>
 
 #include <libretro.h>
 
@@ -1086,9 +1086,9 @@ void GSDeviceOGL::CommitClear(GSTexture* t, bool use_write_fbo)
 	}
 }
 
-GSDownloadTexturePtr GSDeviceOGL::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
+GSDownloadTexture* GSDeviceOGL::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
 {
-	return GSDownloadTexturePtr(GSDownloadTextureOGL::Create(width, height, format));
+	return GSDownloadTextureOGL::Create(width, height, format);
 }
 
 GLuint GSDeviceOGL::CreateSampler(PSSamplerSelector sel)

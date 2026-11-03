@@ -3,10 +3,10 @@
 
 #include "common/Pcsx2Defs.h"
 #include <memalign.h>
-#include <climits>
-#include <cmath>
-#include <cstring>
-#include <cinttypes>
+#include <limits.h>
+#include <math.h>
+#include <string.h>
+#include <inttypes.h>
 #ifdef __APPLE__
 #include <stdlib.h>
 #else
@@ -137,6 +137,11 @@ static u64* s_move_marks;
 GSTextureCache::~GSTextureCache()
 {
 	RemoveAll(true, true, true);
+	gs_download_texture_free(m_color_download_texture);
+	gs_download_texture_free(m_uint16_download_texture);
+	gs_download_texture_free(m_uint32_download_texture);
+	for (u32 i = 0; i < READ_BATCH_MAX; i++)
+		gs_download_texture_free(m_read_batch_download[i]);
 	gs_array_free(&m_move_remaps);
 	gs_flat_map_free(&m_palette_seen);
 	gs_stable_map_free(&m_hash_cache);
@@ -166,7 +171,7 @@ GSTextureCache::~GSTextureCache()
 
 void GSTextureCache::ReadbackAll()
 {
-	GSDownloadTexturePtr own[READBACK_BATCH_READS];
+	GSDownloadTexture* own[READBACK_BATCH_READS] = {};
 	PendingRead pending[READBACK_BATCH_READS];
 	u32 count = 0, shared_used = 0, i;
 	u64 queued = 0;
@@ -184,7 +189,10 @@ void GSTextureCache::ReadbackAll()
 				for (i = 0; i < count; i++)
 					ReadStore(pending[i]);
 				for (i = 0; i < READBACK_BATCH_READS; i++)
-					own[i].reset();
+				{
+					gs_download_texture_free(own[i]);
+					own[i] = nullptr;
+				}
 				count = 0;
 				queued = 0;
 				shared_used = 0;
@@ -198,6 +206,8 @@ void GSTextureCache::ReadbackAll()
 	}
 	for (i = 0; i < count; i++)
 		ReadStore(pending[i]);
+	for (i = 0; i < READBACK_BATCH_READS; i++)
+		gs_download_texture_free(own[i]);
 }
 
 void GSTextureCache::RemoveAll(bool sources, bool targets, bool hash_cache)
@@ -2179,8 +2189,8 @@ GSTextureCache::Target* GSTextureCache::FindTargetOverlap(Target* target, int ty
 
 GSVector2i GSTextureCache::ScaleRenderTargetSize(const GSVector2i& sz, float scale)
 {
-	return GSVector2i(static_cast<int>(std::ceil(static_cast<float>(sz.x) * scale)),
-		static_cast<int>(std::ceil(static_cast<float>(sz.y) * scale)));
+	return GSVector2i(static_cast<int>(ceilf(static_cast<float>(sz.x) * scale)),
+		static_cast<int>(ceilf(static_cast<float>(sz.y) * scale)));
 }
 
 GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVector2i& size, float scale, int type,
@@ -3305,8 +3315,8 @@ void GSTextureCache::ScaleTargetForDisplay(Target* t, const GIFRegTEX0& dispfb, 
 	// We're expanding, so create a new texture.
 	const int new_height = pcsx2_max_i(t->m_unscaled_size.y, needed_height);
 	const int new_width = pcsx2_max_i(t->m_unscaled_size.x, needed_width);
-	const int scaled_new_height = static_cast<int>(std::ceil(static_cast<float>(new_height) * scale));
-	const int scaled_new_width = static_cast<int>(std::ceil(static_cast<float>(new_width) * scale));
+	const int scaled_new_height = static_cast<int>(ceilf(static_cast<float>(new_height) * scale));
+	const int scaled_new_width = static_cast<int>(ceilf(static_cast<float>(new_width) * scale));
 	GSTexture* new_texture = g_gs_device->CreateRenderTarget(scaled_new_width, scaled_new_height, GSTexture::Format::Color, false);
 	// Memory allocation failure, do our best to hobble along.
 	if (!new_texture) 
@@ -3344,7 +3354,7 @@ void GSTextureCache::ScaleTargetForDisplay(Target* t, const GIFRegTEX0& dispfb, 
 
 float GSTextureCache::ConvertColorToDepth(u32 c, ShaderConvert convert)
 {
-	const float mult = std::exp2(g_gs_device->Features().clip_control ? -32.0f : -24.0f);
+	const float mult = exp2f(g_gs_device->Features().clip_control ? -32.0f : -24.0f);
 	switch (convert)
 	{
 		case ShaderConvert::RGB5A1_TO_FLOAT16:
@@ -3371,7 +3381,7 @@ u32 GSTextureCache::ConvertDepthToColor(float d, ShaderConvert convert)
 	 * with a plain cast is undefined, and the two hosts land at opposite
 	 * ends of the range: 0 on x86 and UINT32_MAX on aarch64, so the usual
 	 * far-plane clear came out black on one and white on the other. */
-	const float mult = std::exp2(g_gs_device->Features().clip_control ? 32.0f : 24.0f);
+	const float mult = exp2f(g_gs_device->Features().clip_control ? 32.0f : 24.0f);
 	switch (convert)
 	{
 		case ShaderConvert::FLOAT16_TO_RGB5A1:
@@ -3460,9 +3470,9 @@ bool GSTextureCache::CopyRGBFromDepthToColor(Target* dst, Target* depth_src)
 	return true;
 }
 
-bool GSTextureCache::PrepareDownloadTexture(u32 width, u32 height, GSTexture::Format format, GSDownloadTexturePtr* tex, u32 extent_w, u32 extent_h)
+bool GSTextureCache::PrepareDownloadTexture(u32 width, u32 height, GSTexture::Format format, GSDownloadTexture** tex, u32 extent_w, u32 extent_h)
 {
-	GSDownloadTexture* ctex = tex->get();
+	GSDownloadTexture* ctex = *tex;
 	if (ctex && ctex->GetWidth() >= width && ctex->GetHeight() >= height)
 		return true;
 
@@ -3478,7 +3488,7 @@ bool GSTextureCache::PrepareDownloadTexture(u32 width, u32 height, GSTexture::Fo
 		if (ctex->GetHeight() > new_height)
 			new_height = ctex->GetHeight();
 	}
-	tex->reset();
+	gs_download_texture_free(*tex);
 	*tex = g_gs_device->CreateDownloadTexture(new_width, new_height, format);
 	if (!*tex)
 	{
@@ -4434,7 +4444,7 @@ namespace
 	{
 		const u32 psm = t->m_TEX0.PSM;
 		return (psm == PSMCT32 || psm == PSMCT24 || psm == PSMZ32 || psm == PSMZ24) && t->m_TEX0.TBW > 0 &&
-			   (t->m_TEX0.TBP0 & 31u) == 0 && t->m_texture && t->m_scale >= 1.0f && t->m_scale == std::floor(t->m_scale);
+			   (t->m_TEX0.TBP0 & 31u) == 0 && t->m_texture && t->m_scale >= 1.0f && t->m_scale == floorf(t->m_scale);
 	}
 
 	/* The target pixel holding a word, false when the target does not. */
@@ -5447,7 +5457,7 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 		const u32 tbw = pcsx2_max_u(dst->m_TEX0.TBW, 1u);
 		const int px1 = (ReadEndX(bw, TEX0.PSM, rr) - 1) / pgs.x, py1 = (rr.w - 1) / pgs.y;
 		const int w = pcsx2_min_i((px1 + 1) * pgs.x, tw), h = pcsx2_min_i((py1 + 1) * pgs.y, th);
-		const int sw = static_cast<int>(std::ceil(scale * w)), sh = static_cast<int>(std::ceil(scale * h));
+		const int sw = static_cast<int>(ceilf(scale * w)), sh = static_cast<int>(ceilf(scale * h));
 		GSTexture* dTex = g_gs_device->CreateRenderTarget(sw, sh, GSTexture::Format::Color, true);
 		int px, py;
 		if (!dTex)
@@ -5507,8 +5517,8 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 		const float scale = dst->m_scale;
 		const int x = static_cast<int>(scale * x_offset);
 		const int y = static_cast<int>(scale * y_offset);
-		const int w = static_cast<int>(std::ceil(scale * tw));
-		const int h = static_cast<int>(std::ceil(scale * th));
+		const int w = static_cast<int>(ceilf(scale * tw));
+		const int h = static_cast<int>(ceilf(scale * th));
 
 		dst->Update();
 
@@ -5661,12 +5671,12 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 
 		// Rounding up should never exceed the texture size (since it itself should be rounded up), but just in case.
 		GSVector2i new_size(
-			pcsx2_min_i(static_cast<int>(std::ceil(static_cast<float>(src->m_unscaled_size.x) * dst->m_scale)), dst->m_texture->GetWidth()),
-			pcsx2_min_i(static_cast<int>(std::ceil(static_cast<float>(src->m_unscaled_size.y) * dst->m_scale)), dst->m_texture->GetHeight()));
+			pcsx2_min_i(static_cast<int>(ceilf(static_cast<float>(src->m_unscaled_size.x) * dst->m_scale)), dst->m_texture->GetWidth()),
+			pcsx2_min_i(static_cast<int>(ceilf(static_cast<float>(src->m_unscaled_size.y) * dst->m_scale)), dst->m_texture->GetHeight()));
 
 		// The indexed conversion can carry an integer scale through, since a
 		// texel of the 8-bit view is a fixed part of one target pixel.
-		const bool scaled_8bits = is_8bits && dst->m_scale > 1.0f && std::floor(dst->m_scale) == dst->m_scale;
+		const bool scaled_8bits = is_8bits && dst->m_scale > 1.0f && floorf(dst->m_scale) == dst->m_scale;
 		if (is_8bits)
 		{
 			src->m_unscaled_size.x = tw;
@@ -6581,8 +6591,8 @@ bool GSTextureCache::RestoreTargets(u64 key)
 
 GSTextureCache::Target* GSTextureCache::Target::Create(GIFRegTEX0 TEX0, int w, int h, float scale, int type, bool clear)
 {
-	const int scaled_w = static_cast<int>(std::ceil(static_cast<float>(w) * scale));
-	const int scaled_h = static_cast<int>(std::ceil(static_cast<float>(h) * scale));
+	const int scaled_w = static_cast<int>(ceilf(static_cast<float>(w) * scale));
+	const int scaled_h = static_cast<int>(ceilf(static_cast<float>(h) * scale));
 	GSTexture* texture = (type == RenderTarget) ?
 							 g_gs_device->CreateRenderTarget(scaled_w, scaled_h, GSTexture::Format::Color, clear) :
 							 g_gs_device->CreateDepthStencil(scaled_w, scaled_h, GSTexture::Format::DepthStencil, clear);
@@ -6811,7 +6821,7 @@ void GSTextureCache::ReadBatchStore(ReadBatch* b)
 	b->shared_used = 0;
 }
 
-bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexturePtr* own, u32* shared_used, PendingRead* out)
+bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture** own, u32* shared_used, PendingRead* out)
 {
 	u32 shared_bit;
 
@@ -6833,7 +6843,7 @@ bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture
 
 	GSTexture::Format fmt;
 	ShaderConvert ps_shader;
-	GSDownloadTexturePtr* dltex;
+	GSDownloadTexture** dltex;
 	switch (TEX0.PSM)
 	{
 		case PSMCT32:
@@ -6932,7 +6942,7 @@ bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture
 
 	if (direct_read)
 	{
-		dltex->get()->CopyFromTexture(drc, t->m_texture, tr, 0, true);
+		(*dltex)->CopyFromTexture(drc, t->m_texture, tr, 0, true);
 	}
 	else
 	{
@@ -6940,14 +6950,14 @@ bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture
 		if (tmp)
 		{
 			g_gs_device->StretchRect(t->m_texture, src, tmp, GSVector4(drc), ps_shader, false);
-			dltex->get()->CopyFromTexture(drc, tmp, drc, 0, true);
+			(*dltex)->CopyFromTexture(drc, tmp, drc, 0, true);
 			g_gs_device->Recycle(tmp);
 		}
 		else
 			return false;
 	}
 
-	out->dl         = dltex->get();
+	out->dl         = (*dltex);
 	out->TEX0       = TEX0;
 	out->tr         = tr;
 	out->drc        = drc;

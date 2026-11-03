@@ -307,7 +307,7 @@ public:
 		/// Loop over pages, fn can return `false` to break the loop
 		/// Fn: bool(*)(u32)
 		template <typename Fn>
-		void loopPagesWithBreak(Fn&& fn) const
+		void loopPagesWithBreak(const Fn& fn) const
 		{
 			int lineBP = bp;
 			int startOff = firstRowPgXStart;
@@ -379,9 +379,9 @@ public:
 		/// Loop over pages, calling `fn` on each one with no option to break
 		/// Fn: void(*)(u32)
 		template <typename Fn>
-		void loopPages(Fn&& fn) const
+		void loopPages(const Fn& fn) const
 		{
-			loopPagesWithBreak([fn = std::forward<Fn>(fn)](u32 page) { fn(page); return true; });
+			loopPagesWithBreak([&fn](u32 page) { fn(page); return true; });
 		}
 	};
 
@@ -390,9 +390,9 @@ public:
 
 	/// Loop over all the pages in the given rect, calling `fn` on each
 	template <typename Fn>
-	void loopPages(const GSVector4i& rect, Fn&& fn) const
+	void loopPages(const GSVector4i& rect, const Fn& fn) const
 	{
-		pageLooperForRect(rect).loopPages(std::forward<Fn>(fn));
+		pageLooperForRect(rect).loopPages(fn);
 	}
 
 	/// Use compile-time dimensions from `swz` as a performance optimization

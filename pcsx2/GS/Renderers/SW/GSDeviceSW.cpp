@@ -16,9 +16,9 @@
 #include "common/Align.h"
 #include "common/Pcsx2Defs.h"
 #include <memalign.h>
-#include <cmath>
-#include <cstdint>
-#include <cstring>
+#include <math.h>
+#include <stdint.h>
+#include <string.h>
 
 #include <libretro.h>
 
@@ -1238,7 +1238,7 @@ static RenderAPI  sw_dev_get_render_api(const GSDevice* d) { return static_cast<
 static int        sw_dev_begin_present(GSDevice* d, bool frame_skip) { return static_cast<int>(SWDEV(d)->BeginPresent(frame_skip)); }
 static void       sw_dev_end_present(GSDevice* d) { SWDEV(d)->EndPresent(); }
 static GSTexture* sw_dev_create_surface(GSDevice* d, GSTexture::Type type, int w, int h, int levels, GSTexture::Format format) { return SWDEV(d)->CreateSurface(type, w, h, levels, format); }
-static GSDownloadTexture* sw_dev_create_download_texture(GSDevice* d, u32 w, u32 h, GSTexture::Format format) { return SWDEV(d)->CreateDownloadTexture(w, h, format).release(); }
+static GSDownloadTexture* sw_dev_create_download_texture(GSDevice* d, u32 w, u32 h, GSTexture::Format format) { return SWDEV(d)->CreateDownloadTexture(w, h, format); }
 static void       sw_dev_do_merge(GSDevice* d, GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE* PMODE, const GSRegEXTBUF* EXTBUF, u32 c, bool linear) { SWDEV(d)->DoMerge(sTex, sRect, dTex, dRect, *PMODE, *EXTBUF, c, linear); }
 static void       sw_dev_do_interlace(GSDevice* d, GSTexture* sTex, const GSVector4* sRect, GSTexture* dTex, const GSVector4* dRect, ShaderInterlace shader, bool linear, const InterlaceConstantBuffer* cb) { SWDEV(d)->DoInterlace(sTex, *sRect, dTex, *dRect, shader, linear, *cb); }
 static void       sw_dev_copy_rect(GSDevice* d, GSTexture* sTex, GSTexture* dTex, const GSVector4i* r, u32 destX, u32 destY) { SWDEV(d)->CopyRect(sTex, dTex, *r, destX, destY); }
@@ -1331,9 +1331,9 @@ GSTexture* GSDeviceSW::CreateSurface(GSTexture::Type type, int width, int height
 	return new GSTextureSW(type, width, height, format);
 }
 
-GSDownloadTexturePtr GSDeviceSW::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
+GSDownloadTexture* GSDeviceSW::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
 {
-	return GSDownloadTexturePtr(new GSDownloadTextureSW(width, height, format));
+	return new GSDownloadTextureSW(width, height, format);
 }
 
 void GSDeviceSW::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect,
@@ -1421,10 +1421,10 @@ void GSDeviceSW::DoInterlace(GSTexture* sTex, const GSVector4& /*sRect*/, GSText
 	 * GSDevice::Interlace casts ZrH.x to int and uses (idx & 1) as
 	 * the field. */
 	const int field   = static_cast<int>(cb.ZrH.x) & 1;
-	const int y_shift = static_cast<int>(std::floor(dRect.y + 0.5f));
+	const int y_shift = static_cast<int>(floorf(dRect.y + 0.5f));
 	/* A half-height field (FFMD) passes its block positive. */
 	const bool half_fields = cb.ZrH.w > 0.0f;
-	const int block = pcsx2_max_i(1, static_cast<int>(std::fabs(cb.ZrH.w) + 0.5f));
+	const int block = pcsx2_max_i(1, static_cast<int>(fabsf(cb.ZrH.w) + 0.5f));
 
 	const int src_w   = src->GetWidth();
 	const int src_h   = src->GetHeight();
@@ -1451,8 +1451,8 @@ void GSDeviceSW::DoInterlace(GSTexture* sTex, const GSVector4& /*sRect*/, GSText
 		{
 			/* A rect of another height than the source is a slot of the
 			 * adaptive buffer, which keeps the rest of it. */
-			const int dy0 = static_cast<int>(std::floor(dRect.y + 0.5f));
-			const int dy1 = static_cast<int>(std::floor(dRect.w + 0.5f));
+			const int dy0 = static_cast<int>(floorf(dRect.y + 0.5f));
+			const int dy1 = static_cast<int>(floorf(dRect.w + 0.5f));
 			if (dy1 - dy0 != src_h && dy1 > dy0)
 				BobScaled(src_buf, src_p, src_w, src_h,
 					dst_buf, dst_p, dst_w, dst_h, dy0, dy1);
@@ -1491,8 +1491,8 @@ void GSDeviceSW::DoInterlace(GSTexture* sTex, const GSVector4& /*sRect*/, GSText
 			const int idx_int = static_cast<int>(cb.ZrH.x);
 			const int bank    = (idx_int >> 1) & 1;
 			const int vres    = static_cast<int>(cb.ZrH.z) >> 1;
-			const int dy_begin = static_cast<int>(std::floor(dRect.y + 0.5f));
-			const int dy_end   = static_cast<int>(std::floor(dRect.w + 0.5f));
+			const int dy_begin = static_cast<int>(floorf(dRect.y + 0.5f));
+			const int dy_end   = static_cast<int>(floorf(dRect.w + 0.5f));
 
 			MadBuffer(src_buf, src_p, src_w, src_h,
 				dst_buf, dst_p, dst_w, dst_h,

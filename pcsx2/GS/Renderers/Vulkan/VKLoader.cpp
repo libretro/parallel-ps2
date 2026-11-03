@@ -15,9 +15,9 @@
 
 #include <retro_atomic.h>
 #include "common/Pcsx2Defs.h"
-#include <cstdarg>
-#include <cstdlib>
-#include <cstring>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
 
 
 #include "VKLoader.h"

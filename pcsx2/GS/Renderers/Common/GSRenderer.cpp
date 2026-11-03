@@ -13,7 +13,7 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cmath>
+#include <math.h>
 
 #include "GSRenderer.h"
 #include "../../GSVR.h"

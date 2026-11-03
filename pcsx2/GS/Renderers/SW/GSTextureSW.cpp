@@ -13,7 +13,7 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cstring>
+#include <string.h>
 #include "common/Align.h"
 #include <memalign.h>
 

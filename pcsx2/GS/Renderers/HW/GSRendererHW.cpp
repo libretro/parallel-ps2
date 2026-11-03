@@ -13,8 +13,8 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cstring> /* memset/memcpy */
-#include <cmath>
+#include <string.h> /* memset/memcpy */
+#include <math.h>
 #include <memalign.h>
 
 #include "common/Align.h"
@@ -996,11 +996,11 @@ bool GSRendererHW::IsSampleMapDraw(const GSTextureCache::Source* tex)
 		return false;
 
 	const float rt_scale = GetTextureScaleFactor();
-	if (rt_scale <= 1.0f || std::floor(rt_scale) != rt_scale)
+	if (rt_scale <= 1.0f || floorf(rt_scale) != rt_scale)
 		return false;
 
 	const float tex_scale = tex->GetScale();
-	if (std::floor(tex_scale) != tex_scale || tex_scale > rt_scale)
+	if (floorf(tex_scale) != tex_scale || tex_scale > rt_scale)
 		return false;
 
 	// A cropped upload is addressed through its region, which the map does not follow.
@@ -2027,7 +2027,7 @@ bool GSRendererHW::TryToResolveSinglePageFramebuffer(GIFRegFRAME& FRAME, bool on
 			const bool double_width =
 				GSLocalMemory::m_psm[new_psm].bpp == 32 && PCRTCDisplays.GetFramebufferBitDepth() == 16;
 			u32 width =
-				std::ceil(static_cast<float>(m_split_clear_pages * GSLocalMemory::m_psm[new_psm].pgs.y) / fb_size.y) *
+				ceilf(static_cast<float>(m_split_clear_pages * GSLocalMemory::m_psm[new_psm].pgs.y) / fb_size.y) *
 				64;
 			width = pcsx2_max_u((width * (double_width ? 2 : 1)), static_cast<u32>(fb_size.x));
 			new_bw = (width + 63) / 64;
@@ -2283,8 +2283,8 @@ void GSRendererHW::HandleManualDeswizzle()
 			// The distance is taken in float and then saturated, because a
 			// usable Q still leaves S/Q free to land past what an s32
 			// holds, and the most negative s32 has no absolute value.
-			const u32 x = (u32)f32_to_s32_sat(std::fabs(((v[index_last].ST.S / v[index_last].RGBAQ.Q) * (1 << m_context->TEX0.TW)) - ((v[index_first].ST.S / v[index_first].RGBAQ.Q) * (1 << m_context->TEX0.TW))));
-			const u32 y = (u32)f32_to_s32_sat(std::fabs(((v[index_last].ST.T / v[index_last].RGBAQ.Q) * (1 << m_context->TEX0.TH)) - ((v[index_first].ST.T / v[index_first].RGBAQ.Q) * (1 << m_context->TEX0.TH))));
+			const u32 x = (u32)f32_to_s32_sat(fabsf(((v[index_last].ST.S / v[index_last].RGBAQ.Q) * (1 << m_context->TEX0.TW)) - ((v[index_first].ST.S / v[index_first].RGBAQ.Q) * (1 << m_context->TEX0.TW))));
+			const u32 y = (u32)f32_to_s32_sat(fabsf(((v[index_last].ST.T / v[index_last].RGBAQ.Q) * (1 << m_context->TEX0.TH)) - ((v[index_first].ST.T / v[index_first].RGBAQ.Q) * (1 << m_context->TEX0.TH))));
 
 			if (x != (u32)page_quadrant.x || y != (u32)page_quadrant.y)
 				return;
@@ -3201,8 +3201,8 @@ void GSRendererHW::Draw()
 				const int width = m_split_texture_shuffle_fbw;
 				const int height = (pages >= width) ? (pages / width) : 1;
 				// We must update the texture size! It will likely be 64x64, which is no good, so let's fudge that.
-				m_cached_ctx.TEX0.TW = std::ceil(std::log2(pcsx2_min_i(1024, width * tex_psm.pgs.x)));
-				m_cached_ctx.TEX0.TH = std::ceil(std::log2(pcsx2_min_i(1024, height * tex_psm.pgs.y)));
+				m_cached_ctx.TEX0.TW = ceil(log2(static_cast<double>(pcsx2_min_i(1024, width * tex_psm.pgs.x))));
+				m_cached_ctx.TEX0.TH = ceil(log2(static_cast<double>(pcsx2_min_i(1024, height * tex_psm.pgs.y))));
 				m_cached_ctx.TEX0.TBW = m_split_texture_shuffle_fbw;
 			}
 
@@ -3623,7 +3623,7 @@ void GSRendererHW::Draw()
 
 		// Preserve downscaled target when copying directly from a downscaled target, or it's a normal draw using a downscaled target. Clears that are drawing to the target can also preserve size.
 		// Of course if this size is different (in width) or this is a shuffle happening, this will be bypassed.
-		const bool preserve_downscale_draw = std::abs(scale_draw) == 1 || (scale_draw == 0 && ((src && src->m_from_target && src->m_from_target->m_downscaled) || is_possible_mem_clear == ClearType::ClearWithDraw));
+		const bool preserve_downscale_draw = abs(scale_draw) == 1 || (scale_draw == 0 && ((src && src->m_from_target && src->m_from_target->m_downscaled) || is_possible_mem_clear == ClearType::ClearWithDraw));
 
 		rt = g_texture_cache->LookupTarget(FRAME_TEX0, t_size, ((src && src->m_scale != 1) && GSConfig.UserHacks_NativeScaling == GSNativeScaling::NativeScaling_Normal && !possible_shuffle) ? GetTextureScaleFactor() : target_scale, GSTextureCache::RenderTarget, true,
 			fm, false, force_preload, preserve_rt_rgb, preserve_rt_alpha, unclamped_draw_rect, possible_shuffle, is_possible_mem_clear && FRAME_TEX0.TBP0 != m_cached_ctx.ZBUF.Block(), GSConfig.UserHacks_NativeScaling != GSNativeScaling::NativeScaling_Off && preserve_downscale_draw && is_possible_mem_clear != ClearType::NormalClear);
@@ -4604,10 +4604,10 @@ bool GSRendererHW::IsChannelShuffleIdentity(bool position) const
 	{
 		const GSVertex& a = m_vertex.buff[m_index.buff[i]];
 		const GSVertex& b = m_vertex.buff[m_index.buff[i + 1]];
-		const int w = std::abs(static_cast<int>(b.XYZ.X) - static_cast<int>(a.XYZ.X)) >> 4;
-		const int h = std::abs(static_cast<int>(b.XYZ.Y) - static_cast<int>(a.XYZ.Y)) >> 4;
-		const int uw = std::abs(static_cast<int>(b.U) - static_cast<int>(a.U)) >> 4;
-		const int vh = std::abs(static_cast<int>(b.V) - static_cast<int>(a.V)) >> 4;
+		const int w = abs(static_cast<int>(b.XYZ.X) - static_cast<int>(a.XYZ.X)) >> 4;
+		const int h = abs(static_cast<int>(b.XYZ.Y) - static_cast<int>(a.XYZ.Y)) >> 4;
+		const int uw = abs(static_cast<int>(b.U) - static_cast<int>(a.U)) >> 4;
+		const int vh = abs(static_cast<int>(b.V) - static_cast<int>(a.V)) >> 4;
 
 		if (w == 0 || h == 0 || uw != w || vh != h)
 			return false;
@@ -6098,7 +6098,7 @@ __ri void GSRendererHW::EmulateTextureSampler(const GSTextureCache::Target* rt, 
 		m_conf.cb_ps.LODParams.x = static_cast<float>(m_context->TEX1.K) / 16.0f;
 		m_conf.cb_ps.LODParams.y = static_cast<float>(1 << m_context->TEX1.L);
 		m_conf.cb_ps.LODParams.z = (GSConfig.HWMipmapMode >= GSHWMipmapMode::Unclamped) ?
-									   std::log2(rt ? rt->GetScale() : ds->GetScale()) :
+									   log2f(rt ? rt->GetScale() : ds->GetScale()) :
 									   static_cast<float>((GSConfig.HWMipmapMode == GSHWMipmapMode::AllLevels) ? 0.0f : m_lod.x);
 		m_conf.cb_ps.LODParams.w = static_cast<float>(m_lod.y);
 		m_conf.ps.manual_lod = 1;
@@ -6276,8 +6276,8 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 	unscaled_size = copy_size;
 	scale = m_downscale_source ? 1.0f : src_target->GetScale();
 
-	const GSVector2i scaled_copy_size = GSVector2i(static_cast<int>(std::ceil(static_cast<float>(copy_size.x) * scale)),
-		static_cast<int>(std::ceil(static_cast<float>(copy_size.y) * scale)));
+	const GSVector2i scaled_copy_size = GSVector2i(static_cast<int>(ceilf(static_cast<float>(copy_size.x) * scale)),
+		static_cast<int>(ceilf(static_cast<float>(copy_size.y) * scale)));
 
 	/* Both copies below are draws (StretchRect), so the copy is a target:
 	 * a plain texture cannot be drawn into on D3D. */
@@ -6298,7 +6298,7 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 	{
 		// Can't use box filtering on depth (yet), or fractional scales.
 #if 0
-		if (src_target->m_texture->IsDepthStencil() || std::floor(src_target->GetScale()) != src_target->GetScale())
+		if (src_target->m_texture->IsDepthStencil() || floorf(src_target->GetScale()) != src_target->GetScale())
 #endif
 		{
 			const GSVector4 dst_rect = GSVector4(GSVector4i::loadh(src_unscaled_size));

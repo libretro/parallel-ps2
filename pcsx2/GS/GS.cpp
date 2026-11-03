@@ -16,7 +16,7 @@
 #include "Profiler.h"
 #include "common/Align.h"
 #include "common/Pcsx2Defs.h"
-#include <cerrno>
+#include <errno.h>
 #include "HostFS.h"
 
 #include "GS.h"

@@ -17,8 +17,8 @@
 #include "common/Pcsx2Defs.h"
 #include "glad.h"
 
-#include <cstdlib>
-#include <cstring>
+#include <stdlib.h>
+#include <string.h>
 #ifdef __APPLE__
 #include <stdlib.h>
 #else

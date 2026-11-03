@@ -13,7 +13,7 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cassert>
+#include <assert.h>
 
 class alignas(32) GSVector8
 {

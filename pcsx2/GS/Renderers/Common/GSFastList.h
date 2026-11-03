@@ -16,7 +16,7 @@
 #pragma once
 #include <memalign.h>
 
-#include <climits>
+#include <limits.h>
 
 template <class T>
 struct Element
@@ -39,7 +39,7 @@ class FastListReverseIterator;
 #define FASTLIST_CHECKS 0
 #endif
 #if FASTLIST_CHECKS
-#include <cstdio>
+#include <stdio.h>
 #define FASTLIST_REPORT(op, index) \
 	fprintf(stderr, "FastList %p: %s(%u) with capacity %u, %u held - stale index\n", \
 		(const void*)this, (op), (unsigned)(index), (unsigned)m_capacity, \

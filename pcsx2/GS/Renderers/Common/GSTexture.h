@@ -19,10 +19,9 @@
  * pitch -- a texture upload where the staging pitch is the API's, not
  * the image's. One memcpy when the three agree. */
 #include <string.h>
-#include <memory>
 #include "common/Pcsx2Defs.h"
-static inline void GSStrideMemCpy(void* dst, std::size_t dst_stride, const void* src, std::size_t src_stride,
-	std::size_t copy_size, std::size_t count)
+static inline void GSStrideMemCpy(void* dst, size_t dst_stride, const void* src, size_t src_stride,
+	size_t copy_size, size_t count)
 {
 	if (src_stride == dst_stride && src_stride == copy_size)
 	{
@@ -32,7 +31,7 @@ static inline void GSStrideMemCpy(void* dst, std::size_t dst_stride, const void*
 
 	const u8* src_ptr = static_cast<const u8*>(src);
 	u8* dst_ptr = static_cast<u8*>(dst);
-	for (std::size_t i = 0; i < count; i++)
+	for (size_t i = 0; i < count; i++)
 	{
 		memcpy(dst_ptr, src_ptr, copy_size);
 		src_ptr += src_stride;
@@ -306,15 +305,12 @@ __forceinline_odr bool GSTexture::Map(GSMap& m, const GSVector4i* r, int layer)
 __forceinline_odr void GSTexture::Unmap() { m_ops->unmap(this); }
 __forceinline_odr void GSTexture::GenerateMipmap() { if (m_ops->generate_mipmap) m_ops->generate_mipmap(this); }
 
-// A download texture, like a texture, is freed by its backend: the base
-// has no virtual destructor, so a plain delete would run the wrong one.
-struct GSDownloadTextureDeleter
-{
-	void operator()(GSDownloadTexture* t) const { if (t) t->Free(); }
-};
-using GSDownloadTexturePtr = std::unique_ptr<GSDownloadTexture, GSDownloadTextureDeleter>;
+/* A download texture, like a texture, is freed by its backend: the base
+ * has no virtual destructor, so a plain delete would run the wrong one. */
+__forceinline_odr void gs_download_texture_free(GSDownloadTexture* t);
 
 __forceinline_odr void GSDownloadTexture::Free() { m_ops->free(this); }
+__forceinline_odr void gs_download_texture_free(GSDownloadTexture* t) { if (t) t->Free(); }
 __forceinline_odr void GSDownloadTexture::CopyFromTexture(const GSVector4i& drc, GSTexture* stex, const GSVector4i& src, u32 src_level, bool use_transfer_pitch)
 { m_ops->copy_from_texture(this, &drc, stex, &src, src_level, use_transfer_pitch); }
 __forceinline_odr bool GSDownloadTexture::Map(const GSVector4i& read_rc) { return m_ops->map(this, &read_rc); }

@@ -13,9 +13,8 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cfloat>
+#include <float.h>
 
-#include <iterator> /* C89_ARRAY_SIZE() - TODO/FIXME - C++17 */
 
 #include "GSVector.h"
 

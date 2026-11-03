@@ -1442,8 +1442,9 @@ void VMManager::ApplyHardwareDefaults(Pcsx2Config& c)
 	SetMTVUAndAffinityControlDefault(c);
 }
 
-const std::vector<u32>& VMManager::GetSortedProcessorList()
+const u32* VMManager::GetSortedProcessorList(u32* count)
 {
 	EnsureCPUInfoInitialized();
-	return s_processor_list;
+	*count = static_cast<u32>(s_processor_list.size());
+	return s_processor_list.data();
 }

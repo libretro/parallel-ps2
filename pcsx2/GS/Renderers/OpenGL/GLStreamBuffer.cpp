@@ -16,7 +16,7 @@
 #include "GLStreamBuffer.h"
 #include <memalign.h>
 #include "common/Align.h"
-#include <cstring>
+#include <string.h>
 
 GLStreamBuffer::GLStreamBuffer(GLenum target, GLuint buffer_id, u32 size)
 	: m_target(target)
@@ -328,7 +328,7 @@ GLStreamBuffer* GLStreamBuffer::Create(GLenum target, u32 size)
 
 	// BufferSubData is slower on all drivers except NVIDIA...
 	const char* vendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
-	if (std::strstr(vendor, "NVIDIA"))
+	if (strstr(vendor, "NVIDIA"))
 		return detail::BufferSubDataStreamBuffer::Create(target, size);
 	else
 		return detail::BufferDataStreamBuffer::Create(target, size);

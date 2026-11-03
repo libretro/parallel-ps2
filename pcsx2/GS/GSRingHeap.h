@@ -17,9 +17,8 @@
 
 #include <retro_atomic.h>
 #include <new>
-#include <utility>
-#include <cstdint>
-#include <cstdlib>
+#include <stdint.h>
+#include <stdlib.h>
 
 /// A ring buffer pretending to be a heap (screams if you don't actually use it like a ring buffer)
 /// Meant for one producer thread creating data and sharing it with multiple consumer threads
@@ -64,16 +63,6 @@ public:
 		return static_cast<void*>(header + 1);
 	};
 
-	/// Allocate and initialize a T*
-	template <typename T, typename... Args>
-	T* make(Args&&... args)
-	{
-		/* (no exceptions: the constructor cannot fail past this point) */
-		void* ptr = alloc(sizeof(T), alignof(T));
-		new (ptr) T(std::forward<Args>(args)...);
-		return static_cast<T*>(ptr);
-	}
-
 	/// Free a pointer allocated with `alloc`
 	static void free(void* ptr)
 	{
@@ -81,15 +70,7 @@ public:
 		free_internal(static_cast<void*>(header), *header);
 	}
 
-	/// Deinitialize and free a pointer created with `make`
-	template <typename T>
-	static void destroy(T* ptr)
-	{
-		ptr->~T();
-		free(ptr);
-	}
-
-	/// Like `std::shared_ptr` but holds a pointer on this allocator
+	/// A reference-counted pointer to an object on this allocator
 	template <typename T>
 	class SharedPtr
 	{
@@ -119,7 +100,7 @@ public:
 		{
 		}
 
-		SharedPtr(std::nullptr_t)
+		SharedPtr(decltype(nullptr))
 			: m_ptr(nullptr)
 		{
 		}
@@ -186,9 +167,9 @@ public:
 		}
 	};
 
-	/// Make a shared pointer with a different alignment from what the type would normally expect
-	template <typename T, typename... Args>
-	SharedPtr<T> make_shared(Args&&... args)
+	/// Make a shared pointer to a default-constructed T, at the type's alignment
+	template <typename T>
+	SharedPtr<T> make_shared()
 	{
 		using Header = typename SharedPtr<T>::AllocationHeader;
 		static constexpr size_t alloc_size = sizeof(T) + sizeof(Header);
@@ -199,7 +180,7 @@ public:
 		retro_atomic_store_release_int(&header->refcnt, 1);
 
 		T* tptr = reinterpret_cast<T*>(header + 1);
-		new (tptr) T(std::forward<Args>(args)...);
+		new (tptr) T();
 		return SharedPtr<T>(tptr);
 	}
 };
