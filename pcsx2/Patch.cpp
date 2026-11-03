@@ -1078,7 +1078,10 @@ namespace PatchFunc
 			for (i = 0; i < hex.size(); i += 2)
 			{
 				u8 b;
-				if (!parse_number_u8(hex.data() + i, 2, 16, &b))
+				/* both characters hex: the parse alone stops at the first
+				 * that is not, and "0g" would be a byte of 0 */
+				if (!isxdigit((unsigned char)hex[i]) || !isxdigit((unsigned char)hex[i + 1])
+					|| !parse_number_u8(hex.data() + i, 2, 16, &b))
 				{
 					PATCH_ERROR("'bytes' payload is not hex: '%.*s'",
 					            static_cast<int>(hex.size()), hex.data());

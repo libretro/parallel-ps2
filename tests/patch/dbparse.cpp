@@ -179,5 +179,83 @@ int main(int argc, char** argv)
 		(void)applied;
 	}
 
+	/* Lines the database does not have but a pnach can: spacing around
+	 * the '=' and the commas, a trailing comment, a line with no '=', a
+	 * place out of range, a bytes payload that is not hex or not whole
+	 * bytes, and numbers past their field. Each says whether it loads and,
+	 * when it does, what it loads as. */
+	{
+		static const struct
+		{
+			const char* line;
+			int loads;
+			int place;
+			u32 addr;
+			u64 data;
+			const char* bytes; /* hex of the payload, for a bytes line */
+		} cases[] = {
+			{"patch=1,EE,00100000,word,0000002A", 1, 1, 0x00100000u, 0x2Au, nullptr},
+			{"  patch = 0 , EE , 2010abcd , word , DEADBEEF   // note", 1, 0, 0x2010abcdu, 0xDEADBEEFu, nullptr},
+			{"patch=2,IOP,0001ffff,byte,ff", 1, 2, 0x0001ffffu, 0xffu, nullptr},
+			{"patch=1,EE,00100000,double,123456789abcdef0", 1, 1, 0x00100000u, 0x123456789abcdef0ull, nullptr},
+			{"patch=1,EE,00100000,bytes,00a1FF7e", 1, 1, 0x00100000u, 0, "00a1ff7e"},
+			{"patch 1,EE,00100000,word,1", 0, 0, 0, 0, nullptr},
+			{"// patch=1,EE,00100000,word,1", 0, 0, 0, 0, nullptr},
+			{"patch=", 0, 0, 0, 0, nullptr},
+			{"patch=3,EE,00100000,word,1", 0, 0, 0, 0, nullptr},
+			{"patch=x,EE,00100000,word,1", 0, 0, 0, 0, nullptr},
+			{"patch=-1,EE,00100000,word,1", 0, 0, 0, 0, nullptr},
+			{"patch=1,EE,00100000,bytes,0g", 0, 0, 0, 0, nullptr},
+			{"patch=1,EE,00100000,bytes,abc", 0, 0, 0, 0, nullptr},
+			{"patch=1,ARM,00100000,word,1", 0, 0, 0, 0, nullptr},
+			{"patch=1,EE,00100000,dword,1", 0, 0, 0, 0, nullptr},
+			{"patch=1,EE,00100000,word", 0, 0, 0, 0, nullptr},
+			/* An address past 32 bits is no address, so zero, as before. */
+			{"patch=1,EE,100000000,word,1", 1, 1, 0, 1, nullptr},
+			/* A value past 64 bits likewise. */
+			{"patch=1,EE,00100000,word,10000000000000000", 1, 1, 0x00100000u, 0, nullptr},
+		};
+		const int db_errors = g_errors;
+		int case_fails = 0;
+		g_shown = 5; /* the refusals below are expected; do not print them */
+		size_t c;
+		for (c = 0; c < sizeof(cases) / sizeof(cases[0]); c++)
+		{
+			int loaded;
+			bool ok;
+			ForgetLoadedPatches();
+			loaded = LoadPatchesFromString(cases[c].line);
+			ok = (loaded == cases[c].loads) && (Patch.size() == (size_t)cases[c].loads);
+			if (ok && cases[c].loads)
+			{
+				const IniPatch& ip = Patch[0];
+				ok = ip.placetopatch == cases[c].place && ip.addr == cases[c].addr
+					&& ip.data == cases[c].data;
+				if (ok && cases[c].bytes)
+				{
+					char hex[64] = "";
+					size_t b;
+					for (b = 0; b < ip.bytes.size() && b * 2 + 2 < sizeof(hex); b++)
+						snprintf(hex + b * 2, 3, "%02x", ip.bytes[b]);
+					ok = strcmp(hex, cases[c].bytes) == 0;
+				}
+			}
+			if (!ok)
+			{
+				printf("  FAIL: \"%s\" loaded %d (want %d)", cases[c].line, loaded, cases[c].loads);
+				if (Patch.size())
+					printf(": place %d addr %08x data %llx", Patch[0].placetopatch,
+						Patch[0].addr, (unsigned long long)Patch[0].data);
+				printf("\n");
+				case_fails++;
+			}
+		}
+		ForgetLoadedPatches();
+		g_errors = db_errors + case_fails;
+		printf("dbparse: %d of %d pnach edge cases as expected\n",
+			(int)(sizeof(cases) / sizeof(cases[0])) - case_fails,
+			(int)(sizeof(cases) / sizeof(cases[0])));
+	}
+
 	return (g_errors != 0 || file_lines == 0);
 }
