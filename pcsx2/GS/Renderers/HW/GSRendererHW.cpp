@@ -22,7 +22,6 @@
 
 #include "GSRendererHW.h"
 #include "GSSpriteSnap.h"
-#include "GSTextureReplacements.h"
 #include "../../GSUtil.h"
 #include "../../GSVR.h"
 
@@ -98,7 +97,6 @@ GSRendererHW::GSRendererHW()
 	SetTCOffset();
 
 	g_texture_cache = std::make_unique<GSTextureCache>();
-	GSTextureReplacements::Initialize();
 
 	// Hope nothing requires too many draw calls.
 
@@ -199,8 +197,6 @@ void GSRendererHW::UpdateSettings(const Pcsx2Config::GSOptions& old_config)
 
 void GSRendererHW::VSync(u32 field, bool registers_written, bool idle_frame)
 {
-	if (GSConfig.LoadTextureReplacements)
-		GSTextureReplacements::ProcessAsyncLoadedTextures();
 
 	if (!idle_frame)
 	{

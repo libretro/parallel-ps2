@@ -326,7 +326,6 @@ namespace MTGS
 	 * true. */
 	bool MainLoop(bool flush_all);
 
-	void GameChanged();
 	void ApplySettings();
 
 	void TryOpenGS(void);

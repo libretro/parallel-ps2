@@ -117,7 +117,6 @@ namespace EmuFolders
 	char CheatsNI[PCSX2_PATH_MAX];
 	char Resources[PCSX2_PATH_MAX];
 	char Cache[PCSX2_PATH_MAX];
-	char Textures[PCSX2_PATH_MAX];
 } // namespace EmuFolders
 
 const char* const s_speed_hack_names[] =
@@ -353,9 +352,6 @@ Pcsx2Config::GSOptions::GSOptions()
 	UserHacks_NativePaletteDraw = false;
 	UserHacks_Limit24BitDepth = GSLimit24BitDepth::Disabled;
 
-	LoadTextureReplacements = false;
-	LoadTextureReplacementsAsync = true;
-	PrecacheTextureReplacements = false;
 }
 
 bool Pcsx2Config::GSOptions::operator==(const GSOptions& right) const
@@ -761,7 +757,6 @@ void EmuFolders::LoadConfig(const char* memcards)
 	SetFolder(CheatsWS, sizeof(CheatsWS), DataRoot, "cheats_ws");
 	SetFolder(CheatsNI, sizeof(CheatsNI), DataRoot, "cheats_ni");
 	SetFolder(Cache, sizeof(Cache), DataRoot, "cache");
-	SetFolder(Textures, sizeof(Textures), DataRoot, "textures");
 }
 
 void EmuFolders::EnsureFoldersExist()
@@ -778,8 +773,6 @@ void EmuFolders::EnsureFoldersExist()
 		path_mkdir(CheatsNI);
 	if (!path_is_valid(Cache))
 		path_mkdir(Cache);
-	if (!path_is_valid(Textures))
-		path_mkdir(Textures);
 }
 
 /* What LoadSave applied after reading, now applied to the option

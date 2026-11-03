@@ -24,7 +24,6 @@
 #include "../Common/GSScratch.h"
 #include "GSTargetBudget.h"
 #include "GSObjectPool.h"
-#include "GSTextureReplacements.h"
 #include "GSRendererHW.h"
 
 #include "../../GSState.h"
@@ -239,7 +238,6 @@ void GSTextureCache::RemoveAll(bool sources, bool targets, bool hash_cache)
 
 		gs_stable_map_clear(&m_hash_cache);
 		m_hash_cache_memory_usage = 0;
-		m_hash_cache_replacement_memory_usage = 0;
 		gs_flat_map_clear(&m_palette_seen);
 	}
 }
@@ -5809,7 +5807,7 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 			g_texture_cache->InvalidateVideoMemType(GSTextureCache::DepthStencil, TEX0.TBP0, TEX0.PSM, GSRendererHW::GetInstance()->GetCachedCtx()->FRAME.FBMSK, true);
 		}
 
-		// maintain the clut even when paltex is on for the replacement texture lookup
+		// the clut, for the hash of a texture that is not indexed
 		bool paltex = (GSConfig.GPUPaletteConversion && psm.pal > 0) || gpu_clut;
 		const u32* clut = (psm.pal > 0) ? static_cast<const u32*>(g_gs_renderer->m_mem.m_clut) : nullptr;
 
@@ -6154,28 +6152,19 @@ GSTextureCache::Source* GSTextureCache::CreateMergedSource(GIFRegTEX0 TEX0, GIFR
 
 GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, bool& paltex, const u32* clut, const GSVector2i* lod, SourceRegion region)
 {
-	// don't bother hashing if we're not replacing.
-	const bool replace = GSConfig.LoadTextureReplacements && GSTextureReplacements::HasAnyReplacementTextures();
-	bool can_cache = (TEX0.PSM >= PSMT8H && TEX0.PSM <= PSMT4HH) ? CanPreloadTextureSize(TEX0.TW, TEX0.TH) : CanCacheTextureSize(TEX0.TW, TEX0.TH);
-	if (!replace && !can_cache)
+	const bool can_cache = (TEX0.PSM >= PSMT8H && TEX0.PSM <= PSMT4HH) ? CanPreloadTextureSize(TEX0.TW, TEX0.TH) : CanCacheTextureSize(TEX0.TW, TEX0.TH);
+	if (!can_cache)
 		return nullptr;
 
-	// need the hash either for replacing or caching.
-	// if replacing is on, we compute the clut hash regardless, since replacements aren't indexed
-	HashCacheKey key{HashCacheKey::Create(TEX0, TEXA, (replace || !paltex) ? clut : nullptr, lod, region)};
+	// the hash, for caching; an indexed texture's leaves the clut out
+	HashCacheKey key{HashCacheKey::Create(TEX0, TEXA, !paltex ? clut : nullptr, lod, region)};
 
 	// check with the full key
 	HashCacheEntry* found = FindHashCache(key);
 
-	// if this fails, and paltex is on, try indexed texture
-	const bool needs_second_lookup = paltex && (replace);
-	if (needs_second_lookup && !found)
-		found = FindHashCache(key.WithRemovedCLUTHash());
-
 	/* A paletted texture seen before with another palette: its index
-	 * texture, shared by every palette (m_palette_seen). Not with
-	 * replacements, which are looked up by palette. */
-	if (!found && !paltex && !replace && clut && can_cache && m_auto_index
+	 * texture, shared by every palette (m_palette_seen). */
+	if (!found && !paltex && clut && m_auto_index
 		&& GSLocalMemory::m_psm[TEX0.PSM].pal > 0)
 	{
 		const HashCacheKey index_key{key.WithRemovedCLUTHash()};
@@ -6200,65 +6189,15 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 		}
 	}
 
-	// did we find either a replacement, cached/indexed texture?
+	// did we find a cached/indexed texture?
 	if (found)
 	{
-		// super easy, cache hit. remove paltex if it's a replacement texture.
+		// super easy, cache hit.
 		HashCacheEntry* entry = found;
 		paltex &= (entry->texture->GetFormat() == GSTexture::Format::UNorm8);
 		entry->refcount++;
 		return entry;
 	}
-
-	// check for a replacement texture with the full clut key
-	if (replace)
-	{
-		bool replacement_texture_pending = false;
-		std::pair<u8, u8> alpha_minmax;
-		GSTexture* replacement_tex = GSTextureReplacements::LookupReplacementTexture(key, lod != nullptr,
-			&replacement_texture_pending, &alpha_minmax);
-		if (replacement_tex)
-		{
-			// found a replacement texture! insert it into the hash cache, and clear paltex (since it's not indexed)
-			paltex = false;
-			const HashCacheEntry entry{replacement_tex, 1u, 0u, alpha_minmax, true, true};
-			HashCacheEntry* const e = InsertHashCache(key, entry);
-			if (e)
-				m_hash_cache_replacement_memory_usage += entry.texture->GetMemUsage();
-			return e;
-		}
-		else if (
-			replacement_texture_pending ||
-
-			// With preloading + paltex; when there's multiple textures with the same vram data, but different
-			// palettes, if we don't replace all of them, the first one to get loaded in will prevent any of the
-			// others from getting tested for replacement. So, disable paltex for the textures when any of the
-			// palette variants have replacements.
-			(paltex && GSTextureReplacements::HasReplacementTextureWithOtherPalette(key)))
-		{
-			// We didn't have a texture immediately, but there is a replacement available (and being loaded).
-			// so clear paltex, since when it gets injected back, it's not going to be indexed.
-			paltex = false;
-
-			// If the hash cache is disabled, this will be false, and we need to force it to be cached,
-			// so that when the replacement comes back, there's something for it to swap with.
-			can_cache = true;
-		}
-	}
-
-	// Using paltex without full preloading is a disaster case here. basically, unless *all* textures are
-	// replaced, any texture can get populated without the hash cache, which means it'll get partial invalidated,
-	// and unless it's 100% removed, this partial texture will always take precedence over future hash cache
-	// lookups, making replacements impossible.
-	if (paltex && !can_cache && TEX0.TW <= MAXIMUM_TEXTURE_HASH_CACHE_SIZE && TEX0.TH <= MAXIMUM_TEXTURE_HASH_CACHE_SIZE)
-	{
-		// We need to get it into the hash cache for replacing, because of the issue above.
-		can_cache = true;
-	}
-
-	// if this texture isn't cacheable, bail out now since we don't want to waste time preloading it
-	if (!can_cache)
-		return nullptr;
 
 	// expand/upload texture
 	const int tw = region.HasX() ? region.GetWidth() : (1 << TEX0.TW);
@@ -6305,7 +6244,7 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 		key.RemoveCLUTHash();
 
 	// insert into the cache cache, and we're done
-	const HashCacheEntry entry{tex, 1u, 0u, alpha_minmax, compute_alpha_minmax, false};
+	const HashCacheEntry entry{tex, 1u, 0u, alpha_minmax, compute_alpha_minmax};
 	HashCacheEntry* const e = InsertHashCache(key, entry);
 	if (!e)
 	{
@@ -6336,11 +6275,7 @@ GSTextureCache::HashCacheEntry* GSTextureCache::InsertHashCache(const HashCacheK
 
 void GSTextureCache::RemoveFromHashCache(HashCacheEntry* e)
 {
-	const u32 mem_usage = e->texture->GetMemUsage();
-	if (e->is_replacement)
-		m_hash_cache_replacement_memory_usage -= mem_usage;
-	else
-		m_hash_cache_memory_usage -= mem_usage;
+	m_hash_cache_memory_usage -= e->texture->GetMemUsage();
 	g_gs_device->Recycle(e->texture);
 	gs_stable_map_erase(&m_hash_cache, e);
 }
@@ -6454,11 +6389,10 @@ void GSTextureCache::AgeHashCache()
 	 * the game's own textures rather than upscaled targets, so the
 	 * console's bound applies directly - everything a game has is in four
 	 * megabytes of GS memory - with room for the ones this keeps beyond
-	 * what is live, and for replacements, which are not the console's
-	 * size at all. */
+	 * what is live. */
 	constexpr u64 MAX_HASH_CACHE_BYTES = 8ull * VM_SIZE;
 
-	const u64 hash_bytes = m_hash_cache_memory_usage + m_hash_cache_replacement_memory_usage;
+	const u64 hash_bytes = m_hash_cache_memory_usage;
 	bool might_need_cache_purge = (GS_STABLE_MAP_COUNT(&m_hash_cache) > MAX_HASH_CACHE_SIZE
 			|| hash_bytes > MAX_HASH_CACHE_BYTES);
 	size_t purge_count = 0;
@@ -6496,8 +6430,7 @@ void GSTextureCache::AgeHashCache()
 		if (might_need_cache_purge)
 		{
 			might_need_cache_purge = (GS_STABLE_MAP_COUNT(&m_hash_cache) > MAX_HASH_CACHE_SIZE
-					|| (m_hash_cache_memory_usage + m_hash_cache_replacement_memory_usage)
-						> MAX_HASH_CACHE_BYTES);
+					|| m_hash_cache_memory_usage > MAX_HASH_CACHE_BYTES);
 			if (might_need_cache_purge)
 			{
 				s_hash_cache_purge_list[purge_count].e   = e;
@@ -6523,9 +6456,7 @@ void GSTextureCache::AgeHashCache()
 
 		for (i = 0; i < purgeable; i++)
 		{
-			const bool over_bytes =
-				(m_hash_cache_memory_usage + m_hash_cache_replacement_memory_usage)
-					> MAX_HASH_CACHE_BYTES;
+			const bool over_bytes = m_hash_cache_memory_usage > MAX_HASH_CACHE_BYTES;
 			if (i >= over_count && !over_bytes)
 				break;
 			RemoveFromHashCache(s_hash_cache_purge_list[i].e);
@@ -8291,49 +8222,6 @@ void GSTextureCache::InvalidateTemporarySource()
 
 	delete m_temporary_source;
 	m_temporary_source = nullptr;
-}
-
-void GSTextureCache::InjectHashCacheTexture(const HashCacheKey& key, GSTexture* tex, const std::pair<u8, u8>& alpha_minmax)
-{
-	// When we insert we update memory usage. Old texture gets removed below.
-	m_hash_cache_replacement_memory_usage += tex->GetMemUsage();
-
-	HashCacheEntry* const e = FindHashCache(key);
-	if (!e)
-	{
-		// We must've got evicted before we finished loading. No matter, add it in there anyway;
-		// if it's not used again, it'll get tossed out later.
-		//
-		// Refcount zero, not one: nobody is holding this. The entries the
-		// two paths in LookupHashCache insert are held by the Source being
-		// built around them, which releases on destruction; this one has
-		// no source - the one that asked for it was evicted while the
-		// replacement loaded. At one it could never come back down, and
-		// AgeHashCache skips anything still referenced, so the entry never
-		// aged, was never purged, and pinned its texture for the life of
-		// the cache - the opposite of what the comment above says happens.
-		// At zero it ages like any unused entry, and LookupHashCache
-		// raises it the moment something does pick it up.
-		const HashCacheEntry entry{tex, 0u, 0u, alpha_minmax, true, true};
-		InsertHashCache(key, entry);
-		return;
-	}
-
-	// Reset age so we don't get thrown out too early.
-	e->age = 0;
-	e->alpha_minmax = alpha_minmax;
-	e->valid_alpha_minmax = true;
-
-	// Update memory usage, swap the textures, and recycle the old one for reuse.
-	if (!e->is_replacement)
-		m_hash_cache_memory_usage -= e->texture->GetMemUsage();
-	else
-		m_hash_cache_replacement_memory_usage -= e->texture->GetMemUsage();
-
-	e->is_replacement = true;
-	m_src.SwapTexture(e->texture, tex);
-	g_gs_device->Recycle(e->texture);
-	e->texture = tex;
 }
 
 // GSTextureCache::Palette

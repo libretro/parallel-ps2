@@ -23,7 +23,6 @@
 #include "GSUtil.h"
 #include "GSExtra.h"
 #include "Renderers/HW/GSRendererHW.h"
-#include "Renderers/HW/GSTextureReplacements.h"
 #include "MultiISA.h"
 
 #include "../Config.h"
@@ -349,7 +348,6 @@ static bool OpenGSRenderer(GSRendererType renderer, u8* basemem)
 static void CloseGSRenderer(void)
 {
 	GS_OPS_SET(NULL);
-	GSTextureReplacements::Shutdown();
 
 #ifdef HAVE_PARALLEL_GS
 	g_pgs_renderer.reset();
@@ -535,12 +533,6 @@ int GSfreeze(FreezeAction mode, freezeData* data)
 	return ops->freeze(static_cast<int>(mode), data);
 }
 
-void GSGameChanged()
-{
-	if (GSConfig.UseHardwareRenderer())
-		GSTextureReplacements::GameChanged();
-}
-
 void GSUpdateConfig(const Pcsx2Config::GSOptions& new_config, enum retro_hw_context_type api)
 {
 	Pcsx2Config::GSOptions old_config(std::move(GSConfig));
@@ -601,14 +593,6 @@ void GSUpdateConfig(const Pcsx2Config::GSOptions& new_config, enum retro_hw_cont
 	if (GSConfig.MaxAnisotropy != old_config.MaxAnisotropy)
 		g_gs_device->ClearSamplerCache();
 
-	// texture dumping/replacement options
-	if (GSConfig.UseHardwareRenderer())
-		GSTextureReplacements::UpdateConfig(old_config);
-
-	// clear the hash texture cache since we might have replacements now
-	// also clear it when dumping changes, since we want to dump everything being used
-	if (GSConfig.LoadTextureReplacements != old_config.LoadTextureReplacements)
-		g_gs_renderer->PurgeTextureCache(true, false, true);
 }
 
 #ifdef _WIN32

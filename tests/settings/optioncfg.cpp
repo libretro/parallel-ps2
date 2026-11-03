@@ -58,7 +58,7 @@ int main(void)
      EmuFolders::LoadConfig("/abs/cards");  int g1 = !strcmp(EmuFolders::MemoryCards, "/abs/cards");
      EmuFolders::LoadConfig("rel");         int g2 = !strcmp(EmuFolders::MemoryCards, "/data/rel");
      EmuFolders::LoadConfig("");            int g3 = !strcmp(EmuFolders::MemoryCards, "/data/memcards");
-     int g4 = !strcmp(EmuFolders::Bios, "/data/bios") && !strcmp(EmuFolders::Textures, "/data/textures");
+     int g4 = !strcmp(EmuFolders::Bios, "/data/bios") && !strcmp(EmuFolders::Cache, "/data/cache");
      printf("  %s: folders: absolute kept, relative under DataRoot, empty -> memcards, others default\n", (g1 && g2 && g3 && g4) ? "ok" : "FAIL"); ok &= g1 && g2 && g3 && g4; }
 
    { char buf[PCSX2_PATH_MAX]; std::string longpath(PCSX2_PATH_MAX + 100, 'x');

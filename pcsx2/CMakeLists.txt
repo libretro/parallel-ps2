@@ -370,8 +370,6 @@ set(pcsx2GSSources
 	GS/Renderers/Common/GSScratch.h
 	GS/Renderers/HW/GSObjectPool.h
 	GS/Renderers/HW/GSTextureCache.cpp
-	GS/Renderers/HW/GSTextureReplacementLoaders.cpp
-	GS/Renderers/HW/GSTextureReplacements.cpp
 	GS/Renderers/SW/GSDeviceSW.cpp
 	GS/Renderers/SW/GSHiresMem.c
 	GS/Renderers/SW/GSHiresMem.h
@@ -421,7 +419,6 @@ set(pcsx2GSHeaders
 	GS/Renderers/HW/GSHwHack.h
 	GS/Renderers/HW/GSRendererHW.h
 	GS/Renderers/HW/GSTextureCache.h
-	GS/Renderers/HW/GSTextureReplacements.h
 	GS/Renderers/HW/GSVertexHW.h
 	GS/Renderers/SW/GSDeviceSW.h
 	GS/Renderers/SW/GSDrawScanlineCodeGenerator.h

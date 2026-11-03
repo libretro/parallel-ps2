@@ -41,7 +41,6 @@
 #endif
 #include "GameDatabase.h"
 #include "GS.h"
-#include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "Host.h"
 #include "IopBios.h"
 #include "MTVU.h"
@@ -215,7 +214,6 @@ void VMManager::Internal::UpdateEmuFolders()
 	const std::string old_cheats_ws_directory(EmuFolders::CheatsWS);
 	const std::string old_cheats_ni_directory(EmuFolders::CheatsNI);
 	const std::string old_memcards_directory(EmuFolders::MemoryCards);
-	const std::string old_textures_directory(EmuFolders::Textures);
 	/* Re-read them: the caller has just changed where the memory cards
 	 * live -- the per-content directory is set after load_game has already
 	 * configured the folders once -- and the comparisons below are against
@@ -236,9 +234,6 @@ void VMManager::Internal::UpdateEmuFolders()
 			FileMcd_EmuOpen();
 			AutoEject::SetAll();
 		}
-
-		if (EmuFolders::Textures != old_textures_directory)
-			GSTextureReplacements::ReloadReplacementMap();
 	}
 }
 
@@ -544,7 +539,6 @@ void VMManager::UpdateRunningGame(bool resetting, bool game_starting, bool swapp
 			ReloadPatches();
 	}
 
-	MTGS::GameChanged();
 	Host::OnGameChanged(s_disc_path, s_elf_override, s_game_serial, s_game_crc);
 }
 

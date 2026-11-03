@@ -134,7 +134,6 @@ public:
 		u16 age;
 		std::pair<u8, u8> alpha_minmax;
 		bool valid_alpha_minmax;
-		bool is_replacement;
 	};
 
 
@@ -554,7 +553,6 @@ protected:
 	static constexpr u32 MAX_HASH_CACHE_SIZE = 800;
 	bool m_auto_index = true;
 	u64 m_hash_cache_memory_usage = 0;
-	u64 m_hash_cache_replacement_memory_usage = 0;
 
 	FastList<Target*> m_dst[2];
 	FastList<TargetHeightElem> m_target_heights;
@@ -713,8 +711,7 @@ public:
 	~GSTextureCache();
 
 	__fi u64 GetHashCacheMemoryUsage() const { return m_hash_cache_memory_usage; }
-	__fi u64 GetHashCacheReplacementMemoryUsage() const { return m_hash_cache_replacement_memory_usage; }
-	__fi u64 GetTotalHashCacheMemoryUsage() const { return (m_hash_cache_memory_usage + m_hash_cache_replacement_memory_usage); }
+	__fi u64 GetTotalHashCacheMemoryUsage() const { return m_hash_cache_memory_usage; }
 	__fi u64 GetSourceMemoryUsage() const { return m_source_memory_usage; }
 	__fi u64 GetTargetMemoryUsage() const { return m_target_memory_usage; }
 
@@ -823,7 +820,6 @@ public:
 	void InvalidateTemporarySource();
 
 	/// Injects a texture into the hash cache, by using GSTexture::Swap(), transitively applying to all sources. Ownership of tex is transferred.
-	void InjectHashCacheTexture(const HashCacheKey& key, GSTexture* tex, const std::pair<u8, u8>& alpha_minmax);
 };
 
 extern std::unique_ptr<GSTextureCache> g_texture_cache;

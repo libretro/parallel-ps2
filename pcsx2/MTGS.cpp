@@ -791,11 +791,6 @@ void MTGS::Freeze(FreezeAction mode, MTGS_FreezeData& data)
 	WaitGS(false);
 }
 
-void MTGS::GameChanged()
-{
-	GSGameChanged();
-}
-
 void MTGS::ApplySettings()
 {
 	GSUpdateConfig(EmuConfig.GS, hw_render.context_type);

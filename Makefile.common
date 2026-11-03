@@ -472,8 +472,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSRendererHW.cpp \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSRendererHWMultiISA.cpp \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSTextureCache.cpp \
-	$(LRPS2_DIR)/GS/Renderers/HW/GSTextureReplacementLoaders.cpp \
-	$(LRPS2_DIR)/GS/Renderers/HW/GSTextureReplacements.cpp
 
 # pcsx2/GS/Renderers/SW - software renderer. The device + texture cache/texture
 # build everywhere; the scanline JIT (GS*CodeGenerator) and rasterizer are x86

@@ -510,10 +510,7 @@ struct Pcsx2Config
 					UserHacks_MergePPSprite : 1,
 					UserHacks_ForceEvenSpritePosition : 1,
 					UserHacks_NativePaletteDraw : 1,
-					UserHacks_EstimateTextureRegion : 1,
-					LoadTextureReplacements : 1,
-					LoadTextureReplacementsAsync : 1,
-					PrecacheTextureReplacements : 1;
+					UserHacks_EstimateTextureRegion : 1;
 			};
 		};
 
@@ -919,7 +916,6 @@ namespace EmuFolders
 	extern char CheatsNI[PCSX2_PATH_MAX];
 	extern char Resources[PCSX2_PATH_MAX];
 	extern char Cache[PCSX2_PATH_MAX];
-	extern char Textures[PCSX2_PATH_MAX];
 
 	// Assumes that AppRoot and DataRoot have been initialized.
 	void LoadConfig(const char* memcards);
