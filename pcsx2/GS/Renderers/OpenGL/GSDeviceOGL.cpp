@@ -182,10 +182,13 @@ GSDeviceOGL::GSDeviceOGL()
 {
 	m_ops          = &s_opengl_device_ops;
 	m_present_size = GSVector2i(0, 0);
+	gs_flat_map_init(&m_programs, sizeof(ProgramSelector), sizeof(GLProgram*));
 }
 
 GSDeviceOGL::~GSDeviceOGL()
 {
+	/* (DestroyResources deleted the programs; the slots go here) */
+	gs_flat_map_free(&m_programs);
 }
 
 GSTexture* GSDeviceOGL::CreateSurface(GSTexture::Type type, int width, int height, int levels, GSTexture::Format format)
@@ -782,7 +785,10 @@ void GSDeviceOGL::DestroyResources()
 		glDeleteSamplers(1, &m_palette_ss);
 
 	m_last_program = nullptr;
-	m_programs.clear();
+	for (size_t slot = 0; slot < GS_FLAT_MAP_SLOTS(&m_programs); slot++)
+		if (GS_FLAT_MAP_USED(&m_programs, slot))
+			delete *static_cast<GLProgram**>(GS_FLAT_MAP_VALUE(&m_programs, slot));
+	gs_flat_map_clear(&m_programs);
 
 	for (GSDepthStencilOGL* ds : m_om_dss)
 		delete ds;
@@ -1274,7 +1280,7 @@ static void GSDeviceOGLAppendShaderMacro(std::string& macro, const char* name, i
 
 std::string GSDeviceOGL::GetVSSource(VSSelector sel)
 {
-	log_cb(RETRO_LOG_INFO, "Compiling new vertex shader with selector 0x%\n" PRIX64, (uint64_t)sel.key);
+	log_cb(RETRO_LOG_INFO, "Compiling new vertex shader with selector 0x%" PRIX64 "\n", (uint64_t)sel.key);
 
 	std::string macro;
 	GSDeviceOGLAppendShaderMacro(macro, "VS_FST", sel.fst);
@@ -1289,7 +1295,7 @@ std::string GSDeviceOGL::GetVSSource(VSSelector sel)
 
 std::string GSDeviceOGL::GetPSSource(const PSSelector& sel)
 {
-	log_cb(RETRO_LOG_INFO, "Compiling new pixel shader with selector 0x%\n" PRIX64 "%08X", (uint64_t)sel.key_hi, (unsigned)sel.key_lo);
+	log_cb(RETRO_LOG_INFO, "Compiling new pixel shader with selector 0x%" PRIX64 "%08X\n", (uint64_t)sel.key_hi, (unsigned)sel.key_lo);
 
 	std::string macro;
 	GSDeviceOGLAppendShaderMacro(macro, "PS_FST", sel.fst);
@@ -2102,19 +2108,24 @@ void GSDeviceOGL::SetupPipeline(const ProgramSelector& psel)
 		return;
 	}
 
-	auto it = m_programs.find(psel);
-	if (it == m_programs.end())
+	const size_t hash = gs_key_hash(&psel, sizeof(psel));
+	GLProgram** found = static_cast<GLProgram**>(gs_flat_map_find(&m_programs, &psel, sizeof(psel), hash));
+	if (!found)
 	{
 		const std::string vs(GetVSSource(psel.vs));
 		const std::string ps(GetPSSource(psel.ps));
+		int inserted;
 
-		GLProgram prog;
-		m_shader_cache.GetProgram(&prog, vs, ps);
-		it = m_programs.emplace(psel, std::move(prog)).first;
+		GLProgram* const prog = new GLProgram();
+		m_shader_cache.GetProgram(prog, vs, ps);
+		found = static_cast<GLProgram**>(gs_flat_map_insert(&m_programs, &psel, hash, &inserted));
+		if (!found)
+			abort(); /* out of memory, as the map's emplace was without exceptions */
+		*found = prog;
 	}
 
 	m_last_program_selector = psel;
-	m_last_program          = &it->second;
+	m_last_program          = *found;
 	m_last_program->Bind();
 }
 

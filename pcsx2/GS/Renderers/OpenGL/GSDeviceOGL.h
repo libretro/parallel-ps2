@@ -20,6 +20,7 @@
 #include "GLProgram.h"
 #include "GLShaderCache.h"
 #include "GS/Renderers/Common/GSKeyHash.h"
+#include "GS/Renderers/Common/GSFlatMap.h"
 #include "GS/Renderers/Common/GSDevice.h"
 #include "GSTextureOGL.h"
 #include "GLState.h"
@@ -150,15 +151,6 @@ public:
 		__fi bool operator!=(const ProgramSelector& p) const { return !BitEqual(*this, p); }
 	};
 
-	struct ProgramSelectorHash
-	{
-		__fi std::size_t operator()(const ProgramSelector& p) const noexcept
-		{
-			/* Compared bit for bit: hashed over every byte. */
-			return gs_key_hash(&p, sizeof(p));
-		}
-	};
-
 private:
 	static constexpr u8 NUM_TIMESTAMP_QUERIES = 5;
 
@@ -219,7 +211,11 @@ private:
 
 	GLuint m_ps_ss[1 << 8];
 	GSDepthStencilOGL* m_om_dss[1 << 5] = {};
-	std::unordered_map<ProgramSelector, GLProgram, ProgramSelectorHash> m_programs;
+	/* The programs by selector, compared bit for bit, in a GSFlatMap
+	 * from the selector to the GLProgram*, which the device owns: a
+	 * lookup reads one slot. The program is allocated on its own so the
+	 * pointer the last draw keeps stays put when the map grows. */
+	gs_flat_map_t m_programs;
 	/* The draws of one frame come in runs that share a program; remember
 	 * the last selector so the map is not walked for every draw, as the
 	 * D3D12 and Vulkan pipelines do (d9c02aae9). */
