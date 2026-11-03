@@ -794,8 +794,8 @@ ifeq ($(DEBUG), 1)
       CFLAGS   += -Od -Zi -DDEBUG -D_DEBUG
       CXXFLAGS += -Od -Zi -DDEBUG -D_DEBUG
    else
-      CFLAGS   += -O0 -g -DDEBUG -MMD -fno-strict-aliasing
-      CXXFLAGS += -O0 -g -DDEBUG -MMD -fno-strict-aliasing
+      CFLAGS   += -O0 -g -DDEBUG -MMD -MP -fno-strict-aliasing
+      CXXFLAGS += -O0 -g -DDEBUG -MMD -MP -fno-strict-aliasing
    endif
 else
    ifneq (,$(findstring msvc,$(platform)))
@@ -816,8 +816,8 @@ else
       # miscompiles the core - newer GCC ever more eagerly - which is why
       # Makefile builds broke launch-era CDVD boots that the cmake builds
       # of the very same commit ran fine.
-      CFLAGS   += -O3 -DNDEBUG -MMD -fno-strict-aliasing
-      CXXFLAGS += -O3 -DNDEBUG -MMD -fno-strict-aliasing
+      CFLAGS   += -O3 -DNDEBUG -MMD -MP -fno-strict-aliasing
+      CXXFLAGS += -O3 -DNDEBUG -MMD -MP -fno-strict-aliasing
    endif
 endif
 
@@ -965,7 +965,12 @@ endif
 # depfile from the previous build referring to a header that has since been
 # deleted aborts the build with "No rule to make target" before the cleanup
 # would ever fire. Parse-time removal happens before those files are read.
-BUILD_TAG := $(CC)|$(CXX)|$(platform)|$(arch)|$(IS_ARM64)|$(IS_X86)|$(HAVE_VULKAN)|$(HAVE_OPENGL)
+#
+# The depfiles are written with -MP, which gives every header a target of
+# its own, so a header that is deleted later is simply out of date rather
+# than a target nothing can make. Depfiles from before -MP have no such
+# targets: "deps-mp" in the tag makes a tree built before it clean once.
+BUILD_TAG := $(CC)|$(CXX)|$(platform)|$(arch)|$(IS_ARM64)|$(IS_X86)|$(HAVE_VULKAN)|$(HAVE_OPENGL)|deps-mp
 
 BUILD_TAG_STATUS := $(shell \
 	if [ ! -f .build-tag ] || [ "`cat .build-tag 2>/dev/null`" != "$(BUILD_TAG)" ]; then \
