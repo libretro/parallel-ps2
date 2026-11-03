@@ -2490,6 +2490,8 @@ int main(int argc, char** argv)
 			return 1;
 		}
 		s_cases[c].build();
+		/* (the frames the case needs, for a frontend that runs it) */
+		printf("frames %d\n", s_run_frames);
 		return sl_write_bios(argv[2]) ? 0 : 1;
 	}
 	for (c = 0; c < sizeof(s_cases) / sizeof(s_cases[0]); c++)

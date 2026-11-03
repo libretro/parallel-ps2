@@ -42,10 +42,15 @@ if [ ! -f "$CORE" ]; then
 	exit 0
 fi
 
-SAME="dest_alpha points aa1_line dual_blend mip_tw8 depth_states frame_ct32 date_no_depth_full clut_lines sibling_key_after_clut upload_whole many_copies"
+SAME="dest_alpha points aa1_line dual_blend mip_tw8 depth_states frame_ct32 date_no_depth_full clut_lines sibling_key_after_clut upload_whole many_copies move_width_change"
 RUNS="t4_from_target_shaded"
+# Each case runs for the frames it asks for (at least 30), so the
+# picture compared is its finished one on both renderers, not whichever
+# frame either reached at the 30th.
 for c in $SAME $RUNS; do
-	"$WORK/swdraw$EXE" --bios "$WORK/$c.bin" $c >/dev/null
+	f=$("$WORK/swdraw$EXE" --bios "$WORK/$c.bin" $c | sed -n 's/^frames //p')
+	[ -n "$f" ] && [ "$f" -gt 30 ] || f=30
+	echo "$f" > "$WORK/$c.frames"
 done
 
 fail=0
@@ -53,7 +58,7 @@ vulkan=1
 for c in $SAME $RUNS; do
 	rm -rf "$WORK/gl" "$WORK/vk"
 	mkdir -p "$WORK/gl" "$WORK/vk"
-	if ! GN_RGB=1 LRPS2_BIOS="$WORK/$c.bin" timeout 300 "$WORK/glnegotiate$EXE" "$CORE" "$WORK/gl" > "$WORK/$c.gl.log" 2>&1; then
+	if ! GN_RGB=1 GN_FRAMES=$(cat "$WORK/$c.frames") LRPS2_BIOS="$WORK/$c.bin" timeout 300 "$WORK/glnegotiate$EXE" "$CORE" "$WORK/gl" > "$WORK/$c.gl.log" 2>&1; then
 		cat "$WORK/$c.gl.log"
 		echo "  FAIL: $c on the OpenGL renderer"
 		fail=1
@@ -66,7 +71,7 @@ for c in $SAME $RUNS; do
 	g=$(sed -n 's/.*image: .*hash \([0-9a-f]*\)$/\1/p' "$WORK/$c.gl.log")
 	case " $RUNS " in *" $c "*) printf '  %s: OpenGL %s\n' $c "$g"; continue ;; esac
 	[ $vulkan = 1 ] || { printf '  %s: OpenGL %s\n' $c "$g"; continue; }
-	if ! VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_IDLE_BIOS=1 LRPS2_BIOS="$WORK/$c.bin" VN_FRAMES=30 \
+	if ! VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_IDLE_BIOS=1 LRPS2_BIOS="$WORK/$c.bin" VN_FRAMES=$(cat "$WORK/$c.frames") \
 			timeout 300 "$WORK/vknegotiate$EXE" "$CORE" "$WORK/vk" v2 > "$WORK/$c.vk.log" 2>&1; then
 		cat "$WORK/$c.vk.log"
 		echo "  FAIL: $c on the Vulkan renderer"
@@ -96,11 +101,11 @@ if [ $vulkan = 1 ]; then
 	CPU_SPRITES="pcsx2_enable_hw_hacks=enabled;pcsx2_cpu_sprite_size=5;pcsx2_cpu_sprite_level=Blended Sprites/Triangles"
 	rm -rf "$WORK/gl" "$WORK/vk"
 	mkdir -p "$WORK/gl" "$WORK/vk"
-	if ! GN_RGB=1 GN_OPTIONS="$CPU_SPRITES" LRPS2_BIOS="$WORK/$c.bin" timeout 300 "$WORK/glnegotiate$EXE" "$CORE" "$WORK/gl" > "$WORK/$c.cpu.gl.log" 2>&1; then
+	if ! GN_RGB=1 GN_FRAMES=$(cat "$WORK/$c.frames") GN_OPTIONS="$CPU_SPRITES" LRPS2_BIOS="$WORK/$c.bin" timeout 300 "$WORK/glnegotiate$EXE" "$CORE" "$WORK/gl" > "$WORK/$c.cpu.gl.log" 2>&1; then
 		cat "$WORK/$c.cpu.gl.log"
 		echo "  FAIL: $c with CPU sprites on the OpenGL renderer"
 		fail=1
-	elif ! VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_IDLE_BIOS=1 VN_OPTIONS="$CPU_SPRITES" LRPS2_BIOS="$WORK/$c.bin" VN_FRAMES=30 \
+	elif ! VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_IDLE_BIOS=1 VN_OPTIONS="$CPU_SPRITES" LRPS2_BIOS="$WORK/$c.bin" VN_FRAMES=$(cat "$WORK/$c.frames") \
 			timeout 300 "$WORK/vknegotiate$EXE" "$CORE" "$WORK/vk" v2 > "$WORK/$c.cpu.vk.log" 2>&1; then
 		cat "$WORK/$c.cpu.vk.log"
 		echo "  FAIL: $c with CPU sprites on the Vulkan renderer"
