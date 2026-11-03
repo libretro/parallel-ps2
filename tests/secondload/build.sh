@@ -20,7 +20,7 @@ case "$(uname -s)" in
 esac
 CORE=${LRPS2_CORE:-$CORE}
 
-${CC:-cc} -std=c89 -pedantic -Wall -Wno-long-long -O2 \
+${CC:-cc} -std=c89 -pedantic -Wall -Wno-long-long -O2 ${CFLAGS} \
 	-I "$ROOT/libretro/libretro-common/include" \
 	-o "$DIR/secondload" "$DIR/main.c" $LIBS
 echo "built: $DIR/secondload"
