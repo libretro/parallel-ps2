@@ -203,6 +203,3 @@ extern "C" {
 #define vkCmdSetDepthCompareOpEXT pcsx2_vkCmdSetDepthCompareOpEXT
 #define vkCmdSetStencilTestEnableEXT pcsx2_vkCmdSetStencilTestEnableEXT
 #define vkCmdSetStencilOpEXT pcsx2_vkCmdSetStencilOpEXT
-#define vkCmdSetColorBlendEnableEXT pcsx2_vkCmdSetColorBlendEnableEXT
-#define vkCmdSetColorBlendEquationEXT pcsx2_vkCmdSetColorBlendEquationEXT
-#define vkCmdSetColorWriteMaskEXT pcsx2_vkCmdSetColorWriteMaskEXT

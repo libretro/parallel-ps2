@@ -547,8 +547,6 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			SupportsExtension(VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME, false);
 		m_optional_extensions.vk_ext_extended_dynamic_state =
 			SupportsExtension(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME, false);
-		m_optional_extensions.vk_ext_extended_dynamic_state3 =
-			SupportsExtension(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME, false);
 		/* (the libraries extension needs VK_KHR_pipeline_library) */
 		m_optional_extensions.vk_ext_graphics_pipeline_library =
 			SupportsExtension(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME, false)
@@ -677,50 +675,34 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 				Vulkan::AddPointerToChain(&device_info, &eds_feature);
 		}
 
-		/* Blend state on the command buffer, and pipelines linked from
-		 * libraries: each only with all of what it needs (fast linking for
-		 * the libraries, or linking a sibling is no cheaper than building
-		 * it). LRPS2_TEST_VK_NO_EDS3 / _NO_GPL leave either off, for the
-		 * tests (tests/vkpipewarm). */
-		VkPhysicalDeviceExtendedDynamicState3FeaturesEXT eds3_feature = {
-			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT};
+		/* Pipelines linked from libraries, only with all of what it needs
+		 * (fast linking, or linking a sibling is no cheaper than building
+		 * it). LRPS2_TEST_VK_NO_GPL leaves them off, for the tests
+		 * (tests/vkpipewarm). The blend is not set on the command buffer
+		 * (VK_EXT_extended_dynamic_state3): NVIDIA's driver drew nothing
+		 * with it, Devil May Cry 3 black and Soulcalibur III's picture
+		 * frozen, with the libraries on or off, the state set before or
+		 * after the pipeline's bind, and a dual-source blend declared in
+		 * the pipeline; the blend stays in the pipeline, and in the key. */
 		VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gpl_feature = {
 			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT};
-		if (getenv("LRPS2_TEST_VK_NO_EDS3"))
-			m_optional_extensions.vk_ext_extended_dynamic_state3 = false;
 		if (getenv("LRPS2_TEST_VK_NO_GPL"))
 			m_optional_extensions.vk_ext_graphics_pipeline_library = false;
 		m_test_mem_cap = getenv("LRPS2_TEST_VK_MEM_CAP") ? strtoull(getenv("LRPS2_TEST_VK_MEM_CAP"), NULL, 10) : 0;
-		if (m_optional_extensions.vk_ext_extended_dynamic_state3 || m_optional_extensions.vk_ext_graphics_pipeline_library)
+		if (m_optional_extensions.vk_ext_graphics_pipeline_library)
 		{
-			VkPhysicalDeviceExtendedDynamicState3FeaturesEXT eds3 = {
-				VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT};
 			VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gpl = {
 				VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT};
 			VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT gpl_props = {
 				VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT};
 			VkPhysicalDeviceFeatures2 features2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
 			VkPhysicalDeviceProperties2 properties2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-			if (m_optional_extensions.vk_ext_extended_dynamic_state3)
-				Vulkan::AddPointerToChain(&features2, &eds3);
-			if (m_optional_extensions.vk_ext_graphics_pipeline_library)
-			{
-				Vulkan::AddPointerToChain(&features2, &gpl);
-				Vulkan::AddPointerToChain(&properties2, &gpl_props);
-				vkGetPhysicalDeviceProperties2(vk_init_info.gpu, &properties2);
-			}
+			Vulkan::AddPointerToChain(&features2, &gpl);
+			Vulkan::AddPointerToChain(&properties2, &gpl_props);
+			vkGetPhysicalDeviceProperties2(vk_init_info.gpu, &properties2);
 			vkGetPhysicalDeviceFeatures2(vk_init_info.gpu, &features2);
-			m_optional_extensions.vk_ext_extended_dynamic_state3 &= eds3.extendedDynamicState3ColorBlendEnable
-				&& eds3.extendedDynamicState3ColorBlendEquation && eds3.extendedDynamicState3ColorWriteMask;
-			m_optional_extensions.vk_ext_graphics_pipeline_library &= gpl.graphicsPipelineLibrary
+			m_optional_extensions.vk_ext_graphics_pipeline_library = gpl.graphicsPipelineLibrary
 				&& gpl_props.graphicsPipelineLibraryFastLinking;
-		}
-		if (m_optional_extensions.vk_ext_extended_dynamic_state3)
-		{
-			eds3_feature.extendedDynamicState3ColorBlendEnable   = VK_TRUE;
-			eds3_feature.extendedDynamicState3ColorBlendEquation = VK_TRUE;
-			eds3_feature.extendedDynamicState3ColorWriteMask     = VK_TRUE;
-			Vulkan::AddPointerToChain(&device_info, &eds3_feature);
 		}
 		if (m_optional_extensions.vk_ext_graphics_pipeline_library)
 		{
@@ -771,12 +753,6 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		m_dss_key     = 0;
 		m_dss_applied = 0;
 		m_dss_target  = m_optional_extensions.vk_ext_extended_dynamic_state ? &m_dss_key : &m_pipeline_selector.dss.key;
-		m_optional_extensions.vk_ext_extended_dynamic_state3 = m_optional_extensions.vk_ext_extended_dynamic_state3
-			&& vkCmdSetColorBlendEnableEXT && vkCmdSetColorBlendEquationEXT && vkCmdSetColorWriteMaskEXT;
-		/* (without it the key stays 0, which is what is applied) */
-		m_blend_dynamic = m_optional_extensions.vk_ext_extended_dynamic_state3 ? ~0u : 0u;
-		m_blend_key     = 0;
-		m_blend_applied = m_blend_dynamic;
 
 		// Grab the graphics and present queues.
 		vkGetDeviceQueue(vk_init_info.device, m_graphics_queue_family_index, 0, &m_graphics_queue);
@@ -851,8 +827,6 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			m_optional_extensions.vk_ext_rasterization_order_attachment_access ? "supported" : "NOT supported");
 		log_cb(RETRO_LOG_INFO, "Extended dynamic state (depth/stencil) is %s\n",
 			m_optional_extensions.vk_ext_extended_dynamic_state ? "in use" : "NOT in use");
-		log_cb(RETRO_LOG_INFO, "Extended dynamic state 3 (blend) is %s\n",
-			m_optional_extensions.vk_ext_extended_dynamic_state3 ? "in use" : "NOT in use");
 		log_cb(RETRO_LOG_INFO, "Graphics pipeline libraries are %s\n",
 			m_optional_extensions.vk_ext_graphics_pipeline_library ? "in use" : "NOT in use");
 
@@ -3847,8 +3821,7 @@ static constexpr std::array<VkBlendOp, 4> vk_blend_ops = {{
 /* The blend a selector draws with, as one word: enable (bit 0), colour
  * source and destination factor (1-4, 5-8, indexes of vk_blend_factors),
  * op (9-10, of vk_blend_ops), alpha source and destination factor (11-14,
- * 15-18), colour write mask (19-22). What BuildTFXPipeline bakes without
- * VK_EXT_extended_dynamic_state3, and ApplyBlendState sets with it. */
+ * 15-18), colour write mask (19-22): what BuildTFXPipeline bakes. */
 #define BLEND_ONE  14u
 #define BLEND_ZERO 15u
 static u32 TFXBlendWord(const GSDeviceVK::PipelineSelector& p)
@@ -3862,16 +3835,6 @@ static u32 TFXBlendWord(const GSDeviceVK::PipelineSelector& p)
 	return 1u | (static_cast<u32>(p.bs.src_factor) << 1) | (static_cast<u32>(p.bs.dst_factor) << 5)
 		| (static_cast<u32>(p.bs.op) << 9) | (static_cast<u32>(p.bs.src_factor_alpha) << 11)
 		| (static_cast<u32>(p.bs.dst_factor_alpha) << 15) | (static_cast<u32>(p.cms.wrgba) << 19);
-}
-
-/* The pixel shader a pipeline is made with: blending is off, and its second
- * output unused, when the colours are masked. */
-static GSHWDrawConfig::PSSelector TFXPipelinePS(const GSDeviceVK::PipelineSelector& p)
-{
-	GSHWDrawConfig::PSSelector pps{p.ps};
-	if (!p.bs.IsEffective(p.cms))
-		pps.no_color1 = true;
-	return pps;
 }
 
 VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods, VkPipelineCache cache,
@@ -3921,7 +3884,11 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 	// Shaders: the modules of the selector's interface, its fields as
 	// their specialization constants (a dynamic sibling's pixel shader
 	// reads them from the push constants)
-	const GSHWDrawConfig::PSSelector pps = m_optional_extensions.vk_ext_extended_dynamic_state3 ? p.ps : TFXPipelinePS(p);
+	/* p is a key: its pixel selector says whether the second output is
+	 * used (TFXPipelineKey, a sibling's VKDynamicPS). A library's key has
+	 * no blend, which must not be read as none: the pixel shader part of
+	 * a sibling that blends with its second output is built with it. */
+	const GSHWDrawConfig::PSSelector& pps = p.ps;
 	// (a library's: only those of its parts)
 	const bool with_vs = !library || (library & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT);
 	const bool with_fs = !library || (library & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT);
@@ -3973,14 +3940,7 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 		gpb.SetStencilState(true, sos, sos);
 	}
 
-	// Blending: the word's, or from the command buffer
-	if (m_optional_extensions.vk_ext_extended_dynamic_state3)
-	{
-		gpb.AddDynamicState(VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT);
-		gpb.AddDynamicState(VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT);
-		gpb.AddDynamicState(VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT);
-	}
-	else
+	// Blending: the word's
 	{
 		const u32 w = TFXBlendWord(p);
 		gpb.SetBlendAttachment(0, (w & 1u) != 0, vk_blend_factors[(w >> 1) & 15u], vk_blend_factors[(w >> 5) & 15u],
@@ -4002,10 +3962,9 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 
 /* The key of the pipeline a draw's selector needs: what BuildTFXPipeline
  * does not read zeroed, as the shaders' fields are (VKPipelineKey.h). The
- * line width and the blend constant are dynamic state, and the blend and
- * colour mask too with VK_EXT_extended_dynamic_state3; blending the colour
+ * line width and the blend constant are dynamic state; blending the colour
  * mask leaves without effect is built as none. */
-static GSDeviceVK::PipelineSelector TFXPipelineKey(const GSDeviceVK::PipelineSelector& p, bool dynamic_blend)
+static GSDeviceVK::PipelineSelector TFXPipelineKey(const GSDeviceVK::PipelineSelector& p)
 {
 	GSDeviceVK::PipelineSelector k{p};
 	k.line_width         = 0;
@@ -4015,13 +3974,6 @@ static GSDeviceVK::PipelineSelector TFXPipelineKey(const GSDeviceVK::PipelineSel
 	{
 		k.bs.key      = 0;
 		k.ps.no_color1 = 1;
-	}
-	/* (with the blend on the command buffer, none of it; the shader's
-	 * second output is kept above) */
-	if (dynamic_blend)
-	{
-		k.bs.key  = 0;
-		k.cms.key = 0;
 	}
 	VKCanonicalPS(k.ps);
 	VKCanonicalVS(k.vs, k.topology);
@@ -4035,7 +3987,7 @@ VkPipeline GSDeviceVK::GetTFXPipeline(const PipelineSelector& p)
 	if (m_last_tfx_pipeline != VK_NULL_HANDLE && m_last_tfx_pipeline_selector == p)
 		return m_last_tfx_pipeline;
 
-	const PipelineSelector key = TFXPipelineKey(p, m_optional_extensions.vk_ext_extended_dynamic_state3);
+	const PipelineSelector key = TFXPipelineKey(p);
 	const VkPipeline* found = vk_pipe_find(&m_tfx_pipelines, key);
 	VkPipeline pipeline;
 	if (!found)
@@ -4403,8 +4355,6 @@ void GSDeviceVK::PipelineCacheClose()
 #define PLIST_MAX     65536u
 /* flags: the selectors leave out the depth/stencil state (dss is zero) */
 #define PLIST_FLAG_DYNAMIC_DS 1u
-/* flags: and the blend state (bs and cms are zero) */
-#define PLIST_FLAG_DYNAMIC_BLEND 2u
 
 typedef struct PipelineListHeader
 {
@@ -4424,10 +4374,10 @@ static void PipelineListPath(char* path, size_t size)
 /* A selector a list may hold: a key (TFXPipelineKey), whose fields index
  * tables of the size they have here, and with the depth/stencil state
  * dynamic it has none. */
-static bool PipelineSelectorValid(const GSDeviceVK::PipelineSelector& p, bool dynamic_ds, bool dynamic_blend)
+static bool PipelineSelectorValid(const GSDeviceVK::PipelineSelector& p, bool dynamic_ds)
 {
 	return p.topology < 3 && (!p.bs.enable || p.bs.op < 3) && (!dynamic_ds || p.dss.key == 0)
-		&& TFXPipelineKey(p, dynamic_blend) == p;
+		&& TFXPipelineKey(p) == p;
 }
 
 void GSDeviceVK::PipelineListAdd(const PipelineSelector& p)
@@ -4463,7 +4413,6 @@ void GSDeviceVK::PipelineListLoad()
 	u64 hash;
 	u32 i;
 	const bool dynamic_ds = m_optional_extensions.vk_ext_extended_dynamic_state;
-	const bool dynamic_blend = m_optional_extensions.vk_ext_extended_dynamic_state3;
 
 	m_plist_count = 0;
 	m_plist_dirty = false;
@@ -4477,7 +4426,7 @@ void GSDeviceVK::PipelineListLoad()
 	memcpy(&h, data, sizeof(h));
 	if (h.magic != PLIST_MAGIC || h.version != PLIST_VERSION || h.shader_version != VKSPV_VERSION
 		|| h.entry_size != sizeof(PipelineSelector) || h.count > PLIST_MAX
-		|| h.flags != ((dynamic_ds ? PLIST_FLAG_DYNAMIC_DS : 0u) | (dynamic_blend ? PLIST_FLAG_DYNAMIC_BLEND : 0u))
+		|| h.flags != (dynamic_ds ? PLIST_FLAG_DYNAMIC_DS : 0u)
 		|| (int64_t)(sizeof(h) + (u64)h.count * sizeof(PipelineSelector) + sizeof(hash)) != len)
 		goto refuse;
 	memcpy(&hash, (const u8*)data + len - sizeof(hash), sizeof(hash));
@@ -4495,7 +4444,7 @@ void GSDeviceVK::PipelineListLoad()
 	{
 		PipelineSelector p;
 		memcpy(&p, (const u8*)data + sizeof(h) + i * sizeof(p), sizeof(p));
-		if (!PipelineSelectorValid(p, dynamic_ds, dynamic_blend))
+		if (!PipelineSelectorValid(p, dynamic_ds))
 			goto refuse;
 		memcpy(&m_plist[i], &p, sizeof(p));
 	}
@@ -4526,8 +4475,7 @@ void GSDeviceVK::PipelineListSave()
 	h.shader_version = VKSPV_VERSION;
 	h.entry_size     = sizeof(PipelineSelector);
 	h.count          = m_plist_count;
-	h.flags          = (m_optional_extensions.vk_ext_extended_dynamic_state ? PLIST_FLAG_DYNAMIC_DS : 0u)
-		| (m_optional_extensions.vk_ext_extended_dynamic_state3 ? PLIST_FLAG_DYNAMIC_BLEND : 0u);
+	h.flags          = m_optional_extensions.vk_ext_extended_dynamic_state ? PLIST_FLAG_DYNAMIC_DS : 0u;
 	size = sizeof(h) + (size_t)m_plist_count * sizeof(PipelineSelector) + sizeof(hash);
 	if (!(buf = (u8*)malloc(size)))
 		return;
@@ -4925,9 +4873,6 @@ bool GSDeviceVK::BindDrawPipeline(const PipelineSelector& p)
 		return false;
 
 	SetPipeline(pipeline);
-	/* (without dynamic blend it matches what applied holds: never set) */
-	if (m_optional_extensions.vk_ext_extended_dynamic_state3)
-		m_blend_key = TFXBlendWord(p);
 
 	return ApplyTFXState();
 }
@@ -5079,33 +5024,6 @@ __noinline void GSDeviceVK::ApplyDepthStencilState(VkCommandBuffer cmdbuf)
 		vkCmdSetStencilOpEXT(cmdbuf, VK_STENCIL_FACE_FRONT_AND_BACK, VK_STENCIL_OP_KEEP,
 			want.date_one ? VK_STENCIL_OP_ZERO : VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_EQUAL);
 	m_dss_applied = m_dss_key;
-}
-
-/* Sets what differs between the blend the command buffer holds and the
- * one the draw wants (TFXBlendWord), with VK_EXT_extended_dynamic_state3:
- * all of it when nothing is known. */
-__noinline void GSDeviceVK::ApplyBlendState(VkCommandBuffer cmdbuf)
-{
-	const u32 want = m_blend_key, have = m_blend_applied;
-	const bool all = (have == ~0u);
-	if (all || ((want ^ have) & 1u))
-	{
-		const VkBool32 enable = want & 1u;
-		vkCmdSetColorBlendEnableEXT(cmdbuf, 0, 1, &enable);
-	}
-	if (all || ((want ^ have) & 0x7FFFEu))
-	{
-		const VkColorBlendEquationEXT eq = {vk_blend_factors[(want >> 1) & 15u], vk_blend_factors[(want >> 5) & 15u],
-			vk_blend_ops[(want >> 9) & 3u], vk_blend_factors[(want >> 11) & 15u], vk_blend_factors[(want >> 15) & 15u],
-			VK_BLEND_OP_ADD};
-		vkCmdSetColorBlendEquationEXT(cmdbuf, 0, 1, &eq);
-	}
-	if (all || ((want ^ have) & (15u << 19)))
-	{
-		const VkColorComponentFlags mask = (want >> 19) & 15u;
-		vkCmdSetColorWriteMaskEXT(cmdbuf, 0, 1, &mask);
-	}
-	m_blend_applied = want;
 }
 
 void GSDeviceVK::PSSetShaderResource(int i, GSTexture* sr, bool check_state)
@@ -5327,8 +5245,7 @@ __noinline bool GSDeviceVK::RetryTFXState(bool already_execed, const char* what)
 
 bool GSDeviceVK::ApplyTFXState(bool already_execed)
 {
-	if (m_current_pipeline_layout == PipelineLayout::TFX && m_dirty_flags == 0 && m_dss_key == m_dss_applied
-		&& m_blend_key == m_blend_applied)
+	if (m_current_pipeline_layout == PipelineLayout::TFX && m_dirty_flags == 0 && m_dss_key == m_dss_applied)
 		return true;
 
 	const VkCommandBuffer cmdbuf = GetCurrentCommandBuffer();
@@ -5440,8 +5357,7 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 	{
 		m_current_pipeline_layout = PipelineLayout::TFX;
 		/* a new command buffer, or a utility pipeline's own state */
-		m_dss_applied   = m_dss_dynamic;
-		m_blend_applied = m_blend_dynamic;
+		m_dss_applied = m_dss_dynamic;
 
 		dsets[0] = m_tfx_ubo_descriptor_set;
 		dsets[1] = m_tfx_texture_descriptor_set;
@@ -5473,8 +5389,6 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 
 	if (m_dss_key != m_dss_applied)
 		ApplyDepthStencilState(cmdbuf);
-	if (m_blend_key != m_blend_applied)
-		ApplyBlendState(cmdbuf);
 
 	ApplyBaseState(flags, cmdbuf);
 	return true;

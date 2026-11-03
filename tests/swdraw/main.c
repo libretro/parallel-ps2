@@ -354,6 +354,23 @@ static void case_aa1_line(void)
 	ad(GS_XYZ2, 0, XY(2047, 2047));
 }
 
+/* A sprite alpha blended over an opaque one, (Cs - Cd) * As + Cd, with a
+ * colour whose alpha is none of its channels: the blend reads As through
+ * the shader's second output, and a shader built without it blends with
+ * something else (tests/vkpipewarm holds its linked siblings to this). */
+static void case_dual_blend(void)
+{
+	ad_common();
+	ad(GS_RGBAQ, 0x3f800000ul, 0x80204080ul);
+	ad(GS_PRIM, 0, 6);                /* sprite */
+	ad(GS_XYZ2, 0, XY(0, 0));
+	ad(GS_XYZ2, 0, XY(256, 128));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x4020C0FFul);
+	ad(GS_PRIM, 0, 6 | 0x40);         /* sprite, ABE */
+	ad(GS_XYZ2, 0, XY(64, 32));
+	ad(GS_XYZ2, 0, XY(192, 96));
+}
+
 /* Each case on one rasterizer, which takes every row, and again at 2x. */
 /* A mipmapped texture whose TEX0 claims 2048 texels across (TW = 11),
  * past the 1024 the GS has; drawn with a constant LOD of 1, so the
@@ -2048,6 +2065,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "aa1_triangle",    case_aa1_triangle, "1" },
 	{ "aa1_triangle_2x", case_aa1_triangle, "2" },
 	{ "aa1_line",        case_aa1_line,     "1" },
+	{ "dual_blend",      case_dual_blend,   "1" },
 	{ "aa1_line_2x",     case_aa1_line,     "2" },
 	{ "mip_tw8",         case_mip_tw8,      "1" },
 	{ "mip_tw11",        case_mip_tw11,     "1" },

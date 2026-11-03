@@ -78,10 +78,6 @@ public:
 		 * TFX pipelines: VK_EXT_extended_dynamic_state, or the same
 		 * commands of Vulkan 1.3. */
 		bool vk_ext_extended_dynamic_state : 1;
-		/* Blend enable, blend equation and colour write mask are set on
-		 * the command buffer too, and left out of the TFX keys:
-		 * VK_EXT_extended_dynamic_state3. */
-		bool vk_ext_extended_dynamic_state3 : 1;
 		/* The dynamic siblings are linked from graphics pipeline libraries
 		 * (VK_EXT_graphics_pipeline_library with fast linking): a pixel
 		 * shader part built once per module and render pass, a vertex and
@@ -547,12 +543,6 @@ private:
 	gs_flat_map_t m_tfx_state_libs;
 	VkPipeline GetTFXLibrary(const PipelineSelector& sibling, bool fragment);
 	bool m_gpl_failed = false; /* a library or a link failed: build whole */
-	/* The blend the draw wants (TFXBlendWord) and what the command buffer
-	 * holds, with vk_ext_extended_dynamic_state3; ~0 for nothing known. */
-	u32 m_blend_key = 0;
-	u32 m_blend_applied = 0;
-	u32 m_blend_dynamic = 0; /* what applied is reset to: ~0, or 0 without */
-	void ApplyBlendState(VkCommandBuffer cmdbuf);
 	/* The draw's pipeline is a sibling: the key it reads, pushed by
 	 * ApplyTFXState. */
 	bool m_tfx_dynamic = false;

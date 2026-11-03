@@ -202,9 +202,4 @@ VULKAN_DEVICE_ENTRY_POINT(vkCmdSetDepthCompareOpEXT, false)
 VULKAN_DEVICE_ENTRY_POINT(vkCmdSetStencilTestEnableEXT, false)
 VULKAN_DEVICE_ENTRY_POINT(vkCmdSetStencilOpEXT, false)
 
-// VK_EXT_extended_dynamic_state3 (blend and colour mask)
-VULKAN_DEVICE_ENTRY_POINT(vkCmdSetColorBlendEnableEXT, false)
-VULKAN_DEVICE_ENTRY_POINT(vkCmdSetColorBlendEquationEXT, false)
-VULKAN_DEVICE_ENTRY_POINT(vkCmdSetColorWriteMaskEXT, false)
-
 #endif // VULKAN_DEVICE_ENTRY_POINT
