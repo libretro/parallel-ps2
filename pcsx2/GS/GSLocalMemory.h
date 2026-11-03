@@ -19,8 +19,6 @@
 #include "GSVector.h"
 #include "GSClut.h"
 #include "MultiISA.h"
-#include <array>
-#include <vector>
 #include "Renderers/Common/GSFlatMap.h"
 
 /* Which tiles of a texture live in each GS page, for the repeating-texture

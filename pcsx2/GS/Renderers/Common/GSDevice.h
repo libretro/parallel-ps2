@@ -17,7 +17,6 @@
 
 #include "GSRetireRing.h"
 
-#include <array>
 
 #include "GSKeyHash.h"
 #include "common/WindowInfo.h"
@@ -868,7 +867,7 @@ public:
 	// clang-format on
 
 private:
-	std::array<FastList<GSTexture*>, 2> m_pool; // [texture, target]
+	FastList<GSTexture*> m_pool[2]; // [texture, target]
 
 	static const HWBlend m_blendMap[81];
 

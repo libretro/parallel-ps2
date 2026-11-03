@@ -2145,15 +2145,15 @@ void GSDeviceOGL::SetupOM(OMDepthStencilSelector dssel)
 }
 
 // clang-format off
-static constexpr std::array<GLenum, 16> s_gl_blend_factors = { {
+static constexpr GLenum s_gl_blend_factors[16] = {
 	GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR, GL_DST_COLOR, GL_ONE_MINUS_DST_COLOR,
 	GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
 	GL_DST_ALPHA, GL_ONE_MINUS_DST_ALPHA, GL_SRC1_ALPHA, GL_ONE_MINUS_SRC1_ALPHA,
 	GL_CONSTANT_COLOR, GL_ONE_MINUS_CONSTANT_COLOR, GL_ONE, GL_ZERO
-} };
-static constexpr std::array<GLenum, 3> s_gl_blend_ops = { {
+};
+static constexpr GLenum s_gl_blend_ops[3] = {
 		GL_FUNC_ADD, GL_FUNC_SUBTRACT, GL_FUNC_REVERSE_SUBTRACT
-} };
+};
 // clang-format on
 
 // The renderer keeps SRC1 factors off a device without dual source blending

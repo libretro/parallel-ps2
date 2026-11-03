@@ -14,8 +14,6 @@
  */
 
 #include <algorithm>
-#include <array>
-#include <deque>
 #include <cmath>
 
 #include "GSRenderer.h"

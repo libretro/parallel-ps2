@@ -18,7 +18,6 @@
 #include "glad.h"
 #include <memory>
 #include <tuple>
-#include <vector>
 
 /// Provides a buffer for streaming data to the GPU, ideally in write-combined memory.
 class GLStreamBuffer

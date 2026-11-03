@@ -23,7 +23,6 @@
 #include "GS/Renderers/Common/GSKeyHash.h"
 #include "GS/Renderers/Common/GSFlatMap.h"
 #include "GS/Renderers/Common/GSArray.h"
-#include <array>
 #include <functional>
 #include <memory>
 #include <string>
@@ -336,7 +335,7 @@ private:
        {
 	       // [0] - Init (upload) command buffer, [1] - draw command buffer
 	       VkCommandPool command_pool = VK_NULL_HANDLE;
-	       std::array<VkCommandBuffer, 2> command_buffers{VK_NULL_HANDLE, VK_NULL_HANDLE};
+	       VkCommandBuffer command_buffers[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 	       VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
 	       VkFence fence = VK_NULL_HANDLE;
 	       u64 fence_counter = 0;
@@ -430,7 +429,7 @@ private:
        VkQueue m_graphics_queue = VK_NULL_HANDLE;
        u32 m_graphics_queue_family_index = 0;
 
-       std::array<FrameResources, NUM_COMMAND_BUFFERS> m_frame_resources;
+       FrameResources m_frame_resources[NUM_COMMAND_BUFFERS];
        u64 m_next_fence_counter = 1;
        u64 m_completed_fence_counter = 0;
        u32 m_current_frame = 0;
@@ -845,13 +844,13 @@ private:
 	u8 m_dss_key = 0;
 	u8 m_dss_applied = 0;
 
-	std::array<const GSTextureVK*, NUM_TFX_TEXTURES> m_tfx_textures{};
+	const GSTextureVK* m_tfx_textures[NUM_TFX_TEXTURES] = {};
 	VkSampler m_tfx_sampler = VK_NULL_HANDLE;
 	u32 m_tfx_sampler_sel = 0;
 	VkDescriptorSet m_tfx_ubo_descriptor_set = VK_NULL_HANDLE;
 	VkDescriptorSet m_tfx_texture_descriptor_set = VK_NULL_HANDLE;
 	VkDescriptorSet m_tfx_rt_descriptor_set = VK_NULL_HANDLE;
-	std::array<u32, NUM_TFX_DYNAMIC_OFFSETS> m_tfx_dynamic_offsets{};
+	u32 m_tfx_dynamic_offsets[NUM_TFX_DYNAMIC_OFFSETS] = {};
 
 	const GSTextureVK* m_utility_texture = nullptr;
 	VkSampler m_utility_sampler = VK_NULL_HANDLE;

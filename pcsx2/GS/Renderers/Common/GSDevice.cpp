@@ -437,7 +437,7 @@ void GSDevice::AgePool()
 	 * So in steady state nothing is created and nothing is destroyed, on
 	 * every backend: this is GSDevice, above D3D11, D3D12, OpenGL, Vulkan
 	 * and the software renderer alike. */
-	for (u32 pool_idx = 0; pool_idx < m_pool.size(); pool_idx++)
+	for (u32 pool_idx = 0; pool_idx < 2; pool_idx++)
 	{
 		const u32 max_size = (pool_idx == 0) ? MAX_POOLED_TEXTURES : MAX_POOLED_TARGETS;
 		const u64 max_bytes = PoolByteBudget(pool_idx);

@@ -13,7 +13,6 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <array>
 #include "../../../FormatString.h"
 #include "common/Pcsx2Defs.h"
 #include <fstream>
@@ -51,9 +50,9 @@ GLuint GLProgram::CompileShader(GLenum type, const std::string_view source)
 {
 	GLuint id = glCreateShader(type);
 
-	std::array<const GLchar*, 1> sources = {{source.data()}};
-	std::array<GLint, 1> source_lengths = {{static_cast<GLint>(source.size())}};
-	glShaderSource(id, static_cast<GLsizei>(sources.size()), sources.data(), source_lengths.data());
+	const GLchar* sources[1] = {source.data()};
+	GLint source_lengths[1] = {static_cast<GLint>(source.size())};
+	glShaderSource(id, 1, sources, source_lengths);
 	glCompileShader(id);
 
 	GLint status = GL_FALSE;

@@ -70,7 +70,7 @@ namespace Vulkan
 		b.stageFlags = stages;
 		b.pImmutableSamplers = nullptr;
 
-		m_ci.pBindings = m_bindings.data();
+		m_ci.pBindings = m_bindings;
 		m_ci.bindingCount++;
 	}
 
@@ -103,7 +103,7 @@ namespace Vulkan
 		m_sets[m_ci.setLayoutCount] = layout;
 
 		m_ci.setLayoutCount++;
-		m_ci.pSetLayouts = m_sets.data();
+		m_ci.pSetLayouts = m_sets;
 	}
 
 	void PipelineLayoutBuilder::AddPushConstants(VkShaderStageFlags stages, u32 offset, u32 size)
@@ -114,7 +114,7 @@ namespace Vulkan
 		r.size = size;
 
 		m_ci.pushConstantRangeCount++;
-		m_ci.pPushConstantRanges = m_push_constants.data();
+		m_ci.pPushConstantRanges = m_push_constants;
 	}
 
 	GraphicsPipelineBuilder::GraphicsPipelineBuilder() { Clear(); }
@@ -124,13 +124,13 @@ namespace Vulkan
 		m_ci = {};
 		m_ci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 
-		m_shader_stages = {};
+		memset(m_shader_stages, 0, sizeof(m_shader_stages));
 
 		m_vertex_input_state = {};
 		m_vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 		m_ci.pVertexInputState = &m_vertex_input_state;
-		m_vertex_attributes = {};
-		m_vertex_buffers = {};
+		memset(m_vertex_attributes, 0, sizeof(m_vertex_attributes));
+		memset(m_vertex_buffers, 0, sizeof(m_vertex_buffers));
 
 		m_input_assembly = {};
 		m_input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -142,7 +142,7 @@ namespace Vulkan
 		m_depth_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 		m_blend_state = {};
 		m_blend_state.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-		m_blend_attachments = {};
+		memset(m_blend_attachments, 0, sizeof(m_blend_attachments));
 
 		m_viewport_state = {};
 		m_viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -151,7 +151,7 @@ namespace Vulkan
 
 		m_dynamic_state = {};
 		m_dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-		m_dynamic_state_values = {};
+		memset(m_dynamic_state_values, 0, sizeof(m_dynamic_state_values));
 
 		m_multisample_state = {};
 		m_multisample_state.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -166,7 +166,7 @@ namespace Vulkan
 		m_library.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT;
 		m_linked = {};
 		m_linked.sType = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR;
-		m_linked_libraries = {};
+		memset(m_linked_libraries, 0, sizeof(m_linked_libraries));
 
 		// set defaults
 		SetNoCullRasterizationState();
@@ -195,7 +195,7 @@ namespace Vulkan
 				m_shader_stages[n++] = m_shader_stages[i];
 		}
 		m_ci.stageCount = n;
-		m_ci.pStages    = n ? m_shader_stages.data() : nullptr;
+		m_ci.pStages    = n ? m_shader_stages : nullptr;
 	}
 
 	void GraphicsPipelineBuilder::SetLinkedLibraries(const VkPipeline* libraries, u32 count)
@@ -204,7 +204,7 @@ namespace Vulkan
 		for (i = 0; i < count && i < MAX_LIBRARIES; i++)
 			m_linked_libraries[i] = libraries[i];
 		m_linked.libraryCount = i;
-		m_linked.pLibraries   = m_linked_libraries.data();
+		m_linked.pLibraries   = m_linked_libraries;
 		Vulkan::AddPointerToChain(&m_ci, &m_linked);
 		m_ci.stageCount = 0;
 		m_ci.pStages    = nullptr;
@@ -235,7 +235,7 @@ namespace Vulkan
 		if (index == m_ci.stageCount)
 		{
 			m_ci.stageCount++;
-			m_ci.pStages = m_shader_stages.data();
+			m_ci.pStages = m_shader_stages;
 		}
 
 		VkPipelineShaderStageCreateInfo& s = m_shader_stages[index];
@@ -255,7 +255,7 @@ namespace Vulkan
 		b.inputRate = input_rate;
 
 		m_vertex_input_state.vertexBindingDescriptionCount++;
-		m_vertex_input_state.pVertexBindingDescriptions = m_vertex_buffers.data();
+		m_vertex_input_state.pVertexBindingDescriptions = m_vertex_buffers;
 		m_ci.pVertexInputState = &m_vertex_input_state;
 	}
 
@@ -269,7 +269,7 @@ namespace Vulkan
 		a.offset = offset;
 
 		m_vertex_input_state.vertexAttributeDescriptionCount++;
-		m_vertex_input_state.pVertexAttributeDescriptions = m_vertex_attributes.data();
+		m_vertex_input_state.pVertexAttributeDescriptions = m_vertex_attributes;
 		m_ci.pVertexInputState = &m_vertex_input_state;
 	}
 
@@ -368,7 +368,7 @@ namespace Vulkan
 		bs.colorWriteMask = write_mask;
 
 		m_blend_state.attachmentCount++;
-		m_blend_state.pAttachments = m_blend_attachments.data();
+		m_blend_state.pAttachments = m_blend_attachments;
 		m_ci.pColorBlendState = &m_blend_state;
 	}
 
@@ -391,7 +391,7 @@ namespace Vulkan
 		if (attachment >= m_blend_state.attachmentCount)
 		{
 			m_blend_state.attachmentCount = attachment + 1u;
-			m_blend_state.pAttachments = m_blend_attachments.data();
+			m_blend_state.pAttachments = m_blend_attachments;
 			m_ci.pColorBlendState = &m_blend_state;
 		}
 	}
@@ -409,7 +409,7 @@ namespace Vulkan
 
 	void GraphicsPipelineBuilder::ClearBlendAttachments()
 	{
-		m_blend_attachments = {};
+		memset(m_blend_attachments, 0, sizeof(m_blend_attachments));
 		m_blend_state.attachmentCount = 0;
 	}
 
@@ -425,7 +425,7 @@ namespace Vulkan
 	{
 		m_dynamic_state_values[m_dynamic_state.dynamicStateCount] = state;
 		m_dynamic_state.dynamicStateCount++;
-		m_dynamic_state.pDynamicStates = m_dynamic_state_values.data();
+		m_dynamic_state.pDynamicStates = m_dynamic_state_values;
 		m_ci.pDynamicState = &m_dynamic_state;
 	}
 
@@ -490,8 +490,8 @@ namespace Vulkan
 		m_ci = {};
 		m_ci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
 		m_si = {};
-		m_smap_entries = {};
-		m_smap_constants = {};
+		memset(m_smap_entries, 0, sizeof(m_smap_entries));
+		memset(m_smap_constants, 0, sizeof(m_smap_constants));
 	}
 
 	VkPipeline ComputePipelineBuilder::Create(VkDevice device, VkPipelineCache pipeline_cache /*= VK_NULL_HANDLE*/, bool clear /*= true*/)
@@ -530,8 +530,8 @@ namespace Vulkan
 	{
 		if (m_si.mapEntryCount == 0)
 		{
-			m_si.pMapEntries = m_smap_entries.data();
-			m_si.pData = m_smap_constants.data();
+			m_si.pMapEntries = m_smap_entries;
+			m_si.pData = m_smap_constants;
 			m_ci.stage.pSpecializationInfo = &m_si;
 		}
 
@@ -598,13 +598,13 @@ namespace Vulkan
 
 	void DescriptorSetUpdateBuilder::Clear()
 	{
-		m_writes = {};
+		memset(m_writes, 0, sizeof(m_writes));
 		m_num_writes = 0;
 	}
 
 	void DescriptorSetUpdateBuilder::Update(VkDevice device, bool clear /*= true*/)
 	{
-		vkUpdateDescriptorSets(device, m_num_writes, (m_num_writes > 0) ? m_writes.data() : nullptr, 0, nullptr);
+		vkUpdateDescriptorSets(device, m_num_writes, (m_num_writes > 0) ? m_writes : nullptr, 0, nullptr);
 
 		if (clear)
 			Clear();
@@ -613,7 +613,7 @@ namespace Vulkan
 	void Vulkan::DescriptorSetUpdateBuilder::PushUpdate(
 	VkCommandBuffer cmdbuf, VkPipelineBindPoint bind_point, VkPipelineLayout layout, u32 set, bool clear /*= true*/)
 	{
-		vkCmdPushDescriptorSetKHR(cmdbuf, bind_point, layout, set, m_num_writes, m_writes.data());
+		vkCmdPushDescriptorSetKHR(cmdbuf, bind_point, layout, set, m_num_writes, m_writes);
 
 		if (clear)
 			Clear();
@@ -784,7 +784,7 @@ namespace Vulkan
 	{
 		m_ci = {};
 		m_ci.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		m_images = {};
+		memset(m_images, 0, sizeof(m_images));
 	}
 
 	VkFramebuffer FramebufferBuilder::Create(VkDevice device, bool clear /*= true*/)
@@ -805,7 +805,7 @@ namespace Vulkan
 		m_images[m_ci.attachmentCount] = image;
 
 		m_ci.attachmentCount++;
-		m_ci.pAttachments = m_images.data();
+		m_ci.pAttachments = m_images;
 	}
 
 	void FramebufferBuilder::SetSize(u32 width, u32 height, u32 layers)
@@ -823,10 +823,10 @@ namespace Vulkan
 	{
 		m_ci = {};
 		m_ci.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		m_attachments = {};
-		m_attachment_references = {};
+		memset(m_attachments, 0, sizeof(m_attachments));
+		memset(m_attachment_references, 0, sizeof(m_attachment_references));
 		m_num_attachment_references = 0;
-		m_subpasses = {};
+		memset(m_subpasses, 0, sizeof(m_subpasses));
 	}
 
 	VkRenderPass RenderPassBuilder::Create(VkDevice device, bool clear /*= true*/)
@@ -854,7 +854,7 @@ namespace Vulkan
 		ad.finalLayout = final_layout;
 
 		m_ci.attachmentCount++;
-		m_ci.pAttachments = m_attachments.data();
+		m_ci.pAttachments = m_attachments;
 
 		return index;
 	}
@@ -866,7 +866,7 @@ namespace Vulkan
 		sp.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 
 		m_ci.subpassCount++;
-		m_ci.pSubpasses = m_subpasses.data();
+		m_ci.pSubpasses = m_subpasses;
 
 		return index;
 	}

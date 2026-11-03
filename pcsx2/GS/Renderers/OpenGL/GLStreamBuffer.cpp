@@ -16,7 +16,6 @@
 #include "GLStreamBuffer.h"
 #include <memalign.h>
 #include "common/Align.h"
-#include <array>
 #include <cstring>
 
 GLStreamBuffer::GLStreamBuffer(GLenum target, GLuint buffer_id, u32 size)
@@ -240,7 +239,7 @@ enum : u32
        u32 m_used_block_index = 0;
        u32 m_available_block_index = NUM_SYNC_POINTS;
        u32 m_bytes_per_block;
-       std::array<GLsync, NUM_SYNC_POINTS> m_sync_objects{};
+       GLsync m_sync_objects[NUM_SYNC_POINTS] = {};
 	};
 
 	class BufferStorageStreamBuffer : public SyncingStreamBuffer

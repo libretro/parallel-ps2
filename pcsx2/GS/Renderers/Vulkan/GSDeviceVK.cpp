@@ -44,7 +44,6 @@
 
 #include <limits>
 #include <algorithm>
-#include <array>
 #include <cstring>
 
 #include <libretro.h>
@@ -618,7 +617,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		device_info.queueCreateInfoCount = 0;
 
 		static constexpr float queue_priorities[] = {1.0f, 0.0f}; // Low priority for the spin queue
-		std::array<VkDeviceQueueCreateInfo, 2> queue_infos;
+		VkDeviceQueueCreateInfo queue_infos[2];
 
 		VkDeviceQueueCreateInfo& graphics_queue_info = queue_infos[device_info.queueCreateInfoCount++];
 		graphics_queue_info.sType                    = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -628,7 +627,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		graphics_queue_info.queueCount               = 1;
 		graphics_queue_info.pQueuePriorities         = queue_priorities;
 
-		device_info.pQueueCreateInfos                = queue_infos.data();
+		device_info.pQueueCreateInfos                = queue_infos;
 
 		ExtensionList enabled_extensions;
 		for (u32 i = 0; i < num_required_device_extensions; i++)
@@ -1002,9 +1001,9 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 
 			VkCommandBufferAllocateInfo buffer_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr,
 				resources.command_pool, VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-				static_cast<u32>(resources.command_buffers.size())};
+				static_cast<u32>(sizeof(resources.command_buffers) / sizeof(resources.command_buffers[0]))};
 
-			res = vkAllocateCommandBuffers(m_device, &buffer_info, resources.command_buffers.data());
+			res = vkAllocateCommandBuffers(m_device, &buffer_info, resources.command_buffers);
 			if (res != VK_SUCCESS)
 				return false;
 
@@ -1066,8 +1065,9 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			if (resources.command_buffers[0] != VK_NULL_HANDLE)
 			{
 				vkFreeCommandBuffers(m_device, resources.command_pool,
-					static_cast<u32>(resources.command_buffers.size()), resources.command_buffers.data());
-				resources.command_buffers.fill(VK_NULL_HANDLE);
+					static_cast<u32>(sizeof(resources.command_buffers) / sizeof(resources.command_buffers[0])), resources.command_buffers);
+				resources.command_buffers[0] = VK_NULL_HANDLE;
+				resources.command_buffers[1] = VK_NULL_HANDLE;
 			}
 			if (resources.command_pool != VK_NULL_HANDLE)
 			{
@@ -1289,7 +1289,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		// This command buffer now has commands, so can't be re-used without waiting.
 		VkSubmitInfo submit_info       = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
 		submit_info.commandBufferCount = resources.init_buffer_used ? 2u : 1u;
-		submit_info.pCommandBuffers    = resources.init_buffer_used ? resources.command_buffers.data() : &resources.command_buffers[1];
+		submit_info.pCommandBuffers    = resources.init_buffer_used ? resources.command_buffers : &resources.command_buffers[1];
 
 		res = vkQueueSubmit(m_graphics_queue, 1, &submit_info, resources.fence);
 		if (res != VK_SUCCESS)
@@ -1671,7 +1671,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		VkAttachmentReference* input_reference_ptr = nullptr;
 		VkSubpassDependency subpass_dependency;
 		VkSubpassDependency* subpass_dependency_ptr = nullptr;
-		std::array<VkAttachmentDescription, 2> attachments;
+		VkAttachmentDescription attachments[2];
 		u32 num_attachments = 0;
 		if (key.color_format != VK_FORMAT_UNDEFINED)
 		{
@@ -1730,7 +1730,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			input_reference_ptr ? input_reference_ptr : nullptr, color_reference_ptr ? 1u : 0u,
 			color_reference_ptr ? color_reference_ptr : nullptr, nullptr, depth_reference_ptr, 0, nullptr};
 		const VkRenderPassCreateInfo pass_info = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, nullptr, 0u,
-			num_attachments, attachments.data(), 1u, &subpass, subpass_dependency_ptr ? 1u : 0u,
+			num_attachments, attachments, 1u, &subpass, subpass_dependency_ptr ? 1u : 0u,
 			subpass_dependency_ptr};
 
 		VkRenderPass pass;
@@ -2281,7 +2281,7 @@ void GSDeviceVK::DrawIndexedPrimitive(int offset, int count)
 
 VkFormat GSDeviceVK::LookupNativeFormat(GSTexture::Format format) const
 {
-	static constexpr std::array<VkFormat, static_cast<int>(GSTexture::Format::BC7) + 1> s_format_mapping = {{
+	static constexpr VkFormat s_format_mapping[static_cast<int>(GSTexture::Format::BC7) + 1] = {
 		VK_FORMAT_UNDEFINED, // Invalid
 		VK_FORMAT_R8G8B8A8_UNORM, // Color
 		VK_FORMAT_R16G16B16A16_UNORM, // ColorClip
@@ -2294,7 +2294,7 @@ VkFormat GSDeviceVK::LookupNativeFormat(GSTexture::Format format) const
 		VK_FORMAT_BC2_UNORM_BLOCK, // BC2
 		VK_FORMAT_BC3_UNORM_BLOCK, // BC3
 		VK_FORMAT_BC7_UNORM_BLOCK, // BC7
-	}};
+	};
 
 	return (format != GSTexture::Format::DepthStencil || m_features.stencil_buffer) ?
                s_format_mapping[static_cast<int>(format)] :
@@ -3089,7 +3089,7 @@ void GSDeviceVK::OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVector
 		}
 		else
 		{
-			std::array<VkClearAttachment, 2> cas;
+			VkClearAttachment cas[2];
 			u32 num_ca = 0;
 			if (vkRt && vkRt->GetState() != GSTexture::State::Dirty)
 			{
@@ -3120,7 +3120,7 @@ void GSDeviceVK::OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVector
 			{
 				const GSVector2i size = vkRt ? vkRt->GetSize() : vkDs->GetSize();
 				const VkClearRect cr = {{{0, 0}, {static_cast<u32>(size.x), static_cast<u32>(size.y)}}, 0u, 1u};
-				vkCmdClearAttachments(GetCurrentCommandBuffer(), num_ca, cas.data(), 1, &cr);
+				vkCmdClearAttachments(GetCurrentCommandBuffer(), num_ca, cas, 1, &cr);
 			}
 		}
 	}
@@ -3864,16 +3864,16 @@ void GSDeviceVK::DestroyResources()
 }
 
 // clang-format off
-static constexpr std::array<VkBlendFactor, 16> vk_blend_factors = { {
+static constexpr VkBlendFactor vk_blend_factors[16] = {
 	VK_BLEND_FACTOR_SRC_COLOR, VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR, VK_BLEND_FACTOR_DST_COLOR, VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
 	VK_BLEND_FACTOR_SRC1_COLOR, VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR, VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
 	VK_BLEND_FACTOR_DST_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA, VK_BLEND_FACTOR_SRC1_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA,
 	VK_BLEND_FACTOR_CONSTANT_COLOR, VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO
-}};
+};
 /* [3]: the destination alpha test's first pass, which keeps the least */
-static constexpr std::array<VkBlendOp, 4> vk_blend_ops = {{
+static constexpr VkBlendOp vk_blend_ops[4] = {
 	VK_BLEND_OP_ADD, VK_BLEND_OP_SUBTRACT, VK_BLEND_OP_REVERSE_SUBTRACT, VK_BLEND_OP_MIN
-}};
+};
 // clang-format on
 
 /* The blend a selector draws with, as one word: enable (bit 0), colour
@@ -3898,11 +3898,11 @@ static u32 TFXBlendWord(const GSDeviceVK::PipelineSelector& p)
 VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods, VkPipelineCache cache,
 	bool dynamic, VkGraphicsPipelineLibraryFlagsEXT library) const
 {
-	static constexpr std::array<VkPrimitiveTopology, 3> topology_lookup = {{
+	static constexpr VkPrimitiveTopology topology_lookup[3] = {
 		VK_PRIMITIVE_TOPOLOGY_POINT_LIST, // Point
 		VK_PRIMITIVE_TOPOLOGY_LINE_LIST, // Line
 		VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, // Triangle
-	}};
+	};
 
 	Vulkan::GraphicsPipelineBuilder gpb;
 	SetPipelineProvokingVertex(m_features, gpb);
@@ -5423,7 +5423,7 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 
 		vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_tfx_pipeline_layout, 0,
 			NUM_TFX_DESCRIPTOR_SETS, dsets, NUM_TFX_DYNAMIC_OFFSETS,
-			m_tfx_dynamic_offsets.data());
+			m_tfx_dynamic_offsets);
 	}
 	else if (num_dsets > 0)
 	{
@@ -5432,7 +5432,7 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 		if (start_dset == TFX_DESCRIPTOR_SET_UBO)
 		{
 			dynamic_count   = NUM_TFX_DYNAMIC_OFFSETS;
-			dynamic_offsets = m_tfx_dynamic_offsets.data();
+			dynamic_offsets = m_tfx_dynamic_offsets;
 		}
 		else
 		{

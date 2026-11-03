@@ -17,7 +17,6 @@
 extern "C" {
 #include "GS/gs_vector.h"
 }
-#include <vector>
 #include <climits>
 
 GSDirtyRect::GSDirtyRect() :

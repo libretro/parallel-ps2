@@ -16,7 +16,7 @@
 #pragma once
 #include "common/Pcsx2Defs.h"
 #include "VKLoader.h"
-#include <array>
+#include <string.h>
 
 namespace Vulkan
 {
@@ -42,7 +42,7 @@ namespace Vulkan
 
 	private:
 		VkDescriptorSetLayoutCreateInfo m_ci{};
-		std::array<VkDescriptorSetLayoutBinding, MAX_BINDINGS> m_bindings{};
+		VkDescriptorSetLayoutBinding m_bindings[MAX_BINDINGS] = {};
 	};
 
 	class PipelineLayoutBuilder
@@ -66,8 +66,8 @@ namespace Vulkan
 
 	private:
 		VkPipelineLayoutCreateInfo m_ci{};
-		std::array<VkDescriptorSetLayout, MAX_SETS> m_sets{};
-		std::array<VkPushConstantRange, MAX_PUSH_CONSTANTS> m_push_constants{};
+		VkDescriptorSetLayout m_sets[MAX_SETS] = {};
+		VkPushConstantRange m_push_constants[MAX_PUSH_CONSTANTS] = {};
 	};
 
 	class GraphicsPipelineBuilder
@@ -157,11 +157,11 @@ namespace Vulkan
 
 	private:
 		VkGraphicsPipelineCreateInfo m_ci;
-		std::array<VkPipelineShaderStageCreateInfo, MAX_SHADER_STAGES> m_shader_stages;
+		VkPipelineShaderStageCreateInfo m_shader_stages[MAX_SHADER_STAGES];
 
 		VkPipelineVertexInputStateCreateInfo m_vertex_input_state;
-		std::array<VkVertexInputBindingDescription, MAX_VERTEX_BUFFERS> m_vertex_buffers;
-		std::array<VkVertexInputAttributeDescription, MAX_VERTEX_ATTRIBUTES> m_vertex_attributes;
+		VkVertexInputBindingDescription m_vertex_buffers[MAX_VERTEX_BUFFERS];
+		VkVertexInputAttributeDescription m_vertex_attributes[MAX_VERTEX_ATTRIBUTES];
 
 		VkPipelineInputAssemblyStateCreateInfo m_input_assembly;
 
@@ -169,14 +169,14 @@ namespace Vulkan
 		VkPipelineDepthStencilStateCreateInfo m_depth_state;
 
 		VkPipelineColorBlendStateCreateInfo m_blend_state;
-		std::array<VkPipelineColorBlendAttachmentState, MAX_ATTACHMENTS> m_blend_attachments;
+		VkPipelineColorBlendAttachmentState m_blend_attachments[MAX_ATTACHMENTS];
 
 		VkPipelineViewportStateCreateInfo m_viewport_state;
 		VkViewport m_viewport;
 		VkRect2D m_scissor;
 
 		VkPipelineDynamicStateCreateInfo m_dynamic_state;
-		std::array<VkDynamicState, MAX_DYNAMIC_STATE> m_dynamic_state_values;
+		VkDynamicState m_dynamic_state_values[MAX_DYNAMIC_STATE];
 
 		VkPipelineMultisampleStateCreateInfo m_multisample_state;
 
@@ -185,7 +185,7 @@ namespace Vulkan
 
 		VkGraphicsPipelineLibraryCreateInfoEXT m_library;
 		VkPipelineLibraryCreateInfoKHR m_linked;
-		std::array<VkPipeline, MAX_LIBRARIES> m_linked_libraries;
+		VkPipeline m_linked_libraries[MAX_LIBRARIES];
 	};
 
 	class ComputePipelineBuilder
@@ -215,8 +215,8 @@ namespace Vulkan
 		VkComputePipelineCreateInfo m_ci;
 
 		VkSpecializationInfo m_si;
-		std::array<VkSpecializationMapEntry, MAX_SPECIALIZATION_CONSTANTS> m_smap_entries;
-		std::array<u8, SPECIALIZATION_CONSTANT_SIZE* MAX_SPECIALIZATION_CONSTANTS> m_smap_constants;
+		VkSpecializationMapEntry m_smap_entries[MAX_SPECIALIZATION_CONSTANTS];
+		u8 m_smap_constants[SPECIALIZATION_CONSTANT_SIZE* MAX_SPECIALIZATION_CONSTANTS];
 	};
 
 	class SamplerBuilder
@@ -275,12 +275,12 @@ namespace Vulkan
 			VkDescriptorSet set, u32 binding, VkImageView view, VkImageLayout layout = VK_IMAGE_LAYOUT_GENERAL);
 
 	private:
-		std::array<VkWriteDescriptorSet, MAX_WRITES> m_writes;
+		VkWriteDescriptorSet m_writes[MAX_WRITES];
 		u32 m_num_writes = 0;
 
-		std::array<VkDescriptorBufferInfo, MAX_BUFFER_INFOS> m_buffer_infos;
-		std::array<VkDescriptorImageInfo, MAX_IMAGE_INFOS> m_image_infos;
-		std::array<VkBufferView, MAX_VIEWS> m_views;
+		VkDescriptorBufferInfo m_buffer_infos[MAX_BUFFER_INFOS];
+		VkDescriptorImageInfo m_image_infos[MAX_IMAGE_INFOS];
+		VkBufferView m_views[MAX_VIEWS];
 		u32 m_num_buffer_infos = 0;
 		u32 m_num_image_infos = 0;
 		u32 m_num_views = 0;
@@ -308,7 +308,7 @@ namespace Vulkan
 
 	private:
 		VkFramebufferCreateInfo m_ci;
-		std::array<VkImageView, MAX_ATTACHMENTS> m_images;
+		VkImageView m_images[MAX_ATTACHMENTS];
 	};
 
 	class RenderPassBuilder
@@ -336,10 +336,10 @@ namespace Vulkan
 
 	private:
 		VkRenderPassCreateInfo m_ci;
-		std::array<VkAttachmentDescription, MAX_ATTACHMENTS> m_attachments;
-		std::array<VkAttachmentReference, MAX_ATTACHMENT_REFERENCES> m_attachment_references;
+		VkAttachmentDescription m_attachments[MAX_ATTACHMENTS];
+		VkAttachmentReference m_attachment_references[MAX_ATTACHMENT_REFERENCES];
 		u32 m_num_attachment_references = 0;
-		std::array<VkSubpassDescription, MAX_SUBPASSES> m_subpasses;
+		VkSubpassDescription m_subpasses[MAX_SUBPASSES];
 	};
 
 	class BufferViewBuilder
