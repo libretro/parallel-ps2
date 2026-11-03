@@ -48,7 +48,7 @@ jobs:
       - name: Install what the suites build against
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3 liblzma-dev zlib1g-dev libgl-dev
+          sudo apt-get install -y build-essential python3 liblzma-dev zlib1g-dev libgl-dev libegl1 libgl1-mesa-dri
 
       # run-all.sh finds every directory with a build.sh, so a suite added
       # later is covered here without touching this file.
