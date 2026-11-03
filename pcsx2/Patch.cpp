@@ -15,7 +15,7 @@
 
 #define _PC_ // disables MIPS opcode macros.
 
-#include "HostFS.h"
+#include "HostFS.h"   /* FS_OSPATH_SEPARATOR_* */
 #include "ParseNumber.h"
 #include "common/Pcsx2Defs.h"
 #include <encodings/deflate.h>
@@ -25,51 +25,63 @@
 #include "Patch.h"
 #include "IopMem.h"
 
-#include <memory>
-#include <sstream>
-#include <vector>
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
+#include <compat/fnmatch.h>
 #include <file/file_path.h>
+#include <retro_dirent.h>
+#include <streams/file_stream.h>
 
-/* Split on a delimiter, each piece stripped of surrounding whitespace;
- * a patch line. */
-static std::string_view StripWhitespace(const std::string_view& str)
+/* A run of a pnach line: a pointer into the line and a length. */
+struct patch_piece
 {
-	std::string_view::size_type start = 0;
-	while (start < str.size() && std::isspace((unsigned char)str[start]))
-		start++;
-	if (start == str.size())
-		return {};
+	const char* s;
+	size_t n;
+};
 
-	std::string_view::size_type end = str.size() - 1;
-	while (end > start && std::isspace((unsigned char)str[end]))
-		end--;
-
-	return str.substr(start, end - start + 1);
+/* Whitespace off both ends of a run; all whitespace leaves it empty. */
+static void patch_strip(struct patch_piece* p)
+{
+	while (p->n && isspace((unsigned char)p->s[0]))
+	{
+		p->s++;
+		p->n--;
+	}
+	while (p->n && isspace((unsigned char)p->s[p->n - 1]))
+		p->n--;
 }
 
-static std::vector<std::string_view> SplitString(const std::string_view& str, char delimiter, bool skip_empty /*= true*/)
+/* The comma-separated fields of a run, each stripped, the first max of
+ * them into out; returns how many there are. Empty fields count, but a
+ * trailing comma does not start one, as SplitString had it. */
+static size_t patch_split(const char* s, size_t n, struct patch_piece* out, size_t max)
 {
-	std::vector<std::string_view> res;
-	std::string_view::size_type last_pos = 0;
-	std::string_view::size_type pos;
-	while (last_pos < str.size() && (pos = str.find(delimiter, last_pos)) != std::string_view::npos)
+	size_t count = 0, last = 0, i;
+	for (i = 0; i <= n; i++)
 	{
-		std::string_view part(StripWhitespace(str.substr(last_pos, pos - last_pos)));
-		if (!skip_empty || !part.empty())
-			res.push_back(std::move(part));
-
-		last_pos = pos + 1;
+		if (i < n && s[i] != ',')
+			continue;
+		if (i == n && last >= n)
+			break;
+		if (count < max)
+		{
+			out[count].s = s + last;
+			out[count].n = i - last;
+			patch_strip(&out[count]);
+		}
+		count++;
+		last = i + 1;
 	}
+	return count;
+}
 
-	if (last_pos < str.size())
-	{
-		std::string_view part(StripWhitespace(str.substr(last_pos)));
-		if (!skip_empty || !part.empty())
-			res.push_back(std::move(part));
-	}
-
-	return res;
+static bool patch_piece_is(const struct patch_piece* p, const char* text)
+{
+	const size_t n = strlen(text);
+	return p->n == n && memcmp(p->s, text, n) == 0;
 }
 
 enum patch_cpu_type {
@@ -586,7 +598,7 @@ void _ApplyPatch(IniPatch *p)
 					 * patches are usually code, and are re-applied every
 					 * frame when the place is PPT_CONTINUOUSLY. */
 					size_t i;
-					for (i = 0; i < p->bytes.size(); i++)
+					for (i = 0; i < p->nbytes; i++)
 					{
 						const u32 a = p->addr + (u32)i;
 						if (memRead8(a) != p->bytes[i])
@@ -648,7 +660,7 @@ void _ApplyPatch(IniPatch *p)
 				case BYTES_T:
 				{
 					size_t k;
-					for (k = 0; k < p->bytes.size(); k++)
+					for (k = 0; k < p->nbytes; k++)
 					{
 						const u32 a = p->addr + (u32)k;
 						if (iopMemRead8(a) != p->bytes[k])
@@ -678,39 +690,100 @@ void _ApplyPatch(IniPatch *p)
 	}
 }
 
-static void _ApplyDynaPatch(const DynamicPatch& patch, u32 address)
+/* The loaded patches, in load order, and the dynamic patches' entries:
+ * plain arrays that double when full, emptied (not freed) by
+ * ForgetLoadedPatches. A dynamic patch is a run of pattern entries then
+ * a run of replacement entries in s_dyna_entries, copied out of the game
+ * database so a reload of it does not leave them dangling. */
+struct dyna_patch
 {
-	for (const auto& pattern : patch.pattern)
+	size_t first;
+	u32 npattern;
+	u32 nreplacement;
+};
+
+static IniPatch* s_patches;
+static size_t s_patch_count, s_patch_cap;
+static struct dyna_patch* s_dyna;
+static size_t s_dyna_count, s_dyna_cap;
+static DynamicPatchEntry* s_dyna_entries;
+static size_t s_dyna_entry_count, s_dyna_entry_cap;
+
+/* Room in *items for need elements of elem bytes; zero if it cannot be
+ * made, leaving the array as it was. */
+static int patch_reserve(void** items, size_t* cap, size_t need, size_t elem)
+{
+	size_t grown = *cap ? *cap : 16;
+	void* p;
+	if (need <= *cap)
+		return 1;
+	while (grown < need)
+		grown *= 2;
+	p = realloc(*items, grown * elem);
+	if (!p)
+		return 0;
+	*items = p;
+	*cap   = grown;
+	return 1;
+}
+
+size_t LoadedPatchCount(void)
+{
+	return s_patch_count;
+}
+
+IniPatch* LoadedPatch(size_t i)
+{
+	return &s_patches[i];
+}
+
+void ApplyLoadedPatches(unsigned place_mask)
+{
+	size_t i;
+	for (i = 0; i < s_patch_count; i++)
 	{
-		if (*static_cast<u32*>(PSM(address + pattern.offset)) != pattern.value)
+		const int place = s_patches[i].placetopatch;
+		if (place >= 0 && place < _PPT_END_MARKER && (place_mask & (1u << place)))
+			_ApplyPatch(&s_patches[i]);
+	}
+}
+
+static void _ApplyDynaPatch(const struct dyna_patch* patch, u32 address)
+{
+	const DynamicPatchEntry* pattern     = s_dyna_entries + patch->first;
+	const DynamicPatchEntry* replacement = pattern + patch->npattern;
+	u32 i;
+
+	for (i = 0; i < patch->npattern; i++)
+	{
+		if (*static_cast<u32*>(PSM(address + pattern[i].offset)) != pattern[i].value)
 			return;
 	}
 
 	log_cb(RETRO_LOG_INFO, "Applying Dynamic Patch to address 0x%08X\n", address);
 	// If everything passes, apply the patch.
-	for (const auto& replacement : patch.replacement)
-		memWrite32(address + replacement.offset, replacement.value);
+	for (i = 0; i < patch->nreplacement; i++)
+		memWrite32(address + replacement[i].offset, replacement[i].value);
 }
 
-// This is a declaration for PatchMemory.cpp::_ApplyPatch where we're (patch.cpp)
-// the only consumer, so it's not made public via Patch.h
-// Applies a single patch line to emulation memory regardless of its "place" value.
+typedef void patch_table_func(const struct patch_piece* cmd, const struct patch_piece* param);
 
-std::vector<IniPatch> Patch;
-static std::vector<DynamicPatch> DynaPatch;
+static patch_table_func patch_author;
+static patch_table_func patch_comment;
+static patch_table_func patch_line;
 
 struct PatchTextTable
 {
 	int code;
 	const char* text;
-	PATCHTABLEFUNC* func;
+	patch_table_func* func;
 };
 
 static const PatchTextTable commands_patch[] =
 	{
-		{1, "author", PatchFunc::author},
-		{2, "comment", PatchFunc::comment},
-		{3, "patch", PatchFunc::patch},
+		{1, "author", patch_author},
+		{2, "comment", patch_comment},
+		{3, "patch", patch_line},
 		{0, nullptr, nullptr} // Array Terminator
 };
 
@@ -765,13 +838,13 @@ static void inifile_trim(char* buffer)
 		memmove(buffer, start, strlen(start) + 1);
 }
 
-static int PatchTableExecute(const std::string_view& lhs, const std::string_view& rhs, const PatchTextTable* Table)
+static int PatchTableExecute(const struct patch_piece* lhs, const struct patch_piece* rhs, const PatchTextTable* Table)
 {
 	int i = 0;
 
 	while (Table[i].text)
 	{
-		if (lhs.compare(Table[i].text) == 0)
+		if (patch_piece_is(lhs, Table[i].text))
 		{
 			if (Table[i].func)
 				Table[i].func(lhs, rhs);
@@ -789,24 +862,28 @@ static void inifile_command(const char* cmd)
 	/* "key = value", each side stripped; no '=' is no command, and runs
 	 * the table with nothing, which matches no entry. */
 	const char* eq = strchr(cmd, '=');
-	std::string_view key, value;
+	struct patch_piece key   = {cmd, 0};
+	struct patch_piece value = {cmd, 0};
 	if (eq)
 	{
-		key   = StripWhitespace(std::string_view(cmd, (size_t)(eq - cmd)));
-		value = StripWhitespace(std::string_view(eq + 1));
+		key.n   = (size_t)(eq - cmd);
+		value.s = eq + 1;
+		value.n = strlen(eq + 1);
+		patch_strip(&key);
+		patch_strip(&value);
 	}
 
 	// Is this really what we want to be doing here? Seems like just leaving it empty/blank
 	// would make more sense... --air
-	if (value.empty())
+	if (value.n == 0)
 		value = key;
 
-	/*int code = */ PatchTableExecute(key, value, commands_patch);
+	/*int code = */ PatchTableExecute(&key, &value, commands_patch);
 }
 
 int LoadPatchesFromString(const char* patches)
 {
-	const size_t before = Patch.size();
+	const size_t before = s_patch_count;
 	const char*  p      = patches;
 
 	/* Walk the buffer a line at a time rather than through an
@@ -834,20 +911,27 @@ int LoadPatchesFromString(const char* patches)
 		p = nl + 1;
 	}
 
-	return static_cast<int>(Patch.size() - before);
+	return static_cast<int>(s_patch_count - before);
 }
 
 void ForgetLoadedPatches(void)
 {
-	Patch.clear();
-	DynaPatch.clear();
+	size_t i;
+	for (i = 0; i < s_patch_count; i++)
+		free(s_patches[i].bytes);
+	s_patch_count      = 0;
+	s_dyna_count       = 0;
+	s_dyna_entry_count = 0;
 }
+
+static u32 rd16(const u8* p) { return p[0] | (p[1] << 8); }
+static u32 rd32(const u8* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((u32)p[3] << 24); }
 
 // This routine loads patches from a zip file
 // Returns number of patches loaded
 // Note: does not reset previously loaded patches (use ForgetLoadedPatches() for that)
 // Note: only load patches from the root folder of the zip
-int LoadPatchesFromZip(const std::string& crc, const u8* zip_data, size_t zip_data_size)
+int LoadPatchesFromZip(const char* crc, const u8* zip_data, size_t zip_data_size)
 {
 	/* Minimal in-memory ZIP reader over rinflate, replacing libzip:
 	   the entire consumer surface here is "find one named member in a
@@ -857,21 +941,25 @@ int LoadPatchesFromZip(const std::string& crc, const u8* zip_data, size_t zip_da
 	   deflated members run through one raw-inflate pass sized by the
 	   central-directory's own uncompressed size.  Anything malformed
 	   simply fails to match, as with a missing member. */
-	const std::string pnach_filename(crc + ".pnach");
-
-	auto rd16 = [](const u8* p) -> u32 { return p[0] | (p[1] << 8); };
-	auto rd32 = [](const u8* p) -> u32 { return p[0] | (p[1] << 8) | (p[2] << 16) | (u32(p[3]) << 24); };
+	char pnach_filename[64];
+	size_t pnach_len;
+	size_t scan_max, eocd = SIZE_MAX, back;
+	const u8 *e, *p, *end;
+	u32 cd_count, cd_offset, i;
+	char* pnach_data = NULL;
+	int loaded;
 
 	if (!zip_data || zip_data_size < 22)
 		return 0;
+	if ((size_t)snprintf(pnach_filename, sizeof(pnach_filename), "%s.pnach", crc) >= sizeof(pnach_filename))
+		return 0;
+	pnach_len = strlen(pnach_filename);
 
 	/* EOCD: signature 0x06054b50, within the last 64KB+22 */
-	const size_t scan_max = pcsx2_min_sz(zip_data_size, 22 + 65535);
-	size_t eocd = SIZE_MAX;
-	for (size_t back = 22; back <= scan_max; back++)
+	scan_max = pcsx2_min_sz(zip_data_size, 22 + 65535);
+	for (back = 22; back <= scan_max; back++)
 	{
-		const u8* p = zip_data + zip_data_size - back;
-		if (rd32(p) == 0x06054b50)
+		if (rd32(zip_data + zip_data_size - back) == 0x06054b50)
 		{
 			eocd = zip_data_size - back;
 			break;
@@ -880,138 +968,163 @@ int LoadPatchesFromZip(const std::string& crc, const u8* zip_data, size_t zip_da
 	if (eocd == SIZE_MAX)
 		return 0;
 
-	const u8* e = zip_data + eocd;
-	u32 cd_count  = rd16(e + 10);
-	u32 cd_offset = rd32(e + 16);
+	e         = zip_data + eocd;
+	cd_count  = rd16(e + 10);
+	cd_offset = rd32(e + 16);
 	if (cd_offset >= zip_data_size)
 		return 0;
 
-	const u8* p   = zip_data + cd_offset;
-	const u8* end = zip_data + zip_data_size;
-	std::string pnach_data;
-	bool found = false;
+	p   = zip_data + cd_offset;
+	end = zip_data + zip_data_size;
 
-	for (u32 i = 0; i < cd_count && !found; i++)
+	for (i = 0; i < cd_count && !pnach_data; i++)
 	{
+		u32 method, comp_size, uncomp, name_len, extra_len, comm_len, lho;
+		const u8* name;
 		if (p + 46 > end || rd32(p) != 0x02014b50)
 			break;
-		const u32 method    = rd16(p + 10);
-		const u32 comp_size = rd32(p + 20);
-		const u32 uncomp    = rd32(p + 24);
-		const u32 name_len  = rd16(p + 28);
-		const u32 extra_len = rd16(p + 30);
-		const u32 comm_len  = rd16(p + 32);
-		const u32 lho       = rd32(p + 42);
-		const u8* name      = p + 46;
+		method    = rd16(p + 10);
+		comp_size = rd32(p + 20);
+		uncomp    = rd32(p + 24);
+		name_len  = rd16(p + 28);
+		extra_len = rd16(p + 30);
+		comm_len  = rd16(p + 32);
+		lho       = rd32(p + 42);
+		name      = p + 46;
 		if (name + name_len > end)
 			break;
 
-		if (name_len == pnach_filename.size() &&
-			Strncasecmp(reinterpret_cast<const char*>(name), pnach_filename.c_str(), name_len) == 0)
+		if (name_len == pnach_len &&
+			Strncasecmp(reinterpret_cast<const char*>(name), pnach_filename, name_len) == 0)
 		{
+			u32 lname, lextra;
+			size_t data_off;
+			const u8* src;
+
 			/* local header: skip its own (possibly different) name/extra */
-			if (lho + 30 > zip_data_size || rd32(zip_data + lho) != 0x04034b50)
+			if ((size_t)lho + 30 > zip_data_size || rd32(zip_data + lho) != 0x04034b50)
 				return 0;
-			const u32 lname = rd16(zip_data + lho + 26);
-			const u32 lextra = rd16(zip_data + lho + 28);
-			const size_t data_off = size_t(lho) + 30 + lname + lextra;
+			lname    = rd16(zip_data + lho + 26);
+			lextra   = rd16(zip_data + lho + 28);
+			data_off = (size_t)lho + 30 + lname + lextra;
 			if (data_off + comp_size > zip_data_size)
 				return 0;
-			const u8* src = zip_data + data_off;
+			src = zip_data + data_off;
 
-			if (method == 0)
-			{
-				if (comp_size != uncomp)
-					return 0;
-				pnach_data.assign(reinterpret_cast<const char*>(src), uncomp);
-				found = true;
-			}
-			else if (method == 8)
-			{
-				pnach_data.resize(uncomp);
-				void* z = rinflate_new(-15); /* raw deflate, as ZIP stores it */
-				if (!z)
-					return 0;
-				rinflate_set_in(z, src, comp_size);
-				rinflate_set_out(z, reinterpret_cast<uint8_t*>(pnach_data.data()), uncomp);
-				size_t rdn = 0, wr = 0;
-				const int r = rinflate_process(z, &rdn, &wr);
-				rinflate_free(z);
-				if (r != RDEFLATE_PROCESS_END || wr != uncomp)
-					return 0;
-				found = true;
-			}
-			else
+			if (method != 0 && method != 8)
 			{
 				/* zstd-compressed members (method 93) were only ever
 				   reachable through libzip's optional backend; pnach
 				   archives are deflate in practice. */
 				return 0;
 			}
+			if (method == 0 && comp_size != uncomp)
+				return 0;
+
+			pnach_data = (char*)malloc((size_t)uncomp + 1);
+			if (!pnach_data)
+				return 0;
+			pnach_data[uncomp] = '\0';
+
+			if (method == 0)
+				memcpy(pnach_data, src, uncomp);
+			else
+			{
+				size_t rdn = 0, wr = 0;
+				int r;
+				void* z = rinflate_new(-15); /* raw deflate, as ZIP stores it */
+				if (!z)
+				{
+					free(pnach_data);
+					return 0;
+				}
+				rinflate_set_in(z, src, comp_size);
+				rinflate_set_out(z, reinterpret_cast<uint8_t*>(pnach_data), uncomp);
+				r = rinflate_process(z, &rdn, &wr);
+				rinflate_free(z);
+				if (r != RDEFLATE_PROCESS_END || wr != uncomp)
+				{
+					free(pnach_data);
+					return 0;
+				}
+			}
 		}
 
 		p += 46 + name_len + extra_len + comm_len;
 	}
 
-	if (!found)
+	if (!pnach_data)
 		return 0;
 
-	log_cb(RETRO_LOG_INFO, "Loading patch '%s' from archive.\n", pnach_filename.c_str());
-	return LoadPatchesFromString(pnach_data.c_str());
+	log_cb(RETRO_LOG_INFO, "Loading patch '%s' from archive.\n", pnach_filename);
+	loaded = LoadPatchesFromString(pnach_data);
+	free(pnach_data);
+	return loaded;
 }
 
 // This routine loads patches from *.pnach files
 // Returns number of patches loaded
 // Note: does not reset previously loaded patches (use ForgetLoadedPatches() for that)
-int LoadPatchesFromDir(const std::string& crc, const std::string& folder, const char* friendly_name, bool show_error_when_missing)
+int LoadPatchesFromDir(const char* crc, const char* folder, const char* friendly_name, bool show_error_when_missing)
 {
-	if (!path_is_directory(folder.c_str()))
+	const size_t crc_len = strlen(crc);
+	int total_loaded = 0, found = 0;
+	struct RDIR* dir;
+
+	if (!path_is_directory(folder))
 	{
-		log_cb(RETRO_LOG_INFO, "The %s folder ('%s') is inaccessible. Skipping...\n", friendly_name, folder.c_str());
+		log_cb(RETRO_LOG_INFO, "The %s folder ('%s') is inaccessible. Skipping...\n", friendly_name, folder);
 		return 0;
 	}
 
-	FileSystem::FindResultsArray files;
-	/* The CRC filter happens below, on the results: filenames are
-	 * matched by prefix so "ABCD1234 - fix.pnach" styles all load.
-	 * The pattern itself is every pnach in the folder. */
-	FileSystem::FindFiles(folder.c_str(), "*.pnach",
-		FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES, &files);
-
-	if (show_error_when_missing && files.empty())
+	/* Every pnach in the folder, hidden ones too, whose name starts
+	 * with the CRC in either case: "ABCD1234 - fix.pnach" styles all
+	 * load. In the directory's own order, as the file search gave it. */
+	dir = retro_opendir_include_hidden(folder, true);
+	if (dir && !retro_dirent_error(dir))
 	{
-		log_cb(RETRO_LOG_INFO, "Not found %s file: %s\n" FS_OSPATH_SEPARATOR_STR "%s.pnach",
-			friendly_name, folder.c_str(), crc.c_str());
-	}
-
-	int total_loaded = 0;
-
-	for (const FILESYSTEM_FIND_DATA& fd : files)
-	{
-		const std::string_view name(path_basename(fd.FileName.c_str()));
-		if (name.length() < crc.length() || Strncasecmp(name.data(), crc.c_str(), crc.size()) != 0)
-			continue;
-
-		log_cb(RETRO_LOG_INFO, "Found %s file: '%.*s'\n", friendly_name, static_cast<int>(name.size()), name.data());
-
-		void* pnach_buf = nullptr;
-		int64_t pnach_len = 0;
-		std::optional<std::string> pnach_data;
-		if (filestream_read_file(fd.FileName.c_str(), &pnach_buf, &pnach_len))
+		while (retro_readdir(dir))
 		{
-			pnach_data.emplace();
-			if (pnach_len > 0)
-				pnach_data->assign(static_cast<const char*>(pnach_buf), static_cast<size_t>(pnach_len));
+			const char* name = retro_dirent_get_name(dir);
+			char path[PCSX2_PATH_MAX];
+			void* pnach_buf   = nullptr;
+			int64_t pnach_len = 0;
+			int loaded;
+
+			if (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0')))
+				continue;
+			if (retro_dirent_is_dir(dir, nullptr) || rl_fnmatch("*.pnach", name, 0) != 0)
+				continue;
+			if ((size_t)snprintf(path, sizeof(path), "%s%c%s", folder, FS_OSPATH_SEPARATOR_CHARACTER, name) >= sizeof(path))
+				continue;
+			/* an entry that cannot be sized is not a file (a broken link) */
+			if ((s64)path_get_size(path) < 0)
+				continue;
+			found++;
+
+			if (strlen(name) < crc_len || Strncasecmp(name, crc, crc_len) != 0)
+				continue;
+
+			log_cb(RETRO_LOG_INFO, "Found %s file: '%s'\n", friendly_name, name);
+
+			if (!filestream_read_file(path, &pnach_buf, &pnach_len))
+				continue;
+
+			/* filestream_read_file terminates what it reads */
+			loaded = LoadPatchesFromString(static_cast<const char*>(pnach_buf));
 			free(pnach_buf);
+			total_loaded += loaded;
+
+			log_cb(RETRO_LOG_INFO, "Loaded %d %s from '%s'.\n", loaded, friendly_name, name);
 		}
-		if (!pnach_data.has_value())
-			continue;
+	}
+	if (dir)
+		retro_closedir(dir);
 
-		const int loaded = LoadPatchesFromString(pnach_data.value().c_str());
-		total_loaded += loaded;
-
-		log_cb(RETRO_LOG_INFO, "Loaded %d %s from '%.*s'.\n",
-			loaded, friendly_name, static_cast<int>(name.size()), name.data());
+	if (show_error_when_missing && !found)
+	{
+		log_cb(RETRO_LOG_INFO, "Not found %s file: %s" FS_OSPATH_SEPARATOR_STR "%s.pnach\n",
+			friendly_name, folder, crc);
 	}
 
 	log_cb(RETRO_LOG_INFO, "Overall %d %s loaded\n", total_loaded, friendly_name);
@@ -1019,120 +1132,144 @@ int LoadPatchesFromDir(const std::string& crc, const std::string& folder, const 
 }
 
 // PatchFunc Functions.
-namespace PatchFunc
+static void patch_comment(const struct patch_piece* text1, const struct patch_piece* text2)
 {
-	void comment(const std::string_view& text1, const std::string_view& text2)
-	{
-		log_cb(RETRO_LOG_INFO, "comment: %.*s\n", static_cast<int>(text2.length()), text2.data());
-	}
+	(void)text1;
+	log_cb(RETRO_LOG_INFO, "comment: %.*s\n", static_cast<int>(text2->n), text2->s);
+}
 
-	void author(const std::string_view& text1, const std::string_view& text2)
-	{
-		log_cb(RETRO_LOG_INFO, "Author: %.*s\n", static_cast<int>(text2.length()), text2.data());
-	}
+static void patch_author(const struct patch_piece* text1, const struct patch_piece* text2)
+{
+	(void)text1;
+	log_cb(RETRO_LOG_INFO, "Author: %.*s\n", static_cast<int>(text2->n), text2->s);
+}
 
-	void patch(const std::string_view& cmd, const std::string_view& param)
-	{
+static void patch_line(const struct patch_piece* cmd, const struct patch_piece* param)
+{
 #define PATCH_ERROR(fmt, ...) log_cb(RETRO_LOG_ERROR, "(Patch) Error Parsing: %.*s=%.*s: \n" fmt, \
-	static_cast<int>(cmd.size()), cmd.data(), static_cast<int>(param.size()), param.data(), \
+	static_cast<int>(cmd->n), cmd->s, static_cast<int>(param->n), param->s, \
 	__VA_ARGS__)
 
-		// [0]=PlaceToPatch,[1]=CpuType,[2]=MemAddr,[3]=OperandSize,[4]=WriteValue
-		const std::vector<std::string_view> pieces(SplitString(param, ',', false));
-		if (pieces.size() != 5)
+	// [0]=PlaceToPatch,[1]=CpuType,[2]=MemAddr,[3]=OperandSize,[4]=WriteValue
+	struct patch_piece pieces[5];
+	const struct patch_piece none = {"", 0};
+	const size_t npieces = patch_split(param->s, param->n, pieces, 5);
+	IniPatch iPatch;
+	u32 place = _PPT_END_MARKER;
+
+	if (npieces != 5)
+	{
+		PATCH_ERROR("Expected 5 data parameters; only found %zu", npieces);
+		return;
+	}
+
+	memset(&iPatch, 0, sizeof(iPatch));
+	parse_number_u32(pieces[0].s, pieces[0].n, 10, &place);
+	iPatch.placetopatch = place;
+
+	if (iPatch.placetopatch >= _PPT_END_MARKER)
+	{
+		PATCH_ERROR("Invalid 'place' value '%.*s' (0 - once on startup, 1: continuously)",
+			static_cast<int>(pieces[0].n), pieces[0].s);
+		return;
+	}
+
+	iPatch.cpu = (patch_cpu_type)PatchTableExecute(&pieces[1], &none, cpuCore);
+	parse_number_u32(pieces[2].s, pieces[2].n, 16, &iPatch.addr);
+	iPatch.type = (patch_data_type)PatchTableExecute(&pieces[3], &none, dataType);
+
+	if (iPatch.type == BYTES_T)
+	{
+		/* A hex string of whole bytes, applied as written rather than
+		 * byte-swapped: the payload is a byte sequence, not a value of
+		 * some width, so there is no endianness to apply to it. */
+		const struct patch_piece* hex = &pieces[4];
+		size_t i;
+
+		if (hex->n == 0 || (hex->n & 1))
 		{
-			PATCH_ERROR("Expected 5 data parameters; only found %zu", pieces.size());
+			PATCH_ERROR("'bytes' payload must be whole bytes: '%.*s'",
+			            static_cast<int>(hex->n), hex->s);
 			return;
 		}
 
-		IniPatch iPatch = {0};
-		iPatch.enabled = 0;
+		for (i = 0; i < hex->n; i += 2)
 		{
-			u32 place = _PPT_END_MARKER;
-			parse_number_u32(pieces[0].data(), pieces[0].size(), 10, &place);
-			iPatch.placetopatch = place;
-		}
-
-		if (iPatch.placetopatch >= _PPT_END_MARKER)
-		{
-			PATCH_ERROR("Invalid 'place' value '%.*s' (0 - once on startup, 1: continuously)",
-				static_cast<int>(pieces[0].size()), pieces[0].data());
-			return;
-		}
-
-		iPatch.cpu = (patch_cpu_type)PatchTableExecute(pieces[1], std::string_view(), cpuCore);
-		iPatch.addr = 0;
-		parse_number_u32(pieces[2].data(), pieces[2].size(), 16, &iPatch.addr);
-		iPatch.type = (patch_data_type)PatchTableExecute(pieces[3], std::string_view(), dataType);
-
-		if (iPatch.type == BYTES_T)
-		{
-			/* A hex string of whole bytes, applied as written rather than
-			 * byte-swapped: the payload is a byte sequence, not a value of
-			 * some width, so there is no endianness to apply to it. */
-			const std::string_view hex = pieces[4];
-			size_t i;
-
-			if (hex.empty() || (hex.size() & 1))
+			/* both characters hex: the parse alone stops at the first
+			 * that is not, and "0g" would be a byte of 0 */
+			if (!isxdigit((unsigned char)hex->s[i]) || !isxdigit((unsigned char)hex->s[i + 1]))
 			{
-				PATCH_ERROR("'bytes' payload must be whole bytes: '%.*s'",
-				            static_cast<int>(hex.size()), hex.data());
+				PATCH_ERROR("'bytes' payload is not hex: '%.*s'",
+				            static_cast<int>(hex->n), hex->s);
 				return;
 			}
-
-			iPatch.bytes.reserve(hex.size() / 2);
-			for (i = 0; i < hex.size(); i += 2)
-			{
-				u8 b;
-				/* both characters hex: the parse alone stops at the first
-				 * that is not, and "0g" would be a byte of 0 */
-				if (!isxdigit((unsigned char)hex[i]) || !isxdigit((unsigned char)hex[i + 1])
-					|| !parse_number_u8(hex.data() + i, 2, 16, &b))
-				{
-					PATCH_ERROR("'bytes' payload is not hex: '%.*s'",
-					            static_cast<int>(hex.size()), hex.data());
-					return;
-				}
-				iPatch.bytes.push_back(b);
-			}
-			iPatch.data = 0;
 		}
-		else
-		{
-			iPatch.data = 0;
-			parse_number_u64(pieces[4].data(), pieces[4].size(), 16, &iPatch.data);
-		}
+	}
+	else
+		parse_number_u64(pieces[4].s, pieces[4].n, 16, &iPatch.data);
 
-		if (iPatch.cpu == 0)
-		{
-			PATCH_ERROR("Unrecognized CPU Target: '%.*s'", static_cast<int>(pieces[1].size()), pieces[1].data());
+	if (iPatch.cpu == 0)
+	{
+		PATCH_ERROR("Unrecognized CPU Target: '%.*s'", static_cast<int>(pieces[1].n), pieces[1].s);
+		return;
+	}
+
+	if (iPatch.type == 0)
+	{
+		PATCH_ERROR("Unrecognized Operand Size: '%.*s'", static_cast<int>(pieces[3].n), pieces[3].s);
+		return;
+	}
+
+	if (!patch_reserve((void**)&s_patches, &s_patch_cap, s_patch_count + 1, sizeof(IniPatch)))
+		return;
+
+	if (iPatch.type == BYTES_T)
+	{
+		const struct patch_piece* hex = &pieces[4];
+		size_t i;
+		iPatch.nbytes = (u32)(hex->n / 2);
+		iPatch.bytes  = (u8*)malloc(iPatch.nbytes);
+		if (!iPatch.bytes)
 			return;
-		}
+		for (i = 0; i < iPatch.nbytes; i++)
+			parse_number_u8(hex->s + i * 2, 2, 16, &iPatch.bytes[i]);
+	}
 
-		if (iPatch.type == 0)
-		{
-			PATCH_ERROR("Unrecognized Operand Size: '%.*s'", static_cast<int>(pieces[3].size()), pieces[3].data());
-			return;
-		}
-
-		iPatch.enabled = 1;
-		Patch.push_back(iPatch);
+	iPatch.enabled = 1;
+	s_patches[s_patch_count++] = iPatch;
 
 #undef PATCH_ERROR
-	}
-} // namespace PatchFunc
+}
 
 void ApplyDynamicPatches(u32 pc)
 {
-	for (const auto& dynpatch : DynaPatch)
-	{
-		_ApplyDynaPatch(dynpatch, pc);
-	}
+	size_t i;
+	for (i = 0; i < s_dyna_count; i++)
+		_ApplyDynaPatch(&s_dyna[i], pc);
 }
 
-void LoadDynamicPatches(const std::vector<DynamicPatch>& patches)
+void LoadDynamicPatches(const DynamicPatch* patches, size_t count)
 {
-	for (const DynamicPatch& it : patches){
-		DynaPatch.push_back(it);
+	size_t i;
+	for (i = 0; i < count; i++)
+	{
+		const size_t npat = patches[i].pattern.size();
+		const size_t nrep = patches[i].replacement.size();
+		struct dyna_patch* d;
+
+		if (!patch_reserve((void**)&s_dyna, &s_dyna_cap, s_dyna_count + 1, sizeof(*s_dyna))
+			|| !patch_reserve((void**)&s_dyna_entries, &s_dyna_entry_cap,
+				s_dyna_entry_count + npat + nrep, sizeof(*s_dyna_entries)))
+			return;
+
+		d               = &s_dyna[s_dyna_count++];
+		d->first        = s_dyna_entry_count;
+		d->npattern     = (u32)npat;
+		d->nreplacement = (u32)nrep;
+		if (npat)
+			memcpy(s_dyna_entries + s_dyna_entry_count, patches[i].pattern.data(), npat * sizeof(DynamicPatchEntry));
+		if (nrep)
+			memcpy(s_dyna_entries + s_dyna_entry_count + npat, patches[i].replacement.data(), nrep * sizeof(DynamicPatchEntry));
+		s_dyna_entry_count += npat + nrep;
 	}
 }

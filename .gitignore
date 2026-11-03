@@ -273,3 +273,4 @@ tests/ata/*.img
 /tests/gsstring/gsstring_test
 /tests/parsenumber/parsenumber_test
 /tests/parsenumber/*.o
+/tests/patch/patch_pnachload

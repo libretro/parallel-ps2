@@ -35,8 +35,7 @@
 // - The 6 widescreen patches are 6 pnach-style patch lines loaded either from cheats_ws folder or from cheats_ws.zip
 
 #include "common/Pcsx2Defs.h"
-#include <string>
-#include <string_view>
+#include <stddef.h>
 #include <vector>
 
 // "place" is the first number at a pnach line (patch=<place>,...), e.g.:
@@ -62,8 +61,6 @@
 #define PPT_COMBINED_0_1 2
 #define _PPT_END_MARKER  3
 
-typedef void PATCHTABLEFUNC(const std::string_view& text1, const std::string_view& text2);
-
 struct IniPatch
 {
 	int enabled;
@@ -74,9 +71,11 @@ struct IniPatch
 	u64 data;
 	/* For the "bytes" operand size, whose payload is a hex string of
 	 * arbitrary length rather than a value: data cannot hold it, so the
-	 * bytes live here and `data` is left zero. Empty for every other
-	 * type, which keeps the common case a plain integer. */
-	std::vector<u8> bytes;
+	 * bytes live here (malloc'd, freed by ForgetLoadedPatches) and `data`
+	 * is left zero. NULL and 0 for every other type, which keeps the
+	 * common case a plain integer. */
+	u8* bytes;
+	u32 nbytes;
 };
 
 struct DynamicPatchEntry
@@ -91,25 +90,24 @@ struct DynamicPatch
 	std::vector<DynamicPatchEntry> replacement;
 };
 
-namespace PatchFunc
-{
-	PATCHTABLEFUNC author;
-	PATCHTABLEFUNC comment;
-	PATCHTABLEFUNC gametitle;
-	PATCHTABLEFUNC patch;
-}
+/* The loaded patches, in load order. */
+extern size_t    LoadedPatchCount(void);
+extern IniPatch* LoadedPatch(size_t i);
 
-extern std::vector<IniPatch> Patch;
+/* Applies every loaded patch whose place is in place_mask, a set of
+ * (1u << place) bits, in load order. */
+extern void ApplyLoadedPatches(unsigned place_mask);
 
 // The following LoadPatchesFrom* functions:
 // - do not reset/unload previously loaded patches (use ForgetLoadedPatches() for that)
 // - do not actually patch the emulation memory (that happens at ApplyLoadedPatches(...) )
 extern int  LoadPatchesFromString(const char* patches);
-extern int  LoadPatchesFromDir(const std::string& crc, const std::string& folder, const char* friendly_name, bool show_error_when_missing);
-extern int  LoadPatchesFromZip(const std::string& crc, const u8* zip_data, size_t zip_data_size);
+extern int  LoadPatchesFromDir(const char* crc, const char* folder, const char* friendly_name, bool show_error_when_missing);
+extern int  LoadPatchesFromZip(const char* crc, const u8* zip_data, size_t zip_data_size);
 
 // Functions for Dynamic EE patching.
-extern void LoadDynamicPatches(const std::vector<DynamicPatch>& patches);
+/* Copied in: the game database's entries can go before the patches do. */
+extern void LoadDynamicPatches(const DynamicPatch* patches, size_t count);
 extern void ApplyDynamicPatches(u32 pc);
 
 // Patches the emulation memory by applying all the loaded patches with a specific place value.

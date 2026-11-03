@@ -365,7 +365,8 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 {
 	std::string message;
 	int patch_count = 0;
-	const std::string crc_string(FormatString::Format("%08X", crc));
+	char crc_string[9];
+	snprintf(crc_string, sizeof(crc_string), "%08X", crc);
 	s_patches_crc                   = crc;
 	s_active_widescreen_patches     = 0;
 	s_active_no_interlacing_patches = 0;
@@ -383,7 +384,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 				message += FormatString::Format("%d game patches", patch_count);
 			}
 
-			LoadDynamicPatches(game->dynaPatches);
+			LoadDynamicPatches(game->dynaPatches.data(), game->dynaPatches.size());
 		}
 	}
 
@@ -1059,7 +1060,6 @@ bool VMManager::Internal::IsExecutionInterrupted()
 
 void VMManager::Internal::EntryPointCompilingOnCPUThread()
 {
-	int i;
 	// Classic chicken and egg problem here. We don't want to update the running game
 	// until the game entry point actually runs, because that can update settings, which
 	// can flush the JIT, etc. But we need to apply patches for games where the entry
@@ -1069,25 +1069,13 @@ void VMManager::Internal::EntryPointCompilingOnCPUThread()
 		SysGetDiscID(serial, sizeof(serial));
 		LoadPatches(serial, ElfCRC);
 	}
-	for (i = 0; static_cast<size_t>(i) < Patch.size(); i++)
-	{
-		int _place = Patch[i].placetopatch;
-		if (_place == PPT_ONCE_ON_LOAD)
-			_ApplyPatch(&Patch[i]);
-	}
+	ApplyLoadedPatches(1u << PPT_ONCE_ON_LOAD);
 }
 
 void VMManager::Internal::GameStartingOnCPUThread()
 {
-	int i;
 	UpdateRunningGame(false, true, false);
-	for (i = 0; static_cast<size_t>(i) < Patch.size(); i++)
-	{
-		int _place = Patch[i].placetopatch;
-		if ( (_place == PPT_ONCE_ON_LOAD)
-		  || (_place == PPT_COMBINED_0_1))
-			_ApplyPatch(&Patch[i]);
-	}
+	ApplyLoadedPatches((1u << PPT_ONCE_ON_LOAD) | (1u << PPT_COMBINED_0_1));
 }
 
 void VMManager::CheckForCPUConfigChanges(const Pcsx2Config& old_config)

@@ -55,3 +55,23 @@ ${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 	"$LC/encodings/encoding_utf.c" "$LC/time/rtime.c"
 rm -f "$DIR/ingame.o"
 "$DIR/patch_ingame" "$ROOT/libretro/patches.cpp"
+
+echo "== pnach files and archives through the real file code =="
+ZDIR=$(mktemp -d /tmp/pnachzips.XXXXXX)
+python3 -I "$DIR/mkzips.py" "$ZDIR"
+PLOBJS=""
+for f in file/retro_dirent vfs/vfs_implementation compat/compat_fnmatch \
+	file/file_path file/file_path_io streams/file_stream encodings/encoding_deflate \
+	encodings/encoding_crc32 features/features_cpu string/rstrtod \
+	string/stdstring compat/compat_strl encodings/encoding_utf time/rtime compat/fopen_utf8; do
+	o="$DIR/pnachload_lc_$(echo "$f" | tr / _).o"
+	${CC:-cc} -O1 -w $SANFLAGS -I "$LC/include" -c -o "$o" "$LC/$f.c"
+	PLOBJS="$PLOBJS $o"
+done
+${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
+	-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
+	-I "$LC/include" \
+	-o "$DIR/patch_pnachload" "$DIR/pnachload.cpp" "$ROOT/pcsx2/Patch.cpp" $PLOBJS
+"$DIR/patch_pnachload" "$ZDIR"
+rm -f "${ZDIR:?}"/*.zip
+rmdir "${ZDIR:?}"

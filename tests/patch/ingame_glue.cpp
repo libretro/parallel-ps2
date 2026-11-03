@@ -32,10 +32,16 @@ extern "C" u32 iopMemRead32_slow(u32) { return 0; }
 static uptr s_rlut[0x10000];
 const uptr* psxMemRLUT = s_rlut;
 extern "C" int path_is_directory(const char*) { return 0; }
-#include "HostFS.h"
-namespace FileSystem {
-	bool FindFiles(const char*, const char*, unsigned,
-	               std::vector<FILESYSTEM_FIND_DATA>*) { return false; }
+struct RDIR;
+extern "C" {
+	struct RDIR* retro_opendir_include_hidden(const char*, bool) { return 0; }
+	bool retro_dirent_error(struct RDIR*) { return true; }
+	int  retro_readdir(struct RDIR*) { return 0; }
+	const char* retro_dirent_get_name(struct RDIR*) { return ""; }
+	bool retro_dirent_is_dir(struct RDIR*, const char*) { return false; }
+	void retro_closedir(struct RDIR*) { }
+	int  rl_fnmatch(const char*, const char*, int) { return 1; }
+	int64_t path_get_size(const char*) { return -1; }
 }
 extern "C" int64_t filestream_read_file(const char*, void**, int64_t*) { return 0; }
 extern "C" {
@@ -76,6 +82,6 @@ void ingame_harness_call(const char *serial, unsigned crc,
 {
 	lrps2_ingame_patches(serial, crc, renderer, true, true, true,
 		(int8_t)widescreen, (int8_t)framerate, 1);
-	Patch.clear();
+	ForgetLoadedPatches();
 }
 }

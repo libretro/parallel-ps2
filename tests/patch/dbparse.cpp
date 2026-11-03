@@ -68,10 +68,16 @@ const uptr* psxMemRLUT = s_rlut;
 
 /* The loader's other surface; none of it is entered from a string. */
 extern "C" int path_is_directory(const char*) { return 0; }
-#include "HostFS.h"
-namespace FileSystem {
-	bool FindFiles(const char*, const char*, unsigned,
-	               std::vector<FILESYSTEM_FIND_DATA>*) { return false; }
+struct RDIR;
+extern "C" {
+	struct RDIR* retro_opendir_include_hidden(const char*, bool) { return 0; }
+	bool retro_dirent_error(struct RDIR*) { return true; }
+	int  retro_readdir(struct RDIR*) { return 0; }
+	const char* retro_dirent_get_name(struct RDIR*) { return ""; }
+	bool retro_dirent_is_dir(struct RDIR*, const char*) { return false; }
+	void retro_closedir(struct RDIR*) { }
+	int  rl_fnmatch(const char*, const char*, int) { return 1; }
+	int64_t path_get_size(const char*) { return -1; }
 }
 extern "C" int64_t filestream_read_file(const char*, void**, int64_t*) { return 0; }
 extern "C" {
@@ -107,7 +113,6 @@ static void test_log(enum retro_log_level level, const char* fmt, ...)
 }
 extern "C" retro_log_printf_t log_cb = test_log;
 
-extern std::vector<IniPatch> Patch;
 
 int main(int argc, char** argv)
 {
@@ -155,13 +160,14 @@ int main(int argc, char** argv)
 		/* Applying them all is what proves a bytes payload survived the
 		 * parse: a line that loaded but kept an empty payload writes
 		 * nothing. */
-		for (i = 0; i < Patch.size(); i++)
+		for (i = 0; i < LoadedPatchCount(); i++)
 		{
-			_ApplyPatch(&Patch[i]);
-			if (Patch[i].type == 9 /* BYTES_T */ && Patch[i].bytes.empty())
+			IniPatch* ip = LoadedPatch(i);
+			_ApplyPatch(ip);
+			if (ip->type == 9 /* BYTES_T */ && (!ip->bytes || !ip->nbytes))
 			{
 				printf("  a bytes patch at %08x parsed with no payload\n",
-				       Patch[i].addr);
+				       ip->addr);
 				g_errors++;
 			}
 			applied++;
@@ -225,17 +231,17 @@ int main(int argc, char** argv)
 			bool ok;
 			ForgetLoadedPatches();
 			loaded = LoadPatchesFromString(cases[c].line);
-			ok = (loaded == cases[c].loads) && (Patch.size() == (size_t)cases[c].loads);
+			ok = (loaded == cases[c].loads) && (LoadedPatchCount() == (size_t)cases[c].loads);
 			if (ok && cases[c].loads)
 			{
-				const IniPatch& ip = Patch[0];
+				const IniPatch& ip = *LoadedPatch(0);
 				ok = ip.placetopatch == cases[c].place && ip.addr == cases[c].addr
 					&& ip.data == cases[c].data;
 				if (ok && cases[c].bytes)
 				{
 					char hex[64] = "";
 					size_t b;
-					for (b = 0; b < ip.bytes.size() && b * 2 + 2 < sizeof(hex); b++)
+					for (b = 0; b < ip.nbytes && b * 2 + 2 < sizeof(hex); b++)
 						snprintf(hex + b * 2, 3, "%02x", ip.bytes[b]);
 					ok = strcmp(hex, cases[c].bytes) == 0;
 				}
@@ -243,9 +249,9 @@ int main(int argc, char** argv)
 			if (!ok)
 			{
 				printf("  FAIL: \"%s\" loaded %d (want %d)", cases[c].line, loaded, cases[c].loads);
-				if (Patch.size())
-					printf(": place %d addr %08x data %llx", Patch[0].placetopatch,
-						Patch[0].addr, (unsigned long long)Patch[0].data);
+				if (LoadedPatchCount())
+					printf(": place %d addr %08x data %llx", LoadedPatch(0)->placetopatch,
+						LoadedPatch(0)->addr, (unsigned long long)LoadedPatch(0)->data);
 				printf("\n");
 				case_fails++;
 			}

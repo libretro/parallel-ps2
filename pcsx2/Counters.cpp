@@ -581,14 +581,7 @@ static __fi void rcntStartGate(bool isVblank, u64 sCycle)
 
 static __fi void VSyncStart(u64 sCycle)
 {
-	int i;
-	for (i = 0; static_cast<size_t>(i) < Patch.size(); i++)
-	{
-		int _place = Patch[i].placetopatch;
-		if ( (_place == PPT_CONTINUOUSLY)
-		  || (_place == PPT_COMBINED_0_1))
-			_ApplyPatch(&Patch[i]);
-	}
+	ApplyLoadedPatches((1u << PPT_CONTINUOUSLY) | (1u << PPT_COMBINED_0_1));
 
 	//These are done at VSync Start.  Drawing is done when VSync is off, then output the screen when Vsync is on
 	//The GS needs to be told at the start of a vsync else it loses half of its picture (could be responsible for some halfscreen issues)
