@@ -30,6 +30,6 @@ done
 "$CXX" -std=c++17 -w $DEFS $OPT $INC -o "$DIR/eestage$EXE" \
 	"$DIR/glue.cpp" "$DIR/stubs.cpp" "$P/Interpreter.cpp" "$P/R5900OpcodeImpl.cpp" \
 	"$P/R5900OpcodeTables.cpp" "$P/Pcsx2Config.cpp" "$P/MemoryCardFile.cpp" \
-	"$P/FormatString.cpp" "$P/StringView.cpp" "$OBJ"/*.o $LIBS
+	"$P/FormatString.cpp" "$OBJ"/*.o $LIBS
 rm -rf "$OBJ"
 "$DIR/eestage$EXE"

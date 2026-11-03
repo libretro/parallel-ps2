@@ -14,7 +14,6 @@
  */
 
 #include <compat/strl.h>
-#include "StringView.h"
 #include "FormatString.h"
 #include "common/Pcsx2Defs.h"
 #include <retro_atomic.h>
@@ -549,7 +548,10 @@ void VMManager::ReloadPatches()
 
 bool VMManager::IsElfFileName(const std::string_view path)
 {
-	return StringView::EndsWithNoCase(path, ".elf");
+	/* ".elf" in either case, at the end */
+	const size_t n = path.size();
+	return n >= 4 && path[n - 4] == '.' && (path[n - 3] | 0x20) == 'e'
+		&& (path[n - 2] | 0x20) == 'l' && (path[n - 1] | 0x20) == 'f';
 }
 
 bool VMManager::AutoDetectSource(const std::string& filename)

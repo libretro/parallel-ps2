@@ -12,7 +12,7 @@ ${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 	-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 	-I "$ROOT/libretro/libretro-common/include" \
 	-o "$DIR/patch_dbparse" "$DIR/dbparse.cpp" \
-	"$ROOT/pcsx2/Patch.cpp" "$ROOT/pcsx2/FormatString.cpp" "$ROOT/pcsx2/StringView.cpp" \
+	"$ROOT/pcsx2/Patch.cpp" "$ROOT/pcsx2/FormatString.cpp" \
 	"$ROOT/libretro/libretro-common/file/file_path.c" "$ROOT/libretro/libretro-common/string/stdstring.c" "$ROOT/libretro/libretro-common/compat/compat_strl.c" "$ROOT/libretro/libretro-common/encodings/encoding_utf.c" "$ROOT/libretro/libretro-common/time/rtime.c"
 "$DIR/patch_dbparse" "$ROOT/bin/resources/GameIndex.yaml"
 
@@ -22,7 +22,7 @@ ${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 	-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 	-I "$LC/include" \
 	-c -o "$DIR/dbload.o" "$DIR/dbload.cpp"
-for f in GameDatabase Pcsx2Config FormatString StringView; do
+for f in GameDatabase Pcsx2Config FormatString; do
 	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 		-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 		-I "$LC/include" -c -o "$DIR/dbload_$f.o" "$ROOT/pcsx2/$f.cpp"
@@ -40,7 +40,7 @@ for f in rthreads/retro_eventcount rthreads/retro_procbarrier \
 done
 ${CXX:-c++} $SANFLAGS -o "$DIR/patch_dbload" "$DIR/dbload.o" \
 	"$DIR/dbload_GameDatabase.o" "$DIR/dbload_Pcsx2Config.o" \
-	"$DIR/dbload_FormatString.o" "$DIR/dbload_StringView.o" $LCOBJS -lpthread
+	"$DIR/dbload_FormatString.o" $LCOBJS -lpthread
 "$DIR/patch_dbload" "$ROOT/bin/resources/GameIndex.yaml"
 
 echo "== the core's built-in game patches, every serial and hint =="
@@ -50,7 +50,7 @@ ${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 	-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 	-I "$LC/include" \
 	-o "$DIR/patch_ingame" "$DIR/ingame.o" "$DIR/ingame_glue.cpp" "$ROOT/libretro/patches.cpp" \
-	"$ROOT/pcsx2/Patch.cpp" "$ROOT/pcsx2/FormatString.cpp" "$ROOT/pcsx2/StringView.cpp" \
+	"$ROOT/pcsx2/Patch.cpp" "$ROOT/pcsx2/FormatString.cpp" \
 	"$LC/file/file_path.c" "$LC/string/stdstring.c" "$LC/compat/compat_strl.c" \
 	"$LC/encodings/encoding_utf.c" "$LC/time/rtime.c"
 rm -f "$DIR/ingame.o"

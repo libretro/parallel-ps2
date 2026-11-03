@@ -273,7 +273,6 @@ endif
 # ============================================================================
 SOURCES_CXX += \
 	$(LRPS2_DIR)/FormatString.cpp \
-	$(LRPS2_DIR)/StringView.cpp \
 	$(LRPS2_DIR)/Cache.cpp \
 	$(LRPS2_DIR)/COP0.cpp \
 	$(LRPS2_DIR)/Counters.cpp \

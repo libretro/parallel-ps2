@@ -14,7 +14,7 @@
  */
 
 #include <memory>
-#include "../StringView.h"
+#include <string/stdstring.h>
 #include "common/Pcsx2Defs.h"
 
 #ifdef _WIN32
@@ -237,7 +237,7 @@ std::vector<AdapterEntry> PCAPAdapter::GetAdapters()
 		entry.type = Pcsx2Config::DEV9Options::NetApi::PCAP_Switched;
 #ifdef _WIN32
 		//guid
-		if (!StringView::StartsWith(d->name, PCAPPREFIX))
+		if (!string_starts_with(d->name, PCAPPREFIX))
 		{
 			log_cb(RETRO_LOG_ERROR, "PCAP: Unexpected Device: \n", d->name);
 			d = d->next;

@@ -16,7 +16,6 @@
 #define _PC_ // disables MIPS opcode macros.
 
 #include "HostFS.h"
-#include "StringView.h"
 #include "ParseNumber.h"
 #include "common/Pcsx2Defs.h"
 #include <encodings/deflate.h>
@@ -37,13 +36,13 @@
 static std::string_view StripWhitespace(const std::string_view& str)
 {
 	std::string_view::size_type start = 0;
-	while (start < str.size() && std::isspace(str[start]))
+	while (start < str.size() && std::isspace((unsigned char)str[start]))
 		start++;
 	if (start == str.size())
 		return {};
 
 	std::string_view::size_type end = str.size() - 1;
-	while (end > start && std::isspace(str[end]))
+	while (end > start && std::isspace((unsigned char)str[end]))
 		end--;
 
 	return str.substr(start, end - start + 1);
@@ -787,8 +786,15 @@ static int PatchTableExecute(const std::string_view& lhs, const std::string_view
 // This routine is for executing the commands of the ini file.
 static void inifile_command(const char* cmd)
 {
+	/* "key = value", each side stripped; no '=' is no command, and runs
+	 * the table with nothing, which matches no entry. */
+	const char* eq = strchr(cmd, '=');
 	std::string_view key, value;
-	StringView::ParseAssignmentString(cmd, &key, &value);
+	if (eq)
+	{
+		key   = StripWhitespace(std::string_view(cmd, (size_t)(eq - cmd)));
+		value = StripWhitespace(std::string_view(eq + 1));
+	}
 
 	// Is this really what we want to be doing here? Seems like just leaving it empty/blank
 	// would make more sense... --air

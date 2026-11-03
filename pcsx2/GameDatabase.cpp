@@ -14,7 +14,7 @@
  */
 
 #include <sstream>
-#include "StringView.h"
+#include <string/stdstring.h>
 #include "FormatString.h"
 #include "ParseNumber.h"
 #include "common/Pcsx2Defs.h"
@@ -99,6 +99,18 @@ const std::string* GameDatabaseSchema::GameEntry::findPatch(u32 crc) const
  * the way they did when this used a C++ YAML library. A node handle of
  * RYAML_NONE is inert, so a lookup that missed can be passed straight
  * on without a test at each step. */
+/* Serials and CRCs are keyed lower-case: the database's keys are
+ * written either way and callers pass either. ASCII only, as they are. */
+static std::string gamedb_lower(const std::string_view& in)
+{
+	std::string out(in);
+	size_t i;
+	for (i = 0; i < out.size(); i++)
+		if (out[i] >= 'A' && out[i] <= 'Z')
+			out[i] = (char)(out[i] - 'A' + 'a');
+	return out;
+}
+
 static std::string yamlString(const ryaml_t* yaml, int node)
 {
 	size_t len = 0;
@@ -207,7 +219,7 @@ void GameDatabase::parseAndInsert(const char *serial, const ryaml_t *yaml, int n
 			std::string fix(yamlValView(yaml, n));
 
 			// Enum values don't end with Hack, but gamedb does, so remove it before comparing.
-			if (StringView::EndsWith(fix, "Hack"))
+			if (string_ends_with(fix.c_str(), "Hack"))
 			{
 				fix.erase(fix.size() - 4);
 				for (GamefixId id = GamefixId_FIRST; id < pxEnumEnd; ++id)
@@ -982,7 +994,7 @@ void GameDatabase::initDatabase()
 	for (int n = ryaml_first_child(yaml, root); n >= 0;
 		n = ryaml_next_sibling(yaml, n))
 	{
-		auto serial = StringView::toLower(std::string(yamlKeyView(yaml, n)));
+		auto serial = gamedb_lower(yamlKeyView(yaml, n));
 
 		// Serials and CRCs must be inserted as lower-case, as that is how they are retrieved
 		// this is because the application may pass a lowercase CRC or serial along
@@ -1038,6 +1050,6 @@ const GameDatabaseSchema::GameEntry* GameDatabase::findGame(const std::string_vi
 {
 	GameDatabase::ensureLoaded();
 
-	auto iter = s_game_db.find(StringView::toLower(serial));
+	auto iter = s_game_db.find(gamedb_lower(serial));
 	return (iter != s_game_db.end()) ? &iter->second : nullptr;
 }
