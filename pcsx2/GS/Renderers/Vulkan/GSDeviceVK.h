@@ -22,6 +22,7 @@
 #include "VKStreamBuffer.h"
 #include "GS/Renderers/Common/GSKeyHash.h"
 #include "GS/Renderers/Common/GSFlatMap.h"
+#include "GS/Renderers/Common/GSArray.h"
 #include <array>
 #include <functional>
 #include <memory>
@@ -349,7 +350,7 @@ private:
 	       /* Staging buffers this command buffer is reading from. They
 		* go back to the free list when it completes; they are not
 		* destroyed, because the next upload of that size wants one. */
-	       std::vector<StagingBuffer> staging_in_flight;
+	       gs_array_t staging_in_flight; /* of StagingBuffer */
 
 	       /* Cleanup queue: per-frame list of Vulkan resources to be
 		* destroyed once the GPU is done with this command buffer.
@@ -376,7 +377,7 @@ private:
 		       u64 h0;
 		       gs_vk_alloc_t alloc;
 	       };
-	       std::vector<CleanupEntry> cleanup_resources;
+	       gs_array_t cleanup_resources; /* of CleanupEntry */
        };
 
        /* Device memory: blocks taken at startup, offsets handed out from
@@ -399,7 +400,7 @@ public:
 private:
 
        /* Upload buffers no command buffer is using. */
-       std::vector<StagingBuffer> m_staging_free;
+       gs_array_t m_staging_free; /* of StagingBuffer */
        u64 m_staging_bytes = 0;
        /* And the ones a command buffer is still reading. This is the one
         * that grows without limit: a buffer per texture upload, given
@@ -407,6 +408,7 @@ private:
         * thousands of uploads in it holds thousands of them at once. */
        u64 m_staging_inflight_bytes = 0;
        void DestroyStagingBuffers();
+       FrameResources::CleanupEntry* PushCleanup();
 
        /* Bytes of image sitting in the cleanup lists, waiting for the
         * command buffer that might still be reading them to finish. */

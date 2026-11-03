@@ -1018,8 +1018,9 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			 * lists grow at startup rather than in the middle of a game
 			 * the first time it destroys or uploads that much. They keep
 			 * their capacity when cleared. */
-			resources.cleanup_resources.reserve(512);
-			resources.staging_in_flight.reserve(64);
+			if (!gs_array_reserve(&resources.cleanup_resources, 512) ||
+				!gs_array_reserve(&resources.staging_in_flight, 64))
+				return false;
 			// TODO: A better way to choose the number of descriptors.
 			VkDescriptorPoolSize pool_sizes[] = {
 				{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,	MAX_COMBINED_IMAGE_SAMPLER_DESCRIPTORS_PER_FRAME},
@@ -1299,8 +1300,9 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 	{
 		FrameResources& resources = m_frame_resources[index];
 
-		for (const FrameResources::CleanupEntry& it : resources.cleanup_resources)
+		for (size_t n = 0; n < resources.cleanup_resources.count; n++)
 		{
+			const FrameResources::CleanupEntry& it = GS_ARRAY_AT(&resources.cleanup_resources, FrameResources::CleanupEntry, n);
 			switch (it.kind)
 			{
 				case FrameResources::CleanupKind::Buffer:
@@ -1328,17 +1330,30 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		}
 		/* The GPU is done reading these, so they are free to be handed
 		 * out again - back to the list, not to the driver. */
-		for (size_t i = 0; i < resources.staging_in_flight.size(); i++)
+		for (size_t i = 0; i < resources.staging_in_flight.count; i++)
 		{
-			const u64 sz = resources.staging_in_flight[i].size;
-			m_staging_free.push_back(resources.staging_in_flight[i]);
+			const StagingBuffer& sb = GS_ARRAY_AT(&resources.staging_in_flight, StagingBuffer, i);
+			const u64 sz = sb.size;
+			StagingBuffer* freed = static_cast<StagingBuffer*>(gs_array_push(&m_staging_free));
+			if (!freed)
+			{
+				/* (no room on the free list: back to the driver instead) */
+				vkDestroyBuffer(vk_init_info.device, sb.buffer, nullptr);
+				gs_vk_heap_free(&m_heap, &sb.alloc);
+				if (m_staging_inflight_bytes >= sz)
+					m_staging_inflight_bytes -= sz;
+				else
+					m_staging_inflight_bytes = 0;
+				continue;
+			}
+			*freed = sb;
 			m_staging_bytes += sz;
 			if (m_staging_inflight_bytes >= sz)
 				m_staging_inflight_bytes -= sz;
 			else
 				m_staging_inflight_bytes = 0;
 		}
-		resources.staging_in_flight.clear();
+		resources.staging_in_flight.count = 0;
 		resources.staging_bytes = 0;
 
 		if (m_deferred_bytes >= resources.cleanup_bytes)
@@ -1346,7 +1361,16 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		else
 			m_deferred_bytes = 0;
 		resources.cleanup_bytes = 0;
-		resources.cleanup_resources.clear();
+		resources.cleanup_resources.count = 0;
+	}
+
+	/* A slot on the current command buffer's cleanup list. */
+	GSDeviceVK::FrameResources::CleanupEntry* GSDeviceVK::PushCleanup()
+	{
+		void* slot = gs_array_push(&m_frame_resources[m_current_frame].cleanup_resources);
+		if (!slot)
+			abort();
+		return static_cast<FrameResources::CleanupEntry*>(slot);
 	}
 
 	void GSDeviceVK::MoveToNextCommandBuffer()
@@ -1388,37 +1412,42 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 
 	void GSDeviceVK::DeferBufferDestruction(VkBuffer object)
 	{
-		FrameResources& resources = m_frame_resources[m_current_frame];
-		resources.cleanup_resources.push_back({
-			FrameResources::CleanupKind::Buffer, (u64)object, gs_vk_alloc_t{}});
+		FrameResources::CleanupEntry* e = PushCleanup();
+		e->kind = FrameResources::CleanupKind::Buffer;
+		e->h0   = (u64)object;
+		memset(&e->alloc, 0, sizeof(e->alloc));
 	}
 
 	void GSDeviceVK::DeferBufferDestruction(VkBuffer object, const gs_vk_alloc_t& alloc)
 	{
-		FrameResources& resources = m_frame_resources[m_current_frame];
-		resources.cleanup_resources.push_back({
-			FrameResources::CleanupKind::BufferHeap, (u64)object, alloc});
+		FrameResources::CleanupEntry* e = PushCleanup();
+		e->kind = FrameResources::CleanupKind::BufferHeap;
+		e->h0   = (u64)object;
+		e->alloc = alloc;
 	}
 
 	void GSDeviceVK::DeferFramebufferDestruction(VkFramebuffer object)
 	{
-		FrameResources& resources = m_frame_resources[m_current_frame];
-		resources.cleanup_resources.push_back({
-			FrameResources::CleanupKind::Framebuffer, (u64)object, gs_vk_alloc_t{}});
+		FrameResources::CleanupEntry* e = PushCleanup();
+		e->kind = FrameResources::CleanupKind::Framebuffer;
+		e->h0   = (u64)object;
+		memset(&e->alloc, 0, sizeof(e->alloc));
 	}
 
 	void GSDeviceVK::DeferImageDestruction(VkImage object)
 	{
-		FrameResources& resources = m_frame_resources[m_current_frame];
-		resources.cleanup_resources.push_back({
-			FrameResources::CleanupKind::Image, (u64)object, gs_vk_alloc_t{}});
+		FrameResources::CleanupEntry* e = PushCleanup();
+		e->kind = FrameResources::CleanupKind::Image;
+		e->h0   = (u64)object;
+		memset(&e->alloc, 0, sizeof(e->alloc));
 	}
 
 	void GSDeviceVK::DeferImageDestruction(VkImage object, const gs_vk_alloc_t& alloc)
 	{
-		FrameResources& resources = m_frame_resources[m_current_frame];
-		resources.cleanup_resources.push_back({
-			FrameResources::CleanupKind::ImageHeap, (u64)object, alloc});
+		FrameResources::CleanupEntry* e = PushCleanup();
+		e->kind = FrameResources::CleanupKind::ImageHeap;
+		e->h0   = (u64)object;
+		e->alloc = alloc;
 	}
 
 	/* --- how much may be waiting to be freed ---------------------------
@@ -1494,17 +1523,22 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		if (m_staging_bytes + m_staging_inflight_bytes + want > ceiling)
 			RelieveMemPressure(MEM_PRESSURE_WAIT);
 
-		for (i = 0; i < m_staging_free.size(); i++)
+		for (i = 0; i < m_staging_free.count; i++)
 		{
-			if (m_staging_free[i].size < want)
+			StagingBuffer* free_list = GS_ARRAY_ITEMS(&m_staging_free, StagingBuffer);
+			StagingBuffer* in_flight;
+			if (free_list[i].size < want)
 				continue;
-			sb = m_staging_free[i];
-			m_staging_free[i] = m_staging_free.back();
-			m_staging_free.pop_back();
+			in_flight = static_cast<StagingBuffer*>(gs_array_push(&m_frame_resources[m_current_frame].staging_in_flight));
+			if (!in_flight)
+				return VK_NULL_HANDLE;
+			sb = free_list[i];
+			free_list[i] = free_list[m_staging_free.count - 1];
+			m_staging_free.count--;
 			m_staging_bytes -= sb.size;
 			m_staging_inflight_bytes += sb.size;
 			m_frame_resources[m_current_frame].staging_bytes += sb.size;
-			m_frame_resources[m_current_frame].staging_in_flight.push_back(sb);
+			*in_flight = sb;
 			*mapped    = sb.mapped;
 			*alloc_out = sb.alloc;
 			return sb.buffer;
@@ -1522,19 +1556,28 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			return VK_NULL_HANDLE;
 
 		sb.size = want;
+		{
+			StagingBuffer* in_flight = static_cast<StagingBuffer*>(gs_array_push(&m_frame_resources[m_current_frame].staging_in_flight));
+			if (!in_flight)
+			{
+				vkDestroyBuffer(vk_init_info.device, sb.buffer, nullptr);
+				gs_vk_heap_free(&m_heap, &sb.alloc);
+				return VK_NULL_HANDLE;
+			}
+			*in_flight = sb;
+		}
 		m_staging_inflight_bytes += sb.size;
 		m_frame_resources[m_current_frame].staging_bytes += sb.size;
-		m_frame_resources[m_current_frame].staging_in_flight.push_back(sb);
 
 		/* Trim the free list against the same total. */
 		while (m_staging_bytes + m_staging_inflight_bytes > ceiling
-				&& !m_staging_free.empty())
+				&& m_staging_free.count > 0)
 		{
-			StagingBuffer& dead = m_staging_free.back();
+			StagingBuffer& dead = GS_ARRAY_AT(&m_staging_free, StagingBuffer, m_staging_free.count - 1);
 			m_staging_bytes -= dead.size;
 			vkDestroyBuffer(vk_init_info.device, dead.buffer, nullptr);
 			gs_vk_heap_free(&m_heap, &dead.alloc);
-			m_staging_free.pop_back();
+			m_staging_free.count--;
 		}
 
 		*mapped    = sb.mapped;
@@ -1547,22 +1590,24 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		size_t i;
 		u32 f;
 
-		for (i = 0; i < m_staging_free.size(); i++)
+		for (i = 0; i < m_staging_free.count; i++)
 		{
-			vkDestroyBuffer(vk_init_info.device, m_staging_free[i].buffer, nullptr);
-			gs_vk_heap_free(&m_heap, &m_staging_free[i].alloc);
+			StagingBuffer& sb = GS_ARRAY_AT(&m_staging_free, StagingBuffer, i);
+			vkDestroyBuffer(vk_init_info.device, sb.buffer, nullptr);
+			gs_vk_heap_free(&m_heap, &sb.alloc);
 		}
-		m_staging_free.clear();
+		m_staging_free.count = 0;
 
 		for (f = 0; f < NUM_COMMAND_BUFFERS; f++)
 		{
-			std::vector<StagingBuffer>& v = m_frame_resources[f].staging_in_flight;
-			for (i = 0; i < v.size(); i++)
+			gs_array_t* v = &m_frame_resources[f].staging_in_flight;
+			for (i = 0; i < v->count; i++)
 			{
-				vkDestroyBuffer(vk_init_info.device, v[i].buffer, nullptr);
-				gs_vk_heap_free(&m_heap, &v[i].alloc);
+				StagingBuffer& sb = GS_ARRAY_AT(v, StagingBuffer, i);
+				vkDestroyBuffer(vk_init_info.device, sb.buffer, nullptr);
+				gs_vk_heap_free(&m_heap, &sb.alloc);
 			}
-			v.clear();
+			v->count = 0;
 			m_frame_resources[f].staging_bytes = 0;
 			m_staging_inflight_bytes = 0;
 		}
@@ -1610,9 +1655,10 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 
 	void GSDeviceVK::DeferImageViewDestruction(VkImageView object)
 	{
-		FrameResources& resources = m_frame_resources[m_current_frame];
-		resources.cleanup_resources.push_back({
-			FrameResources::CleanupKind::ImageView, (u64)object, gs_vk_alloc_t{}});
+		FrameResources::CleanupEntry* e = PushCleanup();
+		e->kind = FrameResources::CleanupKind::ImageView;
+		e->h0   = (u64)object;
+		memset(&e->alloc, 0, sizeof(e->alloc));
 	}
 
 	VkRenderPass GSDeviceVK::CreateCachedRenderPass(RenderPassCacheKey key)
@@ -1799,11 +1845,23 @@ GSDeviceVK::GSDeviceVK()
 	gs_flat_map_init(&m_samplers, sizeof(u32), sizeof(VkSampler));
 	gs_flat_map_init(&m_render_pass_cache, sizeof(u32), sizeof(VkRenderPass));
 	gs_flat_map_init(&m_render_pass_keys, sizeof(VkRenderPass), sizeof(u32));
+	gs_array_init(&m_staging_free, sizeof(StagingBuffer));
+	for (u32 f = 0; f < NUM_COMMAND_BUFFERS; f++)
+	{
+		gs_array_init(&m_frame_resources[f].staging_in_flight, sizeof(StagingBuffer));
+		gs_array_init(&m_frame_resources[f].cleanup_resources, sizeof(FrameResources::CleanupEntry));
+	}
 }
 
 GSDeviceVK::~GSDeviceVK()
 {
 	/* (the handles in them went with the device; these are the slots) */
+	gs_array_free(&m_staging_free);
+	for (u32 f = 0; f < NUM_COMMAND_BUFFERS; f++)
+	{
+		gs_array_free(&m_frame_resources[f].staging_in_flight);
+		gs_array_free(&m_frame_resources[f].cleanup_resources);
+	}
 	gs_flat_map_free(&m_tfx_pipelines);
 	gs_flat_map_free(&m_tfx_siblings);
 	gs_flat_map_free(&m_tfx_pending);
