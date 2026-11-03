@@ -21,7 +21,7 @@
 #include "GSTextureCache.h"
 #include "GSAlphaRange.h"
 #include "GSSurfaceSearch.h"
-#include "GSScratch.h"
+#include "../Common/GSScratch.h"
 #include "GSTargetBudget.h"
 #include "GSObjectPool.h"
 #include "GSTextureReplacements.h"

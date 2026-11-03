@@ -128,7 +128,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/Memory.c \
 	$(LRPS2_DIR)/VirtualMemory.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSCodeReserve.c \
-	$(LRPS2_DIR)/GS/Renderers/HW/GSScratch.c \
+	$(LRPS2_DIR)/GS/Renderers/Common/GSScratch.c \
 	$(LRPS2_DIR)/GS/Renderers/DX12/GSD3D12Heap.c \
 	$(LRPS2_DIR)/GS/Renderers/DX12/GSD3D12Warm.c \
 	$(LIBRETRO_COMM_DIR)/compat/compat_posix_string.c \

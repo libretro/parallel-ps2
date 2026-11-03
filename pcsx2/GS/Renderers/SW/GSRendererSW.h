@@ -106,7 +106,9 @@ public: /* called through gs_state_ops (GSRendererSW.cpp); these were protected 
 	gs_hr_layout_t* m_hr_layout[64] = {};
 	u64 m_hr_tex_key[3] = {};     // its TEX0, TEXA and the sum of its pages' generations
 	gs_flat_map_t m_hr_offsets = {}; /* fzb4 hash -> HiresOffset* */
-	std::vector<u32> m_hr_colbuf;
+	u32* m_hr_colbuf = nullptr;   // a row of colours, as wide as the widest read so far
+	size_t m_hr_colbuf_size = 0;
+	u32* HiresColBuf(size_t count);
 	size_t m_hr_output_size = 0;
 	gs_hr_pages_t m_hr_pages;
 	u32 m_hr_mask[GS_HR_PAGES] = {};    // blocks asked for by page, zero between calls

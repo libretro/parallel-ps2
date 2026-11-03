@@ -366,8 +366,8 @@ set(pcsx2GSSources
 	GS/Renderers/Common/GSStableGroup.h
 	GS/Renderers/Common/GSRetireRing.c
 	GS/Renderers/Common/GSRetireRing.h
-	GS/Renderers/HW/GSScratch.c
-	GS/Renderers/HW/GSScratch.h
+	GS/Renderers/Common/GSScratch.c
+	GS/Renderers/Common/GSScratch.h
 	GS/Renderers/HW/GSObjectPool.h
 	GS/Renderers/HW/GSTextureCache.cpp
 	GS/Renderers/HW/GSTextureReplacementLoaders.cpp

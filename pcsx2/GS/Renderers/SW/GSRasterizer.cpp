@@ -1266,6 +1266,11 @@ bool GSSingleRasterizer::IsSynced() const
 
 GSRasterizerList::GSRasterizerList(int threads)
 {
+	m_r         = static_cast<GSRasterizer**>(calloc(static_cast<size_t>(threads), sizeof(GSRasterizer*)));
+	m_workers   = static_cast<GSWorker**>(calloc(static_cast<size_t>(threads), sizeof(GSWorker*)));
+	m_threads   = static_cast<u32>(threads);
+	if (!m_r || !m_workers)
+		abort();
 	m_thread_height = compute_best_thread_height(threads);
 
 	const int rows = (4096 >> m_thread_height) + 16;
@@ -1277,6 +1282,12 @@ GSRasterizerList::GSRasterizerList(int threads)
 
 GSRasterizerList::~GSRasterizerList()
 {
+	for (u32 i = m_threads; i-- > 0;)
+		delete m_workers[i];
+	for (u32 i = m_threads; i-- > 0;)
+		delete m_r[i];
+	free(m_workers);
+	free(m_r);
 	memalign_free(m_scanline);
 }
 
@@ -1321,7 +1332,7 @@ void GSRasterizerList::Queue(const GSRingHeap::SharedPtr<GSRasterizerData>& data
 	}
 
 	int top = r.top >> m_thread_height;
-	int bottom = pcsx2_min_i((r.bottom + (1 << m_thread_height) - 1) >> m_thread_height, top + m_workers.size());
+	int bottom = pcsx2_min_i((r.bottom + (1 << m_thread_height) - 1) >> m_thread_height, top + static_cast<int>(m_threads));
 
 	while (top < bottom)
 	{
@@ -1333,14 +1344,14 @@ void GSRasterizerList::Sync()
 {
 	if (!IsSynced())
 	{
-		for (size_t i = 0; i < m_workers.size(); i++)
+		for (u32 i = 0; i < m_threads; i++)
 			m_workers[i]->Wait();
 	}
 }
 
 bool GSRasterizerList::IsSynced() const
 {
-	for (size_t i = 0; i < m_workers.size(); i++)
+	for (u32 i = 0; i < m_threads; i++)
 	{
 		if (!m_workers[i]->IsEmpty())
 		{
@@ -1368,11 +1379,11 @@ std::unique_ptr<IRasterizer> GSRasterizerList::Create(int threads)
 		u64 affinity = 0;
 		if (affinity_on && (worker_proc_base + i) < procs.size())
 			affinity = static_cast<u64>(1) << procs[worker_proc_base + i];
-		rl->m_r.push_back(std::unique_ptr<GSRasterizer>(new GSRasterizer(&rl->m_ds, i, threads)));
-		auto& r = *rl->m_r[i];
-		rl->m_workers.push_back(std::unique_ptr<GSWorker>(new GSWorker([i, affinity]() { GSRasterizerList::OnWorkerStartup(i, affinity); },
+		rl->m_r[i] = new GSRasterizer(&rl->m_ds, i, threads);
+		GSRasterizer& r = *rl->m_r[i];
+		rl->m_workers[i] = new GSWorker([i, affinity]() { GSRasterizerList::OnWorkerStartup(i, affinity); },
 			[&r](GSRingHeap::SharedPtr<GSRasterizerData>& item) { r.Draw(*item.get()); },
-			[i]() { GSRasterizerList::OnWorkerShutdown(i); })));
+			[i]() { GSRasterizerList::OnWorkerShutdown(i); });
 	}
 
 	return rl;

@@ -19,6 +19,7 @@
 #include "GSVulkanHeap.h"
 #include "GS/Renderers/Vulkan/GSDeviceVK.h"
 #include "GS/Renderers/Common/GSTexture.h"
+#include "GS/Renderers/Common/GSArray.h"
 #include "GS/Renderers/Vulkan/VKLoader.h"
 #include <climits>
 
@@ -117,9 +118,16 @@ private:
 	GSVector4i m_map_area = GSVector4i::zero();
 	int m_map_level = INT_MAX;
 
-	// linked framebuffer is combined with depth texture
-	// list of color textures this depth texture is linked to or vice versa
-	std::vector<std::tuple<GSTextureVK*, VkFramebuffer, bool>> m_framebuffers;
+	/* A framebuffer of this texture with another (a colour target's with
+	 * its depth, or the reverse), or with none; each one is on both
+	 * textures' lists, and goes when either is destroyed. */
+	struct LinkedFramebuffer
+	{
+		GSTextureVK* other;
+		VkFramebuffer fb;
+		bool feedback_loop;
+	};
+	gs_array_t m_framebuffers; /* of LinkedFramebuffer */
 };
 
 class GSDownloadTextureVK final : public GSDownloadTexture

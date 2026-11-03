@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "GS/Renderers/HW/GSScratch.h"
+#include "GS/Renderers/Common/GSScratch.h"
 
 int main(void)
 {

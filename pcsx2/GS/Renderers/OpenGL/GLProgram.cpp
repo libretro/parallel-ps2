@@ -24,7 +24,10 @@
 static u32 s_last_program_id = 0;
 static GLuint s_next_bad_shader_id = 1;
 
-GLProgram::GLProgram() = default;
+GLProgram::GLProgram()
+{
+	gs_array_init(&m_uniform_locations, sizeof(GLint));
+}
 
 GLProgram::GLProgram(GLProgram&& prog)
 {
@@ -34,12 +37,14 @@ GLProgram::GLProgram(GLProgram&& prog)
 	prog.m_vertex_shader_id   = 0;
 	m_fragment_shader_id      = prog.m_fragment_shader_id;
 	prog.m_fragment_shader_id = 0;
-	m_uniform_locations       = std::move(prog.m_uniform_locations);
+	m_uniform_locations       = prog.m_uniform_locations;
+	gs_array_init(&prog.m_uniform_locations, sizeof(GLint));
 }
 
 GLProgram::~GLProgram()
 {
 	Destroy();
+	gs_array_free(&m_uniform_locations);
 }
 
 GLuint GLProgram::CompileShader(GLenum type, const std::string_view source)
@@ -287,180 +292,183 @@ void GLProgram::Destroy()
 		m_program_id = 0;
 	}
 
-	m_uniform_locations.clear();
+	m_uniform_locations.count = 0;
 }
 
 int GLProgram::RegisterUniform(const char* name)
 {
-	int id = static_cast<int>(m_uniform_locations.size());
-	m_uniform_locations.push_back(glGetUniformLocation(m_program_id, name));
+	const int id = static_cast<int>(m_uniform_locations.count);
+	GLint* slot = static_cast<GLint*>(gs_array_push(&m_uniform_locations));
+	if (!slot)
+		abort();
+	*slot = glGetUniformLocation(m_program_id, name);
 	return id;
 }
 
 void GLProgram::Uniform1ui(int index, u32 x) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform1ui(location, x);
 }
 
 void GLProgram::Uniform2ui(int index, u32 x, u32 y) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform2ui(location, x, y);
 }
 
 void GLProgram::Uniform3ui(int index, u32 x, u32 y, u32 z) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform3ui(location, x, y, z);
 }
 
 void GLProgram::Uniform4ui(int index, u32 x, u32 y, u32 z, u32 w) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform4ui(location, x, y, z, w);
 }
 
 void GLProgram::Uniform1i(int index, s32 x) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform1i(location, x);
 }
 
 void GLProgram::Uniform2i(int index, s32 x, s32 y) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform2i(location, x, y);
 }
 
 void GLProgram::Uniform3i(int index, s32 x, s32 y, s32 z) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform3i(location, x, y, z);
 }
 
 void GLProgram::Uniform4i(int index, s32 x, s32 y, s32 z, s32 w) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform4i(location, x, y, z, w);
 }
 
 void GLProgram::Uniform1f(int index, float x) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform1f(location, x);
 }
 
 void GLProgram::Uniform2f(int index, float x, float y) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform2f(location, x, y);
 }
 
 void GLProgram::Uniform3f(int index, float x, float y, float z) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform3f(location, x, y, z);
 }
 
 void GLProgram::Uniform4f(int index, float x, float y, float z, float w) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform4f(location, x, y, z, w);
 }
 
 void GLProgram::Uniform2uiv(int index, const u32* v) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform2uiv(location, 1, v);
 }
 
 void GLProgram::Uniform3uiv(int index, const u32* v) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform3uiv(location, 1, v);
 }
 
 void GLProgram::Uniform4uiv(int index, const u32* v) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform4uiv(location, 1, v);
 }
 
 void GLProgram::Uniform2iv(int index, const s32* v) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform2iv(location, 1, v);
 }
 
 void GLProgram::Uniform3iv(int index, const s32* v) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform3iv(location, 1, v);
 }
 
 void GLProgram::Uniform4iv(int index, const s32* v) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform4iv(location, 1, v);
 }
 
 void GLProgram::Uniform2fv(int index, const float* v) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform2fv(location, 1, v);
 }
 
 void GLProgram::Uniform3fv(int index, const float* v) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform3fv(location, 1, v);
 }
 
 void GLProgram::Uniform4fv(int index, const float* v) const
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniform4fv(location, 1, v);
 }
 
 void GLProgram::UniformMatrix2fv(int index, const float* v)
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniformMatrix2fv(location, 1, GL_FALSE, v);
 }
 
 void GLProgram::UniformMatrix3fv(int index, const float* v)
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniformMatrix3fv(location, 1, GL_FALSE, v);
 }
 
 void GLProgram::UniformMatrix4fv(int index, const float* v)
 {
-	const GLint location = m_uniform_locations[index];
+	const GLint location = GS_ARRAY_AT(&m_uniform_locations, GLint, index);
 	if (location >= 0)
 		glUniformMatrix4fv(location, 1, GL_FALSE, v);
 }
@@ -481,6 +489,8 @@ GLProgram& GLProgram::operator=(GLProgram&& prog)
 	prog.m_vertex_shader_id = 0;
 	m_fragment_shader_id = prog.m_fragment_shader_id;
 	prog.m_fragment_shader_id = 0;
-	m_uniform_locations = std::move(prog.m_uniform_locations);
+	gs_array_free(&m_uniform_locations);
+	m_uniform_locations = prog.m_uniform_locations;
+	gs_array_init(&prog.m_uniform_locations, sizeof(GLint));
 	return *this;
 }

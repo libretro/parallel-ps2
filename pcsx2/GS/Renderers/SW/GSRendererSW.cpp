@@ -212,6 +212,9 @@ void GSRendererSW::Destroy()
 		if (GS_FLAT_MAP_USED(&m_hr_offsets, slot))
 			memalign_free(*static_cast<HiresOffset**>(GS_FLAT_MAP_VALUE(&m_hr_offsets, slot)));
 	gs_flat_map_free(&m_hr_offsets);
+	free(m_hr_colbuf);
+	m_hr_colbuf      = nullptr;
+	m_hr_colbuf_size = 0;
 	for (i = 0; i < 64; i++)
 	{
 		free(m_hr_layout[i]);
@@ -435,7 +438,9 @@ GSTexture* GSRendererSW::GetOutputHires(int index, const GSPCRTCRegs::PCRTCDispl
 	HiresRestored();
 	HiresRefresh(m_mem.GetOffset(fb.Block(), fb.FBW, fb.PSM), fb.PSM, GSVector4i(off_x, off_y, off_x + w, off_y + h));
 
-	m_hr_colbuf.resize(W);
+	u32* const colbuf = HiresColBuf(W);
+	if (!colbuf)
+		return m_texture[index];
 	/* straight into the texture's upload if it maps */
 	{
 		const GSVector4i out2(0, 0, W, H);
@@ -443,14 +448,14 @@ GSTexture* GSRendererSW::GetOutputHires(int index, const GSPCRTCRegs::PCRTCDispl
 		if (m_texture[index]->Map(m, &out2))
 		{
 			gs_hr_read(l, m_hr_vm, fb.FBP, fb.FBW, off_x, off_y, W, H, kind, texa.TA0, texa.TA1,
-				reinterpret_cast<unsigned*>(m.bits), m.pitch, m_hr_colbuf.data());
+				reinterpret_cast<unsigned*>(m.bits), m.pitch, colbuf);
 			m_texture[index]->Unmap();
 			return m_texture[index];
 		}
 	}
 	if (!HiresOutput(static_cast<size_t>(W) * H))
 		return m_texture[index];
-	gs_hr_read(l, m_hr_vm, fb.FBP, fb.FBW, off_x, off_y, W, H, kind, texa.TA0, texa.TA1, m_hr_output, W * 4, m_hr_colbuf.data());
+	gs_hr_read(l, m_hr_vm, fb.FBP, fb.FBW, off_x, off_y, W, H, kind, texa.TA0, texa.TA1, m_hr_output, W * 4, colbuf);
 
 	m_texture[index]->Update(GSVector4i(0, 0, W, H), m_hr_output, W * 4);
 
@@ -1008,6 +1013,20 @@ const gs_hr_layout_t* GSRendererSW::HiresLayout(u32 psm)
 	return l;
 }
 
+/* Room for count colours in the hires read row, kept at the widest. */
+u32* GSRendererSW::HiresColBuf(size_t count)
+{
+	if (count > m_hr_colbuf_size)
+	{
+		u32* grown = static_cast<u32*>(realloc(m_hr_colbuf, count * sizeof(u32)));
+		if (!grown)
+			return nullptr;
+		m_hr_colbuf      = grown;
+		m_hr_colbuf_size = count;
+	}
+	return m_hr_colbuf;
+}
+
 /* The current frame and z buffer's tables in the 2x memory, in the
  * sixteen-bit units the scanline code adds. */
 const GSRendererSW::HiresOffset* GSRendererSW::HiresOffsets()
@@ -1264,8 +1283,13 @@ GSRendererSW::HiresTex* GSRendererSW::HiresTextureRead(const SharedData* sd)
 	t->tw = tw;
 	retro_atomic_store_release_int(&t->refs, 2); /* the draw's and the cache's */
 
-	m_hr_colbuf.resize(n);
-	addr = m_hr_colbuf.data();
+	addr = HiresColBuf(n);
+	if (!addr)
+	{
+		memalign_free(t->texels);
+		memalign_free(t);
+		return nullptr;
+	}
 
 	for (y = r.top; y < r.bottom; y++)
 	{

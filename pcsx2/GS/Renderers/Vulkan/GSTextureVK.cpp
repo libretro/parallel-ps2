@@ -58,6 +58,7 @@ GSTextureVK::GSTextureVK(Type type, Format format, int width, int height, int le
 	, m_view(view)
 	, m_vk_format(vk_format)
 {
+	gs_array_init(&m_framebuffers, sizeof(LinkedFramebuffer));
 	m_ops = &s_vulkan_texture_ops;
 	m_type = type;
 	m_format = format;
@@ -69,6 +70,7 @@ GSTextureVK::GSTextureVK(Type type, Format format, int width, int height, int le
 GSTextureVK::~GSTextureVK()
 {
 	Destroy(true);
+	gs_array_free(&m_framebuffers);
 }
 
 std::unique_ptr<GSTextureVK> GSTextureVK::Create(Type type, Format format, int width, int height, int levels)
@@ -190,28 +192,29 @@ void GSTextureVK::Destroy(bool defer)
 
 	if (m_type == Type::RenderTarget || m_type == Type::DepthStencil)
 	{
-		for (const auto& [other_tex, fb, feedback] : m_framebuffers)
+		for (size_t n = 0; n < m_framebuffers.count; n++)
 		{
+			const LinkedFramebuffer& lfb = GS_ARRAY_AT(&m_framebuffers, LinkedFramebuffer, n);
+			GSTextureVK* other_tex = lfb.other;
 			if (other_tex)
 			{
-				for (auto other_it = other_tex->m_framebuffers.begin(); other_it != other_tex->m_framebuffers.end();
-					 ++other_it)
+				gs_array_t* others = &other_tex->m_framebuffers;
+				for (size_t m = 0; m < others->count; m++)
 				{
-					if (std::get<0>(*other_it) == this)
+					if (GS_ARRAY_AT(others, LinkedFramebuffer, m).other == this)
 					{
-						other_tex->m_framebuffers.erase(other_it);
+						gs_array_erase(others, m);
 						break;
 					}
 				}
 			}
 
 			if (defer)
-				GSDeviceVK::GetInstance()->DeferFramebufferDestruction(fb);
+				GSDeviceVK::GetInstance()->DeferFramebufferDestruction(lfb.fb);
 			else
-				vkDestroyFramebuffer(vk_init_info.device, fb, nullptr);
-
+				vkDestroyFramebuffer(vk_init_info.device, lfb.fb, nullptr);
 		}
-		m_framebuffers.clear();
+		m_framebuffers.count = 0;
 	}
 
 		if (m_view != VK_NULL_HANDLE)
@@ -728,10 +731,11 @@ VkFramebuffer GSTextureVK::GetFramebuffer(bool feedback_loop) { return GetLinked
 
 VkFramebuffer GSTextureVK::GetLinkedFramebuffer(GSTextureVK* depth_texture, bool feedback_loop)
 {
-	for (const auto& [other_tex, fb, other_feedback_loop] : m_framebuffers)
+	for (size_t n = 0; n < m_framebuffers.count; n++)
 	{
-		if (other_tex == depth_texture && other_feedback_loop == feedback_loop)
-			return fb;
+		const LinkedFramebuffer& lfb = GS_ARRAY_AT(&m_framebuffers, LinkedFramebuffer, n);
+		if (lfb.other == depth_texture && lfb.feedback_loop == feedback_loop)
+			return lfb.fb;
 	}
 
 	VkRenderPass rp = GSDeviceVK::GetInstance()->GetRenderPass(
@@ -754,9 +758,27 @@ VkFramebuffer GSTextureVK::GetLinkedFramebuffer(GSTextureVK* depth_texture, bool
 	if (!fb)
 		return VK_NULL_HANDLE;
 
-	m_framebuffers.emplace_back(depth_texture, fb, feedback_loop);
-	if (depth_texture)
-		depth_texture->m_framebuffers.emplace_back(this, fb, feedback_loop);
+	LinkedFramebuffer* mine = static_cast<LinkedFramebuffer*>(gs_array_push(&m_framebuffers));
+	LinkedFramebuffer* theirs = depth_texture ? static_cast<LinkedFramebuffer*>(gs_array_push(&depth_texture->m_framebuffers)) : nullptr;
+	if (!mine || (depth_texture && !theirs))
+	{
+		/* (whichever was pushed comes back off) */
+		if (mine)
+			m_framebuffers.count--;
+		if (theirs)
+			depth_texture->m_framebuffers.count--;
+		vkDestroyFramebuffer(vk_init_info.device, fb, nullptr);
+		return VK_NULL_HANDLE;
+	}
+	mine->other         = depth_texture;
+	mine->fb            = fb;
+	mine->feedback_loop = feedback_loop;
+	if (theirs)
+	{
+		theirs->other         = this;
+		theirs->fb            = fb;
+		theirs->feedback_loop = feedback_loop;
+	}
 	return fb;
 }
 

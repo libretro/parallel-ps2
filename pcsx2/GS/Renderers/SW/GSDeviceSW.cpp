@@ -27,6 +27,7 @@
 #include "common/VectorIntrin.h"
 #include "GS/GSExtra.h"
 #include "GS/Renderers/SW/GSDeviceSW.h"
+#include "GS/Renderers/Common/GSScratch.h"
 
 extern retro_environment_t    environ_cb;
 extern retro_video_refresh_t  video_cb;
@@ -1284,8 +1285,12 @@ GSDeviceSW::GSDeviceSW()
 	m_ops = &s_sw_device_ops;
 }
 
+/* MadFields' per-row working set, kept between frames (GSScratch.h). */
+static struct gs_scratch s_scratch_mad;
+
 GSDeviceSW::~GSDeviceSW()
 {
+	gs_scratch_free(&s_scratch_mad);
 	memalign_free(m_present_buffer);
 	m_present_buffer = NULL;
 }
@@ -1509,9 +1514,11 @@ void GSDeviceSW::DoInterlace(GSTexture* sTex, const GSVector4& /*sRect*/, GSText
 
 			if (half_fields)
 			{
-				std::vector<u8> scratch(static_cast<size_t>(pcsx2_min_i(src_w, dst_w)) * (4 * 8 + sizeof(float) * 7));
-				MadFields(src_buf, src_p, src_w, src_h,
-					dst_buf, dst_p, dst_w, dst_h, idx_int, block, scratch.data());
+				u8* scratch = static_cast<u8*>(gs_scratch_get(&s_scratch_mad,
+					static_cast<size_t>(pcsx2_min_i(src_w, dst_w)) * (4 * 8 + sizeof(float) * 7)));
+				if (scratch)
+					MadFields(src_buf, src_p, src_w, src_h,
+						dst_buf, dst_p, dst_w, dst_h, idx_int, block, scratch);
 			}
 			else
 			{

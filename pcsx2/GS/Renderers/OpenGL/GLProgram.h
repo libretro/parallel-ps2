@@ -18,6 +18,7 @@
 #include "glad.h"
 #include <string_view>
 #include <vector>
+#include "GS/Renderers/Common/GSArray.h"
 
 class GLProgram
 {
@@ -91,5 +92,5 @@ class GLProgram
 		GLuint m_vertex_shader_id = 0;
 		GLuint m_fragment_shader_id = 0;
 
-		std::vector<GLint> m_uniform_locations;
+		gs_array_t m_uniform_locations; /* of GLint, in RegisterUniform order */
 };
