@@ -23,5 +23,7 @@ ${CXX:-c++} -O1 -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 -w $SANFLAGS \
 ${CC:-cc} -O1 -std=c89 -pedantic -Wall $SANFLAGS -I"$ROOT/pcsx2" -c "$DIR/main.c" -o "$TMP/main.o"
 ${CC:-cc} -O1 -w -I"$LRC/include" -c "$LRC/memmap/memalign.c"       -o "$TMP/memalign.o"
 ${CC:-cc} -O1 -w -I"$LRC/include" -c "$LRC/features/features_cpu.c" -o "$TMP/cpu.o"
+${CC:-cc} -O1 -std=c89 -pedantic -Wall -Wno-long-long $SANFLAGS -I"$ROOT/pcsx2" -c "$ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c" -o "$TMP/flatmap.o"
+${CC:-cc} -O1 -std=c89 -pedantic -Wall -Wno-long-long $SANFLAGS -I"$ROOT/pcsx2" -c "$ROOT/pcsx2/GS/GSPage2Tile.c" -o "$TMP/page2tile.o"
 ${CXX:-c++} -O1 $SANFLAGS "$TMP"/*.o -o "$TMP/gssearch"
 "$TMP/gssearch"
