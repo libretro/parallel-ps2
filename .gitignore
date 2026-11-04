@@ -264,6 +264,7 @@ tests/ata/*.img
 /tests/gstc/park_flush
 /tests/gsautoflush/autoflush_select
 /tests/gsautoflush/pixel_feedback
+/tests/gsautoflush/runs_groups
 /tests/gscopyrect/copyrect_dest
 /tests/gsupscale/hires_mem
 /tests/gsupscale/native_taps

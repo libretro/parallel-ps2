@@ -361,6 +361,10 @@ bool GSDeviceOGL::CheckFeatures(bool& buggy_pbo)
 		m_features.texture_barrier = m_features.framebuffer_fetch || GLAD_GL_ARB_texture_barrier || nv_texture_barrier;
 	if (!m_features.texture_barrier)
 		log_cb(RETRO_LOG_WARN, "GL_ARB_texture_barrier is not supported, blending will not be accurate.\n");
+	/* A real glTextureBarrier, not framebuffer fetch alone: it orders the
+	 * texel fetches of a draw sampling its target against the writes
+	 * before it, wherever they are. */
+	m_features.texture_feedback = GSConfig.OverrideTextureBarriers != 0 && (GLAD_GL_ARB_texture_barrier || nv_texture_barrier);
 
 	// The colour clip accumulation needs a render target that holds a 16-bit
 	// integer per channel, and its blended sums, exactly. ES renders to UNORM16

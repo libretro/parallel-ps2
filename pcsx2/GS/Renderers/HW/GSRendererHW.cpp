@@ -140,6 +140,8 @@ GSRendererHW::~GSRendererHW()
 {
 	free(m_runs_index);
 	m_runs_index = nullptr;
+	free(m_runs_groups);
+	m_runs_groups = nullptr;
 	m_runs_index_cap = 0;
 	memalign_free(m_sw_vertex_buffer);
 	m_sw_vertex_buffer   = nullptr;
@@ -6174,6 +6176,7 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 	// Detect framebuffer read that will need special handling
 	const GSTextureCache::Target* src_target = nullptr;
 	m_runs_copy.dst = nullptr;
+	m_runs_direct = false;
 	if (rt && m_conf.tex == m_conf.rt)
 	{
 		// Can we read the framebuffer directly? (i.e. sample location matches up).
@@ -6191,6 +6194,31 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 			unscaled_size = rt->GetUnscaledSize();
 			scale = rt->GetScale();
 			return;
+		}
+
+		/* A batch drawn as runs, on a device that samples its target
+		 * anywhere behind a texture barrier: read in place, so nothing is
+		 * copied. Every texel read, a texel out for filtering, has to be
+		 * inside the texture and the target both, where a sampler bound to
+		 * the target reads what one bound to a copy of the texture's size
+		 * would. RenderRunsInPlace groups the runs. */
+		if (m_af_seg_count && g_gs_device->Features().texture_feedback && !target_region &&
+			!m_texture_shuffle_info && !m_channel_shuffle && !m_downscale_source)
+		{
+			const GSVector2i rt_size = rt->GetUnscaledSize();
+			const int lim_x = pcsx2_min_i(1 << m_cached_ctx.TEX0.TW, rt_size.x);
+			const int lim_y = pcsx2_min_i(1 << m_cached_ctx.TEX0.TH, rt_size.y);
+			const GSVector4i c = tmm.coverage;
+			const int m = m_vt.IsLinear() ? 1 : 0;
+			if (c.x >= m && c.y >= m && c.z + m <= lim_x && c.w + m <= lim_y)
+			{
+				m_runs_direct = true;
+				m_runs_rt_size = rt_size;
+				m_runs_rt_scale = rt->GetScale();
+				unscaled_size = rt_size;
+				scale = m_runs_rt_scale;
+				return;
+			}
 		}
 
 		src_target = rt;
@@ -6472,11 +6500,31 @@ void GSRendererHW::RenderRuns()
 	u32 r, p0, p1, k, vmin, vmax;
 	u16* grown;
 
+	GSTexture* own_copy = nullptr;
+
 	/* Every path of the draw's setup gives its primitives a fixed count of
 	 * indices, or of vertices when the vertex shader expands them. */
-	if (ipp == 0 || prims * ipp != m_conf.nindices || (expand && m_conf.nverts < prims * vpp))
+	const bool shaped = ipp != 0 && prims * ipp == m_conf.nindices && (!expand || m_conf.nverts >= prims * vpp);
+
+	if (m_runs_direct)
+	{
+		if (shaped && RenderRunsInPlace())
+			return;
+		/* Read from a copy of the whole target after all, of its size, so
+		 * the draw's texture setup holds for it as it is. */
+		if (!CopyWholeTargetForRuns())
+		{
+			m_conf.tex = nullptr;
+			m_conf.ps.tfx = 4;
+			g_gs_device->RenderHW(m_conf);
+			return;
+		}
+		own_copy = m_runs_copy.dst;
+	}
+	if (!shaped)
 	{
 		g_gs_device->RenderHW(m_conf);
+		g_gs_device->Recycle(own_copy);
 		return;
 	}
 	/* The draw kept the batch's primitives one for one, in order, so the
@@ -6562,6 +6610,150 @@ void GSRendererHW::RenderRuns()
 		p0 = p1;
 	}
 	memcpy(&m_conf, &m_runs_conf, sizeof(m_conf));
+	g_gs_device->Recycle(own_copy);
+}
+
+/* Whether two unscaled rects share a texel. */
+static bool runs_overlap(const GSVector4i& a, const GSVector4i& b)
+{
+	return a.x < b.z && b.x < a.z && a.y < b.w && b.y < a.w;
+}
+
+/* The batch reading its target in place, as one draw in groups with a
+ * texture barrier before each: a primitive starts a group when it reads
+ * where the group wrote or writes where it read (or, when the pixels
+ * blend with what is under them, where it wrote), so within a group no
+ * texel is both fetched and written and every write before the group is
+ * visible to it. Each primitive's rects are taken from its vertices as
+ * the draw has them, the writes a pixel out and the reads a texel out
+ * when filtered. False, having drawn nothing, when a primitive reads
+ * what it writes, or the draw takes a second pass over the target or
+ * draws to anything but it. */
+bool GSRendererHW::RenderRunsInPlace()
+{
+	const u32 ipp = m_conf.indices_per_prim;
+	const u32 prims = m_conf.nindices / ipp;
+	const bool expand = (m_conf.vs.expand != GSHWDrawConfig::VSExpand::None);
+	const u32 per = expand ? ((m_conf.vs.expand == GSHWDrawConfig::VSExpand::Point) ? 1u : 2u) : ipp;
+	const bool blend_reads = m_conf.require_full_barrier || m_conf.drawlist != nullptr;
+	const float ofx = static_cast<float>(m_context->XYOFFSET.OFX);
+	const float ofy = static_cast<float>(m_context->XYOFFSET.OFY);
+	const float tw = static_cast<float>(1 << m_cached_ctx.TEX0.TW);
+	const float th = static_cast<float>(1 << m_cached_ctx.TEX0.TH);
+	const int pad = m_conf.sampler.biln ? 1 : 0;
+	const GSVector4i whole = GSVector4i(0, 0, m_runs_rt_size.x, m_runs_rt_size.y);
+	const GSVertex* v;
+	GSVector4i rd, wr, group_rd, group_wr;
+	float x, y, u, t, q;
+	float xmin, ymin, xmax, ymax, umin, vmin, umax, vmax;
+	bool all;
+	u32 n = 0, p, j, vi;
+	u32* grown;
+
+	if (m_conf.colclip_mode != GSHWDrawConfig::ColClipMode::NoModify || m_conf.alpha_second_pass.enable ||
+		m_conf.destination_alpha == GSHWDrawConfig::DestinationAlphaMode::PrimIDTracking)
+		return false;
+	if (m_runs_groups_cap < prims)
+	{
+		grown = static_cast<u32*>(realloc(m_runs_groups, sizeof(u32) * prims));
+		if (!grown)
+			return false;
+		m_runs_groups = grown;
+		m_runs_groups_cap = prims;
+	}
+
+	group_rd = GSVector4i::zero();
+	group_wr = GSVector4i::zero();
+	for (p = 0; p < prims; p++)
+	{
+		xmin = ymin = umin = vmin = 1e30f;
+		xmax = ymax = umax = vmax = -1e30f;
+		all = false;
+		for (j = 0; j < per; j++)
+		{
+			vi = expand ? (p * per + j) : m_conf.indices[p * ipp + j];
+			v = &m_conf.verts[vi];
+			x = (static_cast<float>(v->XYZ.X) - ofx) / 16.0f;
+			y = (static_cast<float>(v->XYZ.Y) - ofy) / 16.0f;
+			xmin = pcsx2_min_f(xmin, x);
+			xmax = pcsx2_max_f(xmax, x);
+			ymin = pcsx2_min_f(ymin, y);
+			ymax = pcsx2_max_f(ymax, y);
+			if (PRIM->FST)
+			{
+				u = static_cast<float>(v->U) / 16.0f;
+				t = static_cast<float>(v->V) / 16.0f;
+			}
+			else
+			{
+				q = v->RGBAQ.Q;
+				if (!(q != 0.0f))
+				{
+					all = true;
+					continue;
+				}
+				u = v->ST.S / q * tw;
+				t = v->ST.T / q * th;
+			}
+			if (!(u >= 0.0f && t >= 0.0f && u <= tw && t <= th))
+				all = true;
+			umin = pcsx2_min_f(umin, u);
+			umax = pcsx2_max_f(umax, u);
+			vmin = pcsx2_min_f(vmin, t);
+			vmax = pcsx2_max_f(vmax, t);
+		}
+		wr = GSVector4i(static_cast<int>(floorf(xmin)) - 1, static_cast<int>(floorf(ymin)) - 1,
+			static_cast<int>(ceilf(xmax)) + 1, static_cast<int>(ceilf(ymax)) + 1);
+		if (all)
+			rd = whole;
+		else
+			rd = GSVector4i(static_cast<int>(floorf(umin)) - pad, static_cast<int>(floorf(vmin)) - pad,
+				static_cast<int>(ceilf(umax)) + pad, static_cast<int>(ceilf(vmax)) + pad);
+		if (runs_overlap(rd, wr))
+			return false;
+		if (n == 0 || runs_overlap(rd, group_wr) || runs_overlap(wr, group_rd) || (blend_reads && runs_overlap(wr, group_wr)))
+		{
+			m_runs_groups[n++] = 0;
+			group_rd = rd;
+			group_wr = wr;
+		}
+		else
+		{
+			group_rd = group_rd.runion(rd);
+			group_wr = group_wr.runion(wr);
+		}
+		m_runs_groups[n - 1]++;
+	}
+
+	m_conf.drawlist = m_runs_groups;
+	m_conf.drawlist_count = n;
+	g_gs_device->RenderHW(m_conf);
+	return true;
+}
+
+/* A copy of the whole render target, of its size, read in place of it:
+ * the copy RenderRuns refreshes run by run. */
+bool GSRendererHW::CopyWholeTargetForRuns()
+{
+	GSTexture* const src = m_conf.rt;
+	GSTexture* copy;
+
+	if (!src)
+		return false;
+	copy = g_gs_device->CreateRenderTarget(src->GetWidth(), src->GetHeight(), src->GetFormat(), true);
+	if (!copy)
+		return false;
+	g_gs_device->StretchRect(src, GSVector4::cxpr(0.0f, 0.0f, 1.0f, 1.0f), copy,
+		GSVector4(0.0f, 0.0f, static_cast<float>(src->GetWidth()), static_cast<float>(src->GetHeight())),
+		ShaderConvert::COPY, false);
+	m_runs_copy.src = src;
+	m_runs_copy.dst = copy;
+	m_runs_copy.range = GSVector4i(0, 0, m_runs_rt_size.x, m_runs_rt_size.y);
+	m_runs_copy.offset = GSVector4i::zero();
+	m_runs_copy.src_size = m_runs_rt_size;
+	m_runs_copy.scale = m_runs_rt_scale;
+	m_conf.tex = copy;
+	return true;
 }
 
 bool GSRendererHW::CanUseTexIsFB(const GSTextureCache::Target* rt, const GSTextureCache::Source* tex,
@@ -7444,10 +7636,11 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 	m_conf.drawlist       = (m_conf.require_full_barrier && m_vt.m_primclass == GS_SPRITE_CLASS) ? GS_ARRAY_ITEMS(&m_drawlist, const u32) : nullptr;
 	m_conf.drawlist_count = m_conf.drawlist ? static_cast<u32>(m_drawlist.count) : 0;
 
-	/* Segments read from a copy of the target, refreshed run by run. A
-	 * batch reading the target in place sees every earlier write as it
-	 * is, and one reading anything else read it before the batch. */
-	if (m_af_seg_count && m_runs_copy.dst)
+	/* Segments read from a copy of the target, refreshed run by run, or
+	 * from the target in place behind a barrier a group of runs. A batch
+	 * reading its own pixels in place sees every earlier write as it is,
+	 * and one reading anything else read it before the batch. */
+	if (m_af_seg_count && (m_runs_copy.dst || m_runs_direct))
 		RenderRuns();
 	else
 		g_gs_device->RenderHW(m_conf);

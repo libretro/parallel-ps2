@@ -826,6 +826,7 @@ public:
 		bool dual_source_blend    : 1; ///< Supports a second fragment output (SRC1) as a hardware blend factor.
 		bool colclip_hw           : 1; ///< Has a render target format that holds a 16-bit integer per channel exactly, for the colour clip accumulation.
 		bool indexed4_conversion  : 1; ///< ConvertToIndexedTexture also builds a PSMT4 view of a PSMCT32 target.
+		bool texture_feedback     : 1; ///< A draw can sample its render target anywhere, a texture barrier making the writes before it visible.
 		FeatureSupport()
 		{
 			memset(this, 0, sizeof(*this));

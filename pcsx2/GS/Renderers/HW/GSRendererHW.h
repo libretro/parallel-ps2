@@ -174,6 +174,8 @@ private:
 	 * batches can be, and the draw of one as a run per segment, the copy
 	 * of the target it reads refreshed for each run's texels in turn. */
 	void RenderRuns();
+	bool RenderRunsInPlace();
+	bool CopyWholeTargetForRuns();
 	void RefreshRunsCopy(u32 vmin, u32 vmax);
 
 	void EmulateZbuffer(const GSTextureCache::Target* ds);
@@ -384,6 +386,14 @@ private:
 	u32 m_runs_index_cap = 0;
 	u32 m_runs_prims = 0;
 	u32 m_runs_n_gs = 3;
+	/* The batch reads the target in place (HandleTextureHazards), its
+	 * runs grouped by RenderRunsInPlace; the target's unscaled size and
+	 * scale, for a copy of the whole of it should the grouping not hold. */
+	u32* m_runs_groups = nullptr;
+	GSVector2i m_runs_rt_size = {};
+	float m_runs_rt_scale = 1.0f;
+	u32 m_runs_groups_cap = 0;
+	bool m_runs_direct = false;
 	HWCachedCtx m_cached_ctx;
 
 	/* software sprite renderer state: the vertices of the draw in hand,
