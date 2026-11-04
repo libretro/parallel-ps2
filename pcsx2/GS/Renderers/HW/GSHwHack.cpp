@@ -234,38 +234,6 @@ bool GSHwHack::GSC_DTGames(GSRendererHW& r, int& skip)
 	return true;
 }
 
-bool GSHwHack::GSC_BlackAndBurnoutSky(GSRendererHW& r, int& skip)
-{
-	if (skip != 0)
-		return true;
-
-	const GIFRegTEX0& TEX0 = RTEX0;
-	const GIFRegFRAME& FRAME = RFRAME;
-	const GIFRegALPHA& ALPHA = RCONTEXT->ALPHA;
-
-	if (RPRIM->PRIM == GS_SPRITE && !RPRIM->IIP && RPRIM->TME && !RPRIM->FGE && RPRIM->ABE && !RPRIM->AA1 && !RPRIM->FST && !RPRIM->FIX &&
-		ALPHA.A == ALPHA.B && ALPHA.D == 0 && FRAME.PSM == PSMCT32 && TEX0.CPSM == PSMCT32 && TEX0.TCC && !TEX0.TFX && !TEX0.CSM)
-	{
-		if (TEX0.TBW == 16 && TEX0.TW == 10 && TEX0.PSM == PSMT8 && TEX0.TH >= 7 && FRAME.FBW == 16)
-		{
-			// Readback clouds being rendered during level loading.
-			// Later the alpha channel from the 32 bit frame buffer is used as an 8 bit indexed texture to draw
-			// the clouds on top of the sky at each frame.
-			// Burnout 3 PAL 50Hz: 0x3ba0 => 0x1e80.
-			r.SwPrimRender(r, true, false);
-			skip = 1;
-		}
-		if (TEX0.TBW == 2 && TEX0.TW == 7 && ((TEX0.PSM == PSMT4 && FRAME.FBW == 3) || (TEX0.PSM == PSMT8 && FRAME.FBW == 2)) && TEX0.TH == 6 && (FRAME.FBMSK & 0xFFFFFF) == 0xFFFFFF)
-		{
-			// Rendering of the glass smashing effect and some chassis decal in to the alpha channel of the FRAME on boot (before the menu).
-			// This gets ejected from the texture cache due to old age, but never gets written back.
-			r.SwPrimRender(r, true, false);
-			skip = 1;
-		}
-	}
-	return true;
-}
-
 bool GSHwHack::GSC_MidnightClub3(GSRendererHW& r, int& skip)
 {
 	if (skip == 0)
@@ -983,7 +951,6 @@ const GSHwHack::Entry<GSRendererHW::GSC_Ptr> GSHwHack::s_get_skip_count_function
 	CRC_F(GSC_TalesOfLegendia),
 	CRC_F(GSC_TalesofSymphonia),
 	CRC_F(GSC_UrbanReign),
-	CRC_F(GSC_BlackAndBurnoutSky),
 	CRC_F(GSC_BlueTongueGames),
 	CRC_F(GSC_Battlefield2),
 	CRC_F(GSC_NFSUndercover),
