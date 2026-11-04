@@ -202,7 +202,11 @@ void GSRendererHW::Reset(bool hardware_reset)
 	 * A load of a state this instance took gets the targets back as they
 	 * were when it was taken; any other reset or load starts without. */
 	if (!(m_state_loading && GSSnapshotLoad && g_texture_cache->RestoreTargets(GSSnapshotKey)))
+	{
+		if (m_state_loading)
+			g_texture_cache->TargetsRestored();
 		g_texture_cache->RemoveAll(true, true, false);
+	}
 
 	ResetBase(hardware_reset);
 }

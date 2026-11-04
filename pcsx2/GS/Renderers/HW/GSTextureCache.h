@@ -761,6 +761,7 @@ public:
 	void RemoveAll(bool sources, bool targets, bool hash_cache);
 	void ReadbackAll();
 	void MemRestored(const u32* changed);
+	void TargetsRestored();
 
 	/* Copies every target, on the GPU, under `key`. */
 	void SnapshotTargets(u64 key);

@@ -2685,6 +2685,84 @@ static void case_block_offset_read(void)
 	s_expect_run[1] = 0x00445566ul;
 }
 
+
+/* A buffer one page wide at page 15, one colour, its left half at alpha
+ * 0x80 and its right half at alpha 0x20, drawn once. Every frame after:
+ * a blended draw three pages wide at page 7 of that colour, its alpha
+ * masked, covers the page; then a sprite into the frame at page 0 reads the
+ * page-15 buffer as a texture, twice as wide, blended by its alpha over
+ * black, read back: 64 words of the colour at alpha 0x80, then 64 at a
+ * quarter of it at alpha 0x20, a row. The alpha the page-15 buffer
+ * holds is the wider buffer's once it takes the page: a read of it
+ * needing alpha finds that, not local memory's. */
+static void case_engulfed_alpha(void)
+{
+	unsigned first;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);
+	qw(20u, 1, GS_ZBUF_1, 0);
+	qw(15u | (1u << 16), 0, GS_FRAME_1, 0);
+	qw(6, 0, GS_PRIM, 0);
+	qw(0x80102030u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(16, 32), 0, GS_XYZ2, 0);
+	qw(0x20102030u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(16, 0), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(32, 32), 0, GS_XYZ2, 0);
+	s_qw[0][0] = (s_qw_count - 1) | 0x8000u;
+	kick(0, s_qw_count, 0);
+	first = s_qw_count;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);
+	qw(20u, 1, GS_ZBUF_1, 0);
+	/* the wider draw taking the page, its alpha masked, blended by a
+	 * fixed alpha of one so it is a draw, not a clear */
+	qw(7u | (3u << 16), 0xFF000000u, GS_FRAME_1, 0);
+	qw(0xA8, 0x80, GS_ALPHA_1, 0);
+	qw(6 | 0x40, 0, GS_PRIM, 0);
+	qw(0x80102030u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 112), 0, GS_XYZ2, 0);
+	/* a sprite below the rows read back, a colour higher each frame */
+	qw(2u << 16, 0, GS_FRAME_1, 0);
+	s_bump_qw = s_qw_count;
+	qw(0x80101010u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(0, 32), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 64), 0, GS_XYZ2, 0);
+	/* the page-15 buffer twice as wide, blended by its alpha over black */
+	qw(0x80000000u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 32), 0, GS_XYZ2, 0);
+	qw(0x44, 0, GS_ALPHA_1, 0);
+	qw(0x1E0u | (1u << 14) | (5u << 26) | (1u << 30),      /* page 15, TBW 1, PSMCT32, TW 5, TH 5 */
+		1u | (1u << 2) | (1u << 3), GS_TEX0_1, 0);         /* TCC, DECAL */
+	qw(0, 0, GS_TEX1_1, 0);
+	qw(0, 0, GS_CLAMP_1, 0);
+	qw(6 | 0x10 | 0x40 | 0x100, 0, GS_PRIM, 0);
+	qw(0, 0, GS_UV, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(32, 32), 0, GS_UV, 0);
+	qw((unsigned)XY(128, 32), 0, GS_XYZ2, 0);
+	qw(2u << 16, 0, GS_BITBLTBUF, 0);
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(128, 32, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);
+	s_qw[first][0] = (s_qw_count - first - 1) | 0x8000u;
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(first, s_qw_count - first, 1);
+	readback(128 * 32 / 4);
+	s_run_frames    = 120;
+	s_expect_run[0] = 0x80102030ul;
+	s_expect_run[1] = 0x2004080Cul;
+}
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -2727,6 +2805,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "alpha_dirtied_parked", case_alpha_dirtied_parked, "1" },
 	{ "palette_engulfed", case_palette_engulfed, "1" },
 	{ "block_offset_read", case_block_offset_read, "1" },
+	{ "engulfed_alpha",  case_engulfed_alpha, "1" },
 	{ "big_triangles",   case_big_triangles, "1" },
 	{ "present",         case_present,       "1" },
 	{ "points",          case_points,        "1" },

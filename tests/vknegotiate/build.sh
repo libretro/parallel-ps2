@@ -196,6 +196,20 @@ for renderer in Vulkan paraLLEl-GS; do
 	fi
 done
 
+# A page a wider buffer takes from a narrower one, read as a texture by
+# its alpha after the wider buffer's draws masked alpha: the narrower
+# buffer's alpha, on both renderers.
+c=engulfed_alpha
+"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+for renderer in Vulkan paraLLEl-GS; do
+	if ! VN_EXPECT_RUN=80102030,2004080c VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=$renderer \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: $c, $renderer"
+		exit 1
+	fi
+done
+
 # Destination alpha a clear wrote and a draw wrote, read back and read by
 # a blend: the same alpha either way, on both renderers.
 "$SCRATCH/swdraw" --bios "$SCRATCH/dest_alpha.bin" dest_alpha

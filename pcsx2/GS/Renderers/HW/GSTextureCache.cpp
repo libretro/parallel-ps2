@@ -363,52 +363,114 @@ bool GSTextureCache::CopyTargetPagesInto(Target* t, Target* dst, const GSVector4
 	const u32 dst_tbw = pcsx2_max_u(dst->m_TEX0.TBW, 1u);
 	const float scale = t->m_scale;
 	const bool whole = t->m_valid_rgb && (t->m_valid_alpha_high || t->m_valid_alpha_low);
+	GSVector4i taken = GSVector4i::zero();
 	u32 rows;
 	u32 pages;
 	u32 rel0;
 	u32 p;
-	int sx;
-	int sy;
-	int dx;
-	int dy;
+	int pass;
 
 	if (!t->m_texture || !dst->m_texture || t->m_scale != dst->m_scale || t->m_TEX0.PSM != dst->m_TEX0.PSM ||
 		GSLocalMemory::m_psm[t->m_TEX0.PSM].bpp != 32 || t->m_texture->IsDepthStencil() ||
 		t->m_TEX0.TBP0 < dst->m_TEX0.TBP0 || ((t->m_TEX0.TBP0 - dst->m_TEX0.TBP0) & (GS_BLOCKS_PER_PAGE - 1)))
 		return false;
 
-	t->Update();
-	dst->Update();
+	/* A channel t holds that dst has not drawn: dst's other pages take
+	 * local memory's, as a target preloaded has them, and the channel is
+	 * dst's from here, so a read of it finds t's pages in dst. */
+	if (((t->m_valid_alpha_low || t->m_valid_alpha_high) && !(dst->m_valid_alpha_low || dst->m_valid_alpha_high)) ||
+		(t->m_valid_rgb && !dst->m_valid_rgb))
+	{
+		RGBAMask rgba;
+		rgba._u32 = ((t->m_valid_rgb && !dst->m_valid_rgb) ? 0x7u : 0u) |
+			(((t->m_valid_alpha_low || t->m_valid_alpha_high) && !(dst->m_valid_alpha_low || dst->m_valid_alpha_high)) ? 0x8u : 0u);
+		AddDirtyRectTarget(dst, dst->m_valid, dst->m_TEX0.PSM, dst->m_TEX0.TBW, rgba, false);
+		if (rgba._u32 & 0x7u)
+			dst->m_valid_rgb = true;
+		if (rgba._u32 & 0x8u)
+		{
+			dst->m_valid_alpha_low = true;
+			dst->m_valid_alpha_high = true;
+		}
+	}
 	rows = (u32)((t->m_unscaled_size.y + pgs.y - 1) / pgs.y);
 	pages = rows * src_tbw;
 	rel0 = (t->m_TEX0.TBP0 - dst->m_TEX0.TBP0) >> 5;
-	for (p = 0; p < pages; p++)
+	/* The first pass finds the pages dst takes; the second copies them,
+	 * once dst is valid over them: a page past what dst drew is dst's
+	 * from here, read back with it, so what dst's validity grows over
+	 * besides is local memory's first. */
+	for (pass = 0; pass < 2; pass++)
 	{
-		const GSVector4i src_rect = GSVector4i((int)(p % src_tbw) * pgs.x, (int)(p / src_tbw) * pgs.y, 0, 0);
-		GSVector4i sr = GSVector4i(src_rect.x, src_rect.y, src_rect.x + pgs.x, src_rect.y + pgs.y).rintersect(t->m_valid);
-		GSVector4i dr;
-
-		sx = src_rect.x;
-		sy = src_rect.y;
-		dx = (int)((rel0 + p) % dst_tbw) * pgs.x;
-		dy = (int)((rel0 + p) / dst_tbw) * pgs.y;
-		if (sr.rempty() || sy >= t->m_unscaled_size.y || dx >= dst->m_unscaled_size.x || dy >= dst->m_unscaled_size.y)
-			continue;
-		dr = GSVector4i(dx + (sr.x - sx), dy + (sr.y - sy), dx + (sr.z - sx), dy + (sr.w - sy));
-		dr = dr.rintersect(GSVector4i(0, 0, dst->m_unscaled_size.x, dst->m_unscaled_size.y));
-		if (dr.rempty() || (!keep_under_draw && !dr.rintersect(draw_rect).rempty()))
-			continue;
-		sr = GSVector4i(sr.x, sr.y, sr.x + dr.width(), sr.y + dr.height());
-		if (whole)
+		if (pass == 1)
 		{
-			g_gs_device->CopyRect(t->m_texture, dst->m_texture,
-				GSVector4i(GSVector4(sr) * GSVector4(scale)), (u32)((float)dr.x * scale), (u32)((float)dr.y * scale));
+			if (!taken.rempty() && !dst->m_valid.rintersect(taken).eq(taken))
+			{
+				const GSVector4i old_valid = dst->m_valid;
+				RGBAMask rgba;
+				rgba._u32 = 0xF;
+				dst->UpdateValidity(taken);
+				if (dst->m_valid.z > old_valid.z)
+					AddDirtyRectTarget(dst, GSVector4i(old_valid.z, dst->m_valid.y, dst->m_valid.z, dst->m_valid.w), dst->m_TEX0.PSM, dst->m_TEX0.TBW, rgba, false);
+				if (dst->m_valid.w > old_valid.w)
+					AddDirtyRectTarget(dst, GSVector4i(dst->m_valid.x, old_valid.w, old_valid.z, dst->m_valid.w), dst->m_TEX0.PSM, dst->m_TEX0.TBW, rgba, false);
+			}
+			/* Read back with what dst drew: local memory gets them from
+			 * dst, as t's they are no longer. */
+			if (!taken.rempty())
+				dst->UpdateDrawn(taken, true);
+			t->Update();
+			dst->Update();
+			/* The alpha dst may hold spans t's too: a blend by the alpha
+			 * of a page copied in is not skipped for dst's alone being
+			 * flat. */
+			if (t->m_valid_alpha_low || t->m_valid_alpha_high)
+			{
+				dst->m_alpha_min = pcsx2_min_i(dst->m_alpha_min, t->m_alpha_min);
+				dst->m_alpha_max = pcsx2_max_i(dst->m_alpha_max, t->m_alpha_max);
+				dst->m_alpha_range |= t->m_alpha_range;
+			}
+			/* Both keep their alpha as the GS does, or the copy would carry
+			 * one target's scaling into the other; as the GS does rather
+			 * than scaled, which an alpha past 0x80 cannot be. */
+			if (t->m_rt_alpha_scale)
+				t->UnscaleRTAlpha();
+			if (dst->m_rt_alpha_scale)
+				dst->UnscaleRTAlpha();
 		}
-		else
+		for (p = 0; p < pages; p++)
 		{
-			g_gs_device->StretchRect(t->m_texture, GSVector4(sr) / GSVector4(t->m_texture->GetSize()).xyxy(),
-				dst->m_texture, GSVector4(dr) * GSVector4(scale),
-				t->m_valid_rgb, t->m_valid_rgb, t->m_valid_rgb, t->m_valid_alpha_high || t->m_valid_alpha_low);
+			const GSVector4i src_rect = GSVector4i((int)(p % src_tbw) * pgs.x, (int)(p / src_tbw) * pgs.y, 0, 0);
+			GSVector4i sr = GSVector4i(src_rect.x, src_rect.y, src_rect.x + pgs.x, src_rect.y + pgs.y).rintersect(t->m_valid);
+			GSVector4i dr;
+			const int sx = src_rect.x;
+			const int sy = src_rect.y;
+			const int dx = (int)((rel0 + p) % dst_tbw) * pgs.x;
+			const int dy = (int)((rel0 + p) / dst_tbw) * pgs.y;
+
+			if (sr.rempty() || sy >= t->m_unscaled_size.y || dx >= dst->m_unscaled_size.x || dy >= dst->m_unscaled_size.y)
+				continue;
+			dr = GSVector4i(dx + (sr.x - sx), dy + (sr.y - sy), dx + (sr.z - sx), dy + (sr.w - sy));
+			dr = dr.rintersect(GSVector4i(0, 0, dst->m_unscaled_size.x, dst->m_unscaled_size.y));
+			if (dr.rempty() || (!keep_under_draw && !dr.rintersect(draw_rect).rempty()))
+				continue;
+			if (pass == 0)
+			{
+				taken = taken.rempty() ? dr : taken.runion(dr);
+				continue;
+			}
+			sr = GSVector4i(sr.x, sr.y, sr.x + dr.width(), sr.y + dr.height());
+			if (whole)
+			{
+				g_gs_device->CopyRect(t->m_texture, dst->m_texture,
+					GSVector4i(GSVector4(sr) * GSVector4(scale)), (u32)((float)dr.x * scale), (u32)((float)dr.y * scale));
+			}
+			else
+			{
+				g_gs_device->StretchRect(t->m_texture, GSVector4(sr) / GSVector4(t->m_texture->GetSize()).xyxy(),
+					dst->m_texture, GSVector4(dr) * GSVector4(scale),
+					t->m_valid_rgb, t->m_valid_rgb, t->m_valid_rgb, t->m_valid_alpha_high || t->m_valid_alpha_low);
+			}
 		}
 	}
 	return true;
@@ -2986,8 +3048,11 @@ GSTextureCache::Target* GSTextureCache::CreateTarget(GIFRegTEX0 TEX0, const GSVe
 
 	dst->m_last_draw = GSState::s_n;
 
-	if (dst->m_dirty.empty() && GSLocalMemory::m_psm[TEX0.PSM].depth == 0 && (GSUtil::GetChannelMask(TEX0.PSM) & 0x8))
-		dst->m_rt_alpha_scale = true;
+	/* Scaled, with what the target already holds (pages taken from an
+	 * older target) scaled along; not past an alpha of 0x80, which does
+	 * not scale. */
+	if (dst->m_dirty.empty() && GSLocalMemory::m_psm[TEX0.PSM].depth == 0 && (GSUtil::GetChannelMask(TEX0.PSM) & 0x8) && dst->m_alpha_max <= 128)
+		dst->ScaleRTAlpha();
 	else
 		dst->m_last_draw += 1; // If we preload and it needs to decorrect and we couldn't catch it early, we need to make sure it decorrects the data.
 
@@ -7607,6 +7672,35 @@ void GSTextureCache::MemRestored(const u32* changed)
 	u32 i;
 	for (i = 0; i < GS_MAX_PAGES / 32; i++)
 		m_restored_pages[i] |= changed[i];
+}
+
+/* The targets go without a readback, local memory about to be replaced:
+ * over their pages it is what a target starts from, the state's page or
+ * the one it matched. */
+void GSTextureCache::TargetsRestored()
+{
+	int type;
+	for (type = 0; type < 2; type++)
+	{
+		FastListIterator<Target*> it = m_dst[type].begin();
+		const FastListIterator<Target*> end = m_dst[type].end();
+		for (; it != end; ++it)
+		{
+			const Target* t = *it;
+			const GSVector2i pgs = GSLocalMemory::m_psm[t->m_TEX0.PSM].pgs;
+			const u32 tbw = pcsx2_max_u(t->m_TEX0.TBW, 1u);
+			const GSVector4i r = t->m_valid;
+			int px, py;
+			for (py = r.y / pgs.y; py < (r.w + pgs.y - 1) / pgs.y; py++)
+			{
+				for (px = r.x / pgs.x; px < (r.z + pgs.x - 1) / pgs.x; px++)
+				{
+					const u32 page = ((t->m_TEX0.TBP0 >> 5) + (u32)py * tbw + (u32)px) & (GS_MAX_PAGES - 1);
+					m_restored_pages[page >> 5] |= 1u << (page & 31);
+				}
+			}
+		}
+	}
 }
 
 /* Whether any page of r at bp holds restored memory no target has taken;
