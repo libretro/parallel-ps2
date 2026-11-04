@@ -38,8 +38,11 @@ jobs:
           # rows.
           - name: asan
             sanflags: '-fsanitize=address -fno-omit-frame-pointer'
+          # Without -fno-sanitize-recover a UBSan report is printed and
+          # the run carries on to a pass, so undefined behaviour never
+          # failed this row.
           - name: ubsan
-            sanflags: '-fsanitize=undefined -fno-omit-frame-pointer'
+            sanflags: '-fsanitize=undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer'
     steps:
       - uses: actions/checkout@v5
         with:
