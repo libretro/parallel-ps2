@@ -692,12 +692,12 @@ u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* e, Pcsx2Config& config,
 	{
 		if (applyAuto)
 		{
-			log_cb(RETRO_LOG_INFO, "(GameDB) Changing EE/FPU divison roundmode to %d [%s]\n", (int)e->eeRoundMode, s_round_modes[static_cast<u8>(e->eeDivRoundMode)]);
+			log_cb(RETRO_LOG_INFO, "(GameDB) Changing EE/FPU divison roundmode to %d [%s]\n", (int)e->eeDivRoundMode, s_round_modes[static_cast<u8>(e->eeDivRoundMode)]);
 			config.Cpu.FPUDivFPCR.SetRoundMode(e->eeDivRoundMode);
 		}
 		else
 		{
-			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing EE/FPU roundmode to %d [%s]\n", (int)e->eeRoundMode, s_round_modes[static_cast<u8>(e->eeRoundMode)]);
+			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing EE/FPU divison roundmode to %d [%s]\n", (int)e->eeDivRoundMode, s_round_modes[static_cast<u8>(e->eeDivRoundMode)]);
 		}
 	}
 
