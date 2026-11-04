@@ -3139,6 +3139,11 @@ void GSRendererHW::Draw()
 			page_x -= (m_r.x / fpgs.x) * fpgs.x;
 			page_y -= (m_r.y / fpgs.y) * fpgs.y;
 		}
+		/* A draw on the owner's pages past its width, within its buffer
+		 * width, widens it there. */
+		if (owner && m_r.x >= 0 && m_r.y >= 0 && page_x + m_r.z > owner->m_unscaled_size.x &&
+			page_y + m_r.w <= owner->m_unscaled_size.y)
+			g_texture_cache->WidenTarget(owner, page_x + m_r.z);
 		if (owner && (m_r.x < 0 || m_r.y < 0 || page_x + m_r.z > owner->m_unscaled_size.x || page_y + m_r.w > owner->m_unscaled_size.y))
 			owner = nullptr;
 		const u32 blocks = owner ? (m_cached_ctx.FRAME.Block() - owner->m_TEX0.TBP0) : 0;
@@ -7584,6 +7589,7 @@ bool GSRendererHW::WriteDepthIntoColourMemory(bool no_rt, bool& no_ds)
 	GSVector2i fpgs;
 	GSTextureCache::Target* rt;
 	GSUploadQueue write;
+	u32 zval;
 	u32 zpage;
 	u32 page;
 	int px;
@@ -7635,8 +7641,12 @@ bool GSRendererHW::WriteDepthIntoColourMemory(bool no_rt, bool& no_ds)
 	if (!rt)
 		return false;
 
-	ClearGSLocalMemory(m_context->offset.zb, r, GetConstantDirectWriteMemClearDepth());
-	g_texture_cache->InvalidateVideoMem(m_context->offset.zb, r, true);
+	zval = GetConstantDirectWriteMemClearDepth();
+	ClearGSLocalMemory(m_context->offset.zb, r, zval);
+	/* The colour target filled with it on the GPU keeps those pages as
+	 * memory now has them; every other target over them reloads them. */
+	g_texture_cache->InvalidateVideoMem(m_context->offset.zb, r, true,
+		FillDepthWriteIntoTarget(rt, r, zval) ? rt : NULL);
 
 	/* A target made over these pages later loads them from memory. */
 	write.draw = s_n;
@@ -7650,6 +7660,87 @@ bool GSRendererHW::WriteDepthIntoColourMemory(bool no_rt, bool& no_ds)
 
 	m_cached_ctx.ZBUF.ZMSK = true;
 	no_ds = true;
+	return true;
+}
+
+/* The pages a constant Z wrote, given the same value in the colour target
+ * holding them by a fill on the GPU, rather than uploaded to it again from
+ * local memory. Only for a target laid out by pages from a page boundary,
+ * keeping 8 bits a channel as memory does; pages past its width within
+ * its buffer width widen it, once. A PSMZ24 write leaves alpha alone. */
+bool GSRendererHW::FillDepthWriteIntoTarget(GSTextureCache::Target* rt, const GSVector4i& r, u32 zval)
+{
+	enum { MAX_FILL_RECTS = 32 };
+	GSVector4i rects[MAX_FILL_RECTS];
+	const bool keep_alpha = (m_cached_ctx.ZBUF.PSM == PSMZ24);
+	const GSVector2i pgs = GSLocalMemory::m_psm[PSMCT32].pgs;
+	const u32 fbw = m_cached_ctx.FRAME.FBW;
+	const u32 tbw = pcsx2_max_u(rt->m_TEX0.TBW, 1u);
+	const u32 tpage = rt->m_TEX0.TBP0 >> 5;
+	GSTexture* fill;
+	GSVector4i pr;
+	u32 n = 0;
+	u32 i;
+	u32 zpage;
+	u32 rel;
+	int need_w = 0;
+	int px;
+	int py;
+	int x;
+	int y;
+
+	if ((rt->m_TEX0.PSM != PSMCT32 && rt->m_TEX0.PSM != PSMCT24) || !rt->m_texture ||
+		rt->m_texture->GetFormat() != GSTexture::Format::Color || (rt->m_TEX0.TBP0 & (GS_BLOCKS_PER_PAGE - 1)) ||
+		(!keep_alpha && rt->m_rt_alpha_scale))
+		return false;
+
+	for (py = r.y / pgs.y; py < r.w / pgs.y; py++)
+	{
+		for (px = r.x / pgs.x; px < r.z / pgs.x; px++)
+		{
+			zpage = m_cached_ctx.ZBUF.ZBP + (u32)py * fbw + (u32)px;
+			if (zpage < tpage)
+				return false;
+			rel = zpage - tpage;
+			x = (int)(rel % tbw) * pgs.x;
+			y = (int)(rel / tbw) * pgs.y;
+			if (y + pgs.y > rt->m_unscaled_size.y)
+				return false;
+			if (x + pgs.x > need_w)
+				need_w = x + pgs.x;
+			pr = GSVector4i(x, y, x + pgs.x, y + pgs.y);
+			if (n && rects[n - 1].x == pr.x && rects[n - 1].z == pr.z && rects[n - 1].w == pr.y)
+				rects[n - 1].w = pr.w;
+			else if (n && rects[n - 1].y == pr.y && rects[n - 1].w == pr.w && rects[n - 1].z == pr.x)
+				rects[n - 1].z = pr.z;
+			else if (n == MAX_FILL_RECTS)
+				return false;
+			else
+				rects[n++] = pr;
+		}
+	}
+
+	if (n == 0 || (need_w > rt->m_unscaled_size.x && !g_texture_cache->WidenTarget(rt, need_w)))
+		return false;
+
+	fill = g_gs_device->CreateRenderTarget(1, 1, GSTexture::Format::Color, false);
+	if (!fill)
+		return false;
+	g_gs_device->ClearRenderTarget(fill, zval);
+	for (i = 0; i < n; i++)
+	{
+		g_gs_device->StretchRect(fill, GSVector4(0.0f, 0.0f, 1.0f, 1.0f), rt->m_texture,
+			GSVector4(rects[i]) * GSVector4(rt->m_scale), true, true, true, !keep_alpha, ShaderConvert::COPY);
+		rt->UpdateValidity(rects[i]);
+	}
+	g_gs_device->Recycle(fill);
+
+	rt->m_valid_rgb = true;
+	if (!keep_alpha)
+	{
+		rt->m_valid_alpha_low = true;
+		rt->m_valid_alpha_high = true;
+	}
 	return true;
 }
 

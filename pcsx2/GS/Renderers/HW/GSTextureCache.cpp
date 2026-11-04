@@ -372,6 +372,29 @@ void GSTextureCache::ResizeTarget(Target* t, GSVector4i rect, u32 tbp, u32 psm, 
 	}
 }
 
+bool GSTextureCache::WidenTarget(Target* t, int new_width)
+{
+	const int old_width = t->m_unscaled_size.x;
+	const int height = t->m_unscaled_size.y;
+	const int max_width = (int)(pcsx2_max_u(t->m_TEX0.TBW, 1u) * (u32)GSLocalMemory::m_psm[t->m_TEX0.PSM].pgs.x);
+	RGBAMask rgba;
+
+	if (new_width <= old_width)
+		return true;
+	if (new_width > max_width || !t->m_texture)
+		return false;
+	/* (sources made from it share the texture the resize recycles) */
+	InvalidateSourcesFromTarget(t);
+	if (!t->ResizeTexture(new_width, height))
+		return false;
+
+	rgba._u32 = GSUtil::GetChannelMask(t->m_TEX0.PSM);
+	AddDirtyRectTarget(t, GSVector4i(old_width, 0, new_width, height), t->m_TEX0.PSM, t->m_TEX0.TBW, rgba);
+	t->UpdateValidity(GSVector4i(old_width, 0, new_width, height));
+	GetTargetSize(t->m_TEX0.TBP0, t->m_TEX0.TBW, t->m_TEX0.PSM, new_width, height);
+	return true;
+}
+
 /* The rect's pages, moved from where an old buffer width put them to where
  * a new one does: the box around them. */
 static GSVector4i relayout_rect(GSVector4i r, GSVector2i pgs, int old_tbw, int tbw)
@@ -3601,7 +3624,7 @@ void GSTextureCache::InvalidateVideoMemType(int type, u32 bp, u32 write_psm, u32
 
 // Goal: invalidate data sent to the GPU when the source (GS memory) is modified
 // Called each time you want to write to the GS memory
-void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& rect, bool target)
+void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& rect, bool target, const Target* keep)
 {
 	const u32 bp = off.bp();
 	const u32 bw = off.bw();
@@ -3732,7 +3755,8 @@ void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& r
 			Target* t = *j;
 
 			// Don't bother checking any further if the target doesn't overlap with the write/invalidation.
-			if ((bp < t->m_TEX0.TBP0 && end_bp < t->m_TEX0.TBP0) || bp > t->UnwrappedEndBlock())
+			// Nor for the one the caller has brought up to date itself.
+			if ((bp < t->m_TEX0.TBP0 && end_bp < t->m_TEX0.TBP0) || bp > t->UnwrappedEndBlock() || t == keep)
 			{
 				++i;
 				continue;
@@ -5030,7 +5054,9 @@ GSTextureCache::Target* GSTextureCache::FindPageOwner(u32 BP, u32 BW, u32 PSM, i
 		tbw = pcsx2_max_u(t->m_TEX0.TBW, 1u);
 		x = static_cast<int>((page % tbw) * pgs.x);
 		y = static_cast<int>((page / tbw) * pgs.y);
-		if (x + pgs.x > t->m_unscaled_size.x || y + pgs.y > t->m_unscaled_size.y)
+		/* Past its width but within its buffer width is still its page:
+		 * the caller widens it there. */
+		if (x + pgs.x > (int)(tbw * (u32)pgs.x) || y + pgs.y > t->m_unscaled_size.y)
 			continue;
 		owner = t;
 		break;

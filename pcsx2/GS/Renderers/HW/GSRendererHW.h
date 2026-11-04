@@ -106,6 +106,7 @@ private:
 	bool DetectDoubleHalfClear(bool& no_rt, bool& no_ds);
 	bool DetectStripedDoubleClear(bool& no_rt, bool& no_ds);
 	bool WriteDepthIntoColourMemory(bool no_rt, bool& no_ds);
+	bool FillDepthWriteIntoTarget(GSTextureCache::Target* rt, const GSVector4i& r, u32 zval);
 	bool DetectRedundantBufferClear(bool& no_rt, bool& no_ds, u32 fm_mask);
 	bool TryTargetClear(GSTextureCache::Target* rt, GSTextureCache::Target* ds, bool preserve_rt_color, bool preserve_depth);
 	void SetNewFRAME(u32 bp, u32 bw, u32 psm);

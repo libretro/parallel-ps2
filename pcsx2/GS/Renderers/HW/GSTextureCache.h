@@ -751,6 +751,10 @@ public:
 	bool RestoreTargets(u64 key);
 	static void AddDirtyRectTarget(Target* target, GSVector4i rect, u32 psm, u32 bw, RGBAMask rgba, bool req_linear = false);
 	void ResizeTarget(Target* t, GSVector4i rect, u32 tbp, u32 psm, u32 tbw);
+	/* Widens t to new_width within its buffer width, once: the width is
+	 * kept for the next target made there. The area gained loads from
+	 * local memory. */
+	bool WidenTarget(Target* t, int new_width);
 	bool RelayoutTarget(Target* t, u32 tbw);
 	static bool FullRectDirty(Target* target, u32 rgba_mask);
 	static bool FullRectDirty(Target* target);
@@ -803,7 +807,7 @@ public:
 	void InvalidateVideoMemType(int type, u32 bp, u32 write_psm = PSMCT32, u32 write_fbmsk = 0, bool dirty_only = false,
 		const Target* keep = nullptr);
 	void InvalidateVideoMemSubTarget(GSTextureCache::Target* rt);
-	void InvalidateVideoMem(const GSOffset& off, const GSVector4i& r, bool target = true);
+	void InvalidateVideoMem(const GSOffset& off, const GSVector4i& r, bool target = true, const Target* keep = nullptr);
 	void InvalidateLocalMem(const GSOffset& off, const GSVector4i& r, bool full_flush = false);
 
 	/// Removes any sources which point to the specified target.
