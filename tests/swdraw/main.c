@@ -63,7 +63,7 @@ static unsigned s_drawn;
  * to hold 64 of each of up to two 32-bit words in a row, as a block of GS
  * memory it filled or a readback it took does. */
 static int s_run_frames = SL_FRAMES;
-static unsigned long s_expect_run[3];
+static unsigned long s_expect_run[4];
 /* A case may ask for its frames to be run again from a savestate taken
  * partway, and to come out the same (see sl_rewind). */
 static int s_rewind;
@@ -2333,6 +2333,101 @@ static void case_column_passes(void)
 	s_expect_run[2] = 0x00404040ul;
 }
 
+/* A 32-bit buffer at page 9, cbw pages wide, has its alpha laid down
+ * once: 0x40 over its left 64 columns and 0xC0 over the next 64 in its
+ * first row of pages, 0x58 and 0xD8 in its second (indices the palette
+ * stores where they are read). Every
+ * frame after, a 24-bit depth buffer at page 8 is written over its
+ * pages, a colour draw at ebp, ebw pages wide, with its alpha masked
+ * writes its RGB over them too, and a sprite
+ * reads its alpha as PSMT8H through a palette of entry i = i*0x01010101
+ * into the frame at page 0, read back: 64 words of 0x40404040 then of
+ * 0xC0C0C0C0 a row, then 0x58585858 and 0xD8D8D8D8, as nothing since the
+ * first frame wrote the alpha. */
+static void alpha_under_depth(unsigned cbw, unsigned ebp, unsigned ebw, unsigned ew)
+{
+	unsigned i, first;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);                     /* A+D, EOP, NLOOP below */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(8u, 1, GS_ZBUF_1, 0);                               /* ZMSK */
+	qw(9u | (cbw << 16), 0, GS_FRAME_1, 0);                /* page 9, PSMCT32 */
+	qw(6, 0, GS_PRIM, 0);                                  /* sprite */
+	qw(0x40202020u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(64, 32), 0, GS_XYZ2, 0);
+	qw(0xC0606060u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(64, 0), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 32), 0, GS_XYZ2, 0);
+	qw(0x58202020u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(0, 32), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(64, 64), 0, GS_XYZ2, 0);
+	qw(0xD8606060u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(64, 32), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 64), 0, GS_XYZ2, 0);
+	qw(0, 0x280u | (1u << 16), GS_BITBLTBUF, 0);           /* the palette at block 0x280, DBW 1 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(16, 16, GS_TRXREG, 0);
+	qw(0, 0, GS_TRXDIR, 0);
+	s_qw[0][0] = (s_qw_count - 1) | 0x8000u;
+	qw(64 | 0x8000u, 0x08000000u, 0, 0);                   /* IMAGE, 64 qw, EOP */
+	for (i = 0; i < 256; i += 4)
+		qw(i * 0x01010101u, (i + 1) * 0x01010101u, (i + 2) * 0x01010101u, (i + 3) * 0x01010101u);
+	kick(0, s_qw_count, 0);
+	first = s_qw_count;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);
+	/* the scene: colour at page 0, Z24 at page 8, two pages wide */
+	qw(2u << 16, 0, GS_FRAME_1, 0);
+	qw(8u | (1u << 24), 0, GS_ZBUF_1, 0);                  /* PSMZ24 */
+	qw(6, 0, GS_PRIM, 0);
+	s_bump_qw = s_qw_count;
+	qw(0x80101010u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0x123456u, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 64), 0x123456u, GS_XYZ2, 0);
+	/* an effect over the buffer's pages, alpha masked */
+	qw(ebp | (ebw << 16), 0xFF000000u, GS_FRAME_1, 0);
+	qw(8u, 1, GS_ZBUF_1, 0);                               /* ZMSK */
+	qw(0x80FF00FFu, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(ew, 64), 0, GS_XYZ2, 0);
+	/* the alpha read as PSMT8H through the palette, into the scene */
+	qw(2u << 16, 0, GS_FRAME_1, 0);
+	qw(0x120u | (cbw << 14) | (0x1Bu << 20) | ((cbw == 2 ? 7u : 8u) << 26) | (2u << 30), /* TW, TH 6 */
+		1u | (1u << 2) | (1u << 3) | (0x280u << 5) | (1u << 29), GS_TEX0_1, 0); /* TH, TCC, DECAL, CBP, CLD */
+	qw(0, 0, GS_TEX1_1, 0);
+	qw(0, 0, GS_CLAMP_1, 0);
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* sprite, TME, FST */
+	qw(0, 0, GS_UV, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 64), 0, GS_UV, 0);
+	qw((unsigned)XY(128, 64), 0, GS_XYZ2, 0);
+	qw(2u << 16, 0, GS_BITBLTBUF, 0);                      /* SBP 0, SBW 2, PSMCT32 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(128, 64, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);                                /* local to host */
+	s_qw[first][0] = (s_qw_count - first - 1) | 0x8000u;
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(first, s_qw_count - first, 1);
+	readback(128 * 64 / 4);
+	s_run_frames    = 120;
+	s_expect_run[0] = 0x40404040ul;
+	s_expect_run[1] = 0xC0C0C0C0ul;
+	s_expect_run[2] = 0x58585858ul;
+	s_expect_run[3] = 0xD8D8D8D8ul;
+}
+
+static void case_alpha_under_depth(void) { alpha_under_depth(2, 9, 2, 128); }
+static void case_alpha_under_depth_wide(void) { alpha_under_depth(4, 9, 4, 256); }
+/* The effect drawn one page wide at the depth buffer's own base. */
+static void case_alpha_under_depth_strip(void) { alpha_under_depth(4, 8, 1, 64); }
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -2369,6 +2464,9 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "upload_clut_between", case_upload_clut_between, "1" },
 	{ "readback_parts",  case_readback_parts, "1" },
 	{ "column_passes",   case_column_passes, "1" },
+	{ "alpha_under_depth", case_alpha_under_depth, "1" },
+	{ "alpha_under_depth_wide", case_alpha_under_depth_wide, "1" },
+	{ "alpha_under_depth_strip", case_alpha_under_depth_strip, "1" },
 	{ "big_triangles",   case_big_triangles, "1" },
 	{ "present",         case_present,       "1" },
 	{ "points",          case_points,        "1" },
@@ -2862,7 +2960,7 @@ int main(int argc, char** argv)
 			return 6;
 		}
 	}
-	for (i = 0; i < 3; i++)
+	for (i = 0; i < 4; i++)
 		if (s_expect_run[i] && !sl_state_has_run(serialize_size, serialize, s_expect_run[i]))
 		{
 			fprintf(stderr, "swdraw: %s: the state has no run of 64 words of %08lx\n",

@@ -131,6 +131,24 @@ for renderer in Vulkan paraLLEl-GS; do
 	fi
 done
 
+# A buffer's alpha laid down once, then every frame a 24-bit depth
+# buffer and a colour draw with its alpha masked written over its pages
+# (the colour draw as wide as the buffer, wider, or one page wide at the
+# depth buffer's own base), and the alpha read as PSMT8H through a
+# palette: what was laid down, on both renderers, and still after a state
+# saved by one is loaded.
+for c in alpha_under_depth alpha_under_depth_wide alpha_under_depth_strip; do
+	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+	for renderer in Vulkan paraLLEl-GS; do
+		if ! VN_EXPECT_RUN=40404040,c0c0c0c0,58585858,d8d8d8d8 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=$renderer \
+				timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+			rm -rf "$SCRATCH"
+			echo "  FAIL: $c, $renderer"
+			exit 1
+		fi
+	done
+done
+
 # Destination alpha a clear wrote and a draw wrote, read back and read by
 # a blend: the same alpha either way, on both renderers.
 "$SCRATCH/swdraw" --bios "$SCRATCH/dest_alpha.bin" dest_alpha

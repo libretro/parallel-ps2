@@ -2450,13 +2450,14 @@ int GSState::Freeze(freezeData* fd, bool sizeonly)
 
 	Flush(GSFlushReason::SAVESTATE);
 
-	if (GSConfig.UserHacks_ReadTCOnClose)
-		ReadbackTextureCache();
-
-	/* The GPU's part of the state, which local memory does not hold, kept
-	 * on the GPU for a load in this instance. */
+	/* The GPU's part of the state, which local memory does not hold: kept
+	 * on the GPU for a load in this instance (runahead), and written into
+	 * local memory for any other state, which another instance or another
+	 * renderer may load. */
 	if (GSSnapshotSave && m_ops && m_ops->snapshot_targets)
 		m_ops->snapshot_targets(this, GSSnapshotKey);
+	else
+		ReadbackTextureCache();
 
 	u8* data = fd->data;
 	const u32 version = STATE_VERSION;

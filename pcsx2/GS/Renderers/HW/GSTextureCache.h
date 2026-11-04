@@ -668,7 +668,7 @@ private:
 	/* Records the copy of r back from t. With own given, a download
 	 * texture this cache holds is used the first time in shared_used
 	 * and own after that, so the copies of one batch do not share one. */
-	bool ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture** own, u32* shared_used, PendingRead* out);
+	bool ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture** own, u32* shared_used, PendingRead* out, u32 channels = 0xf);
 	/* Waits for the copy, unless done, and writes it to local memory. */
 	bool ReadStore(const PendingRead& p);
 
@@ -686,7 +686,7 @@ private:
 		u32 shared_used;
 	};
 	GSDownloadTexture* m_read_batch_download[READ_BATCH_MAX] = {};
-	bool ReadBatchQueue(ReadBatch* b, Target* t, const GSVector4i& r);
+	bool ReadBatchQueue(ReadBatch* b, Target* t, const GSVector4i& r, u32 channels = 0xf);
 	void ReadBatchStore(ReadBatch* b);
 
 	/* Targets taken out of the lists, deleted once the pages of what they
@@ -704,7 +704,7 @@ private:
 	void DropInit(DropBatch* d);
 	void DropTarget(DropBatch* d, Target* t);
 	void DropFlush(DropBatch* d);
-	bool DropKeepsPage(DropBatch* d, const Target* t, int px, int py, const GSVector4i& dirty);
+	u32 DropKeepsPage(DropBatch* d, const Target* t, int px, int py, const GSVector4i& dirty);
 	/* Per page of local memory, the last draw of the newest target pixels
 	 * a read put there, or -1: what a target dropped later, holding older
 	 * pixels of the page, must not write over. */

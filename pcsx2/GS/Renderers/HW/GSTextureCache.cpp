@@ -3062,10 +3062,9 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 						// Kill targets that are overlapping new targets, but ignore the copy if the old target is dirty  because we favour GS memory.
 						if (((((t->m_TEX0.TBP0 - dst->m_TEX0.TBP0) >> 5) % buffer_width) != 0) && !t->m_dirty.empty())
 						{
-							InvalidateSourcesFromTarget(t);
+							/* What it drew stays in local memory for a read. */
+							ParkTarget(t);
 							i = list.erase(j);
-							delete t;
-
 							continue;
 						}
 
@@ -3149,9 +3148,10 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 								src->m_region.SetX(src->m_region.GetMinX() + dst_offset_width, src->m_region.GetMaxX() + dst_offset_width);
 							}
 
-							InvalidateSourcesFromTarget(t);
+							/* The pages past the new target, which took none
+							 * of them, stay in local memory for a read. */
+							ParkTarget(t);
 							i = list.erase(j);
-							delete t;
 							continue;
 						}
 					}
@@ -6964,11 +6964,11 @@ bool GSTextureCache::Read(Target* t, const GSVector4i& r)
 	return ReadQueue(t, r, nullptr, nullptr, &p) && ReadStore(p);
 }
 
-bool GSTextureCache::ReadBatchQueue(ReadBatch* b, Target* t, const GSVector4i& r)
+bool GSTextureCache::ReadBatchQueue(ReadBatch* b, Target* t, const GSVector4i& r, u32 channels)
 {
 	if (b->count == READ_BATCH_MAX)
 		ReadBatchStore(b);
-	if (!ReadQueue(t, r, &m_read_batch_download[b->count], &b->shared_used, &b->pending[b->count]))
+	if (!ReadQueue(t, r, &m_read_batch_download[b->count], &b->shared_used, &b->pending[b->count], channels))
 		return false;
 	b->target[b->count]       = t;
 	b->drawn_before[b->count] = t->m_drawn_since_read;
@@ -7009,19 +7009,25 @@ void GSTextureCache::DropInit(DropBatch* d)
  * written since by a transfer, held by no target drawn after t, not
  * taken by a newer target dropped in the same pass, and not holding
  * newer pixels a read put there. A page it keeps is marked as t's. */
-bool GSTextureCache::DropKeepsPage(DropBatch* d, const Target* t, int px, int py, const GSVector4i& dirty)
+/* The channels of the page (px, py) of t that go to local memory when t
+ * is dropped: none when the page is dirty, or newer pixels of it were
+ * read into memory; otherwise those no target drawn later holds over
+ * it: a 24-bit target, or one drawn with its alpha masked, leaves the
+ * page's alpha to t. */
+u32 GSTextureCache::DropKeepsPage(DropBatch* d, const Target* t, int px, int py, const GSVector4i& dirty)
 {
 	const GSVector2i pgs = GSLocalMemory::m_psm[t->m_TEX0.PSM].pgs;
 	const u32 tbw = pcsx2_max_u(t->m_TEX0.TBW, 1u);
 	const GSVector4i page_rect = GSVector4i(0, 0, pgs.x, pgs.y);
 	const GSVector4i in_t = GSVector4i(px * pgs.x, py * pgs.y, (px + 1) * pgs.x, (py + 1) * pgs.y);
 	const u32 page_bp = t->m_TEX0.TBP0 + ((u32)py * tbw + (u32)px) * GS_BLOCKS_PER_PAGE;
+	u32 channels = GSUtil::GetChannelMask(t->m_TEX0.PSM);
 	int type;
 
 	if (!dirty.rintersect(in_t).rempty())
-		return false;
+		return 0;
 
-	for (type = 0; type < 2; type++)
+	for (type = 0; type < 2 && channels; type++)
 	{
 		FastListIterator<Target*> it = m_dst[type].begin();
 		const FastListIterator<Target*> end = m_dst[type].end();
@@ -7029,15 +7035,22 @@ bool GSTextureCache::DropKeepsPage(DropBatch* d, const Target* t, int px, int py
 		{
 			Target* o = *it;
 			if (o != t && o->m_last_draw > t->m_last_draw && o->Overlaps(page_bp, 1, t->m_TEX0.PSM, page_rect))
-				return false;
+			{
+				/* The channels the later target holds: its format's, less
+				 * any it has not written (a draw with its alpha masked). */
+				channels &= ~(GSUtil::GetChannelMask(o->m_TEX0.PSM) &
+					((o->m_valid_rgb ? 0x7u : 0u) | ((o->m_valid_alpha_low || o->m_valid_alpha_high) ? 0x8u : 0u)));
+				if (!channels)
+					return 0;
+			}
 		}
 	}
 
 	if (d->page_draw[(page_bp >> 5) & (GS_MAX_PAGES - 1)] > t->m_last_draw ||
 		m_page_read_draw[(page_bp >> 5) & (GS_MAX_PAGES - 1)] > t->m_last_draw)
-		return false;
+		return 0;
 	d->page_draw[(page_bp >> 5) & (GS_MAX_PAGES - 1)] = t->m_last_draw;
-	return true;
+	return channels;
 }
 
 /* On the GS the memory under a target keeps what was drawn there until
@@ -7050,6 +7063,7 @@ void GSTextureCache::DropTarget(DropBatch* d, Target* t)
 	GSVector4i r;
 	GSVector4i dirty;
 	int px, py, run, px0, px1, py0, py1;
+	u32 run_channels;
 
 	if (d->count == DROP_BATCH_MAX)
 		DropFlush(d);
@@ -7067,17 +7081,19 @@ void GSTextureCache::DropTarget(DropBatch* d, Target* t)
 			for (py = py0; py < py1; py++)
 			{
 				run = -1;
+				run_channels = 0;
 				for (px = px0; px <= px1; px++)
 				{
-					const bool keep = (px < px1) && DropKeepsPage(d, t, px, py, dirty);
-					if (keep && run < 0)
-						run = px;
-					else if (!keep && run >= 0)
+					const u32 keep = (px < px1) ? DropKeepsPage(d, t, px, py, dirty) : 0;
+					if (keep != run_channels && run >= 0)
 					{
 						ReadBatchQueue(&d->reads, t,
-							GSVector4i(run * pgs.x, py * pgs.y, px * pgs.x, (py + 1) * pgs.y).rintersect(r));
+							GSVector4i(run * pgs.x, py * pgs.y, px * pgs.x, (py + 1) * pgs.y).rintersect(r), run_channels);
 						run = -1;
 					}
+					if (keep && run < 0)
+						run = px;
+					run_channels = keep;
 				}
 			}
 		}
@@ -7199,7 +7215,7 @@ void GSTextureCache::DeleteParked()
 	m_parked_count = 0;
 }
 
-bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture** own, u32* shared_used, PendingRead* out)
+bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture** own, u32* shared_used, PendingRead* out, u32 channels)
 {
 	u32 shared_bit;
 
@@ -7291,7 +7307,8 @@ bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture
 
 	// Don't overwrite bits which aren't used in the target's format.
 	// Stops Burnout 3's sky from breaking when flushing targets to local memory.
-	const u32 write_mask = (t->m_valid_rgb ? 0x00FFFFFFu : 0) | (t->m_valid_alpha_low ? 0x0F000000u : 0) | (t->m_valid_alpha_high ? 0xF0000000u : 0);
+	const u32 write_mask = ((t->m_valid_rgb ? 0x00FFFFFFu : 0) | (t->m_valid_alpha_low ? 0x0F000000u : 0) | (t->m_valid_alpha_high ? 0xF0000000u : 0)) &
+		(((channels & 1) ? 0x000000FFu : 0) | ((channels & 2) ? 0x0000FF00u : 0) | ((channels & 4) ? 0x00FF0000u : 0) | ((channels & 8) ? 0xFF000000u : 0));
 	if (write_mask == 0)
 		return false;
 
