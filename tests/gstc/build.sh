@@ -12,6 +12,8 @@
 #                   reaches the colour target as what the Z wrote.
 # drop_writeback  : a target leaving the cache leaves what it drew in local
 #                   memory, never over newer pixels.
+# park_flush      : a target parked by age reaches local memory before
+#                   anything reads what it drew.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
@@ -34,3 +36,6 @@ ${CC:-cc} -std=c89 -pedantic -Wall -Wextra -O2 -g $SANFLAGS \
 ${CC:-cc} -std=c89 -pedantic -Wall -Wextra -O2 -g $SANFLAGS \
 	-o "$DIR/drop_writeback" "$DIR/drop_writeback.c"
 "$DIR/drop_writeback"
+${CC:-cc} -std=c89 -pedantic -Wall -Wextra -O2 -g $SANFLAGS \
+	-o "$DIR/park_flush" "$DIR/park_flush.c"
+"$DIR/park_flush"

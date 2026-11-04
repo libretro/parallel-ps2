@@ -138,6 +138,7 @@ static u64* s_move_marks;
 GSTextureCache::~GSTextureCache()
 {
 	RemoveAll(true, true, true);
+	free(m_parked);
 	gs_download_texture_free(m_color_download_texture);
 	gs_download_texture_free(m_uint16_download_texture);
 	gs_download_texture_free(m_uint32_download_texture);
@@ -177,6 +178,8 @@ void GSTextureCache::ReadbackAll()
 	u32 count = 0, shared_used = 0, i;
 	u64 queued = 0;
 	int type;
+
+	FlushParked(0, 0xFFFFFFFFu);
 
 	for (type = 0; type < 2; type++)
 	{
@@ -240,6 +243,7 @@ void GSTextureCache::RemoveAll(bool sources, bool targets, bool hash_cache)
 
 		m_target_heights.clear();
 		gs_flat_map_clear(&m_surface_offset_cache);
+		DeleteParked();
 		m_target_memory_usage = 0;
 		ClearMoveRemaps();
 		ClearPageReadDraws();
@@ -3810,6 +3814,8 @@ void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& r
 			}
 		}
 	}
+
+	RetireParked(off, rect);
 }
 
 // Goal: retrieve the data from the GPU to the GS memory.
@@ -3818,6 +3824,7 @@ void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& r
 void GSTextureCache::InvalidateLocalMem(const GSOffset& off, const GSVector4i& r, bool full_flush)
 {
 	ReadBatch b;
+	FlushParkedRect(off, r);
 	b.count       = 0;
 	b.shared_used = 0;
 	InvalidateLocalMemReads(off, r, full_flush, &b);
@@ -5374,9 +5381,6 @@ void GSTextureCache::IncAge()
 	// Toss and recompute sizes after 2 seconds of not being used. Should be sufficient for most loading screens.
 	static constexpr int max_size_age = 120;
 
-	DropBatch drop;
-	DropInit(&drop);
-
 	for (int type = 0; type < 2; type++)
 	{
 		auto& list = m_dst[type];
@@ -5387,10 +5391,18 @@ void GSTextureCache::IncAge()
 			if (++t->m_age > max_rt_age)
 			{
 				const Target* overlapping_tgt = FindOverlappingTarget(t);
-				if (overlapping_tgt != nullptr || t->m_dirty.GetTotalRect(t->m_TEX0, GSVector2i(t->m_valid.width(), t->m_valid.height())).rintersect(t->m_valid).eq(t->m_valid))
+				const bool all_dirty = t->m_dirty.GetTotalRect(t->m_TEX0, GSVector2i(t->m_valid.width(), t->m_valid.height())).rintersect(t->m_valid).eq(t->m_valid);
+				if (all_dirty)
 				{
 					i = list.erase(i);
-					DropTarget(&drop, t);
+					delete t;
+				}
+				else if (overlapping_tgt != nullptr)
+				{
+					/* Out of the lists, its texture kept until what it drew
+					 * is read or the room is wanted. */
+					i = list.erase(i);
+					ParkTarget(t);
 				}
 				else
 				{
@@ -5405,7 +5417,6 @@ void GSTextureCache::IncAge()
 		}
 	}
 
-	DropFlush(&drop);
 	EnforceTargetBudget();
 
 	for (auto it = m_target_heights.begin(); it != m_target_heights.end();)
@@ -5474,7 +5485,13 @@ int GSTextureCache::PagesInTarget(const Target* t, u32 bp, u32 bw, u32 psm, cons
 GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, Target* dst, bool half_right, int x_offset, int y_offset, const GSVector2i* lod, const GSVector4i* src_range, GSTexture* gpu_clut, SourceRegion region, int page_gather)
 {
 	const GSLocalMemory::psm_t& psm = GSLocalMemory::m_psm[TEX0.PSM];
-	Source* src = new Source(TEX0, TEXA);
+	Source* src;
+
+	/* A source from local memory reads what parked targets drew there. */
+	if (!dst)
+		FlushParked(TEX0.TBP0, GSLocalMemory::GetUnwrappedEndBlockAddress(TEX0.TBP0, TEX0.TBW, TEX0.PSM,
+			GSVector4i(0, 0, 1 << TEX0.TW, 1 << TEX0.TH)));
+	src = new Source(TEX0, TEXA);
 
 	// For debugging, we have an option to force copies instead of sampling the target directly.
 	static constexpr bool force_target_copy = false;
@@ -6401,6 +6418,14 @@ void GSTextureCache::EnforceTargetBudget()
 	if (m_target_memory_usage <= budget)
 		return;
 
+	/* Parked targets are the first to go. */
+	if (m_parked_count)
+	{
+		FlushParked(0, 0xFFFFFFFFu);
+		if (m_target_memory_usage <= budget)
+			return;
+	}
+
 	/* Over it: GSTargetBudget.c picks which go, from what each holds. */
 	n = (unsigned)(m_dst[0].size() + m_dst[1].size());
 	info = (gs_target_info_t*)malloc(n * sizeof(*info));
@@ -6986,6 +7011,109 @@ void GSTextureCache::DropFlush(DropBatch* d)
 	for (i = 0; i < d->count; i++)
 		delete d->target[i];
 	d->count = 0;
+}
+
+void GSTextureCache::ParkTarget(Target* t)
+{
+	DropBatch drop;
+	Target** grown;
+	u32 cap;
+
+	InvalidateSourcesFromTarget(t);
+	if (m_parked_count == m_parked_cap)
+	{
+		cap = m_parked_cap ? m_parked_cap * 2 : 16;
+		grown = (Target**)realloc(m_parked, cap * sizeof(*grown));
+		if (!grown)
+		{
+			/* No room to keep it: what it drew goes now. */
+			DropInit(&drop);
+			DropTarget(&drop, t);
+			DropFlush(&drop);
+			return;
+		}
+		m_parked = grown;
+		m_parked_cap = cap;
+	}
+	m_parked[m_parked_count++] = t;
+}
+
+/* The parked targets over [bp, end_bp] go to local memory by the drop
+ * rule, then are deleted. A newer parked target holding some of the same
+ * pages is not needed with them: a read of those pages reaches it too, and
+ * its pixels, newer than any written now, then go over them. */
+void GSTextureCache::FlushParked(u32 bp, u32 end_bp)
+{
+	DropBatch drop;
+	const u32 total = m_parked_count;
+	u32 i;
+	Target* t;
+
+	if (!m_parked_count)
+		return;
+
+	/* The ones taken move to the tail, [m_parked_count, total). */
+	for (i = 0; i < m_parked_count;)
+	{
+		t = m_parked[i];
+		if (CheckOverlap(t->m_TEX0.TBP0, t->UnwrappedEndBlock(), bp, end_bp))
+		{
+			m_parked[i] = m_parked[--m_parked_count];
+			m_parked[m_parked_count] = t;
+		}
+		else
+			i++;
+	}
+	if (m_parked_count == total)
+		return;
+
+	DropInit(&drop);
+	for (i = m_parked_count; i < total; i++)
+		DropTarget(&drop, m_parked[i]);
+	DropFlush(&drop);
+}
+
+void GSTextureCache::FlushParkedRect(const GSOffset& off, const GSVector4i& r)
+{
+	if (!m_parked_count || r.rempty())
+		return;
+	FlushParked(GSLocalMemory::GetStartBlockAddress(off.bp(), off.bw(), off.psm(), r),
+		GSLocalMemory::GetUnwrappedEndBlockAddress(off.bp(), off.bw(), off.psm(), r));
+}
+
+/* A write over parked targets' pages: those pages are the write's now, and
+ * a target with nothing left that local memory lacks goes. */
+void GSTextureCache::RetireParked(const GSOffset& off, const GSVector4i& r)
+{
+	const u32 bp = off.bp();
+	const u32 bw = off.bw();
+	const u32 psm = off.psm();
+	u32 i;
+	Target* t;
+
+	for (i = 0; i < m_parked_count;)
+	{
+		t = m_parked[i];
+		if (GSUtil::HasSharedBits(psm, t->m_TEX0.PSM) && t->Overlaps(bp, bw, psm, r))
+		{
+			DirtyRectByPage(bp, psm, bw, t, r);
+			if (FullRectDirty(t))
+			{
+				m_parked[i] = m_parked[--m_parked_count];
+				delete t;
+				continue;
+			}
+		}
+		i++;
+	}
+}
+
+void GSTextureCache::DeleteParked()
+{
+	u32 i;
+	for (i = 0; i < m_parked_count; i++)
+		delete m_parked[i];
+	m_parked_count = 0;
 }
 
 bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture** own, u32* shared_used, PendingRead* out)
@@ -7775,6 +7903,10 @@ void GSTextureCache::Target::Update(bool cannot_scale)
 		m_dirty.clear();
 		return;
 	}
+
+	/* The dirty area loads from local memory: parked targets' pixels
+	 * there go to it first. */
+	g_texture_cache->FlushParked(m_TEX0.TBP0, UnwrappedEndBlock());
 
 	const GSVector4i t_offset(total_rect.xyxy());
 	const GSVector4i t_size(total_rect - t_offset);

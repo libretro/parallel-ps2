@@ -4,7 +4,8 @@
  * transfer -- until something writes it again, and a game can read it any
  * time later: a buffer drawn into once and sampled frames afterwards. The
  * texture cache holds drawn pages on the GPU only, until a read takes them
- * back. When it drops a target, by age or over its memory budget,
+ * back. When a target's texture goes -- over the memory budget, or a
+ * target parked by age when its memory is read (park_flush covers when) --
  * GSTextureCache::DropTarget writes back the pages the target drew since
  * its last read, except the pages a transfer has written since, the pages
  * a target drawn later still holds, the pages a later target dropped in

@@ -711,6 +711,17 @@ private:
 	int m_page_read_draw[GS_MAX_PAGES];
 	void ClearPageReadDraws();
 	void StampPageReadDraws(const GIFRegTEX0& TEX0, const GSVector4i& r, int draw);
+
+	/* Targets dropped by age, out of the lists but keeping their textures:
+	 * what they drew goes to local memory only when something reads that
+	 * memory, the budget wants the room, or the cache is read back whole.
+	 * A write over their pages retires those pages instead. */
+	Target** m_parked = nullptr;
+	u32 m_parked_count = 0;
+	u32 m_parked_cap = 0;
+	void ParkTarget(Target* t);
+	void RetireParked(const GSOffset& off, const GSVector4i& r);
+	void DeleteParked();
 	void InvalidateLocalMemReads(const GSOffset& off, const GSVector4i& r, bool full_flush, ReadBatch* b);
 
 	HashCacheEntry* LookupHashCache(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, bool& paltex, const u32* clut, const GSVector2i* lod, SourceRegion region);
@@ -809,6 +820,10 @@ public:
 	void InvalidateVideoMemSubTarget(GSTextureCache::Target* rt);
 	void InvalidateVideoMem(const GSOffset& off, const GSVector4i& r, bool target = true, const Target* keep = nullptr);
 	void InvalidateLocalMem(const GSOffset& off, const GSVector4i& r, bool full_flush = false);
+	/* Before local memory in [bp, end_bp] is read: what parked targets drew
+	 * there, written to it. */
+	void FlushParked(u32 bp, u32 end_bp);
+	void FlushParkedRect(const GSOffset& off, const GSVector4i& r);
 
 	/// Removes any sources which point to the specified target.
 	void InvalidateSourcesFromTarget(const Target* t);

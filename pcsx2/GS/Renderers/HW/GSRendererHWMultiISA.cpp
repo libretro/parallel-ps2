@@ -54,6 +54,18 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 
 	GSVertexSW* const sw_vertices = hw.SWVertexBuffer((hw.m_vertex.next + 1) & ~1);
 
+	/* Drawn from and into local memory: parked targets' pixels there go
+	 * to it first. */
+	g_texture_cache->FlushParked(hw.m_cached_ctx.FRAME.Block(), GSLocalMemory::GetUnwrappedEndBlockAddress(
+		hw.m_cached_ctx.FRAME.Block(), hw.m_cached_ctx.FRAME.FBW, hw.m_cached_ctx.FRAME.PSM, hw.m_r));
+	if (!hw.m_cached_ctx.ZBUF.ZMSK || hw.m_cached_ctx.TEST.ZTE)
+		g_texture_cache->FlushParked(hw.m_cached_ctx.ZBUF.Block(), GSLocalMemory::GetUnwrappedEndBlockAddress(
+			hw.m_cached_ctx.ZBUF.Block(), hw.m_cached_ctx.FRAME.FBW, hw.m_cached_ctx.ZBUF.PSM, hw.m_r));
+	if (PRIM->TME)
+		g_texture_cache->FlushParked(hw.m_cached_ctx.TEX0.TBP0, GSLocalMemory::GetUnwrappedEndBlockAddress(
+			hw.m_cached_ctx.TEX0.TBP0, hw.m_cached_ctx.TEX0.TBW, hw.m_cached_ctx.TEX0.PSM,
+			GSVector4i(0, 0, 1 << hw.m_cached_ctx.TEX0.TW, 1 << hw.m_cached_ctx.TEX0.TH)));
+
 	data.primclass = vt.m_primclass;
 	data.buff = nullptr;
 	data.vertex = sw_vertices;

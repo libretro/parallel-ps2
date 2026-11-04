@@ -260,6 +260,7 @@ tests/ata/*.img
 /tests/gstc/hash_keep
 /tests/gstc/zwrite_colour
 /tests/gstc/drop_writeback
+/tests/gstc/park_flush
 /tests/gsupscale/hires_mem
 /tests/gsupscale/native_taps
 /tests/gsupscale/sprite_centre
