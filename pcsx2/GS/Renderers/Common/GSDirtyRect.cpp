@@ -23,17 +23,15 @@ GSDirtyRect::GSDirtyRect() :
 	r(GSVector4i(gs_v4i_zero())),
 	psm(PSMCT32),
 	bw(1),
-	rgba({}),
-	req_linear(false)
+	rgba({})
 {
 }
 
-GSDirtyRect::GSDirtyRect(GSVector4i& r, u32 psm, u32 bw, RGBAMask rgba, bool req_linear) :
+GSDirtyRect::GSDirtyRect(GSVector4i& r, u32 psm, u32 bw, RGBAMask rgba) :
 	r(r),
 	psm(psm),
 	bw(bw),
-	rgba(rgba),
-	req_linear(req_linear)
+	rgba(rgba)
 {
 }
 

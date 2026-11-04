@@ -7,13 +7,15 @@
  *
  * Pinned here, each against the form it replaces as a negative control:
  *
- *  1. At an integer scale the copy keeps the target's samples: an entry is
- *     `samples` texels wide in a palette `samples` rows tall, and sample_p
- *     (tfx) reads the sample of the fragment's place in its native pixel,
- *     under either native pixel grid (NativeOffset 0 or half a pixel). So a
- *     palette built by drawing at scale gives every fragment the colour its
- *     own sample was graded to. The one-row copy hands every fragment the
- *     entry's first sample.
+ *  1. An entry is its native pixel's one value. A draw at scale S lays S
+ *     fragments across the pixel, and the native sample sits at one place
+ *     among them: at the first fragment's centre where the draw keeps the
+ *     native grid, at the pixel's middle where the draw is moved half a
+ *     pixel (GSTextureCache::NativeSample), which at an even scale is
+ *     between two fragments. ps_convert_clut_8/_4 fetch the entry at that
+ *     place with a linear filter, so a value linear across the fragments
+ *     comes out as the native draw has it. The copy that read the block's
+ *     middle for every draw was half a pixel off under the kept grid.
  *
  *  2. Which target serves the palette: one starting at CBP before one
  *     containing it; a containing one only when laid out as the palette is;
@@ -49,7 +51,7 @@
 
 typedef unsigned int u32;
 
-/* ---- 1. the sampled palette ------------------------------------------------ */
+/* ---- 1. the entry's sample ---------------------------------------------- */
 
 /* ps_convert_clut_8's entry position: 8 groups of 16x2, the top-right and
  * bottom-left quadrants swapped, the block clamped at 15. */
@@ -65,102 +67,63 @@ static void clut8_pos(u32 clut_x, u32 doffset, u32* px, u32* py)
    *py = ((index / 32u) * 2u) + (subgroup % 2u);
 }
 
-/* The target, at scale S: a sample's value names its place. */
-static u32 target_sample(u32 x, u32 y)
+/* The target drawn at scale S: a shade linear in position, which the draw
+ * evaluates at each fragment's centre. A linear fetch at p gives shade(p). */
+static double shade(double p)
 {
-   return (y << 16) | x;
+   return 3.0 * p + 7.0;
 }
 
-/* ps_convert_clut_8: the palette texel (tx, ty) of a copy with `samples`
- * samples (1 for the one-row copy), from the target at `scale`. */
-static u32 copy_texel(u32 tx, u32 ty, u32 samples, float scale, u32 ox, u32 oy, u32 doffset)
+/* GSTextureCache::NativeSample: where the native sample sits among a
+ * pixel's fragments, from its first fragment's edge. */
+static double native_sample(u32 scale, int shifted)
 {
-   const u32 n = samples ? samples : 1u;
+   return (scale > 1u && shifted) ? scale * 0.5 : 0.5;
+}
+
+/* ps_convert_clut_8: entry e of a copy from a target at `scale`, read at
+ * `at` fragments into its pixel's block. */
+static double copy_entry(u32 e, u32 scale, double at, u32 ox, u32 doffset)
+{
    u32 px, py;
-   clut8_pos(tx / n, doffset, &px, &py);
-   if (n > 1u)
-      return target_sample((ox + px) * n + tx % n, (oy + py) * n + ty);
-   return target_sample((u32)floor((ox + px) * scale), (u32)floor((oy + py) * scale));
+   clut8_pos(e, doffset, &px, &py);
+   return shade((ox + px) * scale + at);
 }
 
-/* tfx sample_p: the palette texel an index reads from fragment (fx, fy) of a
- * draw at scale s with its native grid NativeOffset in. */
-static u32 sample_p(u32 idx, double fx, double fy, double s, double native_offset, u32 rows, float scale,
-   u32 ox, u32 oy, u32 doffset)
+/* The native draw's value for the entry's pixel: the shade at the native
+ * sample, which at scale 1 is the pixel's one fragment's centre. */
+static double native_entry(u32 e, u32 scale, int shifted, u32 ox, u32 doffset)
 {
-   int subx = 0, suby = 0;
-   const int n = (int)rows;
-   if (n > 1)
-   {
-      const double sx = floor((fx - native_offset) / s) * s + native_offset;
-      const double sy = floor((fy - native_offset) / s) * s + native_offset;
-      subx = (int)((fx - sx) * n / s);
-      suby = (int)((fy - sy) * n / s);
-      if (subx > n - 1)
-         subx = n - 1;
-      if (suby > n - 1)
-         suby = n - 1;
-   }
-   return copy_texel(idx * (u32)n + (u32)subx, (u32)suby, rows, scale, ox, oy, doffset);
-}
-
-/* Over every entry, every fragment of a native pixel, both grids: does the
- * fragment read its own sample of the entry? */
-static int sampled_palette_holds(int sampled)
-{
-   static const u32 scales[3] = { 2, 3, 4 };
-   static const double grids[2] = { 0.0, 0.5 };
-   const u32 ox = 16, oy = 16, doffset = 0x20;
-   u32 si, gi, e, i, j;
-   for (si = 0; si < 3; si++)
-      for (gi = 0; gi < 2; gi++)
-      {
-         const u32 S = scales[si];
-         const double N = grids[gi] * S;
-         for (e = 0; e < 256; e++)
-            for (j = 0; j < S; j++)
-               for (i = 0; i < S; i++)
-               {
-                  /* native pixel 5,7 of the draw; fragment i,j inside it */
-                  const double fx = 5.0 * S + N + i + 0.5, fy = 7.0 * S + N + j + 0.5;
-                  u32 px, py, want, got;
-                  clut8_pos(e, doffset, &px, &py);
-                  want = target_sample((ox + px) * S + i, (oy + py) * S + j);
-                  got = sample_p(e, fx, fy, (double)S, N, sampled ? S : 1u, (float)S, ox, oy, doffset);
-                  if (got != want)
-                     return 0;
-               }
-      }
-   return 1;
+   u32 px, py;
+   clut8_pos(e, doffset, &px, &py);
+   return shade((ox + px) * scale + native_sample(scale, shifted));
 }
 
 static int check_sampled_palette(void)
 {
+   static const u32 scales[4] = { 1, 2, 3, 4 };
+   const u32 ox = 16, doffset = 0x20;
    int fail = 0;
-   /* At native, one row, the copy is the old one. */
-   {
-      u32 e, px, py;
-      for (e = 0; e < 256; e++)
-      {
-         clut8_pos(e, 0, &px, &py);
-         if (sample_p(e, 3.5, 9.5, 1.0, 0.0, 1, 1.0f, 0, 0, 0) != target_sample(px, py))
+   u32 si, e;
+   int shifted;
+   for (si = 0; si < 4; si++)
+      for (shifted = 0; shifted < 2; shifted++)
+         for (e = 0; e < 256; e++)
          {
-            printf("  native entry %u moved\n", e);
-            fail++;
-            break;
+            const u32 S = scales[si];
+            const double at = native_sample(S, shifted);
+            if (copy_entry(e, S, at, ox, doffset) != native_entry(e, S, shifted, ox, doffset))
+            {
+               printf("  entry %u at scale %u (%s grid) is not the native pixel's value\n", e, S, shifted ? "moved" : "kept");
+               return fail + 1;
+            }
+            /* negative: the block's middle, under the kept grid at scale */
+            if (S > 1u && !shifted && copy_entry(e, S, S * 0.5, ox, doffset) == native_entry(e, S, shifted, ox, doffset))
+            {
+               printf("  negative: the block's middle is the native value at scale %u\n", S);
+               return fail + 1;
+            }
          }
-      }
-   }
-   if (!sampled_palette_holds(1))
-   {
-      printf("  a fragment does not read its own sample of the entry\n");
-      fail++;
-   }
-   if (sampled_palette_holds(0))
-   {
-      printf("  negative: the one-row copy keeps the samples\n");
-      fail++;
-   }
    return fail;
 }
 

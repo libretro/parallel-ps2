@@ -47,7 +47,6 @@ namespace GameDatabaseSchema
 		MergeSprite,
 		Mipmap,
 		ForceEvenSpritePosition,
-		BilinearUpscale,
 		NativePaletteDraw,
 		EstimateTextureRegion,
 		PCRTCOffsets,

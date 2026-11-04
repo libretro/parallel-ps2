@@ -769,7 +769,7 @@ public:
 	 * cache holds (sources and targets, as RemoveAll); false, and nothing
 	 * changed, when there is no such snapshot. */
 	bool RestoreTargets(u64 key);
-	static void AddDirtyRectTarget(Target* target, GSVector4i rect, u32 psm, u32 bw, RGBAMask rgba, bool req_linear = false);
+	static void AddDirtyRectTarget(Target* target, GSVector4i rect, u32 psm, u32 bw, RGBAMask rgba);
 	void ResizeTarget(Target* t, GSVector4i rect, u32 tbp, u32 psm, u32 tbw);
 	/* Widens t to new_width within its buffer width, once: the width is
 	 * kept for the next target made there. The area gained loads from
@@ -785,7 +785,8 @@ public:
 	GSVector4i TranslateAlignedRectByPage(Target* t, u32 sbp, u32 spsm, u32 sbw, GSVector4i src_r, bool is_invalidation = false);
 	void DirtyRectByPage(u32 sbp, u32 spsm, u32 sbw, Target* t, GSVector4i src_r);
 	void DirtyRectByPageOld(u32 sbp, u32 spsm, u32 sbw, Target* t, GSVector4i src_r);
-	GSTexture* LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, const GSVector2i& size);
+	GSTexture* LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, float* sample, const GSVector2i& size);
+	static float NativeSample(const Target* t);
 	/* Makes sure a palette for this CLUT exists, with its GS texture if
 	 * asked for, and hands back the GS texture or NULL. The palette itself
 	 * stays with the map; the callers only ever wanted the texture. */

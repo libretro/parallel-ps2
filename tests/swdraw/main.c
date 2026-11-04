@@ -2763,6 +2763,184 @@ static void case_engulfed_alpha(void)
 	s_expect_run[1] = 0x2004080Cul;
 }
 
+
+/* A 16x16 8-bit texture, its even rows index 0 and its odd rows index 1,
+ * through a palette whose entry 0 is zero and entry 1 is 0x80808080,
+ * drawn as a sprite four times as wide and eight times as tall with the
+ * magnification filter linear, into a frame two pages wide at page 0,
+ * read back from row 4: each output row is one value across, and the
+ * rows step from one texel row's value to the next by eighths, so rows
+ * of 0x10, 0x30, 0x50 and 0x70 in every channel are read back. The palette
+ * is uploaded, or drawn into a buffer at page 15 a point an entry, which
+ * holds it in place of local memory. */
+static void palette_bilinear(int drawn)
+{
+	unsigned i, first;
+	stream_image(0x2000u, 1, 0x13u, 0, 0, 16, 16, 16);     /* the texture, PSMT8 */
+	for (i = 0; i < 16; i++)
+	{
+		const unsigned v = (i & 1) ? 0x01010101u : 0u;
+		qw(v, v, v, v);
+	}
+	if (!drawn)
+	{
+		stream_image(0x3000u, 1, 0, 0, 0, 16, 16, 64);     /* the palette, 16x16 */
+		qw(0, 0x80808080u, 0, 0);
+		for (i = 4; i < 256; i += 4)
+			qw(0, 0, 0, 0);
+	}
+	else
+	{
+		const unsigned head = s_qw_count;
+		qw(0x8000u, 0x10000000u, 0xEu, 0);
+		qw(1, 0, GS_PRMODECONT, 0);
+		qw(0, 0, GS_XYOFFSET, 0);
+		qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+		qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);
+		qw(20u, 1, GS_ZBUF_1, 0);
+		qw(15u | (1u << 16), 0, GS_FRAME_1, 0);
+		qw(0, 0, GS_PRIM, 0);
+		for (i = 0; i < 256; i++)
+		{
+			qw(i == 1 ? 0x80808080u : 0u, 0x3f800000u, GS_RGBAQ, 0);
+			qw((unsigned)XY(i % 16, i / 16), 0, GS_XYZ2, 0);
+		}
+		s_qw[head][0] = (s_qw_count - head - 1) | 0x8000u;
+	}
+	kick(0, s_qw_count, 0);
+	first = s_qw_count;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);
+	qw(20u, 1, GS_ZBUF_1, 0);
+	qw(2u << 16, 0, GS_FRAME_1, 0);
+	/* a sprite below the rows read back, a colour higher each frame */
+	qw(6, 0, GS_PRIM, 0);
+	s_bump_qw = s_qw_count;
+	qw(0x80101010u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(64, 0), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 128), 0, GS_XYZ2, 0);
+	/* TBP0 0x2000, TBW 1, PSMT8, TW 4, TH 4; TCC, decal, CBP, CLD 1 */
+	qw(0x2000u | (1u << 14) | (0x13u << 20) | (4u << 26),
+		1u | (1u << 2) | (1u << 3) | ((drawn ? 0x1E0u : 0x3000u) << 5) | (1u << 29), GS_TEX0_1, 0);
+	qw(0x20u, 0, GS_TEX1_1, 0);                            /* MMAG linear */
+	qw(0, 0, GS_CLAMP_1, 0);
+	qw(4 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* triangle strip, TME, FST */
+	qw(0, 0, GS_UV, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw(16u << 4, 0, GS_UV, 0);
+	qw((unsigned)XY(64, 0), 0, GS_XYZ2, 0);
+	qw((16u << 4) << 16, 0, GS_UV, 0);
+	qw((unsigned)XY(0, 128), 0, GS_XYZ2, 0);
+	qw((16u << 4) | ((16u << 4) << 16), 0, GS_UV, 0);
+	qw((unsigned)XY(64, 128), 0, GS_XYZ2, 0);
+	qw(2u << 16, 0, GS_BITBLTBUF, 0);
+	qw(4u << 16, 0, GS_TRXPOS, 0);
+	qw(64, 32, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);
+	s_qw[first][0] = (s_qw_count - first - 1) | 0x8000u;
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(first, s_qw_count - first, 1);
+	readback(64 * 32 / 4);
+	s_run_frames    = 120;
+	s_expect_run[0] = 0x10101010ul;
+	s_expect_run[1] = 0x30303030ul;
+	s_expect_run[2] = 0x50505050ul;
+	s_expect_run[3] = 0x70707070ul;
+}
+
+static void case_palette_bilinear(void)
+{
+	palette_bilinear(0);
+}
+
+static void case_palette_bilinear_drawn(void)
+{
+	palette_bilinear(1);
+}
+
+
+/* A palette drawn as a shaded quad over the 16x16 words at page 15, its
+ * colour 0 at the left edge and 0xF0 at the right, so entry n's colour
+ * is the shade at its own word's centre; a 16x16 8-bit texture whose
+ * row r is index r drawn through it as a sprite four times as wide and
+ * eight times as tall with the nearest filter: each run of eight rows
+ * read back is one entry's shade, 64 words of it a row, the shade at
+ * the entry's native pixel whatever the scale the quad was drawn at.
+ * Entries 1 to 4 sit at the second to fifth words of the first row. */
+static void case_palette_shaded(void)
+{
+	unsigned i, first;
+	stream_image(0x2000u, 1, 0x13u, 0, 0, 16, 16, 16);     /* the texture, PSMT8 */
+	for (i = 0; i < 16; i++)
+	{
+		const unsigned v = i * 0x01010101u;
+		qw(v, v, v, v);
+	}
+	{
+		const unsigned head = s_qw_count;
+		qw(0x8000u, 0x10000000u, 0xEu, 0);
+		qw(1, 0, GS_PRMODECONT, 0);
+		qw(0, 0, GS_XYOFFSET, 0);
+		qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+		qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);
+		qw(20u, 1, GS_ZBUF_1, 0);
+		qw(15u | (1u << 16), 0, GS_FRAME_1, 0);
+		qw(4 | 0x08, 0, GS_PRIM, 0);                       /* triangle strip, shaded */
+		qw(0x80000000u, 0x3f800000u, GS_RGBAQ, 0);
+		qw(0, 0, GS_XYZ2, 0);
+		qw(0x80F0F0F0u, 0x3f800000u, GS_RGBAQ, 0);
+		qw((unsigned)XY(16, 0), 0, GS_XYZ2, 0);
+		qw(0x80000000u, 0x3f800000u, GS_RGBAQ, 0);
+		qw((unsigned)XY(0, 16), 0, GS_XYZ2, 0);
+		qw(0x80F0F0F0u, 0x3f800000u, GS_RGBAQ, 0);
+		qw((unsigned)XY(16, 16), 0, GS_XYZ2, 0);
+		s_qw[head][0] = (s_qw_count - head - 1) | 0x8000u;
+	}
+	kick(0, s_qw_count, 0);
+	first = s_qw_count;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);
+	qw(20u, 1, GS_ZBUF_1, 0);
+	qw(2u << 16, 0, GS_FRAME_1, 0);
+	/* a sprite below the rows read back, a colour higher each frame */
+	qw(6, 0, GS_PRIM, 0);
+	s_bump_qw = s_qw_count;
+	qw(0x80101010u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(64, 0), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 128), 0, GS_XYZ2, 0);
+	/* TBP0 0x2000, TBW 1, PSMT8, TW 4, TH 4; TCC, decal, CBP page 15, CLD 1 */
+	qw(0x2000u | (1u << 14) | (0x13u << 20) | (4u << 26),
+		1u | (1u << 2) | (1u << 3) | (0x1E0u << 5) | (1u << 29), GS_TEX0_1, 0);
+	qw(0, 0, GS_TEX1_1, 0);                                /* nearest */
+	qw(0, 0, GS_CLAMP_1, 0);
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* sprite, TME, FST */
+	qw(0, 0, GS_UV, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((16u << 4) | ((16u << 4) << 16), 0, GS_UV, 0);
+	qw((unsigned)XY(64, 128), 0, GS_XYZ2, 0);
+	qw(2u << 16, 0, GS_BITBLTBUF, 0);
+	qw(8u << 16, 0, GS_TRXPOS, 0);
+	qw(64, 32, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);
+	s_qw[first][0] = (s_qw_count - first - 1) | 0x8000u;
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(first, s_qw_count - first, 1);
+	readback(64 * 32 / 4);
+	s_run_frames    = 120;
+	s_expect_run[0] = 0x800F0F0Ful;
+	s_expect_run[1] = 0x801E1E1Eul;
+	s_expect_run[2] = 0x802D2D2Dul;
+	s_expect_run[3] = 0x803C3C3Cul;
+}
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -2806,6 +2984,9 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "palette_engulfed", case_palette_engulfed, "1" },
 	{ "block_offset_read", case_block_offset_read, "1" },
 	{ "engulfed_alpha",  case_engulfed_alpha, "1" },
+	{ "palette_bilinear", case_palette_bilinear, "1" },
+	{ "palette_bilinear_drawn", case_palette_bilinear_drawn, "1" },
+	{ "palette_shaded", case_palette_shaded, "1" },
 	{ "big_triangles",   case_big_triangles, "1" },
 	{ "present",         case_present,       "1" },
 	{ "points",          case_points,        "1" },

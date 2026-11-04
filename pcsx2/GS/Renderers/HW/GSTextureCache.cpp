@@ -268,7 +268,7 @@ bool GSTextureCache::FullRectDirty(Target* target)
 	return FullRectDirty(target, GSUtil::GetChannelMask(target->m_TEX0.PSM));
 }
 
-void GSTextureCache::AddDirtyRectTarget(Target* target, GSVector4i rect, u32 psm, u32 bw, RGBAMask rgba, bool req_linear)
+void GSTextureCache::AddDirtyRectTarget(Target* target, GSVector4i rect, u32 psm, u32 bw, RGBAMask rgba)
 {
 	bool skipdirty = false;
 	bool canskip = true;
@@ -308,7 +308,7 @@ void GSTextureCache::AddDirtyRectTarget(Target* target, GSVector4i rect, u32 psm
 
 	if (!skipdirty)
 	{
-		target->m_dirty.push_back(GSDirtyRect(rect, psm, bw, rgba, req_linear));
+		target->m_dirty.push_back(GSDirtyRect(rect, psm, bw, rgba));
 
 		if (!target->m_drawn_since_read.rempty())
 		{
@@ -384,7 +384,7 @@ bool GSTextureCache::CopyTargetPagesInto(Target* t, Target* dst, const GSVector4
 		RGBAMask rgba;
 		rgba._u32 = ((t->m_valid_rgb && !dst->m_valid_rgb) ? 0x7u : 0u) |
 			(((t->m_valid_alpha_low || t->m_valid_alpha_high) && !(dst->m_valid_alpha_low || dst->m_valid_alpha_high)) ? 0x8u : 0u);
-		AddDirtyRectTarget(dst, dst->m_valid, dst->m_TEX0.PSM, dst->m_TEX0.TBW, rgba, false);
+		AddDirtyRectTarget(dst, dst->m_valid, dst->m_TEX0.PSM, dst->m_TEX0.TBW, rgba);
 		if (rgba._u32 & 0x7u)
 			dst->m_valid_rgb = true;
 		if (rgba._u32 & 0x8u)
@@ -411,9 +411,9 @@ bool GSTextureCache::CopyTargetPagesInto(Target* t, Target* dst, const GSVector4
 				rgba._u32 = 0xF;
 				dst->UpdateValidity(taken);
 				if (dst->m_valid.z > old_valid.z)
-					AddDirtyRectTarget(dst, GSVector4i(old_valid.z, dst->m_valid.y, dst->m_valid.z, dst->m_valid.w), dst->m_TEX0.PSM, dst->m_TEX0.TBW, rgba, false);
+					AddDirtyRectTarget(dst, GSVector4i(old_valid.z, dst->m_valid.y, dst->m_valid.z, dst->m_valid.w), dst->m_TEX0.PSM, dst->m_TEX0.TBW, rgba);
 				if (dst->m_valid.w > old_valid.w)
-					AddDirtyRectTarget(dst, GSVector4i(dst->m_valid.x, old_valid.w, old_valid.z, dst->m_valid.w), dst->m_TEX0.PSM, dst->m_TEX0.TBW, rgba, false);
+					AddDirtyRectTarget(dst, GSVector4i(dst->m_valid.x, old_valid.w, old_valid.z, dst->m_valid.w), dst->m_TEX0.PSM, dst->m_TEX0.TBW, rgba);
 			}
 			/* Read back with what dst drew: local memory gets them from
 			 * dst, as t's they are no longer. */
@@ -3193,7 +3193,7 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 
 					if (hw_clear == HW_CLEAR_UNKNOWN) /* (an optional with no value, as it was) */
 						dst->UpdateValidity(save_rect);
-					AddDirtyRectTarget(dst, save_rect, TEX0.PSM, TEX0.TBW, rgba, GSLocalMemory::m_psm[TEX0.PSM].trbpp >= 16);
+					AddDirtyRectTarget(dst, save_rect, TEX0.PSM, TEX0.TBW, rgba);
 				}
 			}
 		}
@@ -3210,7 +3210,7 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 			}
 
 			// Don't set valid here, because we have no guarantee this is the data we want.
-			AddDirtyRectTarget(dst, newrect, TEX0.PSM, TEX0.TBW, rgba, GSLocalMemory::m_psm[TEX0.PSM].trbpp >= 16);
+			AddDirtyRectTarget(dst, newrect, TEX0.PSM, TEX0.TBW, rgba);
 		}
 	}
 
@@ -6973,7 +6973,20 @@ GSTextureCache::Target* GSTextureCache::Target::Create(GIFRegTEX0 TEX0, int w, i
 	return t;
 }
 
-GSTexture* GSTextureCache::LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, const GSVector2i& size)
+/* Where a native pixel's sample sits among the fragments the target's
+ * scale draws for it, from the pixel's first fragment: a draw that keeps
+ * the native grid samples the pixel at its first fragment's centre; one
+ * moved half a native pixel (the Normal and Native offsets, see SetupIA)
+ * samples it at the middle, between two fragments at an even scale,
+ * where a linear fetch has their mean. At native the one fragment. */
+float GSTextureCache::NativeSample(const Target* t)
+{
+	const bool shifted = GSConfig.UserHacks_HalfPixelOffset == GSHalfPixelOffset::Native ||
+		(GSConfig.UserHacks_HalfPixelOffset == GSHalfPixelOffset::Normal && t->m_half_pixel_shift);
+	return (t->m_scale != 1.0f && shifted) ? t->m_scale * 0.5f : 0.5f;
+}
+
+GSTexture* GSTextureCache::LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, float* sample, const GSVector2i& size)
 {
 	// The palette is read from the target holding its blocks: one starting at
 	// CBP first, then one containing it. The target must hold the palette's
@@ -7069,6 +7082,7 @@ GSTexture* GSTextureCache::LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVec
 
 			offset = this_offset;
 			*scale = t->m_scale;
+			*sample = NativeSample(t);
 
 			t->UnscaleRTAlpha();
 
@@ -7156,6 +7170,9 @@ bool GSTextureCache::Read(Target* t, const GSVector4i& r)
 	return ReadQueue(t, r, nullptr, nullptr, &p) && ReadStore(p);
 }
 
+/* DEBUG (local): dump a colour target to a ppm. */
+#include <stdio.h>
+#include <stdlib.h>
 bool GSTextureCache::ReadBatchQueue(ReadBatch* b, Target* t, const GSVector4i& r, u32 channels)
 {
 	if (b->count == READ_BATCH_MAX)
@@ -7561,7 +7578,13 @@ bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture
 	if (tr.rempty())
 		return false;
 
-	const GSVector4 src(GSVector4(tr) * GSVector4(t->m_scale) / GSVector4(t->m_texture->GetSize()).xyxy());
+	/* Each native pixel read at its sample among its fragments
+	 * (NativeSample): the copy below reads the middle of each pixel's
+	 * block, so the block is moved to put the sample there; a linear
+	 * fetch where the sample lies between two fragments. */
+	const float sample = NativeSample(t);
+	const GSVector4 src((GSVector4(tr) * GSVector4(t->m_scale) + GSVector4(sample - t->m_scale * 0.5f)) /
+		GSVector4(t->m_texture->GetSize()).xyxy());
 	const GSVector4i drc(0, 0, tr.width(), tr.height());
 	const bool direct_read = t->m_type == RenderTarget && t->m_scale == 1.0f && ps_shader == ShaderConvert::COPY;
 
@@ -7584,7 +7607,7 @@ bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture
 		GSTexture* tmp = g_gs_device->CreateRenderTarget(drc.z, drc.w, fmt, false);
 		if (tmp)
 		{
-			g_gs_device->StretchRect(t->m_texture, src, tmp, GSVector4(drc), ps_shader, false);
+			g_gs_device->StretchRect(t->m_texture, src, tmp, GSVector4(drc), ps_shader, t->m_type == RenderTarget && sample != 0.5f);
 			(*dltex)->CopyFromTexture(drc, tmp, drc, 0, true);
 			g_gs_device->Recycle(tmp);
 		}
@@ -8360,8 +8383,6 @@ void GSTextureCache::Target::Update(bool cannot_scale)
 	// Bilinear filtering this is probably not a good thing, at least in native, but upscaling Nearest can be gross and messy.
 	// It's needed for depth, though.. filtering depth doesn't make much sense, but SMT3 needs it..
 	const bool upscaled = (m_scale != 1.0f);
-	const bool override_linear = (upscaled && GSConfig.UserHacks_BilinearHack == GSBilinearDirtyMode::ForceBilinear);
-	const bool linear = (m_type == RenderTarget && upscaled && GSConfig.UserHacks_BilinearHack != GSBilinearDirtyMode::ForceNearest);
 
 	u32 ndrects = 0;
 
@@ -8436,7 +8457,9 @@ void GSTextureCache::Target::Update(bool cannot_scale)
 		drect.src = t;
 		drect.src_rect = GSVector4(update_r - t_offset) / t_sizef;
 		drect.dst_rect = GSVector4(update_r) * GSVector4(m_scale);
-		drect.linear = linear && (m_dirty[i].req_linear || override_linear);
+		/* Local memory's pixel, a block of the scale's fragments: what the GS
+		 * has, for a palette or anything else read pixel for pixel. */
+		drect.linear = false;
 
 		// Copy the new GS memory content into the destination texture.
 		if (m_type == RenderTarget)
@@ -8554,7 +8577,7 @@ bool GSTextureCache::Target::HasValidBitsForFormat(u32 psm, bool req_color, bool
 				m_TEX0.PSM &= ~PSMCT24;
 
 				if (!(m_dirty.GetDirtyChannels() & 0x8))
-					AddDirtyRectTarget(this, m_valid, m_TEX0.PSM, m_TEX0.TBW, mask, false);
+					AddDirtyRectTarget(this, m_valid, m_TEX0.PSM, m_TEX0.TBW, mask);
 
 				alpha_valid = true; // This is going to get resolved going forward.
 			}

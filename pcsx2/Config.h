@@ -294,14 +294,6 @@ enum class GSTextureInRtMode : u8
 	MergeTargets,
 };
 
-enum class GSBilinearDirtyMode : u8
-{
-	Automatic,
-	ForceBilinear,
-	ForceNearest,
-	MaxCount
-};
-
 enum GSHalfPixelOffset
 {
 	Off = 0,
@@ -536,7 +528,6 @@ struct Pcsx2Config
 		u8 UserHacks_CPUSpriteRenderLevel = 0;
 		u8 UserHacks_CPUCLUTRender = 0;
 		GSTextureInRtMode UserHacks_TextureInsideRt = GSTextureInRtMode::Disabled;
-		GSBilinearDirtyMode UserHacks_BilinearHack = GSBilinearDirtyMode::Automatic;
 		GSLimit24BitDepth UserHacks_Limit24BitDepth = GSLimit24BitDepth::Disabled;
 		TriFiltering TriFilter = TriFiltering::Automatic;
 		s8 OverrideTextureBarriers = -1;

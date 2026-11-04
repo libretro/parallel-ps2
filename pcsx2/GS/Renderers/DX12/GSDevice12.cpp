@@ -1326,25 +1326,25 @@ void GSDevice12::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	video_cb(RETRO_HW_FRAME_BUFFER_VALID, texture->GetWidth(), texture->GetHeight(), 0);
 }
 
-void GSDevice12::UpdateCLUTTexture(GSTexture* sTex, float sScale, u32 offsetX, u32 offsetY, GSTexture* dTex, u32 dOffset, u32 dSize, u32 samples)
+void GSDevice12::UpdateCLUTTexture(GSTexture* sTex, float sScale, float sSample, u32 offsetX, u32 offsetY, GSTexture* dTex, u32 dOffset, u32 dSize)
 {
 	// match merge cb
 	struct Uniforms
 	{
 		float scale;
-		float samples; // BGColor.y
+		float sample; // BGColor.y
 		float pad1[2];
 		u32 offsetX, offsetY, dOffset;
 		u32 pad2;
 	};
-	const Uniforms cb = {sScale, static_cast<float>(samples), {}, offsetX, offsetY, dOffset};
+	const Uniforms cb = {sScale, sSample, {}, offsetX, offsetY, dOffset};
 	SetUtilityRootSignature();
 	SetUtilityPushConstants(&cb, sizeof(cb));
 
-	const GSVector4 dRect(0, 0, dSize * samples, samples);
+	const GSVector4 dRect(0, 0, dSize, 1);
 	const ShaderConvert shader = (dSize == 16) ? ShaderConvert::CLUT_4 : ShaderConvert::CLUT_8;
 	DoStretchRect(static_cast<GSTexture12*>(sTex), GSVector4::zero(), static_cast<GSTexture12*>(dTex), dRect,
-		UtilityPipeline(UTIL_CONVERT + static_cast<int>(shader)), false, true);
+		UtilityPipeline(UTIL_CONVERT + static_cast<int>(shader)), true, true);
 }
 
 void GSDevice12::ConvertToIndexedTexture(GSTexture* sTex, float sScale, u32 offsetX, u32 offsetY, u32 SBW, u32 SPSM, GSTexture* dTex, u32 DBW, u32 DPSM)

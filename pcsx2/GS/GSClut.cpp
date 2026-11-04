@@ -383,31 +383,21 @@ void GSClut::Read32(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA)
 			GSVector2i offset = {};
 			GSVector2i size;
 			float scale;
+			float sample;
 			size.x = is_4bit ? 8 : 16;
 			size.y = is_4bit ? 2 : 16;
 
-			GSTexture* src = g_gs_renderer->LookupPaletteSource(m_write.TEX0.CBP, m_write.TEX0.CPSM, 0, offset, &scale, size);
+			GSTexture* src = g_gs_renderer->LookupPaletteSource(m_write.TEX0.CBP, m_write.TEX0.CPSM, 0, offset, &scale, &sample, size);
 			if (src && g_gs_device)
 			{
-				// At an integer scale the palette keeps the target's samples:
-				// an entry is `samples` texels wide in a palette `samples` rows
-				// tall, and a draw at that scale reads the sample of the
-				// fragment's place in its native pixel.
-				const u32 samples = (scale > 1.0f && floorf(scale) == scale) ? static_cast<u32>(scale) : 1u;
 				GSTexture** slot = is_4bit ? &m_gpu_clut4 : &m_gpu_clut8;
 				const u32 dst_size = is_4bit ? 16 : 256;
 				const u32 dOffset = csa << 4;
-				if (*slot && ((*slot)->GetWidth() != static_cast<int>(dst_size * samples) ||
-					(*slot)->GetHeight() != static_cast<int>(samples)))
-				{
-					g_gs_device->Recycle(*slot);
-					*slot = nullptr;
-				}
 				if (!*slot)
-					*slot = g_gs_device->CreateRenderTarget(dst_size * samples, samples, GSTexture::Format::Color, false);
+					*slot = g_gs_device->CreateRenderTarget(dst_size, 1, GSTexture::Format::Color, false);
 				if (*slot)
 				{
-					g_gs_device->UpdateCLUTTexture(src, scale, offset.x, offset.y, *slot, dOffset, dst_size, samples);
+					g_gs_device->UpdateCLUTTexture(src, scale, sample, offset.x, offset.y, *slot, dOffset, dst_size);
 					m_current_gpu_clut = *slot;
 				}
 			}

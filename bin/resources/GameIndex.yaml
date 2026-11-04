@@ -1750,7 +1750,6 @@ SCAJ-20158:
   gsHWFixes:
     minimumBlendingLevel: 2 # Improves shading on effects and bloom.
     halfPixelOffset: 4 # Fixes misaligned lighting and bloom.
-    bilinearUpscale: 1 # Smooths out bloom.
 SCAJ-20159:
   name: "Soul Calibur III"
   region: "NTSC-C"
@@ -4732,7 +4731,6 @@ SCES-51635:
   gsHWFixes:
     halfPixelOffset: 4 # Fixes lighting/shadows.
     preloadFrameData: 1 # Fixes sun flickering.
-    bilinearUpscale: 1 # Smooths out sun glare textures like native.
     nativeScaling: 1 # Fixes post effects.
 SCES-51648:
   name: "Everquest - Online Adventures"
@@ -6180,7 +6178,6 @@ SCES-55510:
     roundSprite: 1 # Fix lines in the sky.
     cpuSpriteRenderBW: 4 # Fixes shadow rendering.
     cpuSpriteRenderLevel: 2 # Needed for above.
-    bilinearUpscale: 1 # Smooths out shadow textures.
     halfPixelOffset: 4 # Fixes misaligned blur.
 SCES-55513:
   name: "SingStar Polskie Hity"
@@ -9636,7 +9633,6 @@ SCUS-97211:
   name: "ATV Offroad Fury 2"
   region: "NTSC-U"
   gsHWFixes:
-    bilinearUpscale: 2 # Fixes broken textures.
   compat: 5
 SCUS-97212:
   name: "My Street"
@@ -9754,7 +9750,6 @@ SCUS-97238:
   name: "ATV Offroad Fury 2 [Demo]"
   region: "NTSC-U"
   gsHWFixes:
-    bilinearUpscale: 2 # Fixes broken textures.
 SCUS-97239:
   name: "Jet X2O [Demo]"
   region: "NTSC-U"
@@ -10154,7 +10149,6 @@ SCUS-97369:
   name: "ATV Offroad Fury 2"
   region: "NTSC-U"
   gsHWFixes:
-    bilinearUpscale: 2 # Fixes broken textures.
   compat: 5
 SCUS-97370:
   name: "NCAA Final Four 2004"
@@ -10798,7 +10792,6 @@ SCUS-97510:
   name: "ATV Offroad Fury 2 [Greatest Hits]"
   region: "NTSC-U"
   gsHWFixes:
-    bilinearUpscale: 2 # Fixes broken textures.
 SCUS-97511:
   name: "SOCOM II - U.S. Navy SEALs [Greatest Hits]"
   region: "NTSC-U"
@@ -10990,7 +10983,6 @@ SCUS-97558:
     roundSprite: 1 # Fix lines in the sky.
     cpuSpriteRenderBW: 4 # Fixes shadow rendering.
     cpuSpriteRenderLevel: 2 # Needed for above.
-    bilinearUpscale: 1 # Smooths out shadow textures.
     halfPixelOffset: 4 # Fixes misaligned blur.
 SCUS-97560:
   name: "SOCOM - U.S. Navy SEALs - Combined Assault [Demo]"
@@ -11405,7 +11397,6 @@ SLAJ-25053:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLAJ-25055:
   name: "Def Jam - Fight for N.Y."
@@ -11446,7 +11437,6 @@ SLAJ-25066:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
   memcardFilters:
     - "SLAJ-25066"
@@ -11476,7 +11466,6 @@ SLAJ-25075:
   name: "Need for Speed - Most Wanted [Black Edition]"
   region: "NTSC-Unk"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
   memcardFilters:
@@ -11572,7 +11561,6 @@ SLAJ-25094:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLAJ-25095:
   name: "Medal of Honor - Vanguard"
@@ -11726,7 +11714,6 @@ SLED-51211:
   region: "PAL-E"
   gsHWFixes:
     halfPixelOffset: 2 # Aligns bloom effect.
-    bilinearUpscale: 2 # Reduces color banding of the sun glare.
     nativeScaling: 2 # Fixes post lighting.
   roundModes:
     vu1RoundMode: 1 # Bright lights in cars.
@@ -11809,7 +11796,6 @@ SLED-51902:
   gsHWFixes:
     preloadFrameData: 1 # Fixes licences.
     halfPixelOffset: 3 # Fixes double image.
-    bilinearUpscale: 2 # Fixes sun glare textures to behave like native.
 SLED-51921:
   name: "Final Fantasy X-2 [Demo]"
   region: "PAL-Unk"
@@ -11944,7 +11930,6 @@ SLED-52597:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLED-52736:
   name: "Need for Speed - Underground 2 [Demo]"
@@ -12112,7 +12097,6 @@ SLED-53512:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLED-53537:
   name: "187 - Ride or Die [Demo]"
@@ -12153,13 +12137,11 @@ SLED-53637:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLED-53650:
   name: "Need for Speed - Most Wanted"
   region: "PAL-E"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
 SLED-53664:
@@ -14221,17 +14203,14 @@ SLES-50812:
   name: "Spider-Man"
   region: "PAL-E"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures.
 SLES-50813:
   name: "Spider-Man"
   region: "PAL-F"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures.
 SLES-50814:
   name: "Spider-Man"
   region: "PAL-G"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures.
   compat: 5
 SLES-50815:
   name: "Blood Omen 2 - The Legacy of Kain Series"
@@ -14663,7 +14642,6 @@ SLES-50965:
   name: "Spider-Man"
   region: "PAL-S"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures.
 SLES-50972:
   name: "Barbarian"
   region: "PAL-M5"
@@ -14798,7 +14776,6 @@ SLES-51044:
   compat: 5
   gsHWFixes:
     halfPixelOffset: 2 # Aligns bloom effect.
-    bilinearUpscale: 2 # Reduces color banding of the sun glare.
     nativeScaling: 2 # Fixes post lighting.
   roundModes:
     vu1RoundMode: 1 # Bright lights in cars.
@@ -15293,7 +15270,6 @@ SLES-51220:
   name: "TY the Tasmanian Tiger"
   region: "PAL-M5"
   gsHWFixes:
-    bilinearUpscale: 1 # Fixes texture pixelation.
   compat: 5
 SLES-51222:
   name: "Rayman 3 - Hoodlum Havoc"
@@ -16430,7 +16406,6 @@ SLES-51753:
   gsHWFixes:
     preloadFrameData: 1 # Fixes licences.
     halfPixelOffset: 3 # Fixes double image.
-    bilinearUpscale: 2 # Fixes sun glare textures to behave like native.
 SLES-51754:
   name: "True Crime - Streets of L.A."
   region: "PAL-M5"
@@ -16438,7 +16413,6 @@ SLES-51754:
   gsHWFixes:
     preloadFrameData: 1 # Fixes licences.
     halfPixelOffset: 3 # Fixes double image.
-    bilinearUpscale: 2 # Fixes sun glare textures to behave like native.
 SLES-51755:
   name: "Disney/Pixar Finding Nemo"
   region: "PAL-E"
@@ -16547,7 +16521,6 @@ SLES-51814:
   name: "ATV Offroad Fury 2"
   region: "PAL-E"
   gsHWFixes:
-    bilinearUpscale: 2 # Fixes broken textures.
 SLES-51815:
   name: "Final Fantasy X-2"
   region: "PAL-E"
@@ -16893,7 +16866,6 @@ SLES-51914:
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Fixes post processing smoothness and position.
     disablePartialInvalidation: 1 # Fixes textureless graphics ingame.
-    bilinearUpscale: 2 # Gets rid of center vertical line when upscaling.
 SLES-51915:
   name: "Pro Evolution Soccer 3"
   region: "PAL-I"
@@ -18522,7 +18494,6 @@ SLES-52584:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLES-52585:
   name: "Burnout 3 - Takedown"
@@ -18532,7 +18503,6 @@ SLES-52585:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLES-52587:
   name: "Army Men - Sarge's War"
@@ -18885,7 +18855,6 @@ SLES-52700:
   gsHWFixes:
     cpuSpriteRenderBW: 1 # Fixes shadow rendering.
     cpuSpriteRenderLevel: 1 # Needed for above.
-    bilinearUpscale: 1 # Smooths out shadow textures.
 SLES-52701:
   name: "Future Tactics - The Uprising"
   region: "PAL-M5"
@@ -19373,7 +19342,6 @@ SLES-52877:
   gsHWFixes:
     halfPixelOffset: 2 # Reduces blurriness. Normal Vertex works better, but causes some lights to disappear.
     roundSprite: 1 # Further reduces blurriness.
-    bilinearUpscale: 1 # Smooths out fire textures.
     nativeScaling: 2 # Fixes post processing.
 SLES-52882:
   name: "Stolen"
@@ -19662,7 +19630,6 @@ SLES-52968:
   compat: 5
   gsHWFixes:
     halfPixelOffset: 2 # Aligns bloom effect.
-    bilinearUpscale: 2 # Reduces color banding of the sun glare.
     nativeScaling: 2 # Fixes post lighting.
   roundModes:
     vu1RoundMode: 1 # Bright lights in cars.
@@ -21188,7 +21155,6 @@ SLES-53506:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
   memcardFilters:
     - "SLES-53506"
@@ -21205,7 +21171,6 @@ SLES-53507:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
   memcardFilters:
     - "SLES-53506"
@@ -21479,7 +21444,6 @@ SLES-53557:
   region: "PAL-E"
   compat: 5
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
   memcardFilters: # Reads Underground 2 save for extra money.
@@ -21492,7 +21456,6 @@ SLES-53558:
   name: "Need for Speed - Most Wanted"
   region: "PAL-M8"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
   memcardFilters:
@@ -21505,7 +21468,6 @@ SLES-53559:
   name: "Need for Speed - Most Wanted"
   region: "PAL-M7"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
   memcardFilters:
@@ -22391,7 +22353,6 @@ SLES-53857:
   name: "Need for Speed - Most Wanted [Black Edition]"
   region: "PAL-M3"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
   memcardFilters:
@@ -23579,7 +23540,6 @@ SLES-54305:
   gsHWFixes:
     minimumBlendingLevel: 2 # Improves shading on effects and bloom.
     halfPixelOffset: 4 # Fixes misaligned lighting and bloom.
-    bilinearUpscale: 1 # Smooths out bloom.
 SLES-54306:
   name: "Cartoon Network Racing"
   region: "PAL-E"
@@ -23772,7 +23732,6 @@ SLES-54346:
   gsHWFixes:
     halfPixelOffset: 5 # Fixes misaligment issues.
     nativeScaling: 2 # Fixes post effects such as the afterburners.
-    bilinearUpscale: 2 # Smooths out sun glare textures.
 SLES-54347:
   name: "The Sims 2 - Pets"
   region: "PAL-M11"
@@ -24606,7 +24565,6 @@ SLES-54596:
   gsHWFixes:
     halfPixelOffset: 5 # Fixes misaligment issues.
     nativeScaling: 2 # Fixes post effects such as the afterburners.
-    bilinearUpscale: 2 # Smooths out sun glare textures.
 SLES-54604:
   name: "¡Qué pasa Neng! El videojuego"
   region: "PAL-S"
@@ -24684,7 +24642,6 @@ SLES-54627:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLES-54628:
   name: "Skate Attack [Promo]"
@@ -24882,7 +24839,6 @@ SLES-54681:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLES-54683:
   name: "Medal of Honor - Vanguard"
@@ -25843,7 +25799,6 @@ SLES-54992:
   name: "PDC World Championship Darts 2008"
   region: "PAL-M6"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out lights.
 SLES-54994:
   name: "Pippa Funnell - Ranch Rescue"
   region: "PAL-M11"
@@ -26957,7 +26912,6 @@ SLES-55349:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes blurriness.
-    bilinearUpscale: 2 # Fixes sun glare textures.
     nativeScaling: 2 # Fixes post alignment.
     getSkipCount: "GSC_NFSUndercover"
     textureInsideRT: 1 # Fixes sun glare.
@@ -26979,7 +26933,6 @@ SLES-55350:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes blurriness.
-    bilinearUpscale: 2 # Fixes sun glare textures.
     nativeScaling: 2 # Fixes post alignment.
     getSkipCount: "GSC_NFSUndercover"
     textureInsideRT: 1 # Fixes sun glare.
@@ -27001,7 +26954,6 @@ SLES-55351:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes blurriness.
-    bilinearUpscale: 2 # Fixes sun glare textures.
     nativeScaling: 2 # Fixes post alignment.
     getSkipCount: "GSC_NFSUndercover"
     textureInsideRT: 1 # Fixes sun glare.
@@ -27024,7 +26976,6 @@ SLES-55352:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes blurriness.
-    bilinearUpscale: 2 # Fixes sun glare textures.
     nativeScaling: 2 # Fixes post alignment.
     getSkipCount: "GSC_NFSUndercover"
     textureInsideRT: 1 # Fixes sun glare.
@@ -27046,7 +26997,6 @@ SLES-55353:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes blurriness.
-    bilinearUpscale: 2 # Fixes sun glare textures.
     nativeScaling: 2 # Fixes post alignment.
     getSkipCount: "GSC_NFSUndercover"
     textureInsideRT: 1 # Fixes sun glare.
@@ -28405,7 +28355,6 @@ SLKA-25039:
   region: "NTSC-K"
   gsHWFixes:
     halfPixelOffset: 2 # Aligns bloom effect.
-    bilinearUpscale: 2 # Reduces color banding of the sun glare.
     nativeScaling: 2 # Fixes post lighting.
   roundModes:
     vu1RoundMode: 1 # Bright lights in cars.
@@ -28620,7 +28569,6 @@ SLKA-25093:
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Fixes post processing smoothness and position.
     disablePartialInvalidation: 1 # Fixes textureless graphics ingame.
-    bilinearUpscale: 2 # Gets rid of center vertical line when upscaling.
 SLKA-25095:
   name: "Madden NFL 2004"
   region: "NTSC-K"
@@ -29047,7 +28995,6 @@ SLKA-25206:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLKA-25207:
   name: "Sakura Taisen V - Episode 0 - Samurai Girl of Wild"
@@ -29301,7 +29248,6 @@ SLKA-25260:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLKA-25261:
   name: "Tsukiyo ni Saraba"
@@ -29481,7 +29427,6 @@ SLKA-25304:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLKA-25305:
   name: "Taito Memories - Gekan"
@@ -29566,7 +29511,6 @@ SLKA-25320:
   gsHWFixes:
     minimumBlendingLevel: 2 # Improves shading on effects and bloom.
     halfPixelOffset: 4 # Fixes misaligned lighting and bloom.
-    bilinearUpscale: 1 # Smooths out bloom.
 SLKA-25321:
   name: "K.League - Winning Eleven 9 - Asia Championship"
   region: "NTSC-K"
@@ -29632,7 +29576,6 @@ SLKA-25334:
     - "SLKA-25334"
     - "SLKA-25241" # Underground 2 save grants extra money.
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
     nativeScaling: 2 # Fixes post effects.
@@ -30307,7 +30250,6 @@ SLPM-55003:
     - "SLPM-55003"
     - "SLPM-65766" # Underground 2 save grants extra money.
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
     nativeScaling: 2 # Fixes post effects.
@@ -30319,7 +30261,6 @@ SLPM-55004:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLPM-55005:
   name: "Mana Khemia 2 - Ochita Gakuen to Renkinjutsushi Tachi"
@@ -30431,7 +30372,6 @@ SLPM-55036:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLPM-55037:
   name: "Medal of Honor - European Assault [EASY 1980]"
@@ -30740,7 +30680,6 @@ SLPM-55127:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes blurriness.
-    bilinearUpscale: 2 # Fixes sun glare textures.
     nativeScaling: 2 # Fixes post alignment.
     getSkipCount: "GSC_NFSUndercover"
     textureInsideRT: 1 # Fixes sun glare.
@@ -31122,7 +31061,6 @@ SLPM-55244:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes blurriness.
-    bilinearUpscale: 2 # Fixes sun glare textures.
     nativeScaling: 2 # Fixes post alignment.
     getSkipCount: "GSC_NFSUndercover"
     textureInsideRT: 1 # Fixes sun glare.
@@ -31687,7 +31625,6 @@ SLPM-60246:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLPM-60247:
   name: "Gradius V"
@@ -32296,7 +32233,6 @@ SLPM-61130:
   gsHWFixes:
     minimumBlendingLevel: 2 # Improves shading on effects and bloom.
     halfPixelOffset: 4 # Fixes misaligned lighting and bloom.
-    bilinearUpscale: 1 # Smooths out bloom.
 SLPM-61131:
   name: "Dengeki PS2 PlayStation D85"
   region: "NTSC-J"
@@ -32308,7 +32244,6 @@ SLPM-61132:
   gsHWFixes:
     minimumBlendingLevel: 2 # Improves shading on effects and bloom.
     halfPixelOffset: 4 # Fixes misaligned lighting and bloom.
-    bilinearUpscale: 1 # Smooths out bloom.
 SLPM-61133:
   name: "Soul Calibur III [Trial Version]"
   region: "NTSC-J"
@@ -35858,7 +35793,6 @@ SLPM-65205:
   name: "Spider-Man"
   region: "NTSC-J"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures.
 SLPM-65206:
   name: "King of Colosseum - Green"
   region: "NTSC-J"
@@ -36709,7 +36643,6 @@ SLPM-65413:
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Fixes post processing smoothness and position.
     disablePartialInvalidation: 1 # Fixes textureless graphics ingame.
-    bilinearUpscale: 2 # Gets rid of center vertical line when upscaling.
 SLPM-65414:
   name: "Simple 2000 Series Vol. 45 - The Koi to Namida to, Tsuioku to..."
   region: "NTSC-J"
@@ -37863,7 +37796,6 @@ SLPM-65719:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLPM-65720:
   name: "Shin Sangoku Musou 2 Moushouden [Koei the Best]"
@@ -37908,7 +37840,6 @@ SLPM-65729:
   gsHWFixes:
     preloadFrameData: 1 # Fixes licences.
     halfPixelOffset: 3 # Fixes double image.
-    bilinearUpscale: 2 # Fixes sun glare textures to behave like native.
 SLPM-65730:
   name: "Rockman X8"
   region: "NTSC-J"
@@ -38642,7 +38573,6 @@ SLPM-65913:
   gsHWFixes:
     halfPixelOffset: 2 # Reduces blurriness. Normal Vertex works better, but causes some lights to disappear.
     roundSprite: 1 # Further reduces blurriness.
-    bilinearUpscale: 1 # Smooths out fire textures.
     nativeScaling: 2 # Fixes post processing.
 SLPM-65914:
   name: "Nana"
@@ -38809,7 +38739,6 @@ SLPM-65958:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLPM-65959:
   name: "Standard Daisenryaku - Ushinawareta Shouri"
@@ -39373,7 +39302,6 @@ SLPM-66098:
   gsHWFixes:
     preloadFrameData: 1 # Fixes licences.
     halfPixelOffset: 3 # Fixes double image.
-    bilinearUpscale: 2 # Fixes sun glare textures to behave like native.
 SLPM-66099:
   name: "Harukanaru Toki no Naka de 3 - Izayoiki [Premium Box-Triple Pack]"
   region: "NTSC-J"
@@ -39424,7 +39352,6 @@ SLPM-66108:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
   memcardFilters:
     - "SLAJ-25066"
@@ -39786,7 +39713,6 @@ SLPM-66184:
   gsHWFixes:
     minimumBlendingLevel: 2 # Improves shading on effects and bloom.
     halfPixelOffset: 4 # Fixes misaligned lighting and bloom.
-    bilinearUpscale: 1 # Smooths out bloom.
 SLPM-66185:
   name: "Game ni Nattayo! Dokuro-chan [Limited Edition]"
   region: "NTSC-J"
@@ -40020,7 +39946,6 @@ SLPM-66232:
   name: "Need for Speed - Most Wanted"
   region: "NTSC-J"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
   memcardFilters:
@@ -41418,7 +41343,6 @@ SLPM-66562:
   name: "Need for Speed - Most Wanted [EA Best Hits]"
   region: "NTSC-J"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
   memcardFilters:
@@ -41761,7 +41685,6 @@ SLPM-66638:
   gsHWFixes:
     halfPixelOffset: 2 # Reduces blurriness. Normal Vertex works better, but causes some lights to disappear.
     roundSprite: 1 # Further reduces blurriness.
-    bilinearUpscale: 1 # Smooths out fire textures.
     nativeScaling: 2 # Fixes post processing.
 SLPM-66639:
   name: "Street Fighter III - 3rd Strike [Capcom the Best]"
@@ -41820,7 +41743,6 @@ SLPM-66652:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
   memcardFilters:
     - "SLAJ-25066"
@@ -42210,7 +42132,6 @@ SLPM-66739:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLPM-66740:
   name: "Sentou Kokka Kai - Legend [DX Pack]"
@@ -43041,7 +42962,6 @@ SLPM-66962:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLPM-66963:
   name: "Medal of Honor - Frontline [EA-SY! 1980]"
@@ -43750,7 +43670,6 @@ SLPM-74227:
   gsHWFixes:
     minimumBlendingLevel: 2 # Improves shading on effects and bloom.
     halfPixelOffset: 4 # Fixes misaligned lighting and bloom.
-    bilinearUpscale: 1 # Smooths out bloom.
 SLPM-74228:
   name: "Fuuun Bakumatsu-den [PlayStation 2 the Best]"
   region: "NTSC-J"
@@ -47184,7 +47103,6 @@ SLPS-25351:
   region: "NTSC-J"
   gsHWFixes:
     halfPixelOffset: 4 # Aligns bloom effect.
-    bilinearUpscale: 2 # Reduces color banding of the sun glare.
     nativeScaling: 2 # Fixes post lighting.
   roundModes:
     vu1RoundMode: 1 # Bright lights in cars.
@@ -51945,7 +51863,6 @@ SLUS-20336:
   region: "NTSC-U"
   compat: 5
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures.
 SLUS-20337:
   name: "X2 - Wolverine's Revenge"
   region: "NTSC-U"
@@ -52782,7 +52699,6 @@ SLUS-20497:
   compat: 5
   gsHWFixes:
     halfPixelOffset: 2 # Aligns bloom effect.
-    bilinearUpscale: 2 # Reduces color banding of the sun glare.
     nativeScaling: 2 # Fixes post lighting.
   roundModes:
     vu1RoundMode: 1 # Bright lights in cars.
@@ -53045,7 +52961,6 @@ SLUS-20550:
   gsHWFixes:
     preloadFrameData: 1 # Fixes licences.
     halfPixelOffset: 3 # Fixes double image.
-    bilinearUpscale: 2 # Fixes sun glare textures to behave like native.
 SLUS-20552:
   name: "Grand Theft Auto - Vice City"
   region: "NTSC-U"
@@ -53155,7 +53070,6 @@ SLUS-20571:
   name: "TY the Tasmanian Tiger"
   region: "NTSC-U"
   gsHWFixes:
-    bilinearUpscale: 1 # Fixes texture pixelation.
   compat: 5
 SLUS-20572:
   name: "Tiger Woods PGA Tour 2003"
@@ -53799,7 +53713,6 @@ SLUS-20694:
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Fixes post processing smoothness and position.
     disablePartialInvalidation: 1 # Fixes textureless graphics ingame.
-    bilinearUpscale: 2 # Gets rid of center vertical line when upscaling.
 SLUS-20695:
   name: "Chaos Legion"
   region: "NTSC-U"
@@ -54814,7 +54727,6 @@ SLUS-20887:
   gsHWFixes:
     cpuSpriteRenderBW: 1 # Fixes shadow rendering.
     cpuSpriteRenderLevel: 1 # Needed for above.
-    bilinearUpscale: 1 # Smooths out shadow textures.
 SLUS-20888:
   name: "Front Mission 4"
   region: "NTSC-U"
@@ -55844,7 +55756,6 @@ SLUS-21050:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLUS-21051:
   name: "FIFA 2005"
@@ -55965,7 +55876,6 @@ SLUS-21075:
   gsHWFixes:
     halfPixelOffset: 2 # Reduces blurriness. Normal Vertex works better, but causes some lights to disappear.
     roundSprite: 1 # Further reduces blurriness.
-    bilinearUpscale: 1 # Smooths out fire textures.
     nativeScaling: 2 # Fixes post processing.
 SLUS-21076:
   name: "Atari Anthology"
@@ -56245,7 +56155,6 @@ SLUS-21127:
   gsHWFixes:
     halfPixelOffset: 4 # Fixes lighting/shadows.
     preloadFrameData: 1 # Fixes sun flickering.
-    bilinearUpscale: 1 # Smooths out sun glare textures like native.
     nativeScaling: 1 # Fixes post effects.
 SLUS-21128:
   name: "Blitz - The League"
@@ -56930,7 +56839,6 @@ SLUS-21242:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
   memcardFilters: # Reads Burnout 3 and NFL 06 saves for unlockables.
     - "SLUS-21242"
@@ -57037,7 +56945,6 @@ SLUS-21257:
     - "SLUS-21257"
     - "SLUS-21065" # Underground 2 save grants extra money.
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
     nativeScaling: 2 # Fixes post effects.
@@ -57119,7 +57026,6 @@ SLUS-21267:
   region: "NTSC-U"
   compat: 5
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
   memcardFilters:
@@ -57705,7 +57611,6 @@ SLUS-21351:
   region: "NTSC-U"
   compat: 5
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
   memcardFilters:
@@ -58884,7 +58789,6 @@ SLUS-21570:
   gsHWFixes:
     halfPixelOffset: 5 # Fixes misaligment issues.
     nativeScaling: 2 # Fixes post effects such as the afterburners.
-    bilinearUpscale: 2 # Smooths out sun glare textures.
   compat: 5
 SLUS-21571:
   name: "Growlanser - Heritage of War"
@@ -59032,7 +58936,6 @@ SLUS-21596:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLUS-21597:
   name: "Medal of Honor - Vanguard"
@@ -60059,7 +59962,6 @@ SLUS-21773:
   region: "NTSC-U"
   compat: 5
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out lights.
 SLUS-21774:
   name: "Dynasty Warriors 6"
   region: "NTSC-U"
@@ -60221,7 +60123,6 @@ SLUS-21801:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes blurriness.
-    bilinearUpscale: 2 # Fixes sun glare textures.
     nativeScaling: 2 # Fixes post alignment.
     getSkipCount: "GSC_NFSUndercover"
     textureInsideRT: 1 # Fixes sun glare.
@@ -61507,7 +61408,6 @@ SLUS-29113:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLUS-29116:
   name: "WWE SmackDown! vs. RAW [Public Beta Vol.1.0]"
@@ -61670,7 +61570,6 @@ SLUS-29153:
   gsHWFixes:
     recommendedBlendingLevel: 3 # Improves car reflections.
     halfPixelOffset: 2 # Fixes depth lines.
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
 SLUS-29154:
   name: "NHL '06 [Demo]"
@@ -61679,7 +61578,6 @@ SLUS-29155:
   name: "Need for Speed - Most Wanted [Demo]"
   region: "NTSC-U"
   gsHWFixes:
-    bilinearUpscale: 2 # Smooths out sun glare textures like native.
     halfPixelOffset: 2 # Fixes blurriness.
     cpuCLUTRender: 1 # Final colour adjustment LUT.
 SLUS-29156:

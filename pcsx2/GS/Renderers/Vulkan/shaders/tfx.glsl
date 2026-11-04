@@ -446,21 +446,7 @@ vec4 sample_c(vec2 uv)
 
 vec4 sample_p(uint idx)
 {
-	// A palette read from a target drawn at an integer scale keeps the
-	// target's samples (GSClut::Read32): an entry is as many texels wide as
-	// the palette has rows. The fragment's place inside its native pixel
-	// picks the sample, as PS_SAMPLE_MAP picks a texel's; a palette at
-	// native size has only the one.
-	int n = textureSize(Palette, 0).y;
-	ivec2 sub = ivec2(0);
-	if (n > 1)
-	{
-		float s = RtScaleFactor;
-		vec2 frag = gl_FragCoord.xy;
-		vec2 start = floor((frag - NativeOffset) / s) * s + NativeOffset;
-		sub = min(ivec2((frag - start) * float(n) / s), ivec2(n - 1));
-	}
-	return texelFetch(Palette, ivec2(int(idx) * n + sub.x, sub.y), 0);
+	return texelFetch(Palette, ivec2(int(idx), 0), 0);
 }
 
 vec4 sample_p_norm(float u)

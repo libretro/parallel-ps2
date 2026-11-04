@@ -609,7 +609,6 @@ static const char* s_gs_hw_fix_names[] = {
 	"mergeSprite",
 	"mipmap",
 	"forceEvenSpritePosition",
-	"bilinearUpscale",
 	"nativePaletteDraw",
 	"estimateTextureRegion",
 	"PCRTCOffsets",
@@ -849,9 +848,6 @@ static bool configMatchesHWFix(const Pcsx2Config::GSOptions& config, GameDatabas
 		case GameDatabaseSchema::GSHWFixId::ForceEvenSpritePosition:
 			return (config.UpscaleMultiplier <= 1.0f || static_cast<int>(config.UserHacks_ForceEvenSpritePosition) == value);
 
-		case GameDatabaseSchema::GSHWFixId::BilinearUpscale:
-			return (config.UpscaleMultiplier <= 1.0f || static_cast<int>(config.UserHacks_BilinearHack) == value);
-
 		case GameDatabaseSchema::GSHWFixId::NativePaletteDraw:
 			return (config.UpscaleMultiplier <= 1.0f || static_cast<int>(config.UserHacks_NativePaletteDraw) == value);
 
@@ -990,11 +986,6 @@ u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, Pcsx2Config::G
 
 			case GameDatabaseSchema::GSHWFixId::ForceEvenSpritePosition:
 				config.UserHacks_ForceEvenSpritePosition = (value > 0);
-				break;
-
-			case GameDatabaseSchema::GSHWFixId::BilinearUpscale:
-				if (value >= 0 && value < static_cast<int>(GSBilinearDirtyMode::MaxCount))
-					config.UserHacks_BilinearHack = static_cast<GSBilinearDirtyMode>(value);
 				break;
 
 			case GameDatabaseSchema::GSHWFixId::NativePaletteDraw:

@@ -376,7 +376,6 @@ Pcsx2Config::GSOptions::GSOptions()
 	UserHacks_DisableRenderFixes = false;
 	UserHacks_MergePPSprite = false;
 	UserHacks_ForceEvenSpritePosition = false;
-	UserHacks_BilinearHack = GSBilinearDirtyMode::Automatic;
 	UserHacks_NativePaletteDraw = false;
 	UserHacks_Limit24BitDepth = GSLimit24BitDepth::Disabled;
 
@@ -427,7 +426,6 @@ bool Pcsx2Config::GSOptions::OptionsAreEqual(const GSOptions& right) const
 		OpEqu(UserHacks_CPUSpriteRenderLevel) &&
 		OpEqu(UserHacks_CPUCLUTRender) &&
 		OpEqu(UserHacks_TextureInsideRt) &&
-		OpEqu(UserHacks_BilinearHack) &&
 		OpEqu(UserHacks_Limit24BitDepth) &&
 		OpEqu(OverrideTextureBarriers) &&
 		OpEqu(Adapter) &&
@@ -485,7 +483,6 @@ void Pcsx2Config::GSOptions::MaskUserHacks()
 	UserHacks_CPUSpriteRenderBW = 0;
 	UserHacks_CPUSpriteRenderLevel = 0;
 	UserHacks_CPUCLUTRender = 0;
-	UserHacks_BilinearHack = GSBilinearDirtyMode::Automatic;
 	SkipDrawStart = 0;
 	SkipDrawEnd = 0;
 }
@@ -498,7 +495,6 @@ void Pcsx2Config::GSOptions::MaskUpscalingHacks()
 	UserHacks_AlignSpriteX = false;
 	UserHacks_MergePPSprite = false;
 	UserHacks_ForceEvenSpritePosition = false;
-	UserHacks_BilinearHack = GSBilinearDirtyMode::Automatic;
 	UserHacks_NativePaletteDraw = false;
 	UserHacks_Limit24BitDepth = GSLimit24BitDepth::Disabled;
 	UserHacks_HalfPixelOffset = GSHalfPixelOffset::Off;

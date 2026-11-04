@@ -52,7 +52,7 @@ struct gs_state_ops
 	bool       (*can_upscale)(GSState* gs);
 	float      (*get_upscale_multiplier)(GSState* gs);
 	float      (*get_texture_scale_factor)(GSState* gs);
-	GSTexture* (*lookup_palette_source)(GSState* gs, u32 CBP, u32 CPSM, u32 CBW, GSVector2i* offset, float* scale, const GSVector2i* size);
+	GSTexture* (*lookup_palette_source)(GSState* gs, u32 CBP, u32 CPSM, u32 CBW, GSVector2i* offset, float* scale, float* sample, const GSVector2i* size);
 	GSTexture* (*get_output)(GSState* gs, int i, float* scale, int* y_offset);
 	GSTexture* (*get_feedback_output)(GSState* gs, float* scale);
 	/* The depth the picture in color, a texture get_output returned, was
@@ -567,9 +567,9 @@ public:
 	bool  CanUpscale()            { return (m_ops && m_ops->can_upscale) ? m_ops->can_upscale(this) : false; }
 	float GetUpscaleMultiplier()  { return (m_ops && m_ops->get_upscale_multiplier) ? m_ops->get_upscale_multiplier(this) : 1.0f; }
 	float GetTextureScaleFactor() { return (m_ops && m_ops->get_texture_scale_factor) ? m_ops->get_texture_scale_factor(this) : 1.0f; }
-	GSTexture* LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, const GSVector2i& size)
+	GSTexture* LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, float* sample, const GSVector2i& size)
 	{
-		return (m_ops && m_ops->lookup_palette_source) ? m_ops->lookup_palette_source(this, CBP, CPSM, CBW, &offset, scale, &size) : nullptr;
+		return (m_ops && m_ops->lookup_palette_source) ? m_ops->lookup_palette_source(this, CBP, CPSM, CBW, &offset, scale, sample, &size) : nullptr;
 	}
 	bool IsIdleFrame() const;
 

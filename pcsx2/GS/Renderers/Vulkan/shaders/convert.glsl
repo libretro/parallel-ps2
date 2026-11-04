@@ -489,7 +489,7 @@ layout(push_constant) uniform cb10
 {
 	uvec2 offset;
 	uint doffset;
-	uint samples;
+	float sample_at;
 	float scale;
 	vec3 cb_pad2;
 };
@@ -499,19 +499,17 @@ void ps_convert_clut_4()
 	// Sixteen consecutive entries from the block DOFFSET selects, so the
 	// offset goes on the index. Past the first block that index leaves the
 	// leading two rows, so it needs the same group layout the 8-bit path uses.
-	// A palette of a target drawn at an integer scale keeps its samples: an
-	// entry is SAMPLES texels wide and the palette SAMPLES rows tall, each
-	// texel the entry's sample at that place in the native pixel.
-	uint n = max(samples, 1u);
-	uvec2 sub = uvec2(uint(gl_FragCoord.x) % n, uint(gl_FragCoord.y));
-	uint index = uint(gl_FragCoord.x) / n + doffset;
+	uint index = uint(gl_FragCoord.x) + doffset;
 	uint subgroup = (index / 8u) % 4u;
 	uvec2 pos;
 	pos.x = (index % 8u) + ((subgroup >= 2u) ? 8u : 0u);
 	pos.y = ((index / 32u) * 2u) + (subgroup % 2u);
 
-	ivec2 final = (n > 1u) ? ivec2((offset + pos) * n + sub) : ivec2(floor(vec2(offset + pos) * vec2(scale)));
-	o_col0 = texelFetch(samp0, final, 0);
+	// The entry is its native pixel's one value, read at that pixel's sample
+	// among the fragments the scale drew for it; a linear fetch where the
+	// sample lies between two.
+	vec2 at = (vec2(offset + pos) * scale + sample_at) / vec2(textureSize(samp0, 0));
+	o_col0 = texture(samp0, at);
 }
 #endif
 
@@ -520,7 +518,7 @@ layout(push_constant) uniform cb10
 {
 	uvec2 offset;
 	uint doffset;
-	uint samples;
+	float sample_at;
 	float scale;
 	vec3 cb_pad2;
 };
@@ -529,12 +527,7 @@ void ps_convert_clut_8()
 {
 	// The CLUT address clamps at the last sixteen-entry block, and the low four
 	// bits still select within it, matching GSClut::ReadCLUT_T32_I8.
-	// A palette of a target drawn at an integer scale keeps its samples: an
-	// entry is SAMPLES texels wide and the palette SAMPLES rows tall, each
-	// texel the entry's sample at that place in the native pixel.
-	uint n = max(samples, 1u);
-	uvec2 sub = uvec2(uint(gl_FragCoord.x) % n, uint(gl_FragCoord.y));
-	uint clut_x = uint(gl_FragCoord.x) / n;
+	uint clut_x = uint(gl_FragCoord.x);
 	uint index = (min((clut_x >> 4u) + (doffset >> 4u), 15u) << 4u) | (clut_x & 15u);
 
 	// CLUT is arranged into 8 groups of 16x2, with the top-right and bottom-left quadrants swapped.
@@ -544,8 +537,11 @@ void ps_convert_clut_8()
 	pos.x = (index % 8u) + ((subgroup >= 2u) ? 8u : 0u);
 	pos.y = ((index / 32u) * 2u) + (subgroup % 2u);
 
-	ivec2 final = (n > 1u) ? ivec2((offset + pos) * n + sub) : ivec2(floor(vec2(offset + pos) * vec2(scale)));
-	o_col0 = texelFetch(samp0, final, 0);
+	// The entry is its native pixel's one value, read at that pixel's sample
+	// among the fragments the scale drew for it; a linear fetch where the
+	// sample lies between two.
+	vec2 at = (vec2(offset + pos) * scale + sample_at) / vec2(textureSize(samp0, 0));
+	o_col0 = texture(samp0, at);
 }
 #endif
 

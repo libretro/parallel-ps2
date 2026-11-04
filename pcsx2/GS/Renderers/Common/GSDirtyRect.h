@@ -40,10 +40,9 @@ public:
 	u32 psm;
 	u32 bw;
 	RGBAMask rgba;
-	bool req_linear;
 
 	GSDirtyRect();
-	GSDirtyRect(GSVector4i& r, u32 psm, u32 bw, RGBAMask rgba, bool req_linear);
+	GSDirtyRect(GSVector4i& r, u32 psm, u32 bw, RGBAMask rgba);
 	GSVector4i GetDirtyRect(GIFRegTEX0 TEX0, bool align) const;
 };
 

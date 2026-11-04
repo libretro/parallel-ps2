@@ -1245,7 +1245,7 @@ static void       sw_dev_copy_rect(GSDevice* d, GSTexture* sTex, GSTexture* dTex
 static void       sw_dev_stretch_rect(GSDevice* d, GSTexture* sTex, const GSVector4* sRect, GSTexture* dTex, const GSVector4* dRect, ShaderConvert shader, bool linear) { SWDEV(d)->StretchRect(sTex, *sRect, dTex, *dRect, shader, linear); }
 static void       sw_dev_stretch_rect_mask(GSDevice* d, GSTexture* sTex, const GSVector4* sRect, GSTexture* dTex, const GSVector4* dRect, bool red, bool green, bool blue, bool alpha, ShaderConvert shader) { SWDEV(d)->StretchRect(sTex, *sRect, dTex, *dRect, red, green, blue, alpha, shader); }
 static void       sw_dev_present_rect(GSDevice* d, GSTexture* sTex, const GSVector4* sRect, GSTexture* dTex, const GSVector4* dRect) { SWDEV(d)->PresentRect(sTex, *sRect, dTex, *dRect); }
-static void       sw_dev_update_clut_texture(GSDevice* d, GSTexture* sTex, float sScale, u32 offsetX, u32 offsetY, GSTexture* dTex, u32 dOffset, u32 dSize, u32 samples) { SWDEV(d)->UpdateCLUTTexture(sTex, sScale, offsetX, offsetY, dTex, dOffset, dSize, samples); }
+static void       sw_dev_update_clut_texture(GSDevice* d, GSTexture* sTex, float sScale, float sSample, u32 offsetX, u32 offsetY, GSTexture* dTex, u32 dOffset, u32 dSize) { SWDEV(d)->UpdateCLUTTexture(sTex, sScale, sSample, offsetX, offsetY, dTex, dOffset, dSize); }
 static void       sw_dev_convert_to_indexed_texture(GSDevice* d, GSTexture* sTex, float sScale, u32 offsetX, u32 offsetY, u32 SBW, u32 SPSM, GSTexture* dTex, u32 DBW, u32 DPSM) { SWDEV(d)->ConvertToIndexedTexture(sTex, sScale, offsetX, offsetY, SBW, SPSM, dTex, DBW, DPSM); }
 static void       sw_dev_filtered_downsample_texture(GSDevice* d, GSTexture* sTex, GSTexture* dTex, u32 factor, const GSVector2i* clamp_min, const GSVector4* dRect) { SWDEV(d)->FilteredDownsampleTexture(sTex, dTex, factor, *clamp_min, *dRect); }
 static void       sw_dev_render_hw(GSDevice* d, GSHWDrawConfig* config) { SWDEV(d)->RenderHW(*config); }
@@ -1702,8 +1702,8 @@ void GSDeviceSW::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	m_present_pending = true;
 }
 
-void GSDeviceSW::UpdateCLUTTexture(GSTexture* /*sTex*/, float /*sScale*/, u32 /*offsetX*/, u32 /*offsetY*/,
-	GSTexture* /*dTex*/, u32 /*dOffset*/, u32 /*dSize*/, u32 /*samples*/)
+void GSDeviceSW::UpdateCLUTTexture(GSTexture* /*sTex*/, float /*sScale*/, float /*sSample*/, u32 /*offsetX*/, u32 /*offsetY*/,
+	GSTexture* /*dTex*/, u32 /*dOffset*/, u32 /*dSize*/)
 {
 	/* HW-renderer-only path - the SW renderer doesn't call this. */
 }

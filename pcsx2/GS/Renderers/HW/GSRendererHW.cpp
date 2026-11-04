@@ -47,7 +47,7 @@ static void       hw_invalidate_local_mem(GSState* gs, const GIFRegBITBLTBUF* b,
 static bool       hw_can_upscale(GSState* gs)              { return HW(gs)->CanUpscale(); }
 static float      hw_get_upscale_multiplier(GSState* gs)   { return HW(gs)->GetUpscaleMultiplier(); }
 static float      hw_get_texture_scale_factor(GSState* gs) { return HW(gs)->GetTextureScaleFactor(); }
-static GSTexture* hw_lookup_palette_source(GSState* gs, u32 CBP, u32 CPSM, u32 CBW, GSVector2i* offset, float* scale, const GSVector2i* size) { return HW(gs)->LookupPaletteSource(CBP, CPSM, CBW, *offset, scale, *size); }
+static GSTexture* hw_lookup_palette_source(GSState* gs, u32 CBP, u32 CPSM, u32 CBW, GSVector2i* offset, float* scale, float* sample, const GSVector2i* size) { return HW(gs)->LookupPaletteSource(CBP, CPSM, CBW, *offset, scale, sample, *size); }
 static GSTexture* hw_get_output(GSState* gs, int i, float* scale, int* y_offset) { return HW(gs)->GetOutput(i, *scale, *y_offset); }
 static GSTexture* hw_get_feedback_output(GSState* gs, float* scale) { return HW(gs)->GetFeedbackOutput(*scale); }
 static bool       hw_get_vr_depth(GSState* gs, GSTexture* color, GSTexture** depth, bool* encoded, float* z_scale) { return HW(gs)->GetVRDepth(color, depth, encoded, z_scale); }
@@ -175,9 +175,9 @@ void GSRendererHW::ReadbackTextureCache()
 	g_texture_cache->ReadbackAll();
 }
 
-GSTexture* GSRendererHW::LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, const GSVector2i& size)
+GSTexture* GSRendererHW::LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, float* sample, const GSVector2i& size)
 {
-	return g_texture_cache->LookupPaletteSource(CBP, CPSM, CBW, offset, scale, size);
+	return g_texture_cache->LookupPaletteSource(CBP, CPSM, CBW, offset, scale, sample, size);
 }
 
 bool GSRendererHW::CanUpscale()
@@ -4014,7 +4014,7 @@ void GSRendererHW::Draw()
 					RGBAMask mask;
 					mask._u32 = preserve_rt_color ? 0x7 : 0;
 					mask.c.a |= preserve_rt_alpha;
-					g_texture_cache->AddDirtyRectTarget(rt, GSVector4i(rt->m_valid.x, rt->m_valid.w, rt->m_valid.z, new_h), rt->m_TEX0.PSM, rt->m_TEX0.TBW, mask, false);
+					g_texture_cache->AddDirtyRectTarget(rt, GSVector4i(rt->m_valid.x, rt->m_valid.w, rt->m_valid.z, new_h), rt->m_TEX0.PSM, rt->m_TEX0.TBW, mask);
 					g_texture_cache->GetTargetSize(rt->m_TEX0.TBP0, rt->m_TEX0.TBW, rt->m_TEX0.PSM, 0, new_h);
 				}
 
@@ -4313,6 +4313,20 @@ void GSRendererHW::SetupIA(float target_scale, float sx, float sy)
 	{
 		case GS_POINT_CLASS:
 			{
+				/* A point covers the pixel its vertex is in, whatever the
+				 * vertex's fraction: at the pixel's origin, from which a quad
+				 * of the scale's size is expanded, or at its centre for a
+				 * sized point, which spans half the size either way. */
+				const int ofx = static_cast<int>(m_context->XYOFFSET.OFX);
+				const int ofy = static_cast<int>(m_context->XYOFFSET.OFY);
+				const int centre = (unscale_pt_ln && !features.point_expand && features.vs_expand) ? 0 : 8;
+				u32 i;
+				for (i = 0; i < m_vertex.next; i++)
+				{
+					GSVertex* const v = &m_vertex.buff[i];
+					v->XYZ.X = static_cast<u16>((((static_cast<int>(v->XYZ.X) - ofx) & ~15) + ofx + centre) & 0xFFFF);
+					v->XYZ.Y = static_cast<u16>((((static_cast<int>(v->XYZ.Y) - ofy) & ~15) + ofy + centre) & 0xFFFF);
+				}
 				m_conf.topology = GSHWDrawConfig::Topology::Point;
 				m_conf.indices_per_prim = 1;
 				if (unscale_pt_ln)
@@ -6047,12 +6061,8 @@ __ri void GSRendererHW::EmulateTextureSampler(const GSTextureCache::Target* rt, 
 	m_conf.ps.ltf = bilinear && shader_sampler;
 	m_conf.ps.native_taps = native_taps && bilinear;
 	/* A read of the target being drawn is fetched at the fragment's own
-	 * position, not through the map's texture. A palette that keeps a
-	 * target's samples (GSClut::Read32, two rows or more) is read at the
-	 * fragment's sample, so its index is the native pixel's texel, not the
-	 * fragment's: a fragment past the texel's edge would take another entry. */
-	const bool sampled_palette = tex->m_palette && tex->m_palette->GetHeight() > 1;
-	m_conf.ps.sample_map = ((tex->m_scaled_indexed && tex->m_palette && !target_region) || sampled_palette || IsSampleMapDraw(tex)) &&
+	 * position, not through the map's texture. */
+	m_conf.ps.sample_map = ((tex->m_scaled_indexed && tex->m_palette && !target_region) || IsSampleMapDraw(tex)) &&
 		!bilinear && !need_mipmap && !m_conf.ps.tex_is_fb;
 	/* (an index texture: every one with GPU palette conversion, and those
 	 * the hash cache indexed because they came with a second palette) */

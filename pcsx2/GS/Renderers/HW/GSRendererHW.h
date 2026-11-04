@@ -456,7 +456,7 @@ public:
 
 	void PurgeTextureCache(bool sources, bool targets, bool hash_cache);
 	void ReadbackTextureCache();
-	GSTexture* LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, const GSVector2i& size);
+	GSTexture* LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, float* sample, const GSVector2i& size);
 	bool CanDrawRuns();
 
 	/// Called by the texture cache to know for certain whether there is a channel shuffle.

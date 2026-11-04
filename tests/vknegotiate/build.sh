@@ -210,6 +210,39 @@ for renderer in Vulkan paraLLEl-GS; do
 	fi
 done
 
+# A palette read through with the linear filter, uploaded or drawn by the
+# GPU into a buffer; a palette drawn as a shade across its words: each
+# entry its native pixel's value, on both renderers, native and at 4x.
+for c in palette_bilinear palette_bilinear_drawn palette_shaded; do
+	case $c in
+		palette_shaded) expect=800f0f0f,801e1e1e,802d2d2d,803c3c3c ;;
+		*)              expect=10101010,30303030,50505050,70707070 ;;
+	esac
+	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+	for scale in 1 4; do
+		for renderer in Vulkan paraLLEl-GS; do
+			if ! VN_SCALE=$scale VN_EXPECT_RUN=$expect VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=$renderer \
+					timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+				rm -rf "$SCRATCH"
+				echo "  FAIL: $c, $renderer at ${scale}x"
+				exit 1
+			fi
+		done
+	done
+done
+
+# The engulfed palette again at 4x: its pages taken, and a savestate's
+# round trip, at scale.
+c=palette_engulfed
+for renderer in Vulkan paraLLEl-GS; do
+	if ! VN_SCALE=4 VN_EXPECT_RUN=40404040,c0c0c0c0,58585858,d8d8d8d8 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=$renderer \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: $c, $renderer at 4x"
+		exit 1
+	fi
+done
+
 # Destination alpha a clear wrote and a draw wrote, read back and read by
 # a blend: the same alpha either way, on both renderers.
 "$SCRATCH/swdraw" --bios "$SCRATCH/dest_alpha.bin" dest_alpha
