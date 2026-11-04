@@ -10,6 +10,8 @@
 #                   found by content, and uploads only what changed.
 # zwrite_colour   : a constant depth write into a colour target's pages
 #                   reaches the colour target as what the Z wrote.
+# drop_writeback  : a target leaving the cache leaves what it drew in local
+#                   memory, never over newer pixels.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
@@ -29,3 +31,6 @@ ${CC:-cc} -std=c89 -pedantic -Wall -Wextra -O2 -g $SANFLAGS \
 ${CC:-cc} -std=c89 -pedantic -Wall -Wextra -O2 -g $SANFLAGS \
 	-o "$DIR/zwrite_colour" "$DIR/zwrite_colour.c"
 "$DIR/zwrite_colour"
+${CC:-cc} -std=c89 -pedantic -Wall -Wextra -O2 -g $SANFLAGS \
+	-o "$DIR/drop_writeback" "$DIR/drop_writeback.c"
+"$DIR/drop_writeback"

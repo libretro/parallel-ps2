@@ -662,6 +662,7 @@ private:
 		GSVector4i tr;
 		GSVector4i drc;
 		u32 write_mask;
+		int last_draw;
 	};
 
 	/* Records the copy of r back from t. With own given, a download
@@ -687,6 +688,29 @@ private:
 	GSDownloadTexture* m_read_batch_download[READ_BATCH_MAX] = {};
 	bool ReadBatchQueue(ReadBatch* b, Target* t, const GSVector4i& r);
 	void ReadBatchStore(ReadBatch* b);
+
+	/* Targets taken out of the lists, deleted once the pages of what they
+	 * drew that local memory lacks have been written there. */
+	enum { DROP_BATCH_MAX = 32 };
+	struct DropBatch
+	{
+		ReadBatch reads;
+		Target* target[DROP_BATCH_MAX];
+		/* Per page of memory, the last draw of the newest dropped target
+		 * whose pixels go there, or -1. */
+		int page_draw[GS_MAX_PAGES];
+		u32 count;
+	};
+	void DropInit(DropBatch* d);
+	void DropTarget(DropBatch* d, Target* t);
+	void DropFlush(DropBatch* d);
+	bool DropKeepsPage(DropBatch* d, const Target* t, int px, int py, const GSVector4i& dirty);
+	/* Per page of local memory, the last draw of the newest target pixels
+	 * a read put there, or -1: what a target dropped later, holding older
+	 * pixels of the page, must not write over. */
+	int m_page_read_draw[GS_MAX_PAGES];
+	void ClearPageReadDraws();
+	void StampPageReadDraws(const GIFRegTEX0& TEX0, const GSVector4i& r, int draw);
 	void InvalidateLocalMemReads(const GSOffset& off, const GSVector4i& r, bool full_flush, ReadBatch* b);
 
 	HashCacheEntry* LookupHashCache(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, bool& paltex, const u32* clut, const GSVector2i* lod, SourceRegion region);
