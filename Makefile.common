@@ -244,8 +244,8 @@ endif
 # ============================================================================
 # common
 # ============================================================================
-SOURCES_CXX += \
-	$(LRPS2_DIR)/HostFS.cpp \
+SOURCES_C += \
+	$(LRPS2_DIR)/HostFS.c \
 
 # common/emitter is the x86-only JIT code emitter. On aarch64 the recompilers
 # that use it are gated out (VIXL is the arm64 emitter instead), so exclude it

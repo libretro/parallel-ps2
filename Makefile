@@ -779,6 +779,16 @@ endif
 
 all: $(TARGET)
 
+# A source renamed from C++ to C (HostFS.cpp to HostFS.c) keeps its
+# object's name, and the depfile from before still makes the object out of
+# the .cpp, which no longer exists: "No rule to make target". The object in
+# the tree is the C++ one, so it goes too. Done here, before the depfiles
+# are read.
+RENAMED_TO_C := $(shell grep -l -E '^[^ :]+\.o: [^ ]+\.cpp' /dev/null $(wildcard $(SOURCES_C:.c=.d)) 2>/dev/null)
+ifneq ($(strip $(RENAMED_TO_C)),)
+   RENAMED_TO_C_STATUS := $(shell rm -f $(RENAMED_TO_C) $(RENAMED_TO_C:.d=.o))
+endif
+
 -include $(DEPS)
 
 ifeq ($(DEBUG), 1)

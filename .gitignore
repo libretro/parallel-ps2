@@ -274,3 +274,5 @@ tests/ata/*.img
 /tests/parsenumber/parsenumber_test
 /tests/parsenumber/*.o
 /tests/patch/patch_pnachload
+/tests/hostfs/hostfs_test
+/tests/hostfs/*.o

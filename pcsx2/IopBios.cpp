@@ -536,18 +536,18 @@ namespace R3000A
 	class HostDir
 	{
 	public:
-		FileSystem::FindResultsArray results;
-		FileSystem::FindResultsArray::iterator dir;
+		FILESYSTEM_FIND_RESULTS results; /* owned */
+		size_t pos;
 		char basedir[PCSX2_PATH_MAX];
 
-		HostDir(FileSystem::FindResultsArray results_, const char* basedir_)
-			: results(std::move(results_))
+		HostDir(const FILESYSTEM_FIND_RESULTS& results_, const char* basedir_)
+			: results(results_)
+			, pos(0)
 		{
 			strlcpy(basedir, basedir_, sizeof(basedir));
-			dir = results.begin();
 		}
 
-		~HostDir() = default;
+		~HostDir() { FileSystem_FreeFindResults(&results); }
 
 		static int open(HostDir** dir, const char* full_path)
 		{
@@ -559,47 +559,50 @@ namespace R3000A
 			if (!path_is_directory(path))
 				return -IOP_ENOENT; // Should return ENOTDIR if path is a file?
 			
-			FileSystem::FindResultsArray results;
-			FileSystem::FindFiles(path, "*", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_FOLDERS | FILESYSTEM_FIND_RELATIVE_PATHS | FILESYSTEM_FIND_HIDDEN_FILES, &results);
+			FILESYSTEM_FIND_RESULTS results = {};
+			FileSystem_FindFiles(path, "*", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_FOLDERS | FILESYSTEM_FIND_RELATIVE_PATHS | FILESYSTEM_FIND_HIDDEN_FILES, &results);
 
-			*dir = new HostDir(std::move(results), path);
+			*dir = new HostDir(results, path);
 			if (!*dir)
+			{
+				FileSystem_FreeFindResults(&results);
 				return -IOP_ENOMEM;
+			}
 
 			return 0;
 		}
 
 		int read(void* buf, bool iomanX) /* Flawfinder: ignore */
 		{
-			if (dir == results.end())
+			if (pos == results.count)
 				return 0;
 
 			if (iomanX)
 			{
 				fxio_dirent_t* hostcontent = (fxio_dirent_t*)buf;
-				strlcpy(hostcontent->name, dir->FileName.c_str(), sizeof(hostcontent->name));
+				strlcpy(hostcontent->name, results.items[pos].FileName, sizeof(hostcontent->name));
 				{
 					char joined[PCSX2_PATH_MAX];
 					/* A truncated join names some other file; better an
 					 * empty stat than a stat of the wrong path. */
-					if (snprintf(joined, sizeof(joined), "%s/%s", basedir, dir->FileName.c_str()) < (int)sizeof(joined))
+					if (snprintf(joined, sizeof(joined), "%s/%s", basedir, results.items[pos].FileName) < (int)sizeof(joined))
 						host_stat(joined, &hostcontent->stat);
 				}
 			}
 			else
 			{
 				fio_dirent_t* hostcontent = (fio_dirent_t*)buf;
-				strlcpy(hostcontent->name, dir->FileName.c_str(), sizeof(hostcontent->name));
+				strlcpy(hostcontent->name, results.items[pos].FileName, sizeof(hostcontent->name));
 				{
 					char joined[PCSX2_PATH_MAX];
 					/* A truncated join names some other file; better an
 					 * empty stat than a stat of the wrong path. */
-					if (snprintf(joined, sizeof(joined), "%s/%s", basedir, dir->FileName.c_str()) < (int)sizeof(joined))
+					if (snprintf(joined, sizeof(joined), "%s/%s", basedir, results.items[pos].FileName) < (int)sizeof(joined))
 						host_stat(joined, &hostcontent->stat);
 				}
 			}
 
-			dir = std::next(dir);
+			pos++;
 			return 1;
 		}
 

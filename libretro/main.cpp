@@ -2371,24 +2371,25 @@ void retro_init(void)
 		const char* system_base = nullptr;
 		environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_base);
 
-		FileSystem::FindResultsArray results;
+		FILESYSTEM_FIND_RESULTS results = {};
 		char bios_dir[PCSX2_PATH_MAX];
 
 		pcsx2_path_join(bios_dir, sizeof(bios_dir), system_base, "pcsx2/bios");
-		if (FileSystem::FindFiles(bios_dir, "*", FILESYSTEM_FIND_FILES, &results))
+		if (FileSystem_FindFiles(bios_dir, "*", FILESYSTEM_FIND_FILES, &results))
 		{
 			u32 version, region;
 			static constexpr u32 MIN_BIOS_SIZE = 4 * _1mb;
 			static constexpr u32 MAX_BIOS_SIZE = 8 * _1mb;
 			char description[BIOS_DESCRIPTION_MAX];
 			char zone[BIOS_ZONE_MAX];
-			for (const FILESYSTEM_FIND_DATA& fd : results)
+			for (size_t fi = 0; fi < results.count; fi++)
 			{
+				const FILESYSTEM_FIND_DATA& fd = results.items[fi];
 				if (fd.Size < MIN_BIOS_SIZE || fd.Size > MAX_BIOS_SIZE)
 					continue;
 
-				if (IsBIOS(fd.FileName.c_str(), &version, description, sizeof(description), &region, zone, sizeof(zone)))
-					bios_info.push_back({ std::string(path_basename(fd.FileName.c_str())), std::string(description) });
+				if (IsBIOS(fd.FileName, &version, description, sizeof(description), &region, zone, sizeof(zone)))
+					bios_info.push_back({ std::string(path_basename(fd.FileName)), std::string(description) });
 			}
 
 			/* Find the BIOS core option and fill its values/labels/default_values */
@@ -2408,6 +2409,7 @@ void retro_init(void)
 				}
 			}
 		}
+		FileSystem_FreeFindResults(&results);
 	}
 
    	libretro_set_core_options(environ_cb, &option_categories);

@@ -113,7 +113,7 @@ set(pcsx2Sources
 	Gif.cpp
 	Gif_Unit.cpp
 	GS.cpp
-	HostFS.cpp
+	HostFS.c
 	Hw.cpp
 	Interpreter.cpp
 	IopBios.cpp

@@ -251,25 +251,32 @@ static std::string FindBiosImage(void)
 {
 	log_cb(RETRO_LOG_INFO, "Searching for a BIOS image in '%s'...\n", EmuFolders::Bios);
 
-	FileSystem::FindResultsArray results;
-	if (!FileSystem::FindFiles(EmuFolders::Bios, "*", FILESYSTEM_FIND_FILES, &results))
+	FILESYSTEM_FIND_RESULTS results = {};
+	if (!FileSystem_FindFiles(EmuFolders::Bios, "*", FILESYSTEM_FIND_FILES, &results))
+	{
+		FileSystem_FreeFindResults(&results);
 		return std::string();
+	}
 
 	u32 version, region;
 	char description[BIOS_DESCRIPTION_MAX];
 	char zone[BIOS_ZONE_MAX];
-	for (const FILESYSTEM_FIND_DATA& fd : results)
+	for (size_t i = 0; i < results.count; i++)
 	{
+		const FILESYSTEM_FIND_DATA& fd = results.items[i];
 		if (fd.Size < MIN_BIOS_SIZE || fd.Size > MAX_BIOS_SIZE)
 			continue;
 
-		if (IsBIOS(fd.FileName.c_str(), &version, description, sizeof(description), &region, zone, sizeof(zone)))
+		if (IsBIOS(fd.FileName, &version, description, sizeof(description), &region, zone, sizeof(zone)))
 		{
-			log_cb(RETRO_LOG_INFO, "Using BIOS '%s' (%s %s)\n", fd.FileName.c_str(), description, zone);
-			return std::move(fd.FileName);
+			log_cb(RETRO_LOG_INFO, "Using BIOS '%s' (%s %s)\n", fd.FileName, description, zone);
+			std::string found(fd.FileName);
+			FileSystem_FreeFindResults(&results);
+			return found;
 		}
 	}
 
+	FileSystem_FreeFindResults(&results);
 	log_cb(RETRO_LOG_ERROR, "Unable to auto locate a BIOS image\n");
 	return std::string();
 }

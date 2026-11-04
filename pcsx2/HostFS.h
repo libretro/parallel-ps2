@@ -15,13 +15,14 @@
 
 /* Host filesystem policy that has no libretro-common equivalent: the
  * recursive directory walker.  Everything else the old FileSystem layer
- * provided is direct libretro-common calls at the call sites now. */
+ * provided is direct libretro-common calls at the call sites now. C89. */
 
-#pragma once
+#ifndef PCSX2_HOSTFS_H
+#define PCSX2_HOSTFS_H
 
-#include "common/Pcsx2Defs.h"
-#include <string>
-#include <vector>
+#include <stddef.h>
+#include <stdint.h>
+#include <boolean.h>
 #include <streams/file_stream.h>
 
 #ifdef _WIN32
@@ -32,11 +33,15 @@
 #define FS_OSPATH_SEPARATOR_STR "/"
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum FILESYSTEM_FILE_ATTRIBUTES
 {
 	FILESYSTEM_FILE_ATTRIBUTE_DIRECTORY = 1,
 	FILESYSTEM_FILE_ATTRIBUTE_READ_ONLY = 2,
-	FILESYSTEM_FILE_ATTRIBUTE_COMPRESSED = 4,
+	FILESYSTEM_FILE_ATTRIBUTE_COMPRESSED = 4
 };
 
 enum FILESYSTEM_FIND_FLAGS
@@ -46,21 +51,34 @@ enum FILESYSTEM_FIND_FLAGS
 	FILESYSTEM_FIND_HIDDEN_FILES = (1 << 2),
 	FILESYSTEM_FIND_FOLDERS = (1 << 3),
 	FILESYSTEM_FIND_FILES = (1 << 4),
-	FILESYSTEM_FIND_KEEP_ARRAY = (1 << 5),
+	FILESYSTEM_FIND_KEEP_ARRAY = (1 << 5)
 };
 
-struct FILESYSTEM_FIND_DATA
+typedef struct FILESYSTEM_FIND_DATA
 {
-	std::string FileName;
-	s64 Size;
-	u32 Attributes;
-};
+	char* FileName; /* malloc'd; the results own it */
+	int64_t Size;
+	uint32_t Attributes;
+} FILESYSTEM_FIND_DATA;
 
-namespace FileSystem
+/* What a search found, in the order the directories gave it. Start it
+ * zeroed; FileSystem_FreeFindResults empties it again. */
+typedef struct FILESYSTEM_FIND_RESULTS
 {
-	using FindResultsArray = std::vector<FILESYSTEM_FIND_DATA>;
+	FILESYSTEM_FIND_DATA* items;
+	size_t count;
+	size_t capacity;
+} FILESYSTEM_FIND_RESULTS;
 
-	/// Search for files
-	bool FindFiles(const char* path, const char* pattern, u32 flags, FindResultsArray* results);
-}; // namespace FileSystem
+/* The entries of path matching pattern ('*' and '?' wildcards, or a
+ * name), as flags select. Without FILESYSTEM_FIND_KEEP_ARRAY the results
+ * are emptied first. True if anything was found. */
+bool FileSystem_FindFiles(const char* path, const char* pattern, uint32_t flags,
+	FILESYSTEM_FIND_RESULTS* results);
+void FileSystem_FreeFindResults(FILESYSTEM_FIND_RESULTS* results);
 
+#ifdef __cplusplus
+}
+#endif
+
+#endif
