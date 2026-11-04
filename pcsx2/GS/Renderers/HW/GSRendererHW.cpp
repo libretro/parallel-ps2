@@ -39,6 +39,7 @@ static void       hw_draw(GSState* gs)                     { HW(gs)->Draw(); }
 static void       hw_move(GSState* gs)                     { HW(gs)->Move(); }
 static void       hw_purge_texture_cache(GSState* gs, bool sources, bool targets, bool hash_cache) { HW(gs)->PurgeTextureCache(sources, targets, hash_cache); }
 static void       hw_readback_texture_cache(GSState* gs)   { HW(gs)->ReadbackTextureCache(); }
+static void       hw_mem_restored(GSState* gs, const u32* changed) { g_texture_cache->MemRestored(changed); }
 static void       hw_snapshot_targets(GSState* gs, u64 key) { (void)gs; g_texture_cache->SnapshotTargets(key); }
 static bool       hw_can_draw_runs(GSState* gs)            { return HW(gs)->CanDrawRuns(); }
 static void       hw_invalidate_video_mem(GSState* gs, const GIFRegBITBLTBUF* b, const GSVector4i* r) { HW(gs)->InvalidateVideoMem(*b, *r); }
@@ -72,7 +73,7 @@ static const struct gs_state_ops s_hw_ops = {
 	hw_get_output,
 	hw_get_feedback_output,
 	hw_get_vr_depth,
-	NULL, /* mem_restored */
+	hw_mem_restored,
 	hw_snapshot_targets,
 	hw_can_draw_runs
 };

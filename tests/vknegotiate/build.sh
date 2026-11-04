@@ -149,6 +149,53 @@ for c in alpha_under_depth alpha_under_depth_wide alpha_under_depth_strip; do
 	done
 done
 
+# A buffer's alpha laid down once, then every frame a constant 24-bit Z
+# written over one of its pages through a depth buffer of another width,
+# and the buffer's pages taken by colour draws of other widths, with their
+# alpha masked, before the alpha is read as PSMT8H through a palette: what
+# was laid down, on both renderers, and still after a state saved by one
+# is loaded. The Z leaves the page's alpha to the buffer as it leaves.
+c=alpha_dirtied_parked
+"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+for renderer in Vulkan paraLLEl-GS; do
+	if ! VN_EXPECT_RUN=40404040,c0c0c0c0,58585858,d8d8d8d8 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=$renderer \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: $c, $renderer"
+		exit 1
+	fi
+done
+
+# A palette drawn into a buffer one page wide, whose page a wider buffer
+# drawn every frame takes without drawing over the palette: an indexed
+# read through the palette gets it, on both renderers, and still after a
+# state saved by one is loaded. The palette's page is carried into the
+# wider buffer, and a buffer made over a loaded state's memory starts
+# from that memory.
+c=palette_engulfed
+"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+for renderer in Vulkan paraLLEl-GS; do
+	if ! VN_EXPECT_RUN=40404040,c0c0c0c0,58585858,d8d8d8d8 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=$renderer \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: $c, $renderer"
+		exit 1
+	fi
+done
+
+# A texture based at a block inside a page of a buffer, read within that
+# page: the buffer's texels from that block's place, on both renderers.
+c=block_offset_read
+"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+for renderer in Vulkan paraLLEl-GS; do
+	if ! VN_EXPECT_RUN=00112233,00445566 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=$renderer \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: $c, $renderer"
+		exit 1
+	fi
+done
+
 # Destination alpha a clear wrote and a draw wrote, read back and read by
 # a blend: the same alpha either way, on both renderers.
 "$SCRATCH/swdraw" --bios "$SCRATCH/dest_alpha.bin" dest_alpha

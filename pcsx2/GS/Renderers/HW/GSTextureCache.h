@@ -696,21 +696,28 @@ private:
 	{
 		ReadBatch reads;
 		Target* target[DROP_BATCH_MAX];
-		/* Per page of memory, the last draw of the newest dropped target
-		 * whose pixels go there, or -1. */
-		int page_draw[GS_MAX_PAGES];
+		/* Per channel and page of memory, the last draw of the newest
+		 * dropped target whose pixels of that channel go there, or -1. */
+		int page_draw[4][GS_MAX_PAGES];
 		u32 count;
 	};
 	void DropInit(DropBatch* d);
+	void DropQueue(DropBatch* d, Target* t);
 	void DropTarget(DropBatch* d, Target* t);
 	void DropFlush(DropBatch* d);
-	u32 DropKeepsPage(DropBatch* d, const Target* t, int px, int py, const GSVector4i& dirty);
-	/* Per page of local memory, the last draw of the newest target pixels
-	 * a read put there, or -1: what a target dropped later, holding older
-	 * pixels of the page, must not write over. */
-	int m_page_read_draw[GS_MAX_PAGES];
+	u32 DropKeepsPage(DropBatch* d, const Target* t, int px, int py);
+	/* Per channel and page of local memory, the last draw of the newest
+	 * target pixels a read put there, or -1: what a target dropped later,
+	 * holding older pixels of the page, must not write over. A read of a
+	 * target's RGB leaves the page's alpha to whoever holds it. */
+	int m_page_read_draw[4][GS_MAX_PAGES];
 	void ClearPageReadDraws();
-	void StampPageReadDraws(const GIFRegTEX0& TEX0, const GSVector4i& r, int draw);
+	void StampPageReadDraws(const GIFRegTEX0& TEX0, const GSVector4i& r, int draw, u32 channels);
+	/* The pages a savestate put into local memory that no target has
+	 * taken since: the first target made over any of them loads from
+	 * local memory, which holds what the GPU had. */
+	u32 m_restored_pages[GS_MAX_PAGES / 32];
+	bool TakeRestoredPages(u32 bp, u32 bw, u32 psm, const GSVector4i& r);
 
 	/* Targets dropped by age, out of the lists but keeping their textures:
 	 * what they drew goes to local memory only when something reads that
@@ -753,6 +760,7 @@ public:
 	void Read(Source* t, const GSVector4i& r);
 	void RemoveAll(bool sources, bool targets, bool hash_cache);
 	void ReadbackAll();
+	void MemRestored(const u32* changed);
 
 	/* Copies every target, on the GPU, under `key`. */
 	void SnapshotTargets(u64 key);
@@ -767,6 +775,7 @@ public:
 	 * local memory. */
 	bool WidenTarget(Target* t, int new_width);
 	bool RelayoutTargetWidth(Target* t, u32 new_tbw, int max_height);
+	bool CopyTargetPagesInto(Target* t, Target* dst, const GSVector4i& draw_rect, bool keep_under_draw);
 	bool RelayoutTarget(Target* t, u32 tbw);
 	static bool FullRectDirty(Target* target, u32 rgba_mask);
 	static bool FullRectDirty(Target* target);

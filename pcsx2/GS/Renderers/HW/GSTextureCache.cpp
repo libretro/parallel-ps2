@@ -111,6 +111,7 @@ GSTextureCache::GSTextureCache()
 	gs_flat_map_init(&m_surface_offset_cache, sizeof(SurfaceOffsetCacheKey), sizeof(SurfaceOffsetCacheValue));
 	gs_array_init(&m_move_remaps, sizeof(MoveRemap));
 	ClearPageReadDraws();
+	memset(m_restored_pages, 0, sizeof(m_restored_pages));
 	/* (slots for what a frame purges down to, made now) */
 	gs_stable_map_reserve(&m_hash_cache, MAX_HASH_CACHE_SIZE);
 	/* (all of it now, for none of it mid-game) */
@@ -164,54 +165,27 @@ GSTextureCache::~GSTextureCache()
 	s_move_marks = nullptr;
 }
 
-/* Every target's copy back is recorded first and the GPU waited for
- * once, not once a target; the stores follow in the same order. A batch
- * is bounded in reads and in bytes, so the download textures it adds are
- * too, and they go with it. */
-#define READBACK_BATCH_READS 16
-#define READBACK_BATCH_BYTES (32u * 1024u * 1024u)
-
+/* Every target goes to local memory by the drop rule, so that what each
+ * page holds is the newest target's, channel by channel, as a target
+ * leaving the cache would have put it: a depth buffer over a colour
+ * target's pages leaves their alpha to the colour target. The targets
+ * stay. The reads of a batch are recorded first and the GPU waited for
+ * once; the stores follow in the same order. */
 void GSTextureCache::ReadbackAll()
 {
-	GSDownloadTexture* own[READBACK_BATCH_READS] = {};
-	PendingRead pending[READBACK_BATCH_READS];
-	u32 count = 0, shared_used = 0, i;
-	u64 queued = 0;
+	DropBatch drop;
 	int type;
 
 	FlushParked(0, 0xFFFFFFFFu);
-
+	DropInit(&drop);
 	for (type = 0; type < 2; type++)
 	{
-		for (auto t : m_dst[type])
-		{
-			const GSVector4i& r = t->m_drawn_since_read;
-			const u64 bytes = static_cast<u64>(pcsx2_max_i(r.width(), 0)) * static_cast<u64>(pcsx2_max_i(r.height(), 0)) * 4;
-
-			if (count == READBACK_BATCH_READS || (count && queued + bytes > READBACK_BATCH_BYTES))
-			{
-				for (i = 0; i < count; i++)
-					ReadStore(pending[i]);
-				for (i = 0; i < READBACK_BATCH_READS; i++)
-				{
-					gs_download_texture_free(own[i]);
-					own[i] = nullptr;
-				}
-				count = 0;
-				queued = 0;
-				shared_used = 0;
-			}
-			if (ReadQueue(t, r, &own[count], &shared_used, &pending[count]))
-			{
-				count++;
-				queued += bytes;
-			}
-		}
+		FastListIterator<Target*> it = m_dst[type].begin();
+		const FastListIterator<Target*> end = m_dst[type].end();
+		for (; it != end; ++it)
+			DropQueue(&drop, *it);
 	}
-	for (i = 0; i < count; i++)
-		ReadStore(pending[i]);
-	for (i = 0; i < READBACK_BATCH_READS; i++)
-		gs_download_texture_free(own[i]);
+	ReadBatchStore(&drop.reads);
 }
 
 void GSTextureCache::RemoveAll(bool sources, bool targets, bool hash_cache)
@@ -374,6 +348,70 @@ void GSTextureCache::ResizeTarget(Target* t, GSVector4i rect, u32 tbp, u32 psm, 
 		const int new_h = pcsx2_max_i(t->m_unscaled_size.y, valid_rect.w);
 		t->ResizeTexture(new_w, new_h);
 	}
+}
+
+/* The pages of t that the new target dst takes, copied into dst page for
+ * page: the two are laid out at different widths, or t spans part of a
+ * row of dst, so each page of t goes to where dst's width puts it, as
+ * local memory would have it. Pages past dst's texture are left to t.
+ * Unless the draw keeps what is under it, a page the draw covers is not
+ * copied: the draw writes it. 32-bit colour targets at one scale only. */
+bool GSTextureCache::CopyTargetPagesInto(Target* t, Target* dst, const GSVector4i& draw_rect, bool keep_under_draw)
+{
+	const GSVector2i pgs = GSLocalMemory::m_psm[t->m_TEX0.PSM].pgs;
+	const u32 src_tbw = pcsx2_max_u(t->m_TEX0.TBW, 1u);
+	const u32 dst_tbw = pcsx2_max_u(dst->m_TEX0.TBW, 1u);
+	const float scale = t->m_scale;
+	const bool whole = t->m_valid_rgb && (t->m_valid_alpha_high || t->m_valid_alpha_low);
+	u32 rows;
+	u32 pages;
+	u32 rel0;
+	u32 p;
+	int sx;
+	int sy;
+	int dx;
+	int dy;
+
+	if (!t->m_texture || !dst->m_texture || t->m_scale != dst->m_scale || t->m_TEX0.PSM != dst->m_TEX0.PSM ||
+		GSLocalMemory::m_psm[t->m_TEX0.PSM].bpp != 32 || t->m_texture->IsDepthStencil() ||
+		t->m_TEX0.TBP0 < dst->m_TEX0.TBP0 || ((t->m_TEX0.TBP0 - dst->m_TEX0.TBP0) & (GS_BLOCKS_PER_PAGE - 1)))
+		return false;
+
+	t->Update();
+	dst->Update();
+	rows = (u32)((t->m_unscaled_size.y + pgs.y - 1) / pgs.y);
+	pages = rows * src_tbw;
+	rel0 = (t->m_TEX0.TBP0 - dst->m_TEX0.TBP0) >> 5;
+	for (p = 0; p < pages; p++)
+	{
+		const GSVector4i src_rect = GSVector4i((int)(p % src_tbw) * pgs.x, (int)(p / src_tbw) * pgs.y, 0, 0);
+		GSVector4i sr = GSVector4i(src_rect.x, src_rect.y, src_rect.x + pgs.x, src_rect.y + pgs.y).rintersect(t->m_valid);
+		GSVector4i dr;
+
+		sx = src_rect.x;
+		sy = src_rect.y;
+		dx = (int)((rel0 + p) % dst_tbw) * pgs.x;
+		dy = (int)((rel0 + p) / dst_tbw) * pgs.y;
+		if (sr.rempty() || sy >= t->m_unscaled_size.y || dx >= dst->m_unscaled_size.x || dy >= dst->m_unscaled_size.y)
+			continue;
+		dr = GSVector4i(dx + (sr.x - sx), dy + (sr.y - sy), dx + (sr.z - sx), dy + (sr.w - sy));
+		dr = dr.rintersect(GSVector4i(0, 0, dst->m_unscaled_size.x, dst->m_unscaled_size.y));
+		if (dr.rempty() || (!keep_under_draw && !dr.rintersect(draw_rect).rempty()))
+			continue;
+		sr = GSVector4i(sr.x, sr.y, sr.x + dr.width(), sr.y + dr.height());
+		if (whole)
+		{
+			g_gs_device->CopyRect(t->m_texture, dst->m_texture,
+				GSVector4i(GSVector4(sr) * GSVector4(scale)), (u32)((float)dr.x * scale), (u32)((float)dr.y * scale));
+		}
+		else
+		{
+			g_gs_device->StretchRect(t->m_texture, GSVector4(sr) / GSVector4(t->m_texture->GetSize()).xyxy(),
+				dst->m_texture, GSVector4(dr) * GSVector4(scale),
+				t->m_valid_rgb, t->m_valid_rgb, t->m_valid_rgb, t->m_valid_alpha_high || t->m_valid_alpha_low);
+		}
+	}
+	return true;
 }
 
 /* A 32-bit colour target taken at another buffer width than the one it
@@ -1521,7 +1559,12 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 			{
 				// If the BP is block offset it's unlikely to be a target, but a target can be made by a HW move, so we need to check for a match.
 				// Good for Baldurs Gate Dark Alliance (HW Move), bad for Tomb Raider Legends (just offset).
-				if (((bp & (GS_BLOCKS_PER_PAGE - 1)) != (t->m_TEX0.TBP0 & (GS_BLOCKS_PER_PAGE - 1))) && (bp & (GS_BLOCKS_PER_PAGE - 1)))
+				// A read based at a block inside a page of a page-aligned
+				// target, kept to that page, is looked at below.
+				if (((bp & (GS_BLOCKS_PER_PAGE - 1)) != (t->m_TEX0.TBP0 & (GS_BLOCKS_PER_PAGE - 1))) && (bp & (GS_BLOCKS_PER_PAGE - 1)) &&
+					!((t->m_TEX0.TBP0 & (GS_BLOCKS_PER_PAGE - 1)) == 0 && psm == t->m_TEX0.PSM && GSLocalMemory::m_psm[psm].bpp == 32 &&
+						!possible_shuffle && req_rect.x >= 0 && req_rect.y >= 0 &&
+						req_rect.z <= GSLocalMemory::m_psm[psm].pgs.x && req_rect.w <= GSLocalMemory::m_psm[psm].pgs.y))
 					continue;
 
 				/* Without the CPU conversion, a 4-bit read only looks at a
@@ -1906,6 +1949,65 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 					const int tx = static_cast<int>((page % bw) * pgs.x) - page_x;
 					const int ty = static_cast<int>((page / bw) * pgs.y) - page_y;
 					const GSVector4i in_target = r + GSVector4i(tx, ty).xyxy();
+					if (in_target.z > t->m_unscaled_size.x || in_target.w > t->m_unscaled_size.y)
+						continue;
+					if (!t->m_dirty.empty() && !t->m_dirty.GetTotalRect(t->m_TEX0, t->m_unscaled_size).rintersect(in_target).rempty())
+						continue;
+
+					x_offset = tx;
+					y_offset = ty;
+					page_gather = 0;
+					dst = t;
+					tex_merge_rt = false;
+					found_t = true;
+					continue;
+				}
+				// A read based at a block inside a page of the target, kept to
+				// that page: the GS adds the block of each texel to the base,
+				// so when none of the read's blocks share a bit with the
+				// base's block in the page, the read's texels sit in the page
+				// at the base block's place, moved by their own. The width of
+				// the read does not matter within one page. A sky gradient
+				// drawn into half a page and read by its own base is one.
+				else if (bp > t->m_TEX0.TBP0 && bp < t->UnwrappedEndBlock() && psm == t->m_TEX0.PSM &&
+					((bp - t->m_TEX0.TBP0) & (GS_BLOCKS_PER_PAGE - 1)) != 0 && GSLocalMemory::m_psm[psm].bpp == 32 &&
+					t->m_age <= 1 && (!found_t || t->m_last_draw > dst->m_last_draw) && !possible_shuffle)
+				{
+					const GSLocalMemory::psm_t& info = GSLocalMemory::m_psm[psm];
+					const GSVector2i& pgs = info.pgs;
+					const GSVector2i& bs = info.bs;
+					const u32 boff = (bp - t->m_TEX0.TBP0) & (GS_BLOCKS_PER_PAGE - 1);
+					const u32 page = (bp - t->m_TEX0.TBP0) >> 5;
+					const u32 tbw = pcsx2_max_u(t->m_TEX0.TBW, 1u);
+					int ox = -1, oy = 0, x, y, tx, ty;
+					bool clear = r.x >= 0 && r.y >= 0 && r.z <= pgs.x && r.w <= pgs.y;
+					GSVector4i in_target;
+					for (y = 0; y < pgs.y && ox < 0; y += bs.y)
+					{
+						for (x = 0; x < pgs.x; x += bs.x)
+						{
+							if ((info.info.bn(x, y, 0, 1) & (GS_BLOCKS_PER_PAGE - 1)) == boff)
+							{
+								ox = x;
+								oy = y;
+								break;
+							}
+						}
+					}
+					for (y = r.y & ~(bs.y - 1); clear && y < r.w; y += bs.y)
+						for (x = r.x & ~(bs.x - 1); x < r.z; x += bs.x)
+							if (info.info.bn(x, y, 0, 1) & boff)
+							{
+								clear = false;
+								break;
+							}
+					if (ox < 0 || !clear)
+						continue;
+					if (!t->HasValidBitsForFormat(psm, req_color, req_alpha))
+						continue;
+					tx = static_cast<int>((page % tbw) * (u32)pgs.x) + ox;
+					ty = static_cast<int>((page / tbw) * (u32)pgs.y) + oy;
+					in_target = r + GSVector4i(tx, ty).xyxy();
 					if (in_target.z > t->m_unscaled_size.x || in_target.w > t->m_unscaled_size.y)
 						continue;
 					if (!t->m_dirty.empty() && !t->m_dirty.GetTotalRect(t->m_TEX0, t->m_unscaled_size).rintersect(in_target).rempty())
@@ -2922,6 +3024,11 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 		rgba._u32 = GSUtil::GetChannelMask(TEX0.PSM);
 		dst->UpdateValidity(GSVector4i::loadh(valid_size));
 
+		/* Over pages a savestate restored, local memory is what the GPU
+		 * had: the target starts from it. */
+		if (TakeRestoredPages(TEX0.TBP0, TEX0.TBW, TEX0.PSM, newrect))
+			preload = true;
+
 		if (!is_frame && !preload && !(src && src->m_TEX0.TBP0 == dst->m_TEX0.TBP0))
 		{
 			if ((preserve_target || !draw_rect.eq(dst->m_valid)) && GSRendererHW::GetInstance()->DrawTransferCount() > 0)
@@ -3083,10 +3190,30 @@ bool GSTextureCache::PreloadTarget(GIFRegTEX0 TEX0, const GSVector2i& size, cons
 							const int overlapping_pages = pcsx2_min_i(rt_pages, static_cast<int>((dst->UnwrappedEndBlock() + 1) - t->m_TEX0.TBP0) >> 5);
 							const int overlapping_pages_height = ((overlapping_pages + (buffer_width - 1)) / buffer_width) * GSLocalMemory::m_psm[t->m_TEX0.PSM].pgs.y;
 
-							if (overlapping_pages_height == 0 || (overlapping_pages % buffer_width))
+							if (overlapping_pages_height == 0)
 							{
-								// No overlap to copy or the widths don't match.
 								i++;
+								continue;
+							}
+							if (overlapping_pages % buffer_width)
+							{
+								/* The widths don't match: the old target's
+								 * pages go to where the new width puts them,
+								 * page for page, and the old target goes. Not
+								 * into a display target, which spans the
+								 * buffers drawn inside it. */
+								if (is_frame || (src && src->m_target && src->m_from_target == t))
+								{
+									i++;
+									continue;
+								}
+								if (!CopyTargetPagesInto(t, dst, draw_rect, hw_clear == HW_CLEAR_UNKNOWN && (preserve_target || preload)))
+								{
+									i++;
+									continue;
+								}
+								ParkTarget(t);
+								i = list.erase(j);
 								continue;
 							}
 
@@ -7001,30 +7128,36 @@ void GSTextureCache::DropInit(DropBatch* d)
 	d->reads.count       = 0;
 	d->reads.shared_used = 0;
 	d->count             = 0;
-	for (i = 0; i < GS_MAX_PAGES; i++)
-		d->page_draw[i] = -1;
+	for (i = 0; i < 4 * GS_MAX_PAGES; i++)
+		d->page_draw[i >> 9][i & (GS_MAX_PAGES - 1)] = -1;
 }
 
-/* Whether page (px, py) of t goes to local memory as t is dropped: not
- * written since by a transfer, held by no target drawn after t, not
- * taken by a newer target dropped in the same pass, and not holding
- * newer pixels a read put there. A page it keeps is marked as t's. */
 /* The channels of the page (px, py) of t that go to local memory when t
- * is dropped: none when the page is dirty, or newer pixels of it were
- * read into memory; otherwise those no target drawn later holds over
- * it: a 24-bit target, or one drawn with its alpha masked, leaves the
- * page's alpha to t. */
-u32 GSTextureCache::DropKeepsPage(DropBatch* d, const Target* t, int px, int py, const GSVector4i& dirty)
+ * is dropped: none where newer pixels of it were read into memory;
+ * otherwise those neither a transfer wrote since (a dirty rect takes the
+ * channels it was written with: a 24-bit write leaves the alpha) nor any
+ * target drawn later holds over it: a 24-bit target, or one drawn with
+ * its alpha masked, leaves the page's alpha to t. */
+u32 GSTextureCache::DropKeepsPage(DropBatch* d, const Target* t, int px, int py)
 {
 	const GSVector2i pgs = GSLocalMemory::m_psm[t->m_TEX0.PSM].pgs;
 	const u32 tbw = pcsx2_max_u(t->m_TEX0.TBW, 1u);
 	const GSVector4i page_rect = GSVector4i(0, 0, pgs.x, pgs.y);
 	const GSVector4i in_t = GSVector4i(px * pgs.x, py * pgs.y, (px + 1) * pgs.x, (py + 1) * pgs.y);
 	const u32 page_bp = t->m_TEX0.TBP0 + ((u32)py * tbw + (u32)px) * GS_BLOCKS_PER_PAGE;
-	u32 channels = GSUtil::GetChannelMask(t->m_TEX0.PSM);
+	/* The channels t holds: its format's, less any it has not drawn. */
+	u32 channels = GSUtil::GetChannelMask(t->m_TEX0.PSM) &
+		((t->m_valid_rgb ? 0x7u : 0u) | ((t->m_valid_alpha_low || t->m_valid_alpha_high) ? 0x8u : 0u));
 	int type;
+	size_t i;
 
-	if (!dirty.rintersect(in_t).rempty())
+	for (i = 0; i < t->m_dirty.size() && channels; i++)
+	{
+		const GSDirtyRect& dr = t->m_dirty[i];
+		if (!dr.GetDirtyRect(t->m_TEX0, false).rintersect(in_t).rempty())
+			channels &= ~dr.rgba._u32;
+	}
+	if (!channels)
 		return 0;
 
 	for (type = 0; type < 2 && channels; type++)
@@ -7046,10 +7179,19 @@ u32 GSTextureCache::DropKeepsPage(DropBatch* d, const Target* t, int px, int py,
 		}
 	}
 
-	if (d->page_draw[(page_bp >> 5) & (GS_MAX_PAGES - 1)] > t->m_last_draw ||
-		m_page_read_draw[(page_bp >> 5) & (GS_MAX_PAGES - 1)] > t->m_last_draw)
-		return 0;
-	d->page_draw[(page_bp >> 5) & (GS_MAX_PAGES - 1)] = t->m_last_draw;
+	{
+		const u32 page = (page_bp >> 5) & (GS_MAX_PAGES - 1);
+		u32 c;
+		for (c = 0; c < 4; c++)
+		{
+			if (!(channels & (1u << c)))
+				continue;
+			if (d->page_draw[c][page] > t->m_last_draw || m_page_read_draw[c][page] > t->m_last_draw)
+				channels &= ~(1u << c);
+			else
+				d->page_draw[c][page] = t->m_last_draw;
+		}
+	}
 	return channels;
 }
 
@@ -7057,48 +7199,69 @@ u32 GSTextureCache::DropKeepsPage(DropBatch* d, const Target* t, int px, int py,
  * something writes it again, and the game can read it at any later time.
  * A target leaving the cache takes the pages of what it drew since local
  * memory last had them along, unless they are now someone else's. */
-void GSTextureCache::DropTarget(DropBatch* d, Target* t)
+void GSTextureCache::DropQueue(DropBatch* d, Target* t)
 {
 	const GSVector2i pgs = GSLocalMemory::m_psm[t->m_TEX0.PSM].pgs;
+	u8 keep[GS_MAX_PAGES];
 	GSVector4i r;
-	GSVector4i dirty;
-	int px, py, run, px0, px1, py0, py1;
+	int px, py, run, px0, px1, py0, py1, n;
 	u32 run_channels;
+	u32 all;
 
-	if (d->count == DROP_BATCH_MAX)
-		DropFlush(d);
+	if (GSConfig.HWDownloadMode != GSHardwareDownloadMode::Enabled || !t->m_texture)
+		return;
+	r = t->m_drawn_since_read.rintersect(t->m_valid);
+	if (r.rempty())
+		return;
+	py0 = r.y / pgs.y;
+	py1 = (r.w + pgs.y - 1) / pgs.y;
+	px0 = r.x / pgs.x;
+	px1 = (r.z + pgs.x - 1) / pgs.x;
+	if ((py1 - py0) * (px1 - px0) > (int)GS_MAX_PAGES)
+		return;
 
-	if (GSConfig.HWDownloadMode == GSHardwareDownloadMode::Enabled && t->m_texture)
-	{
-		r = t->m_drawn_since_read.rintersect(t->m_valid);
-		if (!r.rempty())
+	/* Every page keeping the same channels goes in one read. */
+	n = 0;
+	all = 0xFFFFFFFFu;
+	for (py = py0; py < py1; py++)
+		for (px = px0; px < px1; px++)
 		{
-			dirty = t->m_dirty.empty() ? GSVector4i::zero() : t->m_dirty.GetTotalRect(t->m_TEX0, t->m_unscaled_size);
-			py0 = r.y / pgs.y;
-			py1 = (r.w + pgs.y - 1) / pgs.y;
-			px0 = r.x / pgs.x;
-			px1 = (r.z + pgs.x - 1) / pgs.x;
-			for (py = py0; py < py1; py++)
+			keep[n] = (u8)DropKeepsPage(d, t, px, py);
+			all = (n == 0) ? keep[n] : (all == keep[n] ? all : 0xFFFFFFFFu);
+			n++;
+		}
+	if (all != 0xFFFFFFFFu)
+	{
+		if (all)
+			ReadBatchQueue(&d->reads, t, r, all);
+		return;
+	}
+	n = 0;
+	for (py = py0; py < py1; py++)
+	{
+		run = -1;
+		run_channels = 0;
+		for (px = px0; px <= px1; px++)
+		{
+			const u32 k = (px < px1) ? keep[n++] : 0;
+			if (k != run_channels && run >= 0)
 			{
+				ReadBatchQueue(&d->reads, t,
+					GSVector4i(run * pgs.x, py * pgs.y, px * pgs.x, (py + 1) * pgs.y).rintersect(r), run_channels);
 				run = -1;
-				run_channels = 0;
-				for (px = px0; px <= px1; px++)
-				{
-					const u32 keep = (px < px1) ? DropKeepsPage(d, t, px, py, dirty) : 0;
-					if (keep != run_channels && run >= 0)
-					{
-						ReadBatchQueue(&d->reads, t,
-							GSVector4i(run * pgs.x, py * pgs.y, px * pgs.x, (py + 1) * pgs.y).rintersect(r), run_channels);
-						run = -1;
-					}
-					if (keep && run < 0)
-						run = px;
-					run_channels = keep;
-				}
 			}
+			if (k && run < 0)
+				run = px;
+			run_channels = k;
 		}
 	}
+}
 
+void GSTextureCache::DropTarget(DropBatch* d, Target* t)
+{
+	if (d->count == DROP_BATCH_MAX)
+		DropFlush(d);
+	DropQueue(d, t);
 	d->target[d->count++] = t;
 }
 
@@ -7228,9 +7391,20 @@ bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture
 	if (!t->m_texture)
 		return false;
 
-	if ((!t->m_dirty.empty() && !t->m_dirty.GetTotalRect(t->m_TEX0, t->m_unscaled_size).rintersect(r).rempty())
-		|| r.width() == 0 || r.height() == 0)
+	if (r.width() == 0 || r.height() == 0)
 		return false;
+
+	/* Local memory has newer pixels where a transfer wrote since: those
+	 * channels of them are not the target's to write. */
+	{
+		size_t i;
+		for (i = 0; i < t->m_dirty.size(); i++)
+		{
+			const GSDirtyRect& dr = t->m_dirty[i];
+			if ((dr.rgba._u32 & channels) && !dr.GetDirtyRect(t->m_TEX0, false).rintersect(r).rempty())
+				return false;
+		}
+	}
 
 	const GIFRegTEX0& TEX0 = t->m_TEX0;
 	const bool is_depth = (t->m_type == DepthStencil);
@@ -7305,8 +7479,9 @@ bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture
 			*shared_used |= shared_bit;
 	}
 
-	// Don't overwrite bits which aren't used in the target's format.
-	// Stops Burnout 3's sky from breaking when flushing targets to local memory.
+	/* Only the bytes the target's format has, and has drawn, are written:
+	 * a 24-bit target leaves the alpha byte to whoever holds it. */
+	channels &= GSUtil::GetChannelMask(TEX0.PSM);
 	const u32 write_mask = ((t->m_valid_rgb ? 0x00FFFFFFu : 0) | (t->m_valid_alpha_low ? 0x0F000000u : 0) | (t->m_valid_alpha_high ? 0xF0000000u : 0)) &
 		(((channels & 1) ? 0x000000FFu : 0) | ((channels & 2) ? 0x0000FF00u : 0) | ((channels & 4) ? 0x00FF0000u : 0) | ((channels & 8) ? 0xFF000000u : 0));
 	if (write_mask == 0)
@@ -7361,6 +7536,14 @@ bool GSTextureCache::ReadQueue(Target* t, const GSVector4i& r, GSDownloadTexture
 	return true;
 }
 
+/* The channels a read's write mask touches: a 16-bit read, whose mask
+ * is the whole word, all of them. */
+static u32 read_channels(u32 write_mask)
+{
+	return ((write_mask & 0x000000FFu) ? 1u : 0u) | ((write_mask & 0x0000FF00u) ? 2u : 0u) |
+		((write_mask & 0x00FF0000u) ? 4u : 0u) | ((write_mask & 0xFF000000u) ? 8u : 0u);
+}
+
 bool GSTextureCache::ReadStore(const PendingRead& p)
 {
 	GSDownloadTexture* const dl = p.dl;
@@ -7380,7 +7563,7 @@ bool GSTextureCache::ReadStore(const PendingRead& p)
 	if (GS_TC_PARTIAL_TRANSFERS && readback_store_image(&g_gs_renderer->m_mem, bits, pitch, &tr, TEX0.TBP0, TEX0.TBW, TEX0.PSM, write_mask))
 	{
 		dl->Unmap();
-		StampPageReadDraws(TEX0, tr, p.last_draw);
+		StampPageReadDraws(TEX0, tr, p.last_draw, read_channels(write_mask));
 		return true;
 	}
 
@@ -7406,25 +7589,62 @@ bool GSTextureCache::ReadStore(const PendingRead& p)
 	}
 
 	dl->Unmap();
-	StampPageReadDraws(TEX0, tr, p.last_draw);
+	StampPageReadDraws(TEX0, tr, p.last_draw, read_channels(write_mask));
 	return true;
 }
 
 void GSTextureCache::ClearPageReadDraws()
 {
 	u32 i;
-	for (i = 0; i < GS_MAX_PAGES; i++)
-		m_page_read_draw[i] = -1;
+	for (i = 0; i < 4 * GS_MAX_PAGES; i++)
+		m_page_read_draw[i >> 9][i & (GS_MAX_PAGES - 1)] = -1;
+}
+
+/* A savestate replaced the pages set in changed: with the cache emptied
+ * for the load, every target over them starts from local memory. */
+void GSTextureCache::MemRestored(const u32* changed)
+{
+	u32 i;
+	for (i = 0; i < GS_MAX_PAGES / 32; i++)
+		m_restored_pages[i] |= changed[i];
+}
+
+/* Whether any page of r at bp holds restored memory no target has taken;
+ * the pages are the target's from here. */
+bool GSTextureCache::TakeRestoredPages(u32 bp, u32 bw, u32 psm, const GSVector4i& r)
+{
+	const GSVector2i pgs = GSLocalMemory::m_psm[psm].pgs;
+	const u32 tbw = pcsx2_max_u(bw, 1u);
+	bool any = false;
+	u32 page;
+	int px, py;
+
+	if (r.rempty())
+		return false;
+	for (py = r.y / pgs.y; py < (r.w + pgs.y - 1) / pgs.y; py++)
+	{
+		for (px = r.x / pgs.x; px < (r.z + pgs.x - 1) / pgs.x; px++)
+		{
+			page = ((bp >> 5) + (u32)py * tbw + (u32)px) & (GS_MAX_PAGES - 1);
+			if (m_restored_pages[page >> 5] & (1u << (page & 31)))
+			{
+				m_restored_pages[page >> 5] &= ~(1u << (page & 31));
+				any = true;
+			}
+		}
+	}
+	return any;
 }
 
 /* Every page r touches, a page read in part included: an older target
  * then keeps the rest of that page to itself rather than write over the
  * part that is newer. */
-void GSTextureCache::StampPageReadDraws(const GIFRegTEX0& TEX0, const GSVector4i& r, int draw)
+void GSTextureCache::StampPageReadDraws(const GIFRegTEX0& TEX0, const GSVector4i& r, int draw, u32 channels)
 {
 	const GSVector2i pgs = GSLocalMemory::m_psm[TEX0.PSM].pgs;
 	const u32 tbw = pcsx2_max_u(TEX0.TBW, 1u);
 	u32 page;
+	u32 c;
 	int px, py;
 
 	if (r.rempty())
@@ -7434,8 +7654,9 @@ void GSTextureCache::StampPageReadDraws(const GIFRegTEX0& TEX0, const GSVector4i
 		for (px = r.x / pgs.x; px < (r.z + pgs.x - 1) / pgs.x; px++)
 		{
 			page = ((TEX0.TBP0 >> 5) + (u32)py * tbw + (u32)px) & (GS_MAX_PAGES - 1);
-			if (m_page_read_draw[page] < draw)
-				m_page_read_draw[page] = draw;
+			for (c = 0; c < 4; c++)
+				if ((channels & (1u << c)) && m_page_read_draw[c][page] < draw)
+					m_page_read_draw[c][page] = draw;
 		}
 	}
 }
