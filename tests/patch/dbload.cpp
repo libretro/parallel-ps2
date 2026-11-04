@@ -26,7 +26,7 @@
  *      whole block invisible and the parser says nothing, because an
  *      unrecognised key is skipped rather than reported. Every entry
  *      under it is silently lost.
- *    - an out-of-range value. "autoFlush: 99" loads without complaint;
+ *    - an out-of-range value. "textureInsideRT: 99" loads without complaint;
  *      the numeric gsHWFixes are range-checked nowhere.
  *
  *  Both are real silent failures this does not close. Catching them means
@@ -132,7 +132,7 @@ static const char s_fixture[] =
 	"    eeCycleRate: 2\n"
 	"    bogus: 1\n"
 	"  gsHWFixes:\n"
-	"    autoFlush: 2\n"
+	"    textureInsideRT: 2\n"
 	"    mipmap: 1\n"
 	"    halfPixelOffset: x\n"
 	"    nonsense: 1\n"
@@ -211,7 +211,7 @@ static int fixture(void)
 		&& a->speedHacks[1].id == SpeedHack::EECycleRate && a->speedHacks[1].value == 2,
 		"speed hacks in order, the unknown one dropped");
 	FCHECK(a->nGSHWFixes == 3
-		&& a->gsHWFixes[0].id == GameDatabaseSchema::GSHWFixId::AutoFlush && a->gsHWFixes[0].value == 2
+		&& a->gsHWFixes[0].id == GameDatabaseSchema::GSHWFixId::TextureInsideRT && a->gsHWFixes[0].value == 2
 		&& a->gsHWFixes[1].id == GameDatabaseSchema::GSHWFixId::Mipmap && a->gsHWFixes[1].value == 1
 		&& a->gsHWFixes[2].id == GameDatabaseSchema::GSHWFixId::GetSkipCount,
 		"GS fixes in order, a bad value and an unknown name dropped");

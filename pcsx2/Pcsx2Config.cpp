@@ -362,14 +362,12 @@ Pcsx2Config::GSOptions::GSOptions()
 
 	HWDownloadMode = GSHardwareDownloadMode::Enabled;
 	GPUPaletteConversion = false;
-	AutoFlushSW = true;
 	PreloadFrameWithGSData = false;
 	Mipmap = true;
 
 	ManualUserHacks = false;
 	NativeScalingSet = false;
 	UserHacks_AlignSpriteX = false;
-	UserHacks_AutoFlush = GSHWAutoFlushLevel::Disabled;
 	UserHacks_CPUFBConversion = false;
 	UserHacks_ReadTCOnClose = false;
 	UserHacks_DisableDepthSupport = false;
@@ -419,7 +417,6 @@ bool Pcsx2Config::GSOptions::OptionsAreEqual(const GSOptions& right) const
 		OpEqu(SkipDrawEnd) &&
 		OpEqu(SkipDrawStart) &&
 
-		OpEqu(UserHacks_AutoFlush) &&
 		OpEqu(UserHacks_HalfPixelOffset) &&
 		OpEqu(UserHacks_RoundSprite) &&
 		OpEqu(UserHacks_NativeScaling) &&
@@ -475,7 +472,6 @@ void Pcsx2Config::GSOptions::MaskUserHacks()
 	UserHacks_RoundSprite = 0;
 	if (!NativeScalingSet)
 		UserHacks_NativeScaling = GSNativeScaling::NativeScaling_Normal;
-	UserHacks_AutoFlush = GSHWAutoFlushLevel::Disabled;
 	GPUPaletteConversion = false;
 	PreloadFrameWithGSData = false;
 	UserHacks_DisablePartialInvalidation = false;

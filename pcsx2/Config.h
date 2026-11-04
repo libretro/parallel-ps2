@@ -287,13 +287,6 @@ enum class GSHardwareDownloadMode : u8
 	Disabled
 };
 
-enum class GSHWAutoFlushLevel : u8
-{
-	Disabled,
-	SpritesOnly,
-	Enabled,
-};
-
 enum class GSTextureInRtMode : u8
 {
 	Disabled,
@@ -492,7 +485,6 @@ struct Pcsx2Config
 
 				bool
 					GPUPaletteConversion : 1,
-					AutoFlushSW : 1,
 					PreloadFrameWithGSData : 1,
 					Mipmap : 1,
 					ManualUserHacks : 1,
@@ -535,7 +527,6 @@ struct Pcsx2Config
 		int SkipDrawStart = 0;
 		int SkipDrawEnd = 0;
 
-		GSHWAutoFlushLevel UserHacks_AutoFlush = GSHWAutoFlushLevel::Disabled;
 		GSHalfPixelOffset UserHacks_HalfPixelOffset = GSHalfPixelOffset::Off;
 		s8 UserHacks_RoundSprite = 0;
 		GSNativeScaling UserHacks_NativeScaling = GSNativeScaling::NativeScaling_Normal;

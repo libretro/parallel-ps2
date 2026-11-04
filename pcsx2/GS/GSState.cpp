@@ -40,11 +40,6 @@ static T2 cpp11_bit_cast(T1 t1) {
   return t2;
 }
 
-static __fi bool IsAutoFlushEnabled()
-{
-	return GSIsHardwareRenderer() ? (GSConfig.UserHacks_AutoFlush != GSHWAutoFlushLevel::Disabled) : GSConfig.AutoFlushSW;
-}
-
 static __fi bool IsFirstProvokingVertex()
 {
 	return (GSIsHardwareRenderer() && !g_gs_device->Features().provoking_vertex_last);
@@ -250,29 +245,40 @@ void GSState::ResetBase(bool hardware_reset)
 	memcpy(&m_prev_env, &m_env, sizeof(m_prev_env));
 }
 
-template<bool auto_flush, bool index_swap>
+/* Both sets, plain and auto-flush: UpdateVertexKick picks by whether the
+ * draw state can read what it draws (UpdateAutoFlushKick). */
+template<bool index_swap>
 void GSState::SetPrimHandlers()
 {
-#define SetHandlerXYZ(P, auto_flush, index_swap) \
-	m_fpGIFPackedRegHandlerXYZ[P][0] = &GSState::GIFPackedRegHandlerXYZF2<P, 0, auto_flush, index_swap>; \
-	m_fpGIFPackedRegHandlerXYZ[P][1] = &GSState::GIFPackedRegHandlerXYZF2<P, 1, auto_flush, index_swap>; \
-	m_fpGIFPackedRegHandlerXYZ[P][2] = &GSState::GIFPackedRegHandlerXYZ2<P, 0, auto_flush, index_swap>; \
-	m_fpGIFPackedRegHandlerXYZ[P][3] = &GSState::GIFPackedRegHandlerXYZ2<P, 1, auto_flush, index_swap>; \
-	m_fpGIFRegHandlerXYZ[P][0] = &GSState::GIFRegHandlerXYZF2<P, 0, auto_flush, index_swap>; \
-	m_fpGIFRegHandlerXYZ[P][1] = &GSState::GIFRegHandlerXYZF2<P, 1, auto_flush, index_swap>; \
-	m_fpGIFRegHandlerXYZ[P][2] = &GSState::GIFRegHandlerXYZ2<P, 0, auto_flush, index_swap>; \
-	m_fpGIFRegHandlerXYZ[P][3] = &GSState::GIFRegHandlerXYZ2<P, 1, auto_flush, index_swap>; \
-	m_fpGIFPackedRegHandlerSTQRGBAXYZF2[P] = &GSState::GIFPackedRegHandlerSTQRGBAXYZF2<P, auto_flush, index_swap>; \
-	m_fpGIFPackedRegHandlerSTQRGBAXYZ2[P] = &GSState::GIFPackedRegHandlerSTQRGBAXYZ2<P, auto_flush, index_swap>;
+#define SetHandlerXYZ(P, af, index_swap) \
+	m_fpGIFPackedRegHandlerXYZ[af][P][0] = &GSState::GIFPackedRegHandlerXYZF2<P, 0, af, index_swap>; \
+	m_fpGIFPackedRegHandlerXYZ[af][P][1] = &GSState::GIFPackedRegHandlerXYZF2<P, 1, af, index_swap>; \
+	m_fpGIFPackedRegHandlerXYZ[af][P][2] = &GSState::GIFPackedRegHandlerXYZ2<P, 0, af, index_swap>; \
+	m_fpGIFPackedRegHandlerXYZ[af][P][3] = &GSState::GIFPackedRegHandlerXYZ2<P, 1, af, index_swap>; \
+	m_fpGIFRegHandlerXYZ[af][P][0] = &GSState::GIFRegHandlerXYZF2<P, 0, af, index_swap>; \
+	m_fpGIFRegHandlerXYZ[af][P][1] = &GSState::GIFRegHandlerXYZF2<P, 1, af, index_swap>; \
+	m_fpGIFRegHandlerXYZ[af][P][2] = &GSState::GIFRegHandlerXYZ2<P, 0, af, index_swap>; \
+	m_fpGIFRegHandlerXYZ[af][P][3] = &GSState::GIFRegHandlerXYZ2<P, 1, af, index_swap>; \
+	m_fpGIFPackedRegHandlerSTQRGBAXYZF2[af][P] = &GSState::GIFPackedRegHandlerSTQRGBAXYZF2<P, af, index_swap>; \
+	m_fpGIFPackedRegHandlerSTQRGBAXYZ2[af][P] = &GSState::GIFPackedRegHandlerSTQRGBAXYZ2<P, af, index_swap>;
 
-	SetHandlerXYZ(GS_POINTLIST, true, false);
-	SetHandlerXYZ(GS_LINELIST, auto_flush, index_swap);
-	SetHandlerXYZ(GS_LINESTRIP, auto_flush, index_swap);
-	SetHandlerXYZ(GS_TRIANGLELIST, auto_flush, index_swap);
-	SetHandlerXYZ(GS_TRIANGLESTRIP, auto_flush, index_swap);
-	SetHandlerXYZ(GS_TRIANGLEFAN, auto_flush, index_swap);
-	SetHandlerXYZ(GS_SPRITE, auto_flush, false);
-	SetHandlerXYZ(GS_INVALID, auto_flush, false);
+	SetHandlerXYZ(GS_POINTLIST, 0, false);
+	SetHandlerXYZ(GS_LINELIST, 0, index_swap);
+	SetHandlerXYZ(GS_LINESTRIP, 0, index_swap);
+	SetHandlerXYZ(GS_TRIANGLELIST, 0, index_swap);
+	SetHandlerXYZ(GS_TRIANGLESTRIP, 0, index_swap);
+	SetHandlerXYZ(GS_TRIANGLEFAN, 0, index_swap);
+	SetHandlerXYZ(GS_SPRITE, 0, false);
+	SetHandlerXYZ(GS_INVALID, 0, false);
+
+	SetHandlerXYZ(GS_POINTLIST, 1, false);
+	SetHandlerXYZ(GS_LINELIST, 1, index_swap);
+	SetHandlerXYZ(GS_LINESTRIP, 1, index_swap);
+	SetHandlerXYZ(GS_TRIANGLELIST, 1, index_swap);
+	SetHandlerXYZ(GS_TRIANGLESTRIP, 1, index_swap);
+	SetHandlerXYZ(GS_TRIANGLEFAN, 1, index_swap);
+	SetHandlerXYZ(GS_SPRITE, 1, false);
+	SetHandlerXYZ(GS_INVALID, 1, false);
 
 #undef SetHandlerXYZ
 }
@@ -295,10 +301,7 @@ void GSState::ResetHandlers()
 	m_fpGIFPackedRegHandlers[GIF_REG_NOP] = &GSState::GIFPackedRegHandlerNOP;
 
 	// swap first/last indices when the provoking vertex is the first (D3D/Vulkan)
-	if (IsAutoFlushEnabled())
-		IsFirstProvokingVertex() ? SetPrimHandlers<true, true>() : SetPrimHandlers<true, false>();
-	else
-		IsFirstProvokingVertex() ? SetPrimHandlers<false, true>() : SetPrimHandlers<false, false>();
+	IsFirstProvokingVertex() ? SetPrimHandlers<true>() : SetPrimHandlers<false>();
 
 	for (size_t i = 0; i < C89_ARRAY_SIZE(m_fpGIFRegHandlers); i++)
 		m_fpGIFRegHandlers[i] = &GSState::GIFRegHandlerNull;
@@ -370,10 +373,7 @@ void GSState::UpdateSettingsBase(const Pcsx2Config::GSOptions& old_config)
 {
 	m_mipmap = GSConfig.Mipmap;
 
-	if (
-		GSConfig.AutoFlushSW != old_config.AutoFlushSW ||
-		GSConfig.UserHacks_AutoFlush != old_config.UserHacks_AutoFlush ||
-		GSConfig.UserHacks_ForceEvenSpritePosition != old_config.UserHacks_ForceEvenSpritePosition)
+	if (GSConfig.UserHacks_ForceEvenSpritePosition != old_config.UserHacks_ForceEvenSpritePosition)
 	{
 		ResetHandlers();
 	}
@@ -850,6 +850,9 @@ void GSState::ApplyTEX0(GIFRegTEX0& TEX0)
 		else
 			m_dirty_gs_regs &= ~(1 << DIRTY_REG_TEX0);
 	}
+
+	if (i == PRIM->CTXT)
+		UpdateAutoFlushKick();
 }
 
 template <int i>
@@ -1188,6 +1191,9 @@ void GSState::GIFRegHandlerTEST(const GIFReg* RESTRICT r)
 		else
 			m_dirty_gs_regs &= ~(1 << DIRTY_REG_TEST);
 	}
+
+	if (i == PRIM->CTXT)
+		UpdateAutoFlushKick();
 }
 
 void GSState::GIFRegHandlerPABE(const GIFReg* RESTRICT r)
@@ -1261,6 +1267,9 @@ void GSState::GIFRegHandlerFRAME(const GIFReg* RESTRICT r)
 		else
 			m_dirty_gs_regs &= ~(1 << DIRTY_REG_FRAME);
 	}
+
+	if (i == PRIM->CTXT)
+		UpdateAutoFlushKick();
 }
 
 template <int i>
@@ -1294,6 +1303,9 @@ void GSState::GIFRegHandlerZBUF(const GIFReg* RESTRICT r)
 		else
 			m_dirty_gs_regs &= ~(1 << DIRTY_REG_ZBUF);
 	}
+
+	if (i == PRIM->CTXT)
+		UpdateAutoFlushKick();
 }
 
 void GSState::GIFRegHandlerBITBLTBUF(const GIFReg* RESTRICT r)
@@ -2792,6 +2804,7 @@ void GSState::UpdateContext()
 	m_context = const_cast<GSDrawingContext*>(&m_draw_env->CTXT[PRIM->CTXT]);
 
 	UpdateScissor();
+	UpdateAutoFlushKick();
 }
 
 void GSState::UpdateScissor()
@@ -2805,19 +2818,28 @@ void GSState::UpdateScissor()
 void GSState::UpdateVertexKick()
 {
 	const u32 prim = PRIM->PRIM;
+	const int af = (m_autoflush_kick = IsAutoFlushDraw()) ? 1 : 0;
 
-	m_fpGIFPackedRegHandlers[GIF_REG_XYZF2] = m_fpGIFPackedRegHandlerXYZ[prim][0];
-	m_fpGIFPackedRegHandlers[GIF_REG_XYZF3] = m_fpGIFPackedRegHandlerXYZ[prim][1];
-	m_fpGIFPackedRegHandlers[GIF_REG_XYZ2] = m_fpGIFPackedRegHandlerXYZ[prim][2];
-	m_fpGIFPackedRegHandlers[GIF_REG_XYZ3] = m_fpGIFPackedRegHandlerXYZ[prim][3];
+	m_fpGIFPackedRegHandlers[GIF_REG_XYZF2] = m_fpGIFPackedRegHandlerXYZ[af][prim][0];
+	m_fpGIFPackedRegHandlers[GIF_REG_XYZF3] = m_fpGIFPackedRegHandlerXYZ[af][prim][1];
+	m_fpGIFPackedRegHandlers[GIF_REG_XYZ2] = m_fpGIFPackedRegHandlerXYZ[af][prim][2];
+	m_fpGIFPackedRegHandlers[GIF_REG_XYZ3] = m_fpGIFPackedRegHandlerXYZ[af][prim][3];
 
-	m_fpGIFRegHandlers[GIF_A_D_REG_XYZF2] = m_fpGIFRegHandlerXYZ[prim][0];
-	m_fpGIFRegHandlers[GIF_A_D_REG_XYZF3] = m_fpGIFRegHandlerXYZ[prim][1];
-	m_fpGIFRegHandlers[GIF_A_D_REG_XYZ2] = m_fpGIFRegHandlerXYZ[prim][2];
-	m_fpGIFRegHandlers[GIF_A_D_REG_XYZ3] = m_fpGIFRegHandlerXYZ[prim][3];
+	m_fpGIFRegHandlers[GIF_A_D_REG_XYZF2] = m_fpGIFRegHandlerXYZ[af][prim][0];
+	m_fpGIFRegHandlers[GIF_A_D_REG_XYZF3] = m_fpGIFRegHandlerXYZ[af][prim][1];
+	m_fpGIFRegHandlers[GIF_A_D_REG_XYZ2] = m_fpGIFRegHandlerXYZ[af][prim][2];
+	m_fpGIFRegHandlers[GIF_A_D_REG_XYZ3] = m_fpGIFRegHandlerXYZ[af][prim][3];
 
-	m_fpGIFPackedRegHandlersC[GIF_REG_STQRGBAXYZF2] = m_fpGIFPackedRegHandlerSTQRGBAXYZF2[prim];
-	m_fpGIFPackedRegHandlersC[GIF_REG_STQRGBAXYZ2] = m_fpGIFPackedRegHandlerSTQRGBAXYZ2[prim];
+	m_fpGIFPackedRegHandlersC[GIF_REG_STQRGBAXYZF2] = m_fpGIFPackedRegHandlerSTQRGBAXYZF2[af][prim];
+	m_fpGIFPackedRegHandlersC[GIF_REG_STQRGBAXYZ2] = m_fpGIFPackedRegHandlerSTQRGBAXYZ2[af][prim];
+}
+
+/* After a write to a register IsAutoFlushDraw reads: the handlers change
+ * only when the answer does. */
+void GSState::UpdateAutoFlushKick()
+{
+	if (IsAutoFlushDraw() != m_autoflush_kick)
+		UpdateVertexKick();
 }
 
 void GSState::GrowVertexBuffer()
@@ -3066,9 +3088,13 @@ void GSState::CalculatePrimitiveCoversWithoutGaps()
 	m_primitive_covers_without_gaps = SpriteDrawWithoutGaps() ? (m_primitive_covers_without_gaps == GapsFound ? SpriteNoGaps : m_primitive_covers_without_gaps) : GapsFound;
 }
 
-__forceinline bool GSState::IsAutoFlushDraw(u32 prim)
+/* Whether the draw state reads what it draws: a texture at its frame's or
+ * its Z buffer's address, sharing bits with what is written there. Read
+ * from TEX0, FRAME, ZBUF and TEST of the current context and PRIM's TME
+ * and context; every write to those comes through UpdateAutoFlushKick. */
+__forceinline bool GSState::IsAutoFlushDraw()
 {
-	if (!PRIM->TME || (GSConfig.UserHacks_AutoFlush == GSHWAutoFlushLevel::SpritesOnly && prim != GS_SPRITE))
+	if (!PRIM->TME)
 		return false;
 
 	// Not using the same channels.
@@ -3171,7 +3197,7 @@ __noinline void GSState::HandleAutoFlush()
 	// To briefly explain what's going on here, what we are checking for is draws over a texture when the source and destination are themselves.
 	// Because one page of the texture gets buffered in the Texture Cache (the PS2's one) if any of those pixels are overwritten, you still read the old data.
 	// So we need to calculate if a page boundary is being crossed for the format it is in and if the same part of the texture being written and read inside the draw.
-	if (IsAutoFlushDraw(prim))
+	if (IsAutoFlushDraw())
 	{
 		int  n = 1;
 		u32 buff[3];

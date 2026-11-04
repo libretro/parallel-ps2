@@ -182,7 +182,6 @@ static u8 setting_blending_accuracy            = 0;
 static u8 setting_cpu_sprite_size              = 0;
 static u8 setting_cpu_sprite_level             = 0;
 static u8 setting_software_clut_render         = 0;
-static u8 setting_auto_flush                   = 0;
 static u8 setting_round_sprite                 = 0;
 static u8 setting_texture_inside_rt            = 0;
 static u8 setting_ee_cycle_skip                = 0;
@@ -211,7 +210,6 @@ static bool setting_dev9_hdd                   = false;
 static bool setting_dev9_eth                   = false;
 static u32  setting_dev9_hdd_sectors           = 40u * (1024 * 1024 * 1024 / 512);
 static bool setting_enable_hw_hacks            = false;
-static bool setting_auto_flush_software        = true;
 static int setting_sw_renderer_threads         = 2;
 static bool setting_disable_depth_conversion   = false;
 static bool setting_framebuffer_conversion     = false;
@@ -337,8 +335,6 @@ static bool update_option_visibility(void)
 		option_display.visible = setting_show_gsdx_sw_only_options;
 		option_display.key     = "pcsx2_sw_renderer_threads";
 		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
-		option_display.key     = "pcsx2_auto_flush_software";
-		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
 
 		updated                = true;
 	}
@@ -377,8 +373,6 @@ static bool update_option_visibility(void)
 		option_display.key     = "pcsx2_cpu_sprite_level";
 		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
 		option_display.key     = "pcsx2_software_clut_render";
-		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
-		option_display.key     = "pcsx2_auto_flush";
 		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
 		option_display.key     = "pcsx2_texture_inside_rt";
 		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
@@ -946,23 +940,6 @@ static void check_variables(bool first_run)
 				}
 			}
 
-			var.key = "pcsx2_auto_flush";
-			if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-			{
-				u8 auto_flush_prev = setting_auto_flush;
-				if (!strcmp(var.value, "disabled"))
-					setting_auto_flush = (u8)GSHWAutoFlushLevel::Disabled;
-				else if (!strcmp(var.value, "Sprites Only"))
-					setting_auto_flush = (u8)GSHWAutoFlushLevel::SpritesOnly;
-				else if (!strcmp(var.value, "All Primitives"))
-					setting_auto_flush = (u8)GSHWAutoFlushLevel::Enabled;
-
-				if (first_run || setting_auto_flush != auto_flush_prev)
-				{
-					s_option_config.GS.UserHacks_AutoFlush = static_cast<decltype(s_option_config.GS.UserHacks_AutoFlush)>(setting_auto_flush);
-					updated = true;
-				}
-			}
 
 			var.key = "pcsx2_texture_inside_rt";
 			if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
@@ -1168,18 +1145,6 @@ static void check_variables(bool first_run)
 			}
 		}
 
-		var.key = "pcsx2_auto_flush_software";
-		if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-		{
-			bool auto_flush_software_prev = setting_auto_flush_software;
-			setting_auto_flush_software = !strcmp(var.value, "enabled");
-
-			if (first_run || setting_auto_flush_software != auto_flush_software_prev)
-			{
-				s_option_config.GS.AutoFlushSW = setting_auto_flush_software;
-				updated = true;
-			}
-		}
 	}
 
 	if (setting_plugin_type == PLUGIN_GSDX_HW || setting_plugin_type == PLUGIN_GSDX_SW)

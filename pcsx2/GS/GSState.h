@@ -87,7 +87,8 @@ private:
 	typedef void (GSState::*GIFPackedRegHandler)(const GIFPackedReg* RESTRICT r);
 
 	GIFPackedRegHandler m_fpGIFPackedRegHandlers[16] = {};
-	GIFPackedRegHandler m_fpGIFPackedRegHandlerXYZ[8][4] = {};
+	/* [plain, auto-flush][prim][XYZF2, XYZF3, XYZ2, XYZ3] */
+	GIFPackedRegHandler m_fpGIFPackedRegHandlerXYZ[2][8][4] = {};
 
 	void CheckFlushes();
 
@@ -105,13 +106,13 @@ private:
 	typedef void (GSState::*GIFRegHandler)(const GIFReg* RESTRICT r);
 
 	GIFRegHandler m_fpGIFRegHandlers[256] = {};
-	GIFRegHandler m_fpGIFRegHandlerXYZ[8][4] = {};
+	GIFRegHandler m_fpGIFRegHandlerXYZ[2][8][4] = {};
 
 	typedef void (GSState::*GIFPackedRegHandlerC)(const GIFPackedReg* RESTRICT r, u32 size);
 
 	GIFPackedRegHandlerC m_fpGIFPackedRegHandlersC[2] = {};
-	GIFPackedRegHandlerC m_fpGIFPackedRegHandlerSTQRGBAXYZF2[8] = {};
-	GIFPackedRegHandlerC m_fpGIFPackedRegHandlerSTQRGBAXYZ2[8] = {};
+	GIFPackedRegHandlerC m_fpGIFPackedRegHandlerSTQRGBAXYZF2[2][8] = {};
+	GIFPackedRegHandlerC m_fpGIFPackedRegHandlerSTQRGBAXYZ2[2][8] = {};
 
 	template<u32 prim, bool auto_flush, bool index_swap> void GIFPackedRegHandlerSTQRGBAXYZF2(const GIFPackedReg* RESTRICT r, u32 size);
 	template<u32 prim, bool auto_flush, bool index_swap> void GIFPackedRegHandlerSTQRGBAXYZ2(const GIFPackedReg* RESTRICT r, u32 size);
@@ -160,7 +161,7 @@ private:
 	void GIFRegHandlerTRXDIR(const GIFReg* RESTRICT r);
 	void GIFRegHandlerHWREG(const GIFReg* RESTRICT r);
 
-	template<bool auto_flush, bool index_swap>
+	template<bool index_swap>
 	void SetPrimHandlers();
 
 	struct GSTransferBuffer
@@ -218,9 +219,13 @@ protected:
 	void NormalizeRestoredRegs();
 
 	void UpdateVertexKick();
+	/* Whether the draw state samples its own frame or Z buffer, so its
+	 * vertex kicks take the auto-flush handlers; re-chosen when it flips. */
+	bool m_autoflush_kick = false;
+	void UpdateAutoFlushKick();
 
 	void GrowVertexBuffer();
-	bool IsAutoFlushDraw(u32 prim);
+	bool IsAutoFlushDraw();
 	template<u32 prim, bool index_swap>
 	void HandleAutoFlush();
 	void CheckCLUTValidity(u32 prim);

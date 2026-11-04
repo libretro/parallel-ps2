@@ -599,7 +599,6 @@ static const char* s_round_modes[static_cast<u32>(FPRoundMode::MaxCount)] = {
 };
 
 static const char* s_gs_hw_fix_names[] = {
-	"autoFlush",
 	"cpuFramebufferConversion",
 	"readTCOnClose",
 	"disableDepthSupport",
@@ -823,9 +822,6 @@ static bool configMatchesHWFix(const Pcsx2Config::GSOptions& config, GameDatabas
 {
 	switch (id)
 	{
-		case GameDatabaseSchema::GSHWFixId::AutoFlush:
-			return (static_cast<int>(config.UserHacks_AutoFlush) == value);
-
 		case GameDatabaseSchema::GSHWFixId::CPUFramebufferConversion:
 			return (static_cast<int>(config.UserHacks_CPUFBConversion) == value);
 
@@ -957,13 +953,6 @@ u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, Pcsx2Config::G
 
 		switch (id)
 		{
-			case GameDatabaseSchema::GSHWFixId::AutoFlush:
-			{
-				if (value >= 0 && value <= static_cast<int>(GSHWAutoFlushLevel::Enabled))
-					config.UserHacks_AutoFlush = static_cast<GSHWAutoFlushLevel>(value);
-			}
-			break;
-
 			case GameDatabaseSchema::GSHWFixId::CPUFramebufferConversion:
 				config.UserHacks_CPUFBConversion = (value > 0);
 				break;

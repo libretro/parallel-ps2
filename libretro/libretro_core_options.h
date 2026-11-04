@@ -637,20 +637,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "100%"
    },
    {
-      "pcsx2_auto_flush_software",
-      "Video > Auto Flush (Software)",
-      "Auto Flush (Software)",
-      NULL,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled", NULL },
-         { NULL, NULL },
-      },
-      "enabled"
-   },
-   {
       "pcsx2_sw_renderer_threads",
       "Video > Software Renderer Extra Threads",
       "Software Renderer Extra Threads",
@@ -978,21 +964,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
          { "disabled", NULL },
          { "Normal", NULL },
          { "Aggressive", NULL },
-         { NULL, NULL },
-      },
-      "disabled"
-   },
-   {
-      "pcsx2_auto_flush",
-      "HW Hacks > Auto Flush",
-      "Auto Flush",
-      NULL,
-      NULL,
-      "hw_hacks",
-      {
-         { "disabled", NULL },
-         { "Sprites Only", NULL },
-         { "All Primitives", NULL },
          { NULL, NULL },
       },
       "disabled"

@@ -112,11 +112,6 @@
         "gsHWFixes": {
           "type": "object",
           "properties": {
-            "autoFlush": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 2
-            },
             "conservativeFramebuffer": {
               "type": "integer",
               "minimum": 0,

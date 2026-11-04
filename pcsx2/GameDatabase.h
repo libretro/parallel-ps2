@@ -37,7 +37,6 @@ namespace GameDatabaseSchema
 	enum class GSHWFixId : u32
 	{
 		// boolean settings
-		AutoFlush,
 		CPUFramebufferConversion,
 		FlushTCOnClose,
 		DisableDepthSupport,
