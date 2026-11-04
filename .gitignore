@@ -169,6 +169,7 @@ tests/ipu/_streams/
 tests/gsregion/gs_region_repeat
 tests/gsclut/clut_bank_clamp
 tests/gsclut/clut_from_target
+tests/gsclut/clut_load_sync
 tests/gstc/readback_retire
 tests/gstc/upload_dirty
 tests/gsstq/stq_saturate

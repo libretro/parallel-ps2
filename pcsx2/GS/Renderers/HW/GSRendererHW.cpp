@@ -2335,8 +2335,11 @@ void GSRendererHW::InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GS
 	/* A CLUT loads from local memory too. */
 	g_texture_cache->FlushParkedRect(m_mem.GetOffset(BITBLTBUF.SBP, BITBLTBUF.SBW, BITBLTBUF.SPSM), r);
 
+	/* A palette the GPU palette path takes is read from its target there;
+	 * any other load reads local memory, which takes the target's data
+	 * below like any read. */
 	if (clut)
-		return; // FIXME
+		return;
 
 	const GSUploadQueue* const transfers = DrawTransfers();
 	bool skip = false;

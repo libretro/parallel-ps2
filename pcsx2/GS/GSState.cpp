@@ -789,6 +789,12 @@ void GSState::ApplyTEX0(GIFRegTEX0& TEX0)
 	{
 		GIFRegBITBLTBUF BITBLTBUF = {};
 		GSVector4i r;
+		/* A load the GPU palette path takes (CSM1, CSA within the first
+		 * sixteen blocks) is read from a target holding it on the GPU; any
+		 * other is read from local memory, which must then hold what the
+		 * GPU drew there. */
+		const u32 load_csa = TEX0.CSA & ((TEX0.CPSM == PSMCT16 || TEX0.CPSM == PSMCT16S) ? 31u : 15u);
+		const bool gpu_palette = (TEX0.CSM == 0) && (load_csa <= 15);
 
 		if (TEX0.CSM == 0)
 		{
@@ -811,7 +817,7 @@ void GSState::ApplyTEX0(GIFRegTEX0& TEX0)
 
 			// Invalidating videomem is slow, so *only* do it when it's definitely a CLUT draw in HW mode.
 			for (int j = 0; j < blocks; j++, BITBLTBUF.SBP++)
-				InvalidateLocalMem(BITBLTBUF, r, true);
+				InvalidateLocalMem(BITBLTBUF, r, gpu_palette);
 		}
 		else
 		{
@@ -824,7 +830,7 @@ void GSState::ApplyTEX0(GIFRegTEX0& TEX0)
 			r.right = r.left + GSLocalMemory::m_psm[TEX0.CPSM].pal;
 			r.bottom = r.top + 1;
 
-			InvalidateLocalMem(BITBLTBUF, r, true);
+			InvalidateLocalMem(BITBLTBUF, r, gpu_palette);
 		}
 
 		m_mem.m_clut.Write(m_env.CTXT[i].TEX0, m_env.TEXCLUT);
