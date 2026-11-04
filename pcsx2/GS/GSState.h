@@ -223,6 +223,13 @@ protected:
 	 * vertex kicks take the auto-flush handlers; re-chosen when it flips. */
 	bool m_autoflush_kick = false;
 	void UpdateAutoFlushKick();
+	/* The batch so far is all primitives reading only the pixels they
+	 * write, and an overlap auto flush would have flushed was let through
+	 * for the draw to take in place (tex-is-fb). */
+	bool m_af_pixel_batch = true;
+	bool m_af_skipped = false;
+	bool IsPixelFeedbackPrim(u32 prim, const u32* buff, int n) const;
+	void AutoFlushOverlap(bool pixel);
 
 	void GrowVertexBuffer();
 	bool IsAutoFlushDraw();
@@ -290,6 +297,11 @@ public:
 	GSDrawingEnvironment m_prev_env = {};
 	const GSDrawingEnvironment* m_draw_env = &m_env;
 	GSDrawingContext* m_context = nullptr;
+	/* Set by a renderer that draws a primitive reading only its own pixels
+	 * correctly however the draw's primitives overlap (tex-is-fb with
+	 * barriers, or framebuffer fetch): auto flush then lets such overlaps
+	 * through. */
+	bool m_pixel_feedback_ok = false;
 	GSVector4i temp_draw_rect = {};
 	/* Counts the times a savestate replaced local memory as a whole. */
 	u32 m_mem_restores = 0;

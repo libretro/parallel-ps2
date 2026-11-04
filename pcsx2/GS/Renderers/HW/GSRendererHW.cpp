@@ -95,6 +95,9 @@ GSRendererHW::GSRendererHW()
 	m_vr_frame           = 0;
 	m_mipmap = (GSConfig.HWMipmapMode >= GSHWMipmapMode::Enabled);
 	SetTCOffset();
+	/* The same test CanUseTexIsFB starts with. */
+	m_pixel_feedback_ok = g_gs_device && g_gs_device->Features().texture_barrier &&
+		GSConfig.AccurateBlendingUnit != AccBlendLevel::Minimum;
 
 	g_texture_cache = new GSTextureCache();
 
@@ -201,6 +204,8 @@ void GSRendererHW::UpdateSettings(const Pcsx2Config::GSOptions& old_config)
 	UpdateSettingsBase(old_config);
 	m_mipmap = (GSConfig.HWMipmapMode >= GSHWMipmapMode::Enabled);
 	SetTCOffset();
+	m_pixel_feedback_ok = g_gs_device && g_gs_device->Features().texture_barrier &&
+		GSConfig.AccurateBlendingUnit != AccBlendLevel::Minimum;
 }
 
 void GSRendererHW::VSync(u32 field, bool registers_written, bool idle_frame)
@@ -6166,7 +6171,9 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 	if (rt && m_conf.tex == m_conf.rt)
 	{
 		// Can we read the framebuffer directly? (i.e. sample location matches up).
-		if (CanUseTexIsFB(rt, tex, tmm))
+		// A batch auto flush let overlaps through for is one whose primitives
+		// each read only their own pixels: it has to be read in place.
+		if ((m_af_skipped && m_pixel_feedback_ok) || CanUseTexIsFB(rt, tex, tmm))
 		{
 			m_conf.tex = nullptr;
 			m_conf.ps.tex_is_fb = true;

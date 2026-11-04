@@ -263,6 +263,7 @@ tests/ata/*.img
 /tests/gstc/drop_writeback
 /tests/gstc/park_flush
 /tests/gsautoflush/autoflush_select
+/tests/gsautoflush/pixel_feedback
 /tests/gsupscale/hires_mem
 /tests/gsupscale/native_taps
 /tests/gsupscale/sprite_centre

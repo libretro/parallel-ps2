@@ -1644,6 +1644,8 @@ void GSState::FlushPrim()
 
 		m_index.tail = 0;
 		m_vertex.head = 0;
+		m_af_pixel_batch = true;
+		m_af_skipped = false;
 
 		if (unused > 0)
 		{
@@ -3187,13 +3189,75 @@ __forceinline void GSState::CheckCLUTValidity(u32 prim)
 	}
 }
 
+/* The primitive being kicked reads only the pixels it writes: the
+ * texture is the frame, sampled nearest, each vertex's texel within a
+ * texel of its pixel and inside any region clamp, and the primitive is a
+ * sprite or a triangle writing alpha alone -- the cases the hardware
+ * renderer draws reading the target in place (CanUseTexIsFB). */
+bool GSState::IsPixelFeedbackPrim(u32 prim, const u32* buff, int n) const
+{
+	const GSDrawingContext* ctx = m_context;
+	const GS_PRIM_CLASS pc = GSUtil::GetPrimClass(prim);
+	const float ox = static_cast<float>(ctx->XYOFFSET.OFX) / 16.0f;
+	const float oy = static_cast<float>(ctx->XYOFFSET.OFY) / 16.0f;
+	const float tw = static_cast<float>(1 << ctx->TEX0.TW);
+	const float th = static_cast<float>(1 << ctx->TEX0.TH);
+	const GSVertex* v;
+	float x, y, u, t, q;
+	int i;
+
+	if (ctx->FRAME.Block() != ctx->TEX0.TBP0 || ctx->TEX1.MMAG || ctx->TEX1.MMIN)
+		return false;
+	if (pc != GS_SPRITE_CLASS && !(pc == GS_TRIANGLE_CLASS && ctx->FRAME.FBMSK == 0x00FFFFFFu))
+		return false;
+	if (ctx->CLAMP.WMS == CLAMP_REGION_REPEAT || ctx->CLAMP.WMT == CLAMP_REGION_REPEAT)
+		return false;
+
+	for (i = 0; i < n; i++)
+	{
+		v = (i == 0) ? &m_v : &m_vertex.buff[buff[i - 1]];
+		x = static_cast<float>(v->XYZ.X) / 16.0f - ox;
+		y = static_cast<float>(v->XYZ.Y) / 16.0f - oy;
+		if (PRIM->FST)
+		{
+			u = static_cast<float>(v->U) / 16.0f;
+			t = static_cast<float>(v->V) / 16.0f;
+		}
+		else
+		{
+			/* A sprite's Q is its second vertex's. */
+			q = (pc == GS_SPRITE_CLASS) ? m_v.RGBAQ.Q : v->RGBAQ.Q;
+			if (!(q != 0.0f))
+				return false;
+			u = v->ST.S / q * tw;
+			t = v->ST.T / q * th;
+		}
+		if (!(fabsf(x - u) < 1.0f) || !(fabsf(y - t) < 1.0f))
+			return false;
+		if (ctx->CLAMP.WMS == CLAMP_REGION_CLAMP && (u < static_cast<float>(ctx->CLAMP.MINU) || u > static_cast<float>(ctx->CLAMP.MAXU + 1)))
+			return false;
+		if (ctx->CLAMP.WMT == CLAMP_REGION_CLAMP && (t < static_cast<float>(ctx->CLAMP.MINV) || t > static_cast<float>(ctx->CLAMP.MAXV + 1)))
+			return false;
+	}
+	return true;
+}
+
+/* An overlap found: a batch of primitives all reading only their own
+ * pixels takes it in the draw; anything else flushes before the primitive. */
+void GSState::AutoFlushOverlap(bool pixel)
+{
+	if (pixel && m_af_pixel_batch)
+	{
+		m_af_skipped = true;
+		return;
+	}
+	Flush(GSFlushReason::AUTOFLUSH);
+	m_af_pixel_batch = pixel;
+}
+
 template<u32 prim, bool index_swap>
 __noinline void GSState::HandleAutoFlush()
 {
-	// Kind of a cheat, making the assumption that 2 consecutive fan/strip triangles won't overlap each other (*should* be safe)
-	if ((m_index.tail & 1) && (prim == GS_TRIANGLESTRIP || prim == GS_TRIANGLEFAN) && !m_texflush_flag)
-		return;
-
 	// To briefly explain what's going on here, what we are checking for is draws over a texture when the source and destination are themselves.
 	// Because one page of the texture gets buffered in the Texture Cache (the PS2's one) if any of those pixels are overwritten, you still read the old data.
 	// So we need to calculate if a page boundary is being crossed for the format it is in and if the same part of the texture being written and read inside the draw.
@@ -3231,6 +3295,29 @@ __noinline void GSState::HandleAutoFlush()
 			default:
 				break;
 		}
+
+		const bool pixel = m_pixel_feedback_ok && IsPixelFeedbackPrim(prim, buff, n);
+		if (m_index.tail == 0)
+		{
+			m_af_pixel_batch = pixel;
+			return;
+		}
+		if (!pixel)
+		{
+			/* Overlaps let through earlier are drawn in place, which this
+			 * one cannot be: they go first. */
+			if (m_af_skipped)
+			{
+				Flush(GSFlushReason::AUTOFLUSH);
+				m_af_pixel_batch = false;
+				return;
+			}
+			m_af_pixel_batch = false;
+		}
+
+		// Kind of a cheat, making the assumption that 2 consecutive fan/strip triangles won't overlap each other (*should* be safe)
+		if ((m_index.tail & 1) && (prim == GS_TRIANGLESTRIP || prim == GS_TRIANGLEFAN) && !m_texflush_flag)
+			return;
 
 		GSVector4i tex_coord;
 		// Prepare the currently processed vertex.
@@ -3356,7 +3443,7 @@ __noinline void GSState::HandleAutoFlush()
 			return;
 		if (m_texflush_flag)
 		{
-			Flush(GSFlushReason::AUTOFLUSH);
+			AutoFlushOverlap(pixel);
 			return;
 		}
 
@@ -3427,7 +3514,7 @@ __noinline void GSState::HandleAutoFlush()
 					old_draw_rect = tex_rect.rintersect(old_draw_rect);
 					if (!old_draw_rect.rintersect(scissor).rempty())
 					{
-						Flush(GSFlushReason::AUTOFLUSH);
+						AutoFlushOverlap(pixel);
 						return;
 					}
 
@@ -3454,10 +3541,10 @@ __noinline void GSState::HandleAutoFlush()
 					area_out = GSVector4i(area_out.x / frame_psm.pgs.x, area_out.y / frame_psm.pgs.y, area_out.z / frame_psm.pgs.x, area_out.w / frame_psm.pgs.y);
 
 					if (!area_out.rintersect(tex_rect).rempty())
-						Flush(GSFlushReason::AUTOFLUSH);
+						AutoFlushOverlap(pixel);
 				}
 				else // Formats are too different so just flush it.
-					Flush(GSFlushReason::AUTOFLUSH);
+					AutoFlushOverlap(pixel);
 			}
 		}
 	}
@@ -3474,7 +3561,7 @@ __forceinline void GSState::VertexKick(u32 skip, u32& maxcount)
 		return;
 	}
 
-	if (auto_flush && skip == 0 && m_index.tail > 0 && ((m_vertex.tail + 1) - m_vertex.head) >= n)
+	if (auto_flush && skip == 0 && ((m_vertex.tail + 1) - m_vertex.head) >= n)
 	{
 		HandleAutoFlush<prim, index_swap>();
 	}
