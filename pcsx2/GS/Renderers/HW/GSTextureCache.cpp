@@ -376,6 +376,84 @@ void GSTextureCache::ResizeTarget(Target* t, GSVector4i rect, u32 tbp, u32 psm, 
 	}
 }
 
+/* A 32-bit colour target taken at another buffer width than the one it
+ * is laid out at: its pages moved to where the new width puts them, as
+ * local memory holds them, so what a draw at one width left in a page is
+ * what a draw at the other finds there, as far down as max_height; pages
+ * past it are left to local memory. Page-aligned targets only. */
+bool GSTextureCache::RelayoutTargetWidth(Target* t, u32 new_tbw, int max_height)
+{
+	const GSVector2i pgs = GSLocalMemory::m_psm[t->m_TEX0.PSM].pgs;
+	const u32 old_tbw = t->m_TEX0.TBW;
+	const float scale = t->m_scale;
+	GSVector2i new_unscaled;
+	GSVector2i new_scaled;
+	GSTexture* tex;
+	u32 rows_old;
+	u32 pages;
+	u32 rows_new;
+	u32 p;
+	u32 run;
+	u32 sx;
+	u32 sy;
+	u32 dx;
+	u32 dy;
+
+	if (old_tbw == new_tbw || old_tbw == 0 || new_tbw == 0 || !t->m_texture || t->m_texture->IsDepthStencil() ||
+		GSLocalMemory::m_psm[t->m_TEX0.PSM].bpp != 32 || (t->m_TEX0.TBP0 & (GS_BLOCKS_PER_PAGE - 1)))
+		return false;
+
+	t->Update();
+	rows_old = (u32)((t->m_unscaled_size.y + pgs.y - 1) / pgs.y);
+	pages = rows_old * old_tbw;
+	rows_new = (pages + new_tbw - 1) / new_tbw;
+	if (max_height > 0 && rows_new > (u32)((max_height + pgs.y - 1) / pgs.y))
+	{
+		rows_new = (u32)((max_height + pgs.y - 1) / pgs.y);
+		pages = rows_new * new_tbw;
+	}
+	new_unscaled = GSVector2i((int)(new_tbw * (u32)pgs.x), (int)(rows_new * (u32)pgs.y));
+	new_scaled = ScaleRenderTargetSize(new_unscaled, scale);
+	tex = g_gs_device->CreateRenderTarget(new_scaled.x, new_scaled.y, t->m_texture->GetFormat(), false);
+	if (!tex)
+		return false;
+
+	if (t->m_texture->GetState() == GSTexture::State::Cleared)
+		g_gs_device->ClearRenderTarget(tex, t->m_texture->GetClearColor());
+	else if (t->m_texture->GetState() == GSTexture::State::Dirty)
+	{
+		/* Pages next to each other at both widths go in one copy. */
+		for (p = 0; p < pages; p += run)
+		{
+			sx = (p % old_tbw) * (u32)pgs.x;
+			sy = (p / old_tbw) * (u32)pgs.y;
+			dx = (p % new_tbw) * (u32)pgs.x;
+			dy = (p / new_tbw) * (u32)pgs.y;
+			run = 1;
+			while (p + run < pages && (p + run) % old_tbw != 0 && (p + run) % new_tbw != 0)
+				run++;
+			if ((int)sy >= t->m_unscaled_size.y)
+				continue;
+			g_gs_device->CopyRect(t->m_texture, tex,
+				GSVector4i(GSVector4(GSVector4i((int)sx, (int)sy, (int)(sx + run * (u32)pgs.x), (int)(sy + (u32)pgs.y))) * GSVector4(scale)),
+				(u32)((float)dx * scale), (u32)((float)dy * scale));
+		}
+	}
+	else
+		g_gs_device->InvalidateRenderTarget(tex);
+
+	m_target_memory_usage = (m_target_memory_usage - t->m_texture->GetMemUsage()) + tex->GetMemUsage();
+	g_gs_device->Recycle(t->m_texture);
+	t->m_texture = tex;
+	t->m_TEX0.TBW = new_tbw;
+	t->m_unscaled_size = new_unscaled;
+	t->m_valid = GSVector4i::loadh(new_unscaled);
+	t->UpdateValidity(t->m_valid, true);
+	t->m_drawn_since_read = t->m_valid;
+	GetTargetSize(t->m_TEX0.TBP0, new_tbw, t->m_TEX0.PSM, new_unscaled.x, new_unscaled.y);
+	return true;
+}
+
 bool GSTextureCache::WidenTarget(Target* t, int new_width)
 {
 	const int old_width = t->m_unscaled_size.x;
@@ -2705,6 +2783,11 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVe
 				// Now pull in any dirty areas in the new format.
 				dst->Update();
 			}
+
+			/* Drawn at another width than the depth buffer it came from:
+			 * laid out at the draw's width, page for page, before the draw. */
+			if (type == RenderTarget && !is_shuffle && !half_width && dst->m_TEX0.TBW != TEX0.TBW)
+				RelayoutTargetWidth(dst, TEX0.TBW, pcsx2_max_i(new_size.y, draw_rect.w));
 		}
 	}
 

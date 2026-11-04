@@ -766,6 +766,7 @@ public:
 	 * kept for the next target made there. The area gained loads from
 	 * local memory. */
 	bool WidenTarget(Target* t, int new_width);
+	bool RelayoutTargetWidth(Target* t, u32 new_tbw, int max_height);
 	bool RelayoutTarget(Target* t, u32 tbw);
 	static bool FullRectDirty(Target* target, u32 rgba_mask);
 	static bool FullRectDirty(Target* target);

@@ -63,7 +63,7 @@ static unsigned s_drawn;
  * to hold 64 of each of up to two 32-bit words in a row, as a block of GS
  * memory it filled or a readback it took does. */
 static int s_run_frames = SL_FRAMES;
-static unsigned long s_expect_run[2];
+static unsigned long s_expect_run[3];
 /* A case may ask for its frames to be run again from a savestate taken
  * partway, and to come out the same (see sl_rewind). */
 static int s_rewind;
@@ -236,7 +236,7 @@ static unsigned      s_tlb_store;
  * optionally read a number of quadwords back from the GS (a local to host
  * transfer the kick set up) into RAM at 0x200000 + 0x1000 * the kick. */
 #define SL_MAX_QW    1024
-#define SL_MAX_KICKS 4
+#define SL_MAX_KICKS 16
 static unsigned      s_qw_count;
 static unsigned      s_qw[SL_MAX_QW][4];
 /* The reset program may write the last quadword this many more times
@@ -2213,6 +2213,126 @@ static void case_feedback_runs(void)
 	s_expect_run[0] = 0x02030303ul;
 }
 
+/* A buffer one page column wide at page 8, drawn at its two columns in
+ * turn over the pages of a depth buffer laid out four pages wide, twice,
+ * as two frames would: each time the depth buffer is drawn first, with a
+ * depth test; a
+ * 24-bit Z and a 32-bit colour with its alpha masked clear the first
+ * column together (colour the left half of its pages, Z the right); a
+ * draw into it takes (Cs - Cd) from a frame of 0x80 and lays the second
+ * column's Z down as it goes; the first column is copied out to page 40;
+ * a draw into the second column does the same back. After the second
+ * time, the copy holds 0x404040, the first column the Z the last draw
+ * left there, 0x181818, and the second 0x80 - 0x30; read back from the
+ * second row of pages, which a buffer kept at the depth buffer's width
+ * puts elsewhere. */
+static void column_pass(unsigned zcol2, unsigned zcol1)
+{
+	const unsigned zb = 8;                                 /* page 8, block 0x100 */
+	const unsigned first = s_qw_count;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);                     /* A+D, EOP, NLOOP below */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(6, 0, GS_PRIM, 0);                                  /* sprite */
+	/* a depth buffer at page 8, four pages wide, Z 0x777777 */
+	qw(32u | (10u << 16), 0xFFFFFFFFu, GS_FRAME_1, 0);     /* colour all masked */
+	qw(zb | (1u << 24), 0, GS_ZBUF_1, 0);                  /* PSMZ24 */
+	qw((1u << 16) | (2u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST GEQUAL */
+	qw(0, 0x777777u, GS_XYZ2, 0);
+	qw((unsigned)XY(640, 64), 0x777777u, GS_XYZ2, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTST always */
+	/* the first column cleared: colour 32 wide, Z 32 wide, at one base */
+	qw(zb | (2u << 16), 0xFF000000u, GS_FRAME_1, 0);       /* FBW 2, alpha masked */
+	qw(0x00404040u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0x404040u, GS_XYZ2, 0);
+	qw((unsigned)XY(32, 64), 0x404040u, GS_XYZ2, 0);
+	/* (Cs - Cd) from the frame into the first column, Z into the second */
+	qw(0u | (1u << 14) | (6u << 26) | (2u << 30), 0x8u | 1u, GS_TEX0_1, 0); /* TBP 0, TBW 1, CT32, 64x64, DECAL */
+	qw(0x4u | 0x20u | 0x80u, 128u, GS_ALPHA_1, 0);         /* (Cs - Cd) * 128/128 + 0 */
+	qw((zb + 1) | (1u << 24), 0, GS_ZBUF_1, 0);
+	qw(6 | 0x10 | 0x40 | 0x100, 0, GS_PRIM, 0);            /* sprite, TME, ABE, FST */
+	qw(0, 0, GS_UV, 0);
+	qw(0, zcol2, GS_XYZ2, 0);
+	qw((unsigned)XY(64, 64), 0, GS_UV, 0);
+	qw((unsigned)XY(64, 64), zcol2, GS_XYZ2, 0);
+	/* the first column copied out to page 40, 64 wide */
+	qw(40u | (1u << 16), 0, GS_FRAME_1, 0);
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((zb * 32u) | (2u << 14) | (7u << 26) | (2u << 30), 0x8u | 1u, GS_TEX0_1, 0); /* TBP 0x100, TBW 2, 128x64 */
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* sprite, TME, FST */
+	qw(0, 0, GS_UV, 0);
+	s_qw[first][0] = (s_qw_count - first - 1) | 0x8000u;
+	kick(first, s_qw_count - first, 1);
+	{
+		const unsigned second = s_qw_count;
+		qw(0x8000u, 0x10000000u, 0xEu, 0);                 /* A+D, EOP, NLOOP below */
+		qw(0, 0, GS_XYZ2, 0);
+		qw((unsigned)XY(64, 64), 0, GS_UV, 0);
+		qw((unsigned)XY(64, 64), 0, GS_XYZ2, 0);
+		/* the same into the second column, Z into the first */
+		qw(0u | (1u << 14) | (6u << 26) | (2u << 30), 0x8u | 1u, GS_TEX0_1, 0);
+		qw((zb + 1) | (2u << 16), 0xFF000000u, GS_FRAME_1, 0);
+		qw(zb | (1u << 24), 0, GS_ZBUF_1, 0);
+		qw(6 | 0x10 | 0x40 | 0x100, 0, GS_PRIM, 0);
+		qw(0, 0, GS_UV, 0);
+		qw(0, zcol1, GS_XYZ2, 0);
+		qw((unsigned)XY(64, 64), 0, GS_UV, 0);
+		qw((unsigned)XY(64, 64), zcol1, GS_XYZ2, 0);
+		qw(0, 1, GS_ZBUF_1, 0);
+		s_qw[second][0] = (s_qw_count - second - 1) | 0x8000u;
+		kick(second, s_qw_count - second, 0);
+	}
+}
+
+static void case_column_passes(void)
+{
+	/* the frame of 0x80 at page 0, 64x64 */
+	qw(8 | 0x8000u, 0x10000000u, 0xEu, 0);
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw(1u << 16, 0, GS_FRAME_1, 0);
+	qw(0, 1, GS_ZBUF_1, 0);
+	qw(0x80808080u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(6, 0, GS_PRIM, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	kick(0, s_qw_count, 0);
+	{
+		const unsigned first = s_qw_count;
+		qw(1 | 0x8000u, 0x10000000u, 0xEu, 0);
+		qw((unsigned)XY(64, 64), 0, GS_XYZ2, 0);
+		kick(first, s_qw_count - first, 0);
+	}
+	column_pass(0x202020u, 0x101010u);
+	column_pass(0x303030u, 0x181818u);
+	{
+		const unsigned first = s_qw_count;
+		qw(4 | 0x8000u, 0x10000000u, 0xEu, 0);
+		qw((8u * 32u) | (2u << 16), 0, GS_BITBLTBUF, 0);   /* SBP 0x100, SBW 2, PSMCT32 */
+		qw(32u << 16, 0, GS_TRXPOS, 0);                    /* the second row of pages */
+		qw(128, 32, GS_TRXREG, 0);
+		qw(1, 0, GS_TRXDIR, 0);                            /* local to host */
+		kick(first, s_qw_count - first, 2);
+		readback(128 * 32 / 4);
+	}
+	{
+		const unsigned first = s_qw_count;
+		qw(4 | 0x8000u, 0x10000000u, 0xEu, 0);
+		qw((40u * 32u) | (1u << 16), 0, GS_BITBLTBUF, 0);  /* SBP page 40, SBW 1 */
+		qw(32u << 16, 0, GS_TRXPOS, 0);
+		qw(64, 32, GS_TRXREG, 0);
+		qw(1, 0, GS_TRXDIR, 0);
+		kick(first, s_qw_count - first, 1);
+		readback(64 * 32 / 4);
+	}
+	s_run_frames    = 60;
+	s_expect_run[0] = 0x00181818ul;
+	s_expect_run[1] = 0x00505050ul;
+	s_expect_run[2] = 0x00404040ul;
+}
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -2248,6 +2368,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "upload_split",    case_upload_split,  "1" },
 	{ "upload_clut_between", case_upload_clut_between, "1" },
 	{ "readback_parts",  case_readback_parts, "1" },
+	{ "column_passes",   case_column_passes, "1" },
 	{ "big_triangles",   case_big_triangles, "1" },
 	{ "present",         case_present,       "1" },
 	{ "points",          case_points,        "1" },
@@ -2741,7 +2862,7 @@ int main(int argc, char** argv)
 			return 6;
 		}
 	}
-	for (i = 0; i < 2; i++)
+	for (i = 0; i < 3; i++)
 		if (s_expect_run[i] && !sl_state_has_run(serialize_size, serialize, s_expect_run[i]))
 		{
 			fprintf(stderr, "swdraw: %s: the state has no run of 64 words of %08lx\n",

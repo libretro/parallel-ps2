@@ -7926,12 +7926,20 @@ bool GSRendererHW::DetectStripedDoubleClear(bool& no_rt, bool& no_ds)
 {
 	const bool single_page_offset =
 		abs(static_cast<int>(m_cached_ctx.FRAME.FBP) - static_cast<int>(m_cached_ctx.ZBUF.ZBP)) == 1;
+	/* The colour and the Z write the same bits of a word: the same format,
+	 * or a 32-bit colour with its alpha masked under a 24-bit Z, both of
+	 * which write the low three bytes and leave the fourth as it was. */
+	const u32 frame_bits = GSLocalMemory::m_psm[m_cached_ctx.FRAME.PSM].fmsk & ~m_cached_ctx.FRAME.FBMSK;
+	const bool same_format = (m_cached_ctx.FRAME.PSM & 0xF) == (m_cached_ctx.ZBUF.PSM & 0xF);
+	const bool same_bits = same_format ||
+		((m_cached_ctx.ZBUF.PSM & 0xF) == PSMCT24 && frame_bits == 0x00FFFFFFu);
+	const u32 value_mask = same_format ? 0xFFFFFFFFu : 0x00FFFFFFu;
 	const bool z_is_frame = (m_cached_ctx.FRAME.FBP == m_cached_ctx.ZBUF.ZBP ||
 								(m_cached_ctx.FRAME.FBW > 1 && single_page_offset)) && // GT4O Public Beta
 							!m_cached_ctx.ZBUF.ZMSK &&
 							(m_cached_ctx.FRAME.PSM & 0x30) != (m_cached_ctx.ZBUF.PSM & 0x30) &&
-							(m_cached_ctx.FRAME.PSM & 0xF) == (m_cached_ctx.ZBUF.PSM & 0xF) && m_vt.m_eq.z == 1 &&
-							m_vertex.buff[1].XYZ.Z == m_vertex.buff[1].RGBAQ.U32[0];
+							same_bits && m_vt.m_eq.z == 1 &&
+							(m_vertex.buff[1].XYZ.Z & value_mask) == (m_vertex.buff[1].RGBAQ.U32[0] & value_mask);
 
 	// Z and color must be constant and the same and must be drawing strips.
 	if (!z_is_frame || m_vt.m_eq.rgba != 0xFFFF)

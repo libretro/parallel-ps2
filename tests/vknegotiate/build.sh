@@ -117,6 +117,20 @@ for renderer in Vulkan paraLLEl-GS; do
 	fi
 done
 
+# A buffer one page column wide drawn at its two columns in turn over the
+# pages of a depth buffer of another width, a 24-bit Z laying each next
+# column down, twice: the second row of pages read back holds what the
+# GS leaves there, on both renderers.
+"$SCRATCH/swdraw" --bios "$SCRATCH/column_passes.bin" column_passes
+for renderer in Vulkan paraLLEl-GS; do
+	if ! VN_EXPECT_RUN=00181818,00505050,00404040 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/column_passes.bin" VN_RENDERER=$renderer \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: column passes, $renderer"
+		exit 1
+	fi
+done
+
 # Destination alpha a clear wrote and a draw wrote, read back and read by
 # a blend: the same alpha either way, on both renderers.
 "$SCRATCH/swdraw" --bios "$SCRATCH/dest_alpha.bin" dest_alpha
