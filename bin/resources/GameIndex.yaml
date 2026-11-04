@@ -11647,7 +11647,6 @@ SLAJ-25053:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLAJ-25055:
   name: "Def Jam - Fight for N.Y."
   region: "NTSC-Unk"
@@ -11690,7 +11689,6 @@ SLAJ-25066:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
   memcardFilters:
     - "SLAJ-25066"
     - "SLPM-66108"
@@ -11762,7 +11760,6 @@ SLAJ-25078:
     autoFlush: 2 # Properly diffuses light instead of strips of light.
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Improves post processing smoothness.
-    beforeDraw: "OI_BurnoutGames"
 SLAJ-25079:
   name: "Shin Sangoku Musou 4 - Empires"
   region: "NTSC-Unk"
@@ -11823,7 +11820,6 @@ SLAJ-25094:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLAJ-25095:
   name: "Medal of Honor - Vanguard"
   region: "NTSC-HK"
@@ -12211,7 +12207,6 @@ SLED-52597:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLED-52736:
   name: "Need for Speed - Underground 2 [Demo]"
   region: "PAL-E"
@@ -12385,7 +12380,6 @@ SLED-53512:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLED-53537:
   name: "187 - Ride or Die [Demo]"
   region: "PAL-E"
@@ -12430,7 +12424,6 @@ SLED-53637:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLED-53650:
   name: "Need for Speed - Most Wanted"
   region: "PAL-E"
@@ -12531,7 +12524,6 @@ SLED-53937:
     autoFlush: 2 # Properly diffuses light instead of strips of light.
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Improves post processing smoothness.
-    beforeDraw: "OI_BurnoutGames"
 SLED-53951:
   name: "Honda Demo [Demo]"
   region: "PAL-E"
@@ -18909,7 +18901,6 @@ SLES-52584:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLES-52585:
   name: "Burnout 3 - Takedown"
   region: "PAL-F-G-I"
@@ -18921,7 +18912,6 @@ SLES-52585:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLES-52587:
   name: "Army Men - Sarge's War"
   region: "PAL-M5"
@@ -21638,7 +21628,6 @@ SLES-53506:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
   memcardFilters:
     - "SLES-53506"
     - "SLES-53507"
@@ -21657,7 +21646,6 @@ SLES-53507:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
   memcardFilters:
     - "SLES-53506"
     - "SLES-53507"
@@ -22949,7 +22937,6 @@ SLES-53886:
     autoFlush: 2 # Properly diffuses light instead of strips of light.
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Improves post processing smoothness.
-    beforeDraw: "OI_BurnoutGames"
   patches:
     ADDFF505:
       content: |-
@@ -23383,7 +23370,6 @@ SLES-54030:
     autoFlush: 2 # Properly diffuses light instead of strips of light.
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Improves post processing smoothness.
-    beforeDraw: "OI_BurnoutGames"
   patches:
     CAA04879:
       content: |-
@@ -25214,7 +25200,6 @@ SLES-54627:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLES-54628:
   name: "Skate Attack [Promo]"
   region: "PAL-E"
@@ -25420,7 +25405,6 @@ SLES-54681:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLES-54683:
   name: "Medal of Honor - Vanguard"
   region: "PAL-M9"
@@ -29665,7 +29649,6 @@ SLKA-25206:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLKA-25207:
   name: "Sakura Taisen V - Episode 0 - Samurai Girl of Wild"
   region: "NTSC-K"
@@ -29927,7 +29910,6 @@ SLKA-25260:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLKA-25261:
   name: "Tsukiyo ni Saraba"
   region: "NTSC-K"
@@ -30113,7 +30095,6 @@ SLKA-25304:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLKA-25305:
   name: "Taito Memories - Gekan"
   region: "NTSC-K"
@@ -30467,7 +30448,6 @@ SLKA-25372:
     roundSprite: 1 # Fixes lighting misalignment such as the street poles and the sun.
     halfPixelOffset: 2 # Mostly aligns post processing.
     nativeScaling: 2 # Improves post processing smoothness.
-    beforeDraw: "OI_BurnoutGames"
 SLKA-25373:
   name: "Fight Night Round 3"
   region: "NTSC-K"
@@ -30975,7 +30955,6 @@ SLPM-55004:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLPM-55005:
   name: "Mana Khemia 2 - Ochita Gakuen to Renkinjutsushi Tachi"
   region: "NTSC-J"
@@ -31092,7 +31071,6 @@ SLPM-55036:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLPM-55037:
   name: "Medal of Honor - European Assault [EASY 1980]"
   region: "NTSC-J"
@@ -32365,7 +32343,6 @@ SLPM-60246:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLPM-60247:
   name: "Gradius V"
   region: "NTSC-J"
@@ -38579,7 +38556,6 @@ SLPM-65719:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLPM-65720:
   name: "Shin Sangoku Musou 2 Moushouden [Koei the Best]"
   region: "NTSC-J"
@@ -39537,7 +39513,6 @@ SLPM-65958:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLPM-65959:
   name: "Standard Daisenryaku - Ushinawareta Shouri"
   region: "NTSC-J"
@@ -40168,7 +40143,6 @@ SLPM-66108:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
   memcardFilters:
     - "SLAJ-25066"
     - "SLPM-66108"
@@ -41327,7 +41301,6 @@ SLPM-66354:
     autoFlush: 2 # Properly diffuses light instead of strips of light.
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Improves post processing smoothness.
-    beforeDraw: "OI_BurnoutGames"
   patches:
     B3A9F9ED:
       content: |-
@@ -42606,7 +42579,6 @@ SLPM-66652:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
   memcardFilters:
     - "SLAJ-25066"
     - "SLPM-66108"
@@ -42959,7 +42931,6 @@ SLPM-66731:
     autoFlush: 2 # Properly diffuses light instead of strips of light.
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Improves post processing smoothness.
-    beforeDraw: "OI_BurnoutGames"
 SLPM-66732:
   name: "Iinazuke [Limited Edition]"
   region: "NTSC-J"
@@ -43006,7 +42977,6 @@ SLPM-66739:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLPM-66740:
   name: "Sentou Kokka Kai - Legend [DX Pack]"
   region: "NTSC-J"
@@ -43838,7 +43808,6 @@ SLPM-66961:
     autoFlush: 2 # Properly diffuses light instead of strips of light.
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Improves post processing smoothness.
-    beforeDraw: "OI_BurnoutGames"
 SLPM-66962:
   name: "Burnout 3 - Takedown [EA-SY! 1980]"
   region: "NTSC-J"
@@ -43850,7 +43819,6 @@ SLPM-66962:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLPM-66963:
   name: "Medal of Honor - Frontline [EA-SY! 1980]"
   region: "NTSC-J"
@@ -56809,7 +56777,6 @@ SLUS-21050:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLUS-21051:
   name: "FIFA 2005"
   region: "NTSC-U"
@@ -57920,7 +57887,6 @@ SLUS-21242:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
   memcardFilters: # Reads Burnout 3 and NFL 06 saves for unlockables.
     - "SLUS-21242"
     - "SLUS-21050"
@@ -58904,7 +58870,6 @@ SLUS-21376:
     autoFlush: 2 # Properly diffuses light instead of strips of light.
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Improves post processing smoothness.
-    beforeDraw: "OI_BurnoutGames"
   patches:
     5C891FF1:
       content: |-
@@ -60063,7 +60028,6 @@ SLUS-21596:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLUS-21597:
   name: "Medal of Honor - Vanguard"
   region: "NTSC-U"
@@ -62577,7 +62541,6 @@ SLUS-29113:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLUS-29116:
   name: "WWE SmackDown! vs. RAW [Public Beta Vol.1.0]"
   region: "NTSC-U"
@@ -62749,7 +62712,6 @@ SLUS-29153:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    beforeDraw: "OI_BurnoutGames"
 SLUS-29154:
   name: "NHL '06 [Demo]"
   region: "NTSC-U"
@@ -62895,7 +62857,6 @@ SLUS-29180:
     autoFlush: 2 # Properly diffuses light instead of strips of light.
     halfPixelOffset: 4 # Mostly aligns post processing.
     nativeScaling: 2 # Improves post processing smoothness.
-    beforeDraw: "OI_BurnoutGames"
 SLUS-29183:
   name: "Fight Night - Round 3 [Demo]"
   region: "NTSC-U"

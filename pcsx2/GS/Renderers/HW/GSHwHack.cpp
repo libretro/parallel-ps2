@@ -740,25 +740,6 @@ bool GSHwHack::OI_ArTonelico2(GSRendererHW& r, GSTexture* rt, GSTexture* ds, GST
 	return true;
 }
 
-bool GSHwHack::OI_BurnoutGames(GSRendererHW& r, GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t)
-{
-	if (!OI_PointListPalette(r, rt, ds, t))
-		return false; // Render point list palette.
-
-	if (t && t->m_from_target) // Avoid slow framebuffer readback
-		return true;
-
-	if (!r.CanUseSwSpriteRender())
-		return true;
-
-	if (!r.PRIM->TME)
-		return true;
-	// Render palette via CPU.
-	r.SwSpriteRender();
-
-	return false;
-}
-
 bool GSHwHack::GSC_Battlefield2(GSRendererHW& r, int& skip)
 {
 	if (skip == 0)
@@ -976,7 +957,6 @@ const GSHwHack::Entry<GSRendererHW::OI_Ptr> GSHwHack::s_before_draw_functions[] 
 	CRC_F(OI_RozenMaidenGebetGarden),
 	CRC_F(OI_SonicUnleashed),
 	CRC_F(OI_ArTonelico2),
-	CRC_F(OI_BurnoutGames),
 	CRC_F(OI_Battlefield2),
 };
 
