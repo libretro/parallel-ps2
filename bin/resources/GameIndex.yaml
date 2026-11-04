@@ -31297,8 +31297,6 @@ SLPM-55101:
 SLPM-55102:
   name: "Pia Carrot he Youkoso!! G.P. Gakuen Princess"
   region: "NTSC-J"
-  gsHWFixes:
-    beforeDraw: "OI_PointListPalette"
 SLPM-55103:
   name: "Monochrome Factor - Cross Road"
   region: "NTSC-J"
@@ -40022,13 +40020,9 @@ SLPM-66082:
 SLPM-66083:
   name: "Ramune - Garasu-Bin ni Utsuru Umi [First Print Limited Edition]"
   region: "NTSC-J"
-  gsHWFixes:
-    beforeDraw: "OI_PointListPalette"
 SLPM-66084:
   name: "Ramune - Garasu-Bin ni Utsuru Umi"
   region: "NTSC-J"
-  gsHWFixes:
-    beforeDraw: "OI_PointListPalette"
 SLPM-66085:
   name: "Rumble Roses [Konami The Best]"
   region: "NTSC-J"
@@ -40302,8 +40296,6 @@ SLPM-66138:
 SLPM-66139:
   name: "Duel Savior Destiny"
   region: "NTSC-J"
-  gsHWFixes:
-    beforeDraw: "OI_PointListPalette"
 SLPM-66140:
   name: "Atelier Marie + Elie - Salburg no Renkinjutsushi 1 & 2"
   region: "NTSC-J"
@@ -43658,8 +43650,6 @@ SLPM-66918:
 SLPM-66919:
   name: "Kyuuketsu Kitan Moonties"
   region: "NTSC-J"
-  gsHWFixes:
-    beforeDraw: "OI_PointListPalette"
 SLPM-66920:
   name: "Hoshi Furu"
   region: "NTSC-J"
@@ -43898,8 +43888,6 @@ SLPM-66989:
 SLPM-66990:
   name: "Majo-kko A La Mode II [Best Version]"
   region: "NTSC-J"
-  gsHWFixes:
-    beforeDraw: "OI_PointListPalette"
 SLPM-66991:
   name: "Fuuuraiki [Best Version]"
   region: "NTSC-J"

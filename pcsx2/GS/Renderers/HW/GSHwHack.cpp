@@ -537,58 +537,6 @@ bool GSHwHack::GSC_BigMuthaTruckers(GSRendererHW& r, int& skip)
 	return true;
 }
 
-bool GSHwHack::OI_PointListPalette(GSRendererHW& r, GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t)
-{
-	const u32 n_vertices = r.m_vertex.next;
-	const int w = r.m_r.width();
-	const int h = r.m_r.height();
-	const bool is_copy = !r.PRIM->ABE || (
-		r.m_context->ALPHA.A == r.m_context->ALPHA.B // (A - B) == 0 in blending equation, makes C value irrelevant.
-		&& r.m_context->ALPHA.D == 0 // Copy source RGB(A) color into frame buffer.
-	);
-	if (r.m_vt.m_primclass == GS_POINT_CLASS && w <= 64 // Small draws.
-		&& h <= 64 // Small draws.
-		&& n_vertices <= 256 // Small draws.
-		&& is_copy // Copy (no blending).
-		&& !r.PRIM->TME // No texturing please.
-		&& r.m_context->FRAME.PSM == PSMCT32 // Only 32-bit pixel format (CLUT format).
-		&& !r.PRIM->FGE // No FOG.
-		&& !r.PRIM->AA1 // No antialiasing.
-		&& !r.PRIM->FIX // Normal fragment value control.
-		&& !r.m_draw_env->DTHE.DTHE // No dithering.
-		&& !r.m_cached_ctx.TEST.ATE // No alpha test.
-		&& !r.m_cached_ctx.TEST.DATE // No destination alpha test.
-		&& (!r.m_cached_ctx.DepthRead() && !r.m_cached_ctx.DepthWrite()) // No depth handling.
-		&& !RTEX0.CSM // No CLUT usage.
-		&& !r.m_draw_env->PABE.PABE // No PABE.
-		&& r.m_context->FBA.FBA == 0 // No Alpha Correction.
-		&& r.m_cached_ctx.FRAME.FBMSK == 0 // No frame buffer masking.
-	)
-	{
-		const u32 FBP = r.m_cached_ctx.FRAME.Block();
-		const u32 FBW = r.m_cached_ctx.FRAME.FBW;
-		const GSVertex* RESTRICT v = r.m_vertex.buff;
-		const int ox(r.m_context->XYOFFSET.OFX);
-		const int oy(r.m_context->XYOFFSET.OFY);
-		for (size_t i = 0; i < n_vertices; ++i)
-		{
-			const GSVertex& vi = v[i];
-			const GIFRegXYZ& xyz = vi.XYZ;
-			const int x = (int(xyz.X) - ox) / 16;
-			const int y = (int(xyz.Y) - oy) / 16;
-			if (x < r.m_r.x || x > r.m_r.z)
-				continue;
-			if (y < r.m_r.y || y > r.m_r.w)
-				continue;
-			const u32 c = vi.RGBAQ.U32[0];
-			r.m_mem.WritePixel32(x, y, c, FBP, FBW);
-		}
-		g_texture_cache->InvalidateVideoMem(r.m_context->offset.fb, r.m_r);
-		return false;
-	}
-	return true;
-}
-
 bool GSHwHack::OI_DBZBTGames(GSRendererHW& r, GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t)
 {
 	if (t && t->m_from_target) // Avoid slow framebuffer readback
@@ -952,7 +900,6 @@ const GSHwHack::Entry<GSRendererHW::GSC_Ptr> GSHwHack::s_get_skip_count_function
 };
 
 const GSHwHack::Entry<GSRendererHW::OI_Ptr> GSHwHack::s_before_draw_functions[] = {
-	CRC_F(OI_PointListPalette),
 	CRC_F(OI_DBZBTGames),
 	CRC_F(OI_RozenMaidenGebetGarden),
 	CRC_F(OI_SonicUnleashed),
