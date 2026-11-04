@@ -36,7 +36,6 @@
 
 #include "common/Pcsx2Defs.h"
 #include <stddef.h>
-#include <vector>
 
 // "place" is the first number at a pnach line (patch=<place>,...), e.g.:
 // - patch=1,EE,001110e0,word,00000000 <-- place is 1
@@ -84,10 +83,14 @@ struct DynamicPatchEntry
 	u32 value;
 };
 
+/* The words a dynamic patch looks for at an address, and the words it
+ * writes there when they all match. */
 struct DynamicPatch
 {
-	std::vector<DynamicPatchEntry> pattern;
-	std::vector<DynamicPatchEntry> replacement;
+	const DynamicPatchEntry* pattern;
+	u32 npattern;
+	const DynamicPatchEntry* replacement;
+	u32 nreplacement;
 };
 
 /* The loaded patches, in load order. */

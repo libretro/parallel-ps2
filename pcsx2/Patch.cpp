@@ -1253,8 +1253,8 @@ void LoadDynamicPatches(const DynamicPatch* patches, size_t count)
 	size_t i;
 	for (i = 0; i < count; i++)
 	{
-		const size_t npat = patches[i].pattern.size();
-		const size_t nrep = patches[i].replacement.size();
+		const size_t npat = patches[i].npattern;
+		const size_t nrep = patches[i].nreplacement;
 		struct dyna_patch* d;
 
 		if (!patch_reserve((void**)&s_dyna, &s_dyna_cap, s_dyna_count + 1, sizeof(*s_dyna))
@@ -1267,9 +1267,9 @@ void LoadDynamicPatches(const DynamicPatch* patches, size_t count)
 		d->npattern     = (u32)npat;
 		d->nreplacement = (u32)nrep;
 		if (npat)
-			memcpy(s_dyna_entries + s_dyna_entry_count, patches[i].pattern.data(), npat * sizeof(DynamicPatchEntry));
+			memcpy(s_dyna_entries + s_dyna_entry_count, patches[i].pattern, npat * sizeof(DynamicPatchEntry));
 		if (nrep)
-			memcpy(s_dyna_entries + s_dyna_entry_count + npat, patches[i].replacement.data(), nrep * sizeof(DynamicPatchEntry));
+			memcpy(s_dyna_entries + s_dyna_entry_count + npat, patches[i].replacement, nrep * sizeof(DynamicPatchEntry));
 		s_dyna_entry_count += npat + nrep;
 	}
 }

@@ -46,6 +46,7 @@
 
 #include "Common.h"
 #include "GameDatabase.h"
+#include <formats/ryaml.h>
 
 static int g_errors   = 0;
 static int g_warnings = 0;
@@ -105,6 +106,144 @@ unsigned FileMcd_GetMtapPort(unsigned) { return 0; }
 unsigned FileMcd_GetMtapSlot(unsigned) { return 0; }
 bool FileMcd_IsMultitapSlot(unsigned) { return false; }
 
+/* A small database whose every field is known, loaded in place of the
+ * real one: what each field reads back as, lookups in either case, the
+ * first of two serials that differ only in case winning, the default
+ * patch block as the fallback and only when there is one, and the eight
+ * lines that must be refused and reported. */
+static const char s_fixture[] =
+	"SLUS-00001:\n"
+	"  name: \"Fixture One\"\n"
+	"  region: \"NTSC-U\"\n"
+	"  roundModes:\n"
+	"    eeRoundMode: 0\n"
+	"    vuRoundMode: 3\n"
+	"    vu1RoundMode: 1\n"
+	"  clampModes:\n"
+	"    eeClampMode: 2\n"
+	"    vuClampMode: 1\n"
+	"  gameFixes:\n"
+	"    - XGKickHack\n"
+	"    - SkipMPEGHack\n"
+	"    - XGKickHack\n"
+	"    - NotAFixHack\n"
+	"  speedHacks:\n"
+	"    mtvu: 0\n"
+	"    eeCycleRate: 2\n"
+	"    bogus: 1\n"
+	"  gsHWFixes:\n"
+	"    autoFlush: 2\n"
+	"    mipmap: 1\n"
+	"    halfPixelOffset: x\n"
+	"    nonsense: 1\n"
+	"    getSkipCount: \"SomeFunc\"\n"
+	"  memcardFilters:\n"
+	"    - \"SLUS-00001\"\n"
+	"    - \"SLUS-00002\"\n"
+	"  patches:\n"
+	"    default:\n"
+	"      content: |-\n"
+	"        patch=1,EE,00000001,word,1\n"
+	"    ABCD1234:\n"
+	"      content: |-\n"
+	"        patch=1,EE,00000002,word,2\n"
+	"    abcd1234:\n"
+	"      content: |-\n"
+	"        patch=1,EE,00000009,word,9\n"
+	"    zz:\n"
+	"      content: |-\n"
+	"        patch=1,EE,00000009,word,9\n"
+	"  dynaPatches:\n"
+	"    - pattern:\n"
+	"        - offset: 0\n"
+	"          value: 1\n"
+	"        - offset: 4\n"
+	"          value: 2\n"
+	"      replacement:\n"
+	"        - offset: 8\n"
+	"          value: 3\n"
+	"slus-00001:\n"
+	"  name: \"Duplicate\"\n"
+	"SLES-00002:\n"
+	"  name: \"No Default\"\n"
+	"  roundModes:\n"
+	"    eeDivRoundMode: 2\n"
+	"  patches:\n"
+	"    11111111:\n"
+	"      content: |-\n"
+	"        patch=0,EE,00000003,word,3\n";
+
+static int s_fixture_fails;
+#define FCHECK(c, what) do { if (!(c)) { printf("  FAIL: %s\n", what); s_fixture_fails++; } } while (0)
+
+static int fixture(void)
+{
+	const GameDatabaseEntry* a;
+	const GameDatabaseEntry* b;
+	const int errors_before = g_errors;
+	const char* p;
+
+	s_yaml = s_fixture;
+	g_shown = 8; /* the refusals are expected; count them, do not print */
+	GameDatabase_Unload();
+	a = GameDatabase_FindGame("SLUS-00001");
+	b = GameDatabase_FindGame("SLES-00002");
+
+	FCHECK(g_errors - errors_before == 8, "the eight bad lines are each reported");
+	FCHECK(a && b, "both entries load");
+	if (!a || !b)
+		return 1;
+	FCHECK(GameDatabase_FindGame("slus-00001") == a && GameDatabase_FindGame("sLuS-00001") == a,
+		"a serial is found in any case");
+	FCHECK(!strcmp(a->name, "Fixture One") && !strcmp(a->region, "NTSC-U"),
+		"the first of two serials differing in case is the one kept");
+	FCHECK(!strcmp(a->serial, "slus-00001"), "the serial is stored lower case");
+	FCHECK(GameDatabase_FindGame("SLUS-99999") == NULL && GameDatabase_FindGame("") == NULL,
+		"an unknown serial is not found");
+	FCHECK(a->eeRoundMode == FPRoundMode::Nearest && a->eeDivRoundMode == FPRoundMode::MaxCount
+		&& (int)a->vu0RoundMode == 3 && (int)a->vu1RoundMode == 1,
+		"round modes: vuRoundMode sets both, vu1RoundMode then overrides");
+	FCHECK((int)a->eeClampMode == 2 && (int)a->vu0ClampMode == 1 && (int)a->vu1ClampMode == 1,
+		"clamp modes");
+	FCHECK(a->nGameFixes == 2 && a->gameFixes[0] == Fix_XGKick && a->gameFixes[1] == Fix_SkipMpeg,
+		"game fixes in order, the repeat and the unknown one dropped");
+	FCHECK(a->nSpeedHacks == 2 && a->speedHacks[0].id == SpeedHack::MTVU && a->speedHacks[0].value == 0
+		&& a->speedHacks[1].id == SpeedHack::EECycleRate && a->speedHacks[1].value == 2,
+		"speed hacks in order, the unknown one dropped");
+	FCHECK(a->nGSHWFixes == 3
+		&& a->gsHWFixes[0].id == GameDatabaseSchema::GSHWFixId::AutoFlush && a->gsHWFixes[0].value == 2
+		&& a->gsHWFixes[1].id == GameDatabaseSchema::GSHWFixId::Mipmap && a->gsHWFixes[1].value == 1
+		&& a->gsHWFixes[2].id == GameDatabaseSchema::GSHWFixId::GetSkipCount,
+		"GS fixes in order, a bad value and an unknown name dropped");
+	FCHECK(!strcmp(a->memcardFilters, "SLUS-00001/SLUS-00002") && !strcmp(b->memcardFilters, ""),
+		"memory card filters joined with '/', empty when there are none");
+	p = GameDatabase_FindPatch(a, 0xABCD1234u);
+	FCHECK(p && strstr(p, "00000002"), "the CRC's own patch block, the case-repeat of its CRC dropped");
+	p = GameDatabase_FindPatch(a, 0x99u);
+	FCHECK(p && strstr(p, "00000001"), "the default block for any other CRC");
+	FCHECK(GameDatabase_FindPatch(a, 0) == NULL, "no patch block for a CRC of 0");
+	FCHECK(GameDatabase_FindPatch(b, 0x99u) == NULL, "no fallback without a default block");
+	p = GameDatabase_FindPatch(b, 0x11111111u);
+	FCHECK(p && strstr(p, "00000003"), "a CRC-only entry's block");
+	FCHECK(a->nDynaPatches == 1 && a->dynaPatches[0].npattern == 2 && a->dynaPatches[0].nreplacement == 1
+		&& a->dynaPatches[0].pattern[1].offset == 4 && a->dynaPatches[0].pattern[1].value == 2
+		&& a->dynaPatches[0].replacement[0].offset == 8 && a->dynaPatches[0].replacement[0].value == 3,
+		"a dynamic patch's pattern and replacement");
+	FCHECK(b->nDynaPatches == 0 && b->nPatches == 1, "the other entry has only its own");
+	{
+		Pcsx2Config on, off;
+		FCHECK(GameDatabase_ApplyGameFixes(a, on, true) == 7, "seven fixes apply: three clamps, two hacks, two game fixes");
+		FCHECK(GameDatabase_ApplyGameFixes(a, off, false) == 0, "none with the automatic fixes off");
+	}
+
+	GameDatabase_Unload();
+	FCHECK(GameDatabase_FindGame("SLUS-00001") != NULL, "a lookup after unloading loads again");
+	GameDatabase_Unload();
+
+	printf("dbload: fixture %s\n", s_fixture_fails ? "FAIL" : "ok");
+	return s_fixture_fails;
+}
+
 int main(int argc, char** argv)
 {
 	const char* path = (argc > 1) ? argv[1] : "bin/resources/GameIndex.yaml";
@@ -119,7 +258,7 @@ int main(int argc, char** argv)
 	{ fclose(f); fprintf(stderr, "short read\n"); return 2; }
 	fclose(f);
 
-	GameDatabase::ensureLoaded();
+	GameDatabase_EnsureLoaded();
 
 	/* Spot-check that entries actually came out, so an empty parse cannot
 	 * pass by reporting nothing. WRC 4's serial is the one this suite grew
@@ -134,8 +273,8 @@ int main(int argc, char** argv)
 		size_t i;
 		for (i = 0; i < sizeof(kSerials)/sizeof(kSerials[0]); i++)
 		{
-			const GameDatabaseSchema::GameEntry* e =
-				GameDatabase::findGame(kSerials[i]);
+			const GameDatabaseEntry* e =
+				GameDatabase_FindGame(kSerials[i]);
 			if (e) entries++;
 			else
 			{
@@ -147,7 +286,9 @@ int main(int argc, char** argv)
 
 	printf("dbload: %d errors, %d warnings, %d/3 spot-checked serials found\n",
 	       g_errors, g_warnings, entries);
-	return (g_errors != 0 || g_warnings != 0 || entries != 3);
+	if (g_errors != 0 || g_warnings != 0 || entries != 3)
+		return 1;
+	return fixture() ? 1 : 0;
 }
 
 std::string libretro_content;

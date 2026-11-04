@@ -13,17 +13,15 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <sstream>
-#include <string/stdstring.h>
-#include "FormatString.h"
+#include <stdlib.h>
+#include <string.h>
 #include "ParseNumber.h"
 #include "common/Pcsx2Defs.h"
-#include <fstream>
 #include <optional>
-#include <utility>
 
 
 #include <formats/ryaml.h>
+#include <rthreads/rthreads.h>
 
 #include "HostFS.h"
 
@@ -31,24 +29,16 @@
 #include "GS/GS.h"
 #include "Host.h"
 #include "vtlb.h"
-#include "SLockGuard.h"
 
 namespace GameDatabaseSchema
 {
 	static const char* getHWFixName(GSHWFixId id);
-	static std::optional<GSHWFixId> parseHWFixName(const std::string_view& name);
+	static bool parseHWFixName(const char* name, size_t len, GSHWFixId* out);
 	static bool isUserHackHWFix(GSHWFixId id);
 } // namespace GameDatabaseSchema
 
-namespace GameDatabase
-{
-	static void parseAndInsert(const char *serial, const ryaml_t *yaml, int node);
-	static void initDatabase();
-} // namespace GameDatabase
-
 static constexpr char GAMEDB_YAML_FILE_NAME[] = "GameIndex.yaml";
 
-static std::unordered_map<std::string, GameDatabaseSchema::GameEntry> s_game_db;
 static slock_t* s_load_once_mutex(void)
 {
 	/* First use creates it; C++11 makes the init thread-safe, and there is
@@ -58,78 +48,208 @@ static slock_t* s_load_once_mutex(void)
 }
 static bool s_load_once_done = false;
 
-std::string GameDatabaseSchema::GameEntry::memcardFiltersAsString() const
+/* The database while it is read: each entry's lists are runs in pools
+ * shared by every entry, named by offset because a pool moves when it
+ * grows. Once the file is read the pools stay put, and the entries are
+ * made from these with pointers into them. */
+struct gamedb_build
 {
-	std::string ret;
-	for (size_t i = 0; i < memcardFilters.size(); i++)
-	{
-		if (i != 0)
-			ret += '/';
-		ret += memcardFilters[i];
-	}
-	return ret;
+	u32 serial, name, region, memcard; /* offsets into s_chars */
+	u32 fix_first, nfix;
+	u32 hack_first, nhack;
+	u32 hw_first, nhw;
+	u32 patch_first, npatch;
+	u32 dyna_first, ndyna;
+	FPRoundMode eeRoundMode, eeDivRoundMode, vu0RoundMode, vu1RoundMode;
+	GameDatabaseSchema::ClampMode eeClampMode, vu0ClampMode, vu1ClampMode;
+};
+
+struct gamedb_patch_build
+{
+	u32 crc;
+	u32 text; /* offset into s_chars */
+};
+
+struct gamedb_dyna_build
+{
+	u32 first; /* into s_dyna_entries: the pattern, then the replacement */
+	u32 npattern, nreplacement;
+};
+
+/* A growable array: items, how many, room for how many. */
+#define GAMEDB_POOL(type, name) static type* name; static u32 name##_count, name##_cap
+
+GAMEDB_POOL(char, s_chars);
+GAMEDB_POOL(struct gamedb_build, s_builds);
+GAMEDB_POOL(GamefixId, s_fixes);
+GAMEDB_POOL(GameDatabaseSpeedHack, s_hacks);
+GAMEDB_POOL(GameDatabaseHWFix, s_hwfixes);
+GAMEDB_POOL(struct gamedb_patch_build, s_patch_builds);
+GAMEDB_POOL(struct gamedb_dyna_build, s_dyna_builds);
+GAMEDB_POOL(DynamicPatchEntry, s_dyna_entries);
+
+/* What the loaded database is read through: the entries, the patch and
+ * dynamic-patch records they point at, and an open-addressed index of
+ * entry numbers (plus one; 0 is empty) by serial. */
+static GameDatabaseEntry* s_entries;
+static u32 s_entry_count;
+static GameDatabasePatch* s_patches;
+static DynamicPatch* s_dynas;
+static u32* s_index;
+static u32 s_index_mask;
+
+/* Room in a pool for need items of elem bytes; false when it cannot be
+ * made, leaving the pool as it was. */
+static bool gamedb_reserve(void** items, u32* cap, u32 need, size_t elem)
+{
+	u32 grown = *cap ? *cap : 64;
+	void* p;
+	if (need <= *cap)
+		return true;
+	while (grown < need)
+		grown *= 2;
+	p = realloc(*items, (size_t)grown * elem);
+	if (!p)
+		return false;
+	*items = p;
+	*cap   = grown;
+	return true;
 }
 
-const std::string* GameDatabaseSchema::GameEntry::findPatch(u32 crc) const
+#define GAMEDB_PUSH(pool, value) \
+	(gamedb_reserve((void**)&pool, &pool##_cap, pool##_count + 1, sizeof(*pool)) \
+		? (pool[pool##_count++] = (value), true) : false)
+
+/* A run of text into s_chars, terminated; its offset, or 0 (an empty
+ * string: the pool starts with one) when it could not be stored. */
+static u32 gamedb_chars(const char* s, size_t len)
 {
-	if (crc == 0)
-		return nullptr;
-
-	log_cb(RETRO_LOG_INFO, "[GameDB] Searching for patch with CRC '%08X'\n", crc);
-
-	auto it = patches.find(crc);
-	if (it != patches.end())
-	{
-		log_cb(RETRO_LOG_INFO, "[GameDB] Found patch with CRC '%08X'\n", crc);
-		return &it->second;
-	}
-
-	it = patches.find(0);
-	if (it != patches.end())
-	{
-		log_cb(RETRO_LOG_INFO, "[GameDB] Found and falling back to default patch\n");
-		return &it->second;
-	}
-	log_cb(RETRO_LOG_INFO, "[GameDB] No CRC-specific patch or default patch found\n");
-	return nullptr;
+	u32 at;
+	if (!len || !gamedb_reserve((void**)&s_chars, &s_chars_cap, s_chars_count + (u32)len + 1, 1))
+		return 0;
+	at = s_chars_count;
+	memcpy(s_chars + at, s, len);
+	s_chars[at + len] = '\0';
+	s_chars_count += (u32)len + 1;
+	return at;
 }
 
-
-/* Small adapters over the C reader, so the extraction sites below read
- * the way they did when this used a C++ YAML library. A node handle of
- * RYAML_NONE is inert, so a lookup that missed can be passed straight
- * on without a test at each step. */
-/* Serials and CRCs are keyed lower-case: the database's keys are
- * written either way and callers pass either. ASCII only, as they are. */
-static std::string gamedb_lower(const std::string_view& in)
+static void gamedb_free_all(void)
 {
-	std::string out(in);
+	free(s_chars);          s_chars = NULL;          s_chars_count = s_chars_cap = 0;
+	free(s_builds);         s_builds = NULL;         s_builds_count = s_builds_cap = 0;
+	free(s_fixes);          s_fixes = NULL;          s_fixes_count = s_fixes_cap = 0;
+	free(s_hacks);          s_hacks = NULL;          s_hacks_count = s_hacks_cap = 0;
+	free(s_hwfixes);        s_hwfixes = NULL;        s_hwfixes_count = s_hwfixes_cap = 0;
+	free(s_patch_builds);   s_patch_builds = NULL;   s_patch_builds_count = s_patch_builds_cap = 0;
+	free(s_dyna_builds);    s_dyna_builds = NULL;    s_dyna_builds_count = s_dyna_builds_cap = 0;
+	free(s_dyna_entries);   s_dyna_entries = NULL;   s_dyna_entries_count = s_dyna_entries_cap = 0;
+	free(s_entries);        s_entries = NULL;        s_entry_count = 0;
+	free(s_patches);        s_patches = NULL;
+	free(s_dynas);          s_dynas = NULL;
+	free(s_index);          s_index = NULL;          s_index_mask = 0;
+}
+
+/* Serials are keyed lower-case: the database's keys are written either
+ * way and callers pass either. ASCII only, as they are. */
+static u32 gamedb_hash(const char* s, size_t len)
+{
+	u32 h = 2166136261u;
 	size_t i;
-	for (i = 0; i < out.size(); i++)
-		if (out[i] >= 'A' && out[i] <= 'Z')
-			out[i] = (char)(out[i] - 'A' + 'a');
-	return out;
+	for (i = 0; i < len; i++)
+	{
+		char c = s[i];
+		if (c >= 'A' && c <= 'Z')
+			c = (char)(c - 'A' + 'a');
+		h = (h ^ (u8)c) * 16777619u;
+	}
+	return h;
 }
 
-static std::string yamlString(const ryaml_t* yaml, int node)
+/* Whether a stored lower-case serial is the run s[0..len) in any case. */
+static bool gamedb_serial_is(const char* stored, const char* s, size_t len)
+{
+	return strlen(stored) == len && Strncasecmp(stored, s, len) == 0;
+}
+
+/* The slot for a serial in the index: its entry's, or the empty one
+ * where it would go. The index is never more than half full. */
+static u32* gamedb_slot(const char* s, size_t len, const char* (*serial_of)(u32))
+{
+	u32 i = gamedb_hash(s, len) & s_index_mask;
+	while (s_index[i] && !gamedb_serial_is(serial_of(s_index[i] - 1), s, len))
+		i = (i + 1) & s_index_mask;
+	return &s_index[i];
+}
+
+/* An indexed serial, while the file is read and once it has been. */
+static const char* gamedb_build_serial(u32 n)
+{
+	return s_chars + s_builds[n].serial;
+}
+
+static const char* gamedb_entry_serial(u32 n)
+{
+	return s_entries[n].serial;
+}
+
+/* Doubles the index, rehashing what is in it. */
+static bool gamedb_grow_index(void)
+{
+	const u32 old_size = s_index ? s_index_mask + 1 : 0;
+	const u32 size     = old_size ? old_size * 2 : 4096;
+	u32* old           = s_index;
+	u32 i;
+
+	s_index = (u32*)calloc(size, sizeof(u32));
+	if (!s_index)
+	{
+		s_index = old;
+		return false;
+	}
+	s_index_mask = size - 1;
+	for (i = 0; i < old_size; i++)
+	{
+		if (old[i])
+		{
+			const char* serial = gamedb_build_serial(old[i] - 1);
+			*gamedb_slot(serial, strlen(serial), gamedb_build_serial) = old[i];
+		}
+	}
+	free(old);
+	return true;
+}
+
+/* Small adapters over the C reader. A node handle of RYAML_NONE is inert,
+ * so a lookup that missed can be passed straight on without a test at
+ * each step. */
+static u32 yamlString(const ryaml_t* yaml, int node)
 {
 	size_t len = 0;
 	const char* str = ryaml_val(yaml, node, &len);
-	return str ? std::string(str, len) : std::string();
+	return str ? gamedb_chars(str, len) : 0;
 }
 
-static std::string_view yamlKeyView(const ryaml_t* yaml, int node)
+static const char* yamlKey(const ryaml_t* yaml, int node, size_t* len)
 {
-	size_t len = 0;
-	const char* str = ryaml_key(yaml, node, &len);
-	return str ? std::string_view(str, len) : std::string_view();
+	const char* str = ryaml_key(yaml, node, len);
+	if (!str)
+	{
+		*len = 0;
+		return "";
+	}
+	return str;
 }
 
-static std::string_view yamlValView(const ryaml_t* yaml, int node)
+static const char* yamlVal(const ryaml_t* yaml, int node, size_t* len)
 {
-	size_t len = 0;
-	const char* str = ryaml_val(yaml, node, &len);
-	return str ? std::string_view(str, len) : std::string_view();
+	const char* str = ryaml_val(yaml, node, len);
+	if (!str)
+	{
+		*len = 0;
+		return "";
+	}
+	return str;
 }
 
 static int yamlInt(const ryaml_t* yaml, int node, int def)
@@ -139,271 +259,336 @@ static int yamlInt(const ryaml_t* yaml, int node, int def)
 	return value;
 }
 
-void GameDatabase::parseAndInsert(const char *serial, const ryaml_t *yaml, int node)
+static void yamlRoundMode(const ryaml_t* yaml, int roundModes, const char* key, FPRoundMode* a, FPRoundMode* b)
 {
-	GameDatabaseSchema::GameEntry gameEntry;
-	gameEntry.name   = yamlString(yaml, ryaml_find_child(yaml, node, "name"));
-	gameEntry.region = yamlString(yaml, ryaml_find_child(yaml, node, "region"));
+	const int v = yamlInt(yaml, ryaml_find_child(yaml, roundModes, key), -1);
+	if (v >= 0 && v < static_cast<int>(FPRoundMode::MaxCount))
+	{
+		*a = static_cast<FPRoundMode>(v);
+		if (b)
+			*b = *a;
+	}
+}
+
+static void yamlClampMode(const ryaml_t* yaml, int clampModes, const char* key,
+	GameDatabaseSchema::ClampMode* a, GameDatabaseSchema::ClampMode* b)
+{
+	if (ryaml_has_child(yaml, clampModes, key))
+	{
+		*a = static_cast<GameDatabaseSchema::ClampMode>(
+			yamlInt(yaml, ryaml_find_child(yaml, clampModes, key), -1));
+		if (b)
+			*b = *a;
+	}
+}
+
+static void gamedb_parse(struct gamedb_build* e, const char* serial, const ryaml_t* yaml, int node)
+{
+	int n;
+
+	e->name   = yamlString(yaml, ryaml_find_child(yaml, node, "name"));
+	e->region = yamlString(yaml, ryaml_find_child(yaml, node, "region"));
 	{
 		const int roundModes = ryaml_find_child(yaml, node, "roundModes");
-		{
-			const int eeVal = yamlInt(yaml,
-				ryaml_find_child(yaml, roundModes, "eeRoundMode"), -1);
-			if (eeVal >= 0 && eeVal < static_cast<int>(FPRoundMode::MaxCount))
-				gameEntry.eeRoundMode = static_cast<FPRoundMode>(eeVal);
-		}
-		{
-			const int eeVal = yamlInt(yaml,
-				ryaml_find_child(yaml, roundModes, "eeDivRoundMode"), -1);
-			if (eeVal >= 0 && eeVal < static_cast<int>(FPRoundMode::MaxCount))
-				gameEntry.eeDivRoundMode = static_cast<FPRoundMode>(eeVal);
-		}
-		{
-			const int vuVal = yamlInt(yaml,
-				ryaml_find_child(yaml, roundModes, "vuRoundMode"), -1);
-			if (vuVal >= 0 && vuVal < static_cast<int>(FPRoundMode::MaxCount))
-			{
-				gameEntry.vu0RoundMode = static_cast<FPRoundMode>(vuVal);
-				gameEntry.vu1RoundMode = static_cast<FPRoundMode>(vuVal);
-			}
-		}
-		{
-			const int vuVal = yamlInt(yaml,
-				ryaml_find_child(yaml, roundModes, "vu0RoundMode"), -1);
-			if (vuVal >= 0 && vuVal < static_cast<int>(FPRoundMode::MaxCount))
-				gameEntry.vu0RoundMode = static_cast<FPRoundMode>(vuVal);
-		}
-		{
-			const int vuVal = yamlInt(yaml,
-				ryaml_find_child(yaml, roundModes, "vu1RoundMode"), -1);
-			if (vuVal >= 0 && vuVal < static_cast<int>(FPRoundMode::MaxCount))
-				gameEntry.vu1RoundMode = static_cast<FPRoundMode>(vuVal);
-		}
+		yamlRoundMode(yaml, roundModes, "eeRoundMode", &e->eeRoundMode, NULL);
+		yamlRoundMode(yaml, roundModes, "eeDivRoundMode", &e->eeDivRoundMode, NULL);
+		yamlRoundMode(yaml, roundModes, "vuRoundMode", &e->vu0RoundMode, &e->vu1RoundMode);
+		yamlRoundMode(yaml, roundModes, "vu0RoundMode", &e->vu0RoundMode, NULL);
+		yamlRoundMode(yaml, roundModes, "vu1RoundMode", &e->vu1RoundMode, NULL);
 	}
 	{
 		const int clampModes = ryaml_find_child(yaml, node, "clampModes");
-		if (ryaml_has_child(yaml, clampModes, "eeClampMode"))
-		{
-			const int eeVal = yamlInt(yaml,
-				ryaml_find_child(yaml, clampModes, "eeClampMode"), -1);
-			gameEntry.eeClampMode = static_cast<GameDatabaseSchema::ClampMode>(eeVal);
-		}
-		if (ryaml_has_child(yaml, clampModes, "vuClampMode"))
-		{
-			const int vuVal = yamlInt(yaml,
-				ryaml_find_child(yaml, clampModes, "vuClampMode"), -1);
-			gameEntry.vu0ClampMode = static_cast<GameDatabaseSchema::ClampMode>(vuVal);
-			gameEntry.vu1ClampMode = static_cast<GameDatabaseSchema::ClampMode>(vuVal);
-		}
-		if (ryaml_has_child(yaml, clampModes, "vu0ClampMode"))
-		{
-			const int vuVal = yamlInt(yaml,
-				ryaml_find_child(yaml, clampModes, "vu0ClampMode"), -1);
-			gameEntry.vu0ClampMode = static_cast<GameDatabaseSchema::ClampMode>(vuVal);
-		}
-		if (ryaml_has_child(yaml, clampModes, "vu1ClampMode"))
-		{
-			const int vuVal = yamlInt(yaml,
-				ryaml_find_child(yaml, clampModes, "vu1ClampMode"), -1);
-			gameEntry.vu1ClampMode = static_cast<GameDatabaseSchema::ClampMode>(vuVal);
-		}
+		yamlClampMode(yaml, clampModes, "eeClampMode", &e->eeClampMode, NULL);
+		yamlClampMode(yaml, clampModes, "vuClampMode", &e->vu0ClampMode, &e->vu1ClampMode);
+		yamlClampMode(yaml, clampModes, "vu0ClampMode", &e->vu0ClampMode, NULL);
+		yamlClampMode(yaml, clampModes, "vu1ClampMode", &e->vu1ClampMode, NULL);
 	}
 
 	// Validate game fixes, invalid ones will be dropped!
+	e->fix_first = s_fixes_count;
+	for (n = ryaml_first_child(yaml, ryaml_find_child(yaml, node, "gameFixes")); n >= 0;
+		n = ryaml_next_sibling(yaml, n))
 	{
-		const int gameFixes = ryaml_find_child(yaml, node, "gameFixes");
-		for (int n = ryaml_first_child(yaml, gameFixes); n >= 0;
-			n = ryaml_next_sibling(yaml, n))
-		{
-			bool fixValidated = false;
-			std::string fix(yamlValView(yaml, n));
+		bool fixValidated = false;
+		size_t len;
+		const char* fix = yamlVal(yaml, n, &len);
 
-			// Enum values don't end with Hack, but gamedb does, so remove it before comparing.
-			if (string_ends_with(fix.c_str(), "Hack"))
+		// Enum values don't end with Hack, but gamedb does, so remove it before comparing.
+		if (len >= 4 && memcmp(fix + len - 4, "Hack", 4) == 0)
+		{
+			const size_t base = len - 4;
+			len = base; /* the name without it, as reported below */
+			for (GamefixId id = GamefixId_FIRST; id < pxEnumEnd; ++id)
 			{
-				fix.erase(fix.size() - 4);
-				for (GamefixId id = GamefixId_FIRST; id < pxEnumEnd; ++id)
+				const char* name = EnumToString(id);
+				if (strlen(name) == base && memcmp(name, fix, base) == 0)
 				{
-					if (fix.compare(EnumToString(id)) == 0)
+					u32 fi;
+					for (fi = 0; fi < e->nfix; fi++)
 					{
-						const GamefixId* fixes = gameEntry.gameFixes.data();
-						const size_t nfixes = gameEntry.gameFixes.size();
-						size_t fi;
-						for (fi = 0; fi < nfixes; fi++)
-						{
-							if (fixes[fi] == id)
-								break;
-						}
-						if (fi == nfixes)
-						{
-							gameEntry.gameFixes.push_back(id);
-							fixValidated = true;
+						if (s_fixes[e->fix_first + fi] == id)
 							break;
-						}
 					}
+					if (fi == e->nfix && GAMEDB_PUSH(s_fixes, id))
+					{
+						e->nfix++;
+						fixValidated = true;
+					}
+					break;
 				}
 			}
-
-			if (!fixValidated)
-				log_cb(RETRO_LOG_ERROR, "[GameDB] Invalid gamefix: '{%s}', specified for serial: '{%s}'. Dropping!\n", fix.c_str(), serial);
 		}
+
+		if (!fixValidated)
+			log_cb(RETRO_LOG_ERROR, "[GameDB] Invalid gamefix: '{%.*s}', specified for serial: '{%s}'. Dropping!\n", (int)len, fix, serial);
 	}
 
+	e->hack_first = s_hacks_count;
+	for (n = ryaml_first_child(yaml, ryaml_find_child(yaml, node, "speedHacks")); n >= 0;
+		n = ryaml_next_sibling(yaml, n))
 	{
-		const int speedHacks = ryaml_find_child(yaml, node, "speedHacks");
-		for (int n = ryaml_first_child(yaml, speedHacks); n >= 0;
-			n = ryaml_next_sibling(yaml, n))
-		{
-			const std::string_view id_view = yamlKeyView(yaml, n);
-			const std::string_view value_view = yamlValView(yaml, n);
-			const std::optional<SpeedHack> id = Pcsx2Config::SpeedhackOptions::ParseSpeedHackName(id_view);
-			s32 parsed = 0;
-			const std::optional<int> value = parse_number_s32(value_view.data(), value_view.size(), 10, &parsed)
-				? std::optional<int>(parsed) : std::nullopt;
+		size_t id_len, value_len;
+		const char* id_name = yamlKey(yaml, n, &id_len);
+		const char* value   = yamlVal(yaml, n, &value_len);
+		SpeedHack id;
+		s32 parsed = 0;
+		bool inserted = false;
 
-			bool inserted = false;
-			if (id.has_value() && value.has_value())
+		if (Pcsx2Config::SpeedhackOptions::ParseSpeedHackName(id_name, id_len, &id)
+			&& parse_number_s32(value, value_len, 10, &parsed))
+		{
+			u32 hi;
+			for (hi = 0; hi < e->nhack; hi++)
 			{
-				const std::pair<SpeedHack, int>* hacks = gameEntry.speedHacks.data();
-				const size_t nhacks = gameEntry.speedHacks.size();
-				size_t hi;
-				for (hi = 0; hi < nhacks; hi++)
+				if (s_hacks[e->hack_first + hi].id == id)
+					break;
+			}
+			if (hi == e->nhack)
+			{
+				GameDatabaseSpeedHack hack;
+				hack.id    = id;
+				hack.value = parsed;
+				if (GAMEDB_PUSH(s_hacks, hack))
 				{
-					if (hacks[hi].first == id.value())
-						break;
-				}
-				if (hi == nhacks)
-				{
-					gameEntry.speedHacks.emplace_back(id.value(), value.value());
+					e->nhack++;
 					inserted = true;
 				}
 			}
-			if (!inserted)
-				log_cb(RETRO_LOG_ERROR, "[GameDB] Invalid speedhack: '{%s}', specified for serial: '{%.*s}'. Dropping!\n", std::string(id_view).c_str(), (int)value_view.size(), value_view.data());
 		}
+		if (!inserted)
+			log_cb(RETRO_LOG_ERROR, "[GameDB] Invalid speedhack: '{%.*s}', specified for serial: '{%.*s}'. Dropping!\n", (int)id_len, id_name, (int)value_len, value);
 	}
 
+	e->hw_first = s_hwfixes_count;
+	for (n = ryaml_first_child(yaml, ryaml_find_child(yaml, node, "gsHWFixes")); n >= 0;
+		n = ryaml_next_sibling(yaml, n))
 	{
-		const int gsHWFixes = ryaml_find_child(yaml, node, "gsHWFixes");
-		for (int n = ryaml_first_child(yaml, gsHWFixes); n >= 0;
-			n = ryaml_next_sibling(yaml, n))
+		size_t name_len;
+		const char* id_name = yamlKey(yaml, n, &name_len);
+		GameDatabaseSchema::GSHWFixId id;
+		const bool have_id = GameDatabaseSchema::parseHWFixName(id_name, name_len, &id);
+		bool have_value    = false;
+		s32 value          = 0;
+
+		if (have_id && (id == GameDatabaseSchema::GSHWFixId::GetSkipCount ||
+						   id == GameDatabaseSchema::GSHWFixId::BeforeDraw ||
+						   id == GameDatabaseSchema::GSHWFixId::MoveHandler))
 		{
-			const std::string_view id_name = yamlKeyView(yaml, n);
-			std::optional<GameDatabaseSchema::GSHWFixId> id = GameDatabaseSchema::parseHWFixName(id_name);
-			std::optional<s32> value;
-			if (id.has_value() && (id.value() == GameDatabaseSchema::GSHWFixId::GetSkipCount ||
-									  id.value() == GameDatabaseSchema::GSHWFixId::BeforeDraw ||
-									  id.value() == GameDatabaseSchema::GSHWFixId::MoveHandler))
-			{
-				const std::string_view str_value = yamlValView(yaml, n);
-				if (id.value() == GameDatabaseSchema::GSHWFixId::GetSkipCount)
-					value = GSLookupGetSkipCountFunctionId(str_value.data(), str_value.size());
-				else if (id.value() == GameDatabaseSchema::GSHWFixId::BeforeDraw)
-					value = GSLookupBeforeDrawFunctionId(str_value.data(), str_value.size());
-				else if (id.value() == GameDatabaseSchema::GSHWFixId::MoveHandler)
-					value = GSLookupMoveHandlerFunctionId(str_value.data(), str_value.size());
-
-				if (value.value_or(-1) < 0)
-				{
-					log_cb(RETRO_LOG_ERROR, "[GameDB] Invalid GS HW Fix Value for '{%s}' in '{%s}': '{%s}'\n", std::string(id_name).c_str(), serial, std::string(str_value).c_str());
-					continue;
-				}
-			}
-			else if (!ryaml_has_val(yaml, n))
-				value = 1;
+			size_t len;
+			const char* str_value = yamlVal(yaml, n, &len);
+			if (id == GameDatabaseSchema::GSHWFixId::GetSkipCount)
+				value = GSLookupGetSkipCountFunctionId(str_value, len);
+			else if (id == GameDatabaseSchema::GSHWFixId::BeforeDraw)
+				value = GSLookupBeforeDrawFunctionId(str_value, len);
 			else
-			{
-				const std::string_view str_value = yamlValView(yaml, n);
-				s32 parsed = 0;
-				if (parse_number_s32(str_value.data(), str_value.size(), 10, &parsed))
-					value = parsed;
-			}
+				value = GSLookupMoveHandlerFunctionId(str_value, len);
 
-			if (!id.has_value() || !value.has_value())
+			if (value < 0)
 			{
-				log_cb(RETRO_LOG_ERROR, "[GameDB] Invalid GS HW Fix: '{%s}' specified for serial '{%s}'. Dropping!\n", std::string(id_name).c_str(), serial);
+				log_cb(RETRO_LOG_ERROR, "[GameDB] Invalid GS HW Fix Value for '{%.*s}' in '{%s}': '{%.*s}'\n", (int)name_len, id_name, serial, (int)len, str_value);
 				continue;
 			}
+			have_value = true;
+		}
+		else if (!ryaml_has_val(yaml, n))
+		{
+			value      = 1;
+			have_value = true;
+		}
+		else
+		{
+			size_t len;
+			const char* str_value = yamlVal(yaml, n, &len);
+			have_value = parse_number_s32(str_value, len, 10, &value) != 0;
+		}
 
-			gameEntry.gsHWFixes.emplace_back(id.value(), value.value());
+		if (!have_id || !have_value)
+		{
+			log_cb(RETRO_LOG_ERROR, "[GameDB] Invalid GS HW Fix: '{%.*s}' specified for serial '{%s}'. Dropping!\n", (int)name_len, id_name, serial);
+			continue;
+		}
+
+		{
+			GameDatabaseHWFix fix;
+			fix.id    = id;
+			fix.value = value;
+			if (GAMEDB_PUSH(s_hwfixes, fix))
+				e->nhw++;
 		}
 	}
 
-	// Memory Card Filters - Store as a vector to allow flexibility in the future
-	// - currently they are used as a '\n' delimited string in the app
+	// Memory Card Filters - currently they are used as a '/' delimited string in the app
 	{
-		const int memcardFilters = ryaml_find_child(yaml, node, "memcardFilters");
-		for (int n = ryaml_first_child(yaml, memcardFilters); n >= 0;
+		const u32 start = s_chars_count;
+		u32 count       = 0;
+		for (n = ryaml_first_child(yaml, ryaml_find_child(yaml, node, "memcardFilters")); n >= 0;
 			n = ryaml_next_sibling(yaml, n))
-			gameEntry.memcardFilters.emplace_back(yamlValView(yaml, n));
+		{
+			size_t len;
+			const char* filter = yamlVal(yaml, n, &len);
+			if (!gamedb_reserve((void**)&s_chars, &s_chars_cap, s_chars_count + (u32)len + 2, 1))
+				break;
+			if (count++)
+				s_chars[s_chars_count++] = '/';
+			memcpy(s_chars + s_chars_count, filter, len);
+			s_chars_count += (u32)len;
+		}
+		if (count)
+		{
+			s_chars[s_chars_count++] = '\0';
+			e->memcard = start;
+		}
 	}
 
 	// Game Patches
+	e->patch_first = s_patch_builds_count;
+	for (n = ryaml_first_child(yaml, ryaml_find_child(yaml, node, "patches")); n >= 0;
+		n = ryaml_next_sibling(yaml, n))
 	{
-		const int patches = ryaml_find_child(yaml, node, "patches");
-		for (int n = ryaml_first_child(yaml, patches); n >= 0;
-			n = ryaml_next_sibling(yaml, n))
-		{
-			// use a crc of 0 for default patches
-			const std::string_view crc_str = yamlKeyView(yaml, n);
-			std::optional<u32> crc = ((crc_str.length() == 7) && (Strncasecmp(crc_str.data(), "default", 7) == 0)) ? std::optional<u32>(0) : std::nullopt;
-			u32 crc_parsed = 0;
-			if (!crc.has_value() && parse_number_u32(crc_str.data(), crc_str.size(), 16, &crc_parsed))
-				crc = crc_parsed;
-			if (!crc.has_value())
-			{
-				log_cb(RETRO_LOG_ERROR, "[GameDB] Invalid CRC '{%s}' found for serial: '{%s}'. Skipping!\n", std::string(crc_str).c_str(), serial);
-				continue;
-			}
-			if (gameEntry.patches.find(crc.value()) != gameEntry.patches.end())
-			{
-				log_cb(RETRO_LOG_ERROR, "[GameDB] Duplicate CRC '{%s}' found for serial: '{%s}'. Skipping, CRCs are case-insensitive!\n", std::string(crc_str).c_str(), std::string(serial).c_str());
-				continue;
-			}
+		// use a crc of 0 for default patches
+		size_t len;
+		const char* crc_str = yamlKey(yaml, n, &len);
+		u32 crc = 0;
+		u32 pi;
+		struct gamedb_patch_build patch;
 
-			std::string patch =
-				yamlString(yaml, ryaml_find_child(yaml, n, "content"));
-			gameEntry.patches.emplace(crc.value(), std::move(patch));
+		if (!(len == 7 && Strncasecmp(crc_str, "default", 7) == 0)
+			&& !parse_number_u32(crc_str, len, 16, &crc))
+		{
+			log_cb(RETRO_LOG_ERROR, "[GameDB] Invalid CRC '{%.*s}' found for serial: '{%s}'. Skipping!\n", (int)len, crc_str, serial);
+			continue;
 		}
+		for (pi = 0; pi < e->npatch; pi++)
+		{
+			if (s_patch_builds[e->patch_first + pi].crc == crc)
+				break;
+		}
+		if (pi != e->npatch)
+		{
+			log_cb(RETRO_LOG_ERROR, "[GameDB] Duplicate CRC '{%.*s}' found for serial: '{%s}'. Skipping, CRCs are case-insensitive!\n", (int)len, crc_str, serial);
+			continue;
+		}
+
+		patch.crc  = crc;
+		patch.text = yamlString(yaml, ryaml_find_child(yaml, n, "content"));
+		if (GAMEDB_PUSH(s_patch_builds, patch))
+			e->npatch++;
 	}
 
+	e->dyna_first = s_dyna_builds_count;
+	for (n = ryaml_first_child(yaml, ryaml_find_child(yaml, node, "dynaPatches")); n >= 0;
+		n = ryaml_next_sibling(yaml, n))
 	{
-		const int dynaPatches = ryaml_find_child(yaml, node, "dynaPatches");
-		for (int n = ryaml_first_child(yaml, dynaPatches); n >= 0;
-			n = ryaml_next_sibling(yaml, n))
+		struct gamedb_dyna_build dyna;
+		const int pattern = ryaml_find_child(yaml, n, "pattern");
+
+		dyna.first        = s_dyna_entries_count;
+		dyna.npattern     = 0;
+		dyna.nreplacement = 0;
+		if (ryaml_has_children(yaml, pattern))
 		{
-			DynamicPatch patch;
-			const int pattern = ryaml_find_child(yaml, n, "pattern");
+			const int replacement = ryaml_find_child(yaml, n, "replacement");
+			int x;
 
-			if (ryaml_has_children(yaml, pattern))
+			for (x = ryaml_first_child(yaml, pattern); x >= 0; x = ryaml_next_sibling(yaml, x))
 			{
-				const int replacement = ryaml_find_child(yaml, n, "replacement");
-				int e;
-
-				for (e = ryaml_first_child(yaml, pattern); e >= 0;
-					e = ryaml_next_sibling(yaml, e))
-				{
-					DynamicPatchEntry entry = {};
-					ryaml_val_uint(yaml, ryaml_find_child(yaml, e, "offset"), &entry.offset);
-					ryaml_val_uint(yaml, ryaml_find_child(yaml, e, "value"), &entry.value);
-
-					patch.pattern.push_back(entry);
-				}
-				for (e = ryaml_first_child(yaml, replacement); e >= 0;
-					e = ryaml_next_sibling(yaml, e))
-				{
-					DynamicPatchEntry entry = {};
-					ryaml_val_uint(yaml, ryaml_find_child(yaml, e, "offset"), &entry.offset);
-					ryaml_val_uint(yaml, ryaml_find_child(yaml, e, "value"), &entry.value);
-
-					patch.replacement.push_back(entry);
-				}
+				DynamicPatchEntry entry = {};
+				ryaml_val_uint(yaml, ryaml_find_child(yaml, x, "offset"), &entry.offset);
+				ryaml_val_uint(yaml, ryaml_find_child(yaml, x, "value"), &entry.value);
+				if (GAMEDB_PUSH(s_dyna_entries, entry))
+					dyna.npattern++;
 			}
-			gameEntry.dynaPatches.push_back(patch);
+			for (x = ryaml_first_child(yaml, replacement); x >= 0; x = ryaml_next_sibling(yaml, x))
+			{
+				DynamicPatchEntry entry = {};
+				ryaml_val_uint(yaml, ryaml_find_child(yaml, x, "offset"), &entry.offset);
+				ryaml_val_uint(yaml, ryaml_find_child(yaml, x, "value"), &entry.value);
+				if (GAMEDB_PUSH(s_dyna_entries, entry))
+					dyna.nreplacement++;
+			}
 		}
+		if (GAMEDB_PUSH(s_dyna_builds, dyna))
+			e->ndyna++;
 	}
+}
 
-	s_game_db.emplace(std::move(serial), std::move(gameEntry));
+/* The entries out of the build records, now that the pools are final. */
+static bool gamedb_finish(void)
+{
+	u32 i;
+
+	s_entries = (GameDatabaseEntry*)calloc(s_builds_count ? s_builds_count : 1, sizeof(*s_entries));
+	s_patches = (GameDatabasePatch*)calloc(s_patch_builds_count ? s_patch_builds_count : 1, sizeof(*s_patches));
+	s_dynas   = (DynamicPatch*)calloc(s_dyna_builds_count ? s_dyna_builds_count : 1, sizeof(*s_dynas));
+	if (!s_entries || !s_patches || !s_dynas)
+		return false;
+
+	for (i = 0; i < s_patch_builds_count; i++)
+	{
+		s_patches[i].crc  = s_patch_builds[i].crc;
+		s_patches[i].text = s_chars + s_patch_builds[i].text;
+	}
+	for (i = 0; i < s_dyna_builds_count; i++)
+	{
+		const struct gamedb_dyna_build* d = &s_dyna_builds[i];
+		s_dynas[i].pattern      = s_dyna_entries + d->first;
+		s_dynas[i].npattern     = d->npattern;
+		s_dynas[i].replacement  = s_dyna_entries + d->first + d->npattern;
+		s_dynas[i].nreplacement = d->nreplacement;
+	}
+	for (i = 0; i < s_builds_count; i++)
+	{
+		const struct gamedb_build* b = &s_builds[i];
+		GameDatabaseEntry* e         = &s_entries[i];
+		e->serial         = s_chars + b->serial;
+		e->name           = s_chars + b->name;
+		e->region         = s_chars + b->region;
+		e->eeRoundMode    = b->eeRoundMode;
+		e->eeDivRoundMode = b->eeDivRoundMode;
+		e->vu0RoundMode   = b->vu0RoundMode;
+		e->vu1RoundMode   = b->vu1RoundMode;
+		e->eeClampMode    = b->eeClampMode;
+		e->vu0ClampMode   = b->vu0ClampMode;
+		e->vu1ClampMode   = b->vu1ClampMode;
+		e->gameFixes      = s_fixes + b->fix_first;
+		e->nGameFixes     = b->nfix;
+		e->speedHacks     = s_hacks + b->hack_first;
+		e->nSpeedHacks    = b->nhack;
+		e->gsHWFixes      = s_hwfixes + b->hw_first;
+		e->nGSHWFixes     = b->nhw;
+		e->memcardFilters = s_chars + b->memcard;
+		e->patches        = s_patches + b->patch_first;
+		e->nPatches       = b->npatch;
+		e->dynaPatches    = s_dynas + b->dyna_first;
+		e->nDynaPatches   = b->ndyna;
+	}
+	s_entry_count = s_builds_count;
+
+	/* The build records and patch offsets are not read again. */
+	free(s_builds);       s_builds = NULL;       s_builds_count = s_builds_cap = 0;
+	free(s_patch_builds); s_patch_builds = NULL; s_patch_builds_count = s_patch_builds_cap = 0;
+	free(s_dyna_builds);  s_dyna_builds = NULL;  s_dyna_builds_count = s_dyna_builds_cap = 0;
+	return true;
 }
 
 static const char* s_round_modes[static_cast<u32>(FPRoundMode::MaxCount)] = {
@@ -457,33 +642,36 @@ const char* GameDatabaseSchema::getHWFixName(GSHWFixId id)
 	return s_gs_hw_fix_names[static_cast<u32>(id)];
 }
 
-static std::optional<GameDatabaseSchema::GSHWFixId> GameDatabaseSchema::parseHWFixName(const std::string_view& name)
+static bool GameDatabaseSchema::parseHWFixName(const char* name, size_t len, GSHWFixId* out)
 {
 	for (u32 i = 0; i < C89_ARRAY_SIZE(s_gs_hw_fix_names); i++)
 	{
-		if (name.compare(s_gs_hw_fix_names[i]) == 0)
-			return static_cast<GameDatabaseSchema::GSHWFixId>(i);
+		if (strlen(s_gs_hw_fix_names[i]) == len && memcmp(s_gs_hw_fix_names[i], name, len) == 0)
+		{
+			*out = static_cast<GameDatabaseSchema::GSHWFixId>(i);
+			return true;
+		}
 	}
 
-	return std::nullopt;
+	return false;
 }
 
 bool GameDatabaseSchema::isUserHackHWFix(GSHWFixId id)
 {
 	switch (id)
 	{
-		case GSHWFixId::Deinterlace:
-		case GSHWFixId::Mipmap:
-		case GSHWFixId::TexturePreloading:
-		case GSHWFixId::TrilinearFiltering:
-		case GSHWFixId::MinimumBlendingLevel:
-		case GSHWFixId::MaximumBlendingLevel:
-		case GSHWFixId::RecommendedBlendingLevel:
-		case GSHWFixId::PCRTCOffsets:
-		case GSHWFixId::PCRTCOverscan:
-		case GSHWFixId::GetSkipCount:
-		case GSHWFixId::BeforeDraw:
-		case GSHWFixId::MoveHandler:
+		case GameDatabaseSchema::GSHWFixId::Deinterlace:
+		case GameDatabaseSchema::GSHWFixId::Mipmap:
+		case GameDatabaseSchema::GSHWFixId::TexturePreloading:
+		case GameDatabaseSchema::GSHWFixId::TrilinearFiltering:
+		case GameDatabaseSchema::GSHWFixId::MinimumBlendingLevel:
+		case GameDatabaseSchema::GSHWFixId::MaximumBlendingLevel:
+		case GameDatabaseSchema::GSHWFixId::RecommendedBlendingLevel:
+		case GameDatabaseSchema::GSHWFixId::PCRTCOffsets:
+		case GameDatabaseSchema::GSHWFixId::PCRTCOverscan:
+		case GameDatabaseSchema::GSHWFixId::GetSkipCount:
+		case GameDatabaseSchema::GSHWFixId::BeforeDraw:
+		case GameDatabaseSchema::GSHWFixId::MoveHandler:
 			return false;
 		default:
 			break;
@@ -491,63 +679,64 @@ bool GameDatabaseSchema::isUserHackHWFix(GSHWFixId id)
 	return true;
 }
 
-u32 GameDatabaseSchema::GameEntry::applyGameFixes(Pcsx2Config& config, bool applyAuto) const
+u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* e, Pcsx2Config& config, bool applyAuto)
 {
+	u32 i;
 	// Only apply core game fixes if the user has enabled them.
 	if (!applyAuto)
 		log_cb(RETRO_LOG_WARN, "[GameDB] Game Fixes are disabled\n");
 
 	u32 num_applied_fixes = 0;
 
-	if (eeDivRoundMode < FPRoundMode::MaxCount)
+	if (e->eeDivRoundMode < FPRoundMode::MaxCount)
 	{
 		if (applyAuto)
 		{
-			log_cb(RETRO_LOG_INFO, "(GameDB) Changing EE/FPU divison roundmode to %d [%s]\n", (int)eeRoundMode, s_round_modes[static_cast<u8>(eeDivRoundMode)]);
-			config.Cpu.FPUDivFPCR.SetRoundMode(eeDivRoundMode);
+			log_cb(RETRO_LOG_INFO, "(GameDB) Changing EE/FPU divison roundmode to %d [%s]\n", (int)e->eeRoundMode, s_round_modes[static_cast<u8>(e->eeDivRoundMode)]);
+			config.Cpu.FPUDivFPCR.SetRoundMode(e->eeDivRoundMode);
 		}
 		else
 		{
-			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing EE/FPU roundmode to %d [%s]\n", (int)eeRoundMode, s_round_modes[static_cast<u8>(eeRoundMode)]);
+			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing EE/FPU roundmode to %d [%s]\n", (int)e->eeRoundMode, s_round_modes[static_cast<u8>(e->eeRoundMode)]);
 		}
 	}
 
-	if (eeRoundMode < FPRoundMode::MaxCount)
+	if (e->eeRoundMode < FPRoundMode::MaxCount)
 	{
 		if (applyAuto)
 		{
-			log_cb(RETRO_LOG_INFO, "(GameDB) Changing EE/FPU roundmode to %d [%s]\n", (int)eeRoundMode, s_round_modes[static_cast<u8>(eeRoundMode)]);
-			config.Cpu.FPUFPCR.SetRoundMode(eeRoundMode);
+			log_cb(RETRO_LOG_INFO, "(GameDB) Changing EE/FPU roundmode to %d [%s]\n", (int)e->eeRoundMode, s_round_modes[static_cast<u8>(e->eeRoundMode)]);
+			config.Cpu.FPUFPCR.SetRoundMode(e->eeRoundMode);
 		}
 		else
-			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing EE/FPU roundmode to %d [%s]\n", (int)eeRoundMode, s_round_modes[static_cast<u8>(eeRoundMode)]);
+			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing EE/FPU roundmode to %d [%s]\n", (int)e->eeRoundMode, s_round_modes[static_cast<u8>(e->eeRoundMode)]);
 	}
 
-	if (vu0RoundMode < FPRoundMode::MaxCount)
+	if (e->vu0RoundMode < FPRoundMode::MaxCount)
 	{
 		if (applyAuto)
 		{
-			log_cb(RETRO_LOG_INFO, "(GameDB) Changing VU0 roundmode to %d [%s]\n", (int)vu0RoundMode, s_round_modes[static_cast<u8>(vu0RoundMode)]);
-			config.Cpu.VU0FPCR.SetRoundMode(vu0RoundMode);
+			log_cb(RETRO_LOG_INFO, "(GameDB) Changing VU0 roundmode to %d [%s]\n", (int)e->vu0RoundMode, s_round_modes[static_cast<u8>(e->vu0RoundMode)]);
+			config.Cpu.VU0FPCR.SetRoundMode(e->vu0RoundMode);
 		}
 		else
-			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing VU0 roundmode to %d [%s]\n", (int)vu0RoundMode, s_round_modes[static_cast<u8>(vu0RoundMode)]);
+			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing VU0 roundmode to %d [%s]\n", (int)e->vu0RoundMode, s_round_modes[static_cast<u8>(e->vu0RoundMode)]);
 	}
 
-	if (vu1RoundMode < FPRoundMode::MaxCount)
+	if (e->vu1RoundMode < FPRoundMode::MaxCount)
 	{
 		if (applyAuto)
 		{
-			log_cb(RETRO_LOG_INFO, "(GameDB) Changing VU1 roundmode to %d [%s]\n", (int)vu1RoundMode, s_round_modes[static_cast<u8>(vu1RoundMode)]);
-			config.Cpu.VU1FPCR.SetRoundMode(vu1RoundMode);
+			log_cb(RETRO_LOG_INFO, "(GameDB) Changing VU1 roundmode to %d [%s]\n", (int)e->vu1RoundMode, s_round_modes[static_cast<u8>(e->vu1RoundMode)]);
+			config.Cpu.VU1FPCR.SetRoundMode(e->vu1RoundMode);
 		}
 		else
-			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing VU1 roundmode to %d [%s]\n", (int)vu1RoundMode, s_round_modes[static_cast<u8>(vu1RoundMode)]);
+			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing VU1 roundmode to %d [%s]\n", (int)e->vu1RoundMode, s_round_modes[static_cast<u8>(e->vu1RoundMode)]);
 	}
 
-	if (eeClampMode != GameDatabaseSchema::ClampMode::Undefined)
+	if (e->eeClampMode != GameDatabaseSchema::ClampMode::Undefined)
 	{
-		const int clampMode = enum_cast(eeClampMode);
+		const int clampMode = enum_cast(e->eeClampMode);
 		if (applyAuto)
 		{
 			log_cb(RETRO_LOG_INFO, "(GameDB) Changing EE/FPU clamp mode [mode=%d]\n", clampMode);
@@ -560,9 +749,9 @@ u32 GameDatabaseSchema::GameEntry::applyGameFixes(Pcsx2Config& config, bool appl
 			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing EE/FPU clamp mode [mode=%d]\n", clampMode);
 	}
 
-	if (vu0ClampMode != GameDatabaseSchema::ClampMode::Undefined)
+	if (e->vu0ClampMode != GameDatabaseSchema::ClampMode::Undefined)
 	{
-		const int clampMode = enum_cast(vu0ClampMode);
+		const int clampMode = enum_cast(e->vu0ClampMode);
 		if (applyAuto)
 		{
 			log_cb(RETRO_LOG_INFO, "(GameDB) Changing VU0 clamp mode [mode=%d]\n", clampMode);
@@ -575,9 +764,9 @@ u32 GameDatabaseSchema::GameEntry::applyGameFixes(Pcsx2Config& config, bool appl
 			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing VU0 clamp mode [mode=%d]\n", clampMode);
 	}
 
-	if (vu1ClampMode != GameDatabaseSchema::ClampMode::Undefined)
+	if (e->vu1ClampMode != GameDatabaseSchema::ClampMode::Undefined)
 	{
-		const int clampMode = enum_cast(vu1ClampMode);
+		const int clampMode = enum_cast(e->vu1ClampMode);
 		if (applyAuto)
 		{
 			log_cb(RETRO_LOG_INFO, "(GameDB) Changing VU1 clamp mode [mode=%d]\n", clampMode);
@@ -591,25 +780,27 @@ u32 GameDatabaseSchema::GameEntry::applyGameFixes(Pcsx2Config& config, bool appl
 	}
 
 	// TODO - config - this could be simplified with maps instead of bitfields and enums
-	for (const auto& it : speedHacks)
+	for (i = 0; i < e->nSpeedHacks; i++)
 	{
+		const GameDatabaseSpeedHack* it = &e->speedHacks[i];
 		if (!applyAuto)
 		{
 			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping setting Speedhack '%s' to [mode=%d]\n",
-					Pcsx2Config::SpeedhackOptions::GetSpeedHackName(it.first), it.second);
+					Pcsx2Config::SpeedhackOptions::GetSpeedHackName(it->id), it->value);
 			continue;
 		}
 		// Legacy note - speedhacks are setup in the GameDB as integer values, but
 		// are effectively booleans like the gamefixes
-		config.Speedhacks.Set(it.first, it.second);
+		config.Speedhacks.Set(it->id, it->value);
 		log_cb(RETRO_LOG_INFO, "(GameDB) Setting Speedhack '%s' to [mode=%d]\n",
-				Pcsx2Config::SpeedhackOptions::GetSpeedHackName(it.first), it.second);
+				Pcsx2Config::SpeedhackOptions::GetSpeedHackName(it->id), it->value);
 		num_applied_fixes++;
 	}
 
 	// TODO - config - this could be simplified with maps instead of bitfields and enums
-	for (const GamefixId id : gameFixes)
+	for (i = 0; i < e->nGameFixes; i++)
 	{
+		const GamefixId id = e->gameFixes[i];
 		if (!applyAuto)
 		{
 			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping Gamefix: %s\n", EnumToString(id));
@@ -628,112 +819,112 @@ u32 GameDatabaseSchema::GameEntry::applyGameFixes(Pcsx2Config& config, bool appl
 	return num_applied_fixes;
 }
 
-bool GameDatabaseSchema::GameEntry::configMatchesHWFix(const Pcsx2Config::GSOptions& config, GSHWFixId id, int value)
+static bool configMatchesHWFix(const Pcsx2Config::GSOptions& config, GameDatabaseSchema::GSHWFixId id, int value)
 {
 	switch (id)
 	{
-		case GSHWFixId::AutoFlush:
+		case GameDatabaseSchema::GSHWFixId::AutoFlush:
 			return (static_cast<int>(config.UserHacks_AutoFlush) == value);
 
-		case GSHWFixId::CPUFramebufferConversion:
+		case GameDatabaseSchema::GSHWFixId::CPUFramebufferConversion:
 			return (static_cast<int>(config.UserHacks_CPUFBConversion) == value);
 
-		case GSHWFixId::FlushTCOnClose:
+		case GameDatabaseSchema::GSHWFixId::FlushTCOnClose:
 			return (static_cast<int>(config.UserHacks_ReadTCOnClose) == value);
 
-		case GSHWFixId::DisableDepthSupport:
+		case GameDatabaseSchema::GSHWFixId::DisableDepthSupport:
 			return (static_cast<int>(config.UserHacks_DisableDepthSupport) == value);
 
-		case GSHWFixId::PreloadFrameData:
+		case GameDatabaseSchema::GSHWFixId::PreloadFrameData:
 			return (static_cast<int>(config.PreloadFrameWithGSData) == value);
 
-		case GSHWFixId::DisablePartialInvalidation:
+		case GameDatabaseSchema::GSHWFixId::DisablePartialInvalidation:
 			return (static_cast<int>(config.UserHacks_DisablePartialInvalidation) == value);
 
-		case GSHWFixId::TextureInsideRT:
+		case GameDatabaseSchema::GSHWFixId::TextureInsideRT:
 			return (static_cast<int>(config.UserHacks_TextureInsideRt) == value);
 
-		case GSHWFixId::AlignSprite:
+		case GameDatabaseSchema::GSHWFixId::AlignSprite:
 			return (config.UpscaleMultiplier <= 1.0f || static_cast<int>(config.UserHacks_AlignSpriteX) == value);
 
-		case GSHWFixId::MergeSprite:
+		case GameDatabaseSchema::GSHWFixId::MergeSprite:
 			return (config.UpscaleMultiplier <= 1.0f || static_cast<int>(config.UserHacks_MergePPSprite) == value);
 
-		case GSHWFixId::ForceEvenSpritePosition:
+		case GameDatabaseSchema::GSHWFixId::ForceEvenSpritePosition:
 			return (config.UpscaleMultiplier <= 1.0f || static_cast<int>(config.UserHacks_ForceEvenSpritePosition) == value);
 
-		case GSHWFixId::BilinearUpscale:
+		case GameDatabaseSchema::GSHWFixId::BilinearUpscale:
 			return (config.UpscaleMultiplier <= 1.0f || static_cast<int>(config.UserHacks_BilinearHack) == value);
 
-		case GSHWFixId::NativePaletteDraw:
+		case GameDatabaseSchema::GSHWFixId::NativePaletteDraw:
 			return (config.UpscaleMultiplier <= 1.0f || static_cast<int>(config.UserHacks_NativePaletteDraw) == value);
 
-		case GSHWFixId::EstimateTextureRegion:
+		case GameDatabaseSchema::GSHWFixId::EstimateTextureRegion:
 			return (static_cast<int>(config.UserHacks_EstimateTextureRegion) == value);
 
-		case GSHWFixId::PCRTCOffsets:
+		case GameDatabaseSchema::GSHWFixId::PCRTCOffsets:
 			return (static_cast<int>(config.PCRTCOffsets) == value);
 
-		case GSHWFixId::PCRTCOverscan:
+		case GameDatabaseSchema::GSHWFixId::PCRTCOverscan:
 			return (static_cast<int>(config.PCRTCOverscan) == value);
 
-		case GSHWFixId::Mipmap:
+		case GameDatabaseSchema::GSHWFixId::Mipmap:
 			return (static_cast<int>(config.HWMipmapMode) == value);
 
-		case GSHWFixId::Limit24BitDepth:
+		case GameDatabaseSchema::GSHWFixId::Limit24BitDepth:
 			return (static_cast<int>(config.UserHacks_Limit24BitDepth) == value);
 
-		case GSHWFixId::TrilinearFiltering:
+		case GameDatabaseSchema::GSHWFixId::TrilinearFiltering:
 			return (config.TriFilter == TriFiltering::Automatic || static_cast<int>(config.TriFilter) == value);
 
-		case GSHWFixId::SkipDrawStart:
+		case GameDatabaseSchema::GSHWFixId::SkipDrawStart:
 			return (config.SkipDrawStart == value);
 
-		case GSHWFixId::SkipDrawEnd:
+		case GameDatabaseSchema::GSHWFixId::SkipDrawEnd:
 			return (config.SkipDrawEnd == value);
 
-		case GSHWFixId::HalfPixelOffset:
+		case GameDatabaseSchema::GSHWFixId::HalfPixelOffset:
 			return (config.UpscaleMultiplier <= 1.0f || config.UserHacks_HalfPixelOffset == static_cast<GSHalfPixelOffset>(value));
 
-		case GSHWFixId::RoundSprite:
+		case GameDatabaseSchema::GSHWFixId::RoundSprite:
 			return (config.UpscaleMultiplier <= 1.0f || config.UserHacks_RoundSprite == value);
 
-		case GSHWFixId::NativeScaling:
+		case GameDatabaseSchema::GSHWFixId::NativeScaling:
 			return (static_cast<int>(config.UserHacks_NativeScaling) == value);
 
-		case GSHWFixId::TexturePreloading:
+		case GameDatabaseSchema::GSHWFixId::TexturePreloading:
 			return (static_cast<int>(config.TexturePreloading) <= value);
 
-		case GSHWFixId::Deinterlace:
+		case GameDatabaseSchema::GSHWFixId::Deinterlace:
 			return (config.InterlaceMode == GSInterlaceMode::Automatic || static_cast<int>(config.InterlaceMode) == value);
 
-		case GSHWFixId::CPUSpriteRenderBW:
+		case GameDatabaseSchema::GSHWFixId::CPUSpriteRenderBW:
 			return (config.UserHacks_CPUSpriteRenderBW == value);
 
-		case GSHWFixId::CPUSpriteRenderLevel:
+		case GameDatabaseSchema::GSHWFixId::CPUSpriteRenderLevel:
 			return (config.UserHacks_CPUSpriteRenderLevel == value);
 
-		case GSHWFixId::CPUCLUTRender:
+		case GameDatabaseSchema::GSHWFixId::CPUCLUTRender:
 			return (config.UserHacks_CPUCLUTRender == value);
 
-		case GSHWFixId::GPUPaletteConversion:
+		case GameDatabaseSchema::GSHWFixId::GPUPaletteConversion:
 			return (config.GPUPaletteConversion == ((value > 1) ? (config.TexturePreloading == TexturePreloadingLevel::Full) : (value != 0)));
 
-		case GSHWFixId::MinimumBlendingLevel:
+		case GameDatabaseSchema::GSHWFixId::MinimumBlendingLevel:
 			return (static_cast<int>(config.AccurateBlendingUnit) >= value);
 
-		case GSHWFixId::MaximumBlendingLevel:
+		case GameDatabaseSchema::GSHWFixId::MaximumBlendingLevel:
 			return (static_cast<int>(config.AccurateBlendingUnit) <= value);
 
-		case GSHWFixId::RecommendedBlendingLevel:
+		case GameDatabaseSchema::GSHWFixId::RecommendedBlendingLevel:
 			return true;
 
-		case GSHWFixId::GetSkipCount:
+		case GameDatabaseSchema::GSHWFixId::GetSkipCount:
 			return (static_cast<int>(config.GetSkipCountFunctionId) == value);
 
-		case GSHWFixId::BeforeDraw:
+		case GameDatabaseSchema::GSHWFixId::BeforeDraw:
 			return (static_cast<int>(config.BeforeDrawFunctionId) == value);
-		case GSHWFixId::MoveHandler:
+		case GameDatabaseSchema::GSHWFixId::MoveHandler:
 			return (static_cast<int>(config.MoveHandlerFunctionId) == value);
 
 		default:
@@ -741,9 +932,9 @@ bool GameDatabaseSchema::GameEntry::configMatchesHWFix(const Pcsx2Config::GSOpti
 	}
 }
 
-u32 GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions& config) const
+u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, Pcsx2Config::GSOptions& config)
 {
-	std::string disabled_fixes;
+	u32 i;
 
 	// Only apply GS HW fixes if the user hasn't manually enabled HW fixes.
 	const bool apply_auto_fixes = !config.ManualUserHacks;
@@ -751,88 +942,89 @@ u32 GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions& 
 		log_cb(RETRO_LOG_WARN, "[GameDB] Manual GS hardware renderer fixes are enabled, not using automatic hardware renderer fixes from GameDB.\n");
 
 	u32 num_applied_fixes = 0;
-	for (const auto& [id, value] : gsHWFixes)
+	for (i = 0; i < e->nGSHWFixes; i++)
 	{
-		if (isUserHackHWFix(id) && !apply_auto_fixes)
+		const GameDatabaseSchema::GSHWFixId id = e->gsHWFixes[i].id;
+		const s32 value = e->gsHWFixes[i].value;
+		if (GameDatabaseSchema::isUserHackHWFix(id) && !apply_auto_fixes)
 		{
 			if (configMatchesHWFix(config, id, value))
 				continue;
 
-			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping GS Hardware Fix: %s to [mode=%d]\n", getHWFixName(id), value);
-			disabled_fixes += FormatString::Format("%s %s = %d", disabled_fixes.empty() ? "  " : "\n  ", getHWFixName(id), value);
+			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping GS Hardware Fix: %s to [mode=%d]\n", GameDatabaseSchema::getHWFixName(id), value);
 			continue;
 		}
 
 		switch (id)
 		{
-			case GSHWFixId::AutoFlush:
+			case GameDatabaseSchema::GSHWFixId::AutoFlush:
 			{
 				if (value >= 0 && value <= static_cast<int>(GSHWAutoFlushLevel::Enabled))
 					config.UserHacks_AutoFlush = static_cast<GSHWAutoFlushLevel>(value);
 			}
 			break;
 
-			case GSHWFixId::CPUFramebufferConversion:
+			case GameDatabaseSchema::GSHWFixId::CPUFramebufferConversion:
 				config.UserHacks_CPUFBConversion = (value > 0);
 				break;
 
-			case GSHWFixId::FlushTCOnClose:
+			case GameDatabaseSchema::GSHWFixId::FlushTCOnClose:
 				config.UserHacks_ReadTCOnClose = (value > 0);
 				break;
 
-			case GSHWFixId::DisableDepthSupport:
+			case GameDatabaseSchema::GSHWFixId::DisableDepthSupport:
 				config.UserHacks_DisableDepthSupport = (value > 0);
 				break;
 
-			case GSHWFixId::PreloadFrameData:
+			case GameDatabaseSchema::GSHWFixId::PreloadFrameData:
 				config.PreloadFrameWithGSData = (value > 0);
 				break;
 
-			case GSHWFixId::DisablePartialInvalidation:
+			case GameDatabaseSchema::GSHWFixId::DisablePartialInvalidation:
 				config.UserHacks_DisablePartialInvalidation = (value > 0);
 				break;
 
-			case GSHWFixId::TextureInsideRT:
+			case GameDatabaseSchema::GSHWFixId::TextureInsideRT:
 			{
 				if (value >= 0 && value <= static_cast<int>(GSTextureInRtMode::MergeTargets))
 					config.UserHacks_TextureInsideRt = static_cast<GSTextureInRtMode>(value);
 			}
 			break;
 
-			case GSHWFixId::AlignSprite:
+			case GameDatabaseSchema::GSHWFixId::AlignSprite:
 				config.UserHacks_AlignSpriteX = (value > 0);
 				break;
 
-			case GSHWFixId::MergeSprite:
+			case GameDatabaseSchema::GSHWFixId::MergeSprite:
 				config.UserHacks_MergePPSprite = (value > 0);
 				break;
 
-			case GSHWFixId::ForceEvenSpritePosition:
+			case GameDatabaseSchema::GSHWFixId::ForceEvenSpritePosition:
 				config.UserHacks_ForceEvenSpritePosition = (value > 0);
 				break;
 
-			case GSHWFixId::BilinearUpscale:
+			case GameDatabaseSchema::GSHWFixId::BilinearUpscale:
 				if (value >= 0 && value < static_cast<int>(GSBilinearDirtyMode::MaxCount))
 					config.UserHacks_BilinearHack = static_cast<GSBilinearDirtyMode>(value);
 				break;
 
-			case GSHWFixId::NativePaletteDraw:
+			case GameDatabaseSchema::GSHWFixId::NativePaletteDraw:
 				config.UserHacks_NativePaletteDraw = (value > 0);
 				break;
 
-			case GSHWFixId::EstimateTextureRegion:
+			case GameDatabaseSchema::GSHWFixId::EstimateTextureRegion:
 				config.UserHacks_EstimateTextureRegion = (value > 0);
 				break;
 
-			case GSHWFixId::PCRTCOffsets:
+			case GameDatabaseSchema::GSHWFixId::PCRTCOffsets:
 				config.PCRTCOffsets = (value > 0);
 				break;
 
-			case GSHWFixId::PCRTCOverscan:
+			case GameDatabaseSchema::GSHWFixId::PCRTCOverscan:
 				config.PCRTCOverscan = (value > 0);
 				break;
 
-			case GSHWFixId::Mipmap:
+			case GameDatabaseSchema::GSHWFixId::Mipmap:
 				if (value >= 0 && value < static_cast<int>(GSHWMipmapMode::MaxCount))
 				{
 					config.HWMipmapMode = static_cast<GSHWMipmapMode>(value > 0);
@@ -844,12 +1036,12 @@ u32 GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions& 
 				}
 				break;
 
-			case GSHWFixId::Limit24BitDepth:
+			case GameDatabaseSchema::GSHWFixId::Limit24BitDepth:
 				if (value >= 0 && value <= static_cast<int>(GSLimit24BitDepth::PrioritizeLower))
 					config.UserHacks_Limit24BitDepth = static_cast<GSLimit24BitDepth>(value);
 				break;
 
-			case GSHWFixId::TrilinearFiltering:
+			case GameDatabaseSchema::GSHWFixId::TrilinearFiltering:
 			{
 				if (value >= 0 && value <= static_cast<int>(TriFiltering::Forced))
 				{
@@ -861,37 +1053,37 @@ u32 GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions& 
 			}
 			break;
 
-			case GSHWFixId::SkipDrawStart:
+			case GameDatabaseSchema::GSHWFixId::SkipDrawStart:
 				config.SkipDrawStart = value;
 				break;
 
-			case GSHWFixId::SkipDrawEnd:
+			case GameDatabaseSchema::GSHWFixId::SkipDrawEnd:
 				config.SkipDrawEnd = value;
 				break;
 
-			case GSHWFixId::HalfPixelOffset:
+			case GameDatabaseSchema::GSHWFixId::HalfPixelOffset:
 				if (value >= 0 && value < static_cast<int>(GSHalfPixelOffset::MaxCount))
 					config.UserHacks_HalfPixelOffset = static_cast<GSHalfPixelOffset>(value);
 				break;
 
-			case GSHWFixId::RoundSprite:
+			case GameDatabaseSchema::GSHWFixId::RoundSprite:
 				config.UserHacks_RoundSprite = value;
 				break;
 
-			case GSHWFixId::NativeScaling:
+			case GameDatabaseSchema::GSHWFixId::NativeScaling:
 				/* The user's own setting of the option stands over the fix. */
 				if (!config.NativeScalingSet)
 					config.UserHacks_NativeScaling = static_cast<GSNativeScaling>(value);
 				break;
 
-			case GSHWFixId::TexturePreloading:
+			case GameDatabaseSchema::GSHWFixId::TexturePreloading:
 			{
 				if (value >= 0 && value <= static_cast<int>(TexturePreloadingLevel::Full))
 					config.TexturePreloading = (TexturePreloadingLevel)pcsx2_min_i((int)config.TexturePreloading, value);
 			}
 			break;
 
-			case GSHWFixId::Deinterlace:
+			case GameDatabaseSchema::GSHWFixId::Deinterlace:
 			{
 				if (value >= static_cast<int>(GSInterlaceMode::Automatic) && value < static_cast<int>(GSInterlaceMode::Count))
 				{
@@ -903,19 +1095,19 @@ u32 GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions& 
 			}
 			break;
 
-			case GSHWFixId::CPUSpriteRenderBW:
+			case GameDatabaseSchema::GSHWFixId::CPUSpriteRenderBW:
 				config.UserHacks_CPUSpriteRenderBW = value;
 				break;
 
-			case GSHWFixId::CPUSpriteRenderLevel:
+			case GameDatabaseSchema::GSHWFixId::CPUSpriteRenderLevel:
 				config.UserHacks_CPUSpriteRenderLevel = value;
 				break;
 
-			case GSHWFixId::CPUCLUTRender:
+			case GameDatabaseSchema::GSHWFixId::CPUCLUTRender:
 				config.UserHacks_CPUCLUTRender = value;
 				break;
 
-			case GSHWFixId::GPUPaletteConversion:
+			case GameDatabaseSchema::GSHWFixId::GPUPaletteConversion:
 			{
 				// if 2, enable paltex when preloading is full, otherwise leave as-is
 				if (value > 1)
@@ -925,32 +1117,32 @@ u32 GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions& 
 			}
 			break;
 
-			case GSHWFixId::MinimumBlendingLevel:
+			case GameDatabaseSchema::GSHWFixId::MinimumBlendingLevel:
 			{
 				if (value >= 0 && value <= static_cast<int>(AccBlendLevel::Maximum))
 					config.AccurateBlendingUnit = (AccBlendLevel)pcsx2_max_i((int)config.AccurateBlendingUnit, value);
 			}
 			break;
 
-			case GSHWFixId::MaximumBlendingLevel:
+			case GameDatabaseSchema::GSHWFixId::MaximumBlendingLevel:
 			{
 				if (value >= 0 && value <= static_cast<int>(AccBlendLevel::Maximum))
 					config.AccurateBlendingUnit = (AccBlendLevel)pcsx2_min_i((int)config.AccurateBlendingUnit, value);
 			}
 			break;
 
-			case GSHWFixId::RecommendedBlendingLevel:
+			case GameDatabaseSchema::GSHWFixId::RecommendedBlendingLevel:
 				break;
 
-			case GSHWFixId::GetSkipCount:
+			case GameDatabaseSchema::GSHWFixId::GetSkipCount:
 				config.GetSkipCountFunctionId = static_cast<s16>(value);
 				break;
 
-			case GSHWFixId::BeforeDraw:
+			case GameDatabaseSchema::GSHWFixId::BeforeDraw:
 				config.BeforeDrawFunctionId = static_cast<s16>(value);
 				break;
 
-			case GSHWFixId::MoveHandler:
+			case GameDatabaseSchema::GSHWFixId::MoveHandler:
 				config.MoveHandlerFunctionId = static_cast<s16>(value);
 				break;
 
@@ -958,7 +1150,7 @@ u32 GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions& 
 				break;
 		}
 
-		log_cb(RETRO_LOG_INFO, "[GameDB] Enabled GS Hardware Fix: %s to [mode=%d]\n", getHWFixName(id), value);
+		log_cb(RETRO_LOG_INFO, "[GameDB] Enabled GS Hardware Fix: %s to [mode=%d]\n", GameDatabaseSchema::getHWFixName(id), value);
 		num_applied_fixes++;
 	}
 
@@ -967,8 +1159,7 @@ u32 GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions& 
 
 	return num_applied_fixes;
 }
-
-void GameDatabase::initDatabase()
+static void gamedb_init(void)
 {
 	auto buf = Host::ReadResourceFileToString(GAMEDB_YAML_FILE_NAME);
 	if (!buf.has_value())
@@ -989,67 +1180,147 @@ void GameDatabase::initDatabase()
 		return;
 	}
 
+	/* offset 0 is the empty string every missing text points at */
+	if (!GAMEDB_PUSH(s_chars, '\0'))
+	{
+		ryaml_free(yaml);
+		return;
+	}
+
 	const int root = ryaml_root(yaml);
 
 	for (int n = ryaml_first_child(yaml, root); n >= 0;
 		n = ryaml_next_sibling(yaml, n))
 	{
-		auto serial = gamedb_lower(yamlKeyView(yaml, n));
+		size_t len;
+		const char* key = yamlKey(yaml, n, &len);
+		struct gamedb_build build;
+		u32* slot;
+		u32 i;
 
-		// Serials and CRCs must be inserted as lower-case, as that is how they are retrieved
-		// this is because the application may pass a lowercase CRC or serial along
+		if ((s_builds_count + 1) * 2 > (s_index ? s_index_mask + 1 : 0) && !gamedb_grow_index())
+			break;
+
+		// Serials must be inserted as lower-case, as that is how they are retrieved
+		// this is because the application may pass a lowercase serial along
 		//
 		// However, YAML's keys are as expected case-sensitive, so we have to explicitly do our own duplicate checking
-		if (s_game_db.count(serial) == 1)
+		slot = gamedb_slot(key, len, gamedb_build_serial);
+		if (*slot)
 		{
-			log_cb(RETRO_LOG_ERROR, "[GameDB] Duplicate serial '{%s}' found in GameDB. Skipping, Serials are case-insensitive!\n", serial.c_str());
+			log_cb(RETRO_LOG_ERROR, "[GameDB] Duplicate serial '{%s}' found in GameDB. Skipping, Serials are case-insensitive!\n", gamedb_build_serial(*slot - 1));
 			continue;
 		}
-		if (ryaml_is_map(yaml, n))
-			parseAndInsert(serial.c_str(), yaml, n);
+		if (!ryaml_is_map(yaml, n))
+			continue;
+
+		memset(&build, 0, sizeof(build));
+		build.eeRoundMode    = FPRoundMode::MaxCount;
+		build.eeDivRoundMode = FPRoundMode::MaxCount;
+		build.vu0RoundMode   = FPRoundMode::MaxCount;
+		build.vu1RoundMode   = FPRoundMode::MaxCount;
+		build.eeClampMode    = GameDatabaseSchema::ClampMode::Undefined;
+		build.vu0ClampMode   = GameDatabaseSchema::ClampMode::Undefined;
+		build.vu1ClampMode   = GameDatabaseSchema::ClampMode::Undefined;
+		build.serial         = gamedb_chars(key, len);
+		for (i = 0; i < len; i++)
+		{
+			char* c = s_chars + build.serial + i;
+			if (*c >= 'A' && *c <= 'Z')
+				*c = (char)(*c - 'A' + 'a');
+		}
+
+		gamedb_parse(&build, s_chars + build.serial, yaml, n);
+		if (!GAMEDB_PUSH(s_builds, build))
+			break;
+		*gamedb_slot(key, len, gamedb_build_serial) = s_builds_count;
 	}
 
 	ryaml_free(yaml);
+
+	if (!gamedb_finish())
+	{
+		log_cb(RETRO_LOG_ERROR, "[GameDB] Out of memory loading the GameDB.\n");
+		gamedb_free_all();
+	}
 }
 
-void GameDatabase::ensureLoaded()
+void GameDatabase_EnsureLoaded(void)
 {
 	// call_once semantics under the campaign lock family: double load
 	// impossible (mutex), racing callers both observe the completed
 	// state (done set before unlock, read under lock).
-	SLockGuard lock(s_load_once_mutex());
+	slock_t* lock = s_load_once_mutex();
+	slock_lock(lock);
 	if (!s_load_once_done)
 	{
 		log_cb(RETRO_LOG_INFO, "[GameDB] Has not been initialized yet, initializing...\n");
-		initDatabase();
-		log_cb(RETRO_LOG_INFO, "[GameDB] %zu games on record\n", s_game_db.size());
+		gamedb_init();
+		log_cb(RETRO_LOG_INFO, "[GameDB] %u games on record\n", s_entry_count);
 		s_load_once_done = true;
 	}
+	slock_unlock(lock);
 }
 
-void GameDatabase::unload()
+void GameDatabase_Unload(void)
 {
-	/* Held under the same lock ensureLoaded() takes, so a concurrent
-	 * lookup either completes before the clear or reloads after it -
-	 * it cannot observe a half-emptied map.
+	/* Held under the same lock GameDatabase_EnsureLoaded takes, so a
+	 * concurrent lookup either completes before the free or reloads after
+	 * it - it cannot observe a half-freed database.
 	 *
-	 * The parse is 12806 entries for about 7 MB resident and ~50 ms of
-	 * work, and every consumer of it - gamefixes, patches, the memcard
-	 * and disc-swap paths - is a VM-lifetime event.  With no VM there
-	 * is nothing to look a game up for, so the cost is worth carrying
-	 * only while content is loaded.  swap() rather than clear() because
-	 * clear() on an unordered_map keeps the bucket array. */
-	SLockGuard lock(s_load_once_mutex());
-	if (!s_load_once_done)
-		return;
-	decltype(s_game_db)().swap(s_game_db);
-	s_load_once_done = false;
+	 * The parse is 12806 entries and ~50 ms of work, and every consumer of
+	 * it - gamefixes, patches, the memcard and disc-swap paths - is a
+	 * VM-lifetime event. With no VM there is nothing to look a game up
+	 * for, so the cost is worth carrying only while content is loaded. */
+	slock_t* lock = s_load_once_mutex();
+	slock_lock(lock);
+	if (s_load_once_done)
+	{
+		gamedb_free_all();
+		s_load_once_done = false;
+	}
+	slock_unlock(lock);
 }
 
-const GameDatabaseSchema::GameEntry* GameDatabase::findGame(const std::string_view& serial)
+const GameDatabaseEntry* GameDatabase_FindGame(const char* serial)
 {
-	GameDatabase::ensureLoaded();
+	const size_t len = strlen(serial);
+	u32 n;
 
-	auto iter = s_game_db.find(gamedb_lower(serial));
-	return (iter != s_game_db.end()) ? &iter->second : nullptr;
+	GameDatabase_EnsureLoaded();
+	if (!s_index || !s_entries)
+		return nullptr;
+
+	n = *gamedb_slot(serial, len, gamedb_entry_serial);
+	return n ? &s_entries[n - 1] : nullptr;
+}
+
+const char* GameDatabase_FindPatch(const GameDatabaseEntry* entry, u32 crc)
+{
+	u32 i;
+
+	if (crc == 0)
+		return nullptr;
+
+	log_cb(RETRO_LOG_INFO, "[GameDB] Searching for patch with CRC '%08X'\n", crc);
+
+	for (i = 0; i < entry->nPatches; i++)
+	{
+		if (entry->patches[i].crc == crc)
+		{
+			log_cb(RETRO_LOG_INFO, "[GameDB] Found patch with CRC '%08X'\n", crc);
+			return entry->patches[i].text;
+		}
+	}
+
+	for (i = 0; i < entry->nPatches; i++)
+	{
+		if (entry->patches[i].crc == 0)
+		{
+			log_cb(RETRO_LOG_INFO, "[GameDB] Found and falling back to default patch\n");
+			return entry->patches[i].text;
+		}
+	}
+	log_cb(RETRO_LOG_INFO, "[GameDB] No CRC-specific patch or default patch found\n");
+	return nullptr;
 }

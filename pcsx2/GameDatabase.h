@@ -16,16 +16,9 @@
 #pragma once
 
 #include "Config.h"
-#include <utility>
 #include "Patch.h"
 
 #include "../common/FPControl.h"
-
-#include <optional>
-#include <string>
-#include <string_view>
-#include <unordered_map>
-#include <vector>
 
 enum GamefixId;
 
@@ -85,45 +78,68 @@ namespace GameDatabaseSchema
 
 		Count
 	};
-
-	struct GameEntry
-	{
-		std::string name;
-		std::string region;
-		FPRoundMode eeRoundMode = FPRoundMode::MaxCount;
-		FPRoundMode eeDivRoundMode = FPRoundMode::MaxCount;
-		FPRoundMode vu0RoundMode = FPRoundMode::MaxCount;
-		FPRoundMode vu1RoundMode = FPRoundMode::MaxCount;
-		ClampMode eeClampMode = ClampMode::Undefined;
-		ClampMode vu0ClampMode = ClampMode::Undefined;
-		ClampMode vu1ClampMode = ClampMode::Undefined;
-		std::vector<GamefixId> gameFixes;
-		std::vector<std::pair<SpeedHack, int>> speedHacks;
-		std::vector<std::pair<GSHWFixId, s32>> gsHWFixes;
-		std::vector<std::string> memcardFilters;
-		std::unordered_map<u32, std::string> patches;
-		std::vector<DynamicPatch> dynaPatches;
-
-		// Returns the list of memory card serials as a `/` delimited string
-		std::string memcardFiltersAsString() const;
-		const std::string* findPatch(u32 crc) const;
-
-		/// Applies Core game fixes to an existing config. Returns the number of applied fixes.
-		u32 applyGameFixes(Pcsx2Config& config, bool applyAuto) const;
-
-		/// Applies GS hardware fixes to an existing config. Returns the number of applied fixes.
-		u32 applyGSHardwareFixes(Pcsx2Config::GSOptions& config) const;
-
-		/// Returns true if the current config value for the specified hw fix id matches the value.
-		static bool configMatchesHWFix(const Pcsx2Config::GSOptions& config, GSHWFixId id, int value);
-	};
 };
 
-namespace GameDatabase
+/* A speed hack or GS hardware fix the database sets, and its value. */
+struct GameDatabaseSpeedHack
 {
-	void ensureLoaded();
-	/* Drop the parsed database.  Safe at any time: findGame() goes
-	 * through ensureLoaded(), so the next lookup re-reads the file. */
-	void unload();
-	const GameDatabaseSchema::GameEntry* findGame(const std::string_view& serial);
-}; // namespace GameDatabase
+	SpeedHack id;
+	int value;
+};
+
+struct GameDatabaseHWFix
+{
+	GameDatabaseSchema::GSHWFixId id;
+	s32 value;
+};
+
+/* A patch block, by the ELF CRC it is for; 0 is the default block. */
+struct GameDatabasePatch
+{
+	u32 crc;
+	const char* text;
+};
+
+/* One game's entry. Everything it points at belongs to the loaded
+ * database and goes with GameDatabase_Unload. */
+struct GameDatabaseEntry
+{
+	const char* serial; /* lower case, as looked up */
+	const char* name;
+	const char* region;
+	FPRoundMode eeRoundMode;
+	FPRoundMode eeDivRoundMode;
+	FPRoundMode vu0RoundMode;
+	FPRoundMode vu1RoundMode;
+	GameDatabaseSchema::ClampMode eeClampMode;
+	GameDatabaseSchema::ClampMode vu0ClampMode;
+	GameDatabaseSchema::ClampMode vu1ClampMode;
+	const GamefixId* gameFixes;
+	u32 nGameFixes;
+	const GameDatabaseSpeedHack* speedHacks;
+	u32 nSpeedHacks;
+	const GameDatabaseHWFix* gsHWFixes;
+	u32 nGSHWFixes;
+	/* The memory card serials, '/' between them; "" when there are none. */
+	const char* memcardFilters;
+	const GameDatabasePatch* patches;
+	u32 nPatches;
+	const DynamicPatch* dynaPatches;
+	u32 nDynaPatches;
+};
+
+/* Loads the database once; later calls return at once. */
+void GameDatabase_EnsureLoaded(void);
+/* Drops the loaded database. Safe at any time: a lookup after it loads
+ * the file again. */
+void GameDatabase_Unload(void);
+/* The entry for a serial, in either case, loading the database first;
+ * NULL when there is none. */
+const GameDatabaseEntry* GameDatabase_FindGame(const char* serial);
+/* The patch block for the CRC, or the default block; NULL for a CRC of 0
+ * or when there is neither. */
+const char* GameDatabase_FindPatch(const GameDatabaseEntry* entry, u32 crc);
+/* Applies the core game fixes to a config; returns how many applied. */
+u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* entry, Pcsx2Config& config, bool applyAuto);
+/* Applies the GS hardware fixes to a config; returns how many applied. */
+u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* entry, Pcsx2Config::GSOptions& config);
