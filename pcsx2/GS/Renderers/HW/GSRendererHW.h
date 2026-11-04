@@ -170,6 +170,12 @@ private:
 	bool CanUseTexIsFB(const GSTextureCache::Target* rt, const GSTextureCache::Source* tex,
 		const TextureMinMaxResult& tmm);
 
+	/* An auto-flushed batch drawn at once (GSState's segments): which
+	 * batches can be, and the draw of one as a run per segment, the copy
+	 * of the target it reads refreshed for each run's texels in turn. */
+	void RenderRuns();
+	void RefreshRunsCopy(u32 vmin, u32 vmax);
+
 	void EmulateZbuffer(const GSTextureCache::Target* ds);
 	void EmulateATST(float& AREF, GSHWDrawConfig::PSSelector& ps, bool pass_2);
 
@@ -360,6 +366,24 @@ private:
 	GSVector2i m_lod = {}; // Min & Max level of detail
 
 	GSHWDrawConfig m_conf = {};
+	/* The copy of the render target the draw reads (HandleTextureHazards),
+	 * for RenderRuns: the target's texture, the copy, the target rect it
+	 * took, the offset from a target rect to the copy's, the target's
+	 * unscaled size and the scale. dst is null when nothing was copied. */
+	struct RunsCopy
+	{
+		GSTexture* src;
+		GSTexture* dst;
+		GSVector4i range;
+		GSVector4i offset;
+		GSVector2i src_size;
+		float scale;
+	} m_runs_copy = {};
+	GSHWDrawConfig m_runs_conf = {};
+	u16* m_runs_index = nullptr;
+	u32 m_runs_index_cap = 0;
+	u32 m_runs_prims = 0;
+	u32 m_runs_n_gs = 3;
 	HWCachedCtx m_cached_ctx;
 
 	/* software sprite renderer state: the vertices of the draw in hand,
@@ -423,6 +447,7 @@ public:
 	void PurgeTextureCache(bool sources, bool targets, bool hash_cache);
 	void ReadbackTextureCache();
 	GSTexture* LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, const GSVector2i& size);
+	bool CanDrawRuns();
 
 	/// Called by the texture cache to know for certain whether there is a channel shuffle.
 	bool TestChannelShuffle(GSTextureCache::Target* src);

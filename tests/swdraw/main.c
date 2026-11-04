@@ -2061,7 +2061,7 @@ static void case_date_no_depth_full(void)
 #define FB_TEX0_LO (0u | (10u << 14) | (0u << 20) | (10u << 26) | ((9u & 3u) << 30)) /* TBP0 0, TBW 10, CT32, 1024x512 */
 #define FB_TEX0_HI ((9u >> 2) | (1u << 2))                                            /* TCC, TFX MODULATE */
 
-static unsigned feedback_begin(unsigned seed_w)
+static unsigned feedback_begin(unsigned seed_w, unsigned seed_h)
 {
 	const unsigned tag = s_qw_count;
 	qw(0x8000u, 0x10000000u, 0xEu, 0);                     /* A+D, EOP, NLOOP below */
@@ -2074,10 +2074,10 @@ static unsigned feedback_begin(unsigned seed_w)
 	qw(0, 0x3f800000u, GS_RGBAQ, 0);                       /* the strip black */
 	qw(6, 0, GS_PRIM, 0);
 	qw(0, 0, GS_XYZ2, 0);
-	qw((unsigned)XY(640, 8), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(640, seed_h), 0, GS_XYZ2, 0);
 	qw(0x80F0F0F0u, 0x3f800000u, GS_RGBAQ, 0);             /* the seed */
 	qw(0, 0, GS_XYZ2, 0);
-	qw((unsigned)XY(seed_w, 8), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(seed_w, seed_h), 0, GS_XYZ2, 0);
 	qw(FB_TEX0_LO, FB_TEX0_HI, GS_TEX0_1, 0);
 	qw(0, 0, GS_TEX1_1, 0);                                /* nearest */
 	qw(0, 0, GS_CLAMP_1, 0);
@@ -2106,7 +2106,7 @@ static void feedback_end(unsigned tag)
  * from one copy of the frame taken before the batch, it is black. */
 static void case_feedback_chain(void)
 {
-	const unsigned tag = feedback_begin(8);
+	const unsigned tag = feedback_begin(8, 8);
 	unsigned k;
 	for (k = 0; k < 3; k++)
 		feedback_sprite(64 * k, 0, 64 * (k + 1), 0, 8, 8);
@@ -2120,12 +2120,29 @@ static void case_feedback_chain(void)
  * before the batch, it holds the seed halved once. */
 static void case_feedback_own_pixel(void)
 {
-	const unsigned tag = feedback_begin(64);
+	const unsigned tag = feedback_begin(64, 8);
 	unsigned k;
 	for (k = 0; k < 3; k++)
 		feedback_sprite(0, 0, 0, 0, 64, 8);
 	feedback_end(tag);
 	s_expect_run[0] = 0x101E1E1Eul;
+}
+
+/* Four chains like feedback_chain's, a row of blocks each, six sprites
+ * long, laid out a step of every chain at a time: each step reads what
+ * the step before it wrote, so the batch splits five times, into six
+ * runs of four sprites each. The last block of every chain, at x 384,
+ * holds the seed halved six times; a run drawn from the copy of the one
+ * before it, or the batch from one copy, leaves it darker or black. */
+static void case_feedback_runs(void)
+{
+	const unsigned tag = feedback_begin(8, 32);
+	unsigned k, c;
+	for (k = 0; k < 6; k++)
+		for (c = 0; c < 4; c++)
+			feedback_sprite(64 * k, 8 * c, 64 * (k + 1), 8 * c, 8, 8);
+	feedback_end(tag);
+	s_expect_run[0] = 0x02030303ul;
 }
 
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
@@ -2156,6 +2173,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "dest_alpha",      case_dest_alpha,    "1" },
 	{ "feedback_chain",  case_feedback_chain, "1" },
 	{ "feedback_own_pixel", case_feedback_own_pixel, "1" },
+	{ "feedback_runs",   case_feedback_runs, "1" },
 	{ "many_copies",     case_many_copies,   "1" },
 	{ "upload_short",    case_upload_short,  "1" },
 	{ "upload_whole",    case_upload_whole,  "1" },

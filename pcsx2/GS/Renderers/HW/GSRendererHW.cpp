@@ -40,6 +40,7 @@ static void       hw_move(GSState* gs)                     { HW(gs)->Move(); }
 static void       hw_purge_texture_cache(GSState* gs, bool sources, bool targets, bool hash_cache) { HW(gs)->PurgeTextureCache(sources, targets, hash_cache); }
 static void       hw_readback_texture_cache(GSState* gs)   { HW(gs)->ReadbackTextureCache(); }
 static void       hw_snapshot_targets(GSState* gs, u64 key) { (void)gs; g_texture_cache->SnapshotTargets(key); }
+static bool       hw_can_draw_runs(GSState* gs)            { return HW(gs)->CanDrawRuns(); }
 static void       hw_invalidate_video_mem(GSState* gs, const GIFRegBITBLTBUF* b, const GSVector4i* r) { HW(gs)->InvalidateVideoMem(*b, *r); }
 static void       hw_invalidate_local_mem(GSState* gs, const GIFRegBITBLTBUF* b, const GSVector4i* r, bool clut) { HW(gs)->InvalidateLocalMem(*b, *r, clut); }
 static bool       hw_can_upscale(GSState* gs)              { return HW(gs)->CanUpscale(); }
@@ -72,7 +73,8 @@ static const struct gs_state_ops s_hw_ops = {
 	hw_get_feedback_output,
 	hw_get_vr_depth,
 	NULL, /* mem_restored */
-	hw_snapshot_targets
+	hw_snapshot_targets,
+	hw_can_draw_runs
 };
 
 GSRendererHW::GSRendererHW()
@@ -136,6 +138,9 @@ void GSRendererHW::SetTCOffset()
 
 GSRendererHW::~GSRendererHW()
 {
+	free(m_runs_index);
+	m_runs_index = nullptr;
+	m_runs_index_cap = 0;
 	memalign_free(m_sw_vertex_buffer);
 	m_sw_vertex_buffer   = nullptr;
 	m_sw_vertex_capacity = 0;
@@ -6168,6 +6173,7 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 {
 	// Detect framebuffer read that will need special handling
 	const GSTextureCache::Target* src_target = nullptr;
+	m_runs_copy.dst = nullptr;
 	if (rt && m_conf.tex == m_conf.rt)
 	{
 		// Can we read the framebuffer directly? (i.e. sample location matches up).
@@ -6358,8 +6364,204 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 		const GSVector4 dst_rect = (GSVector4(copy_range) - GSVector4(offset).xyxy()) * scale;
 		g_gs_device->StretchRect(src_target->m_texture, src_rect, src_copy, dst_rect,
 			src_target->m_texture->IsDepthStencil() ? ShaderConvert::DEPTH_COPY : ShaderConvert::COPY, false);
+		if (src_target == rt && !src_target->m_texture->IsDepthStencil())
+		{
+			m_runs_copy.src = src_target->m_texture;
+			m_runs_copy.dst = src_copy;
+			m_runs_copy.range = copy_range;
+			m_runs_copy.offset = offset;
+			m_runs_copy.src_size = src_unscaled_size;
+			m_runs_copy.scale = scale;
+		}
 	}
 	m_conf.tex = src_copy;
+}
+
+/* A batch auto flush split into segments goes to the device at once only
+ * if it will be drawn as an ordinary draw: textured sprites or triangles
+ * reading their own frame, in the frame's format, 32 or 24 bits a pixel,
+ * written whole -- no shuffle, no channel copy, no masked or depth read --
+ * with no game hook and no draw on the CPU. Any other goes one segment at
+ * a time. */
+bool GSRendererHW::CanDrawRuns()
+{
+	const GSDrawingContext* ctx = m_context;
+	const GS_PRIM_CLASS pc = m_vt.m_primclass;
+
+	if (!PRIM->TME || (pc != GS_SPRITE_CLASS && pc != GS_TRIANGLE_CLASS))
+		return false;
+	if (ctx->TEX0.TBP0 != ctx->FRAME.Block() || ctx->TEX0.PSM != ctx->FRAME.PSM || ctx->TEX0.TBW != ctx->FRAME.FBW)
+		return false;
+	if ((ctx->TEX0.PSM != PSMCT32 && ctx->TEX0.PSM != PSMCT24) || ctx->FRAME.FBMSK != 0)
+		return false;
+	if (!ctx->ZBUF.ZMSK && ctx->ZBUF.Block() == ctx->TEX0.TBP0)
+		return false;
+	if (m_oi || m_gsc || GSConfig.UserHacks_CPUSpriteRenderBW != 0)
+		return false;
+	/* The batch's primitives, which RenderRuns holds the draw's against. */
+	m_runs_n_gs = (pc == GS_SPRITE_CLASS) ? 2u : 3u;
+	m_runs_prims = m_index.tail / m_runs_n_gs;
+	return true;
+}
+
+/* The copy refreshed from the target over the texels the vertices
+ * [vmin, vmax] of the draw read, a texel out for filtering; the whole of
+ * what was first copied when they reach outside the texture. */
+void GSRendererHW::RefreshRunsCopy(u32 vmin, u32 vmax)
+{
+	const GSVertex* v;
+	const float tw = static_cast<float>(1 << m_cached_ctx.TEX0.TW);
+	const float th = static_cast<float>(1 << m_cached_ctx.TEX0.TH);
+	float u, t, q;
+	float umin = 1e30f, vmn = 1e30f, umax = -1e30f, vmx = -1e30f;
+	bool whole = false;
+	GSVector4i rect;
+	u32 i;
+
+	for (i = vmin; i <= vmax && !whole; i++)
+	{
+		v = &m_runs_conf.verts[i];
+		if (PRIM->FST)
+		{
+			u = static_cast<float>(v->U) / 16.0f;
+			t = static_cast<float>(v->V) / 16.0f;
+		}
+		else
+		{
+			q = v->RGBAQ.Q;
+			if (!(q != 0.0f))
+			{
+				whole = true;
+				break;
+			}
+			u = v->ST.S / q * tw;
+			t = v->ST.T / q * th;
+		}
+		if (!(u >= 0.0f && t >= 0.0f && u <= tw && t <= th))
+			whole = true;
+		umin = pcsx2_min_f(umin, u);
+		umax = pcsx2_max_f(umax, u);
+		vmn = pcsx2_min_f(vmn, t);
+		vmx = pcsx2_max_f(vmx, t);
+	}
+
+	if (whole)
+		rect = m_runs_copy.range;
+	else
+		rect = GSVector4i(static_cast<int>(floorf(umin)) - 1, static_cast<int>(floorf(vmn)) - 1,
+			static_cast<int>(ceilf(umax)) + 1, static_cast<int>(ceilf(vmx)) + 1).rintersect(m_runs_copy.range);
+	if (rect.rempty())
+		return;
+
+	g_gs_device->StretchRect(m_runs_copy.src,
+		GSVector4(rect) / GSVector4(m_runs_copy.src_size).xyxy(), m_runs_copy.dst,
+		(GSVector4(rect) - GSVector4(m_runs_copy.offset).xyxy()) * m_runs_copy.scale, ShaderConvert::COPY, false);
+}
+
+/* The batch as a run per segment, each with only the vertices it uses
+ * and its indices rebased onto them, so the vertices go up once in all;
+ * before each run after the first the copy takes what the runs before it
+ * drew. The draw is set up once. */
+void GSRendererHW::RenderRuns()
+{
+	const u32 ipp = m_conf.indices_per_prim;
+	const u32 prims = ipp ? (m_conf.nindices / ipp) : 0;
+	const bool expand = (m_conf.vs.expand != GSHWDrawConfig::VSExpand::None);
+	const u32 vpp = (m_conf.vs.expand == GSHWDrawConfig::VSExpand::Point) ? 1u : 2u;
+	bool each, rebase;
+	u32 r, p0, p1, k, vmin, vmax;
+	u16* grown;
+
+	/* Every path of the draw's setup gives its primitives a fixed count of
+	 * indices, or of vertices when the vertex shader expands them. */
+	if (ipp == 0 || prims * ipp != m_conf.nindices || (expand && m_conf.nverts < prims * vpp))
+	{
+		g_gs_device->RenderHW(m_conf);
+		return;
+	}
+	/* The draw kept the batch's primitives one for one, in order, so the
+	 * runs are the batch's; otherwise its setup merged or split them, and
+	 * every primitive is a run of its own, which sees every write before
+	 * it as the GS does. */
+	each = (prims != m_runs_prims);
+	/* Indices rebased to the run's first vertex, so a run uploads only
+	 * its own vertices; without the room for them, the run's slice of the
+	 * draw's indices over all of its vertices. */
+	rebase = !expand;
+	if (rebase && m_runs_index_cap < m_conf.nindices)
+	{
+		grown = static_cast<u16*>(realloc(m_runs_index, sizeof(u16) * m_conf.nindices));
+		if (grown)
+		{
+			m_runs_index = grown;
+			m_runs_index_cap = m_conf.nindices;
+		}
+		else
+			rebase = false;
+	}
+
+	memcpy(&m_runs_conf, &m_conf, sizeof(m_runs_conf));
+	p0 = 0;
+	r = 0;
+	while (p0 < prims)
+	{
+		p1 = p0 + 1;
+		if (!each)
+		{
+			p1 = prims;
+			while (r < m_af_seg_count)
+			{
+				k = m_af_seg_start[r++] / m_runs_n_gs;
+				if (k > p0)
+				{
+					p1 = (k < prims) ? k : prims;
+					break;
+				}
+			}
+		}
+		memcpy(&m_conf, &m_runs_conf, sizeof(m_conf));
+		/* (the draw list counts runs of the whole draw) */
+		m_conf.drawlist = nullptr;
+		m_conf.drawlist_count = 0;
+		m_conf.nindices = (p1 - p0) * ipp;
+		if (expand)
+		{
+			/* Expanded in the vertex shader: the vertices in order, so
+			 * many a primitive, and no index list. */
+			vmin = p0 * vpp;
+			vmax = p1 * vpp - 1;
+		}
+		else
+		{
+			vmin = m_runs_conf.indices[p0 * ipp];
+			vmax = vmin;
+			for (k = p0 * ipp; k < p1 * ipp; k++)
+			{
+				if (m_runs_conf.indices[k] < vmin)
+					vmin = m_runs_conf.indices[k];
+				if (m_runs_conf.indices[k] > vmax)
+					vmax = m_runs_conf.indices[k];
+			}
+		}
+		if (p0 > 0)
+			RefreshRunsCopy(vmin, vmax);
+		if (expand || rebase)
+		{
+			m_conf.verts = m_runs_conf.verts + vmin;
+			m_conf.nverts = vmax - vmin + 1;
+		}
+		if (rebase)
+		{
+			for (k = p0 * ipp; k < p1 * ipp; k++)
+				m_runs_index[k - p0 * ipp] = static_cast<u16>(m_runs_conf.indices[k] - vmin);
+			m_conf.indices = m_runs_index;
+		}
+		else if (!expand)
+			m_conf.indices = m_runs_conf.indices + p0 * ipp;
+		g_gs_device->RenderHW(m_conf);
+		p0 = p1;
+	}
+	memcpy(&m_conf, &m_runs_conf, sizeof(m_conf));
 }
 
 bool GSRendererHW::CanUseTexIsFB(const GSTextureCache::Target* rt, const GSTextureCache::Source* tex,
@@ -7242,7 +7444,13 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 	m_conf.drawlist       = (m_conf.require_full_barrier && m_vt.m_primclass == GS_SPRITE_CLASS) ? GS_ARRAY_ITEMS(&m_drawlist, const u32) : nullptr;
 	m_conf.drawlist_count = m_conf.drawlist ? static_cast<u32>(m_drawlist.count) : 0;
 
-	g_gs_device->RenderHW(m_conf);
+	/* Segments read from a copy of the target, refreshed run by run. A
+	 * batch reading the target in place sees every earlier write as it
+	 * is, and one reading anything else read it before the batch. */
+	if (m_af_seg_count && m_runs_copy.dst)
+		RenderRuns();
+	else
+		g_gs_device->RenderHW(m_conf);
 	g_gs_device->Recycle(tex_copy);
 	g_gs_device->Recycle(temp_ds);
 }

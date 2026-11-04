@@ -67,6 +67,11 @@ struct gs_state_ops
 	/* A savestate taken in this instance (GSSnapshotSave): keep a copy
 	 * of what is drawn on the GPU under the key. */
 	void       (*snapshot_targets)(GSState* gs, u64 key);
+	/* An auto-flushed batch split into segments: whether the renderer
+	 * draws it at once, each segment reading what the ones before it
+	 * drew (true), or is to be handed one segment at a time (false or
+	 * NULL). Asked with the vertex trace of the whole batch made. */
+	bool       (*can_draw_runs)(GSState* gs);
 };
 
 class GSState : public GSAlignedClass<32>
@@ -228,6 +233,17 @@ protected:
 	 * for the draw to take in place (tex-is-fb). */
 	bool m_af_pixel_batch = true;
 	bool m_af_skipped = false;
+	/* Where auto flush would have ended the batch: an index count each,
+	 * the start of a segment that reads what the ones before it drew.
+	 * The batch is drawn whole when the renderer can (can_draw_runs),
+	 * else one segment at a time; detection looks back to the current
+	 * segment's start, over its own draw rect. */
+	enum { AF_MAX_SEGMENTS = 64 };
+	u32 m_af_seg_start[AF_MAX_SEGMENTS] = {};
+	u32 m_af_seg_count = 0;
+	GSVector4i m_af_seg_draw = {};
+	bool m_af_seg_fresh = true;
+	void FlushSegments();
 	bool IsPixelFeedbackPrim(u32 prim, const u32* buff, int n) const;
 	void AutoFlushOverlap(bool pixel);
 

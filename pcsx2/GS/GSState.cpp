@@ -1640,12 +1640,19 @@ void GSState::FlushPrim()
 		const bool skip_draw = (m_context->TEST.ZTE && m_context->TEST.ZTST == ZTST_NEVER);
 
 		if (!skip_draw)
-			Draw();
+		{
+			if (m_af_seg_count && !m_ops->can_draw_runs(this))
+				FlushSegments();
+			else
+				Draw();
+		}
 
 		m_index.tail = 0;
 		m_vertex.head = 0;
 		m_af_pixel_batch = true;
 		m_af_skipped = false;
+		m_af_seg_count = 0;
+		m_af_seg_fresh = true;
 
 		if (unused > 0)
 		{
@@ -3246,13 +3253,82 @@ bool GSState::IsPixelFeedbackPrim(u32 prim, const u32* buff, int n) const
  * pixels takes it in the draw; anything else flushes before the primitive. */
 void GSState::AutoFlushOverlap(bool pixel)
 {
-	if (pixel && m_af_pixel_batch)
+	if (pixel && m_af_pixel_batch && m_af_seg_count == 0)
 	{
 		m_af_skipped = true;
 		return;
 	}
+	/* A batch drawn in place cannot take segments read from a copy. */
+	if (m_ops && m_ops->can_draw_runs && !m_af_skipped && m_af_seg_count < AF_MAX_SEGMENTS)
+	{
+		m_af_seg_start[m_af_seg_count++] = m_index.tail;
+		m_af_seg_fresh = true;
+		m_af_pixel_batch = false;
+		return;
+	}
 	Flush(GSFlushReason::AUTOFLUSH);
 	m_af_pixel_batch = pixel;
+}
+
+/* The batch one segment at a time, each with its own vertex trace, as
+ * flushing at each boundary drew it: a segment's vertices are moved to
+ * the front of the buffer and its indices rebased onto them, since a
+ * draw may rewrite every vertex it is given. */
+void GSState::FlushSegments()
+{
+	const u32 total = m_index.tail;
+	const u32 nverts = m_vertex.tail;
+	const u32 segs = m_af_seg_count;
+	const GS_PRIM_CLASS pc = GSUtil::GetPrimClass(PRIM->PRIM);
+	u16* const saved_index = static_cast<u16*>(malloc(sizeof(u16) * total));
+	GSVertex* const saved_vertex = static_cast<GSVertex*>(malloc(sizeof(GSVertex) * nverts));
+	u32 start = 0;
+	u32 end;
+	u32 i;
+	u32 k;
+	u32 vmin;
+	u32 vmax;
+
+	m_af_seg_count = 0;
+	if (!saved_index || !saved_vertex)
+	{
+		free(saved_index);
+		free(saved_vertex);
+		Draw();
+		return;
+	}
+	memcpy(saved_index, m_index.buff, sizeof(u16) * total);
+	memcpy(saved_vertex, m_vertex.buff, sizeof(GSVertex) * nverts);
+	for (i = 0; i <= segs; i++)
+	{
+		end = (i < segs) ? m_af_seg_start[i] : total;
+		if (end > start)
+		{
+			vmin = saved_index[start];
+			vmax = saved_index[start];
+			for (k = start + 1; k < end; k++)
+			{
+				if (saved_index[k] < vmin)
+					vmin = saved_index[k];
+				if (saved_index[k] > vmax)
+					vmax = saved_index[k];
+			}
+			memcpy(m_vertex.buff, saved_vertex + vmin, sizeof(GSVertex) * (vmax - vmin + 1));
+			for (k = start; k < end; k++)
+				m_index.buff[k - start] = static_cast<u16>(saved_index[k] - vmin);
+			m_vertex.head = 0;
+			m_vertex.tail = vmax - vmin + 1;
+			m_vertex.next = m_vertex.tail;
+			m_index.tail = end - start;
+			m_vt.Update(m_vertex.buff, m_index.buff, m_vertex.tail, m_index.tail, pc);
+			if (start)
+				s_n++;
+			Draw();
+		}
+		start = end;
+	}
+	free(saved_index);
+	free(saved_vertex);
 }
 
 template<u32 prim, bool index_swap>
@@ -3439,7 +3515,8 @@ __noinline void GSState::HandleAutoFlush()
 		}
 
 		// Nothing being drawn intersect with the new texture, so no point in checking further.
-		if (tex_psm.depth == frame_psm.depth && tex_rect.rintersect(temp_draw_rect).rempty())
+		// What the segments before this one drew, this one reads after.
+		if (tex_psm.depth == frame_psm.depth && tex_rect.rintersect(m_af_seg_draw).rempty())
 			return;
 		if (m_texflush_flag)
 		{
@@ -3463,8 +3540,9 @@ __noinline void GSState::HandleAutoFlush()
 				const GSVector4i scissor = m_context->scissor.in;
 				GSVector4i old_draw_rect = GSVector4i::zero();
 				int current_draw_end = m_index.tail;
+				const int seg_begin = m_af_seg_count ? static_cast<int>(m_af_seg_start[m_af_seg_count - 1]) : 0;
 
-				while (current_draw_end >= n)
+				while (current_draw_end >= seg_begin + n)
 				{
 					for (int i = current_draw_end - 1; i >= current_draw_end - n; i--)
 					{
@@ -3535,7 +3613,7 @@ __noinline void GSState::HandleAutoFlush()
 					const int frame_page_mask_x = ~(frame_psm.pgs.x - 1);
 					const int frame_page_mask_y = ~(frame_psm.pgs.y - 1);
 					const GSVector4i frame_page_mask = { frame_page_mask_x, frame_page_mask_y, frame_page_mask_x, frame_page_mask_y };
-					GSVector4i area_out = temp_draw_rect;
+					GSVector4i area_out = m_af_seg_draw;
 					area_out += GSVector4i(0, 0, frame_page_mask.z, frame_page_mask.w); // round up to the next page as we will be comparing by page.
 					area_out &= frame_page_mask;
 					area_out = GSVector4i(area_out.x / frame_psm.pgs.x, area_out.y / frame_psm.pgs.y, area_out.z / frame_psm.pgs.x, area_out.w / frame_psm.pgs.y);
@@ -3750,6 +3828,11 @@ __forceinline void GSState::VertexKick(u32 skip, u32& maxcount)
 	else
 		temp_draw_rect = draw_min.blend32<12>(draw_max);
 	temp_draw_rect = temp_draw_rect.rintersect(m_context->scissor.in);
+	if (m_af_seg_fresh || m_vertex.tail == n)
+		m_af_seg_draw = draw_min.blend32<12>(draw_max).rintersect(m_context->scissor.in);
+	else
+		m_af_seg_draw = m_af_seg_draw.min_i32(draw_min).blend32<12>(m_af_seg_draw.max_i32(draw_max)).rintersect(m_context->scissor.in);
+	m_af_seg_fresh = false;
 
 	constexpr u32 max_vertices = MaxVerticesForPrim(prim);
 	if (max_vertices != 0 && m_vertex.tail >= max_vertices)
