@@ -671,6 +671,74 @@ static void upload_block(unsigned packets)
 static void case_upload_whole(void) { upload_block(1); }
 static void case_upload_split(void) { upload_block(2); }
 
+/* upload_split with a palette load from block 0 between its two packets:
+ * the renderer writes the first half before the load reads it, and the
+ * second half after, taking only the data it has not written yet. The
+ * block holds 64 words of 0x00123456 as before. */
+static void case_upload_clut_between(void)
+{
+	static const unsigned words[3] = { 0x56123456u, 0x34561234u, 0x12345612u };
+	unsigned p, i, w = 0;
+	qw(5 | 0x8000u, 0x10000000u, 0xEu, 0);                 /* A+D, NLOOP 5, EOP */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, (1u << 16) | (1u << 24), GS_BITBLTBUF, 0);       /* DBP 0, DBW 1, PSMCT24 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(8, 8, GS_TRXREG, 0);
+	qw(0, 0, GS_TRXDIR, 0);                                /* host to local */
+	for (p = 0; p < 2; p++)
+	{
+		if (p)
+		{
+			qw(1 | 0x8000u, 0x10000000u, 0xEu, 0);         /* A+D, NLOOP 1, EOP */
+			qw((0x13u << 20) | (1u << 14), 1u << 29, GS_TEX0_1, 0); /* PSMT8, CBP 0, CPSMCT32, CLD 1 */
+		}
+		qw(6 | 0x8000u, 0x08000000u, 0, 0);                /* IMAGE, NLOOP 6, EOP */
+		for (i = 0; i < 6; i++, w += 4)
+			qw(words[w % 3], words[(w + 1) % 3], words[(w + 2) % 3], words[(w + 3) % 3]);
+	}
+	kick(0, s_qw_count, 0);
+	s_run_frames    = 60;
+	s_expect_run[0] = 0x00123456ul;
+}
+
+/* A 16x8 24-bit upload, its top four rows 0x112233 and its bottom four
+ * 0x445566, read back as 32-bit pixels in two reads of 16 quadwords with
+ * a packet between them: the first read takes the top rows, the second
+ * the bottom ones, 64 words of each in RAM. */
+static void case_readback_parts(void)
+{
+	static const unsigned top[3] = { 0x33112233u, 0x22331122u, 0x11223311u };
+	static const unsigned bottom[3] = { 0x66445566u, 0x55664455u, 0x44556644u };
+	unsigned i, w;
+	unsigned first;
+	qw(5 | 0x8000u, 0x10000000u, 0xEu, 0);                 /* A+D, NLOOP 5, EOP */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, (1u << 16) | (1u << 24), GS_BITBLTBUF, 0);       /* DBP 0, DBW 1, PSMCT24 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(16, 8, GS_TRXREG, 0);
+	qw(0, 0, GS_TRXDIR, 0);                                /* host to local */
+	qw(24 | 0x8000u, 0x08000000u, 0, 0);                   /* IMAGE, NLOOP 24, EOP */
+	for (i = 0, w = 0; i < 12; i++, w += 4)
+		qw(top[w % 3], top[(w + 1) % 3], top[(w + 2) % 3], top[(w + 3) % 3]);
+	for (i = 0, w = 0; i < 12; i++, w += 4)
+		qw(bottom[w % 3], bottom[(w + 1) % 3], bottom[(w + 2) % 3], bottom[(w + 3) % 3]);
+	qw(4 | 0x8000u, 0x10000000u, 0xEu, 0);                 /* A+D, NLOOP 4, EOP */
+	qw(1u << 16, 0, GS_BITBLTBUF, 0);                      /* SBP 0, SBW 1, PSMCT32 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(16, 8, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);                                /* local to host */
+	kick(0, s_qw_count, 0);
+	readback(16);
+	first = s_qw_count;
+	qw(1 | 0x8000u, 0x10000000u, 0xEu, 0);                 /* A+D, NLOOP 1, EOP */
+	qw(1, 0, GS_PRMODECONT, 0);
+	kick(first, s_qw_count - first, 0);
+	readback(16);
+	s_run_frames    = 60;
+	s_expect_run[0] = 0x00112233ul;
+	s_expect_run[1] = 0x00445566ul;
+}
+
 /* Two flat right triangles 4000 pixels on a side that form a square,
  * as a pair of triangles fused into a quad would be: the renderer's
  * tests on their sides and areas hold for coordinates that large (a
@@ -2178,6 +2246,8 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "upload_short",    case_upload_short,  "1" },
 	{ "upload_whole",    case_upload_whole,  "1" },
 	{ "upload_split",    case_upload_split,  "1" },
+	{ "upload_clut_between", case_upload_clut_between, "1" },
+	{ "readback_parts",  case_readback_parts, "1" },
 	{ "big_triangles",   case_big_triangles, "1" },
 	{ "present",         case_present,       "1" },
 	{ "points",          case_points,        "1" },

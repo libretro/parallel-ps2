@@ -3380,6 +3380,21 @@ void GSInterface::read_transfer_fifo(void *data, uint32_t num_128b_words)
 	uint32_t remaining = 0;
 	uint32_t to_copy;
 
+	/* The whole transfer in one read: from local memory into the
+	 * reader's buffer, the bytes past it zero as for a short FIFO. */
+	if (transfer_state.fifo_readback_pending && transfer_state.fifo_readback_128b_offset == 0 &&
+	    (uint64_t)num_128b_words * 16 >= transfer_state.fifo_readback_bytes)
+	{
+		transfer_state.fifo_readback_pending = false;
+		fifo_readback_into(static_cast<uint8_t *>(data), transfer_state.fifo_readback_bytes);
+		to_copy = transfer_state.fifo_readback_128b_size;
+		if ((uint64_t)to_copy * 16 < (uint64_t)num_128b_words * 16)
+			memset(static_cast<uint8_t *>(data) + 16 * to_copy, 0, (num_128b_words - to_copy) * 16);
+		transfer_state.fifo_readback_128b_offset = to_copy;
+		return;
+	}
+	fifo_readback_materialize();
+
 	if (transfer_state.fifo_readback_128b_offset < transfer_state.fifo_readback_128b_size)
 		remaining = transfer_state.fifo_readback_128b_size - transfer_state.fifo_readback_128b_offset;
 
@@ -3434,6 +3449,7 @@ void GSInterface::read_transfer_fifo(void *data, uint32_t num_128b_words)
 void GSInterface::init_transfer()
 {
 	flush_pending_transfer(false);
+	fifo_readback_materialize();
 
 	transfer_state.copy.trxdir = registers.trxdir;
 	transfer_state.copy.trxreg = registers.trxreg;
@@ -3495,73 +3511,89 @@ void GSInterface::init_transfer()
 
 		uint32_t required_bytes = wide_bytes > (uint64_t)max_readback_bytes ? 0 : (uint32_t)wide_bytes;
 
-		if (required_bytes && !transfer_state.fifo_readback.reserve(required_bytes))
-			required_bytes = 0;
-
 		transfer_state.fifo_readback_128b_offset = 0;
 		transfer_state.fifo_readback_128b_size = required_bytes / 16;
+		transfer_state.fifo_readback_bytes = required_bytes;
+		transfer_state.fifo_readback_pending = required_bytes != 0;
+	}
+}
 
-		if (!required_bytes)
-			return;
+/* The local-to-host transfer's bytes, read from local memory into dst,
+ * once the GPU has written what they cover. */
+void GSInterface::fifo_readback_into(uint8_t *dst, uint32_t bytes)
+{
+	PageRect src_rect = compute_page_rect(transfer_state.copy.bitbltbuf.desc.SBP,
+									  transfer_state.copy.trxpos.desc.SSAX,
+									  transfer_state.copy.trxpos.desc.SSAY,
+									  transfer_state.copy.trxreg.desc.RRW,
+									  transfer_state.copy.trxreg.desc.RRH,
+									  transfer_state.copy.bitbltbuf.desc.SBW,
+									  transfer_state.copy.bitbltbuf.desc.SPSM);
 
-		PageRect src_rect = compute_page_rect(transfer_state.copy.bitbltbuf.desc.SBP,
-										  transfer_state.copy.trxpos.desc.SSAX,
-										  transfer_state.copy.trxpos.desc.SSAY,
-										  transfer_state.copy.trxreg.desc.RRW,
-										  transfer_state.copy.trxreg.desc.RRH,
-										  transfer_state.copy.bitbltbuf.desc.SBW,
-										  transfer_state.copy.bitbltbuf.desc.SPSM);
+	uint64_t host_timeline = tracker.get_host_read_timeline(src_rect);
 
-		uint64_t host_timeline = tracker.get_host_read_timeline(src_rect);
+	if (hacks.unsynced_readbacks && renderer.query_timeline() < host_timeline)
+	{
+		memset(dst, 0, bytes);
+		return;
+	}
 
-		if (hacks.unsynced_readbacks && renderer.query_timeline() < host_timeline)
-		{
-			memset(transfer_state.fifo_readback.data(), 0, required_bytes);
-			return;
-		}
+	if (host_timeline == UINT64_MAX)
+	{
+		host_timeline = tracker.mark_submission_timeline(FlushReason::HostAccess);
+		renderer.flush_submit(host_timeline);
+		if (debug_mode.deterministic_timeline_query)
+			renderer.wait_timeline(host_timeline);
+	}
+	renderer.wait_timeline(host_timeline);
 
-		if (host_timeline == UINT64_MAX)
-		{
-			host_timeline = tracker.mark_submission_timeline(FlushReason::HostAccess);
-			renderer.flush_submit(host_timeline);
-			if (debug_mode.deterministic_timeline_query)
-				renderer.wait_timeline(host_timeline);
-		}
-		renderer.wait_timeline(host_timeline);
+	void *mapped = renderer.begin_host_vram_access();
 
-		void *mapped = renderer.begin_host_vram_access();
-
-		switch (transfer_state.copy.bitbltbuf.desc.SPSM)
-		{
+	switch (transfer_state.copy.bitbltbuf.desc.SPSM)
+	{
 #define PSM_DISPATCH(psm) \
-		case psm: \
-			vram_readback<psm>(transfer_state.fifo_readback.data(), mapped, \
-			                   transfer_state.copy.bitbltbuf.desc.SBP, transfer_state.copy.bitbltbuf.desc.SBW, \
-			                   transfer_state.copy.trxpos.desc.SSAX, transfer_state.copy.trxpos.desc.SSAY, \
-			                   transfer_state.copy.trxreg.desc.RRW, transfer_state.copy.trxreg.desc.RRH, vram_size - 1); \
-			break
-			PSM_DISPATCH(PSMCT32);
-			PSM_DISPATCH(PSMZ32);
-			PSM_DISPATCH(PSMCT24);
-			PSM_DISPATCH(PSMZ24);
-			PSM_DISPATCH(PSMCT16);
-			PSM_DISPATCH(PSMCT16S);
-			PSM_DISPATCH(PSMZ16);
-			PSM_DISPATCH(PSMZ16S);
-			PSM_DISPATCH(PSMT8);
-			PSM_DISPATCH(PSMT8H);
-			PSM_DISPATCH(PSMT4);
-			PSM_DISPATCH(PSMT4HL);
-			PSM_DISPATCH(PSMT4HH);
+	case psm: \
+		vram_readback<psm>(dst, mapped, \
+		                   transfer_state.copy.bitbltbuf.desc.SBP, transfer_state.copy.bitbltbuf.desc.SBW, \
+		                   transfer_state.copy.trxpos.desc.SSAX, transfer_state.copy.trxpos.desc.SSAY, \
+		                   transfer_state.copy.trxreg.desc.RRW, transfer_state.copy.trxreg.desc.RRH, vram_size - 1); \
+		break
+		PSM_DISPATCH(PSMCT32);
+		PSM_DISPATCH(PSMZ32);
+		PSM_DISPATCH(PSMCT24);
+		PSM_DISPATCH(PSMZ24);
+		PSM_DISPATCH(PSMCT16);
+		PSM_DISPATCH(PSMCT16S);
+		PSM_DISPATCH(PSMZ16);
+		PSM_DISPATCH(PSMZ16S);
+		PSM_DISPATCH(PSMT8);
+		PSM_DISPATCH(PSMT8H);
+		PSM_DISPATCH(PSMT4);
+		PSM_DISPATCH(PSMT4HL);
+		PSM_DISPATCH(PSMT4HH);
 #undef PSM_DISPATCH
 
-		default:
-			// An invalid PSM reads zeros, not a previous readback.
-			LOGW("Unrecognized FIFO readback PSM: %u\n", transfer_state.copy.bitbltbuf.desc.SPSM);
-			memset(transfer_state.fifo_readback.data(), 0, required_bytes);
-			break;
-		}
+	default:
+		// An invalid PSM reads zeros, not a previous readback.
+		LOGW("Unrecognized FIFO readback PSM: %u\n", transfer_state.copy.bitbltbuf.desc.SPSM);
+		memset(dst, 0, bytes);
+		break;
 	}
+}
+
+/* A local-to-host transfer not read yet, into fifo_readback, before its
+ * descriptor goes or it is read a part at a time. */
+void GSInterface::fifo_readback_materialize()
+{
+	if (!transfer_state.fifo_readback_pending)
+		return;
+	transfer_state.fifo_readback_pending = false;
+	if (!transfer_state.fifo_readback.reserve(transfer_state.fifo_readback_bytes))
+	{
+		transfer_state.fifo_readback_128b_size = 0;
+		return;
+	}
+	fifo_readback_into(transfer_state.fifo_readback.data(), transfer_state.fifo_readback_bytes);
 }
 
 void GSInterface::update_draw_handler()

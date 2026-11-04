@@ -373,8 +373,15 @@ private:
 		Util::DynamicArray<uint8_t> fifo_readback;
 		uint32_t fifo_readback_128b_offset = 0;
 		uint32_t fifo_readback_128b_size = 0;
+		/* The bytes of a local-to-host transfer, read from local memory
+		 * when the FIFO is first read: straight into the reader's buffer
+		 * when it takes them all at once, into fifo_readback otherwise. */
+		uint32_t fifo_readback_bytes = 0;
+		bool fifo_readback_pending = false;
 	} transfer_state;
 
+	void fifo_readback_into(uint8_t *dst, uint32_t bytes);
+	void fifo_readback_materialize();
 	void flush_pending_transfer(bool keep_alive);
 	void check_pending_transfer();
 	void init_transfer();

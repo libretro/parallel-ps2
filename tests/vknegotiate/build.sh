@@ -104,6 +104,19 @@ for renderer in Vulkan paraLLEl-GS; do
 	fi
 done
 
+# A local to host transfer read in two parts with a packet between: the
+# first part holds the top rows, the second the bottom ones, on both
+# renderers. readback_t4hh above reads each transfer whole.
+"$SCRATCH/swdraw" --bios "$SCRATCH/readback_parts.bin" readback_parts
+for renderer in Vulkan paraLLEl-GS; do
+	if ! VN_EXPECT_RUN=00112233,00445566 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/readback_parts.bin" VN_RENDERER=$renderer \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: readback in two parts, $renderer"
+		exit 1
+	fi
+done
+
 # Destination alpha a clear wrote and a draw wrote, read back and read by
 # a blend: the same alpha either way, on both renderers.
 "$SCRATCH/swdraw" --bios "$SCRATCH/dest_alpha.bin" dest_alpha
@@ -167,9 +180,10 @@ for renderer in Vulkan paraLLEl-GS; do
 done
 
 # An 8x8 upload in one IMAGE packet, which the renderer takes from the
-# packet as it lies, and the same in two packets: the block holds the
-# data either way, on both renderers.
-for c in upload_whole upload_split; do
+# packet as it lies, the same in two packets, and in two with a palette
+# load from the block between them, which has the first half written
+# before it: the block holds the data every way, on both renderers.
+for c in upload_whole upload_split upload_clut_between; do
 	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
 	for renderer in Vulkan paraLLEl-GS; do
 		if ! VN_EXPECT_RUN=00123456 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=$renderer \
