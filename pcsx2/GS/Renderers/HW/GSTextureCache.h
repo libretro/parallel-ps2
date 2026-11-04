@@ -767,6 +767,9 @@ public:
 	Target* FindOverlappingTarget(GSTextureCache::Target* target) const;
 	Target* FindOverlappingTarget(u32 BP, u32 end_bp) const;
 	Target* FindOverlappingTarget(u32 BP, u32 BW, u32 PSM, GSVector4i rc) const;
+	/* The colour target holding memory a depth write lands in, when one does
+	 * and it was drawn after every depth buffer over that memory. */
+	Target* FindColourUnderDepthWrite(u32 zbp, u32 bw, u32 zpsm, const GSVector4i& r);
 
 	GSVector2i GetTargetSize(u32 bp, u32 fbw, u32 psm, s32 min_width, s32 min_height, bool can_expand = true);
 	bool HasTargetInHeightCache(u32 bp, u32 fbw, u32 psm, u32 max_age = 0xFFFFFFFFu, bool move_front = true);

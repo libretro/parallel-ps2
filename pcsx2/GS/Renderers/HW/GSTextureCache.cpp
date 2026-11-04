@@ -5131,6 +5131,36 @@ GSTextureCache::Target* GSTextureCache::FindOverlappingTarget(u32 BP, u32 BW, u3
 	return FindOverlappingTarget(BP, end_bp);
 }
 
+GSTextureCache::Target* GSTextureCache::FindColourUnderDepthWrite(u32 zbp, u32 bw, u32 zpsm, const GSVector4i& r)
+{
+	FastListIterator<Target*> it = m_dst[RenderTarget].begin();
+	const FastListIterator<Target*> rt_end = m_dst[RenderTarget].end();
+	FastListIterator<Target*> dt = m_dst[DepthStencil].begin();
+	const FastListIterator<Target*> ds_end = m_dst[DepthStencil].end();
+	Target* found = NULL;
+
+	for (; it != rt_end; ++it)
+	{
+		Target* t = *it;
+		if (!t->m_valid_rgb || (found && t->m_last_draw <= found->m_last_draw))
+			continue;
+		if (t->Overlaps(zbp, bw, zpsm, r))
+			found = t;
+	}
+
+	if (!found)
+		return NULL;
+
+	for (; dt != ds_end; ++dt)
+	{
+		Target* t = *dt;
+		if (t->m_last_draw >= found->m_last_draw && t->Overlaps(zbp, bw, zpsm, r))
+			return NULL;
+	}
+
+	return found;
+}
+
 GSVector2i GSTextureCache::GetTargetSize(u32 bp, u32 fbw, u32 psm, s32 min_width, s32 min_height, bool can_expand)
 {
 	TargetHeightElem search = {};

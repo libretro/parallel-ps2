@@ -258,6 +258,7 @@ tests/ata/*.img
 /tests/gspool/gspool_test
 /tests/gstc/target_budget
 /tests/gstc/hash_keep
+/tests/gstc/zwrite_colour
 /tests/gsupscale/hires_mem
 /tests/gsupscale/native_taps
 /tests/gsupscale/sprite_centre

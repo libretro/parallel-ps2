@@ -234,108 +234,6 @@ bool GSHwHack::GSC_DTGames(GSRendererHW& r, int& skip)
 	return true;
 }
 
-bool GSHwHack::GSC_BurnoutGames(GSRendererHW& r, int& skip)
-{
-	// Burnout has a... creative way of achieving its bloom effect, to avoid horizontal page breaks.
-	// First they double strip clear a single page column to (191, 191, 191), then blend the main
-	// framebuffer into this column, with (Cs - Cd) * 2. So anything lower than 191 clamps to zero,
-	// and anything larger boosts up a bit. Then that column gets downsampled to half size, makes
-	// sense right? The fun bit is when they move to the next page, instead of being sensible and
-	// using another double strip clear, they write Z to the next page as part of the blended draw,
-	// setting it to 191 (in Z24 terms). Then the buffers are swapped for the next column, 0x1a40
-	// and 0x1a60 in US.
-	//
-	// We _could_ handle that, except for the fact that instead of pointing the texture at 0x1a60
-	// for the downsample of the second column, they point it at 0x1a40, and offset the coordinates
-	// by a page. This would need "tex outside RT", and no way that's happening.
-	//
-	// So, I present to you, dear reader, the first state machine within a CRC hack, in all its
-	// disgusting glory. This effectively reduces the multi-pass effect to a single pass, by replacing
-	// the column-wide draws with a fullscreen sprite, and skipping the extra passes.
-	//
-	// After this, they do a blur on the buffer, which is fine, because all the buffer swap BS has
-	// finished, so we can return to normal.
-
-	static u32 state = 0;
-	static GIFRegTEX0 main_fb;
-	static GSVector2i main_fb_size;
-	static GIFRegTEX0 downsample_fb;
-	static GIFRegTEX0 bloom_fb;
-	switch (state)
-	{
-		case 0: // waiting for double striped clear
-		{
-			if (RFBW != 2 || RFBP != RZBP || RTME)
-				break;
-
-			// Need a backed up context to grab the framebuffer.
-			if (r.m_backed_up_ctx < 0)
-				break;
-
-			// Next draw should contain our source.
-			GSTextureCache::Target* tgt = g_texture_cache->LookupTarget(r.m_env.CTXT[r.m_backed_up_ctx].TEX0,
-				GSVector2i(1, 1), r.GetTextureScaleFactor(), GSTextureCache::RenderTarget);
-			if (!tgt)
-				break;
-
-			// Clear temp render target.
-			main_fb = tgt->m_TEX0;
-			main_fb_size = tgt->GetUnscaledSize();
-			r.m_cached_ctx.FRAME.FBW = tgt->m_TEX0.TBW;
-			r.m_cached_ctx.ZBUF.ZMSK = true;
-			r.ReplaceVerticesWithSprite(GSVector4i::loadh(main_fb_size), main_fb_size);
-			bloom_fb = GIFRegTEX0::Create(RFBP, RFBW, RFPSM);
-			state = 1;
-			return true;
-		}
-
-		case 1: // reverse blend to extract bright pixels
-		{
-			r.ReplaceVerticesWithSprite(GSVector4i::loadh(main_fb_size), main_fb_size);
-			r.m_cached_ctx.ZBUF.ZMSK = true;
-			state = 2;
-			return true;
-		}
-
-		case 2: // downsample
-		{
-			const GSVector4i downsample_rect = GSVector4i(0, 0, ((main_fb_size.x / 2)), ((main_fb_size.y / 2)));
-			const GSVector4i uv_rect = GSVector4i(0, 0, main_fb_size.x, main_fb_size.y);
-			r.ReplaceVerticesWithSprite(downsample_rect, uv_rect, main_fb_size, downsample_rect);
-			downsample_fb = GIFRegTEX0::Create(RFBP, RFBW, RFPSM);
-			state = 3;
-			// Fix up the texture width so the native scaling code can properly detect it as a downscale.
-			RTBW = RFBW * 2;
-			return true;
-		}
-
-		case 3:
-		{
-			// Kill the downsample source, because we made it way larger than it was supposed to be.
-			// That way we don't risk confusing any other targets.
-			g_texture_cache->InvalidateVideoMemType(GSTextureCache::RenderTarget, bloom_fb.TBP0);
-			state = 4;
-			PCSX2_FALLTHROUGH;
-		}
-
-		case 4: // Skip until it's downsampled again.
-		{
-			if (!RTME || RTBP0 != downsample_fb.TBP0) /* skipping extra pass */
-			{
-				skip = 1;
-				return true;
-			}
-
-			// Finally, we're done, let the game take over.
-			skip = 0;
-			state = 0;
-			return true;
-		}
-	}
-
-	return GSC_BlackAndBurnoutSky(r, skip);
-}
-
 bool GSHwHack::GSC_BlackAndBurnoutSky(GSRendererHW& r, int& skip)
 {
 	if (skip != 0)
@@ -1095,7 +993,6 @@ const GSHwHack::Entry<GSRendererHW::GSC_Ptr> GSHwHack::s_get_skip_count_function
 	CRC_F(GSC_GiTS),
 
 	// Depth Issue
-	CRC_F(GSC_BurnoutGames),
 
 	// Half Screen bottom issue
 

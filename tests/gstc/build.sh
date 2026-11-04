@@ -8,6 +8,8 @@
 #                   longer read, never the live set.
 # hash_keep       : a GS reset or state load keeps the hash cache, which is
 #                   found by content, and uploads only what changed.
+# zwrite_colour   : a constant depth write into a colour target's pages
+#                   reaches the colour target as what the Z wrote.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
@@ -24,3 +26,6 @@ ${CC:-cc} -std=c89 -pedantic -Wall -Wextra -O2 -g $SANFLAGS \
 	-o "$DIR/hash_keep" "$DIR/hash_keep.c"
 "$DIR/hash_keep" "$ROOT/pcsx2/GS/Renderers/HW/GSRendererHW.cpp" \
 	"$ROOT/pcsx2/GS/Renderers/HW/GSTextureCache.cpp"
+${CC:-cc} -std=c89 -pedantic -Wall -Wextra -O2 -g $SANFLAGS \
+	-o "$DIR/zwrite_colour" "$DIR/zwrite_colour.c"
+"$DIR/zwrite_colour"

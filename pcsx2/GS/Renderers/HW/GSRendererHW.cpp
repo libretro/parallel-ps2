@@ -3062,7 +3062,10 @@ void GSRendererHW::Draw()
 
 	CalculatePrimitiveCoversWithoutGaps();
 
-	const bool not_writing_to_all = (m_primitive_covers_without_gaps != NoGapsType::FullCover || AreAnyPixelsDiscarded() || !all_depth_tests_pass);
+	if (WriteDepthIntoColourMemory(no_rt, no_ds) && no_rt)
+		return;
+
+	const bool not_writing_to_all =(m_primitive_covers_without_gaps != NoGapsType::FullCover || AreAnyPixelsDiscarded() || !all_depth_tests_pass);
 	bool preserve_depth =
 		not_writing_to_all || (!no_ds && (!all_depth_tests_pass || !m_cached_ctx.DepthWrite() || m_cached_ctx.TEST.ATE));
 
@@ -7555,6 +7558,97 @@ bool GSRendererHW::DetectStripedDoubleClear(bool& no_rt, bool& no_ds)
 	// Remove Z, we'll write it through colour.
 	m_cached_ctx.ZBUF.ZMSK = true;
 	no_rt = false;
+	no_ds = true;
+	return true;
+}
+
+/* A sprite that passes its depth test everywhere and has one Z writes that
+ * Z into memory in the Z format's layout, whatever was drawn there before.
+ * When that memory is held by a colour target drawn after any depth buffer
+ * over it, the colour target is what reads it next, as colour: a depth
+ * buffer would keep the write where no colour lookup sees it. The Z is
+ * written into local memory and the colour target refreshed from there.
+ *
+ * Only whole pages: every block of a page written with one value is the
+ * same in any layout, so the colour target's pages hold exactly what the
+ * Z wrote, and no part of a page the GPU drew is reloaded from memory that
+ * is behind it. The colour this draw writes must not share a page with its
+ * Z, since the order of the two writes in one pixel is not modelled. */
+bool GSRendererHW::WriteDepthIntoColourMemory(bool no_rt, bool& no_ds)
+{
+	u32 frame_pages[GS_MAX_PAGES / 32];
+	const u32 zpsm = m_cached_ctx.ZBUF.PSM;
+	const u32 fbw = m_cached_ctx.FRAME.FBW;
+	const GSVector4i r = m_r;
+	GSVector2i zpgs;
+	GSVector2i fpgs;
+	GSTextureCache::Target* rt;
+	GSUploadQueue write;
+	u32 zpage;
+	u32 page;
+	int px;
+	int py;
+	int i;
+
+	if (no_ds || m_cached_ctx.ZBUF.ZMSK || m_cached_ctx.TEST.ZTST != ZTST_ALWAYS)
+		return false;
+	if (zpsm != PSMZ32 && zpsm != PSMZ24)
+		return false;
+	if (m_vt.m_primclass != GS_SPRITE_CLASS || !m_vt.m_eq.z ||
+		m_primitive_covers_without_gaps != NoGapsType::FullCover)
+		return false;
+	/* Pixels the alpha test fails or the scan mask drops write no Z. */
+	if (m_cached_ctx.TEST.ATE || (m_env.SCANMSK.MSK & 2))
+		return false;
+
+	zpgs = GSLocalMemory::m_psm[zpsm].pgs;
+	if (fbw == 0 || r.z > (int)(fbw * 64) ||
+		(r.x & (zpgs.x - 1)) || (r.z & (zpgs.x - 1)) ||
+		(r.y & (zpgs.y - 1)) || (r.w & (zpgs.y - 1)))
+		return false;
+
+	if (!no_rt)
+	{
+		fpgs = GSLocalMemory::m_psm[m_cached_ctx.FRAME.PSM].pgs;
+		for (i = 0; i < (int)(GS_MAX_PAGES / 32); i++)
+			frame_pages[i] = 0;
+		for (py = r.y / fpgs.y; py <= (r.w - 1) / fpgs.y; py++)
+		{
+			for (px = r.x / fpgs.x; px <= (r.z - 1) / fpgs.x; px++)
+			{
+				page = (m_cached_ctx.FRAME.FBP + (u32)py * fbw + (u32)px) & (GS_MAX_PAGES - 1);
+				frame_pages[page >> 5] |= 1u << (page & 31);
+			}
+		}
+		for (py = r.y / zpgs.y; py < r.w / zpgs.y; py++)
+		{
+			for (px = r.x / zpgs.x; px < r.z / zpgs.x; px++)
+			{
+				zpage = (m_cached_ctx.ZBUF.ZBP + (u32)py * fbw + (u32)px) & (GS_MAX_PAGES - 1);
+				if (frame_pages[zpage >> 5] & (1u << (zpage & 31)))
+					return false;
+			}
+		}
+	}
+
+	rt = g_texture_cache->FindColourUnderDepthWrite(m_cached_ctx.ZBUF.Block(), fbw, zpsm, r);
+	if (!rt)
+		return false;
+
+	ClearGSLocalMemory(m_context->offset.zb, r, GetConstantDirectWriteMemClearDepth());
+	g_texture_cache->InvalidateVideoMem(m_context->offset.zb, r, true);
+
+	/* A target made over these pages later loads them from memory. */
+	write.draw = s_n;
+	write.rect = r;
+	write.blit.U64 = 0;
+	write.blit.DBP = m_cached_ctx.ZBUF.Block();
+	write.blit.DBW = fbw;
+	write.blit.DPSM = zpsm;
+	write.zero_clear = false;
+	PushDrawTransfer(write);
+
+	m_cached_ctx.ZBUF.ZMSK = true;
 	no_ds = true;
 	return true;
 }

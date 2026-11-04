@@ -11647,7 +11647,7 @@ SLAJ-25053:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLAJ-25055:
   name: "Def Jam - Fight for N.Y."
@@ -11691,7 +11691,7 @@ SLAJ-25066:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
   memcardFilters:
     - "SLAJ-25066"
@@ -11826,7 +11826,7 @@ SLAJ-25094:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLAJ-25095:
   name: "Medal of Honor - Vanguard"
@@ -12215,7 +12215,7 @@ SLED-52597:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLED-52736:
   name: "Need for Speed - Underground 2 [Demo]"
@@ -12390,7 +12390,7 @@ SLED-53512:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLED-53537:
   name: "187 - Ride or Die [Demo]"
@@ -12436,7 +12436,7 @@ SLED-53637:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLED-53650:
   name: "Need for Speed - Most Wanted"
@@ -18917,7 +18917,7 @@ SLES-52584:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLES-52585:
   name: "Burnout 3 - Takedown"
@@ -18930,7 +18930,7 @@ SLES-52585:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLES-52587:
   name: "Army Men - Sarge's War"
@@ -21648,7 +21648,7 @@ SLES-53506:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
   memcardFilters:
     - "SLES-53506"
@@ -21668,7 +21668,7 @@ SLES-53507:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
   memcardFilters:
     - "SLES-53506"
@@ -25228,7 +25228,7 @@ SLES-54627:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLES-54628:
   name: "Skate Attack [Promo]"
@@ -25435,7 +25435,7 @@ SLES-54681:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLES-54683:
   name: "Medal of Honor - Vanguard"
@@ -29681,7 +29681,7 @@ SLKA-25206:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLKA-25207:
   name: "Sakura Taisen V - Episode 0 - Samurai Girl of Wild"
@@ -29944,7 +29944,7 @@ SLKA-25260:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLKA-25261:
   name: "Tsukiyo ni Saraba"
@@ -30131,7 +30131,7 @@ SLKA-25304:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLKA-25305:
   name: "Taito Memories - Gekan"
@@ -30995,7 +30995,7 @@ SLPM-55004:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLPM-55005:
   name: "Mana Khemia 2 - Ochita Gakuen to Renkinjutsushi Tachi"
@@ -31113,7 +31113,7 @@ SLPM-55036:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLPM-55037:
   name: "Medal of Honor - European Assault [EASY 1980]"
@@ -32387,7 +32387,7 @@ SLPM-60246:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLPM-60247:
   name: "Gradius V"
@@ -38602,7 +38602,7 @@ SLPM-65719:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLPM-65720:
   name: "Shin Sangoku Musou 2 Moushouden [Koei the Best]"
@@ -39561,7 +39561,7 @@ SLPM-65958:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLPM-65959:
   name: "Standard Daisenryaku - Ushinawareta Shouri"
@@ -40193,7 +40193,7 @@ SLPM-66108:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
   memcardFilters:
     - "SLAJ-25066"
@@ -42633,7 +42633,7 @@ SLPM-66652:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
   memcardFilters:
     - "SLAJ-25066"
@@ -43035,7 +43035,7 @@ SLPM-66739:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLPM-66740:
   name: "Sentou Kokka Kai - Legend [DX Pack]"
@@ -43881,7 +43881,7 @@ SLPM-66962:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLPM-66963:
   name: "Medal of Honor - Frontline [EA-SY! 1980]"
@@ -56841,7 +56841,7 @@ SLUS-21050:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLUS-21051:
   name: "FIFA 2005"
@@ -57953,7 +57953,7 @@ SLUS-21242:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
   memcardFilters: # Reads Burnout 3 and NFL 06 saves for unlockables.
     - "SLUS-21242"
@@ -60098,7 +60098,7 @@ SLUS-21596:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLUS-21597:
   name: "Medal of Honor - Vanguard"
@@ -62613,7 +62613,7 @@ SLUS-29113:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLUS-29116:
   name: "WWE SmackDown! vs. RAW [Public Beta Vol.1.0]"
@@ -62786,7 +62786,7 @@ SLUS-29153:
     autoFlush: 2 # Fixes blur and obscures sun behind objects.
     bilinearUpscale: 2 # Smooths out sun glare textures like native.
     nativeScaling: 2 # Smooths speed blur and corrects some lighting.
-    getSkipCount: "GSC_BurnoutGames"
+    getSkipCount: "GSC_BlackAndBurnoutSky"
     beforeDraw: "OI_BurnoutGames"
 SLUS-29154:
   name: "NHL '06 [Demo]"
