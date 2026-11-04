@@ -42,7 +42,7 @@ if [ ! -f "$CORE" ]; then
 	exit 0
 fi
 
-SAME="dest_alpha points aa1_line dual_blend mip_tw8 depth_states frame_ct32 date_no_depth_full clut_lines sibling_key_after_clut upload_whole many_copies move_width_change"
+SAME="dest_alpha points aa1_line dual_blend mip_tw8 depth_states frame_ct32 date_no_depth_full clut_lines sibling_key_after_clut upload_whole many_copies move_width_change feedback_chain feedback_own_pixel"
 RUNS="t4_from_target_shaded"
 # Each case runs for the frames it asks for (at least 30), so the
 # picture compared is its finished one on both renderers, not whichever
@@ -69,6 +69,21 @@ for c in $SAME $RUNS; do
 		exit 0
 	fi
 	g=$(sed -n 's/.*image: .*hash \([0-9a-f]*\)$/\1/p' "$WORK/$c.gl.log")
+	# The draws that read what they draw: the two renderers alike is
+	# not enough, both could lose the feedback the same way. Their pictures
+	# are the GS's, as the software renderer's memory has it (swdraw):
+	# the blocks read in turn halving the seed, and the own-pixel area
+	# halved three times.
+	want=
+	case $c in
+		feedback_chain)     want=e8bc7b5f5fa58825 ;;
+		feedback_own_pixel) want=7e5263dcb3ee4325 ;;
+	esac
+	if [ -n "$want" ] && [ "$g" != "$want" ]; then
+		echo "  FAIL: $c: the OpenGL renderer draws ${g:-nothing}, the GS's picture is $want"
+		fail=1
+		continue
+	fi
 	case " $RUNS " in *" $c "*) printf '  %s: OpenGL %s\n' $c "$g"; continue ;; esac
 	[ $vulkan = 1 ] || { printf '  %s: OpenGL %s\n' $c "$g"; continue; }
 	if ! VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_IDLE_BIOS=1 LRPS2_BIOS="$WORK/$c.bin" VN_FRAMES=$(cat "$WORK/$c.frames") \

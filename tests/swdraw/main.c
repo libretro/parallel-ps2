@@ -2053,6 +2053,81 @@ static void case_date_no_depth_full(void)
 	s_run_frames = 60;
 }
 
+/* Draws sampling the frame they draw into, in one batch, as the frame:
+ * 640 wide, 32-bit, at 0. The seed is 0x80F0F0F0 and every sprite
+ * modulates what it reads by half (TFX MODULATE, colour 0x40), so a
+ * block read n times after the seed holds 0xF0 >> n in RGB, 0x80 >> n in
+ * alpha. The tag's NLOOP is filled in once the packet is laid out. */
+#define FB_TEX0_LO (0u | (10u << 14) | (0u << 20) | (10u << 26) | ((9u & 3u) << 30)) /* TBP0 0, TBW 10, CT32, 1024x512 */
+#define FB_TEX0_HI ((9u >> 2) | (1u << 2))                                            /* TCC, TFX MODULATE */
+
+static unsigned feedback_begin(unsigned seed_w)
+{
+	const unsigned tag = s_qw_count;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);                     /* A+D, EOP, NLOOP below */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(10u << 16, 0, GS_FRAME_1, 0);                       /* FBP 0, FBW 10, PSMCT32 */
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw(0, 0x3f800000u, GS_RGBAQ, 0);                       /* the strip black */
+	qw(6, 0, GS_PRIM, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(640, 8), 0, GS_XYZ2, 0);
+	qw(0x80F0F0F0u, 0x3f800000u, GS_RGBAQ, 0);             /* the seed */
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(seed_w, 8), 0, GS_XYZ2, 0);
+	qw(FB_TEX0_LO, FB_TEX0_HI, GS_TEX0_1, 0);
+	qw(0, 0, GS_TEX1_1, 0);                                /* nearest */
+	qw(0, 0, GS_CLAMP_1, 0);
+	qw(0x40404040u, 0x3f800000u, GS_RGBAQ, 0);             /* half */
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* sprite, TME, FST */
+	return tag;
+}
+
+static void feedback_sprite(unsigned u, unsigned v, unsigned x, unsigned y, unsigned w, unsigned h)
+{
+	qw((unsigned)XY(u, v), 0, GS_UV, 0);
+	qw((unsigned)XY(x, y), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(u + w, v + h), 0, GS_UV, 0);
+	qw((unsigned)XY(x + w, y + h), 0, GS_XYZ2, 0);
+}
+
+static void feedback_end(unsigned tag)
+{
+	s_qw[tag][0] = (s_qw_count - tag - 1) | 0x8000u;
+	kick(tag, s_qw_count - tag, 0);
+}
+
+/* Each sprite reads the 8x8 block the one before it wrote, a page to its
+ * left: a page the GS has not read in this batch, so it reads the write.
+ * The third block, at x 192, holds the seed halved three times; drawn
+ * from one copy of the frame taken before the batch, it is black. */
+static void case_feedback_chain(void)
+{
+	const unsigned tag = feedback_begin(8);
+	unsigned k;
+	for (k = 0; k < 3; k++)
+		feedback_sprite(64 * k, 0, 64 * (k + 1), 0, 8, 8);
+	feedback_end(tag);
+	s_expect_run[0] = 0x101E1E1Eul;
+}
+
+/* Three sprites over the same 64x8 area, each reading exactly the pixels
+ * it writes: each reads what the one before it wrote, the area holding
+ * the seed halved three times. Drawn from one copy of the frame taken
+ * before the batch, it holds the seed halved once. */
+static void case_feedback_own_pixel(void)
+{
+	const unsigned tag = feedback_begin(64);
+	unsigned k;
+	for (k = 0; k < 3; k++)
+		feedback_sprite(0, 0, 0, 0, 64, 8);
+	feedback_end(tag);
+	s_expect_run[0] = 0x101E1E1Eul;
+}
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -2079,6 +2154,8 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "copy_then_upload", case_copy_then_upload, "1" },
 	{ "readback_t4hh",   case_readback_t4hh, "1" },
 	{ "dest_alpha",      case_dest_alpha,    "1" },
+	{ "feedback_chain",  case_feedback_chain, "1" },
+	{ "feedback_own_pixel", case_feedback_own_pixel, "1" },
 	{ "many_copies",     case_many_copies,   "1" },
 	{ "upload_short",    case_upload_short,  "1" },
 	{ "upload_whole",    case_upload_whole,  "1" },
