@@ -82,7 +82,7 @@ static inline void vram_readback(void *readback_data, const void *host_data, uin
 			case PSMCT24:
 			case PSMZ24:
 			{
-				auto *dst = static_cast<uint8_t *>(readback_data) + output_pixel * 3;
+				uint8_t *dst = static_cast<uint8_t *>(readback_data) + output_pixel * 3;
 				uint32_t word = static_cast<const uint32_t *>(host_data)[addr];
 				dst[0] = uint8_t(word >> 0);
 				dst[1] = uint8_t(word >> 8);
@@ -117,7 +117,7 @@ static inline void vram_readback(void *readback_data, const void *host_data, uin
 					nibble = static_cast<const uint32_t *>(host_data)[addr] >> (PSM == PSMT4HL ? 24 : 28);
 				nibble &= 0xfu;
 
-				auto &out = static_cast<uint8_t *>(readback_data)[output_pixel / 2];
+				uint8_t &out = static_cast<uint8_t *>(readback_data)[output_pixel / 2];
 				if (output_pixel & 1)
 					out = uint8_t(out | (nibble << 4));
 				else
@@ -163,8 +163,8 @@ static inline void vram_upload(void *vram_data, const void *upload_data,
 			case PSMCT24:
 			case PSMZ24:
 			{
-				auto *dst = static_cast<uint8_t *>(vram_data) + addr * 4;
-				auto *src = static_cast<const uint8_t *>(upload_data) + input_pixel * 3;
+				uint8_t *dst = static_cast<uint8_t *>(vram_data) + addr * 4;
+				const uint8_t *src = static_cast<const uint8_t *>(upload_data) + input_pixel * 3;
 				dst[0] = src[0];
 				dst[1] = src[1];
 				dst[2] = src[2];
@@ -188,7 +188,7 @@ static inline void vram_upload(void *vram_data, const void *upload_data,
 
 			case PSMT4:
 			{
-				auto &pix = static_cast<uint8_t *>(vram_data)[addr / 2];
+				uint8_t &pix = static_cast<uint8_t *>(vram_data)[addr / 2];
 
 				uint8_t input_data = static_cast<const uint8_t *>(upload_data)[input_pixel / 2];
 				if (input_pixel & 1)
@@ -206,7 +206,7 @@ static inline void vram_upload(void *vram_data, const void *upload_data,
 			case PSMT4HL:
 			case PSMT4HH:
 			{
-				auto &pix = static_cast<uint32_t *>(vram_data)[addr];
+				uint32_t &pix = static_cast<uint32_t *>(vram_data)[addr];
 				uint32_t input_data = static_cast<const uint8_t *>(upload_data)[input_pixel / 2];
 				if (input_pixel & 1)
 					input_data >>= 4;

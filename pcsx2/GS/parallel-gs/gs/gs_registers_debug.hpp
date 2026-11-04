@@ -291,13 +291,13 @@ static inline Stream &operator<<(Stream &stream, const StateVector &state)
 	                                        ((1u << BLEND_MODE_AFAIL_MODE_BITS) - 1u)];
 
 	stream << "\n       ABE: ";
-	auto A = (state.blend_mode >> BLEND_MODE_A_MODE_OFFSET) &
+	uint32_t A = (state.blend_mode >> BLEND_MODE_A_MODE_OFFSET) &
 			 ((1u << BLEND_MODE_A_MODE_BITS) - 1u);
-	auto B = (state.blend_mode >> BLEND_MODE_B_MODE_OFFSET) &
+	uint32_t B = (state.blend_mode >> BLEND_MODE_B_MODE_OFFSET) &
 			 ((1u << BLEND_MODE_B_MODE_BITS) - 1u);
-	auto C = (state.blend_mode >> BLEND_MODE_C_MODE_OFFSET) &
+	uint32_t C = (state.blend_mode >> BLEND_MODE_C_MODE_OFFSET) &
 			 ((1u << BLEND_MODE_C_MODE_BITS) - 1u);
-	auto D = (state.blend_mode >> BLEND_MODE_D_MODE_OFFSET) &
+	uint32_t D = (state.blend_mode >> BLEND_MODE_D_MODE_OFFSET) &
 			 ((1u << BLEND_MODE_D_MODE_BITS) - 1u);
 
 	static const char *abd_to_str[] = { "Cs", "Cd", "0", "N/A" };
@@ -318,7 +318,7 @@ static inline Stream &operator<<(Stream &stream, const RenderPass &rp)
 {
 	for (uint32_t i = 0; i < rp.num_instances; i++)
 	{
-		auto &inst = rp.instances[i];
+		const RenderPass::Instance &inst = rp.instances[i];
 		stream << "LABEL: " << rp.label_key
 		       << ", instance: " << i
 		       << ", X: " << inst.base_x
@@ -444,7 +444,7 @@ static inline Stream &operator<<(Stream &stream, const Reg64<DummyBits> &)
 template <typename Stream>
 static inline Stream &operator<<(Stream &stream, const GIFTagBits &tag)
 {
-	auto nregs = tag.NREG ? tag.NREG : 16u;
+	uint32_t nregs = tag.NREG ? uint32_t(tag.NREG) : 16u;
 	static const char *flg_to_str[] = { "PACKED", "REGLIST", "IMAGE", "IMAGE" };
 
 	stream << "FLG: " << flg_to_str[tag.FLG]

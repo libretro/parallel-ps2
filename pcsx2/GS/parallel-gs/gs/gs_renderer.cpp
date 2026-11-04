@@ -69,38 +69,51 @@ static void begin_region(Vulkan::CommandBuffer &cmd, const char *fmt, Args... ar
 	cmd.begin_region(label);
 }
 
+/* Ranges pushed in increasing order, merged where one continues the last.
+ * A push that does not continue it hands the merged range back (true) in
+ * out_offset/out_range and starts a new one; flush hands back the last. */
 struct RangeMerger
 {
-	VkDeviceSize merged_offset = 0;
-	VkDeviceSize merged_range = 0;
-
-	template <typename Op>
-	void push(VkDeviceSize new_offset, VkDeviceSize new_range, Op &&op)
-	{
-		if (!merged_range)
-		{
-			merged_offset = new_offset;
-			merged_range = new_range;
-		}
-		else if (merged_offset + merged_range == new_offset)
-		{
-			merged_range += new_range;
-		}
-		else
-		{
-			op(merged_offset, merged_range);
-			merged_offset = new_offset;
-			merged_range = new_range;
-		}
-	}
-
-	template <typename Op>
-	void flush(Op &&op)
-	{
-		if (merged_range)
-			op(merged_offset, merged_range);
-	}
+	VkDeviceSize merged_offset;
+	VkDeviceSize merged_range;
 };
+
+static void range_merger_init(RangeMerger *m)
+{
+	m->merged_offset = 0;
+	m->merged_range = 0;
+}
+
+static bool range_merger_push(RangeMerger *m, VkDeviceSize new_offset, VkDeviceSize new_range,
+                              VkDeviceSize *out_offset, VkDeviceSize *out_range)
+{
+	if (!m->merged_range)
+	{
+		m->merged_offset = new_offset;
+		m->merged_range = new_range;
+		return false;
+	}
+	if (m->merged_offset + m->merged_range == new_offset)
+	{
+		m->merged_range += new_range;
+		return false;
+	}
+	*out_offset = m->merged_offset;
+	*out_range = m->merged_range;
+	m->merged_offset = new_offset;
+	m->merged_range = new_range;
+	return true;
+}
+
+static bool range_merger_flush(RangeMerger *m, VkDeviceSize *out_offset, VkDeviceSize *out_range)
+{
+	if (!m->merged_range)
+		return false;
+	*out_offset = m->merged_offset;
+	*out_range = m->merged_range;
+	m->merged_range = 0;
+	return true;
+}
 
 static constexpr int MaxSamples = 32;
 static constexpr int PhaseLUTGridSize = 64;
@@ -189,7 +202,7 @@ static int compute_phase_lut_samples(
 				int dist_x = (sample_points[i].x + PhaseLUTGridSize * texel_x) - x;
 				int dist_y = (sample_points[i].y + PhaseLUTGridSize * texel_y) - y;
 
-				auto &result = results[num_results++];
+				PhaseLUTResult &result = results[num_results++];
 				result.sample_id = i;
 				result.texel_offset = ivec2{ texel_x, texel_y };
 				result.dist = ivec2{ std::abs(dist_x), std::abs(dist_y) };
@@ -214,7 +227,7 @@ void GSRenderer::init_phase_lut(uint32_t sampling_rate_x_log2, uint32_t sampling
 	uvec2 samples[PhaseLUTGridSize][PhaseLUTGridSize] = {};
 	uvec2 samples_nearest[PhaseLUTGridSize / 2][PhaseLUTGridSize / 2] = {};
 	const Vulkan::ImageInitialData level_data[2] = {{samples}, {samples_nearest}};
-	auto info = Vulkan::ImageCreateInfo::immutable_2d_image(
+	Vulkan::ImageCreateInfo info = Vulkan::ImageCreateInfo::immutable_2d_image(
 		PhaseLUTGridSize, PhaseLUTGridSize, VK_FORMAT_R32G32_UINT);
 	info.levels = 2;
 
@@ -294,7 +307,7 @@ void GSRenderer::init_phase_lut(uint32_t sampling_rate_x_log2, uint32_t sampling
 			for (int i = 0; i < 4; i++)
 			{
 				int sample_id = results[i].sample_id;
-				auto &texel_offset = results[i].texel_offset;
+				ivec2 &texel_offset = results[i].texel_offset;
 				if (wide_ids)
 				{
 					samples[y][x].x |= sample_id << (5 * i);
@@ -319,7 +332,7 @@ void GSRenderer::init_phase_lut(uint32_t sampling_rate_x_log2, uint32_t sampling
 			// Safe-guard against a case where all samples end up at the falloff outer edge.
 			if (weight_sum < 0.001f)
 			{
-				for (auto &w : weights)
+				for (float &w : weights)
 					w = 1.0f;
 				weight_sum = 4.0f;
 			}
@@ -373,15 +386,15 @@ void GSRenderer::invalidate_super_sampling_state(
 	// A grid with more samples than the buffer holds copies for: replace
 	// the buffer with one that does, carrying the live VRAM across. The
 	// sample copies and the shadow are cleared below either way.
-	auto needed = SuperSampling(1u << (sampling_rate_x_log2 + sampling_rate_y_log2));
+	SuperSampling needed = SuperSampling(1u << (sampling_rate_x_log2 + sampling_rate_y_log2));
 	if (vram_buffer_size(vram_size, needed) > buffers.gpu->get_create_info().size)
 	{
 		flush_submit(0);
 		device->wait_idle();
 
 		bool host_visible = false;
-		auto grown = create_vram_buffer(vram_buffer_size(vram_size, needed), host_visible);
-		auto cmd = device->request_command_buffer();
+		Vulkan::BufferHandle grown = create_vram_buffer(vram_buffer_size(vram_size, needed), host_visible);
+		Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
 		cmd->copy_buffer(*grown, 0, *buffers.gpu, 0, vram_size);
 		cmd->barrier(VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
 		             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
@@ -400,7 +413,7 @@ void GSRenderer::invalidate_super_sampling_state(
 	flush_submit(0);
 
 	// Clear reference values and all super sample memory to 0.
-	auto cmd = device->request_command_buffer();
+	Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
 	cmd->begin_region("invalidate-super-sampling");
 	cmd->barrier(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_WRITE_BIT,
 	             VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
@@ -443,7 +456,7 @@ Vulkan::BufferHandle GSRenderer::create_vram_buffer(VkDeviceSize size, bool &hos
 	// On iGPU there should be no need to copy memory around.
 	info.domain = Vulkan::BufferDomain::UMACachedCoherentPreferDevice;
 	info.misc = Vulkan::BUFFER_MISC_ZERO_INITIALIZE_BIT;
-	auto buffer = device->create_buffer(info);
+	Vulkan::BufferHandle buffer = device->create_buffer(info);
 	device->set_name(*buffer, "vram-gpu");
 	host_visible = device->map_host_buffer(*buffer, 0) != nullptr;
 	return buffer;
@@ -520,7 +533,7 @@ void GSRenderer::init_vram(const GSOptions &options)
 void GSRenderer::drain_compilation_tasks()
 {
 	compilation_tasks_active = false;
-	for (auto &task : compilation_tasks)
+	for (std::unique_ptr<CompilationTask> &task : compilation_tasks)
 		task->thread.join();
 	compilation_tasks.clear();
 	/* What they built and nothing took is the programs' to destroy. */
@@ -543,7 +556,7 @@ static int compare_hash(const void *a, const void *b)
 
 void GSRenderer::drain_compilation_tasks_nonblock()
 {
-	auto itr = std::remove_if(compilation_tasks.begin(), compilation_tasks.end(),
+	std::vector<std::unique_ptr<CompilationTask>>::iterator itr = std::remove_if(compilation_tasks.begin(), compilation_tasks.end(),
 	                          [](std::unique_ptr<CompilationTask> &task) {
 		/* The worker publishes done last, so acquiring it means its
 		 * writes are visible and the join below cannot block. */
@@ -585,7 +598,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 	compilation_tasks_active = true;
 
 	{
-		auto cmd = device->request_command_buffer();
+		Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
 		cmd->set_program(shaders.ubershader[0][0]);
 		Vulkan::DeferredPipelineCompile deferred = {};
 
@@ -611,7 +624,8 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 		};
 
 		// Prime all common combinations.
-		static const struct { uint32_t color_psm, depth_psm; } formats[] = {
+		struct PrimeFormat { uint32_t color_psm, depth_psm; };
+		static const PrimeFormat formats[] = {
 			{ PSMCT24, PSMZ24 },
 			{ PSMCT32, PSMZ24 },
 			{ PSMCT16S, PSMZ24 },
@@ -627,7 +641,8 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 			{ PSMZ16, UINT32_MAX },
 		};
 
-		static const struct { uint32_t feedback_psm, feedback_cpsm; } feedbacks[] = {
+		struct PrimeFeedback { uint32_t feedback_psm, feedback_cpsm; };
+		static const PrimeFeedback feedbacks[] = {
 			{ PSMCT32, 0 },
 			{ PSMCT24, 0 },
 			{ PSMCT16S, 0 },
@@ -654,11 +669,11 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 			else
 				continue;
 
-			for (auto &format : formats)
+			for (const PrimeFormat &format : formats)
 			{
-				for (auto &flags : variant_flags)
+				for (const uint32_t &flags : variant_flags)
 				{
-					for (auto &feedback : feedbacks)
+					for (const PrimeFeedback &feedback : feedbacks)
 					{
 						if ((flags & VARIANT_FLAG_FEEDBACK_BIT) != 0)
 						{
@@ -707,10 +722,11 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 
 	{
 		Vulkan::DeferredPipelineCompile deferred = {};
-		auto cmd = device->request_command_buffer();
+		Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
 		cmd->set_program(shaders.vram_copy);
 
-		static const struct { uint32_t wg_size, psm; } formats[] = {
+		struct CopyFormat { uint32_t wg_size, psm; };
+		static const CopyFormat formats[] = {
 			{ 64, PSMCT32 },
 			{ 64, PSMCT24 },
 			{ 64, PSMCT16 },
@@ -732,7 +748,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 		cmd->set_specialization_constant(4, HOST_TO_LOCAL);
 		cmd->set_specialization_constant(5, uint32_t(can_potentially_super_sample()));
 
-		for (auto &format : formats)
+		for (const CopyFormat &format : formats)
 		{
 			cmd->set_specialization_constant(0, format.wg_size);
 			cmd->set_specialization_constant(1, format.psm);
@@ -751,10 +767,11 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 
 	{
 		Vulkan::DeferredPipelineCompile deferred = {};
-		auto cmd = device->request_command_buffer();
+		Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
 		cmd->set_specialization_constant_mask(0x7);
 
-		static const struct { uint32_t psm; uint32_t cpsm; } formats[] = {
+		struct UploadFormat { uint32_t psm; uint32_t cpsm; };
+		static const UploadFormat formats[] = {
 			{ PSMCT32, 0 },
 			{ PSMCT24, 0 },
 			{ PSMCT16, 0 },
@@ -775,15 +792,15 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 
 		const uint32_t vram_masks[] = { PageSize - 1, vram_size - 1 };
 
-		for (auto &format : formats)
+		for (const UploadFormat &format : formats)
 		{
 			cmd->set_specialization_constant(0, format.psm);
 			cmd->set_specialization_constant(2, format.cpsm);
 
-			for (auto mask : vram_masks)
+			for (uint32_t mask : vram_masks)
 			{
 				cmd->set_specialization_constant(1, mask);
-				for (auto *prog : shaders.upload)
+				for (Vulkan::Program *prog : shaders.upload)
 				{
 					cmd->set_program(prog);
 					cmd->extract_pipeline_state(deferred);
@@ -797,7 +814,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 
 	{
 		Vulkan::DeferredPipelineCompile deferred = {};
-		auto cmd = device->request_command_buffer();
+		Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
 		cmd->set_program(shaders.binning);
 		cmd->set_specialization_constant_mask(0x1f);
 		cmd->enable_subgroup_size_control(true);
@@ -884,7 +901,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 			static const uint32_t super_samples[] = { 1, 4, 8, 16, 32 };
 			const uint32_t max_super_samples = can_potentially_super_sample()
 				? uint32_t(get_max_supported_super_sampling()) : 1u;
-			auto cmd = device->request_command_buffer();
+			Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
 			Vulkan::DeferredPipelineCompile deferred = {};
 			unsigned promoted, s, f;
 
@@ -968,8 +985,8 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 		for (t = thread_index; t < num_tasks; t += target_threads)
 			deferred.push_back(tasks[t]);
 
-		auto async_task = std::unique_ptr<CompilationTask>(new CompilationTask);
-		auto *task_state = async_task.get();
+		std::unique_ptr<CompilationTask> async_task = std::unique_ptr<CompilationTask>(new CompilationTask);
+		CompilationTask *task_state = async_task.get();
 		task_state->done.store(false, PGS::memory_order_relaxed);
 
 		const unsigned builder = unsigned(thread_index);
@@ -979,7 +996,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 			// so it can share index 0 rather than take a pool of its own.
 			Util::register_thread_index(0);
 			Util::set_current_thread_name("PGS-Compile");
-			for (auto &task: moved_tasks)
+			for (const Vulkan::DeferredPipelineCompile &task: moved_tasks)
 			{
 				// If we destroy the device before threads are done spinning.
 				if (!compilation_tasks_active)
@@ -1060,7 +1077,7 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 			VK_SUBGROUP_FEATURE_BALLOT_BIT |
 			VK_SUBGROUP_FEATURE_BASIC_BIT;
 
-	const auto &ext = device_->get_device_features();
+	const Vulkan::DeviceFeatures &ext = device_->get_device_features();
 	if (!ext.vk12_features.descriptorIndexing ||
 	    !ext.vk12_features.timelineSemaphore ||
 	    !ext.vk12_features.bufferDeviceAddress ||
@@ -1191,7 +1208,7 @@ void GSRenderer::flush_attribute_scratch(AttributeScratch &scratch)
 
 void GSRenderer::reserve_attribute_scratch(VkDeviceSize size, AttributeScratch &scratch)
 {
-	auto align = buffers.ssbo_alignment;
+	VkDeviceSize align = buffers.ssbo_alignment;
 	scratch.offset = align_offset(scratch.offset, align);
 
 	if (!scratch.buffer || scratch.offset + size > scratch.size)
@@ -1233,7 +1250,7 @@ VkDeviceSize GSRenderer::allocate_device_scratch(VkDeviceSize size, Scratch &scr
 	// Trivial linear allocator. Reduces pressure on Granite allocator.
 	// It's important that we don't allocate too huge buffers here, then we don't get suballocation in Granite
 	// (which would be quite bad).
-	auto align = buffers.ssbo_alignment;
+	VkDeviceSize align = buffers.ssbo_alignment;
 	stats.allocated_scratch_memory += size;
 
 	scratch.offset = align_offset(scratch.offset, align);
@@ -1252,11 +1269,11 @@ VkDeviceSize GSRenderer::allocate_device_scratch(VkDeviceSize size, Scratch &scr
 		scratch.size = info.size;
 	}
 
-	auto offset = scratch.offset;
+	VkDeviceSize offset = scratch.offset;
 
 	if (data)
 	{
-		auto *mapped = static_cast<uint8_t *>(device->map_host_buffer(*scratch.buffer, Vulkan::MEMORY_ACCESS_WRITE_BIT));
+		uint8_t *mapped = static_cast<uint8_t *>(device->map_host_buffer(*scratch.buffer, Vulkan::MEMORY_ACCESS_WRITE_BIT));
 
 		if (mapped)
 		{
@@ -1336,7 +1353,7 @@ void GSRenderer::flush_qword_clears()
 	ensure_clear_cmd();
 
 	uint32_t count = qword_clears.size();
-	auto offset = allocate_device_scratch(count * sizeof(qword_clears.front()), buffers.rebar_scratch, qword_clears.data());
+	VkDeviceSize offset = allocate_device_scratch(count * sizeof(qword_clears.front()), buffers.rebar_scratch, qword_clears.data());
 	clear_cmd->set_program(shaders.qword_clear);
 	clear_cmd->set_storage_buffer(0, 0, *buffers.rebar_scratch.buffer, offset, count * sizeof(qword_clears.front()));
 	clear_cmd->push_constants(&count, 0, sizeof(count));
@@ -1437,7 +1454,7 @@ void GSRenderer::flush_submit(uint64_t value)
 
 	if (value)
 	{
-		auto binary = device->request_timeline_semaphore_as_binary(*timeline, value);
+		Vulkan::Semaphore binary = device->request_timeline_semaphore_as_binary(*timeline, value);
 		device->submit_empty(Vulkan::CommandBuffer::Type::Generic, nullptr, binary.get());
 		last_submitted_timeline.store(value, PGS::memory_order_release);
 		retro_eventcount_notify(&submitted_event);
@@ -1478,7 +1495,7 @@ void GSRenderer::check_bug_feedback()
 
 void GSRenderer::log_timestamps()
 {
-	auto itr = timestamps.begin();
+	std::vector<Timestamp>::iterator itr = timestamps.begin();
 	for (; itr != timestamps.end() && itr->ts_start->is_signalled() && itr->ts_end->is_signalled(); ++itr)
 	{
 		double t = device->convert_device_timestamp_delta(
@@ -1518,13 +1535,13 @@ TexRect GSRenderer::compute_effective_texture_rect(const TextureDescriptor &desc
 
 	TexRect rect = { 0, 0, width, height, levels };
 
-	auto effective_u = compute_effective_texture_extent(
+	Extent1D effective_u = compute_effective_texture_extent(
 			width,
 			uint32_t(desc.clamp.desc.WMS),
 			uint32_t(desc.clamp.desc.MINU),
 			uint32_t(desc.clamp.desc.MAXU), levels);
 
-	auto effective_v = compute_effective_texture_extent(
+	Extent1D effective_v = compute_effective_texture_extent(
 			height,
 			uint32_t(desc.clamp.desc.WMT),
 			uint32_t(desc.clamp.desc.MINV),
@@ -1552,16 +1569,16 @@ void GSRenderer::recycle_image_handle(Vulkan::ImageHandle image)
 Vulkan::ImageHandle GSRenderer::copy_cached_texture(const Vulkan::Image &img, const VkRect2D &rect)
 {
 	ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);
-	auto &cmd = *direct_cmd;
+	Vulkan::CommandBuffer &cmd = *direct_cmd;
 
-	auto info = img.get_create_info();
+	Vulkan::ImageCreateInfo info = img.get_create_info();
 	info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 	info.width = rect.extent.width;
 	info.height = rect.extent.height;
 	info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 	info.misc |= Vulkan::IMAGE_MISC_FORCE_ARRAY_BIT;
 
-	auto copy_img = device->create_image(info);
+	Vulkan::ImageHandle copy_img = device->create_image(info);
 	device->set_name(*copy_img, "Sharp Backbuffer");
 
 	cmd.begin_region("Sharp Backbuffer Copy");
@@ -1714,10 +1731,10 @@ void GSRenderer::promote_cached_texture_upload_cpu(const PageRect &rect)
 {
 	// Assert that there were no stray flushed between create_cached_texture() and commit_cached_texture().
 	assert(!texture_uploads.empty());
-	auto &upload = texture_uploads.back();
+	TextureUpload &upload = texture_uploads.back();
 
 	assert(rect.page_width == 1 && rect.page_height == 1);
-	auto *vram = static_cast<const uint8_t *>(begin_host_vram_access());
+	const uint8_t *vram = static_cast<const uint8_t *>(begin_host_vram_access());
 	vram += (rect.base_page * PageSize) & (vram_size - 1);
 
 	// Only copy what we need.
@@ -1754,20 +1771,24 @@ void GSRenderer::copy_blocks(Vulkan::CommandBuffer &cmd, const Vulkan::Buffer &d
                              uint32_t block_size)
 {
 	RangeMerger merger;
+	VkDeviceSize offset, range;
+	uint32_t i;
+	bool more;
 
 	// page_indices is implicitly sorted, so a trivial linear merger is fine and works well.
-
-	const auto flush_cb = [&](VkDeviceSize offset, VkDeviceSize range)
+	range_merger_init(&merger);
+	for (i = 0; i <= num_indices; i++)
 	{
+		more = (i < num_indices) ?
+		       range_merger_push(&merger, VkDeviceSize(page_indices[i]) * block_size, block_size, &offset, &range) :
+		       range_merger_flush(&merger, &offset, &range);
+		if (!more)
+			continue;
 		cmd.copy_buffer(dst, offset, src, offset, range);
 		// Invalidate all super-sampling state for pixels which CPU clobber.
 		if (invalidate_super_sampling)
 			cmd.fill_buffer(dst, 0, offset + vram_size, range);
-	};
-
-	for (uint32_t i = 0; i < num_indices; i++)
-		merger.push(page_indices[i] * block_size, block_size, flush_cb);
-	merger.flush(flush_cb);
+	}
 }
 
 void GSRenderer::flush_host_vram_copy(const uint32_t *block_indices, uint32_t num_indices)
@@ -1777,7 +1798,7 @@ void GSRenderer::flush_host_vram_copy(const uint32_t *block_indices, uint32_t nu
 
 	bool first_command = !async_transfer_cmd;
 	ensure_command_buffer(async_transfer_cmd, Vulkan::CommandBuffer::Type::AsyncTransfer);
-	auto &cmd = *async_transfer_cmd;
+	Vulkan::CommandBuffer &cmd = *async_transfer_cmd;
 
 	if (first_command)
 		cmd.begin_region("AsyncTransfer");
@@ -1818,7 +1839,7 @@ void GSRenderer::flush_readback(const uint32_t *page_indices, uint32_t num_indic
 		return;
 
 	ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);
-	auto &cmd = *direct_cmd;
+	Vulkan::CommandBuffer &cmd = *direct_cmd;
 
 	cmd.begin_region("flush-readback");
 
@@ -1854,7 +1875,7 @@ Vulkan::BindlessDescriptorPoolHandle GSRenderer::get_bindless_pool()
 
 	if (!exhausted_descriptor_pools.empty() && progress >= exhausted_descriptor_pools.front().timeline)
 	{
-		auto ret = std::move(exhausted_descriptor_pools.front().exhausted_pool);
+		Vulkan::BindlessDescriptorPoolHandle ret = std::move(exhausted_descriptor_pools.front().exhausted_pool);
 		exhausted_descriptor_pools.pop();
 		ret->reset();
 		return ret;
@@ -1868,7 +1889,7 @@ Vulkan::BindlessDescriptorPoolHandle GSRenderer::get_bindless_pool()
 void GSRenderer::bind_textures(Vulkan::CommandBuffer &cmd, const RenderPass &rp)
 {
 	VK_ASSERT(rp.num_textures <= MaxTextures);
-	auto *tex_infos = cmd.allocate_typed_constant_data<TexInfo>(
+	TexInfo *tex_infos = cmd.allocate_typed_constant_data<TexInfo>(
 			0, BINDING_TEXTURE_INFO, std::max<uint32_t>(1, rp.num_textures));
 
 	bound_texture_has_array = false;
@@ -1915,7 +1936,7 @@ void GSRenderer::bind_textures(Vulkan::CommandBuffer &cmd, const RenderPass &rp)
 
 void GSRenderer::bind_frame_resources(const RenderPass &rp)
 {
-	auto &cmd = *direct_cmd;
+	Vulkan::CommandBuffer &cmd = *direct_cmd;
 
 	memcpy(cmd.allocate_typed_constant_data<StateVector>(
 		       0, BINDING_STATE_VECTORS, std::max<uint32_t>(1, rp.num_states)),
@@ -1971,11 +1992,11 @@ static uint32_t align_coarse_tiles(uint32_t num_tiles, uint32_t hier_binning)
 
 void GSRenderer::bind_frame_resources_instanced(const RenderPass &rp, uint32_t instance, uint32_t num_primitives)
 {
-	auto &cmd = *direct_cmd;
+	Vulkan::CommandBuffer &cmd = *direct_cmd;
 
 	GlobalConstants constants = {};
 
-	auto &inst = rp.instances[instance];
+	const RenderPass::Instance &inst = rp.instances[instance];
 
 	uint32_t hier_binning = get_target_hierarchical_binning(
 			num_primitives, inst.coarse_tiles_width, inst.coarse_tiles_height);
@@ -1998,7 +2019,7 @@ void GSRenderer::allocate_scratch_buffers(Vulkan::CommandBuffer &cmd, const Rend
 	VkDeviceSize primitive_setup_size = sizeof(PrimitiveSetup) * rp.num_primitives;
 	VkDeviceSize transformed_attributes_size = sizeof(TransformedAttributes) * rp.num_primitives;
 
-	auto primitive_setup_offset = allocate_device_scratch(primitive_setup_size, buffers.device_scratch, nullptr);
+	VkDeviceSize primitive_setup_offset = allocate_device_scratch(primitive_setup_size, buffers.device_scratch, nullptr);
 	cmd.set_storage_buffer(0, BINDING_PRIMITIVE_SETUP,
 	                       *buffers.device_scratch.buffer, primitive_setup_offset, primitive_setup_size);
 	triangle_setup_cmd->set_storage_buffer(0, BINDING_PRIMITIVE_SETUP,
@@ -2006,7 +2027,7 @@ void GSRenderer::allocate_scratch_buffers(Vulkan::CommandBuffer &cmd, const Rend
 	binning_cmd->set_storage_buffer(0, BINDING_PRIMITIVE_SETUP,
 	                                *buffers.device_scratch.buffer, primitive_setup_offset, primitive_setup_size);
 
-	auto transformed_attributes_offset = allocate_device_scratch(transformed_attributes_size, buffers.device_scratch, nullptr);
+	VkDeviceSize transformed_attributes_offset = allocate_device_scratch(transformed_attributes_size, buffers.device_scratch, nullptr);
 	cmd.set_storage_buffer(0, BINDING_TRANSFORMED_ATTRIBUTES,
 	                       *buffers.device_scratch.buffer, transformed_attributes_offset, transformed_attributes_size);
 	triangle_setup_cmd->set_storage_buffer(0, BINDING_TRANSFORMED_ATTRIBUTES,
@@ -2014,7 +2035,7 @@ void GSRenderer::allocate_scratch_buffers(Vulkan::CommandBuffer &cmd, const Rend
 	binning_cmd->set_storage_buffer(0, BINDING_TRANSFORMED_ATTRIBUTES,
 	                                *buffers.device_scratch.buffer, transformed_attributes_offset, transformed_attributes_size);
 
-	auto single_sampled_heuristic_offset =
+	VkDeviceSize single_sampled_heuristic_offset =
 			allocate_device_scratch(sizeof(SingleSampleHeuristic), buffers.device_scratch, nullptr);
 	triangle_setup_cmd->set_storage_buffer(0, BINDING_SINGLE_SAMPLE_HEURISTIC,
 	                                       *buffers.device_scratch.buffer,
@@ -2074,7 +2095,7 @@ uint32_t GSRenderer::get_target_hierarchical_binning(
 void GSRenderer::allocate_scratch_buffers_instanced(Vulkan::CommandBuffer &cmd, const RenderPass &rp,
                                                     uint32_t instance, uint32_t num_primitives)
 {
-	auto &inst = rp.instances[instance];
+	const RenderPass::Instance &inst = rp.instances[instance];
 
 	uint32_t hier_binning = get_target_hierarchical_binning(
 			num_primitives, inst.coarse_tiles_width, inst.coarse_tiles_height);
@@ -2085,13 +2106,13 @@ void GSRenderer::allocate_scratch_buffers_instanced(Vulkan::CommandBuffer &cmd, 
 	VkDeviceSize primitive_count_size = num_coarse_tiles * sizeof(uint32_t);
 	VkDeviceSize primitive_list_size = num_coarse_tiles * num_primitives * sizeof(uint16_t);
 
-	auto primitive_count_offset = allocate_device_scratch(primitive_count_size, buffers.device_scratch, nullptr);
+	VkDeviceSize primitive_count_offset = allocate_device_scratch(primitive_count_size, buffers.device_scratch, nullptr);
 	cmd.set_storage_buffer(0, BINDING_COARSE_PRIMITIVE_COUNT, *buffers.device_scratch.buffer,
 	                       primitive_count_offset, primitive_count_size);
 	binning_cmd->set_storage_buffer(0, BINDING_COARSE_PRIMITIVE_COUNT, *buffers.device_scratch.buffer,
 	                                primitive_count_offset, primitive_count_size);
 
-	auto primitive_list_offset = allocate_device_scratch(primitive_list_size, buffers.device_scratch, nullptr);
+	VkDeviceSize primitive_list_offset = allocate_device_scratch(primitive_list_size, buffers.device_scratch, nullptr);
 	cmd.set_storage_buffer(0, BINDING_COARSE_TILE_LIST, *buffers.device_scratch.buffer,
 	                       primitive_list_offset, primitive_list_size);
 	binning_cmd->set_storage_buffer(0, BINDING_COARSE_TILE_LIST, *buffers.device_scratch.buffer,
@@ -2099,7 +2120,7 @@ void GSRenderer::allocate_scratch_buffers_instanced(Vulkan::CommandBuffer &cmd, 
 
 	VkDeviceSize work_list_size = 256 + aligned_width * aligned_height * sizeof(uvec2);
 
-	auto work_list_scratch = allocate_device_scratch(work_list_size, buffers.device_scratch, nullptr);
+	VkDeviceSize work_list_scratch = allocate_device_scratch(work_list_size, buffers.device_scratch, nullptr);
 	qword_clears.push_back(buffers.device_scratch.buffer->get_device_address() + work_list_scratch);
 
 	binning_cmd->set_storage_buffer(1, 0, *buffers.device_scratch.buffer, work_list_scratch, work_list_size);
@@ -2165,7 +2186,7 @@ static bool render_pass_instance_might_field_render(const RenderPass &rp, uint32
 	// Some "field" rendered games actually render the frame in full res first, then downsample.
 	// In this case, we can deduce we should use normal snapping rules.
 	// Very shaky heuristic since it obviously cannot catch every case.
-	auto &inst = rp.instances[instance];
+	const RenderPass::Instance &inst = rp.instances[instance];
 	bool is_tall_render_pass = (inst.base_y + (inst.coarse_tiles_height << rp.coarse_tile_size_log2)) > 256;
 	return !is_tall_render_pass;
 }
@@ -2184,11 +2205,11 @@ void GSRenderer::dispatch_triangle_setup(Vulkan::CommandBuffer &cmd, const Rende
 	uint32_t sampling_rate_y_log2 = 0;
 	bool allow_field_render = false;
 
-	auto *opaque_fbmasks = cmd.allocate_typed_constant_data<uint32_t>(0, BINDING_OPAQUE_FBMASKS, MaxRenderPassInstances);
+	unsigned int *opaque_fbmasks = cmd.allocate_typed_constant_data<uint32_t>(0, BINDING_OPAQUE_FBMASKS, MaxRenderPassInstances);
 
 	for (uint32_t i = 0; i < rp.num_instances; i++)
 	{
-		auto &inst = rp.instances[i];
+		const RenderPass::Instance &inst = rp.instances[i];
 
 		opaque_fbmasks[i] = inst.opaque_fbmask;
 
@@ -2273,7 +2294,7 @@ void GSRenderer::dispatch_single_sample_heuristic(Vulkan::CommandBuffer &cmd, co
 
 	for (uint32_t i = 0; i < rp.num_instances; i++)
 	{
-		auto &inst = rp.instances[i];
+		const RenderPass::Instance &inst = rp.instances[i];
 		push.instance = i;
 
 		if (inst.sampling_rate_y_log2 == 0)
@@ -2344,7 +2365,7 @@ void GSRenderer::set_hierarchical_binning_subgroup_config(Vulkan::CommandBuffer 
 void GSRenderer::dispatch_binning(Vulkan::CommandBuffer &cmd, const RenderPass &rp,
                                   uint32_t instance, uint32_t base_primitive, uint32_t num_primitives)
 {
-	auto &inst = rp.instances[instance];
+	const RenderPass::Instance &inst = rp.instances[instance];
 
 	uint32_t hier_binning = get_target_hierarchical_binning(
 			num_primitives, inst.coarse_tiles_width, inst.coarse_tiles_height);
@@ -2460,8 +2481,8 @@ static uint32_t deduce_effectice_z_psm(uint32_t color_psm, uint32_t depth_psm)
 void GSRenderer::dispatch_cache_read_only_depth(Vulkan::CommandBuffer &cmd, const RenderPass &rp,
                                                 uint32_t depth_psm, uint32_t instance)
 {
-	auto &inst = rp.instances[instance];
-	auto z_rect = compute_page_rect(inst.fb.z.desc.ZBP * PGS_BLOCKS_PER_PAGE,
+	const RenderPass::Instance &inst = rp.instances[instance];
+	PageRect z_rect = compute_page_rect(inst.fb.z.desc.ZBP * PGS_BLOCKS_PER_PAGE,
 	                                inst.base_x, inst.base_y, inst.coarse_tiles_width << rp.coarse_tile_size_log2,
 	                                inst.coarse_tiles_height << rp.coarse_tile_size_log2, inst.fb.frame.desc.FBW,
 	                                depth_psm);
@@ -2479,58 +2500,67 @@ void GSRenderer::dispatch_cache_read_only_depth(Vulkan::CommandBuffer &cmd, cons
 				VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_TRANSFER_READ_BIT);
 	{
 		RangeMerger merger;
-		const auto flush_range = [&](VkDeviceSize offset, VkDeviceSize range) {
-			for (uint32_t slice = 0; slice < num_vram_slices; slice++)
+		VkDeviceSize offset, range;
+		uint32_t x, y, slice, page_index, page_offset;
+		const uint32_t pages = z_rect.page_width * z_rect.page_height;
+		uint32_t p;
+		bool more;
+
+		range_merger_init(&merger);
+		for (p = 0; p <= pages; p++)
+		{
+			if (p < pages)
+			{
+				y = p / z_rect.page_width;
+				x = p % z_rect.page_width;
+				page_index = z_rect.base_page + y * z_rect.page_stride + x;
+				page_offset = (page_index * PGS_PAGE_ALIGNMENT_BYTES) & (vram_size - 1);
+				more = range_merger_push(&merger, page_offset, PGS_PAGE_ALIGNMENT_BYTES, &offset, &range);
+			}
+			else
+				more = range_merger_flush(&merger, &offset, &range);
+			if (!more)
+				continue;
+			for (slice = 0; slice < num_vram_slices; slice++)
 			{
 				cmd.copy_buffer(*buffers.gpu, vram_size * slice + offset + read_only_offset,
 				                *buffers.gpu, vram_size * slice + offset,
 				                range);
 			}
-		};
-
-		for (uint32_t y = 0; y < z_rect.page_height; y++)
-		{
-			for (uint32_t x = 0; x < z_rect.page_width; x++)
-			{
-				uint32_t page_index = z_rect.base_page + y * z_rect.page_stride + x;
-				uint32_t page_offset = (page_index * PGS_PAGE_ALIGNMENT_BYTES) & (vram_size - 1);
-				merger.push(page_offset, PGS_PAGE_ALIGNMENT_BYTES, flush_range);
-			}
 		}
-
-		merger.flush(flush_range);
 	}
 	cmd.barrier(VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
 	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
 	cmd.end_region();
 }
 
+static bool image_info_need_recreate(const Vulkan::ImageCreateInfo &info, const Vulkan::ImageHandle &handle)
+{
+	return !handle ||
+	       handle->get_width() < info.width ||
+	       handle->get_height() < info.height ||
+	       handle->get_format() != info.format ||
+	       handle->get_create_info().layers != info.layers;
+}
+
+static void clear_image(Vulkan::CommandBuffer &cmd, const Vulkan::Image &img)
+{
+	cmd.image_barrier(img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+	                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+	                  VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+	cmd.clear_image(img, {}, VK_IMAGE_ASPECT_COLOR_BIT);
+	cmd.image_barrier(img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+	                  VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+	                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+}
+
 void GSRenderer::bind_debug_resources(Vulkan::CommandBuffer &cmd,
                                       const RenderPass &rp,
                                       const RenderPass::Instance &inst)
 {
-	const auto image_info_need_recreate = [](const Vulkan::ImageCreateInfo &info,
-	                                         const Vulkan::ImageHandle &handle) {
-		return !handle ||
-		       handle->get_width() < info.width ||
-		       handle->get_height() < info.height ||
-		       handle->get_format() != info.format ||
-		       handle->get_create_info().layers != info.layers;
-	};
-
-	const auto clear_image = [&](const Vulkan::Image &img) {
-		cmd.image_barrier(img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-		                  VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-		cmd.clear_image(img, {}, VK_IMAGE_ASPECT_COLOR_BIT);
-		cmd.image_barrier(img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
-		                  VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-		                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
-	};
-
 	if (rp.feedback_color)
 	{
-		auto info = Vulkan::ImageCreateInfo::immutable_2d_image(
+		Vulkan::ImageCreateInfo info = Vulkan::ImageCreateInfo::immutable_2d_image(
 				inst.coarse_tiles_width << rp.coarse_tile_size_log2,
 				inst.coarse_tiles_height << rp.coarse_tile_size_log2,
 				VK_FORMAT_R8G8B8A8_UNORM);
@@ -2563,9 +2593,9 @@ void GSRenderer::bind_debug_resources(Vulkan::CommandBuffer &cmd,
 		device->set_name(*feedback_prim, "DebugStat - [ShadeCount, LastShadePrim, CoverageCount, TexMask]");
 		device->set_name(*feedback_vary, "DebugVary - [UV, Q, LOD] [RGBA] [Z, IJ]");
 
-		clear_image(*feedback_color);
-		clear_image(*feedback_prim);
-		clear_image(*feedback_vary);
+		clear_image(cmd, *feedback_color);
+		clear_image(cmd, *feedback_prim);
+		clear_image(cmd, *feedback_vary);
 
 		cmd.set_storage_texture(0, BINDING_FEEDBACK_COLOR, feedback_color->get_view());
 		cmd.set_storage_texture(0, BINDING_FEEDBACK_PRIM, feedback_prim->get_view());
@@ -2574,7 +2604,7 @@ void GSRenderer::bind_debug_resources(Vulkan::CommandBuffer &cmd,
 
 	if (rp.feedback_depth)
 	{
-		auto info = Vulkan::ImageCreateInfo::immutable_2d_image(
+		Vulkan::ImageCreateInfo info = Vulkan::ImageCreateInfo::immutable_2d_image(
 				inst.coarse_tiles_width << rp.coarse_tile_size_log2,
 				inst.coarse_tiles_height << rp.coarse_tile_size_log2,
 				VK_FORMAT_R32_UINT);
@@ -2589,7 +2619,7 @@ void GSRenderer::bind_debug_resources(Vulkan::CommandBuffer &cmd,
 		if (image_info_need_recreate(info, feedback_depth))
 			feedback_depth = device->create_image(info);
 
-		clear_image(*feedback_depth);
+		clear_image(cmd, *feedback_depth);
 		cmd.set_storage_texture(0, BINDING_FEEDBACK_DEPTH, feedback_depth->get_view());
 		device->set_name(*feedback_depth, "DebugDepth - layer 0 = after - layer 1 = before");
 	}
@@ -2599,7 +2629,7 @@ void GSRenderer::dispatch_shading_commands(
 		Vulkan::CommandBuffer &cmd, const RenderPass &rp, uint32_t instance,
 		bool post_barrier, uint32_t base_primitive, uint32_t num_primitives)
 {
-	auto &inst = rp.instances[instance];
+	const RenderPass::Instance &inst = rp.instances[instance];
 
 	uint32_t stride = rp.debug_capture_stride ? rp.debug_capture_stride : num_primitives;
 	uint32_t lo_primitive_index = 0;
@@ -2621,7 +2651,7 @@ void GSRenderer::dispatch_shading_commands(
 			begin_region(cmd, "Prim [%u, %u]", lo_primitive_index, hi_primitive_index);
 			for (uint32_t j = lo_primitive_index; j <= hi_primitive_index; j++)
 			{
-				auto s = buffers.prim[j].state;
+				uint32_t s = buffers.prim[j].state;
 
 				uint32_t prim_instance = (s >> STATE_VERTEX_RENDER_PASS_INSTANCE_OFFSET) &
 				                         ((1 << STATE_VERTEX_RENDER_PASS_INSTANCE_COUNT) - 1);
@@ -2644,12 +2674,12 @@ void GSRenderer::dispatch_shading_commands(
 				             (s >> STATE_BIT_LINE) & 1,
 				             buffers.prim[j].fbmsk);
 
-				auto alpha = buffers.prim[j].alpha;
+				uint32_t alpha = buffers.prim[j].alpha;
 				insert_label(cmd, "  AFIX: %u, AREF: %u",
 				             (alpha >> ALPHA_AFIX_OFFSET) & ((1u << ALPHA_AFIX_BITS) - 1u),
 				             (alpha >> ALPHA_AREF_OFFSET) & ((1u << ALPHA_AREF_BITS) - 1u));
 
-				auto tex = buffers.prim[j].tex;
+				uint32_t tex = buffers.prim[j].tex;
 				insert_label(cmd, "  TEX: %u, MXL: %u, CLAMPS: %u, CLAMPT: %u, MAG: %u, MIN: %u, MIP: %u",
 				             (tex >> TEX_TEXTURE_INDEX_OFFSET) & ((1u << TEX_TEXTURE_INDEX_BITS) - 1u),
 				             (tex >> TEX_MAX_MIP_LEVEL_OFFSET) & ((1u << TEX_MAX_MIP_LEVEL_BITS) - 1u),
@@ -2697,7 +2727,7 @@ void GSRenderer::dispatch_read_aliased_depth_passes(Vulkan::CommandBuffer &cmd, 
                                                     uint32_t base_primitive,
                                                     uint32_t next_lo_index, uint32_t num_primitives)
 {
-	auto bb = ivec4{ INT_MAX, INT_MAX, INT_MIN, INT_MIN };
+	ivec4 bb = ivec4{ INT_MAX, INT_MAX, INT_MIN, INT_MIN };
 
 	uint32_t half_gpu_size = buffers.gpu->get_create_info().size / 2;
 	if (get_bits_per_pixel(depth_psm) == 16)
@@ -2707,7 +2737,7 @@ void GSRenderer::dispatch_read_aliased_depth_passes(Vulkan::CommandBuffer &cmd, 
 
 	for (uint32_t i = next_lo_index; i < num_primitives; i++)
 	{
-		auto &state = buffers.prim[base_primitive + i].state;
+		uint32_t &state = buffers.prim[base_primitive + i].state;
 		uint32_t prim_instance = (state >> STATE_VERTEX_RENDER_PASS_INSTANCE_OFFSET) &
 		                         ((1u << STATE_VERTEX_RENDER_PASS_INSTANCE_COUNT) - 1u);
 
@@ -2717,9 +2747,9 @@ void GSRenderer::dispatch_read_aliased_depth_passes(Vulkan::CommandBuffer &cmd, 
 		if (instance != prim_instance || (state & (1u << STATE_BIT_SPRITE)) == 0)
 			continue;
 
-		auto &prim_bb = buffers.prim[base_primitive + i].bb;
+		i16vec4 &prim_bb = buffers.prim[base_primitive + i].bb;
 
-		auto hazard_bb = ivec4{std::max<int>(bb.x, prim_bb.x),
+		ivec4 hazard_bb = ivec4{std::max<int>(bb.x, prim_bb.x),
 		                       std::max<int>(bb.y, prim_bb.y),
 		                       std::min<int>(bb.z, prim_bb.z),
 		                       std::min<int>(bb.w, prim_bb.w) };
@@ -2766,7 +2796,7 @@ void GSRenderer::dispatch_shading(Vulkan::CommandBuffer &cmd, const RenderPass &
                                   uint32_t base_primitive, uint32_t num_primitives)
 {
 	cmd.begin_region("shading");
-	auto &inst = rp.instances[instance];
+	const RenderPass::Instance &inst = rp.instances[instance];
 
 	bind_debug_resources(cmd, rp, inst);
 
@@ -2817,7 +2847,7 @@ void GSRenderer::dispatch_shading(Vulkan::CommandBuffer &cmd, const RenderPass &
 	{
 		for (uint32_t i = 0; i < num_primitives; i++)
 		{
-			auto &state = buffers.prim[base_primitive + i].state;
+			uint32_t &state = buffers.prim[base_primitive + i].state;
 
 			uint32_t prim_instance = (state >> STATE_VERTEX_RENDER_PASS_INSTANCE_OFFSET) &
 			                         ((1u << STATE_VERTEX_RENDER_PASS_INSTANCE_COUNT) - 1u);
@@ -2876,7 +2906,7 @@ void GSRenderer::dispatch_shading(Vulkan::CommandBuffer &cmd, const RenderPass &
 	assert(inst.sampling_rate_y_log2 <= 3);
 
 	cmd.set_program(shaders.ubershader[int(rp.feedback_color)][int(rp.feedback_depth)]);
-	auto snap_raster_mask = ivec2{ -(1 << inst.sampling_rate_y_log2),
+	ivec2 snap_raster_mask = ivec2{ -(1 << inst.sampling_rate_y_log2),
 	                               -(1 << inst.sampling_rate_y_log2) };
 	// Snap single-sampled raster to half-texel instead.
 	if (inst.sampling_rate_y_log2 && field_aware_super_sampling && render_pass_instance_might_field_render(rp, instance))
@@ -2999,7 +3029,7 @@ void GSRenderer::emit_copy_vram(Vulkan::CommandBuffer &cmd,
 								const uint32_t *dispatch_order, uint32_t num_dispatches, bool prepare_only)
 {
 	cmd.set_program(shaders.vram_copy);
-	auto &base_desc = pending_copies[dispatch_order[0]].copy;
+	CopyDescriptor &base_desc = pending_copies[dispatch_order[0]].copy;
 
 	// One thread will write two values in PSMT4 fused mode.
 	bool is_fused_nibble = copy_is_fused_nibble(base_desc);
@@ -3024,31 +3054,18 @@ void GSRenderer::emit_copy_vram(Vulkan::CommandBuffer &cmd,
 	uint32_t max_wgs = 0;
 	for (uint32_t i = 0; i < num_dispatches; i++)
 	{
-		auto &desc = pending_copies[dispatch_order[i]].copy;
+		CopyDescriptor &desc = pending_copies[dispatch_order[i]].copy;
 		max_wgs += ((desc.trxreg.desc.RRW + 7) / 8) * ((desc.trxreg.desc.RRH + 7) / 8);
 	}
 
 	constexpr uint32_t MaxWorkgroups = 4096;
 
-	auto *work_items = cmd.allocate_typed_constant_data<uvec4>(1, 0, std::min<uint32_t>(MaxWorkgroups, max_wgs));
+	uvec4 *work_items = cmd.allocate_typed_constant_data<uvec4>(1, 0, std::min<uint32_t>(MaxWorkgroups, max_wgs));
 	uint32_t num_wgs = 0;
-
-	const auto push_work = [&](uint32_t group_x, uint32_t group_y, uint32_t transfer_id) {
-		if (num_wgs == MaxWorkgroups)
-		{
-			cmd.checkpoint("copy-vram");
-			cmd.dispatch(num_wgs, 1, 1);
-			max_wgs -= num_wgs;
-			work_items = cmd.allocate_typed_constant_data<uvec4>(1, 0, std::min<uint32_t>(MaxWorkgroups, max_wgs));
-			num_wgs = 0;
-		}
-
-		work_items[num_wgs++] = uvec4{ group_x, group_y, transfer_id, 0u };
-	};
 
 	for (uint32_t i = 0; i < num_dispatches; i++)
 	{
-		auto &desc = pending_copies[dispatch_order[i]].copy;
+		CopyDescriptor &desc = pending_copies[dispatch_order[i]].copy;
 		assert(copy_pipeline_key(desc) == copy_pipeline_key(base_desc));
 
 		if (device->consumes_debug_markers())
@@ -3092,8 +3109,20 @@ void GSRenderer::emit_copy_vram(Vulkan::CommandBuffer &cmd,
 		uint32_t wgs_x = (desc.trxreg.desc.RRW + 7) / 8;
 		uint32_t wgs_y = (desc.trxreg.desc.RRH + 7) / 8;
 		for (uint32_t y = 0; y < wgs_y; y++)
+		{
 			for (uint32_t x = 0; x < wgs_x; x++)
-				push_work(x, y, dispatch_order[i]);
+			{
+				if (num_wgs == MaxWorkgroups)
+				{
+					cmd.checkpoint("copy-vram");
+					cmd.dispatch(num_wgs, 1, 1);
+					max_wgs -= num_wgs;
+					work_items = cmd.allocate_typed_constant_data<uvec4>(1, 0, std::min<uint32_t>(MaxWorkgroups, max_wgs));
+					num_wgs = 0;
+				}
+				work_items[num_wgs++] = uvec4{ x, y, dispatch_order[i], 0u };
+			}
+		}
 	}
 
 	if (num_wgs)
@@ -3126,7 +3155,7 @@ void GSRenderer::copy_vram(const CopyDescriptor &desc, const PageRect &damage_re
 	{
 		// When there's copy wraparound, we don't get exact page tracking atm, so be conservative
 		// since the writes will be scattered all over the place.
-		for (auto &v : vram_copy_write_pages)
+		for (unsigned int &v : vram_copy_write_pages)
 			v = UINT32_MAX;
 	}
 	else
@@ -3199,7 +3228,7 @@ static inline void sanitize_state_indices(const PrimitiveAttribute *prims, const
 void GSRenderer::flush_rendering(const RenderPass &rp, uint32_t instance,
                                  uint32_t base_primitive, uint32_t num_primitives)
 {
-	auto &cmd = *direct_cmd;
+	Vulkan::CommandBuffer &cmd = *direct_cmd;
 	bind_frame_resources_instanced(rp, instance, num_primitives);
 	allocate_scratch_buffers_instanced(cmd, rp, instance, num_primitives);
 
@@ -3214,7 +3243,7 @@ void GSRenderer::flush_rendering(const RenderPass &rp, uint32_t instance,
 
 	if (device->consumes_debug_markers())
 	{
-		auto &inst = rp.instances[instance];
+		const RenderPass::Instance &inst = rp.instances[instance];
 		uint32_t depth_psm = inst.fb.z.desc.PSM | (3u << 4);
 
 		begin_region(cmd,
@@ -3234,7 +3263,7 @@ void GSRenderer::flush_rendering(const RenderPass &rp, uint32_t instance,
 
 		for (uint32_t i = 0; i < rp.num_states && instance == 0; i++)
 		{
-			auto &state = rp.states[i];
+			const StateVector &state = rp.states[i];
 			begin_region(cmd, "State #%u", i);
 			insert_label(cmd, "  TME: %u", (state.combiner & COMBINER_TME_BIT) ? 1 : 0);
 			insert_label(cmd, "  TCC: %u", (state.combiner & COMBINER_TCC_BIT) ? 1 : 0);
@@ -3322,7 +3351,7 @@ static bool compute_instance_hazard_mask(uint8_t (&mask)[MaxRenderPassInstances]
 
 	for (uint32_t i = 0; i < num_instances; i++)
 	{
-		auto &inst = instance[i];
+		const RenderPass::Instance &inst = instance[i];
 
 		fb_rects[i] = compute_page_rect(inst.fb.frame.desc.FBP * PGS_BLOCKS_PER_PAGE,
 		                                inst.base_x, inst.base_y, inst.coarse_tiles_width << coarse_tile_size_log2,
@@ -3361,19 +3390,19 @@ void GSRenderer::reserve_primitive_buffers(uint32_t num_primitives)
 	reserve_attribute_scratch(num_primitives * sizeof(PrimitiveAttribute), buffers.prim_scratch);
 
 	{
-		auto *mapped = static_cast<uint8_t *>(device->map_host_buffer(*buffers.pos_scratch.buffer,
+		uint8_t *mapped = static_cast<uint8_t *>(device->map_host_buffer(*buffers.pos_scratch.buffer,
 		                                                              Vulkan::MEMORY_ACCESS_WRITE_BIT));
 		buffers.pos = reinterpret_cast<VertexPosition *>(mapped + buffers.pos_scratch.offset);
 	}
 
 	{
-		auto *mapped = static_cast<uint8_t *>(device->map_host_buffer(*buffers.attr_scratch.buffer,
+		uint8_t *mapped = static_cast<uint8_t *>(device->map_host_buffer(*buffers.attr_scratch.buffer,
 		                                                              Vulkan::MEMORY_ACCESS_WRITE_BIT));
 		buffers.attr = reinterpret_cast<VertexAttribute *>(mapped + buffers.attr_scratch.offset);
 	}
 
 	{
-		auto *mapped = static_cast<uint8_t *>(device->map_host_buffer(*buffers.prim_scratch.buffer,
+		uint8_t *mapped = static_cast<uint8_t *>(device->map_host_buffer(*buffers.prim_scratch.buffer,
 		                                                              Vulkan::MEMORY_ACCESS_WRITE_BIT));
 		buffers.prim = reinterpret_cast<PrimitiveAttribute *>(mapped + buffers.prim_scratch.offset);
 	}
@@ -3429,7 +3458,7 @@ void GSRenderer::flush_rendering(const RenderPass &rp)
 
 	ensure_command_buffer(binning_cmd, Vulkan::CommandBuffer::Type::Generic);
 	ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);
-	auto &cmd = *direct_cmd;
+	Vulkan::CommandBuffer &cmd = *direct_cmd;
 
 	bind_textures(cmd, rp);
 	bind_frame_resources(rp);
@@ -3579,11 +3608,11 @@ Vulkan::ImageHandle GSRenderer::pull_image_handle_from_slab(
 
 	uint32_t W = Util::floor_log2(width);
 	uint32_t H = Util::floor_log2(height);
-	auto &pool = samples > 1 ? super_sampled_recycled_image_pool[H][W] : recycled_image_pool[levels - 1][H][W];
+	std::vector<Vulkan::ImageHandle> &pool = samples > 1 ? super_sampled_recycled_image_pool[H][W] : recycled_image_pool[levels - 1][H][W];
 	if (pool.empty())
 		return {};
 
-	auto res = std::move(pool.back());
+	Vulkan::ImageHandle res = std::move(pool.back());
 	pool.pop_back();
 	assert(total_image_slab_size >= (sizeof(uint32_t) << (W + H)) * res->get_create_info().layers);
 	total_image_slab_size -= (sizeof(uint32_t) << (W + H)) * res->get_create_info().layers;
@@ -3592,7 +3621,7 @@ Vulkan::ImageHandle GSRenderer::pull_image_handle_from_slab(
 
 void GSRenderer::move_image_handles_to_slab()
 {
-	for (auto &handle : recycled_image_handles)
+	for (Util::IntrusivePtr<Vulkan::Image> &handle : recycled_image_handles)
 	{
 		uint32_t W = Util::floor_log2(handle->get_width());
 		uint32_t H = Util::floor_log2(handle->get_height());
@@ -3629,14 +3658,15 @@ void GSRenderer::move_image_handles_to_slab()
 
 void GSRenderer::flush_slab_cache()
 {
-	for (auto &l : recycled_image_pool)
-		for (auto &y : l)
-			for (auto &x : y)
-				x.clear();
+	uint32_t l, y, x;
+	for (l = 0; l < 7; l++)
+		for (y = 0; y < 11; y++)
+			for (x = 0; x < 11; x++)
+				recycled_image_pool[l][y][x].clear();
 
-	for (auto &h : super_sampled_recycled_image_pool)
-		for (auto &w : h)
-			w.clear();
+	for (y = 0; y < 11; y++)
+		for (x = 0; x < 11; x++)
+			super_sampled_recycled_image_pool[y][x].clear();
 
 	total_image_slab_size = 0;
 }
@@ -3710,7 +3740,7 @@ void GSRenderer::dispatch_texture_analysis(Vulkan::CommandBuffer &cmd, const Ren
 	       rp.states, rp.num_states * sizeof(StateVector));
 
 	VK_ASSERT(rp.num_textures <= MaxTextures);
-	auto *tex_infos = cmd.allocate_typed_constant_data<TexInfo>(
+	TexInfo *tex_infos = cmd.allocate_typed_constant_data<TexInfo>(
 			0, BINDING_TEXTURE_INFO, std::max<uint32_t>(1, rp.num_textures));
 	for (uint32_t i = 0; i < rp.num_textures; i++)
 		tex_infos[i] = rp.textures[i].info;
@@ -3737,10 +3767,10 @@ void GSRenderer::dispatch_texture_analysis(Vulkan::CommandBuffer &cmd, const Ren
 
 void GSRenderer::upload_texture(const TextureUpload &upload)
 {
-	auto &desc = upload.desc;
-	auto &img = *upload.image;
-	auto &scratch = upload.scratch;
-	auto &cmd = *direct_cmd;
+	const TextureDescriptor &desc = upload.desc;
+	const Vulkan::Image &img = *upload.image;
+	const Scratch &scratch = upload.scratch;
+	Vulkan::CommandBuffer &cmd = *direct_cmd;
 
 	uint32_t levels = img.get_create_info().levels;
 	cmd.set_program(shaders.upload[int(upload.desc.samples > 1)]);
@@ -3950,20 +3980,20 @@ void GSRenderer::flush_palette_upload()
 	if (palette_uploads.empty())
 		return;
 
-	auto &cmd = *direct_cmd;
+	Vulkan::CommandBuffer &cmd = *direct_cmd;
 	cmd.set_program(shaders.clut_write);
 	cmd.set_specialization_constant_mask(1);
 	cmd.set_specialization_constant(0, vram_size - 1);
 
 	cmd.set_storage_buffer(0, 0, *buffers.gpu);
 	cmd.set_storage_buffer(0, BINDING_CLUT, *buffers.clut);
-	auto *desc = cmd.allocate_typed_constant_data<CLUTDescriptor>(0, 1, palette_uploads.size());
+	CLUTDescriptor *desc = cmd.allocate_typed_constant_data<CLUTDescriptor>(0, 1, palette_uploads.size());
 
 	CLUTDescriptor clut_desc = {};
 
 	uint32_t instance = (base_clut_instance + 1) % CLUTInstances;
 
-	for (auto &upload : palette_uploads)
+	for (PaletteUploadDescriptor &upload : palette_uploads)
 	{
 		clut_desc.tex_format = uint32_t(upload.tex0.desc.PSM);
 		clut_desc.format = uint32_t(upload.tex0.desc.CPSM);
@@ -4013,7 +4043,7 @@ void GSRenderer::flush_palette_upload()
 	{
 		for (size_t i = 0, n = palette_uploads.size(); i < n; i++)
 		{
-			auto &upload = palette_uploads[i];
+			PaletteUploadDescriptor &upload = palette_uploads[i];
 			insert_label(cmd, "Bank %u - 0x%x - %s - %u colors - CSA %u - CSM %u - COU/V %u, %u - bias %u, incoming %u",
 			             uint32_t(base_clut_instance + 1 + i) % CLUTInstances,
 			             uint32_t(upload.tex0.desc.CBP) * PGS_BLOCK_ALIGNMENT_BYTES,
@@ -4039,7 +4069,7 @@ void GSRenderer::flush_palette_upload()
 
 	for (size_t i = 0, n = palette_uploads.size(); i < n; i++)
 	{
-		auto &clut = palette_uploads[i].tex0.desc;
+		TEX0Bits &clut = palette_uploads[i].tex0.desc;
 
 		uint32_t write_clut_index = (base_clut_instance + 1 + i) % CLUTInstances;
 		bool full_replacement = clut.CSA == 0 && clut.CPSM == PSMCT32 && get_bits_per_pixel(clut.PSM) == 8;
@@ -4116,7 +4146,7 @@ void GSRenderer::flush_cache_upload()
 	if (texture_uploads.empty())
 		return;
 
-	auto &cmd = *direct_cmd;
+	Vulkan::CommandBuffer &cmd = *direct_cmd;
 
 	VkDependencyInfo dep = { VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
 	dep.imageMemoryBarrierCount = pre_image_barriers.size();
@@ -4128,7 +4158,7 @@ void GSRenderer::flush_cache_upload()
 	if (enable_timestamps)
 		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 	// TODO: We could potentially sort this based on shader key to avoid some context rolls, but eeeeeh.
-	for (auto &upload : texture_uploads)
+	for (TextureUpload &upload : texture_uploads)
 		upload_texture(upload);
 
 	if (enable_timestamps)
@@ -4162,7 +4192,7 @@ void GSRenderer::flush_transfer()
 		return;
 
 	ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);
-	auto &cmd = *direct_cmd;
+	Vulkan::CommandBuffer &cmd = *direct_cmd;
 
 	cmd.begin_region("vram-copy");
 
@@ -4177,10 +4207,9 @@ void GSRenderer::flush_transfer()
 	// Prepare atomic buffer for a new linked list setup.
 	{
 		RangeMerger merger;
-		const auto flush_range = [&](VkDeviceSize offset, VkDeviceSize range)
-		{
-			cmd.fill_buffer(*buffers.vram_copy_atomics, UINT32_MAX, offset + PGS_LINKED_VRAM_COPY_WRITE_LIST_OFFSET, range);
-		};
+		VkDeviceSize offset, range;
+		uint32_t bits, bit;
+		range_merger_init(&merger);
 
 		cmd.begin_region("reset-vram-copy-state");
 		// Reset atomic counter.
@@ -4197,13 +4226,17 @@ void GSRenderer::flush_transfer()
 
 		for (size_t i = 0, n = vram_copy_write_pages.size(); i < n; i++)
 		{
-			Util::for_each_bit(vram_copy_write_pages[i], [&](uint32_t bit) {
-				merger.push((i * 32 + bit) * PageSize, PageSize, flush_range);
-			});
+			for (bits = vram_copy_write_pages[i]; bits; bits &= bits - 1)
+			{
+				bit = Util::trailing_zeroes(bits);
+				if (range_merger_push(&merger, VkDeviceSize(i * 32 + bit) * PageSize, PageSize, &offset, &range))
+					cmd.fill_buffer(*buffers.vram_copy_atomics, UINT32_MAX, offset + PGS_LINKED_VRAM_COPY_WRITE_LIST_OFFSET, range);
+			}
 			vram_copy_write_pages[i] = 0;
 		}
 
-		merger.flush(flush_range);
+		if (range_merger_flush(&merger, &offset, &range))
+			cmd.fill_buffer(*buffers.vram_copy_atomics, UINT32_MAX, offset + PGS_LINKED_VRAM_COPY_WRITE_LIST_OFFSET, range);
 		cmd.end_region();
 	}
 
@@ -4211,33 +4244,35 @@ void GSRenderer::flush_transfer()
 	{
 		VkDeviceSize read_only_offset = buffers.gpu->get_create_info().size / 2;
 		RangeMerger merger;
+		VkDeviceSize offset, range;
+		uint32_t bits, bit;
 
-		const auto flush_range = [&](VkDeviceSize offset, VkDeviceSize range)
-		{
-			cmd.copy_buffer(*buffers.gpu, offset + read_only_offset, *buffers.gpu, offset, range);
-		};
-
+		range_merger_init(&merger);
 		cmd.begin_region("shadow-vram-cache");
 		for (size_t i = 0, n = sync_vram_shadow_pages.size(); i < n; i++)
 		{
-			Util::for_each_bit(sync_vram_shadow_pages[i], [i, &merger, &flush_range](uint32_t bit) {
-				merger.push((i * 32 + bit) * PageSize, PageSize, flush_range);
-			});
+			for (bits = sync_vram_shadow_pages[i]; bits; bits &= bits - 1)
+			{
+				bit = Util::trailing_zeroes(bits);
+				if (range_merger_push(&merger, VkDeviceSize(i * 32 + bit) * PageSize, PageSize, &offset, &range))
+					cmd.copy_buffer(*buffers.gpu, offset + read_only_offset, *buffers.gpu, offset, range);
+			}
 			sync_vram_shadow_pages[i] = 0;
 		}
 
-		merger.flush(flush_range);
+		if (range_merger_flush(&merger, &offset, &range))
+			cmd.copy_buffer(*buffers.gpu, offset + read_only_offset, *buffers.gpu, offset, range);
 		cmd.end_region();
 	}
 
 	cmd.barrier(VK_PIPELINE_STAGE_2_CLEAR_BIT | VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
 	            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
 
-	auto *ubo = cmd.allocate_typed_constant_data<TransferDescriptor>(0, 3, pending_copies.size());
+	TransferDescriptor *ubo = cmd.allocate_typed_constant_data<TransferDescriptor>(0, 3, pending_copies.size());
 	uint32_t copy_index = 0;
-	for (auto &copy : pending_copies)
+	for (CopyDescriptorPayload &copy : pending_copies)
 	{
-		auto &desc = copy.copy;
+		CopyDescriptor &desc = copy.copy;
 		ubo->width = desc.trxreg.desc.RRW;
 		ubo->height = desc.trxreg.desc.RRH;
 		ubo->dest_x = desc.trxpos.desc.DSAX;
@@ -4367,7 +4402,7 @@ void GSRenderer::sample_crtc_circuit(Vulkan::CommandBuffer &cmd, const Vulkan::I
 	else
 		cmd.set_storage_buffer(0, 0, *buffers.gpu);
 
-	auto valid_extent = rect.valid_extent;
+	VkExtent2D valid_extent = rect.valid_extent;
 	if (super_samples > 1)
 	{
 		valid_extent.width <<= scale_x_log2;
@@ -4499,7 +4534,7 @@ Vulkan::ImageHandle GSRenderer::acquire_scanout_image(Vulkan::ImageHandle &slot,
 	{
 		for (size_t i = 0, n = recycle->size(); i < n; i++)
 		{
-			auto &img = (*recycle)[i];
+			Util::IntrusivePtr<Vulkan::Image> &img = (*recycle)[i];
 			if (img->get_width() == info.width && img->get_height() == info.height)
 			{
 				slot = std::move(img);
@@ -4524,11 +4559,11 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 
 	// Assume that all pending operations have been flushed.
 	ensure_command_buffer(direct_cmd, Vulkan::CommandBuffer::Type::Generic);
-	auto &cmd = *direct_cmd;
+	Vulkan::CommandBuffer &cmd = *direct_cmd;
 
 	cmd.begin_region("vsync");
 
-	auto image_info = Vulkan::ImageCreateInfo::immutable_2d_image(1, 1, VK_FORMAT_R8G8B8A8_UNORM);
+	Vulkan::ImageCreateInfo image_info = Vulkan::ImageCreateInfo::immutable_2d_image(1, 1, VK_FORMAT_R8G8B8A8_UNORM);
 	image_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 	image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 	image_info.misc |= Vulkan::IMAGE_MISC_MUTABLE_SRGB_BIT;
@@ -4941,7 +4976,7 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 			             priv.display1.MAGH, priv.display1.MAGV);
 		}
 
-		auto rect = compute_circuit_rect(priv, phase, priv.display1, force_progressive, promoted1);
+		SamplingRect rect = compute_circuit_rect(priv, phase, priv.display1, force_progressive, promoted1);
 		image_info.width = rect.image_extent.width;
 		image_info.height = rect.image_extent.height;
 
@@ -4999,7 +5034,7 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 			             priv.display2.MAGH, priv.display2.MAGV);
 		}
 
-		auto rect = compute_circuit_rect(priv, phase, priv.display2, force_progressive, promoted2);
+		SamplingRect rect = compute_circuit_rect(priv, phase, priv.display2, force_progressive, promoted2);
 
 		image_info.width = rect.image_extent.width;
 		image_info.height = rect.image_extent.height;
@@ -5114,8 +5149,8 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 	    info.adapt_to_internal_horizontal_resolution &&
 	    !force_deinterlace && !is_interlaced && !priv.extwrite.WRITE)
 	{
-		auto effective_mode_width = mode_width;
-		auto effective_mode_height = mode_height;
+		uint32_t effective_mode_width = mode_width;
+		uint32_t effective_mode_height = mode_height;
 
 		if (high_resolution_scanout)
 		{
@@ -5410,7 +5445,7 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 			push.resolution.x = std::min<uint32_t>(push.resolution.x, max_feedback_width);
 			push.resolution.y = std::min<uint32_t>(push.resolution.y, max_feedback_height);
 
-			auto write_rect = compute_page_rect(priv.extbuf.EXBP, priv.extbuf.WDX, priv.extbuf.WDY,
+			PageRect write_rect = compute_page_rect(priv.extbuf.EXBP, priv.extbuf.WDX, priv.extbuf.WDY,
 			                                    push.resolution.x, push.resolution.y,
 			                                    priv.extbuf.EXBW, PSMCT32);
 			tracker.mark_external_write(write_rect);
@@ -5472,7 +5507,7 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 	}
 	else
 	{
-		for (auto &field : vsync_last_fields)
+		for (Vulkan::ImageHandle &field : vsync_last_fields)
 			field.reset();
 		scanout_field_spare.reset();
 	}
@@ -5496,7 +5531,7 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 
 Vulkan::ImageHandle GSRenderer::fastmad_deinterlace(Vulkan::CommandBuffer &cmd, const VSyncInfo &vsync)
 {
-	auto image_info = Vulkan::ImageCreateInfo::immutable_2d_image(
+	Vulkan::ImageCreateInfo image_info = Vulkan::ImageCreateInfo::immutable_2d_image(
 			vsync_last_fields[0]->get_width(), vsync_last_fields[0]->get_height() * 2, VK_FORMAT_R8G8B8A8_UNORM);
 	image_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 	image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;

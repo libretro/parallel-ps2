@@ -468,7 +468,7 @@ private:
 
 		// For potential feedback, we need crude UV bb analysis to see if we're
 		// actually straddling into framebuffer territory.
-		struct
+		struct PotentialFeedback
 		{
 			uint32_t base_page = 0;
 			uint32_t page_width_log2 = 0;

@@ -40,7 +40,7 @@ void GSInterface::reset_context_state()
 void GSInterface::reset_context_state_registers()
 {
 	registers = {};
-	for (auto &p : paths)
+	for (GIFPath &p : paths)
 		p = {};
 	reset_vertex_queue();
 	clobber_register_state();
@@ -182,7 +182,7 @@ void GSInterface::flush_render_pass(FlushReason reason)
 
 		for (uint32_t i = 0; i < rp.num_instances; i++)
 		{
-			auto &inst = render_pass.instances[i];
+			RenderPassState::Instance &inst = render_pass.instances[i];
 			uint32_t tile_width = ((inst.bb.z - inst.bb.x) >> PGS_FB_SWIZZLE_WIDTH_LOG2) + 1;
 			uint32_t tile_height = ((inst.bb.w - inst.bb.y) >> PGS_FB_SWIZZLE_HEIGHT_LOG2) + 1;
 			binning_cost += tile_width * tile_height * rp.num_primitives;
@@ -203,7 +203,7 @@ void GSInterface::flush_render_pass(FlushReason reason)
 
 		for (uint32_t i = 0; i < rp.num_instances; i++)
 		{
-			auto &inst = render_pass.instances[i];
+			RenderPassState::Instance &inst = render_pass.instances[i];
 			uint32_t coarse_tiles_width = ((inst.bb.z - inst.bb.x) >> rp.coarse_tile_size_log2) + 1;
 			uint32_t coarse_tiles_height = ((inst.bb.w - inst.bb.y) >> rp.coarse_tile_size_log2) + 1;
 
@@ -222,8 +222,8 @@ void GSInterface::flush_render_pass(FlushReason reason)
 
 		for (uint32_t i = 0; i < rp.num_instances; i++)
 		{
-			auto &inst = render_pass.instances[i];
-			auto &pass = rp.instances[i];
+			RenderPassState::Instance &inst = render_pass.instances[i];
+			RenderPass::Instance &pass = rp.instances[i];
 
 			assert(inst.bb.x <= inst.bb.z && inst.bb.y <= inst.bb.w);
 			assert(inst.bb.x >= 0 && inst.bb.y >= 0);
@@ -354,7 +354,7 @@ void GSInterface::flush_render_pass(FlushReason reason)
 	render_pass.instances[0] = {};
 	render_pass.num_instances = 1;
 	render_pass.current_instance = 0;
-	auto &inst = render_pass.instances[0];
+	RenderPassState::Instance &inst = render_pass.instances[0];
 	inst.frame = instance.frame;
 	inst.zbuf = instance.zbuf;
 	inst.fb_page_width_log2 = instance.fb_page_width_log2;
@@ -530,8 +530,8 @@ void GSInterface::rewrite_forwarded_clut_upload(
 	// from the lines' texture instead: each entry from the texel the line
 	// put there. Without this, every such palette ends the render pass.
 
-	auto &fb_instance = render_pass.instances[render_pass.current_instance];
-	auto &desc = ctx.tex0.desc;
+	RenderPassState::Instance &fb_instance = render_pass.instances[render_pass.current_instance];
+	const TEX0Bits &desc = ctx.tex0.desc;
 
 	if (uint32_t(ctx.tex0.desc.CBP) != fb_instance.frame.desc.FBP * PGS_BLOCKS_PER_PAGE ||
 	    fb_instance.frame.desc.PSM != PSMCT32 ||
@@ -541,8 +541,8 @@ void GSInterface::rewrite_forwarded_clut_upload(
 		return;
 
 	uint32_t a_index = render_pass.primitive_count - 2;
-	auto &prim_a = render_pass.prim[a_index];
-	auto &prim_b = render_pass.prim[a_index + 1];
+	PrimitiveAttribute &prim_a = render_pass.prim[a_index];
+	PrimitiveAttribute &prim_b = render_pass.prim[a_index + 1];
 
 	if (prim_a.state != prim_b.state || prim_a.tex != prim_b.tex)
 		return;
@@ -569,7 +569,7 @@ void GSInterface::rewrite_forwarded_clut_upload(
 	}
 
 	uint32_t a_state_index = prim_a.state & ((1u << STATE_INDEX_BIT_COUNT) - 1u);
-	auto &state = render_pass.state_vectors[a_state_index];
+	StateVector &state = render_pass.state_vectors[a_state_index];
 	if ((state.combiner & (COMBINER_TME_BIT | COMBINER_FOG_BIT)) != COMBINER_TME_BIT)
 		return;
 
@@ -589,10 +589,10 @@ void GSInterface::rewrite_forwarded_clut_upload(
 			return;
 	}
 
-	auto &pos0 = render_pass.positions[3 * a_index + 1];
-	auto &pos1 = render_pass.positions[3 * a_index];
-	auto &pos2 = render_pass.positions[3 * a_index + 4];
-	auto &pos3 = render_pass.positions[3 * a_index + 3];
+	VertexPosition &pos0 = render_pass.positions[3 * a_index + 1];
+	VertexPosition &pos1 = render_pass.positions[3 * a_index];
+	VertexPosition &pos2 = render_pass.positions[3 * a_index + 4];
+	VertexPosition &pos3 = render_pass.positions[3 * a_index + 3];
 
 	// Rows 0 and 1, each from x = 0 to past the seventh pixel.
 	if (pos0.pos.x != 0 || pos0.pos.y != 0 || pos1.pos.x <= 7 * PGS_SUBPIXELS || pos1.pos.y != 0 ||
@@ -609,10 +609,10 @@ void GSInterface::rewrite_forwarded_clut_upload(
 	     ((pos3.pos.x + PGS_SUBPIXELS - 1) >> PGS_SUBPIXEL_BITS) != 8))
 		return;
 
-	auto &attr0 = render_pass.attributes[3 * a_index + 1];
-	auto &attr1 = render_pass.attributes[3 * a_index];
-	auto &attr2 = render_pass.attributes[3 * a_index + 4];
-	auto &attr3 = render_pass.attributes[3 * a_index + 3];
+	VertexAttribute &attr0 = render_pass.attributes[3 * a_index + 1];
+	VertexAttribute &attr1 = render_pass.attributes[3 * a_index];
+	VertexAttribute &attr2 = render_pass.attributes[3 * a_index + 4];
+	VertexAttribute &attr3 = render_pass.attributes[3 * a_index + 3];
 
 	// All entries come from one row of the source.
 	if (attr0.uv.y != attr1.uv.y || attr0.uv.y != attr2.uv.y || attr0.uv.y != attr3.uv.y)
@@ -684,13 +684,13 @@ void GSInterface::rewrite_forwarded_clut_upload(
 }
 void GSInterface::handle_clut_upload(uint32_t ctx_index)
 {
-	auto &ctx = registers.ctx[ctx_index];
-	auto &desc = ctx.tex0.desc;
+	ContextState &ctx = registers.ctx[ctx_index];
+	TEX0Bits &desc = ctx.tex0.desc;
 	bool load_clut = false;
 
-	auto psm = uint32_t(desc.PSM);
-	auto cpsm = uint32_t(desc.CPSM);
-	auto csa = uint32_t(desc.CSA);
+	uint32_t psm = uint32_t(desc.PSM);
+	uint32_t cpsm = uint32_t(desc.CPSM);
+	uint32_t csa = uint32_t(desc.CSA);
 
 	// Fixup buggy case with PSMCT24, which is not supported.
 	if (cpsm == PSMCT24)
@@ -700,7 +700,7 @@ void GSInterface::handle_clut_upload(uint32_t ctx_index)
 	if (!is_palette_format(psm))
 		return;
 
-	auto CLD = uint32_t(desc.CLD);
+	uint32_t CLD = uint32_t(desc.CLD);
 
 	switch (CLD)
 	{
@@ -802,7 +802,7 @@ void GSInterface::handle_clut_upload(uint32_t ctx_index)
 	uint32_t y_offset = csm2 ? palette_desc.texclut.desc.COV : 0;
 	x_offset += palette_desc.csm2_x_bias;
 
-	auto clut_page = compute_page_rect(uint32_t(palette_desc.tex0.desc.CBP), x_offset, y_offset,
+	PageRect clut_page = compute_page_rect(uint32_t(palette_desc.tex0.desc.CBP), x_offset, y_offset,
 	                                   palette_width, palette_height,
 	                                   palette_desc.texclut.desc.CBW,
 	                                   cpsm);
@@ -824,7 +824,7 @@ void GSInterface::handle_clut_upload(uint32_t ctx_index)
 
 	for (uint32_t i = render_pass.num_memoized_palettes; i; i--)
 	{
-		auto &memoized = render_pass.memoized_palettes[i - 1];
+		RenderPassState::MemoizedPaletteState &memoized = render_pass.memoized_palettes[i - 1];
 
 		// Try to optimize for a certain pattern where a game is doing
 		// 256 color, 16 color, 256 color, 16 color, etc.
@@ -870,7 +870,7 @@ void GSInterface::handle_clut_upload(uint32_t ctx_index)
 				        render_pass.memoized_palettes + i,
 				        (render_pass.num_memoized_palettes - i) * sizeof(render_pass.memoized_palettes[0]));
 
-				auto &last_memoized = render_pass.memoized_palettes[render_pass.num_memoized_palettes - 1];
+				RenderPassState::MemoizedPaletteState &last_memoized = render_pass.memoized_palettes[render_pass.num_memoized_palettes - 1];
 				last_memoized.csa_mask = page.csa_mask;
 				last_memoized.upload = palette_desc;
 				last_memoized.clut_instance = render_pass.clut_instance;
@@ -919,7 +919,7 @@ void GSInterface::handle_clut_upload(uint32_t ctx_index)
 	}
 
 	TRACE_INDEXED("MEMOIZE CLUT", render_pass.num_memoized_palettes, palette_desc);
-	auto &memoized = render_pass.memoized_palettes[render_pass.num_memoized_palettes++];
+	RenderPassState::MemoizedPaletteState &memoized = render_pass.memoized_palettes[render_pass.num_memoized_palettes++];
 	memoized.clut_instance = render_pass.clut_instance;
 	memoized.csa_mask = page.csa_mask;
 	memoized.upload = palette_desc;
@@ -942,9 +942,9 @@ void GSInterface::handle_tex0_write(uint32_t ctx_index)
 
 void GSInterface::handle_miptbl_gen(uint32_t ctx_index)
 {
-	auto &ctx = registers.ctx[ctx_index];
-	auto &tex0 = ctx.tex0.desc;
-	auto &tex1 = ctx.tex1.desc;
+	ContextState &ctx = registers.ctx[ctx_index];
+	TEX0Bits &tex0 = ctx.tex0.desc;
+	TEX1Bits &tex1 = ctx.tex1.desc;
 
 	if (!tex1.MTBA)
 		return;
@@ -958,7 +958,7 @@ void GSInterface::handle_miptbl_gen(uint32_t ctx_index)
 	uint32_t H = 1u << TH;
 	uint32_t row_length_64 = W / 64;
 
-	auto layout = get_data_structure(uint32_t(tex0.PSM));
+	LocalDataStructure layout = get_data_structure(uint32_t(tex0.PSM));
 	uint32_t num_blocks = (W >> layout.block_width_log2) * (H >> layout.block_height_log2);
 	base += num_blocks;
 
@@ -1077,8 +1077,8 @@ void GSInterface::mark_render_pass_has_texture_feedback(const TEX0Bits &tex0, Re
 
 void GSInterface::check_frame_buffer_state()
 {
-	auto &prim = registers.prim;
-	auto &ctx = registers.ctx[prim.desc.CTXT];
+	Reg64<PRIMBits> &prim = registers.prim;
+	ContextState &ctx = registers.ctx[prim.desc.CTXT];
 
 	if (!get_and_clear_dirty_flag(STATE_DIRTY_FB_BIT))
 	{
@@ -1087,7 +1087,7 @@ void GSInterface::check_frame_buffer_state()
 		return;
 	}
 
-	auto *inst = &render_pass.instances[render_pass.current_instance];
+	RenderPassState::Instance *inst = &render_pass.instances[render_pass.current_instance];
 	bool fb_delta = !inst->frame.desc.compat(ctx.frame.desc);
 	bool z_delta = !inst->zbuf.desc.compat(ctx.zbuf.desc);
 
@@ -1104,7 +1104,7 @@ void GSInterface::check_frame_buffer_state()
 		{
 			for (uint32_t instance = 0; instance < render_pass.num_instances; instance++)
 			{
-				auto &test_inst = render_pass.instances[instance];
+				RenderPassState::Instance &test_inst = render_pass.instances[instance];
 				if (test_inst.frame.desc.compat(ctx.frame.desc) &&
 				    (!test_inst.z_sensitive || test_inst.zbuf.desc.compat(ctx.zbuf.desc)))
 				{
@@ -1144,7 +1144,7 @@ void GSInterface::check_frame_buffer_state()
 
 	if (fb_delta)
 	{
-		auto fb_layout = get_data_structure(ctx.frame.desc.PSM);
+		LocalDataStructure fb_layout = get_data_structure(ctx.frame.desc.PSM);
 		inst->fb_page_width_log2 = fb_layout.page_width_log2;
 		inst->fb_page_height_log2 = fb_layout.page_height_log2;
 		inst->frame = ctx.frame;
@@ -1153,7 +1153,7 @@ void GSInterface::check_frame_buffer_state()
 
 	if (z_delta)
 	{
-		auto z_layout = get_data_structure(ctx.zbuf.desc.PSM);
+		LocalDataStructure z_layout = get_data_structure(ctx.zbuf.desc.PSM);
 		inst->z_page_width_log2 = z_layout.page_width_log2;
 		inst->z_page_height_log2 = z_layout.page_height_log2;
 		inst->zbuf = ctx.zbuf;
@@ -1172,7 +1172,7 @@ uint32_t GSInterface::find_or_place_unique_state_vector(const StateVector &state
 {
 	uint32_t state_index;
 
-	auto &last_state = state_tracker.last_state_vector;
+	StateVector &last_state = state_tracker.last_state_vector;
 	if (!render_pass.state_vectors.empty() &&
 	    state.blend_mode == last_state.blend_mode &&
 	    state.combiner == last_state.combiner &&
@@ -1189,7 +1189,7 @@ uint32_t GSInterface::find_or_place_unique_state_vector(const StateVector &state
 	hasher.u32(state.dimx.x);
 	hasher.u32(state.dimx.y);
 
-	auto *cached_state_index = render_pass.state_vector_map.find(hasher.get());
+	Util::IntrusivePODWrapper<unsigned int> *cached_state_index = render_pass.state_vector_map.find(hasher.get());
 	if (cached_state_index)
 	{
 		state_index = cached_state_index->get();
@@ -1213,8 +1213,8 @@ uint32_t GSInterface::drawing_kick_update_state_vector()
 	if (!get_and_clear_dirty_flag(STATE_DIRTY_STATE_BIT))
 		return state_tracker.last_state_index;
 
-	auto &prim = registers.prim;
-	auto &ctx = registers.ctx[prim.desc.CTXT];
+	Reg64<PRIMBits> &prim = registers.prim;
+	ContextState &ctx = registers.ctx[prim.desc.CTXT];
 
 	StateVector state = {};
 
@@ -1275,10 +1275,10 @@ uint32_t GSInterface::drawing_kick_update_state_vector()
 
 void GSInterface::update_texture_page_rects()
 {
-	auto &prim = registers.prim;
-	auto &ctx = registers.ctx[prim.desc.CTXT];
-	auto psm = uint32_t(ctx.tex0.desc.PSM);
-	auto &tex = state_tracker.tex;
+	Reg64<PRIMBits> &prim = registers.prim;
+	ContextState &ctx = registers.ctx[prim.desc.CTXT];
+	uint32_t psm = uint32_t(ctx.tex0.desc.PSM);
+	StateTracker::StateTrackerTexture &tex = state_tracker.tex;
 
 	// Mark that we're starting a read. This will check for any hazards and flush render pass if need be.
 	for (uint32_t level = 0; level < tex.rect.levels; level++)
@@ -1309,14 +1309,14 @@ void GSInterface::texture_page_rects_read_safe_region()
 
 void GSInterface::texture_page_rects_read_region(const ivec4 &uv_bb)
 {
-	auto &prim = registers.prim;
-	auto &ctx = registers.ctx[prim.desc.CTXT];
+	Reg64<PRIMBits> &prim = registers.prim;
+	ContextState &ctx = registers.ctx[prim.desc.CTXT];
 
 	assert(render_pass.is_potential_feedback);
-	auto &feedback = render_pass.potential_feedback;
+	RenderPassState::PotentialFeedback &feedback = render_pass.potential_feedback;
 
 	assert(state_tracker.tex.rect.levels == 1);
-	auto tex_base_page = uint32_t(ctx.tex0.desc.TBP0) / PGS_BLOCKS_PER_PAGE;
+	uint32_t tex_base_page = uint32_t(ctx.tex0.desc.TBP0) / PGS_BLOCKS_PER_PAGE;
 
 	assert(uv_bb.z >= 0);
 	assert(uv_bb.w >= 0);
@@ -1346,7 +1346,7 @@ void GSInterface::texture_page_rects_read_region(const ivec4 &uv_bb)
 
 void GSInterface::texture_page_rects_read_full()
 {
-	auto &tex = state_tracker.tex;
+	StateTracker::StateTrackerTexture &tex = state_tracker.tex;
 	for (uint32_t level = 0; level < tex.rect.levels; level++)
 		tracker.mark_texture_read(state_tracker.tex.page_rects[level]);
 }
@@ -1356,7 +1356,7 @@ void GSInterface::invalidate_texture_hash(Util::Hash hash, bool clut)
 	if (!clut)
 	{
 		// Any CLUT texture will make palette bank part of the hash.
-		auto *tex = render_pass.texture_map.find(hash);
+		RenderPassState::TextureStateToLocalIndex *tex = render_pass.texture_map.find(hash);
 		if (tex)
 			tex->valid = false;
 	}
@@ -1406,8 +1406,8 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 		return state_tracker.last_texture_index;
 	}
 
-	auto &prim = registers.prim;
-	auto &ctx = registers.ctx[prim.desc.CTXT];
+	Reg64<PRIMBits> &prim = registers.prim;
+	ContextState &ctx = registers.ctx[prim.desc.CTXT];
 
 	if (feedback_mode == FBFeedbackMode::Pixel)
 	{
@@ -1433,8 +1433,8 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 	desc.clamp = ctx.clamp;
 	desc.samples = 1;
 
-	auto psm = uint32_t(desc.tex0.desc.PSM);
-	auto cpsm = uint32_t(desc.tex0.desc.CPSM);
+	uint32_t psm = uint32_t(desc.tex0.desc.PSM);
+	uint32_t cpsm = uint32_t(desc.tex0.desc.CPSM);
 
 	// Fixup buggy case with PSMCT24, which is not supported.
 	if (cpsm == PSMCT24)
@@ -1595,8 +1595,8 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 		long_term_cache_texture = false;
 	}
 
-	auto TW = uint32_t(desc.tex0.desc.TW);
-	auto TH = uint32_t(desc.tex0.desc.TH);
+	uint32_t TW = uint32_t(desc.tex0.desc.TW);
+	uint32_t TH = uint32_t(desc.tex0.desc.TH);
 	uint32_t width = 1u << TW;
 	uint32_t height = 1u << TH;
 
@@ -1762,7 +1762,7 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 	// live as long as we can maintain the render pass.
 	hasher.u64(desc.palette_bank);
 	hasher.u32(desc.samples);
-	auto *cached_index = render_pass.texture_map.find(hasher.get());
+	RenderPassState::TextureStateToLocalIndex *cached_index = render_pass.texture_map.find(hasher.get());
 
 	// For explicit feedback, we have to be super careful, and we skip these checks.
 	// This is mostly relevant for potential feedback and textures placed at an address
@@ -1841,7 +1841,7 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 			}
 		}
 
-		auto image = tracker.find_cached_texture(hasher.get());
+		Vulkan::ImageHandle image = tracker.find_cached_texture(hasher.get());
 		if (!image)
 		{
 			TRACE("CACHE IMAGE", desc);
@@ -1963,10 +1963,10 @@ void GSInterface::drawing_kick_update_state(FBFeedbackMode feedback_mode, const 
 	if (!get_and_clear_dirty_flag(STATE_DIRTY_PRIM_TEMPLATE_BIT))
 		return;
 
-	auto &prim = registers.prim;
-	auto &ctx = registers.ctx[prim.desc.CTXT];
+	Reg64<PRIMBits> &prim = registers.prim;
+	ContextState &ctx = registers.ctx[prim.desc.CTXT];
 
-	auto &p = state_tracker.prim_template;
+	PrimitiveTemplate &p = state_tracker.prim_template;
 	p = {};
 
 	if (prim.desc.TME)
@@ -1990,7 +1990,7 @@ void GSInterface::drawing_kick_update_state(FBFeedbackMode feedback_mode, const 
 
 		if (tex_index < MaxTextures)
 		{
-			auto &info = render_pass.tex_infos[tex_index].info;
+			TexInfo &info = render_pass.tex_infos[tex_index].info;
 			if (info.arrayed)
 			{
 				p.tex |= TEX_PER_SAMPLE_BIT;
@@ -2138,7 +2138,7 @@ void GSInterface::drawing_kick_update_state(FBFeedbackMode feedback_mode, const 
 	 * The bounding box and the topology bits are the primitive's own and
 	 * are filled in at the kick. */
 	{
-		auto &base = state_tracker.prim_attr_base;
+		PrimitiveAttribute &base = state_tracker.prim_attr_base;
 		base.tex = p.tex;
 		base.tex2 = p.tex2;
 		base.state = p.state;
@@ -2151,7 +2151,7 @@ void GSInterface::drawing_kick_update_state(FBFeedbackMode feedback_mode, const 
 
 PageRect GSInterface::compute_fb_rect() const
 {
-	auto &inst = render_pass.instances[render_pass.current_instance];
+	const RenderPassState::Instance &inst = render_pass.instances[render_pass.current_instance];
 	// We know this BB is not degenerate already.
 	assert(inst.bb.x <= inst.bb.z);
 	assert(inst.bb.y <= inst.bb.w);
@@ -2187,7 +2187,7 @@ PageRect GSInterface::compute_fb_rect() const
 
 PageRect GSInterface::compute_z_rect() const
 {
-	auto &inst = render_pass.instances[render_pass.current_instance];
+	const RenderPassState::Instance &inst = render_pass.instances[render_pass.current_instance];
 	// We know this BB is not degenerate already.
 	assert(inst.bb.x <= inst.bb.z);
 	assert(inst.bb.y <= inst.bb.w);
@@ -2226,8 +2226,8 @@ bool GSInterface::draw_is_degenerate()
 	if (!get_and_clear_dirty_flag(STATE_DIRTY_DEGENERATE_BIT))
 		return state_tracker.degenerate_draw;
 
-	auto &prim = registers.prim;
-	auto &ctx = registers.ctx[prim.desc.CTXT];
+	Reg64<PRIMBits> &prim = registers.prim;
+	ContextState &ctx = registers.ctx[prim.desc.CTXT];
 
 	// Degenerate scissor.
 	if (ctx.scissor.desc.SCAX0 > ctx.scissor.desc.SCAX1 ||
@@ -2304,8 +2304,8 @@ bool GSInterface::draw_is_degenerate()
 
 bool GSInterface::state_is_z_sensitive() const
 {
-	auto &prim = registers.prim;
-	auto &ctx = registers.ctx[prim.desc.CTXT];
+	const Reg64<PRIMBits> &prim = registers.prim;
+	const ContextState &ctx = registers.ctx[prim.desc.CTXT];
 
 	if (ctx.test.desc.ZTE == TESTBits::ZTE_ENABLED)
 	{
@@ -2337,9 +2337,9 @@ void GSInterface::update_color_feedback_state()
 		return;
 	}
 
-	auto &prim = registers.prim;
-	auto &ctx = registers.ctx[prim.desc.CTXT];
-	auto &inst = render_pass.instances[render_pass.current_instance];
+	Reg64<PRIMBits> &prim = registers.prim;
+	ContextState &ctx = registers.ctx[prim.desc.CTXT];
+	RenderPassState::Instance &inst = render_pass.instances[render_pass.current_instance];
 
 	render_pass.is_color_feedback = false;
 	render_pass.is_depth_feedback = false;
@@ -2354,8 +2354,8 @@ void GSInterface::update_color_feedback_state()
 	if (ctx.tex1.desc.has_mipmap() && !hacks.disable_mipmaps)
 		return;
 
-	auto tbp0 = uint32_t(ctx.tex0.desc.TBP0);
-	auto tex_psm = uint32_t(ctx.tex0.desc.PSM);
+	uint32_t tbp0 = uint32_t(ctx.tex0.desc.TBP0);
+	uint32_t tex_psm = uint32_t(ctx.tex0.desc.PSM);
 
 	if (ctx.frame.desc.PSM == tex_psm &&
 	    (tex_psm == PSMCT16 || tex_psm == PSMCT16S || tex_psm == PSMZ16 || tex_psm == PSMZ16S))
@@ -2450,7 +2450,7 @@ void GSInterface::update_color_feedback_state()
 
 		if (render_pass.is_potential_feedback)
 		{
-			auto layout = get_data_structure(ctx.tex0.desc.PSM);
+			LocalDataStructure layout = get_data_structure(ctx.tex0.desc.PSM);
 
 			render_pass.potential_feedback.base_page = uint32_t(ctx.tex0.desc.TBP0) / PGS_BLOCKS_PER_PAGE;
 			render_pass.potential_feedback.page_width_log2 = layout.page_width_log2;
@@ -2502,8 +2502,8 @@ static void compute_uv_bb(const VertexAttribute *attr, const ContextState &ctx, 
 {
 	int width = 1 << int(ctx.tex0.desc.TW);
 	int height = 1 << int(ctx.tex0.desc.TH);
-	auto fwidth = float(width * 16);
-	auto fheight = float(height * 16);
+	float fwidth = float(width * 16);
+	float fheight = float(height * 16);
 	ivec2 local_uvs[3];
 
 	if (needs_perspective)
@@ -2695,8 +2695,8 @@ GSInterface::deduce_color_feedback_mode(const VertexPosition *pos, const VertexA
 template <bool list_primitive, bool fan_primitive, bool quad, unsigned num_vertices>
 void GSInterface::drawing_kick_append()
 {
-	auto &prim = registers.prim;
-	auto &ctx = registers.ctx[prim.desc.CTXT];
+	Reg64<PRIMBits> &prim = registers.prim;
+	ContextState &ctx = registers.ctx[prim.desc.CTXT];
 
 	VertexAttribute attr[3];
 	VertexPosition pos[3];
@@ -2740,8 +2740,8 @@ void GSInterface::drawing_kick_append()
 	pgs_pair_min_max3(&pos[0].pos, &pos[1].pos, &pos[2].pos,
 	                  (!quad && !is_line) ? 1 : 0, &lo_pos, &hi_pos);
 
-	auto pre_snap_lo = lo_pos;
-	auto pre_snap_hi = hi_pos;
+	ivec2 pre_snap_lo = lo_pos;
+	ivec2 pre_snap_hi = hi_pos;
 
 	hi_pos.x -= 1; hi_pos.y -= 1;
 	// Tighten the bounding box according to top-left raster rules.
@@ -2809,7 +2809,7 @@ void GSInterface::drawing_kick_append()
 		                                 render_pass.last_triangle_parallelogram_order,
 		                                 prim.desc))
 		{
-			auto &state = render_pass.prim[render_pass.primitive_count - 1].state;
+			uint32_t &state = render_pass.prim[render_pass.primitive_count - 1].state;
 			state |= (1u << STATE_BIT_PARALLELOGRAM) |
 			         (render_pass.last_triangle_parallelogram_order.x << STATE_PARALLELOGRAM_PROVOKING_OFFSET);
 
@@ -2822,7 +2822,7 @@ void GSInterface::drawing_kick_append()
 	}
 
 	update_color_feedback_state();
-	auto feedback_mode = FBFeedbackMode::None;
+	GSInterface::FBFeedbackMode feedback_mode = FBFeedbackMode::None;
 	ivec4 uv_bb = {};
 	if (render_pass.is_color_feedback || render_pass.is_depth_feedback)
 	{
@@ -2890,7 +2890,7 @@ void GSInterface::drawing_kick_append()
 
 	drawing_kick_update_state(feedback_mode, uv_bb, bb);
 
-	auto &fb_instance = render_pass.instances[render_pass.current_instance];
+	GSInterface::RenderPassState::Instance &fb_instance = render_pass.instances[render_pass.current_instance];
 
 	PrimitiveAttribute prim_attr;
 	memcpy(&prim_attr, &state_tracker.prim_attr_base, sizeof(prim_attr));
@@ -2952,7 +2952,7 @@ void GSInterface::drawing_kick_append()
 		rp_expands = true;
 	}
 
-	auto &current_bb = fb_instance.bb;
+	ivec4 &current_bb = fb_instance.bb;
 
 	if (render_pass.can_fb_wraparound && bb.x > render_pass.scissor_hi_x_fb)
 	{
@@ -3014,13 +3014,13 @@ void GSInterface::drawing_kick_append()
 		// Damage pages.
 		// This is very conservative, and potentially can trigger hazards which should not exist,
 		// but this seems unlikely without solid proof that games care.
-		auto fb_rect = compute_fb_rect();
+		PageRect fb_rect = compute_fb_rect();
 		fb_rect.write_mask &= fb_instance.color_write_mask;
 		tracker.mark_fb_write(fb_rect);
 
 		if (fb_instance.z_sensitive)
 		{
-			auto z_rect = compute_z_rect();
+			PageRect z_rect = compute_z_rect();
 			if (fb_instance.z_write)
 				tracker.mark_fb_write(z_rect);
 			else
@@ -3165,8 +3165,8 @@ void GSInterface::reset_vertex_queue()
 template <int CTX>
 void GSInterface::a_d_TEX2(uint64_t payload)
 {
-	auto &ctx = registers.ctx[CTX];
-	auto &preserve = ctx.tex0.desc;
+	ContextState &ctx = registers.ctx[CTX];
+	TEX0Bits &preserve = ctx.tex0.desc;
 
 	Reg64<TEX0Bits> tex0{payload};
 	tex0.desc.TBP0 = preserve.TBP0;
@@ -3210,7 +3210,7 @@ void GSInterface::flush_pending_transfer(bool keep_alive)
 			LOGW("Mismatch in trxreg state.\n");
 #endif
 
-		auto dst_rect = compute_page_rect(transfer_state.copy.bitbltbuf.desc.DBP,
+		PageRect dst_rect = compute_page_rect(transfer_state.copy.bitbltbuf.desc.DBP,
 										  transfer_state.copy.trxpos.desc.DSAX,
 										  transfer_state.copy.trxpos.desc.DSAY,
 		                                  transfer_state.copy.trxreg.desc.RRW,
@@ -3440,11 +3440,11 @@ void GSInterface::init_transfer()
 	transfer_state.copy.trxpos = registers.trxpos;
 	transfer_state.copy.bitbltbuf = registers.bitbltbuf;
 
-	auto XDIR = transfer_state.copy.trxdir.desc.XDIR;
+	uint32_t XDIR = transfer_state.copy.trxdir.desc.XDIR;
 
 	if (XDIR == LOCAL_TO_LOCAL)
 	{
-		auto dst_rect = compute_page_rect(transfer_state.copy.bitbltbuf.desc.DBP,
+		PageRect dst_rect = compute_page_rect(transfer_state.copy.bitbltbuf.desc.DBP,
 		                                  transfer_state.copy.trxpos.desc.DSAX,
 		                                  transfer_state.copy.trxpos.desc.DSAY,
 		                                  transfer_state.copy.trxreg.desc.RRW,
@@ -3452,7 +3452,7 @@ void GSInterface::init_transfer()
 		                                  transfer_state.copy.bitbltbuf.desc.DBW,
 		                                  transfer_state.copy.bitbltbuf.desc.DPSM);
 
-		auto src_rect = compute_page_rect(transfer_state.copy.bitbltbuf.desc.SBP,
+		PageRect src_rect = compute_page_rect(transfer_state.copy.bitbltbuf.desc.SBP,
 		                                  transfer_state.copy.trxpos.desc.SSAX,
 		                                  transfer_state.copy.trxpos.desc.SSAY,
 		                                  transfer_state.copy.trxreg.desc.RRW,
@@ -3504,7 +3504,7 @@ void GSInterface::init_transfer()
 		if (!required_bytes)
 			return;
 
-		auto src_rect = compute_page_rect(transfer_state.copy.bitbltbuf.desc.SBP,
+		PageRect src_rect = compute_page_rect(transfer_state.copy.bitbltbuf.desc.SBP,
 										  transfer_state.copy.trxpos.desc.SSAX,
 										  transfer_state.copy.trxpos.desc.SSAY,
 										  transfer_state.copy.trxreg.desc.RRW,
@@ -3604,10 +3604,10 @@ void GSInterface::update_draw_handler()
 
 void GSInterface::update_optimized_gif_handler(uint32_t path)
 {
-	auto &hand = optimized_draw_handler[path];
+	OptimizedPacketHandler &hand = optimized_draw_handler[path];
 	hand = nullptr;
 
-	auto &gif_path = paths[path];
+	GIFPath &gif_path = paths[path];
 
 	// Only care about PACKED
 	if (gif_path.tag.FLG != GIFTagBits::PACKED || gif_path.tag.NLOOP == 0)
@@ -4297,7 +4297,7 @@ void GSInterface::packed_a_d_forward(const void *words)
 
 void GSInterface::packed_RGBAQ(const void *words)
 {
-	auto &rgba = *static_cast<const PackedRGBAQBits *>(words);
+	const PackedRGBAQBits &rgba = *static_cast<const PackedRGBAQBits *>(words);
 	registers.rgbaq.desc.R = rgba.R;
 	registers.rgbaq.desc.G = rgba.G;
 	registers.rgbaq.desc.B = rgba.B;
@@ -4309,7 +4309,7 @@ void GSInterface::packed_RGBAQ(const void *words)
 
 void GSInterface::packed_ST(const void *words)
 {
-	auto &st = *static_cast<const PackedSTBits *>(words);
+	const PackedSTBits &st = *static_cast<const PackedSTBits *>(words);
 	registers.st.desc.S = st.S;
 	registers.st.desc.T = st.T;
 	registers.internal_q = st.Q;
@@ -4319,7 +4319,7 @@ void GSInterface::packed_ST(const void *words)
 
 void GSInterface::packed_UV(const void *words)
 {
-	auto &uv = *static_cast<const PackedUVBits *>(words);
+	const PackedUVBits &uv = *static_cast<const PackedUVBits *>(words);
 	registers.uv.desc.U = uv.U;
 	registers.uv.desc.V = uv.V;
 	TRACE("UV", registers.uv);
@@ -4328,7 +4328,7 @@ void GSInterface::packed_UV(const void *words)
 template <bool ADC>
 void GSInterface::packed_XYZF(const void *words)
 {
-	auto &xyzf = *static_cast<const PackedXYZFBits *>(words);
+	const PackedXYZFBits &xyzf = *static_cast<const PackedXYZFBits *>(words);
 	bool adc = ADC || xyzf.ADC;
 
 	Reg64<XYZFBits> bits = {};
@@ -4345,7 +4345,7 @@ void GSInterface::packed_XYZF(const void *words)
 template <bool ADC>
 void GSInterface::packed_XYZ(const void *words)
 {
-	auto &xyz = *static_cast<const PackedXYZBits *>(words);
+	const PackedXYZBits &xyz = *static_cast<const PackedXYZBits *>(words);
 	bool adc = ADC || xyz.ADC;
 
 	Reg64<XYZBits> bits = {};
@@ -4365,7 +4365,7 @@ void GSInterface::packed_XYZ(const void *words)
 
 	if (FOG)
 	{
-		auto &xyzf = *static_cast<const PackedXYZFBits *>(words);
+		const PackedXYZFBits &xyzf = *static_cast<const PackedXYZFBits *>(words);
 		Reg64<XYZFBits> bits = {};
 		bits.desc.X = xyzf.X;
 		bits.desc.Y = xyzf.Y;
@@ -4376,7 +4376,7 @@ void GSInterface::packed_XYZ(const void *words)
 	}
 	else
 	{
-		auto &xyz = *static_cast<const PackedXYZBits *>(words);
+		const PackedXYZBits &xyz = *static_cast<const PackedXYZBits *>(words);
 		Reg64<XYZBits> bits = {};
 		bits.desc.X = xyz.X;
 		bits.desc.Y = xyz.Y;
@@ -4392,7 +4392,7 @@ void GSInterface::packed_XYZ(const void *words)
 template <bool FOG, PRIMType PRIM, int factor>
 void GSInterface::packed_STQRGBAXYZ(const void *words_, uint32_t num_vertices)
 {
-	const auto *words = static_cast<const uint8_t *>(words_);
+	const uint8_t *words = static_cast<const uint8_t *>(words_);
 	num_vertices *= factor;
 
 	for (uint32_t i = 0; i < num_vertices; i++, words += 48)
@@ -4406,7 +4406,7 @@ void GSInterface::packed_STQRGBAXYZ(const void *words_, uint32_t num_vertices)
 template <bool FOG, PRIMType PRIM, int factor>
 void GSInterface::packed_UVRGBAXYZ(const void *words_, uint32_t num_vertices)
 {
-	const auto *words = static_cast<const uint8_t *>(words_);
+	const uint8_t *words = static_cast<const uint8_t *>(words_);
 	num_vertices *= factor;
 
 	for (uint32_t i = 0; i < num_vertices; i++, words += 48)
@@ -4420,7 +4420,7 @@ void GSInterface::packed_UVRGBAXYZ(const void *words_, uint32_t num_vertices)
 template <bool FOG>
 void GSInterface::packed_STXYZSTRGBAXYZ_sprite(const void *words_, uint32_t num_sprites)
 {
-	const auto *words = static_cast<const uint8_t *>(words_);
+	const uint8_t *words = static_cast<const uint8_t *>(words_);
 	for (uint32_t i = 0; i < num_sprites; i++, words += 80)
 	{
 		packed_ST(words + 0);
@@ -4433,18 +4433,18 @@ void GSInterface::packed_STXYZSTRGBAXYZ_sprite(const void *words_, uint32_t num_
 
 void GSInterface::packed_FOG(const void *words)
 {
-	auto &fog = *static_cast<const PackedFOGBits *>(words);
+	const PackedFOGBits &fog = *static_cast<const PackedFOGBits *>(words);
 	registers.fog.desc.FOG = fog.F;
 	TRACE("FOG", registers.fog);
 }
 
 void GSInterface::setup_handlers()
 {
-	for (auto &h : ad_handlers)
+	for (RegListHandler &h : ad_handlers)
 		h = &GSInterface::reglist_nop;
-	for (auto &h : reglist_handlers)
+	for (RegListHandler &h : reglist_handlers)
 		h = &GSInterface::reglist_nop;
-	for (auto &h : packed_handlers)
+	for (PackedHandler &h : packed_handlers)
 		h = &GSInterface::packed_nop;
 
 	draw_handler = &GSInterface::drawing_kick_invalid;
@@ -4585,7 +4585,7 @@ void GSInterface::write_register(RegisterAddr addr, uint64_t payload)
 template <int count>
 void GSInterface::packed_ADONLY(const void *words, uint32_t num_loops)
 {
-	auto *ad = static_cast<const Reg128<PackedADBits> *>(words);
+	const Reg128<PackedADBits> *ad = static_cast<const Reg128<PackedADBits> *>(words);
 	for (uint32_t i = 0; i < num_loops; i++)
 		for (int j = 0; j < count; j++, ad++)
 			write_register(RegisterAddr(ad->desc.ADDR), ad->desc.data);
@@ -4597,13 +4597,13 @@ void GSInterface::gif_transfer(uint32_t path_index, const void *data, size_t siz
 	assert(path_index < 4);
 	assert(size % 16 == 0);
 	size /= 16;
-	auto &path = paths[path_index];
+	GIFPath &path = paths[path_index];
 
 	if (size == 0)
 		return;
 
-	const auto *qwords = static_cast<const GIFTagBits *>(data);
-	const auto *word64 = static_cast<const uint64_t *>(data);
+	const GIFTagBits *qwords = static_cast<const GIFTagBits *>(data);
+	const uint64_t *word64 = static_cast<const uint64_t *>(data);
 
 	// This can be optimized a lot, but keep it simple for now.
 
@@ -4647,13 +4647,13 @@ void GSInterface::gif_transfer(uint32_t path_index, const void *data, size_t siz
 			}
 			else if (path.tag.FLG == GIFTagBits::PACKED)
 			{
-				auto addr = uint32_t(path.tag.REGS >> (4 * path.reg)) & 0xf;
+				uint32_t addr = uint32_t(path.tag.REGS >> (4 * path.reg)) & 0xf;
 				path.reg++;
 
 				if (GIFAddr(addr) == GIFAddr::A_D)
 				{
 					PROFILE_SCOPE(ZONE_GS_REGWRITE);
-					auto *ad = reinterpret_cast<const Reg128<PackedADBits> *>(&qwords[i]);
+					const Reg128<PackedADBits> *ad = reinterpret_cast<const Reg128<PackedADBits> *>(&qwords[i]);
 					write_register(RegisterAddr(ad->desc.ADDR), ad->desc.data);
 				}
 				else
@@ -4675,7 +4675,7 @@ void GSInterface::gif_transfer(uint32_t path_index, const void *data, size_t siz
 
 				for (uint32_t j = 0; j < 2; j++)
 				{
-					auto addr = uint32_t(path.tag.REGS >> (4 * path.reg)) & 0xf;
+					uint32_t addr = uint32_t(path.tag.REGS >> (4 * path.reg)) & 0xf;
 					path.reg++;
 					(this->*reglist_handlers[addr])(word64[2 * i + j]);
 
@@ -4695,7 +4695,7 @@ void GSInterface::gif_transfer(uint32_t path_index, const void *data, size_t siz
 			{
 				// IMAGE
 				// Spam HWREG.
-				auto num_loops = std::min<size_t>(size - i, path.tag.NLOOP - path.loop);
+				size_t num_loops = std::min<size_t>(size - i, path.tag.NLOOP - path.loop);
 				a_d_HWREG_multi(word64 + 2 * i, num_loops * 2);
 				i += num_loops;
 				path.loop += num_loops;
@@ -4746,7 +4746,7 @@ void GSInterface::set_hacks(const Hacks &hacks_)
 
 	if (!hacks.backbuffer_promotion)
 	{
-		for (auto &b : promoted_backbuffers)
+		for (PromotedBackbuffer &b : promoted_backbuffers)
 			b = {};
 		num_promoted_backbuffers = 0;
 	}
@@ -4775,9 +4775,9 @@ void GSInterface::promote_render_pass_to_backbuffer(const RenderPass &rp)
 
 	for (uint32_t instance = 0; instance < rp.num_instances; instance++)
 	{
-		auto &inst = rp.instances[instance];
+		const RenderPass::Instance &inst = rp.instances[instance];
 		uint32_t fbp = inst.fb.frame.desc.FBP;
-		auto *promoted = find_promoted_backbuffer(fbp);
+		PromotedBackbuffer *promoted = find_promoted_backbuffer(fbp);
 		if (!promoted)
 			continue;
 
@@ -4804,7 +4804,7 @@ void GSInterface::promote_render_pass_to_backbuffer(const RenderPass &rp)
 				break;
 			}
 
-			auto &s = render_pass.state_vectors[state_index];
+			StateVector &s = render_pass.state_vectors[state_index];
 			if ((s.combiner & COMBINER_TME_BIT) == 0)
 			{
 				is_valid_blit = false;
@@ -4843,8 +4843,8 @@ void GSInterface::promote_render_pass_to_backbuffer(const RenderPass &rp)
 			// Promote that region to be the new backbuffer.
 			if ((state & (1 << STATE_BIT_PERSPECTIVE)) != 0)
 			{
-				auto &attr0 = render_pass.attributes[3 * prim + 0];
-				auto &attr1 = render_pass.attributes[3 * prim + 1];
+				VertexAttribute &attr0 = render_pass.attributes[3 * prim + 0];
+				VertexAttribute &attr1 = render_pass.attributes[3 * prim + 1];
 
 				// The region to promote is read off these coordinates,
 				// so a Q they cannot be computed from means there is no
@@ -4880,7 +4880,7 @@ void GSInterface::promote_render_pass_to_backbuffer(const RenderPass &rp)
 		if (!is_valid_blit)
 			continue;
 
-		auto &img = render_pass.tex_infos[promoted_tex_index].view->get_image();
+		const Vulkan::Image &img = render_pass.tex_infos[promoted_tex_index].view->get_image();
 
 		// For purposes of promoting frame to field rendering more gracefully, assume
 		// that any field based blit should round the blit rect to something reasonable.
@@ -4933,7 +4933,7 @@ void GSInterface::register_backbuffer_promotion_fbp(uint32_t fbp)
 		{
 			if (i)
 			{
-				auto tmp = std::move(promoted_backbuffers[i]);
+				PromotedBackbuffer tmp = std::move(promoted_backbuffers[i]);
 				for (uint32_t j = i; j; j--)
 					promoted_backbuffers[j] = std::move(promoted_backbuffers[j - 1]);
 				promoted_backbuffers[0] = std::move(tmp);
@@ -4953,8 +4953,8 @@ void GSInterface::register_backbuffer_promotion_fbp(uint32_t fbp)
 
 ScanoutResult GSInterface::vsync(const VSyncInfo &info_)
 {
-	auto info = info_;
-	auto ffmd = priv_registers.smode2.FFMD;
+	VSyncInfo info = info_;
+	uint32_t ffmd = priv_registers.smode2.FFMD;
 
 	// Somewhat of a hack to avoid having to turn off force_progressive manually.
 	if (state_tracker.has_complex_scanmsk_timeout)
@@ -4968,13 +4968,13 @@ ScanoutResult GSInterface::vsync(const VSyncInfo &info_)
 	const Vulkan::Image *promoted2 = nullptr;
 	if (priv_registers.pmode.EN1)
 	{
-		auto *promoted = find_promoted_backbuffer(priv_registers.dispfb1.FBP);
+		PromotedBackbuffer *promoted = find_promoted_backbuffer(priv_registers.dispfb1.FBP);
 		promoted1 = promoted ? promoted->img.get() : nullptr;
 	}
 
 	if (priv_registers.pmode.EN2)
 	{
-		auto *promoted = find_promoted_backbuffer(priv_registers.dispfb2.FBP);
+		PromotedBackbuffer *promoted = find_promoted_backbuffer(priv_registers.dispfb2.FBP);
 		promoted2 = promoted ? promoted->img.get() : nullptr;
 	}
 
@@ -5000,7 +5000,7 @@ ScanoutResult GSInterface::vsync(const VSyncInfo &info_)
 	renderer.set_field_aware_super_sampling(render_pass.field_aware_rendering);
 
 
-	auto result = renderer.vsync(priv_registers, info,
+	ScanoutResult result = renderer.vsync(priv_registers, info,
 	                             sampling_rate_x_log2, sampling_rate_y_log2,
 								 promoted1, promoted2);
 

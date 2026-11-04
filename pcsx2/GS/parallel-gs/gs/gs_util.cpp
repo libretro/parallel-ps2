@@ -55,8 +55,8 @@ Extent1D compute_effective_texture_extent(uint32_t extent, uint32_t wrap_mode, u
 	}
 	else if (wrap_mode == CLAMPBits::REGION_REPEAT)
 	{
-		auto msk = lo;
-		auto fix = hi;
+		uint32_t msk = lo;
+		uint32_t fix = hi;
 
 		if (msk == 0)
 		{
@@ -87,17 +87,17 @@ void compute_has_potential_feedback(const TEX0Bits &tex0, const CLAMPBits &clamp
 	uint32_t fb_base_page = frame.FBP;
 	uint32_t z_base_page = z.ZBP;
 
-	auto psm = uint32_t(tex0.PSM);
-	auto row_length_64 = uint32_t(tex0.TBW);
-	auto layout = get_data_structure(psm);
+	uint32_t psm = uint32_t(tex0.PSM);
+	uint32_t row_length_64 = uint32_t(tex0.TBW);
+	LocalDataStructure layout = get_data_structure(psm);
 	uint32_t page_stride = psm == PSMT4 || psm == PSMT8 ? (row_length_64 >> 1) : row_length_64;
 
 	uint32_t width = 1u << uint32_t(tex0.TW);
 	uint32_t height = 1u << uint32_t(tex0.TH);
 
-	auto u_extent = compute_effective_texture_extent(
+	Extent1D u_extent = compute_effective_texture_extent(
 			width, uint32_t(clamp.WMS), uint32_t(clamp.MINU), uint32_t(clamp.MAXU), 1);
-	auto v_extent = compute_effective_texture_extent(
+	Extent1D v_extent = compute_effective_texture_extent(
 			height, uint32_t(clamp.WMT), uint32_t(clamp.MINV), uint32_t(clamp.MAXV), 1);
 
 	// REGION clamps may cause us to go beyond the limits of the texture.
@@ -112,7 +112,7 @@ void compute_has_potential_feedback(const TEX0Bits &tex0, const CLAMPBits &clamp
 	if (width >= 1024 && row_length_64)
 		width = std::min<uint32_t>(width, row_length_64 * PGS_BUFFER_WIDTH_SCALE);
 
-	auto base_block = uint32_t(tex0.TBP0);
+	uint32_t base_block = uint32_t(tex0.TBP0);
 	uint32_t base_page = base_block / PGS_BLOCKS_PER_PAGE;
 
 	uint32_t fb_base_block = fb_base_page * PGS_BLOCKS_PER_PAGE;
@@ -149,7 +149,7 @@ PageRect compute_page_rect(uint32_t base_256, uint32_t x, uint32_t y,
 
 	// Pages are 64x32, 64x64, 128x64, 128x128 for 32-bit, 16-bit, 8-bit and 4-bit respectively.
 	uint32_t page_stride = psm == PSMT4 || psm == PSMT8 ? (row_length_64 >> 1) : row_length_64;
-	auto layout = get_data_structure(psm);
+	LocalDataStructure layout = get_data_structure(psm);
 
 	constexpr uint32_t BlocksPerPage = PageSize / 256;
 
@@ -194,8 +194,8 @@ PageRect compute_page_rect(uint32_t base_256, uint32_t x, uint32_t y,
 		                                             max_block_y - min_block_y + 1,
 		                                             psm);
 
-		auto hi_mask = uint32_t(block_mask >> 32);
-		auto lo_mask = uint32_t(block_mask >> 0);
+		uint32_t hi_mask = uint32_t(block_mask >> 32);
+		uint32_t lo_mask = uint32_t(block_mask >> 0);
 
 		if (hi_mask == 0)
 		{
@@ -317,16 +317,16 @@ bool triangles_form_parallelogram(const VertexPosition *pos, const VertexAttribu
                                   const PrimOrder &last_order,
                                   const PRIMBits &prim)
 {
-	auto &pos0 = pos[order.x];
-	auto &pos1 = pos[order.y];
-	auto &pos2 = pos[order.z];
+	const VertexPosition &pos0 = pos[order.x];
+	const VertexPosition &pos1 = pos[order.y];
+	const VertexPosition &pos2 = pos[order.z];
 	VertexPosition pos3;
 	pos3.pos.x = pos1.pos.x + pos2.pos.x - pos0.pos.x;
 	pos3.pos.y = pos1.pos.y + pos2.pos.y - pos0.pos.y;
 
-	auto &last_pos0 = last_pos[last_order.x];
-	auto &last_pos1 = last_pos[last_order.y];
-	auto &last_pos2 = last_pos[last_order.z];
+	const VertexPosition &last_pos0 = last_pos[last_order.x];
+	const VertexPosition &last_pos1 = last_pos[last_order.y];
+	const VertexPosition &last_pos2 = last_pos[last_order.z];
 
 	if (!pgs_ivec2_eq(&pos3.pos, &last_pos0.pos) ||
 	    !pgs_ivec2_eq(&pos1.pos, &last_pos1.pos) ||
@@ -344,13 +344,13 @@ bool triangles_form_parallelogram(const VertexPosition *pos, const VertexAttribu
 	if (attr[0].rgba != last_attr[0].rgba)
 		return false;
 
-	auto &attr0 = attr[order.x];
-	auto &attr1 = attr[order.y];
-	auto &attr2 = attr[order.z];
+	const VertexAttribute &attr0 = attr[order.x];
+	const VertexAttribute &attr1 = attr[order.y];
+	const VertexAttribute &attr2 = attr[order.z];
 
-	auto &last_attr0 = last_attr[last_order.x];
-	auto &last_attr1 = last_attr[last_order.y];
-	auto &last_attr2 = last_attr[last_order.z];
+	const VertexAttribute &last_attr0 = last_attr[last_order.x];
+	const VertexAttribute &last_attr1 = last_attr[last_order.y];
+	const VertexAttribute &last_attr2 = last_attr[last_order.z];
 
 	if (prim.TME)
 	{

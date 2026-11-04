@@ -40,7 +40,7 @@ bool PageTracker::page_has_host_write_timeline_update(const PageRect &rect) cons
 		for (unsigned x = 0; x < rect.page_width; x++)
 		{
 			unsigned page = rect.base_page + y * rect.page_stride + x;
-			auto &state = page_state[page & page_state_mask];
+			const PageState &state = page_state[page & page_state_mask];
 			if ((state.need_host_write_timeline_mask & rect.block_mask) != 0)
 				return true;
 		}
@@ -56,7 +56,7 @@ bool PageTracker::page_has_host_read_timeline_update(const PageRect &rect) const
 		for (unsigned x = 0; x < rect.page_width; x++)
 		{
 			unsigned page = rect.base_page + y * rect.page_stride + x;
-			auto &state = page_state[page & page_state_mask];
+			const PageState &state = page_state[page & page_state_mask];
 			if ((state.need_host_read_timeline_mask & rect.block_mask) != 0)
 				return true;
 		}
@@ -72,7 +72,7 @@ bool PageTracker::page_has_fb_read_write(const PageRect &rect) const
 		for (unsigned x = 0; x < rect.page_width; x++)
 		{
 			unsigned page = rect.base_page + y * rect.page_stride + x;
-			auto &state = page_state[page & page_state_mask];
+			const PageState &state = page_state[page & page_state_mask];
 			if (((state.fb_write_mask | state.fb_read_mask) & rect.block_mask) != 0 &&
 			    (state.pending_fb_access_mask & rect.write_mask) != 0)
 			{
@@ -91,7 +91,7 @@ bool PageTracker::page_has_fb_write(const PageRect &rect) const
 		for (unsigned x = 0; x < rect.page_width; x++)
 		{
 			unsigned page = rect.base_page + y * rect.page_stride + x;
-			auto &state = page_state[page & page_state_mask];
+			const PageState &state = page_state[page & page_state_mask];
 			if ((state.fb_write_mask & rect.block_mask) != 0 &&
 			    (state.pending_fb_access_mask & rect.write_mask) != 0)
 			{
@@ -110,7 +110,7 @@ bool PageTracker::page_is_copy_cached_sensitive(const PageRect& rect) const
 		for (unsigned x = 0; x < rect.page_width; x++)
 		{
 			unsigned page = rect.base_page + y * rect.page_stride + x;
-			auto &state = page_state[page & page_state_mask];
+			const PageState &state = page_state[page & page_state_mask];
 			if (((state.cached_read_block_mask | state.copy_write_block_mask | state.copy_read_block_mask) & rect.block_mask) != 0)
 				return true;
 		}
@@ -128,7 +128,7 @@ void PageTracker::mark_external_write(const PageRect &rect)
 			unsigned page = rect.base_page + y * rect.page_stride + x;
 
 			page &= page_state_mask;
-			auto &state = page_state[page];
+			PageState &state = page_state[page];
 
 			register_accessed_readback_page(page);
 			register_potential_invalidated_indices(page);
@@ -148,7 +148,7 @@ bool PageTracker::texture_may_super_sample(const PageRect &rect) const
 {
 	// Only check the base page since otherwise we may easily get false positives
 	// due to W/H rounding up to nearest POT.
-	auto &state = page_state[rect.base_page & page_state_mask];
+	const PageState &state = page_state[rect.base_page & page_state_mask];
 	return (state.flags & PAGE_STATE_MAY_SUPER_SAMPLE_BIT) != 0;
 }
 
@@ -164,7 +164,7 @@ void PageTracker::mark_fb_write(const PageRect &rect)
 			unsigned page = rect.base_page + y * rect.page_stride + x;
 
 			page &= page_state_mask;
-			auto &state = page_state[page];
+			PageState &state = page_state[page];
 
 			register_accessed_fb_pages(page);
 			register_accessed_readback_page(page);
@@ -205,7 +205,7 @@ void PageTracker::mark_fb_read(const PageRect &rect)
 		{
 			unsigned page = rect.base_page + y * rect.page_stride + x;
 			page &= page_state_mask;
-			auto &state = page_state[page];
+			PageState &state = page_state[page];
 
 			register_accessed_fb_pages(page);
 			register_accessed_readback_page(page);
@@ -220,8 +220,8 @@ void PageTracker::mark_fb_read(const PageRect &rect)
 
 bool PageTracker::mark_transfer_copy(const PageRect &dst_rect, const PageRect &src_rect)
 {
-	auto dst_block = get_block_state(dst_rect);
-	auto src_block = get_block_state(src_rect);
+	BlockState dst_block = get_block_state(dst_rect);
+	BlockState src_block = get_block_state(src_rect);
 
 	bool need_tex_invalidate = false;
 	bool has_hazard = false;
@@ -250,7 +250,7 @@ bool PageTracker::mark_transfer_copy(const PageRect &dst_rect, const PageRect &s
 		{
 			unsigned page = dst_rect.base_page + y * dst_rect.page_stride + x;
 			page &= page_state_mask;
-			auto &state = page_state[page];
+			PageState &state = page_state[page];
 
 			register_accessed_readback_page(page);
 			register_accessed_copy_pages(page);
@@ -279,7 +279,7 @@ bool PageTracker::mark_transfer_copy(const PageRect &dst_rect, const PageRect &s
 		{
 			unsigned page = src_rect.base_page + y * src_rect.page_stride + x;
 			page &= page_state_mask;
-			auto &state = page_state[page];
+			PageState &state = page_state[page];
 
 			register_accessed_copy_pages(page);
 			register_accessed_readback_page(page);
@@ -306,7 +306,7 @@ bool PageTracker::mark_transfer_copy(const PageRect &dst_rect, const PageRect &s
 			{
 				unsigned page = src_rect.base_page + y * src_rect.page_stride + x;
 				page &= page_state_mask;
-				auto &state = page_state[page];
+				PageState &state = page_state[page];
 
 				if ((state.flags & PAGE_STATE_NEEDS_SHADOW_PAGE_BIT) == 0)
 				{
@@ -358,7 +358,7 @@ void PageTracker::register_cached_clut_clobber(const PageRectCLUT &rect)
 		{
 			unsigned page = rect.base_page + y * rect.page_stride + x;
 			page &= page_state_mask;
-			auto &state = page_state[page];
+			PageState &state = page_state[page];
 			// Need to resolve WAR hazard.
 			register_accessed_cache_pages(page);
 			register_accessed_readback_page(page);
@@ -380,7 +380,7 @@ void PageTracker::register_short_term_cached_texture(
 
 	for (unsigned level = 0; level < levels; level++)
 	{
-		auto &rect = level_rect[level];
+		const PageRect &rect = level_rect[level];
 
 		for (unsigned y = 0; y < rect.page_height; y++)
 		{
@@ -389,7 +389,7 @@ void PageTracker::register_short_term_cached_texture(
 				unsigned page = rect.base_page + y * rect.page_stride + x;
 				page &= page_state_mask;
 
-				auto &state = page_state[page];
+				PageState &state = page_state[page];
 
 				// Need to resolve WAR hazard.
 				register_accessed_readback_page(page);
@@ -417,7 +417,7 @@ bool PageTracker::has_punchthrough_host_write(const PageRect &rect) const
 		for (unsigned x = 0; x < rect.page_width; x++)
 		{
 			unsigned page = rect.base_page + y * rect.page_stride + x;
-			auto &state = page_state[page & page_state_mask];
+			const PageState &state = page_state[page & page_state_mask];
 
 			// This is quite hacky, and should just be seen as a heuristic.
 			if (state.punchthrough_host_write_mask == 0 ||
@@ -441,7 +441,7 @@ PageTracker::register_cached_texture(const PageRect *level_rect, uint32_t levels
 	handle->set_hash(hash);
 	handle->image = std::move(image);
 
-	auto *delete_t = cached_textures.insert_yield(handle);
+	CachedTexture *delete_t = cached_textures.insert_yield(handle);
 	// We should always have called find_cached_texture before creating a new one.
 	(void)delete_t;
 	assert(!delete_t);
@@ -464,7 +464,7 @@ PageTracker::register_cached_texture(const PageRect *level_rect, uint32_t levels
 
 	for (unsigned level = 0; level < levels; level++)
 	{
-		auto &rect = level_rect[level];
+		const PageRect &rect = level_rect[level];
 
 		for (unsigned y = 0; y < rect.page_height; y++)
 		{
@@ -473,7 +473,7 @@ PageTracker::register_cached_texture(const PageRect *level_rect, uint32_t levels
 				unsigned page = rect.base_page + y * rect.page_stride + x;
 				page &= page_state_mask;
 
-				auto &state = page_state[page];
+				PageState &state = page_state[page];
 
 				if (!promote_to_cpu)
 				{
@@ -521,7 +521,7 @@ void PageTracker::clear_copy_pages()
 {
 	for (uint32_t page_index : accessed_copy_pages)
 	{
-		auto &page = page_state[page_index];
+		PageState &page = page_state[page_index];
 		page.copy_read_block_mask = 0;
 		page.copy_write_block_mask = 0;
 	}
@@ -529,7 +529,7 @@ void PageTracker::clear_copy_pages()
 
 	for (uint32_t page_index : accessed_shadow_pages)
 	{
-		auto &page = page_state[page_index];
+		PageState &page = page_state[page_index];
 		page.flags &= ~PAGE_STATE_NEEDS_SHADOW_PAGE_BIT;
 	}
 	accessed_shadow_pages.clear();
@@ -551,7 +551,7 @@ void PageTracker::clear_fb_pages()
 {
 	for (uint32_t page_index : accessed_fb_pages)
 	{
-		auto &page = page_state[page_index];
+		PageState &page = page_state[page_index];
 		page.fb_read_mask = 0;
 		page.fb_write_mask = 0;
 		page.pending_fb_access_mask = 0;
@@ -565,14 +565,14 @@ void PageTracker::clear_fb_pages()
 	// Once a FB is flushed, these references are dead.
 	for (uint32_t page_index : short_term_cache_pages)
 	{
-		auto &page = page_state[page_index];
+		PageState &page = page_state[page_index];
 		page.short_term_cached_textures.clear();
 	}
 	short_term_cache_pages.clear();
 
 	// Once a FB is flushed, we can no longer hold on to CLUT cached images
 	// which are in a floating state.
-	for (auto &cached : texture_cached_palette)
+	for (CachedTextureMasked &cached : texture_cached_palette)
 		if (cached.tex->status == CachedTexture::Status::Floating)
 			cached.tex->status = CachedTexture::Status::Dead;
 }
@@ -603,7 +603,7 @@ BlockState PageTracker::get_block_state(const PageRect &rect) const
 		for (unsigned x = 0; x < rect.page_width; x++)
 		{
 			unsigned page = rect.base_page + y * rect.page_stride + x;
-			auto &state = page_state[page & page_state_mask];
+			const PageState &state = page_state[page & page_state_mask];
 			block.cached_read_block_mask |= state.cached_read_block_mask;
 			block.copy_write_block_mask |= state.copy_write_block_mask;
 			block.copy_read_block_mask |= state.copy_read_block_mask;
@@ -617,7 +617,7 @@ void PageTracker::invalidate_fb_write_short_term_references()
 {
 	for (uint32_t page : accessed_fb_pages)
 	{
-		auto &state = page_state[page];
+		PageState &state = page_state[page];
 		if (!state.short_term_cached_textures.empty())
 			invalidate_cached_textures(state.short_term_cached_textures, UINT32_MAX, state.fb_write_mask, UINT32_MAX);
 	}
@@ -628,7 +628,7 @@ void PageTracker::mark_transfer_write(const PageRect &rect)
 	bool need_tex_invalidate = false;
 
 	// There are hazards if there is pending work that is dispatched after or concurrently.
-	auto block = get_block_state(rect);
+	BlockState block = get_block_state(rect);
 	if (page_has_fb_read_write(rect))
 	{
 		flush_render_pass(FlushReason::CopyHazard);
@@ -650,7 +650,7 @@ void PageTracker::mark_transfer_write(const PageRect &rect)
 		{
 			unsigned page = rect.base_page + y * rect.page_stride + x;
 			page &= page_state_mask;
-			auto &state = page_state[page];
+			PageState &state = page_state[page];
 
 			register_accessed_readback_page(page);
 			register_accessed_copy_pages(page);
@@ -712,7 +712,7 @@ void PageTracker::commit_host_write(const PageRect &rect)
 			unsigned page = rect.base_page + y * rect.page_stride + x;
 			page &= page_state_mask;
 			cb.sync_host_vram_page(page, rect.block_mask);
-			auto &state = page_state[page];
+			PageState &state = page_state[page];
 			state.flags &= ~PAGE_STATE_MAY_SUPER_SAMPLE_BIT;
 
 			register_potential_invalidated_indices(page);
@@ -730,7 +730,7 @@ void PageTracker::commit_punchthrough_host_write(const ParallelGS::PageRect &rec
 		{
 			unsigned page = rect.base_page + y * rect.page_stride + x;
 			page &= page_state_mask;
-			auto &state = page_state[page];
+			PageState &state = page_state[page];
 
 			register_accessed_readback_page(page);
 			state.punchthrough_host_write_mask |= rect.block_mask;
@@ -740,21 +740,21 @@ void PageTracker::commit_punchthrough_host_write(const ParallelGS::PageRect &rec
 
 void PageTracker::register_potential_invalidated_indices(uint32_t page)
 {
-	auto &state = page_state[page];
+	PageState &state = page_state[page];
 	if (state.texture_cache_needs_invalidate_block_mask == 0)
 		potential_invalidated_indices.push_back(page);
 }
 
 void PageTracker::register_accessed_cache_pages(uint32_t page)
 {
-	auto &state = page_state[page];
+	PageState &state = page_state[page];
 	if (state.cached_read_block_mask == 0)
 		accessed_cache_pages.push_back(page);
 }
 
 void PageTracker::register_accessed_readback_page(uint32_t page)
 {
-	auto &state = page_state[page];
+	PageState &state = page_state[page];
 	if (state.need_host_write_timeline_mask == 0 &&
 	    state.need_host_read_timeline_mask == 0 &&
 	    state.punchthrough_host_write_mask == 0)
@@ -765,14 +765,14 @@ void PageTracker::register_accessed_readback_page(uint32_t page)
 
 void PageTracker::register_accessed_fb_pages(uint32_t page)
 {
-	auto &state = page_state[page];
+	PageState &state = page_state[page];
 	if (state.fb_read_mask == 0 && state.fb_write_mask == 0)
 		accessed_fb_pages.push_back(page);
 }
 
 void PageTracker::register_accessed_copy_pages(uint32_t page)
 {
-	auto &state = page_state[page];
+	PageState &state = page_state[page];
 	if (state.copy_read_block_mask == 0 && state.copy_write_block_mask == 0)
 		accessed_copy_pages.push_back(page);
 }
@@ -830,7 +830,7 @@ uint64_t PageTracker::get_host_write_timeline(const PageRect &rect) const
 
 Vulkan::ImageHandle PageTracker::find_cached_texture(Util::Hash hash) const
 {
-	auto *cached_texture = cached_textures.find(hash);
+	CachedTexture *cached_texture = cached_textures.find(hash);
 	if (!cached_texture)
 		return {};
 	return cached_texture->image;
@@ -838,7 +838,7 @@ Vulkan::ImageHandle PageTracker::find_cached_texture(Util::Hash hash) const
 
 void PageTracker::garbage_collect_texture_masked_handles(std::vector<CachedTextureMasked> &textures)
 {
-	auto itr = Util::unstable_remove_if(textures.begin(), textures.end(), [](const CachedTextureMasked &masked) {
+	__gnu_cxx::__normal_iterator<CachedTextureMasked *, std::vector<CachedTextureMasked>> itr = Util::unstable_remove_if(textures.begin(), textures.end(), [](const CachedTextureMasked &masked) {
 		return masked.tex->status == CachedTexture::Status::Dead;
 	});
 	textures.erase(itr, textures.end());
@@ -850,10 +850,10 @@ bool PageTracker::invalidate_cached_textures(
 {
 	bool did_work = false;
 
-	auto itr = Util::unstable_remove_if(
+	__gnu_cxx::__normal_iterator<CachedTextureMasked *, std::vector<CachedTextureMasked>> itr = Util::unstable_remove_if(
 			textures.begin(), textures.end(),
 			[this, block_mask, write_mask, clut_instance, &did_work](CachedTextureMasked &masked) {
-				auto &tex = *masked.tex;
+				CachedTexture &tex = *masked.tex;
 
 				// CLUT invalidation is a soft invalidation. As long as we can use CLUT memoization
 				// to get back to the original CLUT index, we can keep reusing the image,
@@ -905,9 +905,9 @@ void PageTracker::invalidate_texture_cache(uint32_t clut_instance)
 {
 	bool invalidated = false;
 
-	for (auto index : potential_invalidated_indices)
+	for (unsigned int index : potential_invalidated_indices)
 	{
-		auto &page = page_state[index];
+		PageState &page = page_state[index];
 
 		if (!page.cached_textures.empty())
 		{
@@ -945,7 +945,7 @@ uint64_t PageTracker::mark_submission_timeline(FlushReason reason)
 
 	for (uint32_t page_index : accessed_readback_pages)
 	{
-		auto &page = page_state[page_index];
+		PageState &page = page_state[page_index];
 
 		if (page.need_host_read_timeline_mask != 0)
 		{
