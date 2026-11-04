@@ -1421,7 +1421,7 @@ void GSDeviceOGL::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r
 
 		const int w = r.width(), h = r.height();
 		glDisable(GL_SCISSOR_TEST);
-		glBlitFramebuffer(r.x, r.y, r.x + w, r.y + h, destX + r.x, destY + r.y, destX + r.x + w, destY + r.y + h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(r.x, r.y, r.x + w, r.y + h, destX, destY, destX + w, destY + h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 		glEnable(GL_SCISSOR_TEST);
 
 		if(GLState::fbo)
