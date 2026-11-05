@@ -21,6 +21,7 @@
 #include "MTVU.h"
 
 Gif_Unit gifUnit;
+Gif_Path_ReadAmount gifPathReadAmount[3];
 
 // Returns true on stalling SIGNAL
 bool Gif_HandlerAD(u8* pMem)
@@ -218,6 +219,7 @@ bool gifPathFreeze(SaveStateBase *s, u32 path)
 	if (!SaveState_IsSaving(s))
 	{
 		gifPath.readAmount = 0;
+		retro_atomic_store_release_int(&gifPathReadAmount[path].v, 0);
 		gifPath.gsPack.readAmount = 0;
 	}
 

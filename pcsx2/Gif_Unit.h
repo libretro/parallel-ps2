@@ -267,9 +267,25 @@ struct Gif_Path_MTVU
 	}
 };
 
+/* The bytes MTGS has yet to read of each path, each count on a cache line
+ * of its own. The count sat first in Gif_Path, in the line the EE's packet
+ * parsing walks (curOffset, the tag, the packet), and every packet the GS
+ * thread finished pulled that line from the EE, and the packet parser
+ * stalled on its next load of the packet (a fifth of its samples in a
+ * racing game). The field in Gif_Path stays, at zero, for the saved
+ * state's layout. */
+struct alignas(64) Gif_Path_ReadAmount
+{
+	retro_atomic_int_t v;
+	char pad[64 - sizeof(retro_atomic_int_t)];
+};
+static_assert(sizeof(Gif_Path_ReadAmount) == 64 && alignof(Gif_Path_ReadAmount) == 64,
+	"one MTGS read count a cache line");
+extern Gif_Path_ReadAmount gifPathReadAmount[3];
+
 struct Gif_Path
 {
-	retro_atomic_int_t readAmount; // Amount of data MTGS still needs to read
+	retro_atomic_int_t readAmount; // Always zero: see Gif_Path_ReadAmount
 	u8* buffer;                  // Path packet buffer
 	u32 buffSize;                // Full size of buffer
 	u32 buffLimit;               // Cut off limit to wrap around
@@ -317,6 +333,7 @@ struct Gif_Path
 		curSize = 0;
 		curOffset = 0;
 		retro_atomic_store_release_int(&readAmount, 0);
+		retro_atomic_store_release_int(&gifPathReadAmount[idx].v, 0);
 		gifTag.Reset();
 		gsPack.offset     = 0;
 		gsPack.size       = 0;
@@ -325,7 +342,7 @@ struct Gif_Path
 	}
 
 	bool isMTVU() const { return !idx && THREAD_VU1; }
-	s32 getReadAmount() { return retro_atomic_load_acquire_int(&readAmount) + gsPack.readAmount; }
+	s32 getReadAmount() { return retro_atomic_load_acquire_int(&gifPathReadAmount[idx].v) + gsPack.readAmount; }
 	bool hasDataRemaining() const { return curOffset < curSize; }
 	bool isDone() const { return isMTVU() ? !mtvu.fakePackets : (!hasDataRemaining() && (state == GIF_PATH_IDLE || state == GIF_PATH_WAIT)); }
 

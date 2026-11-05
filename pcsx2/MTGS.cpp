@@ -445,7 +445,7 @@ bool MTGS::MainLoop(bool flush_all)
 							GSgifTransfer((u8*)&path.buffer[offset], size / 16);
 							GS_HW_CONTEXT_END();
 						}
-						retro_atomic_fetch_sub_int(&path.readAmount, size);
+						retro_atomic_fetch_sub_int(&gifPathReadAmount[tag.data[2]].v, size);
 					}
 					break;
 
@@ -820,7 +820,7 @@ void Gif_AddCompletedGSPacket(GS_Packet& _gsPack, GIF_PATH _path)
 		tag->data[0] = (int)_gsPack.offset;
 		tag->data[1] = (int)_gsPack.size;
 
-		retro_atomic_fetch_add_int(&gifUnit.gifPath[_path].readAmount, _gsPack.size);
+		retro_atomic_fetch_add_int(&gifPathReadAmount[_path].v, _gsPack.size);
 	}
 	tag->data[2] = (int)_path;
 	RingWriteEnd();
@@ -837,7 +837,7 @@ void Gif_AddBlankGSPacket(u32 _size, GIF_PATH _path)
 	if (sthread_get_current_thread_id() == MTGS::s_thread)
 		return;
 
-	retro_atomic_fetch_add_int(&gifUnit.gifPath[_path].readAmount, _size);
+	retro_atomic_fetch_add_int(&gifPathReadAmount[_path].v, _size);
 	PacketTagType* tag = RingWriteBegin();
 	if (!tag)
 		return;
