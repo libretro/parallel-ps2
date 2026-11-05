@@ -501,6 +501,23 @@ for scale in 1 2; do
 	echo "  software renderer output, ${scale}x: a display ending inside a block row shows what the other does"
 done
 
+# A mipmapped texture read at a constant LOD by Gouraud triangles
+# (mip_shaded): the software renderer's picture is the hardware
+# renderers', on one rasterizer and on four. Its setup once kept the
+# colour steps in the slot holding the level's clamp, and the texels it
+# fetched came from past the level.
+c=mip_shaded
+"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+hash_of() { VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_FRAMES=60 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER="$1" VN_OPTIONS="$2" \
+	timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 2>/dev/null | sed -n 's/.*image: .*, hash \([0-9a-f]*\).*/\1/p'; }
+vk=$(hash_of Vulkan ""); pgs=$(hash_of paraLLEl-GS ""); sw1=$(hash_of "Software (HW)" "pcsx2_sw_renderer_threads=0"); sw4=$(hash_of "Software (HW)" "pcsx2_sw_renderer_threads=3")
+if [ -z "$vk" ] || [ "$vk" != "$pgs" ] || [ "$vk" != "$sw1" ] || [ "$vk" != "$sw4" ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: $c: Vulkan ${vk:-none}, paraLLEl-GS ${pgs:-none}, software on one rasterizer ${sw1:-none}, on four ${sw4:-none}"
+	exit 1
+fi
+echo "  a mipmapped texture under shaded triangles: the same picture on every renderer"
+
 # Sixteen sprites a frame reading two textures in turn (texture_alternate)
 # on the Vulkan renderer: the descriptor sets a frame allocates are the
 # bindings it has (the two textures, the target, the present), not one a

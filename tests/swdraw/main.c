@@ -1356,6 +1356,66 @@ static void stream_texture(unsigned mode, unsigned fpsm)
 
 static void case_stream_ct32(void) { stream_texture(STREAM_CT32, 0); }
 
+/* A mipmapped PSMT8 texture read at a constant LOD by shaded triangles:
+ * level 0, 32x32 at page 256, is index 1 and level 1, 16x16 at page 257,
+ * index 2, through a palette with entry 1 = 0x80102030 and entry 2 =
+ * 0x80405060; TEX1 fixes the LOD at 1 (LCM, K = 1.0, MXL 1) and the
+ * triangles are Gouraud, their RGB a ramp and their alpha 0x80, so a
+ * colour step is set up for them, and decal without TCC takes the
+ * texel's RGB with the vertex alpha. The quad is the 64 columns read
+ * back, the texture repeated eight times across it: 64 words of level
+ * 1's 0x80405060 a row. The software rasterizer's setup once used the mip clamp slot
+ * as scratch for the colour steps, and the clamped fetch read past the
+ * level. */
+static void case_mip_shaded(void)
+{
+	unsigned i, draw, rb;
+	s_smode1_hi = 0x7;                                     /* NTSC, for a display every renderer shows */
+	s_smode1_lo = 0x40834504u;
+	stream_image(0x3000u, 1, 0, 0, 0, 16, 16, 64);         /* the palette */
+	qw(0, 0x80102030u, 0x80405060u, 0);
+	for (i = 4; i < 256; i += 4)
+		qw(0, 0, 0, 0);
+	stream_image(0x2000u, 1, 0x13u, 0, 0, 32, 32, 64);     /* level 0: index 1 */
+	for (i = 0; i < 64; i++)
+		qw(0x01010101u, 0x01010101u, 0x01010101u, 0x01010101u);
+	stream_image(0x2020u, 1, 0x13u, 0, 0, 16, 16, 16);     /* level 1: index 2 */
+	for (i = 0; i < 16; i++)
+		qw(0x02020202u, 0x02020202u, 0x02020202u, 0x02020202u);
+	kick(0, s_qw_count, 0);
+	draw = s_qw_count;
+	stream_draw_setup(18, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);
+	/* TBP0 page 256, TBW 1, PSMT8, TW 5, TH 5; RGB only, decal, CBP page 384, CLD 1 */
+	qw(0x2000u | (1u << 14) | (0x13u << 20) | (5u << 26) | (1u << 30),
+		(5u >> 2) | (0u << 2) | (1u << 3) | (0x3000u << 5) | (1u << 29), GS_TEX0_1, 0);
+	qw(1u | (1u << 2) | (2u << 6), 16u, GS_TEX1_1, 0);     /* LCM, MXL 1, MMIN nearest mipmap; K 1.0 */
+	qw(0x2020u | (1u << 14), 0, GS_MIPTBP1, 0);           /* TBP1 page 257, TBW1 1 */
+	qw(0, 0, GS_CLAMP_1, 0);
+	qw(4 | 0x08 | 0x10 | 0x100, 0, GS_PRIM, 0);            /* triangle strip, Gouraud, TME, FST */
+	qw(0x80000000u, 0x3f800000u, GS_RGBAQ, 0);              /* RGB ramps across the 64 columns, alpha 0x80 throughout */
+	qw(0, 0, GS_UV, 0);
+	qw((unsigned)XY(224, 224), 0, GS_XYZ2, 0);
+	qw(0x80ffffffu, 0x3f800000u, GS_RGBAQ, 0);
+	qw(256u << 4, 0, GS_UV, 0);                            /* the texture eight times over */
+	qw((unsigned)XY(288, 224), 0, GS_XYZ2, 0);
+	qw(0x80000000u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((256u << 4) << 16, 0, GS_UV, 0);
+	qw((unsigned)XY(224, 288), 0, GS_XYZ2, 0);
+	qw(0x80ffffffu, 0x3f800000u, GS_RGBAQ, 0);
+	qw((256u << 4) | ((256u << 4) << 16), 0, GS_UV, 0);
+	qw((unsigned)XY(288, 288), 0, GS_XYZ2, 0);
+	rb = s_qw_count;
+	stream_readback(0);
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(draw, rb - draw, 1);
+	kick(rb, s_qw_count - rb, 0);
+	readback(512);
+	s_run_frames = 60;
+	s_expect_run[0] = 0x80405060ul;
+}
+
 /* Two 16x16 PSMCT32 textures at pages 128 and 129, uploaded once, and
  * every frame sixteen sprites into the frame at page 0 reading them in
  * turn, the first texture's the colour 0x80102030 and the second's
@@ -3069,6 +3129,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "stream_ct32",     case_stream_ct32,  "1" },
 	{ "stream_clamped",  case_stream_clamped, "1" },
 	{ "texture_alternate", case_texture_alternate, "1" },
+	{ "mip_shaded",      case_mip_shaded,   "1" },
 	{ "stream_t8",       case_stream_t8,    "1" },
 	{ "stream_t8_flat",  case_stream_t8_flat, "1" },
 	{ "stream_ct24_aem", case_stream_ct24_aem, "1" },

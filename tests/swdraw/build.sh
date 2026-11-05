@@ -33,7 +33,7 @@ SCRATCH=$(mktemp -d)
 trap 'rm -rf "$SCRATCH"' EXIT
 failed=0
 for c in aa1_small aa1_triangle aa1_triangle_2x aa1_line aa1_line_2x mip_tw8 mip_tw11 mip_tw11_2x \
-         display_large display_large_2x frame_ct32 frame_after_t4 frame_ct32_2x frame_after_t4_2x copy_then_upload readback_t4hh dest_alpha many_copies upload_short upload_whole upload_split upload_clut_between readback_parts column_passes alpha_under_depth alpha_under_depth_wide alpha_under_depth_strip alpha_under_depth_big alpha_dirtied_parked palette_engulfed block_offset_read engulfed_alpha palette_bilinear palette_bilinear_drawn palette_shaded big_triangles present points nine_frames fb_wrap uv_huge offset_reload vram_wrap_read frame_on_depth dirty_whole_target wrap_gradient depth_texture_far move_width_change frame_on_depth32 depth_states shuffle_left_of_offset split_clear_no_display frame_low frame_low_odd frame_low_odd_2x \
+         display_large display_large_2x frame_ct32 frame_after_t4 frame_ct32_2x frame_after_t4_2x copy_then_upload readback_t4hh dest_alpha many_copies upload_short upload_whole upload_split upload_clut_between readback_parts column_passes alpha_under_depth alpha_under_depth_wide alpha_under_depth_strip alpha_under_depth_big mip_shaded alpha_dirtied_parked palette_engulfed block_offset_read engulfed_alpha palette_bilinear palette_bilinear_drawn palette_shaded big_triangles present points nine_frames fb_wrap uv_huge offset_reload vram_wrap_read frame_on_depth dirty_whole_target wrap_gradient depth_texture_far move_width_change frame_on_depth32 depth_states shuffle_left_of_offset split_clear_no_display frame_low frame_low_odd frame_low_odd_2x \
          gif_nloop_past_data dual_blend date_no_depth_full t4_from_target t4_from_target_page t4_from_target_shaded texture_rewind draw_once \
          feedback_chain feedback_own_pixel feedback_runs; do
 	if ! timeout 300 "$DIR/swdraw" "$CORE" "$SCRATCH" "$c" > "$SCRATCH/$c.out" 2>&1; then
@@ -46,7 +46,7 @@ for c in aa1_small aa1_triangle aa1_triangle_2x aa1_line aa1_line_2x mip_tw8 mip
 done
 
 # A few again on four rasterizers, which split the rows between them.
-for c in aa1_triangle mip_tw8 frame_ct32_2x display_large wrap_gradient; do
+for c in aa1_triangle mip_tw8 mip_shaded frame_ct32_2x display_large wrap_gradient; do
 	if ! timeout 300 "$DIR/swdraw" "$CORE" "$SCRATCH" "$c" 3 > "$SCRATCH/$c.mt.out" 2>&1; then
 		cat "$SCRATCH/$c.mt.out"
 		echo "  FAIL: $c on four rasterizers"
@@ -68,4 +68,7 @@ same frame_ct32_2x frame_after_t4_2x
 # A frame that wraps local memory, rows a band apart at one address:
 # the picture on four rasterizers is the one drawn on one.
 same wrap_gradient wrap_gradient.mt
+# A mipmapped texture at a constant LOD under shaded triangles: the
+# picture on four rasterizers is the one drawn on one.
+same mip_shaded mip_shaded.mt
 exit $failed

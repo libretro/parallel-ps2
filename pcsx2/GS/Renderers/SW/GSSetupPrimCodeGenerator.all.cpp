@@ -574,8 +574,12 @@ void GSSetupPrimCodeGenerator2::QuadOffset(const Ymm& dst, const Ymm& d, int ski
 
 void GSSetupPrimCodeGenerator2::Color_YMM()
 {
-	const Address hi[4] = {_rip_local(temp.uv[0]), _rip_local(temp.trb), _rip_local(temp.uv_minmax[0]), _rip_local(temp.zs)};
-	const Address lo[4] = {_rip_local(temp.uv[1]), _rip_local(temp.tga), _rip_local(temp.uv_minmax[1]), _rip_local(temp.zd)};
+	/* Scratch for the quad steps: temporaries the scanline code makes
+	 * anew each scanline. Not temp.uv_minmax: with a constant LOD that
+	 * holds the mip level's clamp from BeginDraw for the whole draw, and
+	 * a texel fetch clamped by a colour step reads past its texture. */
+	const Address hi[4] = {_rip_local(temp.uv[0]), _rip_local(temp.trb), _rip_local(temp.lod.i), _rip_local(temp.zs)};
+	const Address lo[4] = {_rip_local(temp.uv[1]), _rip_local(temp.tga), _rip_local(temp.lod.f), _rip_local(temp.zd)};
 
 	// GSVector4 c = dscan.c;
 
