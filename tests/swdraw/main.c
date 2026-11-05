@@ -3124,6 +3124,78 @@ static void case_palette_shaded(void)
 	s_expect_run[3] = 0x803C3C3Cul;
 }
 
+/* Every frame: a scene 640x448 at page 0, ten pages wide, a colour and
+ * a 24-bit Z a half, the Z through a depth buffer at page 140; a
+ * colour draw two pages wide at page 140, its alpha masked, over the
+ * first 64 columns of its 448 rows, so the depth's pages are its; and
+ * a sprite reading page 140 as a 128x512 texture two pages wide into the
+ * frame, rows of it about the colours' border read back: the colours on
+ * the left, the Z as RGB on the right, under the alpha the memory had.
+ * On GSdx, the
+ * depth buffer's pages are laid out at the draw's width as they are
+ * converted, one draw a run of them, rather than copied over after a
+ * conversion of the whole. */
+static void case_depth_narrowed(void)
+{
+	unsigned draw, rb;
+	s_smode1_hi = 0x7;                                     /* NTSC, for a display every renderer shows */
+	s_smode1_lo = 0x40834504u;
+	draw = s_qw_count;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	/* the scene: colour at page 0, Z24 at page 140, ten pages wide */
+	qw(10u << 16, 0, GS_FRAME_1, 0);
+	qw(140u | (1u << 24), 0, GS_ZBUF_1, 0);
+	qw(6, 0, GS_PRIM, 0);                                  /* a colour and a Z a half: drawn, not cleared or filled */
+	s_bump_qw = s_qw_count;                                /* a sprite's first colour: bumped, drawn with the second */
+	qw(0x80101010u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0x123456u, GS_XYZ2, 0);
+	qw((unsigned)XY(320, 448), 0x123456u, GS_XYZ2, 0);
+	qw(0x80202020u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(320, 0), 0x234567u, GS_XYZ2, 0);
+	qw((unsigned)XY(640, 448), 0x234567u, GS_XYZ2, 0);
+	/* the colour draw over the depth's pages, two pages wide, alpha
+	 * masked: one colour on the top half, another on the bottom */
+	qw(140u | (2u << 16), 0xFF000000u, GS_FRAME_1, 0);
+	qw(8u, 1, GS_ZBUF_1, 0);                               /* ZMSK */
+	qw(6, 0, GS_PRIM, 0);
+	qw(0x80102030u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(64, 224), 0, GS_XYZ2, 0);
+	qw(0x80405060u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(0, 224), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(64, 448), 0, GS_XYZ2, 0);
+	/* page 140 read as a texture two pages wide into the frame */
+	qw(10u << 16, 0, GS_FRAME_1, 0);
+	qw(0x1180u | (2u << 14) | (7u << 26) | (1u << 30), 2u | (1u << 2) | (1u << 3), GS_TEX0_1, 0);
+	qw(0, 0, GS_TEX1_1, 0);
+	qw(0, 0, GS_CLAMP_1, 0);
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);
+	qw(0, 0, GS_UV, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 448), 0, GS_UV, 0);
+	qw((unsigned)XY(128, 448), 0, GS_XYZ2, 0);
+	s_qw[draw][0] = (s_qw_count - draw - 1) | 0x8000u;
+	rb = s_qw_count;
+	qw(4 | 0x8000u, 0x10000000u, 0xEu, 0);
+	qw(10u << 16, 0, GS_BITBLTBUF, 0);                     /* SBP 0, SBW 10 */
+	qw(200u << 16, 0, GS_TRXPOS, 0);                       /* rows 200 to 263: both colours */
+	qw(128, 64, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);                                /* local to host */
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(draw, rb - draw, 1);
+	kick(rb, s_qw_count - rb, 0);
+	readback(128 * 64 / 4);
+	s_run_frames    = 60;
+	s_expect_run[0] = 0x00102030ul;
+	s_expect_run[1] = 0x00405060ul;
+	s_expect_run[2] = 0x00123456ul;
+}
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -3168,6 +3240,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "alpha_under_depth_strip", case_alpha_under_depth_strip, "1" },
 	{ "alpha_under_depth_big", case_alpha_under_depth_big, "1" },
 	{ "alpha_dirtied_parked", case_alpha_dirtied_parked, "1" },
+	{ "depth_narrowed",  case_depth_narrowed, "1" },
 	{ "palette_engulfed", case_palette_engulfed, "1" },
 	{ "block_offset_read", case_block_offset_read, "1" },
 	{ "engulfed_alpha",  case_engulfed_alpha, "1" },

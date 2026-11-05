@@ -193,6 +193,28 @@ for renderer in Vulkan paraLLEl-GS; do
 	fi
 done
 
+# A depth buffer ten pages wide, drawn every frame, whose pages a colour
+# draw two pages wide then takes with its alpha masked, before they are
+# read as a texture at that width (depth_narrowed): the same picture on
+# every renderer, and on the Vulkan renderer no image copy a frame. GSdx
+# lays the depth's pages out at the draw's width as it converts them, a
+# draw a run of pages, rather than converting the whole buffer and
+# copying the pages over after.
+c=depth_narrowed
+"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+narrowed() { VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_COUNT_CALLS=1 VN_FRAMES=40 VN_EXPECT_RUN=00102030,00405060,00123456 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER="$1" \
+	timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/$c.$2.log" 2>&1 || true
+	grep -q "vknegotiate v2: ok" "$SCRATCH/$c.$2.log" && sed -n 's/.*image: .*, hash \([0-9a-f]*\).*/\1/p' "$SCRATCH/$c.$2.log" | sort -u | tr '\n' ' '; }
+vk=$(narrowed Vulkan vk); pgs=$(narrowed paraLLEl-GS pgs); sw=$(narrowed "Software (HW)" sw)
+copies=$(sed -n 's/.*run 40: calls.* copyimg=\([0-9]*\).*/\1/p' "$SCRATCH/$c.vk.log")
+draws=$(sed -n 's/.*run 40: calls.* draw=\([0-9]*\).*/\1/p' "$SCRATCH/$c.vk.log")
+if [ -z "$vk" ] || [ "$vk" != "$pgs" ] || [ "$vk" != "$sw" ] || [ -n "$copies" ] || [ -z "$draws" ] || [ "$draws" -lt 3 ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: $c: Vulkan ${vk:-none}(${copies:-0} copies, ${draws:-0} draws a frame), paraLLEl-GS ${pgs:-none}, software ${sw:-none}"
+	exit 1
+fi
+echo "  a depth buffer taken by a narrower colour draw: the same picture on every renderer, no image copy a frame"
+
 # A palette drawn into a buffer one page wide, whose page a wider buffer
 # drawn every frame takes without drawing over the palette: an indexed
 # read through the palette gets it, on both renderers, and still after a

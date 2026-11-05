@@ -481,7 +481,7 @@ bool GSTextureCache::CopyTargetPagesInto(Target* t, Target* dst, const GSVector4
  * local memory holds them, so what a draw at one width left in a page is
  * what a draw at the other finds there, as far down as max_height; pages
  * past it are left to local memory. Page-aligned targets only. */
-bool GSTextureCache::RelayoutTargetWidth(Target* t, u32 new_tbw, int max_height)
+bool GSTextureCache::RelayoutTargetWidth(Target* t, u32 new_tbw, int max_height, GSTexture* from, ShaderConvert shader)
 {
 	const GSVector2i pgs = GSLocalMemory::m_psm[t->m_TEX0.PSM].pgs;
 	const u32 old_tbw = t->m_TEX0.TBW;
@@ -518,13 +518,17 @@ bool GSTextureCache::RelayoutTargetWidth(Target* t, u32 new_tbw, int max_height)
 	if (!tex)
 		return false;
 
-	if (t->m_texture->GetState() == GSTexture::State::Cleared)
+	if (!from && t->m_texture->GetState() == GSTexture::State::Cleared)
 		g_gs_device->ClearRenderTarget(tex, t->m_texture->GetClearColor());
-	else if (t->m_texture->GetState() == GSTexture::State::Dirty)
+	else if (from || t->m_texture->GetState() == GSTexture::State::Dirty)
 	{
-		/* Pages next to each other at both widths go in one copy. */
+		/* Pages next to each other at both widths go in one copy; from
+		 * another texture in the old layout (a depth buffer's, say), each
+		 * run is converted by the shader on its way. */
+		const GSVector4 from_size = from ? GSVector4(from->GetSize()).xyxy() : GSVector4(1.0f);
 		for (p = 0; p < pages; p += run)
 		{
+			GSVector4i sr;
 			sx = (p % old_tbw) * (u32)pgs.x;
 			sy = (p / old_tbw) * (u32)pgs.y;
 			dx = (p % new_tbw) * (u32)pgs.x;
@@ -532,11 +536,14 @@ bool GSTextureCache::RelayoutTargetWidth(Target* t, u32 new_tbw, int max_height)
 			run = 1;
 			while (p + run < pages && (p + run) % old_tbw != 0 && (p + run) % new_tbw != 0)
 				run++;
-			if ((int)sy >= t->m_unscaled_size.y)
+			if ((int)sy >= t->m_unscaled_size.y || (from && (float)(sy + (u32)pgs.y) * scale > from_size.y))
 				continue;
-			g_gs_device->CopyRect(t->m_texture, tex,
-				GSVector4i(GSVector4(GSVector4i((int)sx, (int)sy, (int)(sx + run * (u32)pgs.x), (int)(sy + (u32)pgs.y))) * GSVector4(scale)),
-				(u32)((float)dx * scale), (u32)((float)dy * scale));
+			sr = GSVector4i(GSVector4(GSVector4i((int)sx, (int)sy, (int)(sx + run * (u32)pgs.x), (int)(sy + (u32)pgs.y))) * GSVector4(scale));
+			if (from)
+				g_gs_device->StretchRect(from, GSVector4(sr) / from_size, tex,
+					GSVector4(sr - sr.xyxy()) + GSVector4(GSVector4i((int)dx, (int)dy, (int)dx, (int)dy)) * GSVector4(scale), shader, false);
+			else
+				g_gs_device->CopyRect(t->m_texture, tex, sr, (u32)((float)dx * scale), (u32)((float)dy * scale));
 		}
 	}
 	else
@@ -2906,6 +2913,16 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVe
 				shader = (fmt_16_bits) ? ShaderConvert::FLOAT16_TO_RGB5A1 : ShaderConvert::FLOAT32_TO_RGBA8;
 
 
+			/* Drawn at another width than the buffer it came from: laid
+			 * out at the draw's width, page for page, before the draw -
+			 * and when its pixels come converted from that buffer, each
+			 * page converted straight into its place, rather than the
+			 * whole buffer converted at its own width and the pages
+			 * copied over after. */
+			const bool relayout = type == RenderTarget && !is_shuffle && !half_width && dst->m_TEX0.TBW != TEX0.TBW;
+			const int relayout_height = pcsx2_max_i(new_size.y, draw_rect.w);
+			bool relaid = false;
+
 			if (preserve_target)
 			{
 				// The old target's going to get invalidated (at least until we handle concurrent frame+depth at the same BP),
@@ -2940,7 +2957,10 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVe
 					else if (dst_match->m_texture->GetState() == GSTexture::State::Dirty)
 					{
 						dst_match->UnscaleRTAlpha();
-						g_gs_device->StretchRect(dst_match->m_texture, sRect, dst->m_texture, dRect, shader, false);
+						if (relayout && dst->m_dirty.empty() && dst_match->m_scale == dst->m_scale)
+							relaid = RelayoutTargetWidth(dst, TEX0.TBW, relayout_height, dst_match->m_texture, shader);
+						if (!relaid)
+							g_gs_device->StretchRect(dst_match->m_texture, sRect, dst->m_texture, dRect, shader, false);
 					}
 				}
 
@@ -2948,10 +2968,8 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVe
 				dst->Update();
 			}
 
-			/* Drawn at another width than the depth buffer it came from:
-			 * laid out at the draw's width, page for page, before the draw. */
-			if (type == RenderTarget && !is_shuffle && !half_width && dst->m_TEX0.TBW != TEX0.TBW)
-				RelayoutTargetWidth(dst, TEX0.TBW, pcsx2_max_i(new_size.y, draw_rect.w));
+			if (relayout && !relaid)
+				RelayoutTargetWidth(dst, TEX0.TBW, relayout_height);
 		}
 	}
 
