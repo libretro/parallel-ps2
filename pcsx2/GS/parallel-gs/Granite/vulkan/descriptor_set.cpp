@@ -443,7 +443,8 @@ DescriptorSetAllocator::~DescriptorSetAllocator()
 
 BindlessDescriptorPool::BindlessDescriptorPool(Device *device_, DescriptorSetAllocator *allocator_,
                                                VkDescriptorPool pool, uint32_t num_sets, uint32_t num_desc)
-	: device(device_), allocator(allocator_), desc_pool(pool), total_sets(num_sets), total_descriptors(num_desc)
+	: device(device_), allocator(allocator_), desc_pool(pool),
+	  total_descriptors(pool ? std::min<uint32_t>(num_desc, VULKAN_NUM_BINDINGS_BINDLESS_VARYING) : num_desc)
 {
 	if (!desc_pool)
 		bindless_buffer = allocator->allocate_bindless_buffer(num_sets, num_desc);
@@ -473,13 +474,18 @@ BindlessDescriptorSet BindlessDescriptorPool::get_descriptor_set() const
 	return desc_set;
 }
 
+uint32_t BindlessDescriptorPool::get_descriptor_base() const
+{
+	return desc_pool ? descriptor_base : 0;
+}
+
 void BindlessDescriptorPool::reset()
 {
 	if (desc_pool != VK_NULL_HANDLE)
 		allocator->reset_bindless_pool(desc_pool);
 	desc_set = {};
+	descriptor_base = 0;
 	allocated_descriptor_count = 0;
-	allocated_sets = 0;
 	bindless_buffer_offset = 0;
 }
 
@@ -502,23 +508,29 @@ bool BindlessDescriptorPool::allocate_descriptors(unsigned count)
 			bindless_buffer_offset += size;
 
 			allocated_descriptor_count += count;
-			allocated_sets++;
 		}
 
 		info_ptrs.reserve(count);
 	}
 	else
 	{
-		// Not all drivers will exhaust the pool for us, so make sure we don't allocate more than expected.
-		if (allocated_sets == total_sets)
-			return false;
+		// One set a pool, of every descriptor the pool has, and each
+		// allocation a range of it from where the last ended: a set is
+		// allocated once, written at its range while bound (update after
+		// bind), and a driver that backs a set with its layout's whole
+		// capacity, whatever its count, is charged for one set rather than
+		// one per draw.
 		if (allocated_descriptor_count + count > total_descriptors)
 			return false;
+		if (!desc_set)
+		{
+			desc_set = allocator->allocate_bindless_set(desc_pool, total_descriptors);
+			if (!desc_set)
+				return false;
+		}
 
+		descriptor_base = allocated_descriptor_count;
 		allocated_descriptor_count += count;
-		allocated_sets++;
-
-		desc_set = allocator->allocate_bindless_set(desc_pool, count);
 		infos.reserve(count);
 	}
 
@@ -580,6 +592,7 @@ void BindlessDescriptorPool::update()
 		desc.descriptorCount = write_count;
 		desc.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 		desc.dstSet = desc_set.handle.set;
+		desc.dstArrayElement = descriptor_base;
 
 		desc.pImageInfo = infos.data();
 		desc.pBufferInfo = nullptr;
@@ -598,75 +611,4 @@ void BindlessDescriptorPoolDeleter::operator()(BindlessDescriptorPool *pool)
 	pool->device->handle_pool.bindless_descriptor_pool.free(pool);
 }
 
-unsigned BindlessAllocator::push(const ImageView &view)
-{
-	auto ret = unsigned(views.size());
-	views.push_back(&view);
-	if (views.size() > VULKAN_NUM_BINDINGS_BINDLESS_VARYING)
-	{
-		LOGE("Exceeding maximum number of bindless resources per set (%u >= %u).\n",
-		     unsigned(views.size()), VULKAN_NUM_BINDINGS_BINDLESS_VARYING);
-	}
-	return ret;
-}
-
-void BindlessAllocator::begin()
-{
-	views.clear();
-}
-
-void BindlessAllocator::reset()
-{
-	descriptor_pool.reset();
-}
-
-unsigned BindlessAllocator::get_next_offset() const
-{
-	return unsigned(views.size());
-}
-
-void BindlessAllocator::reserve_max_resources_per_pool(unsigned set_count, unsigned descriptor_count)
-{
-	max_sets_per_pool = std::max(max_sets_per_pool, set_count);
-	max_descriptors_per_pool = std::max(max_descriptors_per_pool, descriptor_count);
-	views.reserve(max_descriptors_per_pool);
-}
-
-void BindlessAllocator::set_bindless_resource_type(BindlessResourceType type)
-{
-	resource_type = type;
-}
-
-BindlessDescriptorSet BindlessAllocator::commit(Device &device)
-{
-	max_sets_per_pool = std::max(1u, max_sets_per_pool);
-	max_descriptors_per_pool = std::max<unsigned>(views.size(), max_descriptors_per_pool);
-	max_descriptors_per_pool = std::max<unsigned>(1u, max_descriptors_per_pool);
-	max_descriptors_per_pool = std::min(max_descriptors_per_pool, VULKAN_NUM_BINDINGS_BINDLESS_VARYING);
-	unsigned to_allocate = std::max<unsigned>(views.size(), 1u);
-
-	if (!descriptor_pool)
-	{
-		descriptor_pool = device.create_bindless_descriptor_pool(
-				resource_type, max_sets_per_pool, max_descriptors_per_pool);
-	}
-
-	if (!descriptor_pool->allocate_descriptors(to_allocate))
-	{
-		descriptor_pool = device.create_bindless_descriptor_pool(
-				resource_type, max_sets_per_pool, max_descriptors_per_pool);
-
-		if (!descriptor_pool->allocate_descriptors(to_allocate))
-		{
-			LOGE("Failed to allocate descriptors on a fresh descriptor pool!\n");
-			return {};
-		}
-	}
-
-	for (size_t i = 0, n = views.size(); i < n; i++)
-		descriptor_pool->push_texture(*views[i]);
-	descriptor_pool->update();
-
-	return descriptor_pool->get_descriptor_set();
-}
 }

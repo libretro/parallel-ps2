@@ -474,6 +474,8 @@ private:
 	void bind_textures(Vulkan::CommandBuffer &cmd, const RenderPass &rp);
 
 	bool bound_texture_has_array = false;
+	// Where this pass's textures start in the bound bindless set.
+	uint32_t bindless_base = 0;
 
 	void bind_frame_resources(const RenderPass &rp);
 	void bind_frame_resources_instanced(const RenderPass &rp, uint32_t instance, uint32_t num_primitives);

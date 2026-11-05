@@ -1882,7 +1882,9 @@ Vulkan::BindlessDescriptorPoolHandle GSRenderer::get_bindless_pool()
 	}
 	else
 	{
-		return device->create_bindless_descriptor_pool(Vulkan::BindlessResourceType::Image, 4096, 64 * 1024);
+		/* One set a pool, the render passes' texture ranges within it. */
+		return device->create_bindless_descriptor_pool(Vulkan::BindlessResourceType::Image, 1,
+		                                               Vulkan::VULKAN_NUM_BINDINGS_BINDLESS_VARYING);
 	}
 }
 
@@ -1906,6 +1908,7 @@ void GSRenderer::bind_textures(Vulkan::CommandBuffer &cmd, const RenderPass &rp)
 	if (rp.num_textures == 0 && bindless_allocator->get_descriptor_set())
 	{
 		// Just bind dummy set and forget.
+		bindless_base = bindless_allocator->get_descriptor_base();
 		cmd.set_bindless(DESCRIPTOR_SET_IMAGES, bindless_allocator->get_descriptor_set());
 		return;
 	}
@@ -1931,6 +1934,7 @@ void GSRenderer::bind_textures(Vulkan::CommandBuffer &cmd, const RenderPass &rp)
 			bound_texture_has_array = true;
 	}
 	bindless_allocator->update();
+	bindless_base = bindless_allocator->get_descriptor_base();
 	cmd.set_bindless(DESCRIPTOR_SET_IMAGES, bindless_allocator->get_descriptor_set());
 }
 
@@ -2009,6 +2013,7 @@ void GSRenderer::bind_frame_resources_instanced(const RenderPass &rp, uint32_t i
 	constants.fb_color_page = int(inst.fb.frame.desc.FBP);
 	constants.fb_depth_page = int(inst.fb.z.desc.ZBP);
 	constants.fb_page_stride = int(inst.fb.frame.desc.FBW);
+	constants.bindless_base = int(bindless_base);
 
 	*cmd.allocate_typed_constant_data<GlobalConstants>(0, BINDING_CONSTANTS, 1) = constants;
 	*binning_cmd->allocate_typed_constant_data<GlobalConstants>(0, BINDING_CONSTANTS, 1) = constants;

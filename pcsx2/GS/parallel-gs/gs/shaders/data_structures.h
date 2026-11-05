@@ -160,6 +160,7 @@ struct GlobalConstants
 	int fb_color_page;
 	int fb_depth_page;
 	int fb_page_stride;
+	int bindless_base;
 };
 
 struct StateVector

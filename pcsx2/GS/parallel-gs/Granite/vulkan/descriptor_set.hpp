@@ -101,6 +101,11 @@ public:
 	void reset();
 	bool allocate_descriptors(unsigned count);
 	BindlessDescriptorSet get_descriptor_set() const;
+	// The first descriptor of the range the last allocate_descriptors()
+	// took, as the shader indexes the set: a descriptor-set pool holds one
+	// set, every range at its own place in it; a descriptor-buffer pool's
+	// range is its own set, from 0.
+	uint32_t get_descriptor_base() const;
 
 	void push_texture(const ImageView &view);
 	void push_texture_unorm(const ImageView &view);
@@ -117,8 +122,7 @@ private:
 
 	BindlessDescriptorSet desc_set;
 
-	uint32_t allocated_sets = 0;
-	uint32_t total_sets = 0;
+	uint32_t descriptor_base = 0;
 	uint32_t allocated_descriptor_count = 0;
 	uint32_t total_descriptors = 0;
 
@@ -218,26 +222,4 @@ private:
 	bool bindless = false;
 };
 
-class BindlessAllocator
-{
-public:
-	void reserve_max_resources_per_pool(unsigned set_count, unsigned descriptor_count);
-	void set_bindless_resource_type(BindlessResourceType type);
-
-	void begin();
-	unsigned push(const ImageView &view);
-
-	BindlessDescriptorSet commit(Device &device);
-
-	unsigned get_next_offset() const;
-
-	void reset();
-
-private:
-	BindlessDescriptorPoolHandle descriptor_pool;
-	unsigned max_sets_per_pool = 0;
-	unsigned max_descriptors_per_pool = 0;
-	BindlessResourceType resource_type = BindlessResourceType::Image;
-	std::vector<const ImageView *> views;
-};
 }

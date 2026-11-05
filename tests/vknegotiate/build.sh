@@ -412,6 +412,18 @@ if [ -z "$pgs" ] || [ "$pgs" != "$sw" ]; then
 fi
 echo "  palettes drawn and loaded at once: no render pass of their own, the software renderer's colours"
 
+# A frame's render passes bind their textures from one descriptor set a
+# pool, each pass a range of it: a steady frame allocates no set, where
+# a set a pass charged a driver that backs every set with its layout's
+# whole capacity a megabyte a pass.
+sets=$(calls "$SCRATCH/clut_lines.log" descsets); passes=$(calls "$SCRATCH/clut_lines.log" dispatch_ind)
+if [ -z "$passes" ] || [ "$passes" -lt 1 ] || [ -n "$sets" ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: a steady frame on paraLLEl-GS allocates ${sets:-no} descriptor sets for ${passes:-no} indirect dispatches"
+	exit 1
+fi
+echo "  a steady frame allocates no descriptor set"
+
 # The same with the lines' coordinates stepping at other rates
 # (clut_scales): each entry is the texel the line put there, so every
 # sprite is the software renderer's, and only the palette whose lines
