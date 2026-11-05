@@ -227,6 +227,7 @@ static INLINE void work_eventcount_wait(WorkEventCount *w)
 
 static INLINE int work_eventcount_wait_timed(WorkEventCount *w, u32 timeout_ms)
 {
+	const s32 spin_budget = WorkEventCount_SpinBudget();
 	int epoch, key;
 
 	if (retro_atomic_load_acquire_int(&w->dead))
@@ -237,6 +238,24 @@ static INLINE int work_eventcount_wait_timed(WorkEventCount *w, u32 timeout_ms)
 		return work_eventcount_consume(w, epoch);
 
 	work_eventcount_go_idle(w, epoch);
+
+	/* The same bounded spin as work_eventcount_wait before the park:
+	 * the bound is for a wedged producer, and a park is the barrier
+	 * and a kernel sleep/wake pair for work that is a few packets
+	 * away. */
+	if (spin_budget)
+	{
+		s32 spins = spin_budget;
+		while (spins-- > 0)
+		{
+			epoch = retro_atomic_load_acquire_int(&w->work.epoch);
+			if (WORK_EVENTCOUNT_EPOCH_BITS(epoch) != work_eventcount_seen(w))
+				return work_eventcount_consume(w, epoch);
+			if (retro_atomic_load_relaxed_int(&w->dead))
+				return 1;
+			WORK_EVENTCOUNT_RELAX();
+		}
+	}
 
 	key = retro_asym_eventcount_prepare_wait(&w->work);
 	if (WORK_EVENTCOUNT_EPOCH_BITS(key) != work_eventcount_seen(w)
