@@ -85,6 +85,11 @@ private:
 	VkDeviceSize alignment = 0;
 	VkBufferUsageFlags usage = 0;
 	size_t max_retained_blocks = 0;
+	/* The blocks kept, any size: one larger than block_size (a host
+	 * upload bigger than a block takes one of its own) comes back for
+	 * the next request it fits, within max_retained_blocks blocks'
+	 * worth of bytes. */
+	VkDeviceSize retained_bytes = 0;
 	std::vector<BufferBlock> blocks;
 	BufferBlock allocate_block(VkDeviceSize size);
 };

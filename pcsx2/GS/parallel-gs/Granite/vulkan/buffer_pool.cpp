@@ -48,6 +48,7 @@ BufferBlock::~BufferBlock()
 void BufferPool::reset()
 {
 	blocks.clear();
+	retained_bytes = 0;
 }
 
 BufferBlock BufferPool::allocate_block(VkDeviceSize size)
@@ -77,27 +78,37 @@ BufferBlock BufferPool::allocate_block(VkDeviceSize size)
 
 BufferBlock BufferPool::request_block(VkDeviceSize minimum_size)
 {
-	if ((minimum_size > block_size) || blocks.empty())
+	/* The newest block that fits; a plain block for a plain request. */
+	size_t i;
+	for (i = blocks.size(); i-- > 0;)
 	{
-		return allocate_block(std::max(block_size, minimum_size));
-	}
-	else
-	{
-		auto back = std::move(blocks.back());
+		BufferBlock back;
+		if (blocks[i].size < minimum_size)
+			continue;
+		if (minimum_size <= block_size && blocks[i].size != block_size)
+			continue;
+		back = std::move(blocks[i]);
+		if (i + 1 != blocks.size())
+			blocks[i] = std::move(blocks.back());
 		blocks.pop_back();
+		retained_bytes -= back.size;
 
 		back.mapped = static_cast<uint8_t *>(device->map_host_buffer(*back.buffer, MEMORY_ACCESS_WRITE_BIT));
 		back.offset = 0;
 		return back;
 	}
+	return allocate_block(std::max(block_size, minimum_size));
 }
 
 void BufferPool::recycle_block(BufferBlock &block)
 {
-	VK_ASSERT(block.size == block_size);
+	VK_ASSERT(block.size >= block_size);
 
-	if (blocks.size() < max_retained_blocks)
+	if (blocks.size() < max_retained_blocks && retained_bytes + block.size <= max_retained_blocks * block_size)
+	{
+		retained_bytes += block.size;
 		blocks.push_back(std::move(block));
+	}
 	else
 		block = {};
 }

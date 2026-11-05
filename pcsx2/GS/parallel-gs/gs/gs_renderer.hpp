@@ -369,6 +369,21 @@ private:
 		VkDeviceSize size = 0;
 	};
 
+	/* A scratch buffer filled up and set aside, with the timeline value
+	 * whose signal says the GPU is done with it: the next scratch of its
+	 * kind takes it rather than a new buffer. */
+	struct RetiredScratch
+	{
+		Vulkan::BufferHandle buffer;
+		VkDeviceSize size;
+		Vulkan::BufferDomain domain;
+		uint64_t release_value; /* UINT64_MAX until a submission carries a value */
+	};
+	enum { RETIRED_SCRATCH_MAX = 4 };
+	std::vector<RetiredScratch> retired_scratch;
+	void retire_scratch(Scratch &scratch, Vulkan::BufferDomain domain);
+	Vulkan::BufferHandle take_retired_scratch(VkDeviceSize size, Vulkan::BufferDomain domain);
+
 	struct AttributeScratch : Scratch
 	{
 		Vulkan::BufferHandle gpu_buffer;
@@ -592,10 +607,22 @@ private:
 	uint64_t query_timeline(const Vulkan::SemaphoreHolder &sem) const;
 
 	std::vector<Vulkan::ImageHandle> recycled_image_handles;
-	// Only cache textures with reasonable POT size.
-	// Small slab allocator basically.
-	std::vector<Vulkan::ImageHandle> recycled_image_pool[7][11][11];
-	std::vector<Vulkan::ImageHandle> super_sampled_recycled_image_pool[11][11];
+	/* The images textures gave up, kept for the next of the same size
+	 * (any size up to RECYCLED_IMAGE_MAX_DIM a side, as the clamped
+	 * extents textures are cut to are rarely powers of two), bucketed
+	 * by their dimensions; a small slab allocator. */
+	enum { RECYCLED_IMAGE_BUCKETS = 64, RECYCLED_IMAGE_MAX_DIM = 4096 };
+	struct RecycledImage
+	{
+		uint32_t width;
+		uint32_t height;
+		uint32_t levels;
+		uint32_t layers;
+		Vulkan::ImageHandle image;
+	};
+	std::vector<RecycledImage> recycled_image_pool[RECYCLED_IMAGE_BUCKETS];
+	static uint32_t recycled_image_bucket(uint32_t width, uint32_t height, uint32_t levels, uint32_t layers);
+	static VkDeviceSize recycled_image_size(uint32_t width, uint32_t height, uint32_t layers);
 	void move_image_handles_to_slab();
 	Vulkan::ImageHandle pull_image_handle_from_slab(uint32_t width, uint32_t height, uint32_t levels, uint32_t samples);
 	VkDeviceSize total_image_slab_size = 0;

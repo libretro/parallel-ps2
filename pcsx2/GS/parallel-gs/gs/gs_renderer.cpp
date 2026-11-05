@@ -1104,6 +1104,7 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	}
 
 	buffers = {};
+	retired_scratch.clear();
 	device = device_;
 	vram_size = options.vram_size;
 	next_clut_instance = 0;
@@ -1245,6 +1246,49 @@ void GSRenderer::commit_attribute_scratch(VkDeviceSize size, AttributeScratch &s
 	scratch.offset += size;
 }
 
+/* The scratch's buffer, when it has one, set aside for the GPU to finish
+ * with; the oldest set aside goes when there are too many. */
+void GSRenderer::retire_scratch(Scratch &scratch, Vulkan::BufferDomain domain)
+{
+	RetiredScratch retired;
+	size_t i;
+	if (!scratch.buffer)
+		return;
+	if (retired_scratch.size() >= RETIRED_SCRATCH_MAX)
+	{
+		for (i = 1; i < retired_scratch.size(); i++)
+			retired_scratch[i - 1] = std::move(retired_scratch[i]);
+		retired_scratch.pop_back();
+	}
+	retired.buffer = std::move(scratch.buffer);
+	retired.size = scratch.size;
+	retired.domain = domain;
+	retired.release_value = UINT64_MAX;
+	retired_scratch.push_back(std::move(retired));
+	scratch.buffer = {};
+}
+
+/* A buffer set aside that the GPU has finished with, large enough and
+ * of the domain, or none. */
+Vulkan::BufferHandle GSRenderer::take_retired_scratch(VkDeviceSize size, Vulkan::BufferDomain domain)
+{
+	const uint64_t done = timeline_value.load(PGS::memory_order_acquire);
+	size_t i;
+	for (i = 0; i < retired_scratch.size(); i++)
+	{
+		RetiredScratch &r = retired_scratch[i];
+		Vulkan::BufferHandle buffer;
+		if (r.release_value > done || r.size < size || r.domain != domain)
+			continue;
+		buffer = std::move(r.buffer);
+		if (i + 1 != retired_scratch.size())
+			retired_scratch[i] = std::move(retired_scratch.back());
+		retired_scratch.pop_back();
+		return buffer;
+	}
+	return {};
+}
+
 VkDeviceSize GSRenderer::allocate_device_scratch(VkDeviceSize size, Scratch &scratch, const void *data)
 {
 	// Trivial linear allocator. Reduces pressure on Granite allocator.
@@ -1264,9 +1308,12 @@ VkDeviceSize GSRenderer::allocate_device_scratch(VkDeviceSize size, Scratch &scr
 		             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
 		             VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
 
-		scratch.buffer = device->create_buffer(info);
+		retire_scratch(scratch, info.domain);
+		scratch.buffer = take_retired_scratch(info.size, info.domain);
+		if (!scratch.buffer)
+			scratch.buffer = device->create_buffer(info);
 		scratch.offset = 0;
-		scratch.size = info.size;
+		scratch.size = scratch.buffer->get_create_info().size;
 	}
 
 	VkDeviceSize offset = scratch.offset;
@@ -1458,6 +1505,14 @@ void GSRenderer::flush_submit(uint64_t value)
 		device->submit_empty(Vulkan::CommandBuffer::Type::Generic, nullptr, binary.get());
 		last_submitted_timeline.store(value, PGS::memory_order_release);
 		retro_eventcount_notify(&submitted_event);
+		/* Every scratch set aside so far is done with when this value
+		 * signals: the command buffers using it went in above. */
+		{
+			size_t i;
+			for (i = 0; i < retired_scratch.size(); i++)
+				if (retired_scratch[i].release_value == UINT64_MAX)
+					retired_scratch[i].release_value = value;
+		}
 		// Only a pool exhausted since the last signal waits on this
 		// value; otherwise the signal, an empty queue submission of its
 		// own, says nothing anyone reads. The value stays until it does.
@@ -1559,11 +1614,8 @@ void GSRenderer::recycle_image_handle(Vulkan::ImageHandle image)
 {
 	// Have to defer this until render pass is flushed, since an invalidate doesn't mean the texture is
 	// immune from reuse.
-	if (Util::is_pow2(image->get_width()) && Util::is_pow2(image->get_height()) &&
-	    image->get_width() <= 1024 && image->get_height() <= 1024)
-	{
+	if (image->get_width() <= RECYCLED_IMAGE_MAX_DIM && image->get_height() <= RECYCLED_IMAGE_MAX_DIM)
 		recycled_image_handles.push_back(std::move(image));
-	}
 }
 
 Vulkan::ImageHandle GSRenderer::copy_cached_texture(const Vulkan::Image &img, const VkRect2D &rect)
@@ -3598,45 +3650,63 @@ void GSRenderer::flush_rendering(const RenderPass &rp)
 	move_image_handles_to_slab();
 }
 
+uint32_t GSRenderer::recycled_image_bucket(uint32_t width, uint32_t height, uint32_t levels, uint32_t layers)
+{
+	return (width * 31u + height * 17u + levels * 7u + layers) & (RECYCLED_IMAGE_BUCKETS - 1);
+}
+
+/* The size an image counts for in the slab: its base level, as before. */
+VkDeviceSize GSRenderer::recycled_image_size(uint32_t width, uint32_t height, uint32_t layers)
+{
+	return (VkDeviceSize)width * height * layers * sizeof(uint32_t);
+}
+
 Vulkan::ImageHandle GSRenderer::pull_image_handle_from_slab(
 	uint32_t width, uint32_t height,
 	uint32_t levels, uint32_t samples)
 {
-	if (!Util::is_pow2(width) || !Util::is_pow2(height) || levels > 7 ||
-	    width > 1024 || height > 1024 || width == 0 || height == 0)
-	{
+	const uint32_t layers = samples > 1 ? samples + 1 : 1;
+	std::vector<RecycledImage> &pool = recycled_image_pool[recycled_image_bucket(width, height, levels, layers)];
+	size_t i;
+
+	if (width == 0 || height == 0 || width > RECYCLED_IMAGE_MAX_DIM || height > RECYCLED_IMAGE_MAX_DIM)
 		return {};
-	}
 
 	assert(levels == 1 || samples == 1);
 	assert(levels > 0);
 
-	uint32_t W = Util::floor_log2(width);
-	uint32_t H = Util::floor_log2(height);
-	std::vector<Vulkan::ImageHandle> &pool = samples > 1 ? super_sampled_recycled_image_pool[H][W] : recycled_image_pool[levels - 1][H][W];
-	if (pool.empty())
-		return {};
-
-	Vulkan::ImageHandle res = std::move(pool.back());
-	pool.pop_back();
-	assert(total_image_slab_size >= (sizeof(uint32_t) << (W + H)) * res->get_create_info().layers);
-	total_image_slab_size -= (sizeof(uint32_t) << (W + H)) * res->get_create_info().layers;
-	return res;
+	/* The newest first: the last given up is the likeliest still warm. */
+	for (i = pool.size(); i-- > 0;)
+	{
+		RecycledImage &entry = pool[i];
+		Vulkan::ImageHandle res;
+		if (entry.width != width || entry.height != height || entry.levels != levels || entry.layers != layers)
+			continue;
+		res = std::move(entry.image);
+		assert(total_image_slab_size >= recycled_image_size(width, height, layers));
+		total_image_slab_size -= recycled_image_size(width, height, layers);
+		if (i + 1 != pool.size())
+			pool[i] = std::move(pool.back());
+		pool.pop_back();
+		return res;
+	}
+	return {};
 }
 
 void GSRenderer::move_image_handles_to_slab()
 {
-	for (Util::IntrusivePtr<Vulkan::Image> &handle : recycled_image_handles)
+	size_t i;
+	for (i = 0; i < recycled_image_handles.size(); i++)
 	{
-		uint32_t W = Util::floor_log2(handle->get_width());
-		uint32_t H = Util::floor_log2(handle->get_height());
-		uint32_t levels = handle->get_create_info().levels;
-		assert(W <= 10 && H <= 10 && levels <= 7);
-		total_image_slab_size += (sizeof(uint32_t) << (W + H)) * handle->get_create_info().layers;
-		if (handle->get_create_info().layers > 1)
-			super_sampled_recycled_image_pool[H][W].push_back(std::move(handle));
-		else
-			recycled_image_pool[levels - 1][H][W].push_back(std::move(handle));
+		Vulkan::ImageHandle &handle = recycled_image_handles[i];
+		RecycledImage entry;
+		entry.width = handle->get_width();
+		entry.height = handle->get_height();
+		entry.levels = handle->get_create_info().levels;
+		entry.layers = handle->get_create_info().layers;
+		total_image_slab_size += recycled_image_size(entry.width, entry.height, entry.layers);
+		entry.image = std::move(handle);
+		recycled_image_pool[recycled_image_bucket(entry.width, entry.height, entry.levels, entry.layers)].push_back(std::move(entry));
 	}
 	recycled_image_handles.clear();
 
@@ -3663,16 +3733,9 @@ void GSRenderer::move_image_handles_to_slab()
 
 void GSRenderer::flush_slab_cache()
 {
-	uint32_t l, y, x;
-	for (l = 0; l < 7; l++)
-		for (y = 0; y < 11; y++)
-			for (x = 0; x < 11; x++)
-				recycled_image_pool[l][y][x].clear();
-
-	for (y = 0; y < 11; y++)
-		for (x = 0; x < 11; x++)
-			super_sampled_recycled_image_pool[y][x].clear();
-
+	uint32_t b;
+	for (b = 0; b < RECYCLED_IMAGE_BUCKETS; b++)
+		recycled_image_pool[b].clear();
 	total_image_slab_size = 0;
 }
 

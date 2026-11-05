@@ -1248,7 +1248,10 @@ void Device::set_context(const Context &context)
 	managers.vbo.set_max_retained_blocks(256);
 	managers.ibo.set_max_retained_blocks(256);
 	managers.ubo.set_max_retained_blocks(64);
-	managers.staging.set_max_retained_blocks(32);
+	/* Host uploads a frame run to a few megabytes (a game streaming its
+	 * textures every frame); the blocks they take come back for the next
+	 * frame rather than being made again past the first two megabytes. */
+	managers.staging.set_max_retained_blocks(256);
 	managers.descriptor_buffer.init(this);
 	managers.breadcrumbs.init(this);
 
@@ -1441,14 +1444,16 @@ static void request_block(Device &device, BufferBlock &block, VkDeviceSize size,
 	if (block.is_mapped())
 		block.unmap(device);
 
+	/* A block larger than the pool's goes back as well: the pool keeps
+	 * what fits its budget. */
 	if (block.get_offset() == 0)
 	{
-		if (block.get_size() == pool.get_block_size())
+		if (block.get_size() >= pool.get_block_size())
 			pool.recycle_block(block);
 	}
 	else
 	{
-		if (block.get_size() == pool.get_block_size())
+		if (block.get_size() >= pool.get_block_size())
 			recycle.push_back(block);
 	}
 

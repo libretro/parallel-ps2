@@ -1343,6 +1343,11 @@ static void stream_texture(unsigned mode, unsigned fpsm)
 	s_loop = 1;
 	s_loop_kick = s_kick_count;
 	kick(up, s_qw_count + s_qw_repeat - up, 1);
+	kick(up, s_qw_count + s_qw_repeat - up, 0);
+	kick(up, s_qw_count + s_qw_repeat - up, 0);
+	kick(up, s_qw_count + s_qw_repeat - up, 0);
+	kick(up, s_qw_count + s_qw_repeat - up, 0);
+	kick(up, s_qw_count + s_qw_repeat - up, 0);
 	kick(draw, rb - draw, 0);
 	kick(rb, up - rb, 0);
 	readback(fpsm ? 256 : 512);
@@ -1350,6 +1355,51 @@ static void stream_texture(unsigned mode, unsigned fpsm)
 }
 
 static void case_stream_ct32(void) { stream_texture(STREAM_CT32, 0); }
+
+/* A 1024x120 PSMCT32 texture (480 KB, what one IMAGE GIFtag carries) at
+ * page 128 streamed six times every frame, and a sprite reading its first
+ * 34x113 through a region clamp (an extent a hardware renderer keeps a
+ * texture of, neither side a power of two) into the frame at page 0,
+ * read back from the sprite's corner: 64 words of the texel,
+ * 0x80402010, a row. Every frame the uploads take the texture again and
+ * the sprite reads it again, so a renderer making an image for each
+ * texture, and staging buffers for each upload past the few it keeps,
+ * makes them every frame. */
+static void case_stream_clamped(void)
+{
+	unsigned draw, rb, up;
+	draw = s_qw_count;
+	stream_draw_setup(13, 0);
+	qw(6, 0, GS_PRIM, 0);                                  /* a sprite under it, a colour higher each frame */
+	s_bump_qw = s_qw_count;
+	qw(0x00406080u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(512, 448), 0, GS_XYZ2, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);
+	qw(0x1000u | (16u << 14) | (0u << 20) | (10u << 26) | (1u << 30), /* TBP0 page 128, TBW 16, CT32, TW 10, TH 9 */
+		(9u >> 2) | (1u << 2) | (1u << 3), GS_TEX0_1, 0);  /* TCC, decal */
+	qw(2u | (2u << 2) | (0u << 4) | (33u << 14) | (0u << 24), (112u >> 8), GS_CLAMP_1, 0); /* region clamp 0-33, 0-112 */
+	qw(0, 0, GS_TEX1_1, 0);
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* sprite, TME, FST */
+	qw(0, 0, GS_UV, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((34u << 4) | ((113u << 4) << 16), 0, GS_UV, 0);
+	qw((unsigned)XY(256, 256), 0, GS_XYZ2, 0);
+	rb = s_qw_count;
+	stream_readback(0);
+	up = s_qw_count;
+	stream_image(0x1000u, 16, 0, 0, 0, 1024, 120, 30720u);
+	qw(0x80402010u, 0x80402010u, 0x80402010u, 0x80402010u);
+	s_qw_repeat = 30720u - 1;
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(up, s_qw_count + s_qw_repeat - up, 1);
+	kick(draw, rb - draw, 0);
+	kick(rb, up - rb, 0);
+	readback(512);
+	s_run_frames = 120;
+	s_expect_run[0] = 0x80402010ul;
+}
 static void case_stream_t8(void) { stream_texture(STREAM_T8, 0); }
 static void case_stream_t8_flat(void) { stream_texture(STREAM_T8_FLAT, 0); }
 static void case_stream_ct24_aem(void) { stream_texture(STREAM_CT24_AEM, 0); }
@@ -2972,6 +3022,7 @@ static void case_palette_shaded(void)
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
+	{ "stream_clamped",  case_stream_clamped, "1" },
 	{ "stream_t8",       case_stream_t8,    "1" },
 	{ "stream_t8_flat",  case_stream_t8_flat, "1" },
 	{ "stream_ct24_aem", case_stream_ct24_aem, "1" },

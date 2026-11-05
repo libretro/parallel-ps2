@@ -501,6 +501,25 @@ for scale in 1 2; do
 	echo "  software renderer output, ${scale}x: a display ending inside a block row shows what the other does"
 done
 
+# A texture streamed every frame in uploads larger than a staging block
+# and read through a region clamp neither side of which is a power of
+# two (stream_clamped), on paraLLEl-GS: a steady frame makes no image and
+# no buffer. The texture's image comes back from the slab for the next
+# of its size, the upload's staging block from the pool for the next
+# upload that fits it, and the scratch buffer a frame's passes fill from
+# the ones set aside once the GPU is done with them.
+c=stream_clamped
+"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+VN_COUNT_CALLS=1 VN_FRAMES=40 VN_EXPECT_RUN=80402010 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=paraLLEl-GS \
+	timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/$c.log" 2>&1 || true
+images=$(calls "$SCRATCH/$c.log" mkimage); bufs=$(calls "$SCRATCH/$c.log" mkbuffer); passes=$(calls "$SCRATCH/$c.log" dispatch_ind)
+if ! grep -q "vknegotiate v2: ok" "$SCRATCH/$c.log" || [ -z "$passes" ] || [ -n "$images" ] || [ -n "$bufs" ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: $c: a steady frame on paraLLEl-GS makes ${images:-no} images and ${bufs:-no} buffers for ${passes:-no} render passes"
+	exit 1
+fi
+echo "  a texture streamed and read every frame: no image or buffer made a frame"
+
 # A texture streamed and drawn every frame (stream_ct32) on paraLLEl-GS:
 # once the pipelines it builds ahead are built - only those its draws
 # look up - the heap stays where it is (Linux, glibc). A super-sampling
