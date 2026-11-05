@@ -3260,6 +3260,67 @@ static void case_width_overwritten(void)
 	s_expect_run[1] = 0x80405060ul;
 }
 
+/* A buffer 320x224 at page 140, five pages wide, laid down once in a
+ * colour; every frame after, ten sprites a column of 32 each read it
+ * as a texture, linear, a texel to the side of where they draw, and
+ * draw it back into itself brightened (highlight), until it is white;
+ * its first rows are read back: white. On paraLLEl-GS the columns are
+ * one render pass, the blur in place reading the buffer as it was
+ * before the pass, not one a column, each waiting for the last. */
+static void case_blur_in_place(void)
+{
+	unsigned i, draw, rb;
+	s_smode1_hi = 0x7;                                     /* NTSC, for a display every renderer shows */
+	s_smode1_lo = 0x40834504u;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(8u, 1, GS_ZBUF_1, 0);                               /* ZMSK */
+	qw(140u | (5u << 16), 0, GS_FRAME_1, 0);
+	qw(6, 0, GS_PRIM, 0);
+	qw(0xFF202020u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(160, 224), 0, GS_XYZ2, 0);
+	qw(0xFF303030u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(160, 0), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(320, 224), 0, GS_XYZ2, 0);
+	s_qw[0][0] = (s_qw_count - 1) | 0x8000u;
+	kick(0, s_qw_count, 0);
+	draw = s_qw_count;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);
+	qw(140u | (5u << 16), 0, GS_FRAME_1, 0);
+	qw(0x1180u | (5u << 14) | (9u << 26), 2u | (1u << 2) | (2u << 3), GS_TEX0_1, 0); /* 512x256, TCC, highlight */
+	qw(1u << 5, 0, GS_TEX1_1, 0);                          /* MMAG linear */
+	qw(0, 0, GS_CLAMP_1, 0);
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* sprite, TME, FST */
+	s_bump_qw = s_qw_count;                                /* a sprite's first colour: bumped, drawn with the second */
+	qw(0x10808080u, 0x3f800000u, GS_RGBAQ, 0);
+	for (i = 0; i < 10; i++)
+	{
+		qw(0x10808080u, 0x3f800000u, GS_RGBAQ, 0);         /* unity, plus 0x10 a frame */
+		qw((unsigned)XY(i * 32 + 1, 0) + 0x00080008u, 0, GS_UV, 0);
+		qw((unsigned)XY(i * 32, 0), 0, GS_XYZ2, 0);
+		qw((unsigned)XY(i * 32 + 33, 224) + 0x00080008u, 0, GS_UV, 0);
+		qw((unsigned)XY(i * 32 + 32, 224), 0, GS_XYZ2, 0);
+	}
+	s_qw[draw][0] = (s_qw_count - draw - 1) | 0x8000u;
+	rb = s_qw_count;
+	qw(4 | 0x8000u, 0x10000000u, 0xEu, 0);
+	qw(140u | (5u << 16), 0, GS_BITBLTBUF, 0);             /* SBP page 140, SBW 5 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(128, 16, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);                                /* local to host */
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(draw, rb - draw, 1);
+	kick(rb, s_qw_count - rb, 0);
+	readback(128 * 16 / 4);
+	s_run_frames    = 60;
+	s_expect_run[0] = 0xFFFFFFFFul;
+}
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -3306,6 +3367,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "alpha_dirtied_parked", case_alpha_dirtied_parked, "1" },
 	{ "depth_narrowed",  case_depth_narrowed, "1" },
 	{ "width_overwritten", case_width_overwritten, "1" },
+	{ "blur_in_place",   case_blur_in_place, "1" },
 	{ "palette_engulfed", case_palette_engulfed, "1" },
 	{ "block_offset_read", case_block_offset_read, "1" },
 	{ "engulfed_alpha",  case_engulfed_alpha, "1" },

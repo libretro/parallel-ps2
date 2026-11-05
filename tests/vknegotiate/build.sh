@@ -236,6 +236,32 @@ if [ -z "$vk" ] || [ "$vk" != "$pgs" ] || [ "$vk" != "$sw" ] || [ -n "$copies" ]
 fi
 echo "  a buffer overwritten at two widths in turn: the same picture on every renderer, no image copy a frame"
 
+# A buffer blurred in place every frame, a column of 32 at a time, each
+# column a sprite reading the buffer linear a texel to the side of where
+# it draws (blur_in_place): the readback on every renderer, and on
+# paraLLEl-GS the columns in one render pass. paraLLEl-GS reads such a
+# blur's source as it was before the pass rather than ending the pass
+# at every column whose page the last one wrote.
+c=blur_in_place
+"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+for renderer in Vulkan "Software (HW)"; do
+	if ! VN_EXPECT_RUN=ffffffff VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER="$renderer" \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/$c.log" 2>&1; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: $c, $renderer"
+		exit 1
+	fi
+done
+VN_COUNT_CALLS=1 VN_FRAMES=40 VN_EXPECT_RUN=ffffffff VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=paraLLEl-GS \
+	timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/$c.log" 2>&1 || true
+passes=$(sed -n 's/.*run 40: calls.* dispatch_ind=\([0-9]*\).*/\1/p' "$SCRATCH/$c.log")
+if ! grep -q "vknegotiate v2: ok" "$SCRATCH/$c.log" || [ -z "$passes" ] || [ "$passes" -gt 2 ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: $c: a frame of ten blur columns on paraLLEl-GS is ${passes:-no} render passes"
+	exit 1
+fi
+echo "  a buffer blurred in place a column at a time: $passes render passes a frame on paraLLEl-GS"
+
 # A palette drawn into a buffer one page wide, whose page a wider buffer
 # drawn every frame takes without drawing over the palette: an indexed
 # read through the palette gets it, on both renderers, and still after a

@@ -1538,16 +1538,14 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 				// It tends to look very broken, especially when using SSAA textures.
 				int u_offset = std::abs(uv_bb.x - bb.x);
 				int v_offset = std::abs(uv_bb.y - bb.y);
-				int u_size = uv_bb.z - uv_bb.x;
-				int v_size = uv_bb.w - uv_bb.y;
-				int x_size = bb.z - bb.x;
-				int y_size = bb.w - bb.y;
+				/* For linear filter, UV bb is generally 2 extra pixels;
+				 * fewer on an axis sampled on texel centres, or at the
+				 * texture's edge. The bias is a few taps. */
+				int u_extra = (uv_bb.z - uv_bb.x) - (bb.z - bb.x);
+				int v_extra = (uv_bb.w - uv_bb.y) - (bb.w - bb.y);
 
-				// For linear filter, UV bb is generally 2 extra pixels.
-				u_size -= 2;
-				v_size -= 2;
-
-				if (u_offset <= 1 && v_offset <= 1 && u_size == x_size && v_size == y_size)
+				if (u_offset <= 4 && v_offset <= 4 &&
+				    u_extra >= 0 && u_extra <= 2 && v_extra >= 0 && v_extra <= 2)
 					long_term_cache_texture = false;
 			}
 		}
