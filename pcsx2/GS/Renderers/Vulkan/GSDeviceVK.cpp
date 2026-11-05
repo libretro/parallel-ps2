@@ -1190,6 +1190,62 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		return buf;
 	}
 
+	struct ds_key_view { u64 view0; u64 view1; u64 sampler; u32 layout0; u32 layout1; };
+	static u32 ds_key_hash(const void* key_)
+	{
+		const struct ds_key_view* key = (const struct ds_key_view*)key_;
+		u64 h = key->view0 * 0x9E3779B97F4A7C15ull;
+		h ^= key->view1 + 0x7F4A7C15ull + (h << 6) + (h >> 2);
+		h ^= key->sampler + (h << 6) + (h >> 2);
+		h ^= ((u64)key->layout0 << 32 | key->layout1) + (h << 6) + (h >> 2);
+		return (u32)(h >> 32) ^ (u32)h;
+	}
+
+	static bool ds_key_equal(const void* a_, const void* b_)
+	{
+		const struct ds_key_view* a = (const struct ds_key_view*)a_;
+		const struct ds_key_view* b = (const struct ds_key_view*)b_;
+		return a->view0 == b->view0 && a->view1 == b->view1 && a->sampler == b->sampler &&
+			a->layout0 == b->layout0 && a->layout1 == b->layout1;
+	}
+
+	VkDescriptorSet GSDeviceVK::FindCachedDescriptorSet(const FrameResources::DescriptorSetKey* key) const
+	{
+		const FrameResources& resources = m_frame_resources[m_current_frame];
+		u32 i = ds_key_hash(key) & (FrameResources::DS_CACHE_SIZE - 1);
+		u32 n;
+		for (n = 0; n < FrameResources::DS_CACHE_SIZE; n++, i = (i + 1) & (FrameResources::DS_CACHE_SIZE - 1))
+		{
+			const FrameResources::DescriptorSetEntry* e = &resources.ds_cache[i];
+			if (e->set == VK_NULL_HANDLE)
+				return VK_NULL_HANDLE;
+			if (ds_key_equal(&e->key, key))
+				return e->set;
+		}
+		return VK_NULL_HANDLE;
+	}
+
+	/* A full table (a frame of more distinct bindings than slots) keeps
+	 * what it has; the rest allocate as before. */
+	void GSDeviceVK::CacheDescriptorSet(const FrameResources::DescriptorSetKey* key, VkDescriptorSet set)
+	{
+		FrameResources& resources = m_frame_resources[m_current_frame];
+		u32 i = ds_key_hash(key) & (FrameResources::DS_CACHE_SIZE - 1);
+		u32 n;
+		if (resources.ds_cache_used >= FrameResources::DS_CACHE_SIZE / 2)
+			return;
+		for (n = 0; n < FrameResources::DS_CACHE_SIZE; n++, i = (i + 1) & (FrameResources::DS_CACHE_SIZE - 1))
+		{
+			FrameResources::DescriptorSetEntry* e = &resources.ds_cache[i];
+			if (e->set != VK_NULL_HANDLE)
+				continue;
+			e->key = *key;
+			e->set = set;
+			resources.ds_cache_used++;
+			return;
+		}
+	}
+
 	VkDescriptorSet GSDeviceVK::AllocateDescriptorSet(VkDescriptorSetLayout set_layout)
 	{
 		VkDescriptorSetAllocateInfo allocate_info = 	{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -1410,6 +1466,11 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 
 		// Also can do the same for the descriptor pools
 		vkResetDescriptorPool(m_device, resources.descriptor_pool, 0);
+		if (resources.ds_cache_used)
+		{
+			memset(resources.ds_cache, 0, sizeof(resources.ds_cache));
+			resources.ds_cache_used = 0;
+		}
 
 		resources.fence_counter = m_next_fence_counter++;
 		resources.init_buffer_used = false;
@@ -5320,14 +5381,25 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 
 	if ((flags & DIRTY_FLAG_TFX_SAMPLERS_DS) || m_tfx_texture_descriptor_set == VK_NULL_HANDLE)
 	{
-		m_tfx_texture_descriptor_set = AllocateDescriptorSet(m_tfx_sampler_ds_layout);
+		FrameResources::DescriptorSetKey key;
+		key.view0 = (u64)m_tfx_textures[0]->GetView();
+		key.view1 = (u64)m_tfx_textures[1]->GetView();
+		key.sampler = (u64)m_tfx_sampler;
+		key.layout0 = (u32)m_tfx_textures[0]->GetVkLayout();
+		key.layout1 = (u32)m_tfx_textures[1]->GetVkLayout();
+		m_tfx_texture_descriptor_set = FindCachedDescriptorSet(&key);
 		if (m_tfx_texture_descriptor_set == VK_NULL_HANDLE)
-			return RetryTFXState(already_execed, "allocate TFX texture descriptors");
+		{
+			m_tfx_texture_descriptor_set = AllocateDescriptorSet(m_tfx_sampler_ds_layout);
+			if (m_tfx_texture_descriptor_set == VK_NULL_HANDLE)
+				return RetryTFXState(already_execed, "allocate TFX texture descriptors");
 
-		dsub.AddCombinedImageSamplerDescriptorWrite(
-			m_tfx_texture_descriptor_set, 0, m_tfx_textures[0]->GetView(), m_tfx_sampler, m_tfx_textures[0]->GetVkLayout());
-		dsub.AddImageDescriptorWrite(m_tfx_texture_descriptor_set, 1, m_tfx_textures[1]->GetView(), m_tfx_textures[1]->GetVkLayout());
-		dsub.Update(vk_init_info.device);
+			dsub.AddCombinedImageSamplerDescriptorWrite(
+				m_tfx_texture_descriptor_set, 0, m_tfx_textures[0]->GetView(), m_tfx_sampler, m_tfx_textures[0]->GetVkLayout());
+			dsub.AddImageDescriptorWrite(m_tfx_texture_descriptor_set, 1, m_tfx_textures[1]->GetView(), m_tfx_textures[1]->GetVkLayout());
+			dsub.Update(vk_init_info.device);
+			CacheDescriptorSet(&key, m_tfx_texture_descriptor_set);
+		}
 
 		if (!layout_changed)
 		{
@@ -5339,23 +5411,35 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 
 	if ((flags & DIRTY_FLAG_TFX_RT_TEXTURE_DS) || m_tfx_rt_descriptor_set == VK_NULL_HANDLE)
 	{
-		m_tfx_rt_descriptor_set = AllocateDescriptorSet(m_tfx_rt_texture_ds_layout);
+		/* (no sampler: 1 keeps this key apart from a texture set's) */
+		FrameResources::DescriptorSetKey key;
+		key.view0 = (u64)m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetView();
+		key.view1 = (u64)m_tfx_textures[NUM_TFX_DRAW_TEXTURES + 1]->GetView();
+		key.sampler = 1;
+		key.layout0 = m_features.texture_barrier ? (u32)VK_IMAGE_LAYOUT_GENERAL : (u32)m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetVkLayout();
+		key.layout1 = (u32)m_tfx_textures[NUM_TFX_DRAW_TEXTURES + 1]->GetVkLayout();
+		m_tfx_rt_descriptor_set = FindCachedDescriptorSet(&key);
 		if (m_tfx_rt_descriptor_set == VK_NULL_HANDLE)
-			return RetryTFXState(already_execed, "allocate TFX sampler descriptors");
+		{
+			m_tfx_rt_descriptor_set = AllocateDescriptorSet(m_tfx_rt_texture_ds_layout);
+			if (m_tfx_rt_descriptor_set == VK_NULL_HANDLE)
+				return RetryTFXState(already_execed, "allocate TFX sampler descriptors");
 
-		if (m_features.texture_barrier)
-		{
-			dsub.AddInputAttachmentDescriptorWrite(
-				m_tfx_rt_descriptor_set, 0, m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetView(), VK_IMAGE_LAYOUT_GENERAL);
+			if (m_features.texture_barrier)
+			{
+				dsub.AddInputAttachmentDescriptorWrite(
+					m_tfx_rt_descriptor_set, 0, m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetView(), VK_IMAGE_LAYOUT_GENERAL);
+			}
+			else
+			{
+				dsub.AddImageDescriptorWrite(m_tfx_rt_descriptor_set, 0, m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetView(),
+					m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetVkLayout());
+			}
+			dsub.AddImageDescriptorWrite(m_tfx_rt_descriptor_set, 1, m_tfx_textures[NUM_TFX_DRAW_TEXTURES + 1]->GetView(),
+				m_tfx_textures[NUM_TFX_DRAW_TEXTURES + 1]->GetVkLayout());
+			dsub.Update(vk_init_info.device);
+			CacheDescriptorSet(&key, m_tfx_rt_descriptor_set);
 		}
-		else
-		{
-			dsub.AddImageDescriptorWrite(m_tfx_rt_descriptor_set, 0, m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetView(),
-				m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetVkLayout());
-		}
-		dsub.AddImageDescriptorWrite(m_tfx_rt_descriptor_set, 1, m_tfx_textures[NUM_TFX_DRAW_TEXTURES + 1]->GetView(),
-			m_tfx_textures[NUM_TFX_DRAW_TEXTURES + 1]->GetVkLayout());
-		dsub.Update(vk_init_info.device);
 
 		if (!layout_changed)
 		{

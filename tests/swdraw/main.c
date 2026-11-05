@@ -1356,6 +1356,51 @@ static void stream_texture(unsigned mode, unsigned fpsm)
 
 static void case_stream_ct32(void) { stream_texture(STREAM_CT32, 0); }
 
+/* Two 16x16 PSMCT32 textures at pages 128 and 129, uploaded once, and
+ * every frame sixteen sprites into the frame at page 0 reading them in
+ * turn, the first texture's the colour 0x80102030 and the second's
+ * 0x80405060, the last two over the rows read back: 64 words of each
+ * a row. A renderer binding its textures through descriptor sets has two
+ * bindings a frame here, not sixteen. */
+static void case_texture_alternate(void)
+{
+	unsigned i, draw, rb;
+	stream_image(0x1000u, 1, 0, 0, 0, 16, 16, 64);
+	for (i = 0; i < 64; i++)
+		qw(0x80102030u, 0x80102030u, 0x80102030u, 0x80102030u);
+	stream_image(0x1020u, 1, 0, 0, 0, 16, 16, 64);
+	for (i = 0; i < 64; i++)
+		qw(0x80405060u, 0x80405060u, 0x80405060u, 0x80405060u);
+	kick(0, s_qw_count, 0);
+	draw = s_qw_count;
+	stream_draw_setup(2 + 16 * 6, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);
+	qw(0, 0, GS_TEX1_1, 0);
+	for (i = 0; i < 16; i++)
+	{
+		/* 128x32 each, down the left; the last two over the rows read back */
+		const unsigned x = (i >= 14) ? 192u : 0u;
+		const unsigned y = (i >= 14) ? 224u + (i - 14) * 32u : (i * 32u) & 511u;
+		qw(((i & 1) ? 0x1020u : 0x1000u) | (1u << 14) | (4u << 26) | (0u << 30), /* TBP0, TBW 1, CT32, TW 4 */
+			1u | (1u << 2) | (1u << 3), GS_TEX0_1, 0);                        /* TH 4, TCC, decal */
+		qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);
+		qw(0, 0, GS_UV, 0);
+		qw((unsigned)XY(x, y), 0, GS_XYZ2, 0);
+		qw((16u << 4) | ((16u << 4) << 16), 0, GS_UV, 0);
+		qw((unsigned)XY(x + 128, y + 32), 0, GS_XYZ2, 0);
+	}
+	rb = s_qw_count;
+	stream_readback(0);
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(draw, rb - draw, 1);
+	kick(rb, s_qw_count - rb, 0);
+	readback(512);
+	s_run_frames = 120;
+	s_expect_run[0] = 0x80102030ul;
+	s_expect_run[1] = 0x80405060ul;
+}
+
 /* A 1024x120 PSMCT32 texture (480 KB, what one IMAGE GIFtag carries) at
  * page 128 streamed six times every frame, and a sprite reading its first
  * 34x113 through a region clamp (an extent a hardware renderer keeps a
@@ -3023,6 +3068,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
 	{ "stream_clamped",  case_stream_clamped, "1" },
+	{ "texture_alternate", case_texture_alternate, "1" },
 	{ "stream_t8",       case_stream_t8,    "1" },
 	{ "stream_t8_flat",  case_stream_t8_flat, "1" },
 	{ "stream_ct24_aem", case_stream_ct24_aem, "1" },

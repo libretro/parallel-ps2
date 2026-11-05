@@ -379,7 +379,34 @@ private:
 		       gs_vk_alloc_t alloc;
 	       };
 	       gs_array_t cleanup_resources; /* of CleanupEntry */
+
+	       /* The TFX texture and target descriptor sets made on this
+		* command buffer, by what they bind: a draw binding what an
+		* earlier one did takes that one's set rather than a new one,
+		* so a frame cycling through its textures allocates a set per
+		* texture rather than per draw. Open addressing, cleared with
+		* the pool. */
+	       enum { DS_CACHE_SIZE = 1024 };
+	       struct DescriptorSetKey
+	       {
+		       u64 view0;
+		       u64 view1;
+		       u64 sampler;
+		       u32 layout0;
+		       u32 layout1;
+	       };
+	       struct DescriptorSetEntry
+	       {
+		       DescriptorSetKey key;
+		       VkDescriptorSet set;
+	       };
+	       DescriptorSetEntry ds_cache[DS_CACHE_SIZE];
+	       u32 ds_cache_used = 0;
        };
+       /* The cached set for key on the current command buffer, or
+	* VK_NULL_HANDLE; made puts one there. */
+       VkDescriptorSet FindCachedDescriptorSet(const FrameResources::DescriptorSetKey* key) const;
+       void CacheDescriptorSet(const FrameResources::DescriptorSetKey* key, VkDescriptorSet set);
 
        /* Device memory: blocks taken at startup, offsets handed out from
         * them. What VMA used to do, with the decisions in our own file. */

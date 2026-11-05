@@ -501,6 +501,22 @@ for scale in 1 2; do
 	echo "  software renderer output, ${scale}x: a display ending inside a block row shows what the other does"
 done
 
+# Sixteen sprites a frame reading two textures in turn (texture_alternate)
+# on the Vulkan renderer: the descriptor sets a frame allocates are the
+# bindings it has (the two textures, the target, the present), not one a
+# draw.
+c=texture_alternate
+"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+VN_COUNT_CALLS=1 VN_FRAMES=40 VN_EXPECT_RUN=80102030,80405060 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=Vulkan \
+	timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/$c.log" 2>&1 || true
+sets=$(calls "$SCRATCH/$c.log" descsets); draws=$(calls "$SCRATCH/$c.log" draw)
+if ! grep -q "vknegotiate v2: ok" "$SCRATCH/$c.log" || [ -z "$draws" ] || [ "$draws" -lt 16 ] || [ "${sets:-0}" -gt 8 ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: $c: a frame of ${draws:-no} draws over two textures allocates ${sets:-no} descriptor sets on Vulkan"
+	exit 1
+fi
+echo "  two textures drawn in turn: ${sets:-0} descriptor sets a frame for $draws draws"
+
 # A texture streamed every frame in uploads larger than a staging block
 # and read through a region clamp neither side of which is a power of
 # two (stream_clamped), on paraLLEl-GS: a steady frame makes no image and
