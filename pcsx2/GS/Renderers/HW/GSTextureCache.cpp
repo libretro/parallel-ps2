@@ -617,7 +617,7 @@ static GSVector4i relayout_rect(GSVector4i r, GSVector2i pgs, int old_tbw, int t
  * buffer width: each moves to where that width puts it, so the target stays
  * the memory it stands for, and what is written into it at either width
  * lands on the same pages. */
-bool GSTextureCache::RelayoutTarget(Target* t, u32 tbw)
+bool GSTextureCache::RelayoutTarget(Target* t, u32 tbw, bool keep_none, const GSVector4i& draw_rect)
 {
 	const GSVector2i pgs = GSLocalMemory::m_psm[t->m_TEX0.PSM].pgs;
 	const int old_tbw = pcsx2_max_i(1, (int)t->m_TEX0.TBW);
@@ -654,8 +654,12 @@ bool GSTextureCache::RelayoutTarget(Target* t, u32 tbw)
 		return false;
 
 	old_size = t->m_texture->GetSize();
-	/* A cleared target is the clear everywhere, so its pages need no move. */
-	if (t->m_texture->GetState() == GSTexture::State::Cleared)
+	/* A cleared target is the clear everywhere, so its pages need no move;
+	 * nor do they when the draw that wants the width keeps nothing of
+	 * them and covers every page at it. */
+	if (keep_none && draw_rect.x <= 0 && draw_rect.y <= 0 && draw_rect.z >= new_unscaled.x && draw_rect.w >= new_unscaled.y)
+		g_gs_device->InvalidateRenderTarget(tex);
+	else if (t->m_texture->GetState() == GSTexture::State::Cleared)
 	{
 		if (t->m_type == DepthStencil)
 			g_gs_device->ClearDepth(tex, t->m_texture->GetClearDepth());
@@ -2550,7 +2554,7 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVe
 					 * by position in the layout there is, and keeps it, the
 					 * width it comes at being a label on the target. */
 					if (!is_shuffle && !is_frame && TEX0.TBW != dst->m_TEX0.TBW && TEX0.PSM == dst->m_TEX0.PSM && dst->m_TEX0.TBW > 0 && TEX0.TBW > 0)
-						RelayoutTarget(dst, TEX0.TBW);
+						RelayoutTarget(dst, TEX0.TBW, !preserve_rgb && !preserve_alpha, draw_rect);
 					break;
 				}
 				else if (t != keep)

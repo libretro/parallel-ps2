@@ -779,7 +779,9 @@ public:
 	 * converted by shader; the target's own, copied, when NULL. */
 	bool RelayoutTargetWidth(Target* t, u32 new_tbw, int max_height, GSTexture* from = nullptr, ShaderConvert shader = ShaderConvert::COPY);
 	bool CopyTargetPagesInto(Target* t, Target* dst, const GSVector4i& draw_rect, bool keep_under_draw);
-	bool RelayoutTarget(Target* t, u32 tbw);
+	/* keep_none: the draw at the width keeps nothing of the target; with
+	 * draw_rect, the pages it covers at that width have nothing to move. */
+	bool RelayoutTarget(Target* t, u32 tbw, bool keep_none = false, const GSVector4i& draw_rect = GSVector4i::zero());
 	static bool FullRectDirty(Target* target, u32 rgba_mask);
 	static bool FullRectDirty(Target* target);
 	bool CanTranslate(u32 bp, u32 bw, u32 spsm, GSVector4i r, u32 dbp, u32 dpsm, u32 dbw);

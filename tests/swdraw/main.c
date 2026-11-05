@@ -3196,6 +3196,70 @@ static void case_depth_narrowed(void)
 	s_expect_run[2] = 0x00123456ul;
 }
 
+/* Every frame: a buffer at page 140 drawn four pages wide, 256x320, in
+ * two colours; then drawn five pages wide, 320x256, in two others, the
+ * draw covering every one of its forty pages and keeping nothing; then
+ * read as a texture five pages wide into the frame, read back: the
+ * second pair. On GSdx the buffer's pages move to the other width's
+ * places each time; a draw that covers every page and keeps nothing of
+ * them leaves nothing worth moving, so no page is copied. */
+static void case_width_overwritten(void)
+{
+	unsigned draw, rb;
+	s_smode1_hi = 0x7;                                     /* NTSC, for a display every renderer shows */
+	s_smode1_lo = 0x40834504u;
+	draw = s_qw_count;
+	qw(0x8000u, 0x10000000u, 0xEu, 0);
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(2047u << 16, 2047u << 16, GS_SCISSOR, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(8u, 1, GS_ZBUF_1, 0);                               /* ZMSK */
+	/* four pages wide: a colour a half */
+	qw(140u | (4u << 16), 0, GS_FRAME_1, 0);
+	qw(6, 0, GS_PRIM, 0);
+	s_bump_qw = s_qw_count;                                /* a sprite's first colour: bumped, drawn with the second */
+	qw(0x80111111u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 320), 0, GS_XYZ2, 0);
+	qw(0x80222222u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(128, 0), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(256, 320), 0, GS_XYZ2, 0);
+	/* five pages wide: two others */
+	qw(140u | (5u << 16), 0, GS_FRAME_1, 0);
+	qw(0x80102030u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(160, 256), 0, GS_XYZ2, 0);
+	qw(0x80405060u, 0x3f800000u, GS_RGBAQ, 0);
+	qw((unsigned)XY(160, 0), 0, GS_XYZ2, 0);
+	qw((unsigned)XY(320, 256), 0, GS_XYZ2, 0);
+	/* page 140 read as a texture five pages wide into the frame */
+	qw(10u << 16, 0, GS_FRAME_1, 0);
+	qw(0x1180u | (5u << 14) | (9u << 26), 2u | (1u << 2) | (1u << 3), GS_TEX0_1, 0); /* 512x256, TCC, decal */
+	qw(0, 0, GS_TEX1_1, 0);
+	qw(0, 0, GS_CLAMP_1, 0);
+	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);
+	qw(0, 0, GS_UV, 0);
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(320, 256), 0, GS_UV, 0);
+	qw((unsigned)XY(320, 256), 0, GS_XYZ2, 0);
+	s_qw[draw][0] = (s_qw_count - draw - 1) | 0x8000u;
+	rb = s_qw_count;
+	qw(4 | 0x8000u, 0x10000000u, 0xEu, 0);
+	qw(10u << 16, 0, GS_BITBLTBUF, 0);                     /* SBP 0, SBW 10 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(256, 32, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);                                /* local to host */
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(draw, rb - draw, 1);
+	kick(rb, s_qw_count - rb, 0);
+	readback(256 * 32 / 4);
+	s_run_frames    = 60;
+	s_expect_run[0] = 0x80102030ul;
+	s_expect_run[1] = 0x80405060ul;
+}
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
@@ -3241,6 +3305,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "alpha_under_depth_big", case_alpha_under_depth_big, "1" },
 	{ "alpha_dirtied_parked", case_alpha_dirtied_parked, "1" },
 	{ "depth_narrowed",  case_depth_narrowed, "1" },
+	{ "width_overwritten", case_width_overwritten, "1" },
 	{ "palette_engulfed", case_palette_engulfed, "1" },
 	{ "block_offset_read", case_block_offset_read, "1" },
 	{ "engulfed_alpha",  case_engulfed_alpha, "1" },

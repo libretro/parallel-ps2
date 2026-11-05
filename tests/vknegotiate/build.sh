@@ -215,6 +215,27 @@ if [ -z "$vk" ] || [ "$vk" != "$pgs" ] || [ "$vk" != "$sw" ] || [ -n "$copies" ]
 fi
 echo "  a depth buffer taken by a narrower colour draw: the same picture on every renderer, no image copy a frame"
 
+# A buffer drawn four pages wide and then five every frame, each draw
+# covering every one of its pages and keeping nothing of them, before it
+# is read as a texture (width_overwritten): the same picture on every
+# renderer, and on the Vulkan renderer no image copy a frame. GSdx moves
+# a target's pages to the other width's places when a draw comes at it;
+# a draw that overwrites every page leaves nothing to move.
+c=width_overwritten
+"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+overwritten() { VN_HASH_RGB=1 VN_HASH_IMAGE=1 VN_COUNT_CALLS=1 VN_FRAMES=40 VN_EXPECT_RUN=80102030,80405060 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER="$1" \
+	timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/$c.$2.log" 2>&1 || true
+	grep -q "vknegotiate v2: ok" "$SCRATCH/$c.$2.log" && sed -n 's/.*image: .*, hash \([0-9a-f]*\).*/\1/p' "$SCRATCH/$c.$2.log" | sort -u | tr '\n' ' '; }
+vk=$(overwritten Vulkan vk); pgs=$(overwritten paraLLEl-GS pgs); sw=$(overwritten "Software (HW)" sw)
+copies=$(sed -n 's/.*run 40: calls.* copyimg=\([0-9]*\).*/\1/p' "$SCRATCH/$c.vk.log")
+draws=$(sed -n 's/.*run 40: calls.* draw=\([0-9]*\).*/\1/p' "$SCRATCH/$c.vk.log")
+if [ -z "$vk" ] || [ "$vk" != "$pgs" ] || [ "$vk" != "$sw" ] || [ -n "$copies" ] || [ -z "$draws" ] || [ "$draws" -lt 3 ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: $c: Vulkan ${vk:-none}(${copies:-0} copies, ${draws:-0} draws a frame), paraLLEl-GS ${pgs:-none}, software ${sw:-none}"
+	exit 1
+fi
+echo "  a buffer overwritten at two widths in turn: the same picture on every renderer, no image copy a frame"
+
 # A palette drawn into a buffer one page wide, whose page a wider buffer
 # drawn every frame takes without drawing over the palette: an indexed
 # read through the palette gets it, on both renderers, and still after a
