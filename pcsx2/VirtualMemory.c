@@ -38,6 +38,7 @@ bool vmm_init(VirtualMemoryManager* m, const char* file_mapping_name, size_t siz
 	m->file_handle = NULL;
 	m->baseptr     = NULL;
 	m->size        = pcsx2_page_align(size);
+	m->in_image    = false;
 	m->pageuse     = (retro_atomic_int_t*)calloc(m->size / __pagesize, sizeof(*m->pageuse));
 	if (!m->pageuse)
 		return false;
@@ -105,15 +106,51 @@ bool vmm_map(VirtualMemoryManager* m, uptr base)
 	return m->baseptr != NULL;
 }
 
+#ifdef __linux__
+/* Gives the space back to the image as the zeroed memory it was. */
+static void vmm_restore_image(u8* space, size_t size)
+{
+	mmap(space, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+}
+
+bool vmm_map_in_image(VirtualMemoryManager* m, u8* space)
+{
+	void* p;
+	if (m->baseptr || !m->pageuse)
+		return false;
+	if (m->file_handle)
+		p = mmap(space, m->size, PROT_READ | PROT_WRITE,
+				MAP_SHARED | MAP_FIXED, (int)(intptr_t)m->file_handle, 0);
+	else
+		p = mmap(space, m->size, PROT_READ | PROT_WRITE | PROT_EXEC,
+				MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+	if (p == MAP_FAILED)
+	{
+		/* A failed fixed mapping can leave the range unmapped */
+		vmm_restore_image(space, m->size);
+		return false;
+	}
+	m->baseptr  = (u8*)p;
+	m->in_image = true;
+	return true;
+}
+#endif
+
 void vmm_unmap(VirtualMemoryManager* m)
 {
 	if (!m->baseptr)
 		return;
+#ifdef __linux__
+	if (m->in_image)
+		vmm_restore_image(m->baseptr, m->size);
+	else
+#endif
 	if (m->file_handle)
 		memshm_unmap(m->baseptr, m->size);
 	else
 		host_munmap(m->baseptr, m->size);
-	m->baseptr = NULL;
+	m->baseptr  = NULL;
+	m->in_image = false;
 	memset(m->pageuse, 0, (m->size / __pagesize) * sizeof(*m->pageuse));
 }
 
