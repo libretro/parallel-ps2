@@ -122,7 +122,10 @@ static void worker(void*)
 	}
 }
 
-static void contract_pair(void)
+/* symmetric: the pair on the symmetric protocol (the rasterizer job
+ * queues' choice), which parks without the process-wide barrier and
+ * must keep the same contract. */
+static void contract_pair(int symmetric)
 {
 	sthread_t* th;
 	int i, empties = 0;
@@ -131,7 +134,13 @@ static void contract_pair(void)
 	retro_atomic_store_relaxed_int(&g_taken, 0);
 	retro_atomic_store_relaxed_int(&g_stop, 0);
 	retro_atomic_store_relaxed_int(&g_bad_empty, 0);
-	work_eventcount_init(&g_ws);
+	if (symmetric)
+	{
+		work_eventcount_init_symmetric(&g_ws);
+		CHECK(!retro_asym_eventcount_is_asymmetric(&g_ws.work), "symmetric init runs the symmetric protocol");
+	}
+	else
+		work_eventcount_init(&g_ws);
 	th = sthread_create(worker, NULL);
 
 	for (i = 0; i < 20000; i++)
@@ -167,7 +176,8 @@ static void contract_pair(void)
 	work_eventcount_free(&g_ws);
 	if (g_quiet_pair && !fails)
 		return;
-	printf("  pair: %d items, %d WaitForEmpty calls, %d returned early\n",
+	printf("  pair%s: %d items, %d WaitForEmpty calls, %d returned early\n",
+	       symmetric ? " (symmetric)" : "",
 	       retro_atomic_load_relaxed_int(&g_queue), empties,
 	       retro_atomic_load_relaxed_int(&g_bad_empty));
 }
@@ -256,7 +266,10 @@ int main(void)
 		 * run is the one that fails, and contract_pair prints its own
 		 * counts, so only the last is shown when all of them pass. */
 		g_quiet_pair = (reps > 1 && i + 1 < reps);
-		contract_pair();
+		contract_pair(0);
+		if (fails)
+			break;
+		contract_pair(1);
 		if (fails)
 			break;
 	}

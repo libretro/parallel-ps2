@@ -93,14 +93,30 @@ typedef struct WorkEventCount
  * sleep/wake pair; 0 on single-core hosts. Defined in MTGS.cpp. */
 extern s32 WorkEventCount_SpinBudget(void);
 
-static INLINE void work_eventcount_init(WorkEventCount *w)
+static INLINE void work_eventcount_init_mode(WorkEventCount *w, int symmetric)
 {
-	retro_asym_eventcount_init(&w->work);
+	if (symmetric)
+		retro_asym_eventcount_init_symmetric(&w->work);
+	else
+		retro_asym_eventcount_init(&w->work);
 	retro_eventcount_init(&w->empty);
 	retro_atomic_store_relaxed_int(&w->state,
 			WORK_EVENTCOUNT_STATE(
 				retro_atomic_load_relaxed_int(&w->work.epoch), 1));
 	retro_atomic_store_relaxed_int(&w->dead, 0);
+}
+
+static INLINE void work_eventcount_init(WorkEventCount *w)
+{
+	work_eventcount_init_mode(w, 0);
+}
+
+/* The producer pays a locked increment a notify, and a park costs the
+ * worker no process-wide barrier: for a worker fed many small jobs
+ * that parks between them, by a producer that is not the EE. */
+static INLINE void work_eventcount_init_symmetric(WorkEventCount *w)
+{
+	work_eventcount_init_mode(w, 1);
 }
 
 static INLINE void work_eventcount_free(WorkEventCount *w)

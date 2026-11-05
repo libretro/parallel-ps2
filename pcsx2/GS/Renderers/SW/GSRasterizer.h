@@ -112,7 +112,10 @@ public:
 		, m_context(context)
 		, m_exit(RETRO_ATOMIC_INT_INITIALIZER(0))
 	{
-		work_eventcount_init(&m_sema);
+		/* Fed a job a draw by the GS thread and drained faster than
+		 * they come, the worker parks many times a frame: the
+		 * symmetric pair, where a park is a kernel wait and no more. */
+		work_eventcount_init_symmetric(&m_sema);
 		m_queue_ok = retro_spsc_init(&m_queue, (size_t)CAPACITY * sizeof(T));
 		if (!m_queue_ok)
 			log_cb(RETRO_LOG_ERROR, "GSJobQueue: ring allocation failed; jobs will run on the calling thread\n");
