@@ -4213,7 +4213,8 @@ void GSRendererHW::Draw()
 		// Limit to 2x the vertical height of the resolution (for double buffering)
 		rt->UpdateValidity(real_rect, can_update_size || (real_rect.w <= (resolution.y * 2) && !m_texture_shuffle_info));
 
-		g_texture_cache->InvalidateVideoMem(context->offset.fb, real_rect, false);
+		g_texture_cache->InvalidateVideoMem(context->offset.fb, real_rect, false, nullptr,
+			m_texture_shuffle_info ? GetEffectiveTextureShuffleFbmsk() : fm);
 
 		// Remove overwritten Zs at the FBP.
 		g_texture_cache->InvalidateVideoMemType(GSTextureCache::DepthStencil, m_cached_ctx.FRAME.Block(),

@@ -830,7 +830,9 @@ public:
 	void InvalidateVideoMemType(int type, u32 bp, u32 write_psm = PSMCT32, u32 write_fbmsk = 0, bool dirty_only = false,
 		const Target* keep = nullptr);
 	void InvalidateVideoMemSubTarget(GSTextureCache::Target* rt);
-	void InvalidateVideoMem(const GSOffset& off, const GSVector4i& r, bool target = true, const Target* keep = nullptr);
+	/* fbmsk: the frame mask of the draw doing the write, 0 for a write of
+	 * every bit; the sources it leaves untouched stay. */
+	void InvalidateVideoMem(const GSOffset& off, const GSVector4i& r, bool target = true, const Target* keep = nullptr, u32 fbmsk = 0);
 	void InvalidateLocalMem(const GSOffset& off, const GSVector4i& r, bool full_flush = false);
 	/* Before local memory in [bp, end_bp] is read: what parked targets drew
 	 * there, written to it. */

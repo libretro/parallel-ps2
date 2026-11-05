@@ -2343,9 +2343,17 @@ static void case_column_passes(void)
  * reads its alpha as PSMT8H through a palette of entry i = i*0x01010101
  * into the frame at page 0, read back: 64 words of 0x40404040 then of
  * 0xC0C0C0C0 a row, then 0x58585858 and 0xD8D8D8D8, as nothing since the
- * first frame wrote the alpha. */
-static void alpha_under_depth(unsigned cbw, unsigned ebp, unsigned ebw, unsigned ew)
+ * first frame wrote the alpha. With big, the alpha is uploaded as PSMT8H
+ * instead, and read as a texture too large for a hardware renderer's
+ * hash cache (see alpha_under_depth_big). */
+static void alpha_under_depth(unsigned cbw, unsigned ebp, unsigned ebw, unsigned ew, unsigned big)
 {
+	/* When big, the alpha is uploaded as PSMT8H rather than drawn, and
+	 * read as a texture 1024x512 (TW 10, TH 9): too large for the
+	 * hardware renderers' hash cache, so a source they lose is uploaded
+	 * again rather than found. */
+	const unsigned tw = big ? 10u : (cbw == 2 ? 7u : 8u);
+	const unsigned th = big ? 9u : 6u;
 	unsigned i, first;
 	qw(0x8000u, 0x10000000u, 0xEu, 0);                     /* A+D, EOP, NLOOP below */
 	qw(1, 0, GS_PRMODECONT, 0);
@@ -2354,19 +2362,22 @@ static void alpha_under_depth(unsigned cbw, unsigned ebp, unsigned ebw, unsigned
 	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
 	qw(8u, 1, GS_ZBUF_1, 0);                               /* ZMSK */
 	qw(9u | (cbw << 16), 0, GS_FRAME_1, 0);                /* page 9, PSMCT32 */
-	qw(6, 0, GS_PRIM, 0);                                  /* sprite */
-	qw(0x40202020u, 0x3f800000u, GS_RGBAQ, 0);
-	qw(0, 0, GS_XYZ2, 0);
-	qw((unsigned)XY(64, 32), 0, GS_XYZ2, 0);
-	qw(0xC0606060u, 0x3f800000u, GS_RGBAQ, 0);
-	qw((unsigned)XY(64, 0), 0, GS_XYZ2, 0);
-	qw((unsigned)XY(128, 32), 0, GS_XYZ2, 0);
-	qw(0x58202020u, 0x3f800000u, GS_RGBAQ, 0);
-	qw((unsigned)XY(0, 32), 0, GS_XYZ2, 0);
-	qw((unsigned)XY(64, 64), 0, GS_XYZ2, 0);
-	qw(0xD8606060u, 0x3f800000u, GS_RGBAQ, 0);
-	qw((unsigned)XY(64, 32), 0, GS_XYZ2, 0);
-	qw((unsigned)XY(128, 64), 0, GS_XYZ2, 0);
+	if (!big)
+	{
+		qw(6, 0, GS_PRIM, 0);                              /* sprite */
+		qw(0x40202020u, 0x3f800000u, GS_RGBAQ, 0);
+		qw(0, 0, GS_XYZ2, 0);
+		qw((unsigned)XY(64, 32), 0, GS_XYZ2, 0);
+		qw(0xC0606060u, 0x3f800000u, GS_RGBAQ, 0);
+		qw((unsigned)XY(64, 0), 0, GS_XYZ2, 0);
+		qw((unsigned)XY(128, 32), 0, GS_XYZ2, 0);
+		qw(0x58202020u, 0x3f800000u, GS_RGBAQ, 0);
+		qw((unsigned)XY(0, 32), 0, GS_XYZ2, 0);
+		qw((unsigned)XY(64, 64), 0, GS_XYZ2, 0);
+		qw(0xD8606060u, 0x3f800000u, GS_RGBAQ, 0);
+		qw((unsigned)XY(64, 32), 0, GS_XYZ2, 0);
+		qw((unsigned)XY(128, 64), 0, GS_XYZ2, 0);
+	}
 	qw(0, 0x280u | (1u << 16), GS_BITBLTBUF, 0);           /* the palette at block 0x280, DBW 1 */
 	qw(0, 0, GS_TRXPOS, 0);
 	qw(16, 16, GS_TRXREG, 0);
@@ -2375,6 +2386,20 @@ static void alpha_under_depth(unsigned cbw, unsigned ebp, unsigned ebw, unsigned
 	qw(64 | 0x8000u, 0x08000000u, 0, 0);                   /* IMAGE, 64 qw, EOP */
 	for (i = 0; i < 256; i += 4)
 		qw(i * 0x01010101u, (i + 1) * 0x01010101u, (i + 2) * 0x01010101u, (i + 3) * 0x01010101u);
+	if (big)
+	{
+		/* the alpha as PSMT8H (eight bits a pixel), a row of 128 at a time */
+		unsigned y;
+		for (y = 0; y < 64; y++)
+		{
+			const unsigned lo = ((y < 32) ? 0x40u : 0x58u) * 0x01010101u, hi = lo + 0x80808080u;
+			stream_image(0x120u, cbw, 0x1Bu, 0, y, 128, 1, 8);
+			for (i = 0; i < 4; i++)
+				qw(lo, lo, lo, lo);
+			for (i = 0; i < 4; i++)
+				qw(hi, hi, hi, hi);
+		}
+	}
 	kick(0, s_qw_count, 0);
 	first = s_qw_count;
 	qw(0x8000u, 0x10000000u, 0xEu, 0);
@@ -2398,8 +2423,8 @@ static void alpha_under_depth(unsigned cbw, unsigned ebp, unsigned ebw, unsigned
 	qw((unsigned)XY(ew, 64), 0, GS_XYZ2, 0);
 	/* the alpha read as PSMT8H through the palette, into the scene */
 	qw(2u << 16, 0, GS_FRAME_1, 0);
-	qw(0x120u | (cbw << 14) | (0x1Bu << 20) | ((cbw == 2 ? 7u : 8u) << 26) | (2u << 30), /* TW, TH 6 */
-		1u | (1u << 2) | (1u << 3) | (0x280u << 5) | (1u << 29), GS_TEX0_1, 0); /* TH, TCC, DECAL, CBP, CLD */
+	qw(0x120u | (cbw << 14) | (0x1Bu << 20) | (tw << 26) | ((th & 3u) << 30),
+		(th >> 2) | (1u << 2) | (1u << 3) | (0x280u << 5) | (1u << 29), GS_TEX0_1, 0); /* TH, TCC, DECAL, CBP, CLD */
 	qw(0, 0, GS_TEX1_1, 0);
 	qw(0, 0, GS_CLAMP_1, 0);
 	qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);                   /* sprite, TME, FST */
@@ -2423,10 +2448,13 @@ static void alpha_under_depth(unsigned cbw, unsigned ebp, unsigned ebw, unsigned
 	s_expect_run[3] = 0xD8D8D8D8ul;
 }
 
-static void case_alpha_under_depth(void) { alpha_under_depth(2, 9, 2, 128); }
-static void case_alpha_under_depth_wide(void) { alpha_under_depth(4, 9, 4, 256); }
+static void case_alpha_under_depth(void) { alpha_under_depth(2, 9, 2, 128, 0); }
+static void case_alpha_under_depth_wide(void) { alpha_under_depth(4, 9, 4, 256, 0); }
 /* The effect drawn one page wide at the depth buffer's own base. */
-static void case_alpha_under_depth_strip(void) { alpha_under_depth(4, 8, 1, 64); }
+static void case_alpha_under_depth_strip(void) { alpha_under_depth(4, 8, 1, 64, 0); }
+/* The alpha uploaded, read as a texture too large for the hash cache,
+ * the effect one page wide at the depth buffer's base over its first. */
+static void case_alpha_under_depth_big(void) { alpha_under_depth(4, 8, 1, 64, 1); }
 
 
 /* The buffer of alpha_under_depth, two pages wide at page 9, its alpha
@@ -2980,6 +3008,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "alpha_under_depth", case_alpha_under_depth, "1" },
 	{ "alpha_under_depth_wide", case_alpha_under_depth_wide, "1" },
 	{ "alpha_under_depth_strip", case_alpha_under_depth_strip, "1" },
+	{ "alpha_under_depth_big", case_alpha_under_depth_big, "1" },
 	{ "alpha_dirtied_parked", case_alpha_dirtied_parked, "1" },
 	{ "palette_engulfed", case_palette_engulfed, "1" },
 	{ "block_offset_read", case_block_offset_read, "1" },

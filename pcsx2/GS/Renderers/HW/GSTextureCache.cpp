@@ -3903,7 +3903,33 @@ void GSTextureCache::InvalidateVideoMemType(int type, u32 bp, u32 write_psm, u32
 
 // Goal: invalidate data sent to the GPU when the source (GS memory) is modified
 // Called each time you want to write to the GS memory
-void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& rect, bool target, const Target* keep)
+/* The bits of a 32-bit word a read in this format takes. */
+static u32 psm_word_bits(u32 psm)
+{
+	switch (psm)
+	{
+		case PSMT8H:  return 0xff000000u;
+		case PSMT4HL: return 0x0f000000u;
+		case PSMT4HH: return 0xf0000000u;
+		case PSMCT24:
+		case PSMZ24:  return 0x00ffffffu;
+		default:      return 0xffffffffu;
+	}
+}
+
+/* A 32-bit draw whose frame mask keeps every bit a source reads leaves
+ * that source as it was: a depth clear drawn through a CT32 frame with
+ * the alpha byte masked, say, over the 8H texture living in that byte. */
+static bool write_leaves_source(u32 write_psm, u32 fbmsk, u32 src_psm)
+{
+	u32 bits;
+	if (fbmsk == 0 || GSLocalMemory::m_psm[write_psm].trbpp != 32)
+		return false;
+	bits = psm_word_bits(src_psm);
+	return (fbmsk & bits) == bits;
+}
+
+void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& rect, bool target, const Target* keep, u32 fbmsk)
 {
 	const u32 bp = off.bp();
 	const u32 bw = off.bw();
@@ -3919,6 +3945,8 @@ void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& r
 			Source* s = *i;
 			++i;
 
+			if (write_leaves_source(psm, fbmsk, s->m_TEX0.PSM))
+				continue;
 			if (GSUtil::HasSharedBits(bp, psm, s->m_TEX0.TBP0, s->m_TEX0.PSM) ||
 				(GSUtil::HasSharedBits(bp, psm, s->m_from_target_TEX0.TBP0, s->m_TEX0.PSM) && s->m_target))
 				m_src.RemoveAt(s);
@@ -3936,6 +3964,8 @@ void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& r
 				Source* s = *i;
 				++i;
 
+				if (write_leaves_source(psm, fbmsk, s->m_TEX0.PSM))
+					continue;
 				if (GSUtil::HasSharedBits(bbp, psm, s->m_TEX0.TBP0, s->m_TEX0.PSM))
 				{
 					m_src.RemoveAt(s);
@@ -3949,7 +3979,7 @@ void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& r
 	// But this causes rects to be too big, especially in WRC games, I don't think there's any need to align them here.
 	GSVector4i r = rect;
 
-	off.loopPages(rect, [this, &rect, bp, bw, psm, &found](u32 page)
+	off.loopPages(rect, [this, &rect, bp, bw, psm, fbmsk, &found](u32 page)
 	{
 		auto& list = m_src.m_map[page];
 		for (auto i = list.begin(); i != list.end();)
@@ -3957,6 +3987,8 @@ void GSTextureCache::InvalidateVideoMem(const GSOffset& off, const GSVector4i& r
 			Source* s = *i;
 			++i;
 
+			if (write_leaves_source(psm, fbmsk, s->m_TEX0.PSM))
+				continue;
 			if (GSUtil::HasSharedBits(psm, s->m_TEX0.PSM))
 			{
 				bool b = bp == s->m_TEX0.TBP0;

@@ -149,6 +149,33 @@ for c in alpha_under_depth alpha_under_depth_wide alpha_under_depth_strip; do
 	done
 done
 
+# The same with the alpha uploaded and read as a texture too large for
+# the hash cache (alpha_under_depth_big), the effect one page wide at the
+# depth buffer's base: the colour draw's mask keeps the byte the texture
+# lives in, so GSdx keeps the texture's pages rather than loading the one
+# the draw touched again every frame. The Vulkan renderer's uploads a
+# steady frame make are counted: the buffer's RGB the depth draw dirtied,
+# loaded before the effect, is the one; the texture adds none.
+c=alpha_under_depth_big
+"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
+for renderer in Vulkan paraLLEl-GS; do
+	if ! VN_EXPECT_RUN=40404040,c0c0c0c0,58585858,d8d8d8d8 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=$renderer \
+			timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+		rm -rf "$SCRATCH"
+		echo "  FAIL: $c, $renderer"
+		exit 1
+	fi
+done
+VN_COUNT_CALLS=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=Vulkan \
+	timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/$c.log" 2>&1 || true
+uploads=$(sed -n 's/.*run 40: calls.* b2i=\([0-9]*\).*/\1/p' "$SCRATCH/$c.log")
+if ! grep -q 'run 40: calls' "$SCRATCH/$c.log" || [ "${uploads:-0}" -gt 1 ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: $c: a steady frame on Vulkan uploads ${uploads:-nothing counted} textures, the dirtied RGB alone expected"
+	exit 1
+fi
+echo "  alpha under a masked colour draw: its texture stays loaded (${uploads:-0} upload a frame)"
+
 # A buffer's alpha laid down once, then every frame a constant 24-bit Z
 # written over one of its pages through a depth buffer of another width,
 # and the buffer's pages taken by colour draws of other widths, with their
