@@ -2118,6 +2118,13 @@ bool GSDeviceVK::CreateDeviceAndSwapChain()
 
 	AcquireWindow();
 
+	/* The entry points through the frontend's vkGetInstanceProcAddr, as
+	 * the libretro Vulkan interface asks: a frontend that wraps the
+	 * loader's (one counting the calls, say) sees every call made. */
+	if (vk_init_info.vkGetInstanceProcAddr &&
+		vk_init_info.vkGetInstanceProcAddr != vkGetInstanceProcAddr_libretro)
+		vkGetInstanceProcAddr_org = vk_init_info.vkGetInstanceProcAddr;
+
 	if (!Vulkan::LoadVulkanInstanceFunctions(vk_init_info.instance))
 	{
 		log_cb(RETRO_LOG_ERROR, "Failed to load Vulkan instance functions\n");
