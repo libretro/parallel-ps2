@@ -46,6 +46,9 @@ uint FileMcd_ConvertToSlot(uint port, uint slot);
 void FileMcd_EmuOpen();
 void FileMcd_EmuClose();
 s32 FileMcd_IsPresent(uint port, uint slot);
+/* The card's own MagicGate ID, from <image>.id beside its image (an
+ * arcade dongle's); NULL when it has none. */
+const u8* FileMcd_GetMagicGateId(uint port, uint slot);
 void FileMcd_GetSizeInfo(uint port, uint slot, McdSizeInfo* outways);
 bool FileMcd_IsPSX(uint port, uint slot);
 s32 FileMcd_Read(uint port, uint slot, u8* dest, u32 adr, int size);

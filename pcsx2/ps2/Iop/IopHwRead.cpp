@@ -23,6 +23,7 @@
 #include "USB/USB.h"
 #include "IopCounters.h"
 #include "IopDma.h"
+#include "ps2/BiosTools.h"
 
 #include "ps2/pgif.h"
 #include "Mdec.h"
@@ -76,8 +77,14 @@ mem8_t iopHwRead8_Page1( u32 addr )
 //
 mem8_t iopHwRead8_Page3( u32 addr )
 {
-	if( addr == 0x1f803100 )	// PS/EE/IOP conf related
-		return 0xFF; //all high bus is the corect default state for CEX PS2!
+	if( addr == 0x1f803100 )	/* TOOL config switches */
+	{
+		/* All high is a CEX console's. A COH-H board has no CD-ROM drive
+		 * and says so with bit 3 alone, which its BIOS checks. */
+		return BiosIsArcade ? 0x08 : 0xFF;
+	}
+	if( addr == 0x1f803204 && BiosIsArcade )	/* TOOL board id */
+		return 0x7c;
 	return psxHu8( addr );
 }
 

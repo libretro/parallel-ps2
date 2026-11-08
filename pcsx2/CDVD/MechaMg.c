@@ -97,6 +97,10 @@ typedef struct MechaMg
 	MechaMgKeyStore ks;
 	u8 icvps2_key[16];
 	u8 keyed;
+	u8 arcade;
+	u8 have_kelf07;
+	u8 kelf07_kbit[MECHA_MG_KELF07_KEY_SIZE];
+	u8 kelf07_kc[MECHA_MG_KELF07_KEY_SIZE];
 
 	u8 state;
 	u8 errorcode;
@@ -137,6 +141,11 @@ typedef struct MechaMg
 } MechaMg;
 
 static MechaMg s_mg;
+
+/* Card IDs from the user's files, per SIO slot; kept apart from s_mg,
+ * which a reset clears, as they belong to the card images. */
+static u8 s_card_id[MECHA_MG_CARD_SLOTS][8];
+static u8 s_card_has_id[MECHA_MG_CARD_SLOTS];
 
 /* Where each of the 18 card key and IV blocks of a key set sits: below
  * 0x200 a word index into the encrypted store, 0x1000 + n the n-th block
@@ -273,11 +282,29 @@ static bool read_key_file(const char* dir, const char* name, u8* out, int size)
 	return ok;
 }
 
+void mecha_mg_set_arcade(bool arcade, const u8* kelf07_kbit, const u8* kelf07_kc)
+{
+	s_mg.arcade = arcade ? 1 : 0;
+	s_mg.have_kelf07 = (arcade && kelf07_kbit && kelf07_kc) ? 1 : 0;
+	if (s_mg.have_kelf07)
+	{
+		memcpy(s_mg.kelf07_kbit, kelf07_kbit, MECHA_MG_KELF07_KEY_SIZE);
+		memcpy(s_mg.kelf07_kc, kelf07_kc, MECHA_MG_KELF07_KEY_SIZE);
+	}
+	else
+	{
+		memset(s_mg.kelf07_kbit, 0, MECHA_MG_KELF07_KEY_SIZE);
+		memset(s_mg.kelf07_kc, 0, MECHA_MG_KELF07_KEY_SIZE);
+	}
+}
+
 bool mecha_mg_load_keys(const char* dir, int mode, const MechaMgIds* ids)
 {
 	u8 enc_store[MECHA_MG_ENC_KEYSTORE_SIZE];
 	u8 card_store[MECHA_MG_CARD_KEYSTORE_SIZE];
 	u8 store_key[MECHA_MG_KEYSTORE_KEY_SIZE];
+	u8 kbit[MECHA_MG_KELF07_KEY_SIZE], kc[MECHA_MG_KELF07_KEY_SIZE];
+	bool have07 = false;
 	MechaMgKeyStore ks;
 
 	if (!read_key_file(dir, MECHA_MG_ENC_KEYSTORE_FILE, enc_store, sizeof(enc_store)) ||
@@ -290,9 +317,21 @@ bool mecha_mg_load_keys(const char* dir, int mode, const MechaMgIds* ids)
 
 	mecha_mg_decode_keystore(&ks, enc_store, card_store, store_key, mode);
 	mecha_mg_set_keys(&ks, ids);
+	if (mode == MECHA_MG_MODE_ARCADE)
+	{
+		/* Missing is fine (none then); a file there of the wrong size
+		 * is reported by read_key_file. */
+		have07 = read_key_file(dir, MECHA_MG_KELF07_KBIT_FILE, kbit, sizeof(kbit)) &&
+			read_key_file(dir, MECHA_MG_KELF07_KC_FILE, kc, sizeof(kc));
+		mecha_mg_set_arcade(true, have07 ? kbit : NULL, have07 ? kc : NULL);
+		memset(kbit, 0, sizeof(kbit));
+		memset(kc, 0, sizeof(kc));
+	}
 	memset(&ks, 0, sizeof(ks));
 	memset(store_key, 0, sizeof(store_key));
-	log_cb(RETRO_LOG_INFO, "[MG] MagicGate keys loaded from %s\n", dir);
+	log_cb(RETRO_LOG_INFO, "[MG] MagicGate keys loaded from %s (%s%s)\n", dir,
+		mode == MECHA_MG_MODE_ARCADE ? "arcade" : "retail",
+		have07 ? ", with application type 0x07 keys" : "");
 	return true;
 }
 
@@ -456,6 +495,18 @@ static u16 decrypt_kelf_header(const MechaMgIds* ids)
 		mg_3des_decrypt(kek, kbit + 8);
 		mg_3des_decrypt(kek, s_mg.kc);
 		mg_3des_decrypt(kek, s_mg.kc + 8);
+	}
+	/* An arcade mechacon keeps the keys of application type 0x07 itself. */
+	if (s_mg.arcade && d[23] == MECHA_MG_KELF07_APP_TYPE)
+	{
+		if (!s_mg.have_kelf07)
+		{
+			log_cb(RETRO_LOG_ERROR, "[MG] KELF application type 0x07 needs %s and %s beside the BIOS\n",
+				MECHA_MG_KELF07_KBIT_FILE, MECHA_MG_KELF07_KC_FILE);
+			return kelf_fail(0x81);
+		}
+		memcpy(kbit, s_mg.kelf07_kbit, 16);
+		memcpy(s_mg.kc, s_mg.kelf07_kc, 16);
 	}
 
 	if (offset > size - 8)
@@ -1006,6 +1057,17 @@ static void card_session_key(u8 key[16])
 	session_key(key, s_card_keysource, s_mg.card_key_index < 3 ? s_mg.card_key_index : 0);
 }
 
+void mecha_mg_card_set_id(int slot, const u8 id[8])
+{
+	if (slot < 0 || slot >= MECHA_MG_CARD_SLOTS)
+		return;
+	s_card_has_id[slot] = id ? 1 : 0;
+	if (id)
+		memcpy(s_card_id[slot], id, 8);
+	else
+		memset(s_card_id[slot], 0, 8);
+}
+
 void mecha_mg_card_auth_reset(int slot)
 {
 	if (slot >= 0 && slot < MECHA_MG_CARD_SLOTS)
@@ -1053,8 +1115,13 @@ bool mecha_mg_card_get(int slot, u8 mode, u8 out[8])
 			xor8(c->response[1], random, c->response[0]);
 			mg_3des_encrypt(key, c->response[1]);
 			/* The card ID the mechacon keeps for the slot. */
-			memcpy(card_id, "LRPS2MC0", 8);
-			card_id[7] = (u8)('0' + slot);
+			if (s_card_has_id[slot])
+				memcpy(card_id, s_card_id[slot], 8);
+			else
+			{
+				memcpy(card_id, "LRPS2MC0", 8);
+				card_id[7] = (u8)('0' + slot);
+			}
 			xor8(c->response[2], card_id, c->response[1]);
 			mg_3des_encrypt(key, c->response[2]);
 			memcpy(out, c->response[0], 8);

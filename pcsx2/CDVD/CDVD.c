@@ -208,6 +208,12 @@ void cdvdLoadNVRAM(void)
 		log_cb(RETRO_LOG_WARN, "Failed to open or read NVRAM: %s\n", nvmfile);
 		cdvdCreateNewNVM();
 	}
+	else if (BiosIsArcade)
+	{
+		/* A COH-H BIOS keeps neither a language nor PStwo region block:
+		 * their being blank is no reason to replace the board's NVRAM. */
+		log_cb(RETRO_LOG_INFO, "Reading NVRAM file: %s\n", nvmfile);
+	}
 	else
 	{
 		/* Verify NVRAM is sane. */
@@ -818,7 +824,9 @@ void cdvdReset(void)
 		MechaMgIds ids;
 		cdvdMgIds(&ids);
 		fill_pathname_basedir(dir, BiosPath, sizeof(dir));
-		mecha_mg_load_keys(dir, MECHA_MG_MODE_RETAIL, &ids);
+		/* A COH-H BIOS sits on an arcade board, whose mechacon answers
+		 * with the key store's arcade set. */
+		mecha_mg_load_keys(dir, BiosIsArcade ? MECHA_MG_MODE_ARCADE : MECHA_MG_MODE_RETAIL, &ids);
 	}
 }
 

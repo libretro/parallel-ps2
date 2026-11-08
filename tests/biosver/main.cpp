@@ -28,10 +28,9 @@ static void __attribute__((noinline)) poison_stack(void)
 }
 
 /* RESET (the table itself), ROMDIR and ROMVER; no EXTINFO. */
-static bool write_image(const char* path)
+static bool write_image(const char* path, const char* romver)
 {
 	static unsigned char img[0x200];
-	static const char romver[] = "0220EC20040604";
 	struct entry { const char* name; unsigned size; } dir[] = {
 		{ "RESET", 0x100 }, { "ROMDIR", 0x40 }, { "ROMVER", 0x10 },
 	};
@@ -59,7 +58,7 @@ int main(int argc, char** argv)
 	bool (*volatile is_bios)(const char*, u32*, char*, size_t, u32*, char*, size_t) = IsBIOS;
 	log_cb = quiet_log;
 	snprintf(path, sizeof(path), "%s/bios.bin", argc > 1 ? argv[1] : ".");
-	if (!write_image(path))
+	if (!write_image(path, "0220EC20040604"))
 	{
 		printf("FAIL: cannot write %s\n", path);
 		return 1;
@@ -74,6 +73,15 @@ int main(int argc, char** argv)
 		"no EXTINFO: the description ends with an empty serial");
 	if (strcmp(description, "Europe  v02.20(04/06/2004)  Console "))
 		printf("      description: \"%s\"\n", description);
+
+	/* ROMVER zone T, model Z: a COH-H arcade board, which LoadBIOS takes
+	 * for BiosIsArcade; model D is a T10K devkit, not arcade. */
+	write_image(path, "0220TZ20040604");
+	is_bios(path, &version, description, sizeof(description), &region, zone, sizeof(zone));
+	check(!strcmp(zone, "COH-H") && region == 8, "ROMVER zone T, model Z: COH-H");
+	write_image(path, "0220TD20040604");
+	is_bios(path, &version, description, sizeof(description), &region, zone, sizeof(zone));
+	check(!strcmp(zone, "T10K") && region == 8, "ROMVER zone T, model D: T10K");
 	remove(path);
 
 	printf(failures ? "biosver: %d failure(s)\n" : "biosver: ok\n", failures);

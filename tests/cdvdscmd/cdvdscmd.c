@@ -1,4 +1,5 @@
-/*  CDVD S-commands through cdvdWrite17/cdvdWrite16, as the IOP issues them.
+/*  CDVD S-commands through cdvdWrite17/cdvdWrite16, as the IOP issues them,
+ *  and the NVRAM file as cdvdLoadNVRAM takes it.
  *
  *  sceCdWriteILinkID (0x13) takes the ID as its eight parameter bytes
  *  (ps2sdk cdvdman sceCdWI: set_prev_command(0x13, buffer, 8, ...)), and
@@ -12,6 +13,9 @@
 #include "../../pcsx2/CDVD/CDVD.c"
 
 u32 BiosVersion = 0x0220;
+u32 BiosRegion = 2;
+bool BiosIsArcade;
+char BiosPath[PCSX2_PATH_MAX];
 bool NoOSD;
 bool g_GameStarted;
 bool g_SkipBiosHack;
@@ -51,7 +55,57 @@ static void scmd(u8 cmd, const u8* param, int n)
 	cdvdWrite16(cmd);
 }
 
-int main(void)
+/* A COH-H board's NVRAM has no language or PStwo region block; read
+ * back with those blank it must stay as it was, where a console's gets
+ * the defaults filled in. */
+static void test_nvram(const char* dir)
+{
+	const NVMLayout* l;
+	FILE* f;
+	char path[PCSX2_PATH_MAX];
+	static u8 board[sizeof(s_nvram)];
+	size_t i;
+
+	for (i = 0; i < sizeof(board); i++)
+		board[i] = (u8)(i * 7 + 3);
+	BiosVersion = 0x0220;
+	l = getNvmLayout();
+	memset(board + l->config1 + 0x10, 0, 16);
+	memset(board + l->regparams, 0, 12);
+	snprintf(path, sizeof(path), "%s/bios.nvm", dir);
+	f = fopen(path, "wb");
+	if (!f || fwrite(board, 1, sizeof(board), f) != sizeof(board))
+	{
+		printf("  FAIL cannot write %s\n", path);
+		failures++;
+		if (f)
+			fclose(f);
+		return;
+	}
+	fclose(f);
+	snprintf(BiosPath, PCSX2_PATH_MAX, "%s/bios.bin", dir);
+
+	BiosIsArcade = true;
+	memset(s_nvram, 0xEE, sizeof(s_nvram));
+	cdvdLoadNVRAM();
+	if (memcmp(s_nvram, board, sizeof(board)) != 0)
+	{
+		printf("  FAIL a COH-H BIOS: the NVRAM read back is not the file\n");
+		failures++;
+	}
+
+	BiosIsArcade = false;
+	memset(s_nvram, 0xEE, sizeof(s_nvram));
+	cdvdLoadNVRAM();
+	if (memcmp(s_nvram + l->config1 + 0x10, biosLangDefaults[BiosRegion], 16) != 0 ||
+		memcmp(s_nvram + l->regparams, PStwoRegionDefaults[BiosRegion], 12) != 0)
+	{
+		printf("  FAIL a console BIOS: blank language and region not filled in\n");
+		failures++;
+	}
+}
+
+int main(int argc, char** argv)
 {
 	static const u8 id[8] = {0x08, 0x00, 0x46, 0x01, 0x23, 0x45, 0x67, 0x89};
 	int i;
@@ -87,11 +141,13 @@ int main(void)
 		failures++;
 	}
 
+	test_nvram(argc > 1 ? argv[1] : ".");
+
 	if (failures)
 	{
 		printf("cdvdscmd: %d failure(s)\n", failures);
 		return 1;
 	}
-	printf("cdvdscmd: the iLink ID written is the one read back\n");
+	printf("cdvdscmd: the iLink ID written is the one read back; NVRAM loads as the BIOS needs\n");
 	return 0;
 }

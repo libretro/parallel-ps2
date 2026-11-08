@@ -143,6 +143,10 @@ build*/
 /tests/cdvdscmd/cdvdscmd_test
 /tests/biosver/biosver_test
 /tests/biosver/biosver_test.exe
+/tests/iopcoh/iopcoh_test
+/tests/iopcoh/iopcoh_test.exe
+/tests/mcdid/mcdid_test
+/tests/mcdid/mcdid_test.exe
 /tests/spsc/spsc_test_tsan
 /tests/spsc/spsc_test.exe
 /tests/faultstress/fault_test

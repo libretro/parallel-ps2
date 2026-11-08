@@ -351,6 +351,12 @@ static void test_state(void)
 
 #define NBLK 3
 
+/* The application type the builder writes at header byte 23, and, when
+ * set, the Kbit|Kc it encrypts with while the header wraps others: an
+ * arcade application-type 0x07 KELF, whose keys the mechacon holds. */
+static u8 s_kelf_app_type;
+static const u8* s_kelf_keys;
+
 /* Build a mode-0 KELF the way the mechacon takes one apart: header,
  * its signature, Kbit/Kc under the key-encryption key, the bit table
  * chained under Kbit, its signature and the root signature; then the
@@ -359,7 +365,7 @@ static int build_kelf_n(u8* out, int nblk, u8* const* plain, const u32* sizes, c
 	u8* const* content, u16 extra_flags, u8 root_src_out[8], u8 kbit_out[16], u8 kc_out[16])
 {
 	const u16 hflags = (u16)((2 << 8) | (2 << 4) | extra_flags); /* CBC, two keys */
-	u8 kbit[16], kc[16], kek[16], nonce[8], header_sig[8], bit_sig[8], root[8], prev[8], sig_key[16], blk_sig[16][8];
+	u8 kbit[16], kc[16], wrap_kbit[16], wrap_kc[16], kek[16], nonce[8], header_sig[8], bit_sig[8], root[8], prev[8], sig_key[16], blk_sig[16][8];
 	u8 table[8 + 16 * 16];
 	const int table_len = 8 + 16 * nblk;
 	int i, size, off;
@@ -370,8 +376,16 @@ static int build_kelf_n(u8* out, int nblk, u8* const* plain, const u32* sizes, c
 	wr32(out + 16, 0);
 	wr16(out + 24, hflags);
 	wr16(out + 26, 0);             /* no bans */
+	out[23] = s_kelf_app_type;
 	fill(kbit, 16);
 	fill(kc, 16);
+	memcpy(wrap_kbit, kbit, 16);
+	memcpy(wrap_kc, kc, 16);
+	if (s_kelf_keys)
+	{
+		memcpy(kbit, s_kelf_keys, 16);
+		memcpy(kc, s_kelf_keys + 16, 16);
+	}
 
 	/* Content and block signatures first: the bit table carries them. */
 	for (b = 0; b < (u32)nblk; b++)
@@ -442,8 +456,8 @@ static int build_kelf_n(u8* out, int nblk, u8* const* plain, const u32* sizes, c
 	mg_3des_encrypt(s_ks.KbitMasterKey, kek);
 	xor8(kek + 8, s_ks.KcIv, nonce);
 	mg_3des_encrypt(s_ks.KcMasterKey, kek + 8);
-	memcpy(out + 40, kbit, 16);
-	memcpy(out + 56, kc, 16);
+	memcpy(out + 40, wrap_kbit, 16);
+	memcpy(out + 56, wrap_kc, 16);
 	for (i = 0; i < 4; i++)
 		mg_3des_encrypt(kek, out + 40 + 8 * i);
 
@@ -612,16 +626,20 @@ static void test_kelf(void)
 
 /* Mode 2 binds a KELF to a card: Kbit and Kc come back under the card's
  * ID, and with header flag 2 the icvps2 value after them (0x98). */
-static void test_kelf_bind(void)
+static void test_kelf_bind(const u8* real_id)
 {
 	static const u32 sizes[NBLK] = {24, 16, 40};
 	static const u32 bflags[NBLK] = {3, 2, 1};
 	u8 plain[NBLK][64], content[NBLK][64], kelf[0x800], res[16], p[5];
 	u8 root_src[8], kbit[16], kc[16], want[16], icv[16], seed[8];
-	const u8 card_id[8] = {'L', 'R', 'P', 'S', '2', 'M', 'C', '2'};
+	u8 card_id[8] = {'L', 'R', 'P', 'S', '2', 'M', 'C', '2'};
 	int size, b, i;
 
 	arm();
+	/* A card with its own ID (a dongle's file) hands that over instead. */
+	mecha_mg_card_set_id(2, real_id);
+	if (real_id)
+		memcpy(card_id, real_id, 8);
 	CHECK(handshake(5, 0, 0, 2) == 0, "card in slot 5 verifies before binding");
 	for (b = 0; b < NBLK; b++)
 		fill(plain[b], 64);
@@ -682,6 +700,86 @@ static void test_kelf_bind(void)
 	CHECK(scmd(0x98, NULL, 0, res) == 9 && res[0] == 0 && memcmp(res + 1, want, 8) == 0,
 		"0x98 gives the icvps2 value, nine bytes");
 	CHECK(scmd(0x98, NULL, 0, res) == 1 && res[0] == 0x80, "a second 0x98 is refused");
+	mecha_mg_card_set_id(2, NULL);
+}
+
+/* Header through 0x8F, then the first block; the header's verdict, or
+ * 0x100 when the header holds but the block does not read back. */
+static int run_kelf(const u8* kelf, int size, const u8* plain0, u32 size0, const u8* content0)
+{
+	u8 res[16], p[5], len[2], out[64];
+
+	scmd(0x80, (const u8*)"\0", 1, res);
+	p[0] = 0;
+	wr16(p + 1, (u32)size);
+	p[3] = 0;
+	p[4] = 0;
+	scmd(0x90, p, 5, res);
+	send(0x8D, kelf, size);
+	scmd(0x8F, NULL, 0, res);
+	if (res[0] != 0)
+		return res[0];
+	scmd(0x91, NULL, 0, res);
+	{
+		u8 table[8 + 16 * NBLK];
+		receive(table, sizeof(table));
+	}
+	wr16(len, size0);
+	scmd(0x92, len, 2, res);
+	send(0x8D, content0, (int)size0);
+	scmd(0x8F, NULL, 0, res);
+	if (res[0] != 0)
+		return 0x100;
+	scmd(0x93, len, 2, res);
+	memset(out, 0, sizeof(out));
+	if (receive(out, (int)size0) != (int)size0 || memcmp(out, plain0, size0) != 0)
+		return 0x100;
+	return 0;
+}
+
+/* An arcade mechacon decrypts application type 0x07 with Kbit and Kc of
+ * its own, whatever the header wraps; any other type, and any other
+ * mechacon, goes by the header. */
+static void test_kelf_arcade(void)
+{
+	static const u32 sizes[NBLK] = {24, 16, 40};
+	static const u32 bflags[NBLK] = {3, 2, 1};
+	u8 plain[NBLK][64], content[NBLK][64], kelf[0x800], keys[32];
+	int size, b;
+
+	fill(keys, sizeof(keys));
+	for (b = 0; b < NBLK; b++)
+		fill(plain[b], 64);
+
+	arm();
+	s_kelf_app_type = MECHA_MG_KELF07_APP_TYPE;
+	s_kelf_keys = keys;
+	size = build_kelf(kelf, plain, sizes, bflags, content, 0, NULL, NULL, NULL);
+	s_kelf_keys = NULL;
+	s_kelf_app_type = 0;
+
+	mecha_mg_set_arcade(true, keys, keys + 16);
+	CHECK(run_kelf(kelf, size, plain[0], sizes[0], content[0]) == 0,
+		"arcade: type 0x07 verifies and decrypts with the mechacon's own keys");
+
+	/* Type 0x07 with its keys in the header: only an arcade mechacon
+	 * without keys of its own refuses it. */
+	s_kelf_app_type = MECHA_MG_KELF07_APP_TYPE;
+	size = build_kelf(kelf, plain, sizes, bflags, content, 0, NULL, NULL, NULL);
+	s_kelf_app_type = 0;
+	mecha_mg_set_arcade(true, NULL, NULL);
+	CHECK(run_kelf(kelf, size, plain[0], sizes[0], content[0]) == 0x81,
+		"arcade without the type 0x07 keys: refused with 0x81");
+	mecha_mg_set_arcade(false, keys, keys + 16);
+	CHECK(run_kelf(kelf, size, plain[0], sizes[0], content[0]) == 0,
+		"retail: type 0x07 goes by the header's keys");
+
+	/* Any other type is the header's, arcade or not. */
+	size = build_kelf(kelf, plain, sizes, bflags, content, 0, NULL, NULL, NULL);
+	mecha_mg_set_arcade(true, keys, keys + 16);
+	CHECK(run_kelf(kelf, size, plain[0], sizes[0], content[0]) == 0,
+		"arcade: type 0 still goes by the header's keys");
+	mecha_mg_set_arcade(false, NULL, NULL);
 }
 
 /* A block larger than 64 KiB arrives in 0x800-byte pieces; the count of
@@ -801,6 +899,67 @@ static void put_file(const char* dir, const char* name, const u8* data, int n)
 	}
 }
 
+static void drop_file(const char* dir, const char* name)
+{
+	char path[1024];
+	snprintf(path, sizeof(path), "%s/%s", dir, name);
+	remove(path);
+}
+
+/* Arcade mode reads the application-type 0x07 keys beside the store. */
+static void test_files_arcade(const char* dir)
+{
+	static const u32 sizes[NBLK] = {24, 16, 40};
+	static const u32 bflags[NBLK] = {3, 2, 1};
+	u8 plain[304], enc[1024], card[96], key[16], keys[32];
+	u8 bplain[NBLK][64], content[NBLK][64], kelf[0x800];
+	int i, size;
+
+	fill(plain, sizeof(plain));
+	/* Mode 3 reads the same word for its two key-2 halves. */
+	for (i = 0; i < 6; i++)
+		memcpy(plain + 8 * (3 * i + 2), plain + 8 * (3 * i + 1), 8);
+	fill(enc, sizeof(enc));
+	fill(card, sizeof(card));
+	fill(key, sizeof(key));
+	fill(keys, sizeof(keys));
+	encode_store(plain, enc, card, key, MECHA_MG_MODE_ARCADE);
+	memcpy(&s_ks, plain, sizeof(s_ks));
+	for (i = 0; i < NBLK; i++)
+		fill(bplain[i], 64);
+	s_kelf_app_type = MECHA_MG_KELF07_APP_TYPE;
+	s_kelf_keys = keys;
+	size = build_kelf(kelf, bplain, sizes, bflags, content, 0, NULL, NULL, NULL);
+	s_kelf_keys = NULL;
+	s_kelf_app_type = 0;
+
+	put_file(dir, MECHA_MG_ENC_KEYSTORE_FILE, enc, sizeof(enc));
+	put_file(dir, MECHA_MG_CARD_KEYSTORE_FILE, card, sizeof(card));
+	put_file(dir, MECHA_MG_KEYSTORE_KEY_FILE, key, sizeof(key));
+	put_file(dir, MECHA_MG_KELF07_KBIT_FILE, keys, 16);
+	put_file(dir, MECHA_MG_KELF07_KC_FILE, keys + 16, 16);
+	CHECK(mecha_mg_load_keys(dir, MECHA_MG_MODE_ARCADE, &s_ids) &&
+			run_kelf(kelf, size, bplain[0], sizes[0], content[0]) == 0,
+		"arcade key files: type 0x07 decrypts with the keys beside the store");
+
+	/* From here a type 0x07 KELF with its keys in the header: refused
+	 * only for want of the mechacon's own. */
+	s_kelf_app_type = MECHA_MG_KELF07_APP_TYPE;
+	size = build_kelf(kelf, bplain, sizes, bflags, content, 0, NULL, NULL, NULL);
+	s_kelf_app_type = 0;
+	put_file(dir, MECHA_MG_KELF07_KC_FILE, keys + 16, 15);
+	CHECK(mecha_mg_load_keys(dir, MECHA_MG_MODE_ARCADE, &s_ids) &&
+			run_kelf(kelf, size, bplain[0], sizes[0], content[0]) == 0x81,
+		"a short type 0x07 key file: keyed, and type 0x07 refused");
+
+	drop_file(dir, MECHA_MG_KELF07_KBIT_FILE);
+	drop_file(dir, MECHA_MG_KELF07_KC_FILE);
+	CHECK(mecha_mg_load_keys(dir, MECHA_MG_MODE_ARCADE, &s_ids) &&
+			run_kelf(kelf, size, bplain[0], sizes[0], content[0]) == 0x81,
+		"arcade without the type 0x07 key files: keyed, and type 0x07 refused");
+	mecha_mg_set_keys(NULL, &s_ids);
+}
+
 static void test_files(const char* dir)
 {
 	u8 plain[304], enc[1024], card[96], key[16];
@@ -832,6 +991,7 @@ static void test_files(const char* dir)
 		u8 res[16];
 		CHECK(scmd(0x84, NULL, 0, res) == -1, "unkeyed, the SCMDs are left to the CDVD");
 	}
+	test_files_arcade(dir);
 }
 
 int main(int argc, char** argv)
@@ -842,7 +1002,12 @@ int main(int argc, char** argv)
 	test_card();
 	test_state();
 	test_kelf();
-	test_kelf_bind();
+	test_kelf_bind(NULL);
+	{
+		static const u8 dongle[8] = {0x31, 0x9a, 0x05, 0xc7, 0x4e, 0x12, 0xb8, 0x60};
+		test_kelf_bind(dongle);
+	}
+	test_kelf_arcade();
 	test_kelf_large();
 	test_fuzz();
 	test_files(argc > 1 ? argv[1] : ".");

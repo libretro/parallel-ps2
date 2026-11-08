@@ -37,6 +37,8 @@ extern "C" {
 	extern u32 BiosChecksum;
 	extern u32 BiosVersion;		/* Used by CDVD */
 	extern u32 BiosRegion;		/* Used by CDVD */
+	/* A COH-H (arcade board) BIOS: ROMVER zone T, model Z. */
+	extern bool BiosIsArcade;
 	extern bool NoOSD;			/* Used for HLE OSD Config Params */
 	/* The BIOS image's path; empty when none is loaded. */
 	extern char BiosPath[];

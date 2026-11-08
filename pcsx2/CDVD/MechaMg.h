@@ -35,6 +35,14 @@ struct SaveStateBase;
 #define MECHA_MG_CARD_KEYSTORE_FILE "mg_card_keystore.bin" /* 96 bytes */
 #define MECHA_MG_KEYSTORE_KEY_FILE  "mg_keystore_key.bin" /* 16 bytes */
 
+/* COH (arcade) mechacons only: a KELF of application type 0x07 takes
+ * its Kbit and Kc from these, not from its header. Optional; without
+ * them such a KELF is refused, as the mechacon would. */
+#define MECHA_MG_KELF07_KBIT_FILE   "mg_kelf07_kbit.bin"  /* 16 bytes */
+#define MECHA_MG_KELF07_KC_FILE     "mg_kelf07_kc.bin"    /* 16 bytes */
+#define MECHA_MG_KELF07_APP_TYPE    0x07
+#define MECHA_MG_KELF07_KEY_SIZE    16
+
 #define MECHA_MG_ENC_KEYSTORE_SIZE  1024
 #define MECHA_MG_CARD_KEYSTORE_SIZE 96
 #define MECHA_MG_KEYSTORE_KEY_SIZE  16
@@ -88,8 +96,14 @@ void mecha_mg_decode_keystore(MechaMgKeyStore* out, const u8 enc_store[MECHA_MG_
 /* Arm the keyed path with a decoded key set, or disarm it (ks NULL). */
 void mecha_mg_set_keys(const MechaMgKeyStore* ks, const MechaMgIds* ids);
 
+/* After mecha_mg_set_keys: whether the keys are an arcade mechacon's,
+ * and its application-type 0x07 Kbit and Kc (both NULL: none). */
+void mecha_mg_set_arcade(bool arcade, const u8* kelf07_kbit, const u8* kelf07_kc);
+
 /* Load the key files from dir and arm the keyed path; false (and the
- * keyed path off) when any is missing or the wrong size. */
+ * keyed path off) when any is missing or the wrong size. In
+ * MECHA_MG_MODE_ARCADE the application-type 0x07 key files are read
+ * too, when present. */
 bool mecha_mg_load_keys(const char* dir, int mode, const MechaMgIds* ids);
 
 bool mecha_mg_keyed(void);
@@ -101,6 +115,12 @@ int mecha_mg_scmd(u8 cmd, const u8* param, int param_cnt, u8* result, const Mech
 /* ---- the emulated memory card's side, per SIO slot (0..7) ---------------
  * Values are in protocol order; the SIO layer reverses them on the wire. */
 #define MECHA_MG_CARD_SLOTS 8
+
+/* The ID a card hands the mechacon at the end of the handshake, which
+ * the mechacon keeps as that card's key: a real card's ID (an arcade
+ * dongle's, say) unwraps the KELFs bound to that card. NULL puts back
+ * the emulated card's own. Set as each handshake starts; not state. */
+void mecha_mg_card_set_id(int slot, const u8 id[8]);
 
 void mecha_mg_card_auth_reset(int slot);
 /* Card to console: 0x01 IV (makes a fresh IV, seed and nonce), 0x02

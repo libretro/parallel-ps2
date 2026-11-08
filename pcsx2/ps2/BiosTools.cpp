@@ -51,6 +51,7 @@ struct romdir
 u32 BiosVersion;
 u32 BiosChecksum;
 u32 BiosRegion;
+bool BiosIsArcade;
 bool NoOSD;
 bool AllowParams1;
 bool AllowParams2;
@@ -329,8 +330,12 @@ bool LoadBIOS(void)
 
 	char zone[BIOS_ZONE_MAX];
 
+	zone[0] = '\0';
 	LoadBiosVersion(fp, &BiosVersion, BiosDescription, sizeof(BiosDescription),
 			&BiosRegion, zone, sizeof(zone), BiosSerial, sizeof(BiosSerial));
+	BiosIsArcade = strcmp(zone, "COH-H") == 0;
+	if (BiosIsArcade)
+		log_cb(RETRO_LOG_INFO, "BIOS is an arcade (COH-H) BIOS\n");
 
 	if (filestream_seek(fp, 0, RETRO_VFS_SEEK_POSITION_START) ||
 		filestream_read(fp, eeMem->ROM, static_cast<size_t>(pcsx2_min_s64(Ps2MemSize::Rom, filesize))) != (int64_t)pcsx2_min_s64(Ps2MemSize::Rom, filesize))

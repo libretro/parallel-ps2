@@ -22,6 +22,8 @@
 #include <vector>
 
 #include <file/file_path.h>
+#include <streams/file_stream.h>
+#include <compat/strl.h>
 
 #include "HostFS.h"
 
@@ -158,6 +160,38 @@ FileMemoryCard::~FileMemoryCard()
 	}
 }
 
+/* A real card's MagicGate ID (an arcade dongle's), when its 8 bytes sit
+ * beside the image as <image>.id: dongle.ps2 and dongle.id. */
+static u8 s_mcd_mg_id[8][8];
+static bool s_mcd_has_mg_id[8];
+
+static void FileMcd_LoadCardId(int slot, const char* image)
+{
+	/* Off the stack, like Open's paths. */
+	char* path = (char*)malloc(PCSX2_PATH_MAX);
+	void* buf = NULL;
+	int64_t len = 0;
+
+	if (!path)
+		return;
+	strlcpy(path, image, PCSX2_PATH_MAX);
+	path_remove_extension(path);
+	strlcat(path, ".id", PCSX2_PATH_MAX);
+	if (path_is_valid(path) && filestream_read_file(path, &buf, &len))
+	{
+		if (len == 8)
+		{
+			memcpy(s_mcd_mg_id[slot], buf, 8);
+			s_mcd_has_mg_id[slot] = true;
+			log_cb(RETRO_LOG_INFO, "Memcard: slot %d answers MagicGate with the ID in %s\n", slot, path);
+		}
+		else
+			log_cb(RETRO_LOG_WARN, "Memcard: %s is %d bytes, not 8; ignored\n", path, (int)len);
+		free(buf);
+	}
+	free(path);
+}
+
 void FileMemoryCard::Open()
 {
 	/* The card path and its staging name, off the stack. */
@@ -170,6 +204,7 @@ void FileMemoryCard::Open()
 	for (int slot = 0; slot < 8; ++slot)
 	{
 		m_filenames[slot] = {};
+		s_mcd_has_mg_id[slot] = false;
 
 		if (FileMcd_IsMultitapSlot(slot))
 		{
@@ -232,6 +267,7 @@ void FileMemoryCard::Open()
 
 		if (m_file[slot]) // Load the whole card into RAM
 		{
+			FileMcd_LoadCardId(slot, fname);
 			m_fileSize[slot]  = filestream_get_size(m_file[slot]);
 			m_filenames[slot] = fname;
 			m_ispsx[slot]     = m_fileSize[slot] == 0x20000;
@@ -502,6 +538,12 @@ void FileMcd_EmuClose(void)
 		return;
 	FileMcd_Open = false;
 	Mcd::impl.Close();
+}
+
+const u8* FileMcd_GetMagicGateId(uint port, uint slot)
+{
+	const uint combinedSlot = FileMcd_ConvertToSlot(port, slot);
+	return (combinedSlot < 8 && s_mcd_has_mg_id[combinedSlot]) ? s_mcd_mg_id[combinedSlot] : NULL;
 }
 
 s32 FileMcd_IsPresent(uint port, uint slot)

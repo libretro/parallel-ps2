@@ -517,7 +517,13 @@ void MemoryCardProtocol::AuthF3()
 	/* An authentication reset puts the card back on the default
 	 * terminator, which MCMAN sets again once the card is authenticated. */
 	mcd->term = Terminator::DEFAULT;
-	mecha_mg_card_auth_reset((int)sioConvertPortAndSlotToPad(mcd->port, mcd->slot));
+	{
+		const int pad = (int)sioConvertPortAndSlotToPad(mcd->port, mcd->slot);
+		/* The ID this card answers the handshake with: its own, when the
+		 * user gave one (a real dongle's), else the emulated card's. */
+		mecha_mg_card_set_id(pad, FileMcd_GetMagicGateId(mcd->port, mcd->slot));
+		mecha_mg_card_auth_reset(pad);
+	}
 	The2bTerminator(5);
 }
 
