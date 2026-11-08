@@ -288,6 +288,54 @@ static std::string FindBiosImage(void)
 	return std::string();
 }
 
+/* Whether the BIOS at path is a COH-H one. */
+static bool IsArcadeBios(const char* path)
+{
+	u32 version, region;
+	char description[BIOS_DESCRIPTION_MAX];
+	char zone[BIOS_ZONE_MAX];
+	return IsBIOS(path, &version, description, sizeof(description), &region, zone, sizeof(zone))
+		&& strcmp(zone, "COH-H") == 0;
+}
+
+bool FindArcadeBios(const char* dir, const char* selected, char* out, size_t out_size)
+{
+	FILESYSTEM_FIND_RESULTS results = {};
+	char* path = (char*)malloc(PCSX2_PATH_MAX);
+	const char* best = NULL;
+	size_t i;
+
+	if (!path)
+		return false;
+	if (selected && selected[0])
+	{
+		pcsx2_path_join(path, PCSX2_PATH_MAX, dir, selected);
+		if (IsArcadeBios(path))
+		{
+			free(path);
+			strlcpy(out, selected, out_size);
+			return true;
+		}
+	}
+	free(path);
+
+	/* By name, so the choice does not follow the directory's order. */
+	if (FileSystem_FindFiles(dir, "*", FILESYSTEM_FIND_FILES, &results))
+		for (i = 0; i < results.count; i++)
+		{
+			const FILESYSTEM_FIND_DATA* fd = &results.items[i];
+			const char* name = path_basename(fd->FileName);
+			if (fd->Size < MIN_BIOS_SIZE || fd->Size > MAX_BIOS_SIZE)
+				continue;
+			if ((!best || strcmp(name, best) < 0) && IsArcadeBios(fd->FileName))
+				best = name;
+		}
+	if (best)
+		strlcpy(out, best, out_size);
+	FileSystem_FreeFindResults(&results);
+	return best != NULL;
+}
+
 // Loads the configured BIOS ROM file into PS2 memory.  PS2 memory must be allocated prior to
 // this method being called.
 //

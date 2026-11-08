@@ -2545,6 +2545,21 @@ static void libretro_teardown_cpu_thread(void)
 	libretro_python1_release();
 }
 
+/* A Python game boots only on its board's own BIOS: the selected BIOS
+ * when it is a COH-H one, else the first COH-H BIOS beside it. */
+static void libretro_pick_arcade_bios(void)
+{
+	char name[sizeof(s_option_config.BaseFilenames.Bios)];
+	if (!FindArcadeBios(EmuFolders::Bios, s_option_config.BaseFilenames.Bios, name, sizeof(name)))
+	{
+		log_cb(RETRO_LOG_WARN, "Python: no COH-H BIOS in %s; the selected BIOS is used\n", EmuFolders::Bios);
+		return;
+	}
+	if (strcmp(name, s_option_config.BaseFilenames.Bios))
+		log_cb(RETRO_LOG_INFO, "Python: booting the arcade BIOS %s\n", name);
+	strlcpy(s_option_config.BaseFilenames.Bios, name, sizeof(s_option_config.BaseFilenames.Bios));
+}
+
 /* A Konami Python 2 game: its descriptor names the HDD, the machine's
  * identity files and the I/O board's dongles and cards. Sets up the board,
  * the HDD, the NVRAM and the patches; false when the descriptor is not
@@ -2601,6 +2616,7 @@ static bool libretro_load_python2(const char* path)
 
 	cdvd_set_nvram_files(d->nvram, d->ilink_id);
 	VMManager::SetPython2PatchFile(d->patch);
+	libretro_pick_arcade_bios();
 	log_cb(RETRO_LOG_INFO, "Python 2: %s, input type %d\n", d->name[0] ? d->name : path, d->input_type);
 	ok = true;
 done:
@@ -2662,6 +2678,7 @@ static bool libretro_load_python1(const char* path)
 	s_option_config.DEV9.HddEnable = false;
 	/* It helps every one of them but Perfect Pool. */
 	s_option_config.Gamefixes.OPHFlagHack = d->io_mode != P1IO_MODE_PPOOL;
+	libretro_pick_arcade_bios();
 	log_cb(RETRO_LOG_INFO, "Python 1: %s, I/O mode %s\n", d->name[0] ? d->name : path, py1_io_mode_name(d->io_mode));
 	ok = true;
 done:

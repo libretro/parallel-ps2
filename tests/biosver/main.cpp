@@ -84,6 +84,46 @@ int main(int argc, char** argv)
 	check(!strcmp(zone, "T10K") && region == 8, "ROMVER zone T, model D: T10K");
 	remove(path);
 
+	/* A Python game's BIOS: the selected one when it is COH-H, else the
+	 * first COH-H BIOS by name; one under 4 MiB is not a BIOS image. */
+	{
+		const char* dir = argc > 1 ? argv[1] : ".";
+		static const struct { const char* name; const char* romver; long size; } files[] = {
+			{ "a_retail.bin", "0220EC20040604", 4 << 20 },
+			{ "z_coh.bin",    "0220TZ20040604", 4 << 20 },
+			{ "m_coh.bin",    "0220TZ20040604", 4 << 20 },
+			{ "c_small.bin",  "0220TZ20040604", 0x200 },
+		};
+		char name[64];
+		unsigned i;
+		for (i = 0; i < sizeof(files) / sizeof(files[0]); i++)
+		{
+			FILE* f;
+			snprintf(path, sizeof(path), "%s/%s", dir, files[i].name);
+			write_image(path, files[i].romver);
+			if (files[i].size > 0x200 && (f = fopen(path, "r+b")))
+			{
+				fseek(f, files[i].size - 1, SEEK_SET);
+				fputc(0, f);
+				fclose(f);
+			}
+		}
+		check(FindArcadeBios(dir, "a_retail.bin", name, sizeof(name)) && !strcmp(name, "m_coh.bin"),
+			"a retail BIOS selected: the first COH-H BIOS by name");
+		check(FindArcadeBios(dir, "z_coh.bin", name, sizeof(name)) && !strcmp(name, "z_coh.bin"),
+			"a COH-H BIOS selected: that one");
+		snprintf(path, sizeof(path), "%s/m_coh.bin", dir);
+		remove(path);
+		snprintf(path, sizeof(path), "%s/z_coh.bin", dir);
+		remove(path);
+		check(!FindArcadeBios(dir, "a_retail.bin", name, sizeof(name)), "none in the folder: none");
+		for (i = 0; i < sizeof(files) / sizeof(files[0]); i++)
+		{
+			snprintf(path, sizeof(path), "%s/%s", dir, files[i].name);
+			remove(path);
+		}
+	}
+
 	printf(failures ? "biosver: %d failure(s)\n" : "biosver: ok\n", failures);
 	return failures != 0;
 }

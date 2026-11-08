@@ -17,9 +17,11 @@ case "$(uname -s 2>/dev/null)" in
 esac
 OBJ="$DIR/.obj_biosver"
 rm -rf "$OBJ" && mkdir -p "$OBJ"
+"$CC" -std=gnu89 -O1 -g -w $SANFLAGS -D__LIBRETRO__ -I "$ROOT/pcsx2" -I "$LC/include" -c "$ROOT/pcsx2/HostFS.c" -o "$OBJ/hostfs.o"
 for c in streams/file_stream vfs/vfs_implementation file/file_path \
          file/file_path_io string/stdstring string/rstrtod compat/compat_strl \
-         compat/fopen_utf8 encodings/encoding_utf time/rtime; do
+         compat/fopen_utf8 encodings/encoding_utf time/rtime \
+         file/retro_dirent compat/compat_fnmatch; do
 	"$CC" -O1 -g -w $SANFLAGS -D__LIBRETRO__ -I "$LC/include" \
 		-c "$LC/$c.c" -o "$OBJ/$(echo $c | tr / _).o"
 done

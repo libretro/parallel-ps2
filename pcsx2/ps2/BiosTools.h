@@ -63,4 +63,8 @@ extern "C"
 bool LoadBIOS(void);
 extern bool IsBIOS(const char *filename, u32 *version, char *description, size_t description_size, u32 *region, char *zone, size_t zone_size);
 extern bool IsBIOSAvailable(const char* full_path);
+/* The arcade BIOS a Python game boots with, as a file name in dir: the
+ * selected one when it is a COH-H BIOS, otherwise the first COH-H BIOS
+ * in dir by name. False when dir has none. */
+extern bool FindArcadeBios(const char* dir, const char* selected, char* out, size_t out_size);
 
