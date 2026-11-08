@@ -59,7 +59,8 @@ static int findmax(int tl, int br, int limit, int wm, int minuv, int maxuv)
 
 static int reduce(int uv, int size)
 {
-	while (size > 3 && (1 << (size - 1)) >= uv)
+	/* uv is an inclusive texel coordinate: a size of 1 << n holds 0..(1 << n) - 1. */
+	while (size > 3 && (1 << (size - 1)) > uv)
 	{
 		size--;
 	}
@@ -69,7 +70,7 @@ static int reduce(int uv, int size)
 
 static int extend(int uv, int size)
 {
-	while (size < 10 && (1 << size) < uv)
+	while (size < 10 && (1 << size) <= uv)
 		size++;
 	return size;
 }

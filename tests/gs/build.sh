@@ -49,6 +49,15 @@ g++ -O2 -std=c++17 -msse4.1 -o "$DIR/gs_restore_norm" "$DIR/gs_restore_norm.cpp"
     -I"$ROOT/libretro/libretro-common/include"
 "$DIR/gs_restore_norm"
 
+# Texture sizing from the vertex trace keeps the texel at the inclusive max
+# UV. Links the real GSDrawingContext.cpp.
+g++ -O2 -std=c++17 -msse4.1 -o "$DIR/gs_texsize" "$DIR/gs_texsize.cpp" \
+    "$ROOT/pcsx2/GS/GSDrawingContext.cpp" "$ROOT/pcsx2/GS/GSVector.cpp" \
+    -I"$ROOT" -I"$ROOT/common" -I"$ROOT/common/include" -I"$ROOT/pcsx2" \
+    -I"$ROOT/3rdparty" -I"$ROOT/3rdparty/include" \
+    -I"$ROOT/libretro/libretro-common/include"
+"$DIR/gs_texsize"
+
 # The two benchmarks below build with the flags the core ships with. __fi is
 # always_inline only under NDEBUG, so at plain -O2 the kernels they time are
 # not the kernels the emulator runs.
