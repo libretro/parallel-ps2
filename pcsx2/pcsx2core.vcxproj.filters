@@ -488,13 +488,13 @@
     <ClCompile Include="IopBios.cpp">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="IopCounters.cpp">
+    <ClCompile Include="IopCounters.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="IopDma.cpp">
+    <ClCompile Include="IopDma.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="IopIrq.cpp">
+    <ClCompile Include="IopIrq.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
     <ClCompile Include="IopMem.cpp">
@@ -518,7 +518,7 @@
     <ClCompile Include="x86\iR3000Atables.cpp">
       <Filter>System\Ps2\Iop\Dynarec</Filter>
     </ClCompile>
-    <ClCompile Include="IopHw.cpp">
+    <ClCompile Include="IopHw.c">
       <Filter>System\Ps2\Iop\Hardware</Filter>
     </ClCompile>
     <ClCompile Include="ps2\Iop\IopHwRead.cpp">

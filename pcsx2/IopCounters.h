@@ -35,13 +35,14 @@ typedef struct psxCounter
 #ifdef __cplusplus
 extern "C" {
 #endif
-	extern psxCounter psxCounters[NUM_COUNTERS];
-#ifdef __cplusplus
-}
-#endif
+extern psxCounter psxCounters[NUM_COUNTERS];
+/* Which counters the EE's blanks gate: bit 0 the HBlank, bits 1 and 3
+ * the VBlank. Counters.cpp reads the first. */
+extern u8 psxhblankgate;
+extern u8 psxvblankgate;
 
-extern void psxRcntInit();
-extern void psxRcntUpdate();
+extern void psxRcntInit(void);
+extern void psxRcntUpdate(void);
 extern void psxRcntWcount16(int index, u16 value);
 extern void psxRcntWcount32(int index, u32 value);
 extern void psxRcntWmode16(int index, u32 value);
@@ -51,7 +52,10 @@ extern void psxRcntWtarget32(int index, u32 value);
 extern u16  psxRcntRcount16(int index);
 extern u32  psxRcntRcount32(int index);
 
-extern void psxVBlankStart();
-extern void psxVBlankEnd();
+extern void psxVBlankStart(void);
+extern void psxVBlankEnd(void);
 extern void psxCheckStartGate16(int i);
 extern void psxCheckEndGate16(int i);
+#ifdef __cplusplus
+}
+#endif

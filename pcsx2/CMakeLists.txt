@@ -117,10 +117,10 @@ set(pcsx2Sources
 	Hw.cpp
 	Interpreter.cpp
 	IopBios.cpp
-	IopCounters.cpp
-	IopDma.cpp
-	IopHw.cpp
-	IopIrq.cpp
+	IopCounters.c
+	IopDma.c
+	IopHw.c
+	IopIrq.c
 	IopMem.cpp
 	Mdec.cpp
 	Memory.c

@@ -17,6 +17,7 @@
 
 #include "common/Pcsx2Defs.h"
 #include "DEV9mmio.h"
+#include "DEV9irq.h"
 
 #include <stdio.h>
 #include <string>
@@ -636,8 +637,6 @@ static flash_info_t devices[] = {
 
 #define FLASH_REGSIZE 0x20
 
-extern void dev9Irq(int cycles);
-
 void FLASHinit();
 void FLASHsave();
 s32 DEV9init();
@@ -646,10 +645,6 @@ s32 DEV9open();
 void DEV9shutdown();
 u32 FLASHread32(u32 addr, int size);
 void FLASHwrite32(u32 addr, u32 value, int size);
-int DEV9irqHandler(void);
-void DEV9async(u32 cycles);
-void DEV9writeDMA8Mem(u32* pMem, int size);
-void DEV9readDMA8Mem(u32* pMem, int size);
 void DEV9CheckChanges(const Pcsx2Config& old_config);
 
 #ifdef _WIN32

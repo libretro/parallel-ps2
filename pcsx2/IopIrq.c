@@ -13,7 +13,7 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "DEV9/DEV9.h"
+#include "DEV9/DEV9irq.h"
 #include "USB/usb-host.h"
 #include "IopHw.h"
 #include "IopDma.h"
@@ -32,7 +32,7 @@ void dev9Irq(int cycles)
 	PSX_INT(IopEvt_DEV9, cycles);
 }
 
-void usbInterrupt()
+void usbInterrupt(void)
 {
 	iopIntcIrq(22);
 }

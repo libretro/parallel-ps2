@@ -24,6 +24,7 @@
 #include "GS.h"
 #include "CDVD/CDVDcommon.h"
 #include "MemoryCardFile.h"
+#include "R5900.h"
 
 #include <file/file_path.h>
 
@@ -774,6 +775,12 @@ bool emu_config_multitap(uint port)
 bool emu_config_mcd_ejection(void)
 {
 	return EmuConfig.McdEnableEjection;
+}
+
+/* For IopHw.c's reset, which arms the fast boot from it. */
+bool emu_config_boot2_injection(void)
+{
+	return EmuConfig.UseBOOT2Injection;
 }
 
 

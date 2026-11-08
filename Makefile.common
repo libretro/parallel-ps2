@@ -290,10 +290,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/Hw.cpp \
 	$(LRPS2_DIR)/Interpreter.cpp \
 	$(LRPS2_DIR)/IopBios.cpp \
-	$(LRPS2_DIR)/IopCounters.cpp \
-	$(LRPS2_DIR)/IopDma.cpp \
-	$(LRPS2_DIR)/IopHw.cpp \
-	$(LRPS2_DIR)/IopIrq.cpp \
 	$(LRPS2_DIR)/IopMem.cpp \
 	$(LRPS2_DIR)/MMI.cpp \
 	$(LRPS2_DIR)/MTGS.cpp \
@@ -369,6 +365,10 @@ SOURCES_C += \
 	$(LRPS2_DIR)/MultitapProtocol.c \
 	$(LRPS2_DIR)/Sio.c \
 	$(LRPS2_DIR)/SioFifo.c \
+	$(LRPS2_DIR)/IopCounters.c \
+	$(LRPS2_DIR)/IopDma.c \
+	$(LRPS2_DIR)/IopHw.c \
+	$(LRPS2_DIR)/IopIrq.c \
 	$(LRPS2_DIR)/FireWire/fatimg.c \
 	$(LRPS2_DIR)/FireWire/p1io.c \
 	$(LRPS2_DIR)/FireWire/py1desc.c

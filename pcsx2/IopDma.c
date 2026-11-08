@@ -22,20 +22,17 @@
 #include "Sio.h"
 
 #include "Sif.h"
-#include "DEV9/DEV9.h"
+#include "DEV9/DEV9irq.h"
 #include "SPU2/defs.h"
 
-// Dma0/1   in Mdec.c
-// Dma3     in CdRom.c
-// Dma8     in PsxSpd.c
-// Dma11/12 in PsxSio2.c
+/* Dma0/1 in Mdec.cpp, Dma3 in CDVD/Ps1CD.c */
 
 static void psxDmaGeneric(u32 madr, u32 bcr, u32 chcr, u32 spuCore)
 {
 	const char dmaNum = spuCore ? 7 : 4;
 	const int size = (bcr >> 16) * (bcr & 0xFFFF);
 
-	// Update the SPU2 to the current cycle before initiating the DMA
+	/* Update the SPU2 to the current cycle before initiating the DMA */
 	TimeUpdate(psxRegs.cycle);
 
 	psxCounters[6].startCycle  = psxRegs.cycle;
@@ -51,7 +48,7 @@ static void psxDmaGeneric(u32 madr, u32 bcr, u32 chcr, u32 spuCore)
 
 	switch (chcr)
 	{
-		case 0x01000201: //cpu to spu2 transfer
+		case 0x01000201: /* cpu to spu2 transfer */
 			if (dmaNum == 7)
 			{
 				TimeUpdate(psxRegs.cycle);
@@ -64,7 +61,7 @@ static void psxDmaGeneric(u32 madr, u32 bcr, u32 chcr, u32 spuCore)
 			}
 			break;
 
-		case 0x01000200: //spu2 to cpu transfer
+		case 0x01000200: /* spu2 to cpu transfer */
 			if (dmaNum == 7)
 			{
 				TimeUpdate(psxRegs.cycle);
@@ -83,25 +80,25 @@ static void psxDmaGeneric(u32 madr, u32 bcr, u32 chcr, u32 spuCore)
 	}
 }
 
-void psxDma4(u32 madr, u32 bcr, u32 chcr) // SPU2's Core 0
+void psxDma4(u32 madr, u32 bcr, u32 chcr) /* SPU2's Core 0 */
 {
 	psxDmaGeneric(madr, bcr, chcr, 0);
 }
 
-void psxDma7(u32 madr, u32 bcr, u32 chcr) // SPU2's Core 1
+void psxDma7(u32 madr, u32 bcr, u32 chcr) /* SPU2's Core 1 */
 {
 	psxDmaGeneric(madr, bcr, chcr, 1);
 }
 
 #ifndef DISABLE_PSX_GPU_DMAS
-void psxDma2(u32 madr, u32 bcr, u32 chcr) // GPU
+void psxDma2(u32 madr, u32 bcr, u32 chcr) /* GPU */
 {
 	sif2.iop.busy = true;
 	sif2.iop.end = false;
-	//SIF2Dma();
-	// todo: psxmode: dmaSIF2 appears to interface with PGPU but everything is already handled without it.
-	// it slows down psxmode if it's run.
-	//dmaSIF2();
+	/* SIF2Dma(); */
+	/* todo: psxmode: dmaSIF2 appears to interface with PGPU but everything is already handled without it. */
+	/* it slows down psxmode if it's run. */
+	/* dmaSIF2(); */
 }
 
 void psxDma6(u32 madr, u32 bcr, u32 chcr)
@@ -129,11 +126,11 @@ void psxDma8(u32 madr, u32 bcr, u32 chcr)
 
 	switch (chcr & 0x01000201)
 	{
-		case 0x01000201: //cpu to dev9 transfer
+		case 0x01000201: /* cpu to dev9 transfer */
 			DEV9writeDMA8Mem((u32*)&iopMem->Main[madr & 0x1fffff], size);
 			break;
 
-		case 0x01000200: //dev9 to cpu transfer
+		case 0x01000200: /* dev9 to cpu transfer */
 			DEV9readDMA8Mem((u32*)&iopMem->Main[madr & 0x1fffff], size);
 			break;
 
@@ -164,8 +161,8 @@ void psxDma11(u32 madr, u32 bcr, u32 chcr)
 {
 	unsigned int i, j;
 	int size = (bcr >> 16) * (bcr & 0xffff);
-	// Set dmaBlockSize, so SIO2 knows to count based on the DMA block rather than SEND3 length.
-	// When SEND3 is written, SIO2 will automatically reset this to zero.
+	/* Set dmaBlockSize, so SIO2 knows to count based on the DMA block rather than SEND3 length. */
+	/* When SEND3 is written, SIO2 will automatically reset this to zero. */
 	sio2.dmaBlockSize = (bcr & 0xffff) * 4;
 
 	if (chcr != 0x01000201)
@@ -187,7 +184,7 @@ void psxDma11(u32 madr, u32 bcr, u32 chcr)
 	PSX_INT(IopEvt_Dma11, (size >> 2));
 }
 
-void psxDMA11Interrupt()
+void psxDMA11Interrupt(void)
 {
 	if (HW_DMA11_CHCR & 0x01000000)
 	{
@@ -219,7 +216,7 @@ void psxDma12(u32 madr, u32 bcr, u32 chcr)
 	PSX_INT(IopEvt_Dma12, (size >> 2));
 }
 
-void psxDMA12Interrupt()
+void psxDMA12Interrupt(void)
 {
 	if (HW_DMA12_CHCR & 0x01000000)
 	{

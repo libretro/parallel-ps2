@@ -17,6 +17,9 @@
 
 #include "common/Pcsx2Types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern void psxDma2(u32 madr, u32 bcr, u32 chcr);
 extern void psxDma6(u32 madr, u32 bcr, u32 chcr);
 extern void psxDma4(u32 madr, u32 bcr, u32 chcr);
@@ -27,23 +30,14 @@ extern void psxDma10(u32 madr, u32 bcr, u32 chcr);
 extern void psxDma11(u32 madr, u32 bcr, u32 chcr);
 extern void psxDma12(u32 madr, u32 bcr, u32 chcr);
 
-extern void psxDMA11Interrupt();
-extern void psxDMA12Interrupt();
-extern void dev9Interrupt();
+extern void psxDMA11Interrupt(void);
+extern void psxDMA12Interrupt(void);
+extern void dev9Interrupt(void);
 extern void dev9Irq(int cycles);
-extern void usbInterrupt();
-#ifdef __cplusplus
-extern "C" {
-#endif
+extern void usbInterrupt(void);
 extern void fwIrq(void);
 extern void spu2Irq(void);
-#ifdef __cplusplus
-}
-#endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 extern void iopIntcIrq( uint irqType );
 /* Ps1CD.c */
 extern void psxDma3(u32 madr, u32 bcr, u32 chcr);

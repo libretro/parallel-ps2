@@ -271,9 +271,9 @@
     <ClCompile Include="R5900.cpp" />
     <ClCompile Include="R5900OpcodeImpl.cpp" />
     <ClCompile Include="IopBios.cpp" />
-    <ClCompile Include="IopCounters.cpp" />
-    <ClCompile Include="IopDma.cpp" />
-    <ClCompile Include="IopIrq.cpp" />
+    <ClCompile Include="IopCounters.c" />
+    <ClCompile Include="IopDma.c" />
+    <ClCompile Include="IopIrq.c" />
     <ClCompile Include="IopMem.cpp" />
     <ClCompile Include="R3000A.cpp" />
     <ClCompile Include="R3000AInterpreter.cpp" />
@@ -281,7 +281,7 @@
     <ClCompile Include="Sio.c" />
     <ClCompile Include="x86\iR3000A.cpp" />
     <ClCompile Include="x86\iR3000Atables.cpp" />
-    <ClCompile Include="IopHw.cpp" />
+    <ClCompile Include="IopHw.c" />
     <ClCompile Include="ps2\Iop\IopHwRead.cpp" />
     <ClCompile Include="ps2\Iop\IopHwWrite.cpp" />
     <ClCompile Include="CDVD\Ps1CD.c" />

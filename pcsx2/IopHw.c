@@ -13,10 +13,12 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <string.h>
+
 #include "R3000A.h"
 #include "Common.h"
 
-#include "Config.h"
+#include "R5900.h"
 #include "Sio.h"
 #include "Mdec.h"
 #include "IopCounters.h"
@@ -26,17 +28,14 @@
 #include "CDVD/CDVD.h"
 
 
-// NOTE: Any modifications to read/write fns should also go into their const counterparts
-// found in iPsxHw.cpp.
-
 void psxHwReset(void) {
 
 	memset(iopHw, 0, 0x10000);
 
-	mdecInit(); // Initialize MDEC decoder
+	mdecInit(); /* Initialize MDEC decoder */
 	cdrReset();
 	/* Before the drive's reset, which closes the tray by it. */
-	g_SkipBiosHack = EmuConfig.UseBOOT2Injection;
+	g_SkipBiosHack = emu_config_boot2_injection();
 	cdvdReset();
 	psxRcntInit();
 	sio0_full_reset();
@@ -52,18 +51,19 @@ u8 psxHw4Read8(u32 add)
 
 void psxHw4Write8(u32 add, u8 value)
 {
-	u8 mem = (u8)add;	// only lower 8 bits are relevant (cdvd regs mirror across the page)
+	u8 mem = (u8)add;	/* only lower 8 bits are relevant (cdvd regs mirror across the page) */
 	cdvdWrite(mem, value);
 }
 
 void psxDmaInterrupt(int n)
 {
+	int i;
 	if(n == 33) {
-		for (int i = 0; i < 6; i++) {
+		for (i = 0; i < 6; i++) {
 			if (HW_DMA_ICR & (1 << (16 + i))) {
 				if (HW_DMA_ICR & (1 << (24 + i))) {
 					if (HW_DMA_ICR & (1 << 23)) {
-						HW_DMA_ICR |= 0x80000000; //Set master IRQ condition met
+						HW_DMA_ICR |= 0x80000000; /* Set master IRQ condition met */
 					}
 					psxRegs.CP0.n.Cause &= ~0x7C;
 					iopIntcIrq(3);
@@ -75,7 +75,7 @@ void psxDmaInterrupt(int n)
 	{
 		HW_DMA_ICR |= (1 << (24 + n));
 		if (HW_DMA_ICR & (1 << 23)) {
-			HW_DMA_ICR |= 0x80000000; //Set master IRQ condition met
+			HW_DMA_ICR |= 0x80000000; /* Set master IRQ condition met */
 		}
 		iopIntcIrq(3);
 	}
@@ -83,12 +83,13 @@ void psxDmaInterrupt(int n)
 
 void psxDmaInterrupt2(int n)
 {
-	// SIF0 and SIF1 DMA IRQ's cannot be supressed due to a mask flag for "tag" interrupts being available which cannot be disabled.
-	// The hardware can't disinguish between the DMA End and Tag Interrupt flags on these channels so interrupts always fire
+	/* SIF0 and SIF1 DMA IRQ's cannot be supressed due to a mask flag for "tag" interrupts being available which cannot be disabled. */
+	/* The hardware can't disinguish between the DMA End and Tag Interrupt flags on these channels so interrupts always fire */
 	bool fire_interrupt = n == 2 || n == 3;
+	int i;
 
 	if (n == 33) {
-		for (int i = 0; i < 6; i++) {
+		for (i = 0; i < 6; i++) {
 			if (HW_DMA_ICR2 & (1 << (24 + i))) {
 				if (HW_DMA_ICR2 & (1 << (16 + i)) || i == 2 || i == 3) {
 					fire_interrupt = true;
@@ -106,7 +107,7 @@ void psxDmaInterrupt2(int n)
 			HW_DMA_ICR2 |= (1 << (24 + n));
 
 		if (HW_DMA_ICR2 & (1 << 23)) {
-			HW_DMA_ICR2 |= 0x80000000; //Set master IRQ condition met
+			HW_DMA_ICR2 |= 0x80000000; /* Set master IRQ condition met */
 		}
 		iopIntcIrq(3);
 	}

@@ -82,7 +82,6 @@ struct vSyncTimingInfo
 
 static vSyncTimingInfo vSyncInfo;
 
-extern u8 psxhblankgate;
 static const uint EECNT_FUTURE_TARGET = 0x10000000;
 static int gates = 0;
 

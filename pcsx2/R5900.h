@@ -36,6 +36,8 @@ extern "C" {
 	extern bool g_GameStarted;
 	extern bool g_GameLoading;
 	extern bool g_SkipBiosHack;
+	/* EmuConfig.UseBOOT2Injection, for C units (Pcsx2Config.cpp) */
+	extern bool emu_config_boot2_injection(void);
 
 	extern s32 EEsCycle;
 	extern u64 EEoCycle;

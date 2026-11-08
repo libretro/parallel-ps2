@@ -300,4 +300,6 @@ tests/hddimage/hddimage_test.exe
 tests/p2io/p2io_test
 tests/p1io/p1io_test
 tests/sio/sio_test
+tests/iopglue/iopglue_test
+tests/iopglue/.got.txt
 tests/p2io/p2io_test.exe

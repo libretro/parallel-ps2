@@ -1,0 +1,337 @@
+reset: skip bios 1 seen by cdvd 1
+reset: skip bios 0 seen by cdvd 0
+init: cyc 1000 delta 1 start 1000 gates 0/0 istat 0 icr 0 icr2 0 ev 0 next 0 cause 0 intc 0
+  c0 count 0 target 1000000000 mode 400 rate 1 int 10 start 1000 delta 0
+  c1 count 0 target 1000000000 mode 400 rate 1 int 20 start 1000 delta 0
+  c2 count 0 target 1000000000 mode 400 rate 1 int 40 start 1000 delta 0
+  c3 count 0 target 1000000000 mode 400 rate 1 int 4000 start 1000 delta 0
+  c4 count 0 target 1000000000 mode 400 rate 1 int 8000 start 1000 delta 0
+  c5 count 0 target 1000000000 mode 400 rate 1 int 10000 start 1000 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1000 delta 768
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 1000 delta 36864
+first update: cyc 1000 delta 536 start 1000 gates 0/0 istat 0 icr 0 icr2 0 ev 0 next 2147484647 cause 0 intc 0
+  c0 count 0 target 1000000000 mode 400 rate 1 int 10 start 1000 delta 0
+  c1 count 0 target 1000000000 mode 400 rate 1 int 20 start 1000 delta 0
+  c2 count 0 target 1000000000 mode 400 rate 1 int 40 start 1000 delta 0
+  c3 count 0 target 1000000000 mode 400 rate 1 int 4000 start 1000 delta 0
+  c4 count 0 target 1000000000 mode 400 rate 1 int 8000 start 1000 delta 0
+  c5 count 0 target 1000000000 mode 400 rate 1 int 10000 start 1000 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1000 delta 536
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 1000 delta 36864
+c0 mode 58 target 100: cyc 1000 delta 0 start 1000 gates 0/0 istat 0 icr 0 icr2 0 ev 0 next 1000 cause 0 intc 0
+  c0 count 0 target 100 mode 458 rate 1 int 10 start 1000 delta 0
+  c1 count 0 target 1000000000 mode 400 rate 1 int 20 start 1000 delta 0
+  c2 count 0 target 1000000000 mode 400 rate 1 int 40 start 1000 delta 0
+  c3 count 0 target 1000000000 mode 400 rate 1 int 4000 start 1000 delta 0
+  c4 count 0 target 1000000000 mode 400 rate 1 int 8000 start 1000 delta 0
+  c5 count 0 target 1000000000 mode 400 rate 1 int 10000 start 1000 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1000 delta 536
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 1000 delta 36864
+c0 read c0
+c0 read 80
+c0 read 40
+c0 read 0
+c0 after 4 updates: cyc 1768 delta 256 start 1768 gates 0/0 istat 10 icr 0 icr2 0 ev 0 next 2024 cause 0 intc 3
+  c0 count 0 target 100 mode 858 rate 1 int 10 start 1768 delta 0
+  c1 count 300 target 1000000000 mode 400 rate 1 int 20 start 1768 delta 0
+  c2 count 300 target 1000000000 mode 400 rate 1 int 40 start 1768 delta 0
+  c3 count 300 target 1000000000 mode 400 rate 1 int 4000 start 1768 delta 0
+  c4 count 300 target 1000000000 mode 400 rate 1 int 8000 start 1768 delta 0
+  c5 count 300 target 1000000000 mode 400 rate 1 int 10000 start 1768 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1768 delta 536
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 1000 delta 36864
+c0 pixel overflow: cyc 1001768 delta 4 start 1001768 gates 0/0 istat 10 icr 0 icr2 0 ev 0 next 2148485415 cause 0 intc 4
+  c0 count 6a120 target 1000000100 mode 19e0 rate 2 int 10 start 1001768 delta 0
+  c1 count e4540 target 1000000000 mode 400 rate 1 int 20 start 1001768 delta 0
+  c2 count e4540 target 1000000000 mode 400 rate 1 int 40 start 1001768 delta 0
+  c3 count f4540 target 1000000000 mode 400 rate 1 int 4000 start 1001768 delta 0
+  c4 count f4540 target 1000000000 mode 400 rate 1 int 8000 start 1001768 delta 0
+  c5 count f4540 target 1000000000 mode 400 rate 1 int 10000 start 1001768 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1001768 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 996328 delta 36864
+c1 gate mode 0 read 2
+c1 gated: cyc 1001768 delta 4 start 1001768 gates 0/2 istat 811 icr 0 icr2 0 ev 0 next 2148485415 cause 0 intc 6
+  c0 count 6a120 target 1000000100 mode 19e0 rate 2 int 10 start 1001768 delta 0
+  c1 count 2 target 3 mode 511 rate 8193 int 20 start 1001768 delta 0
+  c2 count e4540 target 1000000000 mode 400 rate 1 int 40 start 1001768 delta 0
+  c3 count f4540 target 1000000000 mode 400 rate 1 int 4000 start 1001768 delta 0
+  c4 count f4540 target 1000000000 mode 400 rate 1 int 8000 start 1001768 delta 0
+  c5 count f4540 target 1000000000 mode 400 rate 1 int 10000 start 1001768 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1001768 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 996328 delta 36864
+c1 gate mode 1 read 2
+c1 gated: cyc 1001768 delta 4 start 1001768 gates 0/2 istat 811 icr 0 icr2 0 ev 0 next 2148485415 cause 0 intc 8
+  c0 count 6a120 target 1000000100 mode 19e0 rate 2 int 10 start 1001768 delta 0
+  c1 count 2 target 3 mode 513 rate 8193 int 20 start 1001768 delta 0
+  c2 count e4540 target 1000000000 mode 400 rate 1 int 40 start 1001768 delta 0
+  c3 count f4540 target 1000000000 mode 400 rate 1 int 4000 start 1001768 delta 0
+  c4 count f4540 target 1000000000 mode 400 rate 1 int 8000 start 1001768 delta 0
+  c5 count f4540 target 1000000000 mode 400 rate 1 int 10000 start 1001768 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1001768 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 996328 delta 36864
+c1 gate mode 2 read 1
+c1 gated: cyc 1001768 delta 4 start 1001768 gates 0/2 istat 811 icr 0 icr2 0 ev 0 next 2148485415 cause 0 intc 10
+  c0 count 6a120 target 1000000100 mode 19e0 rate 2 int 10 start 1001768 delta 0
+  c1 count 1 target 3 mode 10000515 rate 8193 int 20 start 1001768 delta 0
+  c2 count e4540 target 1000000000 mode 400 rate 1 int 40 start 1001768 delta 0
+  c3 count f4540 target 1000000000 mode 400 rate 1 int 4000 start 1001768 delta 0
+  c4 count f4540 target 1000000000 mode 400 rate 1 int 8000 start 1001768 delta 0
+  c5 count f4540 target 1000000000 mode 400 rate 1 int 10000 start 1001768 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1001768 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 996328 delta 36864
+c1 gate mode 3 read 2
+c1 gated: cyc 1001768 delta 4 start 1001768 gates 0/2 istat 811 icr 0 icr2 0 ev 0 next 2148485415 cause 0 intc 12
+  c0 count 6a120 target 1000000100 mode 19e0 rate 2 int 10 start 1001768 delta 0
+  c1 count 2 target 3 mode 517 rate 8193 int 20 start 1001768 delta 0
+  c2 count e4540 target 1000000000 mode 400 rate 1 int 40 start 1001768 delta 0
+  c3 count f4540 target 1000000000 mode 400 rate 1 int 4000 start 1001768 delta 0
+  c4 count f4540 target 1000000000 mode 400 rate 1 int 8000 start 1001768 delta 0
+  c5 count f4540 target 1000000000 mode 400 rate 1 int 10000 start 1001768 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1001768 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 996328 delta 36864
+c2 count past target: cyc 1001768 delta 0 start 1001768 gates 0/2 istat 811 icr 0 icr2 0 ev 0 next 1001768 cause 0 intc 12
+  c0 count 6a120 target 1000000100 mode 19e0 rate 2 int 10 start 1001768 delta 0
+  c1 count 2 target 3 mode 517 rate 8193 int 20 start 1001768 delta 0
+  c2 count 50 target 1000000040 mode 610 rate 8 int 40 start 1001768 delta 0
+  c3 count f4540 target 1000000000 mode 400 rate 1 int 4000 start 1001768 delta 0
+  c4 count f4540 target 1000000000 mode 400 rate 1 int 8000 start 1001768 delta 0
+  c5 count f4540 target 1000000000 mode 400 rate 1 int 10000 start 1001768 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1001768 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 996328 delta 36864
+c2 after wrap: cyc 1526056 delta 4 start 1526056 gates 0/2 istat 851 icr 0 icr2 0 ev 0 next 2149009703 cause 0 intc 13
+  c0 count 9a120 target 1000000100 mode 1de0 rate 2 int 10 start 1526056 delta 0
+  c1 count 2 target 3 mode 517 rate 8193 int 20 start 1001768 delta 0
+  c2 count 50 target 1000000040 mode a10 rate 8 int 40 start 1526056 delta 0
+  c3 count 174540 target 1000000000 mode 400 rate 1 int 4000 start 1526056 delta 0
+  c4 count 174540 target 1000000000 mode 400 rate 1 int 8000 start 1526056 delta 0
+  c5 count 174540 target 1000000000 mode 400 rate 1 int 10000 start 1526056 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1526056 delta 728
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 1512424 delta 36864
+c2 stopped by mode 7: cyc 1526056 delta 4 start 1526056 gates 0/2 istat 851 icr 0 icr2 0 ev 0 next 2149009703 cause 0 intc 13
+  c0 count 9a120 target 1000000100 mode 1de0 rate 2 int 10 start 1526056 delta 0
+  c1 count 2 target 3 mode 517 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 174540 target 1000000000 mode 400 rate 1 int 4000 start 1526056 delta 0
+  c4 count 174540 target 1000000000 mode 400 rate 1 int 8000 start 1526056 delta 0
+  c5 count 174540 target 1000000000 mode 400 rate 1 int 10000 start 1526056 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1526056 delta 728
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 1512424 delta 36864
+c3 read 1
+c3 hblanks: cyc 1526056 delta 4 start 1526056 gates 0/a istat 871 icr 0 icr2 0 ev 0 next 2149009703 cause 0 intc 16
+  c0 count 9a120 target 1000000100 mode 1de0 rate 2 int 10 start 1526056 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 174540 target 1000000000 mode 400 rate 1 int 8000 start 1526056 delta 0
+  c5 count 174540 target 1000000000 mode 400 rate 1 int 10000 start 1526056 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1526056 delta 728
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 1512424 delta 36864
+c4 3f000 c5 3f000
+c4/c5: cyc 1788200 delta 4 start 1788200 gates 0/a istat 18871 icr 0 icr2 0 ev 0 next 2149271847 cause 0 intc 19
+  c0 count aa120 target 1000000100 mode 19e0 rate 2 int 10 start 1788200 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 3f000 target 1000 mode 858 rate 1 int 8000 start 1788200 delta 0
+  c5 count 3f000 target 0 mode 1038 rate 1 int 10000 start 1788200 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 1788200 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 1770472 delta 36864
+c4 6fff c5 7000
+c4/c5: cyc 2050344 delta 4 start 2050344 gates 0/a istat 18871 icr 0 icr2 0 ev 0 next 2149533991 cause 0 intc 21
+  c0 count ba120 target 1000000100 mode 1de0 rate 2 int 10 start 2050344 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 6fff target 1001 mode 2858 rate 8 int 8000 start 2050344 delta 0
+  c5 count 7000 target 0 mode 3038 rate 8 int 10000 start 2050344 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2050344 delta 216
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2028520 delta 36864
+c4 2ffe c5 3000
+c4/c5: cyc 2312488 delta 4 start 2312488 gates 0/a istat 18871 icr 0 icr2 0 ev 0 next 2149796135 cause 0 intc 24
+  c0 count ca120 target 1000000100 mode 19e0 rate 2 int 10 start 2312488 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 2ffe target 1002 mode 4858 rate 16 int 8000 start 2312488 delta 0
+  c5 count 3000 target 0 mode 5038 rate 16 int 10000 start 2312488 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2312488 delta 728
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2286568 delta 36864
+c4 400 c5 fffff400
+c4/c5: cyc 2574632 delta 4 start 2574632 gates 0/a istat 18871 icr 0 icr2 0 ev 0 next 2150058279 cause 0 intc 24
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 400 target 1003 mode 6c58 rate 256 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+c4 stopped by gate mode 0: cyc 2574632 delta 4 start 2574632 gates 0/a istat 18871 icr 0 icr2 0 ev 0 next 2150058279 cause 0 intc 24
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+state: saved 362 bytes
+  PSX_INT 11 55
+  PSX_INT 12 66
+lines: cyc 2574632 delta 4 start 2574632 gates 0/a istat 143aa71 icr 0 icr2 0 ev 1800 next 2150058279 cause 0 intc 29
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+icr: cyc 2574632 delta 4 start 2574632 gates 0/a istat 143aa71 icr 0 icr2 0 ev 1800 next 2150058279 cause 0 intc 29
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+icr: cyc 2574632 delta 4 start 2574632 gates 0/a istat 143aa79 icr 27f0000 icr2 23f0000 ev 1800 next 2150058279 cause 0 intc 33
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+icr: cyc 2574632 delta 4 start 2574632 gates 0/a istat 143aa79 icr 800000 icr2 84800000 ev 1800 next 2150058279 cause 0 intc 35
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+icr: cyc 2574632 delta 4 start 2574632 gates 0/a istat 143aa79 icr 88ff0000 icr2 88bf0000 ev 1800 next 2150058279 cause 0 intc 39
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+icr: cyc 2574632 delta 4 start 2574632 gates 0/a istat 143aa79 icr 0 icr2 3f000000 ev 1800 next 2150058279 cause 0 intc 40
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+icr: cyc 2574632 delta 4 start 2574632 gates 0/a istat 143aa79 icr 207f0000 icr2 3f3f0000 ev 1800 next 2150058279 cause 0 intc 44
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+icr: cyc 2574632 delta 4 start 2574632 gates 0/a istat 143aa79 icr 800000 icr2 bf800000 ev 1800 next 2150058279 cause 0 intc 45
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+icr: cyc 2574632 delta 4 start 2574632 gates 0/a istat 143aa79 icr 81ff0000 icr2 bfbf0000 ev 1800 next 2150058279 cause 0 intc 49
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 472
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+  spu2 write core 0 at 1000 size 512
+  spu2 read core 0 at 1000 size 512
+  clear 0 256
+  spu2 write core 1 at 2000 size 512
+  spu2 read core 1 at 2000 size 512
+  clear 0 256
+spu2 dma: cyc 2574632 delta 4 start 2574632 gates 0/a istat 143aa79 icr 81ff0000 icr2 bfbf0000 ev 1800 next 2574636 cause 0 intc 49
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 1024
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+  dev9 write 256
+  dev9 read 256
+sif busy 1 1 end 0 0
+  PSX_INT 4 1
+dma11 madr 9018 block 8
+  PSX_INT 5 6
+dma12 madr a018
+channels: cyc 2574632 delta 4 start 2574632 gates 0/a istat 143aa79 icr c1ff0000 icr2 bfbf0000 ev 1830 next 2574636 cause 0 intc 56
+  c0 count da120 target 1000000100 mode 1de0 rate 2 int 10 start 2574632 delta 0
+  c1 count 8 target 1000000003 mode 917 rate 8193 int 20 start 1001768 delta 0
+  c2 count 0 target 40 mode 10000e07 rate 8 int 40 start 1526056 delta 0
+  c3 count 1 target 2 mode 551 rate 8193 int 4000 start 1526056 delta 0
+  c4 count 0 target 1003 mode 10000c01 rate 1 int 8000 start 2574632 delta 0
+  c5 count fffff400 target 1000000000 mode 7438 rate 256 int 10000 start 2574632 delta 0
+  c6 count 0 target 0 mode 8 rate 768 int 0 start 2574632 delta 1024
+  c7 count 0 target 0 mode 8 rate 36864 int 0 start 2544616 delta 36864
+cdvd read 5e
+cdvd read 5f
+cdvd read 5c
+cdvd read 5d
+walk: 4bcc2a8d34e84257
+fuzz 500: 06d31ffc5db0b04a
+fuzz 1000: e57892d1cb7552a4
+fuzz 1500: 829059d6d3bde146
+fuzz 2000: caef9c52a8c42a46
+fuzz 2500: 7f82d9d0b989c919
+fuzz 3000: 24e35c7efc191790
+fuzz 3500: 9588cf14b1c42597
+fuzz 4000: 18e58b85aa4f89fa
+fuzz 4500: 1522433b296e4eff
+fuzz 5000: 6086e619a607447f
+fuzz 5500: 8c336152ce43f67f
+fuzz 6000: cb3bf638ae2abce8
+fuzz 6500: 1a74269f2fd13827
+fuzz 7000: a647ea5275fe3775
+fuzz 7500: 83c1827dd0ecd95d
+fuzz 8000: 73162c1e48fb0e6d
+fuzz 8500: 2a98628f398c9123
+fuzz 9000: 0336aabb25657405
+fuzz 9500: 4daa934053069ba3
+fuzz 10000: 8c2c377d3c81524f
+fuzz 10500: 0079155cdf1bc751
+fuzz 11000: 7a51fdf45402402d
+fuzz 11500: b3a1794e16a07581
+fuzz 12000: 48b2ac435d3afab8
+fuzz 12500: fe59e36570e501b0
+fuzz 13000: 955469d0617789a3
+fuzz 13500: 533620d9d6f21284
+fuzz 14000: 34a77386efd9b983
+fuzz 14500: 1df1f0af994c5673
+fuzz 15000: 431325ab3aded393
+fuzz 15500: c65690fe16f23d8c
+fuzz 16000: a056e58b8fab1b0a
+fuzz 16500: 1892b58f73c2b4f6
+fuzz 17000: 35f74c5ad2eff3f9
+fuzz 17500: 9975383deb7a15de
+fuzz 18000: 1dedb34080a92e0f
+fuzz 18500: effcd334f7849895
+fuzz 19000: 516652638f90127b
+fuzz 19500: cd64317df00d7fc6
+fuzz 20000: 00c325e1b2b49ad9
