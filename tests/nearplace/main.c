@@ -9,7 +9,9 @@
  * .bss array (an image well past any fixed span estimate), a main + code pair
  * placed for real keeps that invariant, and with the address space around the
  * image reserved except for one hole off any fixed stride grid, the search
- * still finds the hole. */
+ * still finds the hole. Where the core keeps room for the maps in its image,
+ * that room is the top of the image, uncommitted and read-only until used,
+ * and with the hole taken too the pair goes into it within reach. */
 #if defined(__linux__) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE
 #endif
@@ -431,9 +433,22 @@ static void release_at(uintptr_t base, size_t size)
 #endif
 }
 
-static void lane_live_extent(near_range_t *image)
+static void lane_live_extent(near_range_t *image, near_range_t *full)
 {
-	near_image_extent((const void *)&data_global, image);
+	near_range_t room;
+	int have_room = near_room_extent(&room);
+
+	/* As the core does: the normal placement measures the image without the
+	 * room, the room's own placement with it. */
+	near_image_extent((const void *)&data_global, full);
+	near_image_extent_except((const void *)&data_global, have_room ? &room : NULL, image);
+	if (have_room)
+	{
+		CHECK(full->lo <= room.lo && room.hi <= full->hi, "the room is not in the image");
+		CHECK(room.lo >= image->hi || room.hi <= image->lo,
+				"the image the normal placement measures still covers the room");
+		CHECK(full->hi - full->lo <= RIP_LIMIT, "image and room out of reach of each other");
+	}
 	CHECK(image->lo <= (uintptr_t)&lane_live_extent && (uintptr_t)&lane_live_extent < image->hi, "extent misses the text");
 	CHECK(image->lo <= (uintptr_t)&data_global && (uintptr_t)&data_global < image->hi, "extent misses .data");
 	CHECK(image->lo <= (uintptr_t)&big_bss[0] && (uintptr_t)&big_bss[sizeof(big_bss) - 1] < image->hi,
@@ -508,6 +523,116 @@ static void lane_live_pair(const near_range_t *image)
 	if (pc.main_base)
 		release_at(pc.main_base, MAIN_SIZE);
 }
+
+/* ---- room in the image ---------------------------------------------- */
+
+#ifdef NEAR_HAVE_ROOM
+/* Whether every page of [lo, hi) is mapped with these permissions. */
+static int mapped_as(uintptr_t lo, uintptr_t hi, const char *perms)
+{
+	char line[512];
+	uintptr_t covered = lo;
+	FILE *f = fopen("/proc/self/maps", "r");
+	if (!f)
+		return 0;
+	while (fgets(line, sizeof(line), f))
+	{
+		unsigned long a;
+		unsigned long b;
+		char p[8];
+		if (sscanf(line, "%lx-%lx %7s", &a, &b, p) != 3 || (uintptr_t)b <= lo || (uintptr_t)a >= hi)
+			continue;
+		if ((uintptr_t)a > covered || strncmp(p, perms, 4) != 0)
+			break;
+		covered = (uintptr_t)b;
+	}
+	fclose(f);
+	return covered >= hi;
+}
+
+static int room_map(uintptr_t base, size_t size)
+{
+	if (mmap((void *)base, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_FIXED,
+			-1, 0) != MAP_FAILED)
+		return 1;
+	near_room_return(base, size);
+	return 0;
+}
+
+static int room_map_main(void *ctx, uintptr_t base)
+{
+	if (!room_map(base, MAIN_SIZE))
+		return 0;
+	((pair_ctx_t *)ctx)->main_base = base;
+	return 1;
+}
+
+static void room_unmap_main(void *ctx)
+{
+	near_room_return(((pair_ctx_t *)ctx)->main_base, MAIN_SIZE);
+	((pair_ctx_t *)ctx)->main_base = 0;
+}
+
+static int room_map_code(void *ctx, uintptr_t base)
+{
+	if (!room_map(base, CODE_SIZE))
+		return 0;
+	((pair_ctx_t *)ctx)->code_base = base;
+	return 1;
+}
+
+/* The core's last resort: both maps in the room, writable while there, the
+ * hull of image and maps within reach, and the room back to uncommitted,
+ * read-only zeroes after. */
+static void place_in_room_checked(const near_range_t *full)
+{
+	near_pair_ops_t ops;
+	near_range_t room;
+	near_range_t hull;
+	near_range_t r;
+	pair_ctx_t pc;
+
+	near_room_extent(&room);
+	pc.main_base   = 0;
+	pc.code_base   = 0;
+	ops.map_main   = room_map_main;
+	ops.unmap_main = room_unmap_main;
+	ops.map_code   = room_map_code;
+	ops.ctx        = &pc;
+	if (!near_place_pair_in_room(full, MAIN_SIZE, CODE_SIZE, RIP_LIMIT, RESERVE_ALIGN, &ops))
+	{
+		CHECK(0, "no placement in the room");
+		return;
+	}
+	CHECK(pc.main_base >= room.lo && pc.main_base + MAIN_SIZE <= room.hi, "main outside the room");
+	CHECK(pc.code_base >= room.lo && pc.code_base + CODE_SIZE <= room.hi, "code outside the room");
+	CHECK(pc.code_base >= pc.main_base + MAIN_SIZE, "code overlaps main");
+	CHECK(pc.main_base % RESERVE_ALIGN == 0 && pc.code_base % RESERVE_ALIGN == 0, "maps misaligned");
+	hull = *full;
+	r.lo = pc.main_base;
+	r.hi = pc.code_base + CODE_SIZE;
+	near_hull(&hull, &r);
+	CHECK(hull.hi - hull.lo <= RIP_LIMIT, "maps in the room out of reach of the image");
+	CHECK(mapped_as(pc.main_base, pc.code_base + CODE_SIZE, "rw-p"), "maps in the room not writable");
+	((unsigned char *)pc.code_base)[CODE_SIZE - 1] = 1;
+	CHECK(near_room_return(pc.code_base, CODE_SIZE), "code not handed back");
+	room_unmap_main(&pc);
+	CHECK(mapped_as(room.lo, room.hi, "r--p"), "room not read-only after the maps left");
+	CHECK(((volatile unsigned char *)room.lo)[CODE_SIZE] == 0, "room not zeroes after the maps left");
+}
+
+static void lane_live_room(const near_range_t *full)
+{
+	near_range_t room;
+	near_room_extent(&room);
+	/* Writable it would be committed and counted in VmData from load on. */
+	CHECK(mapped_as(room.lo, room.hi, "r--p"), "room still committed after load");
+	place_in_room_checked(full);
+	/* A second session lands there again. */
+	place_in_room_checked(full);
+	printf("room: %lu MB at the top of the image, placed twice\n", (unsigned long)((room.hi - room.lo) >> 20));
+}
+#endif
 
 #ifndef NEAR_FORCE_STEPPED
 /* Free ranges of this process, for the crowding lane. */
@@ -612,13 +737,14 @@ static void fill_gap(uintptr_t lo, uintptr_t hi, void *ctx)
 
 static crowd_t crowd;
 
-static void lane_live_crowded(const near_range_t *image)
+static void lane_live_crowded(const near_range_t *image, const near_range_t *full)
 {
 	near_search_t s;
 	pair_ctx_t pc;
 	unsigned i;
 	int placed;
 
+	(void)full;
 	CHECK(near_search_init(&s, image, HOLE_SIZE, RIP_LIMIT, RESERVE_ALIGN, 0), "window refused");
 	crowd.down   = (image->lo - MAIN_SIZE) & ~(RESERVE_ALIGN - 1);
 	crowd.up     = (image->hi + RESERVE_ALIGN - 1) & ~(RESERVE_ALIGN - 1);
@@ -658,6 +784,23 @@ static void lane_live_crowded(const near_range_t *image)
 	if (pc.main_base)
 		release_at(pc.main_base, MAIN_SIZE);
 
+#ifdef NEAR_HAVE_ROOM
+	/* With the hole taken too nothing in reach is free: the room takes both. */
+	if (reserve_at(crowd.hole, HOLE_SIZE))
+	{
+		placed = place_pair_checked(image, &pc);
+		CHECK(!placed, "a pair placed with nothing in reach free");
+		if (placed)
+		{
+			release_at(pc.code_base, CODE_SIZE);
+			release_at(pc.main_base, MAIN_SIZE);
+		}
+		place_in_room_checked(full);
+		release_at(crowd.hole, HOLE_SIZE);
+		printf("crowded: nothing free in reach, room placed\n");
+	}
+#endif
+
 	for (i = 0; i < crowd.held; i++)
 		if (crowd.held_len[i])
 			release_at(crowd.held_lo[i], crowd.held_len[i]);
@@ -667,21 +810,28 @@ static void lane_live_crowded(const near_range_t *image)
 int main(void)
 {
 	near_range_t image;
+	near_range_t full;
 
 	lane_fuzz();
 	lane_fuzz_pair();
 	lane_one_hole();
 	lane_best_k();
 	lane_edges();
-	lane_live_extent(&image);
-	printf("image: %lu MB measured\n", (unsigned long)((image.hi - image.lo) >> 20));
+	lane_live_extent(&image, &full);
+	printf("image: %lu MB measured, %lu MB with the room\n", (unsigned long)((image.hi - image.lo) >> 20),
+			(unsigned long)((full.hi - full.lo) >> 20));
 	lane_live_pair(&image);
+#ifdef NEAR_HAVE_ROOM
+	lane_live_room(&full);
+#else
+	printf("room: SKIP (none kept on this platform)\n");
+#endif
 #ifdef NEAR_FORCE_STEPPED
 	/* A fixed-stride probe finds a lone hole only by luck: that is what the
 	 * address map is for. */
 	printf("crowded: SKIP (stepped probe)\n");
 #else
-	lane_live_crowded(&image);
+	lane_live_crowded(&image, &full);
 #endif
 
 	if (failures)

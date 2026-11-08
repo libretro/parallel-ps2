@@ -76,53 +76,50 @@ BIOS
 static const char s_image_anchor = 0;
 static near_space_t s_space;
 
-#if defined(__linux__) && defined(__x86_64__)
-/* The last resort when no range within reach is free, as in a host that has
- * mapped a lot around the module: room for both maps in the module's own
- * .bss, which is loaded with the image and so always within reach. Until the
- * maps go over it, it is only reserved address space. */
-static PCSX2_ALIGN(0x10000) u8 s_maps_in_image[HOSTMEM_MAIN_SIZE + HOSTMEM_CODE_SIZE];
+#ifdef NEAR_HAVE_ROOM
+PCSX2_STATIC_ASSERT(HOSTMEM_MAIN_SIZE + HOSTMEM_CODE_SIZE <= NEAR_ROOM_BYTES, "room too small for the maps");
 #endif
 
 static int place_map_main(void* ctx, uintptr_t base) { return vmm_map(&((SysMainMemory*)ctx)->main, base); }
 static void place_unmap_main(void* ctx)              { vmm_unmap(&((SysMainMemory*)ctx)->main); }
 static int place_map_code(void* ctx, uintptr_t base) { return vmm_map(&((SysMainMemory*)ctx)->code, base); }
+static int room_map_main(void* ctx, uintptr_t base)  { return vmm_map_in_room(&((SysMainMemory*)ctx)->main, base); }
+static int room_map_code(void* ctx, uintptr_t base)  { return vmm_map_in_room(&((SysMainMemory*)ctx)->code, base); }
 
 static bool place_maps(SysMainMemory* m)
 {
 	near_pair_ops_t ops;
 	near_range_t image;
+	near_range_t room;
 
 	ops.map_main   = place_map_main;
 	ops.unmap_main = place_unmap_main;
 	ops.map_code   = place_map_code;
 	ops.ctx        = m;
-	near_image_extent(&s_image_anchor, &image);
+	/* The room holds no globals, so reach is measured without it. */
+	near_image_extent_except(&s_image_anchor, near_room_extent(&room) ? &room : NULL, &image);
 	return near_place_pair(&s_space, &image, m->main.size, MAIN_CEILING, m->code.size,
 			RIP_LIMIT, RESERVE_ALIGN, &ops) != 0;
 }
 
+/* The last resort: the room kept in the image (NearPlace.h). */
 static bool place_maps_in_image(SysMainMemory* m)
 {
-#if defined(__linux__) && defined(__x86_64__)
-	if (m->main.size + m->code.size > sizeof(s_maps_in_image))
+	near_pair_ops_t ops;
+	near_range_t image;
+
+	ops.map_main   = room_map_main;
+	ops.unmap_main = place_unmap_main;
+	ops.map_code   = room_map_code;
+	ops.ctx        = m;
+	near_image_extent(&s_image_anchor, &image);
+	if (!near_place_pair_in_room(&image, m->main.size, m->code.size, RIP_LIMIT, RESERVE_ALIGN, &ops))
 		return false;
-	if (!vmm_map_in_image(&m->main, s_maps_in_image))
-		return false;
-	if (!vmm_map_in_image(&m->code, s_maps_in_image + m->main.size))
-	{
-		vmm_unmap(&m->main);
-		return false;
-	}
 	log_cb(RETRO_LOG_WARN, "No free range within reach of the core for the %u MB main and %u MB code "
 	                       "maps; they are in room kept in the core's own image (%p).\n",
 	       (unsigned)(HOSTMEM_MAIN_SIZE >> 20), (unsigned)(HOSTMEM_CODE_SIZE >> 20),
-	       (void*)s_maps_in_image);
+	       (void*)m->main.baseptr);
 	return true;
-#else
-	(void)m;
-	return false;
-#endif
 }
 
 /* --------------------------------------------------------------------------

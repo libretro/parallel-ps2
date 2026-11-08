@@ -37,17 +37,15 @@ typedef struct VirtualMemoryManager
 	u8* baseptr;                 /* NULL while unmapped */
 	retro_atomic_int_t* pageuse; /* one flag per page, set while handed out */
 	size_t size;                 /* page-aligned */
-	bool in_image;               /* mapped over room in the module's own image */
+	bool in_room;                /* mapped over the image's room (NearPlace.h) */
 } VirtualMemoryManager;
 
 bool vmm_init(VirtualMemoryManager* m, const char* file_mapping_name, size_t size);
 /* Maps the block at exactly base, or anywhere when base is 0. */
 bool vmm_map(VirtualMemoryManager* m, uptr base);
-#ifdef __linux__
-/* Maps the block over space, page-aligned room the module owns such as a
- * static array; it is handed back as plain memory when unmapped. */
-bool vmm_map_in_image(VirtualMemoryManager* m, u8* space);
-#endif
+/* Maps the block exactly over base, inside the image's room (NearPlace.h),
+ * and hands it back to the room when unmapped. False where there is none. */
+bool vmm_map_in_room(VirtualMemoryManager* m, uptr base);
 void vmm_unmap(VirtualMemoryManager* m);
 void vmm_destroy(VirtualMemoryManager* m);
 
