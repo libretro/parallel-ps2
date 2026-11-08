@@ -1264,6 +1264,11 @@ static void case_split_clear_no_display(void)
 #define STREAM_CT24_AEM 3
 /* What the IMAGE GIFtags claim past the quadwords sent after them. */
 static unsigned s_image_overrun;
+/* Uploads of the texture a stream_texture round makes: one, then five
+ * more for paraLLEl-GS's slab. gif_nloop_past_data keeps to one, or its
+ * overrun carries on through every upload into the draw and the frame
+ * is never drawn. */
+static unsigned s_stream_uploads = 6;
 static void stream_image(unsigned dbp, unsigned dbw, unsigned dpsm,
 	unsigned x, unsigned y, unsigned w, unsigned h, unsigned qwc)
 {
@@ -1343,11 +1348,8 @@ static void stream_texture(unsigned mode, unsigned fpsm)
 	s_loop = 1;
 	s_loop_kick = s_kick_count;
 	kick(up, s_qw_count + s_qw_repeat - up, 1);
-	kick(up, s_qw_count + s_qw_repeat - up, 0);
-	kick(up, s_qw_count + s_qw_repeat - up, 0);
-	kick(up, s_qw_count + s_qw_repeat - up, 0);
-	kick(up, s_qw_count + s_qw_repeat - up, 0);
-	kick(up, s_qw_count + s_qw_repeat - up, 0);
+	for (i = 1; i < s_stream_uploads; i++)
+		kick(up, s_qw_count + s_qw_repeat - up, 0);
 	kick(draw, rb - draw, 0);
 	kick(rb, up - rb, 0);
 	readback(fpsm ? 256 : 512);
@@ -1670,6 +1672,7 @@ static void case_stream_frame16(void) { stream_texture(STREAM_CT32, 2); }
 static void case_gif_nloop_past_data(void)
 {
 	s_image_overrun = 1;
+	s_stream_uploads = 1;
 	stream_texture(STREAM_CT32, 0);
 }
 
