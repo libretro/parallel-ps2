@@ -707,19 +707,13 @@ static u32 cdvdRotationTime(CDVD_MODE_TYPE mode)
 
 	/* CLV adjusts its speed based on where it is on the disc, so we can take the max RPM and use the sector to work it out */
 	/* Sector counts are taken from google for Single layer, Dual layer DVD's and for 700MB CD's */
-	switch (cdvd.DiscType)
+	if (cdvdIsDVD())
 	{
-		case CDVD_TYPE_DETCTDVDS:
-		case CDVD_TYPE_PS2DVD:
-		case CDVD_TYPE_DETCTDVDD:
-			numSectors      = 2298496;
-			/* Layer 1 needs an offset as it goes back to the middle of the disc */
-			CDVD->getDualInfo(&dualType, &layer1Start);
-			if (cdvd.SeekToSector >= layer1Start)
-				offset = layer1Start;
-			break;
-		default: /* Pretty much every CD format */
-			break;
+		numSectors      = 2298496;
+		/* Layer 1 needs an offset as it goes back to the middle of the disc */
+		CDVD->getDualInfo(&dualType, &layer1Start);
+		if (cdvd.SeekToSector >= layer1Start)
+			offset = layer1Start;
 	}
 
 	/* CLV speeds are reversed, so the centre is the fastest position. */
@@ -744,9 +738,7 @@ static uint cdvdBlockReadTime(CDVD_MODE_TYPE mode)
 		u64 ss_ptm;
 
 		/* Sector counts are taken from google for Single layer, Dual layer DVD's and for 700MB CD's */
-		if (       (cdvd.DiscType == CDVD_TYPE_DETCTDVDS)
-			|| (cdvd.DiscType == CDVD_TYPE_PS2DVD)
-			|| (cdvd.DiscType == CDVD_TYPE_DETCTDVDD))
+		if (cdvdIsDVD())
 		{
 			u32 layer1Start  = 0;
 			s32 dualType     = 0;

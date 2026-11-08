@@ -138,6 +138,7 @@ build*/
 /tests/gs/gs_reg_index
 /tests/gs/gs_restore_norm
 /tests/gs/gs_texsize
+/tests/cdvdtime/cdvdtime_test
 /tests/spsc/spsc_test_tsan
 /tests/spsc/spsc_test.exe
 /tests/faultstress/fault_test
