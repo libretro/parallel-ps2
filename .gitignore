@@ -141,6 +141,8 @@ build*/
 /tests/cdvdtime/cdvdtime_test
 /tests/mg/mg_test
 /tests/cdvdscmd/cdvdscmd_test
+/tests/biosver/biosver_test
+/tests/biosver/biosver_test.exe
 /tests/spsc/spsc_test_tsan
 /tests/spsc/spsc_test.exe
 /tests/faultstress/fault_test

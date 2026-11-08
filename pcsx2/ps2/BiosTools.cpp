@@ -63,6 +63,12 @@ BiosDebugInformation CurrentBiosInformation;
 static bool LoadBiosVersion(RFILE *fp, u32 *version, char *description, size_t description_size, u32 *region, char *zone, size_t zone_size, char *serial, size_t serial_size)
 {
 	romdir rd;
+	/* The serial comes from EXTINFO, which not every BIOS has (FPS2BIOS
+	 * has none): without it the serial is empty, not what the buffer
+	 * held - IsBIOS's is uninitialised, and BiosSerial would keep the
+	 * last BIOS's. */
+	if (serial_size)
+		serial[0] = '\0';
 	for (u32 i = 0; i < 512 * 1024; i++)
 	{
 		if (filestream_read(fp, &rd, sizeof(rd)) != (int64_t)(sizeof(rd)))
