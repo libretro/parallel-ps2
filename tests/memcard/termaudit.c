@@ -11,12 +11,12 @@
  *
  *  This is upstream PCSX2 c3bafa2a4 less its eject signalling, which this
  *  core does with auto-eject ticks instead. The three handlers are a few
- *  lines each in MemoryCardProtocol.cpp; this reads them and checks that
+ *  lines each in MemoryCardProtocol.c; this reads them and checks that
  *  shape: in SetTerminator the store precedes a final push of mcd->term,
  *  GetTerminator pushes mcd->term twice, and AuthF3 assigns mcd->term
- *  before The2bTerminator.
+ *  before the_2b_terminator.
  *
- *  Usage: tests/memcard/termaudit <MemoryCardProtocol.cpp>
+ *  Usage: tests/memcard/termaudit <MemoryCardProtocol.c>
  */
 
 #include <stdio.h>
@@ -46,12 +46,12 @@ static char* read_file(const char* path)
 	return buf;
 }
 
-/* Body of `void MemoryCardProtocol::<name>()` as [*s, *e), 0 if absent. */
+/* Body of `void mcp_<name>(void)` as [*s, *e), 0 if absent. */
 static int body(const char* src, const char* name, const char** s, const char** e)
 {
 	char sig[96];
 
-	sprintf(sig, "void MemoryCardProtocol::%s()", name);
+	sprintf(sig, "void mcp_%s(void)", name);
 	*s = strstr(src, sig);
 	*e = *s ? strstr(*s, "\n}\n") : NULL;
 	return *s && *e;
@@ -98,7 +98,7 @@ int main(int argc, char** argv)
 
 	if (argc != 2)
 	{
-		fprintf(stderr, "usage: %s <MemoryCardProtocol.cpp>\n", argv[0]);
+		fprintf(stderr, "usage: %s <MemoryCardProtocol.c>\n", argv[0]);
 		return 2;
 	}
 	src = read_file(argv[1]);
@@ -108,27 +108,27 @@ int main(int argc, char** argv)
 		return 2;
 	}
 
-	if (!body(src, "SetTerminator", &s, &e))
+	if (!body(src, "set_terminator", &s, &e))
 		bad += verdict("SetTerminator", 0);
 	else
 	{
 		store = strstr(s, "mcd->term =");
-		push = last_in(s, e, "fifoOut.push_back(");
+		push = last_in(s, e, "OUT(");
 		bad += verdict("SetTerminator", store && store < e && push && store < push &&
-		                                    !strncmp(push, "fifoOut.push_back(mcd->term);", 29));
+		                                    !strncmp(push, "OUT(mcd->term);", 15));
 	}
 
-	if (!body(src, "GetTerminator", &s, &e))
+	if (!body(src, "get_terminator", &s, &e))
 		bad += verdict("GetTerminator", 0);
 	else
-		bad += verdict("GetTerminator", count_in(s, e, "fifoOut.push_back(mcd->term);") == 2);
+		bad += verdict("GetTerminator", count_in(s, e, "OUT(mcd->term);") == 2);
 
-	if (!body(src, "AuthF3", &s, &e))
+	if (!body(src, "auth_f3", &s, &e))
 		bad += verdict("AuthF3", 0);
 	else
 	{
 		store = strstr(s, "mcd->term =");
-		push = strstr(s, "The2bTerminator(");
+		push = strstr(s, "the_2b_terminator(");
 		bad += verdict("AuthF3", store && push && store < push && push < e);
 	}
 

@@ -147,11 +147,11 @@
     <ClCompile Include="GS\Renderers\Vulkan\GSTextureVK.cpp" />
     <ClCompile Include="Frontend\HostSettings.cpp" />
     <ClCompile Include="IopGte.cpp" />
-    <ClCompile Include="MemoryCardProtocol.cpp" />
-    <ClCompile Include="MultitapProtocol.cpp" />
+    <ClCompile Include="MemoryCardProtocol.c" />
+    <ClCompile Include="MultitapProtocol.c" />
     <ClCompile Include="PAD\PAD.cpp" />
     <ClCompile Include="FW.c" />
-    <ClCompile Include="MemoryCardFile.cpp" />
+    <ClCompile Include="MemoryCardFile.c" />
     <ClCompile Include="PerformanceMetrics.cpp" />
     <ClCompile Include="SPU2\Dma.cpp" />
     <ClCompile Include="SPU2\RegTable.cpp" />
@@ -278,7 +278,7 @@
     <ClCompile Include="R3000A.cpp" />
     <ClCompile Include="R3000AInterpreter.cpp" />
     <ClCompile Include="R3000AOpcodeTables.cpp" />
-    <ClCompile Include="Sio.cpp" />
+    <ClCompile Include="Sio.c" />
     <ClCompile Include="x86\iR3000A.cpp" />
     <ClCompile Include="x86\iR3000Atables.cpp" />
     <ClCompile Include="IopHw.cpp" />

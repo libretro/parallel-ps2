@@ -178,7 +178,7 @@ void psxDma11(u32 madr, u32 bcr, u32 chcr)
 		for (j = 0; j < ((bcr & 0xFFFF) * 4); j++)
 		{
 			const u8 data = iopMemRead8(madr);
-			sio2.Write(data);
+			sio2_write(data);
 			madr++;
 		}
 	}
@@ -209,7 +209,7 @@ void psxDma12(u32 madr, u32 bcr, u32 chcr)
 
 	while (bcr > 0)
 	{
-		const u8 data = sio2.Read();
+		const u8 data = sio2_read();
 		iopMemWrite8(madr, data);
 		bcr--;
 		madr++;

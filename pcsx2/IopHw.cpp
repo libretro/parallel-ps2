@@ -16,6 +16,7 @@
 #include "R3000A.h"
 #include "Common.h"
 
+#include "Config.h"
 #include "Sio.h"
 #include "Mdec.h"
 #include "IopCounters.h"
@@ -38,8 +39,8 @@ void psxHwReset(void) {
 	g_SkipBiosHack = EmuConfig.UseBOOT2Injection;
 	cdvdReset();
 	psxRcntInit();
-	sio0.FullReset();
-	sio2.FullReset();
+	sio0_full_reset();
+	sio2_full_reset();
 }
 
 u8 psxHw4Read8(u32 add)

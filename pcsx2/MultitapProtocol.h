@@ -13,31 +13,21 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/* The multitap's side of SIO2. C89. */
 #pragma once
 
-enum class MultitapMode
-{
-	NOT_SET = 0xff,
-	PAD_SUPPORT_CHECK = 0x12,
-	MEMCARD_SUPPORT_CHECK = 0x13,
-	SELECT_PAD = 0x21,
-	SELECT_MEMCARD = 0x22,
-};
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-class MultitapProtocol
-{
-private:
-	void SupportCheck();
-	void Select();
+#define MULTITAP_MODE_NOT_SET               0xff
+#define MULTITAP_MODE_PAD_SUPPORT_CHECK     0x12
+#define MULTITAP_MODE_MEMCARD_SUPPORT_CHECK 0x13
+#define MULTITAP_MODE_SELECT_PAD            0x21
+#define MULTITAP_MODE_SELECT_MEMCARD        0x22
 
-public:
-	MultitapProtocol();
-	~MultitapProtocol();
+void multitap_send(void);
 
-	void SoftReset();
-	void FullReset();
-
-	void SendToMultitap();
-};
-
-extern MultitapProtocol g_MultitapProtocol;
+#ifdef __cplusplus
+}
+#endif

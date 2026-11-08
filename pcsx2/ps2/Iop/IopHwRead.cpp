@@ -41,7 +41,7 @@ mem8_t iopHwRead8_Page1( u32 addr )
 	switch( masked_addr )
 	{
 		case (HW_SIO_DATA & 0x0fff):
-			ret = sio0.GetRxData();
+			ret = sio0_get_rx_data();
 			break;
 		case (HW_SIO_STAT & 0x0fff):
 		case (HW_SIO_MODE & 0x0fff):
@@ -93,7 +93,7 @@ mem8_t iopHwRead8_Page3( u32 addr )
 mem8_t iopHwRead8_Page8( u32 addr )
 {
 	if (addr == HW_SIO2_FIFO)
-		return sio2.Read();
+		return sio2_read();
 	return psxHu8(addr);
 }
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -201,16 +201,16 @@ static __fi T _HwRead_16or32_Page1( u32 addr )
 		{
 			// ------------------------------------------------------------------------
 			case (HW_SIO_DATA & 0x0fff):
-				ret = sio0.GetRxData();
-				ret |= sio0.GetRxData() << 8;
+				ret = sio0_get_rx_data();
+				ret |= sio0_get_rx_data() << 8;
 				if (sizeof(T) == 4)
 				{
-					ret |= sio0.GetRxData() << 16;
-					ret |= sio0.GetRxData() << 24;
+					ret |= sio0_get_rx_data() << 16;
+					ret |= sio0_get_rx_data() << 24;
 				}
 				break;
 			case (HW_SIO_STAT & 0x0fff):
-				ret = sio0.GetStat();
+				ret = sio0_get_stat();
 				break;
 			case (HW_SIO_MODE & 0x0fff):
 				ret = sio0.mode;

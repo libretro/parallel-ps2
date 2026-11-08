@@ -161,7 +161,7 @@ static __fi void Sio0TestEvent(IopEventId n)
 	if (psxTestCycle(psxRegs.sCycle[n], psxRegs.eCycle[n]))
 	{
 		psxRegs.interrupt &= ~(1 << n);
-		sio0.Interrupt(Sio0Interrupt::TEST_EVENT);
+		sio0_interrupt(SIO0_INT_TEST_EVENT);
 	}
 	else
 		psxSetNextBranch(psxRegs.sCycle[n], psxRegs.eCycle[n]);

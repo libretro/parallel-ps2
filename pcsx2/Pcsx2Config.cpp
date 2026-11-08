@@ -697,9 +697,6 @@ Pcsx2Config::Pcsx2Config()
 	{
 		Mcd[slot].Enabled = !FileMcd_IsMultitapSlot(slot); // enables main 2 slots
 		FileMcd_GetDefaultName(Mcd[slot].Filename, sizeof(Mcd[slot].Filename), slot);
-
-		// Folder memory card is autodetected later.
-		Mcd[slot].Type = MemoryCardType::File;
 	}
 
 	strlcpy(GzipIsoIndexTemplate, "$(f).pindex.tmp", sizeof(GzipIsoIndexTemplate));
@@ -756,11 +753,27 @@ void Pcsx2Config::CopyRuntimeConfig(Pcsx2Config& cfg)
 	UseBOOT2Injection = cfg.UseBOOT2Injection;
 	strlcpy(CurrentIRX, cfg.CurrentIRX, sizeof(CurrentIRX));
 	strlcpy(CurrentGameArgs, cfg.CurrentGameArgs, sizeof(CurrentGameArgs));
+}
 
-	for (u32 i = 0; i < sizeof(Mcd) / sizeof(Mcd[0]); i++)
-	{
-		Mcd[i].Type = cfg.Mcd[i].Type;
-	}
+/* The memory cards' settings, for MemoryCardFile.c. */
+bool emu_config_mcd(uint slot, char* path, size_t path_size)
+{
+	path[0] = '\0';
+	if (slot >= sizeof(EmuConfig.Mcd) / sizeof(EmuConfig.Mcd[0]))
+		return false;
+	if (EmuConfig.Mcd[slot].Filename[0])
+		EmuConfig.FullpathToMcd(path, path_size, slot);
+	return EmuConfig.Mcd[slot].Enabled;
+}
+
+bool emu_config_multitap(uint port)
+{
+	return EmuConfig.MultitapEnabled(port);
+}
+
+bool emu_config_mcd_ejection(void)
+{
+	return EmuConfig.McdEnableEjection;
 }
 
 

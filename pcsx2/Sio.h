@@ -13,242 +13,133 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Huge thanks to PSI for his work reversing the PS2, his documentation on SIO2 pretty much saved
-// this entire implementation. https://psi-rockin.github.io/ps2tek/#sio2registers
-
+/* SIO0 (the PS1-side pad and card port) and SIO2 (the PS2 side). After
+ * PSI's documentation of SIO2:
+ * https://psi-rockin.github.io/ps2tek/#sio2registers
+ * C89. */
 #pragma once
 
+#include <stddef.h>
+
 #include "SioTypes.h"
+#include "SioFifo.h"
 #include "MemoryCardFile.h"
-#include <cstdlib>
-#include <cstring>
 
-/* SIO2 holds sixteen SEND3 command descriptors. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define SIO2_SEND3_COUNT 16
-
-// Byte FIFO for SIO/SIO2 command exchange. Replaces std::deque<u8>: a flat
-// growable buffer with a head cursor, so push_back appends and pop_front just
-// advances the cursor (no per-byte node allocation, no memmove on consume).
-// A SIO2 cycle fills the FIFO then drains it fully and clears, so the live
-// span [head, count) stays contiguous and compaction is essentially never
-// hit; the guard is kept for safety. front()/size()/empty() mirror the deque
-// interface so call sites are unchanged.
-struct SioFifo
-{
-	u8*    data     = nullptr;
-	size_t head     = 0; // index of front element
-	size_t count    = 0; // one past the last element
-	size_t capacity = 0;
-
-	size_t size()  const { return count - head; }
-	bool   empty() const { return count == head; }
-	u8     front() const { return data[head]; }
-
-	void clear()
-	{
-		head  = 0;
-		count = 0;
-	}
-
-	void pop_front()
-	{
-		head++;
-		// Once fully drained, reset to the start so the buffer is reused
-		// without growing and without a memmove.
-		if (head == count)
-		{
-			head  = 0;
-			count = 0;
-		}
-	}
-
-	void push_back(u8 v)
-	{
-		if (count == capacity)
-		{
-			// Compact first if there is reclaimable space at the front;
-			// otherwise grow.
-			if (head > 0)
-			{
-				memmove(data, data + head, (count - head) * sizeof(u8));
-				count -= head;
-				head   = 0;
-			}
-			if (count == capacity)
-			{
-				size_t newcap = capacity ? capacity * 2 : 64;
-				data     = (u8*)realloc(data, newcap * sizeof(u8));
-				capacity = newcap;
-			}
-		}
-		data[count++] = v;
-	}
-
-	void free_storage()
-	{
-		free(data);
-		data     = nullptr;
-		head     = 0;
-		count    = 0;
-		capacity = 0;
-	}
-
-	~SioFifo()
-	{
-		free(data);
-	}
-};
 
 extern SioFifo fifoIn;
 extern SioFifo fifoOut;
 
-struct _mcd
+/* A memory card's protocol state, one per port and slot. */
+typedef struct _mcd
 {
-	u32 sectorAddr;     // read/write sector address
-	u32 transferAddr;   // Transfer address
+	u32 sectorAddr;     /* read/write sector address */
+	u32 transferAddr;   /* transfer address */
 	u32 autoEjectTicks;
 
-	u8 term; // terminator value;
-	u8 FLAG; // for PSX;
-	u8 port; // port
-	u8 slot; // and slot for this memcard
+	u8 term; /* terminator value */
+	u8 FLAG; /* for PS1 cards */
+	u8 port; /* port */
+	u8 slot; /* and slot for this card */
 
-	bool goodSector; // xor sector check
-};
+	bool goodSector; /* xor sector check */
+} _mcd;
 
-class Sio0
+/* A state carries Sio0 and Sio2 whole: their members' order and types are
+ * the state's layout. */
+typedef struct Sio0
 {
-public:
-	u32 txData; // 0x1f801040
-	u32 rxData; // 0x1f801040
-	u32 stat; // 0x1f801044
-	u16 mode; // 0x1f801048
-	u16 ctrl; // 0x1f80104a
-	u16 baud; // 0x1f80104e
-	u8 flag = 0;
+	u32 txData; /* 0x1f801040 */
+	u32 rxData; /* 0x1f801040 */
+	u32 stat;   /* 0x1f801044 */
+	u16 mode;   /* 0x1f801048 */
+	u16 ctrl;   /* 0x1f80104a */
+	u16 baud;   /* 0x1f80104e */
+	u8 flag;
 
-	SioStage sioStage = SioStage::IDLE;
-	u8 sioMode = SioMode::NOT_SET;
-	u8 sioCommand = 0;
-	bool padStarted = false;
-	bool rxDataSet = false;
+	SioStage sioStage;
+	u8 sioMode;
+	u8 sioCommand;
+	bool padStarted;
+	bool rxDataSet;
 
-	u8 port = 0;
-	u8 slot = 0;
+	u8 port;
+	u8 slot;
+} Sio0;
 
-	Sio0();
-	~Sio0();
-
-	void SoftReset();
-	void FullReset();
-
-	void Interrupt(Sio0Interrupt sio0Interrupt);
-
-	u8 GetRxData();
-	u32 GetStat();
-
-	void SetTxData(u8 value);
-	void SetCtrl(u16 value);
-
-	bool IsPadCommand(u8 command);
-	bool IsMemcardCommand(u8 command);
-	bool IsPocketstationCommand(u8 command);
-
-	u8 Pad(u8 value);
-	u8 Memcard(u8 value);
-};
-
-class Sio2
+typedef struct Sio2
 {
-public:
-	u32 send3[SIO2_SEND3_COUNT];	// 0x1f808200 - 0x1f80823f
-	// SEND1 and SEND2 are an unusual bunch. It's not entirely clear just from
-	// documentation but these registers almost seem like they are the same thing;
-	// when bit 2 is set, SEND2 is being read/written. When bit 2 isn't set, it is
-	// SEND1. Their use is not really known, either.
-	u32 send1[4];				// 0x1f808240 - 0x1f80825f
-	u32 send2[4];				// 0x1f808240 - 0x1f80825f
-	u32 dataIn;					// 0x1f808260
-	u32 dataOut;				// 0x1f808264
-	u32 ctrl;					// 0x1f808268
-	u32 recv1;					// 0x1f80826c
-	u32 recv2;					// 0x1f808270
-	u32 recv3;					// 0x1f808274
-	u32 unknown1;				// 0x1f808278
-	u32 unknown2;				// 0x1f80827c
-	u32 iStat;					// 0x1f808280
+	u32 send3[SIO2_SEND3_COUNT]; /* 0x1f808200 - 0x1f80823f */
+	/* SEND1 and SEND2 may be the same register: bit 2 picks SEND2. Their
+	 * use is not known. */
+	u32 send1[4];  /* 0x1f808240 - 0x1f80825f */
+	u32 send2[4];  /* 0x1f808240 - 0x1f80825f */
+	u32 dataIn;    /* 0x1f808260 */
+	u32 dataOut;   /* 0x1f808264 */
+	u32 ctrl;      /* 0x1f808268 */
+	u32 recv1;     /* 0x1f80826c */
+	u32 recv2;     /* 0x1f808270 */
+	u32 recv3;     /* 0x1f808274 */
+	u32 unknown1;  /* 0x1f808278 */
+	u32 unknown2;  /* 0x1f80827c */
+	u32 iStat;     /* 0x1f808280 */
 
-	u8 port = 0;
-	u8 slot = 0;
+	u8 port;
+	u8 slot;
 
-	// The current working index of SEND3. The SEND3 register is a 16 position
-	// array of command descriptors. Each descriptor describes the port the command
-	// is targeting, as well as the length of the command in bytes.
-	bool send3Read = false;
-	size_t send3Position = 0;
-	size_t commandLength = 0;
-	size_t processedLength = 0;
-	// Tracks the size of a single block of DMA11/DMA12 data. psxDma11 will set this prior
-	// to doing writes, and Sio2::SetSend3 will clear this to ensure a non-DMA write into SIO2
-	// does not accidentally use dmaBlockSize.
-	size_t dmaBlockSize = 0;
-	bool send3Complete = false;
-
-	Sio2();
-	~Sio2();
-
-	void SoftReset();
-	void FullReset();
-
-	void Interrupt();
-
-	void SetCtrl(u32 value);
-	void SetSend3(size_t position, u32 value);
-	void SetRecv1(u32 value);
-
-	void Pad();
-	void Multitap();
-	void Infrared();
-	void Memcard();
-	
-	void Write(u8 data);
-	u8 Read();
-};
+	/* Where in SEND3, the 16 command descriptors (port and length), the
+	 * transfer is. */
+	bool send3Read;
+	size_t send3Position;
+	size_t commandLength;
+	size_t processedLength;
+	/* One DMA11/DMA12 block's size: psxDma11 sets it before its writes,
+	 * a SEND3 write clears it so a direct write does not count by it. */
+	size_t dmaBlockSize;
+	bool send3Complete;
+} Sio2;
 
 extern Sio0 sio0;
 extern Sio2 sio2;
+extern _mcd* mcd;
 
-/* What a loaded state may hold for the fields that index arrays or size a
- * fifo: a port and slot inside mcds[][], a SEND3 position at most one
- * past the last descriptor (all of them read), and a
- * command length the descriptor's field can hold. */
-static inline bool sio_port_slot_ok(size_t port, size_t slot)
-{
-	return port < SIO::PORTS && slot < SIO::SLOTS;
+void sio0_full_reset(void);
+void sio0_soft_reset(void);
+void sio0_interrupt(Sio0Interrupt why);
+u8 sio0_get_rx_data(void);
+u32 sio0_get_stat(void);
+void sio0_set_tx_data(u8 value);
+void sio0_set_ctrl(u16 value);
+
+void sio2_full_reset(void);
+void sio2_soft_reset(void);
+void sio2_set_ctrl(u32 value);
+void sio2_set_send3(size_t position, u32 value);
+void sio2_set_recv1(u32 value);
+void sio2_write(u8 data);
+u8 sio2_read(void);
+
+/* Bounds a loaded state is held to. */
+#define sio_port_slot_ok(port, slot) ((size_t)(port) < SIO_PORTS && (size_t)(slot) < SIO_SLOTS)
+#define sio2_send3_ok(position, length) 	((size_t)(position) <= SIO2_SEND3_COUNT && (size_t)(length) <= SEND3_COMMAND_LENGTH_MASK)
+
+/* A global pad index to a multitap port and slot, and back. */
+void sioConvertPadToPortAndSlot(u32 index, u32* port, u32* slot);
+u32 sioConvertPortAndSlotToPad(u32 port, u32 slot);
+bool sioPadIsMultitapSlot(u32 index);
+bool sioPortAndSlotIsMultitap(u32 port, u32 slot);
+void sioSetGameSerial(const char* serial);
+
+/* A card reads as pulled out for a while, so the game notices a swap. */
+void AutoEject_Set(size_t port, size_t slot);
+void AutoEject_Clear(size_t port, size_t slot);
+void AutoEject_SetAll(void);
+void AutoEject_ClearAll(void);
+
+#ifdef __cplusplus
 }
-
-static inline bool sio2_send3_ok(size_t position, size_t command_length)
-{
-	return position <= SIO2_SEND3_COUNT && command_length <= Send3::COMMAND_LENGTH_MASK;
-}
-
-extern _mcd *mcd;
-
-/// Converts a global pad index to a multitap port and slot.
-extern std::tuple<u32, u32> sioConvertPadToPortAndSlot(u32 index);
-
-/// Converts a multitap port and slot to a global pad index.
-extern u32 sioConvertPortAndSlotToPad(u32 port, u32 slot);
-
-/// Returns true if the given pad index is a multitap slot.
-extern bool sioPadIsMultitapSlot(u32 index);
-extern bool sioPortAndSlotIsMultitap(u32 port, u32 slot);
-extern void sioSetGameSerial(const char* serial);
-
-namespace AutoEject
-{
-	extern void Set(size_t port, size_t slot);
-	extern void Clear(size_t port, size_t slot);
-	extern void SetAll();
-	extern void ClearAll();
-}
+#endif

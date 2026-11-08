@@ -76,7 +76,7 @@ void iopHwWrite8_Page1( u32 addr, mem8_t val )
 	switch( masked_addr )
 	{
 		case (HW_SIO_DATA & 0x0fff):
-			sio0.SetTxData(val);
+			sio0_set_tx_data(val);
 			break;
 		case (HW_SIO_STAT & 0x0fff):
 		case (HW_SIO_MODE & 0x0fff):
@@ -118,7 +118,7 @@ void iopHwWrite8_Page3( u32 addr, mem8_t val )
 void iopHwWrite8_Page8( u32 addr, mem8_t val )
 {
 	if (addr == HW_SIO2_DATAIN)
-		sio2.Write(val);
+		sio2_write(val);
 	else
 		psxHu8(addr) = val;
 
@@ -242,7 +242,7 @@ static __fi void _HwWrite_16or32_Page1( u32 addr, T val )
 				break;
 
 			case (HW_SIO_CTRL & 0x0fff):
-				sio0.SetCtrl(static_cast<u16>(val));
+				sio0_set_ctrl(static_cast<u16>(val));
 				break;
 			
 			case (HW_SIO_BAUD & 0x0fff):
@@ -512,7 +512,7 @@ void iopHwWrite32_Page8( u32 addr, mem32_t val )
 		if( masked_addr < 0x240 )
 		{
 			const int parm = (masked_addr - 0x200) / 4;
-			sio2.SetSend3(parm, val);
+			sio2_set_send3(parm, val);
 		}
 		else if( masked_addr < 0x260 )
 		{
@@ -535,7 +535,7 @@ void iopHwWrite32_Page8( u32 addr, mem32_t val )
 				case (HW_SIO2_FIFO & 0x0fff):
 					break;
 				case (HW_SIO2_CTRL & 0x0fff):
-					sio2.SetCtrl(val);
+					sio2_set_ctrl(val);
 					break;
 				case (HW_SIO2_RECV1 & 0x0fff):
 					sio2.recv1 = val;

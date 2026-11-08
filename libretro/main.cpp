@@ -2670,7 +2670,6 @@ static bool libretro_load_python1(const char* path)
 	if (d->memcard[0])
 	{
 		s_option_config.Mcd[0].Enabled = true;
-		s_option_config.Mcd[0].Type    = MemoryCardType::File;
 		strlcpy(s_option_config.Mcd[0].Filename, d->memcard, sizeof(s_option_config.Mcd[0].Filename));
 	}
 	FileMcd_SetIdPath(0, d->memcard_id);

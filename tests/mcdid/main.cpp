@@ -1,4 +1,4 @@
-/* A memory card's own MagicGate ID (pcsx2/MemoryCardFile.cpp): eight bytes
+/* A memory card's own MagicGate ID (pcsx2/MemoryCardFile.c): eight bytes
  * in <image>.id beside the card image -- a real arcade dongle's -- are what
  * FileMcd_GetMagicGateId hands the handshake for that slot. No file, or a
  * file of any other length, leaves the slot to the emulated card's ID. */

@@ -509,7 +509,7 @@
     <ClCompile Include="R3000AOpcodeTables.cpp">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="Sio.cpp">
+    <ClCompile Include="Sio.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
     <ClCompile Include="x86\iR3000A.cpp">
@@ -896,7 +896,7 @@
     <ClCompile Include="GS\Renderers\DX11\D3D.cpp">
       <Filter>System\Ps2\GS\Renderers\Direct3D11</Filter>
     </ClCompile>
-    <ClCompile Include="MemoryCardFile.cpp">
+    <ClCompile Include="MemoryCardFile.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
     <ClCompile Include="PerformanceMetrics.cpp">
@@ -935,10 +935,10 @@
     <ClCompile Include="GS\Renderers\DX12\GSDevice12.cpp">
       <Filter>System\Ps2\GS\Renderers\Direct3D12</Filter>
     </ClCompile>
-    <ClCompile Include="MemoryCardProtocol.cpp">
+    <ClCompile Include="MemoryCardProtocol.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="MultitapProtocol.cpp">
+    <ClCompile Include="MultitapProtocol.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
     <ClCompile Include="USB\shared\ringbuffer.cpp">

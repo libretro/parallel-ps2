@@ -9,7 +9,7 @@ ${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 	-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 	-I "$LC/include" \
 	-o "$DIR/settings_optioncfg" "$DIR/optioncfg.cpp" \
-	"$ROOT/pcsx2/Pcsx2Config.cpp" "$ROOT/pcsx2/MemoryCardFile.cpp" \
+	"$ROOT/pcsx2/Pcsx2Config.cpp" "$ROOT/pcsx2/MemoryCardFile.c" \
 	"$ROOT/pcsx2/memcard_ecc.c" "$ROOT/pcsx2/FormatString.cpp" \
 	"$LC/string/stdstring.c" "$LC/string/rstrtod.c" "$LC/file/file_path.c" \
 	"$LC/compat/compat_strl.c" "$LC/encodings/encoding_utf.c" "$LC/time/rtime.c" \

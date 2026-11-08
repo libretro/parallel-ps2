@@ -127,9 +127,7 @@ s32 PADopen();
 void PADclose();
 s32 PADsetSlot(u8 port, u8 slot);
 s32 PADfreeze(FreezeAction mode, freezeData* data);
-u8 PADstartPoll(int _port, int _slot);
-u8 PADpoll(u8 value);
-bool PADcomplete(void);
+#include "PADsio.h"
 
 struct PadSettings
 {

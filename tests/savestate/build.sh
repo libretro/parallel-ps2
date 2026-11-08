@@ -82,8 +82,8 @@ done
 echo
 echo "=== memory card state coverage ==="
 gcc -O1 -g -std=gnu89 -Wall -Wextra -o "$TMP/mcdstate" "$DIR/mcdstate.c"
-"$TMP/mcdstate" "$ROOT/pcsx2/Sio.h" "$ROOT/pcsx2/Sio.cpp" \
-	"$ROOT/pcsx2/MemoryCardProtocol.h" "$ROOT/pcsx2/MemoryCardProtocol.cpp"
+"$TMP/mcdstate" "$ROOT/pcsx2/Sio.h" "$ROOT/pcsx2/Sio.c" \
+	"$ROOT/pcsx2/MemoryCardProtocol.h" "$ROOT/pcsx2/MemoryCardProtocol.c"
 
 # A rejected load puts the running machine back rather than half-applying.
 echo
@@ -127,11 +127,11 @@ for CC in gcc clang; do
 	$CC  -O2 "$TMP/rb.o" "$TMP/ss.o" "$TMP/strl.o" -o "$TMP/restore_bounds_test"
 	"$TMP/restore_bounds_test"
 
-	# sio2Freeze's fifo serialisation, against the real SioFifo
-	echo "--- $CXX (sio fifo) ---"
-	$CXX -O2 -std=c++17 -Wall -Wextra $INC -I"$ROOT/3rdparty" \
-	     -I"$ROOT/3rdparty/include" -c "$DIR/sio_fifo.cpp" -o "$TMP/sio.o"
-	$CXX -O2 "$TMP/sio.o" "$TMP/ss.o" "$TMP/strl.o" -o "$TMP/sio_fifo_test"
+	# sio2Freeze's fifo serialisation, the real one
+	echo "--- $CC (sio fifo) ---"
+	$CC  -O2 -std=gnu89 -Wall -Wextra $INC -c "$ROOT/pcsx2/SioFifo.c" -o "$TMP/siofifo.o"
+	$CC  -O2 -std=gnu89 -Wall -Wextra $INC -c "$DIR/sio_fifo.c" -o "$TMP/sio.o"
+	$CC  -O2 "$TMP/sio.o" "$TMP/siofifo.o" "$TMP/ss.o" "$TMP/strl.o" -o "$TMP/sio_fifo_test"
 	"$TMP/sio_fifo_test"
 done
 

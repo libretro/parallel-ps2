@@ -77,8 +77,6 @@ int main(void)
       live.UseBOOT2Injection = true;
       strcpy(live.CurrentIRX, "host:/some.irx");
       strcpy(live.CurrentGameArgs, "-arg");
-      live.Mcd[0].Type = MemoryCardType::Empty;
-      live.Mcd[1].Type = MemoryCardType::Empty;
       live.Cpu.Recompiler.EnableFastmem = true;       /* stale: the option wins */
 
       {
@@ -90,11 +88,9 @@ int main(void)
 
       int kept =  live.UseBOOT2Injection
                && !strcmp(live.CurrentIRX, "host:/some.irx")
-               && !strcmp(live.CurrentGameArgs, "-arg")
-               && live.Mcd[0].Type == MemoryCardType::Empty
-               && live.Mcd[1].Type == MemoryCardType::Empty;
+               && !strcmp(live.CurrentGameArgs, "-arg");
       int applied = (live.Cpu.Recompiler.EnableFastmem == false);
-      printf("  %s: a settings reload keeps the runtime state (fast boot, IRX, game args, card types)\n",
+      printf("  %s: a settings reload keeps the runtime state (fast boot, IRX, game args)\n",
              kept ? "ok" : "FAIL");
       printf("  %s: and still takes the option's value for a field the options set\n",
              applied ? "ok" : "FAIL");

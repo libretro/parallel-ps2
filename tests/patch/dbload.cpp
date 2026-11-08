@@ -100,11 +100,14 @@ s16 GSLookupBeforeDrawFunctionId(const char*, size_t)
 s16 GSLookupMoveHandlerFunctionId(const char*, size_t)
 { return 0; }
 
-/* Memory card naming, reached for the memcardFilters field. */
+/* Memory card naming, reached for the memcardFilters field; C, as
+ * MemoryCardFile.c is. */
+extern "C" {
 void FileMcd_GetDefaultName(char* buf, size_t n, unsigned) { if (n) buf[0] = 0; }
 unsigned FileMcd_GetMtapPort(unsigned) { return 0; }
 unsigned FileMcd_GetMtapSlot(unsigned) { return 0; }
 bool FileMcd_IsMultitapSlot(unsigned) { return false; }
+}
 
 /* A small database whose every field is known, loaded in place of the
  * real one: what each field reads back as, lookups in either case, the

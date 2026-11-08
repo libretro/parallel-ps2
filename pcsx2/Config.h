@@ -185,24 +185,6 @@ enum class VsyncMode
 	Adaptive,
 };
 
-enum class MemoryCardType
-{
-	Empty,
-	File,
-	MaxCount
-};
-
-enum class MemoryCardFileType
-{
-	Unknown,
-	PS2_8MB,
-	PS2_16MB,
-	PS2_32MB,
-	PS2_64MB,
-	PS1,
-	MaxCount
-};
-
 enum class GSRendererType : s8
 {
 	Auto = -1,
@@ -815,7 +797,6 @@ struct Pcsx2Config
 	{
 		char Filename[PCSX2_PATH_MAX]; /* user-configured location of this card */
 		bool Enabled; // memory card enabled (if false, memcard will not show up in-game)
-		MemoryCardType Type; // the memory card implementation that should be used
 	};
 
 	// ------------------------------------------------------------------------

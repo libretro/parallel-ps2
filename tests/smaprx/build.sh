@@ -27,7 +27,7 @@ CXX_SRC="$DIR/glue.cpp $P/DEV9/net.cpp $P/DEV9/smap.cpp \
   $P/DEV9/PacketReader/IP/IP_Options.cpp $P/DEV9/PacketReader/IP/UDP/UDP_Packet.cpp \
   $P/DEV9/PacketReader/IP/UDP/DHCP/DHCP_Packet.cpp $P/DEV9/PacketReader/IP/UDP/DHCP/DHCP_Options.cpp \
   $P/DEV9/PacketReader/IP/UDP/DNS/DNS_Packet.cpp $P/DEV9/PacketReader/IP/UDP/DNS/DNS_Classes.cpp \
-  $P/Pcsx2Config.cpp $P/MemoryCardFile.cpp $P/FormatString.cpp"
+  $P/Pcsx2Config.cpp $P/MemoryCardFile.c $P/FormatString.cpp"
 C_SRC="$DIR/main.c $P/memcard_ecc.c \
   $LC/rthreads/rthreads.c $LC/rthreads/retro_eventcount.c $LC/rthreads/retro_procbarrier.c $LC/queues/retro_spsc.c \
   $LC/string/stdstring.c $LC/string/rstrtod.c $LC/file/file_path.c $LC/file/file_path_io.c \

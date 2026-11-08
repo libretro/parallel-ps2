@@ -13,56 +13,52 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/* What a memory card answers each command with. C89. */
 #pragma once
 
-#include "common/Pcsx2Defs.h"
+#include <stddef.h>
+
+#include "../common/Pcsx2Types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct SaveStateBase;
 
-struct PS1MemoryCardState
+/* A PS1 card transfer, byte by byte. */
+typedef struct PS1MemoryCardState
 {
-	size_t currentByte = 2;
-	u8 sectorAddrMSB = 0;
-	u8 sectorAddrLSB = 0;
-	u8 checksum = 0;
-	u8 expectedChecksum = 0;
+	size_t currentByte;
+	u8 sectorAddrMSB;
+	u8 sectorAddrLSB;
+	u8 checksum;
+	u8 expectedChecksum;
 	u8 buf[128];
-};
+} PS1MemoryCardState;
 
-// A global class which contains the behavior of each memory card command.
-class MemoryCardProtocol
-{
-private:
-	bool AuthXorKeyed(u8 modeByte);
-	PS1MemoryCardState ps1McState;
+void mcp_reset_ps1(void);
+bool mcp_freeze_ps1(struct SaveStateBase* s);
 
-	bool PS1Fail();
-	void The2bTerminator(size_t length);
-	void ReadWriteIncrement(size_t length);
-	void RecalculatePS1Addr();
+void mcp_probe(void);
+void mcp_unknown_write_delete_end(void);
+void mcp_set_sector(void);
+void mcp_get_specs(void);
+void mcp_set_terminator(void);
+void mcp_get_terminator(void);
+void mcp_write_data(void);
+void mcp_read_data(void);
+u8 mcp_ps1_read(u8 data);
+u8 mcp_ps1_state(u8 data);
+u8 mcp_ps1_write(u8 data);
+u8 mcp_ps1_pocketstation(u8 data);
+void mcp_read_write_end(void);
+void mcp_erase_block(void);
+void mcp_unknown_boot(void);
+void mcp_auth_xor(void);
+void mcp_auth_f3(void);
+void mcp_auth_f7(void);
 
-public:
-	void ResetPS1State();
-	bool FreezePS1State(SaveStateBase* s);
-
-	void Probe();
-	void UnknownWriteDeleteEnd();
-	void SetSector();
-	void GetSpecs();
-	void SetTerminator();
-	void GetTerminator();
-	void WriteData();
-	void ReadData();
-	u8 PS1Read(u8 data);
-	u8 PS1State(u8 data);
-	u8 PS1Write(u8 data);
-	u8 PS1Pocketstation(u8 data);
-	void ReadWriteEnd();
-	void EraseBlock();
-	void UnknownBoot();
-	void AuthXor();
-	void AuthF3();
-	void AuthF7();
-};
-
-extern MemoryCardProtocol g_MemoryCardProtocol;
+#ifdef __cplusplus
+}
+#endif

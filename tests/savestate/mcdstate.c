@@ -9,12 +9,12 @@
  *  whatever address happens to be live.
  *
  *  This reads both struct declarations and checks that every member is
- *  frozen by FreezeMcds (Sio.cpp) or FreezePS1State (MemoryCardProtocol.cpp),
+ *  frozen by FreezeMcds (Sio.c) or mcp_freeze_ps1 (MemoryCardProtocol.c),
  *  so a member added later without a line in the freeze shows up here.
  *  _mcd's port and slot are fixed by the array position and are exempt.
  *
- *  Usage: tests/savestate/mcdstate <Sio.h> <Sio.cpp>
- *                                  <MemoryCardProtocol.h> <MemoryCardProtocol.cpp>
+ *  Usage: tests/savestate/mcdstate <Sio.h> <Sio.c>
+ *                                  <MemoryCardProtocol.h> <MemoryCardProtocol.c>
  */
 
 #include <ctype.h>
@@ -138,7 +138,7 @@ int main(int argc, char** argv)
 
 	if (argc != 5)
 	{
-		fprintf(stderr, "usage: %s <Sio.h> <Sio.cpp> <MemoryCardProtocol.h> <MemoryCardProtocol.cpp>\n",
+		fprintf(stderr, "usage: %s <Sio.h> <Sio.c> <MemoryCardProtocol.h> <MemoryCardProtocol.c>\n",
 			argv[0]);
 		return 2;
 	}
@@ -153,7 +153,7 @@ int main(int argc, char** argv)
 		goto done;
 	}
 
-	if (!span(sio_h, "struct _mcd\n{", "\n};", &ds, &de) ||
+	if (!span(sio_h, "struct _mcd\n{", "\n}", &ds, &de) ||
 	    !span(sio_c, "static bool FreezeMcds(", "\n}\n", &fs, &fe))
 	{
 		printf("  _mcd or FreezeMcds not found -- has it moved?\n");
@@ -162,10 +162,10 @@ int main(int argc, char** argv)
 	else
 		bad += check_members("_mcd", ds, de, fs, fe, "m->", kMcdExempt, &n_mcd);
 
-	if (!span(mcp_h, "struct PS1MemoryCardState\n{", "\n};", &ds, &de) ||
-	    !span(mcp_c, "bool MemoryCardProtocol::FreezePS1State(", "\n}\n", &fs, &fe))
+	if (!span(mcp_h, "struct PS1MemoryCardState\n{", "\n}", &ds, &de) ||
+	    !span(mcp_c, "bool mcp_freeze_ps1(", "\n}\n", &fs, &fe))
 	{
-		printf("  PS1MemoryCardState or FreezePS1State not found -- has it moved?\n");
+		printf("  PS1MemoryCardState or mcp_freeze_ps1 not found -- has it moved?\n");
 		bad++;
 	}
 	else

@@ -299,9 +299,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/MTGS.cpp \
 	$(LRPS2_DIR)/MTVU.cpp \
 	$(LRPS2_DIR)/Mdec.cpp \
-	$(LRPS2_DIR)/MemoryCardFile.cpp \
-	$(LRPS2_DIR)/MemoryCardProtocol.cpp \
-	$(LRPS2_DIR)/MultitapProtocol.cpp \
 	$(LRPS2_DIR)/Patch.cpp \
 	$(LRPS2_DIR)/Pcsx2Config.cpp \
 	$(LRPS2_DIR)/PerformanceMetrics.cpp \
@@ -314,7 +311,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/Sif0.cpp \
 	$(LRPS2_DIR)/Sif1.cpp \
 	$(LRPS2_DIR)/sif2.cpp \
-	$(LRPS2_DIR)/Sio.cpp \
 	$(LRPS2_DIR)/SPR.cpp \
 	$(LRPS2_DIR)/Vif.cpp \
 	$(LRPS2_DIR)/Vif_Codes.cpp \
@@ -368,6 +364,11 @@ SOURCES_C += \
 	$(LRPS2_DIR)/USB/usb-python2/usb-python2.c \
 	$(LRPS2_DIR)/USB/usb-perfect-pool/ppcam.c \
 	$(LRPS2_DIR)/FW.c \
+	$(LRPS2_DIR)/MemoryCardFile.c \
+	$(LRPS2_DIR)/MemoryCardProtocol.c \
+	$(LRPS2_DIR)/MultitapProtocol.c \
+	$(LRPS2_DIR)/Sio.c \
+	$(LRPS2_DIR)/SioFifo.c \
 	$(LRPS2_DIR)/FireWire/fatimg.c \
 	$(LRPS2_DIR)/FireWire/p1io.c \
 	$(LRPS2_DIR)/FireWire/py1desc.c

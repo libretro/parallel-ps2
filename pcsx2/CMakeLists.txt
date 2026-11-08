@@ -124,14 +124,14 @@ set(pcsx2Sources
 	IopMem.cpp
 	Mdec.cpp
 	Memory.c
-	MemoryCardFile.cpp
+	MemoryCardFile.c
 	memcard_ecc.c
 	NearPlace.c
-	MemoryCardProtocol.cpp
+	MemoryCardProtocol.c
 	MMI.cpp
 	MTGS.cpp
 	MTVU.cpp
-	MultitapProtocol.cpp
+	MultitapProtocol.c
 	FormatString.cpp
 	Patch.cpp
 	Pcsx2Config.cpp
@@ -145,7 +145,8 @@ set(pcsx2Sources
 	Sif0.cpp
 	Sif1.cpp
 	sif2.cpp
-	Sio.cpp
+	Sio.c
+	SioFifo.c
 	SPR.cpp
 	Vif0_Dma.cpp
 	Vif1_Dma.cpp
@@ -211,6 +212,7 @@ set(pcsx2Headers
 	ShaderCacheVersion.h
 	Sif.h
 	Sio.h
+	SioFifo.h
 	SPR.h
 	Vif_Dma.h
 	Vif.h
@@ -301,6 +303,7 @@ set(pcsx2PADSources
 )
 set(pcsx2PADHeaders
 	PAD/PAD.h
+	PAD/PADsio.h
 )
 
 # GS sources

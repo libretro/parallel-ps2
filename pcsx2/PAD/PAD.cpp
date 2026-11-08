@@ -519,9 +519,8 @@ namespace Input
 			u32 mask            = input_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MASK);
 			u32 new_button_mask = 0xFFFF0000;
 			u32 btn_index       = 0;
-			const std::tuple<u32, u32> con = sioConvertPadToPortAndSlot(pad);
-			const u32 con_port  = std::get<0>(con);
-			const u32 con_slot  = std::get<1>(con);
+			u32 con_port, con_slot;
+			sioConvertPadToPortAndSlot(pad, &con_port, &con_slot);
 			const auto &conf    = pad_settings[con_port];
 
 			for (int i = 0; i < 16; ++i)

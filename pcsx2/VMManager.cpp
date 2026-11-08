@@ -153,7 +153,7 @@ static uintptr_t  s_vm_thread_id = 0;
 
 /* Plain, not recursive: nothing that runs under it re-takes it. GetDiscSerial
  * is a leaf, and the blocks that write under it call only findGame,
- * sioSetGameSerial and AutoEject::ClearAll, none of which read the serial
+ * sioSetGameSerial and AutoEject_ClearAll, none of which read the serial
  * back through the lock. */
 static slock_t* s_info_mutex(void)
 {
@@ -232,7 +232,7 @@ void VMManager::Internal::UpdateEmuFolders()
 		{
 			FileMcd_EmuClose();
 			FileMcd_EmuOpen();
-			AutoEject::SetAll();
+			AutoEject_SetAll();
 		}
 	}
 }
@@ -547,7 +547,7 @@ void VMManager::UpdateRunningGame(bool resetting, bool game_starting, bool swapp
 		// If we don't reset the timer here, when using folder memcards the reindex will cause an eject,
 		// which a bunch of games don't like since they access the memory card on boot.
 		if (game_starting || resetting)
-			AutoEject::ClearAll();
+			AutoEject_ClearAll();
 	}
 
 	UpdateGameSettingsLayer();
@@ -558,7 +558,7 @@ void VMManager::UpdateRunningGame(bool resetting, bool game_starting, bool swapp
 		// Clear the memory card eject notification again when booting for the first time, or starting.
 		// Otherwise, games think the card was removed on boot.
 		if (game_starting || resetting)
-			AutoEject::ClearAll();
+			AutoEject_ClearAll();
 
 		// Check this here, for two cases: dynarec on, and when enable cheats is set per-game.
 		if (s_patches_crc != s_game_crc)
@@ -1191,7 +1191,7 @@ void VMManager::CheckForMemoryCardConfigChanges(const Pcsx2Config& old_config)
 			const uint index = FileMcd_ConvertToSlot(port, slot);
 			if (EmuConfig.Mcd[index].Enabled != old_config.Mcd[index].Enabled ||
 				strcmp(EmuConfig.Mcd[index].Filename, old_config.Mcd[index].Filename) != 0)
-				AutoEject::Set(port, slot);
+				AutoEject_Set(port, slot);
 		}
 	}
 
