@@ -14,10 +14,9 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* The PS1 GPU registers and GPU DMA window as the IOP's hardware register
- * handlers (ps2/Iop/IopHwRead.c, IopHwWrite.c) reach them, in a header C
- * reads. pgif.h includes it, so pgif.cpp defines these with the same
- * linkage. */
+/* The PGIF (ps2/pgif.c): the PS1 GPU registers and GPU DMA window as the
+ * IOP's hardware register handlers reach them, and the EE side's PGIF
+ * registers as Hw.cpp reaches them. */
 
 #ifndef PGIFIO_H
 #define PGIFIO_H
@@ -33,6 +32,14 @@ extern u32 psxGPUr(int addr);
 
 extern u32 psxDma2GpuR(u32 addr);
 extern void psxDma2GpuW(u32 addr, u32 data);
+
+extern void pgifInit(void);
+
+extern void PGIFw(int addr, u32 data);
+extern u32 PGIFr(int addr);
+
+extern void PGIFwQword(u32 addr, void* data);
+extern void PGIFrQword(u32 addr, void* data);
 
 #ifdef __cplusplus
 }

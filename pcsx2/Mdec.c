@@ -68,7 +68,7 @@ struct config_mdec {
 };
 struct config_mdec Config;
 
-// Should be optimized(the funcs. that use it) to read IOP RAM direcly.
+/* Should be optimized(the funcs. that use it) to read IOP RAM direcly. */
 #define PSXM(x) ((uptr)mdecMem + x)
 
 #define FIX_1_082392200  (277)
@@ -82,7 +82,12 @@ struct config_mdec Config;
 #define	IFAST_SCALE_BITS 2
 
 #define	MAKERGB15(r,g,b)	( (((r)>>3)<<10)|(((g)>>3)<<5)|((b)>>3) )
-#define	ROUND(c)	roundtbl[((c)+128+256)]//&0x3ff]
+/* roundtbl saturates 0..255 over an index of -384..383 around the value;
+ * a value past either end is clamped to the end first, which is the same
+ * saturation. A stream with large levels takes a value past them, and the
+ * table used to be read out of its bounds there. */
+#define	ROUND_INDEX(c)	((c) + 128 + 256)
+#define	ROUND(c)	roundtbl[ROUND_INDEX(c) < 0 ? 0 : (ROUND_INDEX(c) > 767 ? 767 : ROUND_INDEX(c))]
 
 #define RGB15(n, Y) \
 	image[n] = MAKERGB15(ROUND(Y + R),ROUND(Y + G),ROUND(Y + B));
@@ -145,7 +150,8 @@ static int aanscales[DCTSIZE2] = {
 
 static u32 mdecArr2[0x100000] = { 0 };
 
-static u32 mdecMem[0x100000]; //watherver large size. //Memory only used to get DMA data and not really for anything else.
+/* Only where DMA data lands for the decoder; whatever size, large. */
+static u32 mdecMem[0x100000];
 
 static unsigned char roundtbl[256*3];
 
@@ -167,7 +173,6 @@ static void iqtab_init(int *iqtab,unsigned char *iq_y)
 	for(i=0;i<DCTSIZE2;i++)
 		iqtab[i] = iq_y[i] * aanscales[zscan[i]]>>(CONST_BITS14-IFAST_SCALE_BITS);
 }
-
 
 static void idct1(int *block)
 {
@@ -480,7 +485,7 @@ static unsigned short* rl2blk_one(int *blk, unsigned short *mdec_rl, int which)
 static unsigned short* rl2blk(int *blk,unsigned short *mdec_rl) {
 	int i;
 
-	for(i=0;i<6;i++) {	// decode blocks (Cr,Cb,Y1,Y2,Y3,Y4)
+	for(i=0;i<6;i++) {	/* decode blocks (Cr,Cb,Y1,Y2,Y3,Y4) */
 		mdec_rl = rl2blk_one(blk, mdec_rl, i);
 		blk+=DCTSIZE2;
 	}
@@ -489,7 +494,7 @@ static unsigned short* rl2blk(int *blk,unsigned short *mdec_rl) {
 
 void mdecInit(void)
 {
-	Config.Mdec  = 0; //XXXXXXXXXXXXXXXXX  0 or 1 // 1 is black and white decoding
+	Config.Mdec  = 0; /* 0 or 1; 1 is black and white decoding */
 	mdec.rl      = (u16*)PSXM(0);
 	mdec.command    = 0;
 	mdec.status     = 0;
@@ -503,7 +508,6 @@ void mdecInit(void)
 	mdec.busy       = 0;
 	round_init();
 }
-
 
 /* The block order the decoder walks: Cr, then Cb, then the four luma
  * blocks. The trace's currentBlock field reports 4 before the first block
@@ -570,7 +574,7 @@ void mdecWrite0(u32 data)
 
 void mdecWrite1(u32 data)
 {
-	if (data&0x80000000) // mdec reset
+	if (data&0x80000000) /* mdec reset */
 		round_init();
 }
 
@@ -634,7 +638,7 @@ u32 mdecRead0(void)
  * is worth 153 reads over not advancing at all.
  *
  * Nothing in PS2 mode touches the MDEC: it is reachable only through the
- * PS1 hardware map in ps2/Iop/IopHwRead.cpp, and matters to PS1 software
+ * PS1 hardware map in ps2/Iop/IopHwRead.c, and matters to PS1 software
  * polling the register between blocks, which is what that trace does.
  */
 u32 mdecRead1(void)
@@ -651,31 +655,38 @@ u32 mdecRead1(void)
 	return st;
 }
 
+/* The most words a DMA can move through mdecMem and mdecArr2. One the
+ * size of the IOP's whole RAM is half of it; anything past it would run
+ * off the end of both. */
+#define MDEC_DMA_MAX_WORDS ((int)(sizeof(mdecMem) / sizeof(mdecMem[0])))
+
 void psxDma0(u32 adr, u32 bcr, u32 chcr)
 {
 	int cmd = mdec.command;
+	int size, i;
 
 	if (chcr != 0x01000201) return;
 
-	// bcr LSBs are the blocksize in words
-	// bcr MSBs are the number of block
-	int size = (bcr >> 16)*(bcr & 0xffff);
+	/* bcr LSBs are the blocksize in words
+	 * bcr MSBs are the number of block */
+	size = (bcr >> 16)*(bcr & 0xffff);
 	if (size < 0) { /* psxDma0 DMA transfer overflow */
-		// Need to investigate what happen if the transfer is huge
+		/* Need to investigate what happen if the transfer is huge */
 		return;
 	}
+	if (size > MDEC_DMA_MAX_WORDS)
+		size = MDEC_DMA_MAX_WORDS;
 
-	for (int i = 0; i<(size); i++)
+	for (i = 0; i<(size); i++)
 		*(u32*)PSXM(((i + 0) * 4)) = iopMemRead32(adr + ((i + 0) * 4));
 
-
 	if (cmd == 0x40000001) {
-		u8 *p = (u8*)PSXM(0); //u8 *p = (u8*)PSXM(adr);
+		u8 *p = (u8*)PSXM(0); /* u8 *p = (u8*)PSXM(adr); */
 		iqtab_init(iq_y, p);
 		iqtab_init(iq_uv, p + 64);
 	}
 	else if ((cmd & 0xf5ff0000) == 0x30000000) {
-		mdec.rl = (u16*)PSXM(0); //mdec.rl = (u16*)PSXM(adr);
+		mdec.rl = (u16*)PSXM(0); /* mdec.rl = (u16*)PSXM(adr); */
 	}
 
 	HW_DMA0_CHCR &= ~0x01000000;
@@ -686,18 +697,21 @@ void psxDma1(u32 adr, u32 bcr, u32 chcr)
 {
 	int blk[DCTSIZE2*6];
 	unsigned short *image;
+	int size, size2, i;
 
 	if (chcr != 0x01000200) return;
-	// bcr LSBs are the blocksize in words
-	// bcr MSBs are the number of block
-	int size = (bcr >> 16)*(bcr & 0xffff);
-	int size2 = (bcr >> 16)*(bcr & 0xffff);
+	/* bcr LSBs are the blocksize in words
+	 * bcr MSBs are the number of block */
+	size = (bcr >> 16)*(bcr & 0xffff);
 	if (size < 0) { /* psxDma1 DMA transfer overflow */
-		// Need to investigate what happen if the transfer is huge
+		/* Need to investigate what happen if the transfer is huge */
 		return;
 	}
+	if (size > MDEC_DMA_MAX_WORDS)
+		size = MDEC_DMA_MAX_WORDS;
+	size2 = size;
 
-	image = (u16*)mdecArr2;//(u16*)PSXM(0); //image = (u16*)PSXM(adr);
+	image = (u16*)mdecArr2;
 
 	/* The decode command's bits 28..27 select the output depth: 0 is
 	 * 4-bit, 1 is 8-bit, 2 is 24-bit and 3 is 15-bit. This used to test
@@ -807,19 +821,9 @@ void psxDma1(u32 adr, u32 bcr, u32 chcr)
 		break;
 	}
 
-	for (int i = 0; i<(size2); i++)
+	for (i = 0; i<(size2); i++)
 		iopMemWrite32(((adr & 0x00FFFFFF) + (i * 4) + 0), mdecArr2[i]);
 
 	HW_DMA1_CHCR &= ~0x01000000;
 	psxDmaInterrupt(1);
 }
-
-//todo: psxmode: add mdec savestate support
-//int SaveState::mdecFreeze() {
-//	Freeze(mdec);
-//	Freeze(iq_y);
-//	Freeze(iq_uv);
-//
-//	return 0;
-//
-//}

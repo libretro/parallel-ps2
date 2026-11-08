@@ -290,11 +290,9 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/Hw.cpp \
 	$(LRPS2_DIR)/Interpreter.cpp \
 	$(LRPS2_DIR)/IopBios.cpp \
-	$(LRPS2_DIR)/IopMem.cpp \
 	$(LRPS2_DIR)/MMI.cpp \
 	$(LRPS2_DIR)/MTGS.cpp \
 	$(LRPS2_DIR)/MTVU.cpp \
-	$(LRPS2_DIR)/Mdec.cpp \
 	$(LRPS2_DIR)/Patch.cpp \
 	$(LRPS2_DIR)/Pcsx2Config.cpp \
 	$(LRPS2_DIR)/PerformanceMetrics.cpp \
@@ -382,13 +380,15 @@ SOURCES_CXX += \
 
 # pcsx2/ps2
 SOURCES_CXX += \
-	$(LRPS2_DIR)/ps2/BiosTools.cpp \
-	$(LRPS2_DIR)/ps2/pgif.cpp \
-	$(LRPS2_DIR)/ps2/Iop/PsxBios.cpp
+	$(LRPS2_DIR)/ps2/BiosTools.cpp
 
 SOURCES_C += \
+	$(LRPS2_DIR)/IopMem.c \
+	$(LRPS2_DIR)/Mdec.c \
+	$(LRPS2_DIR)/ps2/pgif.c \
 	$(LRPS2_DIR)/ps2/Iop/IopHwRead.c \
-	$(LRPS2_DIR)/ps2/Iop/IopHwWrite.c
+	$(LRPS2_DIR)/ps2/Iop/IopHwWrite.c \
+	$(LRPS2_DIR)/ps2/Iop/PsxBios.c
 
 # pcsx2/SPU2. Every unit builds as C, the emulator-facing shim included.
 SOURCES_C += \

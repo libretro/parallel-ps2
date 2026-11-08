@@ -125,9 +125,6 @@ extern void iopMemWrite8 (u32 mem, u8 value);
 extern void iopMemWrite16(u32 mem, u16 value);
 extern void iopMemWrite32(u32 mem, u32 value);
 
-#ifdef __cplusplus
-std::string iopMemReadString(u32 mem, int maxlen = 65536);
-#endif
 /* C89-callable variant: fills dst (NUL-terminated, cap includes the NUL). */
 void iopMemReadStringBuf(char* dst, int cap, u32 mem, int maxlen);
 

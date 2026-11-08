@@ -164,10 +164,10 @@
     <ClCompile Include="SPU2\spu2.cpp" />
     <ClCompile Include="IPU\IPUdma.cpp" />
     <ClCompile Include="IPU\IPUdither.cpp" />
-    <ClCompile Include="Mdec.cpp" />
+    <ClCompile Include="Mdec.c" />
     <ClCompile Include="Patch.cpp" />
-    <ClCompile Include="ps2\Iop\PsxBios.cpp" />
-    <ClCompile Include="ps2\pgif.cpp" />
+    <ClCompile Include="ps2\Iop\PsxBios.c" />
+    <ClCompile Include="ps2\pgif.c" />
     <ClCompile Include="Dmac.cpp" />
     <ClCompile Include="sif2.cpp" />
     <ClCompile Include="GS\Renderers\OpenGL\GLState.cpp" />
@@ -274,7 +274,7 @@
     <ClCompile Include="IopCounters.c" />
     <ClCompile Include="IopDma.c" />
     <ClCompile Include="IopIrq.c" />
-    <ClCompile Include="IopMem.cpp" />
+    <ClCompile Include="IopMem.c" />
     <ClCompile Include="R3000A.cpp" />
     <ClCompile Include="R3000AInterpreter.cpp" />
     <ClCompile Include="R3000AOpcodeTables.cpp" />

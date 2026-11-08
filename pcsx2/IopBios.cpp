@@ -209,13 +209,9 @@ namespace R3000A
 #define ra (psxRegs.GPR.n.ra)
 #define pc (psxRegs.pc)
 
-/* Guest strings into caller buffers. iopMemReadString returns a
- * std::string and every consumer here read it back as characters; the
- * buffer form already existed in IopMem and simply was not used. */
+/* Guest strings into caller buffers. */
 #define Ra0_BUF(buf) iopMemReadStringBuf((buf), (int)sizeof(buf), a0, 65536)
 #define Ra1_BUF(buf) iopMemReadStringBuf((buf), (int)sizeof(buf), a1, 65536)
-#define Ra2 (iopMemReadString(a2))
-#define Ra3 (iopMemReadString(a3))
 
 	// Stat values differ between iomanX and ioman
 	// These values have been taken from the PS2SDK

@@ -305,4 +305,7 @@ tests/iopglue/.got.txt
 tests/iophw/iophw_test
 tests/iophw/iophw_test.exe
 tests/iophw/.got.txt
+tests/iopdev/iopdev_test
+tests/iopdev/iopdev_test.exe
+tests/iopdev/.got.txt
 tests/p2io/p2io_test.exe

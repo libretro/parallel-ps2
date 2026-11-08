@@ -13,14 +13,14 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <string.h>
 
 #include "R3000A.h"
 #include <memalign.h>
 #include "../common/Align.h"
 #include "Common.h"
-#include "ps2/pgif.h" // for PSX kernel TTY in iopMemWrite32
 #include "SPU2/spu2.h"
-#include "DEV9/DEV9.h"
+#include "DEV9/DEV9mmio.h"
 #include "IopHw.h"
 #include "USB/usb-host.h"
 
@@ -37,7 +37,7 @@ u8* usb_iop_ram(void)
 	return iopMem->Main;
 }
 
-alignas(__pagealignsize) u8 iopHw[Ps2MemSize::IopHardware];
+PCSX2_ALIGN(__pagealignsize) u8 iopHw[PS2MEM_IOP_HARDWARE];
 
 /* IOP main memory (2MB), in the main map. */
 #define IOP_MEMORY_RESERVE_SIZE pcsx2_page_align(sizeof(IopVM_MemoryAllocMess))
@@ -60,37 +60,37 @@ void iop_memory_release(const VirtualMemoryManager* main_map)
 	iopMem     = NULL;
 }
 
-// Note!  Resetting the IOP's memory state is dependent on having *all* psx memory allocated,
-// which is performed by MemInit and PsxMemInit()
+/* Note!  Resetting the IOP's memory state is dependent on having *all* psx memory allocated, */
+/* which is performed by MemInit and PsxMemInit() */
 void iop_memory_reset(void)
 {
 	int i;
 
 	memset(iopMem, 0, IOP_MEMORY_RESERVE_SIZE);
-	memset(psxMemWLUT, 0, 0x2000 * sizeof(uptr) * 2);	// clears both allocations, RLUT and WLUT
+	memset(psxMemWLUT, 0, 0x2000 * sizeof(uptr) * 2);	/* clears both allocations, RLUT and WLUT */
 
-	// Trick!  We're accessing RLUT here through WLUT, since it's the non-const pointer.
-	// So the ones with a 0x2000 prefixed are RLUT tables.
+	/* Trick!  We're accessing RLUT here through WLUT, since it's the non-const pointer. */
+	/* So the ones with a 0x2000 prefixed are RLUT tables. */
 
-	// Map IOP main memory, which is Read/Write, and mirrored three times
-	// at 0x0, 0x8000, and 0xa000:
+	/* Map IOP main memory, which is Read/Write, and mirrored three times */
+	/* at 0x0, 0x8000, and 0xa000: */
 	for (i = 0; i < 0x0080; i++)
 	{
 		psxMemWLUT[i + 0x0000] = (uptr)&iopMem->Main[(i & 0x1f) << 16];
 
-		// RLUTs, accessed through WLUT.
+		/* RLUTs, accessed through WLUT. */
 		psxMemWLUT[i + 0x2000] = (uptr)&iopMem->Main[(i & 0x1f) << 16];
 	}
 
-	// A few single-page allocations for things we store in special locations.
+	/* A few single-page allocations for things we store in special locations. */
 	psxMemWLUT[0x2000 + 0x1f00] = (uptr)iopMem->P;
 	psxMemWLUT[0x2000 + 0x1f80] = (uptr)iopHw;
-	//psxMemWLUT[0x1bf80] = (uptr)iopHw;
+	/* psxMemWLUT[0x1bf80] = (uptr)iopHw; */
 
 	psxMemWLUT[0x1f00] = (uptr)iopMem->P;
 	psxMemWLUT[0x1f80] = (uptr)iopHw;
 
-	// Read-only memory areas, so don't map WLUT for these...
+	/* Read-only memory areas, so don't map WLUT for these... */
 	for (i = 0; i < 0x0040; i++)
 	{
 		psxMemWLUT[i + 0x2000 + 0x1fc0] = (uptr)&eeMem->ROM[i << 16];
@@ -106,20 +106,21 @@ void iop_memory_reset(void)
 		psxMemWLUT[i + 0x2000 + 0x1e40] = (uptr)&eeMem->ROM2[i << 16];
 	}
 
-	// sif!! (which is read only? (air))
+	/* sif!! (which is read only? (air)) */
 	psxMemWLUT[0x2000 + 0x1d00] = (uptr)iopMem->Sif;
-	//psxMemWLUT[0x1bd00] = (uptr)iopMem->Sif;
+	/* psxMemWLUT[0x1bd00] = (uptr)iopMem->Sif; */
 
-	// this one looks like an old hack for some special write-only memory area,
-	// but leaving it in for reference (air)
-	//for (i=0; i<0x0008; i++) psxMemWLUT[i + 0xbfc0] = (uptr)&psR[i << 16];
+	/* this one looks like an old hack for some special write-only memory area, */
+	/* but leaving it in for reference (air) */
+	/* for (i=0; i<0x0008; i++) psxMemWLUT[i + 0xbfc0] = (uptr)&psR[i << 16]; */
 }
 
 /* Slow path only; the common case is inline in IopMem.h. */
 u8 iopMemRead8_slow(u32 mem)
 {
+	u32 t;
 	mem &= 0x1fffffff;
-	u32 t = mem >> 16;
+	t = mem >> 16;
 
 	if (t == 0x1f80)
 	{
@@ -156,8 +157,9 @@ u8 iopMemRead8_slow(u32 mem)
 /* Slow path only; the common case is inline in IopMem.h. */
 u16 iopMemRead16_slow(u32 mem)
 {
+	u32 t;
 	mem &= 0x1fffffff;
-	u32 t = mem >> 16;
+	t = mem >> 16;
 
 	if (t == 0x1f80)
 	{
@@ -218,8 +220,9 @@ u16 iopMemRead16_slow(u32 mem)
  * remainder: hardware pages, the 0x1d00 SBUS aliases, and unmapped space. */
 u32 iopMemRead32_slow(u32 mem)
 {
+	u32 t;
 	mem &= 0x1fffffff;
-	u32 t = mem >> 16;
+	t = mem >> 16;
 
 	if (t == 0x1f80)
 	{
@@ -234,7 +237,7 @@ u32 iopMemRead32_slow(u32 mem)
 		}
 	} else
 	{
-		//see also Hw.c
+		/* see also Hw.c */
 		const u8* p = (const u8*)(psxMemRLUT[mem >> 16]);
 		if (p != NULL)
 		{
@@ -252,7 +255,7 @@ u32 iopMemRead32_slow(u32 mem)
 				case 0x20:
 					ret= psHu32(SBUS_F220);
 					break;
-				case 0x30:	// EE Side
+				case 0x30:	/* EE Side */
 					ret= psHu32(SBUS_F230);
 					break;
 				case 0x40:
@@ -281,8 +284,9 @@ u32 iopMemRead32_slow(u32 mem)
 
 void iopMemWrite8(u32 mem, u8 value)
 {
+	u32 t;
 	mem &= 0x1fffffff;
-	u32 t = mem >> 16;
+	t = mem >> 16;
 
 	if (t == 0x1f80)
 	{
@@ -326,8 +330,9 @@ void iopMemWrite8(u32 mem, u8 value)
 
 void iopMemWrite16(u32 mem, u16 value)
 {
+	u32 t;
 	mem &= 0x1fffffff;
-	u32 t = mem >> 16;
+	t = mem >> 16;
 
 	if (t == 0x1f80)
 	{
@@ -356,19 +361,18 @@ void iopMemWrite16(u32 mem, u16 value)
 				switch (mem & 0x8f0)
 				{
 					case 0x10:
-						// write to ps2 mem
+						/* write to ps2 mem */
 						psHu16(SBUS_F210) = value;
 						return;
 					case 0x40:
 					{
 						u32 temp = value & 0xF0;
-						// write to ps2 mem
+						/* write to ps2 mem */
 						if(value & 0x20 || value & 0x80)
 						{
 							psHu16(SBUS_F240) &= ~0xF000;
 							psHu16(SBUS_F240) |= 0x2000;
 						}
-
 
 						if(psHu16(SBUS_F240) & temp)
 							psHu16(SBUS_F240) &= ~temp;
@@ -394,8 +398,9 @@ void iopMemWrite16(u32 mem, u16 value)
 
 void iopMemWrite32(u32 mem, u32 value)
 {
+	u32 t;
 	mem &= 0x1fffffff;
-	u32 t = mem >> 16;
+	t = mem >> 16;
 
 	if (t == 0x1f80)
 	{
@@ -411,7 +416,7 @@ void iopMemWrite32(u32 mem, u32 value)
 		}
 	} else
 	{
-		//see also Hw.c
+		/* see also Hw.c */
 		u8* p = (u8 *)(psxMemWLUT[mem >> 16]);
 		if( p != NULL && !(psxRegs.CP0.n.Status & 0x10000) )
 		{
@@ -424,22 +429,22 @@ void iopMemWrite32(u32 mem, u32 value)
 			{
 				switch (mem & 0x8f0)
 				{
-					case 0x00:		// EE write path (EE/IOP readable)
-						return;		// this is the IOP, so read-only (do nothing)
+					case 0x00:		/* EE write path (EE/IOP readable) */
+						return;		/* this is the IOP, so read-only (do nothing) */
 
-					case 0x10:		// IOP write path (EE/IOP readable)
+					case 0x10:		/* IOP write path (EE/IOP readable) */
 						psHu32(SBUS_F210) = value;
 						return;
 
-					case 0x20:		// Bits cleared when written from IOP.
+					case 0x20:		/* Bits cleared when written from IOP. */
 						psHu32(SBUS_F220) &= ~value;
 						return;
 
-					case 0x30:		// bits set when written from IOP
+					case 0x30:		/* bits set when written from IOP */
 						psHu32(SBUS_F230) |= value;
 						return;
 
-					case 0x40:		// Control Register
+					case 0x40:		/* Control Register */
 					{
 						u32 temp = value & 0xF0;
 						if (value & 0x20 || value & 0x80)
@@ -447,7 +452,6 @@ void iopMemWrite32(u32 mem, u32 value)
 							psHu32(SBUS_F240) &= ~0xF000;
 							psHu32(SBUS_F240) |= 0x2000;
 						}
-
 
 						if (psHu32(SBUS_F240) & temp)
 							psHu32(SBUS_F240) &= ~temp;
@@ -463,9 +467,9 @@ void iopMemWrite32(u32 mem, u32 value)
 				}
 				psxSu32(mem) = value;
 
-				// wtf?  why were we writing to the EE's sif space?  Commenting this out doesn't
-				// break any of my games, and should be more correct, but I guess we'll see.  --air
-				//*(u32*)(eeHw+0xf200+(mem&0xf0)) = value;
+				/* wtf?  why were we writing to the EE's sif space?  Commenting this out doesn't */
+				/* break any of my games, and should be more correct, but I guess we'll see.  --air */
+				/* *(u32*)(eeHw+0xf200+(mem&0xf0)) = value; */
 				return;
 			}
 			else if (t == 0x1000)
@@ -474,17 +478,6 @@ void iopMemWrite32(u32 mem, u32 value)
 			}
 		}
 	}
-}
-
-std::string iopMemReadString(u32 mem, int maxlen)
-{
-    std::string ret;
-    char c;
-
-    while ((c = iopMemRead8(mem++)) && maxlen--)
-        ret.push_back(c);
-
-    return ret;
 }
 
 void iopMemReadStringBuf(char* dst, int cap, u32 mem, int maxlen)

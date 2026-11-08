@@ -352,8 +352,15 @@ typedef struct INTCregisters
 
 extern tDMA_TAG *dmaGetAddr(u32 addr, bool write);
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* Hw.cpp; ps2/pgif.c raises the PGIF's EE interrupt through the first. */
 extern void hwIntcIrq(int n);
 extern void hwDmacIrq(int n);
+#ifdef __cplusplus
+}
+#endif
 
 extern void FireMFIFOEmpty(void);
 extern bool hwMFIFOWrite(u32 addr, const u128* data, uint size_qwc);

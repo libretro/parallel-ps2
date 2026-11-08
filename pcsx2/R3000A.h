@@ -234,5 +234,12 @@ extern void (*psxCP0[32])();
 extern void (*psxCP2[64])();
 extern void (*psxCP2BSC[32])();
 
-extern void psxBiosReset();
-extern bool psxBiosCall();
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* ps2/Iop/PsxBios.c */
+extern void psxBiosReset(void);
+extern bool psxBiosCall(void);
+#ifdef __cplusplus
+}
+#endif

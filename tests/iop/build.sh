@@ -152,10 +152,14 @@ fi
 echo "== MDEC vs PS1 console trace (report, not a gate) =="
 MDECLOG="${PS1TESTS:-}/mdec/step-by-step-log/psx.log"
 if [ -f "$MDECLOG" ]; then
+	${CC:-cc} -std=gnu89 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
+		-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
+		-I "$ROOT/libretro/libretro-common/include" \
+		-c "$ROOT/pcsx2/Mdec.c" -o "$DIR/Mdec.o"
 	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 		-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 		-I "$ROOT/libretro/libretro-common/include" \
-		-o "$DIR/iop_hwmdec" "$DIR/hwmdec.cpp" "$ROOT/pcsx2/Mdec.cpp"
+		-o "$DIR/iop_hwmdec" "$DIR/hwmdec.cpp" "$DIR/Mdec.o"
 	"$DIR/iop_hwmdec" "$MDECLOG" | tail -3 || true
 else
 	echo "  skipped: set PS1TESTS to a ps1-tests checkout to run this"

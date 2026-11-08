@@ -121,8 +121,8 @@ set(pcsx2Sources
 	IopDma.c
 	IopHw.c
 	IopIrq.c
-	IopMem.cpp
-	Mdec.cpp
+	IopMem.c
+	Mdec.c
 	Memory.c
 	MemoryCardFile.c
 	memcard_ecc.c
@@ -647,10 +647,10 @@ set(pcsx2LinuxHeaders
 # ps2 sources
 set(pcsx2ps2Sources
 	ps2/BiosTools.cpp
-	ps2/pgif.cpp
+	ps2/pgif.c
 	ps2/Iop/IopHwRead.c
 	ps2/Iop/IopHwWrite.c
-	ps2/Iop/PsxBios.cpp)
+	ps2/Iop/PsxBios.c)
 
 # ps2 headers
 set(pcsx2ps2Headers

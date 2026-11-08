@@ -27,7 +27,7 @@
 #include "ps2/BiosTools.h"
 #include "R5900.h"
 #include "R3000A.h"
-#include "ps2/pgif.h" // pgif init
+#include "ps2/pgifio.h"
 #include "VUmicro.h"
 #include "COP0.h"
 #include "MTVU.h"
