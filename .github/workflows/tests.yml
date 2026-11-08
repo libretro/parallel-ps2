@@ -30,12 +30,14 @@ jobs:
         include:
           - name: plain
             sanflags: ''
-          # Twelve of the sixteen build from SANFLAGS, so the sanitizers
-          # cost a rebuild rather than a separate harness. The other four
-          # -- faultstress, spsc, mtvuring, gs -- are the concurrency ones
-          # and run TSan themselves every time, which is the sanitizer
-          # that finds anything there; they simply repeat in these two
-          # rows.
+          # The suites build their code with the SANFLAGS set here, so
+          # the sanitizers cost a rebuild rather than a separate harness.
+          # A suite takes SANFLAGS="${SANFLAGS:-}", never SANFLAGS="":
+          # twenty-two started from an empty one and so ran unsanitized
+          # in both rows. The concurrency ones -- faultstress, spsc,
+          # mtvuring, gs -- run TSan themselves every time, which is the
+          # sanitizer that finds anything there; they simply repeat in
+          # these two rows.
           - name: asan
             sanflags: '-fsanitize=address -fno-omit-frame-pointer'
           # Without -fno-sanitize-recover a UBSan report is printed and

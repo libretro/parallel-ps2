@@ -8,7 +8,7 @@ DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
 P="$ROOT/pcsx2"
 CC=${CC:-cc}
-SANFLAGS=""
+SANFLAGS="${SANFLAGS:-}"
 [ -n "$SANITIZER" ] && SANFLAGS="-fsanitize=$SANITIZER"
 INC="-I $ROOT -I $P -I $ROOT/common -I $ROOT/libretro/libretro-common/include"
 # MSVC's C89: gnu89 takes the // comments common/ carries, as MSVC does.

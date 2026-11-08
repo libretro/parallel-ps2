@@ -12,7 +12,7 @@ LC="$ROOT/libretro/libretro-common"
 U="$ROOT/pcsx2/USB"
 INC="-I$ROOT -I$ROOT/pcsx2 -I$ROOT/common -I$ROOT/libretro -I$LC/include"
 DEFS="-D__LIBRETRO__ -DHAVE_THREADS -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64"
-SANFLAGS=""
+SANFLAGS="${SANFLAGS:-}"
 [ -n "$SANITIZER" ] && SANFLAGS="-fsanitize=$SANITIZER"
 
 CXXSRC="$DIR/main.cpp $ROOT/libretro/USB.cpp \

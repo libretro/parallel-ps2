@@ -16,7 +16,7 @@ set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
 CC=${CC:-cc}
-SANFLAGS=""
+SANFLAGS="${SANFLAGS:-}"
 [ -n "$SANITIZER" ] && SANFLAGS="-fsanitize=$SANITIZER"
 
 echo "== VU CLIP vs console =="

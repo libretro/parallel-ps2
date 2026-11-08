@@ -8,7 +8,7 @@ ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
 # like the other suites that link emulator code. jit_stage emits and runs
 # machine code of its own, which ASan's shadow mapping does not survive,
 # so it takes the flag only when it is not asan.
-SANFLAGS=""
+SANFLAGS="${SANFLAGS:-}"
 [ -n "$SANITIZER" ] && SANFLAGS="-fsanitize=$SANITIZER"
 JITSAN="$SANFLAGS"
 case "${SANITIZER:-}" in address*) JITSAN="" ;; esac

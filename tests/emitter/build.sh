@@ -9,7 +9,7 @@
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
-SANFLAGS=""
+SANFLAGS="${SANFLAGS:-}"
 [ -n "$SANITIZER" ] && SANFLAGS="-fsanitize=$SANITIZER"
 
 echo "== C emitter macros vs GNU as =="

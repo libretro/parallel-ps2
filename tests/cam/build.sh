@@ -13,7 +13,7 @@ CXX=${CXX:-c++}
 E="$ROOT/pcsx2/USB/usb-eyetoy"
 INC="-I$E -I$ROOT -I$ROOT/pcsx2 -I$ROOT/common -I$ROOT/libretro/libretro-common/include"
 SRC="$DIR/main.cpp $E/cam-frame.cpp $E/cam-jpeg.cpp $E/jo_mpeg.cpp"
-SANFLAGS=""
+SANFLAGS="${SANFLAGS:-}"
 [ -n "$SANITIZER" ] && SANFLAGS="-fsanitize=$SANITIZER"
 
 case "$(uname -s 2>/dev/null)" in

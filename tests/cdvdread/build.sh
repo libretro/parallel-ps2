@@ -8,7 +8,7 @@ ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
 LC="$ROOT/libretro/libretro-common"
 OBJ="$DIR/.obj"
 CC=${CC:-cc}
-SANFLAGS=""
+SANFLAGS="${SANFLAGS:-}"
 [ -n "$SANITIZER" ] && SANFLAGS="-fsanitize=$SANITIZER"
 INC="-I $ROOT -I $ROOT/pcsx2 -I $ROOT/common -I $LC/include"
 DEFS="-D__LIBRETRO__ -DHAVE_RCHD_DEFLATE -DHAVE_RCHD_LZMA -DHAVE_RCHD_FLAC -DHAVE_RCHD_ZSTD"

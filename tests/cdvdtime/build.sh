@@ -6,7 +6,7 @@ set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
 CC=${CC:-cc}
-SANFLAGS=""
+SANFLAGS="${SANFLAGS:-}"
 [ -n "$SANITIZER" ] && SANFLAGS="-fsanitize=$SANITIZER"
 "$CC" -std=gnu89 -O1 -g -w $SANFLAGS -D__LIBRETRO__ \
 	-ffunction-sections -fdata-sections -Wl,--gc-sections \
