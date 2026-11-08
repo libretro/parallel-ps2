@@ -160,6 +160,9 @@ private:
 	bool m_is_gles = false;
 	bool m_colclip_float = false;
 	bool m_disable_download_pbo = false;
+	/* llvmpipe: a texture one scene still in flight samples and a later
+	 * one renders to reads back stale (see FinishBeforeCpuRead). */
+	bool m_cpu_reads_need_finish = false;
 
 	GLuint m_fbo = 0; // frame buffer container
 	GLuint m_fbo_read = 0; // frame buffer container only for reading
@@ -254,6 +257,20 @@ public:
 	static void APIENTRY DebugMessageCallback(GLenum gl_source, GLenum gl_type, GLuint id, GLenum gl_severity, GLsizei gl_length, const GLchar* gl_message, const void* userParam);
 
 	__fi bool IsDownloadPBODisabled() const { return m_disable_download_pbo; }
+	/* Before the driver reads a texture on the CPU: a copy out of it or a
+	 * readback. llvmpipe asks whether a texture is in use scene by scene
+	 * and takes the first scene that has it: one that only samples it
+	 * answers "read", and a read waits for nothing, though a later scene
+	 * still renders to it. The read then sees the texture from before
+	 * that draw. A finish leaves no scene in flight; llvmpipe would have
+	 * finished for the copy anyway had it seen the writer. (Mesa's
+	 * lp_setup_is_resource_referenced; so in 25.2 and in main as of
+	 * November 2026.) */
+	__fi void FinishBeforeCpuRead() const
+	{
+		if (m_cpu_reads_need_finish)
+			glFinish();
+	}
 	__fi bool IsColClipFloat() const { return m_colclip_float; }
 	GLenum GLBlendFactor(u8 factor) const;
 	__fi u32 GetFBORead() const { return m_fbo_read; }

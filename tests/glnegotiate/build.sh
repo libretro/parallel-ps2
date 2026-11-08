@@ -171,5 +171,36 @@ for run in 1 2; do
 	fi
 done
 
+# A move out of a target the frame drew into and showed: llvmpipe,
+# threaded, could copy the target from before the draw (the GL device's
+# FinishBeforeCpuRead). Whether it did hung on how far its rasterizer
+# had got, so one run proves little; with one rasterizer thread it read
+# stale a third of the time, and sixteen runs all drawing the first
+# run's picture leave about one chance in five hundred of missing it.
+c=move_width_change
+want=$(sed -n 's/.*image: .*hash \([0-9a-f]*\)$/\1/p' "$WORK/$c.gl.log")
+if [ -n "$want" ]; then
+	run=1
+	while [ $run -le 16 ]; do
+		rm -rf "$WORK/gl"
+		mkdir -p "$WORK/gl"
+		if ! LP_NUM_THREADS=1 GN_RGB=1 GN_FRAMES=$(cat "$WORK/$c.frames") LRPS2_BIOS="$WORK/$c.bin" timeout 300 \
+				"$WORK/glnegotiate$EXE" "$CORE" "$WORK/gl" > "$WORK/$c.rerun.log" 2>&1; then
+			cat "$WORK/$c.rerun.log"
+			echo "  FAIL: $c, run $run of 16 on one rasterizer thread"
+			fail=1
+			break
+		fi
+		h=$(sed -n 's/.*image: .*hash \([0-9a-f]*\)$/\1/p' "$WORK/$c.rerun.log")
+		if [ "$h" != "$want" ]; then
+			echo "  FAIL: $c, run $run of 16 on one rasterizer thread, draws ${h:-nothing}, not $want"
+			fail=1
+			break
+		fi
+		run=$((run + 1))
+	done
+	[ $run -gt 16 ] && printf '  %s: the same picture in 16 runs on one rasterizer thread\n' $c
+fi
+
 [ $fail = 0 ] || exit 1
 echo "glnegotiate: ok"

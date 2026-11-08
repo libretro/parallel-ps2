@@ -402,6 +402,7 @@ void GSDownloadTextureOGL::CopyFromTexture(
 {
 	GSTextureOGL* const glTex = static_cast<GSTextureOGL*>(stex);
 	GSDeviceOGL::GetInstance()->CommitClear(glTex, true);
+	GSDeviceOGL::GetInstance()->FinishBeforeCpuRead();
 
 	u32 copy_offset, copy_size, copy_rows;
 	m_current_pitch = GetTransferPitch(use_transfer_pitch ? static_cast<u32>(drc.width()) : m_width, TEXTURE_UPLOAD_PITCH_ALIGNMENT);

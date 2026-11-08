@@ -215,8 +215,16 @@ bool GSDeviceOGL::CheckFeatures(bool& buggy_pbo)
 {
 	bool vendor_id_nvidia = false;
 	const char* vendor = (const char*)glGetString(GL_VENDOR);
+	const char* renderer = (const char*)glGetString(GL_RENDERER);
 	if (strstr(vendor, "NVIDIA Corporation"))
 		vendor_id_nvidia = true;
+
+	/* Mesa's software rasterizer, threaded, can read back a render target
+	 * from before its last draw (FinishBeforeCpuRead). Its rasterizer
+	 * runs on its own threads unless LP_NUM_THREADS=0. */
+	m_cpu_reads_need_finish = renderer && strstr(renderer, "llvmpipe");
+	if (m_cpu_reads_need_finish)
+		log_cb(RETRO_LOG_INFO, "llvmpipe: finishing before texture copies and readbacks.\n");
 
 	GLint major_gl = 0;
 	GLint minor_gl = 0;
@@ -1393,6 +1401,7 @@ void GSDeviceOGL::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r
 	const GLuint& did = static_cast<GSTextureOGL*>(dTex)->GetID();
 	CommitClear(sTex, false);
 	CommitClear(dTex, false);
+	FinishBeforeCpuRead();
 
 	if (GLAD_GL_VERSION_4_3 || GLAD_GL_ARB_copy_image)
 	{
