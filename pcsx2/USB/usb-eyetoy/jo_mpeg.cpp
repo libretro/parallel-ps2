@@ -70,7 +70,10 @@ static void jo_writeBits(jo_bits_t *b, int value, int count) {
 		//putc(c, b->fp);
 		*(b->buf_ptr) = c & 0xff;
 		b->buf_ptr++;
-		b->buf <<= 8;
+		/* Bits 16-23 are written; only the 16 below them are still to
+		 * come. Shifting the written ones up as well walked them off
+		 * the top of the int, which is undefined. */
+		b->buf = (b->buf & 0xFFFF) << 8;
 		b->cnt -= 8;
 	}
 }
