@@ -2347,8 +2347,14 @@ static void cdvdWrite16(u8 rt) /* SCOMMAND */
 			cdvd.SCMDResultCnt  = 1;
 			cdvd.SCMDResultPos  = 0;
 			cdvd.sDataIn       &= ~0x40;
-			memset(&cdvd.SCMDResultBuff[0], 0, 1);
-			cdvdWriteNVM(&cdvd.SCMDResultBuff[1], getNvmLayout()->ilinkId, 8);
+			/* The eight parameter bytes are the ID (cdvdman's sceCdWI). */
+			if (cdvd.SCMDParamCnt == 8)
+			{
+				cdvd.SCMDResultBuff[0] = 0;
+				cdvdWriteNVM(&cdvd.SCMDParamBuff[0], getNvmLayout()->ilinkId, 8);
+			}
+			else
+				cdvd.SCMDResultBuff[0] = 0x80;
 			break;
 
 		case 0x14: /* CdCtrlAudioDigitalOut (1:1) */
