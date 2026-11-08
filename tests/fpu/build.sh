@@ -13,6 +13,15 @@ CC=${CC:-cc}
 SANFLAGS=""
 [ -n "$SANITIZER" ] && SANFLAGS="-fsanitize=$SANITIZER"
 
+echo "== EE FPU DIV/RSQRT flags through FPU.cpp =="
+${CXX:-c++} -std=c++17 -O1 -w -frounding-math $SANFLAGS \
+	-I "$ROOT" -I "$ROOT/pcsx2" -I "$ROOT/common" \
+	-I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
+	-I "$ROOT/libretro/libretro-common/include" \
+	-o "$DIR/fpu_fpuflags" "$DIR/fpuflags.cpp" \
+	"$ROOT/pcsx2/FPU.cpp" "$ROOT/pcsx2/ps2float.c"
+"$DIR/fpu_fpuflags"
+
 echo "== EE FPU vs console =="
 EXPECTED="${PS2AUTOTESTS:-}/tests/cpu/ee_fpu"
 if [ -d "$EXPECTED" ]; then

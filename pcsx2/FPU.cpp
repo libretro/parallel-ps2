@@ -329,12 +329,8 @@ void CVT_W() {
 
 void DIV_S() {
 	if (checkDivideByZero( _FdValUl_, _FtValUl_, _FsValUl_, FPUflagD | FPUflagSD, FPUflagI | FPUflagSI)) return;
-	{
-		u64 res = ps2f_div(_FsValUl_, _FtValUl_);
-		_FdValUl_ = ps2f_raw(res);
-		if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
-		checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
-	}
+	/* DIV.S clamps but leaves O/U and SO/SU alone, as both recompilers do. */
+	_FdValUl_ = ps2f_raw(ps2f_div(_FsValUl_, _FtValUl_));
 }
 
 /*	The Instruction Set manual has an overly complicated way of
@@ -414,11 +410,14 @@ void NEG_S() {
 void RSQRT_S() {
 	clearFPUFlags(FPUflagD | FPUflagI);
 
-	u64 res = ps2f_rsqrt(_FsValUl_, _FtValUl_);
+	u32 ft = _FtValUl_;
+	u64 res = ps2f_rsqrt(_FsValUl_, ft);
 	_FdValUl_ = ps2f_raw(res);
-	if (checkDivideByZeroInvalidSoft(res, FPUflagD | FPUflagSD, FPUflagI | FPUflagSI)) return;
-	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
-	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
+	/* ps2f_rsqrt drops Ft's sign before the sqrt, so a negative non-zero
+	 * Ft raises I here. O/U stay untouched, as in both recompilers. */
+	if ((ft & 0x80000000) && (ft & 0x7F800000))
+		_ContVal_ |= FPUflagI | FPUflagSI;
+	checkDivideByZeroInvalidSoft(res, FPUflagD | FPUflagSD, FPUflagI | FPUflagSI);
 }
 
 void SQRT_S() {
