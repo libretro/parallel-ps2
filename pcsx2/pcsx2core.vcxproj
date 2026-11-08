@@ -287,6 +287,8 @@
     <ClCompile Include="CDVD\Ps1CD.c" />
     <ClCompile Include="CDVD\CDVD.c" />
     <ClCompile Include="CDVD\CDVDnvram.c" />
+    <ClCompile Include="CDVD\MechaMg.c" />
+    <ClCompile Include="CDVD\MgDes.c" />
     <ClCompile Include="CDVD\CDVDisoReader.c" />
     <ClCompile Include="CDVD\cdvd_reader.c" />
     <ClCompile Include="CDVD\cdvd_flat.c" />

@@ -235,6 +235,8 @@ set(pcsx2CDVDSources
 	CDVD/CDVDcommon.c
 	CDVD/CDVD.c
 	CDVD/CDVDnvram.c
+	CDVD/MechaMg.c
+	CDVD/MgDes.c
 	CDVD/CDVDisoReader.c
 	CDVD/cdvd_reader.c
 	CDVD/cdvd_flat.c
@@ -252,6 +254,8 @@ set(pcsx2CDVDHeaders
 	CDVD/CDVDcommon.h
 	CDVD/CDVD.h
 	CDVD/CDVDnvram.h
+	CDVD/MechaMg.h
+	CDVD/MgDes.h
 	CDVD/CDVD_internal.h
 	CDVD/IsoFS/iso9660.h
 	CDVD/CDVD_host.h

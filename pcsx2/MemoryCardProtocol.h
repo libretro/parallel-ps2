@@ -33,6 +33,7 @@ struct PS1MemoryCardState
 class MemoryCardProtocol
 {
 private:
+	bool AuthXorKeyed(u8 modeByte);
 	PS1MemoryCardState ps1McState;
 
 	bool PS1Fail();

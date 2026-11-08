@@ -39,6 +39,7 @@
 #include "CDVD.h"
 #include "CDVD_host.h"
 #include "CDVD_internal.h"
+#include "MechaMg.h"
 #include "cdvd_iso.h"
 #include "IsoFS/iso9660.h"
 
@@ -761,6 +762,13 @@ static uint cdvdBlockReadTime(CDVD_MODE_TYPE mode)
 	return (u32)((u64)PSXCLK * 10ULL / (sps * speed_x10));
 }
 
+/* The console identity MagicGate reads, from NVRAM. */
+static void cdvdMgIds(MechaMgIds* ids)
+{
+	cdvdReadNVM(ids->console_id, getNvmLayout()->consoleId, 8);
+	cdvdReadNVM(ids->ilink_id, getNvmLayout()->ilinkId, 8);
+}
+
 void cdvdReset(void)
 {
 	memset(&cdvd, 0, sizeof(cdvd));
@@ -802,6 +810,16 @@ void cdvdReset(void)
 	/* g_SkipBiosHack is set by psxHwReset, before this runs */
 
 	cdvdCtrlTrayClose();
+
+	/* MagicGate keys, when the user put them beside the BIOS; NVRAM is
+	 * loaded by now (memReset runs first). */
+	{
+		char dir[PCSX2_PATH_MAX];
+		MechaMgIds ids;
+		cdvdMgIds(&ids);
+		fill_pathname_basedir(dir, BiosPath, sizeof(dir));
+		mecha_mg_load_keys(dir, MECHA_MG_MODE_RETAIL, &ids);
+	}
 }
 
 bool cdvdFreeze(SaveStateBase *s)
@@ -847,6 +865,9 @@ bool cdvdFreeze(SaveStateBase *s)
 			cdvd.ReadErr = DoCDVDreadTrack(cdvd.SeekCompleted ? cdvd.CurrentSector : cdvd.SeekToSector, cdvd.ReadMode);
 	}
 
+	/* States saved before keyed MagicGate end the CDVD block here. */
+	if (SaveState_IsSaving(s) || SaveState_PeekTag(s, "mechaMG"))
+		return mecha_mg_freeze(s);
 	return true;
 }
 
@@ -2103,6 +2124,25 @@ static void cdvdWrite16(u8 rt) /* SCOMMAND */
 	u8 tmp;
 	cdvd.sCommand = rt;
 	memset(cdvd.SCMDResultBuff, 0, sizeof(cdvd.SCMDResultBuff));
+
+	/* With MagicGate keys the mechacon's 0x80-0x98 run keyed; without,
+	 * the fixed replies below stand. */
+	if (rt >= 0x80 && rt <= 0x98 && mecha_mg_keyed())
+	{
+		MechaMgIds ids;
+		int n;
+		cdvdMgIds(&ids);
+		n = mecha_mg_scmd(rt, cdvd.SCMDParamBuff, cdvd.SCMDParamCnt, cdvd.SCMDResultBuff, &ids);
+		if (n >= 0)
+		{
+			cdvd.SCMDResultCnt = (u8)n;
+			cdvd.SCMDResultPos = 0;
+			cdvd.sDataIn &= ~0x40;
+			cdvd.SCMDParamPos = 0;
+			cdvd.SCMDParamCnt = 0;
+			return;
+		}
+	}
 
 	switch (rt)
 	{

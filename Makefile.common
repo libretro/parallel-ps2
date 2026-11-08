@@ -111,6 +111,8 @@ SOURCES_C += \
 	$(LRPS2_DIR)/USB/libretro-usb/ohci_dma.c \
 	$(LRPS2_DIR)/memcard_ecc.c \
 	$(LRPS2_DIR)/CDVD/CDVDnvram.c \
+	$(LRPS2_DIR)/CDVD/MechaMg.c \
+	$(LRPS2_DIR)/CDVD/MgDes.c \
 	$(LRPS2_DIR)/CDVD/CDVDisoReader.c \
 	$(LRPS2_DIR)/CDVD/cdvd_reader.c \
 	$(LRPS2_DIR)/CDVD/cdvd_flat.c \

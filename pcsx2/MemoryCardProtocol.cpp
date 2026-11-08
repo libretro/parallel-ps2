@@ -19,6 +19,7 @@
 #include "MemoryCardProtocol.h"
 #include "SaveState.h"
 #include "Sio.h"
+#include "CDVD/MechaMg.h"
 
 MemoryCardProtocol g_MemoryCardProtocol;
 
@@ -401,11 +402,54 @@ void MemoryCardProtocol::UnknownBoot()
 	The2bTerminator(5);
 }
 
+/* The card's side of keyed MagicGate: values go out and come in last
+ * byte first, an outgoing one followed by its XOR. False for the modes
+ * that carry nothing, which take the unkeyed path. */
+bool MemoryCardProtocol::AuthXorKeyed(u8 modeByte)
+{
+	const int slot = (int)sioConvertPortAndSlotToPad(mcd->port, mcd->slot);
+	u8 v[8];
+	size_t i;
+
+	if (mecha_mg_card_get(slot, modeByte, v))
+	{
+		u8 xorResult = 0;
+		fifoOut.push_back(0x00);
+		fifoOut.push_back(0x2b);
+		for (i = 0; i < 8; i++)
+		{
+			if (!fifoIn.empty())
+				fifoIn.pop_front();
+			xorResult ^= v[7 - i];
+			fifoOut.push_back(v[7 - i]);
+		}
+		fifoOut.push_back(xorResult);
+		fifoOut.push_back(mcd->term);
+		return true;
+	}
+	if (modeByte == 0x06 || modeByte == 0x07 || modeByte == 0x0b)
+	{
+		for (i = 0; i < 8; i++)
+		{
+			v[7 - i] = fifoIn.empty() ? 0 : fifoIn.front();
+			if (!fifoIn.empty())
+				fifoIn.pop_front();
+		}
+		mecha_mg_card_put(slot, modeByte, v);
+		The2bTerminator(14);
+		return true;
+	}
+	return false;
+}
+
 void MemoryCardProtocol::AuthXor()
 {
 	if (this->PS1Fail()) return;
 	const u8 modeByte = fifoIn.front();
 	fifoIn.pop_front();
+
+	if (mecha_mg_keyed() && AuthXorKeyed(modeByte))
+		return;
 
 	switch (modeByte)
 	{
@@ -473,6 +517,7 @@ void MemoryCardProtocol::AuthF3()
 	/* An authentication reset puts the card back on the default
 	 * terminator, which MCMAN sets again once the card is authenticated. */
 	mcd->term = Terminator::DEFAULT;
+	mecha_mg_card_auth_reset((int)sioConvertPortAndSlotToPad(mcd->port, mcd->slot));
 	The2bTerminator(5);
 }
 

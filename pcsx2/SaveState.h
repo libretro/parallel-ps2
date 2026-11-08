@@ -25,7 +25,7 @@
  * line to your commit message somewhere:
  * [SAVEVERSION+] */
 
-#define g_SaveVersion ((u32)((0x9A58 << 16) | 0x0000))
+#define g_SaveVersion ((u32)((0x9A59 << 16) | 0x0000))
 
 /* --------------------------------------------------------------------------
  *  SaveStateBase

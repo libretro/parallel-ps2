@@ -536,6 +536,12 @@
     <ClCompile Include="CDVD\CDVDnvram.c">
       <Filter>System\Ps2\Iop\CDVD</Filter>
     </ClCompile>
+    <ClCompile Include="CDVD\MechaMg.c">
+      <Filter>System\Ps2\Iop\CDVD</Filter>
+    </ClCompile>
+    <ClCompile Include="CDVD\MgDes.c">
+      <Filter>System\Ps2\Iop\CDVD</Filter>
+    </ClCompile>
     <ClCompile Include="CDVD\CDVDisoReader.c">
       <Filter>System\Ps2\Iop\CDVD</Filter>
     </ClCompile>
