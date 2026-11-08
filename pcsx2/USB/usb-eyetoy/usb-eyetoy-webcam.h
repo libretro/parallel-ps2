@@ -454,9 +454,4 @@ namespace usb_eyetoy
 		0x75, 0x75, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	};
 
-	USBDevice* eyetoy_create(u32 subtype);
-
-	/* Saves or loads the device's own state, beyond what every USB device has. */
-	void eyetoy_freeze(USBDevice* dev, UsbState& st);
-
 } // namespace usb_eyetoy

@@ -1,12 +1,17 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: GPL-2.0+
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: GPL-2.0+ */
 
 #pragma once
 
 #include "common/Pcsx2Types.h"
+#include "USB/libretro-usb/qusb.h"
 
-#include <cstdint>
-#include <vector>
+#include <stddef.h>
+#include <retro_inline.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* binary representation */
 #pragma pack(push, 1)
@@ -136,7 +141,10 @@ struct USBDescDevice
 	u8 bMaxPacketSize0;
 	u8 bNumConfigurations;
 
-	std::vector<USBDescConfig> confs;
+	/* Allocated by usb_desc_parse_config, released by
+	 * usb_desc_device_free. */
+	int nconfs;
+	USBDescConfig* confs;
 };
 
 struct USBDescConfig
@@ -148,12 +156,12 @@ struct USBDescConfig
 	u8 bMaxPower;
 
 	/* grouped interfaces */
-	//u8                   nif_groups;
-	std::vector<USBDescIfaceAssoc> if_groups;
+	int nif_groups;
+	USBDescIfaceAssoc* if_groups;
 
 	/* "normal" interfaces */
-	//u8                   nif;
-	std::vector<USBDescIface> ifs;
+	int nif;
+	USBDescIface* ifs;
 };
 
 /* conceptually an Interface Association Descriptor, and releated interfaces */
@@ -166,8 +174,8 @@ struct USBDescIfaceAssoc
 	u8 bFunctionProtocol;
 	u8 iFunction;
 
-	//u8                   nif;
-	std::vector<USBDescIface> ifs;
+	int nif;
+	USBDescIface* ifs;
 };
 
 struct USBDescIface
@@ -180,9 +188,10 @@ struct USBDescIface
 	u8 bInterfaceProtocol;
 	u8 iInterface;
 
-	//u8                   ndesc;
-	std::vector<USBDescOther> descs;
-	std::vector<USBDescEndpoint> eps;
+	int ndesc;
+	USBDescOther* descs;
+	int neps;
+	USBDescEndpoint* eps;
 };
 
 struct USBDescEndpoint
@@ -231,12 +240,12 @@ struct USBDesc
 #define USB_DESC_FLAG_SUPER (1 << 1)
 
 /* little helpers */
-static inline u8 usb_lo(u16 val)
+static INLINE u8 usb_lo(u16 val)
 {
 	return val & 0xff;
 }
 
-static inline u8 usb_hi(u16 val)
+static INLINE u8 usb_hi(u16 val)
 {
 	return (val >> 8) & 0xff;
 }
@@ -246,19 +255,23 @@ int usb_desc_device(const USBDescID* id, const USBDescDevice* dev,
 					bool msos, u8* dest, size_t len);
 int usb_desc_device_qualifier(const USBDescDevice* dev,
 							  u8* dest, size_t len);
-int usb_desc_config(const USBDescConfig& conf, int flags,
+int usb_desc_config(const USBDescConfig* conf, int flags,
 					u8* dest, size_t len);
-int usb_desc_iface_group(const USBDescIfaceAssoc& iad, int flags,
+int usb_desc_iface_group(const USBDescIfaceAssoc* iad, int flags,
 						 u8* dest, size_t len);
-int usb_desc_iface(const USBDescIface& iface, int flags,
+int usb_desc_iface(const USBDescIface* iface, int flags,
 				   u8* dest, size_t len);
-int usb_desc_endpoint(const USBDescEndpoint& ep, int flags,
+int usb_desc_endpoint(const USBDescEndpoint* ep, int flags,
 					  u8* dest, size_t len);
-int usb_desc_other(const USBDescOther& desc, u8* dest, size_t len);
-//int usb_desc_msos(const USBDesc *desc, USBPacket *p,
-//                  int index, u8 *dest, size_t len);
-int usb_desc_parse_dev(const u8* data, int len, USBDesc& desc, USBDescDevice& dev);
-int usb_desc_parse_config(const u8* data, int len, USBDescDevice& dev);
+int usb_desc_other(const USBDescOther* desc, u8* dest, size_t len);
+/*int usb_desc_msos(const USBDesc *desc, USBPacket *p, */
+/*                  int index, u8 *dest, size_t len); */
+int usb_desc_parse_dev(const u8* data, int len, USBDesc* desc, USBDescDevice* dev);
+/* Builds dev's configurations, interfaces and endpoints from raw
+ * descriptors; a device that parsed any must be given to
+ * usb_desc_device_free. Returns -1 on a descriptor it cannot use. */
+int usb_desc_parse_config(const u8* data, int len, USBDescDevice* dev);
+void usb_desc_device_free(USBDescDevice* dev);
 
 /* control message emulation helpers */
 void usb_desc_init(USBDevice* dev);
@@ -271,3 +284,7 @@ int usb_desc_handle_control(USBDevice* dev, USBPacket* p,
 
 int usb_desc_set_config(USBDevice* dev, int value);
 int usb_desc_set_interface(USBDevice* dev, int index, int value);
+
+#ifdef __cplusplus
+}
+#endif

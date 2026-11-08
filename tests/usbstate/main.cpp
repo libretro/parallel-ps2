@@ -1,4 +1,4 @@
-// The USB block of a savestate (libretro/USB.cpp): write, find, strip, read.
+// The USB block of a savestate (libretro/USB.c): write, find, strip, read.
 //
 // A keyboard on port 0 and an EyeToy on the free port, through the real
 // OHCI controller and device models. A register is written into the EyeToy
@@ -13,11 +13,12 @@
 // neither V4L2 nor ALSA here.
 
 #include "USB/USB.h"
+#include "USB/usb-host.h"
 #include "USB/libretro-usb/USBinternal.h"
 #include "USB/libretro-usb/qusb.h"
 #include "USB/libretro-usb/desc.h"
 #include "USB/usb-eyetoy/eyetoy-frontend.h"
-#include "MemoryTypes.h"
+#include "USB/usb-python2/usb-python2.h"
 
 #include "libretro.h"
 
@@ -38,9 +39,15 @@ static void stub_log(enum retro_log_level level, const char* fmt, ...)
 	vprintf(fmt, ap);
 	va_end(ap);
 }
+extern "C" {
 retro_log_printf_t log_cb = stub_log;
+}
 
-IopVM_MemoryAllocMess* iopMem;
+static u8* s_iop_ram;
+u8* usb_iop_ram(void)
+{
+	return s_iop_ram;
+}
 
 void usbIrq(int) {}
 
@@ -131,7 +138,7 @@ static void eyetoy_write_reg(USBDevice* dev, int reg, u8 value)
 }
 
 /* Where the altsetting array sits in a port's slot: the kind, then the
- * fields USBFreezeDevice writes in order. Mirrors libretro/USB.cpp. */
+ * fields USBFreezeDevice writes in order. Mirrors libretro/USB.c. */
 static size_t slot_altsetting_offset(void)
 {
 	USBDevice* d = nullptr;
@@ -143,10 +150,68 @@ static size_t slot_altsetting_offset(void)
 #define USB_STATE_OHCI 10240
 #define USB_STATE_SLOT 8192
 
+/* One bulk or interrupt transfer on endpoint nr, as the OHCI core would
+ * make it; returns the bytes moved. */
+static int transfer(USBDevice* dev, int pid, int nr, u8* buf, unsigned size)
+{
+	USBPacket p;
+	memset(&p, 0, sizeof(p));
+	p.pid         = pid;
+	p.ep          = usb_ep_get(dev, pid, nr);
+	p.buffer_ptr  = buf;
+	p.buffer_size = size;
+	dev->klass.handle_data(dev, &p);
+	return p.status == USB_RET_SUCCESS ? p.actual_length : -1;
+}
+
+/* A Python 2 game's I/O board takes the first port, and its state rides
+ * in the block: a command answered half way through is answered the
+ * rest of the way after a load. */
+static void python2_checks(void)
+{
+	static const u8 get_version[] = { 0xaa, 0x02, 0x07, 0x01 };
+	u8 first[16], rest[16], again[16];
+	p2io_config cfg;
+	USBDevice* io;
+	size_t size = USBStateSize();
+	u8* state = (u8*)malloc(size);
+	int n1, n2;
+
+	memset(&cfg, 0, sizeof(cfg));
+	cfg.game = P2IO_GAME_DDR;
+	usb_python2_set_config(&cfg);
+	USBSetPortDevice(0, USB_DEV_KEYBOARD, 0);
+	USBSetCamera(USB_CAMERA_NONE);
+	check(USBopen(), "USBopen with a Python 2 game");
+	io = USBGetPortDevice(0);
+	check(io && io->klass.handle_data && USBGetPortDevice(1) == nullptr,
+		"the I/O board is on port 0, over the port's keyboard");
+	usb_desc_set_config(io, 1);
+
+	/* The version answer is 11 bytes: magic, length, sequence, status,
+	 * then D44 1.6.4. Take 4 of them, save, then the rest. */
+	transfer(io, USB_TOKEN_OUT, 2, (u8*)get_version, sizeof(get_version));
+	n1 = transfer(io, USB_TOKEN_IN, 1, first, 4);
+	check(n1 == 4 && first[0] == 0xaa && first[2] == 0x07, "the answer's start: magic, length, sequence");
+	USBStateWrite(state);
+	n2 = transfer(io, USB_TOKEN_IN, 1, rest, sizeof(rest));
+	check(n2 == 7 && rest[0] == 'D' && rest[1] == '4' && rest[2] == '4' && rest[6] == 4,
+		"the rest of it, in the next transfer");
+
+	USBStateRead(state, size);
+	check(USBGetPortDevice(0) == io, "a matching state keeps the board");
+	check(transfer(io, USB_TOKEN_IN, 1, again, sizeof(again)) == n2 && !memcmp(again, rest, (size_t)n2),
+		"after a load the rest of the answer comes again");
+
+	USBclose();
+	usb_python2_clear_config();
+	free(state);
+}
+
 int main()
 {
 	static const int REG = 0x10; /* OV519_R10_H_SIZE: harmless, logged, kept */
-	iopMem = (IopVM_MemoryAllocMess*)calloc(1, sizeof(IopVM_MemoryAllocMess));
+	s_iop_ram = (u8*)calloc(1, USB_IOP_RAM_SIZE);
 
 	usb_eyetoy::FrontendLoad(stub_environ);
 	USBSetPortDevice(0, USB_DEV_KEYBOARD, 0);
@@ -239,10 +304,24 @@ int main()
 	check(USBGetPortDevice(1) == cam && eyetoy_read_reg(cam, REG) == def, "an empty slot replugs the device, so it starts afresh");
 
 	USBclose();
+
+	/* Every device model's descriptors go through the parser: the mouse's
+	 * too, configured as a guest would. */
+	USBSetPortDevice(0, USB_DEV_MOUSE, 0);
+	USBSetCamera(USB_CAMERA_CAPTURE_EYE);
+	check(USBopen(), "USBopen with a mouse and a Capture Eye");
+	{
+		USBDevice* mouse = USBGetPortDevice(0);
+		check(mouse && usb_desc_set_config(mouse, 1) == 0 && mouse->config && mouse->ninterfaces == 1
+				&& mouse->ifaces[0] && mouse->ifaces[0]->neps == 1,
+			"the mouse's configuration: one interface, one endpoint");
+	}
+	USBclose();
 	usb_eyetoy::FrontendUnload();
+	python2_checks();
 	free(state);
 	free(other);
-	free(iopMem);
+	free(s_iop_ram);
 	printf(s_bad ? "FAIL\n" : "PASS\n");
 	return s_bad ? 1 : 0;
 }

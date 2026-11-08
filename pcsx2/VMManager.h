@@ -101,6 +101,10 @@ namespace VMManager
 	/// Reloads cheats/patches. If verbose is set, the number of patches loaded will be shown in the OSD.
 	void ReloadPatches();
 
+	/* A pnach file loaded in place of the GameDB's patches, whatever
+	 * the CRC: a Konami Python 2 game's. NULL or empty for none. */
+	void SetPython2PatchFile(const char* path);
+
 	/// Returns true if the specified path is an ELF.
 	bool IsElfFileName(const std::string_view path);
 

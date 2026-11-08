@@ -161,20 +161,55 @@ const NVMLayout* getNvmLayout(void)
 	return (nvmlayouts[1].biosVer <= BiosVersion) ? &nvmlayouts[1] : &nvmlayouts[0];
 }
 
+/* cdvd_set_nvram_files; static, as a path is too large for a frame. */
+static char s_nvram_file[PCSX2_PATH_MAX];
+static char s_ilink_id_file[PCSX2_PATH_MAX];
+
+void cdvd_set_nvram_files(const char* nvram, const char* ilink_id)
+{
+	strlcpy(s_nvram_file, nvram ? nvram : "", sizeof(s_nvram_file));
+	strlcpy(s_ilink_id_file, ilink_id ? ilink_id : "", sizeof(s_ilink_id_file));
+}
+
+/* The i.Link ID a new NVRAM gets: the configured file's, else a dummy. */
+static void cdvdNewILinkID(u8 id[8])
+{
+	static const u8 ILinkID_Data[8] = {0x00, 0xAC, 0xFF, 0xFF, 0xFF, 0xFF, 0xB9, 0x86};
+	void* data   = NULL;
+	int64_t size = 0;
+
+	memcpy(id, ILinkID_Data, 8);
+	if (!s_ilink_id_file[0] || !filestream_read_file(s_ilink_id_file, &data, &size))
+	{
+		free(data);
+		return;
+	}
+	/* The ID alone, or an NVRAM dump (as MAME's sets have) with it at
+	 * 0x1e0. */
+	if (size == 8)
+		memcpy(id, data, 8);
+	else if (size == 0x400)
+		memcpy(id, (const u8*)data + 0x1e0, 8);
+	else
+		log_cb(RETRO_LOG_WARN, "i.Link ID file is neither 8 bytes nor an NVRAM dump: %s\n", s_ilink_id_file);
+	free(data);
+}
+
 static void cdvdCreateNewNVM(void)
 {
 	/* Write NVM ILink area with dummy data (Age of Empires 2) */
 	/* Also write language data defaulting to English (Guitar Hero 2) */
 	/* Also write PStwo region defaults */
 
-	static const u8 ILinkID_Data[8] = {0x00, 0xAC, 0xFF, 0xFF, 0xFF, 0xFF, 0xB9, 0x86};
 	static const u8 ILinkID_checksum[2] = {0x00, 0x18};
 	const NVMLayout* nvmLayout = getNvmLayout();
+	u8 ILinkID_Data[8];
 
 	memset(s_nvram, 0, sizeof(s_nvram));
 	if (((BiosVersion >> 8) == 2) && ((BiosVersion & 0xff) != 10)) /* bios >= 200, except of 0x210 for PSX2 DESR */
 		memcpy(&s_nvram[nvmLayout->regparams], PStwoRegionDefaults[BiosRegion], 12);
 
+	cdvdNewILinkID(ILinkID_Data);
 	memcpy(&s_nvram[nvmLayout->ilinkId], ILinkID_Data, sizeof(ILinkID_Data));
 	if (nvmlayouts[1].biosVer <= BiosVersion)
 		memcpy(&s_nvram[nvmLayout->ilinkId + 0x08], ILinkID_checksum, sizeof(ILinkID_checksum));
@@ -185,9 +220,15 @@ static void cdvdCreateNewNVM(void)
 }
 
 
-/* BIOS path with the extension swapped, into a caller buffer. */
+/* BIOS path with the extension swapped, into a caller buffer; for the
+ * NVRAM, the configured file when there is one. */
 static void cdvdBiosSiblingPath(char* out, size_t out_size, const char* ext)
 {
+	if (!strcmp(ext, "nvm") && s_nvram_file[0])
+	{
+		strlcpy(out, s_nvram_file, out_size);
+		return;
+	}
 	strlcpy(out, BiosPath, out_size);
 	path_remove_extension(out);
 	strlcat(out, ".", out_size);

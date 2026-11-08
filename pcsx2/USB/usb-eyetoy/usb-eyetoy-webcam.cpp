@@ -3,6 +3,7 @@
 
 #include "videodev.h"
 #include "usb-eyetoy-webcam.h"
+#include "eyetoy.h"
 #include "ov519.h"
 #include "USB/libretro-usb/USBinternal.h"
 #include "USB/libretro-usb/desc.h"
@@ -406,15 +407,16 @@ namespace usb_eyetoy
 	{
 		EYETOYState* s = USB_CONTAINER_OF(dev, EYETOYState, dev);
 		close_camera(s);
+		usb_desc_device_free(&s->desc_dev);
 		delete s;
 	}
 
-	void eyetoy_freeze(USBDevice* dev, UsbState& st)
+	static void eyetoy_freeze(USBDevice* dev, UsbState* st)
 	{
 		EYETOYState* s = USB_CONTAINER_OF(dev, EYETOYState, dev);
-		st.Bytes(s->regs, sizeof(s->regs));
-		st.Bytes(s->i2c_regs, sizeof(s->i2c_regs));
-		if (st.reading)
+		usb_state_bytes(st, s->regs, sizeof(s->regs));
+		usb_state_bytes(st, s->i2c_regs, sizeof(s->i2c_regs));
+		if (st->reading)
 		{
 			// The frame in flight is not kept: the camera starts afresh on the next request,
 			// with the format and size the registers now hold.
@@ -425,7 +427,7 @@ namespace usb_eyetoy
 		}
 	}
 
-	USBDevice* eyetoy_create(u32 subtype)
+	static USBDevice* eyetoy_create(u32 subtype)
 	{
 		std::unique_ptr<VideoDevice> videodev(VideoDevice::CreateInstance());
 		if (!videodev)
@@ -441,9 +443,9 @@ namespace usb_eyetoy
 
 		if (subtype == TYPE_EYETOY)
 		{
-			if (usb_desc_parse_dev(eyetoy_dev_descriptor, sizeof(eyetoy_dev_descriptor), s->desc, s->desc_dev) < 0)
+			if (usb_desc_parse_dev(eyetoy_dev_descriptor, sizeof(eyetoy_dev_descriptor), &s->desc, &s->desc_dev) < 0)
 				goto fail;
-			if (usb_desc_parse_config(eyetoy_config_descriptor, sizeof(eyetoy_config_descriptor), s->desc_dev) < 0)
+			if (usb_desc_parse_config(eyetoy_config_descriptor, sizeof(eyetoy_config_descriptor), &s->desc_dev) < 0)
 				goto fail;
 			s->dev.klass.handle_control = webcam_handle_control_eyetoy;
 			s->dev.klass.handle_data = webcam_handle_data_eyetoy;
@@ -452,9 +454,9 @@ namespace usb_eyetoy
 		}
 		else if (subtype == TYPE_OV511P)
 		{
-			if (usb_desc_parse_dev(ov511p_dev_descriptor, sizeof(ov511p_dev_descriptor), s->desc, s->desc_dev) < 0)
+			if (usb_desc_parse_dev(ov511p_dev_descriptor, sizeof(ov511p_dev_descriptor), &s->desc, &s->desc_dev) < 0)
 				goto fail;
-			if (usb_desc_parse_config(ov511p_config_descriptor, sizeof(ov511p_config_descriptor), s->desc_dev) < 0)
+			if (usb_desc_parse_config(ov511p_config_descriptor, sizeof(ov511p_config_descriptor), &s->desc_dev) < 0)
 				goto fail;
 			s->dev.klass.handle_control = webcam_handle_control_ov511p;
 			s->dev.klass.handle_data = webcam_handle_data_ov511p;
@@ -484,3 +486,13 @@ namespace usb_eyetoy
 		return nullptr;
 	}
 } // namespace usb_eyetoy
+
+USBDevice* usb_eyetoy_create(int model)
+{
+	return usb_eyetoy::eyetoy_create(model == USB_EYETOY_MODEL_EYETOY ? usb_eyetoy::TYPE_EYETOY : usb_eyetoy::TYPE_OV511P);
+}
+
+void usb_eyetoy_freeze(USBDevice* dev, UsbState* st)
+{
+	usb_eyetoy::eyetoy_freeze(dev, st);
+}

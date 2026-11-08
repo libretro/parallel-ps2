@@ -13,15 +13,17 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cstdlib>
+#include <stdlib.h>
+#include <string.h>
 
 #include "../pcsx2/USB/USB.h"
+#include "../pcsx2/USB/usb-host.h"
 #include "../pcsx2/USB/libretro-usb/USBinternal.h"
 #include "../pcsx2/USB/libretro-usb/usb-hid.h"
-#include "../pcsx2/USB/usb-eyetoy/usb-eyetoy-webcam.h"
+#include "../pcsx2/USB/usb-eyetoy/eyetoy.h"
+#include "../pcsx2/USB/usb-python2/usb-python2.h"
 #include "../pcsx2/USB/libretro-usb/desc.h"
 #include "../pcsx2/USB/libretro-usb/usb-state.h"
-#include "../pcsx2/SaveState.h"
 
 #include "libretro.h"
 
@@ -35,18 +37,17 @@ s64 g_usb_frame_time = 0;
 s64 g_usb_bit_time   = 0;
 s64 g_usb_last_cycle = 0;
 
-static OHCIState* s_qemu_ohci   = nullptr;
+static OHCIState* s_qemu_ohci   = NULL;
 static s64        s_usb_clocks  = 0;
 static s64        s_usb_remaining = 0;
 
-static int        s_port_device[USB::NUM_PORTS] = { USB_DEV_NONE, USB_DEV_NONE };
-static unsigned   s_input_port[USB::NUM_PORTS]  = { 0, 1 };
+static int        s_port_device[USB_NUM_PORTS] = { USB_DEV_NONE, USB_DEV_NONE };
+static unsigned   s_input_port[USB_NUM_PORTS]  = { 0, 1 };
 static int        s_camera      = USB_CAMERA_NONE;
 static int        s_camera_port = -1;
-static USBDevice* s_usb_device[USB::NUM_PORTS]  = { nullptr, nullptr };
+static int        s_python2_port = -1;
+static USBDevice* s_usb_device[USB_NUM_PORTS]  = { NULL, NULL };
 
-/* From PAD.cpp - the libretro input_state callback the frontend installed. */
-extern retro_input_state_t PADGetInputStateCallback(void);
 
 /* Set the device type for a USB port and which frontend controller port it
  * reads input from. Takes effect on the next USBopen()/USBreset(). For most
@@ -54,17 +55,17 @@ extern retro_input_state_t PADGetInputStateCallback(void);
  * USB ports to the same frontend port. */
 void USBSetPortDevice(unsigned port, int device, unsigned input_port)
 {
-	if (port < USB::NUM_PORTS)
+	if (port < USB_NUM_PORTS)
 	{
 		s_port_device[port] = device;
 		s_input_port[port]  = input_port;
 	}
 }
 
-static OHCIPort& GetOHCIPort(u32 port)
+static OHCIPort* GetOHCIPort(u32 port)
 {
 	const u32 rhport = (port < s_qemu_ohci->num_ports) ? port : 0;
-	return s_qemu_ohci->rhport[rhport];
+	return &s_qemu_ohci->rhport[rhport];
 }
 
 void USBSetCamera(int camera)
@@ -74,22 +75,33 @@ void USBSetCamera(int camera)
 
 static void USBAttachDevice(u32 port, USBDevice* dev)
 {
-	GetOHCIPort(port).port.dev = dev;
+	GetOHCIPort(port)->port.dev = dev;
 	dev->attached = true;
-	usb_attach(&GetOHCIPort(port).port);
+	usb_attach(&GetOHCIPort(port)->port);
 	s_usb_device[port] = dev;
 }
 
 static void USBCreateDevice(u32 port)
 {
-	USBDevice* dev = nullptr;
+	USBDevice* dev = NULL;
+	/* A Python 2 game's I/O board is on the first port, whatever the
+	 * port's own setting. */
+	if (port == 0 && usb_python2_has_config())
+	{
+		if ((dev = usb_python2_create()))
+		{
+			USBAttachDevice(port, dev);
+			s_python2_port = 0;
+		}
+		return;
+	}
 	switch (s_port_device[port])
 	{
 		case USB_DEV_KEYBOARD:
-			dev = usb_hid::usb_hid_create_kbd(port);
+			dev = usb_hid_create_kbd(port);
 			break;
 		case USB_DEV_MOUSE:
-			dev = usb_hid::usb_hid_create_mouse(port);
+			dev = usb_hid_create_mouse(port);
 			break;
 		default:
 			return;
@@ -106,15 +118,15 @@ static void USBCreateCamera(void)
 	s_camera_port = -1;
 	if (s_camera == USB_CAMERA_NONE)
 		return;
-	for (port = 0; port < USB::NUM_PORTS && s_usb_device[port]; port++)
+	for (port = 0; port < USB_NUM_PORTS && s_usb_device[port]; port++)
 		;
-	if (port == USB::NUM_PORTS)
+	if (port == USB_NUM_PORTS)
 	{
 		log_cb(RETRO_LOG_WARN, "USB: no free port for the camera\n");
 		return;
 	}
-	dev = usb_eyetoy::eyetoy_create(
-		s_camera == USB_CAMERA_EYETOY ? usb_eyetoy::TYPE_EYETOY : usb_eyetoy::TYPE_OV511P);
+	dev = usb_eyetoy_create(
+		s_camera == USB_CAMERA_EYETOY ? USB_EYETOY_MODEL_EYETOY : USB_EYETOY_MODEL_OV511P);
 	if (!dev)
 		return;
 	USBAttachDevice(port, dev);
@@ -128,8 +140,10 @@ static void USBDestroyDevice(u32 port)
 		return;
 	if (dev->klass.unrealize)
 		dev->klass.unrealize(dev);
-	GetOHCIPort(port).port.dev = nullptr;
-	s_usb_device[port] = nullptr;
+	GetOHCIPort(port)->port.dev = NULL;
+	s_usb_device[port] = NULL;
+	if ((int)port == s_python2_port)
+		s_python2_port = -1;
 }
 
 int usb_get_ticks_per_second(void)
@@ -142,8 +156,6 @@ s64 usb_get_clock(void)
 	return s_usb_clocks;
 }
 
-void USB::CheckForConfigChanges(const Pcsx2Config& old_config) { }
-
 void USBconfigure(void) {}
 
 void USBinit(void) {}
@@ -152,6 +164,7 @@ void USBshutdown(void) {}
 
 bool USBopen(void)
 {
+	u32 port;
 	s_qemu_ohci = ohci_create(0x1f801600, 2);
 	if (!s_qemu_ohci)
 		return false;
@@ -160,7 +173,7 @@ bool USBopen(void)
 	s_usb_remaining  = 0;
 	g_usb_last_cycle = 0;
 
-	for (u32 port = 0; port < USB::NUM_PORTS; port++)
+	for (port = 0; port < USB_NUM_PORTS; port++)
 		USBCreateDevice(port);
 	USBCreateCamera();
 	return true;
@@ -168,12 +181,13 @@ bool USBopen(void)
 
 void USBclose(void)
 {
-	for (u32 port = 0; port < USB::NUM_PORTS; port++)
+	u32 port;
+	for (port = 0; port < USB_NUM_PORTS; port++)
 		USBDestroyDevice(port);
 	if (s_qemu_ohci)
 	{
 		free(s_qemu_ohci);
-		s_qemu_ohci = nullptr;
+		s_qemu_ohci = NULL;
 	}
 }
 
@@ -189,12 +203,12 @@ void USBreset(void)
 
 	/* Reconcile attached devices with the current per-port selection, so a
 	 * device-type change applied while running takes effect on reset. */
-	for (port = 0; port < USB::NUM_PORTS; port++)
+	for (port = 0; port < USB_NUM_PORTS; port++)
 		USBDestroyDevice(port);
 
 	ohci_hard_reset(s_qemu_ohci);
 
-	for (port = 0; port < USB::NUM_PORTS; port++)
+	for (port = 0; port < USB_NUM_PORTS; port++)
 		USBCreateDevice(port);
 	USBCreateCamera();
 }
@@ -209,10 +223,14 @@ void USBasync(u32 cycles)
 	{
 		retro_input_state_t input_cb = PADGetInputStateCallback();
 		u32 port;
-		for (port = 0; port < USB::NUM_PORTS; port++)
+		for (port = 0; port < USB_NUM_PORTS; port++)
 		{
-			if (s_usb_device[port] && (int)port != s_camera_port)
-				usb_hid::usb_hid_update(s_usb_device[port], input_cb, s_input_port[port]);
+			if (!s_usb_device[port] || (int)port == s_camera_port)
+				continue;
+			if ((int)port == s_python2_port)
+				usb_python2_update(s_usb_device[port], input_cb);
+			else
+				usb_hid_update(s_usb_device[port], input_cb, s_input_port[port]);
 		}
 	}
 
@@ -241,14 +259,12 @@ void USBasync(u32 cycles)
 	}
 }
 
-s32 USBfreeze(FreezeAction mode, freezeData* data) { return 0; }
-
 /* The savestate block: the controller, a slot per port, then a footer of
  * size, version and magic. Fixed size, so retro_serialize_size does not
  * change with what is plugged in. */
 #define USB_STATE_OHCI    10240
 #define USB_STATE_SLOT    8192
-#define USB_STATE_SIZE    (USB_STATE_OHCI + USB::NUM_PORTS * USB_STATE_SLOT + 16)
+#define USB_STATE_SIZE    (USB_STATE_OHCI + USB_NUM_PORTS * USB_STATE_SLOT + 16)
 #define USB_STATE_VERSION 1
 #define USB_STATE_MAGIC   "LRPS2USB"
 
@@ -259,6 +275,7 @@ enum UsbStateKind
 	USB_KIND_MOUSE,
 	USB_KIND_EYETOY,
 	USB_KIND_CAPTURE_EYE,
+	USB_KIND_PYTHON2
 };
 
 static u32 USBPortKind(u32 port)
@@ -267,48 +284,50 @@ static u32 USBPortKind(u32 port)
 		return USB_KIND_NONE;
 	if ((int)port == s_camera_port)
 		return s_camera == USB_CAMERA_EYETOY ? USB_KIND_EYETOY : USB_KIND_CAPTURE_EYE;
+	if ((int)port == s_python2_port)
+		return USB_KIND_PYTHON2;
 	return s_port_device[port] == USB_DEV_KEYBOARD ? USB_KIND_KEYBOARD : USB_KIND_MOUSE;
 }
 
-static void USBFreezeOHCI(UsbState& st)
+static void USBFreezeOHCI(UsbState* st)
 {
 	OHCIState* o = s_qemu_ohci;
 	u32 fsmps = o->fsmps, fit = o->fit, fi = o->fi, frt = o->frt;
 	u32 i;
 
-	st.Do(&g_usb_last_cycle);
-	st.Do(&s_usb_clocks);
-	st.Do(&s_usb_remaining);
-	st.Do(&o->eof_timer);
-	st.Do(&o->sof_time);
-	st.Do(&o->ctl);
-	st.Do(&o->status);
-	st.Do(&o->intr_status);
-	st.Do(&o->intr);
-	st.Do(&o->hcca);
-	st.Do(&o->ctrl_head);
-	st.Do(&o->ctrl_cur);
-	st.Do(&o->bulk_head);
-	st.Do(&o->bulk_cur);
-	st.Do(&o->per_cur);
-	st.Do(&o->done);
-	st.Do(&o->done_count);
-	st.Do(&fsmps);
-	st.Do(&fit);
-	st.Do(&fi);
-	st.Do(&frt);
-	st.Do(&o->frame_number);
-	st.Do(&o->pstart);
-	st.Do(&o->lst);
-	st.Do(&o->rhdesc_a);
-	st.Do(&o->rhdesc_b);
+	USB_STATE_DO(st, g_usb_last_cycle);
+	USB_STATE_DO(st, s_usb_clocks);
+	USB_STATE_DO(st, s_usb_remaining);
+	USB_STATE_DO(st, o->eof_timer);
+	USB_STATE_DO(st, o->sof_time);
+	USB_STATE_DO(st, o->ctl);
+	USB_STATE_DO(st, o->status);
+	USB_STATE_DO(st, o->intr_status);
+	USB_STATE_DO(st, o->intr);
+	USB_STATE_DO(st, o->hcca);
+	USB_STATE_DO(st, o->ctrl_head);
+	USB_STATE_DO(st, o->ctrl_cur);
+	USB_STATE_DO(st, o->bulk_head);
+	USB_STATE_DO(st, o->bulk_cur);
+	USB_STATE_DO(st, o->per_cur);
+	USB_STATE_DO(st, o->done);
+	USB_STATE_DO(st, o->done_count);
+	USB_STATE_DO(st, fsmps);
+	USB_STATE_DO(st, fit);
+	USB_STATE_DO(st, fi);
+	USB_STATE_DO(st, frt);
+	USB_STATE_DO(st, o->frame_number);
+	USB_STATE_DO(st, o->pstart);
+	USB_STATE_DO(st, o->lst);
+	USB_STATE_DO(st, o->rhdesc_a);
+	USB_STATE_DO(st, o->rhdesc_b);
 	for (i = 0; i < OHCI_MAX_PORTS; i++)
-		st.Do(&o->rhport[i].ctrl);
-	st.Do(&o->old_ctl);
-	st.Bytes(o->usb_buf, sizeof(o->usb_buf));
-	st.Do(&o->async_td);
-	st.Do(&o->async_complete);
-	if (st.reading)
+		USB_STATE_DO(st, o->rhport[i].ctrl);
+	USB_STATE_DO(st, o->old_ctl);
+	usb_state_bytes(st, o->usb_buf, sizeof(o->usb_buf));
+	USB_STATE_DO(st, o->async_td);
+	USB_STATE_DO(st, o->async_complete);
+	if (st->reading)
 	{
 		o->fsmps = fsmps;
 		o->fit   = fit;
@@ -317,47 +336,47 @@ static void USBFreezeOHCI(UsbState& st)
 	}
 }
 
-static void USBFreezeEndpoint(USBEndpoint* ep, UsbState& st)
+static void USBFreezeEndpoint(USBEndpoint* ep, UsbState* st)
 {
-	st.Do(&ep->pipeline);
-	st.Do(&ep->halted);
-	if (st.reading)
+	USB_STATE_DO(st, ep->pipeline);
+	USB_STATE_DO(st, ep->halted);
+	if (st->reading)
 		while (!QTAILQ_EMPTY(&ep->queue))
 			QTAILQ_REMOVE(&ep->queue, QTAILQ_FIRST(&ep->queue), queue);
 }
 
 /* What every USB device has: address, configuration, endpoints. */
-static void USBFreezeDevice(USBDevice* dev, UsbState& st)
+static void USBFreezeDevice(USBDevice* dev, UsbState* st)
 {
 	int altsetting[USB_MAX_INTERFACES];
 	u32 i;
 
-	st.Do(&dev->speed);
-	st.Do(&dev->addr);
-	st.Do(&dev->state);
-	st.Bytes(dev->setup_buf, sizeof(dev->setup_buf));
-	st.Bytes(dev->data_buf, sizeof(dev->data_buf));
-	st.Do(&dev->remote_wakeup);
-	st.Do(&dev->setup_state);
-	st.Do(&dev->setup_len);
-	st.Do(&dev->setup_index);
-	st.Do(&dev->configuration);
-	if (st.reading && !st.error)
+	USB_STATE_DO(st, dev->speed);
+	USB_STATE_DO(st, dev->addr);
+	USB_STATE_DO(st, dev->state);
+	usb_state_bytes(st, dev->setup_buf, sizeof(dev->setup_buf));
+	usb_state_bytes(st, dev->data_buf, sizeof(dev->data_buf));
+	USB_STATE_DO(st, dev->remote_wakeup);
+	USB_STATE_DO(st, dev->setup_state);
+	USB_STATE_DO(st, dev->setup_len);
+	USB_STATE_DO(st, dev->setup_index);
+	USB_STATE_DO(st, dev->configuration);
+	if (st->reading && !st->error)
 	{
 		/* A configuration the descriptors do not have is a bad slot, not
 		 * a device left on whatever it had before. */
 		const int configuration = dev->configuration;
 		usb_desc_set_config(dev, configuration);
 		if (configuration != 0 && (!dev->config || dev->config->bConfigurationValue != configuration))
-			st.error = true;
+			st->error = true;
 	}
 	memcpy(altsetting, dev->altsetting, sizeof(altsetting));
-	st.Bytes(altsetting, sizeof(altsetting));
-	if (st.reading && !st.error)
+	usb_state_bytes(st, altsetting, sizeof(altsetting));
+	if (st->reading && !st->error)
 		for (i = 0; i < (u32)dev->ninterfaces && i < USB_MAX_INTERFACES; i++)
 		{
 			if (usb_desc_set_interface(dev, i, altsetting[i]) < 0)
-				st.error = true;
+				st->error = true;
 		}
 	USBFreezeEndpoint(&dev->ep_ctl, st);
 	for (i = 0; i < USB_MAX_ENDPOINTS; i++)
@@ -366,15 +385,17 @@ static void USBFreezeDevice(USBDevice* dev, UsbState& st)
 		USBFreezeEndpoint(&dev->ep_out[i], st);
 }
 
-static void USBFreezePort(u32 port, u32 kind, UsbState& st)
+static void USBFreezePort(u32 port, u32 kind, UsbState* st)
 {
 	USBDevice* dev = s_usb_device[port];
 
 	USBFreezeDevice(dev, st);
 	if (kind == USB_KIND_EYETOY || kind == USB_KIND_CAPTURE_EYE)
-		usb_eyetoy::eyetoy_freeze(dev, st);
+		usb_eyetoy_freeze(dev, st);
+	else if (kind == USB_KIND_PYTHON2)
+		usb_python2_freeze(dev, st);
 	else
-		usb_hid::usb_hid_freeze(dev, st);
+		usb_hid_freeze(dev, st);
 }
 
 static const u8* USBStateFind(const void* state, size_t size)
@@ -383,11 +404,11 @@ static const u8* USBStateFind(const void* state, size_t size)
 	u32 block_size, version;
 
 	if (size < USB_STATE_SIZE)
-		return nullptr;
+		return NULL;
 	memcpy(&block_size, end - 16, 4);
 	memcpy(&version, end - 12, 4);
 	if (memcmp(end - 8, USB_STATE_MAGIC, 8) || block_size != USB_STATE_SIZE || version != USB_STATE_VERSION)
-		return nullptr;
+		return NULL;
 	return end - USB_STATE_SIZE;
 }
 
@@ -396,25 +417,36 @@ size_t USBStateSize(void)
 	return USB_STATE_SIZE;
 }
 
+/* A block of size at data, read or written. */
+static void usb_state_init(UsbState* st, u8* data, size_t size, bool reading)
+{
+	st->data    = data;
+	st->size    = size;
+	st->pos     = 0;
+	st->reading = reading;
+	st->error   = false;
+}
+
 void USBStateWrite(void* dst)
 {
 	u8* p = (u8*)dst;
 	const u32 size = USB_STATE_SIZE, version = USB_STATE_VERSION;
-	u32 port;
+	UsbState st, slot;
+	u32 port, kind;
 
 	memset(p, 0, USB_STATE_SIZE);
 	if (!s_qemu_ohci)
 		return;
 
-	UsbState st = { p, USB_STATE_OHCI, 0, false, false };
-	USBFreezeOHCI(st);
-	for (port = 0; port < USB::NUM_PORTS && !st.error; port++)
+	usb_state_init(&st, p, USB_STATE_OHCI, false);
+	USBFreezeOHCI(&st);
+	for (port = 0; port < USB_NUM_PORTS && !st.error; port++)
 	{
-		UsbState slot = { p + USB_STATE_OHCI + port * USB_STATE_SLOT, USB_STATE_SLOT, 0, false, false };
-		u32 kind = USBPortKind(port);
-		slot.Do(&kind);
+		usb_state_init(&slot, p + USB_STATE_OHCI + port * USB_STATE_SLOT, USB_STATE_SLOT, false);
+		kind = USBPortKind(port);
+		USB_STATE_DO(&slot, kind);
 		if (kind != USB_KIND_NONE)
-			USBFreezePort(port, kind, slot);
+			USBFreezePort(port, kind, &slot);
 		st.error = slot.error;
 	}
 	if (st.error)
@@ -439,7 +471,8 @@ size_t USBStateStrip(const void* state, size_t size)
 void USBStateRead(const void* state, size_t size)
 {
 	const u8* p = USBStateFind(state, size);
-	u32 port;
+	UsbState st, slot;
+	u32 port, kind;
 
 	if (!s_qemu_ohci)
 		return;
@@ -449,37 +482,38 @@ void USBStateRead(const void* state, size_t size)
 		return;
 	}
 
-	UsbState st = { const_cast<u8*>(p), USB_STATE_OHCI, 0, true, false };
-	USBFreezeOHCI(st);
+	/* Read only: the cast is for the shared reader/writer. */
+	usb_state_init(&st, (u8*)p, USB_STATE_OHCI, true);
+	USBFreezeOHCI(&st);
 	if (st.error || s_qemu_ohci->async_td)
 	{
 		log_cb(RETRO_LOG_WARN, "USB: state not loaded; devices plugged in afresh\n");
 		USBreset();
 		return;
 	}
-	for (port = 0; port < USB::NUM_PORTS; port++)
+	for (port = 0; port < USB_NUM_PORTS; port++)
 	{
-		UsbState slot = { const_cast<u8*>(p) + USB_STATE_OHCI + port * USB_STATE_SLOT, USB_STATE_SLOT, 0, true, false };
-		u32 kind = USB_KIND_NONE;
-		slot.Do(&kind);
+		usb_state_init(&slot, (u8*)p + USB_STATE_OHCI + port * USB_STATE_SLOT, USB_STATE_SLOT, true);
+		kind = USB_KIND_NONE;
+		USB_STATE_DO(&slot, kind);
 		if (kind != USBPortKind(port))
 		{
 			/* Plugged in afresh: the port cycles and the device model goes
 			 * back to its defaults, as a guest's port reset would do later. */
 			if (s_usb_device[port])
-				usb_port_reset(&GetOHCIPort(port).port);
+				usb_port_reset(&GetOHCIPort(port)->port);
 			continue;
 		}
 		if (kind != USB_KIND_NONE)
 		{
-			USBFreezePort(port, kind, slot);
+			USBFreezePort(port, kind, &slot);
 			/* A slot that ran short, or named a configuration or interface
 			 * the device does not have, leaves the device half loaded:
 			 * plugged in afresh instead. */
 			if (slot.error)
 			{
 				log_cb(RETRO_LOG_WARN, "USB: port %u state not loaded; device plugged in afresh\n", port);
-				usb_port_reset(&GetOHCIPort(port).port);
+				usb_port_reset(&GetOHCIPort(port)->port);
 			}
 		}
 	}
@@ -487,7 +521,7 @@ void USBStateRead(const void* state, size_t size)
 
 USBDevice* USBGetPortDevice(unsigned port)
 {
-	return port < USB::NUM_PORTS ? s_usb_device[port] : nullptr;
+	return port < USB_NUM_PORTS ? s_usb_device[port] : NULL;
 }
 
 u8 USBread8(u32 addr) { return 0; }

@@ -24,7 +24,6 @@
 #include "GS.h"
 #include "CDVD/CDVDcommon.h"
 #include "MemoryCardFile.h"
-#include "USB/USB.h"
 
 #include <file/file_path.h>
 

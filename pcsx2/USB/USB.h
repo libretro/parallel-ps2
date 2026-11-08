@@ -15,87 +15,37 @@
 
 #pragma once
 
-#include <optional>
-#include <string>
-#include <string_view>
-#include <utility>
-#include <vector>
+#include "common/Pcsx2Types.h"
 
-#include "../Config.h"
+#include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-namespace USB
-{
-	enum : u32
-	{
-		NUM_PORTS = 2,
-	};
+#define USB_NUM_PORTS 2
 
-	s32 DeviceTypeNameToIndex(const std::string_view& device);
-	const char* DeviceTypeIndexToName(s32 device);
-
-	std::vector<std::pair<std::string, std::string>> GetDeviceTypes();
-	const char* GetDeviceName(const std::string_view& device);
-	const char* GetDeviceSubtypeName(const std::string_view& device, u32 subtype);
-
-	float GetDeviceBindValue(u32 port, u32 bind_index);
-	void SetDeviceBindValue(u32 port, u32 bind_index, float value);
-
-	/// Called when a new input device is connected.
-	void InputDeviceConnected(const std::string_view& identifier);
-
-	/// Called when an input device is disconnected.
-	void InputDeviceDisconnected(const std::string_view& identifier);
-
-	std::string GetConfigSection(int port);
-
-	/// Returns the configuration key for the specified bind and device type.
-	std::string GetConfigSubKey(const std::string_view& device, const std::string_view& bind_name);
-
-	/// Performs automatic controller mapping with the provided list of generic mappings.
-
-	/// Clears all bindings for a given port.
-
-	/// Identifies any device/subtype changes and recreates devices.
-	void CheckForConfigChanges(const Pcsx2Config& old_config);
-
-	/// Reads a device-specific configuration boolean.
-
-	/// Reads a device-specific configuration integer.
-
-	/// Reads a device-specific configuration floating-point value.
-
-	/// Reads a device-specific configuration string.
-} // namespace USB
-
-// ---------------------------------------------------------------------
-
-/* libretro USB port device selection (driven by core options). */
 enum UsbPortDevice
 {
 	USB_DEV_NONE = 0,
 	USB_DEV_KEYBOARD,
-	USB_DEV_MOUSE,
+	USB_DEV_MOUSE
 };
 
 void USBSetPortDevice(unsigned port, int device, unsigned input_port);
 
-/* A camera on the first USB port no other device claims (core option). */
 enum UsbCamera
 {
 	USB_CAMERA_NONE = 0,
 	USB_CAMERA_EYETOY,
-	USB_CAMERA_CAPTURE_EYE,
+	USB_CAMERA_CAPTURE_EYE
 };
 
 void USBSetCamera(int camera);
 
-/* The device on a port, or NULL; for the harnesses under tests/. */
 struct USBDevice;
-USBDevice* USBGetPortDevice(unsigned port);
+struct USBDevice* USBGetPortDevice(unsigned port);
 
-/* The USB block of a savestate: fixed size, found at the end of the
- * bytes given, so it can sit at the tail of a state with its own footer. */
 size_t USBStateSize(void);
 void USBStateWrite(void* dst);
 size_t USBStateStrip(const void* state, size_t size);
@@ -115,4 +65,6 @@ void USBwrite8(u32 addr, u8 value);
 void USBwrite16(u32 addr, u16 value);
 void USBwrite32(u32 addr, u32 value);
 
-void USBsetRAM(void* mem);
+#ifdef __cplusplus
+}
+#endif

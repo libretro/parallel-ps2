@@ -308,6 +308,51 @@ static void check_dma_bounds(const char* path)
 	ata_free(ata);
 }
 
+/* The drive's SCE security block, as SCE_IDENTIFY_DRIVE answers it: a
+ * Python 2 game's HDD comes with the one it was paired to. */
+static void check_hdd_id(const char* path)
+{
+	static const char* id = "ata_test.hddid";
+	uint8_t data[600];
+	ata_state_t* ata = ata_new();
+	size_t i;
+	FILE* f;
+	int bad = 0;
+
+	if (!ata || ata_open(ata, path, IMAGE_SECTORS) != 0)
+	{
+		fail("hdd id: ata_open", 0, 0);
+		return;
+	}
+	for (i = 0; i < sizeof(data); i++)
+		data[i] = (uint8_t)(i * 3 + 1);
+
+	f = fopen(id, "wb");
+	fwrite(data, 1, 100, f);
+	fclose(f);
+	if (!ata_load_hdd_id(ata, id) || memcmp(ata->sceSec, data, 100))
+		bad = 1;
+	for (i = 100; i < sizeof(ata->sceSec); i++)
+		if (ata->sceSec[i])
+			bad = 1;
+	if (bad)
+		fail("hdd id: a short file is the block's start, zeroes after it", 0, 0);
+
+	f = fopen(id, "wb");
+	fwrite(data, 1, sizeof(data), f);
+	fclose(f);
+	if (!ata_load_hdd_id(ata, id) || memcmp(ata->sceSec, data, sizeof(ata->sceSec)))
+		fail("hdd id: a long file gives its first 512 bytes", 0, 0);
+
+	remove(id);
+	if (ata_load_hdd_id(ata, id) || ata_load_hdd_id(ata, NULL))
+		fail("hdd id: no file reports so", 0, 0);
+	for (i = 0; i < sizeof(ata->sceSec); i++)
+		if (ata->sceSec[i])
+			fail("hdd id: no file leaves no old identity behind", 0, 0);
+	ata_free(ata);
+}
+
 int main(int argc, char** argv)
 {
 	const char* path = "ata_test.img";
@@ -352,6 +397,7 @@ int main(int argc, char** argv)
 	}
 
 	check_dma_bounds(path);
+	check_hdd_id(path);
 	remove(path);
 
 	if (failures)

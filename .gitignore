@@ -297,3 +297,5 @@ tests/ata/*.img
 /tests/hostfs/*.o
 tests/hddimage/hddimage_test
 tests/hddimage/hddimage_test.exe
+tests/p2io/p2io_test
+tests/p2io/p2io_test.exe

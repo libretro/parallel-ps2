@@ -31,7 +31,11 @@
 #include "../pcsx2/CDVD/CDVD_host.h"
 #include "../pcsx2/USB/USB.h"
 #include "../pcsx2/USB/usb-eyetoy/eyetoy-frontend.h"
+#include "../pcsx2/USB/usb-python2/py2desc.h"
+#include "../pcsx2/USB/usb-python2/usb-python2.h"
 #include "../pcsx2/DEV9/ATA/HddCreate.h"
+#include "../pcsx2/DEV9/ATA/HddImage.h"
+#include "../pcsx2/CDVD/CDVDnvram.h"
 #include "../pcsx2/MTVU.h"
 #include "../pcsx2/Counters.h"
 #include "../pcsx2/COP0.h"
@@ -208,6 +212,9 @@ static bool setting_pcrtc_antiblur             = true;
 static bool setting_enable_cheats              = false;
 static bool setting_dev9_hdd                   = false;
 static bool setting_dev9_eth                   = false;
+/* A Konami Python 2 game (.py2) is loaded: its descriptor, not the DEV9
+ * options, says what the HDD and network are. */
+static bool s_python2_content                  = false;
 static u32  setting_dev9_hdd_sectors           = 40u * (1024 * 1024 * 1024 / 512);
 static bool setting_enable_hw_hacks            = false;
 static int setting_sw_renderer_threads         = 2;
@@ -1210,7 +1217,7 @@ static void check_variables(bool first_run)
 	}
 
 	var.key = "pcsx2_dev9_hdd";
-	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+	if (!s_python2_content && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
 	{
 		const bool dev9_hdd_prev = setting_dev9_hdd;
 		setting_dev9_hdd = !strcmp(var.value, "enabled");
@@ -1225,7 +1232,7 @@ static void check_variables(bool first_run)
 	}
 
 	var.key = "pcsx2_dev9_eth";
-	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+	if (!s_python2_content && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
 	{
 		const bool dev9_eth_prev = setting_dev9_eth;
 		setting_dev9_eth = !strcmp(var.value, "enabled");
@@ -1857,7 +1864,7 @@ void retro_get_system_info(retro_system_info* info)
 	/* the version is checked by retroachievements, it should be semver */
 	info->library_version  = "v2.0.0-" GIT_VERSION;
 	info->library_name     = "ParaLLEl PS2";
-	info->valid_extensions = "elf|iso|ciso|cue|gz|chd|cso|zso|m3u";
+	info->valid_extensions = "elf|iso|ciso|cue|gz|chd|cso|zso|m3u|py2";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
 }
@@ -2515,6 +2522,71 @@ static void libretro_teardown_cpu_thread(void)
 	}
 }
 
+/* A Konami Python 2 game: its descriptor names the HDD, the machine's
+ * identity files and the I/O board's dongles and cards. Sets up the board,
+ * the HDD, the NVRAM and the patches; false when the descriptor is not
+ * one. */
+static bool libretro_load_python2(const char* path)
+{
+	py2_desc* d    = (py2_desc*)calloc(1, sizeof(py2_desc));
+	char* dir      = (char*)malloc(PCSX2_PATH_MAX);
+	void* text     = NULL;
+	int64_t len    = 0;
+	p2io_config cfg;
+	unsigned missing;
+	bool ok = false;
+
+	if (!d || !dir)
+		goto done;
+	strlcpy(dir, path, PCSX2_PATH_MAX);
+	path_basedir(dir);
+	if (!filestream_read_file(path, &text, &len) || !py2_parse((const char*)text, (size_t)len, dir, d))
+	{
+		log_cb(RETRO_LOG_ERROR, "Python 2: %s is not a game descriptor with an HddImagePath\n", path);
+		goto done;
+	}
+	if (!path_is_valid(d->hdd_image))
+	{
+		log_cb(RETRO_LOG_ERROR, "Python 2: HDD image not found: %s\n", d->hdd_image);
+		goto done;
+	}
+
+	missing = py2_make_config(d, &cfg);
+	if (missing)
+		log_cb(RETRO_LOG_WARN, "Python 2: dongle or card files could not be read (mask %u)\n", missing);
+	if (d->dongle[0][0] && !cfg.dongle_loaded[0] && !(missing & 1))
+		log_cb(RETRO_LOG_WARN, "Python 2: the black dongle fails its CRC: %s\n", d->dongle[0]);
+	if (d->dongle[1][0] && !cfg.dongle_loaded[1] && !(missing & 2))
+		log_cb(RETRO_LOG_WARN, "Python 2: the white dongle fails its CRC: %s\n", d->dongle[1]);
+	usb_python2_set_config(&cfg);
+
+	s_option_config.DEV9.HddEnable = true;
+	s_option_config.DEV9.HddFile   = d->hdd_image;
+	s_option_config.DEV9.HddIdFile = d->hdd_id;
+	if (hdd_image_kind(d->hdd_image) == HDD_IMAGE_RAW)
+	{
+		/* A raw image is the drive it holds, not the size option's. */
+		const int64_t size = path_get_size(d->hdd_image);
+		if (size > 0)
+			s_option_config.DEV9.HddSizeSectors = (uint)(size / 512);
+	}
+	s_option_config.DEV9.EthEnable = true;
+	s_option_config.DEV9.EthApi    = Pcsx2Config::DEV9Options::NetApi::Sockets;
+	s_option_config.DEV9.EthDevice = "Auto";
+	s_option_config.Gamefixes.OPHFlagHack = true;
+	s_option_config.GS.PCRTCOverscan = true;
+
+	cdvd_set_nvram_files(d->nvram, d->ilink_id);
+	VMManager::SetPython2PatchFile(d->patch);
+	log_cb(RETRO_LOG_INFO, "Python 2: %s, input type %d\n", d->name[0] ? d->name : path, d->input_type);
+	ok = true;
+done:
+	free(text);
+	free(dir);
+	free(d);
+	return ok;
+}
+
 bool retro_load_game(const struct retro_game_info* game)
 {
 	VMBootParameters boot_params;
@@ -2558,9 +2630,24 @@ bool retro_load_game(const struct retro_game_info* game)
 	s_cpu_thread_initialized = true;
 	VMManager::LoadSettings();
 
+	/* Before check_variables, which leaves the DEV9 options alone for a
+	 * Python 2 game. */
+	s_python2_content = game && game->path && !strcmp(path_get_extension(game->path), "py2");
+	usb_python2_clear_config();
+	cdvd_set_nvram_files(NULL, NULL);
+	VMManager::SetPython2PatchFile(NULL);
+	s_option_config.DEV9.HddIdFile.clear();
+
 	check_variables(true);
 	if (s_option_camera != USB_CAMERA_NONE)
 		usb_eyetoy::FrontendLoad(environ_cb);
+
+	if (s_python2_content && !libretro_load_python2(game->path))
+	{
+		s_python2_content = false;
+		libretro_teardown_cpu_thread();
+		return false;
+	}
 
 	if (setting_bios.empty())
 	{
@@ -2571,6 +2658,9 @@ bool retro_load_game(const struct retro_game_info* game)
 
 	Input::Init();
 	s_input_initialized = true;
+	if (s_python2_content)
+		environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS,
+			(void*)usb_python2_input_descriptors(usb_python2_game()));
 
 	if (!libretro_select_hw_render())
 	{
@@ -2683,7 +2773,8 @@ bool retro_load_game(const struct retro_game_info* game)
 	image_index = 0;
 	disk_images.clear();
 
-	if (game && game->path)
+	/* A Python 2 game has no disc: the BIOS boots it from the HDD. */
+	if (game && game->path && !s_python2_content)
 	{
 		std::string game_path = game->path;
 

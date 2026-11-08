@@ -1,13 +1,17 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: GPL-3.0+
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: GPL-3.0+ */
 
 #include "input-keymap.h"
 
-#include <cassert>
-#include <map>
+#include <assert.h>
+#include <stddef.h>
 
-//TODO how much does std::map kill perf if any?
-static const std::map<const QKeyCode, unsigned short> qemu_input_map_qcode_to_qnum = {
+/* Looked up on key events only, a handful a frame at most. */
+static const struct
+{
+	QKeyCode qcode;
+	unsigned short qnum;
+} qemu_input_map_qcode_to_qnum[] = {
 	{Q_KEY_CODE_0, 0xb},                 /* qcode:Q_KEY_CODE_0 (0) -> linux:11 (KEY_0) -> qnum:11 */
 	{Q_KEY_CODE_1, 0x2},                 /* qcode:Q_KEY_CODE_1 (1) -> linux:2 (KEY_1) -> qnum:2 */
 	{Q_KEY_CODE_2, 0x3},                 /* qcode:Q_KEY_CODE_2 (2) -> linux:3 (KEY_2) -> qnum:3 */
@@ -159,10 +163,11 @@ static const std::map<const QKeyCode, unsigned short> qemu_input_map_qcode_to_qn
 
 int qemu_input_qcode_to_number(const QKeyCode value)
 {
-	auto it = qemu_input_map_qcode_to_qnum.find(value);
-	if (it == qemu_input_map_qcode_to_qnum.end())
-		return 0;
-	return it->second;
+	size_t i;
+	for (i = 0; i < sizeof(qemu_input_map_qcode_to_qnum) / sizeof(qemu_input_map_qcode_to_qnum[0]); i++)
+		if (qemu_input_map_qcode_to_qnum[i].qcode == value)
+			return qemu_input_map_qcode_to_qnum[i].qnum;
+	return 0;
 }
 
 int qemu_input_key_value_to_number(const KeyValue* value)

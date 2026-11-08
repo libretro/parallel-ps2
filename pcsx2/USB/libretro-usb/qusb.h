@@ -1,10 +1,20 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: MIT
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: MIT */
 
 #pragma once
 #include "USB/libretro-usb/queue.h"
-#include <cstdint>
-#include <cstddef>
+#include "common/Pcsx2Types.h"
+#include <stddef.h>
+#include <retro_inline.h>
+#include <retro_miscellaneous.h>
+#include <libretro.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The frontend's logger, C linkage, defined in libretro/main.cpp. */
+extern retro_log_printf_t log_cb;
 
 #define USB_TOKEN_SETUP 0x2d
 #define USB_TOKEN_IN 0x69  /* device -> host */
@@ -34,10 +44,10 @@
 
 #define USB_STATE_NOTATTACHED 0
 #define USB_STATE_ATTACHED 1
-//#define USB_STATE_POWERED     2
+/*#define USB_STATE_POWERED     2 */
 #define USB_STATE_DEFAULT 3
-//#define USB_STATE_ADDRESS     4
-//#define	USB_STATE_CONFIGURED  5
+/*#define USB_STATE_ADDRESS     4 */
+/*#define	USB_STATE_CONFIGURED  5 */
 #define USB_STATE_SUSPENDED 6
 
 #define USB_CLASS_RESERVED 0
@@ -70,33 +80,33 @@
 #define USB_RECIP_ENDPOINT 0x02
 #define USB_RECIP_OTHER 0x03
 
-#define DeviceRequest ((USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE) << 8)     //0x8000
-#define DeviceOutRequest ((USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE) << 8) // 0x0000
-#define VendorDeviceRequest ((USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE) << 8) // 0xC000
+#define DeviceRequest ((USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE) << 8)     /*0x8000 */
+#define DeviceOutRequest ((USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE) << 8) /* 0x0000 */
+#define VendorDeviceRequest ((USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE) << 8) /* 0xC000 */
 #define VendorDeviceOutRequest \
-	((USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE) << 8) //0x4000
+	((USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE) << 8) /*0x4000 */
 #define InterfaceRequest \
-	((USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE) << 8) // 0x8100
+	((USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE) << 8) /* 0x8100 */
 #define InterfaceOutRequest \
-	((USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_INTERFACE) << 8)                   //0x0100
-#define EndpointRequest ((USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) << 8) //0x8200
+	((USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_INTERFACE) << 8)                   /*0x0100 */
+#define EndpointRequest ((USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) << 8) /*0x8200 */
 #define EndpointOutRequest \
-	((USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) << 8) //0x0200
+	((USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) << 8) /*0x0200 */
 
 #define ClassInterfaceRequest \
-	((USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8) //0xA100
+	((USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8) /*0xA100 */
 #define ClassInterfaceOutRequest \
-	((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8) //0x2100
+	((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8) /*0x2100 */
 
 #define ClassEndpointRequest \
-	((USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_ENDPOINT) << 8) //0xA200
+	((USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_ENDPOINT) << 8) /*0xA200 */
 #define ClassEndpointOutRequest \
-	((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_ENDPOINT) << 8) //0x2200
+	((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_ENDPOINT) << 8) /*0x2200 */
 
 #define VendorInterfaceRequest \
-	((USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_INTERFACE) << 8) // 0xC100
+	((USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_INTERFACE) << 8) /* 0xC100 */
 #define VendorInterfaceOutRequest \
-	((USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_INTERFACE) << 8) // 0x4100
+	((USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_INTERFACE) << 8) /* 0x4100 */
 
 #define USB_REQ_GET_STATUS 0x00
 #define USB_REQ_CLEAR_FEATURE 0x01
@@ -283,7 +293,7 @@ struct USBEndpoint
 	bool pipeline;
 	bool halted;
 	USBDevice* dev;
-	QTAILQ_HEAD(, USBPacket)
+	QTAILQ_HEAD(USBPacketQueue, USBPacket)
 	queue;
 };
 
@@ -292,7 +302,7 @@ enum USBDeviceFlags
 	USB_DEV_FLAG_FULL_PATH,
 	USB_DEV_FLAG_IS_HOST,
 	USB_DEV_FLAG_MSOS_DESC_ENABLE,
-	USB_DEV_FLAG_MSOS_DESC_IN_USE,
+	USB_DEV_FLAG_MSOS_DESC_IN_USE
 };
 
 typedef void (*USBDeviceRealize)(USBDevice* dev /*, Error **errp*/);
@@ -300,7 +310,7 @@ typedef void (*USBDeviceUnrealize)(USBDevice* dev /*, Error **errp*/);
 
 typedef struct USBDeviceClass
 {
-	//DeviceClass parent_class;
+	/*DeviceClass parent_class; */
 
 	USBDeviceRealize realize;
 	USBDeviceUnrealize unrealize;
@@ -421,7 +431,7 @@ typedef struct USBPortOps
      * This gets called when a device downstream from the device attached to
      * the port (iow attached through a hub) gets detached.
      */
-	//void (*child_detach)(USBPort *port, USBDevice *child);
+	/*void (*child_detach)(USBPort *port, USBDevice *child); */
 	void (*wakeup)(USBPort* port);
 	/*
      * Note that port->dev will be different then the device from which
@@ -438,7 +448,7 @@ struct USBPort
 	USBPortOps* ops;
 	void* opaque;
 	int index; /* internal port index, may be used with the opaque */
-			   //QTAILQ_ENTRY(USBPort) next; /* Used internally by qemu.  */
+			   /* QTAILQ_ENTRY(USBPort) next; used internally by qemu. */
 };
 
 typedef void USBCallback(USBPacket* packet, void* opaque);
@@ -450,7 +460,7 @@ typedef enum USBPacketState
 	USB_PACKET_QUEUED,
 	USB_PACKET_ASYNC,
 	USB_PACKET_COMPLETE,
-	USB_PACKET_CANCELED,
+	USB_PACKET_CANCELED
 } USBPacketState;
 
 /* Structure used to hold information about an active USB packet.  */
@@ -487,7 +497,7 @@ void usb_packet_skip(USBPacket* p, size_t bytes);
 size_t usb_packet_size(USBPacket* p);
 void usb_packet_cleanup(USBPacket* p);
 
-static inline bool usb_packet_is_inflight(USBPacket* p)
+static INLINE bool usb_packet_is_inflight(USBPacket* p)
 {
 	return (p->state == USB_PACKET_QUEUED ||
 			p->state == USB_PACKET_ASYNC);
@@ -495,15 +505,14 @@ static inline bool usb_packet_is_inflight(USBPacket* p)
 
 struct USBBus
 {
-	//BusState qbus;
+	/*BusState qbus; */
 	USBBusOps* ops;
 	int busnr;
 	int nfree;
 	int nused;
-	QTAILQ_HEAD(, USBPort)
+	QTAILQ_HEAD(USBPortQueue, USBPort)
 	free;
-	QTAILQ_HEAD(, USBPort)
-	used;
+	struct USBPortQueue used;
 	QTAILQ_ENTRY(USBBus)
 	next;
 };
@@ -574,3 +583,7 @@ int usb_device_alloc_streams(USBDevice* dev, USBEndpoint** eps, int nr_eps,
 void usb_device_free_streams(USBDevice* dev, USBEndpoint** eps, int nr_eps);
 
 const USBDesc* usb_device_get_usb_desc(USBDevice* dev);
+
+#ifdef __cplusplus
+}
+#endif

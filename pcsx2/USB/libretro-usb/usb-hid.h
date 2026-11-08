@@ -15,21 +15,27 @@
 
 #pragma once
 
+#include "USB/libretro-usb/qusb.h"
 #include "USB/libretro-usb/hid.h"
 #include "USB/libretro-usb/usb-state.h"
 #include "libretro.h"
 
-namespace usb_hid
-{
-	/* Plain factories - no DeviceProxy or config lookup. Build a boot-
-	 * protocol HID keyboard or mouse on the given OHCI port and return the
-	 * USBDevice to attach. */
-	USBDevice* usb_hid_create_kbd(u32 port);
-	USBDevice* usb_hid_create_mouse(u32 port);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-	/* Pump one frame of libretro keyboard/mouse input into the device. */
-	void usb_hid_update(USBDevice* dev, retro_input_state_t input_cb, unsigned port);
+/* Plain factories - no DeviceProxy or config lookup. Build a boot-
+ * protocol HID keyboard or mouse on the given OHCI port and return the
+ * USBDevice to attach. */
+USBDevice* usb_hid_create_kbd(u32 port);
+USBDevice* usb_hid_create_mouse(u32 port);
 
-	/* Saves or loads the device's own state, beyond what every USB device has. */
-	void usb_hid_freeze(USBDevice* dev, UsbState& st);
-} // namespace usb_hid
+/* Pump one frame of libretro keyboard/mouse input into the device. */
+void usb_hid_update(USBDevice* dev, retro_input_state_t input_cb, unsigned port);
+
+/* Saves or loads the device's own state, beyond what every USB device has. */
+void usb_hid_freeze(USBDevice* dev, UsbState* st);
+
+#ifdef __cplusplus
+}
+#endif

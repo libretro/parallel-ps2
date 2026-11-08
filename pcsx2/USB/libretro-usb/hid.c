@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: MIT
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: MIT */
  
 /*
 * QEMU HID devices
@@ -27,13 +27,13 @@
 */
 
 #include "hid.h"
-#include "common/Pcsx2Defs.h"
 #include "input-keymap.h"
 
-#include <algorithm>
-#include <cassert>
-#include <cstdlib>
-#include <cstring>
+#include <assert.h>
+#include <retro_inline.h>
+#include <retro_miscellaneous.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define HID_USAGE_ERROR_ROLLOVER 0x01
 #define HID_USAGE_POSTFAIL 0x02
@@ -322,7 +322,7 @@ static void hid_pointer_event(HIDState* hs, InputEvent* evt)
 	InputBtnEvent* btn;
 
 	assert(hs->n < QUEUE_LENGTH);
-	e = &hs->ptr.queue[(hs->head + hs->n) & QUEUE_MASK];
+	e = &hs->u.ptr.queue[(hs->head + hs->n) & QUEUE_MASK];
 
 	switch (evt->type)
 	{
@@ -390,9 +390,9 @@ static void hid_pointer_sync(HIDState* hs)
 		return;
 	}
 
-	prev = &hs->ptr.queue[(hs->head + hs->n - 1) & QUEUE_MASK];
-	curr = &hs->ptr.queue[(hs->head + hs->n) & QUEUE_MASK];
-	next = &hs->ptr.queue[(hs->head + hs->n + 1) & QUEUE_MASK];
+	prev = &hs->u.ptr.queue[(hs->head + hs->n - 1) & QUEUE_MASK];
+	curr = &hs->u.ptr.queue[(hs->head + hs->n) & QUEUE_MASK];
+	next = &hs->u.ptr.queue[(hs->head + hs->n + 1) & QUEUE_MASK];
 
 	if (hs->n > 0)
 	{
@@ -454,16 +454,17 @@ static void hid_keyboard_event(HIDState* hs, InputEvent* evt)
 	const int count = qemu_input_key_value_to_scancode(&key->key,
 											 key->down,
 											 scancodes);
+	int i;
 	if (hs->n + count > QUEUE_LENGTH)
 	{
-		//trace_hid_kbd_queue_full();
+		/*trace_hid_kbd_queue_full(); */
 		return;
 	}
-	for (int i = 0; i < count; i++)
+	for (i = 0; i < count; i++)
 	{
 		const int slot = (hs->head + hs->n) & QUEUE_MASK;
 		hs->n++;
-		hs->kbd.keycodes[slot] = scancodes[i];
+		hs->u.kbd.keycodes[slot] = scancodes[i];
 	}
 	hs->event(hs);
 }
@@ -480,17 +481,17 @@ static void hid_keyboard_process_keycode(HIDState* hs)
 	slot = hs->head & QUEUE_MASK;
 	QUEUE_INCR(hs->head);
 	hs->n--;
-	keycode = hs->kbd.keycodes[slot];
+	keycode = hs->u.kbd.keycodes[slot];
 
 	if (!hs->n)
 	{
-		//trace_hid_kbd_queue_empty();
+		/*trace_hid_kbd_queue_empty(); */
 	}
 
 	key = keycode & 0x7f;
-	index = key | ((hs->kbd.modifiers & (1 << 8)) >> 1);
+	index = key | ((hs->u.kbd.modifiers & (1 << 8)) >> 1);
 	hid_code = hid_usage_keys[index];
-	hs->kbd.modifiers &= ~(1 << 8);
+	hs->u.kbd.modifiers &= ~(1 << 8);
 
 	switch (hid_code)
 	{
@@ -499,19 +500,19 @@ static void hid_keyboard_process_keycode(HIDState* hs)
 
 		case 0xe0:
 			assert(key == 0x1d);
-			if (hs->kbd.modifiers & (1 << 9))
+			if (hs->u.kbd.modifiers & (1 << 9))
 			{
 				/* The hid_codes for the 0xe1/0x1d scancode sequence are 0xe9/0xe0.
 				* Here we're processing the second hid_code.  By dropping bit 9
 				* and setting bit 8, the scancode after 0x1d will access the
 				* second half of the table.
 				*/
-				hs->kbd.modifiers ^= (1 << 8) | (1 << 9);
+				hs->u.kbd.modifiers ^= (1 << 8) | (1 << 9);
 				return;
 			}
 			/* fall through to process Ctrl_L */
-			//case 0xe1 ... 0xe7:
-			PCSX2_FALLTHROUGH;
+			/*case 0xe1 ... 0xe7: */
+			/* fall through */
 		case 0xe1:
 		case 0xe2:
 		case 0xe3:
@@ -524,19 +525,19 @@ static void hid_keyboard_process_keycode(HIDState* hs)
 			*/
 			if (keycode & (1 << 7))
 			{
-				hs->kbd.modifiers &= ~(1 << (hid_code & 0x0f));
+				hs->u.kbd.modifiers &= ~(1 << (hid_code & 0x0f));
 				return;
 			}
 			/* fall through */
 		case 0xe8:
 		case 0xe9:
 			/* USB modifiers are just 1 byte long.  Bits 8 and 9 of
-			* hs->kbd.modifiers implement a state machine that detects the
+			* hs->u.kbd.modifiers implement a state machine that detects the
 			* 0xe0 and 0xe1/0x1d sequences.  These bits do not follow the
 			* usual rules where bit 7 marks released keys; they are cleared
 			* elsewhere in the function as the state machine dictates.
 			*/
-			hs->kbd.modifiers |= 1 << (hid_code & 0x0f);
+			hs->u.kbd.modifiers |= 1 << (hid_code & 0x0f);
 			return;
 
 		case 0xea:
@@ -554,12 +555,12 @@ static void hid_keyboard_process_keycode(HIDState* hs)
 
 	if (keycode & (1 << 7))
 	{
-		for (i = hs->kbd.keys - 1; i >= 0; i--)
+		for (i = hs->u.kbd.keys - 1; i >= 0; i--)
 		{
-			if (hs->kbd.key[i] == hid_code)
+			if (hs->u.kbd.key[i] == hid_code)
 			{
-				hs->kbd.key[i] = hs->kbd.key[--hs->kbd.keys];
-				hs->kbd.key[hs->kbd.keys] = 0x00;
+				hs->u.kbd.key[i] = hs->u.kbd.key[--hs->u.kbd.keys];
+				hs->u.kbd.key[hs->u.kbd.keys] = 0x00;
 				break;
 			}
 		}
@@ -570,18 +571,18 @@ static void hid_keyboard_process_keycode(HIDState* hs)
 	}
 	else
 	{
-		for (i = hs->kbd.keys - 1; i >= 0; i--)
+		for (i = hs->u.kbd.keys - 1; i >= 0; i--)
 		{
-			if (hs->kbd.key[i] == hid_code)
+			if (hs->u.kbd.key[i] == hid_code)
 			{
 				break;
 			}
 		}
 		if (i < 0)
 		{
-			if (hs->kbd.keys < (int32_t)sizeof(hs->kbd.key))
+			if (hs->u.kbd.keys < (int32_t)sizeof(hs->u.kbd.key))
 			{
-				hs->kbd.key[hs->kbd.keys++] = hid_code;
+				hs->u.kbd.key[hs->u.kbd.keys++] = hid_code;
 			}
 		}
 		else
@@ -591,7 +592,7 @@ static void hid_keyboard_process_keycode(HIDState* hs)
 	}
 }
 
-static inline int int_clamp(int val, int vmin, int vmax)
+static INLINE int int_clamp(int val, int vmin, int vmax)
 {
 	if (val < vmin)
 	{
@@ -609,9 +610,9 @@ static inline int int_clamp(int val, int vmin, int vmax)
 
 void hid_pointer_activate(HIDState* hs)
 {
-	if (!hs->ptr.mouse_grabbed)
+	if (!hs->u.ptr.mouse_grabbed)
 	{
-		hs->ptr.mouse_grabbed = 1;
+		hs->u.ptr.mouse_grabbed = 1;
 	}
 }
 
@@ -626,7 +627,7 @@ int hid_pointer_poll(HIDState* hs, uint8_t* buf, int len)
 	/* When the buffer is empty, return the last event.  Relative
     movements will all be zero.  */
 	index = (hs->n ? hs->head : hs->head - 1);
-	e = &hs->ptr.queue[index & QUEUE_MASK];
+	e = &hs->u.ptr.queue[index & QUEUE_MASK];
 
 	if (hs->kind == HID_MOUSE)
 	{
@@ -719,18 +720,18 @@ int hid_keyboard_poll(HIDState* hs, uint8_t* buf, int len)
 
 	hid_keyboard_process_keycode(hs);
 
-	buf[0] = hs->kbd.modifiers & 0xff;
+	buf[0] = hs->u.kbd.modifiers & 0xff;
 	buf[1] = 0;
-	if (hs->kbd.keys > 6)
+	if (hs->u.kbd.keys > 6)
 	{
-		memset(buf + 2, HID_USAGE_ERROR_ROLLOVER, std::min(8, len) - 2);
+		memset(buf + 2, HID_USAGE_ERROR_ROLLOVER, MIN(8, len) - 2);
 	}
 	else
 	{
-		memcpy(buf + 2, hs->kbd.key, std::min(8, len) - 2);
+		memcpy(buf + 2, hs->u.kbd.key, MIN(8, len) - 2);
 	}
 
-	return std::min(8, len);
+	return MIN(8, len);
 }
 
 int hid_keyboard_write(HIDState* hs, uint8_t* buf, int len)
@@ -744,20 +745,20 @@ int hid_keyboard_write(HIDState* hs, uint8_t* buf, int len)
         * 0x04: Scroll Lock LED
         * 0x08: Compose LED
         * 0x10: Kana LED */
-		hs->kbd.leds = buf[0];
-		if (hs->kbd.leds & 0x04)
+		hs->u.kbd.leds = buf[0];
+		if (hs->u.kbd.leds & 0x04)
 		{
 			ledstate |= QEMU_SCROLL_LOCK_LED;
 		}
-		if (hs->kbd.leds & 0x01)
+		if (hs->u.kbd.leds & 0x01)
 		{
 			ledstate |= QEMU_NUM_LOCK_LED;
 		}
-		if (hs->kbd.leds & 0x02)
+		if (hs->u.kbd.leds & 0x02)
 		{
 			ledstate |= QEMU_CAPS_LOCK_LED;
 		}
-		//kbd_put_ledstate(ledstate);
+		/*kbd_put_ledstate(ledstate); */
 	}
 #endif
 	return 0;
@@ -768,14 +769,14 @@ void hid_reset(HIDState* hs)
 	switch (hs->kind)
 	{
 		case HID_KEYBOARD:
-			memset(hs->kbd.keycodes, 0, sizeof(hs->kbd.keycodes));
-			memset(hs->kbd.key, 0, sizeof(hs->kbd.key));
-			hs->kbd.keys = 0;
-			hs->kbd.modifiers = 0;
+			memset(hs->u.kbd.keycodes, 0, sizeof(hs->u.kbd.keycodes));
+			memset(hs->u.kbd.key, 0, sizeof(hs->u.kbd.key));
+			hs->u.kbd.keys = 0;
+			hs->u.kbd.modifiers = 0;
 			break;
 		case HID_MOUSE:
 		case HID_TABLET:
-			memset(hs->ptr.queue, 0, sizeof(hs->ptr.queue));
+			memset(hs->u.ptr.queue, 0, sizeof(hs->u.ptr.queue));
 			break;
 	}
 	hs->head = 0;
@@ -795,11 +796,11 @@ void hid_init(HIDState* hs, int kind, HIDEventFunc event)
 
 	if (hs->kind == HID_KEYBOARD)
 	{
-		hs->kbd.eh_entry = hid_keyboard_event;
+		hs->u.kbd.eh_entry = hid_keyboard_event;
 	}
 	else if (hs->kind == HID_MOUSE || hs->kind == HID_TABLET)
 	{
-		hs->ptr.eh_entry = hid_pointer_event;
-		hs->ptr.eh_sync = hid_pointer_sync;
+		hs->u.ptr.eh_entry = hid_pointer_event;
+		hs->u.ptr.eh_sync = hid_pointer_sync;
 	}
 }

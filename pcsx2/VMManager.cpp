@@ -14,6 +14,7 @@
  */
 
 #include <compat/strl.h>
+#include <streams/file_stream.h>
 #include "FormatString.h"
 #include "common/Pcsx2Defs.h"
 #include <retro_atomic.h>
@@ -361,6 +362,36 @@ void VMManager::RefreshRunningGameAfterStateLoad()
 
 bool VMManager::UpdateGameSettingsLayer(void) { return true; }
 
+/* SetPython2PatchFile; static, as a path is too large for a frame. */
+static char s_python2_patch_file[PCSX2_PATH_MAX];
+
+void VMManager::SetPython2PatchFile(const char* path)
+{
+	strlcpy(s_python2_patch_file, path ? path : "", sizeof(s_python2_patch_file));
+}
+
+/* The Python 2 game's pnach; returns how many patches it held. */
+static int LoadPython2Patches(void)
+{
+	void* data   = NULL;
+	int64_t size = 0;
+	int count    = 0;
+	char* text;
+
+	if (!filestream_read_file(s_python2_patch_file, &data, &size) || size < 0)
+	{
+		log_cb(RETRO_LOG_ERROR, "Python 2 patch file could not be read: %s\n", s_python2_patch_file);
+		free(data);
+		return 0;
+	}
+	/* filestream_read_file terminates what it reads. */
+	text = (char*)data;
+	count = LoadPatchesFromString(text);
+	free(data);
+	log_cb(RETRO_LOG_INFO, "Python 2 patches loaded: %d\n", count);
+	return count;
+}
+
 void VMManager::LoadPatches(const std::string& serial, u32 crc)
 {
 	std::string message;
@@ -372,7 +403,9 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 	s_active_no_interlacing_patches = 0;
 	ForgetLoadedPatches();
 
-	if (EmuConfig.EnablePatches)
+	if (s_python2_patch_file[0])
+		patch_count = LoadPython2Patches();
+	else if (EmuConfig.EnablePatches)
 	{
 		const GameDatabaseEntry* game = GameDatabase_FindGame(serial.c_str());
 		if (game)
@@ -1181,7 +1214,6 @@ void VMManager::CheckForConfigChanges(const Pcsx2Config& old_config)
 		CheckForPatchConfigChanges(old_config);
 		CheckForDEV9ConfigChanges(old_config);
 		CheckForMemoryCardConfigChanges(old_config);
-		USB::CheckForConfigChanges(old_config);
 
 		if (EmuConfig.EnableCheats != old_config.EnableCheats ||
 			EmuConfig.EnableWideScreenPatches != old_config.EnableWideScreenPatches ||

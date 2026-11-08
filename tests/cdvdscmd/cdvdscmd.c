@@ -105,6 +105,98 @@ static void test_nvram(const char* dir)
 	}
 }
 
+static void put(const char* path, const void* data, size_t n)
+{
+	FILE* f = fopen(path, "wb");
+	if (f)
+	{
+		fwrite(data, 1, n, f);
+		fclose(f);
+	}
+}
+
+static int same_file(const char* path, const void* data, size_t n)
+{
+	static u8 buf[2048];
+	FILE* f = fopen(path, "rb");
+	size_t got;
+	if (!f)
+		return 0;
+	got = fread(buf, 1, sizeof(buf), f);
+	fclose(f);
+	return got == n && !memcmp(buf, data, n);
+}
+
+static void expect(int ok, const char* what)
+{
+	if (!ok)
+	{
+		printf("  FAIL %s\n", what);
+		failures++;
+	}
+}
+
+/* A Python 2 game brings its machine's NVRAM, and an i.Link ID for one
+ * made afresh: cdvd_set_nvram_files. */
+static void test_nvram_files(const char* dir)
+{
+	static u8 game[sizeof(s_nvram)], bios[sizeof(s_nvram)], dump[0x400];
+	static const u8 id8[8] = {0x08, 0x00, 0x46, 0x01, 0xaa, 0xbb, 0xcc, 0xdd};
+	char game_nvm[PCSX2_PATH_MAX], bios_nvm[PCSX2_PATH_MAX], idfile[PCSX2_PATH_MAX], none[PCSX2_PATH_MAX];
+	const NVMLayout* l;
+	size_t i;
+
+	BiosVersion  = 0x0220;
+	BiosIsArcade = false;
+	l = getNvmLayout();
+	for (i = 0; i < sizeof(game); i++)
+	{
+		game[i] = (u8)(i * 13 + 1);
+		bios[i] = (u8)(i * 5 + 2);
+	}
+	/* Language and region present, so neither is taken for blank. */
+	memcpy(game + l->config1 + 0x10, biosLangDefaults[BiosRegion], 16);
+	memcpy(game + l->regparams, PStwoRegionDefaults[BiosRegion], 12);
+	memcpy(bios + l->config1 + 0x10, biosLangDefaults[BiosRegion], 16);
+	memcpy(bios + l->regparams, PStwoRegionDefaults[BiosRegion], 12);
+
+	snprintf(BiosPath, PCSX2_PATH_MAX, "%s/bios.bin", dir);
+	snprintf(bios_nvm, sizeof(bios_nvm), "%s/bios.nvm", dir);
+	snprintf(game_nvm, sizeof(game_nvm), "%s/game.nvm", dir);
+	snprintf(idfile, sizeof(idfile), "%s/ilink.bin", dir);
+	snprintf(none, sizeof(none), "%s/none.nvm", dir);
+	put(bios_nvm, bios, sizeof(bios));
+	put(game_nvm, game, sizeof(game));
+
+	cdvd_set_nvram_files(game_nvm, NULL);
+	cdvdLoadNVRAM();
+	expect(!memcmp(s_nvram, game, sizeof(game)), "the game's NVRAM is loaded, not the BIOS's");
+	s_nvram[0x123] ^= 0xff;
+	cdvdSaveNVRAM();
+	game[0x123] ^= 0xff;
+	expect(same_file(game_nvm, game, sizeof(game)), "and saved back to the game's file");
+	expect(same_file(bios_nvm, bios, sizeof(bios)), "the BIOS's NVRAM is left alone");
+
+	/* No NVRAM yet: made afresh with the i.Link ID file's ID. */
+	put(idfile, id8, 8);
+	cdvd_set_nvram_files(none, idfile);
+	cdvdLoadNVRAM();
+	expect(!memcmp(s_nvram + l->ilinkId, id8, 8), "a new NVRAM takes an 8-byte i.Link ID file's ID");
+	for (i = 0; i < sizeof(dump); i++)
+		dump[i] = (u8)i;
+	put(idfile, dump, sizeof(dump));
+	cdvdLoadNVRAM();
+	expect(!memcmp(s_nvram + l->ilinkId, dump + 0x1e0, 8), "or a 1 KiB NVRAM dump's, from 0x1e0");
+	put(idfile, id8, 7);
+	cdvdLoadNVRAM();
+	expect(s_nvram[l->ilinkId + 1] == 0xAC, "a file of another size: the dummy ID");
+
+	cdvd_set_nvram_files(NULL, NULL);
+	cdvdLoadNVRAM();
+	expect(!memcmp(s_nvram, bios, sizeof(bios)), "cleared, the BIOS's NVRAM is back");
+	remove(none);
+}
+
 int main(int argc, char** argv)
 {
 	static const u8 id[8] = {0x08, 0x00, 0x46, 0x01, 0x23, 0x45, 0x67, 0x89};
@@ -142,12 +234,14 @@ int main(int argc, char** argv)
 	}
 
 	test_nvram(argc > 1 ? argv[1] : ".");
+	test_nvram_files(argc > 1 ? argv[1] : ".");
 
 	if (failures)
 	{
 		printf("cdvdscmd: %d failure(s)\n", failures);
 		return 1;
 	}
-	printf("cdvdscmd: the iLink ID written is the one read back; NVRAM loads as the BIOS needs\n");
+	printf("cdvdscmd: the iLink ID written is the one read back; NVRAM loads as the BIOS needs,\n"
+		"  from the game's own file when it brings one\n");
 	return 0;
 }

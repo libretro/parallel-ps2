@@ -160,6 +160,23 @@ int ata_open(ata_state_t* ata, const char* hddPath, uint64_t size_sectors)
 	return 0;
 }
 
+bool ata_load_hdd_id(ata_state_t* ata, const char* path)
+{
+	void* data   = NULL;
+	int64_t size = 0;
+
+	memset(ata->sceSec, 0, sizeof(ata->sceSec));
+	if (!path || !path[0] || !path_is_valid(path)
+		|| !filestream_read_file(path, &data, &size) || size <= 0)
+	{
+		free(data);
+		return false;
+	}
+	memcpy(ata->sceSec, data, (size_t)size < sizeof(ata->sceSec) ? (size_t)size : sizeof(ata->sceSec));
+	free(data);
+	return true;
+}
+
 static void ata_init_sparse_support(ata_state_t* ata)
 {
 	int64_t granularity;

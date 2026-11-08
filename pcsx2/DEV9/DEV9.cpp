@@ -199,6 +199,29 @@ void DEV9shutdown()
 	dev9.ata = nullptr;
 }
 
+/* ata_open, then the drive's identity: the configured file, or one beside
+ * the image with the extension .hddid. */
+static int dev9_ata_open(const std::string& hddPath)
+{
+	if (ata_open(dev9.ata, hddPath.c_str(), EmuConfig.DEV9.HddSizeSectors) != 0)
+		return -1;
+	if (!EmuConfig.DEV9.HddIdFile.empty())
+		ata_load_hdd_id(dev9.ata, EmuConfig.DEV9.HddIdFile.c_str());
+	else
+	{
+		char* id = (char*)malloc(hddPath.size() + 8);
+		if (id)
+		{
+			strcpy(id, hddPath.c_str());
+			path_remove_extension(id);
+			strcat(id, ".hddid");
+		}
+		ata_load_hdd_id(dev9.ata, id);
+		free(id);
+	}
+	return 0;
+}
+
 s32 DEV9open()
 {
 	log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9open\n");
@@ -208,7 +231,7 @@ s32 DEV9open()
 
 	if (EmuConfig.DEV9.HddEnable)
 	{
-		if (ata_open(dev9.ata, hddPath.c_str(), EmuConfig.DEV9.HddSizeSectors) != 0)
+		if (dev9_ata_open(hddPath) != 0)
 			EmuConfig.DEV9.HddEnable = false;
 	}
 
@@ -1090,14 +1113,15 @@ void DEV9CheckChanges(const Pcsx2Config& old_config)
 			//ATA::Open/Close dosn't set any regs
 			//So we can close/open to apply settings
 			if (EmuConfig.DEV9.HddFile != old_config.DEV9.HddFile ||
+				EmuConfig.DEV9.HddIdFile != old_config.DEV9.HddIdFile ||
 				EmuConfig.DEV9.HddSizeSectors != old_config.DEV9.HddSizeSectors)
 			{
 				ata_close(dev9.ata);
-				if (ata_open(dev9.ata, hddPath.c_str(), EmuConfig.DEV9.HddSizeSectors) != 0)
+				if (dev9_ata_open(hddPath) != 0)
 					EmuConfig.DEV9.HddEnable = false;
 			}
 		}
-		else if (ata_open(dev9.ata, hddPath.c_str(), EmuConfig.DEV9.HddSizeSectors) != 0)
+		else if (dev9_ata_open(hddPath) != 0)
 			EmuConfig.DEV9.HddEnable = false;
 	}
 	else if (old_config.DEV9.HddEnable)

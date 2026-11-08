@@ -288,6 +288,11 @@ void ata_free(ata_state_t* ata);
 int ata_open(ata_state_t* ata, const char* hddPath, uint64_t size_sectors);
 void ata_close(ata_state_t* ata);
 
+/* The drive's SCE security block, what SCE_IDENTIFY_DRIVE returns: the
+ * first 512 bytes of the file at path, zero-padded, or all zeroes when
+ * path is NULL or cannot be read. Returns whether the file was read. */
+bool ata_load_hdd_id(ata_state_t* ata, const char* path);
+
 void ata_hard_reset(ata_state_t* ata);
 
 /* addr is the offset within the ATA register window (ATA_R_*). */

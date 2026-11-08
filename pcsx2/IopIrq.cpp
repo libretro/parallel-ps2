@@ -14,7 +14,7 @@
  */
 
 #include "DEV9/DEV9.h"
-#include "USB/USB.h"
+#include "USB/usb-host.h"
 #include "IopHw.h"
 #include "IopDma.h"
 #include "Common.h"

@@ -11,6 +11,13 @@ extern "C" {
 extern void cdvdLoadNVRAM(void);
 extern void cdvdSaveNVRAM(void);
 
+/* Where the NVRAM lives and what a new one's i.Link ID is, for content
+ * that brings its own (a Konami Python 2 game's machine). nvram replaces
+ * the BIOS's .nvm beside it, loaded and saved; ilink_id is an 8-byte ID
+ * or a 1 KiB NVRAM dump to take it from, used when the NVRAM is made
+ * afresh. NULL or empty puts each back to the default. */
+extern void cdvd_set_nvram_files(const char *nvram, const char *ilink_id);
+
 #define CDVD_NVRAM_STORE_MAX 1024
 
 /* Writes the size bytes at data to path, unless path already holds

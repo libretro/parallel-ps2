@@ -39,9 +39,9 @@ typedef unsigned char bool;
 #include <stdint.h>
 #endif
 
-// --------------------------------------------------------------------------------------
-//  Basic Atomic Types
-// --------------------------------------------------------------------------------------
+/* -------------------------------------------------------------------------------------- */
+/*  Basic Atomic Types */
+/* -------------------------------------------------------------------------------------- */
 typedef int8_t s8;
 typedef int16_t s16;
 typedef int32_t s32;
@@ -57,21 +57,24 @@ typedef intptr_t sptr;
 
 typedef unsigned int uint;
 
-// --------------------------------------------------------------------------------------
-//  u128 / s128 - A rough-and-ready cross platform 128-bit datatype, Non-SSE style.
-// --------------------------------------------------------------------------------------
-// Note: These structs don't provide any additional constructors because C++ doesn't allow
-// the use of datatypes with constructors in unions (and since unions aren't the primary
-// uses of these types, that means we can't have constructors). Embedded functions for
-// performing explicit conversion from 64 and 32 bit values are provided instead.
-//
+/* -------------------------------------------------------------------------------------- */
+/*  u128 / s128 - A rough-and-ready cross platform 128-bit datatype, Non-SSE style. */
+/* -------------------------------------------------------------------------------------- */
+/* Note: These structs don't provide any additional constructors because C++ doesn't allow */
+/* the use of datatypes with constructors in unions (and since unions aren't the primary */
+/* uses of these types, that means we can't have constructors). Embedded functions for */
+/* performing explicit conversion from 64 and 32 bit values are provided instead. */
 typedef union u128
 {
+	/* Unnamed members are an extension to C90; strict ISO C goes without
+	 * this view, the size and layout are the same. */
+#if defined(__cplusplus) || !defined(__STRICT_ANSI__) || defined(_MSC_VER)
 	struct
 	{
 		u64 lo;
 		u64 hi;
 	};
+#endif
 
 	u64 _u64[2];
 	u32 _u32[4];

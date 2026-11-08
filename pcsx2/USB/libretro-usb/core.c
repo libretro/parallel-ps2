@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: MIT
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: MIT */
 
 /*
  * QEMU USB emulation
@@ -28,27 +28,23 @@
  */
 
 #include "USB/libretro-usb/qusb.h"
-#include "common/Pcsx2Defs.h"
-
-
-#include <cassert>
-#include <climits>
-#include <cstdlib>
-#include <cstring>
-#include <iterator>
-#include <utility>
+#include <assert.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
 
 void usb_pick_speed(USBPort* port)
 {
 	static const int speeds[] = {
-		//USB_SPEED_SUPER,
-		//USB_SPEED_HIGH,
+		/*USB_SPEED_SUPER, */
+		/*USB_SPEED_HIGH, */
 		USB_SPEED_FULL,
 		USB_SPEED_LOW,
 	};
 	USBDevice* udev = port->dev;
+	u32 i;
 
-	for (u32 i = 0; i < C89_ARRAY_SIZE(speeds); i++)
+	for (i = 0; i < ARRAY_SIZE(speeds); i++)
 	{
 		if ((udev->speedmask & (1 << speeds[i])) &&
 			(port->speedmask & (1 << speeds[i])))
@@ -63,7 +59,7 @@ void usb_attach(USBPort* port)
 {
 	USBDevice* dev = port->dev;
 
-	assert(dev != nullptr);
+	assert(dev != NULL);
 	assert(dev->attached);
 	assert(dev->state == USB_STATE_NOTATTACHED);
 	usb_pick_speed(port);
@@ -76,7 +72,7 @@ void usb_detach(USBPort* port)
 {
 	USBDevice* dev = port->dev;
 
-	assert(dev != nullptr);
+	assert(dev != NULL);
 	assert(dev->state != USB_STATE_NOTATTACHED);
 	port->ops->detach(port);
 	dev->state = USB_STATE_NOTATTACHED;
@@ -92,7 +88,7 @@ void usb_port_reset(USBPort* port)
 {
 	USBDevice* dev = port->dev;
 
-	assert(dev != nullptr);
+	assert(dev != NULL);
 	usb_detach(port);
 	usb_attach(port);
 	usb_device_reset(dev);
@@ -100,7 +96,7 @@ void usb_port_reset(USBPort* port)
 
 void usb_device_reset(USBDevice* dev)
 {
-	if (dev == nullptr || !dev->attached)
+	if (dev == NULL || !dev->attached)
 	{
 		return;
 	}
@@ -113,7 +109,7 @@ void usb_device_reset(USBDevice* dev)
 void usb_wakeup(USBEndpoint* ep, unsigned int stream)
 {
 	USBDevice* dev = ep->dev;
-	USBBus* bus = dev->bus; //usb_bus_from_device(dev);
+	USBBus* bus = dev->bus; /*usb_bus_from_device(dev); */
 
 	if (dev->remote_wakeup && dev->port && dev->port->ops->wakeup)
 	{
@@ -154,8 +150,8 @@ static void do_token_setup(USBDevice* s, USBPacket* p)
 	s->setup_len = (s->setup_buf[7] << 8) | s->setup_buf[6];
 	if (s->setup_len > (int32_t)sizeof(s->data_buf))
 	{
-		log_cb(RETRO_LOG_WARN, "usb_generic_handle_packet: ctrl buffer too small (%d > %zu)\n\n",
-				s->setup_len, sizeof(s->data_buf));
+		log_cb(RETRO_LOG_WARN, "usb_generic_handle_packet: ctrl buffer too small (%d > %lu)\n\n",
+				s->setup_len, (unsigned long)sizeof(s->data_buf));
 		p->status = USB_RET_STALL;
 		return;
 	}
@@ -307,8 +303,8 @@ static void do_parameter(USBDevice* s, USBPacket* p)
 
 	if (s->setup_len > (int32_t)sizeof(s->data_buf))
 	{
-		log_cb(RETRO_LOG_WARN, "usb_generic_handle_packet: ctrl buffer too small (%d > %zu)\n\n",
-				s->setup_len, sizeof(s->data_buf));
+		log_cb(RETRO_LOG_WARN, "usb_generic_handle_packet: ctrl buffer too small (%d > %lu)\n\n",
+				s->setup_len, (unsigned long)sizeof(s->data_buf));
 		p->status = USB_RET_STALL;
 		return;
 	}
@@ -385,9 +381,9 @@ USBDevice* usb_find_device(USBPort* port, u8 addr)
 {
 	USBDevice* dev = port->dev;
 
-	if (dev == nullptr || !dev->attached || dev->state != USB_STATE_DEFAULT)
+	if (dev == NULL || !dev->attached || dev->state != USB_STATE_DEFAULT)
 	{
-		return nullptr;
+		return NULL;
 	}
 	if (dev->addr == addr)
 	{
@@ -449,7 +445,7 @@ static void usb_queue_one(USBPacket* p)
    driver will call usb_packet_complete() when done processing it. */
 void usb_handle_packet(USBDevice* dev, USBPacket* p)
 {
-	if (dev == nullptr)
+	if (dev == NULL)
 	{
 		p->status = USB_RET_NODEV;
 		return;
@@ -457,7 +453,7 @@ void usb_handle_packet(USBDevice* dev, USBPacket* p)
 	assert(dev == p->ep->dev);
 	assert(dev->state == USB_STATE_DEFAULT);
 	usb_packet_check_state(p, USB_PACKET_SETUP);
-	assert(p->ep != nullptr);
+	assert(p->ep != NULL);
 
 	/* Submitting a new packet clears halt */
 	if (p->ep->halted)
@@ -571,7 +567,7 @@ void usb_cancel_packet(USBPacket* p)
 }
 
 #if 0
-// Unused
+/* Unused */
 static const char* usb_packet_state_name(USBPacketState state)
 {
 	static const char* name[] = {
@@ -582,7 +578,7 @@ static const char* usb_packet_state_name(USBPacketState state)
 		/*[USB_PACKET_COMPLETE]  =*/"complete",
 		/*[USB_PACKET_CANCELED]  =*/"canceled",
 	};
-	if (static_cast<u32>(state) < C89_ARRAY_SIZE(name))
+	if (((u32)(state)) < ARRAY_SIZE(name))
 	{
 		return name[state];
 	}
@@ -596,9 +592,9 @@ void usb_packet_check_state(USBPacket* p, USBPacketState expected)
 	{
 		return;
 	}
-	//trace_usb_packet_state_fault(bus->busnr, dev->port->path, p->ep->nr, p,
-	//                             usb_packet_state_name(p->state),
-	//                             usb_packet_state_name(expected));
+	/*trace_usb_packet_state_fault(bus->busnr, dev->port->path, p->ep->nr, p, */
+	/*                             usb_packet_state_name(p->state), */
+	/*                             usb_packet_state_name(expected)); */
 	assert(!"usb packet state check failed");
 }
 
@@ -632,7 +628,7 @@ void usb_packet_setup(USBPacket* p, int pid,
 	p->parameter = 0;
 	p->short_not_ok = short_not_ok;
 	p->int_req = int_req;
-	p->buffer_ptr = nullptr;
+	p->buffer_ptr = NULL;
 	p->buffer_size = 0;
 	usb_packet_set_state(p, USB_PACKET_SETUP);
 }
@@ -640,8 +636,8 @@ void usb_packet_setup(USBPacket* p, int pid,
 void usb_packet_addbuf(USBPacket* p, void* ptr, size_t len)
 {
 	assert(!p->buffer_ptr);
-	p->buffer_ptr = static_cast<u8*>(ptr);
-	p->buffer_size = static_cast<unsigned int>(len);
+	p->buffer_ptr = ((u8*)(ptr));
+	p->buffer_size = ((unsigned int)(len));
 }
 
 void usb_packet_copy(USBPacket* p, void* ptr, size_t bytes)
@@ -659,7 +655,7 @@ void usb_packet_copy(USBPacket* p, void* ptr, size_t bytes)
 			memcpy(p->buffer_ptr, ptr, bytes);
 			break;
 		default:
-			log_cb(RETRO_LOG_WARN, "%s: invalid pid: %x\n\n", __func__, p->pid);
+			log_cb(RETRO_LOG_WARN, "usb_packet_copy: invalid pid: %x\n\n", p->pid);
 			abort();
 	}
 	p->actual_length += bytes;
@@ -685,7 +681,7 @@ size_t usb_packet_size(USBPacket* p)
 void usb_packet_cleanup(USBPacket* p)
 {
 	assert(!usb_packet_is_inflight(p));
-	p->buffer_ptr = nullptr;
+	p->buffer_ptr = NULL;
 	p->buffer_size = 0;
 }
 
@@ -743,12 +739,14 @@ void usb_ep_dump(USBDevice* dev)
 		/* [USB_ENDPOINT_XFER_INT]     = */ "int",
 	};
 
+	int ifnum, ep;
+
 	log_cb(RETRO_LOG_WARN, "Device \"%s\", config %d\n\n",
 			dev->product_desc, dev->configuration);
-	for (int ifnum = 0; ifnum < 16; ifnum++)
+	for (ifnum = 0; ifnum < 16; ifnum++)
 	{
 		int first = 1;
-		for (int ep = 0; ep < USB_MAX_ENDPOINTS; ep++)
+		for (ep = 0; ep < USB_MAX_ENDPOINTS; ep++)
 		{
 			if (dev->ep_in[ep].type != USB_ENDPOINT_XFER_INVALID &&
 				dev->ep_in[ep].ifnum == ifnum)
@@ -785,9 +783,9 @@ struct USBEndpoint* usb_ep_get(USBDevice* dev, int pid, int ep)
 {
 	struct USBEndpoint* eps;
 
-	if (dev == nullptr)
+	if (dev == NULL)
 	{
-		return nullptr;
+		return NULL;
 	}
 	eps = (pid == USB_TOKEN_IN) ? dev->ep_in : dev->ep_out;
 	if (ep == 0)
@@ -875,13 +873,5 @@ USBPacket* usb_ep_find_packet_by_id(USBDevice* dev, int pid, int ep,
 		}
 	}
 
-	return nullptr;
-}
-
-void usb_wakeup(USBDevice* dev)
-{
-	if (dev->remote_wakeup && dev->port && dev->port->ops->wakeup)
-	{
-		dev->port->ops->wakeup(dev->port);
-	}
+	return NULL;
 }

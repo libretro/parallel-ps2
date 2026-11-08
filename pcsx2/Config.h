@@ -626,6 +626,9 @@ struct Pcsx2Config
 
 		bool HddEnable{false};
 		std::string HddFile;
+		/* The drive's SCE security block; empty, <HddFile>.hddid is
+		 * used when there is one. */
+		std::string HddIdFile;
 
 		/* The PS2's HDD max size is 2TB
 		 * which is 2^32 * 512 byte sectors
@@ -654,6 +657,7 @@ struct Pcsx2Config
 				&& (EthHosts    == right.EthHosts)
 				&& (HddEnable   == right.HddEnable)
 				&& (HddFile     == right.HddFile)
+				&& (HddIdFile   == right.HddIdFile)
 				&& (HddSizeSectors == right.HddSizeSectors);
 		}
 

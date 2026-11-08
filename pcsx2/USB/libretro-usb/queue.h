@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSD-3-Clause
+/* SPDX-License-Identifier: BSD-3-Clause */
 
 /*      $NetBSD: queue.h,v 1.52 2009/04/20 09:56:08 mschuett Exp $ */
 
@@ -80,7 +80,6 @@
  * For details on the use of these macros, see the queue(3) manual page.
  */
 
-//#include "qemu/atomic.h" /* for smp_wmb() */
 
 /*
  * List definitions.
@@ -225,23 +224,6 @@
 	{                                              \
 		(elm)->field.sle_next = (head)->slh_first; \
 		(head)->slh_first = (elm);                 \
-	} while (/*CONSTCOND*/ 0)
-
-#define QSLIST_INSERT_HEAD_ATOMIC(head, elm, field)                          \
-	do                                                                       \
-	{                                                                        \
-		typeof(elm) save_sle_next;                                           \
-		do                                                                   \
-		{                                                                    \
-			save_sle_next = (elm)->field.sle_next = (head)->slh_first;       \
-		} while (atomic_cmpxchg(&(head)->slh_first, save_sle_next, (elm)) != \
-				 save_sle_next);                                             \
-	} while (/*CONSTCOND*/ 0)
-
-#define QSLIST_MOVE_ATOMIC(dest, src)                             \
-	do                                                            \
-	{                                                             \
-		(dest)->slh_first = atomic_xchg(&(src)->slh_first, NULL); \
 	} while (/*CONSTCOND*/ 0)
 
 #define QSLIST_REMOVE_HEAD(head, field)                        \
@@ -405,26 +387,27 @@
 /*
  * Tail queue definitions.
  */
-#define Q_TAILQ_HEAD(name, type, qual)                             \
+/* name is required: C90 has no empty macro arguments, and a tag declared
+ * inside a struct has file scope, so a head type is declared once and
+ * named again as struct name where it is reused. */
+#define QTAILQ_HEAD(name, type)                                    \
 	struct name                                                    \
 	{                                                              \
-		qual type* tqh_first;      /* first element */             \
-		qual type* qual* tqh_last; /* addr of last next element */ \
+		struct type* tqh_first;  /* first element */               \
+		struct type** tqh_last;  /* addr of last next element */   \
 	}
-#define QTAILQ_HEAD(name, type) Q_TAILQ_HEAD(name, struct type, )
 
 #define QTAILQ_HEAD_INITIALIZER(head) \
 	{                                 \
 		NULL, &(head).tqh_first       \
 	}
 
-#define Q_TAILQ_ENTRY(type, qual)                                         \
+#define QTAILQ_ENTRY(type)                                                \
 	struct                                                                \
 	{                                                                     \
-		qual type* tqe_next;       /* next element */                     \
-		qual type* qual* tqe_prev; /* address of previous next element */ \
+		struct type* tqe_next;   /* next element */                       \
+		struct type** tqe_prev;  /* address of previous next element */   \
 	}
-#define QTAILQ_ENTRY(type) Q_TAILQ_ENTRY(struct type, )
 
 /*
  * Tail queue functions.
@@ -517,71 +500,5 @@
 	(*(((struct headname*)((head)->tqh_last))->tqh_last))
 #define QTAILQ_PREV(elm, headname, field) \
 	(*(((struct headname*)((elm)->field.tqe_prev))->tqh_last))
-
-#define field_at_offset(base, offset, type) \
-	((type)(((char*)(base)) + (offset)))
-
-typedef struct DUMMY_Q_ENTRY DUMMY_Q_ENTRY;
-typedef struct DUMMY_Q DUMMY_Q;
-
-struct DUMMY_Q_ENTRY
-{
-	QTAILQ_ENTRY(DUMMY_Q_ENTRY)
-	next;
-};
-
-struct DUMMY_Q
-{
-	QTAILQ_HEAD(DUMMY_Q_HEAD, DUMMY_Q_ENTRY)
-	head;
-};
-
-#define dummy_q ((DUMMY_Q*)0)
-#define dummy_qe ((DUMMY_Q_ENTRY*)0)
-
-/*
- * Offsets of layout of a tail queue head.
- */
-#define QTAILQ_FIRST_OFFSET (offsetof(typeof(dummy_q->head), tqh_first))
-#define QTAILQ_LAST_OFFSET (offsetof(typeof(dummy_q->head), tqh_last))
-/*
- * Raw access of elements of a tail queue
- */
-#define QTAILQ_RAW_FIRST(head) \
-	(*field_at_offset(head, QTAILQ_FIRST_OFFSET, void**))
-#define QTAILQ_RAW_TQH_LAST(head) \
-	(*field_at_offset(head, QTAILQ_LAST_OFFSET, void***))
-
-/*
- * Offsets of layout of a tail queue element.
- */
-#define QTAILQ_NEXT_OFFSET (offsetof(typeof(dummy_qe->next), tqe_next))
-#define QTAILQ_PREV_OFFSET (offsetof(typeof(dummy_qe->next), tqe_prev))
-
-/*
- * Raw access of elements of a tail entry
- */
-#define QTAILQ_RAW_NEXT(elm, entry) \
-	(*field_at_offset(elm, entry + QTAILQ_NEXT_OFFSET, void**))
-#define QTAILQ_RAW_TQE_PREV(elm, entry) \
-	(*field_at_offset(elm, entry + QTAILQ_PREV_OFFSET, void***))
-/*
- * Tail queue tranversal using pointer arithmetic.
- */
-#define QTAILQ_RAW_FOREACH(elm, head, entry) \
-	for ((elm) = QTAILQ_RAW_FIRST(head);     \
-		 (elm);                              \
-		 (elm) = QTAILQ_RAW_NEXT(elm, entry))
-/*
- * Tail queue insertion using pointer arithmetic.
- */
-#define QTAILQ_RAW_INSERT_TAIL(head, elm, entry)                     \
-	do                                                               \
-	{                                                                \
-		QTAILQ_RAW_NEXT(elm, entry) = NULL;                          \
-		QTAILQ_RAW_TQE_PREV(elm, entry) = QTAILQ_RAW_TQH_LAST(head); \
-		*QTAILQ_RAW_TQH_LAST(head) = (elm);                          \
-		QTAILQ_RAW_TQH_LAST(head) = &QTAILQ_RAW_NEXT(elm, entry);    \
-	} while (/*CONSTCOND*/ 0)
 
 #endif /* QEMU_SYS_QUEUE_H */

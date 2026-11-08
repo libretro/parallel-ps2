@@ -1,20 +1,24 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: GPL-2.0+
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: GPL-2.0+ */
 
 #pragma once
 
 #include "USB/libretro-usb/qusb.h"
 #include "common/Pcsx2Types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Dump packet contents.  */
-//#define DEBUG_PACKET
+/*#define DEBUG_PACKET */
 /* This causes frames to occur 1000x slower */
-//#define OHCI_TIME_WARP 1
+/*#define OHCI_TIME_WARP 1 */
 
 /* Number of Downstream Ports on the root hub.  */
 
-#define OHCI_MAX_PORTS 15 // status regs from 0x0c54 but usb snooping
-						  // reg is at 0x0c80, so only 11 ports?
+#define OHCI_MAX_PORTS 15 /* status regs from 0x0c54 but usb snooping */
+						  /* reg is at 0x0c80, so only 11 ports? */
 
 extern s64 g_usb_frame_time;
 extern s64 g_usb_bit_time;
@@ -81,7 +85,7 @@ struct ohci_hcca
 	u32 done;
 };
 
-//ISO C++ forbids declaration of ‘typeof’ with no type
+/*ISO C++ forbids declaration of ‘typeof’ with no type */
 /*
 #define CONTAINER_OF(ptr, type, member) ({                      \
         const typeof(((type *) 0)->member) *__mptr = (ptr);     \
@@ -89,30 +93,30 @@ struct ohci_hcca
 */
 #define USB_CONTAINER_OF(p, type, field) ((type*)((char*)p - ((ptrdiff_t) & ((type*)0)->field)))
 
-#define HCCA_WRITEBACK_OFFSET 128 //offsetof(struct ohci_hcca, frame)
+#define HCCA_WRITEBACK_OFFSET 128 /*offsetof(struct ohci_hcca, frame) */
 #define HCCA_WRITEBACK_SIZE 8     /* frame, pad, done */
 
-#define ED_WBACK_OFFSET 8 //offsetof(struct ohci_ed, head)
+#define ED_WBACK_OFFSET 8 /*offsetof(struct ohci_ed, head) */
 #define ED_WBACK_SIZE 4
 
 /* Bitfields for the first word of an Endpoint Descriptor.  */
-#define OHCI_ED_FA_SHIFT 0 //device address
+#define OHCI_ED_FA_SHIFT 0 /*device address */
 #define OHCI_ED_FA_MASK (0x7f << OHCI_ED_FA_SHIFT)
-#define OHCI_ED_EN_SHIFT 7 //endpoint number
+#define OHCI_ED_EN_SHIFT 7 /*endpoint number */
 #define OHCI_ED_EN_MASK (0xf << OHCI_ED_EN_SHIFT)
-#define OHCI_ED_D_SHIFT 11 //direction
+#define OHCI_ED_D_SHIFT 11 /*direction */
 #define OHCI_ED_D_MASK (3 << OHCI_ED_D_SHIFT)
-#define OHCI_ED_S (1 << 13) //speed 0 - full, 1 - low
-#define OHCI_ED_K (1 << 14) //skip ED if 1
-#define OHCI_ED_F (1 << 15) //format 0 - inter, bulk or setup, 1 - isoch
-//#define OHCI_ED_MPS_SHIFT 7
-//#define OHCI_ED_MPS_MASK  (0xf<<OHCI_ED_FA_SHIFT)
+#define OHCI_ED_S (1 << 13) /*speed 0 - full, 1 - low */
+#define OHCI_ED_K (1 << 14) /*skip ED if 1 */
+#define OHCI_ED_F (1 << 15) /*format 0 - inter, bulk or setup, 1 - isoch */
+/*#define OHCI_ED_MPS_SHIFT 7 */
+/*#define OHCI_ED_MPS_MASK  (0xf<<OHCI_ED_FA_SHIFT) */
 
-#define OHCI_ED_MPS_SHIFT 16 //max packet size
+#define OHCI_ED_MPS_SHIFT 16 /*max packet size */
 #define OHCI_ED_MPS_MASK (0x7ff << OHCI_ED_MPS_SHIFT)
 
 /* Flags in the head field of an Endpoint Descriptor.  */
-#define OHCI_ED_H 1 //halted
+#define OHCI_ED_H 1 /*halted */
 #define OHCI_ED_C 2
 
 /* Bitfields for the first word of a Transfer Descriptor.  */
@@ -205,7 +209,7 @@ struct ohci_iso_td
 #define OHCI_STATUS_CLF (1 << 1)
 #define OHCI_STATUS_BLF (1 << 2)
 #define OHCI_STATUS_OCR (1 << 3)
-#define OHCI_STATUS_SOC ((1 << 6) | (1 << 7)) //TODO LSI has SOC at bits 16,17?
+#define OHCI_STATUS_SOC ((1 << 6) | (1 << 7)) /*TODO LSI has SOC at bits 16,17? */
 
 #define OHCI_INTR_SO (1U << 0)   /* Scheduling overrun */
 #define OHCI_INTR_WD (1U << 1)   /* HcDoneHead writeback */
@@ -271,7 +275,7 @@ struct ohci_iso_td
 #define OHCI_CC_STALL 0x4
 #define OHCI_CC_DEVICENOTRESPONDING 0x5
 #define OHCI_CC_PIDCHECKFAILURE 0x6
-#define OHCI_CC_UNDEXPETEDPID 0x7 // the what?
+#define OHCI_CC_UNDEXPETEDPID 0x7 /* the what? */
 #define OHCI_CC_DATAOVERRUN 0x8
 #define OHCI_CC_DATAUNDERRUN 0x9
 #define OHCI_CC_BUFFEROVERRUN 0xc
@@ -287,3 +291,7 @@ void ohci_hard_reset(OHCIState* ohci);
 void ohci_soft_reset(OHCIState* ohci);
 int ohci_bus_start(OHCIState* ohci);
 void ohci_bus_stop(OHCIState* ohci);
+
+#ifdef __cplusplus
+}
+#endif

@@ -29,6 +29,7 @@
 #include "../Host.h"
 #include "../Sio.h"
 #include "../USB/USB.h"
+#include "../USB/usb-host.h"
 
 #define MODE_DIGITAL	0x41
 #define MODE_ANALOG	0x73

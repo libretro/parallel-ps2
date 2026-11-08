@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: GPL-2.0+
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: GPL-2.0+ */
 
 #include "USB/libretro-usb/USBinternal.h"
 #include "USB/libretro-usb/qusb.h"
@@ -13,7 +13,7 @@ USBDevice* usb_device_find_device(USBDevice* dev, uint8_t addr)
 	{
 		return klass->find_device(dev, addr);
 	}
-	return nullptr;
+	return NULL;
 }
 
 void usb_device_cancel_packet(USBDevice* dev, USBPacket* p)

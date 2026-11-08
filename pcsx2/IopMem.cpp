@@ -22,6 +22,7 @@
 #include "SPU2/spu2.h"
 #include "DEV9/DEV9.h"
 #include "IopHw.h"
+#include "USB/usb-host.h"
 
 static uptr *psxMemWLUT = NULL;
 /* Not static: the 32-bit read fast path in IopMem.h dereferences this
@@ -30,6 +31,11 @@ static uptr *psxMemWLUT = NULL;
 const uptr *psxMemRLUT = NULL;
 
 IopVM_MemoryAllocMess* iopMem = NULL;
+
+u8* usb_iop_ram(void)
+{
+	return iopMem->Main;
+}
 
 alignas(__pagealignsize) u8 iopHw[Ps2MemSize::IopHardware];
 

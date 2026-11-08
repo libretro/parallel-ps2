@@ -1,8 +1,12 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: GPL-2.0+
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: GPL-2.0+ */
 
 #pragma once
-#include <cstdint>
+#include "common/Pcsx2Types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* include/ui/console.h */
 /* keyboard/mouse support */
@@ -187,7 +191,7 @@ typedef enum QKeyCode
 	Q_KEY_CODE_AC_FORWARD = 145,
 	Q_KEY_CODE_AC_REFRESH = 146,
 	Q_KEY_CODE_AC_BOOKMARKS = 147,
-	Q_KEY_CODE__MAX = 148,
+	Q_KEY_CODE__MAX = 148
 } QKeyCode;
 
 typedef enum InputEventKind
@@ -196,21 +200,21 @@ typedef enum InputEventKind
 	INPUT_EVENT_KIND_BTN = 1,
 	INPUT_EVENT_KIND_REL = 2,
 	INPUT_EVENT_KIND_ABS = 3,
-	INPUT_EVENT_KIND__MAX = 4,
+	INPUT_EVENT_KIND__MAX = 4
 } InputEventKind;
 
 typedef enum KeyValueKind
 {
 	KEY_VALUE_KIND_NUMBER = 0,
 	KEY_VALUE_KIND_QCODE = 1,
-	KEY_VALUE_KIND__MAX = 2,
+	KEY_VALUE_KIND__MAX = 2
 } KeyValueKind;
 
 typedef enum InputAxis
 {
 	INPUT_AXIS_X = 0,
 	INPUT_AXIS_Y = 1,
-	INPUT_AXIS__MAX = 2,
+	INPUT_AXIS__MAX = 2
 } InputAxis;
 
 typedef enum InputButton
@@ -222,8 +226,14 @@ typedef enum InputButton
 	INPUT_BUTTON_WHEEL_DOWN = 4,
 	INPUT_BUTTON_SIDE = 5,
 	INPUT_BUTTON_EXTRA = 6,
-	INPUT_BUTTON__MAX = 7,
+	INPUT_BUTTON__MAX = 7
 } InputButton;
+
+typedef struct KeyValue KeyValue;
+typedef struct InputKeyEvent InputKeyEvent;
+typedef struct InputBtnEvent InputBtnEvent;
+typedef struct InputMoveEvent InputMoveEvent;
+typedef struct InputEvent InputEvent;
 
 struct KeyValue
 {
@@ -306,7 +316,7 @@ struct HIDState
 	{
 		HIDMouseState ptr;
 		HIDKeyboardState kbd;
-	};
+	} u;
 	uint32_t head; /* index into circular queue */
 	uint32_t n;
 	int kind;
@@ -325,3 +335,7 @@ void hid_pointer_activate(HIDState* hs);
 int hid_pointer_poll(HIDState* hs, uint8_t* buf, int len);
 int hid_keyboard_poll(HIDState* hs, uint8_t* buf, int len);
 int hid_keyboard_write(HIDState* hs, uint8_t* buf, int len);
+
+#ifdef __cplusplus
+}
+#endif
