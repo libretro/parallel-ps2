@@ -77,7 +77,7 @@ upscale_frag|@post/ffx-fsr/upscale.frag|fragment||pinned
 blit|@blit.frag|fragment||pinned
 extwrite|extwrite.comp|compute||pinned
 qword_clear|qword_clear.comp|compute||pinned
-sampler_feedback|sampler_feedback.comp|compute||pinned
+sampler_feedback|sampler_feedback.comp|compute||glslc
 ui_vert|ui.vert|vertex||pinned
 ui_frag[0][0]|ui.frag|fragment|TEX=0 LINEAR=0|pinned
 ui_frag[1][0]|ui.frag|fragment|TEX=1 LINEAR=0|pinned

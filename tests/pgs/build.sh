@@ -34,6 +34,8 @@
 # pgs_bank_splice   : puts a rebuilt SPIR-V module back into the shader
 #                     bank, or takes one out; checked here by a splice that
 #                     replaces nothing.
+# pgs_bank_caps     : no bank module needs a 16-bit storage feature that
+#                     paraLLEl-GS neither requires nor checks for.
 # pgs_spv_canon     : canonical form of a SPIR-V disassembly, for
 #                     grid_fold.sh, which checks a shader change leaves the
 #                     other grids' folded code as it was.
@@ -81,6 +83,8 @@ for CC in gcc clang; do
 	"$DIR/pgs_bank_splice" "$PGS/gs/shaders/slangmosh.hpp" "$DIR/bank_roundtrip.hpp" > /dev/null
 	cmp "$PGS/gs/shaders/slangmosh.hpp" "$DIR/bank_roundtrip.hpp" && echo "bank round trip: ok"
 	rm -f "$DIR/bank_roundtrip.hpp"
+	$CC -std=c89 -pedantic -Wall -Wextra -O2 $SANFLAGS -o "$DIR/pgs_bank_caps" "$DIR/pgs_bank_caps.c"
+	"$DIR/pgs_bank_caps" "$PGS/gs/shaders/slangmosh.hpp"
 done
 
 # A shader change must leave the grids it does not touch folding to the

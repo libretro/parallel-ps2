@@ -189,6 +189,7 @@ tests/pgs/pgs_palette_samples
 tests/pgs/pgs_page_runs
 tests/pgs/pgs_bank_splice
 tests/pgs/pgs_spv_canon
+tests/pgs/pgs_bank_caps
 tests/pgs/pgs_scanout_exec
 tests/pgs/*.spv
 tests/recswitch/recswitch

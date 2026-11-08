@@ -96,26 +96,49 @@ static char *read_file(const char *path)
    return text;
 }
 
-/* The n-th hex token after `start`, as a number; -1 past the end. */
-static long nth_token(const char *start, const char *end, unsigned long n)
+/* Every hex token between start and end, parsed once: indexing them by
+ * rescanning from start each time made the scan of a module quadratic
+ * in the bank's size. */
+static long *tokens(const char *start, const char *end, unsigned long *count)
 {
    const char *p = start;
-   unsigned long i = 0;
-   while ((p = strstr(p, "0x")) != NULL && p < end)
+   unsigned long n = 0, cap = 1024;
+   long *t = (long *)malloc(cap * sizeof(*t));
+   /* A plain scan: strstr under ASan measures the rest of the text on
+    * every call, which is the quadratic cost again. */
+   for (; t && p + 1 < end; p++)
    {
-      if (i == n)
-         return (long)strtoul(p, NULL, 16);
-      i++;
-      p += 2;
+      if (p[0] != '0' || p[1] != 'x')
+         continue;
+      if (n == cap)
+      {
+         long *grown = (long *)realloc(t, (cap *= 2) * sizeof(*t));
+         if (!grown)
+         {
+            free(t);
+            return NULL;
+         }
+         t = grown;
+      }
+      t[n++] = (long)strtoul(p, NULL, 16);
+      p++;
    }
-   return -1;
+   *count = n;
+   return t;
+}
+
+/* The n-th token; -1 past the end. */
+static long tok(const long *t, unsigned long count, unsigned long n)
+{
+   return n < count ? t[n] : -1;
 }
 
 static int check_bank(const char *path)
 {
    char *text = read_file(path);
    const char *bank, *bank_end, *refl, *refl_end, *call, *layout;
-   unsigned long off, bytes, refl_off, i;
+   unsigned long off, bytes, refl_off, i, nb = 0, nr = 0;
+   long *bw, *rw;
    int spec4 = 0, fail = 0;
    long mask;
    if (!text)
@@ -145,20 +168,30 @@ static int check_bank(const char *path)
       free(text);
       return 1;
    }
+   bw = tokens(bank, bank_end, &nb);
+   rw = tokens(refl, refl_end, &nr);
+   if (!bw || !rw)
+   {
+      printf("  out of memory reading %s\n", path);
+      free(bw);
+      free(rw);
+      free(text);
+      return 1;
+   }
    /* OpDecorate %x SpecId 4: word count 4, opcode 71, decoration 1 */
    for (i = 5; i < bytes / 4;)
    {
-      const long w = nth_token(bank, bank_end, off + i);
+      const long w = tok(bw, nb, off + i);
       const unsigned long wc = (unsigned long)w >> 16;
       if (w < 0 || wc == 0)
          break;
-      if ((w & 0xffff) == 71 && wc == 4 && nth_token(bank, bank_end, off + i + 2) == 1 &&
-          nth_token(bank, bank_end, off + i + 3) == 4)
+      if ((w & 0xffff) == 71 && wc == 4 && tok(bw, nb, off + i + 2) == 1 &&
+          tok(bw, nb, off + i + 3) == 4)
          spec4 = 1;
       i += wc;
    }
    /* spec_constant_mask: the uint32 at byte 340 of the 348-byte entry */
-   mask = nth_token(refl, refl_end, refl_off + 340) | (nth_token(refl, refl_end, refl_off + 341) << 8);
+   mask = tok(rw, nr, refl_off + 340) | (tok(rw, nr, refl_off + 341) << 8);
    if (!spec4)
    {
       printf("  the embedded triangle_setup has no specialization constant 4\n");
@@ -169,6 +202,8 @@ static int check_bank(const char *path)
       printf("  triangle_setup's reflection masks specialization constants 0x%lx\n", mask);
       fail++;
    }
+   free(bw);
+   free(rw);
    free(text);
    return fail;
 }

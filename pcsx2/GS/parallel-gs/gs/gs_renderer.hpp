@@ -411,13 +411,16 @@ private:
 		VkDeviceAddress indirect_workgroups_va;
 		VkDeviceAddress indirect_bitmask_va;
 		uvec2 size_minus_1;
-		u16vec2 base;
-		uint16_t block_stride;
-		uint16_t layers;
+		uint32_t base_xy;
+		uint32_t block_stride_layers;
 		uint32_t flags;
 		enum { ENABLED_BIT = 1 << 0 };
 	};
 	static_assert(sizeof(TextureAnalysis) % 16 == 0, "Unaligned TextureAnalysis");
+	static_assert(offsetof(TextureAnalysis, base_xy) == 32 &&
+	              offsetof(TextureAnalysis, block_stride_layers) == 36 &&
+	              offsetof(TextureAnalysis, flags) == 40 &&
+	              sizeof(TextureAnalysis) == 48, "TextureAnalysis no longer matches sampler_feedback.comp's std140 layout");
 	static_assert(sizeof(TextureAnalysis) * MaxTextures <= Vulkan::VULKAN_MAX_UBO_SIZE, "Too large analysis struct.");
 
 	std::vector<TextureUpload> texture_uploads;

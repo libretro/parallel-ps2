@@ -1737,8 +1737,8 @@ void GSRenderer::allocate_upload_indirection(TextureAnalysis &analysis, TextureU
 
 	analysis = {};
 	analysis.flags = TextureAnalysis::ENABLED_BIT;
-	analysis.block_stride = horiz_blocks;
-	analysis.layers = upload.image->get_create_info().layers;
+	analysis.block_stride_layers = horiz_blocks;
+	analysis.block_stride_layers |= upload.image->get_create_info().layers << 16u;
 
 	VkDeviceSize indirect_workgroups_offset = allocate_device_scratch(sizeof(uvec4), buffers.device_scratch, nullptr);
 	analysis.indirect_dispatch_va = buffers.device_scratch.buffer->get_device_address() + indirect_workgroups_offset;
@@ -1760,7 +1760,7 @@ void GSRenderer::allocate_upload_indirection(TextureAnalysis &analysis, TextureU
 	upload.indirection.size = sizeof(uvec4) + num_blocks * sizeof(uvec2);
 	qword_clears.push_back(analysis.indirect_workgroups_va);
 
-	analysis.base = u16vec2{ uint16_t(upload.desc.rect.x), uint16_t(upload.desc.rect.y) };
+	analysis.base_xy = (upload.desc.rect.x & 0xffffu) | ((upload.desc.rect.y & 0xffffu) << 16u);
 	analysis.size_minus_1 = uvec2{ upload.desc.rect.width - 1u, upload.desc.rect.height - 1u };
 }
 
