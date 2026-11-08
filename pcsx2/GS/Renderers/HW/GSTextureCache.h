@@ -701,6 +701,12 @@ private:
 		int page_draw[4][GS_MAX_PAGES];
 		u32 count;
 	};
+	/* One batch, 8 KiB of page_draw, kept here and not on the stack: no
+	 * drop starts another, but one that did would get a heap batch. */
+	DropBatch m_drop;
+	bool m_drop_busy = false;
+	DropBatch* DropBegin();
+	void DropEnd(DropBatch* d);
 	void DropInit(DropBatch* d);
 	void DropQueue(DropBatch* d, Target* t);
 	void DropTarget(DropBatch* d, Target* t);

@@ -173,19 +173,21 @@ GSTextureCache::~GSTextureCache()
  * once; the stores follow in the same order. */
 void GSTextureCache::ReadbackAll()
 {
-	DropBatch drop;
+	DropBatch* drop;
 	int type;
 
 	FlushParked(0, 0xFFFFFFFFu);
-	DropInit(&drop);
+	if (!(drop = DropBegin()))
+		return;
 	for (type = 0; type < 2; type++)
 	{
 		FastListIterator<Target*> it = m_dst[type].begin();
 		const FastListIterator<Target*> end = m_dst[type].end();
 		for (; it != end; ++it)
-			DropQueue(&drop, *it);
+			DropQueue(drop, *it);
 	}
-	ReadBatchStore(&drop.reads);
+	ReadBatchStore(&drop->reads);
+	DropEnd(drop);
 }
 
 void GSTextureCache::RemoveAll(bool sources, bool targets, bool hash_cache)
@@ -6735,7 +6737,7 @@ u64 GSTextureCache::TargetByteBudget() const
 void GSTextureCache::EnforceTargetBudget()
 {
 	const u64 budget = TargetByteBudget();
-	DropBatch drop;
+	DropBatch* drop;
 	gs_target_info_t* info;
 	Target** tgt;
 	unsigned* order;
@@ -6760,7 +6762,7 @@ void GSTextureCache::EnforceTargetBudget()
 	info = (gs_target_info_t*)malloc(n * sizeof(*info));
 	tgt = (Target**)malloc(n * sizeof(*tgt));
 	order = (unsigned*)malloc(n * sizeof(*order));
-	if (info && tgt && order)
+	if (info && tgt && order && (drop = DropBegin()))
 	{
 		n = 0;
 		for (type = 0; type < 2; type++)
@@ -6785,7 +6787,6 @@ void GSTextureCache::EnforceTargetBudget()
 		}
 
 		count = gs_target_evict_order(info, n, m_target_memory_usage, budget, order);
-		DropInit(&drop);
 		for (i = 0; i < count; i++)
 		{
 			Target* t = tgt[order[i]];
@@ -6797,12 +6798,13 @@ void GSTextureCache::EnforceTargetBudget()
 				{
 					InvalidateSourcesFromTarget(t);
 					list.erase(it);
-					DropTarget(&drop, t);
+					DropTarget(drop, t);
 					break;
 				}
 			}
 		}
-		DropFlush(&drop);
+		DropFlush(drop);
+		DropEnd(drop);
 	}
 	free(order);
 	free(tgt);
@@ -7257,6 +7259,32 @@ void GSTextureCache::ReadBatchStore(ReadBatch* b)
 	b->shared_used = 0;
 }
 
+GSTextureCache::DropBatch* GSTextureCache::DropBegin()
+{
+	DropBatch* d;
+
+	if (!m_drop_busy)
+	{
+		m_drop_busy = true;
+		d = &m_drop;
+	}
+	else if (!(d = (DropBatch*)malloc(sizeof(*d))))
+	{
+		log_cb(RETRO_LOG_ERROR, "GS: out of memory for a target drop batch\n");
+		return NULL;
+	}
+	DropInit(d);
+	return d;
+}
+
+void GSTextureCache::DropEnd(DropBatch* d)
+{
+	if (d == &m_drop)
+		m_drop_busy = false;
+	else
+		free(d);
+}
+
 void GSTextureCache::DropInit(DropBatch* d)
 {
 	u32 i;
@@ -7413,7 +7441,7 @@ void GSTextureCache::DropFlush(DropBatch* d)
 
 void GSTextureCache::ParkTarget(Target* t)
 {
-	DropBatch drop;
+	DropBatch* drop;
 	Target** grown;
 	u32 cap;
 
@@ -7425,9 +7453,14 @@ void GSTextureCache::ParkTarget(Target* t)
 		if (!grown)
 		{
 			/* No room to keep it: what it drew goes now. */
-			DropInit(&drop);
-			DropTarget(&drop, t);
-			DropFlush(&drop);
+			if ((drop = DropBegin()))
+			{
+				DropTarget(drop, t);
+				DropFlush(drop);
+				DropEnd(drop);
+			}
+			else
+				delete t;
 			return;
 		}
 		m_parked = grown;
@@ -7442,7 +7475,7 @@ void GSTextureCache::ParkTarget(Target* t)
  * its pixels, newer than any written now, then go over them. */
 void GSTextureCache::FlushParked(u32 bp, u32 end_bp)
 {
-	DropBatch drop;
+	DropBatch* drop;
 	const u32 total = m_parked_count;
 	u32 i;
 	Target* t;
@@ -7465,10 +7498,18 @@ void GSTextureCache::FlushParked(u32 bp, u32 end_bp)
 	if (m_parked_count == total)
 		return;
 
-	DropInit(&drop);
+	if (!(drop = DropBegin()))
+	{
+		/* No batch to write them back with: deleted all the same, as
+		 * they are out of the list. */
+		for (i = m_parked_count; i < total; i++)
+			delete m_parked[i];
+		return;
+	}
 	for (i = m_parked_count; i < total; i++)
-		DropTarget(&drop, m_parked[i]);
-	DropFlush(&drop);
+		DropTarget(drop, m_parked[i]);
+	DropFlush(drop);
+	DropEnd(drop);
 }
 
 void GSTextureCache::FlushParkedRect(const GSOffset& off, const GSVector4i& r)
