@@ -218,8 +218,11 @@ static void ata_io_read(ata_state_t* ata)
 	const int64_t bytes = (int64_t)ata->nsector * 512;
 	int64_t got         = -1;
 
-	if (lba != -1
-	 && filestream_seek(ata->hddImage, lba * 512, RETRO_VFS_SEEK_POSITION_START) >= 0)
+	if (lba == -1)
+		;
+	else if (ata->hddImg)
+		got = hdd_image_read(ata->hddImg, (uint64_t)lba * 512, ata->readBuffer, (uint32_t)bytes) ? bytes : -1;
+	else if (filestream_seek(ata->hddImage, lba * 512, RETRO_VFS_SEEK_POSITION_START) >= 0)
 		got = filestream_read(ata->hddImage, ata->readBuffer, bytes);
 	ata->ioReadFailed = got != bytes;
 	if (ata->ioReadFailed)
@@ -250,6 +253,15 @@ static bool ata_io_write(ata_state_t* ata)
 	}
 
 	imagePos = entry.sector * 512;
+	if (ata->hddImg)
+	{
+		if (!hdd_image_write(ata->hddImg, imagePos, entry.data, entry.length) || !hdd_image_flush(ata->hddImg))
+			ata_io_write_failed(ata);
+		else
+			ata_io_result(ata, true, "write");
+		free(entry.data);
+		return true;
+	}
 	if (filestream_seek(ata->hddImage, (int64_t)imagePos, RETRO_VFS_SEEK_POSITION_START) < 0)
 	{
 		ata_io_write_failed(ata);

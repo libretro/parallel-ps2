@@ -25,6 +25,7 @@
 #include <streams/file_stream.h>
 
 #include "DEV9/ATA/ATA.h"
+#include "../hddimage/images.h"
 
 #define REGION_SECTORS 256
 #define IMAGE_SECTORS  (REGION_SECTORS * 2)
@@ -182,22 +183,43 @@ static void op(ata_state_t* ata)
 	}
 }
 
+/* The kind the suite runs on: a raw file, or through HddImage.c a
+ * dynamic VHD (blocks made as the writes come) or a CHD (the fixed half
+ * in the CHD, the writes in its overlay). */
+static int s_kind = HDD_IMAGE_RAW;
+
 static int make_image(const char* path)
 {
-	uint8_t sector[512];
+	static uint8_t disk[IMAGE_SECTORS * 512];
+	char ovl[1024];
 	unsigned s, i;
-	FILE* f = fopen(path, "wb");
-	if (!f)
-		return 0;
-	memset(sector, 0, sizeof(sector));
-	for (s = 0; s < REGION_SECTORS; s++)
-		fwrite(sector, 1, sizeof(sector), f);
+	FILE* f;
+
+	memset(disk, 0, sizeof(disk));
 	for (s = REGION_SECTORS; s < IMAGE_SECTORS; s++)
-	{
 		for (i = 0; i < 512; i++)
-			sector[i] = fixed_byte(s, i);
-		fwrite(sector, 1, sizeof(sector), f);
+			disk[s * 512 + i] = fixed_byte(s, i);
+	if (s_kind == HDD_IMAGE_CHD)
+	{
+		sprintf(ovl, "%s" HDD_IMAGE_OVERLAY_SUFFIX, path);
+		remove(ovl);
+		return img_write_chd(path, disk, sizeof(disk), 4096, 1);
 	}
+	if (s_kind == HDD_IMAGE_VHD)
+	{
+		hdd_image_t* img;
+		int ok;
+		/* 16 KiB blocks, so the run allocates them as it goes. */
+		if (!img_write_dynamic_vhd(path, sizeof(disk), 16384) || !(img = hdd_image_open(path)))
+			return 0;
+		ok = hdd_image_write(img, REGION_SECTORS * 512, disk + REGION_SECTORS * 512,
+			(IMAGE_SECTORS - REGION_SECTORS) * 512);
+		hdd_image_close(img);
+		return ok;
+	}
+	if (!(f = fopen(path, "wb")))
+		return 0;
+	fwrite(disk, 1, sizeof(disk), f);
 	fclose(f);
 	return 1;
 }
@@ -206,15 +228,17 @@ static void check_image(const char* path, int round)
 {
 	uint8_t sector[512];
 	unsigned s, i;
-	FILE* f = fopen(path, "rb");
-	if (!f)
+	FILE* f = NULL;
+	hdd_image_t* img = NULL;
+	if (s_kind == HDD_IMAGE_RAW ? !(f = fopen(path, "rb")) : !(img = hdd_image_open(path)))
 	{
 		fail("image could not be reopened", -1, -1);
 		return;
 	}
 	for (s = 0; s < IMAGE_SECTORS; s++)
 	{
-		if (fread(sector, 1, sizeof(sector), f) != sizeof(sector))
+		if (f ? fread(sector, 1, sizeof(sector), f) != sizeof(sector)
+		      : !hdd_image_read(img, (uint64_t)s * 512, sector, sizeof(sector)))
 		{
 			fail("image came back short", (int)s, -1);
 			break;
@@ -232,7 +256,9 @@ static void check_image(const char* path, int round)
 			}
 		}
 	}
-	fclose(f);
+	if (f)
+		fclose(f);
+	hdd_image_close(img);
 }
 
 /* A guest DMA longer than the command's sectors: a write keeps only what
@@ -282,10 +308,21 @@ static void check_dma_bounds(const char* path)
 	ata_free(ata);
 }
 
-int main(void)
+int main(int argc, char** argv)
 {
 	const char* path = "ata_test.img";
 	int round, n;
+
+	if (argc > 1 && !strcmp(argv[1], "vhd"))
+	{
+		s_kind = HDD_IMAGE_VHD;
+		path = "ata_test.vhd";
+	}
+	else if (argc > 1 && !strcmp(argv[1], "chd"))
+	{
+		s_kind = HDD_IMAGE_CHD;
+		path = "ata_test.chd";
+	}
 
 	if (!make_image(path))
 	{
@@ -322,7 +359,14 @@ int main(void)
 		fprintf(stderr, "  %u failures\n", failures);
 		return 1;
 	}
-	printf("  ok: %u reads unchanged across %d rounds, every queued write landed\n",
+	if (s_kind == HDD_IMAGE_CHD)
+	{
+		char ovl[1024];
+		sprintf(ovl, "%s" HDD_IMAGE_OVERLAY_SUFFIX, path);
+		remove(ovl);
+	}
+	printf("  ok (%s): %u reads unchanged across %d rounds, every queued write landed\n",
+		s_kind == HDD_IMAGE_VHD ? "dynamic VHD" : s_kind == HDD_IMAGE_CHD ? "CHD and overlay" : "raw",
 		reads_checked, ROUNDS);
 	return 0;
 }

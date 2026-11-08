@@ -26,6 +26,8 @@
 #include <rthreads/retro_eventcount.h>
 #include <streams/file_stream.h>
 
+#include "HddImage.h"
+
 /* The emulated SPEED ATA hard drive, in C89. State lives in a plain
  * struct and every function takes it explicitly; the member names
  * match the ones upstream PCSX2 uses so field-level diffs against the
@@ -139,7 +141,8 @@ typedef struct ata_state
 	uint64_t HddSparseStart;
 	uint64_t currentWriteSectors;
 
-	RFILE* hddImage;
+	RFILE* hddImage;       /* a raw image */
+	hdd_image_t* hddImg;   /* a VHD or CHD; one of the two is open */
 	uint8_t* hddSparseBlock;
 	uint8_t* readBuffer;
 	uint8_t* currentWrite; /* array */

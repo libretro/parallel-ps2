@@ -453,18 +453,37 @@ static bool is_software_sw_setting(const std::string& s)
 	return s == "Software (SW)";
 }
 
-/* The HDD image is created lazily so the option works without any file
+/* The HDD image: DEV9hdd.chd or DEV9hdd.vhd when the user put one there
+ * (a CHD's writes go to DEV9hdd.chd.overlay beside it), else
+ * DEV9hdd.raw, created lazily so the option works without any file
  * management on the user's part; an image that already exists is used
- * as-is regardless of the size option. */
-static void dev9_ensure_hdd_image(u32 size_sectors)
+ * as-is regardless of the size option. Returns the name chosen. */
+static const char* dev9_ensure_hdd_image(u32 size_sectors)
 {
-	char path[PCSX2_PATH_MAX];
-	pcsx2_path_join(path, sizeof(path), EmuFolders::Settings, "DEV9hdd.raw");
-	if (path_is_valid(path))
-		return;
-	log_cb(RETRO_LOG_INFO, "DEV9: creating HDD image '%s'\n", path);
-	if (hdd_create(path, (u64)size_sectors * 512) != 0)
-		log_cb(RETRO_LOG_ERROR, "DEV9: failed to create HDD image '%s'\n", path);
+	static const char* const names[] = { "DEV9hdd.chd", "DEV9hdd.vhd" };
+	char* path = (char*)malloc(PCSX2_PATH_MAX);
+	size_t i;
+
+	if (!path)
+		return "DEV9hdd.raw";
+	for (i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+	{
+		pcsx2_path_join(path, PCSX2_PATH_MAX, EmuFolders::Settings, names[i]);
+		if (path_is_valid(path))
+		{
+			free(path);
+			return names[i];
+		}
+	}
+	pcsx2_path_join(path, PCSX2_PATH_MAX, EmuFolders::Settings, "DEV9hdd.raw");
+	if (!path_is_valid(path))
+	{
+		log_cb(RETRO_LOG_INFO, "DEV9: creating HDD image '%s'\n", path);
+		if (hdd_create(path, (u64)size_sectors * 512) != 0)
+			log_cb(RETRO_LOG_ERROR, "DEV9: failed to create HDD image '%s'\n", path);
+	}
+	free(path);
+	return "DEV9hdd.raw";
 }
 
 static void check_variables(bool first_run)
@@ -1199,7 +1218,7 @@ static void check_variables(bool first_run)
 		if (first_run || setting_dev9_hdd != dev9_hdd_prev)
 		{
 			if (setting_dev9_hdd)
-				dev9_ensure_hdd_image(setting_dev9_hdd_sectors);
+				s_option_config.DEV9.HddFile = dev9_ensure_hdd_image(setting_dev9_hdd_sectors);
 			s_option_config.DEV9.HddEnable = setting_dev9_hdd;
 			updated = true;
 		}

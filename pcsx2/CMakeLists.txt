@@ -773,10 +773,12 @@ set(pcsx2DEV9Sources
 	DEV9/ATA/Commands/ATA_Command.c
 	DEV9/ATA/Commands/ATA_SCE.c
 	DEV9/ATA/HddCreate.c
+	DEV9/ATA/HddImage.c
 )
 set(pcsx2DEV9Headers
 	DEV9/ATA/ATA.h
 	DEV9/ATA/HddCreate.h
+	DEV9/ATA/HddImage.h
 	DEV9/AdapterUtils.h
 	DEV9/DEV9.h
 	DEV9/DEV9mmio.h

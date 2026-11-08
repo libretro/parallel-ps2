@@ -223,6 +223,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/DEV9/ATA/ATA_State.c \
 	$(LRPS2_DIR)/DEV9/ATA/ATA_Transfer.c \
 	$(LRPS2_DIR)/DEV9/ATA/HddCreate.c \
+	$(LRPS2_DIR)/DEV9/ATA/HddImage.c \
 	$(LRPS2_DIR)/DEV9/ATA/Commands/ATA_Command.c \
 	$(LRPS2_DIR)/DEV9/ATA/Commands/ATA_CmdDMA.c \
 	$(LRPS2_DIR)/DEV9/ATA/Commands/ATA_CmdExecuteDeviceDiag.c \

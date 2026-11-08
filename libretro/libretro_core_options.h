@@ -187,7 +187,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "pcsx2_dev9_hdd",
       "System > HDD (DEV9)",
       "HDD (DEV9)",
-      "Emulate the SPEED expansion's ATA hard drive. The image lives at 'pcsx2/DEV9hdd.raw' in the frontend system directory and is created on first use at the configured size.",
+      "Emulate the SPEED expansion's ATA hard drive. The image lives at 'pcsx2/DEV9hdd.raw' in the frontend system directory and is created on first use at the configured size. A 'DEV9hdd.chd' or 'DEV9hdd.vhd' there is used instead; a CHD is not written, its writes go to 'DEV9hdd.chd.overlay' beside it.",
       NULL,
       "system",
       {

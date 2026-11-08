@@ -104,26 +104,40 @@ int ata_open(ata_state_t* ata, const char* hddPath, uint64_t size_sectors)
 	if (!ata->readBuffer)
 		return -1;
 
-	ata_create_hdd_info(ata, ata->hddSizeSectors);
-
 	/* Open File */
 	if (!path_is_valid(hddPath))
 		return -1;
 
-	ata->hddImage = filestream_open(hddPath,
-			RETRO_VFS_FILE_ACCESS_READ_WRITE | RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING,
-			RETRO_VFS_FILE_ACCESS_HINT_NONE);
-	size = ata->hddImage ? filestream_get_size(ata->hddImage) : -1;
-	if (!ata->hddImage || size < 0)
+	if (hdd_image_kind(hddPath) != HDD_IMAGE_RAW)
 	{
-		log_cb(RETRO_LOG_ERROR, "Failed to open HDD image '%s'\n", hddPath);
-		return -1;
+		/* A VHD or CHD is the disk it describes, whatever the size
+		 * option says. */
+		if (!(ata->hddImg = hdd_image_open(hddPath)))
+			return -1;
+		ata->hddImageSize = hdd_image_size(ata->hddImg);
+		ata->hddSizeSectors = ata->hddImageSize / 512;
+		ata->hddSparse = false;
+		ata->hddSparseBlockValid = false;
+	}
+	else
+	{
+		ata->hddImage = filestream_open(hddPath,
+				RETRO_VFS_FILE_ACCESS_READ_WRITE | RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING,
+				RETRO_VFS_FILE_ACCESS_HINT_NONE);
+		size = ata->hddImage ? filestream_get_size(ata->hddImage) : -1;
+		if (!ata->hddImage || size < 0)
+		{
+			log_cb(RETRO_LOG_ERROR, "Failed to open HDD image '%s'\n", hddPath);
+			return -1;
+		}
+
+		/* Store HddImage size for later check */
+		ata->hddImageSize = (uint64_t)size;
+
+		ata_init_sparse_support(ata);
 	}
 
-	/* Store HddImage size for later check */
-	ata->hddImageSize = (uint64_t)size;
-
-	ata_init_sparse_support(ata);
+	ata_create_hdd_info(ata, ata->hddSizeSectors);
 
 	ata_write_queue_init(&ata->writeQueue);
 
@@ -212,6 +226,11 @@ void ata_close(ata_state_t* ata)
 	{
 		filestream_close(ata->hddImage);
 		ata->hddImage = NULL;
+	}
+	if (ata->hddImg)
+	{
+		hdd_image_close(ata->hddImg);
+		ata->hddImg = NULL;
 	}
 
 	free(ata->readBuffer);
@@ -362,7 +381,7 @@ void ata_async(ata_state_t* ata, uint32_t cycles)
 {
 	(void)cycles;
 
-	if (!ata->hddImage)
+	if (!ata->hddImage && !ata->hddImg)
 		return;
 
 	if ((ata->regStatus & (ATA_STAT_BUSY | ATA_STAT_DRQ)) == 0 ||

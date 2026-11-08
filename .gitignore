@@ -295,3 +295,5 @@ tests/ata/*.img
 /tests/patch/patch_pnachload
 /tests/hostfs/hostfs_test
 /tests/hostfs/*.o
+tests/hddimage/hddimage_test
+tests/hddimage/hddimage_test.exe
