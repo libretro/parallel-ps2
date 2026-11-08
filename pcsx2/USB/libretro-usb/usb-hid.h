@@ -29,6 +29,9 @@ extern "C" {
  * USBDevice to attach. */
 USBDevice* usb_hid_create_kbd(u32 port);
 USBDevice* usb_hid_create_mouse(u32 port);
+/* A mouse moved as a trackball: half the pointer's motion, none while
+ * its left button is held; the pad's left stick rolls it too. */
+USBDevice* usb_hid_create_trackball(u32 port);
 
 /* Pump one frame of libretro keyboard/mouse input into the device. */
 void usb_hid_update(USBDevice* dev, retro_input_state_t input_cb, unsigned port);

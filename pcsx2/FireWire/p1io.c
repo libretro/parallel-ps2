@@ -2114,6 +2114,14 @@ int p1io_memcard_slot(void)
 	D(port, A, "Foot Right"), D(port, L, "Select Left"), D(port, R, "Select Right")
 
 static const struct retro_input_descriptor s_desc_jvs[] = { SYSTEM, JVS(0), JVS(1), { 0, 0, 0, 0, NULL } };
+/* Perfect Pool: the panel, and the trackball on the first pad's mouse
+ * and left stick (the USB side). */
+static const struct retro_input_descriptor s_desc_ppool[] = {
+	SYSTEM, JVS(0), JVS(1),
+	{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Trackball X" },
+	{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Trackball Y" },
+	{ 0, 0, 0, 0, NULL }
+};
 static const struct retro_input_descriptor s_desc_ddr[] = { SYSTEM, DDR(0), DDR(1), { 0, 0, 0, 0, NULL } };
 static const struct retro_input_descriptor s_desc_popn[] = {
 	SYSTEM, D(0, START, "Start"),
@@ -2134,6 +2142,7 @@ const struct retro_input_descriptor* p1io_input_descriptors(int io_mode)
 	{
 		case P1IO_MODE_EXTIO: return s_desc_ddr;
 		case P1IO_MODE_POPN:  return s_desc_popn;
+		case P1IO_MODE_PPOOL: return s_desc_ppool;
 		default:              return s_desc_jvs;
 	}
 }

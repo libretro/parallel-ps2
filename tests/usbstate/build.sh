@@ -21,7 +21,8 @@ USBC="$ROOT/libretro/USB.c \
   $U/libretro-usb/bus.c $U/libretro-usb/core.c $U/libretro-usb/desc.c \
   $U/libretro-usb/hid.c $U/libretro-usb/input-keymap-qcode-to-qnum.c \
   $U/libretro-usb/usb-hid.c $U/libretro-usb/usb-ohci.c $U/libretro-usb/ohci_dma.c \
-  $U/usb-python2/p2io.c $U/usb-python2/usb-python2.c"
+  $U/usb-python2/p2io.c $U/usb-python2/usb-python2.c \
+  $U/usb-perfect-pool/ppcam.c"
 CXXSRC="$DIR/main.cpp \
   $U/usb-eyetoy/cam-frame.cpp $U/usb-eyetoy/cam-jpeg.cpp $U/usb-eyetoy/eyetoy-frontend.cpp \
   $U/usb-eyetoy/eyetoy-host.cpp $U/usb-eyetoy/jo_mpeg.cpp $U/usb-eyetoy/usb-eyetoy-webcam.cpp"

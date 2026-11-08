@@ -366,6 +366,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/USB/usb-python2/p2io.c \
 	$(LRPS2_DIR)/USB/usb-python2/py2desc.c \
 	$(LRPS2_DIR)/USB/usb-python2/usb-python2.c \
+	$(LRPS2_DIR)/USB/usb-perfect-pool/ppcam.c \
 	$(LRPS2_DIR)/FW.c \
 	$(LRPS2_DIR)/FireWire/fatimg.c \
 	$(LRPS2_DIR)/FireWire/p1io.c \

@@ -19,6 +19,7 @@
 #include "USB/libretro-usb/desc.h"
 #include "USB/usb-eyetoy/eyetoy-frontend.h"
 #include "USB/usb-python2/usb-python2.h"
+#include "USB/usb-perfect-pool/ppcam.h"
 
 #include "libretro.h"
 
@@ -51,8 +52,17 @@ u8* usb_iop_ram(void)
 
 void usbIrq(int) {}
 
-static int16_t RETRO_CALLCONV stub_input(unsigned, unsigned, unsigned, unsigned)
+/* The first pad's mouse and left stick, for the trackball. */
+static int16_t s_mouse[16];
+static int16_t s_stick[2];
+static int16_t RETRO_CALLCONV stub_input(unsigned port, unsigned device, unsigned index, unsigned id)
 {
+	if (port != 0)
+		return 0;
+	if (device == RETRO_DEVICE_MOUSE && id < 16)
+		return s_mouse[id];
+	if (device == RETRO_DEVICE_ANALOG && index == RETRO_DEVICE_INDEX_ANALOG_LEFT && id < 2)
+		return s_stick[id];
 	return 0;
 }
 retro_input_state_t PADGetInputStateCallback(void)
@@ -208,6 +218,92 @@ static void python2_checks(void)
 	free(state);
 }
 
+/* The trackball's report for the frame's input: its x and y. */
+static void trackball_frame(USBDevice* tb, int* x, int* y)
+{
+	u8 r[8];
+	int n;
+	USBasync(0);
+	memset(r, 0, sizeof(r));
+	n = transfer(tb, USB_TOKEN_IN, 1, r, sizeof(r));
+	*x = n >= 3 ? (int)(s8)r[1] : 0;
+	*y = n >= 3 ? (int)(s8)r[2] : 0;
+}
+
+/* Perfect Pool: a trackball on port 0, the camera the game downloads its
+ * firmware into on port 1, and the camera's RAM in the state. */
+static void ppool_checks(void)
+{
+	static const u8 fw[] = { 0x02, 0x00, 0x30, 0x12, 0x34 };
+	u8 got[sizeof(fw)], one;
+	USBDevice *tb, *cam;
+	size_t size;
+	u8* state;
+	int x, y;
+
+	USBSetPerfectPool(true);
+	USBSetPortDevice(0, USB_DEV_KEYBOARD, 0);
+	USBSetCamera(USB_CAMERA_EYETOY);
+	check(USBopen(), "USBopen with Perfect Pool");
+	tb = USBGetPortDevice(0);
+	cam = USBGetPortDevice(1);
+	check(tb && cam, "trackball on port 0, camera on port 1, over the ports' own");
+	size = USBStateSize();
+	check(size == USB_STATE_OHCI + 2 * USB_STATE_SLOT + USB_PPCAM_RAM_SIZE + 16, "the block carries the camera's RAM");
+	/* Its one interface is alternate setting 2, as usbio.irx selects it. */
+	check(cam && usb_desc_set_config(cam, 1) == 0 && cam->ninterfaces == 1
+			&& usb_desc_set_interface(cam, 0, 2) == 0 && cam->ifaces[0] && cam->ifaces[0]->neps == 4,
+		"the camera's interface: alternate setting 2, four endpoints");
+
+	control(cam, VendorDeviceOutRequest | 0xa0, 0x100, 0, (u8*)fw, sizeof(fw));
+	memset(got, 0, sizeof(got));
+	control(cam, VendorDeviceRequest | 0xa0, 0x100, 0, got, sizeof(got));
+	check(!memcmp(got, fw, sizeof(fw)), "firmware written and read back");
+	one = 1;
+	control(cam, VendorDeviceOutRequest | 0xa0, 0x7f92, 0, &one, 1);
+	cam->state = USB_STATE_DEFAULT;
+	one = 0;
+	control(cam, VendorDeviceOutRequest | 0xa0, 0x7f92, 0, &one, 1);
+	check(cam->state == USB_STATE_ATTACHED, "let out of reset, it comes back on the bus");
+
+	state = (u8*)malloc(size);
+	USBStateWrite(state);
+	memset(got, 0xee, sizeof(got));
+	control(cam, VendorDeviceOutRequest | 0xa0, 0x100, 0, got, sizeof(got));
+	USBStateRead(state, size);
+	memset(got, 0, sizeof(got));
+	control(cam, VendorDeviceRequest | 0xa0, 0x100, 0, got, sizeof(got));
+	check(USBGetPortDevice(1) == cam && !memcmp(got, fw, sizeof(fw)), "a state brings the firmware back");
+	usb_port_reset(cam->port);
+	control(cam, VendorDeviceRequest | 0xa0, 0x100, 0, got, sizeof(got));
+	check(!memcmp(got, fw, sizeof(fw)), "and a bus reset keeps it once it is in");
+
+	usb_desc_set_config(tb, 1);
+	s_mouse[RETRO_DEVICE_ID_MOUSE_X] = 5;
+	s_mouse[RETRO_DEVICE_ID_MOUSE_Y] = -5;
+	trackball_frame(tb, &x, &y);
+	check(x == 2 && y == -2, "half the pointer's motion, toward zero");
+	trackball_frame(tb, &x, &y);
+	check(x == 3 && y == -3, "and the half count left over joins the next");
+	s_mouse[RETRO_DEVICE_ID_MOUSE_LEFT] = 1;
+	trackball_frame(tb, &x, &y);
+	check(x == 0 && y == 0, "none while the left button is held");
+	s_mouse[RETRO_DEVICE_ID_MOUSE_LEFT] = 0;
+	s_mouse[RETRO_DEVICE_ID_MOUSE_X] = s_mouse[RETRO_DEVICE_ID_MOUSE_Y] = 0;
+	trackball_frame(tb, &x, &y);
+	s_stick[0] = 32767;
+	trackball_frame(tb, &x, &y);
+	check(x == 15, "the left stick rolls it too");
+	s_stick[0] = 0;
+	trackball_frame(tb, &x, &y);
+
+	USBclose();
+	USBSetPerfectPool(false);
+	USBSetCamera(USB_CAMERA_NONE);
+	check(USBStateSize() == USB_STATE_OHCI + 2 * USB_STATE_SLOT + 16, "without it the block is as it always was");
+	free(state);
+}
+
 int main()
 {
 	static const int REG = 0x10; /* OV519_R10_H_SIZE: harmless, logged, kept */
@@ -319,6 +415,7 @@ int main()
 	USBclose();
 	usb_eyetoy::FrontendUnload();
 	python2_checks();
+	ppool_checks();
 	free(state);
 	free(other);
 	free(s_iop_ram);

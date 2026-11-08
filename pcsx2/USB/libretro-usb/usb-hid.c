@@ -334,6 +334,10 @@ typedef struct UsbHIDState
 	/* Previous-frame state for edge detection. */
 	bool key_down[RETROK_LAST];
 	bool mouse_btn[3];
+
+	/* A trackball's motion not yet sent, in half counts. */
+	bool trackball;
+	s32 roll[2];
 } UsbHIDState;
 
 /* RETROK_* -> QKeyCode. Replaces the upstream host-string lookup through
@@ -392,6 +396,7 @@ static void usb_hid_handle_reset(USBDevice* dev)
 	UsbHIDState* us = USB_CONTAINER_OF(dev, UsbHIDState, dev);
 
 	hid_reset(&us->hid);
+	us->roll[0] = us->roll[1] = 0;
 }
 
 static void usb_hid_handle_control(USBDevice* dev, USBPacket* p,
@@ -658,6 +663,25 @@ fail:
 	return NULL;
 }
 
+USBDevice* usb_hid_create_trackball(u32 port)
+{
+	USBDevice* dev = usb_hid_create_mouse(port);
+	if (dev)
+		USB_CONTAINER_OF(dev, UsbHIDState, dev)->trackball = true;
+	return dev;
+}
+
+/* Half of what has rolled, whole counts toward zero; the rest is kept.
+ * A report carries at most 127 either way and the excess is dropped. */
+static s32 trackball_counts(s32* roll, s32 delta)
+{
+	s32 n;
+	*roll += delta;
+	n = *roll >= 0 ? *roll / 2 : -(-*roll / 2);
+	*roll -= n * 2;
+	return n > 127 ? 127 : n < -127 ? -127 : n;
+}
+
 /* Pump one frame of frontend input into the HID event queue. Called from
  * USBasync via usb_hid_update(). input_cb is the libretro input_state
  * callback; port is the OHCI port the device sits on (used as the libretro
@@ -692,10 +716,29 @@ void usb_hid_update(USBDevice* dev, retro_input_state_t input_cb, unsigned port)
 		const bool bl = input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT) != 0;
 		const bool br = input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT) != 0;
 		const bool bm = input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE) != 0;
-		if (dx)
-			hid_queue_mouse_axis(s, POINTER_AXIS_X, dx);
-		if (dy)
-			hid_queue_mouse_axis(s, POINTER_AXIS_Y, dy);
+		if (s->trackball)
+		{
+			/* The stick at full tilt is 32 counts a frame before halving. */
+			const int sx = input_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X) / 1024;
+			const int sy = input_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y) / 1024;
+			s32 nx, ny;
+			if (bl)
+				s->roll[0] = s->roll[1] = 0;
+			else
+			{
+				if ((nx = trackball_counts(&s->roll[0], dx + sx)) != 0)
+					hid_queue_mouse_axis(s, POINTER_AXIS_X, nx);
+				if ((ny = trackball_counts(&s->roll[1], dy + sy)) != 0)
+					hid_queue_mouse_axis(s, POINTER_AXIS_Y, ny);
+			}
+		}
+		else
+		{
+			if (dx)
+				hid_queue_mouse_axis(s, POINTER_AXIS_X, dx);
+			if (dy)
+				hid_queue_mouse_axis(s, POINTER_AXIS_Y, dy);
+		}
 
 		if (bl != s->mouse_btn[0]) { s->mouse_btn[0] = bl; hid_queue_mouse_button(s, INPUT_BUTTON_LEFT, bl); }
 		if (br != s->mouse_btn[1]) { s->mouse_btn[1] = br; hid_queue_mouse_button(s, INPUT_BUTTON_RIGHT, br); }
@@ -719,6 +762,12 @@ void usb_hid_freeze(USBDevice* dev, UsbState* st)
 	{
 		usb_state_bytes(st, s->hid.u.ptr.queue, sizeof(s->hid.u.ptr.queue));
 		USB_STATE_DO(st, s->hid.u.ptr.mouse_grabbed);
+		if (s->trackball)
+		{
+			usb_state_bytes(st, s->roll, sizeof(s->roll));
+			if (st->reading && (s->roll[0] < -1 || s->roll[0] > 1 || s->roll[1] < -1 || s->roll[1] > 1))
+				st->error = true;
+		}
 	}
 	USB_STATE_DO(st, s->hid.head);
 	USB_STATE_DO(st, s->hid.n);

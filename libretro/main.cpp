@@ -2644,8 +2644,6 @@ static bool libretro_load_python1(const char* path)
 		log_cb(RETRO_LOG_WARN, "Python 1: no MemoryCardDonglePath; the game will look for its card in vain\n");
 	if (!d->bbsram[0] || !d->bootrom[0])
 		log_cb(RETRO_LOG_WARN, "Python 1: no BbsRamPath or IoBootRomPath; what the board keeps is lost at exit\n");
-	if (d->io_mode == P1IO_MODE_PPOOL)
-		log_cb(RETRO_LOG_WARN, "Python 1: Perfect Pool's trackball and camera are not emulated\n");
 
 	s_python1_board = p1io_create(d, PADGetInputStateCallback);
 	if (!s_python1_board)
@@ -2660,6 +2658,7 @@ static bool libretro_load_python1(const char* path)
 		strlcpy(s_option_config.Mcd[0].Filename, d->memcard, sizeof(s_option_config.Mcd[0].Filename));
 	}
 	FileMcd_SetIdPath(0, d->memcard_id);
+	USBSetPerfectPool(d->io_mode == P1IO_MODE_PPOOL);
 	s_option_config.DEV9.HddEnable = false;
 	/* It helps every one of them but Perfect Pool. */
 	s_option_config.Gamefixes.OPHFlagHack = d->io_mode != P1IO_MODE_PPOOL;
@@ -2720,6 +2719,7 @@ bool retro_load_game(const struct retro_game_info* game)
 	s_python2_content = game && game->path && !strcmp(path_get_extension(game->path), "py2");
 	s_python1_content = game && game->path && !strcmp(path_get_extension(game->path), "py1");
 	usb_python2_clear_config();
+	USBSetPerfectPool(false);
 	libretro_python1_release();
 	cdvd_set_nvram_files(NULL, NULL);
 	VMManager::SetPython2PatchFile(NULL);

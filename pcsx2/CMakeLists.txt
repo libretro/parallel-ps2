@@ -836,6 +836,7 @@ set(pcsx2USBSources
 	USB/usb-python2/p2io.c
 	USB/usb-python2/py2desc.c
 	USB/usb-python2/usb-python2.c
+	USB/usb-perfect-pool/ppcam.c
 	FireWire/fatimg.c
 	FireWire/p1io.c
 	FireWire/py1desc.c
@@ -861,6 +862,7 @@ set(pcsx2USBHeaders
 	USB/usb-python2/p2io.h
 	USB/usb-python2/py2desc.h
 	USB/usb-python2/usb-python2.h
+	USB/usb-perfect-pool/ppcam.h
 	FireWire/fatimg.h
 	FireWire/fw_device.h
 	FireWire/p1io.h
