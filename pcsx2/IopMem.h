@@ -142,11 +142,9 @@ extern void iop_memory_release(const struct VirtualMemoryManager* main_map);
 }
 #endif
 
-/* The IOP hardware register handlers the EE's vtlb maps. C linkage, so
- * Memory.c registers them; C++ keeps reaching them as IopMemory::. */
+/* The IOP hardware register handlers (ps2/Iop/IopHwRead.c, IopHwWrite.c):
+ * the EE's vtlb maps them and the IOP's memory map calls them. */
 #ifdef __cplusplus
-namespace IopMemory
-{
 extern "C" {
 #endif
 	extern mem8_t iopHwRead8_generic( u32 addr );
@@ -177,6 +175,5 @@ extern "C" {
 	extern void iopHwWrite32_Page3( u32 iopaddr, mem32_t data );
 	extern void iopHwWrite32_Page8( u32 iopaddr, mem32_t data );
 #ifdef __cplusplus
-}
 }
 #endif

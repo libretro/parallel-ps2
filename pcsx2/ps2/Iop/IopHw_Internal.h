@@ -15,18 +15,29 @@
 
 #pragma once
 
+#include <string.h>
+
 #include "../../Common.h"
 #include "../../IopHw.h"
 
-namespace IopMemory {
-namespace Internal {
-
-//////////////////////////////////////////////////////////////////////////////////////////
-// Masking helper so that I can use the fully qualified address for case statements.
-// Switches are based on the bottom 12 bits only, since MSVC tends to optimize switches
-// better when it has a limited width operand to work with. :)
-//
+/* Masking helper so that the fully qualified address can be used for case
+ * statements. Switches are based on the bottom 12 bits only, since MSVC
+ * tends to optimize switches better when it has a limited width operand
+ * to work with. */
 #define pgmsk( src ) ( (src) & 0x0fff )
 #define mcase( src ) case pgmsk(src)
 
-} };
+/* The register word at mem, read and written whole. A 16-bit access at a
+ * halfword boundary reaches these too, so through memcpy: the four bytes
+ * at mem as an unaligned u32 access would take them, without one. */
+static __fi u32 iop_hw_load32( u32 mem )
+{
+	u32 v;
+	memcpy(&v, &iopHw[mem & 0xffff], sizeof(v));
+	return v;
+}
+
+static __fi void iop_hw_store32( u32 mem, u32 v )
+{
+	memcpy(&iopHw[mem & 0xffff], &v, sizeof(v));
+}

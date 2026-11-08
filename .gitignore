@@ -302,4 +302,7 @@ tests/p1io/p1io_test
 tests/sio/sio_test
 tests/iopglue/iopglue_test
 tests/iopglue/.got.txt
+tests/iophw/iophw_test
+tests/iophw/iophw_test.exe
+tests/iophw/.got.txt
 tests/p2io/p2io_test.exe

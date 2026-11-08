@@ -648,14 +648,15 @@ set(pcsx2LinuxHeaders
 set(pcsx2ps2Sources
 	ps2/BiosTools.cpp
 	ps2/pgif.cpp
-	ps2/Iop/IopHwRead.cpp
-	ps2/Iop/IopHwWrite.cpp
+	ps2/Iop/IopHwRead.c
+	ps2/Iop/IopHwWrite.c
 	ps2/Iop/PsxBios.cpp)
 
 # ps2 headers
 set(pcsx2ps2Headers
 	ps2/BiosTools.h
 	ps2/pgif.h
+	ps2/pgifio.h
 	ps2/HwInternal.h
 	ps2/Iop/IopHw_Internal.h)
 
@@ -784,6 +785,7 @@ set(pcsx2DEV9Headers
 	DEV9/ATA/HddImage.h
 	DEV9/AdapterUtils.h
 	DEV9/DEV9.h
+	DEV9/DEV9irq.h
 	DEV9/DEV9mmio.h
 	DEV9/InternalServers/DHCP_Server.h
 	DEV9/InternalServers/DNS_Logger.h

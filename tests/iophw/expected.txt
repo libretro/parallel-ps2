@@ -1,0 +1,36 @@
+8 page1: 5afdde829de1128f
+8 page3: 95ce9c3c698734b8
+8 page8: 4977cb3d99542706
+16 page1: 78264beab909c504
+16 page3: 0ecfe07995fffb84
+16 page8: 595bfc8eeab2a3a4
+32 page1: f4d7692a7cd7721f
+32 page3: 40ed932ba571a23f
+32 page8: a831acfacba1ff57
+8 generic: 3f127bbb7e3dcad7
+16 generic: 9f0010b077bf77d7
+32 generic: e1994a2e2f7a88d7
+8 page1 arcade: ceeed739fa41377f
+8 page3 arcade: 1af71921aa8e3e13
+8 page8 arcade: 089c7691bfc9b8c1
+16 page1 arcade: 6c7c0b301478ccd5
+16 page3 arcade: 8f91ad7359a5e355
+16 page8 arcade: 8eb6e29866df4cf5
+32 page1 arcade: c1c4818105d0d0b5
+32 page3 arcade: c56f86e4008303b5
+32 page8 arcade: 86e012fbbc1cc7eb
+8 generic arcade: 3e5d2698da2808cb
+16 generic arcade: 24bca7622c04adab
+32 generic arcade: 093c179ac08243eb
+sweep: cc141b47658d99eb
+mix 20000: f67535d8fdff842b
+mix 40000: 26bf2b2de979f9cc
+mix 60000: fac04a372439f8dc
+mix 80000: d939d4b399aa46d7
+mix 100000: 56346f9d489181e9
+mix 120000: 695a85a96d4f1b3f
+mix 140000: 96e5323dd754c884
+mix 160000: 845aaba23780645e
+mix 180000: e341955ca7acec3a
+mix 200000: 17aacc0809fa79d9
+end: 34e88c7274b94494

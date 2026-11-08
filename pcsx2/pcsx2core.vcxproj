@@ -282,8 +282,8 @@
     <ClCompile Include="x86\iR3000A.cpp" />
     <ClCompile Include="x86\iR3000Atables.cpp" />
     <ClCompile Include="IopHw.c" />
-    <ClCompile Include="ps2\Iop\IopHwRead.cpp" />
-    <ClCompile Include="ps2\Iop\IopHwWrite.cpp" />
+    <ClCompile Include="ps2\Iop\IopHwRead.c" />
+    <ClCompile Include="ps2\Iop\IopHwWrite.c" />
     <ClCompile Include="CDVD\Ps1CD.c" />
     <ClCompile Include="CDVD\CDVD.c" />
     <ClCompile Include="CDVD\CDVDnvram.c" />
@@ -429,6 +429,7 @@
     <ClInclude Include="Mdec.h" />
     <ClInclude Include="Patch.h" />
     <ClInclude Include="ps2\pgif.h" />
+    <ClInclude Include="ps2\pgifio.h" />
     <ClInclude Include="USB\shared\ringbuffer.h" />
     <ClInclude Include="USB\USB.h" />
     <ClInclude Include="Elfheader.h" />

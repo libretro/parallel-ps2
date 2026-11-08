@@ -521,10 +521,10 @@
     <ClCompile Include="IopHw.c">
       <Filter>System\Ps2\Iop\Hardware</Filter>
     </ClCompile>
-    <ClCompile Include="ps2\Iop\IopHwRead.cpp">
+    <ClCompile Include="ps2\Iop\IopHwRead.c">
       <Filter>System\Ps2\Iop\Hardware</Filter>
     </ClCompile>
-    <ClCompile Include="ps2\Iop\IopHwWrite.cpp">
+    <ClCompile Include="ps2\Iop\IopHwWrite.c">
       <Filter>System\Ps2\Iop\Hardware</Filter>
     </ClCompile>
     <ClCompile Include="CDVD\Ps1CD.c">
@@ -1178,6 +1178,9 @@
       <Filter>System\Ps2\Iop</Filter>
     </ClInclude>
     <ClInclude Include="ps2\pgif.h">
+      <Filter>System\Ps2</Filter>
+    </ClInclude>
+    <ClInclude Include="ps2\pgifio.h">
       <Filter>System\Ps2</Filter>
     </ClInclude>
     <ClInclude Include="Mdec.h">

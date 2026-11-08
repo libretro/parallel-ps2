@@ -384,9 +384,11 @@ SOURCES_CXX += \
 SOURCES_CXX += \
 	$(LRPS2_DIR)/ps2/BiosTools.cpp \
 	$(LRPS2_DIR)/ps2/pgif.cpp \
-	$(LRPS2_DIR)/ps2/Iop/IopHwRead.cpp \
-	$(LRPS2_DIR)/ps2/Iop/IopHwWrite.cpp \
 	$(LRPS2_DIR)/ps2/Iop/PsxBios.cpp
+
+SOURCES_C += \
+	$(LRPS2_DIR)/ps2/Iop/IopHwRead.c \
+	$(LRPS2_DIR)/ps2/Iop/IopHwWrite.c
 
 # pcsx2/SPU2. Every unit builds as C, the emulator-facing shim included.
 SOURCES_C += \

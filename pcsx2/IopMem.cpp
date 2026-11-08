@@ -125,9 +125,9 @@ u8 iopMemRead8_slow(u32 mem)
 	{
 		switch( mem & 0xf000 )
 		{
-			case 0x1000: return IopMemory::iopHwRead8_Page1(mem);
-			case 0x3000: return IopMemory::iopHwRead8_Page3(mem);
-			case 0x8000: return IopMemory::iopHwRead8_Page8(mem);
+			case 0x1000: return iopHwRead8_Page1(mem);
+			case 0x3000: return iopHwRead8_Page3(mem);
+			case 0x8000: return iopHwRead8_Page8(mem);
 
 			default:
 				return psxHu8(mem);
@@ -163,9 +163,9 @@ u16 iopMemRead16_slow(u32 mem)
 	{
 		switch( mem & 0xf000 )
 		{
-			case 0x1000: return IopMemory::iopHwRead16_Page1(mem);
-			case 0x3000: return IopMemory::iopHwRead16_Page3(mem);
-			case 0x8000: return IopMemory::iopHwRead16_Page8(mem);
+			case 0x1000: return iopHwRead16_Page1(mem);
+			case 0x3000: return iopHwRead16_Page3(mem);
+			case 0x8000: return iopHwRead16_Page8(mem);
 
 			default:
 				return psxHu16(mem);
@@ -225,9 +225,9 @@ u32 iopMemRead32_slow(u32 mem)
 	{
 		switch( mem & 0xf000 )
 		{
-			case 0x1000: return IopMemory::iopHwRead32_Page1(mem);
-			case 0x3000: return IopMemory::iopHwRead32_Page3(mem);
-			case 0x8000: return IopMemory::iopHwRead32_Page8(mem);
+			case 0x1000: return iopHwRead32_Page1(mem);
+			case 0x3000: return iopHwRead32_Page3(mem);
+			case 0x8000: return iopHwRead32_Page8(mem);
 
 			default:
 				return psxHu32(mem);
@@ -288,9 +288,9 @@ void iopMemWrite8(u32 mem, u8 value)
 	{
 		switch( mem & 0xf000 )
 		{
-			case 0x1000: IopMemory::iopHwWrite8_Page1(mem,value); break;
-			case 0x3000: IopMemory::iopHwWrite8_Page3(mem,value); break;
-			case 0x8000: IopMemory::iopHwWrite8_Page8(mem,value); break;
+			case 0x1000: iopHwWrite8_Page1(mem,value); break;
+			case 0x3000: iopHwWrite8_Page3(mem,value); break;
+			case 0x8000: iopHwWrite8_Page8(mem,value); break;
 
 			default:
 				psxHu8(mem) = value;
@@ -333,9 +333,9 @@ void iopMemWrite16(u32 mem, u16 value)
 	{
 		switch( mem & 0xf000 )
 		{
-			case 0x1000: IopMemory::iopHwWrite16_Page1(mem,value); break;
-			case 0x3000: IopMemory::iopHwWrite16_Page3(mem,value); break;
-			case 0x8000: IopMemory::iopHwWrite16_Page8(mem,value); break;
+			case 0x1000: iopHwWrite16_Page1(mem,value); break;
+			case 0x3000: iopHwWrite16_Page3(mem,value); break;
+			case 0x8000: iopHwWrite16_Page8(mem,value); break;
 
 			default:
 				psxHu16(mem) = value;
@@ -401,9 +401,9 @@ void iopMemWrite32(u32 mem, u32 value)
 	{
 		switch( mem & 0xf000 )
 		{
-			case 0x1000: IopMemory::iopHwWrite32_Page1(mem,value); break;
-			case 0x3000: IopMemory::iopHwWrite32_Page3(mem,value); break;
-			case 0x8000: IopMemory::iopHwWrite32_Page8(mem,value); break;
+			case 0x1000: iopHwWrite32_Page1(mem,value); break;
+			case 0x3000: iopHwWrite32_Page3(mem,value); break;
+			case 0x8000: iopHwWrite32_Page8(mem,value); break;
 
 			default:
 				psxHu32(mem) = value;

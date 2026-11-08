@@ -233,8 +233,8 @@ struct ringBuf_t
 
 void pgifInit(void);
 
-extern void psxGPUw(int, u32);
-extern u32 psxGPUr(int);
+#include "pgifio.h"
+
 
 extern void PGIFw(int, u32);
 extern u32 PGIFr(int);
@@ -242,8 +242,6 @@ extern u32 PGIFr(int);
 extern void PGIFwQword(u32 addr, void *);
 extern void PGIFrQword(u32 addr, void *);
 
-extern u32 psxDma2GpuR(u32 addr);
-extern void psxDma2GpuW(u32 addr, u32 data);
 
 /***************************************************************************************************
 *** Constants here control code that is either not certainly correct or may affect compatibility ***

@@ -17,7 +17,10 @@
 
 #include "IopMem.h"
 
-static const u32
+/* Enumerators, so C units can use them as case labels; every value fits an
+ * int. */
+enum
+{
 	HW_PS1_GPU_START = 0x1F8010A0,
 	HW_PS1_GPU_END   = 0x1F8010B0,
 	HW_USB_START	 = 0x1f801600,
@@ -25,9 +28,11 @@ static const u32
 	HW_FW_START		 = 0x1f808400,
 	HW_FW_END		 = 0x1f808550,	/* end addr for FW is a guess... */
 	HW_SPU2_START	 = 0x1f801c00,
-	HW_SPU2_END		 = 0x1f801e00;
+	HW_SPU2_END		 = 0x1f801e00
+};
 
-static const u32
+enum
+{
 	HW_SSBUS_SPD_ADDR	= 0x1f801000,
 	HW_SSBUS_PIO_ADDR	= 0x1f801004,
 	HW_SSBUS_SPD_DELAY	= 0x1f801008,
@@ -82,7 +87,8 @@ static const u32
 	HW_SIO2_RECV3		= 0x1f808274,
 	HW_SIO2_8278        	= 0x1F808278, /* May as well add defs */
 	HW_SIO2_827C        	= 0x1F80827C, /* for these 2... */
-	HW_SIO2_INTR		= 0x1f808280;
+	HW_SIO2_INTR		= 0x1f808280
+};
 
 enum DMAMadrAddresses
 {

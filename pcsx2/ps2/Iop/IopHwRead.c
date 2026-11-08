@@ -19,25 +19,20 @@
 #include "CDVD/Ps1CD.h"
 #include "FW.h"
 #include "SPU2/spu2.h"
-#include "DEV9/DEV9.h"
+#include "DEV9/DEV9mmio.h"
 #include "USB/USB.h"
 #include "IopCounters.h"
 #include "IopDma.h"
 #include "ps2/BiosTools.h"
 
-#include "ps2/pgif.h"
+#include "ps2/pgifio.h"
 #include "Mdec.h"
 
-namespace IopMemory
-{
-
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 mem8_t iopHwRead8_Page1( u32 addr )
 {
 	const u32 masked_addr = addr & 0x0fff;
 
-	mem8_t ret = 0; // using a return var can be helpful in debugging.
+	mem8_t ret = 0; /* using a return var can be helpful in debugging. */
 	switch( masked_addr )
 	{
 		case (HW_SIO_DATA & 0x0fff):
@@ -49,8 +44,8 @@ mem8_t iopHwRead8_Page1( u32 addr )
 		case (HW_SIO_BAUD & 0x0fff):
 			break;
 
-		// for use of serial port ignore for now
-		//case 0x50: ret = serial_read8(); break;
+		/* for use of serial port ignore for now */
+		/* case 0x50: ret = serial_read8(); break; */
 
 		mcase(HW_DEV9_DATA): ret = DEV9read8( addr ); break;
 
@@ -73,8 +68,6 @@ mem8_t iopHwRead8_Page1( u32 addr )
 	return ret;
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 mem8_t iopHwRead8_Page3( u32 addr )
 {
 	if( addr == 0x1f803100 )	/* TOOL config switches */
@@ -88,40 +81,38 @@ mem8_t iopHwRead8_Page3( u32 addr )
 	return psxHu8( addr );
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 mem8_t iopHwRead8_Page8( u32 addr )
 {
 	if (addr == HW_SIO2_FIFO)
 		return sio2_read();
 	return psxHu8(addr);
 }
-//////////////////////////////////////////////////////////////////////////////////////////
-//
-template< typename T >
-static __fi T _HwRead_16or32_Page1( u32 addr )
+
+/* The 16- and 32-bit Page 1 reads; size is the access width in bytes.
+ * The caller truncates a 16-bit read's result to 16 bits. */
+static __fi u32 _HwRead_16or32_Page1( u32 addr, int size )
 {
 	u32 masked_addr = pgmsk( addr );
-	T ret = 0;
+	u32 ret = 0;
 
-	// ------------------------------------------------------------------------
-	// Counters, 16-bit varieties!
-	//
+	/* ------------------------------------------------------------------------ */
+	/* Counters, 16-bit varieties! */
+
 	if( masked_addr >= 0x100 && masked_addr < 0x130 )
 	{
-		int cntidx = ( masked_addr >> 4 ) & 0xf;
+		const int cntidx = ( masked_addr >> 4 ) & 0xf;
 		switch( masked_addr & 0xf )
 		{
 			case 0x0:
-				ret = (T)psxRcntRcount16( cntidx );
+				ret = psxRcntRcount16( cntidx );
 			break;
 
 			case 0x4:
 				ret = psxCounters[cntidx].mode;
 
-				// hmm!  The old code only did this bitwise math for 16 bit reads.
-				// Logic indicates it should do the math consistently.  Question is,
-				// should it do the logic for both 16 and 32, or not do logic at all?
+				/* hmm!  The old code only did this bitwise math for 16 bit reads. */
+				/* Logic indicates it should do the math consistently.  Question is, */
+				/* should it do the logic for both 16 and 32, or not do logic at all? */
 
 				psxCounters[cntidx].mode &= ~0x1800;
 			break;
@@ -131,31 +122,31 @@ static __fi T _HwRead_16or32_Page1( u32 addr )
 			break;
 
 			default:
-				ret = psxHu32(addr);
+				ret = iop_hw_load32(addr);
 			break;
 		}
 	}
-	// ------------------------------------------------------------------------
-	// Counters, 32-bit varieties!
-	//
+	/* ------------------------------------------------------------------------ */
+	/* Counters, 32-bit varieties! */
+
 	else if( masked_addr >= 0x480 && masked_addr < 0x4b0 )
 	{
 		int cntidx = (( masked_addr >> 4 ) & 0xf) - 5;
 		switch( masked_addr & 0xf )
 		{
 			case 0x0:
-				ret = (T)psxRcntRcount32( cntidx );
+				ret = psxRcntRcount32( cntidx );
 			break;
 
 			case 0x2:
-				ret = (T)(psxRcntRcount32( cntidx ) >> 16);
+				ret = (psxRcntRcount32( cntidx ) >> 16);
 			break;
 
 			case 0x4:
 				ret = psxCounters[cntidx].mode;
-				// hmm!  The old code only did the following bitwise math for 16 bit reads.
-				// Logic indicates it should do the math consistently.  Question is,
-				// should it do the logic for both 16 and 32, or not do logic at all?
+				/* hmm!  The old code only did the following bitwise math for 16 bit reads. */
+				/* Logic indicates it should do the math consistently.  Question is, */
+				/* should it do the logic for both 16 and 32, or not do logic at all? */
 
 				psxCounters[cntidx].mode &= ~0x1800;
 			break;
@@ -169,44 +160,44 @@ static __fi T _HwRead_16or32_Page1( u32 addr )
 			break;
 
 			default:
-				ret = psxHu32(addr);
+				ret = iop_hw_load32(addr);
 			break;
 		}
 	}
-	// ------------------------------------------------------------------------
-	// USB, with both 16 and 32 bit interfaces
-	//
+	/* ------------------------------------------------------------------------ */
+	/* USB, with both 16 and 32 bit interfaces */
+
 	else if( (masked_addr >= pgmsk(HW_USB_START)) && (masked_addr < pgmsk(HW_USB_END)) )
 	{
-		ret = (sizeof(T) == 2) ? USBread16( addr ) : USBread32( addr );
+		ret = (size == 2) ? USBread16( addr ) : USBread32( addr );
 	}
-	// ------------------------------------------------------------------------
-	// SPU2, accessible in 16 bit mode only!
-	//
+	/* ------------------------------------------------------------------------ */
+	/* SPU2, accessible in 16 bit mode only! */
+
 	else if( masked_addr >= pgmsk(HW_SPU2_START) && masked_addr < pgmsk(HW_SPU2_END) )
 	{
-		if( sizeof(T) == 2 )
+		if( size == 2 )
 			ret = SPU2read( addr );
 		else
-			ret = psxHu32(addr);
+			ret = iop_hw_load32(addr);
 	}
-	// ------------------------------------------------------------------------
-	// PS1 GPU access
-	//
+	/* ------------------------------------------------------------------------ */
+	/* PS1 GPU access */
+
 	else if( (masked_addr >= pgmsk(HW_PS1_GPU_START)) && (masked_addr < pgmsk(HW_PS1_GPU_END)) )
 		ret = psxDma2GpuR(addr);
 	else
 	{
 		switch( masked_addr )
 		{
-			// ------------------------------------------------------------------------
+			/* ------------------------------------------------------------------------ */
 			case (HW_SIO_DATA & 0x0fff):
 				ret = sio0_get_rx_data();
-				ret |= sio0_get_rx_data() << 8;
-				if (sizeof(T) == 4)
+				ret |= (u32)sio0_get_rx_data() << 8;
+				if (size == 4)
 				{
-					ret |= sio0_get_rx_data() << 16;
-					ret |= sio0_get_rx_data() << 24;
+					ret |= (u32)sio0_get_rx_data() << 16;
+					ret |= (u32)sio0_get_rx_data() << 24;
 				}
 				break;
 			case (HW_SIO_STAT & 0x0fff):
@@ -222,12 +213,12 @@ static __fi T _HwRead_16or32_Page1( u32 addr )
 				ret = sio0.baud;
 				break;
 
-			// ------------------------------------------------------------------------
-			//Serial port stuff not support now ;P
-			// case 0x050: hard = serial_read32(); break;
-			//	case 0x054: hard = serial_status_read(); break;
-			//	case 0x05a: hard = serial_control_read(); break;
-			//	case 0x05e: hard = serial_baud_read(); break;
+			/* ------------------------------------------------------------------------ */
+			/* Serial port stuff not support now ;P */
+			/* case 0x050: hard = serial_read32(); break; */
+			/* case 0x054: hard = serial_status_read(); break; */
+			/* case 0x05a: hard = serial_control_read(); break; */
+			/* case 0x05e: hard = serial_baud_read(); break; */
 
 			mcase(HW_ICTRL):
 				ret = psxHu32(0x1078);
@@ -236,14 +227,14 @@ static __fi T _HwRead_16or32_Page1( u32 addr )
 
 			mcase(HW_ICTRL+2):
 				ret = psxHu16(0x107a);
-				psxHu32(0x1078) = 0;	// most likely should clear all 32 bits here.
+				psxHu32(0x1078) = 0;	/* most likely should clear all 32 bits here. */
 			break;
 
-			// ------------------------------------------------------------------------
-			// Legacy GPU  emulation
-			//
+			/* ------------------------------------------------------------------------ */
+			/* Legacy GPU  emulation */
+
 			mcase(0x1f8010ac) :
-				ret = psxHu32(addr);
+				ret = iop_hw_load32(addr);
 			break;
 
 			mcase(HW_PS1_GPU_DATA) :
@@ -254,22 +245,22 @@ static __fi T _HwRead_16or32_Page1( u32 addr )
 				ret = psxGPUr(addr);
 			break;
 
-			mcase (0x1f801820): // MDEC
+			mcase (0x1f801820): /* MDEC */
 				ret = mdecRead0();
 			break;
 
-			mcase (0x1f801824): // MDEC
+			mcase (0x1f801824): /* MDEC */
 				ret = mdecRead1();
 			break;
 
-			// ------------------------------------------------------------------------
+			/* ------------------------------------------------------------------------ */
 
 			mcase(0x1f80146e):
 				ret = DEV9read16( addr );
 			break;
 
 			default:
-				ret = psxHu32(addr);
+				ret = iop_hw_load32(addr);
 			break;
 		}
 	}
@@ -277,48 +268,33 @@ static __fi T _HwRead_16or32_Page1( u32 addr )
 	return ret;
 }
 
-// Some Page 2 mess?  I love random question marks for comments!
-//case 0x1f802030: hard =   //int_2000????
-//case 0x1f802040: hard =//dip switches...??
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 mem16_t iopHwRead16_Page1( u32 addr )
 {
-	return _HwRead_16or32_Page1<mem16_t>( addr );
+	return (mem16_t)_HwRead_16or32_Page1( addr, 2 );
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 mem16_t iopHwRead16_Page3( u32 addr )
 {
 	return psxHu16(addr);
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 mem16_t iopHwRead16_Page8( u32 addr )
 {
 	return psxHu16(addr);
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 mem32_t iopHwRead32_Page1( u32 addr )
 {
-	return _HwRead_16or32_Page1<mem32_t>( addr );
+	return _HwRead_16or32_Page1( addr, 4 );
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 mem32_t iopHwRead32_Page3( u32 addr )
 {
 	const mem32_t ret = psxHu32(addr);
 	return ret;
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 mem32_t iopHwRead32_Page8( u32 addr )
 {
 	u32 masked_addr = addr & 0x0fff;
@@ -331,8 +307,8 @@ mem32_t iopHwRead32_Page8( u32 addr )
 		}
 		else if( masked_addr < 0x260 )
 		{
-			// SIO2 Send commands alternate registers.  First reg maps to Send1, second
-			// to Send2, third to Send1, etc.  And the following clever code does this:
+			/* SIO2 Send commands alternate registers.  First reg maps to Send1, second */
+			/* to Send2, third to Send1, etc.  And the following clever code does this: */
 			const int parm = (masked_addr-0x240) / 8;
 			return (masked_addr & 4) ? sio2.send2[parm] : sio2.send1[parm];
 		}
@@ -367,6 +343,3 @@ mem32_t iopHwRead32_Page8( u32 addr )
 	}
 	return psxHu32(addr);
 }
-
-}
-
