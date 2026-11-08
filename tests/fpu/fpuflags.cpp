@@ -84,6 +84,9 @@ int main(void)
 	run("div overflow, flags clear",  DIV_S, huge, tiny, 0, FLAGS_OU, 0, 0, 0);
 	run("div underflow, flags clear", DIV_S, tiny, huge, 0, FLAGS_OU, 0, 0, 0);
 	run("div overflow, flags set",    DIV_S, huge, tiny, FLAGS_OU, FLAGS_OU, FLAGS_OU, 0, 0);
+	/* ps2autotests ee_fpu/fcr "Underflow": FLT_MIN / 3 leaves FCR31 at
+	 * 01000001 on the console, no U or SU. */
+	run("div FLT_MIN / 3, as on console", DIV_S, tiny, 0x40400000u, 0, FLAGS_OU, 0, 0, 0);
 	run("div ordinary, flags set",    DIV_S, 0x40000000u, 0x3F800000u, FLAGS_OU,
 		FLAGS_OU, FLAGS_OU, 1, 0x40000000u);
 

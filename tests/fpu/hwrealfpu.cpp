@@ -351,6 +351,90 @@ int main(int argc, char** argv)
 		if (pass != cases) failures++;
 	}
 
+	/* ---- the flag situations at the end of fcr --------------------------
+	 *
+	 * FCR31 on the console after one op each, from a CTC1 of zero: the
+	 * only flags any capture records, since the arithmetic ones print
+	 * results alone. "Underflow" is a DIV.S whose quotient underflows,
+	 * and the console sets no flag for it.
+	 */
+	{
+		static const struct { const char* name; void (*fn)(); u32 fs, ft; }
+		kFlag[] = {
+			/* SQRT_S reads ft. */
+			{ "sqrt(-1)",            SQRT_S, 0,           0xBF800000u },
+			{ "Divide zero by zero", DIV_S,  0,           0           },
+			{ "Divide one by zero",  DIV_S,  0x3F800000u, 0           },
+			{ "NAN math",            ADD_S,  0x7F800001u, 0x7F800001u },
+			{ "Overflow",            MUL_S,  0x7F7FFFFFu, 0x7F7FFFFFu },
+			{ "Underflow",           DIV_S,  0x00800000u, 0x40400000u },
+			{ "Inexact",             DIV_S,  0x3F800000u, 0x4040FFFFu },
+		};
+		const int n = (int)(sizeof(kFlag)/sizeof(kFlag[0]));
+		char path[512], buf[4096], name[128];
+		FILE* f;
+		int i, in = 0, pass = 0, cases = 0, matched = 0;
+
+		snprintf(path, sizeof(path), "%s/fcr.expected", dir);
+		f = fopen(path, "r");
+		name[0] = '\0';
+		while (f && fgets(buf, sizeof(buf), f))
+		{
+			char* p;
+			unsigned want;
+			size_t len = strlen(buf);
+
+			if (!in)
+			{ if (!strncmp(buf, "Flag situations:", 16)) in = 1; continue; }
+			if (buf[0] != ' ')
+			{
+				/* "Name:" opens a situation; anything else ends them. */
+				if (len < 2 || buf[len - 2] != ':') { name[0] = '\0'; continue; }
+				buf[len - 2] = '\0';
+				snprintf(name, sizeof(name), "%s", buf);
+				continue;
+			}
+			if (!name[0] || !(p = strstr(buf, "fcr31: ")) || sscanf(p + 7, "%x", &want) != 1)
+				continue;
+
+			for (i = 0; i < n && strcmp(kFlag[i].name, name); i++) {}
+			cases++;
+			if (i == n)
+			{
+				printf("  flag situation \"%s\" has no op here to run\n", name);
+				name[0] = '\0';
+				continue;
+			}
+			matched++;
+
+			cpuRegs.GPR.r[RT].UD[0] = 0;
+			set_code(31, RT, 0);
+			CTC1();
+			fpuRegs.fpr[FS].UL = kFlag[i].fs;
+			fpuRegs.fpr[FT].UL = kFlag[i].ft;
+			set_code(FS, FT, FD);
+			kFlag[i].fn();
+			cpuRegs.GPR.r[RT].UD[0] = 0;
+			set_code(31, RT, 0);
+			CFC1();
+			if (cpuRegs.GPR.r[RT].UL[0] == want) pass++;
+			else
+				printf("  %-20s fcr31 console %08x  ours %08x\n", name, want,
+				       cpuRegs.GPR.r[RT].UL[0]);
+			name[0] = '\0';
+		}
+		if (f)
+			fclose(f);
+		if (matched != n)
+		{
+			printf("  %d of %d flag situations found in %s\n", matched, n, path);
+			failures++;
+		}
+		total += cases;
+		printf("flags    %2d/%-3d console cases from ee_fpu/fcr\n", pass, cases);
+		if (pass != cases) failures++;
+	}
+
 	printf("hwrealfpu: %d cases across %d ops, driven through FPU.cpp\n",
 	       total, NOPS + 1);
 	return failures != 0;
