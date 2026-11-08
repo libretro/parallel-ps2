@@ -55,13 +55,25 @@ static void near_extent_around(uintptr_t a, near_range_t *out)
 typedef struct near_phdr_ctx
 {
 	near_range_t r;
+	const near_range_t *except;
 	uintptr_t anchor;
 	int found;
 } near_phdr_ctx_t;
 
+static void near_phdr_add(near_range_t *r, uintptr_t lo, uintptr_t hi)
+{
+	if (lo >= hi)
+		return;
+	if (lo < r->lo)
+		r->lo = lo;
+	if (hi > r->hi)
+		r->hi = hi;
+}
+
 static int near_phdr_cb(struct dl_phdr_info *info, size_t info_size, void *data)
 {
 	near_phdr_ctx_t *c = (near_phdr_ctx_t *)data;
+	const near_range_t *x = c->except;
 	near_range_t r;
 	unsigned i;
 	int hit = 0;
@@ -80,10 +92,13 @@ static int near_phdr_cb(struct dl_phdr_info *info, size_t info_size, void *data)
 		hi = lo + (uintptr_t)ph->p_memsz;
 		if (c->anchor >= lo && c->anchor < hi)
 			hit = 1;
-		if (lo < r.lo)
-			r.lo = lo;
-		if (hi > r.hi)
-			r.hi = hi;
+		if (x && x->lo < hi && x->hi > lo)
+		{
+			near_phdr_add(&r, lo, x->lo);
+			near_phdr_add(&r, x->hi, hi);
+		}
+		else
+			near_phdr_add(&r, lo, hi);
 	}
 	if (!hit)
 		return 0;
@@ -95,8 +110,14 @@ static int near_phdr_cb(struct dl_phdr_info *info, size_t info_size, void *data)
 
 void near_image_extent(const void *anchor, near_range_t *out)
 {
+	near_image_extent_except(anchor, NULL, out);
+}
+
+void near_image_extent_except(const void *anchor, const near_range_t *except, near_range_t *out)
+{
 #if defined(_WIN32)
 	MEMORY_BASIC_INFORMATION mbi;
+	(void)except;
 	if (VirtualQuery(anchor, &mbi, sizeof(mbi)) == sizeof(mbi) && mbi.AllocationBase)
 	{
 		const unsigned char *base = (const unsigned char *)mbi.AllocationBase;
@@ -116,6 +137,7 @@ void near_image_extent(const void *anchor, near_range_t *out)
 	near_phdr_ctx_t c;
 	c.r.lo = 0;
 	c.r.hi = 0;
+	c.except = except;
 	c.anchor = (uintptr_t)anchor;
 	c.found = 0;
 	dl_iterate_phdr(near_phdr_cb, &c);
@@ -124,8 +146,103 @@ void near_image_extent(const void *anchor, near_range_t *out)
 		*out = c.r;
 		return;
 	}
+#else
+	(void)except;
 #endif
 	near_extent_around((uintptr_t)anchor, out);
+}
+
+/* ---- room in the image --------------------------------------------------- */
+
+#ifdef NEAR_HAVE_ROOM
+#define NEAR_STR_(x) #x
+#define NEAR_STR(x) NEAR_STR_(x)
+/* .lbss is NOBITS and goes after .bss in the linkers' default layouts, so the
+ * room costs no file size and is the top of the image. */
+__asm__(".pushsection .lbss,\"aw\",@nobits\n"
+		".p2align 16\n"
+		".globl near_room_space\n"
+		".hidden near_room_space\n"
+		".type near_room_space,@object\n"
+		".size near_room_space," NEAR_STR(NEAR_ROOM_BYTES) "\n"
+		"near_room_space:\n"
+		".zero " NEAR_STR(NEAR_ROOM_BYTES) "\n"
+		".popsection\n");
+extern unsigned char near_room_space[] __attribute__((visibility("hidden")));
+
+static int near_room_lost;
+
+/* The loader commits the room as writable data; drop that at once. */
+__attribute__((constructor)) static void near_room_drop(void)
+{
+	near_room_return((uintptr_t)near_room_space, NEAR_ROOM_SIZE);
+}
+#endif
+
+int near_room_extent(near_range_t *out)
+{
+#ifdef NEAR_HAVE_ROOM
+	out->lo = (uintptr_t)near_room_space;
+	out->hi = out->lo + NEAR_ROOM_SIZE;
+	return 1;
+#else
+	(void)out;
+	return 0;
+#endif
+}
+
+int near_room_return(uintptr_t lo, size_t size)
+{
+#ifdef NEAR_HAVE_ROOM
+	/* Read-only: uncommitted and outside VmData, yet still readable by
+	 * whatever scans the image's data, as LeakSanitizer does. */
+	if (mmap((void *)lo, size, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_NORESERVE,
+			-1, 0) != MAP_FAILED)
+		return 1;
+	near_room_lost = 1;
+#else
+	(void)lo;
+	(void)size;
+#endif
+	return 0;
+}
+
+int near_place_pair_in_room(const near_range_t *image, size_t main_size, size_t code_size,
+		uintptr_t limit, uintptr_t align, const near_pair_ops_t *ops)
+{
+#ifdef NEAR_HAVE_ROOM
+	near_range_t room;
+	near_range_t hull;
+	uintptr_t main_base;
+	uintptr_t code_base;
+
+	if (near_room_lost || !near_room_extent(&room))
+		return 0;
+	if (!align)
+		align = 1;
+	main_base = (room.lo + align - 1) & ~(align - 1);
+	code_base = (main_base + main_size + align - 1) & ~(align - 1);
+	if (code_base > room.hi || room.hi - code_base < code_size)
+		return 0;
+	hull = *image;
+	near_hull(&hull, &room);
+	if (hull.hi - hull.lo > limit)
+		return 0;
+	if (!ops->map_main(ops->ctx, main_base))
+		return 0;
+	if (ops->map_code(ops->ctx, code_base))
+		return 1;
+	ops->unmap_main(ops->ctx);
+	return 0;
+#else
+	(void)image;
+	(void)main_size;
+	(void)code_size;
+	(void)limit;
+	(void)align;
+	(void)ops;
+	return 0;
+#endif
 }
 
 int near_search_init(near_search_t *s, const near_range_t *target, size_t size,

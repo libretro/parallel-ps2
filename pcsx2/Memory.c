@@ -76,22 +76,50 @@ BIOS
 static const char s_image_anchor = 0;
 static near_space_t s_space;
 
+#ifdef NEAR_HAVE_ROOM
+PCSX2_STATIC_ASSERT(HOSTMEM_MAIN_SIZE + HOSTMEM_CODE_SIZE <= NEAR_ROOM_BYTES, "room too small for the maps");
+#endif
+
 static int place_map_main(void* ctx, uintptr_t base) { return vmm_map(&((SysMainMemory*)ctx)->main, base); }
 static void place_unmap_main(void* ctx)              { vmm_unmap(&((SysMainMemory*)ctx)->main); }
 static int place_map_code(void* ctx, uintptr_t base) { return vmm_map(&((SysMainMemory*)ctx)->code, base); }
+static int room_map_main(void* ctx, uintptr_t base)  { return vmm_map_in_room(&((SysMainMemory*)ctx)->main, base); }
+static int room_map_code(void* ctx, uintptr_t base)  { return vmm_map_in_room(&((SysMainMemory*)ctx)->code, base); }
 
 static bool place_maps(SysMainMemory* m)
 {
 	near_pair_ops_t ops;
 	near_range_t image;
+	near_range_t room;
 
 	ops.map_main   = place_map_main;
 	ops.unmap_main = place_unmap_main;
 	ops.map_code   = place_map_code;
 	ops.ctx        = m;
-	near_image_extent(&s_image_anchor, &image);
+	/* The room holds no globals, so reach is measured without it. */
+	near_image_extent_except(&s_image_anchor, near_room_extent(&room) ? &room : NULL, &image);
 	return near_place_pair(&s_space, &image, m->main.size, MAIN_CEILING, m->code.size,
 			RIP_LIMIT, RESERVE_ALIGN, &ops) != 0;
+}
+
+/* The last resort: the room kept in the image (NearPlace.h). */
+static bool place_maps_in_image(SysMainMemory* m)
+{
+	near_pair_ops_t ops;
+	near_range_t image;
+
+	ops.map_main   = room_map_main;
+	ops.unmap_main = place_unmap_main;
+	ops.map_code   = room_map_code;
+	ops.ctx        = m;
+	near_image_extent(&s_image_anchor, &image);
+	if (!near_place_pair_in_room(&image, m->main.size, m->code.size, RIP_LIMIT, RESERVE_ALIGN, &ops))
+		return false;
+	log_cb(RETRO_LOG_WARN, "No free range within reach of the core for the %u MB main and %u MB code "
+	                       "maps; they are in room kept in the core's own image (%p).\n",
+	       (unsigned)(HOSTMEM_MAIN_SIZE >> 20), (unsigned)(HOSTMEM_CODE_SIZE >> 20),
+	       (void*)m->main.baseptr);
+	return true;
 }
 
 /* --------------------------------------------------------------------------
@@ -127,7 +155,7 @@ bool sys_memory_init(SysMainMemory* m)
 		return false;
 	}
 
-	if (!place_maps(m))
+	if (!place_maps(m) && !place_maps_in_image(m))
 	{
 		vmm_map(&m->main, 0);
 		vmm_map(&m->code, 0);

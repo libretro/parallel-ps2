@@ -21,6 +21,7 @@ rm -rf "$OBJ" && mkdir -p "$OBJ"
 "$CC" -std=c89 -pedantic -Wall -Wno-long-long $OPT -c "$DIR/main.c" -o "$OBJ/main.o"
 "$CC" -w $DEFS $OPT $INC -c "$LC/memmap/memmap.c" -o "$OBJ/memmap.o"
 "$CC" -w $DEFS $OPT $INC -c "$P/VirtualMemory.c" -o "$OBJ/VirtualMemory.o"
+"$CC" -w $DEFS $OPT $INC -c "$P/NearPlace.c" -o "$OBJ/NearPlace.o"
 "$CC" -w $DEFS $OPT $INC -c "$P/GS/Renderers/Common/GSCodeReserve.c" -o "$OBJ/GSCodeReserve.o"
 "$CC" -w $DEFS $OPT $INC -c "$P/GS/Renderers/Common/GSFlatMap.c" -o "$OBJ/GSFlatMap.o"
 "$CXX" -std=c++17 -w $DEFS $OPT $INC -o "$DIR/gsjit$EXE" "$DIR/glue.cpp" "$OBJ"/*.o $LIBS

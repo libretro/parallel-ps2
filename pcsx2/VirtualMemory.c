@@ -21,6 +21,7 @@
 #include "common/Pcsx2Defs.h"
 #include "VirtualMemory.h"
 #include "HostMem.h"
+#include "NearPlace.h"
 
 #include "../common/Align.h"
 
@@ -38,6 +39,7 @@ bool vmm_init(VirtualMemoryManager* m, const char* file_mapping_name, size_t siz
 	m->file_handle = NULL;
 	m->baseptr     = NULL;
 	m->size        = pcsx2_page_align(size);
+	m->in_room     = false;
 	m->pageuse     = (retro_atomic_int_t*)calloc(m->size / __pagesize, sizeof(*m->pageuse));
 	if (!m->pageuse)
 		return false;
@@ -105,15 +107,46 @@ bool vmm_map(VirtualMemoryManager* m, uptr base)
 	return m->baseptr != NULL;
 }
 
+bool vmm_map_in_room(VirtualMemoryManager* m, uptr base)
+{
+#ifdef NEAR_HAVE_ROOM
+	void* p;
+	if (m->baseptr || !m->pageuse)
+		return false;
+	if (m->file_handle)
+		p = mmap((void*)base, m->size, PROT_READ | PROT_WRITE,
+				MAP_SHARED | MAP_FIXED, (int)(intptr_t)m->file_handle, 0);
+	else
+		p = mmap((void*)base, m->size, PROT_READ | PROT_WRITE | PROT_EXEC,
+				MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+	if (p == MAP_FAILED)
+	{
+		/* A failed fixed mapping can leave the range unmapped. */
+		near_room_return(base, m->size);
+		return false;
+	}
+	m->baseptr = (u8*)p;
+	m->in_room = true;
+	return true;
+#else
+	(void)m;
+	(void)base;
+	return false;
+#endif
+}
+
 void vmm_unmap(VirtualMemoryManager* m)
 {
 	if (!m->baseptr)
 		return;
-	if (m->file_handle)
+	if (m->in_room)
+		near_room_return((uptr)m->baseptr, m->size);
+	else if (m->file_handle)
 		memshm_unmap(m->baseptr, m->size);
 	else
 		host_munmap(m->baseptr, m->size);
 	m->baseptr = NULL;
+	m->in_room = false;
 	memset(m->pageuse, 0, (m->size / __pagesize) * sizeof(*m->pageuse));
 }
 

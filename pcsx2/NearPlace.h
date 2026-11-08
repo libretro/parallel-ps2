@@ -58,6 +58,37 @@ void near_hull(near_range_t *r, const near_range_t *add);
  * a conservative span around anchor. */
 void near_image_extent(const void *anchor, near_range_t *out);
 
+/* As near_image_extent, less except (NULL: nothing) where that is an end of
+ * the image. */
+void near_image_extent_except(const void *anchor, const near_range_t *except, near_range_t *out);
+
+/* Room for both maps kept in the module's own image, for when no range in
+ * reach is free, as in hosts that have mapped a lot around the module.
+ * It sits at the top of the image in a section of its own and is read-only,
+ * uncommitted zeroes until something is mapped over it. */
+#if defined(__linux__) && defined(__x86_64__) && defined(__GNUC__)
+#define NEAR_HAVE_ROOM 1
+#define NEAR_ROOM_BYTES 0x27100000 /* main plus code, Memory.h */
+#define NEAR_ROOM_SIZE ((size_t)NEAR_ROOM_BYTES)
+#endif
+
+/* The room's range, used or not. Returns 0 where the build keeps none. */
+int near_room_extent(near_range_t *out);
+
+/* Hands [lo, lo + size) of the room back as uncommitted, read-only zeroes.
+ * Returns 0 when it cannot: the range may then be unmapped and anyone's, so
+ * the room is given up for good. */
+int near_room_return(uintptr_t lo, size_t size);
+
+/* Places the pair in the room instead: main at its start, code after main.
+ * The ops map exactly over a base and unmap_main hands main back with
+ * near_room_return. image is the whole image, room included. Returns 0
+ * without a usable room, when the pair does not fit it, or when image and
+ * room span more than limit. */
+typedef struct near_pair_ops near_pair_ops_t;
+int near_place_pair_in_room(const near_range_t *image, size_t main_size, size_t code_size,
+		uintptr_t limit, uintptr_t align, const near_pair_ops_t *ops);
+
 /* Sets up a search for a size-byte reservation whose hull with target spans at
  * most limit bytes, on align boundaries, ending at or below ceiling (0: no
  * ceiling). Returns 0 when no base can satisfy that. */
@@ -91,13 +122,13 @@ void near_search_space(near_search_t *s, const near_space_t *sp, const near_rang
  * both are placed from it. The ops map each reservation exactly at a base
  * (returning nonzero on success) and undo main when code does not fit
  * beside it. Returns nonzero with both mapped. */
-typedef struct near_pair_ops
+struct near_pair_ops
 {
 	int (*map_main)(void *ctx, uintptr_t base);
 	void (*unmap_main)(void *ctx);
 	int (*map_code)(void *ctx, uintptr_t base);
 	void *ctx;
-} near_pair_ops_t;
+};
 
 int near_place_pair(near_space_t *sp, const near_range_t *image, size_t main_size,
 		uintptr_t main_ceiling, size_t code_size, uintptr_t limit, uintptr_t align,
