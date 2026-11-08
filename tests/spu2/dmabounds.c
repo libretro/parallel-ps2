@@ -35,6 +35,7 @@ u32 psxNextStartCounter;
 void psxDmaInterrupt(int n) { (void)n; }
 void psxDmaInterrupt2(int n) { (void)n; }
 void spu2Irq(void) {}
+void FWmixSubboardAudio(s32* l, s32* r) { (void)l; (void)r; }
 s16* retro_audio_reserve(int n) { static s16 buf[4096]; (void)n; return buf; }
 void retro_audio_commit(int n) { (void)n; }
 

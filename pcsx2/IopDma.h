@@ -32,10 +32,10 @@ extern void psxDMA12Interrupt();
 extern void dev9Interrupt();
 extern void dev9Irq(int cycles);
 extern void usbInterrupt();
-extern void fwIrq();
 #ifdef __cplusplus
 extern "C" {
 #endif
+extern void fwIrq(void);
 extern void spu2Irq(void);
 #ifdef __cplusplus
 }

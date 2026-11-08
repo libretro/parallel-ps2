@@ -49,6 +49,10 @@ s32 FileMcd_IsPresent(uint port, uint slot);
 /* The card's own MagicGate ID, from <image>.id beside its image (an
  * arcade dongle's); NULL when it has none. */
 const u8* FileMcd_GetMagicGateId(uint port, uint slot);
+/* The ID file for a slot's card, when it is not <image>.id (a Python 1
+ * game names its own); NULL or empty for the one beside the image. Taken
+ * at the next open. */
+void FileMcd_SetIdPath(uint slot, const char* path);
 void FileMcd_GetSizeInfo(uint port, uint slot, McdSizeInfo* outways);
 bool FileMcd_IsPSX(uint port, uint slot);
 s32 FileMcd_Read(uint port, uint slot, u8* dest, u32 adr, int size);

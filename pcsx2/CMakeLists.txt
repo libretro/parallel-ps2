@@ -101,7 +101,7 @@ set(pcsx2Sources
 	GameDatabase.cpp
 	${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.cpp
 	Elfheader.c
-	FW.cpp
+	FW.c
 	FiFo.cpp
 	FPU.cpp
 	ps2float.c
@@ -836,6 +836,9 @@ set(pcsx2USBSources
 	USB/usb-python2/p2io.c
 	USB/usb-python2/py2desc.c
 	USB/usb-python2/usb-python2.c
+	FireWire/fatimg.c
+	FireWire/p1io.c
+	FireWire/py1desc.c
 	USB/usb-eyetoy/cam-frame.cpp
 	USB/usb-eyetoy/cam-jpeg.cpp
 	USB/usb-eyetoy/eyetoy-frontend.cpp
@@ -858,6 +861,10 @@ set(pcsx2USBHeaders
 	USB/usb-python2/p2io.h
 	USB/usb-python2/py2desc.h
 	USB/usb-python2/usb-python2.h
+	FireWire/fatimg.h
+	FireWire/fw_device.h
+	FireWire/p1io.h
+	FireWire/py1desc.h
 	USB/usb-eyetoy/cam-frame.h
 	USB/usb-eyetoy/cam-jpeg.h
 	USB/usb-eyetoy/eyetoy-frontend.h

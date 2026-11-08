@@ -19,6 +19,7 @@
 #include "Global.h"
 #include "Profiler.h"
 #include "spu2.h"
+#include "../FW.h"
 #include "interpolate_table.h"
 
 static __fi void XA_decode_block(s16* buffer, const s16* block, s32 *prev1, s32 *prev2)
@@ -725,6 +726,9 @@ void Mix(short *out_left, short *out_right)
 		Out.Left  = (Out.Left  * Cores[1].MasterVol.Left.Value)  >> 15;
 		Out.Right = (Out.Right * Cores[1].MasterVol.Right.Value) >> 15;
 	}
+
+	/* An i.LINK board's own audio (the Python 1's ADPCM), at the output. */
+	FWmixSubboardAudio(&Out.Left, &Out.Right);
 
 	/* A simple DC blocking high-pass filter, y[n] = x[n] - x[n-1] + a*y[n-1].
 	 * Implementation from http://peabody.sapp.org/class/dmp2/lab/dcblock/

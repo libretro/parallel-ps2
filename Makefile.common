@@ -282,7 +282,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/Dmac.cpp \
 	$(LRPS2_DIR)/FiFo.cpp \
 	$(LRPS2_DIR)/FPU.cpp \
-	$(LRPS2_DIR)/FW.cpp \
 	$(LRPS2_DIR)/GameDatabase.cpp \
 	$(LRPS2_DIR)/GameDatabaseBuiltin.cpp \
 	$(LRPS2_DIR)/Gif.cpp \
@@ -366,7 +365,11 @@ SOURCES_C += \
 	$(LRPS2_DIR)/USB/libretro-usb/usb-ohci.c \
 	$(LRPS2_DIR)/USB/usb-python2/p2io.c \
 	$(LRPS2_DIR)/USB/usb-python2/py2desc.c \
-	$(LRPS2_DIR)/USB/usb-python2/usb-python2.c
+	$(LRPS2_DIR)/USB/usb-python2/usb-python2.c \
+	$(LRPS2_DIR)/FW.c \
+	$(LRPS2_DIR)/FireWire/fatimg.c \
+	$(LRPS2_DIR)/FireWire/p1io.c \
+	$(LRPS2_DIR)/FireWire/py1desc.c
 SOURCES_CXX += \
 	$(LRPS2_DIR)/USB/usb-eyetoy/cam-frame.cpp \
 	$(LRPS2_DIR)/USB/usb-eyetoy/cam-jpeg.cpp \

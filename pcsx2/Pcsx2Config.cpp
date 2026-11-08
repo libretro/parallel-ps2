@@ -722,8 +722,13 @@ void Pcsx2Config::FullpathToBios(char* out, size_t out_size) const
 
 void Pcsx2Config::FullpathToMcd(char* out, size_t out_size, uint slot) const
 {
-	pcsx2_path_join(out, out_size, EmuFolders::MemoryCards,
-			Mcd[slot].Filename);
+	/* A card named by its whole path (an arcade game's dongle) is where
+	 * it says. */
+	if (path_is_absolute(Mcd[slot].Filename))
+		strlcpy(out, Mcd[slot].Filename, out_size);
+	else
+		pcsx2_path_join(out, out_size, EmuFolders::MemoryCards,
+				Mcd[slot].Filename);
 }
 
 bool Pcsx2Config::operator==(const Pcsx2Config& right) const

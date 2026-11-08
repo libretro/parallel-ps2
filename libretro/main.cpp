@@ -33,6 +33,11 @@
 #include "../pcsx2/USB/usb-eyetoy/eyetoy-frontend.h"
 #include "../pcsx2/USB/usb-python2/py2desc.h"
 #include "../pcsx2/USB/usb-python2/usb-python2.h"
+#include "../pcsx2/USB/usb-host.h"
+#include "../pcsx2/FireWire/py1desc.h"
+#include "../pcsx2/FireWire/p1io.h"
+#include "../pcsx2/FW.h"
+#include "../pcsx2/MemoryCardFile.h"
 #include "../pcsx2/DEV9/ATA/HddCreate.h"
 #include "../pcsx2/DEV9/ATA/HddImage.h"
 #include "../pcsx2/CDVD/CDVDnvram.h"
@@ -215,6 +220,11 @@ static bool setting_dev9_eth                   = false;
 /* A Konami Python 2 game (.py2) is loaded: its descriptor, not the DEV9
  * options, says what the HDD and network are. */
 static bool s_python2_content                  = false;
+/* A Konami Python 1 game (.py1): its I/O board is an i.LINK node, its
+ * storage the board's, and the DEV9 HDD is not used. */
+static bool s_python1_content                  = false;
+static p1io* s_python1_board                   = NULL;
+static int  s_python1_io_mode                  = P1IO_MODE_JVS;
 static u32  setting_dev9_hdd_sectors           = 40u * (1024 * 1024 * 1024 / 512);
 static bool setting_enable_hw_hacks            = false;
 static int setting_sw_renderer_threads         = 2;
@@ -1217,7 +1227,7 @@ static void check_variables(bool first_run)
 	}
 
 	var.key = "pcsx2_dev9_hdd";
-	if (!s_python2_content && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+	if (!s_python2_content && !s_python1_content && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
 	{
 		const bool dev9_hdd_prev = setting_dev9_hdd;
 		setting_dev9_hdd = !strcmp(var.value, "enabled");
@@ -1864,7 +1874,7 @@ void retro_get_system_info(retro_system_info* info)
 	/* the version is checked by retroachievements, it should be semver */
 	info->library_version  = "v2.0.0-" GIT_VERSION;
 	info->library_name     = "ParaLLEl PS2";
-	info->valid_extensions = "elf|iso|ciso|cue|gz|chd|cso|zso|m3u|py2";
+	info->valid_extensions = "elf|iso|ciso|cue|gz|chd|cso|zso|m3u|py1|py2";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
 }
@@ -2498,6 +2508,17 @@ static bool s_cpu_thread_initialized = false;
 static bool s_input_initialized      = false;
 static bool s_vulkan_library_loaded  = false;
 
+/* The board of the last Python 1 game, off the bus and let go. */
+static void libretro_python1_release(void)
+{
+	/* Closed already unless the VM failed on its way up. */
+	FWclose();
+	FWsetDevice(NULL);
+	p1io_destroy(s_python1_board);
+	s_python1_board = NULL;
+	FileMcd_SetIdPath(0, NULL);
+}
+
 static void libretro_teardown_cpu_thread(void)
 {
 	if (s_input_initialized)
@@ -2520,6 +2541,8 @@ static void libretro_teardown_cpu_thread(void)
 		s_cpu_thread_initialized = false;
 
 	}
+	/* After the VM, which has closed the bus. */
+	libretro_python1_release();
 }
 
 /* A Konami Python 2 game: its descriptor names the HDD, the machine's
@@ -2587,6 +2610,68 @@ done:
 	return ok;
 }
 
+/* A Konami Python 1 game: its descriptor names the board's storage and
+ * files and the memory card the game keeps. Puts the board on the i.LINK
+ * bus and the card in slot 1; false when the descriptor is not one. */
+static bool libretro_load_python1(const char* path)
+{
+	py1_desc* d = (py1_desc*)calloc(1, sizeof(py1_desc));
+	char* dir   = (char*)malloc(PCSX2_PATH_MAX);
+	void* text  = NULL;
+	int64_t len = 0;
+	bool ok     = false;
+
+	if (!d || !dir)
+		goto done;
+	strlcpy(dir, path, PCSX2_PATH_MAX);
+	path_basedir(dir);
+	if (!filestream_read_file(path, &text, &len) || !py1_parse((const char*)text, (size_t)len, dir, d))
+	{
+		log_cb(RETRO_LOG_ERROR, "Python 1: %s is not a game descriptor with an HddImagePath or CfImagePath\n", path);
+		goto done;
+	}
+	if (!(d->hdd_image[0] && path_is_valid(d->hdd_image)) && !(d->cf_image[0] && path_is_valid(d->cf_image)))
+	{
+		log_cb(RETRO_LOG_ERROR, "Python 1: storage image not found: %s\n", d->hdd_image[0] ? d->hdd_image : d->cf_image);
+		goto done;
+	}
+	if (d->memcard[0] && !path_is_valid(d->memcard))
+	{
+		log_cb(RETRO_LOG_ERROR, "Python 1: memory card dongle not found: %s\n", d->memcard);
+		goto done;
+	}
+	if (!d->memcard[0])
+		log_cb(RETRO_LOG_WARN, "Python 1: no MemoryCardDonglePath; the game will look for its card in vain\n");
+	if (!d->bbsram[0] || !d->bootrom[0])
+		log_cb(RETRO_LOG_WARN, "Python 1: no BbsRamPath or IoBootRomPath; what the board keeps is lost at exit\n");
+	if (d->io_mode == P1IO_MODE_PPOOL)
+		log_cb(RETRO_LOG_WARN, "Python 1: Perfect Pool's trackball and camera are not emulated\n");
+
+	s_python1_board = p1io_create(d, PADGetInputStateCallback);
+	if (!s_python1_board)
+		goto done;
+	FWsetDevice(p1io_device(s_python1_board));
+	s_python1_io_mode = d->io_mode;
+
+	if (d->memcard[0])
+	{
+		s_option_config.Mcd[0].Enabled = true;
+		s_option_config.Mcd[0].Type    = MemoryCardType::File;
+		strlcpy(s_option_config.Mcd[0].Filename, d->memcard, sizeof(s_option_config.Mcd[0].Filename));
+	}
+	FileMcd_SetIdPath(0, d->memcard_id);
+	s_option_config.DEV9.HddEnable = false;
+	/* It helps every one of them but Perfect Pool. */
+	s_option_config.Gamefixes.OPHFlagHack = d->io_mode != P1IO_MODE_PPOOL;
+	log_cb(RETRO_LOG_INFO, "Python 1: %s, I/O mode %s\n", d->name[0] ? d->name : path, py1_io_mode_name(d->io_mode));
+	ok = true;
+done:
+	free(text);
+	free(dir);
+	free(d);
+	return ok;
+}
+
 bool retro_load_game(const struct retro_game_info* game)
 {
 	VMBootParameters boot_params;
@@ -2633,7 +2718,9 @@ bool retro_load_game(const struct retro_game_info* game)
 	/* Before check_variables, which leaves the DEV9 options alone for a
 	 * Python 2 game. */
 	s_python2_content = game && game->path && !strcmp(path_get_extension(game->path), "py2");
+	s_python1_content = game && game->path && !strcmp(path_get_extension(game->path), "py1");
 	usb_python2_clear_config();
+	libretro_python1_release();
 	cdvd_set_nvram_files(NULL, NULL);
 	VMManager::SetPython2PatchFile(NULL);
 	s_option_config.DEV9.HddIdFile.clear();
@@ -2645,6 +2732,12 @@ bool retro_load_game(const struct retro_game_info* game)
 	if (s_python2_content && !libretro_load_python2(game->path))
 	{
 		s_python2_content = false;
+		libretro_teardown_cpu_thread();
+		return false;
+	}
+	if (s_python1_content && !libretro_load_python1(game->path))
+	{
+		s_python1_content = false;
 		libretro_teardown_cpu_thread();
 		return false;
 	}
@@ -2661,6 +2754,9 @@ bool retro_load_game(const struct retro_game_info* game)
 	if (s_python2_content)
 		environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS,
 			(void*)usb_python2_input_descriptors(usb_python2_game()));
+	else if (s_python1_content)
+		environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS,
+			(void*)p1io_input_descriptors(s_python1_io_mode));
 
 	if (!libretro_select_hw_render())
 	{
@@ -2773,8 +2869,8 @@ bool retro_load_game(const struct retro_game_info* game)
 	image_index = 0;
 	disk_images.clear();
 
-	/* A Python 2 game has no disc: the BIOS boots it from the HDD. */
-	if (game && game->path && !s_python2_content)
+	/* A Python game has no disc: the BIOS boots it from its storage. */
+	if (game && game->path && !s_python2_content && !s_python1_content)
 	{
 		std::string game_path = game->path;
 
@@ -2992,6 +3088,7 @@ void retro_unload_game(void)
 	cpu_thread = NULL;
 	VMManager::SetVMThread(NULL);
 	libretro_teardown_cpu_thread();
+	s_python1_content = false;
 
 	retro_set_region(RETRO_REGION_NTSC); /* set back to default */
 }
@@ -3157,6 +3254,7 @@ size_t retro_serialize_size(void)
 	size         += fP.size;
 	GSfreeze(FREEZE_SIZE, &fP);
 	size         += fP.size;
+	size         += FWStateSize();
 	size         += USBStateSize();
 	size         += state_ext_size();
 
@@ -3166,7 +3264,8 @@ size_t retro_serialize_size(void)
 /* Writes the whole machine into dst, size bytes, the size
  * retro_serialize_size() gives: the emulator's blocks from the start,
  * the extension block (state_ext.h) in the last bytes with the USB block
- * just before it, and zeros between.
+ * just before it and the i.LINK block (FW.h, only with a device on the
+ * bus) before that, and zeros between.
  * The CPU thread must be paused and the VU1 and GS threads quiesced. */
 static bool state_write(void* dst, size_t size)
 {
@@ -3175,10 +3274,11 @@ static bool state_write(void* dst, size_t size)
 	SaveStateBase* saveme = &state;
 	const size_t ext = state_ext_size();
 	const size_t usb = USBStateSize();
+	const size_t fw  = FWStateSize();
 
-	if (size < ext + usb)
+	if (size < ext + usb + fw)
 		return false;
-	SaveState_Init(saveme, (u8 *)dst, 0, size - ext - usb, true);
+	SaveState_Init(saveme, (u8 *)dst, 0, size - ext - usb - fw, true);
 	saveme->fixed = true;
 
 	SaveState_FreezeBios(saveme);
@@ -3220,7 +3320,8 @@ static bool state_write(void* dst, size_t size)
 
 	if (!SaveState_IsOkay(saveme))
 		return false;
-	memset((u8 *)dst + saveme->idx, 0, size - ext - usb - (size_t)saveme->idx);
+	memset((u8 *)dst + saveme->idx, 0, size - ext - usb - fw - (size_t)saveme->idx);
+	FWStateWrite((u8 *)dst + size - ext - usb - fw);
 	USBStateWrite((u8 *)dst + size - ext - usb);
 	state_ext_write((u8 *)dst + size - ext);
 	return true;
@@ -3282,6 +3383,8 @@ static bool state_read(const void* data, size_t size, bool keep_code)
 	size = state_ext_strip(data, size);
 	const size_t usb_end = size;
 	size = USBStateStrip(data, size);
+	const size_t fw_end = size;
+	size = FWStateStrip(data, size);
 
 	/* The live size is what PrepBlock and FreezeMem bound against, so the
 	 * whole payload counts as present from the start: otherwise the first
@@ -3409,6 +3512,7 @@ static bool state_read(const void* data, size_t size, bool keep_code)
 		return false;
 
 	USBStateRead(data, usb_end);
+	FWStateRead(data, fw_end);
 	state_ext_read(data, full_size);
 	return true;
 }

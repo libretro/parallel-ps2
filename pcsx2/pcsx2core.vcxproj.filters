@@ -626,7 +626,7 @@
     <ClCompile Include="IPU\IPUdither.cpp">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
-    <ClCompile Include="FW.cpp">
+    <ClCompile Include="FW.c">
       <Filter>System\Ps2\Iop\FW</Filter>
     </ClCompile>
     <ClCompile Include="SPU2\spu2.cpp">

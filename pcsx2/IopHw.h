@@ -305,6 +305,7 @@ typedef enum IopEventId
 	IopEvt_CdvdSectorReady,
 	IopEvt_DEV9,
 	IopEvt_USB,
+	IopEvt_FW		/* the i.LINK device's own timing */
 } IopEventId;
 
 #ifdef __cplusplus

@@ -19,6 +19,7 @@
 
 #include "Common.h"
 #include "Sio.h"
+#include "FireWire/p1io.h"
 #include "MemoryCardProtocol.h"
 #include "MultitapProtocol.h"
 #include "Config.h"
@@ -446,7 +447,21 @@ void Sio2::Infrared()
 
 void Sio2::Memcard()
 {
-	mcd = &mcds[port][slot];
+	/* A Python 1 serial board selects the second port's slot by its
+	 * latch, and only slot 0 has a card behind it. */
+	const int p1io_slot = port == 1 ? p1io_memcard_slot() : -1;
+	mcd = &mcds[port][p1io_slot >= 0 ? p1io_slot : slot];
+	if (p1io_slot > 0)
+	{
+		SetRecv1(Recv1::DISCONNECTED);
+		fifoOut.push_back(0xff);
+		while (!fifoIn.empty())
+		{
+			fifoIn.pop_front();
+			fifoOut.push_back(0xff);
+		}
+		return;
+	}
 
 	// Check if auto ejection is active. If so, set RECV1 to DISCONNECTED,
 	// and zero out the fifo to simulate dead air over the wire.

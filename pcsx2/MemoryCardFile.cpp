@@ -165,6 +165,15 @@ FileMemoryCard::~FileMemoryCard()
 static u8 s_mcd_mg_id[8][8];
 static bool s_mcd_has_mg_id[8];
 
+/* An ID file named for the slot, in place of the one beside its image. */
+static std::string s_mcd_id_path[8];
+
+void FileMcd_SetIdPath(uint slot, const char* path)
+{
+	if (slot < 8)
+		s_mcd_id_path[slot] = path ? path : "";
+}
+
 static void FileMcd_LoadCardId(int slot, const char* image)
 {
 	/* Off the stack, like Open's paths. */
@@ -174,9 +183,14 @@ static void FileMcd_LoadCardId(int slot, const char* image)
 
 	if (!path)
 		return;
-	strlcpy(path, image, PCSX2_PATH_MAX);
-	path_remove_extension(path);
-	strlcat(path, ".id", PCSX2_PATH_MAX);
+	if (!s_mcd_id_path[slot].empty())
+		strlcpy(path, s_mcd_id_path[slot].c_str(), PCSX2_PATH_MAX);
+	else
+	{
+		strlcpy(path, image, PCSX2_PATH_MAX);
+		path_remove_extension(path);
+		strlcat(path, ".id", PCSX2_PATH_MAX);
+	}
 	if (path_is_valid(path) && filestream_read_file(path, &buf, &len))
 	{
 		if (len == 8)

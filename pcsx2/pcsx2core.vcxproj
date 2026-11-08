@@ -150,7 +150,7 @@
     <ClCompile Include="MemoryCardProtocol.cpp" />
     <ClCompile Include="MultitapProtocol.cpp" />
     <ClCompile Include="PAD\PAD.cpp" />
-    <ClCompile Include="FW.cpp" />
+    <ClCompile Include="FW.c" />
     <ClCompile Include="MemoryCardFile.cpp" />
     <ClCompile Include="PerformanceMetrics.cpp" />
     <ClCompile Include="SPU2\Dma.cpp" />

@@ -74,6 +74,8 @@ extern "C" const size_t spu2_layout_probe[5];
 extern "C" void psxDmaInterrupt(int) {}
 extern "C" void psxDmaInterrupt2(int) {}
 extern "C" void spu2Irq(void) {}
+/* No i.LINK board: the output is the SPU2's own. */
+extern "C" void FWmixSubboardAudio(s32*, s32*) {}
 
 /* The sink. Mix() is called directly, so these are only reached if the
  * core tries to hand samples off on its own. */

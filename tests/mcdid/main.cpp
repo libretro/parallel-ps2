@@ -9,6 +9,7 @@
 #include <libretro.h>
 #include "Config.h"
 #include "MemoryCardFile.h"
+#include <file/file_path.h>
 
 static void test_log(enum retro_log_level level, const char* fmt, ...) { (void)level; (void)fmt; }
 extern "C" retro_log_printf_t log_cb = test_log;
@@ -66,6 +67,29 @@ int main(int argc, char** argv)
 	put(dir, "dongle.id", id, 7);
 	open_cards(dir);
 	check(FileMcd_GetMagicGateId(0, 0) == NULL, "a .id file of 7 bytes is ignored");
+
+	/* A Python 1 game names its card by its whole path, somewhere other
+	 * than the cards' folder, and its ID file by a name of its own. */
+	{
+		char abs_card[1024], id_path[1024];
+		snprintf(abs_card, sizeof(abs_card), "%s/game/card.bin", dir);
+		snprintf(id_path, sizeof(id_path), "%s/game/key.dat", dir);
+		{
+			std::string sub = std::string(dir) + "/game";
+			path_mkdir(sub.c_str());
+		}
+		put(dir, "game/card.bin", card, sizeof(card));
+		put(dir, "game/key.dat", id, sizeof(id));
+		FileMcd_EmuClose();
+		strcpy(EmuFolders::MemoryCards, "/nonexistent");
+		strcpy(EmuConfig.Mcd[0].Filename, abs_card);
+		FileMcd_SetIdPath(0, id_path);
+		FileMcd_EmuOpen();
+		got = FileMcd_GetMagicGateId(0, 0);
+		check(FileMcd_IsPresent(0, 0) && got && memcmp(got, id, 8) == 0,
+			"an absolute card path is opened where it is, its ID from the file named for it");
+		FileMcd_SetIdPath(0, NULL);
+	}
 
 	FileMcd_EmuClose();
 	printf(failures ? "mcdid: %d failure(s)\n" : "mcdid: ok\n", failures);

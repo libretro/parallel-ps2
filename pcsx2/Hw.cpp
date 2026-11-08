@@ -23,6 +23,7 @@
 #include "R3000A.h"
 #include "SPU2/spu2.h"
 #include "USB/USB.h"
+#include "FW.h"
 
 #include "CDVD/Ps1CD.h"
 #include "CDVD/CDVD.h"
@@ -57,6 +58,7 @@ void hwReset(void)
 	gif_fifo.init();
 	rcntInit();
 	USBreset();
+	FWreset();
 }
 
 uint intcInterrupt(void)
