@@ -174,7 +174,8 @@ static void vn_count_pipes(uint32_t n, int graphics)
 #ifndef _WIN32
 	char name[32] = "";
 	pthread_getname_np(pthread_self(), name, sizeof(name));
-	if (!strncmp(name, "PGS-Compile", 11))
+	/* (PGS-Variant: the shading variants a frame found unbuilt) */
+	if (!strncmp(name, "PGS-Compile", 11) || !strncmp(name, "PGS-Variant", 11))
 	{
 		__sync_fetch_and_add(&vn_pipes_compile, (long)n);
 		if (graphics)

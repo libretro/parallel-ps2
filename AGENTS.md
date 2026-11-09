@@ -187,8 +187,9 @@ listed TFX pipelines on a warm-up thread, and draws a key it has not
 built with a dynamic sibling while its own pipeline is built ahead;
 D3D12 builds its shaders as the device is created and draws a pipeline
 not ready with a dynamic sibling while its warm-up thread
-(`GSD3D12Warm`) builds its own;
-paraLLEl-GS builds its pipelines ahead on its own threads. The rule is
+(`GSD3D12Warm`) builds its own; paraLLEl-GS builds its pipelines ahead
+on its own threads and draws a shading variant not built yet with its
+dynamic ubershader. The rule is
 not met yet. These draw paths still compile, and each one is a bug to
 remove, most-played first:
 
@@ -235,18 +236,21 @@ remove, most-played first:
   those threads it stays drawn with one. `tests/glnegotiate` holds every
   case to none built on the render thread and to the Vulkan picture with
   programs of their own and with dynamic ones alone.
-- paraLLEl-GS: the passes every frame dispatches (binning, triangle
-  setup, the qword clears, the single-sample heuristic, CLUT writes,
-  texture analysis, EXTWRITE) and the plain shading variants at each
-  sampling rate are built on the compile threads before the device is
-  handed over, and `tests/pgspipelines` holds every lane to none built
-  on the frame's threads from nothing. A shading variant past that (AA1,
-  SCANMSK, feedback, a primitive range, a format pair the enumeration
-  does not prime) is built on a frame's thread when the compile threads
-  have not reached it, or never will: the shading pass needs a dynamic
-  variant, as Vulkan's TFX has, before that goes. Each of those passes
-  sets every piece of state its pipeline is keyed on (subgroup size,
-  specialization constants), so what is built ahead is what it binds.
+- paraLLEl-GS: none on the frame's threads for what `tests/pgspipelines`
+  draws. Built on the compile threads before the device is handed over:
+  the passes every frame dispatches (binning, triangle setup, the qword
+  clears, the single-sample heuristic, CLUT writes, texture analysis,
+  EXTWRITE), the uploads and VRAM copies by format and direction, the
+  plain shading variants at each sampling rate, and the dynamic
+  ubershader (`ubershader_dynamic.inc`: `ubershader.comp` with
+  `DYNAMIC_VARIANT`, its formats and variant flags pushed rather than
+  specialised; `tests/pgsdynamic` holds the file to its source). A
+  shading dispatch whose own variant is not built draws with the
+  dynamic one while the variant builder (`PGS-Variant`) builds it. Each
+  pass sets every piece of state its pipeline is keyed on (subgroup
+  size, specialization constants, an upload's CLUT format as only 16-bit
+  or not), so what is built ahead is what it binds. Left: a VRAM copy
+  between two formats, which nothing builds ahead.
 
 The way out is the same everywhere: a small covering set built before
 the first frame, so that every key has a correct pipeline ready, and

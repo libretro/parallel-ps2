@@ -230,6 +230,17 @@ struct ShadingDescriptor
 	uint fb_index_depth_offset;
 };
 
+// What the dynamic ubershader reads in place of its specialisation
+// constants 2, 3, 5, 6 and 7, after the ShadingDescriptor.
+struct ShadingVariant
+{
+	uint fb_fmt;
+	uint zb_fmt;
+	uint flags;
+	uint feedback_psm;
+	uint feedback_cpsm;
+};
+
 // PrimitiveAttribute::state
 // If set, performs a greater-than or greater-or-equals test. If false, depth test always passes.
 CONSTEXPR int STATE_BIT_Z_TEST = 12;

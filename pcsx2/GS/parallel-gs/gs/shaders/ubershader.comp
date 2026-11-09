@@ -21,14 +21,26 @@ spirv_instruction(set = "GLSL.std.450", id = 81) vec2 spvNClamp(vec2, vec2, vec2
 layout(local_size_x = 64) in;
 layout(constant_id = 0) const int NUM_SAMPLES_X_LOG2 = 0;
 layout(constant_id = 1) const int NUM_SAMPLES_Y_LOG2 = 0;
+layout(constant_id = 4) const uint VRAM_MASK = 4 * 1024 * 1024 - 1;
+#ifdef DYNAMIC_VARIANT
+// The formats and variant flags read from the push constants, not
+// specialised: one pipeline a sampling rate draws a pass whose own
+// variant is still being built.
+#define FB_FMT (variant.fb_fmt)
+#define ZB_FMT (variant.zb_fmt)
+#define VARIANT_FLAGS (variant.flags)
+#define FEEDBACK_PSM (variant.feedback_psm)
+#define FEEDBACK_CPSM (variant.feedback_cpsm)
+#define Z_SENSITIVE (ZB_FMT != -1u)
+#else
 layout(constant_id = 2) const uint FB_FMT = 0;
 layout(constant_id = 3) const uint ZB_FMT = 0;
-layout(constant_id = 4) const uint VRAM_MASK = 4 * 1024 * 1024 - 1;
 layout(constant_id = 5) const uint VARIANT_FLAGS = 0;
 layout(constant_id = 6) const uint FEEDBACK_PSM = 0;
 layout(constant_id = 7) const uint FEEDBACK_CPSM = 0;
 
 const bool Z_SENSITIVE = ZB_FMT != -1u;
+#endif
 const int NUM_SAMPLES_X = 1 << NUM_SAMPLES_X_LOG2;
 const int NUM_SAMPLES_Y = 1 << NUM_SAMPLES_Y_LOG2;
 const int NUM_SAMPLES = NUM_SAMPLES_X * NUM_SAMPLES_Y;
@@ -65,6 +77,15 @@ const uint SPARSE_PATTERN_SIZE_LOG2 = NUM_SAMPLES_Y_LOG2 - NUM_SAMPLES_X_LOG2;
 #include "utils.h"
 #include "swizzle_utils.h"
 
+#ifdef DYNAMIC_VARIANT
+#define FEEDBACK ((VARIANT_FLAGS & VARIANT_FLAG_FEEDBACK_BIT) != 0)
+#define HAS_AA1 ((VARIANT_FLAGS & VARIANT_FLAG_HAS_AA1_BIT) != 0)
+#define HAS_SCANMSK ((VARIANT_FLAGS & VARIANT_FLAG_HAS_SCANMSK_BIT) != 0)
+#define HAS_PRIMITIVE_RANGE ((VARIANT_FLAGS & VARIANT_FLAG_HAS_PRIMITIVE_RANGE_BIT) != 0)
+#define HAS_SUPER_SAMPLE_REFERENCE ((VARIANT_FLAGS & VARIANT_FLAG_HAS_SUPER_SAMPLE_REFERENCE_BIT) != 0)
+#define FEEDBACK_READS_DEPTH ((VARIANT_FLAGS & VARIANT_FLAG_FEEDBACK_DEPTH_BIT) != 0)
+#define HAS_TEXTURE_ARRAY ((VARIANT_FLAGS & VARIANT_FLAG_HAS_TEXTURE_ARRAY_BIT) != 0)
+#else
 const bool FEEDBACK = (VARIANT_FLAGS & VARIANT_FLAG_FEEDBACK_BIT) != 0;
 const bool HAS_AA1 = (VARIANT_FLAGS & VARIANT_FLAG_HAS_AA1_BIT) != 0;
 const bool HAS_SCANMSK = (VARIANT_FLAGS & VARIANT_FLAG_HAS_SCANMSK_BIT) != 0;
@@ -72,6 +93,7 @@ const bool HAS_PRIMITIVE_RANGE = (VARIANT_FLAGS & VARIANT_FLAG_HAS_PRIMITIVE_RAN
 const bool HAS_SUPER_SAMPLE_REFERENCE = (VARIANT_FLAGS & VARIANT_FLAG_HAS_SUPER_SAMPLE_REFERENCE_BIT) != 0;
 const bool FEEDBACK_READS_DEPTH = (VARIANT_FLAGS & VARIANT_FLAG_FEEDBACK_DEPTH_BIT) != 0;
 const bool HAS_TEXTURE_ARRAY = (VARIANT_FLAGS & VARIANT_FLAG_HAS_TEXTURE_ARRAY_BIT) != 0;
+#endif
 
 layout(std430, set = 0, binding = BINDING_CLUT) readonly buffer CLUT16
 {
@@ -98,6 +120,9 @@ layout(r32ui, set = 0, binding = BINDING_FEEDBACK_DEPTH) writeonly uniform uimag
 layout(push_constant) uniform Registers
 {
 	ShadingDescriptor registers;
+#ifdef DYNAMIC_VARIANT
+	ShadingVariant variant;
+#endif
 };
 
 struct ShadeRequest
@@ -397,6 +422,14 @@ bool fb_depth_dirty;
 ShadeRequest pending_shade_request;
 uint pending_primitive_index;
 
+#ifdef DYNAMIC_VARIANT
+#define is_fb_32bit (FB_FMT == PSMCT32 || FB_FMT == PSMZ32)
+#define is_fb_24bit (FB_FMT == PSMCT24 || FB_FMT == PSMZ24)
+#define is_fb_16bit (FB_FMT == PSMCT16 || FB_FMT == PSMCT16S || FB_FMT == PSMZ16 || FB_FMT == PSMZ16S)
+#define is_zb_32bit (ZB_FMT == PSMZ32 || ZB_FMT == PSMCT32)
+#define is_zb_24bit (ZB_FMT == PSMZ24 || ZB_FMT == PSMCT24)
+#define is_zb_16bit (ZB_FMT == PSMZ16 || ZB_FMT == PSMZ16S || ZB_FMT == PSMCT16 || ZB_FMT == PSMCT16S)
+#else
 const bool is_fb_32bit = FB_FMT == PSMCT32 || FB_FMT == PSMZ32;
 const bool is_fb_24bit = FB_FMT == PSMCT24 || FB_FMT == PSMZ24;
 const bool is_fb_16bit = FB_FMT == PSMCT16 || FB_FMT == PSMCT16S || FB_FMT == PSMZ16 || FB_FMT == PSMZ16S;
@@ -404,6 +437,7 @@ const bool is_fb_16bit = FB_FMT == PSMCT16 || FB_FMT == PSMCT16S || FB_FMT == PS
 const bool is_zb_32bit = ZB_FMT == PSMZ32 || ZB_FMT == PSMCT32;
 const bool is_zb_24bit = ZB_FMT == PSMZ24 || ZB_FMT == PSMCT24;
 const bool is_zb_16bit = ZB_FMT == PSMZ16 || ZB_FMT == PSMZ16S || ZB_FMT == PSMCT16 || ZB_FMT == PSMCT16S;
+#endif
 
 #if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
 uint shade_count = 0u;

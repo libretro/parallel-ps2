@@ -7,6 +7,7 @@
 
 #include "thread_prims.hpp"
 #include <rthreads/retro_eventcount.h>
+#include <retro_spsc.h>
 #include "gs_registers.hpp"
 #include "device.hpp"
 #include "image.hpp"
@@ -610,6 +611,40 @@ private:
 	 * waits for all of them), and their eventcount. */
 	retro_atomic_size_t small_built;
 	retro_eventcount_t small_built_event;
+
+	/* A shading dispatch whose own variant is not built draws with the
+	 * dynamic ubershader (its formats and flags in the push constants,
+	 * one pipeline a sampling rate, built before the first frame) while
+	 * the variant builder, a thread of its own, builds the variant. Room
+	 * for VARIANT_JOBS asked and not yet taken back, made at init: the
+	 * frame never allocates, never waits, and when the room is taken the
+	 * next dispatch asks again. */
+	enum { VARIANT_JOBS = 32 };
+	struct VariantBuilt
+	{
+		Vulkan::Program *program;
+		Util::Hash hash;
+		Vulkan::Pipeline pipeline;
+	};
+	Vulkan::Program *ubershader_dynamic = nullptr;
+	retro_spsc_t variant_jobs;    /* frame -> builder: DeferredPipelineCompile */
+	retro_spsc_t variant_results; /* builder -> frame: VariantBuilt */
+	retro_eventcount_t variant_wake;
+	PGS::atomic_bool variant_stop;
+	PGS::thread variant_thread;
+	bool variant_running = false;
+	/* the frame's: what is asked and not taken back */
+	Util::Hash variant_pending[VARIANT_JOBS];
+	unsigned variant_in_flight = 0;
+	/* LRPS2_TEST_PGS_DYNAMIC: every shading dispatch with the dynamic one */
+	bool test_dynamic = false;
+	uint64_t dynamic_dispatches = 0;
+	uint64_t variants_asked = 0;
+	void start_variant_builder();
+	void stop_variant_builder();
+	void take_built_variants();
+	bool use_dynamic_shading(Vulkan::CommandBuffer &cmd);
+	void dispatch_shading_indirect(Vulkan::CommandBuffer &cmd, const Vulkan::Buffer &buffer, VkDeviceSize offset);
 
 	uint64_t query_timeline(const Vulkan::SemaphoreHolder &sem) const;
 

@@ -710,6 +710,24 @@ public:
 		set_specialization_constant(index, uint32_t(value));
 	}
 
+	inline uint32_t get_specialization_constant(unsigned index) const
+	{
+		uint32_t value;
+		VK_ASSERT(index < VULKAN_NUM_USER_SPEC_CONSTANTS);
+		memcpy(&value, &pipeline_state.potential_static_state.spec_constants[index], sizeof(value));
+		return value;
+	}
+
+	inline Program *get_program() const
+	{
+		return pipeline_state.program;
+	}
+
+	inline uint32_t get_specialization_constant_mask() const
+	{
+		return pipeline_state.potential_static_state.spec_constant_mask;
+	}
+
 	inline void enable_subgroup_size_control(bool subgroup_control_size,
 	                                         VkShaderStageFlagBits stage = VK_SHADER_STAGE_COMPUTE_BIT)
 	{

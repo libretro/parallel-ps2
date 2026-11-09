@@ -30,6 +30,15 @@
 # height (each with the super sampling it needs), the sharp backbuffer,
 # super sampled textures, a deinterlace mode, and a PMODE.ALP fade.
 #
+# Then cases whose passes take shading variants no list or enumeration
+# need hold (AA1, a primitive range, texture feedback) and that upload
+# and copy in their first frames, each from nothing with no time between
+# loading and the first frame: none built on the frame's threads - a
+# variant not built yet is drawn with the dynamic ubershader while the
+# variant builder builds it - and the run ends in the state the dynamic
+# ubershader alone draws it to (LRPS2_TEST_PGS_DYNAMIC), GS memory and
+# all, but for the sections that hold the clock and the GIF's timing.
+#
 # Counting by thread needs thread names (pthread_getname_np); elsewhere
 # the runs are made and checked, the counts are not.
 #
@@ -57,7 +66,8 @@ ${CC:-cc} -std=c99 -pedantic -Wall -O2 ${CFLAGS} \
 ${CC:-cc} -std=c89 -pedantic -Wall -Wno-long-long -O2 \
 	-I "$ROOT/libretro/libretro-common/include" \
 	-o "$SCRATCH/swdraw" "$ROOT/tests/swdraw/main.c" $LIBS
-for c in scan_field scan_noninterlaced scan_alp scan_src_alpha scan_ct16s scan_fade; do
+RARE="aa1_line aa1_small depth_states mip_tw8 stream_ct24_aem"
+for c in scan_field scan_noninterlaced scan_alp scan_src_alpha scan_ct16s scan_fade $RARE; do
 	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c > /dev/null
 done
 
@@ -235,6 +245,50 @@ if [ "$COUNT" = 1 ]; then
 	[ -n "$sets" ] && [ "$sets" -gt 0 ] || { echo "pgspipelines: FAIL: fade: the blend constant was never set"; fail=1; }
 	echo "  fade: blend constant set $sets times in the warm run's frames"
 fi
+
+# $1 name, $2 case, environment from the caller: one run from nothing,
+# no pause, its end state dumped (the scan cases' GS memory is not looked
+# for, and these hand over no image)
+rare_run()
+{
+	rm -rf "$DATA"
+	mkdir -p "$DATA"
+	if ! VN_COUNT_PIPELINES=1 VN_DUMP_STATE="$SCRATCH/$1.state" VN_LOAD_PAUSE_MS=0 VN_FRAMES=30 \
+			VN_IDLE_BIOS=1 VN_VERBOSE=1 LRPS2_BIOS="$SCRATCH/$2.bin" VN_RENDERER=paraLLEl-GS \
+			timeout 600 "$SCRATCH/vknegotiate" "$CORE" "$DATA" v2 > "$SCRATCH/$1.log" 2>&1; then
+		tail -n 30 "$SCRATCH/$1.log"
+		echo "pgspipelines: FAIL: $1: the run failed"
+		exit 1
+	fi
+}
+# $1, $2 runs: the same end state but in "Gif" up to "GIFdma" and "cdvd"
+# up to "deci2" (found in the first's), which differ between any two runs
+tag() { grep -abo "$2" "$1" | head -n 1 | cut -d: -f1; }
+same_state()
+{
+	f="$SCRATCH/$1.state"
+	g0=$(tag "$f" Gif); g1=$(tag "$f" GIFdma); c0=$(tag "$f" cdvd); c1=$(tag "$f" deci2)
+	if [ -z "$g0" ] || [ -z "$g1" ] || [ -z "$c0" ] || [ -z "$c1" ]; then
+		echo "pgspipelines: FAIL: $1: no section tags in the state"
+		fail=1
+		return
+	fi
+	n=$(cmp -l "$f" "$SCRATCH/$2.state" | awk -v g0=$g0 -v g1=$g1 -v c0=$c0 -v c1=$c1 \
+		'{ o = $1 - 1; if (!((o >= g0 && o < g1) || (o >= c0 && o < c1))) n++ } END { print n + 0 }') || true
+	if [ "$(wc -c < "$f")" != "$(wc -c < "$SCRATCH/$2.state")" ] || [ "$n" != 0 ]; then
+		echo "pgspipelines: FAIL: $2 ends in another state than $1 ($n bytes)"
+		fail=1
+	fi
+}
+for c in $RARE; do
+	rare_run "rare_$c" $c
+	expect "rare_$c" 0
+	LRPS2_TEST_PGS_DYNAMIC=1; export LRPS2_TEST_PGS_DYNAMIC
+	rare_run "dynamic_$c" $c
+	unset LRPS2_TEST_PGS_DYNAMIC
+	same_state "rare_$c" "dynamic_$c"
+	echo "  $c: from nothing, no pause: $(built "rare_$c") on the frame's threads; the dynamic ubershader alone ends in the same state"
+done
 
 [ "$fail" = 0 ] || exit 1
 echo "pgspipelines: ok"

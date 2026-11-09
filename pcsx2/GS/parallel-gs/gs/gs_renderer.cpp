@@ -21,6 +21,7 @@
 #include "gs_registers_debug.hpp"
 #include "bitops.hpp"
 #include "shaders/slangmosh.hpp"
+#include <retro_spsc.h>
 #include "shaders/swizzle_utils.h"
 #include "thread_id.hpp"
 #include "gs_util.hpp"
@@ -29,6 +30,15 @@
 #include <algorithm>
 #include <cmath>
 #include <climits>
+
+namespace ParallelGS
+{
+#include "shaders/ubershader_dynamic.inc"
+}
+
+/* The specialisation constants the dynamic ubershader keeps: the sampling
+ * rate (0, 1) and the VRAM mask (4). */
+#define PGS_DYNAMIC_SPEC_MASK ((1u << 0) | (1u << 1) | (1u << 4))
 
 #if defined(__clang__)
 #pragma clang diagnostic ignored "-Wformat-security"
@@ -544,6 +554,143 @@ void GSRenderer::drain_compilation_tasks()
 void GSRenderer::stop_compilation_tasks()
 {
 	drain_compilation_tasks();
+	stop_variant_builder();
+}
+
+/* ---- shading variants built while a frame draws ---- */
+
+void GSRenderer::start_variant_builder()
+{
+	if (variant_running || !ubershader_dynamic)
+		return;
+	if (!retro_spsc_init(&variant_jobs, VARIANT_JOBS * sizeof(Vulkan::DeferredPipelineCompile)))
+		return;
+	if (!retro_spsc_init(&variant_results, VARIANT_JOBS * sizeof(VariantBuilt)))
+		goto fail_jobs;
+	if (!retro_eventcount_init(&variant_wake))
+		goto fail_results;
+	variant_stop.store(false, PGS::memory_order_relaxed);
+	variant_in_flight = 0;
+	variant_thread = PGS::thread([this]() {
+		// As the compile threads: pipelines only, no command buffer.
+		Util::register_thread_index(0);
+		Util::set_current_thread_name("PGS-Variant");
+		for (;;)
+		{
+			Vulkan::DeferredPipelineCompile job;
+			VariantBuilt built;
+			if (variant_stop.load(PGS::memory_order_acquire))
+				break;
+			if (retro_spsc_read_avail(&variant_jobs) < sizeof(job))
+			{
+				const int key = retro_eventcount_prepare_wait(&variant_wake);
+				if (retro_spsc_read_avail(&variant_jobs) >= sizeof(job) || variant_stop.load(PGS::memory_order_acquire))
+					retro_eventcount_cancel_wait(&variant_wake);
+				else
+					retro_eventcount_commit_wait(&variant_wake, key);
+				continue;
+			}
+			retro_spsc_read(&variant_jobs, &job, sizeof(job));
+			built.program  = job.program;
+			built.hash     = job.hash;
+			built.pipeline = Vulkan::CommandBuffer::build_compute_pipeline(
+					device, job, Vulkan::CommandBuffer::CompileMode::AsyncThread);
+			/* (answered built or not; room for every job asked) */
+			retro_spsc_write(&variant_results, &built, sizeof(built));
+		}
+	});
+	variant_running = true;
+	return;
+
+fail_results:
+	retro_spsc_free(&variant_results);
+fail_jobs:
+	retro_spsc_free(&variant_jobs);
+}
+
+void GSRenderer::stop_variant_builder()
+{
+	if (!variant_running)
+		return;
+	variant_stop.store(true, PGS::memory_order_release);
+	retro_eventcount_notify(&variant_wake);
+	variant_thread.join();
+	/* what it built and nothing took is the programs' to destroy */
+	take_built_variants();
+	retro_eventcount_free(&variant_wake);
+	retro_spsc_free(&variant_results);
+	retro_spsc_free(&variant_jobs);
+	variant_in_flight = 0;
+	variant_running   = false;
+}
+
+/* The frame's thread: what the builder finished, staged for the miss
+ * that takes it. */
+void GSRenderer::take_built_variants()
+{
+	VariantBuilt built;
+	unsigned i;
+
+	while (retro_spsc_read_avail(&variant_results) >= sizeof(built))
+	{
+		retro_spsc_read(&variant_results, &built, sizeof(built));
+		for (i = 0; i < variant_in_flight; i++)
+			if (variant_pending[i] == built.hash)
+			{
+				variant_pending[i] = variant_pending[--variant_in_flight];
+				break;
+			}
+		if (built.pipeline.pipeline != VK_NULL_HANDLE)
+			built.program->stage_pipeline(built.hash, built.pipeline);
+	}
+}
+
+/* Before a shading dispatch: true, with the dynamic ubershader bound and
+ * the variant it stands for pushed, when the dispatch's own variant is
+ * not built (asked of the builder if it is not asked yet); the caller
+ * binds the ubershader and the mask back after the dispatch. False, with
+ * nothing changed, when the variant is there, or there is no builder or
+ * no dynamic ubershader (debug captures have none). */
+bool GSRenderer::use_dynamic_shading(Vulkan::CommandBuffer &cmd)
+{
+	Vulkan::DeferredPipelineCompile job;
+	ShadingVariant variant;
+	unsigned i;
+
+	if (!variant_running || cmd.get_program() != shaders.ubershader[0][0])
+		return false;
+	take_built_variants();
+	cmd.extract_pipeline_state(job);
+	if (!test_dynamic)
+	{
+		if (job.program->has_pipeline(job.hash))
+			return false;
+		device->collect_built_pipelines();
+		if (job.program->has_pipeline(job.hash))
+			return false;
+		for (i = 0; i < variant_in_flight; i++)
+			if (variant_pending[i] == job.hash)
+				break;
+		if (i == variant_in_flight && variant_in_flight < VARIANT_JOBS
+		    && retro_spsc_write_avail(&variant_jobs) >= sizeof(job))
+		{
+			retro_spsc_write(&variant_jobs, &job, sizeof(job));
+			variant_pending[variant_in_flight++] = job.hash;
+			variants_asked++;
+			retro_eventcount_notify(&variant_wake);
+		}
+	}
+
+	variant.fb_fmt        = cmd.get_specialization_constant(2);
+	variant.zb_fmt        = cmd.get_specialization_constant(3);
+	variant.flags         = cmd.get_specialization_constant(5);
+	variant.feedback_psm  = cmd.get_specialization_constant(6);
+	variant.feedback_cpsm = cmd.get_specialization_constant(7);
+	cmd.set_program(ubershader_dynamic);
+	cmd.set_specialization_constant_mask(PGS_DYNAMIC_SPEC_MASK);
+	cmd.push_constants(&variant, sizeof(ShadingDescriptor), sizeof(variant));
+	dynamic_dispatches++;
+	return true;
 }
 
 /* Ascending, for the binary search below. */
@@ -744,6 +891,29 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 					}
 				}
 			}
+
+			/* The dynamic ubershader at this rate, and the native rate
+			 * the pass's single-sample dispatch drops to, with the pass's
+			 * subgroup size: whatever variant a pass needs draws at once. */
+			if (ubershader_dynamic)
+			{
+				cmd->set_program(ubershader_dynamic);
+				cmd->set_specialization_constant_mask(PGS_DYNAMIC_SPEC_MASK);
+				cmd->set_specialization_constant(0, rates->sample_x);
+				cmd->set_specialization_constant(1, rates->sample_y);
+				cmd->set_specialization_constant(4, vram_size - 1);
+				cmd->extract_pipeline_state(deferred);
+				small_tasks.push_back(deferred);
+				if (rates->sample_y != 0)
+				{
+					cmd->set_specialization_constant(0, 0);
+					cmd->set_specialization_constant(1, 0);
+					cmd->extract_pipeline_state(deferred);
+					small_tasks.push_back(deferred);
+				}
+				cmd->set_program(shaders.ubershader[0][0]);
+				cmd->set_specialization_constant_mask(0xff);
+			}
 		}
 
 		device->submit_discard(cmd);
@@ -772,22 +942,29 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 			{ 64, PSMT4 },
 		};
 
+		/* (each with the state the dispatch sets in full; waited for, as
+		 * the first frames upload and copy) */
+		static const uint32_t directions[] = { HOST_TO_LOCAL, LOCAL_TO_HOST, LOCAL_TO_LOCAL };
+		cmd->enable_subgroup_size_control(false);
 		cmd->set_specialization_constant_mask(0x7f);
 		cmd->set_specialization_constant(3, vram_size - 1);
-		cmd->set_specialization_constant(4, HOST_TO_LOCAL);
 		cmd->set_specialization_constant(5, uint32_t(can_potentially_super_sample()));
 
-		for (const CopyFormat &format : formats)
+		for (const uint32_t &direction : directions)
 		{
-			cmd->set_specialization_constant(0, format.wg_size);
-			cmd->set_specialization_constant(1, format.psm);
-			cmd->set_specialization_constant(2, format.psm);
-
-			for (unsigned prepare_only = 0; prepare_only < 2; prepare_only++)
+			cmd->set_specialization_constant(4, direction);
+			for (const CopyFormat &format : formats)
 			{
-				cmd->set_specialization_constant(6, prepare_only);
-				cmd->extract_pipeline_state(deferred);
-				tasks.push_back(deferred);
+				cmd->set_specialization_constant(0, format.wg_size);
+				cmd->set_specialization_constant(1, format.psm);
+				cmd->set_specialization_constant(2, format.psm);
+
+				for (unsigned prepare_only = 0; prepare_only < 2; prepare_only++)
+				{
+					cmd->set_specialization_constant(6, prepare_only);
+					cmd->extract_pipeline_state(deferred);
+					small_tasks.push_back(deferred);
+				}
 			}
 		}
 
@@ -797,7 +974,8 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 	{
 		Vulkan::DeferredPipelineCompile deferred = {};
 		Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
-		cmd->set_specialization_constant_mask(0x7);
+		cmd->enable_subgroup_size_control(false);
+		cmd->set_specialization_constant_mask(0xf);
 
 		struct UploadFormat { uint32_t psm; uint32_t cpsm; };
 		static const UploadFormat formats[] = {
@@ -811,6 +989,8 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 			{ PSMZ16S, 0 },
 			{ PSMT8, PSMCT32 },
 			{ PSMT8, PSMCT16 },
+			{ PSMT8H, PSMCT32 },
+			{ PSMT8H, PSMCT16 },
 			{ PSMT4, PSMCT32 },
 			{ PSMT4, PSMCT16 },
 			{ PSMT4HH, PSMCT32 },
@@ -831,9 +1011,14 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 				cmd->set_specialization_constant(1, mask);
 				for (Vulkan::Program *prog : shaders.upload)
 				{
+					unsigned indirection;
 					cmd->set_program(prog);
-					cmd->extract_pipeline_state(deferred);
-					tasks.push_back(deferred);
+					for (indirection = 0; indirection < 2; indirection++)
+					{
+						cmd->set_specialization_constant(3, uint32_t(indirection));
+						cmd->extract_pipeline_state(deferred);
+						small_tasks.push_back(deferred);
+					}
 				}
 			}
 		}
@@ -1177,9 +1362,20 @@ GSRenderer::GSRenderer(PageTracker &tracker_)
 bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 {
 	drain_compilation_tasks();
+	stop_variant_builder();
 
 	Vulkan::ResourceLayout layout;
 	shaders = Shaders<>(*device_, layout, 0);
+	/* The ubershader's resources, with room for the variant pushed after
+	 * the descriptor. */
+	{
+		Vulkan::ResourceLayout dynamic_layout =
+				shaders.ubershader[0][0]->get_shader(Vulkan::ShaderStage::Compute)->get_layout();
+		dynamic_layout.push_constant_size = sizeof(ShadingDescriptor) + sizeof(ShadingVariant);
+		dynamic_layout.spec_constant_mask = PGS_DYNAMIC_SPEC_MASK;
+		ubershader_dynamic = device_->request_program(pgs_ubershader_dynamic, sizeof(pgs_ubershader_dynamic),
+		                                              &dynamic_layout);
+	}
 	blit_quad = device_->request_program(shaders.quad, shaders.blit_circuit);
 	sample_quad[0] = device_->request_program(shaders.quad, shaders.sample_circuit[0]);
 	sample_quad[1] = device_->request_program(shaders.quad, shaders.sample_circuit[1]);
@@ -1256,6 +1452,8 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	LOGI("Using max allocated image memory per flush of %llu MiB.\n",
 	     static_cast<unsigned long long>(max_allocated_image_memory_per_flush / (1024 * 1024)));
 
+	start_variant_builder();
+	test_dynamic = variant_running && getenv("LRPS2_TEST_PGS_DYNAMIC") != nullptr;
 	return true;
 }
 
@@ -1465,6 +1663,10 @@ GSRenderer::~GSRenderer()
 	// Need to get rid of any command buffer handles at the very least. Otherwise, we deadlock the device.
 	flush_submit(0);
 	drain_compilation_tasks();
+	stop_variant_builder();
+	if (dynamic_dispatches || variants_asked)
+		LOGI("Shading: %llu dispatches drawn with the dynamic ubershader, %llu variants asked of the builder.\n",
+		     static_cast<unsigned long long>(dynamic_dispatches), static_cast<unsigned long long>(variants_asked));
 
 	last_submitted_timeline.store(UINT64_MAX, PGS::memory_order_release);
 	retro_eventcount_notify(&submitted_event);
@@ -2805,6 +3007,20 @@ void GSRenderer::bind_debug_resources(Vulkan::CommandBuffer &cmd,
 	}
 }
 
+/* A shading dispatch: with its own variant, else the dynamic one. */
+void GSRenderer::dispatch_shading_indirect(Vulkan::CommandBuffer &cmd, const Vulkan::Buffer &buffer, VkDeviceSize offset)
+{
+	const uint32_t mask = cmd.get_specialization_constant_mask();
+	if (use_dynamic_shading(cmd))
+	{
+		cmd.dispatch_indirect(buffer, offset);
+		cmd.set_program(shaders.ubershader[0][0]);
+		cmd.set_specialization_constant_mask(mask);
+	}
+	else
+		cmd.dispatch_indirect(buffer, offset);
+}
+
 void GSRenderer::dispatch_shading_commands(
 		Vulkan::CommandBuffer &cmd, const RenderPass &rp, uint32_t instance,
 		bool post_barrier, uint32_t base_primitive, uint32_t num_primitives)
@@ -2880,7 +3096,7 @@ void GSRenderer::dispatch_shading_commands(
 			                       *work_list_super_sample.buffer, work_list_super_sample.offset + 256, VK_WHOLE_SIZE);
 			if (debug)
 				cmd.insert_label("super-sample");
-			cmd.dispatch_indirect(*work_list_super_sample.buffer, work_list_super_sample.offset);
+			dispatch_shading_indirect(cmd, *work_list_super_sample.buffer, work_list_super_sample.offset);
 		}
 
 		cmd.set_specialization_constant(0, 0);
@@ -2890,7 +3106,7 @@ void GSRenderer::dispatch_shading_commands(
 		                       VK_WHOLE_SIZE);
 		if (debug)
 			cmd.insert_label("single-sample");
-		cmd.dispatch_indirect(*work_list_single_sample.buffer, work_list_single_sample.offset);
+		dispatch_shading_indirect(cmd, *work_list_single_sample.buffer, work_list_single_sample.offset);
 
 		if (post_barrier || debug)
 		{
@@ -3215,6 +3431,7 @@ void GSRenderer::emit_copy_vram(Vulkan::CommandBuffer &cmd,
 	bool is_fused_nibble = copy_is_fused_nibble(base_desc);
 	const uint32_t workgroup_size = is_fused_nibble ? 32 : 64;
 
+	cmd.enable_subgroup_size_control(false);
 	cmd.set_specialization_constant_mask(0x7f);
 	cmd.set_specialization_constant(0, workgroup_size);
 	cmd.set_specialization_constant(1, base_desc.bitbltbuf.desc.SPSM);
@@ -3958,6 +4175,16 @@ void GSRenderer::dispatch_texture_analysis(Vulkan::CommandBuffer &cmd, const Ren
 	cmd.dispatch((rp.num_primitives + 255) / 256, 1, 1);
 }
 
+/* The CLUT format an upload pipeline is built for: upload.comp reads it
+ * for a palette only, and then only whether it is 16-bit; one value for
+ * each, so TEX0.CPSM's other bits make no variant of their own. */
+static uint32_t upload_clut_format(uint32_t psm, uint32_t cpsm)
+{
+	if (psm != PSMT8 && psm != PSMT8H && psm != PSMT4 && psm != PSMT4HH && psm != PSMT4HL)
+		return 0;
+	return (cpsm == PSMCT16 || cpsm == PSMCT16S) ? PSMCT16 : PSMCT32;
+}
+
 void GSRenderer::upload_texture(const TextureUpload &upload)
 {
 	const TextureDescriptor &desc = upload.desc;
@@ -4038,9 +4265,10 @@ void GSRenderer::upload_texture(const TextureUpload &upload)
 		{ uint32_t(desc.miptbp4_6.desc.TBP3), uint32_t(desc.miptbp4_6.desc.TBW3) },
 	};
 
+	cmd.enable_subgroup_size_control(false);
 	cmd.set_specialization_constant_mask(0xf);
 	cmd.set_specialization_constant(0, uint32_t(desc.tex0.desc.PSM));
-	cmd.set_specialization_constant(2, uint32_t(desc.tex0.desc.CPSM));
+	cmd.set_specialization_constant(2, upload_clut_format(uint32_t(desc.tex0.desc.PSM), uint32_t(desc.tex0.desc.CPSM)));
 	cmd.set_specialization_constant(3, bool(upload.indirection.buffer));
 
 	// Makes it feasible to handle REGION_CLAMP where we only access one page, but at an offset.
