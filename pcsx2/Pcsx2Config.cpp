@@ -28,6 +28,7 @@
 #include "R3000A.h"
 #include "IopBios.h"
 #include "VUmicro.h"
+#include "ps2/HwInternal.h"
 
 #include <file/file_path.h>
 
@@ -799,6 +800,21 @@ bool emu_config_host_fs(void)
 bool emu_config_thread_vu1(void)
 {
 	return THREAD_VU1;
+}
+
+bool emu_config_ophflag_hack(void)
+{
+	return CHECK_OPHFLAGHACK;
+}
+
+bool emu_config_dmabusy_hack(void)
+{
+	return CHECK_DMABUSYHACK;
+}
+
+bool emu_config_viffifo_hack(void)
+{
+	return CHECK_VIFFIFOHACK;
 }
 
 

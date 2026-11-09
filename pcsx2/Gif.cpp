@@ -762,3 +762,101 @@ bool gifDmaFreeze(SaveStateBase *s)
 
 	return SaveState_IsOkay(s);
 }
+
+/* --------------------------------------------------------------------------
+ *  The GIF's side of the EE hardware (ps2/HwInternal.h)
+ * -------------------------------------------------------------------------- */
+
+u32 gifRead32(u32 mem)
+{
+	/* Fixme: OPH hack. Toggle the flag on GIF_STAT access. (rama) */
+	if (mem == GIF_STAT && CHECK_OPHFLAGHACK)
+	{
+		static unsigned counter = 1;
+		if (++counter == 8)
+			counter = 2;
+		/* Set OPH and APATH from counter, cycling paths and alternating OPH */
+		return (gifRegs.stat._u32 & ~(7 << 9)) | ((counter & 1) ? (counter << 9) : 0);
+	}
+
+	return psHu32(mem);
+}
+
+bool gifWrite32(u32 mem, u32 value)
+{
+	switch (mem)
+	{
+		case GIF_CTRL:
+			/* Not exactly sure what RST needs to do */
+			gifRegs.ctrl._u32 = value & 9;
+			if (gifRegs.ctrl.RST)
+				gifUnit.Reset(true); /* Should it reset gsSIGNAL? */
+			gifRegs.stat.PSE = gifRegs.ctrl.PSE;
+			return false;
+
+		case GIF_MODE:
+			gifRegs.mode._u32 = value;
+			/* Need to kickstart the GIF if the M3R mask comes off */
+			if (gifRegs.stat.M3R == 1 && gifRegs.mode.M3R == 0
+					&& (gifch.chcr.STR || gif_fifo.fifoSize))
+				CPU_INT(DMAC_GIF, 8);
+
+			gifRegs.stat.M3R = gifRegs.mode.M3R;
+			gifRegs.stat.IMT = gifRegs.mode.IMT;
+			return false;
+
+		default:
+			break;
+	}
+	return true;
+}
+
+void gifHwReset(void)
+{
+	gifUnit.Reset();
+}
+
+void gifFifoReset(void)
+{
+	gif_fifo.init();
+}
+
+/* The MFIFO's consumers, VIF1 or the GIF, learn of what SPR0 put in it. */
+void FireMFIFOEmpty(void)
+{
+	hwDmacIrq(DMAC_MFIFO_EMPTY);
+
+	if (dmacRegs.ctrl.MFD == MFD_VIF1) vif1Regs.stat.FQC = 0;
+	if (dmacRegs.ctrl.MFD == MFD_GIF)  gifRegs.stat.FQC  = 0;
+}
+
+void hwMFIFOResume(u32 transferred)
+{
+	if (transferred == 0)
+		return; /* Nothing got put in the MFIFO, we don't care */
+
+	switch (dmacRegs.ctrl.MFD)
+	{
+		case MFD_VIF1: /* Most common case. */
+			if (vif1.inprogress & 0x10)
+			{
+				vif1.inprogress &= ~0x10;
+				/* Don't resume if stalled or already looping */
+				if (vif1ch.chcr.STR && !(cpuRegs.interrupt & (1 << DMAC_MFIFO_VIF)) && !vif1Regs.stat.INT)
+				{
+					/* Need to simulate the time it takes to copy here, if the VIF resumes before the SPR has finished, it isn't happy. */
+					CPU_INT(DMAC_MFIFO_VIF, transferred * BIAS);
+				}
+
+			}
+			break;
+		case MFD_GIF:
+			if ((gif.gifstate & GIF_STATE_EMPTY)) {
+				CPU_INT(DMAC_MFIFO_GIF, transferred * BIAS);
+				gif.gifstate = GIF_STATE_READY;
+			}
+			break;
+		default:
+			break;
+	}
+}

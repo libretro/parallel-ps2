@@ -197,9 +197,9 @@ struct GIFregisters
 
 static GIFregisters& gifRegs = (GIFregisters&)eeHw[0x3000];
 
-extern void gifInterrupt(void);
+#include "ps2/HwInternal.h"
+
 extern void GIFdma(void);
-extern void dmaGIF(void);
 extern void mfifoGIFtransfer(void);
 extern void gifMFIFOInterrupt(void);
 extern void gifCheckPathStatus(bool calledFromGIF);

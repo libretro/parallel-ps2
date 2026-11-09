@@ -415,8 +415,7 @@ _vifT bool vifWrite32(u32 mem, u32 value)
 	return true;
 }
 
-template u32 vifRead32<0>(u32 mem);
-template u32 vifRead32<1>(u32 mem);
-
-template bool vifWrite32<0>(u32 mem, u32 value);
-template bool vifWrite32<1>(u32 mem, u32 value);
+u32 vif0Read32(u32 mem) { return vifRead32<0>(mem); }
+u32 vif1Read32(u32 mem) { return vifRead32<1>(mem); }
+bool vif0Write32(u32 mem, u32 value) { return vifWrite32<0>(mem, value); }
+bool vif1Write32(u32 mem, u32 value) { return vifWrite32<1>(mem, value); }

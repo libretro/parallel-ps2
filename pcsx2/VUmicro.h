@@ -122,7 +122,14 @@ extern void vu0Exec(VURegs* VU);
 extern void vu0Finish();
 
 /* VU1 */
+/* VU1micro.cpp; Dmac.c finishes VU1 through it. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern void vu1Finish(bool add_cycles);
+#ifdef __cplusplus
+}
+#endif
 extern void vu1ResetRegs();
 extern void vu1ExecMicro(u32 addr);
 extern void vu1Exec(VURegs* VU);

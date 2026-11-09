@@ -335,7 +335,14 @@ namespace MTGS
 /////////////////////////////////////////////////////////////////////////////
 // Generalized GS Functions and Stuff
 
-extern void gsReset();
+/* GS.cpp; hwReset (Hw.c) calls it. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern void gsReset(void);
+#ifdef __cplusplus
+}
+#endif
 extern void gsSetVideoMode(GS_VideoMode mode);
 
 extern retro_atomic_int_t s_GSRegistersWritten;
@@ -366,21 +373,3 @@ extern retro_atomic_int_t s_GSRegistersWritten;
 // observed peak while reclaiming 7 MiB of static storage vs the old 8 MiB ring.
 #define MTGS_RINGBUFFERSIZE 65536
 
-// FIXME: These belong in common with other memcpy tools.  Will move them there later if no one
-// else beats me to it.  --air
-inline void MemCopy_WrappedDest(const u128* src, u128* destBase, uint& destStart, uint destSize, uint len)
-{
-	uint endpos = destStart + len;
-	if (endpos < destSize)
-	{
-		memcpy(&destBase[destStart], src, len * 16);
-		destStart += len;
-	}
-	else
-	{
-		uint firstcopylen = destSize - destStart;
-		memcpy(&destBase[destStart], src, firstcopylen * 16);
-		destStart = endpos % destSize;
-		memcpy(destBase, src + firstcopylen, destStart * 16);
-	}
-}

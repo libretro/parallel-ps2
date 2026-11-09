@@ -329,7 +329,7 @@
     <ClCompile Include="FiFo.cpp">
       <Filter>System\Ps2\EmotionEngine\Hardware</Filter>
     </ClCompile>
-    <ClCompile Include="Hw.cpp">
+    <ClCompile Include="Hw.c">
       <Filter>System\Ps2\EmotionEngine\Hardware</Filter>
     </ClCompile>
     <ClCompile Include="Cache.cpp">
@@ -602,7 +602,7 @@
     <ClCompile Include="IPU\IPUdma.cpp">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
-    <ClCompile Include="Dmac.cpp">
+    <ClCompile Include="Dmac.c">
       <Filter>System\Ps2</Filter>
     </ClCompile>
     <ClCompile Include="DmacChannel.c">
@@ -1133,6 +1133,9 @@
       <Filter>System\Ps2\Iop\CDVD</Filter>
     </ClInclude>
     <ClInclude Include="IPU\IPU.h">
+      <Filter>System\Ps2\IPU</Filter>
+    </ClInclude>
+    <ClInclude Include="IPU\IPU_hw.h">
       <Filter>System\Ps2\IPU</Filter>
     </ClInclude>
     <ClInclude Include="IPU\IPU_Fifo.h">

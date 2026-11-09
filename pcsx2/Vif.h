@@ -217,8 +217,15 @@ typedef struct VIFregistersMTVU {
 
 #define VifStallEnable(vif) (vif.chcr.STR);
 
-extern void dmaVIF0();
-extern void dmaVIF1();
+/* Vif0_Dma.cpp, Vif1_Dma.cpp; Dmac.c starts them. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern void dmaVIF0(void);
+extern void dmaVIF1(void);
+#ifdef __cplusplus
+}
+#endif
 extern void mfifoVIF1transfer();
 extern bool VIF0transfer(u32 *data, int size, bool TTE);
 extern bool VIF1transfer(u32 *data, int size, bool TTE);

@@ -19,43 +19,20 @@
 
 #include "../../common/SingleRegisterTypes.h"
 
-// hw read functions
-template< uint page > extern mem8_t  hwRead8  (u32 mem);
-template< uint page > extern mem16_t hwRead16 (u32 mem);
-template< uint page > extern mem32_t hwRead32 (u32 mem);
-template< uint page > extern mem64_t hwRead64 (u32 mem);
-template< uint page > extern RETURNS_R128       hwRead128(u32 mem);
-
-// Internal hwRead32 which does not log reads, used by hwWrite8/16 to perform
-// read-modify-write operations.
-template< uint page, bool intcstathack >
-extern mem32_t _hwRead32(u32 mem);
-
-extern mem16_t hwRead16_page_0F_INTC_HACK(u32 mem);
-extern mem32_t hwRead32_page_0F_INTC_HACK(u32 mem);
-
-
-// hw write functions
-template<uint page> extern void hwWrite8  (u32 mem, u8  value);
-template<uint page> extern void hwWrite16 (u32 mem, u16 value);
-
-template<uint page> extern void hwWrite32 (u32 mem, mem32_t value);
-template<uint page> extern void hwWrite64 (u32 mem, mem64_t srcval);
-#if PCSX2_MINGW_R128_BY_PTR
-template<uint page> extern void hwWrite128(u32 mem, const r128* srcval);
-#else
-template<uint page> extern void TAKES_R128 hwWrite128(u32 mem, r128 srcval);
+/* What the EE hardware register handlers (Hw.c) and the DMAC (Dmac.c)
+ * reach in the units that are still C++, with C linkage. */
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-// --------------------------------------------------------------------------------------
-//  Hardware FIFOs (128 bit access only!)
-// --------------------------------------------------------------------------------------
-// VIF0   -- 0x10004000 -- eeHw[0x4000]
-// VIF1   -- 0x10005000 -- eeHw[0x5000]
-// GIF    -- 0x10006000 -- eeHw[0x6000]
-// IPUout -- 0x10007000 -- eeHw[0x7000]
-// IPUin  -- 0x10007010 -- eeHw[0x7010]
-
+/* --------------------------------------------------------------------------
+ *  Hardware FIFOs (128 bit access only!), FiFo.cpp
+ * --------------------------------------------------------------------------
+ * VIF0   -- 0x10004000 -- eeHw[0x4000]
+ * VIF1   -- 0x10005000 -- eeHw[0x5000]
+ * GIF    -- 0x10006000 -- eeHw[0x6000]
+ * IPUout -- 0x10007000 -- eeHw[0x7000]
+ * IPUin  -- 0x10007010 -- eeHw[0x7010] */
 extern void ReadFIFO_VIF1(mem128_t* out);
 extern void ReadFIFO_IPUout(mem128_t* out);
 
@@ -63,3 +40,25 @@ extern void WriteFIFO_VIF0(const mem128_t* value);
 extern void WriteFIFO_VIF1(const mem128_t* value);
 extern void WriteFIFO_GIF(const mem128_t* value);
 extern void WriteFIFO_IPUin(const mem128_t* value);
+
+/* Gif.cpp: the GIF's registers on page 3, its DMA, and its reset. The
+ * read and write return like the other units': the value read, and false
+ * when the write was taken care of. */
+extern u32  gifRead32(u32 mem);
+extern bool gifWrite32(u32 mem, u32 value);
+extern void gifInterrupt(void);
+extern void dmaGIF(void);
+extern void gifHwReset(void);  /* the GIF unit and its paths */
+extern void gifFifoReset(void); /* the 16-quadword FIFO */
+
+/* GS.cpp: the GS's part of hwReset. */
+extern void gsReset(void);
+
+/* Pcsx2Config.cpp: the gamefixes the handlers check. */
+extern bool emu_config_ophflag_hack(void);
+extern bool emu_config_dmabusy_hack(void);
+extern bool emu_config_viffifo_hack(void);
+
+#ifdef __cplusplus
+}
+#endif

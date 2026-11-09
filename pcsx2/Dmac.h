@@ -401,8 +401,13 @@ extern void hwMFIFOResume(u32 transferred);
 }
 #endif
 
-/* The paged hardware accessors are templates on the page index. */
+/* Dmac.c: a write to the DMAC's registers (pages 8 to 0xe, and
+ * DMAC_ENABLEW). False when it was taken care of, true when the caller
+ * should store the value as it is. */
 #ifdef __cplusplus
-template< uint page > u32 dmacRead32( u32 mem );
-template< uint page > extern bool dmacWrite32( u32 mem, mem32_t& value );
-#endif /* __cplusplus */
+extern "C" {
+#endif
+extern bool dmacWrite32(u32 mem, u32 value);
+#ifdef __cplusplus
+}
+#endif

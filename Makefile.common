@@ -242,6 +242,8 @@ SOURCES_C += \
 	$(LRPS2_DIR)/sif2.c \
 	$(LRPS2_DIR)/DmacChannel.c \
 	$(LRPS2_DIR)/SPR.c \
+	$(LRPS2_DIR)/Dmac.c \
+	$(LRPS2_DIR)/Hw.c \
 	$(LRPS2_DIR)/SaveStateBase.c \
 	$(LRPS2_DIR)/SaveStateFreeze.c
 
@@ -284,7 +286,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/Cache.cpp \
 	$(LRPS2_DIR)/COP0.cpp \
 	$(LRPS2_DIR)/Counters.cpp \
-	$(LRPS2_DIR)/Dmac.cpp \
 	$(LRPS2_DIR)/FiFo.cpp \
 	$(LRPS2_DIR)/FPU.cpp \
 	$(LRPS2_DIR)/GameDatabase.cpp \
@@ -292,7 +293,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/Gif.cpp \
 	$(LRPS2_DIR)/Gif_Unit.cpp \
 	$(LRPS2_DIR)/GS.cpp \
-	$(LRPS2_DIR)/Hw.cpp \
 	$(LRPS2_DIR)/Interpreter.cpp \
 	$(LRPS2_DIR)/MMI.cpp \
 	$(LRPS2_DIR)/MTGS.cpp \

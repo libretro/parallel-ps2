@@ -167,12 +167,7 @@ alignas(16) extern tIPU_cmd ipu_cmd;
 
 #include "ipu_decode_state.h"
 
-extern void ipuReset();
-
-extern u32 ipuRead32(u32 mem);
-extern u64 ipuRead64(u32 mem);
-extern bool ipuWrite32(u32 mem,u32 value);
-extern bool ipuWrite64(u32 mem,u64 value);
+#include "IPU_hw.h"
 
 extern void IPUCMD_WRITE(u32 val);
 extern void ipuSoftReset();

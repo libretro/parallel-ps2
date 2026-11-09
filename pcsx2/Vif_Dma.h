@@ -77,19 +77,19 @@ typedef struct tVIF_CTRL {
    u32 value;
 } tVIF_CTRL;
 
-// NOTE, if debugging vif stalls, use sega classics, spyro, gt4, and taito
+/* NOTE, if debugging vif stalls, use sega classics, spyro, gt4, and taito */
 typedef struct vifStruct {
 	PCSX2_ALIGN(16) u128 MaskRow;
 	PCSX2_ALIGN(16) u128 MaskCol;
 
-	struct { // These must be together for MTVU
+	struct { /* These must be together for MTVU */
 		vifCode tag;
 		int cmd;
 		int pass;
 		int cl;
 		u8  usn;
 		u8 start_aligned;
-		u8  StructEnd; // Address of this is used to calculate end of struct
+		u8  StructEnd; /* Address of this is used to calculate end of struct */
 	};
 
 	int irq;
@@ -99,8 +99,8 @@ typedef struct vifStruct {
 	bool stallontag;
 	bool waitforvu;
 	int unpackcalls;
-	// GS registers used for calculating the size of the last local->host transfer initiated on the GS
-	// Transfer size calculation should be restricted to GS emulation in the future
+	/* GS registers used for calculating the size of the last local->host transfer initiated on the GS */
+	/* Transfer size calculation should be restricted to GS emulation in the future */
 	union
 	{
 		struct
@@ -114,7 +114,7 @@ typedef struct vifStruct {
 
 	u32        GSLastDownloadSize;
 
-	tVIF_CTRL  irqoffset; // 32bit offset where next vif code is
+	tVIF_CTRL  irqoffset; /* 32bit offset where next vif code is */
 	u32 vifpacketsize;
 	u8  inprogress;
 	u8  dmamode;
@@ -126,15 +126,29 @@ typedef struct vifStruct {
 
 PCSX2_ALIGN(16) extern vifStruct  vif0, vif1;
 
+#ifdef __cplusplus
 _vifT extern u32 vifRead32(u32 mem);
 _vifT extern bool vifWrite32(u32 mem, u32 value);
-extern void vif0Interrupt();
-extern void vif0VUFinish();
-extern void vif0Reset();
+#endif
+extern void vif0VUFinish(void);
 
-extern void vif1Interrupt();
-extern void vif1VUFinish();
-extern void vif1Reset();
+/* Vif.cpp, Vif0_Dma.cpp, Vif1_Dma.cpp; the EE hardware (Hw.c, Dmac.c)
+ * reaches them, the register accessors through the per-unit wrappers. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern u32  vif0Read32(u32 mem);
+extern u32  vif1Read32(u32 mem);
+extern bool vif0Write32(u32 mem, u32 value);
+extern bool vif1Write32(u32 mem, u32 value);
+extern void vif0Interrupt(void);
+extern void vif0Reset(void);
+extern void vif1Interrupt(void);
+extern void vif1VUFinish(void);
+extern void vif1Reset(void);
+#ifdef __cplusplus
+}
+#endif
 
 typedef int FnType_VifCmdHandler(int pass, const u32 *data);
 typedef FnType_VifCmdHandler* Fnptr_VifCmdHandler;
@@ -148,7 +162,7 @@ enum VifModes
 	VIF_CHAIN_MODE 		 = 2
 };
 
-// Generic constants
+/* Generic constants */
 static const unsigned int VIF0intc = 4;
 static const unsigned int VIF1intc = 5;
 

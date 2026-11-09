@@ -27,8 +27,7 @@ struct IPUDMAStatus {
 extern void ipu0Interrupt();
 extern void ipu1Interrupt();
 
-extern void dmaIPU0();
-extern void dmaIPU1();
+#include "IPU_hw.h"
 extern void IPU0dma();
 extern void IPU1dma();
 

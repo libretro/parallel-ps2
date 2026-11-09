@@ -373,8 +373,15 @@ extern void CPU_INT( EE_EventType n, s32 ecycle );
 #ifdef __cplusplus
 }
 #endif
-extern uint intcInterrupt();
-extern uint dmacInterrupt();
+/* Hw.c */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern uint intcInterrupt(void);
+extern uint dmacInterrupt(void);
+#ifdef __cplusplus
+}
+#endif
 
 extern void cpuReset();
 extern void cpuException(u32 code, u32 bd);
@@ -391,8 +398,15 @@ extern int cpuGetCycles(void);
 
 extern void _cpuEventTest_Shared(void);	// for internal use by the Dynarecs and Ints inside R5900:
 
+/* R5900.cpp; Hw.c and Dmac.c raise interrupts through them. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern void cpuTestINTCInts(void);
 extern void cpuTestDMACInts(void);
+#ifdef __cplusplus
+}
+#endif
 
 ////////////////////////////////////////////////////////////////////
 // Exception Codes

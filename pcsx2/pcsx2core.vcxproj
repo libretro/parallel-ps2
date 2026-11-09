@@ -168,7 +168,7 @@
     <ClCompile Include="Patch.cpp" />
     <ClCompile Include="ps2\Iop\PsxBios.c" />
     <ClCompile Include="ps2\pgif.c" />
-    <ClCompile Include="Dmac.cpp" />
+    <ClCompile Include="Dmac.c" />
     <ClCompile Include="DmacChannel.c" />
     <ClCompile Include="sif2.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLState.cpp" />
@@ -218,7 +218,7 @@
     <ClCompile Include="ps2\BiosTools.cpp" />
     <ClCompile Include="Counters.cpp" />
     <ClCompile Include="FiFo.cpp" />
-    <ClCompile Include="Hw.cpp" />
+    <ClCompile Include="Hw.c" />
     <ClCompile Include="Cache.cpp" />
     <ClCompile Include="Memory.c" />
     <ClCompile Include="x86\iR5900Analysis.cpp" />
@@ -427,6 +427,7 @@
     <ClInclude Include="GS\GSXXH.h" />
     <ClInclude Include="GS\MultiISA.h" />
     <ClInclude Include="IPU\IPUdma.h" />
+    <ClInclude Include="IPU\IPU_hw.h" />
     <ClInclude Include="Mdec.h" />
     <ClInclude Include="Patch.h" />
     <ClInclude Include="ps2\pgif.h" />

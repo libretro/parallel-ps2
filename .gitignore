@@ -320,6 +320,10 @@ tests/eespr/eespr_test
 tests/eespr/eespr_test.exe
 tests/eespr/.got.txt
 tests/eespr/.obj/
+tests/eehw/eehw_test
+tests/eehw/eehw_test.exe
+tests/eehw/.got.txt
+tests/eehw/.obj/
 tests/p2io/p2io_test.exe
 tests/stdlib/.build/
 tests/stdlib/.probe.cpp

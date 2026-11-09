@@ -369,7 +369,14 @@ enum GSRegisterAddresses
 	GS_SIGLBLID		=	0x12001080
 };
 
+/* Hw.c */
+#ifdef __cplusplus
+extern "C" {
+#endif
 void hwReset(void);
+#ifdef __cplusplus
+}
+#endif
 
 
 /* The EE hardware register handlers, one set per 4K page of 0x1000xxxx

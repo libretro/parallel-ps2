@@ -57,6 +57,8 @@ asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
  * scores 8 of 13 where this scores 0 of 16. */
 static void vu_config_is_default(void) { }
 alignas(16) u8 s_gifunit[sizeof(Gif_Unit)];
+/* The GIF paths' read counters, reached by Gif_Unit.h's inline path code. */
+Gif_Path_ReadAmount gifPathReadAmount[3];
 asm(".globl gifUnit\n.set gifUnit, s_gifunit");
 alignas(16) u8 s_vu1thread[sizeof(VU_Thread)];
 asm(".globl vu1Thread\n.set vu1Thread, s_vu1thread");

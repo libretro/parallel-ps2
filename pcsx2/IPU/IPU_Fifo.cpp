@@ -19,6 +19,7 @@
 #include "IPU.h"
 #include "IPUdma.h"
 #include "IPU_MultiISA.h"
+#include "../ps2/HwInternal.h"
 
 alignas(16) IPU_Fifo ipu_fifo;
 

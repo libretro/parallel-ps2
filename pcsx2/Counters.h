@@ -82,7 +82,6 @@ typedef struct SyncCounter
 	s32 deltaCycles;
 } SyncCounter;
 
-extern Counter counters[4];
 
 /* MSVC decorates C++ data symbols; the ELF ABI does not. A variable a C
  * unit references therefore has to be declared -- and so, through this
@@ -105,8 +104,16 @@ extern "C" {
 
 extern void rcntUpdate(void);
 
+/* Counters.cpp; the EE hardware handlers (Hw.c) reach them. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern Counter counters[4];
 extern void rcntInit(void);
 extern u32 rcntRcount(int index);
 extern bool rcntWrite32( u32 mem, mem32_t *value );
-extern u16 rcntRead32( u32 mem );		// returns u16 by design! (see implementation for details)
+extern u16 rcntRead32( u32 mem );		/* returns u16 by design! (see implementation for details) */
+#ifdef __cplusplus
+}
+#endif
 

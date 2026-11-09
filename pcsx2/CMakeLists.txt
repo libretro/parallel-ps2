@@ -97,7 +97,6 @@ set(pcsx2Sources
 	Cache.cpp
 	COP0.cpp
 	Counters.cpp
-	Dmac.cpp
 	GameDatabase.cpp
 	${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.cpp
 	Elfheader.c
@@ -113,13 +112,14 @@ set(pcsx2Sources
 	sif2.c
 	DmacChannel.c
 	SPR.c
+	Dmac.c
+	Hw.c
 	SaveStateBase.c
 	SaveStateFreeze.c
 	Gif.cpp
 	Gif_Unit.cpp
 	GS.cpp
 	HostFS.c
-	Hw.cpp
 	Interpreter.cpp
 	IopBios.c
 	IopCounters.c
@@ -561,6 +561,7 @@ set(pcsx2IPUSourcesUnshared
 # IPU headers
 set(pcsx2IPUHeaders
 	IPU/IPU.h
+	IPU/IPU_hw.h
 	IPU/IPU_Fifo.h
 	IPU/IPU_MultiISA.h
 	IPU/IPUdma.h
