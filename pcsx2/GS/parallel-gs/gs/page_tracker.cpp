@@ -5,7 +5,6 @@
 
 #include "page_tracker.hpp"
 #include "gs_interface.hpp"
-#include "unstable_remove_if.hpp"
 #include <algorithm>
 
 #if 0 && defined(PARALLEL_GS_DEBUG) && PARALLEL_GS_DEBUG
@@ -836,68 +835,92 @@ Vulkan::ImageHandle PageTracker::find_cached_texture(Util::Hash hash) const
 	return cached_texture->image;
 }
 
+/* The handle lists are compacted in place by index, front to back: a
+ * handle that goes is swapped with the last one still kept, which is
+ * looked at next, and the tail is cut off at the end. No iterator or
+ * predicate type is named, so nothing here depends on how a standard
+ * library spells them. */
 void PageTracker::garbage_collect_texture_masked_handles(std::vector<CachedTextureMasked> &textures)
 {
-	__gnu_cxx::__normal_iterator<CachedTextureMasked *, std::vector<CachedTextureMasked>> itr = Util::unstable_remove_if(textures.begin(), textures.end(), [](const CachedTextureMasked &masked) {
-		return masked.tex->status == CachedTexture::Status::Dead;
-	});
-	textures.erase(itr, textures.end());
+	size_t i = 0;
+	size_t n = textures.size();
+
+	while (i < n)
+	{
+		if (textures[i].tex->status == CachedTexture::Status::Dead)
+		{
+			n--;
+			std::swap(textures[i], textures[n]);
+		}
+		else
+			i++;
+	}
+	textures.erase(textures.begin() + n, textures.end());
 }
 
 bool PageTracker::invalidate_cached_textures(
 		std::vector<CachedTextureMasked> &textures,
 		uint32_t block_mask, uint32_t write_mask, uint32_t clut_instance)
 {
+	/* CLUT invalidation is a soft invalidation. As long as we can use CLUT
+	 * memoization to get back to the original CLUT index, we can keep
+	 * reusing the image, but only within the same render pass. */
+	const bool is_clut_invalidation = clut_instance != UINT32_MAX;
 	bool did_work = false;
+	size_t i = 0;
+	size_t n = textures.size();
 
-	__gnu_cxx::__normal_iterator<CachedTextureMasked *, std::vector<CachedTextureMasked>> itr = Util::unstable_remove_if(
-			textures.begin(), textures.end(),
-			[this, block_mask, write_mask, clut_instance, &did_work](CachedTextureMasked &masked) {
-				CachedTexture &tex = *masked.tex;
+	while (i < n)
+	{
+		CachedTextureMasked &masked = textures[i];
+		CachedTexture &tex = *masked.tex;
+		const bool can_invalidate =
+				tex.status == CachedTexture::Status::Live ||
+				(tex.status == CachedTexture::Status::Floating && !is_clut_invalidation);
 
-				// CLUT invalidation is a soft invalidation. As long as we can use CLUT memoization
-				// to get back to the original CLUT index, we can keep reusing the image,
-				// but only within the same render pass.
-				bool is_clut_invalidation = clut_instance != UINT32_MAX;
+		if (can_invalidate &&
+		    (masked.block_mask & block_mask) != 0 &&
+		    (masked.write_mask & write_mask) != 0 &&
+		    (clut_instance == UINT32_MAX || masked.clut_instance != clut_instance))
+		{
+			/* When we transition away from Live status, remove it from the
+			 * hashmap lookup. Handles may persist until render pass end. */
+			if (tex.status == CachedTexture::Status::Live)
+				cached_textures.erase(masked.tex.get());
 
-				bool can_invalidate =
-						tex.status == CachedTexture::Status::Live ||
-						(tex.status == CachedTexture::Status::Floating && !is_clut_invalidation);
+			/* If we only invalidated texture due to palette cache being
+			 * clobbered, we may be able to ignore the invalidation and keep
+			 * it alive in the render pass cache if we sample the texture
+			 * with same memoized CLUT instance once again. Essentially, we
+			 * defer the invalidation until the same texture is used with a
+			 * different palette instance. */
+			cb.invalidate_texture_hash(tex.get_hash(), is_clut_invalidation);
+			if (tex.image)
+			{
+				cb.recycle_image_handle(std::move(tex.image));
+				tex.image = {};
+			}
 
-				if (can_invalidate &&
-				    (masked.block_mask & block_mask) != 0 &&
-				    (masked.write_mask & write_mask) != 0 &&
-				    (clut_instance == UINT32_MAX || masked.clut_instance != clut_instance))
-				{
-					// When we transition away from Live status, remove it from the hashmap lookup.
-					// Handles may persist until render pass end.
-					if (tex.status == CachedTexture::Status::Live)
-						cached_textures.erase(masked.tex.get());
+			/* If the image was only invalidated for CLUT, it can remain
+			 * live until. */
+			tex.status = is_clut_invalidation ?
+			             CachedTexture::Status::Floating :
+			             CachedTexture::Status::Dead;
 
-					// If we only invalidated texture due to palette cache being clobbered,
-					// we may be able to ignore the invalidation and keep it alive in the render pass cache if
-					// we sample the texture with same memoized CLUT instance once again.
-					// Essentially, we defer the invalidation until the same texture is used with a different palette instance.
-					cb.invalidate_texture_hash(tex.get_hash(), is_clut_invalidation);
-					if (tex.image)
-					{
-						cb.recycle_image_handle(std::move(tex.image));
-						tex.image = {};
-					}
+			did_work = true;
+		}
 
-					// If the image was only invalidated for CLUT, it can remain live until.
-					tex.status = is_clut_invalidation ?
-					             CachedTexture::Status::Floating :
-					             CachedTexture::Status::Dead;
+		/* Can only reap the handle when it's truly dead. */
+		if (tex.status == CachedTexture::Status::Dead)
+		{
+			n--;
+			std::swap(textures[i], textures[n]);
+		}
+		else
+			i++;
+	}
 
-					did_work = true;
-				}
-
-				// Can only reap the handle when it's truly dead.
-				return tex.status == CachedTexture::Status::Dead;
-			});
-
-	textures.erase(itr, textures.end());
+	textures.erase(textures.begin() + n, textures.end());
 	return did_work;
 }
 
