@@ -112,6 +112,9 @@ extern void* mtvu_write_mem_begin(int data_mem, u32 addr, u32 size);
 extern void mtvu_write_mem_commit(void);
 extern void mtvu_write_micro_mem(u32 vu_micro_addr, const void* data, u32 size);
 extern void mtvu_write_data_mem(u32 vu_data_addr, const void* data, u32 size);
+/* VIF1's STCOL/STROW: hand vif1's column or row to the VU1 thread. */
+extern void mtvu_write_col(void);
+extern void mtvu_write_row(void);
 #ifdef __cplusplus
 }
 #endif
@@ -134,9 +137,10 @@ extern void vu0Finish(void);
 extern "C" {
 #endif
 extern void vu1Finish(bool add_cycles);
+/* VU1micro.cpp; Vif_Codes.c starts VU1 programs through it. */
+extern void vu1ExecMicro(u32 addr);
 #ifdef __cplusplus
 }
 #endif
 extern void vu1ResetRegs();
-extern void vu1ExecMicro(u32 addr);
 extern void vu1Exec(VURegs* VU);

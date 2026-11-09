@@ -152,7 +152,14 @@ extern void vif1Reset(void);
 typedef int FnType_VifCmdHandler(int pass, const u32 *data);
 typedef FnType_VifCmdHandler* Fnptr_VifCmdHandler;
 
+/* Vif_Codes.c: the VIFcode handlers, per unit, by command. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 PCSX2_ALIGN(16) extern const Fnptr_VifCmdHandler vifCmdHandler[2][128];
+#ifdef __cplusplus
+}
+#endif
 
 enum VifModes
 {

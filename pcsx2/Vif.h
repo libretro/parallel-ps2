@@ -217,6 +217,11 @@ typedef struct VIFregistersMTVU {
 
 #define VifStallEnable(vif) (vif.chcr.STR);
 
+/* The same per-unit selection for C, as pointers: n is 0 or 1. */
+#define VIF_X(n)     ((n) ? &vif1 : &vif0)
+#define VIF_XCH(n)   ((n) ? &vif1ch : &vif0ch)
+#define VIF_XREGS(n) ((n) ? &vif1Regs : &vif0Regs)
+
 /* Vif0_Dma.cpp, Vif1_Dma.cpp; Dmac.c starts them. */
 #ifdef __cplusplus
 extern "C" {
@@ -226,7 +231,7 @@ extern void dmaVIF1(void);
 /* Vif1_MFIFO.c */
 extern void mfifoVIF1transfer(void);
 extern void vifMFIFOInterrupt(void);
-/* Vif_Transfer.cpp: runs the VIF codes in size words of data. */
+/* Vif_Transfer.c: runs the VIF codes in size words of data. */
 extern bool VIF0transfer(u32 *data, int size, bool TTE);
 extern bool VIF1transfer(u32 *data, int size, bool TTE);
 #ifdef __cplusplus

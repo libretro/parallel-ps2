@@ -153,8 +153,8 @@ set(pcsx2Sources
 	Sio.c
 	SioFifo.c
 	Vif.cpp
-	Vif_Codes.cpp
-	Vif_Transfer.cpp
+	Vif_Codes.c
+	Vif_Transfer.c
 	Vif_Unpack.cpp
 	VirtualMemory.c
 	vtlb.cpp

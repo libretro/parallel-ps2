@@ -192,6 +192,8 @@ extern bool gif_unit_path3_masked(void);
 extern bool gif_unit_signal_queued(void);
 /* PATH3 DMA data of size bytes; returns the bytes taken. */
 extern u32  gif_unit_transfer_dma(u8* pMem, u32 size);
+/* PATH2 (VIF1 DIRECT/DIRECTHL) data of size bytes; returns the bytes taken. */
+extern u32  gif_unit_transfer_direct(u8* pMem, u32 size, bool hl);
 extern void gif_unit_reset(bool softReset);
 extern bool gif_path_is_done(int path);
 extern bool gif_path_is_idle(int path);

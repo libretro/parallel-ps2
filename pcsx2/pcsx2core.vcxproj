@@ -242,8 +242,8 @@
     <ClCompile Include="Vif0_Dma.c" />
     <ClCompile Include="Vif1_Dma.c" />
     <ClCompile Include="Vif1_MFIFO.c" />
-    <ClCompile Include="Vif_Codes.cpp" />
-    <ClCompile Include="Vif_Transfer.cpp" />
+    <ClCompile Include="Vif_Codes.c" />
+    <ClCompile Include="Vif_Transfer.c" />
     <ClCompile Include="Vif_Unpack.cpp" />
     <ClCompile Include="x86\newVif_Dynarec.cpp" />
     <ClCompile Include="x86\newVif_UnpackSSE.cpp" />

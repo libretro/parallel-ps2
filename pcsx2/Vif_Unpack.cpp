@@ -428,6 +428,19 @@ _vifT int nVifUnpack(const u8* data)
 template int nVifUnpack<0>(const u8* data);
 template int nVifUnpack<1>(const u8* data);
 
+void vif_unpack_setup(int idx, const u32* data)
+{
+	if (idx)
+		vifUnpackSetup<1>(data);
+	else
+		vifUnpackSetup<0>(data);
+}
+
+int vif_unpack(int idx, const u8* data)
+{
+	return idx ? nVifUnpack<1>(data) : nVifUnpack<0>(data);
+}
+
 // This is used by the interpreted SSE unpacks only.  Recompiled SSE unpacks
 // and the interpreted C unpacks use the vif.MaskRow/MaskCol members directly.
 static void setMasks(const vifStruct& vif, const VIFregisters& v)

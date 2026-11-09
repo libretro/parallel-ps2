@@ -395,10 +395,10 @@
     <ClCompile Include="Vif1_MFIFO.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Vif</Filter>
     </ClCompile>
-    <ClCompile Include="Vif_Codes.cpp">
+    <ClCompile Include="Vif_Codes.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Vif</Filter>
     </ClCompile>
-    <ClCompile Include="Vif_Transfer.cpp">
+    <ClCompile Include="Vif_Transfer.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Vif</Filter>
     </ClCompile>
     <ClCompile Include="Vif_Unpack.cpp">

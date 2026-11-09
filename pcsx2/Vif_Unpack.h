@@ -47,3 +47,15 @@ extern int nVifUnpack(const u8* data);
 template< int idx >
 extern void vifUnpackSetup(const u32* data);
 #endif
+
+/* The same for C (Vif_Codes.c), the unit as an argument: UNPACK's code
+ * sets the transfer up, and its data is unpacked into VU memory, the
+ * words taken returned. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern void vif_unpack_setup(int idx, const u32* data);
+extern int  vif_unpack(int idx, const u8* data);
+#ifdef __cplusplus
+}
+#endif
