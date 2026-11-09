@@ -66,6 +66,8 @@ extern void mtvu_kick_pending(void);
 /* Pcsx2Config.cpp: the gamefixes the handlers check. */
 extern bool emu_config_ophflag_hack(void);
 extern bool emu_config_giffifo_hack(void);
+extern bool emu_config_xgkick_hack(void);
+extern bool emu_config_enable_vu1(void);
 extern bool emu_config_dmabusy_hack(void);
 extern bool emu_config_viffifo_hack(void);
 extern bool emu_config_vif1stall_hack(void);

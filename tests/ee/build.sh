@@ -102,10 +102,11 @@ else
 fi
 
 echo "== GS SIGNAL and LABEL merges vs console =="
-${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
-	-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
-	-I "$ROOT/libretro/libretro-common/include" \
-	-o "$DIR/ee_hwgslabel" "$DIR/hwgslabel.cpp" "$ROOT/pcsx2/Gif_Unit.cpp" "$ROOT/libretro/libretro-common/queues/retro_spsc.c" "$ROOT/libretro/libretro-common/rthreads/rthreads.c" "$ROOT/libretro/libretro-common/memmap/memalign.c" -lpthread
+GSLINC="-I $ROOT -I $ROOT/pcsx2 -I $ROOT/common -I $ROOT/common/include -I $ROOT/3rdparty/include -I $ROOT/libretro/libretro-common/include"
+${CC:-cc} -std=gnu89 -O1 -w -msse4.1 $SANFLAGS $GSLINC -c "$ROOT/pcsx2/Gif_Unit.c" -o "$DIR/ee_hwgslabel_gif.o"
+${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS $GSLINC \
+	-o "$DIR/ee_hwgslabel" "$DIR/hwgslabel.cpp" "$DIR/ee_hwgslabel_gif.o" "$ROOT/libretro/libretro-common/queues/retro_spsc.c" "$ROOT/libretro/libretro-common/memmap/memalign.c"
+rm -f "$DIR/ee_hwgslabel_gif.o"
 "$DIR/ee_hwgslabel"
 
 echo "== DMAC CPCOND0 vs console =="

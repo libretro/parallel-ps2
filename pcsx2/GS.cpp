@@ -19,6 +19,7 @@
 #include <cstring> /* memset */
 #include <list>
 
+#include "GS.h"
 #include "Gif_Unit.h"
 #include "Counters.h"
 #include "Config.h"
@@ -77,7 +78,7 @@ static __fi void gsCSRwrite( const tGS_CSR& csr )
 		}
 		else gsCSRclear(GS_CSR_SIGNAL);
 		gifUnit.gsSIGNAL.queued = false;
-		gifUnit.Execute(false, true); // Resume paused transfers
+		gif_unit_execute(false, true); // Resume paused transfers
 	}
 
 	if (csr.FINISH)	{
@@ -227,10 +228,10 @@ void gsWrite64_page_01(u32 mem, u64 value)
 	{
 		case GS_BUSDIR:
 
-			gifUnit.stat.DIR = static_cast<u32>(value) & 1;
-			if (gifUnit.stat.DIR) {      // Assume will do local->host transfer
-				gifUnit.stat.OPH = true; // Should we set OPH here?
-				gifUnit.FlushToMTGS();   // Send any pending GS Primitives to the GS
+			gifRegs.stat.DIR = static_cast<u32>(value) & 1;
+			if (gifRegs.stat.DIR) {      // Assume will do local->host transfer
+				gifRegs.stat.OPH = true; // Should we set OPH here?
+				gif_unit_flush_to_mtgs();   // Send any pending GS Primitives to the GS
 			}
 
 			gsWrite64_generic( mem, value );

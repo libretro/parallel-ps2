@@ -265,19 +265,7 @@ extern void gsSetVideoMode(GS_VideoMode mode);
 extern retro_atomic_int_t s_GSRegistersWritten;
 
 // Size of the ringbuffer as a power of 2 -- size is a multiple of simd128s.
-// MTVU GS-packet queue size in GS_Packet records (must be a power of two).
-//
-// One queue exists: GIF path 1 is the only path MTVU drives, and the only
-// one that allocates it. Its old size was inherited from the upstream 8 MiB
-// MTGS ring ("based on MTGS", factor 2) - a ring that no longer exists here.
-// MTGS_RINGBUFFERSIZE below bounds how many MTVU placeholder tags the EE can
-// have outstanding, and each drains the packet queue until a final packet,
-// so occupancy tracks the same PostVsyncStart pacing that keeps the command
-// ring at ~22k entries worst-observed. 65536 records (1 MiB) matches the
-// command ring's bound-with-margin. No measured peak exists for this queue
-// yet: build with MTVU_GSPACK_QUEUE_HIGH_WATER (Gif_Unit.h) to record one
-// and tighten this.
-#define MTVU_GSPACK_QUEUE_RECORDS 65536
+// MTVU_GSPACK_QUEUE_RECORDS, the MTVU packet queue's size, is in Gif_Unit.h.
 
 // MTGS command-ring size in u128 qwords (must be a power of two).
 //

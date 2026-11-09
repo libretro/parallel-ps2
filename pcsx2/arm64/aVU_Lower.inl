@@ -1979,16 +1979,16 @@ void mVU_XGKICK_(u32 addr)
 {
 	addr = (addr & 0x3ff) * 16;
 	u32 diff = 0x4000 - addr;
-	u32 size = gifUnit.GetGSPacketSize(GIF_PATH_1, vuRegs[1].Mem, addr, ~0u, true);
+	u32 size = gif_unit_get_packet_size(GIF_PATH_1, vuRegs[1].Mem, addr, ~0u, true);
 
 	if (size > diff)
 	{
-		gifUnit.gifPath[GIF_PATH_1].CopyGSPacketData(&vuRegs[1].Mem[addr], diff, true);
-		gifUnit.TransferGSPacketData(GIF_TRANS_XGKICK, &vuRegs[1].Mem[0], size - diff, true);
+		gif_path_copy(&gifUnit.gifPath[GIF_PATH_1], &vuRegs[1].Mem[addr], diff);
+		gif_unit_transfer(GIF_TRANS_XGKICK, &vuRegs[1].Mem[0], size - diff);
 	}
 	else
 	{
-		gifUnit.TransferGSPacketData(GIF_TRANS_XGKICK, &vuRegs[1].Mem[addr], size, true);
+		gif_unit_transfer(GIF_TRANS_XGKICK, &vuRegs[1].Mem[addr], size);
 	}
 }
 
@@ -2000,7 +2000,7 @@ void _vuXGKICKTransfermVU(bool flush)
 
 		if (VU1.xgkicksizeremaining == 0)
 		{
-			u32 size = gifUnit.GetGSPacketSize(GIF_PATH_1, vuRegs[1].Mem, VU1.xgkickaddr, ~0u, flush);
+			u32 size = gif_unit_get_packet_size(GIF_PATH_1, vuRegs[1].Mem, VU1.xgkickaddr, ~0u, flush);
 			VU1.xgkicksizeremaining = size & 0xFFFF;
 			VU1.xgkickendpacket = size >> 31;
 			VU1.xgkickdiff = 0x4000 - VU1.xgkickaddr;
@@ -2028,13 +2028,13 @@ void _vuXGKICKTransfermVU(bool flush)
 		if (THREAD_VU1)
 		{
 			if (transfersize < VU1.xgkicksizeremaining)
-				gifUnit.gifPath[GIF_PATH_1].CopyGSPacketData(&VU1.Mem[VU1.xgkickaddr], transfersize, true);
+				gif_path_copy(&gifUnit.gifPath[GIF_PATH_1], &VU1.Mem[VU1.xgkickaddr], transfersize);
 			else
-				gifUnit.TransferGSPacketData(GIF_TRANS_XGKICK, &vuRegs[1].Mem[VU1.xgkickaddr], transfersize, true);
+				gif_unit_transfer(GIF_TRANS_XGKICK, &vuRegs[1].Mem[VU1.xgkickaddr], transfersize);
 		}
 		else
 		{
-			gifUnit.TransferGSPacketData(GIF_TRANS_XGKICK, &vuRegs[1].Mem[VU1.xgkickaddr], transfersize, true);
+			gif_unit_transfer(GIF_TRANS_XGKICK, &vuRegs[1].Mem[VU1.xgkickaddr], transfersize);
 		}
 
 		if (flush)

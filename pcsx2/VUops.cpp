@@ -2721,7 +2721,7 @@ void _vuXGKICKTransfer(s32 cycles, bool flush)
 
 		if (vuRegs[1].xgkicksizeremaining == 0)
 		{
-			u32 size = gifUnit.GetGSPacketSize(GIF_PATH_1, vuRegs[1].Mem, vuRegs[1].xgkickaddr, ~0u, flush);
+			u32 size = gif_unit_get_packet_size(GIF_PATH_1, vuRegs[1].Mem, vuRegs[1].xgkickaddr, ~0u, flush);
 			vuRegs[1].xgkicksizeremaining = size & 0xFFFF;
 			vuRegs[1].xgkickendpacket     = size >> 31;
 			vuRegs[1].xgkickdiff          = 0x4000 - vuRegs[1].xgkickaddr;
@@ -2750,13 +2750,13 @@ void _vuXGKICKTransfer(s32 cycles, bool flush)
 		/*if (THREAD_VU1)
 		{
 			if ((transfersize * 0x10) < vuRegs[1].xgkicksizeremaining)
-				gifUnit.gifPath[GIF_PATH_1].CopyGSPacketData(&vuRegs[1].Mem[vuRegs[1].xgkickaddr], transfersize * 0x10, true);
+				gif_path_copy(&gifUnit.gifPath[GIF_PATH_1], &vuRegs[1].Mem[vuRegs[1].xgkickaddr], transfersize * 0x10);
 			else
-				gifUnit.TransferGSPacketData(GIF_TRANS_XGKICK, &vuRegs[1].Mem[vuRegs[1].xgkickaddr], transfersize * 0x10, true);
+				gif_unit_transfer(GIF_TRANS_XGKICK, &vuRegs[1].Mem[vuRegs[1].xgkickaddr], transfersize * 0x10);
 		}
 		else*/
 		//{
-			gifUnit.TransferGSPacketData(GIF_TRANS_XGKICK, &vuRegs[1].Mem[vuRegs[1].xgkickaddr], transfersize * 0x10, true);
+			gif_unit_transfer(GIF_TRANS_XGKICK, &vuRegs[1].Mem[vuRegs[1].xgkickaddr], transfersize * 0x10);
 		//}
 
 		if ((vuRegs[0].VI[REG_VPU_STAT].UL & 0x100) && flush)

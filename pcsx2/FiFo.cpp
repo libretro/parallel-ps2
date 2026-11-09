@@ -16,6 +16,7 @@
 #include "Common.h"
 
 #include "Gif.h"
+#include "GS.h"
 #include "Gif_Unit.h"
 #include "Vif.h"
 #include "Vif_Dma.h"
@@ -81,28 +82,28 @@ void WriteFIFO_VIF1(const mem128_t* value)
 	else
 		vif1Regs.stat.VPS = VPS_IDLE;
 
-	if (gifRegs.stat.APATH == 2 && gifUnit.gifPath[1].isDone())
+	if (gifRegs.stat.APATH == 2 && gif_path_is_done(1))
 	{
 		gifRegs.stat.APATH = 0;
 		gifRegs.stat.OPH = 0;
 		vif1Regs.stat.VGW = false; //Let vif continue if it's stuck on a flush
 
-		if (gifUnit.checkPaths(1, 0, 1))
-			gifUnit.Execute(false, true);
+		if (gif_unit_check_paths(1, 0, 1))
+			gif_unit_execute(false, true);
 	}
 
 }
 
 void WriteFIFO_GIF(const mem128_t* value)
 {
-	if ((!gifUnit.CanDoPath3() || gif_fifo.fifoSize > 0))
+	if ((!gif_unit_can_do_path3() || gif_fifo.fifoSize > 0))
 	{
 		gif_fifo_write((u32*)value, 1);
 		gif_fifo_read();
 	}
 	else
 	{
-		gifUnit.TransferGSPacketData(GIF_TRANS_FIFO, (u8*)value, 16);
+		gif_unit_transfer(GIF_TRANS_FIFO, (u8*)value, 16);
 	}
 
 	if (gifUnit.gifPath[GIF_PATH_3].state == GIF_PATH_WAIT)
@@ -115,8 +116,8 @@ void WriteFIFO_GIF(const mem128_t* value)
 
 		if (gifUnit.gifPath[GIF_PATH_3].state == GIF_PATH_IDLE || gifUnit.gifPath[GIF_PATH_3].state == GIF_PATH_WAIT)
 		{
-			if (gifUnit.checkPaths(1, 1, 0))
-				gifUnit.Execute(false, true);
+			if (gif_unit_check_paths(1, 1, 0))
+				gif_unit_execute(false, true);
 		}
 	}
 }

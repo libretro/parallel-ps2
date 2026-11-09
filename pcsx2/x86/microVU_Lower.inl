@@ -1702,16 +1702,16 @@ void mVU_XGKICK_(u32 addr)
 {
 	addr = (addr & 0x3ff) * 16;
 	u32 diff = 0x4000 - addr;
-	u32 size = gifUnit.GetGSPacketSize(GIF_PATH_1, vuRegs[1].Mem, addr, ~0u, 1);
+	u32 size = gif_unit_get_packet_size(GIF_PATH_1, vuRegs[1].Mem, addr, ~0u, 1);
 
 	if (size > diff)
 	{
-		gifUnit.gifPath[GIF_PATH_1].CopyGSPacketData(&vuRegs[1].Mem[addr], diff, 1);
-		gifUnit.TransferGSPacketData(GIF_TRANS_XGKICK, &vuRegs[1].Mem[0], size - diff, 1);
+		gif_path_copy(&gifUnit.gifPath[GIF_PATH_1], &vuRegs[1].Mem[addr], diff);
+		gif_unit_transfer(GIF_TRANS_XGKICK, &vuRegs[1].Mem[0], size - diff);
 	}
 	else
 	{
-		gifUnit.TransferGSPacketData(GIF_TRANS_XGKICK, &vuRegs[1].Mem[addr], size, 1);
+		gif_unit_transfer(GIF_TRANS_XGKICK, &vuRegs[1].Mem[addr], size);
 	}
 }
 
@@ -1723,7 +1723,7 @@ void _vuXGKICKTransfermVU(int flush)
 
 		if (vuRegs[1].xgkicksizeremaining == 0)
 		{
-			u32 size = gifUnit.GetGSPacketSize(GIF_PATH_1, vuRegs[1].Mem, vuRegs[1].xgkickaddr, ~0u, flush);
+			u32 size = gif_unit_get_packet_size(GIF_PATH_1, vuRegs[1].Mem, vuRegs[1].xgkickaddr, ~0u, flush);
 			vuRegs[1].xgkicksizeremaining = size & 0xFFFF;
 			vuRegs[1].xgkickendpacket = size >> 31;
 			vuRegs[1].xgkickdiff = 0x4000 - vuRegs[1].xgkickaddr;
@@ -1744,9 +1744,9 @@ void _vuXGKICKTransfermVU(int flush)
 		// Would be "nicer" to do the copy until it's all up, however this really screws up PATH3 masking stuff
 		// So lets just do it the other way :)
 		if (THREAD_VU1 && (transfersize < vuRegs[1].xgkicksizeremaining))
-			gifUnit.gifPath[GIF_PATH_1].CopyGSPacketData(&vuRegs[1].Mem[vuRegs[1].xgkickaddr], transfersize, 1);
+			gif_path_copy(&gifUnit.gifPath[GIF_PATH_1], &vuRegs[1].Mem[vuRegs[1].xgkickaddr], transfersize);
 		else
-			gifUnit.TransferGSPacketData(GIF_TRANS_XGKICK, &vuRegs[1].Mem[vuRegs[1].xgkickaddr], transfersize, 1);
+			gif_unit_transfer(GIF_TRANS_XGKICK, &vuRegs[1].Mem[vuRegs[1].xgkickaddr], transfersize);
 
 		if (flush)
 			vuRegs[1].cycle += transfersize / 8;

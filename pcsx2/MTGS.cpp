@@ -481,15 +481,15 @@ bool MTGS::MainLoop(bool flush_all)
 						 * the condition -- there is no separate credit to take,
 						 * and PopGSPacketMTVU below is the consume. Spin the
 						 * budget first, then register, re-check, park. */
-						if (!path.GetPendingGSPackets())
+						if (!gif_path_pending_packets(&path))
 						{
 							s32 spins = WorkEventCount_SpinBudget();
-							while (!path.GetPendingGSPackets() && spins-- > 0)
+							while (!gif_path_pending_packets(&path) && spins-- > 0)
 								WORK_EVENTCOUNT_RELAX();
-							while (!path.GetPendingGSPackets())
+							while (!gif_path_pending_packets(&path))
 							{
 								int key = retro_asym_eventcount_prepare_wait(&vu1Thread.ecXGkick);
-								if (path.GetPendingGSPackets())
+								if (gif_path_pending_packets(&path))
 								{
 									retro_asym_eventcount_cancel_wait(&vu1Thread.ecXGkick);
 									break;
@@ -497,7 +497,7 @@ bool MTGS::MainLoop(bool flush_all)
 								retro_asym_eventcount_commit_wait(&vu1Thread.ecXGkick, key);
 							}
 						}
-						GS_Packet gsPack = path.GetGSPacketMTVU(); // Get vu1 program's xgkick packet(s)
+						GS_Packet gsPack = gif_path_get_packet_mtvu(&path); // Get vu1 program's xgkick packet(s)
 						if (gsPack.size)
 						{
 							GS_HW_CONTEXT_BEGIN();
@@ -506,7 +506,7 @@ bool MTGS::MainLoop(bool flush_all)
 						}
 						retro_atomic_fetch_sub_int(&path.readAmount, gsPack.size + gsPack.readAmount);
 						const bool final_packet = gsPack.cycles == 0;
-						path.PopGSPacketMTVU(); // Should be done last, for proper WaitGS(isMTVU)
+						gif_path_pop_packet_mtvu(&path); // Should be done last, for proper WaitGS(isMTVU)
 						/* One post per pop: WaitGS(isMTVU) sleeps on
 						 * this instead of the old lock rendezvous. */
 						retro_asym_eventcount_notify(&vu1Thread.ecP1Progress);
@@ -671,7 +671,7 @@ void MTGS::WaitGS(bool isMTVU)
 		// Note: the command ring's cursors belong to the EE and MTGS
 		// threads; this MTVU-thread path deliberately never reads them
 		// and keys off the packet queue instead.
-		u32 startP1Packs = path.GetPendingGSPackets();
+		u32 startP1Packs = gif_path_pending_packets(&path);
 		if (startP1Packs)
 		{
 			/* Park until MTGS consumes a path-1 packet. MTGS notifies
@@ -689,7 +689,7 @@ void MTGS::WaitGS(bool isMTVU)
 			for (;;)
 			{
 				int key;
-				if (path.GetPendingGSPackets() != startP1Packs)
+				if (gif_path_pending_packets(&path) != startP1Packs)
 				{
 					/* The packet count derives from the queue's cursors, so
 					 * on weak memory the changed count can be observed before
@@ -707,7 +707,7 @@ void MTGS::WaitGS(bool isMTVU)
 				 * its notify wakes us. There is no credit to drain, so a
 				 * stale post cannot turn this into a spin. */
 				key = retro_asym_eventcount_prepare_wait(&vu1Thread.ecP1Progress);
-				if (path.GetPendingGSPackets() != startP1Packs
+				if (gif_path_pending_packets(&path) != startP1Packs
 				 || !retro_atomic_load_acquire_int(&s_open_flag))
 				{
 					retro_asym_eventcount_cancel_wait(&vu1Thread.ecP1Progress);
@@ -808,8 +808,14 @@ void MTGS::ApplySettings()
 }
 
 // Adds a finished GS Packet to the MTGS ring buffer
-void Gif_AddCompletedGSPacket(GS_Packet& _gsPack, GIF_PATH _path)
+void mtgs_wait_gs(bool isMTVU)
 {
+	MTGS::WaitGS(isMTVU);
+}
+
+void Gif_AddCompletedGSPacket(const GS_Packet* gsPack, GIF_PATH _path)
+{
+	const GS_Packet& _gsPack = *gsPack;
 	PacketTagType* tag = RingWriteBegin();
 	if (!tag)
 		return;

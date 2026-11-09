@@ -19,7 +19,7 @@
 
 /* The GIF as the EE hardware and the VIF DMA see it: its paths, its
  * registers on page 3 (gifRegs, a view of eeHw), and what Gif.c and
- * Gif_Unit.cpp answer about the GIF unit, readable from C and C++. */
+ * Gif_Unit.c answer about the GIF unit, readable from C and C++. */
 
 typedef enum GIF_PATH {
 	GIF_PATH_1 = 0,
@@ -181,7 +181,7 @@ typedef struct GIFregisters
 extern "C" {
 #endif
 
-/* Gif_Unit.cpp: the GIF unit and its paths, as the VIF and GIF DMA ask
+/* Gif_Unit.c: the GIF unit and its paths, as the VIF and GIF DMA ask
  * after them. */
 extern int  gif_unit_check_paths(bool p1, bool p2, bool p3);
 extern int  gif_unit_execute(bool isPath3, bool isResume);

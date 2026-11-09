@@ -608,7 +608,7 @@
     <ClCompile Include="DmacChannel.c">
       <Filter>System\Ps2</Filter>
     </ClCompile>
-    <ClCompile Include="Gif_Unit.cpp">
+    <ClCompile Include="Gif_Unit.c">
       <Filter>System\Ps2\GS\GIF</Filter>
     </ClCompile>
     <ClCompile Include="sif2.c">

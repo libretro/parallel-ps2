@@ -812,6 +812,16 @@ bool emu_config_giffifo_hack(void)
 	return CHECK_GIFFIFOHACK;
 }
 
+bool emu_config_xgkick_hack(void)
+{
+	return CHECK_XGKICKHACK;
+}
+
+bool emu_config_enable_vu1(void)
+{
+	return EmuConfig.Cpu.Recompiler.EnableVU1;
+}
+
 bool emu_config_dmabusy_hack(void)
 {
 	return CHECK_DMABUSYHACK;

@@ -348,6 +348,10 @@ tests/eevifregs/eevifregs_test
 tests/eevifregs/eevifregs_test.exe
 tests/eevifregs/.got.txt
 tests/eevifregs/.obj/
+tests/eegifunit/eegifunit_test
+tests/eegifunit/eegifunit_test.exe
+tests/eegifunit/.got.txt
+tests/eegifunit/.obj/
 tests/p2io/p2io_test.exe
 tests/stdlib/.build/
 tests/stdlib/.probe.cpp

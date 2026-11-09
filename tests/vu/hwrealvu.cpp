@@ -31,6 +31,7 @@ alignas(16) VURegs vuRegs[2];
 /* VUops.cpp reaches for these on paths this harness never takes: XGKICK
  * and the MTVU handoff. The EFU ops touch none of it, so they are storage
  * and no-ops rather than behaviour. */
+#include "Config.h"
 #include "Gif_Unit.h"
 #include "MTVU.h"
 
@@ -56,10 +57,13 @@ asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
  * That, rather than any difference in the arithmetic, is why its EATAN
  * scores 8 of 13 where this scores 0 of 16. */
 static void vu_config_is_default(void) { }
-alignas(16) u8 s_gifunit[sizeof(Gif_Unit)];
-/* The GIF paths' read counters, reached by Gif_Unit.h's inline path code. */
-Gif_Path_ReadAmount gifPathReadAmount[3];
-asm(".globl gifUnit\n.set gifUnit, s_gifunit");
+/* The GIF unit (Gif_Unit.c): XGKICK's way in, never reached here. */
+Gif_Unit gifUnit;
+extern "C" {
+u32 gif_unit_get_packet_size(GIF_PATH, u8*, u32, u32, bool) { return 0; }
+void gif_path_copy(Gif_Path*, const u8*, u32) { }
+u32 gif_unit_transfer(GIF_TRANSFER_TYPE, u8*, u32) { return 0; }
+}
 alignas(16) u8 s_vu1thread[sizeof(VU_Thread)];
 asm(".globl vu1Thread\n.set vu1Thread, s_vu1thread");
 
@@ -81,14 +85,6 @@ void (*Int_COP2SPECIAL1PrintTable[64])() = {};
 void (*Int_COP2SPECIAL2PrintTable[128])() = {};
 RETURNS_R128 vtlb_memRead128(u32) { r128 v; memset(&v, 0, sizeof(v)); return v; }
 void vtlb_memWrite128(u32, r128) { }
-void Gif_AddBlankGSPacket(u32, GIF_PATH) { }
-void Gif_AddCompletedGSPacket(GS_Packet&, GIF_PATH) { }
-void Gif_FinishIRQ() { }
-bool Gif_HandlerAD(u8*) { return false; }
-void Gif_HandlerAD_MTVU(u8*) { }
-void Gif_MTVU_KickSema() { }
-void gifCheckPathStatus(bool) { }
-namespace MTGS { void WaitGS(bool) { } }
 
 /* Lower-op encoding, as ps2autotests' assembler builds it. */
 #define LOWER_TYPE1345 0x80000000u

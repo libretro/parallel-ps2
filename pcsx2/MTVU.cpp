@@ -17,6 +17,8 @@
 #include <faulthandler.h>
 
 #include "Common.h"
+#include "GS.h"
+#include "GS/GSRegs.h"
 #include "Gif_Unit.h"
 #include "MTVU.h"
 #include "VMManager.h"
@@ -224,7 +226,7 @@ void VU_Thread::ExecuteRingBuffer(void)
 					if (CpuVU1 != &vucpu_rec_vu1)
 						vuRegs[0].VI[REG_VPU_STAT].UL |= 0x0100;
 					CpuVU1->Execute(vu1RunCycles);
-					gifUnit.gifPath[GIF_PATH_1].FinishGSPacketMTVU();
+					gif_path_finish_mtvu(&gifUnit.gifPath[GIF_PATH_1], true);
 					retro_asym_eventcount_notify(&ecXGkick); // Tell MTGS a path1 packet is complete
 					retro_atomic_store_release_int(&vuCycles[vuCycleIdx], (int)vuRegs[1].cycle);
 					vuCycleIdx = (vuCycleIdx + 1) & 3;
@@ -460,7 +462,7 @@ u32 VU_Thread::Get_vuCycles()
 
 void VU_Thread::Get_MTVUChanges()
 {
-	// Note: Atomic communication is with Gif_Unit.cpp Gif_HandlerAD_MTVU
+	// Note: Atomic communication is with Gif_HandlerAD_MTVU (below)
 	u32 interrupts = mtvuInterrupts.load(std::memory_order_relaxed);
 	if (!interrupts)
 		return;
@@ -478,7 +480,7 @@ void VU_Thread::Get_MTVUChanges()
 		 * the flag (the previous design), the producer could
 		 * overwrite gsSignal between our read and our clear, and
 		 * we'd silently drop the second value. With clear-then-
-		 * exchange the producer-side spin-wait (Gif_Unit.cpp) sees
+		 * exchange the producer-side spin-wait (Gif_HandlerAD_MTVU, below) sees
 		 * the cleared flag and is free to publish a new value; if
 		 * it raced into the gap before our exchange, our exchange
 		 * picks up the new value and the spurious flag re-set is
@@ -521,7 +523,7 @@ void VU_Thread::Get_MTVUChanges()
 		gifUnit.gsFINISH.gsFINISHFired = false;
 		gifUnit.gsFINISH.gsFINISHPending = true;
 
-		if (!gifUnit.checkPaths(false, true, true, true))
+		if (!gif_unit_check_paths_queued(false, true, true))
 			Gif_FinishIRQ();
 	}
 	if (interrupts & InterruptFlagLabel)
@@ -590,7 +592,82 @@ void VU_Thread::KickPending()
 		KickStart();
 }
 
-// Called from Gif_Path::CopyGSPacketData (MTVU thread) after handing MTGS a
+/* The A+D writes on path 1 the GIF acts on, from the VU1 thread
+ * (Gif_Unit.c, gif_path_execute_mtvu); handed to the EE thread, which
+ * takes them in Get_GSChanges. */
+void Gif_HandlerAD_MTVU(u8* pMem)
+{
+	// Note: Atomic communication is with MTVU.cpp Get_GSChanges
+	const u8 reg    = pMem[8] & 0x7f;
+	const u32* data = (u32*)pMem;
+
+	if (reg == GIF_A_D_REG_SIGNAL)
+	{ // SIGNAL
+		/* gsSignal is single-producer (this MTVU thread) /
+		 * single-consumer (cpu_thread). If the consumer hasn't
+		 * cleared InterruptFlagSignal yet, the previous signal
+		 * value still belongs to it - overwriting would drop the
+		 * pending signal entirely (the consumer's fetch_and would
+		 * succeed against our new flag-set, but our gsSignal
+		 * value would be lost since the consumer already captured
+		 * the prior value).
+		 *
+		 * Bounded spin to give the consumer time to drain. If
+		 * cpu_thread is actively running EE between VU dispatches
+		 * it will hit one of the polling Get_MTVUChanges sites
+		 * within a few yields and clear the flag. The bound is
+		 * critical: if cpu_thread is asleep in WaitVU /
+		 * WaitForEmpty, it cannot drain the flag until MTVU
+		 * thread fully completes its current ring-buffer item -
+		 * spinning forever here while cpu_thread waits there
+		 * would deadlock. Falling out of the bound restores the
+		 * upstream behavior of losing the second SIGNAL, which
+		 * is rare and at worst recovers via the game's own
+		 * timeout/poll paths.
+		 *
+		 * Upstream PCSX2 logged "Double SIGNAL Not Handled" here
+		 * instead of waiting; this closes the race in the common
+		 * case while keeping liveness for the deadlock case. */
+		for (int spin = 0; spin < 16; spin++)
+		{
+			if (!((u32)retro_atomic_load_acquire_int(&vu1Thread.mtvuInterrupts) & VU_Thread::InterruptFlagSignal))
+				break;
+			sthread_yield();
+		}
+		retro_atomic_store_release_64(&vu1Thread.gsSignal, (int64_t)(((u64)data[1] << 32) | data[0]));
+		retro_atomic_fetch_or_int(&vu1Thread.mtvuInterrupts, VU_Thread::InterruptFlagSignal);
+	}
+	else if (reg == GIF_A_D_REG_FINISH)
+	{ // FINISH
+		retro_atomic_fetch_or_int(&vu1Thread.mtvuInterrupts, VU_Thread::InterruptFlagFinish);
+	}
+	else if (reg == GIF_A_D_REG_LABEL)
+	{ // LABEL
+		// It's okay to coalesce label updates
+		u32 labelData = data[0];
+		u32 labelMsk = data[1];
+		/* Merge-coalesce under CAS.  cas_64 is strong with no
+		 * expected-out parameter, so the loop is load-then-attempt:
+		 * recompute the merge against the freshly observed value each
+		 * round.  Same convergence as the old weak-CAS form (which
+		 * refreshed 'existing' through the expected-out channel), one
+		 * doomed first attempt fewer. */
+		for (;;)
+		{
+			const u64 existing = (u64)retro_atomic_load_acquire_64(&vu1Thread.gsLabel);
+			const u32 existingData = (u32)existing;
+			const u32 existingMsk = (u32)(existing >> 32);
+			const u32 wantedData = (existingData & ~labelMsk) | (labelData & labelMsk);
+			const u32 wantedMsk = existingMsk | labelMsk;
+			const u64 wanted = ((u64)wantedMsk << 32) | wantedData;
+			if (retro_atomic_cas_64(&vu1Thread.gsLabel, (int64_t)existing, (int64_t)wanted))
+				break;
+		}
+		retro_atomic_fetch_or_int(&vu1Thread.mtvuInterrupts, VU_Thread::InterruptFlagLabel);
+	}
+}
+
+// Called from gif_path_copy (Gif_Unit.c, MTVU thread) after handing MTGS a
 // partial packet, so MTGS's semaXGkick wait wakes up and drains it.
 void Gif_MTVU_KickSema()
 {
@@ -615,7 +692,7 @@ void VU_Thread::ExecuteVU(u32 vu_addr, u32 vif_top, u32 vif_itop, u32 fbrst)
 	Write(vif_itop);
 	Write(fbrst);
 	retro_atomic_store_release_int(&m_ato_write_pos, m_write_pos);
-	gifUnit.TransferGSPacketData(GIF_TRANS_MTVU, NULL, 0);
+	gif_unit_transfer(GIF_TRANS_MTVU, NULL, 0);
 	KickStart();
 	u32 cycles = pcsx2_max_i(Get_vuCycles(), 4u);
 	u32 skip_cycles = pcsx2_min_i(cycles, 3000u);

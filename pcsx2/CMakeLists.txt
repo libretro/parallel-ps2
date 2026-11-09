@@ -120,7 +120,7 @@ set(pcsx2Sources
 	SaveStateBase.c
 	SaveStateFreeze.c
 	Gif.c
-	Gif_Unit.cpp
+	Gif_Unit.c
 	GS.cpp
 	HostFS.c
 	Interpreter.cpp

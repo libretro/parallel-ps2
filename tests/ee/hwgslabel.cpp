@@ -1,6 +1,6 @@
 /*  GS SIGNAL and LABEL against console captures.
  *
- *  Scores Gif_HandlerAD in pcsx2/Gif_Unit.cpp against ps2autotests
+ *  Scores Gif_HandlerAD in pcsx2/Gif_Unit.c against ps2autotests
  *  tests/gs/label.expected and tests/gs/signal.expected, two captures
  *  nothing read.
  *
@@ -27,31 +27,34 @@
 #include <string.h>
 
 #include "Common.h"
+#include "GS.h"
+#include "GS/GSRegs.h"
 #include "Gif_Unit.h"
-#include "MTVU.h"
+#include "Vif_Dma.h"
+#include "SaveState.h"
 
 alignas(16) u8 eeHw[0x10000];
 alignas(16) u8 g_RealGSMem[0x2000];
-alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
-asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
-alignas(16) u8 s_vu1thread[sizeof(VU_Thread)];
-asm(".globl vu1Thread\n.set vu1Thread, s_vu1thread");
 alignas(16) vifStruct vif1;
 
 alignas(16) cpuRegisters cpuRegs;
 
-/* The rest of the GIF unit, which the C glue at the end of Gif_Unit.cpp
- * reaches: never run here. */
+/* The rest of the GIF unit, which Gif_Unit.c reaches: never run here. */
+extern "C" {
 void Gif_AddBlankGSPacket(u32, GIF_PATH) { }
-void Gif_AddCompletedGSPacket(GS_Packet&, GIF_PATH) { }
-void Gif_MTVU_KickSema() { }
+void Gif_AddCompletedGSPacket(const GS_Packet*, GIF_PATH) { }
+void Gif_MTVU_KickSema(void) { }
+void Gif_HandlerAD_MTVU(u8*) { }
+void mtgs_wait_gs(bool) { }
 void gifCheckPathStatus(bool) { }
 void CPU_INT(EE_EventType, s32) { }
 void hwIntcIrq(int) { }
+bool emu_config_thread_vu1(void) { return false; }
+bool emu_config_xgkick_hack(void) { return false; }
+bool emu_config_enable_vu1(void) { return true; }
 void SaveState_FreezeMem(SaveStateBase*, void*, int) { }
 bool SaveState_FreezeTag(SaveStateBase*, const char*) { return true; }
-namespace MTGS { void WaitGS(bool) { } }
-namespace Threading { void Timeslice() { } }
+}
 
 /* One AD packet: the data quadword followed by the register number. */
 static void send_ad(u64 lo, u64 hi, u8 reg)

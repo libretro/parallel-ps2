@@ -53,7 +53,7 @@ right. Where the two disagree, that disagreement is the finding.
 | ee | hwspr.cpp | 448 | SPR.cpp |
 | ee | hwperf.c | 85 | transcription |
 | ee | hwcpcond.cpp | 6 | COP0.cpp |
-| ee | hwgslabel.cpp | 4 | Gif_Unit.cpp |
+| ee | hwgslabel.cpp | 4 | Gif_Unit.c |
 | fpu | hwrealfpu.cpp | 939 across 25 ops | FPU.cpp |
 | fpu | hwfpu.c, hwfcr.c, hwbranch.c | 595 | ps2float.c + transcription |
 | iop | hwrealiop.cpp | 563 across 33 ops | R3000AOpcodeTables.c |

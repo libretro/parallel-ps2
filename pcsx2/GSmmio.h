@@ -128,3 +128,11 @@ static __fi void gsCSRfield(u32 mask, u32 value)
 			return;
 	}
 }
+
+/* IMR's mask bits and SIGLBLID's two words, as C reaches them (GS.h has
+ * the C++ register views). */
+#define GS_IMR_WORD      (*(u32*)(PS2MEM_GS + 0x1010))
+#define GS_IMR_SIGMSK    (1u << 8)
+#define GS_IMR_FINISHMSK (1u << 9)
+#define GS_SIGID_WORD    (*(u32*)(PS2MEM_GS + 0x1080))
+#define GS_LBLID_WORD    (*(u32*)(PS2MEM_GS + 0x1084))
