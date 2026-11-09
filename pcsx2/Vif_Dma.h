@@ -124,19 +124,18 @@ typedef struct vifStruct {
 	bool queued_gif_wait;
 } vifStruct;
 
-PCSX2_ALIGN(16) extern vifStruct  vif0, vif1;
-
 #ifdef __cplusplus
 _vifT extern u32 vifRead32(u32 mem);
 _vifT extern bool vifWrite32(u32 mem, u32 value);
 #endif
-extern void vif0VUFinish(void);
 
 /* Vif.cpp, Vif0_Dma.cpp, Vif1_Dma.cpp; the EE hardware (Hw.c, Dmac.c)
  * reaches them, the register accessors through the per-unit wrappers. */
 #ifdef __cplusplus
 extern "C" {
 #endif
+PCSX2_ALIGN(16) extern vifStruct  vif0, vif1;
+extern void vif0VUFinish(void);
 extern u32  vif0Read32(u32 mem);
 extern u32  vif1Read32(u32 mem);
 extern bool vif0Write32(u32 mem, u32 value);
@@ -166,10 +165,18 @@ enum VifModes
 static const unsigned int VIF0intc = 4;
 static const unsigned int VIF1intc = 5;
 
+/* Vif0_Dma.c, Vif1_Dma.c, Vif.cpp; the VIF code interpreters and the DMA
+ * side share them. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern u32 g_vif0Cycles;
 extern u32 g_vif1Cycles;
 
-extern void vif0FLUSH();
-extern void vif1FLUSH();
+extern void vif0FLUSH(void);
+extern void vif1FLUSH(void);
 
 extern void vifExecQueue(int idx);
+#ifdef __cplusplus
+}
+#endif

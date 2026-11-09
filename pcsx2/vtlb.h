@@ -213,7 +213,14 @@ typedef enum vtlb_ProtectionMode
 extern vtlb_ProtectionMode mmap_GetRamPageInfo(u32 paddr);
 extern void mmap_MarkCountedRamPage(u32 paddr);
 extern void mmap_ResetBlockTracking();
+/* Vif1_Dma.c lifts the protection before the GS writes into EE RAM. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern void mmap_UnprotectRamRange(u32 paddr, u32 size);
+#ifdef __cplusplus
+}
+#endif
 
 // --------------------------------------------------------------------------------------
 //  Goemon game fix

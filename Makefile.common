@@ -244,6 +244,9 @@ SOURCES_C += \
 	$(LRPS2_DIR)/SPR.c \
 	$(LRPS2_DIR)/Dmac.c \
 	$(LRPS2_DIR)/Hw.c \
+	$(LRPS2_DIR)/Vif0_Dma.c \
+	$(LRPS2_DIR)/Vif1_Dma.c \
+	$(LRPS2_DIR)/Vif1_MFIFO.c \
 	$(LRPS2_DIR)/SaveStateBase.c \
 	$(LRPS2_DIR)/SaveStateFreeze.c
 
@@ -307,9 +310,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/Vif_Codes.cpp \
 	$(LRPS2_DIR)/Vif_Transfer.cpp \
 	$(LRPS2_DIR)/Vif_Unpack.cpp \
-	$(LRPS2_DIR)/Vif0_Dma.cpp \
-	$(LRPS2_DIR)/Vif1_Dma.cpp \
-	$(LRPS2_DIR)/Vif1_MFIFO.cpp \
 	$(LRPS2_DIR)/VMManager.cpp \
 	$(LRPS2_DIR)/vtlb.cpp \
 	$(LRPS2_DIR)/VU0.cpp \

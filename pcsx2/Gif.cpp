@@ -860,3 +860,12 @@ void hwMFIFOResume(u32 transferred)
 			break;
 	}
 }
+
+/* The GIF unit as the VIF DMA (Vif1_Dma.c, Vif1_MFIFO.c) asks after it
+ * (Gif_hw.h). */
+int gif_unit_check_paths(bool p1, bool p2, bool p3) { return gifUnit.checkPaths(p1, p2, p3); }
+int gif_unit_execute(bool isPath3, bool isResume) { return gifUnit.Execute(isPath3, isResume); }
+bool gif_unit_can_do_path2(void) { return gifUnit.CanDoPath2(); }
+bool gif_unit_can_do_path2hl(void) { return gifUnit.CanDoPath2HL(); }
+bool gif_path_is_done(int path) { return gifUnit.gifPath[path].isDone(); }
+bool gif_path_is_idle(int path) { return gifUnit.gifPath[path].state == GIF_PATH_IDLE; }

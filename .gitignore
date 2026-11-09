@@ -328,6 +328,10 @@ tests/eeipu/eeipu_test
 tests/eeipu/eeipu_test.exe
 tests/eeipu/.got.txt
 tests/eeipu/.obj/
+tests/eevif/eevif_test
+tests/eevif/eevif_test.exe
+tests/eevif/.got.txt
+tests/eevif/.obj/
 tests/p2io/p2io_test.exe
 tests/stdlib/.build/
 tests/stdlib/.probe.cpp

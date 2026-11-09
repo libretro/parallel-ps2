@@ -114,6 +114,9 @@ set(pcsx2Sources
 	SPR.c
 	Dmac.c
 	Hw.c
+	Vif0_Dma.c
+	Vif1_Dma.c
+	Vif1_MFIFO.c
 	SaveStateBase.c
 	SaveStateFreeze.c
 	Gif.cpp
@@ -149,9 +152,6 @@ set(pcsx2Sources
 	R5900OpcodeTables.cpp
 	Sio.c
 	SioFifo.c
-	Vif0_Dma.cpp
-	Vif1_Dma.cpp
-	Vif1_MFIFO.cpp
 	Vif.cpp
 	Vif_Codes.cpp
 	Vif_Transfer.cpp
@@ -179,6 +179,7 @@ set(pcsx2Headers
 	Elfheader.h
 	FW.h
 	Gif.h
+	Gif_hw.h
 	Gif_Unit.h
 	GS.h
 	Hardware.h

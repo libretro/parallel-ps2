@@ -394,7 +394,14 @@ extern void GoemonPreloadTlb();
 extern void GoemonUnloadTlb(u32 key);
 
 extern int  cpuTestCycle( u64 startCycle, s32 delta );
+/* R5900.cpp; the VIF DMA (Vif1_Dma.c, Vif1_MFIFO.c) paces itself on it. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern int cpuGetCycles(void);
+#ifdef __cplusplus
+}
+#endif
 
 extern void _cpuEventTest_Shared(void);	// for internal use by the Dynarecs and Ints inside R5900:
 

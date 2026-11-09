@@ -26,6 +26,7 @@
 
 #include "GS.h"
 #include "Gif_Unit.h"
+#include "ps2/HwInternal.h"
 #include "MTVU.h"
 #include "WorkEventCount.h"
 #include "MTGSOwner.h"
@@ -313,6 +314,11 @@ void MTGS::InitAndReadFIFO(u8* mem, u32 qwc)
 		RingWriteEnd();
 	}
 	WaitGS(false);
+}
+
+void mtgs_init_and_read_fifo(u8* mem, u32 qwc)
+{
+	MTGS::InitAndReadFIFO(mem, qwc);
 }
 
 void MTGS::TryOpenGS(void)

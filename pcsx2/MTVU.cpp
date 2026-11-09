@@ -23,6 +23,7 @@
 #include "Vif_Dynarec.h"
 
 #include <rthreads/rthreads.h>
+#include "ps2/HwInternal.h"
 
 VU_Thread vu1Thread;
 
@@ -708,3 +709,7 @@ void VU_Thread::WriteRow(vifStruct& _vif)
 	retro_atomic_store_release_int(&m_ato_write_pos, m_write_pos);
 	KickStart();
 }
+
+/* The VU1 thread as the VIF DMA (Vif1_Dma.c, Vif1_MFIFO.c) reaches it. */
+void mtvu_get_changes(void) { vu1Thread.Get_MTVUChanges(); }
+void mtvu_kick_pending(void) { vu1Thread.KickPending(); }

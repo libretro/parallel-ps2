@@ -817,6 +817,21 @@ bool emu_config_viffifo_hack(void)
 	return CHECK_VIFFIFOHACK;
 }
 
+bool emu_config_vif1stall_hack(void)
+{
+	return CHECK_VIF1STALLHACK;
+}
+
+bool emu_config_vusync_hack(void)
+{
+	return EmuConfig.Gamefixes.VUSyncHack;
+}
+
+bool emu_config_instant_vu1(void)
+{
+	return INSTANT_VU1;
+}
+
 
 /* A folder under DataRoot unless given absolute. */
 static void SetFolder(char* out, size_t out_size, const char* root, const char* value)

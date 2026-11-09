@@ -14,18 +14,18 @@
  */
 
 #include "Common.h"
-#include "GS.h"
-#include "Gif_Unit.h"
-#include "MTVU.h"
-#include "VUmicro.h"
+#include "Vif.h"
 #include "Vif_Dma.h"
-#include "x86/newVif.h"
+#include "VUmicro.h"
+#include "Gif_hw.h"
+#include "vtlb.h"
+#include "ps2/HwInternal.h"
 
 u32 g_vif1Cycles = 0;
 
 void vif1FLUSH(void)
 {
-	if (vuRegs[0].VI[REG_VPU_STAT].UL & 0x500) // T bit stop or Busy
+	if (vuRegs[0].VI[REG_VPU_STAT].UL & 0x500) /* T bit stop or Busy */
 	{
 		vif1.waitforvu = true;
 		vif1.vifstalled.enabled = VifStallEnable(vif1ch);
@@ -36,52 +36,53 @@ void vif1FLUSH(void)
 
 void vif1TransferToMemory(void)
 {
-	// Reverse VIF1 is a download: the GS writes into this buffer, so the
-	// address has to be resolved for writing. dmaGetAddr hands back a
-	// different placeholder for the two cases when madr falls outside main
-	// RAM -- eeMem->ZeroWrite for writers, the read-only eeMem->ZeroRead for
-	// readers -- so asking for the read one here yields a page that faults
-	// the moment the readback copies into it. SPR0, the other DMA that
-	// writes into EE memory, already passes true.
+	/* Reverse VIF1 is a download: the GS writes into this buffer, so the */
+	/* address has to be resolved for writing. dmaGetAddr hands back a */
+	/* different placeholder for the two cases when madr falls outside main */
+	/* RAM -- eeMem->ZeroWrite for writers, the read-only eeMem->ZeroRead for */
+	/* readers -- so asking for the read one here yields a page that faults */
+	/* the moment the readback copies into it. SPR0, the other DMA that */
+	/* writes into EE memory, already passes true. */
 	u128* pMem = (u128*)dmaGetAddr(vif1ch.madr, true);
+	u32 size;
 
-	// VIF from gsMemory
+	/* VIF from gsMemory */
 	if (pMem == NULL)
-	{ // Is vif0ptag empty?
-		dmacRegs.stat.BEIS = true; // Bus Error
+	{ /* Is vif0ptag empty? */
+		dmacRegs.stat.BEIS = true; /* Bus Error */
 		vif1Regs.stat.FQC = 0;
 
 		vif1ch.qwc = 0;
 		vif1.done = true;
 		CPU_INT(DMAC_VIF1, 0);
-		return; // An error has occurred.
+		return; /* An error has occurred. */
 	}
 
-	// MTGS concerns:  The MTGS is inherently disagreeable with the idea of downloading
-	// stuff from the GS.  The *only* way to handle this case safely is to flush the GS
-	// completely and execute the transfer there-after.
-	const u32 size = pcsx2_min_u(vif1.GSLastDownloadSize, (u32)vif1ch.qwc);
+	/* MTGS concerns:  The MTGS is inherently disagreeable with the idea of downloading */
+	/* stuff from the GS.  The *only* way to handle this case safely is to flush the GS */
+	/* completely and execute the transfer there-after. */
+	size = pcsx2_min_u(vif1.GSLastDownloadSize, (u32)vif1ch.qwc);
 
-	// The GS writes into EE RAM here, from the MTGS consumer thread, with a
-	// plain memcpy. If the recompiler has marked those pages read-only to
-	// catch self-modifying code, that store faults -- and unlike a fault from
-	// recompiled EE code there is no instruction behind it and no handler on
-	// that thread, so it goes unhandled and takes the process down. Seen as an
-	// access violation writing a COMMIT/MAPPED page whose allocation
-	// protection was READWRITE and whose current protection was READONLY,
-	// which is mmap_MarkCountedRamPage's doing and nothing else's.
-	//
-	// Cpu->Clear is not enough on its own, which cost a round to find out: it
-	// invalidates the blocks but never calls MemProtect, so the page stays
-	// read-only and the memcpy still faults. The protection has to come off
-	// as well, which is what the fault handler's mmap_ClearCpuBlock does and
-	// what mmap_UnprotectRamRange applies over a range.
+	/* The GS writes into EE RAM here, from the MTGS consumer thread, with a */
+	/* plain memcpy. If the recompiler has marked those pages read-only to */
+	/* catch self-modifying code, that store faults -- and unlike a fault from */
+	/* recompiled EE code there is no instruction behind it and no handler on */
+	/* that thread, so it goes unhandled and takes the process down. Seen as an */
+	/* access violation writing a COMMIT/MAPPED page whose allocation */
+	/* protection was READWRITE and whose current protection was READONLY, */
+	/* which is mmap_MarkCountedRamPage's doing and nothing else's. */
+
+	/* Cpu->Clear is not enough on its own, which cost a round to find out: it */
+	/* invalidates the blocks but never calls MemProtect, so the page stays */
+	/* read-only and the memcpy still faults. The protection has to come off */
+	/* as well, which is what the fault handler's mmap_ClearCpuBlock does and */
+	/* what mmap_UnprotectRamRange applies over a range. */
 	mmap_UnprotectRamRange(vif1ch.madr & 0x1ffffff0, size * 16);
 
-	MTGS::InitAndReadFIFO(reinterpret_cast<u8*>(pMem), size);
+	mtgs_init_and_read_fifo((u8*)pMem, size);
 
 	g_vif1Cycles += size * 2;
-	vif1ch.madr += size * 16; // MGS3 scene changes
+	vif1ch.madr += size * 16; /* MGS3 scene changes */
 	if (vif1.GSLastDownloadSize >= vif1ch.qwc)
 	{
 		vif1.GSLastDownloadSize -= vif1ch.qwc;
@@ -99,6 +100,7 @@ void vif1TransferToMemory(void)
 bool _VIF1chain(void)
 {
 	u32* pMem;
+	u32 qwc;
 
 	if (vif1ch.qwc == 0)
 	{
@@ -108,7 +110,7 @@ bool _VIF1chain(void)
 		return true;
 	}
 
-	// Clarification - this is TO memory mode, for some reason i used the other way round >.<
+	/* Clarification - this is TO memory mode, for some reason i used the other way round >.< */
 	if (vif1.dmamode == VIF_NORMAL_TO_MEM_MODE)
 	{
 		vif1TransferToMemory();
@@ -125,28 +127,31 @@ bool _VIF1chain(void)
 		return true;
 	}
 
+	/* No more than is mapped behind MADR in one run: the transfer moves
+	 * MADR and QWC on by what it took, and the rest goes next time. */
+	qwc = pcsx2_min_u(vif1ch.qwc, dmaContiguousQwc(vif1ch.madr));
 	if (vif1.irqoffset.enabled)
-		return VIF1transfer(pMem + vif1.irqoffset.value, vif1ch.qwc * 4 - vif1.irqoffset.value, false);
-	return VIF1transfer(pMem, vif1ch.qwc * 4, false);
+		return VIF1transfer(pMem + vif1.irqoffset.value, qwc * 4 - vif1.irqoffset.value, false);
+	return VIF1transfer(pMem, qwc * 4, false);
 }
 
 static __fi void vif1SetupTransfer(void)
 {
-	tDMA_TAG* ptag = dmaGetAddr(vif1ch.tadr, false); //Set memory pointer to TADR
+	tDMA_TAG* ptag = dmaGetAddr(vif1ch.tadr, false); /* Set memory pointer to TADR */
 
-	if (!(vif1ch.transfer(ptag)))
+	if (!(dmach_transfer(&vif1ch, ptag)))
 		return;
 
-	vif1ch.madr = ptag[1]._u32; //MADR = ADDR field + SPR
-	g_vif1Cycles += 1; // Add 1 g_vifCycles from the QW read for the tag
+	vif1ch.madr = ptag[1]._u32; /* MADR = ADDR field + SPR */
+	g_vif1Cycles += 1; /* Add 1 g_vifCycles from the QW read for the tag */
 	vif1.inprogress &= ~1;
 
-	if (!vif1.done && ((dmacRegs.ctrl.STD == STD_VIF1) && (ptag->ID == TAG_REFS))) // STD == VIF1
+	if (!vif1.done && ((dmacRegs.ctrl.STD == STD_VIF1) && (ptag->ID == TAG_REFS))) /* STD == VIF1 */
 	{
-		// there are still bugs, need to also check if gif->madr +16*qwc >= stadr, if not, stall
+		/* there are still bugs, need to also check if gif->madr +16*qwc >= stadr, if not, stall */
 		if ((vif1ch.madr + vif1ch.qwc * 16) > dmacRegs.stadr.ADDR)
 		{
-			// stalled
+			/* stalled */
 			hwDmacIrq(DMAC_STALL_SIS);
 			cpuRegs.dmastall |= 1 << DMAC_VIF1;
 			return;
@@ -155,33 +160,33 @@ static __fi void vif1SetupTransfer(void)
 
 	if (vif1ch.chcr.TTE)
 	{
-		// Transfer dma tag if tte is set
+		/* Transfer dma tag if tte is set */
 
 		bool ret;
 
-		alignas(16) static u128 masked_tag;
+		static PCSX2_ALIGN(16) u128 masked_tag;
 
 		masked_tag._u64[0] = 0;
 		masked_tag._u64[1] = *((u64*)ptag + 1);
 
 		if (vif1.irqoffset.enabled)
 		{
-			ret = VIF1transfer((u32*)&masked_tag + vif1.irqoffset.value, 4 - vif1.irqoffset.value, true); //Transfer Tag on stall
+			ret = VIF1transfer((u32*)&masked_tag + vif1.irqoffset.value, 4 - vif1.irqoffset.value, true); /* Transfer Tag on stall */
 		}
 		else
 		{
-			// Some games (like killzone) do Tags mid unpack, the nops will just write blank data
-			// to the VU's, which breaks stuff, this is where the 128bit packet will fail, so we ignore the first 2 words
+			/* Some games (like killzone) do Tags mid unpack, the nops will just write blank data */
+			/* to the VU's, which breaks stuff, this is where the 128bit packet will fail, so we ignore the first 2 words */
 			vif1.irqoffset.value = 2;
 			vif1.irqoffset.enabled = true;
-			ret = VIF1transfer((u32*)&masked_tag + 2, 2, true); //Transfer Tag
+			ret = VIF1transfer((u32*)&masked_tag + 2, 2, true); /* Transfer Tag */
 		}
 
 		if (!ret && vif1.irqoffset.enabled)
 		{
-			vif1.inprogress &= ~1; // Better clear this so it has to do it again (Jak 1)
-			vif1ch.qwc = 0; // Gumball 3000 pauses the DMA when the tag stalls so we need to reset the QWC, it'll be gotten again later
-			return; // IRQ set by VIFTransfer
+			vif1.inprogress &= ~1; /* Better clear this so it has to do it again (Jak 1) */
+			vif1ch.qwc = 0; /* Gumball 3000 pauses the DMA when the tag stalls so we need to reset the QWC, it'll be gotten again later */
+			return; /* IRQ set by VIFTransfer */
 		}
 	}
 	vif1.irqoffset.value     = 0;
@@ -192,10 +197,10 @@ static __fi void vif1SetupTransfer(void)
 	if (vif1ch.qwc > 0)
 		vif1.inprogress |= 1;
 
-	//Check TIE bit of CHCR and IRQ bit of tag
+	/* Check TIE bit of CHCR and IRQ bit of tag */
 	if (vif1ch.chcr.TIE && ptag->IRQ)
 	{
-		//End Transfer
+		/* End Transfer */
 		vif1.done = true;
 		return;
 	}
@@ -203,21 +208,21 @@ static __fi void vif1SetupTransfer(void)
 
 void vif1VUFinish(void)
 {
-	// Sync up VU1 so we don't errantly wait.
-	while (!THREAD_VU1 && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
+	/* Sync up VU1 so we don't errantly wait. */
+	while (!emu_config_thread_vu1() && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
 	{
-		const s64 cycle_diff = static_cast<int>(cpuRegs.cycle - vuRegs[1].cycle);
+		const s64 cycle_diff = (int)(cpuRegs.cycle - vuRegs[1].cycle);
 
-		if ((EmuConfig.Gamefixes.VUSyncHack && cycle_diff < vuRegs[1].nextBlockCycles) || cycle_diff <= 0)
+		if ((emu_config_vusync_hack() && cycle_diff < vuRegs[1].nextBlockCycles) || cycle_diff <= 0)
 			break;
 		vucpu_execute_block(CpuVU1, 0);
 	}
 
 	if (vuRegs[0].VI[REG_VPU_STAT].UL & 0x500)
 	{
-		vu1Thread.Get_MTVUChanges();
+		mtvu_get_changes();
 
-		if (THREAD_VU1 && !INSTANT_VU1 && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
+		if (emu_config_thread_vu1() && !emu_config_instant_vu1() && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
 			CPU_INT(VIF_VU1_FINISH, cpuGetCycles());
 		else
 			CPU_INT(VIF_VU1_FINISH, 128);
@@ -229,7 +234,7 @@ void vif1VUFinish(void)
 	{
 		u64 _cycles = vuRegs[1].cycle;
 		vu1Finish(false);
-		if (THREAD_VU1 && !INSTANT_VU1 && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
+		if (emu_config_thread_vu1() && !emu_config_instant_vu1() && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
 			CPU_INT(VIF_VU1_FINISH, cpuGetCycles());
 		else
 			CPU_INT(VIF_VU1_FINISH, vuRegs[1].cycle - _cycles);
@@ -242,7 +247,7 @@ void vif1VUFinish(void)
 	if (vif1.waitforvu)
 	{
 		vif1.waitforvu = false;
-		//Check if VIF is already scheduled to interrupt, if it's waiting, kick it :P
+		/* Check if VIF is already scheduled to interrupt, if it's waiting, kick it :P */
 		if ((cpuRegs.interrupt & ((1 << DMAC_VIF1) | (1 << DMAC_MFIFO_VIF))) == 0 && vif1ch.chcr.STR && !VIF_TEST(vif1Regs.stat, VIF1_STAT_VSS | VIF1_STAT_VIS | VIF1_STAT_VFS))
 		{
 			if (dmacRegs.ctrl.MFD == MFD_VIF1)
@@ -259,44 +264,44 @@ static __noinline void vif1_path2_done(void)
 {
 	gifRegs.stat.APATH = 0;
 	gifRegs.stat.OPH   = 0;
-	vif1Regs.stat.VGW  = false; //Let vif continue if it's stuck on a flush
+	vif1Regs.stat.VGW  = false; /* Let vif continue if it's stuck on a flush */
 
-	if (gifUnit.checkPaths(1, 0, 1))
-		gifUnit.Execute(false, true);
+	if (gif_unit_check_paths(1, 0, 1))
+		gif_unit_execute(false, true);
 }
 
 void vif1Interrupt(void)
 {
 	g_vif1Cycles = 0;
 
-	if (gifRegs.stat.APATH == 2 && gifUnit.gifPath[GIF_PATH_2].isDone())
+	if (gifRegs.stat.APATH == 2 && gif_path_is_done(GIF_PATH_2))
 		vif1_path2_done();
-	//Some games (Fahrenheit being one) start vif first, let it loop through blankness while it sets MFIFO mode, so we need to check it here.
+	/* Some games (Fahrenheit being one) start vif first, let it loop through blankness while it sets MFIFO mode, so we need to check it here. */
 	if (dmacRegs.ctrl.MFD == MFD_VIF1)
 	{
-		// Test changed because the Final Fantasy 12 opening somehow has the tag in *Undefined* mode, which is not in the documentation that I saw.
+		/* Test changed because the Final Fantasy 12 opening somehow has the tag in *Undefined* mode, which is not in the documentation that I saw. */
 		vif1Regs.stat.FQC = pcsx2_min_u((u32)0x10, vif1ch.qwc);
 		vifMFIFOInterrupt();
 		return;
 	}
 
-	// We need to check the direction, if it is downloading
-	// from the GS then we handle that separately (KH2 for testing)
+	/* We need to check the direction, if it is downloading */
+	/* from the GS then we handle that separately (KH2 for testing) */
 	if (vif1ch.chcr.DIR)
 	{
 		bool isDirect   = (vif1.cmd & 0x7f) == 0x50;
 		bool isDirectHL = (vif1.cmd & 0x7f) == 0x51;
-		if ((isDirect && !gifUnit.CanDoPath2()) || (isDirectHL && !gifUnit.CanDoPath2HL()))
+		if ((isDirect && !gif_unit_can_do_path2()) || (isDirectHL && !gif_unit_can_do_path2hl()))
 		{
 			CPU_INT(DMAC_VIF1, 128);
 			if (gifRegs.stat.APATH == 3)
-				vif1Regs.stat.VGW = 1; //We're waiting for path 3. Gunslinger II
+				vif1Regs.stat.VGW = 1; /* We're waiting for path 3. Gunslinger II */
 			cpuRegs.dmastall |= 1 << DMAC_VIF1;
 			return;
 		}
-		vif1Regs.stat.VGW = 0; //Path 3 isn't busy so we don't need to wait for it.
+		vif1Regs.stat.VGW = 0; /* Path 3 isn't busy so we don't need to wait for it. */
 		vif1Regs.stat.FQC = pcsx2_min_u(vif1ch.qwc, (u32)16);
-		//Simulated GS transfer time done, clear the flags
+		/* Simulated GS transfer time done, clear the flags */
 	}
 
 	if (vif1.waitforvu)
@@ -320,7 +325,7 @@ void vif1Interrupt(void)
 		if (!vif1Regs.stat.ER1)
 			vif1Regs.stat.INT = true;
 
-		//Yakuza watches VIF_STAT so lets do this here.
+		/* Yakuza watches VIF_STAT so lets do this here. */
 		if (((vif1Regs.code >> 24) & 0x7f) != 0x7)
 			vif1Regs.stat.VIS = true;
 
@@ -329,12 +334,12 @@ void vif1Interrupt(void)
 
 		if (VIF_TEST(vif1Regs.stat, VIF1_STAT_VSS | VIF1_STAT_VIS | VIF1_STAT_VFS))
 		{
-			//NFSHPS stalls when the whole packet has gone across (it stalls in the last 32bit cmd)
-			//In this case VIF will end
+			/* NFSHPS stalls when the whole packet has gone across (it stalls in the last 32bit cmd) */
+			/* In this case VIF will end */
 			vif1Regs.stat.FQC = pcsx2_min_u((u32)0x10, vif1ch.qwc);
-			if ((vif1ch.qwc > 0 || !vif1.done) && !CHECK_VIF1STALLHACK)
+			if ((vif1ch.qwc > 0 || !vif1.done) && !emu_config_vif1stall_hack())
 			{
-				vif1Regs.stat.VPS = VPS_DECODING; //If there's more data you need to say it's decoding the next VIF CMD (Onimusha - Blade Warriors)
+				vif1Regs.stat.VPS = VPS_DECODING; /* If there's more data you need to say it's decoding the next VIF CMD (Onimusha - Blade Warriors) */
 				cpuRegs.dmastall |= 1 << DMAC_VIF1;
 				return;
 			}
@@ -343,7 +348,7 @@ void vif1Interrupt(void)
 
 	vif1.vifstalled.enabled = false;
 
-	//Mirroring change to VIF0
+	/* Mirroring change to VIF0 */
 	if (vif1.cmd)
 	{
 		if (vif1.done && (vif1ch.qwc == 0))
@@ -355,16 +360,16 @@ void vif1Interrupt(void)
 	if (vif1.inprogress & 0x1)
 	{
 		_VIF1chain();
-		// VIF_NORMAL_FROM_MEM_MODE is a very slow operation.
-		// Timesplitters 2 depends on this beeing a bit higher than 128.
+		/* VIF_NORMAL_FROM_MEM_MODE is a very slow operation. */
+		/* Timesplitters 2 depends on this beeing a bit higher than 128. */
 		if (vif1ch.chcr.DIR)
 			vif1Regs.stat.FQC = pcsx2_min_u(vif1ch.qwc, (u32)16);
 
-		if (!(vif1Regs.stat.VGW && gifUnit.gifPath[GIF_PATH_3].state != GIF_PATH_IDLE)) //If we're waiting on GIF, stop looping, (can be over 1000 loops!)
+		if (!(vif1Regs.stat.VGW && !gif_path_is_idle(GIF_PATH_3))) /* If we're waiting on GIF, stop looping, (can be over 1000 loops!) */
 		{
 			if (vif1.waitforvu)
 			{
-				CPU_INT(DMAC_VIF1, pcsx2_max_i(static_cast<int>(g_vif1Cycles), cpuGetCycles()));
+				CPU_INT(DMAC_VIF1, pcsx2_max_i((int)(g_vif1Cycles), cpuGetCycles()));
 			}
 			else
 				CPU_INT(DMAC_VIF1, g_vif1Cycles);
@@ -375,7 +380,7 @@ void vif1Interrupt(void)
 	if (!vif1.done)
 	{
 
-		if (!(dmacRegs.ctrl.DMAE) || vif1Regs.stat.VSS) //Stopped or DMA Disabled
+		if (!(dmacRegs.ctrl.DMAE) || vif1Regs.stat.VSS) /* Stopped or DMA Disabled */
 			return;
 
 		if ((vif1.inprogress & 0x1) == 0)
@@ -383,11 +388,11 @@ void vif1Interrupt(void)
 		if (vif1ch.chcr.DIR)
 			vif1Regs.stat.FQC = pcsx2_min_u(vif1ch.qwc, (u32)16);
 
-		if (!(vif1Regs.stat.VGW && gifUnit.gifPath[GIF_PATH_3].state != GIF_PATH_IDLE)) //If we're waiting on GIF, stop looping, (can be over 1000 loops!)
+		if (!(vif1Regs.stat.VGW && !gif_path_is_idle(GIF_PATH_3))) /* If we're waiting on GIF, stop looping, (can be over 1000 loops!) */
 		{
 			if (vif1.waitforvu)
 			{
-				CPU_INT(DMAC_VIF1, pcsx2_max_i(static_cast<int>(g_vif1Cycles), cpuGetCycles()));
+				CPU_INT(DMAC_VIF1, pcsx2_max_i((int)(g_vif1Cycles), cpuGetCycles()));
 			}
 			else
 				CPU_INT(DMAC_VIF1, g_vif1Cycles);
@@ -399,12 +404,12 @@ void vif1Interrupt(void)
 	{
 		CPU_INT(DMAC_VIF1, 0);
 		cpuRegs.dmastall |= 1 << DMAC_VIF1;
-		return; //Dont want to end if vif is stalled.
+		return; /* Dont want to end if vif is stalled. */
 	}
 
 	if (vif1ch.chcr.DIR)
 	{
-		//Reverse fifo has finished and nothing is left, so lets clear the outputting flag
+		/* Reverse fifo has finished and nothing is left, so lets clear the outputting flag */
 		if ((vif1ch.chcr.DIR == VIF_NORMAL_TO_MEM_MODE) && vif1.GSLastDownloadSize <= 16)
 			gifRegs.stat.OPH = false;
 		vif1Regs.stat.FQC = pcsx2_min_u(vif1ch.qwc, (u32)16);
@@ -416,8 +421,8 @@ void vif1Interrupt(void)
 	if (vif1.queued_program)
 		vifExecQueue(1);
 	g_vif1Cycles             = 0;
-	if (THREAD_VU1)
-		vu1Thread.KickPending(); // C.80: DMA done -- flush any deferred unpack notify
+	if (emu_config_thread_vu1())
+		mtvu_kick_pending(); /* C.80: DMA done -- flush any deferred unpack notify */
 	hwDmacIrq(DMAC_VIF1);
 	cpuRegs.dmastall        &= ~(1 << DMAC_VIF1);
 }
@@ -428,10 +433,10 @@ void dmaVIF1(void)
 	vif1.inprogress   = 0;
 	cpuRegs.dmastall &= ~(1 << DMAC_VIF1);
 
-	if (vif1ch.qwc > 0) // Normal Mode
+	if (vif1ch.qwc > 0) /* Normal Mode */
 	{
 
-		// ignore tag if it's a GS download (Def Jam Fight for NY)
+		/* ignore tag if it's a GS download (Def Jam Fight for NY) */
 		if (vif1ch.chcr.MOD == CHAIN_MODE && vif1ch.chcr.DIR)
 		{
 			tDMA_TAG tmp;
@@ -443,9 +448,9 @@ void dmaVIF1(void)
 			else
 				vif1.done = false;
 		}
-		else //Assume normal mode for reverse FIFO and Normal.
+		else /* Assume normal mode for reverse FIFO and Normal. */
 		{
-			if (vif1ch.chcr.DIR) // from Memory
+			if (vif1ch.chcr.DIR) /* from Memory */
 				vif1.dmamode = VIF_NORMAL_FROM_MEM_MODE;
 			else
 				vif1.dmamode = VIF_NORMAL_TO_MEM_MODE;
@@ -465,9 +470,9 @@ void dmaVIF1(void)
 	if (vif1ch.chcr.DIR)
 		vif1Regs.stat.FQC = pcsx2_min_u((u32)0x10, vif1ch.qwc);
 
-	// Check VIF isn't stalled before starting the loop.
-	// Batman Vengence does something stupid and instead of cancelling a stall it tries to restart VIF, THEN check the stall
-	// However if VIF FIFO is reversed, it can continue
+	/* Check VIF isn't stalled before starting the loop. */
+	/* Batman Vengence does something stupid and instead of cancelling a stall it tries to restart VIF, THEN check the stall */
+	/* However if VIF FIFO is reversed, it can continue */
 	if (!vif1ch.chcr.DIR || !VIF_TEST(vif1Regs.stat, VIF1_STAT_VSS | VIF1_STAT_VIS | VIF1_STAT_VFS))
 		CPU_INT(DMAC_VIF1, 4);
 }

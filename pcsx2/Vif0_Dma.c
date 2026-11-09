@@ -14,18 +14,20 @@
  */
 
 #include "Common.h"
+#include "Vif.h"
 #include "Vif_Dma.h"
 #include "VUmicro.h"
-#include "x86/newVif.h"
-#include "Config.h"
+#include "Gif_hw.h"
+#include "vtlb.h"
+#include "ps2/HwInternal.h"
 
 u32 g_vif0Cycles = 0;
 
-// Run VU0 until finish, don't add cycles to EE
-// because its vif stalling not the EE core...
+/* Run VU0 until finish, don't add cycles to EE */
+/* because its vif stalling not the EE core... */
 void vif0FLUSH(void)
 {
-	if (vuRegs[0].VI[REG_VPU_STAT].UL & 0x5) // T bit stop or Busy
+	if (vuRegs[0].VI[REG_VPU_STAT].UL & 0x5) /* T bit stop or Busy */
 	{
 		vif0.waitforvu = true;
 		vif0.vifstalled.enabled = VifStallEnable(vif0ch);
@@ -38,6 +40,7 @@ void vif0FLUSH(void)
 bool _VIF0chain(void)
 {
 	u32 *pMem;
+	u32 qwc;
 
 	if (vif0ch.qwc == 0)
 	{
@@ -54,50 +57,53 @@ bool _VIF0chain(void)
 		return true;
 	}
 
+	/* No more than is mapped behind MADR in one run: the transfer moves
+	 * MADR and QWC on by what it took, and the rest goes next time. */
+	qwc = pcsx2_min_u(vif0ch.qwc, dmaContiguousQwc(vif0ch.madr));
 	if (vif0.irqoffset.enabled)
-		return VIF0transfer(pMem + vif0.irqoffset.value, vif0ch.qwc * 4 - vif0.irqoffset.value, false);
-	return VIF0transfer(pMem, vif0ch.qwc * 4, false);
+		return VIF0transfer(pMem + vif0.irqoffset.value, qwc * 4 - vif0.irqoffset.value, false);
+	return VIF0transfer(pMem, qwc * 4, false);
 }
 
 static __fi void vif0SetupTransfer(void)
 {
-	tDMA_TAG *ptag = dmaGetAddr(vif0ch.tadr, false); //Set memory pointer to TADR
+	tDMA_TAG *ptag = dmaGetAddr(vif0ch.tadr, false); /* Set memory pointer to TADR */
 
-	if (!(vif0ch.transfer(ptag))) return;
+	if (!(dmach_transfer(&vif0ch, ptag))) return;
 
-	vif0ch.madr = ptag[1]._u32;            //MADR = ADDR field + SPR
-	g_vif0Cycles += 1; // Add 1 g_vifCycles from the QW read for the tag
+	vif0ch.madr = ptag[1]._u32;            /* MADR = ADDR field + SPR */
+	g_vif0Cycles += 1; /* Add 1 g_vifCycles from the QW read for the tag */
 
-	// Transfer dma tag if tte is set
+	/* Transfer dma tag if tte is set */
 	vif0.inprogress = 0;
 
 	if (vif0ch.chcr.TTE)
 	{
-		// Transfer dma tag if tte is set
+		/* Transfer dma tag if tte is set */
 
 		bool ret;
 
-		alignas(16) static u128 masked_tag;
+		static PCSX2_ALIGN(16) u128 masked_tag;
 
 		masked_tag._u64[0] = 0;
 		masked_tag._u64[1] = *((u64*)ptag + 1);
 
 		if (vif0.irqoffset.enabled)
-			ret = VIF0transfer((u32*)&masked_tag + vif0.irqoffset.value, 4 - vif0.irqoffset.value, true);  //Transfer Tag on stall
+			ret = VIF0transfer((u32*)&masked_tag + vif0.irqoffset.value, 4 - vif0.irqoffset.value, true);  /* Transfer Tag on stall */
 		else
 		{
-			// Some games (like killzone) do Tags mid unpack, the nops will just write blank data
-			// to the VU's, which breaks stuff, this is where the 128bit packet will fail, so we ignore the first 2 words
+			/* Some games (like killzone) do Tags mid unpack, the nops will just write blank data */
+			/* to the VU's, which breaks stuff, this is where the 128bit packet will fail, so we ignore the first 2 words */
 			vif0.irqoffset.value = 2;
 			vif0.irqoffset.enabled = true;
-			ret = VIF0transfer((u32*)&masked_tag + 2, 2, true);  //Transfer Tag
+			ret = VIF0transfer((u32*)&masked_tag + 2, 2, true);  /* Transfer Tag */
 		}
 
 		if (!ret && vif0.irqoffset.enabled)
 		{
-			vif0.inprogress = 0; // Better clear this so it has to do it again (Jak 1)
-			vif0ch.qwc = 0; // Gumball 3000 pauses the DMA when the tag stalls so we need to reset the QWC, it'll be gotten again later
-			return;        // IRQ set by VIFTransfer
+			vif0.inprogress = 0; /* Better clear this so it has to do it again (Jak 1) */
+			vif0ch.qwc = 0; /* Gumball 3000 pauses the DMA when the tag stalls so we need to reset the QWC, it'll be gotten again later */
+			return;        /* IRQ set by VIFTransfer */
 
 		}
 	}
@@ -107,10 +113,10 @@ static __fi void vif0SetupTransfer(void)
 	vif0.done |= hwDmacSrcChainWithStack(&vif0ch, ptag->ID);
 
 	if(vif0ch.qwc > 0) vif0.inprogress = 1;
-	//Check TIE bit of CHCR and IRQ bit of tag
+	/* Check TIE bit of CHCR and IRQ bit of tag */
 	if (vif0ch.chcr.TIE && ptag->IRQ)
 	{
-		//End Transfer
+		/* End Transfer */
 		vif0.done = true;
 		return;
 	}
@@ -120,12 +126,12 @@ static __fi void vif0Interrupt_inl(void);
 
 void vif0VUFinish(void)
 {
-	// Sync up VU0 so we don't errantly wait.
+	/* Sync up VU0 so we don't errantly wait. */
 	while (vuRegs[0].VI[REG_VPU_STAT].UL & 0x1)
 	{
-		const s64 cycle_diff = static_cast<int>(cpuRegs.cycle - vuRegs[0].cycle);
+		const s64 cycle_diff = (int)(cpuRegs.cycle - vuRegs[0].cycle);
 
-		if ((EmuConfig.Gamefixes.VUSyncHack && cycle_diff < vuRegs[0].nextBlockCycles) || cycle_diff <= 0)
+		if ((emu_config_vusync_hack() && cycle_diff < vuRegs[0].nextBlockCycles) || cycle_diff <= 0)
 			break;
 		vucpu_execute_block(CpuVU0, 0);
 	}
@@ -150,7 +156,7 @@ void vif0VUFinish(void)
 	if(vif0.waitforvu)
 	{
 		vif0.waitforvu = false;
-		//Make sure VIF0 isnt already scheduled to spin.
+		/* Make sure VIF0 isnt already scheduled to spin. */
 		if(!(cpuRegs.interrupt & 0x1) && vif0ch.chcr.STR && !VIF_TEST(vif0Regs.stat, VIF0_STAT_VSS | VIF0_STAT_VIS | VIF0_STAT_VFS))
 			vif0Interrupt_inl();
 	}
@@ -174,7 +180,7 @@ static __fi void vif0Interrupt_inl(void)
 		if (!vif0Regs.stat.ER1)
 			vif0Regs.stat.INT = true;
 
-		//Yakuza watches VIF_STAT so lets do this here.
+		/* Yakuza watches VIF_STAT so lets do this here. */
 		if (((vif0Regs.code >> 24) & 0x7f) != 0x7) {
 			vif0Regs.stat.VIS = true;
 		}
@@ -184,14 +190,14 @@ static __fi void vif0Interrupt_inl(void)
 
 		if (VIF_TEST(vif0Regs.stat, VIF0_STAT_VSS | VIF0_STAT_VIS | VIF0_STAT_VFS))
 		{
-			//vif0Regs.stat.FQC = 0;
+			/* vif0Regs.stat.FQC = 0; */
 
-			// One game doesn't like vif stalling at end, can't remember what. Spiderman isn't keen on it tho
-			//vif0ch.chcr.STR = false;
+			/* One game doesn't like vif stalling at end, can't remember what. Spiderman isn't keen on it tho */
+			/* vif0ch.chcr.STR = false; */
 			vif0Regs.stat.FQC = pcsx2_min_u((u32)0x8, vif0ch.qwc);
 			if (vif0ch.qwc > 0 || !vif0.done)
 			{
-				vif0Regs.stat.VPS = VPS_DECODING; //If there's more data you need to say it's decoding the next VIF CMD (Onimusha - Blade Warriors)
+				vif0Regs.stat.VPS = VPS_DECODING; /* If there's more data you need to say it's decoding the next VIF CMD (Onimusha - Blade Warriors) */
 				cpuRegs.dmastall |= 1 << DMAC_VIF0;
 				return;
 			}
@@ -200,7 +206,7 @@ static __fi void vif0Interrupt_inl(void)
 
 	vif0.vifstalled.enabled = false;
 
-	//Must go after the Stall, incase it's still in progress, GTC africa likes to see it still transferring.
+	/* Must go after the Stall, incase it's still in progress, GTC africa likes to see it still transferring. */
 	if (vif0.cmd)
 	{
 		if(vif0.done && vif0ch.qwc == 0)	vif0Regs.stat.VPS = VPS_WAITING;
@@ -221,7 +227,7 @@ static __fi void vif0Interrupt_inl(void)
 	if (!vif0.done)
 	{
 
-		if (!(dmacRegs.ctrl.DMAE) || vif0Regs.stat.VSS) //Stopped or DMA Disabled
+		if (!(dmacRegs.ctrl.DMAE) || vif0Regs.stat.VSS) /* Stopped or DMA Disabled */
 			return;
 
 		if ((vif0.inprogress & 0x1) == 0) vif0SetupTransfer();
@@ -233,7 +239,7 @@ static __fi void vif0Interrupt_inl(void)
 	if (vif0.vifstalled.enabled && vif0.done)
 	{
 		CPU_INT(DMAC_VIF0, 0);
-		return; //Dont want to end if vif is stalled.
+		return; /* Dont want to end if vif is stalled. */
 	}
 
 	vif0ch.chcr.STR = false;
@@ -257,7 +263,7 @@ void dmaVIF0(void)
 	g_vif0Cycles = 0;
 	cpuRegs.dmastall &= ~(1 << DMAC_VIF0);
 
-	if (vif0ch.qwc > 0)   // Normal Mode
+	if (vif0ch.qwc > 0)   /* Normal Mode */
 	{
 		if (vif0ch.chcr.MOD == CHAIN_MODE)
 		{
@@ -270,7 +276,7 @@ void dmaVIF0(void)
 			else
 				vif0.done = false;
 		}
-		else //Assume Normal mode.
+		else /* Assume Normal mode. */
 		{
 			vif0.dmamode = VIF_NORMAL_FROM_MEM_MODE;
 
@@ -288,9 +294,9 @@ void dmaVIF0(void)
 
 	vif0Regs.stat.FQC = pcsx2_min_u((u32)0x8, vif0ch.qwc);
 
-	//Using a delay as Beyond Good and Evil does the DMA twice with 2 different TADR's (no checks in the middle, all one block of code),
-	//the first bit it sends isnt required for it to work.
-	//Also being an end chain it ignores the second lot, this causes infinite loops ;p
+	/* Using a delay as Beyond Good and Evil does the DMA twice with 2 different TADR's (no checks in the middle, all one block of code), */
+	/* the first bit it sends isnt required for it to work. */
+	/* Also being an end chain it ignores the second lot, this causes infinite loops ;p */
 	if (!VIF_TEST(vif0Regs.stat, VIF0_STAT_VSS | VIF0_STAT_VIS | VIF0_STAT_VFS))
 		CPU_INT(DMAC_VIF0, 4);
 }

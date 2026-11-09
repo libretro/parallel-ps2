@@ -119,7 +119,14 @@ extern void mtvu_write_data_mem(u32 vu_data_addr, const void* data, u32 size);
 /* VU0 */
 extern void vu0ResetRegs();
 extern void vu0Exec(VURegs* VU);
-extern void vu0Finish();
+/* VU0.cpp; Vif0_Dma.c finishes VU0 through it. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern void vu0Finish(void);
+#ifdef __cplusplus
+}
+#endif
 
 /* VU1 */
 /* VU1micro.cpp; Dmac.c finishes VU1 through it. */
