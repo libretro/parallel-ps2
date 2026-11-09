@@ -129,7 +129,7 @@ _vifT extern u32 vifRead32(u32 mem);
 _vifT extern bool vifWrite32(u32 mem, u32 value);
 #endif
 
-/* Vif.cpp, Vif0_Dma.cpp, Vif1_Dma.cpp; the EE hardware (Hw.c, Dmac.c)
+/* Vif.c, Vif0_Dma.c, Vif1_Dma.c; the EE hardware (Hw.c, Dmac.c)
  * reaches them, the register accessors through the per-unit wrappers. */
 #ifdef __cplusplus
 extern "C" {
@@ -172,7 +172,7 @@ enum VifModes
 static const unsigned int VIF0intc = 4;
 static const unsigned int VIF1intc = 5;
 
-/* Vif0_Dma.c, Vif1_Dma.c, Vif.cpp; the VIF code interpreters and the DMA
+/* Vif0_Dma.c, Vif1_Dma.c, Vif.c; the VIF code interpreters and the DMA
  * side share them. */
 #ifdef __cplusplus
 extern "C" {

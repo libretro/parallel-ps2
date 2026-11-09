@@ -251,6 +251,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/Vif_Codes.c \
 	$(LRPS2_DIR)/Vif_Transfer.c \
 	$(LRPS2_DIR)/Vif_Unpack.c \
+	$(LRPS2_DIR)/Vif.c \
 	$(LRPS2_DIR)/SaveStateBase.c \
 	$(LRPS2_DIR)/SaveStateFreeze.c
 
@@ -309,7 +310,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/R5900.cpp \
 	$(LRPS2_DIR)/R5900OpcodeImpl.cpp \
 	$(LRPS2_DIR)/R5900OpcodeTables.cpp \
-	$(LRPS2_DIR)/Vif.cpp \
 	$(LRPS2_DIR)/VMManager.cpp \
 	$(LRPS2_DIR)/vtlb.cpp \
 	$(LRPS2_DIR)/VU0.cpp \

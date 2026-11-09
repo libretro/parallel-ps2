@@ -152,7 +152,7 @@ set(pcsx2Sources
 	R5900OpcodeTables.cpp
 	Sio.c
 	SioFifo.c
-	Vif.cpp
+	Vif.c
 	Vif_Codes.c
 	Vif_Transfer.c
 	Vif_Unpack.c

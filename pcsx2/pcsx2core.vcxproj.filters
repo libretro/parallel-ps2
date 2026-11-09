@@ -383,7 +383,7 @@
     <ClCompile Include="Sif1.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Sif</Filter>
     </ClCompile>
-    <ClCompile Include="Vif.cpp">
+    <ClCompile Include="Vif.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Vif</Filter>
     </ClCompile>
     <ClCompile Include="Vif0_Dma.c">
