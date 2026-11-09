@@ -504,7 +504,7 @@ bool MTGS::MainLoop(bool flush_all)
 							GSgifTransfer((u8*)&path.buffer[gsPack.offset], gsPack.size / 16);
 							GS_HW_CONTEXT_END();
 						}
-						retro_atomic_fetch_sub_int(&path.readAmount, gsPack.size + gsPack.readAmount);
+						retro_atomic_fetch_sub_int(&gifPathReadAmount[GIF_PATH_1].v, gsPack.size + gsPack.readAmount);
 						const bool final_packet = gsPack.cycles == 0;
 						gif_path_pop_packet_mtvu(&path); // Should be done last, for proper WaitGS(isMTVU)
 						/* One post per pop: WaitGS(isMTVU) sleeps on

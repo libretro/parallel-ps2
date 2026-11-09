@@ -14,17 +14,27 @@
  * The GS thread is a model: each packet the unit hands it is hashed byte
  * for byte where it lies in the path buffer, and counted as unread until
  * the GS "catches up", which WaitGS forces and which also happens at
- * random; it drains the VU1 thread's packet queue the same way. The GIF
+ * random; it drains the VU1 thread's packet queue the same way, and with
+ * the VU1 thread on it catches up as each VU1 program ends. The GIF
  * registers, the GS registers the unit writes, every path's state, the
- * VIF1 transfer registers, every call made and every value returned go
- * into a running hash, written out every so many scenarios. The
- * transcript is compared with expected.txt, which this harness made from
- * the C++ the unit was converted from (EEGIFUNIT_TREE=<that checkout>):
- * the conversion changes none of it. */
+ * VIF1 transfer registers, every packet and every value returned go into
+ * a running hash, written out every so many scenarios. The transcript is
+ * compared with expected.txt, which this harness made from the C++ the
+ * unit was converted from (EEGIFUNIT_TREE=<that checkout>).
+ *
+ * What the GS has yet to read -- the counts, the blank packets that
+ * account for a buffer's skipped end, how often the unit waits on the GS
+ * -- is the bookkeeping the fixes after the conversion correct, so it is
+ * not in the hash; fixes() checks it directly in the C build, and the
+ * path 1 deadlock and the savestate checks the C++ crashed or hung on. */
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <signal.h>
+#include <unistd.h>
+#endif
 
 #include "Common.h"
 #include "Config.h"
@@ -159,11 +169,11 @@ static void gs_packet(const GS_Packet* p, int path)
 	}
 }
 
+static int s_blanks, s_waits;
+
 static void gs_blank(u32 size, int path)
 {
-	mix(0x11);
-	mix((u32)path);
-	mix(size);
+	s_blanks++;
 	retro_atomic_fetch_add_int(&gifPathReadAmount[path].v, (int)size);
 }
 
@@ -187,7 +197,7 @@ static void gs_catch_up(void)
 	retro_atomic_store_release_int(&gifUnit.gifPath[0].readAmount, 0);
 }
 
-static void gs_wait(bool isMTVU) { mix(0x13); mix(isMTVU); gs_catch_up(); }
+static void gs_wait(bool isMTVU) { (void)isMTVU; s_waits++; gs_catch_up(); }
 
 #ifdef EEGIFUNIT_CXX_TREE
 namespace MTGS { void WaitGS(bool isMTVU) { gs_wait(isMTVU); } }
@@ -346,13 +356,10 @@ static void mix_state(void)
 		mix(p->gsPack.offset);
 		mix(p->gsPack.size);
 		mix((u32)p->gsPack.cycles);
-		mix((u32)p->gsPack.readAmount);
 		mix((u32)p->idx);
 		mix((u32)p->state);
 		mix(p->mtvu.fakePackets);
-		mix((u32)retro_atomic_load_acquire_int(&gifPathReadAmount[i].v));
 	}
-	mix((u32)retro_atomic_load_acquire_int(&gifUnit.gifPath[0].readAmount));
 	mix(gifUnit.gsSIGNAL.data[0]);
 	mix(gifUnit.gsSIGNAL.data[1]);
 	mix(gifUnit.gsSIGNAL.queued);
@@ -442,6 +449,7 @@ static void feed(bool big)
 		/* The VU1 program ends: its packet to MTGS, and the EE's side. */
 		FINISH_MTVU(true);
 		mix(TRANSFER(GIF_TRANS_MTVU, NULL, 0));
+		gs_catch_up();
 	}
 }
 
@@ -608,6 +616,189 @@ static void run(FILE* out)
 	fprintf(out, " all %016llx\n", s_hash);
 }
 
+/* ---- what the fixes after the conversion changed ------------------- */
+
+#ifndef EEGIFUNIT_CXX_TREE
+static int s_failed;
+static const char* s_watching;
+
+static void expect(bool ok, const char* what)
+{
+	if (!ok)
+	{
+		fprintf(stderr, "eegifunit: %s\n", what);
+		s_failed = 1;
+	}
+}
+
+/* The checks below hung the C++; a hang here fails rather than stalls.
+ * Windows has no alarm: build.sh's timeout is the watchdog there. */
+#ifndef _WIN32
+static void watchdog(int sig)
+{
+	(void)sig;
+	fprintf(stderr, "eegifunit: hung: %s\n", s_watching);
+	_exit(1);
+}
+
+static void watch(const char* what, unsigned seconds)
+{
+	s_watching = what;
+	alarm(seconds);
+}
+#define watch_off() alarm(0)
+#else
+static void watch(const char* what, unsigned seconds) { s_watching = what; (void)seconds; }
+#define watch_off() ((void)0)
+#endif
+
+static void gif_pack_clear_for_test(GS_Packet* p)
+{
+	p->offset = p->size = 0;
+	p->cycles = p->readAmount = 0;
+}
+
+static void fresh_vu1_thread(void)
+{
+	reset_world();
+	s_thread_vu1 = true;
+	gif_unit_reset(false);
+	gs_catch_up();
+}
+
+static u32 eop_packet(u8* out)
+{
+	u32 i;
+	put_tag(out, 4, true, 2, 0, 0); /* IMAGE, 4 quadwords, EOP */
+	for (i = 16; i < 80; i++)
+		out[i] = (u8)rnd();
+	return 80;
+}
+
+static void fixes(void)
+{
+	Gif_Path* p1 = &gifUnit.gifPath[GIF_PATH_1];
+#ifndef _WIN32
+	signal(SIGALRM, watchdog);
+#endif
+
+	/* A VU1 program's packet, handed to the GS, counts as unread where
+	 * the space checks look until the GS has sent it. */
+	fresh_vu1_thread();
+	{
+		const u32 n = eop_packet(s_pkt);
+		gif_unit_transfer(GIF_TRANS_XGKICK, s_pkt, n);
+		gif_path_finish_mtvu(p1, true);
+		expect(retro_atomic_load_acquire_int(&gifPathReadAmount[GIF_PATH_1].v) == (int)n,
+		       "a VU1 program's packet counts as unread for the space checks");
+		expect(retro_atomic_load_acquire_int(&p1->readAmount) == 0,
+		       "nothing counts in the path's own, unread, field");
+	}
+
+	/* Path 1 on the VU1 thread with a realign's skipped end pending and no
+	 * packet data: the copy hands the skip to the GS instead of waiting on
+	 * a count nothing else would clear. */
+	fresh_vu1_thread();
+	p1->curSize   = 5u << 20;
+	p1->curOffset = 0;
+	gif_pack_clear_for_test(&p1->gsPack);
+	p1->gsPack.readAmount = (s32)(p1->buffLimit - (4u << 20));
+	watch("path 1 copy with only a skip pending", 20);
+	gif_path_copy(p1, s_pkt, 300u << 10);
+	watch_off();
+	expect(p1->curSize == (5u << 20) + (300u << 10), "the copy lands");
+	expect(p1->gsPack.readAmount == 0, "the pending skip went to the GS");
+
+	/* A realign of a packet already at the start returns: there is
+	 * nothing to move, and the count it would wait on only goes down when
+	 * the packet is finished. */
+	fresh_vu1_thread();
+	p1->curSize   = 6u << 20;
+	p1->curOffset = 6u << 20;
+	p1->gsPack.offset = 0;
+	p1->gsPack.size   = 6u << 20;
+	p1->gsPack.readAmount = 2u << 20;
+	watch("realign of a packet at the start", 20);
+	gif_path_realign(p1);
+	watch_off();
+	expect(p1->curOffset == (6u << 20) && p1->gsPack.readAmount == (2 << 20),
+	       "a packet at the start is left as it is");
+
+	/* A VU1 program that streams one unending packet through path 1,
+	 * copied in parts ahead of the parsing, outgrowing the buffer: the
+	 * C++ deadlocked on it. */
+	fresh_vu1_thread();
+	watch("an unending VU1 stream on path 1", 120);
+	{
+		u32 len = 0, sent = 0;
+		while (len + 0x80010 < kStream)
+		{
+			const u32 nloop = 0x4000 + rnd_n(0x3fff);
+			u32 i;
+			len += put_tag(s_stream + len, nloop, false, 2, 0, 0);
+			for (i = 0; i < nloop * 16; i += 4)
+			{
+				const u32 w = rnd();
+				memcpy(s_stream + len + i, &w, 4);
+			}
+			len += nloop * 16;
+		}
+		while (sent < len)
+		{
+			u32 n = (1 + rnd_n(0x18000)) * 16;
+			if (n > len - sent)
+				n = len - sent;
+			if (rnd_n(3) == 0)
+				gif_path_copy(p1, s_stream + sent, n);
+			else
+				gif_unit_transfer(GIF_TRANS_XGKICK, s_stream + sent, n);
+			sent += n;
+			if (rnd_n(4) == 0)
+				gs_catch_up();
+		}
+	}
+	watch_off();
+
+	/* Savestates whose path does not add up: the load fails and the path
+	 * is left empty, instead of realigning from outside the buffer. */
+	{
+		static const int kField[] = { 0, 1, 2, 3 };
+		int f;
+		for (f = 0; f < 4; f++)
+		{
+			SaveStateBase st;
+			const size_t at = 1 + 4 + sizeof(GS_SIGNAL) + sizeof(GS_FINISH) + 4 + 4;
+			size_t field;
+			u32 bad;
+			bool ok;
+			fresh_vu1_thread();
+			s_thread_vu1 = false;
+			gif_unit_transfer(GIF_TRANS_XGKICK, s_pkt, eop_packet(s_pkt));
+			memset(&st, 0, sizeof(st));
+			st.is_saving = true;
+			s_state_len = 0;
+			gifFreeze(&st);
+			switch (kField[f])
+			{
+				case 0:  field = offsetof(Gif_Path, curSize);       bad = 0xfffff000u; break;
+				case 1:  field = offsetof(Gif_Path, curOffset);     bad = 0x00100000u; break;
+				case 2:  field = offsetof(Gif_Path, gsPack.size);   bad = 0x00010000u; break;
+				default: field = offsetof(Gif_Path, gsPack.offset); bad = 0x00000010u; break;
+			}
+			memcpy(s_state + at + field, &bad, 4);
+			gif_unit_reset(false);
+			memset(&st, 0, sizeof(st));
+			s_state_pos = 0;
+			ok = gifFreeze(&st);
+			expect(!ok, "a savestate whose path does not add up fails to load");
+			expect(p1->curSize == 0 && p1->curOffset == 0 && p1->gsPack.size == 0,
+			       "the path it failed on is left empty");
+			gif_path_realign(p1);
+		}
+	}
+}
+#endif
+
 int main(int argc, char** argv)
 {
 	FILE* out;
@@ -623,11 +814,16 @@ int main(int argc, char** argv)
 	if (!out || !s_stream)
 		return 2;
 	run(out);
-	free(s_stream);
 	fclose(out);
 #ifndef EEGIFUNIT_CXX_TREE
+	fixes();
 	gif_unit_shutdown();
 #endif
+	free(s_stream);
 	free(s_state);
+#ifndef EEGIFUNIT_CXX_TREE
+	return s_failed;
+#else
 	return 0;
+#endif
 }

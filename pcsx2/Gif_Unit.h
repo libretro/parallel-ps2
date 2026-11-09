@@ -136,7 +136,7 @@ PCSX2_ALIGN(64) extern Gif_Path_ReadAmount gifPathReadAmount[3];
  * saved state's. */
 typedef struct Gif_Path
 {
-	retro_atomic_int_t readAmount; /* MTVU: path 1 bytes MTGS has yet to read */
+	retro_atomic_int_t readAmount; /* Always zero, for the saved state's layout: see gifPathReadAmount */
 	u8* buffer;                    /* Path packet buffer */
 	u32 buffSize;                  /* Full size of buffer */
 	u32 buffLimit;                 /* Cut off limit to wrap around */

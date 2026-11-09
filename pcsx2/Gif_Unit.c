@@ -340,6 +340,11 @@ void gif_path_realign(Gif_Path* path)
 	const s32 offset    = path->curOffset - path->gsPack.size;
 	const s32 sizeToAdd = path->curSize - offset;
 	s32 intersect       = sizeToAdd - offset;
+	/* Already at the start: nothing moves and nothing is skipped. Waiting
+	 * for the GS here waits on a count that only finishing the packet
+	 * clears -- on the VU1 thread, forever. */
+	if (offset == 0)
+		return;
 	if (intersect < 0)
 		intersect = 0;
 	for (;;)
@@ -402,11 +407,13 @@ void gif_path_copy(Gif_Path* path, const u8* pMem, u32 size)
 			break; /* MTGS is reading in back of curOffset */
 		if ((s32)path->buffLimit + readPos > (s32)path->curSize + (s32)size)
 			break; /* Enough free front space */
-		if (mtvu && !gif_path_pending_packets(path) && path->gsPack.size)
+		if (mtvu && !gif_path_pending_packets(path) && (path->gsPack.size || path->gsPack.readAmount))
 		{
 			/* Nothing for MTGS to pop and the current (unfinished) packet
-			 * holds the space: hand it over as a PARTIAL packet so MTGS
-			 * can drain the buffer (see gif_path_finish_mtvu). */
+			 * holds the space -- its data, or only the part of the buffer
+			 * a realign skipped, which nothing else hands over: give it
+			 * to MTGS as a PARTIAL packet so the buffer can drain (see
+			 * gif_path_finish_mtvu). */
 			gif_path_finish_mtvu(path, false);
 			Gif_MTVU_KickSema();
 			continue;
@@ -569,9 +576,9 @@ static void gif_path_execute_mtvu(Gif_Path* path)
 void gif_path_finish_mtvu(Gif_Path* path, bool final_packet)
 {
 	path->gsPack.cycles = final_packet ? 0 : 1;
-	/* Performance note: fetch_add atomic operation might create some stall
-	 * for atomic operation in gsPack.push */
-	retro_atomic_fetch_add_int(&path->readAmount, path->gsPack.size + path->gsPack.readAmount);
+	/* Counted where every space check reads it: the GS thread takes it
+	 * off once it has sent the packet (MTGS.cpp, MTVU_GSPACKET). */
+	retro_atomic_fetch_add_int(&gifPathReadAmount[path->idx].v, path->gsPack.size + path->gsPack.readAmount);
 	/* Wait for room for a whole packet before writing any of it: a short
 	 * write would put a partial record in the queue and every packet after
 	 * it would be read off by one. */
@@ -1005,10 +1012,23 @@ bool gifPathFreeze(SaveStateBase* s, u32 pathIdx)
 	 * on the way out these are live values and already consistent. */
 	if (SaveState_IsLoading(s))
 	{
-		if (path->curSize > realBuffSize)
-			path->curSize = 0;
-		if (path->curOffset > path->curSize)
+		/* A path whose packet does not sit where its sizes say -- more
+		 * buffered than the buffer holds, the tag past the data, a packet
+		 * that starts before the buffer -- would realign from outside it,
+		 * and the bytes after it in the state no longer line up: the path
+		 * starts empty and the load fails. */
+		if (path->curSize > realBuffSize || path->curOffset > path->curSize
+		 || path->gsPack.size > path->curOffset
+		 || path->gsPack.offset != path->curOffset - path->gsPack.size)
+		{
+			path->curSize   = 0;
 			path->curOffset = 0;
+			gif_tag_reset(&path->gifTag);
+			gif_pack_clear(&path->gsPack, 0);
+			path->state = GIF_PATH_IDLE;
+			s->error    = true;
+			return false;
+		}
 	}
 	SaveState_FreezeMem(s, bufferPtr, path->curSize);
 	if (!SaveState_IsSaving(s))

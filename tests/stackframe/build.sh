@@ -40,6 +40,13 @@ while IFS= read -r cmd; do
 	} > "$WORK/$n.sh"
 done < "$WORK/cmds.txt"
 
+# A source the Makefile generates (GameDatabaseBuiltin.cpp, from the
+# shipped game index) does not exist in a fresh checkout until a build
+# makes it; make it the Makefile's own way, or its compile fails here.
+sed -E 's/^[^ ]+ -c -o[^ ]+ ([^ ]+\.(c|cc|cpp)) .*/\1/' "$WORK/cmds.txt" | while IFS= read -r src; do
+	[ -f "$ROOT/$src" ] || "$MAKE" --no-print-directory -s -C "$ROOT" "$src"
+done
+
 if [ "$n" -eq 0 ]; then
 	echo "  FAIL: no compile commands from the Makefile"
 	exit 1
