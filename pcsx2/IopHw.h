@@ -200,40 +200,6 @@ enum IOPCountRegs
 	} \
 }
 
-struct dma_mbc
-{
-	u32 madr;
-	u32 bcr;
-	u32 chcr;
-};
-
-struct dma_mbct
-{
-	u32 madr;
-	u32 bcr;
-	u32 chcr;
-	u32 tadr;
-};
-
-/* Reference bindings onto the register block; C sees the HW_DMA* macros
- * below instead. */
-#ifdef __cplusplus
-static dma_mbc&		hw_dma0		= (dma_mbc&) iopHw[0x1080];
-static dma_mbc&		hw_dma1		= (dma_mbc&) iopHw[0x1090];
-static dma_mbct&	hw_dma2		= (dma_mbct&)iopHw[0x10a0];
-static dma_mbc&		hw_dma3		= (dma_mbc&) iopHw[0x10b0];
-static dma_mbct&	hw_dma4		= (dma_mbct&)iopHw[0x10c0];
-static dma_mbc&		hw_dma6		= (dma_mbc&) iopHw[0x10e0];
-static dma_mbc&		hw_dma7		= (dma_mbc&) iopHw[0x1500];
-static dma_mbc&		hw_dma8		= (dma_mbc&) iopHw[0x1510];
-static dma_mbct&	hw_dma9		= (dma_mbct&)iopHw[0x1520];
-static dma_mbc&		hw_dma10	= (dma_mbc&) iopHw[0x1530];
-static dma_mbc&		hw_dma11	= (dma_mbc&) iopHw[0x1540];
-static dma_mbc&		hw_dma12	= (dma_mbc&) iopHw[0x1550];
-
-#define hw_dma(x)	hw_dma##x
-#endif
-
 #define HW_DMA0_MADR (psxHu32(0x1080)) /* MDEC in DMA */
 #define HW_DMA0_BCR  (psxHu32(0x1084))
 #define HW_DMA0_CHCR (psxHu32(0x1088))

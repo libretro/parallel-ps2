@@ -365,7 +365,14 @@ typedef enum EE_EventType
 	VU_MTVU_BUSY
 } EE_EventType;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* R5900.cpp; the SIF DMA units (Sif0.c, Sif1.c, sif2.c) schedule through it. */
 extern void CPU_INT( EE_EventType n, s32 ecycle );
+#ifdef __cplusplus
+}
+#endif
 extern uint intcInterrupt();
 extern uint dmacInterrupt();
 

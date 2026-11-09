@@ -133,12 +133,42 @@ typedef struct DMACh {
 	/* Non-virtual, so the layout is the same either way and C sees the
 	 * registers without them. */
 #ifdef __cplusplus
-	bool transfer(tDMA_TAG* ptag);
-	void unsafeTransfer(tDMA_TAG* ptag);
-	tDMA_TAG *getAddr(u32 addr, u32 num, bool write);
-	tDMA_TAG *DMAtransfer(u32 addr, u32 num);
+	inline bool transfer(tDMA_TAG* ptag);
+	inline void unsafeTransfer(tDMA_TAG* ptag);
+	inline tDMA_TAG *getAddr(u32 addr, u32 num, bool write);
+	inline tDMA_TAG *DMAtransfer(u32 addr, u32 num);
 #endif
 } DMACh;
+
+/* DmacChannel.c: the channel helpers, callable from C and C++. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* Latches the tag's upper half into CHCR.TAG and its QWC; a NULL tag
+ * raises BEIS and returns false. */
+extern bool dmach_transfer(DMACh *ch, tDMA_TAG *ptag);
+extern void dmach_unsafe_transfer(DMACh *ch, const tDMA_TAG *ptag);
+/* Resolves a DMA address; on a bus error raises BEIS and the channel's
+ * STAT bit 'num' and stops the channel. */
+extern tDMA_TAG *dmach_get_addr(DMACh *ch, u32 addr, u32 num, bool write);
+/* dmach_get_addr for reading, then latches the tag found there. */
+extern tDMA_TAG *dmach_dma_transfer(DMACh *ch, u32 addr, u32 num);
+extern tDMA_TAG *dmaGetAddr(u32 addr, bool write);
+/* How many quadwords from addr dmaGetAddr maps to one run of host memory
+ * (0 if addr is a bus error).  A copy longer than this must resolve the
+ * next address again rather than run off the end of the backing array. */
+extern u32 dmaContiguousQwc(u32 addr);
+extern void hwDmacSrcTadrInc(DMACh *dma);
+extern bool hwDmacSrcChainWithStack(DMACh *dma, int id);
+extern bool hwDmacSrcChain(DMACh *dma, int id);
+#ifdef __cplusplus
+}
+
+inline bool DMACh::transfer(tDMA_TAG* ptag) { return dmach_transfer(this, ptag); }
+inline void DMACh::unsafeTransfer(tDMA_TAG* ptag) { dmach_unsafe_transfer(this, ptag); }
+inline tDMA_TAG *DMACh::getAddr(u32 addr, u32 num, bool write) { return dmach_get_addr(this, addr, num, write); }
+inline tDMA_TAG *DMACh::DMAtransfer(u32 addr, u32 num) { return dmach_dma_transfer(this, addr, num); }
+#endif
 
 enum INTCIrqs
 {
@@ -350,8 +380,6 @@ typedef struct INTCregisters
 #define sif1ch	(*(DMACh*)(eeHw + 0xc400))
 #define sif2dma	(*(DMACh*)(eeHw + 0xc800))
 
-extern tDMA_TAG *dmaGetAddr(u32 addr, bool write);
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -365,9 +393,6 @@ extern void hwDmacIrq(int n);
 extern void FireMFIFOEmpty(void);
 extern bool hwMFIFOWrite(u32 addr, const u128* data, uint size_qwc);
 extern void hwMFIFOResume(u32 transferred);
-extern void hwDmacSrcTadrInc(DMACh *dma);
-extern bool hwDmacSrcChainWithStack(DMACh *dma, int id);
-extern bool hwDmacSrcChain(DMACh *dma, int id);
 
 /* The paged hardware accessors are templates on the page index. */
 #ifdef __cplusplus

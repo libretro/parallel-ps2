@@ -13,7 +13,7 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _PC_	// disables MIPS opcode macros.
+#define _PC_	/* disables MIPS opcode macros. */
 
 #include "R3000A.h"
 #include "Common.h"
@@ -30,52 +30,48 @@ static __fi void Sif1Init(void)
 	sif1.iop.cycles = 0;
 }
 
-// Write from the EE to Fifo.
+/* Write from the EE to Fifo. */
 static __fi bool WriteEEtoFifo(void)
 {
-	// There's some data ready to transfer into the fifo..
-	const int writeSize = pcsx2_min_i((s32)sif1ch.qwc, (FIFO_SIF_W - sif1.fifo.size) >> 2);
-	tDMA_TAG *ptag      = sif1ch.getAddr(sif1ch.madr, DMAC_SIF1, false);
-	if (!ptag)
+	/* There's some data ready to transfer into the fifo.. */
+	const int writeSize = sif_ee_to_fifo(&sif1.fifo, &sif1ch, DMAC_SIF1,
+			pcsx2_min_i((s32)sif1ch.qwc, (FIFO_SIF_W - sif1.fifo.size) >> 2));
+	if (writeSize < 0)
 		return false;
-
-	if ((writeSize << 2) > 0)
-		sif1.fifo.write((u32*)ptag, writeSize << 2);
 
 	sif1ch.madr += writeSize << 4;
 	hwDmacSrcTadrInc(&sif1ch);
-	sif1.ee.cycles += writeSize;		// fixme : BIAS is factored in above
+	sif1.ee.cycles += writeSize;		/* fixme : BIAS is factored in above */
 	sif1ch.qwc -= writeSize;
 
 	return true;
 }
 
-// Read from the fifo and write to IOP
+/* Read from the fifo and write to IOP */
 static __fi void WriteFifoToIOP(void)
 {
-	// If we're reading something, continue to do so.
+	/* If we're reading something, continue to do so. */
 
 	const int readSize = pcsx2_min_i(sif1.iop.counter, sif1.fifo.size);
 
-	if (readSize > 0)
-		sif1.fifo.read((u32*)&iopMem->Main[hw_dma10.madr & 0x1fffff], readSize);
-	psxCpu->Clear(hw_dma10.madr, readSize);
-	hw_dma10.madr    += readSize << 2;
-	sif1.iop.cycles  += readSize >> 2;		// fixme: should be >> 4
+	sif_fifo_to_iop(&sif1.fifo, HW_DMA10_MADR, readSize);
+	psxCpu->Clear(HW_DMA10_MADR, readSize);
+	HW_DMA10_MADR    += readSize << 2;
+	sif1.iop.cycles  += readSize >> 2;		/* fixme: should be >> 4 */
 	sif1.iop.counter -= readSize;
 }
 
-// Get a tag and process it.
+/* Get a tag and process it. */
 static __fi bool ProcessEETag(void)
 {
-	// Chain mode
-	// Process DMA tag at sif1ch.tadr
-	tDMA_TAG *ptag = sif1ch.DMAtransfer(sif1ch.tadr, DMAC_SIF1);
+	/* Chain mode */
+	/* Process DMA tag at sif1ch.tadr */
+	tDMA_TAG *ptag = dmach_dma_transfer(&sif1ch, sif1ch.tadr, DMAC_SIF1);
 	if (!ptag)
 		return false;
 
 	if (sif1ch.chcr.TTE)
-		sif1.fifo.write((u32*)ptag + 2, 2);
+		sif_fifo_write(&sif1.fifo, (u32*)ptag + 2, 2);
 
 	sif1ch.madr = ptag[1]._u32;
 
@@ -87,32 +83,32 @@ static __fi bool ProcessEETag(void)
 	return true;
 }
 
-// Write fifo to data, and put it in IOP.
+/* Write fifo to data, and put it in IOP. */
 static __fi void SIFIOPReadTag(void)
 {
 	tDMA_TAG sif1dat_tmp;
-	// Read a tag.
-	sif1.fifo.read((u32*)&sif1.iop.data, 4);
+	/* Read a tag. */
+	sif_fifo_read(&sif1.fifo, &sif1.iop.data, 4);
 
-	// Only use the first 24 bits.
-	hw_dma10.madr = sif1data & 0xffffff;
+	/* Only use the first 24 bits. */
+	HW_DMA10_MADR = sif1data & 0xffffff;
 
-	//Maximum transfer amount 1mb-16 also masking out top part which is a "Mode" cache stuff, we don't care :)
+	/* Maximum transfer amount 1mb-16 also masking out top part which is a "Mode" cache stuff, we don't care :) */
 	sif1.iop.counter = sif1words & 0xFFFFC;
 
 	sif1dat_tmp._u32 = sif1data;
 	if (sif1dat_tmp.IRQ  || (sif1dat_tmp.ID & 4)) sif1.iop.end = true;
 }
 
-// Stop processing EE, and signal an interrupt.
+/* Stop processing EE, and signal an interrupt. */
 static __fi void EndEE(void)
 {
 	sif1.ee.end = false;
 	sif1.ee.busy = false;
 
-	// Voodoocycles : Okami wants around 100 cycles when booting up
-	// Other games reach like 50k cycles here, but the EE will long have given up by then and just retry.
-	// (Cause of double interrupts on the EE)
+	/* Voodoocycles : Okami wants around 100 cycles when booting up */
+	/* Other games reach like 50k cycles here, but the EE will long have given up by then and just retry. */
+	/* (Cause of double interrupts on the EE) */
 	if (sif1.ee.cycles == 0)
 		sif1.ee.cycles = 1;
 
@@ -120,24 +116,24 @@ static __fi void EndEE(void)
 	CPU_INT(DMAC_SIF1, sif1.ee.cycles * BIAS);
 }
 
-// Stop processing IOP, and signal an interrupt.
+/* Stop processing IOP, and signal an interrupt. */
 static __fi void EndIOP(void)
 {
 	sif1data = 0;
 	sif1.iop.end = false;
 	sif1.iop.busy = false;
 
-	//Fixme ( voodoocycles ):
-	//The *24 are needed for ecco the dolphin (CDVD hangs) and silver surfer (Pad not detected)
-	//Greater than *35 break rebooting when trying to play Tekken5 arcade history
-	//Total cycles over 1024 makes SIF too slow to keep up the sound stream in so3...
+	/* Fixme ( voodoocycles ): */
+	/* The *24 are needed for ecco the dolphin (CDVD hangs) and silver surfer (Pad not detected) */
+	/* Greater than *35 break rebooting when trying to play Tekken5 arcade history */
+	/* Total cycles over 1024 makes SIF too slow to keep up the sound stream in so3... */
 	if (sif1.iop.cycles == 0)
 		sif1.iop.cycles = 1;
-	// IOP is 1/8th the clock rate of the EE and psxcycles is in words (not quadwords)
+	/* IOP is 1/8th the clock rate of the EE and psxcycles is in words (not quadwords) */
 	PSX_INT(IopEvt_SIF1, /*pcsx2_min_i((*/sif1.iop.cycles/* * 26*//*), 1024)*/);
 }
 
-// Handle the EE transfer.
+/* Handle the EE transfer. */
 static __fi void HandleEETransfer(void)
 {
 	if(!sif1ch.chcr.STR)
@@ -147,10 +143,10 @@ static __fi void HandleEETransfer(void)
 		return;
 	}
 
-	// If there's no more to transfer.
+	/* If there's no more to transfer. */
 	if (sif1ch.qwc <= 0)
 	{
-		// If NORMAL mode or end of CHAIN then stop DMA.
+		/* If NORMAL mode or end of CHAIN then stop DMA. */
 		if ((sif1ch.chcr.MOD == NORMAL_MODE) || sif1.ee.end)
 		{
 			EndEE();
@@ -183,7 +179,7 @@ static __fi void HandleEETransfer(void)
 	}
 }
 
-// Handle the IOP transfer.
+/* Handle the IOP transfer. */
 static __fi void HandleIOPTransfer(void)
 {
 	if (sif1.iop.counter > 0)
@@ -205,7 +201,7 @@ static __fi void HandleIOPTransfer(void)
 	}
 }
 
-// Transfer EE to IOP, putting data in the fifo as an intermediate step.
+/* Transfer EE to IOP, putting data in the fifo as an intermediate step. */
 static __fi void SIF1Dma_inl(void)
 {
 	int BusyCheck = 0;
@@ -222,12 +218,16 @@ static __fi void SIF1Dma_inl(void)
 
 	do
 	{
-		//I realise this is very hacky in a way but its an easy way of checking if both are doing something
+		/* I realise this is very hacky in a way but its an easy way of checking if both are doing something */
 		BusyCheck = 0;
 
 		if (sif1.ee.busy && !sif1_dma_stall)
 		{
-			if((FIFO_SIF_W - sif1.fifo.size) > 0 || (sif1.ee.end && sif1ch.qwc == 0))
+			/* The EE moves whole quadwords (and a TTE tag, half of one), so it
+			 * only counts as able to go on with a quadword free: with 1-3
+			 * words free (a TTE tag leaves 2) it would move nothing and spin
+			 * here for ever. */
+			if((FIFO_SIF_W - sif1.fifo.size) >= 4 || (sif1.ee.end && sif1ch.qwc == 0))
 			{
 				BusyCheck++;
 				HandleEETransfer();
@@ -256,7 +256,7 @@ void SIF1Dma(void)
 
 void  sif1Interrupt(void)
 {
-	HW_DMA10_CHCR &= ~0x01000000; //reset TR flag
+	HW_DMA10_CHCR &= ~0x01000000; /* reset TR flag */
 	psxDmaInterrupt2(3);
 }
 
@@ -266,24 +266,24 @@ void EEsif1Interrupt(void)
 	sif1ch.chcr.STR = false;
 }
 
-// Do almost exactly the same thing as psxDma10 in IopDma.cpp.
-// Main difference is this checks for IOP, where psxDma10 checks for ee.
+/* Do almost exactly the same thing as psxDma10 in IopDma.cpp. */
+/* Main difference is this checks for IOP, where psxDma10 checks for ee. */
 void dmaSIF1(void)
 {
 	psHu32(SBUS_F240) |= 0x4000;
 	sif1.ee.busy       = true;
 
 	cpuRegs.dmastall  &= ~(1 << DMAC_SIF1);
-	// Okay, this here is needed currently (r3644).
-	// FFX battles in the thunder plains map die otherwise, Phantasy Star 4 as well
-	// These 2 games could be made playable again by increasing the time the EE or the IOP run,
-	// showing that this is very timing sensible.
-	// Doing this DMA unfortunately brings back an old warning in Legend of Legaia though, but it still works.
+	/* Okay, this here is needed currently (r3644). */
+	/* FFX battles in the thunder plains map die otherwise, Phantasy Star 4 as well */
+	/* These 2 games could be made playable again by increasing the time the EE or the IOP run, */
+	/* showing that this is very timing sensible. */
+	/* Doing this DMA unfortunately brings back an old warning in Legend of Legaia though, but it still works. */
 
-	//Updated 23/08/2011: The hangs are caused by the EE suspending SIF1 DMA and restarting it when in the middle
-	//of processing a "REFE" tag, so the hangs can be solved by forcing the ee.end to be false
-	// (as it should always be at the beginning of a DMA).  using "if IOP is busy" flags breaks Tom Clancy Rainbow Six.
-	// Legend of Legaia doesn't throw a warning either :)
+	/* Updated 23/08/2011: The hangs are caused by the EE suspending SIF1 DMA and restarting it when in the middle */
+	/* of processing a "REFE" tag, so the hangs can be solved by forcing the ee.end to be false */
+	/* (as it should always be at the beginning of a DMA).  using "if IOP is busy" flags breaks Tom Clancy Rainbow Six. */
+	/* Legend of Legaia doesn't throw a warning either :) */
 	sif1.ee.end        = false;
 
 	if (sif1ch.chcr.MOD == CHAIN_MODE && sif1ch.qwc > 0)

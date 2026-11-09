@@ -108,6 +108,10 @@ set(pcsx2Sources
 	IopGte.c
 	COP2.c
 	Sif.c
+	Sif0.c
+	Sif1.c
+	sif2.c
+	DmacChannel.c
 	SaveStateBase.c
 	SaveStateFreeze.c
 	Gif.cpp
@@ -142,9 +146,6 @@ set(pcsx2Sources
 	R5900.cpp
 	R5900OpcodeImpl.cpp
 	R5900OpcodeTables.cpp
-	Sif0.cpp
-	Sif1.cpp
-	sif2.cpp
 	Sio.c
 	SioFifo.c
 	SPR.cpp

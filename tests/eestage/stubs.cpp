@@ -27,6 +27,7 @@ extern "C" {
 	void VCALLMS(void) { reached("VCALLMS"); }
 	void VCALLMSR(void) { reached("VCALLMSR"); }
 	void cdvdReadLanguageParams(unsigned char* config) { (void)config; reached("cdvdReadLanguageParams"); }
+	void dmaGetAddr(void) { reached("dmaGetAddr"); }
 }
 	void CFC2() { reached("CFC2()"); }
 	void COP2_BC2() { reached("COP2_BC2()"); }
@@ -157,7 +158,6 @@ extern "C" {
 	void VSUBz() { reached("VSUBz()"); }
 	void VWAITQ() { reached("VWAITQ()"); }
 	void cpuException(unsigned int, unsigned int) { reached("cpuException(unsigned int, unsigned int)"); }
-	void dmaGetAddr(unsigned int, bool) { reached("dmaGetAddr(unsigned int, bool)"); }
 	void gsSetVideoMode(GS_VideoMode) { reached("gsSetVideoMode(GS_VideoMode)"); }
 	void recABS_S() { reached("recABS_S()"); }
 	void recADD() { reached("recADD()"); }

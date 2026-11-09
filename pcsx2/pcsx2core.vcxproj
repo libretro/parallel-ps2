@@ -169,7 +169,8 @@
     <ClCompile Include="ps2\Iop\PsxBios.c" />
     <ClCompile Include="ps2\pgif.c" />
     <ClCompile Include="Dmac.cpp" />
-    <ClCompile Include="sif2.cpp" />
+    <ClCompile Include="DmacChannel.c" />
+    <ClCompile Include="sif2.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLState.cpp" />
     <ClCompile Include="GS\GS.cpp" />
     <ClCompile Include="GS\GSBlock.cpp" />
@@ -233,9 +234,9 @@
     <ClCompile Include="VU1micro.cpp" />
     <ClCompile Include="VU1microInterp.cpp" />
     <ClCompile Include="VUops.cpp" />
-    <ClCompile Include="Sif.cpp" />
-    <ClCompile Include="Sif0.cpp" />
-    <ClCompile Include="Sif1.cpp" />
+    <ClCompile Include="Sif.c" />
+    <ClCompile Include="Sif0.c" />
+    <ClCompile Include="Sif1.c" />
     <ClCompile Include="Vif.cpp" />
     <ClCompile Include="Vif0_Dma.cpp" />
     <ClCompile Include="Vif1_Dma.cpp" />

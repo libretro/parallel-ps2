@@ -312,4 +312,8 @@ tests/iopcore/iopcore_test
 tests/iopcore/iopcore_test.exe
 tests/iopcore/.got.txt
 tests/iopcore/.scratch/
+tests/iopsif/iopsif_test
+tests/iopsif/iopsif_test.exe
+tests/iopsif/.got.txt
+tests/iopsif/.obj/
 tests/p2io/p2io_test.exe

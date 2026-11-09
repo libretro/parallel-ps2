@@ -374,13 +374,13 @@
     <ClCompile Include="VUops.cpp">
       <Filter>System\Ps2\EmotionEngine\VU\Interpreter</Filter>
     </ClCompile>
-    <ClCompile Include="Sif.cpp">
+    <ClCompile Include="Sif.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Sif</Filter>
     </ClCompile>
-    <ClCompile Include="Sif0.cpp">
+    <ClCompile Include="Sif0.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Sif</Filter>
     </ClCompile>
-    <ClCompile Include="Sif1.cpp">
+    <ClCompile Include="Sif1.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Sif</Filter>
     </ClCompile>
     <ClCompile Include="Vif.cpp">
@@ -605,10 +605,13 @@
     <ClCompile Include="Dmac.cpp">
       <Filter>System\Ps2</Filter>
     </ClCompile>
+    <ClCompile Include="DmacChannel.c">
+      <Filter>System\Ps2</Filter>
+    </ClCompile>
     <ClCompile Include="Gif_Unit.cpp">
       <Filter>System\Ps2\GS\GIF</Filter>
     </ClCompile>
-    <ClCompile Include="sif2.cpp">
+    <ClCompile Include="sif2.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Sif</Filter>
     </ClCompile>
     <ClCompile Include="IopGte.cpp">
