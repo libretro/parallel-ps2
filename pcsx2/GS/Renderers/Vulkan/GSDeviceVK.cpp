@@ -4825,9 +4825,56 @@ static bool PipelineWarmDoJob(GSDeviceVK::PipelineWarm* w)
 	return true;
 }
 
-/* Builds the utility pipelines, the listed keys (what the last session
- * drew with, so most likely what this one draws with first), then their
- * siblings (so a new key of a state the list knows draws at once), all
+/* The siblings of the listed keys, each once: the list's own copy is
+ * turned into their selectors, in front, as it goes; where they are
+ * linked from libraries, their pixel shader parts instead, which the
+ * render thread links new siblings from in a fraction of a build (and
+ * where the cover has every pixel shader part, none). False when told to
+ * stop. */
+static bool PipelineWarmSiblings(GSDeviceVK::PipelineWarm* w)
+{
+	PipelineWarmResult res = PipelineWarmResult();
+	const bool libs = w->dev->GetOptionalExtensions().vk_ext_graphics_pipeline_library;
+	const bool dynamic_ds = w->dev->GetOptionalExtensions().vk_ext_extended_dynamic_state;
+	u32 i, j, n;
+
+	res.util    = GSDeviceVK::UP_COUNT;
+	res.dynamic = libs ? 2 + TFX_LIB_FS : 1;
+	for (i = 0, n = 0; i < ((libs && dynamic_ds) ? 0u : w->count); i++)
+	{
+		GSDeviceVK::PipelineSelector sk{w->list[i]};
+		VKDynamicPS(sk.ps);
+		if (libs)
+			sk = TFXLibraryKey(sk, TFX_LIB_FS, dynamic_ds);
+		for (j = 0; j < n; j++)
+			if (w->list[w->count + j] == sk)
+				break;
+		if (j < n)
+			continue;
+		w->list[w->count + n++] = sk;
+		while (PipelineWarmDoJob(w))
+			;
+		if (retro_atomic_load_acquire_int(&w->stop))
+			return false;
+		res.sel      = sk;
+		res.pipeline = w->dev->BuildTFXPipeline(sk, &w->mods, w->cache, true,
+			libs ? VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT : 0);
+		if (res.pipeline == VK_NULL_HANDLE)
+			continue;
+		if (libs)
+			w->libs_built++;
+		else
+			w->siblings_built++;
+		PipelineWarmResultPut(w, &res);
+	}
+	return true;
+}
+
+/* Builds the utility pipelines; with libraries the cover, the listed keys
+ * (what the last session drew with, so most likely what this one draws
+ * with first), then their siblings' pixel shader parts; without, the
+ * listed keys' siblings (so every key of a state the list knows draws at
+ * once), then the keys. Then the device is handed over. All
  * with modules of its own made from the core's SPIR-V, and passes them
  * back; what the render thread asks for (for a draw drawing now) goes
  * before the next of those, and once they are done the thread sleeps
@@ -4837,7 +4884,7 @@ static void PipelineWarmThread(void* data)
 	GSDeviceVK::PipelineWarm* w = (GSDeviceVK::PipelineWarm*)data;
 	PipelineWarmResult res = PipelineWarmResult();
 	PipelineWarmJob job;
-	u32 i, j, n;
+	u32 i;
 
 	for (i = 0; i < GSDeviceVK::UP_COUNT; i++)
 	{
@@ -4869,9 +4916,14 @@ static void PipelineWarmThread(void* data)
 		w->libs_built++;
 		PipelineWarmResultPut(w, &res);
 	}
+	/* without libraries: a sibling for every listed state */
+	if (!w->dev->GetOptionalExtensions().vk_ext_graphics_pipeline_library
+		&& !w->libs_only && !PipelineWarmSiblings(w))
+		goto done;
 	retro_atomic_store_release_int(&w->covered, 1);
 	retro_eventcount_notify(&w->covered_ev);
 
+	res.util    = GSDeviceVK::UP_COUNT;
 	res.dynamic = 0;
 	for (i = 0; i < (w->libs_only ? 0u : w->count); i++)
 	{
@@ -4887,43 +4939,10 @@ static void PipelineWarmThread(void* data)
 		PipelineWarmResultPut(w, &res);
 	}
 
-	/* the siblings, each once: the list's own copy is turned into their
-	 * selectors, in front, as it goes; where they are linked from
-	 * libraries, their pixel shader parts instead, which the render thread
-	 * links new siblings from in a fraction of a build */
-	{
-	const bool libs = w->dev->GetOptionalExtensions().vk_ext_graphics_pipeline_library;
-	const bool dynamic_ds = w->dev->GetOptionalExtensions().vk_ext_extended_dynamic_state;
-	res.dynamic = libs ? 2 + TFX_LIB_FS : 1;
-	/* (where the cover has every pixel shader part, none) */
-	for (i = 0, n = 0; i < ((libs && dynamic_ds) ? 0u : w->count); i++)
-	{
-		GSDeviceVK::PipelineSelector sk{w->list[i]};
-		VKDynamicPS(sk.ps);
-		if (libs)
-			sk = TFXLibraryKey(sk, TFX_LIB_FS, dynamic_ds);
-		for (j = 0; j < n; j++)
-			if (w->list[w->count + j] == sk)
-				break;
-		if (j < n)
-			continue;
-		w->list[w->count + n++] = sk;
-		while (PipelineWarmDoJob(w))
-			;
-		if (retro_atomic_load_acquire_int(&w->stop))
-			goto done;
-		res.sel      = sk;
-		res.pipeline = w->dev->BuildTFXPipeline(sk, &w->mods, w->cache, true,
-			libs ? VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT : 0);
-		if (res.pipeline == VK_NULL_HANDLE)
-			continue;
-		if (libs)
-			w->libs_built++;
-		else
-			w->siblings_built++;
-		PipelineWarmResultPut(w, &res);
-	}
-	}
+	/* (with libraries the siblings' pixel shader parts, after the list) */
+	if (w->dev->GetOptionalExtensions().vk_ext_graphics_pipeline_library
+		&& !PipelineWarmSiblings(w))
+		goto done;
 
 	/* the render thread's, as it asks */
 	for (;;)
@@ -5003,11 +5022,11 @@ void GSDeviceVK::PipelineWarmStart()
 		goto fail_jobs;
 	m_warm           = w;
 	m_jobs_in_flight = 0;
-	/* Every shader part a draw can link a sibling from is built before the
-	 * device is handed over, as the game boots, and not as it plays: a new
-	 * key then never has a pipeline built on the draw path. With the
-	 * driver's cache this is a lookup a part. */
-	if (w->cover_count)
+	/* The utility pipelines, and every shader part a draw can link a
+	 * sibling from (without libraries, a sibling for every state the list
+	 * knows), are built before the device is handed over, as the game
+	 * boots, and not as it plays. With the driver's cache this is a lookup
+	 * each. */
 	{
 		while (!retro_atomic_load_acquire_int(&w->covered))
 		{

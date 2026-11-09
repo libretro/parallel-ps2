@@ -183,9 +183,14 @@ remove, most-played first:
 
 - Vulkan without graphics pipeline libraries (or without depth/stencil
   state on the command buffer, whose pixel shader parts the cover cannot
-  hold): `GSDeviceVK::GetTFXPipelineMissed` builds a key with no ready
-  sibling whole (`BuildTFXPipeline`), and `GetTFXSibling` builds the
-  sibling whole; with no warm-up thread every key is built so. With the
+  hold): `GSDeviceVK::GetTFXPipelineMissed` builds a key of a state no
+  pipeline list held whole (`BuildTFXPipeline`) and lists it; with no
+  warm-up thread every key is built so. The utility pipelines and a
+  sibling for every listed state are built before the device is handed
+  over, so a listed key the thread has not got to draws with its
+  sibling: `tests/vkpipewarm` holds a run with the list and no time
+  between loading and the first frame to none built on the render
+  thread. With the
   libraries, the warm-up thread builds every shader part a sibling links
   from (`TFXLibraryCover`) before the device is handed over, and the draw
   path only makes output parts (no shader) and links; `tests/vkpipewarm`

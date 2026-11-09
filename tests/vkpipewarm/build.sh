@@ -5,9 +5,10 @@
 # do) in one scratch directory, so the cache and the pipeline list carry
 # over from run to run:
 #
-#  - every run builds no utility pipeline on the render thread while it
-#    creates the device - the warm-up thread builds them all, from the
-#    SPIR-V the core was built with;
+#  - every run builds no utility pipeline on the render thread, creating
+#    the device or at a first use - the warm-up thread builds them all,
+#    from the SPIR-V the core was built with, before the device is handed
+#    over;
 #  - each case run once from nothing builds its TFX pipelines on the
 #    render thread and lists them;
 #  - with the driver's pipeline cache deleted, or stamped with another
@@ -17,7 +18,10 @@
 #    loading and the first frame (VKPW_PAUSE_MS) - and ends in the same
 #    state (but for the sections that hold the clock and the GIF's
 #    timing, which differ between two runs from nothing too), with the
-#    same picture presented last;
+#    same picture presented last; and so with no time between loading
+#    and the first frame at all: a sibling for every state the list knows
+#    is built before the device is handed over, and a key whose own
+#    pipeline the thread has not got to draws with it;
 #  - a session torn down one frame in, while the thread may still be
 #    building, ends clean and keeps the list;
 #  - a list cut short, with a byte changed, of another version, or not a
@@ -120,12 +124,13 @@ ahead() { sed -n 's/.*, \([0-9]*\) ahead on the warm-up thread.*/\1/p' "$WORK/$1
 # and on the warm-up thread
 util_creating() { sed -n 's/.*Vulkan utility pipelines: \([0-9]*\) built on the render thread creating.*/\1/p' "$WORK/$1.log"; }
 util_ahead() { sed -n 's/.*Vulkan utility pipelines: .*, \([0-9]*\) on the warm-up thread.*/\1/p' "$WORK/$1.log"; }
+util_first_use() { sed -n 's/.*Vulkan utility pipelines: .*, \([0-9]*\) at first use.*/\1/p' "$WORK/$1.log"; }
 check_util()
 {
 	# $1 log name; every run builds as many as the first did
-	n=$(util_creating "$1"); a=$(util_ahead "$1")
-	if [ "$n" != 0 ] || [ -z "$a" ] || [ "$a" = 0 ] || { [ -n "$util_ahead_cold" ] && [ "$a" != "$util_ahead_cold" ]; }; then
-		echo "  FAIL: $1: utility pipelines: ${n:-?} built creating the device (none expected), ${a:-none} on the warm-up thread (${util_ahead_cold:-some} expected)"
+	n=$(util_creating "$1"); a=$(util_ahead "$1"); u=$(util_first_use "$1")
+	if [ "$n" != 0 ] || [ "${u:-x}" != 0 ] || [ -z "$a" ] || [ "$a" = 0 ] || { [ -n "$util_ahead_cold" ] && [ "$a" != "$util_ahead_cold" ]; }; then
+		echo "  FAIL: $1: utility pipelines: ${n:-?} built creating the device and ${u:-?} at first use (none expected), ${a:-none} on the warm-up thread (${util_ahead_cold:-some} expected)"
 		fail=1
 	fi
 }
@@ -226,6 +231,22 @@ for c in $CASES; do
 	check_stamped "$c.warm"
 	same_state $c $c.warm
 done
+
+# 2b. Likewise with no time between loading and the first frame, the
+# driver's cache gone: the list's siblings are built before the device is
+# handed over, and the keys the thread has not got to draw with them.
+for c in $CASES; do
+	rm -f "$CACHE/vulkan_pipelines.bin"
+	VKPW_PAUSE_MS=0 run "$c.nopause" $c "$S"
+	[ "$(here "$c.nopause")" = 0 ] || { echo "  FAIL: $c built $(here "$c.nopause") on the render thread with the list and no time to build it"; fail=1; }
+	check_util "$c.nopause"
+	a=$(image "$c.cold"); b=$(image "$c.nopause")
+	if [ -z "$a" ] || [ "$a" != "$b" ]; then
+		echo "  FAIL: $c with the list and no time to build it presents another picture (${a:-none}, ${b:-none})"
+		fail=1
+	fi
+done
+echo "  with the list and no time to build it: none built on the render thread"
 
 # 3. Torn down one frame in.
 driver_change
