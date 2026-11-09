@@ -390,9 +390,16 @@ extern void hwDmacIrq(int n);
 }
 #endif
 
+/* Hw.cpp; SPR.c feeds the MFIFO through the last two. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern void FireMFIFOEmpty(void);
 extern bool hwMFIFOWrite(u32 addr, const u128* data, uint size_qwc);
 extern void hwMFIFOResume(u32 transferred);
+#ifdef __cplusplus
+}
+#endif
 
 /* The paged hardware accessors are templates on the page index. */
 #ifdef __cplusplus

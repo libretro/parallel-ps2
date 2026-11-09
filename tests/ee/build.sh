@@ -91,10 +91,11 @@ ${CC:-cc} -O1 -g -Wall $SANFLAGS -o "$DIR/ee_hwperf" "$DIR/hwperf.c"
 echo "== scratchpad DMA interleave vs console =="
 EXPECTED="${PS2AUTOTESTS:-}/tests/dma/spr/interleave.expected"
 if [ -f "$EXPECTED" ]; then
-	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
-		-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
-		-I "$ROOT/libretro/libretro-common/include" \
-		-o "$DIR/ee_hwspr" "$DIR/hwspr.cpp" "$ROOT/pcsx2/SPR.cpp" "$ROOT/libretro/libretro-common/queues/retro_spsc.c"
+	SPRINC="-I $ROOT -I $ROOT/pcsx2 -I $ROOT/common -I $ROOT/common/include -I $ROOT/3rdparty/include -I $ROOT/libretro/libretro-common/include"
+	${CC:-cc} -std=gnu89 -O1 -w $SANFLAGS $SPRINC -c "$ROOT/pcsx2/SPR.c" -o "$DIR/ee_hwspr_spr.o"
+	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS $SPRINC \
+		-o "$DIR/ee_hwspr" "$DIR/hwspr.cpp" "$DIR/ee_hwspr_spr.o" "$ROOT/libretro/libretro-common/queues/retro_spsc.c"
+	rm -f "$DIR/ee_hwspr_spr.o"
 	"$DIR/ee_hwspr" "$EXPECTED"
 else
 	echo "  skipped: set PS2AUTOTESTS to a ps2autotests checkout to run this"

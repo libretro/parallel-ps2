@@ -15,7 +15,19 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern void dmaSPR0(void);
 extern void dmaSPR1(void);
 extern void SPRFROMinterrupt(void);
 extern void SPRTOinterrupt(void);
+
+/* The interleave transfers on their own; tests/ee scores them. */
+extern void _SPR0interleave(void);
+extern void _SPR1interleave(void);
+
+#ifdef __cplusplus
+}
+#endif

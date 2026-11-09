@@ -88,7 +88,7 @@ BiosDebugInformation CurrentBiosInformation = {};
 alignas(16) u8 g_RealGSMem[0x2000];
 alignas(16) u8 eeHw[0x10000];
 void gsSetVideoMode(GS_VideoMode) { }
-void cdvdReadLanguageParams(u8*) { }
+extern "C" void cdvdReadLanguageParams(u8*) { }
 tDMA_TAG* dmaGetAddr(u32, bool) { return (tDMA_TAG*)s_mem; }
 void SaveState_FreezeMem(SaveStateBase*, void*, int) { }
 bool SaveState_FreezeTag(SaveStateBase*, const char*) { return true; }

@@ -27,6 +27,7 @@
 #include "R5900.h"
 #include "R3000A.h"
 #include "IopBios.h"
+#include "VUmicro.h"
 
 #include <file/file_path.h>
 
@@ -793,6 +794,11 @@ bool emu_config_irx_injected(void)
 bool emu_config_host_fs(void)
 {
 	return EmuConfig.HostFs;
+}
+
+bool emu_config_thread_vu1(void)
+{
+	return THREAD_VU1;
 }
 
 

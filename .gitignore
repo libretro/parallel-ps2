@@ -316,4 +316,8 @@ tests/iopsif/iopsif_test
 tests/iopsif/iopsif_test.exe
 tests/iopsif/.got.txt
 tests/iopsif/.obj/
+tests/eespr/eespr_test
+tests/eespr/eespr_test.exe
+tests/eespr/.got.txt
+tests/eespr/.obj/
 tests/p2io/p2io_test.exe

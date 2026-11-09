@@ -410,7 +410,7 @@
     <ClCompile Include="x86\newVif_UnpackSSE.cpp">
       <Filter>System\Ps2\EmotionEngine\DMAC\Vif\Unpack\newVif\Dynarec</Filter>
     </ClCompile>
-    <ClCompile Include="SPR.cpp">
+    <ClCompile Include="SPR.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\SPR</Filter>
     </ClCompile>
     <ClCompile Include="Gif.cpp">

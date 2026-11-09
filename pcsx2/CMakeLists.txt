@@ -112,6 +112,7 @@ set(pcsx2Sources
 	Sif1.c
 	sif2.c
 	DmacChannel.c
+	SPR.c
 	SaveStateBase.c
 	SaveStateFreeze.c
 	Gif.cpp
@@ -148,7 +149,6 @@ set(pcsx2Sources
 	R5900OpcodeTables.cpp
 	Sio.c
 	SioFifo.c
-	SPR.cpp
 	Vif0_Dma.cpp
 	Vif1_Dma.cpp
 	Vif1_MFIFO.cpp

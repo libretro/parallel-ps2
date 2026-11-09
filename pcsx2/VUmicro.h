@@ -34,7 +34,7 @@
 #define VU_MEMORY_RESERVE_SIZE (VU1_PROGSIZE + VU1_MEMSIZE + VU0_PROGSIZE + VU0_MEMSIZE)
 #define VU1_PROGMASK	(VU1_PROGSIZE-1)
 
-#define vu1RunCycles (3000000) // mVU1 uses this for inf loop detection on dev builds
+#define vu1RunCycles (3000000) /* mVU1 uses this for inf loop detection on dev builds */
 
 
 /* --------------------------------------------------------------------------
@@ -62,8 +62,15 @@ struct VUmicroCpu
 	void (*ResumeXGkick)(void); /* NULL when the provider has none */
 };
 
-/* Executes a block based on EE delta time (see VUmicro.cpp). */
+/* Executes a block based on EE delta time (see VUmicro.cpp); SPR.c
+ * catches the VUs up through it. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 void vucpu_execute_block(const struct VUmicroCpu* cpu, int startUp);
+#ifdef __cplusplus
+}
+#endif
 
 /* Called from recompiled code after a COP2 transfer; see VUmicro.cpp. */
 void vucpu_execute_block_jit(const struct VUmicroCpu* cpu, int interlocked);
@@ -99,6 +106,8 @@ extern void vu_memory_release(const struct VirtualMemoryManager* main_map);
  * publishes it with mtvu_write_mem_commit; the _micro/_data_mem forms copy
  * from a buffer. */
 extern void mtvu_wait_vu(void);
+/* Pcsx2Config.cpp: whether VU1 runs on its own thread (THREAD_VU1). */
+extern bool emu_config_thread_vu1(void);
 extern void* mtvu_write_mem_begin(int data_mem, u32 addr, u32 size);
 extern void mtvu_write_mem_commit(void);
 extern void mtvu_write_micro_mem(u32 vu_micro_addr, const void* data, u32 size);
@@ -107,12 +116,12 @@ extern void mtvu_write_data_mem(u32 vu_data_addr, const void* data, u32 size);
 }
 #endif
 
-// VU0
+/* VU0 */
 extern void vu0ResetRegs();
 extern void vu0Exec(VURegs* VU);
 extern void vu0Finish();
 
-// VU1
+/* VU1 */
 extern void vu1Finish(bool add_cycles);
 extern void vu1ResetRegs();
 extern void vu1ExecMicro(u32 addr);

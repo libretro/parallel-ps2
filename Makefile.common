@@ -241,6 +241,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/Sif1.c \
 	$(LRPS2_DIR)/sif2.c \
 	$(LRPS2_DIR)/DmacChannel.c \
+	$(LRPS2_DIR)/SPR.c \
 	$(LRPS2_DIR)/SaveStateBase.c \
 	$(LRPS2_DIR)/SaveStateFreeze.c
 
@@ -302,7 +303,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/R5900.cpp \
 	$(LRPS2_DIR)/R5900OpcodeImpl.cpp \
 	$(LRPS2_DIR)/R5900OpcodeTables.cpp \
-	$(LRPS2_DIR)/SPR.cpp \
 	$(LRPS2_DIR)/Vif.cpp \
 	$(LRPS2_DIR)/Vif_Codes.cpp \
 	$(LRPS2_DIR)/Vif_Transfer.cpp \
