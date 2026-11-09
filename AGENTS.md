@@ -36,6 +36,17 @@ section that covers the code you touch before touching it.
   move a compile off the draw path, and none may add one, not even for
   a state seen once. The draw paths that still compile are listed in
   "Shader compilation and stutter"; removing them comes first.
+- **No allocation mid-game.** After boot, nothing on the EE, IOP, GS,
+  VU or render threads or inside `retro_run` allocates or frees memory:
+  no `malloc`, `new` or `realloc`, no container that grows or rehashes,
+  no temporary string or vector, and no driver object (buffer, image,
+  view, descriptor pool, command pool) made for one draw, pass or frame.
+  Storage is sized when the core starts, content loads or a setting
+  changes, from the most that can be live at once ("Reuse storage with
+  a defensible bound"), and reused; a pool that runs out takes its
+  defined exhausted path, not a bigger allocation. Like a compile on
+  the draw path, an allocation found on a play path is a bug: a commit
+  may move one out of play, and none may add one.
 
 ## Speed of light
 
