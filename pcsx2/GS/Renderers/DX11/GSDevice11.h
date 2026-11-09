@@ -19,6 +19,7 @@
 #include "GS/GSVector.h"
 #include "GS/Renderers/Common/GSDevice.h"
 #include "D3D11ShaderCache.h"
+#include "D3DDynamicPS.h"
 #include <unordered_map>
 #include "common/RedtapeWilCom.h"
 #include <dxgi1_5.h>
@@ -234,7 +235,7 @@ private:
 	 * created; a pixel selector not built yet draws with its dynamic one
 	 * while the worker builds its own (m_ps holds a null one meanwhile).
 	 * From the worker's start the shader cache is the worker's. */
-	wil::com_ptr_nothrow<ID3D11PixelShader> m_ps_dynamic[6];
+	wil::com_ptr_nothrow<ID3D11PixelShader> m_ps_dynamic[D3D_DYNAMIC_PS_COUNT];
 	wil::com_ptr_nothrow<ID3D11Buffer> m_ps_key_cb;
 	u32 m_ps_key[4] = {};
 	bool m_ps_key_valid = false;

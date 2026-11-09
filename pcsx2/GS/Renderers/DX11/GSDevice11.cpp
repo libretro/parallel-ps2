@@ -21,6 +21,7 @@
 #include "GS.h"
 #include "GSDevice11.h"
 #include "GS/Renderers/DX11/D3D.h"
+#include "GS/Renderers/DX11/D3DDynamicPS.h"
 #include "GS/GSExtra.h"
 #include "GS/GSUtil.h"
 #include "Host.h"
@@ -1876,7 +1877,6 @@ void GSDevice11::RestoreAPIState()
 		m_ctx->OMSetRenderTargets(0, nullptr, m_state.dsv);
 }
 
-static void D3D11DynamicMacros(GSDevice11::ShaderMacro& sm, u32 index);
 
 bool GSDevice11::CreateTextureFX()
 {
@@ -1931,7 +1931,7 @@ bool GSDevice11::CreateTextureFX()
 		for (i = 0; i < C89_ARRAY_SIZE(m_ps_dynamic); i++)
 		{
 			ShaderMacro sm(m_shader_cache.GetFeatureLevel());
-			D3D11DynamicMacros(sm, i);
+			D3DDynamicMacros(sm, i);
 			m_ps_dynamic[i] = m_shader_cache.GetPixelShader(m_dev.get(), tfx_fx_shader_raw, sm.GetPtr(), "ps_main");
 			if (!m_ps_dynamic[i])
 				break;
@@ -2041,89 +2041,6 @@ void GSDevice11::SetupVS(VSSelector sel, const GSHWDrawConfig::VSConstantBuffer*
 	IASetInputLayout(vsp->il.get());
 }
 
-/* The pixel selector fields as tfx.fx's macros, each in the bits after the
- * last and none across a word: the dynamic pixel shader's PsKey. */
-#define D3D11_PS_FIELDS(X) \
-	X(PS_FST, fst, 1) X(PS_WMS, wms, 2) X(PS_WMT, wmt, 2) X(PS_ADJS, adjs, 1) X(PS_ADJT, adjt, 1) \
-	X(PS_AEM_FMT, aem_fmt, 2) X(PS_AEM, aem, 1) X(PS_TFX, tfx, 3) X(PS_TCC, tcc, 1) X(PS_DATE, date, 3) \
-	X(PS_ATST, atst, 3) X(PS_AFAIL, afail, 3) X(PS_FOG, fog, 1) X(PS_IIP, iip, 1) X(PS_BLEND_HW, blend_hw, 3) \
-	X(PS_A_MASKED, a_masked, 1) X(PS_FBA, fba, 1) X(PS_FBMASK, fbmask, 1) X(PS_LTF, ltf, 1) \
-	X(PS_TCOFFSETHACK, tcoffsethack, 1) X(PS_POINT_SAMPLER, point_sampler, 1) X(PS_REGION_RECT, region_rect, 1) \
-	X(PS_SHUFFLE, shuffle, 1) X(PS_SHUFFLE_SAME, shuffle_same, 1) X(PS_PROCESS_BA, process_ba, 2) \
-	X(PS_PROCESS_RG, process_rg, 2) X(PS_SHUFFLE_ACROSS, shuffle_across, 1) X(PS_READ16_SRC, real16src, 1) \
-	X(PS_CHANNEL_FETCH, channel, 3) X(PS_TALES_OF_ABYSS_HLE, tales_of_abyss_hle, 1) \
-	X(PS_URBAN_CHAOS_HLE, urban_chaos_hle, 1) X(PS_DST_FMT, dst_fmt, 2) X(PS_DEPTH_FMT, depth_fmt, 2) \
-	X(PS_PAL_FMT, pal_fmt, 2) X(PS_COLCLIP_HW, colclip_hw, 1) X(PS_RTA_CORRECTION, rta_correction, 1) \
-	X(PS_RTA_SRC_CORRECTION, rta_source_correction, 1) X(PS_COLCLIP, colclip, 1) X(PS_BLEND_A, blend_a, 2) \
-	X(PS_BLEND_B, blend_b, 2) X(PS_BLEND_C, blend_c, 2) X(PS_BLEND_D, blend_d, 2) X(PS_BLEND_MIX, blend_mix, 2) \
-	X(PS_ROUND_INV, round_inv, 1) X(PS_FIXED_ONE_A, fixed_one_a, 1) X(PS_PABE, pabe, 1) X(PS_DITHER, dither, 2) \
-	X(PS_DITHER_ADJUST, dither_adjust, 1) X(PS_ZCLAMP, zclamp, 1) X(PS_SCANMSK, scanmsk, 2) \
-	X(PS_SAMPLE_MAP, sample_map, 1) X(PS_NATIVE_TAPS, native_taps, 1) X(PS_AUTOMATIC_LOD, automatic_lod, 1) \
-	X(PS_MANUAL_LOD, manual_lod, 1) X(PS_TEX_IS_FB, tex_is_fb, 1) X(PS_NO_COLOR, no_color, 1) \
-	X(PS_NO_COLOR1, no_color1, 1)
-
-/* The next field's place: in the word it starts in, else the next. */
-static u32 D3D11KeyPlace(u32* at, u32 bits)
-{
-	u32 place;
-	if ((*at & 31u) + bits > 32u)
-		*at = (*at + 31u) & ~31u;
-	place = *at;
-	*at += bits;
-	return place;
-}
-
-static void D3D11DynamicKey(const GSHWDrawConfig::PSSelector& sel, u32* key)
-{
-	u32 at = 0, place;
-	key[0] = key[1] = key[2] = key[3] = 0;
-#define D3D11_PACK(name, field, bits) \
-	place = D3D11KeyPlace(&at, bits); \
-	key[place >> 5] |= (static_cast<u32>(sel.field) & ((1u << bits) - 1u)) << (place & 31u);
-	D3D11_PS_FIELDS(D3D11_PACK)
-#undef D3D11_PACK
-}
-
-/* The interface a selector's dynamic pixel shader has: the flat colour,
- * and the destination alpha test's first pass or primitive ID test. */
-static u32 D3D11DynamicIndex(const GSHWDrawConfig::PSSelector& sel)
-{
-	const u32 date = (sel.date == 1 || sel.date == 2) ? 1u : (sel.date == 3) ? 2u : 0u;
-	return sel.iip * 3u + date;
-}
-
-static void D3D11PixelShaderMacros(GSDevice11::ShaderMacro& sm, const GSHWDrawConfig::PSSelector& sel)
-{
-	sm.AddMacro("PIXEL_SHADER", 1);
-#define D3D11_MACRO(name, field, bits) sm.AddMacro(#name, static_cast<int>(sel.field));
-	D3D11_PS_FIELDS(D3D11_MACRO)
-#undef D3D11_MACRO
-}
-
-/* The dynamic pixel shader of interface index: every field read from
- * PsKey but what shapes the interface; the second output and the depth
- * output are kept (a draw that does without them leaves them unread). */
-static void D3D11DynamicMacros(GSDevice11::ShaderMacro& sm, u32 index)
-{
-	const u32 date = index % 3u;
-	char buf[48];
-	u32 at = 0, place;
-	sm.AddMacro("PIXEL_SHADER", 1);
-	sm.AddMacro("PS_DYNAMIC", 1);
-	sm.AddMacro("PS_IF_IIP", static_cast<int>(index / 3u));
-	sm.AddMacro("PS_IF_DATE_INIT", date == 1);
-	sm.AddMacro("PS_IF_PRIMID", date != 0);
-	sm.AddMacro("PS_IF_NO_COLOR", 0);
-	sm.AddMacro("PS_IF_NO_COLOR1", 0);
-	sm.AddMacro("PS_IF_ZCLAMP", date != 1);
-#define D3D11_DYN(name, field, bits) \
-	place = D3D11KeyPlace(&at, bits); \
-	snprintf(buf, sizeof(buf), "((PsKey[%u] >> %uu) & %uu)", place >> 5, place & 31u, (1u << bits) - 1u); \
-	sm.AddMacro(#name, std::string(buf));
-	D3D11_PS_FIELDS(D3D11_DYN)
-#undef D3D11_DYN
-}
-
 void GSDevice11::SetupPS(const PSSelector& sel, const GSHWDrawConfig::PSConstantBuffer* cb, PSSamplerSelector ssel)
 {
 	ID3D11PixelShader* psp;
@@ -2149,21 +2066,21 @@ void GSDevice11::SetupPS(const PSSelector& sel, const GSHWDrawConfig::PSConstant
 		u32 key[4];
 		if (i == m_ps.end() && !m_test_dynamic && PSWorkerQueue(sel))
 			m_ps.try_emplace(sel);
-		D3D11DynamicKey(sel, key);
+		D3DDynamicKey(sel, key);
 		if (!m_ps_key_valid || memcmp(key, m_ps_key, sizeof(key)))
 		{
 			memcpy(m_ps_key, key, sizeof(key));
 			m_ps_key_valid = true;
 			m_ctx->UpdateSubresource(m_ps_key_cb.get(), 0, NULL, key, 0, 0);
 		}
-		psp = m_ps_dynamic[D3D11DynamicIndex(sel)].get();
+		psp = m_ps_dynamic[D3DDynamicIndex(sel)].get();
 		m_dynamic_draws++;
 		m_last_ps_valid = false;
 	}
 	else
 	{
 		ShaderMacro sm(m_shader_cache.GetFeatureLevel());
-		D3D11PixelShaderMacros(sm, sel);
+		D3DPixelShaderMacros(sm, sel);
 		wil::com_ptr_nothrow<ID3D11PixelShader> ps = m_shader_cache.GetPixelShader(m_dev.get(), tfx_fx_shader_raw, sm.GetPtr(), "ps_main");
 		m_shaders_built_here++;
 		i = m_ps.insert_or_assign(sel, std::move(ps)).first;
@@ -2429,7 +2346,7 @@ static void D3D11PSWorkerThread(void* data)
 		{
 			GSDevice11::ShaderMacro sm(w->fl);
 			wil::com_ptr_nothrow<ID3DBlob> blob;
-			D3D11PixelShaderMacros(sm, sel);
+			D3DPixelShaderMacros(sm, sel);
 			blob = w->cache->GetShaderBlob(D3D::ShaderType::Pixel, tfx_fx_shader_raw, sm.GetPtr(), "ps_main");
 			if (blob && w->d3d)
 				w->d3d->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &res.ps);

@@ -6,10 +6,11 @@
  * driver update that throws away the driver's own pipeline cache leaves
  * it standing. The warm-up thread is handed the list as it was loaded,
  * builds each through the caller's callback and returns what it built
- * through a lock-free queue made room for all of them up front: it never
- * waits, and it is done when the list is. The thread that draws takes
- * from that queue when it misses a pipeline, and builds the pipeline
- * itself when the warm-up thread has not got to it. */
+ * through a lock-free queue made room for all of them up front. Past the
+ * list it builds what the drawing thread queues for it, a bounded number
+ * at a time, and parks when there is nothing. The thread that draws
+ * takes from that queue when it misses a pipeline, and draws with one
+ * it has meanwhile. */
 #ifndef GS_D3D12_WARM_H
 #define GS_D3D12_WARM_H
 
@@ -56,11 +57,19 @@ typedef int (*gs_warm_build_t)(void *ud, const void *job, void *result);
 
 typedef struct gs_warm gs_warm_t;
 
-/* Starts the thread on a copy of @count jobs of @job_size bytes. NULL
- * when there are none, no memory or no thread - and always in a build
- * without threads: the caller then builds everything as it is drawn. */
+/* Starts the thread on a copy of @count jobs of @job_size bytes, with
+ * room for @queued queued jobs whose results are not taken yet. NULL
+ * when there are neither, no memory or no thread - and always in a
+ * build without threads: the caller then builds everything as it is
+ * drawn. */
 gs_warm_t *gs_warm_start(const void *jobs, size_t job_size, size_t count,
-      size_t result_size, gs_warm_build_t build, void *ud);
+      size_t queued, size_t result_size, gs_warm_build_t build, void *ud);
+/* The drawing thread: a job for after the list. False, and nothing
+ * queued, when the room is taken (results not taken back count) or
+ * there is no thread. Never waits. */
+bool gs_warm_queue(gs_warm_t *w, const void *job);
+/* Until the list's first @n jobs are done. For device creation only. */
+void gs_warm_wait(gs_warm_t *w, size_t n);
 /* The drawing thread: one finished result, or false when there is none
  * yet. Never waits. */
 bool gs_warm_take(gs_warm_t *w, void *result);

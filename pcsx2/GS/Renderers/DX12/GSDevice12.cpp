@@ -990,27 +990,41 @@ bool GSDevice12::Create()
 		return false;
 	}
 
-	/* The utility pipelines, then the listed draw pipelines, from here on
-	 * a thread of their own; without one, or after one of them could not
+	if (!BuildTFXShadersAhead())
+	{
+		log_cb(RETRO_LOG_ERROR, "Failed to compile the draw vertex shaders\n");
+		return false;
+	}
+
+	/* The utility pipelines, then the listed siblings and draw pipelines,
+	 * from here on a thread of their own, which also builds what a draw
+	 * queues; the first frame waits for the utility pipelines and the
+	 * listed siblings. Without the thread, or after one of them could not
 	 * be built on the last device, the utility pipelines here, so a
 	 * device that cannot have them is not made. */
-	const bool warming = StartTFXWarm();
+	size_t first = 0;
+	const bool warming = StartTFXWarm(&first);
+	m_test_dynamic = warming && m_tfx_ps_dynamic[0] && getenv("LRPS2_TEST_D3D12_DYNAMIC");
 
 	if (!CreateBuffers())
 		return false;
 
-	if (!warming || s_utility_build_failed)
+	if (warming)
 	{
-		for (u32 slot = 0; slot < UTIL_COUNT; slot++)
-		{
-			if (!(m_utility[slot] = CreateUtilityPipeline(slot)))
-			{
-				log_cb(RETRO_LOG_ERROR, "Failed to compile utility pipelines\n");
-				return false;
-			}
-		}
-		s_utility_build_failed = false;
+		gs_warm_wait(m_tfx_warm, first);
+		CollectWarmedTFXPipelines(nullptr, nullptr);
 	}
+	for (u32 slot = 0; slot < UTIL_COUNT; slot++)
+	{
+		if (m_utility[slot] && !s_utility_build_failed)
+			continue;
+		if (!(m_utility[slot] = CreateUtilityPipeline(slot)))
+		{
+			log_cb(RETRO_LOG_ERROR, "Failed to compile utility pipelines\n");
+			return false;
+		}
+	}
+	s_utility_build_failed = false;
 
 	InitializeState();
 	InitializeSamplers();
@@ -2068,6 +2082,7 @@ bool GSDevice12::CreateRootSignatures()
 	rsb.AddDescriptorTable(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 2, D3D12_SHADER_VISIBILITY_PIXEL);
 	rsb.AddDescriptorTable(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 0, NUM_TFX_SAMPLERS, D3D12_SHADER_VISIBILITY_PIXEL);
 	rsb.AddDescriptorTable(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 2, D3D12_SHADER_VISIBILITY_PIXEL);
+	rsb.Add32BitConstants(2, 4, D3D12_SHADER_VISIBILITY_PIXEL); /* PsKey: a dynamic sibling's */
 	if (!(m_tfx_root_signature = rsb.Create()))
 		return false;
 	return true;
@@ -2326,14 +2341,27 @@ void GSDevice12::DrainDebugMessages()
 
 void GSDevice12::DestroyResources()
 {
+	u32 i;
+
+	/* First: the warm-up thread reads the shaders built ahead. */
 	StopTFXWarm();
+	if (m_tfx_built_ahead || m_tfx_pipelines_here)
+		log_cb(RETRO_LOG_INFO, "D3D12 pipelines: %u shaders compiled on the render thread, %u pipelines built there (%u of them dynamic siblings), %u shaders built as the device was created, %u pipelines queued for the warm-up thread; %u draws drawn with a sibling\n",
+			m_tfx_shaders_here, m_tfx_pipelines_here, m_tfx_siblings_here, m_tfx_built_ahead, m_tfx_queued, m_tfx_sibling_draws);
+	m_tfx_shaders_here = m_tfx_pipelines_here = m_tfx_siblings_here = 0;
+	m_tfx_built_ahead = m_tfx_queued = m_tfx_sibling_draws = 0;
 
 	for (auto& it : m_tfx_pipelines)
-		DeferObjectDestruction(it.second.get());
+		if (it.second)
+			DeferObjectDestruction(it.second.get());
 	m_tfx_pipelines.clear();
 	m_last_tfx_pipeline = nullptr;
 	m_tfx_pixel_shaders.clear();
 	m_tfx_vertex_shaders.clear();
+	for (i = 0; i < C89_ARRAY_SIZE(m_tfx_vs); i++)
+		m_tfx_vs[i].reset();
+	for (i = 0; i < D3D_DYNAMIC_PS_COUNT; i++)
+		m_tfx_ps_dynamic[i].reset();
 	m_present = {};
 	m_utility = {};
 	m_utility_failed = false;
@@ -2402,64 +2430,14 @@ static const char* TFXVertexShaderMacros(GSDevice12::ShaderMacro& sm, GSHWDrawCo
 
 static void TFXPixelShaderMacros(GSDevice12::ShaderMacro& sm, const GSHWDrawConfig::PSSelector& sel)
 {
-	sm.AddMacro("PIXEL_SHADER", 1);
-	sm.AddMacro("PS_FST", sel.fst);
-	sm.AddMacro("PS_WMS", sel.wms);
-	sm.AddMacro("PS_WMT", sel.wmt);
-	sm.AddMacro("PS_ADJS", sel.adjs);
-	sm.AddMacro("PS_ADJT", sel.adjt);
-	sm.AddMacro("PS_AEM_FMT", sel.aem_fmt);
-	sm.AddMacro("PS_AEM", sel.aem);
-	sm.AddMacro("PS_TFX", sel.tfx);
-	sm.AddMacro("PS_TCC", sel.tcc);
-	sm.AddMacro("PS_DATE", sel.date);
-	sm.AddMacro("PS_ATST", static_cast<u32>(sel.atst));
-	sm.AddMacro("PS_AFAIL", static_cast<u32>(sel.afail));
-	sm.AddMacro("PS_FOG", sel.fog);
-	sm.AddMacro("PS_IIP", sel.iip);
-	sm.AddMacro("PS_BLEND_HW", sel.blend_hw);
-	sm.AddMacro("PS_A_MASKED", sel.a_masked);
-	sm.AddMacro("PS_FBA", sel.fba);
-	sm.AddMacro("PS_FBMASK", sel.fbmask);
-	sm.AddMacro("PS_LTF", sel.ltf);
-	sm.AddMacro("PS_TCOFFSETHACK", sel.tcoffsethack);
-	sm.AddMacro("PS_POINT_SAMPLER", sel.point_sampler);
-	sm.AddMacro("PS_REGION_RECT", sel.region_rect);
-	sm.AddMacro("PS_SHUFFLE", sel.shuffle);
-	sm.AddMacro("PS_SHUFFLE_SAME", sel.shuffle_same);
-	sm.AddMacro("PS_PROCESS_BA", sel.process_ba);
-	sm.AddMacro("PS_PROCESS_RG", sel.process_rg);
-	sm.AddMacro("PS_SHUFFLE_ACROSS", sel.shuffle_across);
-	sm.AddMacro("PS_READ16_SRC", sel.real16src);
-	sm.AddMacro("PS_CHANNEL_FETCH", sel.channel);
-	sm.AddMacro("PS_TALES_OF_ABYSS_HLE", sel.tales_of_abyss_hle);
-	sm.AddMacro("PS_URBAN_CHAOS_HLE", sel.urban_chaos_hle);
-	sm.AddMacro("PS_DST_FMT", sel.dst_fmt);
-	sm.AddMacro("PS_DEPTH_FMT", sel.depth_fmt);
-	sm.AddMacro("PS_PAL_FMT", sel.pal_fmt);
-	sm.AddMacro("PS_COLCLIP_HW", sel.colclip_hw);
-	sm.AddMacro("PS_RTA_CORRECTION", sel.rta_correction);
-	sm.AddMacro("PS_RTA_SRC_CORRECTION", sel.rta_source_correction);
-	sm.AddMacro("PS_COLCLIP", sel.colclip);
-	sm.AddMacro("PS_BLEND_A", sel.blend_a);
-	sm.AddMacro("PS_BLEND_B", sel.blend_b);
-	sm.AddMacro("PS_BLEND_C", sel.blend_c);
-	sm.AddMacro("PS_BLEND_D", sel.blend_d);
-	sm.AddMacro("PS_BLEND_MIX", sel.blend_mix);
-	sm.AddMacro("PS_ROUND_INV", sel.round_inv);
-	sm.AddMacro("PS_FIXED_ONE_A", sel.fixed_one_a);
-	sm.AddMacro("PS_PABE", sel.pabe);
-	sm.AddMacro("PS_DITHER", sel.dither);
-	sm.AddMacro("PS_DITHER_ADJUST", sel.dither_adjust);
-	sm.AddMacro("PS_ZCLAMP", sel.zclamp);
-	sm.AddMacro("PS_SCANMSK", sel.scanmsk);
-	sm.AddMacro("PS_SAMPLE_MAP", sel.sample_map);
-	sm.AddMacro("PS_NATIVE_TAPS", sel.native_taps);
-	sm.AddMacro("PS_AUTOMATIC_LOD", sel.automatic_lod);
-	sm.AddMacro("PS_MANUAL_LOD", sel.manual_lod);
-	sm.AddMacro("PS_TEX_IS_FB", sel.tex_is_fb);
-	sm.AddMacro("PS_NO_COLOR", sel.no_color);
-	sm.AddMacro("PS_NO_COLOR1", sel.no_color1);
+	D3DPixelShaderMacros(sm, sel);
+}
+
+/* A vertex shader's place: point_size changes nothing in it here. */
+static u32 TFXVertexShaderKey(GSHWDrawConfig::VSSelector sel)
+{
+	sel.point_size = 0;
+	return sel.key;
 }
 
 /* The pixel shader a pipeline is made with: without its second colour
@@ -2477,16 +2455,76 @@ static GSHWDrawConfig::PSSelector TFXEffectivePS(const GSDevice12::PipelineSelec
 	return pps;
 }
 
+/* The dynamic sibling of a draw pipeline: the pipeline's state, and of
+ * its pixel selector only what that state and the dynamic shader's
+ * interface take (the rest comes in PsKey). */
+static GSDevice12::PipelineSelector TFXSiblingOf(const GSDevice12::PipelineSelector& p)
+{
+	GSDevice12::PipelineSelector sib;
+	GSHWDrawConfig::BlendState pbs;
+	const u32 date = D3DDynamicIndex(p.ps) % 3u;
+
+	TFXEffectivePS(p, &pbs);
+	memcpy((void*)&sib, (const void*)&p, sizeof(sib));
+	memset((void*)&sib.ps, 0, sizeof(sib.ps));
+	sib.ps.iip        = p.ps.iip;
+	sib.ps.date       = (date == 1) ? 1 : (date == 2) ? 3 : 0;
+	sib.ps.colclip_hw = p.ps.colclip_hw;
+	sib.bs            = pbs;
+	sib.dynamic       = 1;
+	return sib;
+}
+
+/* Every vertex shader a draw can have, and the dynamic pixel shaders, as
+ * the game boots: then no draw compiles one. With the shader cache this
+ * is a lookup each. */
+bool GSDevice12::BuildTFXShadersAhead()
+{
+	u32 key, i;
+
+	for (key = 0; key < C89_ARRAY_SIZE(m_tfx_vs); key++)
+	{
+		const GSHWDrawConfig::VSSelector vsel(static_cast<u8>(key));
+		if (vsel.point_size || (vsel.expand != GSHWDrawConfig::VSExpand::None && !m_features.vs_expand))
+			continue;
+		ShaderMacro sm(m_shader_cache.GetFeatureLevel());
+		const char* entry_point = TFXVertexShaderMacros(sm, vsel);
+		if (!(m_tfx_vs[key] = m_shader_cache.GetVertexShader(tfx_fx_shader_raw, strlen(tfx_fx_shader_raw), sm.GetPtr(), entry_point)))
+			return false;
+		m_tfx_built_ahead++;
+	}
+	for (i = 0; i < D3D_DYNAMIC_PS_COUNT; i++)
+	{
+		ShaderMacro sm(m_shader_cache.GetFeatureLevel());
+		D3DDynamicMacros(sm, i);
+		/* (without them every miss builds its own pipeline, as before) */
+		if (!(m_tfx_ps_dynamic[i] = m_shader_cache.GetPixelShader(tfx_fx_shader_raw, strlen(tfx_fx_shader_raw), sm.GetPtr(), "ps_main")))
+		{
+			log_cb(RETRO_LOG_WARN, "GS: the D3D12 dynamic pixel shaders could not be built\n");
+			for (i = 0; i < D3D_DYNAMIC_PS_COUNT; i++)
+				m_tfx_ps_dynamic[i].reset();
+			break;
+		}
+		m_tfx_built_ahead++;
+	}
+	return true;
+}
+
 const ID3DBlob* GSDevice12::GetTFXVertexShader(GSHWDrawConfig::VSSelector sel)
 {
-	auto it = m_tfx_vertex_shaders.find(sel.key);
+	const u32 key = TFXVertexShaderKey(sel);
+	if (key < C89_ARRAY_SIZE(m_tfx_vs) && m_tfx_vs[key])
+		return m_tfx_vs[key].get();
+
+	auto it = m_tfx_vertex_shaders.find(key);
 	if (it != m_tfx_vertex_shaders.end())
 		return it->second.get();
 
 	ShaderMacro sm(m_shader_cache.GetFeatureLevel());
 	const char* entry_point = TFXVertexShaderMacros(sm, sel);
 	ComPtr<ID3DBlob> vs(m_shader_cache.GetVertexShader(tfx_fx_shader_raw, strlen(tfx_fx_shader_raw), sm.GetPtr(), entry_point));
-	it = m_tfx_vertex_shaders.emplace(sel.key, std::move(vs)).first;
+	m_tfx_shaders_here++;
+	it = m_tfx_vertex_shaders.emplace(key, std::move(vs)).first;
 	return it->second.get();
 }
 
@@ -2499,6 +2537,7 @@ const ID3DBlob* GSDevice12::GetTFXPixelShader(const GSHWDrawConfig::PSSelector& 
 	ShaderMacro sm(m_shader_cache.GetFeatureLevel());
 	TFXPixelShaderMacros(sm, sel);
 	ComPtr<ID3DBlob> ps(m_shader_cache.GetPixelShader(tfx_fx_shader_raw, strlen(tfx_fx_shader_raw), sm.GetPtr(), "ps_main"));
+	m_tfx_shaders_here++;
 	it = m_tfx_pixel_shaders.emplace(sel, std::move(ps)).first;
 	return it->second.get();
 }
@@ -2618,8 +2657,31 @@ GSDevice12::ComPtr<ID3D12PipelineState> GSDevice12::CreateTFXPipeline(const Pipe
 	return pipeline;
 }
 
-/* A pipeline no draw had yet: one the warm-up thread built, else built
- * here, and listed for the next start either way it was not listed. */
+/* A dynamic sibling no draw had yet, on the drawing thread: its shaders
+ * were all built as the device was created, so this is the driver's part
+ * alone, and no cache file is read or written for it. Listed, so that the
+ * next start builds it before the first frame. */
+GSDevice12::ComPtr<ID3D12PipelineState> GSDevice12::CreateTFXSibling(const PipelineSelector& sib)
+{
+	const ID3DBlob* vs = GetTFXVertexShader(sib.vs);
+	D3D12::GraphicsPipelineBuilder gpb;
+	ComPtr<ID3D12PipelineState> pso;
+
+	if (!vs)
+		return pso;
+	FillTFXPipeline(gpb, sib, vs, m_tfx_ps_dynamic[D3DDynamicIndex(sib.ps)].get());
+	if ((pso = gpb.Create(m_device.get())))
+	{
+		m_tfx_pipelines_here++;
+		m_tfx_siblings_here++;
+		gs_warm_list_add(&m_tfx_list, &sib);
+	}
+	return pso;
+}
+
+/* A pipeline no draw had yet, with no warm-up thread or no dynamic
+ * shaders: one the warm-up thread built, else built here, and listed for
+ * the next start either way it was not listed. */
 GSDevice12::TFXPipelineMap::iterator GSDevice12::AddMissingTFXPipeline(const PipelineSelector& p)
 {
 	TFXPipelineMap::iterator it;
@@ -2628,19 +2690,76 @@ GSDevice12::TFXPipelineMap::iterator GSDevice12::AddMissingTFXPipeline(const Pip
 		return it;
 
 	ComPtr<ID3D12PipelineState> pipeline(CreateTFXPipeline(p));
+	m_tfx_pipelines_here++;
 	if (pipeline)
 		gs_warm_list_add(&m_tfx_list, &p);
-	return m_tfx_pipelines.emplace(p, std::move(pipeline)).first;
+	return m_tfx_pipelines.insert_or_assign(p, std::move(pipeline)).first;
 }
 
-const ID3D12PipelineState* GSDevice12::GetTFXPipeline(const PipelineSelector& p)
+/* A draw whose pipeline is not ready: queued for the warm-up thread when
+ * it is not yet, and drawn meanwhile with its dynamic sibling (whose
+ * PsKey BindDrawPipeline sets). A full queue leaves it to the next draw. */
+const ID3D12PipelineState* GSDevice12::MissedTFXPipeline(const PipelineSelector& p, bool* dynamic)
 {
+	TFXPipelineMap::iterator it;
+	PipelineSelector sib;
+	WarmJob job;
+
+	if (!m_tfx_warm || !m_tfx_ps_dynamic[0])
+	{
+		it = m_tfx_pipelines.find(p);
+		if (it == m_tfx_pipelines.end() || !it->second)
+			it = AddMissingTFXPipeline(p);
+		m_last_tfx_pipeline_selector = p;
+		m_last_tfx_pipeline          = it->second.get();
+		return m_last_tfx_pipeline;
+	}
+
+	if (CollectWarmedTFXPipelines(&p, &it) && it->second && !m_test_dynamic)
+	{
+		m_last_tfx_pipeline_selector = p;
+		m_last_tfx_pipeline          = it->second.get();
+		return m_last_tfx_pipeline;
+	}
+	if (!m_test_dynamic && m_tfx_pipelines.find(p) == m_tfx_pipelines.end())
+	{
+		memset((void*)&job, 0, sizeof(job));
+		memcpy((void*)&job.p, (const void*)&p, sizeof(p));
+		job.utility = UTIL_COUNT;
+		if (gs_warm_queue(m_tfx_warm, &job))
+		{
+			/* (null until it lands) */
+			m_tfx_pipelines.emplace(p, ComPtr<ID3D12PipelineState>());
+			gs_warm_list_add(&m_tfx_list, &p);
+			m_tfx_queued++;
+		}
+	}
+
+	sib = TFXSiblingOf(p);
+	it  = m_tfx_pipelines.find(sib);
+	if (it == m_tfx_pipelines.end() || !it->second)
+	{
+		ComPtr<ID3D12PipelineState> pso(CreateTFXSibling(sib));
+		if (!pso)
+			return nullptr;
+		it = m_tfx_pipelines.insert_or_assign(sib, std::move(pso)).first;
+	}
+	/* (looked for again by the next draw: its own may land) */
+	m_last_tfx_pipeline = nullptr;
+	m_tfx_sibling_draws++;
+	*dynamic = true;
+	return it->second.get();
+}
+
+const ID3D12PipelineState* GSDevice12::GetTFXPipeline(const PipelineSelector& p, bool* dynamic)
+{
+	*dynamic = false;
 	if (m_last_tfx_pipeline && m_last_tfx_pipeline_selector == p)
 		return m_last_tfx_pipeline;
 
 	TFXPipelineMap::iterator it = m_tfx_pipelines.find(p);
-	if (it == m_tfx_pipelines.end())
-		it = AddMissingTFXPipeline(p);
+	if (unlikely(it == m_tfx_pipelines.end() || !it->second || m_test_dynamic))
+		return MissedTFXPipeline(p, dynamic);
 
 	m_last_tfx_pipeline_selector = p;
 	m_last_tfx_pipeline          = it->second.get();
@@ -2651,15 +2770,18 @@ const ID3D12PipelineState* GSDevice12::GetTFXPipeline(const PipelineSelector& p)
 
 /* Bumped with the shaders, and whenever what a selector stands for
  * changes; the record size is checked as well. */
-static constexpr u32 TFX_LIST_VERSION = (SHADER_CACHE_VERSION << 8) | 1;
+static constexpr u32 TFX_LIST_VERSION = (SHADER_CACHE_VERSION << 8) | 2;
+
+/* Queued pipelines the warm-up thread has not handed back, at most. */
+#define D3D12_TFX_QUEUED 64u
 
 bool GSDevice12::s_utility_build_failed = false;
 
-bool GSDevice12::StartTFXWarm()
+bool GSDevice12::StartTFXWarm(size_t* first)
 {
 	const std::string path(m_shader_cache.GetPipelineListFileName());
 	WarmJob* jobs;
-	size_t   i, n;
+	size_t   i, n, at;
 
 	gs_warm_list_free(&m_tfx_list);
 	m_tfx_list_loaded = 0;
@@ -2673,14 +2795,29 @@ bool GSDevice12::StartTFXWarm()
 		return false;
 	for (i = 0; i < UTIL_COUNT; i++)
 		jobs[i].utility = (u32)i;
+	/* the listed siblings first: the first frame waits for them and the
+	 * utility pipelines, and for nothing else */
+	at = UTIL_COUNT;
 	for (i = 0; i < m_tfx_list.count; i++)
 	{
-		memcpy((void*)&jobs[UTIL_COUNT + i].p, m_tfx_list.recs + i * m_tfx_list.rec_size, sizeof(PipelineSelector));
-		jobs[UTIL_COUNT + i].utility = UTIL_COUNT;
+		const PipelineSelector* p = reinterpret_cast<const PipelineSelector*>(m_tfx_list.recs + i * m_tfx_list.rec_size);
+		if (!p->dynamic || !m_tfx_ps_dynamic[0])
+			continue;
+		memcpy((void*)&jobs[at].p, (const void*)p, sizeof(PipelineSelector));
+		jobs[at++].utility = UTIL_COUNT;
+	}
+	*first = at;
+	for (i = 0; i < m_tfx_list.count; i++)
+	{
+		const PipelineSelector* p = reinterpret_cast<const PipelineSelector*>(m_tfx_list.recs + i * m_tfx_list.rec_size);
+		if (p->dynamic)
+			continue;
+		memcpy((void*)&jobs[at].p, (const void*)p, sizeof(PipelineSelector));
+		jobs[at++].utility = UTIL_COUNT;
 	}
 
 	if (m_shader_cache.OpenSnapshot(&m_tfx_warm_cache))
-		m_tfx_warm = gs_warm_start(jobs, sizeof(WarmJob), n, sizeof(TFXWarmResult), BuildWarmedTFXPipeline, this);
+		m_tfx_warm = gs_warm_start(jobs, sizeof(WarmJob), at, D3D12_TFX_QUEUED, sizeof(TFXWarmResult), BuildWarmedTFXPipeline, this);
 	else
 		log_cb(RETRO_LOG_WARN, "GS: the shader cache could not be opened for the warm-up thread\n");
 	free(jobs);
@@ -2714,7 +2851,8 @@ bool GSDevice12::CollectWarmedTFXPipelines(const PipelineSelector* want, TFXPipe
 		}
 		std::pair<TFXPipelineMap::iterator, bool> ins(
 			m_tfx_pipelines.emplace(r.p, ComPtr<ID3D12PipelineState>()));
-		if (ins.second)
+		/* (a queued one waits null; one built here meanwhile keeps its own) */
+		if (!ins.first->second)
 			*ins.first->second.put() = r.pso;
 		else
 			r.pso->Release();
@@ -2900,6 +3038,7 @@ int GSDevice12::BuildWarmedTFXPipeline(void* ud, const void* job, void* result)
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc;
 	ComPtr<ID3DBlob> vs, ps;
 	ComPtr<ID3D12PipelineState> pso;
+	const u32 vkey = TFXVertexShaderKey(p->vs);
 	int built = 0;
 
 	memset((void*)r, 0, sizeof(*r));
@@ -2913,12 +3052,18 @@ int GSDevice12::BuildWarmedTFXPipeline(void* ud, const void* job, void* result)
 		if (p->topology > 2 || p->bs.op > 2)
 			return 0;
 		pps = TFXEffectivePS(*p, &pbs);
+		/* (the device's own built ahead: not changed while this runs) */
+		if (vkey < C89_ARRAY_SIZE(self->m_tfx_vs) && self->m_tfx_vs[vkey])
+			vs = self->m_tfx_vs[vkey];
+		else
 		{
 			ShaderMacro sm(fl);
 			const char* entry = TFXVertexShaderMacros(sm, p->vs);
 			vs = WarmShader(self, D3D12ShaderCache::EntryType::VertexShader, tfx_fx_shader_raw, sm, entry, &r->vs_key, &r->vs_blob);
 		}
-		if (vs)
+		if (vs && p->dynamic)
+			ps = self->m_tfx_ps_dynamic[D3DDynamicIndex(p->ps)];
+		else if (vs)
 		{
 			ShaderMacro sm(fl);
 			TFXPixelShaderMacros(sm, pps);
@@ -2949,13 +3094,24 @@ int GSDevice12::BuildWarmedTFXPipeline(void* ud, const void* job, void* result)
 
 bool GSDevice12::BindDrawPipeline(const PipelineSelector& p)
 {
-	const ID3D12PipelineState* pipeline = GetTFXPipeline(p);
+	bool dynamic;
+	const ID3D12PipelineState* pipeline = GetTFXPipeline(p, &dynamic);
 	if (!pipeline)
 		return false;
 
 	SetPipeline(pipeline);
 
-	return ApplyTFXState();
+	if (!ApplyTFXState())
+		return false;
+	/* (after the root signature is bound: its arguments go with it) */
+	if (dynamic)
+	{
+		GSHWDrawConfig::BlendState pbs;
+		u32 key[4];
+		D3DDynamicKey(TFXEffectivePS(p, &pbs), key);
+		GetCommandList()->SetGraphicsRoot32BitConstants(TFX_ROOT_SIGNATURE_PARAM_PS_KEY, 4, key, 0);
+	}
+	return true;
 }
 
 void GSDevice12::InitializeState()

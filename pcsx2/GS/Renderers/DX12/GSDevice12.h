@@ -23,6 +23,7 @@
 #include "D3D12StreamBuffer.h"
 #include "GSTexture12.h"
 #include "D3D12ShaderCache.h"
+#include "GS/Renderers/DX11/D3DDynamicPS.h"
 #include "D3D12StreamBuffer.h"
 
 #include "GS/GSVector.h"
@@ -80,6 +81,9 @@ public:
 				u32 topology : 2;
 				u32 rt : 1;
 				u32 ds : 1;
+				/* a dynamic sibling: ps holds only what the pipeline's
+				 * state and the shader's interface take from it */
+				u32 dynamic : 1;
 			};
 
 			u32 key;
@@ -160,6 +164,7 @@ public:
 		TFX_ROOT_SIGNATURE_PARAM_PS_TEXTURES = 3,
 		TFX_ROOT_SIGNATURE_PARAM_PS_SAMPLERS = 4,
 		TFX_ROOT_SIGNATURE_PARAM_PS_RT_TEXTURES = 5,
+		TFX_ROOT_SIGNATURE_PARAM_PS_KEY = 6,
 
 		UTILITY_ROOT_SIGNATURE_PARAM_PUSH_CONSTANTS = 0,
 		UTILITY_ROOT_SIGNATURE_PARAM_PS_TEXTURES = 1,
@@ -207,8 +212,27 @@ private:
 	};
 	std::array<ComPtr<ID3D12PipelineState>, UTIL_COUNT> m_utility{};
 
+	/* Every vertex shader a draw can have (by VSSelector key) and the
+	 * dynamic pixel shaders, built as the device is created and not
+	 * changed after: the warm-up thread reads them. */
+	ComPtr<ID3DBlob> m_tfx_vs[64];
+	ComPtr<ID3DBlob> m_tfx_ps_dynamic[D3D_DYNAMIC_PS_COUNT];
+	/* the drawing thread's: shaders only a device without a warm-up
+	 * thread builds as it draws */
 	std::unordered_map<u32, ComPtr<ID3DBlob>> m_tfx_vertex_shaders;
 	std::unordered_map<GSHWDrawConfig::PSSelector, ComPtr<ID3DBlob>, GSHWDrawConfig::PSSelectorHash> m_tfx_pixel_shaders;
+	/* LRPS2_TEST_D3D12_DYNAMIC: every draw with its dynamic sibling */
+	bool m_test_dynamic = false;
+	/* Counted for the log at teardown: shaders compiled and pipelines
+	 * built on the drawing thread (siblings among them), built as the
+	 * device was created, queued for the warm-up thread, and draws drawn
+	 * with a sibling. */
+	u32 m_tfx_shaders_here = 0;
+	u32 m_tfx_pipelines_here = 0;
+	u32 m_tfx_siblings_here = 0;
+	u32 m_tfx_built_ahead = 0;
+	u32 m_tfx_queued = 0;
+	u32 m_tfx_sibling_draws = 0;
 	typedef std::unordered_map<PipelineSelector, ComPtr<ID3D12PipelineState>, PipelineSelectorHash> TFXPipelineMap;
 	TFXPipelineMap m_tfx_pipelines;
 	/* The draws of one frame come in runs that share a pipeline, and the
@@ -270,11 +294,14 @@ private:
 	const ID3DBlob* GetTFXVertexShader(GSHWDrawConfig::VSSelector sel);
 	const ID3DBlob* GetTFXPixelShader(const GSHWDrawConfig::PSSelector& sel);
 	ComPtr<ID3D12PipelineState> CreateTFXPipeline(const PipelineSelector& p);
-	const ID3D12PipelineState* GetTFXPipeline(const PipelineSelector& p);
+	const ID3D12PipelineState* GetTFXPipeline(const PipelineSelector& p, bool* dynamic);
 	__noinline TFXPipelineMap::iterator AddMissingTFXPipeline(const PipelineSelector& p);
+	__noinline const ID3D12PipelineState* MissedTFXPipeline(const PipelineSelector& p, bool* dynamic);
+	bool BuildTFXShadersAhead();
+	ComPtr<ID3D12PipelineState> CreateTFXSibling(const PipelineSelector& sib);
 	void FillTFXPipeline(D3D12::GraphicsPipelineBuilder& gpb, const PipelineSelector& p,
 		const ID3DBlob* vs, const ID3DBlob* ps) const;
-	bool StartTFXWarm();
+	bool StartTFXWarm(size_t* first);
 	void StopTFXWarm();
 	bool CollectWarmedTFXPipelines(const PipelineSelector* want, TFXPipelineMap::iterator* found);
 	void KeepTFXWarmBlobs(const TFXWarmResult& r);

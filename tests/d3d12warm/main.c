@@ -233,7 +233,7 @@ static void check_thread(void)
          want++;
    }
 
-   w = gs_warm_start(jobs, sizeof(job_t), JOBS, sizeof(res_t), build, NULL);
+   w = gs_warm_start(jobs, sizeof(job_t), JOBS, 0, sizeof(res_t), build, NULL);
 #ifdef HAVE_THREADS
    check(w != NULL, "the thread starts");
    /* the jobs are its own copy */
@@ -277,7 +277,7 @@ static void check_thread(void)
       jobs[i].v    = i;
       jobs[i].work = 200000u;
    }
-   w = gs_warm_start(jobs, sizeof(job_t), JOBS, sizeof(res_t), build, NULL);
+   w = gs_warm_start(jobs, sizeof(job_t), JOBS, 0, sizeof(res_t), build, NULL);
    check(w != NULL, "the thread starts again");
    while (!gs_warm_take(w, &r))
       ;
@@ -288,7 +288,7 @@ static void check_thread(void)
    gs_warm_free(w);
 
    /* freed before it finishes, with nothing taken */
-   w = gs_warm_start(jobs, sizeof(job_t), JOBS, sizeof(res_t), build, NULL);
+   w = gs_warm_start(jobs, sizeof(job_t), JOBS, 0, sizeof(res_t), build, NULL);
    gs_warm_free(w);
 #else
    check(w == NULL, "no thread without threads");
@@ -297,9 +297,113 @@ static void check_thread(void)
    gs_warm_free(w);
    (void)got; (void)bad; (void)want; (void)seen; (void)idle; (void)last; (void)order_bad;
 #endif
-   check(gs_warm_start(jobs, sizeof(job_t), 0, sizeof(res_t), build, NULL) == NULL, "no jobs, no thread");
+   check(gs_warm_start(jobs, sizeof(job_t), 0, 0, sizeof(res_t), build, NULL) == NULL, "no jobs, no thread");
    free(jobs);
    free(seen);
+}
+
+#define LISTED 300
+#define ROOM   8
+
+/* Past the list: jobs the drawing thread queues, a bounded number whose
+ * results are not taken yet; one it declines gives its room back. */
+static void check_queue(void)
+{
+   job_t     *jobs = (job_t*)malloc(LISTED * sizeof(job_t));
+   gs_warm_t *w;
+   res_t      r;
+   job_t      j;
+   unsigned   i, got, bad = 0, queued, want, next;
+   unsigned long idle;
+
+   for (i = 0; i < LISTED; i++)
+   {
+      jobs[i].v    = i;
+      jobs[i].work = 5000u;
+   }
+   w = gs_warm_start(jobs, sizeof(job_t), LISTED, ROOM, sizeof(res_t), build, NULL);
+#ifdef HAVE_THREADS
+   check(w != NULL, "the thread starts with room to queue");
+   /* the first part of the list, all of it built once this returns */
+   gs_warm_wait(w, 100);
+   for (got = 0; got < 100 && gs_warm_take(w, &r); )
+   {
+      if (r.v >= LISTED || r.sum != job_sum(&jobs[r.v]))
+         bad++;
+      if (r.v < 100)
+         got++;
+   }
+   check(!bad, "the waited-for part came back right");
+   check(got == 100 - 100 / 7 - (100 % 7 > 3), "all of the waited-for part was there");
+   gs_warm_wait(w, LISTED);
+   while (gs_warm_take(w, &r))
+      ;
+
+   /* the room: no more than ROOM at once */
+   j.work = 3000u;
+   for (queued = 0, next = 1000; queued < ROOM + 4; queued++, next++)
+   {
+      j.v = next;
+      if (!gs_warm_queue(w, &j))
+         break;
+   }
+   check(queued == ROOM, "as many queued as there is room for");
+   /* taken back, declined ones included, the room comes back */
+   want = 0;
+   for (i = 1000; i < next; i++)
+      if (i % 7u != 3u)
+         want++;
+   for (got = 0, idle = 0; got < want && idle < 400000000ul; )
+   {
+      if (!gs_warm_take(w, &r))
+      {
+         idle++;
+         continue;
+      }
+      idle = 0;
+      j.v = r.v;
+      if (r.v < 1000 || r.v >= next || r.sum != job_sum(&j))
+         bad++;
+      got++;
+   }
+   check(!bad && got == want, "every queued job it built came back, right");
+   /* (a declined one's record may still be in flight: drain them) */
+   for (idle = 0, queued = 0; queued < ROOM && idle < 400000000ul; idle++)
+   {
+      j.v = next;
+      if (gs_warm_queue(w, &j))
+      {
+         queued++;
+         next++;
+         continue;
+      }
+      while (gs_warm_take(w, &r))
+         ;
+   }
+   check(queued == ROOM, "the room came back, declined ones too");
+   /* freed with queued jobs not taken back */
+   gs_warm_free(w);
+
+   /* no list, only queued jobs */
+   w = gs_warm_start(NULL, sizeof(job_t), 0, ROOM, sizeof(res_t), build, NULL);
+   check(w != NULL, "a thread for queued jobs alone");
+   gs_warm_wait(w, 5);
+   j.v = 4; j.work = 10u;
+   check(gs_warm_queue(w, &j), "queued with no list");
+   for (idle = 0; !gs_warm_take(w, &r) && idle < 400000000ul; idle++)
+      ;
+   check(r.v == 4 && r.sum == job_sum(&j), "and built");
+   /* stopped while it waits for a job */
+   gs_warm_free(w);
+#else
+   check(w == NULL, "no thread without threads");
+   j.v = 1; j.work = 1u;
+   check(!gs_warm_queue(w, &j), "nothing queued without threads");
+   gs_warm_wait(w, LISTED);
+   gs_warm_free(w);
+   (void)r; (void)i; (void)got; (void)bad; (void)queued; (void)want; (void)next; (void)idle;
+#endif
+   free(jobs);
 }
 
 int main(int argc, char **argv)
@@ -311,6 +415,7 @@ int main(int argc, char **argv)
    }
    check_list(argv[1]);
    check_thread();
+   check_queue();
    if (failures)
    {
       printf("d3d12warm: FAILED (%u)\n", failures);

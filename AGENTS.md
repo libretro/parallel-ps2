@@ -174,7 +174,9 @@ a first draw free of a hitch.
 Where the renderers stand: Vulkan builds the utility pipelines and the
 listed TFX pipelines on a warm-up thread, and draws a key it has not
 built with a dynamic sibling while its own pipeline is built ahead;
-D3D12 warms from the pipeline list on a thread (`GSD3D12Warm`);
+D3D12 builds its shaders as the device is created and draws a pipeline
+not ready with a dynamic sibling while its warm-up thread
+(`GSD3D12Warm`) builds its own;
 paraLLEl-GS builds its pipelines ahead on its own threads. The rule is
 not met yet. These draw paths still compile, and each one is a bug to
 remove, most-played first:
@@ -188,9 +190,20 @@ remove, most-played first:
   from (`TFXLibraryCover`) before the device is handed over, and the draw
   path only makes output parts (no shader) and links; `tests/vkpipewarm`
   holds a run from nothing to none built on the render thread.
-- D3D12, `GSDevice12::GetTFXPipeline`: a miss creates the PSO
-  (`AddMissingTFXPipeline`), and `GetTFXVertexShader` and
-  `GetTFXPixelShader` compile on a miss.
+- D3D12: no shader is compiled on the draw path. Every vertex shader and
+  the dynamic pixel shaders (D3D11's, the key in root constants) are
+  built as the device is created; a draw whose pipeline is not ready
+  queues it for the warm-up thread and draws with its dynamic sibling,
+  and the first frame waits for the utility pipelines and the listed
+  siblings. A PSO bakes blend, depth, stencil, colour mask, topology and
+  formats, so a sibling for state no earlier session drew is still
+  created on the draw path (`CreateTFXSibling`: the driver's part, no
+  HLSL), and listed for the next start; it goes when that state is done
+  in the shader. Without threads every miss builds its own pipeline
+  there (`AddMissingTFXPipeline`). `tests/d3dswdraw` holds every case to
+  no shader compiled and no pipeline but a sibling built on the render
+  thread, none at all drawn again with the list, and to D3D12's picture
+  drawn with siblings alone.
 - D3D11 without threads, or on a device the frontend made
   single-threaded: without the worker a pixel selector not built yet is
   compiled on the draw path, and on a single-threaded device the

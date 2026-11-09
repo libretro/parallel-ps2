@@ -529,6 +529,7 @@ target_compile_options(PCSX2_FLAGS INTERFACE "-DHAVE_D3D12")
 	)
 	list(APPEND pcsx2GSHeaders
 		GS/Renderers/DX11/D3D.h
+		GS/Renderers/DX11/D3DDynamicPS.h
 		GS/Renderers/DX11/GSDevice11.h
 		GS/Renderers/DX11/GSTexture11.h
 		GS/Renderers/DX11/D3D11ShaderCache.h

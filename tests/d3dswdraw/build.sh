@@ -13,7 +13,11 @@
 # and each case drawn with dynamic pixel shaders alone
 # (LRPS2_TEST_D3D11_DYNAMIC) must present D3D11's picture (a channel
 # may round 2 apart: the specialised shader folds what the dynamic one
-# computes).
+# computes). D3D12 must compile no shader on the render thread and build
+# no pipeline there but a dynamic sibling, none at all when the case is
+# drawn again with the pipeline list it left, and each case drawn with
+# its siblings alone (LRPS2_TEST_D3D12_DYNAMIC) must present D3D12's
+# picture the same way.
 #
 # MSYS2 MINGW64 runs it on the system's D3D. Elsewhere it runs under wine
 # with DXVK and vkd3d-proton, any Vulkan device (lavapipe will do), and
@@ -101,6 +105,17 @@ same() {
 		failed=1
 	fi
 }
+# d12_built <log> sibling|none: what D3D12 built on the render thread
+d12_built() {
+	line=$(grep 'D3D12 pipelines:' "$SCRATCH/$1.log" | tr -d '\r')
+	sh=$(echo "$line" | sed -n 's/.*D3D12 pipelines: \([0-9]*\) shaders compiled on the render thread.*/\1/p')
+	pl=$(echo "$line" | sed -n 's/.* \([0-9]*\) pipelines built there (\([0-9]*\) of them.*/\1/p')
+	sb=$(echo "$line" | sed -n 's/.* pipelines built there (\([0-9]*\) of them.*/\1/p')
+	if [ "${sh:-x}" != 0 ] || [ -z "$pl" ] || { [ $2 = none ] && [ "$pl" != 0 ]; } || [ "$pl" != "$sb" ]; then
+		echo "  FAIL: $1 on the render thread: ${sh:-?} shaders compiled, ${pl:-?} pipelines built (${sb:-?} siblings)"
+		failed=1
+	fi
+}
 mkdir -p "$SCRATCH/sys"
 # (the core's info lines too: D3D11's shader counts)
 D3DSW_VERBOSE=1; export D3DSW_VERBOSE
@@ -128,6 +143,14 @@ while read c pm; do
 	LRPS2_TEST_D3D11_DYNAMIC=1; export LRPS2_TEST_D3D11_DYNAMIC
 	draw D3D11dyn_$c "$c.bin" D3D11 && same D3D11_$c D3D11dyn_$c 2 0
 	unset LRPS2_TEST_D3D11_DYNAMIC
+	# D3D12 compiles no shader on the draw path, and builds no pipeline
+	# there but a sibling of the dynamic shader, listed for the next start:
+	# drawn again, none.
+	d12_built D3D12_$c sibling
+	draw D3D12w_$c "$c.bin" D3D12 && same D3D12_$c D3D12w_$c 2 0 && d12_built D3D12w_$c none
+	LRPS2_TEST_D3D12_DYNAMIC=1; export LRPS2_TEST_D3D12_DYNAMIC
+	draw D3D12dyn_$c "$c.bin" D3D12 && same D3D12_$c D3D12dyn_$c 2 0
+	unset LRPS2_TEST_D3D12_DYNAMIC
 	echo "  $c: $(sed -n 's/^d3dswdraw: D3D12 //p' "$SCRATCH/D3D12_$c.log" | tr -d '\r')"
 done <<EOF
 aa1_small 20
