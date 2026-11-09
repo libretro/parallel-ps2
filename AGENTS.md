@@ -29,6 +29,13 @@ section that covers the code you touch before touching it.
   vcxproj.
 - **Optional features are neutral when off.** A setting off costs
   nothing over the code without it.
+- **Never compile a pipeline on the draw path.** After boot, nothing on
+  the GS thread, the EE thread or inside `retro_run` creates a shader,
+  a pipeline, a library or a GL program, or waits for one to be
+  created. This outranks every other renderer change: a commit may
+  move a compile off the draw path, and none may add one, not even for
+  a state seen once. The draw paths that still compile are listed in
+  "Shader compilation and stutter"; removing them comes first.
 
 ## Speed of light
 
@@ -168,9 +175,35 @@ Where the renderers stand: Vulkan builds the utility pipelines and the
 listed TFX pipelines on a warm-up thread, and draws a key it has not
 built with a dynamic sibling while its own pipeline is built ahead;
 D3D12 warms from the pipeline list on a thread (`GSD3D12Warm`);
-paraLLEl-GS builds its pipelines ahead on its own threads. A key no
-sibling covers is still built on the draw path. That is the gap the
-invariants below close; nothing may widen it.
+paraLLEl-GS builds its pipelines ahead on its own threads. The rule is
+not met yet. These draw paths still compile, and each one is a bug to
+remove, most-played first:
+
+- Vulkan, `GSDeviceVK::GetTFXPipelineMissed`: a key with no ready
+  sibling is built whole (`BuildTFXPipeline`), and with no warm-up
+  thread every key is. `GetTFXSibling` builds a sibling whole where
+  there are no graphics pipeline libraries, and `GetTFXLibrary` builds
+  the vertex/output library there. `tests/vkpipewarm` still expects a
+  run from nothing to build some on the render thread.
+- D3D12, `GSDevice12::GetTFXPipeline`: a miss creates the PSO
+  (`AddMissingTFXPipeline`), and `GetTFXVertexShader` and
+  `GetTFXPixelShader` compile on a miss.
+- D3D11, `GSDevice11::SetupVS` and `SetupPS`: a miss compiles the
+  shader.
+- OpenGL, `GSDeviceOGL::SetupPipeline`: a miss compiles and links the
+  program.
+- paraLLEl-GS: from nothing, a pipeline the list did not name is built
+  on the frame's threads (`tests/pgspipelines` allows up to a first
+  run's count).
+
+The way out is the same everywhere: a small covering set built before
+the first frame, so that every key has a correct pipeline ready, and
+the specialised pipelines built by workers. On Vulkan that means a
+fragment library whose key holds only what shapes the module's
+interface, and a sibling fast-linked (no link-time optimisation) from
+libraries that were all built ahead. Fast-linking such libraries, and
+creating a library with no shader in it, are the only pipeline calls
+the draw path may make.
 
 ### Invariants
 
@@ -189,7 +222,9 @@ invariants below close; nothing may widen it.
 3. **A miss is a state machine.** Unseen, queued, words ready, pipeline
    queued, pipeline landed. The draw takes the best ready step: the
    specialised pipeline, else a ready sibling while the specialisation is
-   queued, and only with neither a synchronous build. Count each step.
+   queued. There is no synchronous step: a renderer that still builds
+   on a miss carries a listed violation, counted as such and gated so
+   the count only falls. Count each step.
 4. **Workers never hold up a draw.** Compile queues are bounded, and
    admission counts results not yet drained as well as work not yet
    done. A full queue defers speculative work and the draw goes ahead
