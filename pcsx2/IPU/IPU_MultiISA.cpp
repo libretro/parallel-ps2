@@ -775,7 +775,7 @@ __ri static bool mpeg2sliceIDEC(void)
 								return false;
 							}
 
-							uint read = ipu_fifo.out.write((u32*)ipu_decoder_data_ptr(&decoder), decoder.ipu0_data);
+							uint read = ipu_fifo_out_write((u32*)ipu_decoder_data_ptr(&decoder), decoder.ipu0_data);
 							ipu_decoder_advance(&decoder, read);
 
 							if (decoder.ipu0_data != 0)
@@ -1178,7 +1178,7 @@ __fi static bool mpeg2_slice(void)
 					return false;
 				}
 
-				uint read = ipu_fifo.out.write((u32*)ipu_decoder_data_ptr(&decoder), decoder.ipu0_data);
+				uint read = ipu_fifo_out_write((u32*)ipu_decoder_data_ptr(&decoder), decoder.ipu0_data);
 				ipu_decoder_advance(&decoder, read);
 
 				if (decoder.ipu0_data != 0)
@@ -1400,7 +1400,7 @@ __ri static bool ipuCSC(tIPU_CMD_CSC csc)
 		if (csc.OFM)
 		{
 			::ipu_dither(&decoder.rgb32, &decoder.rgb16, csc.DTE);
-			ipu_cmd.pos[1] += ipu_fifo.out.write(((u32*) & decoder.rgb16) + 4 * ipu_cmd.pos[1], 32 - ipu_cmd.pos[1]);
+			ipu_cmd.pos[1] += ipu_fifo_out_write(((u32*) & decoder.rgb16) + 4 * ipu_cmd.pos[1], 32 - ipu_cmd.pos[1]);
 			if (ipu_cmd.pos[1] < 32)
 			{
 				IPUCoreStatus.WaitingOnIPUFrom = true;
@@ -1409,7 +1409,7 @@ __ri static bool ipuCSC(tIPU_CMD_CSC csc)
 		}
 		else
 		{
-			ipu_cmd.pos[1] += ipu_fifo.out.write(((u32*) & decoder.rgb32) + 4 * ipu_cmd.pos[1], 64 - ipu_cmd.pos[1]);
+			ipu_cmd.pos[1] += ipu_fifo_out_write(((u32*) & decoder.rgb32) + 4 * ipu_cmd.pos[1], 64 - ipu_cmd.pos[1]);
 			if (ipu_cmd.pos[1] < 64)
 			{
 				IPUCoreStatus.WaitingOnIPUFrom = true;
@@ -1437,7 +1437,7 @@ __ri static bool ipuPACK(tIPU_CMD_CSC csc)
 
 		if (csc.OFM)
 		{
-			ipu_cmd.pos[1] += ipu_fifo.out.write(((u32*) & decoder.rgb16) + 4 * ipu_cmd.pos[1], 32 - ipu_cmd.pos[1]);
+			ipu_cmd.pos[1] += ipu_fifo_out_write(((u32*) & decoder.rgb16) + 4 * ipu_cmd.pos[1], 32 - ipu_cmd.pos[1]);
 			if (ipu_cmd.pos[1] < 32)
 			{
 				IPUCoreStatus.WaitingOnIPUFrom = true;
@@ -1447,7 +1447,7 @@ __ri static bool ipuPACK(tIPU_CMD_CSC csc)
 		else
 		{
 			ipu_vq(&decoder.rgb16, g_ipu_indx4, g_ipu_vqclut);
-			ipu_cmd.pos[1] += ipu_fifo.out.write(((u32*)g_ipu_indx4) + 4 * ipu_cmd.pos[1], 8 - ipu_cmd.pos[1]);
+			ipu_cmd.pos[1] += ipu_fifo_out_write(((u32*)g_ipu_indx4) + 4 * ipu_cmd.pos[1], 8 - ipu_cmd.pos[1]);
 			if (ipu_cmd.pos[1] < 8)
 			{
 				IPUCoreStatus.WaitingOnIPUFrom = true;

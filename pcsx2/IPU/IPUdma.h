@@ -19,16 +19,4 @@
 
 #include "IPU.h"
 
-struct IPUDMAStatus {
-	bool InProgress;
-	bool DMAFinished;
-};
-
-extern void ipu0Interrupt();
-extern void ipu1Interrupt();
-
 #include "IPU_hw.h"
-extern void IPU0dma();
-extern void IPU1dma();
-
-extern void ipuDmaReset();

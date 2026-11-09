@@ -569,7 +569,7 @@
     <ClCompile Include="IPU\IPU.cpp">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
-    <ClCompile Include="IPU\IPU_Fifo.cpp">
+    <ClCompile Include="IPU\IPU_Fifo.c">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
     <ClCompile Include="IPU\IPU_MultiISA.cpp">
@@ -599,7 +599,7 @@
     <ClCompile Include="GameDatabase.cpp">
       <Filter>Misc</Filter>
     </ClCompile>
-    <ClCompile Include="IPU\IPUdma.cpp">
+    <ClCompile Include="IPU\IPUdma.c">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
     <ClCompile Include="Dmac.c">

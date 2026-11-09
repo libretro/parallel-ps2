@@ -43,8 +43,7 @@ typedef struct tIPU_BP {
 extern "C" {
 #endif
 
-/* One quadword out of the input FIFO, as IPU_Fifo_Input::read. Defined in
- * IPU_Fifo.cpp, which owns the FIFO. */
+/* One quadword out of the input FIFO (IPU_Fifo.c). */
 int ipu_fifo_in_read(void *value);
 
 #ifdef __cplusplus

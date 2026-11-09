@@ -17,40 +17,51 @@
 
 #include "../../common/Pcsx2Defs.h"
 
-#include <string>
-
-// Important!  All FIFO containers in this header should be 'struct' type, not class type.
-// They are saved into the savestate as-is, and keeping them as struct ensures that the
-// layout of their contents is reliable.
-
-struct IPU_Fifo_Input
+/* The IPU's two FIFOs, 8 quadwords each, as rings of 32 words. They are
+ * saved into the savestate as they are, so the layout is fixed: these are
+ * plain structs. IPU_Fifo.c owns them. */
+typedef struct IPU_Fifo_Input
 {
-	alignas(16) u32 data[32];
+	PCSX2_ALIGN(16) u32 data[32];
 	int readpos, writepos;
+} IPU_Fifo_Input;
 
-	int write(const u32* pMem, int size);
-	int read(void *value);
-	void clear();
-};
-
-struct IPU_Fifo_Output
+typedef struct IPU_Fifo_Output
 {
-	alignas(16) u32 data[32];
+	PCSX2_ALIGN(16) u32 data[32];
 	int readpos, writepos;
+} IPU_Fifo_Output;
 
-	// returns number of qw read
-	int write(const u32 * value, uint size);
-	void read(void *value, uint size);
-	void clear();
-};
-
-struct IPU_Fifo
+typedef struct IPU_Fifo
 {
-	alignas(16) IPU_Fifo_Input in;
-	alignas(16) IPU_Fifo_Output out;
+	PCSX2_ALIGN(16) IPU_Fifo_Input in;
+	PCSX2_ALIGN(16) IPU_Fifo_Output out;
+} IPU_Fifo;
 
-	void init();
-	void clear();
-};
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-alignas(16) extern IPU_Fifo ipu_fifo;
+PCSX2_ALIGN(16) extern IPU_Fifo ipu_fifo;
+
+/* Both empty, contents zeroed. */
+extern void ipu_fifo_init(void);
+/* Both emptied, with their counters in IPU_CTRL and what waits on them. */
+extern void ipu_fifo_clear(void);
+extern void ipu_fifo_in_clear(void);
+extern void ipu_fifo_out_clear(void);
+
+/* Up to size quadwords in from IPU1 (or the FIFO register); returns how
+ * many fitted. */
+extern int  ipu_fifo_in_write(const u32* pMem, int size);
+/* One quadword out to the bit pointer; 0 when there was none. */
+extern int  ipu_fifo_in_read(void* value);
+/* Up to size quadwords in from the decoder; returns how many fitted. */
+extern int  ipu_fifo_out_write(const u32* value, uint size);
+/* size quadwords out to IPU0 (or the FIFO register); the caller knows
+ * they are there. */
+extern void ipu_fifo_out_read(void* value, uint size);
+
+#ifdef __cplusplus
+}
+#endif

@@ -51,7 +51,6 @@ static_assert(offsetof(decoder_t, rgb32) % 16 == 0, "rgb32 must stay 16-byte ali
 static_assert(offsetof(decoder_t, rgb16) % 16 == 0, "rgb16 must stay 16-byte aligned within decoder_t");
 
 alignas(16) extern decoder_t decoder;
-alignas(16) extern tIPU_BP g_BP;
 
 /* One build: the SSE2 form this is written in measures the same at every
  * tier, so there is nothing for a per-ISA copy to pick up. */

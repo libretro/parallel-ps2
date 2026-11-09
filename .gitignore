@@ -324,6 +324,10 @@ tests/eehw/eehw_test
 tests/eehw/eehw_test.exe
 tests/eehw/.got.txt
 tests/eehw/.obj/
+tests/eeipu/eeipu_test
+tests/eeipu/eeipu_test.exe
+tests/eeipu/.got.txt
+tests/eeipu/.obj/
 tests/p2io/p2io_test.exe
 tests/stdlib/.build/
 tests/stdlib/.probe.cpp

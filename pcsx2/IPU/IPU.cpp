@@ -114,7 +114,7 @@ void ipuReset(void)
 
 	decoder.picture_structure = FRAME_PICTURE;      //default: progressive...my guess:P
 
-	ipu_fifo.init();
+	ipu_fifo_init();
 	ipu_cmd.clear();
 	ipuDmaReset();
 }
@@ -298,7 +298,7 @@ u64 ipuRead64(u32 mem)
 
 void ipuSoftReset(void)
 {
-	ipu_fifo.clear();
+	ipu_fifo_clear();
 	memset(&g_BP, 0, sizeof(g_BP));
 
 	coded_block_pattern = 0;
@@ -365,7 +365,7 @@ bool ipuWrite64(u32 mem, u64 value)
 
 static void ipuBCLR(u32 val)
 {
-	ipu_fifo.in.clear();
+	ipu_fifo_in_clear();
 	memset(&g_BP, 0, sizeof(g_BP));
 	g_BP.BP = val & 0x7F;
 

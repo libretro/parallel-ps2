@@ -546,11 +546,11 @@ endif()
 # IPU sources
 set(pcsx2IPUSources
 	IPU/IPU.cpp
-	IPU/IPU_Fifo.cpp
+	IPU/IPU_Fifo.c
 	IPU/IPUdither.c
 	IPU/ipu_csc.c
 	IPU/ipu_idct.c
-	IPU/IPUdma.cpp
+	IPU/IPUdma.c
 	IPU/yuv2rgb.c
 )
 

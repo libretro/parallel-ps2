@@ -162,7 +162,8 @@
     <ClCompile Include="SPU2\ReadInput.cpp" />
     <ClCompile Include="SPU2\Reverb.cpp" />
     <ClCompile Include="SPU2\spu2.cpp" />
-    <ClCompile Include="IPU\IPUdma.cpp" />
+    <ClCompile Include="IPU\IPUdma.c" />
+    <ClCompile Include="IPU\IPU_Fifo.c" />
     <ClCompile Include="IPU\IPUdither.cpp" />
     <ClCompile Include="Mdec.c" />
     <ClCompile Include="Patch.cpp" />

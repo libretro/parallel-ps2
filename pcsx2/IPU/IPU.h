@@ -17,53 +17,10 @@
 
 #include "ipu_bp.h"
 
-#include "IPU_Fifo.h"
+#include "IPU_hw.h"
 #include "IPUdma.h"
 
 #include "../Common.h"
-
-#define ipumsk( src ) ( (src) & 0xff )
-#define ipucase( src ) case ipumsk(src)
-
-#define IPU_INT_TO( cycles )  if(!(cpuRegs.interrupt & (1<<4))) CPU_INT( DMAC_TO_IPU, cycles )
-#define IPU_INT_FROM( cycles )  CPU_INT( DMAC_FROM_IPU, cycles )
-
-#define IPU_INT_PROCESS( cycles ) if(!(cpuRegs.interrupt & (1 << IPU_PROCESS))) CPU_INT( IPU_PROCESS, cycles )
-
-//
-// Bitfield Structures
-//
-
-union tIPU_CMD
-{
-	struct
-	{
-		u32 DATA;
-		u32 BUSY;
-	};
-	u64 _u64;
-};
-
-union tIPU_CTRL {
-	struct {
-		u32 IFC : 4;	// Input FIFO counter
-		u32 OFC : 4;	// Output FIFO counter
-		u32 CBP : 6;	// Coded block pattern
-		u32 ECD : 1;	// Error code pattern
-		u32 SCD : 1;	// Start code detected
-		u32 IDP : 2;	// Intra DC precision
-		u32 resv0 : 2;
-		u32 AS : 1;		// Alternate scan
-		u32 IVF : 1;	// Intra VLC format
-		u32 QST : 1;	// Q scale step
-		u32 MP1 : 1;	// MPEG1 bit stream
-		u32 PCT : 3;	// Picture Type
-		u32 resv1 : 3;
-		u32 RST : 1;	// Reset
-		u32 BUSY : 1;	// Busy
-	};
-	u32 _u32;
-};
 
 union tIPU_CMD_IDEC
 {
@@ -125,21 +82,6 @@ enum SCE_IPU
 ,	SCE_IPU_SETTH
 };
 
-struct IPUregisters {
-	tIPU_CMD	cmd;
-	u32		dummy0[2];
-
-	tIPU_CTRL	ctrl;
-	u32		dummy1[3];
-
-	u32		ipubp;
-	u32		dummy2[3];
-
-	u32		top;
-	u32		topbusy;
-	u32		dummy3[2];
-};
-
 union tIPU_cmd
 {
 	struct
@@ -160,16 +102,12 @@ union tIPU_cmd
 	void clear();
 };
 
-static IPUregisters& ipuRegs = (IPUregisters&)eeHw[0x2000];
 
 
 alignas(16) extern tIPU_cmd ipu_cmd;
 
 #include "ipu_decode_state.h"
 
-#include "IPU_hw.h"
-
 extern void IPUCMD_WRITE(u32 val);
 extern void ipuSoftReset();
-extern void IPUProcessInterrupt();
 
