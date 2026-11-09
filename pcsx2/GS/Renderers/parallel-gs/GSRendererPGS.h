@@ -66,6 +66,12 @@ private:
 	static int GetSaveStateSize();
 };
 
+/* The one renderer object, made and freed by GS.cpp; GSRendererPGS.cpp's
+ * op table calls through it. Declared here, once, so both see the same
+ * type: MSVC names a variable by its type, so two different declarations
+ * do not link. */
+extern GSRendererPGS* g_pgs_renderer;
+
 // libretro integration.
 /* What GS.cpp calls this renderer through; see gs_renderer_ops in GS.h. */
 extern const struct gs_renderer_ops pgs_renderer_ops;

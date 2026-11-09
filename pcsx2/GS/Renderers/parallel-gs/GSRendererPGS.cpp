@@ -28,7 +28,14 @@ using namespace ParallelGS;
 using namespace Granite;
 
 static retro_hw_render_interface_vulkan *hw_render_iface;
-static std::unique_ptr<Vulkan::Context> vulkan_ctx;
+/* Owned here: made by pgs_create_instance, freed by vulkan_ctx_free. */
+static Vulkan::Context *vulkan_ctx = NULL;
+
+static void vulkan_ctx_free(void)
+{
+	delete vulkan_ctx;
+	vulkan_ctx = NULL;
+}
 
 #define PGS_THREAD_INDEX_COUNT 4
 
@@ -158,7 +165,7 @@ bool pgs_create_device(retro_vulkan_context *context,
 void pgs_destroy_device()
 {
 	pgs_release_vsync_images();
-	vulkan_ctx.reset();
+	vulkan_ctx_free();
 	hw_render_iface = nullptr;
 }
 
@@ -168,13 +175,13 @@ VkInstance pgs_create_instance(PFN_vkGetInstanceProcAddr get_instance_proc_addr,
 	void *opaque)
 {
 	Util::set_thread_logging_interface(&logging_iface);
-	vulkan_ctx.reset();
+	vulkan_ctx_free();
 
 	// Always force the reload, since the other backends may clobber the volk pointers.
 	if (!Context::init_loader(get_instance_proc_addr, true))
 		return VK_NULL_HANDLE;
 
-	vulkan_ctx = std::make_unique<Context>();
+	vulkan_ctx = new Context();
 	Context::SystemHandles handles = {};
 	vulkan_ctx->set_system_handles(handles);
 	/* One command pool per recording thread per frame: the GS thread
@@ -204,7 +211,7 @@ VkInstance pgs_create_instance(PFN_vkGetInstanceProcAddr get_instance_proc_addr,
 
 	if (!vulkan_ctx->init_instance(nullptr, 0))
 	{
-		vulkan_ctx.reset();
+		vulkan_ctx_free();
 		return VK_NULL_HANDLE;
 	}
 
@@ -1004,7 +1011,6 @@ void GSRendererPGS::ReadFIFO(u8 *mem, u32 size)
  * reset, the CSR write or the unsynchronised local-memory read: this
  * renderer takes all of that from the GIF stream and its own copy of GS
  * memory. */
-extern std::unique_ptr<GSRendererPGS> g_pgs_renderer;
 
 static void pgs_op_reset(bool hardware_reset)            { g_pgs_renderer->Reset(hardware_reset); }
 static void pgs_op_read_fifo(u8* mem, u32 size)          { g_pgs_renderer->ReadFIFO(mem, size); }
