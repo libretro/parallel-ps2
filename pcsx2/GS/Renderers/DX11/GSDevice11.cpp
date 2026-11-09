@@ -30,6 +30,10 @@
 #include <d3dcompiler.h>
 
 #include <libretro_d3d.h>
+#include <retro_atomic.h>
+#include <retro_spsc.h>
+#include <rthreads/retro_eventcount.h>
+#include <rthreads/rthreads.h>
 
 extern "C" {
 
@@ -528,6 +532,13 @@ bool GSDevice11::Create()
 			return false;
 	}
 
+	/* The shader cache is the worker's from here; without every dynamic
+	 * pixel shader there is none, and a miss is built on the draw path. */
+	if (m_ps_dynamic[C89_ARRAY_SIZE(m_ps_dynamic) - 1])
+		PSWorkerStart();
+	/* (tests/d3dswdraw: every draw with its dynamic pixel shader) */
+	m_test_dynamic = m_ps_worker && getenv("LRPS2_TEST_D3D11_DYNAMIC");
+
 	/* From here a lock that reports the context disturbed can be answered
 	 * with RestoreAPIState(). */
 	s_d3d11_device_ready = true;
@@ -541,6 +552,16 @@ void GSDevice11::Destroy()
 	s_d3d11_device_ready = false;
 	s_d3d11_v2           = NULL;
 	s_d3d11_resolved     = false;
+
+	/* First: the worker uses the device and the shader cache. */
+	PSWorkerStop();
+	if (m_shaders_built_here || m_shaders_built_ahead)
+		log_cb(RETRO_LOG_INFO, "D3D11 shaders: %u built on the render thread, %u as the device was created, %u made into objects there from the worker's; %u draws drawn with a dynamic pixel shader\n",
+			m_shaders_built_here, m_shaders_built_ahead, m_ps_objects_here, m_dynamic_draws);
+	m_shaders_built_here = m_shaders_built_ahead = m_ps_objects_here = m_dynamic_draws = 0;
+	for (size_t i = 0; i < C89_ARRAY_SIZE(m_ps_dynamic); i++)
+		m_ps_dynamic[i].reset();
+	m_ps_key_cb.reset();
 
 	DestroyBase();
 	/* With the pool's textures. The frontend holds its own reference to
@@ -1816,6 +1837,8 @@ void GSDevice11::RestoreAPIState()
 	m_ctx->VSSetConstantBuffers(0, 1, &m_state.vs_cb);
 	m_ctx->PSSetShader(m_state.ps, nullptr, 0);
 	m_ctx->PSSetConstantBuffers(0, 1, &m_state.ps_cb);
+	if (m_ps_key_cb)
+		m_ctx->PSSetConstantBuffers(1, 1, m_ps_key_cb.addressof());
 	m_ctx->IASetIndexBuffer(m_state.index_buffer, DXGI_FORMAT_R16_UINT, 0);
 
 	/* The vertex-expansion buffer is bound to VS slot 0 once, in Create,
@@ -1853,6 +1876,8 @@ void GSDevice11::RestoreAPIState()
 		m_ctx->OMSetRenderTargets(0, nullptr, m_state.dsv);
 }
 
+static void D3D11DynamicMacros(GSDevice11::ShaderMacro& sm, u32 index);
+
 bool GSDevice11::CreateTextureFX()
 {
 	HRESULT hr;
@@ -1881,6 +1906,39 @@ bool GSDevice11::CreateTextureFX()
 	if (FAILED(hr))
 		return false;
 
+	memset(&bd, 0, sizeof(bd));
+	bd.ByteWidth = 16;
+	bd.Usage = D3D11_USAGE_DEFAULT;
+	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	if (FAILED(m_dev->CreateBuffer(&bd, nullptr, m_ps_key_cb.put())))
+		return false;
+	m_ctx->PSSetConstantBuffers(1, 1, m_ps_key_cb.addressof());
+	m_ps_key_valid = false;
+
+	/* Every vertex shader and the dynamic pixel shaders, as the game
+	 * boots: then no draw waits for one. With the shader cache this is a
+	 * lookup each. */
+	{
+		u32 key, i;
+		for (key = 0; key < 64; key++)
+		{
+			const VSSelector vsel(static_cast<u8>(key));
+			if (vsel.point_size || (vsel.expand != GSHWDrawConfig::VSExpand::None && !m_features.vs_expand))
+				continue;
+			if (BuildTFXVertexShader(key, true))
+				m_shaders_built_ahead++;
+		}
+		for (i = 0; i < C89_ARRAY_SIZE(m_ps_dynamic); i++)
+		{
+			ShaderMacro sm(m_shader_cache.GetFeatureLevel());
+			D3D11DynamicMacros(sm, i);
+			m_ps_dynamic[i] = m_shader_cache.GetPixelShader(m_dev.get(), tfx_fx_shader_raw, sm.GetPtr(), "ps_main");
+			if (!m_ps_dynamic[i])
+				break;
+			m_shaders_built_ahead++;
+		}
+	}
+
 	// create layout
 
 	VSSelector sel;
@@ -1893,48 +1951,82 @@ bool GSDevice11::CreateTextureFX()
 	return true;
 }
 
+/* A vertex shader into m_vs, from the shader cache: as the device is
+ * created, for every key (CreateTextureFX), and so never on the draw path
+ * but for a key that set left out. */
+bool GSDevice11::BuildTFXVertexShader(u32 key, bool cached)
+{
+	VSSelector sel(static_cast<u8>(key));
+	ShaderMacro sm(m_shader_cache.GetFeatureLevel());
+	GSVertexShader11 vs;
+
+	sm.AddMacro("VERTEX_SHADER", 1);
+	sm.AddMacro("VS_TME", sel.tme);
+	sm.AddMacro("VS_FST", sel.fst);
+	sm.AddMacro("VS_IIP", sel.iip);
+	sm.AddMacro("VS_EXPAND", static_cast<int>(sel.expand));
+
+	static constexpr const D3D11_INPUT_ELEMENT_DESC layout[] =
+	{
+		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UINT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"TEXCOORD", 1, DXGI_FORMAT_R32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"POSITION", 0, DXGI_FORMAT_R16G16_UINT, 0, 16, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"POSITION", 1, DXGI_FORMAT_R32_UINT, 0, 20, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"TEXCOORD", 2, DXGI_FORMAT_R16G16_UINT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"COLOR", 1, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0},
+	};
+
+	if (!cached)
+	{
+		/* (the worker owns the cache) */
+		const bool expand = sel.expand != GSHWDrawConfig::VSExpand::None;
+		wil::com_ptr_nothrow<ID3DBlob> blob = D3D::CompileShader(D3D::ShaderType::Vertex, m_feature_level,
+			GSConfig.UseDebugDevice, tfx_fx_shader_raw, sm.GetPtr(), expand ? "vs_main_expand" : "vs_main");
+		if (!blob || FAILED(m_dev->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, vs.vs.put())))
+			return false;
+		if (!expand && FAILED(m_dev->CreateInputLayout(layout, C89_ARRAY_SIZE(layout), blob->GetBufferPointer(), blob->GetBufferSize(), vs.il.put())))
+			return false;
+	}
+	else if (sel.expand == GSHWDrawConfig::VSExpand::None)
+	{
+		if (!m_shader_cache.GetVertexShaderAndInputLayout(m_dev.get(), vs.vs.put(), vs.il.put(), layout,
+				C89_ARRAY_SIZE(layout), tfx_fx_shader_raw, sm.GetPtr(), "vs_main"))
+			return false;
+	}
+	else if (!(vs.vs = m_shader_cache.GetVertexShader(m_dev.get(), tfx_fx_shader_raw, sm.GetPtr(), "vs_main_expand")))
+		return false;
+	m_vs.insert_or_assign(key, std::move(vs));
+	return true;
+}
+
+/* The vertex selector bits a D3D11 vertex shader is built from: the point
+ * size is not one of them. */
+static u32 D3D11VertexKey(GSHWDrawConfig::VSSelector sel)
+{
+	sel.point_size = 0;
+	return sel.key;
+}
+
 void GSDevice11::SetupVS(VSSelector sel, const GSHWDrawConfig::VSConstantBuffer* cb)
 {
 	const GSVertexShader11* vsp;
-	if (m_last_vs && m_last_vs_key == sel.key)
+	const u32 key = D3D11VertexKey(sel);
+	if (m_last_vs && m_last_vs_key == key)
 		vsp = m_last_vs;
 	else
 	{
-	auto i = std::as_const(m_vs).find(sel.key);
+	auto i = std::as_const(m_vs).find(key);
 
 	if (i == m_vs.end())
 	{
-		ShaderMacro sm(m_shader_cache.GetFeatureLevel());
-
-		sm.AddMacro("VERTEX_SHADER", 1);
-		sm.AddMacro("VS_TME", sel.tme);
-		sm.AddMacro("VS_FST", sel.fst);
-		sm.AddMacro("VS_IIP", sel.iip);
-		sm.AddMacro("VS_EXPAND", static_cast<int>(sel.expand));
-
-		static constexpr const D3D11_INPUT_ELEMENT_DESC layout[] =
-		{
-			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-			{"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UINT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0},
-			{"TEXCOORD", 1, DXGI_FORMAT_R32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
-			{"POSITION", 0, DXGI_FORMAT_R16G16_UINT, 0, 16, D3D11_INPUT_PER_VERTEX_DATA, 0},
-			{"POSITION", 1, DXGI_FORMAT_R32_UINT, 0, 20, D3D11_INPUT_PER_VERTEX_DATA, 0},
-			{"TEXCOORD", 2, DXGI_FORMAT_R16G16_UINT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0},
-			{"COLOR", 1, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0},
-		};
-
-		GSVertexShader11 vs;
-		if (sel.expand == GSHWDrawConfig::VSExpand::None)
-		{
-			m_shader_cache.GetVertexShaderAndInputLayout(m_dev.get(), vs.vs.put(), vs.il.put(), layout,
-				C89_ARRAY_SIZE(layout), tfx_fx_shader_raw, sm.GetPtr(), "vs_main");
-		}
-		else
-			vs.vs = m_shader_cache.GetVertexShader(m_dev.get(), tfx_fx_shader_raw, sm.GetPtr(), "vs_main_expand");
-
-		i = m_vs.try_emplace(sel.key, std::move(vs)).first;
+		/* (none: every key was built as the device was created) */
+		if (!BuildTFXVertexShader(key, !m_ps_worker))
+			m_vs.try_emplace(key);
+		m_shaders_built_here++;
+		i = std::as_const(m_vs).find(key);
 	}
-	m_last_vs_key = sel.key;
+	m_last_vs_key = key;
 	m_last_vs     = &i->second;
 	vsp           = m_last_vs;
 	}
@@ -1949,85 +2041,137 @@ void GSDevice11::SetupVS(VSSelector sel, const GSHWDrawConfig::VSConstantBuffer*
 	IASetInputLayout(vsp->il.get());
 }
 
+/* The pixel selector fields as tfx.fx's macros, each in the bits after the
+ * last and none across a word: the dynamic pixel shader's PsKey. */
+#define D3D11_PS_FIELDS(X) \
+	X(PS_FST, fst, 1) X(PS_WMS, wms, 2) X(PS_WMT, wmt, 2) X(PS_ADJS, adjs, 1) X(PS_ADJT, adjt, 1) \
+	X(PS_AEM_FMT, aem_fmt, 2) X(PS_AEM, aem, 1) X(PS_TFX, tfx, 3) X(PS_TCC, tcc, 1) X(PS_DATE, date, 3) \
+	X(PS_ATST, atst, 3) X(PS_AFAIL, afail, 3) X(PS_FOG, fog, 1) X(PS_IIP, iip, 1) X(PS_BLEND_HW, blend_hw, 3) \
+	X(PS_A_MASKED, a_masked, 1) X(PS_FBA, fba, 1) X(PS_FBMASK, fbmask, 1) X(PS_LTF, ltf, 1) \
+	X(PS_TCOFFSETHACK, tcoffsethack, 1) X(PS_POINT_SAMPLER, point_sampler, 1) X(PS_REGION_RECT, region_rect, 1) \
+	X(PS_SHUFFLE, shuffle, 1) X(PS_SHUFFLE_SAME, shuffle_same, 1) X(PS_PROCESS_BA, process_ba, 2) \
+	X(PS_PROCESS_RG, process_rg, 2) X(PS_SHUFFLE_ACROSS, shuffle_across, 1) X(PS_READ16_SRC, real16src, 1) \
+	X(PS_CHANNEL_FETCH, channel, 3) X(PS_TALES_OF_ABYSS_HLE, tales_of_abyss_hle, 1) \
+	X(PS_URBAN_CHAOS_HLE, urban_chaos_hle, 1) X(PS_DST_FMT, dst_fmt, 2) X(PS_DEPTH_FMT, depth_fmt, 2) \
+	X(PS_PAL_FMT, pal_fmt, 2) X(PS_COLCLIP_HW, colclip_hw, 1) X(PS_RTA_CORRECTION, rta_correction, 1) \
+	X(PS_RTA_SRC_CORRECTION, rta_source_correction, 1) X(PS_COLCLIP, colclip, 1) X(PS_BLEND_A, blend_a, 2) \
+	X(PS_BLEND_B, blend_b, 2) X(PS_BLEND_C, blend_c, 2) X(PS_BLEND_D, blend_d, 2) X(PS_BLEND_MIX, blend_mix, 2) \
+	X(PS_ROUND_INV, round_inv, 1) X(PS_FIXED_ONE_A, fixed_one_a, 1) X(PS_PABE, pabe, 1) X(PS_DITHER, dither, 2) \
+	X(PS_DITHER_ADJUST, dither_adjust, 1) X(PS_ZCLAMP, zclamp, 1) X(PS_SCANMSK, scanmsk, 2) \
+	X(PS_SAMPLE_MAP, sample_map, 1) X(PS_NATIVE_TAPS, native_taps, 1) X(PS_AUTOMATIC_LOD, automatic_lod, 1) \
+	X(PS_MANUAL_LOD, manual_lod, 1) X(PS_TEX_IS_FB, tex_is_fb, 1) X(PS_NO_COLOR, no_color, 1) \
+	X(PS_NO_COLOR1, no_color1, 1)
+
+/* The next field's place: in the word it starts in, else the next. */
+static u32 D3D11KeyPlace(u32* at, u32 bits)
+{
+	u32 place;
+	if ((*at & 31u) + bits > 32u)
+		*at = (*at + 31u) & ~31u;
+	place = *at;
+	*at += bits;
+	return place;
+}
+
+static void D3D11DynamicKey(const GSHWDrawConfig::PSSelector& sel, u32* key)
+{
+	u32 at = 0, place;
+	key[0] = key[1] = key[2] = key[3] = 0;
+#define D3D11_PACK(name, field, bits) \
+	place = D3D11KeyPlace(&at, bits); \
+	key[place >> 5] |= (static_cast<u32>(sel.field) & ((1u << bits) - 1u)) << (place & 31u);
+	D3D11_PS_FIELDS(D3D11_PACK)
+#undef D3D11_PACK
+}
+
+/* The interface a selector's dynamic pixel shader has: the flat colour,
+ * and the destination alpha test's first pass or primitive ID test. */
+static u32 D3D11DynamicIndex(const GSHWDrawConfig::PSSelector& sel)
+{
+	const u32 date = (sel.date == 1 || sel.date == 2) ? 1u : (sel.date == 3) ? 2u : 0u;
+	return sel.iip * 3u + date;
+}
+
+static void D3D11PixelShaderMacros(GSDevice11::ShaderMacro& sm, const GSHWDrawConfig::PSSelector& sel)
+{
+	sm.AddMacro("PIXEL_SHADER", 1);
+#define D3D11_MACRO(name, field, bits) sm.AddMacro(#name, static_cast<int>(sel.field));
+	D3D11_PS_FIELDS(D3D11_MACRO)
+#undef D3D11_MACRO
+}
+
+/* The dynamic pixel shader of interface index: every field read from
+ * PsKey but what shapes the interface; the second output and the depth
+ * output are kept (a draw that does without them leaves them unread). */
+static void D3D11DynamicMacros(GSDevice11::ShaderMacro& sm, u32 index)
+{
+	const u32 date = index % 3u;
+	char buf[48];
+	u32 at = 0, place;
+	sm.AddMacro("PIXEL_SHADER", 1);
+	sm.AddMacro("PS_DYNAMIC", 1);
+	sm.AddMacro("PS_IF_IIP", static_cast<int>(index / 3u));
+	sm.AddMacro("PS_IF_DATE_INIT", date == 1);
+	sm.AddMacro("PS_IF_PRIMID", date != 0);
+	sm.AddMacro("PS_IF_NO_COLOR", 0);
+	sm.AddMacro("PS_IF_NO_COLOR1", 0);
+	sm.AddMacro("PS_IF_ZCLAMP", date != 1);
+#define D3D11_DYN(name, field, bits) \
+	place = D3D11KeyPlace(&at, bits); \
+	snprintf(buf, sizeof(buf), "((PsKey[%u] >> %uu) & %uu)", place >> 5, place & 31u, (1u << bits) - 1u); \
+	sm.AddMacro(#name, std::string(buf));
+	D3D11_PS_FIELDS(D3D11_DYN)
+#undef D3D11_DYN
+}
+
 void GSDevice11::SetupPS(const PSSelector& sel, const GSHWDrawConfig::PSConstantBuffer* cb, PSSamplerSelector ssel)
 {
 	ID3D11PixelShader* psp;
+	if (m_ps_worker)
+		PSWorkerTake();
 	if (m_last_ps_valid && m_last_ps_sel == sel)
 		psp = m_last_ps;
 	else
 	{
 	auto i = std::as_const(m_ps).find(sel);
 
-	if (i == m_ps.end())
+	if (i != m_ps.end() && i->second && !m_test_dynamic)
+	{
+		m_last_ps_sel   = sel;
+		m_last_ps_valid = true;
+		m_last_ps       = i->second.get();
+		psp             = m_last_ps;
+	}
+	else if (m_ps_worker)
+	{
+		/* Drawn with its dynamic shader while the worker builds its own
+		 * (asked for again by the next draw if the worker had no room). */
+		u32 key[4];
+		if (i == m_ps.end() && !m_test_dynamic && PSWorkerQueue(sel))
+			m_ps.try_emplace(sel);
+		D3D11DynamicKey(sel, key);
+		if (!m_ps_key_valid || memcmp(key, m_ps_key, sizeof(key)))
+		{
+			memcpy(m_ps_key, key, sizeof(key));
+			m_ps_key_valid = true;
+			m_ctx->UpdateSubresource(m_ps_key_cb.get(), 0, NULL, key, 0, 0);
+		}
+		psp = m_ps_dynamic[D3D11DynamicIndex(sel)].get();
+		m_dynamic_draws++;
+		m_last_ps_valid = false;
+	}
+	else
 	{
 		ShaderMacro sm(m_shader_cache.GetFeatureLevel());
-
-		sm.AddMacro("PIXEL_SHADER", 1);
-		sm.AddMacro("PS_FST", sel.fst);
-		sm.AddMacro("PS_WMS", sel.wms);
-		sm.AddMacro("PS_WMT", sel.wmt);
-		sm.AddMacro("PS_ADJS", sel.adjs);
-		sm.AddMacro("PS_ADJT", sel.adjt);
-		sm.AddMacro("PS_AEM_FMT", sel.aem_fmt);
-		sm.AddMacro("PS_AEM", sel.aem);
-		sm.AddMacro("PS_TFX", sel.tfx);
-		sm.AddMacro("PS_TCC", sel.tcc);
-		sm.AddMacro("PS_DATE", sel.date);
-		sm.AddMacro("PS_ATST", static_cast<u32>(sel.atst));
-		sm.AddMacro("PS_AFAIL", static_cast<u32>(sel.afail));
-		sm.AddMacro("PS_FOG", sel.fog);
-		sm.AddMacro("PS_IIP", sel.iip);
-		sm.AddMacro("PS_BLEND_HW", sel.blend_hw);
-		sm.AddMacro("PS_A_MASKED", sel.a_masked);
-		sm.AddMacro("PS_FBA", sel.fba);
-		sm.AddMacro("PS_FBMASK", sel.fbmask);
-		sm.AddMacro("PS_LTF", sel.ltf);
-		sm.AddMacro("PS_TCOFFSETHACK", sel.tcoffsethack);
-		sm.AddMacro("PS_POINT_SAMPLER", sel.point_sampler);
-		sm.AddMacro("PS_REGION_RECT", sel.region_rect);
-		sm.AddMacro("PS_SHUFFLE", sel.shuffle);
-		sm.AddMacro("PS_SHUFFLE_SAME", sel.shuffle_same);
-		sm.AddMacro("PS_PROCESS_BA", sel.process_ba);
-		sm.AddMacro("PS_PROCESS_RG", sel.process_rg);
-		sm.AddMacro("PS_SHUFFLE_ACROSS", sel.shuffle_across);
-		sm.AddMacro("PS_READ16_SRC", sel.real16src);
-		sm.AddMacro("PS_CHANNEL_FETCH", sel.channel);
-		sm.AddMacro("PS_TALES_OF_ABYSS_HLE", sel.tales_of_abyss_hle);
-		sm.AddMacro("PS_URBAN_CHAOS_HLE", sel.urban_chaos_hle);
-		sm.AddMacro("PS_DST_FMT", sel.dst_fmt);
-		sm.AddMacro("PS_DEPTH_FMT", sel.depth_fmt);
-		sm.AddMacro("PS_PAL_FMT", sel.pal_fmt);
-		sm.AddMacro("PS_COLCLIP_HW", sel.colclip_hw);
-		sm.AddMacro("PS_RTA_CORRECTION", sel.rta_correction);
-		sm.AddMacro("PS_RTA_SRC_CORRECTION", sel.rta_source_correction);
-		sm.AddMacro("PS_COLCLIP", sel.colclip);
-		sm.AddMacro("PS_BLEND_A", sel.blend_a);
-		sm.AddMacro("PS_BLEND_B", sel.blend_b);
-		sm.AddMacro("PS_BLEND_C", sel.blend_c);
-		sm.AddMacro("PS_BLEND_D", sel.blend_d);
-		sm.AddMacro("PS_BLEND_MIX", sel.blend_mix);
-		sm.AddMacro("PS_ROUND_INV", sel.round_inv);
-		sm.AddMacro("PS_FIXED_ONE_A", sel.fixed_one_a);
-		sm.AddMacro("PS_PABE", sel.pabe);
-		sm.AddMacro("PS_DITHER", sel.dither);
-		sm.AddMacro("PS_DITHER_ADJUST", sel.dither_adjust);
-		sm.AddMacro("PS_ZCLAMP", sel.zclamp);
-		sm.AddMacro("PS_SCANMSK", sel.scanmsk);
-		sm.AddMacro("PS_SAMPLE_MAP", sel.sample_map);
-		sm.AddMacro("PS_NATIVE_TAPS", sel.native_taps);
-		sm.AddMacro("PS_AUTOMATIC_LOD", sel.automatic_lod);
-		sm.AddMacro("PS_MANUAL_LOD", sel.manual_lod);
-		sm.AddMacro("PS_TEX_IS_FB", sel.tex_is_fb);
-		sm.AddMacro("PS_NO_COLOR", sel.no_color);
-		sm.AddMacro("PS_NO_COLOR1", sel.no_color1);
-
+		D3D11PixelShaderMacros(sm, sel);
 		wil::com_ptr_nothrow<ID3D11PixelShader> ps = m_shader_cache.GetPixelShader(m_dev.get(), tfx_fx_shader_raw, sm.GetPtr(), "ps_main");
-		i = m_ps.try_emplace(sel, std::move(ps)).first;
+		m_shaders_built_here++;
+		i = m_ps.insert_or_assign(sel, std::move(ps)).first;
+		m_last_ps_sel   = sel;
+		m_last_ps_valid = true;
+		m_last_ps       = i->second.get();
+		psp             = m_last_ps;
 	}
-	m_last_ps_sel   = sel;
-	m_last_ps_valid = true;
-	m_last_ps       = i->second.get();
-	psp             = m_last_ps;
 	}
 
 	if (cb && m_ps_cb_cache.Update(*cb))
@@ -2232,3 +2376,166 @@ void GSDevice11::SetupOM(OMDepthStencilSelector dssel, OMBlendSelector bsel, u8 
 
 	OMSetBlendState(bsp, afix);
 }
+
+/* ---- the pixel shader worker ---- */
+
+#ifdef HAVE_THREADS
+
+#define D3D11_PS_JOBS 64u
+
+typedef struct D3D11PSResult
+{
+	GSHWDrawConfig::PSSelector sel;
+	ID3D11PixelShader* ps; /* made by the worker, where the device allows */
+	ID3DBlob* blob;        /* else the shader, made into one by the render thread */
+} D3D11PSResult;
+
+struct GSDevice11::PSWorker
+{
+	GSDevice11* dev;
+	ID3D11Device* d3d;       /* null: a single-threaded device, objects made by the render thread */
+	D3D11ShaderCache* cache; /* the worker's from its start */
+	D3D_FEATURE_LEVEL fl;
+	retro_spsc_t jobs;       /* render thread -> worker */
+	retro_spsc_t results;    /* worker -> render thread: room for every job made at the start */
+	retro_eventcount_t wake; /* a job, or stop */
+	retro_atomic_int_t stop;
+	sthread_t* thread;
+	u32 in_flight;           /* the render thread's */
+};
+
+static void D3D11PSWorkerThread(void* data)
+{
+	GSDevice11::PSWorker* w = static_cast<GSDevice11::PSWorker*>(data);
+	for (;;)
+	{
+		GSHWDrawConfig::PSSelector sel;
+		D3D11PSResult res;
+		int key;
+		if (retro_atomic_load_acquire_int(&w->stop))
+			break;
+		if (retro_spsc_read_avail(&w->jobs) < sizeof(sel))
+		{
+			key = retro_eventcount_prepare_wait(&w->wake);
+			if (retro_spsc_read_avail(&w->jobs) >= sizeof(sel) || retro_atomic_load_acquire_int(&w->stop))
+				retro_eventcount_cancel_wait(&w->wake);
+			else
+				retro_eventcount_commit_wait(&w->wake, key);
+			continue;
+		}
+		retro_spsc_read(&w->jobs, &sel, sizeof(sel));
+		memset(&res, 0, sizeof(res));
+		res.sel = sel;
+		{
+			GSDevice11::ShaderMacro sm(w->fl);
+			wil::com_ptr_nothrow<ID3DBlob> blob;
+			D3D11PixelShaderMacros(sm, sel);
+			blob = w->cache->GetShaderBlob(D3D::ShaderType::Pixel, tfx_fx_shader_raw, sm.GetPtr(), "ps_main");
+			if (blob && w->d3d)
+				w->d3d->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &res.ps);
+			else
+				res.blob = blob.detach();
+		}
+		retro_spsc_write(&w->results, &res, sizeof(res));
+	}
+}
+
+void GSDevice11::PSWorkerStart()
+{
+	PSWorker* w;
+	if (m_ps_worker)
+		return;
+	if (!(w = static_cast<PSWorker*>(calloc(1, sizeof(*w)))))
+		return;
+	w->dev   = this;
+	w->d3d   = (m_dev->GetCreationFlags() & D3D11_CREATE_DEVICE_SINGLETHREADED) ? nullptr : m_dev.get();
+	w->cache = &m_shader_cache;
+	w->fl    = m_shader_cache.GetFeatureLevel();
+	retro_atomic_int_init(&w->stop, 0);
+	if (!retro_eventcount_init(&w->wake))
+		goto fail;
+	if (!retro_spsc_init(&w->jobs, D3D11_PS_JOBS * sizeof(GSHWDrawConfig::PSSelector)))
+		goto fail_wake;
+	if (!retro_spsc_init(&w->results, D3D11_PS_JOBS * sizeof(D3D11PSResult)))
+		goto fail_jobs;
+	if (!(w->thread = sthread_create(D3D11PSWorkerThread, w)))
+		goto fail_results;
+	m_ps_worker = w;
+	return;
+
+fail_results:
+	retro_spsc_free(&w->results);
+fail_jobs:
+	retro_spsc_free(&w->jobs);
+fail_wake:
+	retro_eventcount_free(&w->wake);
+fail:
+	free(w);
+}
+
+bool GSDevice11::PSWorkerQueue(const PSSelector& sel)
+{
+	PSWorker* w = m_ps_worker;
+	if (w->in_flight >= D3D11_PS_JOBS || retro_spsc_write_avail(&w->jobs) < sizeof(sel))
+		return false;
+	retro_spsc_write(&w->jobs, &sel, sizeof(sel));
+	w->in_flight++;
+	retro_eventcount_notify(&w->wake);
+	return true;
+}
+
+/* What the worker finished, into m_ps. */
+void GSDevice11::PSWorkerTake()
+{
+	PSWorker* w = m_ps_worker;
+	D3D11PSResult res;
+	while (retro_spsc_read_avail(&w->results) >= sizeof(res))
+	{
+		wil::com_ptr_nothrow<ID3D11PixelShader> ps;
+		retro_spsc_read(&w->results, &res, sizeof(res));
+		w->in_flight--;
+		ps.Attach(res.ps);
+		if (res.blob)
+		{
+			m_dev->CreatePixelShader(res.blob->GetBufferPointer(), res.blob->GetBufferSize(), nullptr, ps.put());
+			res.blob->Release();
+			m_ps_objects_here++;
+		}
+		/* (one that failed stays null: drawn with its dynamic shader) */
+		if (ps)
+			m_ps.insert_or_assign(res.sel, std::move(ps));
+	}
+}
+
+void GSDevice11::PSWorkerStop()
+{
+	PSWorker* w = m_ps_worker;
+	D3D11PSResult res;
+	if (!w)
+		return;
+	retro_atomic_store_release_int(&w->stop, 1);
+	retro_eventcount_notify(&w->wake);
+	sthread_join(w->thread);
+	while (retro_spsc_read_avail(&w->results) >= sizeof(res))
+	{
+		retro_spsc_read(&w->results, &res, sizeof(res));
+		if (res.ps)
+			res.ps->Release();
+		if (res.blob)
+			res.blob->Release();
+	}
+	retro_spsc_free(&w->results);
+	retro_spsc_free(&w->jobs);
+	retro_eventcount_free(&w->wake);
+	free(w);
+	m_ps_worker = nullptr;
+}
+
+#else
+
+void GSDevice11::PSWorkerStart() { }
+void GSDevice11::PSWorkerStop() { }
+bool GSDevice11::PSWorkerQueue(const PSSelector&) { return false; }
+void GSDevice11::PSWorkerTake() { }
+
+#endif

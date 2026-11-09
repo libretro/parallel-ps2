@@ -9,7 +9,11 @@
 # interfaces, three sync slots, a frontend rebuilding its driver and
 # tests/latency's case run too, and a D3D12 log that reports a draw into
 # a texture that is not a render target, or a heap with no room for a
-# resource, fails the run.
+# resource, fails the run. D3D11 must build no shader on the render thread,
+# and each case drawn with dynamic pixel shaders alone
+# (LRPS2_TEST_D3D11_DYNAMIC) must present D3D11's picture (a channel
+# may round 2 apart: the specialised shader folds what the dynamic one
+# computes).
 #
 # MSYS2 MINGW64 runs it on the system's D3D. Elsewhere it runs under wine
 # with DXVK and vkd3d-proton, any Vulkan device (lavapipe will do), and
@@ -98,6 +102,8 @@ same() {
 	fi
 }
 mkdir -p "$SCRATCH/sys"
+# (the core's info lines too: D3D11's shader counts)
+D3DSW_VERBOSE=1; export D3DSW_VERBOSE
 
 # case, and the share of pixels (per mille) that may differ from the
 # software renderer's by more than 24 in a channel; 1000 for a case whose
@@ -111,6 +117,17 @@ while read c pm; do
 		draw ${api}_$c "$c.bin" $api && same ${api}_$c sw_$c 24 $pm
 	done
 	same D3D11_$c D3D12_$c 24 1
+	# D3D11 compiles nothing on the draw path: a pixel selector not built
+	# yet draws with its dynamic shader, and every draw drawn with one
+	# alone presents the same picture.
+	n=$(sed -n 's/.*D3D11 shaders: \([0-9]*\) built on the render thread.*/\1/p' "$SCRATCH/D3D11_$c.log" | tr -d '\r')
+	if [ "${n:-x}" != 0 ]; then
+		echo "  FAIL: D3D11_$c built ${n:-?} shaders on the render thread"
+		failed=1
+	fi
+	LRPS2_TEST_D3D11_DYNAMIC=1; export LRPS2_TEST_D3D11_DYNAMIC
+	draw D3D11dyn_$c "$c.bin" D3D11 && same D3D11_$c D3D11dyn_$c 2 0
+	unset LRPS2_TEST_D3D11_DYNAMIC
 	echo "  $c: $(sed -n 's/^d3dswdraw: D3D12 //p' "$SCRATCH/D3D12_$c.log" | tr -d '\r')"
 done <<EOF
 aa1_small 20

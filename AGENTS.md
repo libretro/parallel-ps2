@@ -191,8 +191,14 @@ remove, most-played first:
 - D3D12, `GSDevice12::GetTFXPipeline`: a miss creates the PSO
   (`AddMissingTFXPipeline`), and `GetTFXVertexShader` and
   `GetTFXPixelShader` compile on a miss.
-- D3D11, `GSDevice11::SetupVS` and `SetupPS`: a miss compiles the
-  shader.
+- D3D11 without threads, or on a device the frontend made
+  single-threaded: without the worker a pixel selector not built yet is
+  compiled on the draw path, and on a single-threaded device the
+  worker's shader is made into an object there. Otherwise every vertex
+  shader and the dynamic pixel shaders are built as the device is
+  created, a new pixel selector draws with its dynamic shader while the
+  worker builds its own, and `tests/d3dswdraw` holds every case to none
+  built on the render thread.
 - OpenGL, `GSDeviceOGL::SetupPipeline`: a miss compiles and links the
   program.
 - paraLLEl-GS: from nothing, a pipeline the list did not name is built

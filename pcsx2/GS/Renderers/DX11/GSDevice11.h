@@ -37,6 +37,7 @@ class GSDevice11 final : public GSDevice
 	 * used to be reached through a vtable, whatever its access. */
 	friend struct GSDevice11_ops_access;
 public:
+	struct PSWorker;
 	using VSSelector = GSHWDrawConfig::VSSelector;
 	using PSSelector = GSHWDrawConfig::PSSelector;
 	using PSSamplerSelector = GSHWDrawConfig::SamplerSelector;
@@ -226,6 +227,28 @@ private:
 
 	GSHWDrawConfig::VSConstantBuffer m_vs_cb_cache;
 	GSHWDrawConfig::PSConstantBuffer m_ps_cb_cache;
+
+	/* No shader is compiled on the draw path. Every vertex shader and the
+	 * dynamic pixel shaders (one per interface, D3D11DynamicIndex: they
+	 * read the selector from m_ps_key_cb) are built as the device is
+	 * created; a pixel selector not built yet draws with its dynamic one
+	 * while the worker builds its own (m_ps holds a null one meanwhile).
+	 * From the worker's start the shader cache is the worker's. */
+	wil::com_ptr_nothrow<ID3D11PixelShader> m_ps_dynamic[6];
+	wil::com_ptr_nothrow<ID3D11Buffer> m_ps_key_cb;
+	u32 m_ps_key[4] = {};
+	bool m_ps_key_valid = false;
+	PSWorker* m_ps_worker = nullptr;
+	u32 m_shaders_built_here = 0;  /* on the draw path: none, but without the worker */
+	u32 m_shaders_built_ahead = 0; /* as the device was created */
+	u32 m_ps_objects_here = 0;     /* worker's shaders made into objects here */
+	u32 m_dynamic_draws = 0;
+	bool m_test_dynamic = false;
+	bool BuildTFXVertexShader(u32 key, bool cached);
+	void PSWorkerStart();
+	void PSWorkerStop();
+	bool PSWorkerQueue(const PSSelector& sel);
+	void PSWorkerTake();
 
 	D3D11ShaderCache m_shader_cache;
 
