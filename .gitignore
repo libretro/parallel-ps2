@@ -340,6 +340,10 @@ tests/eevifcode/eevifcode_test
 tests/eevifcode/eevifcode_test.exe
 tests/eevifcode/.got.txt
 tests/eevifcode/.obj/
+tests/eevifunpack/eevifunpack_test
+tests/eevifunpack/eevifunpack_test.exe
+tests/eevifunpack/.got.txt
+tests/eevifunpack/.obj/
 tests/p2io/p2io_test.exe
 tests/stdlib/.build/
 tests/stdlib/.probe.cpp

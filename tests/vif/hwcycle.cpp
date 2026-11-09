@@ -1,6 +1,6 @@
 /*  VIF write and skip cycles against console captures.
  *
- *  Scores pcsx2/Vif_Unpack.cpp's unpack loop against ps2autotests
+ *  Scores pcsx2/Vif_Unpack.c's unpack loop against ps2autotests
  *  tests/dma/vif/stcycl.expected. Each line sets CYCLE to one (cl, wl)
  *  pair, a mask of 0xAAAAAAAA and a column of (1,2,3,4), then unpacks
  *  eight V4-32 vectors and prints word 0 of each of the first 64
@@ -13,11 +13,9 @@
  *  twos, so every write takes the MaskCol arm -- the one the stmod
  *  scenarios never reach, as recorded in hwunpack.cpp.
  *
- *  _nVifUnpackLoop and UnpackLoopTable have internal linkage, so this
- *  includes the translation unit rather than linking it. That is the
- *  point: the loop is the thing under test, and reimplementing it here to
- *  get at it would leave the same gap the transcriptions elsewhere in
- *  this tree had.
+ *  The loop is reached through _nVifUnpack, the entry the recompilers
+ *  fall back to, so it is the unit's own loop that is scored rather than
+ *  a transcription of it.
  *
  *  Usage: tests/vif/hwcycle <path-to-vif/stcycl.expected>
  */
@@ -29,31 +27,22 @@
 
 #include "Common.h"
 #include "Vif.h"
+#include "Vif_Dma.h"
+#include "VU.h"
 #include "Vif_Unpack.h"
-#include "MTVU.h"
 
 alignas(16) u8 eeHw[0x10000];
 alignas(16) VURegs vuRegs[2];
 alignas(16) vifStruct vif0, vif1;
-alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
-asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
-alignas(16) u8 s_vu1thread[sizeof(VU_Thread)];
-asm(".globl vu1Thread\n.set vu1Thread, s_vu1thread");
-/* Only referenced by inline helpers that -O1 elides and -O0 does not. */
-void* _aligned_malloc(size_t n, size_t a) { void* p = NULL; posix_memalign(&p, a, n); return p; }
-void _aligned_free(void* p) { free(p); }
-RETURNS_R128 vtlb_memRead128(u32) { r128 v; memset(&v, 0, sizeof(v)); return v; }
-void vtlb_memWrite128(u32, r128) { }
+extern "C" {
 void dVifReset(int) { }
 void vifExecQueue(int) { }
-template <int idx> void dVifUnpack(const u8*, int) { }
-template void dVifUnpack<0>(const u8*, int);
-template void dVifUnpack<1>(const u8*, int);
-void VU_Thread::VifUnpack(vifStruct&, VIFregisters&, const u8*, u32) { }
-
-/* The unit under test, included rather than linked so the loop and its
- * dispatch table are reachable. */
-#include "Vif_Unpack.cpp"
+void dvif_unpack(int, const u8*, int) { }
+vifStruct* mtvu_vif(void) { return &vif1; }
+VIFregisters* mtvu_vif_regs(void) { return &vif1Regs; }
+void mtvu_vif_unpack(const u8*, u32) { }
+bool emu_config_thread_vu1(void) { return false; }
+}
 
 /* The loop calls nVifUpk, the recompiled per-cycle kernels. On arm64 it
  * falls back to the interpreted VIFfuncTable entry when those are null;
@@ -73,7 +62,9 @@ static u32 interp_unpack(void* dest, const void* src)
 	VIFregisters& regs = idx ? vif1Regs : vif0Regs;
 	const int usn = !!vif.usn;
 	const int upkNum = vif.cmd & 0x1f;
-	VIFfuncTable[idx][regs.mode][(usn * 2 * 16) + upkNum](dest, src);
+	/* VIFfuncTable's own layout: the mask at +32, usn at +16. */
+	const int ftIdx = ((upkNum & 0x10) ? 32 : 0) + (usn ? 16 : 0) + (upkNum & 0x0f);
+	VIFfuncTable[0][ftIdx](dest, src, &vif, &regs);
 	return 0;
 }
 
@@ -151,7 +142,7 @@ int main(int argc, char** argv)
 			{
 				const uint wl_eff = regs.cycle.wl ? regs.cycle.wl : 256;
 				const bool isFill = (regs.cycle.cl < wl_eff);
-				UnpackLoopTable[unit][0][isFill]((const u8*)data);
+				_nVifUnpack(unit, (const u8*)data, 0, isFill);
 			}
 
 			/* Word 0 of each of the first 64 quadwords, one hex digit

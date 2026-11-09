@@ -115,6 +115,11 @@ extern void mtvu_write_data_mem(u32 vu_data_addr, const void* data, u32 size);
 /* VIF1's STCOL/STROW: hand vif1's column or row to the VU1 thread. */
 extern void mtvu_write_col(void);
 extern void mtvu_write_row(void);
+/* The VU1 thread's copies of VIF1's state, which its unpacks write, and an
+ * UNPACK's data handed to it (Vif_Unpack.c). */
+extern struct vifStruct* mtvu_vif(void);
+extern struct VIFregisters* mtvu_vif_regs(void);
+extern void mtvu_vif_unpack(const u8* data, u32 size);
 #ifdef __cplusplus
 }
 #endif

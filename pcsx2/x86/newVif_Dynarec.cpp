@@ -32,8 +32,11 @@ void dVifReserve(int idx)
 			idx ? HOSTMEM_VIF1REC_OFFSET : HOSTMEM_VIF0REC_OFFSET, 8 * _1mb);
 }
 
+alignas(16) nVifStruct nVif[2];
+
 void dVifReset(int idx)
 {
+	nVif[idx].idx = idx;
 	vif_hash_reset(&nVif[idx].vifBlocks);
 
 	nVif[idx].recWritePtr = nVif[idx].recReserve.baseptr;
@@ -392,3 +395,12 @@ _vifT void dVifUnpack(const u8* data, int isFill)
 
 template void dVifUnpack<0>(const u8* data, int isFill);
 template void dVifUnpack<1>(const u8* data, int isFill);
+
+/* For Vif_Unpack.c. */
+void dvif_unpack(int idx, const u8* data, int isFill)
+{
+	if (idx)
+		dVifUnpack<1>(data, isFill);
+	else
+		dVifUnpack<0>(data, isFill);
+}

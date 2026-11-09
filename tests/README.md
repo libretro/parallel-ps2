@@ -61,7 +61,7 @@ right. Where the two disagree, that disagreement is the finding.
 | iop | hwgtefuzz.cpp | 1100 | IopGte.cpp |
 | vu | hwrealvu.cpp | 479 across 28 ops | VUops.cpp, VU0.cpp |
 | vu | hwclip, hwrandom, hwint, hwefu, hwfdiv, hwctc2 | 295 | transcription |
-| vif | hwunpack.cpp | 42 formats + 16 write modes + 4 layout | Vif_Unpack.cpp |
+| vif | hwunpack.cpp, hwcycle.cpp | 42 formats + 16 write modes + 4 layout + 342 write cycles | Vif_Unpack.c |
 | emitter | hwas.cpp | 9213 | c89ops.h vs GNU as |
 
 ## What is deliberately not scored

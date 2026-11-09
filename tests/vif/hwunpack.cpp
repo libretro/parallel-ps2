@@ -1,6 +1,6 @@
 /*  VIF unpack against console captures.
  *
- *  Scores pcsx2/Vif_Unpack.cpp against ps2autotests
+ *  Scores pcsx2/Vif_Unpack.c against ps2autotests
  *  tests/dma/vif/unpack.expected. That capture sends a VIF packet of
  *  STCYCL(4,4) then one UNPACK of each format, with a fixed data word,
  *  and prints the quadword the unpack leaves in VU memory. Since the
@@ -29,25 +29,25 @@
 #include "Common.h"
 #include "Config.h"
 #include "Vif.h"
+#include "Vif_Dma.h"
+#include "VU.h"
 #include "Vif_Unpack.h"
 
-/* Vif_Unpack.cpp's transfer entry points reach the recompiled unpackers
- * and the MTVU thread; this harness calls the interpreted table directly
+/* Vif_Unpack.c's transfer entry points reach the recompiled unpackers
+ * and the VU1 thread; this harness calls the interpreted table directly
  * and never enters them, so they are storage and no-ops. */
-#include "MTVU.h"
 alignas(16) u8 eeHw[0x10000];
 alignas(16) vifStruct vif0, vif1;
 alignas(16) VURegs vuRegs[2];
-alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
-asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
-alignas(16) u8 s_vu1thread[sizeof(VU_Thread)];
-asm(".globl vu1Thread\n.set vu1Thread, s_vu1thread");
+extern "C" {
 void dVifReset(int) { }
 void vifExecQueue(int) { }
-template <int idx> void dVifUnpack(const u8*, int) { }
-template void dVifUnpack<0>(const u8*, int);
-template void dVifUnpack<1>(const u8*, int);
-void VU_Thread::VifUnpack(vifStruct&, VIFregisters&, const u8*, u32) { }
+void dvif_unpack(int, const u8*, int) { }
+vifStruct* mtvu_vif(void) { return &vif1; }
+VIFregisters* mtvu_vif_regs(void) { return &vif1Regs; }
+void mtvu_vif_unpack(const u8*, u32) { }
+bool emu_config_thread_vu1(void) { return false; }
+}
 
 /* The formats the "Simple UNPACK" lines exercise, by the name the capture
  * prints. `fmt` is the low four bits of the VIF unpack command. */
@@ -173,12 +173,12 @@ static int run_stmod(const char* path, int* total)
 					for (v = 0; v < 4; v++)
 					{
 						const UNPACKFUNCTYPE fn =
-							VIFfuncTable[unit][mode][0x0C | (dm ? 0x20 : 0)];
+							VIFfuncTable[mode][0x0C | (dm ? 0x20 : 0)];
 						/* signed/dm1 is +0x20; +0x30 is unsigned/dm1 and
 						 * silently unpacks unmasked for a 32-bit format. */
 						for (i = 0; i < 4; i++) src[i] = (u32)(v * 4 + i);
 						vif.cl = v;          /* selects the mask nibble */
-						fn(mem + v * 4, src);
+						fn(mem + v * 4, src, &vif, &regs);
 					}
 
 					ok = 1;
@@ -240,7 +240,7 @@ static int check_layout(void)
 		vif0Regs.mask = 0xAAAAAAAAu;              /* every element a column */
 		for (k = 0; k < 4; k++) vif0.MaskCol._u32[k] = 0x11111111u * (u32)(k + 1);
 
-		VIFfuncTable[0][0][kBlocks[i].off | 0x02](dest, src);   /* S8 */
+		VIFfuncTable[0][kBlocks[i].off | 0x02](dest, src, &vif0, &vif0Regs);   /* S8 */
 		if (dest[0] != kBlocks[i].want)
 		{
 			printf("  block +%02x should be %s (%08x), got %08x\n",
@@ -293,7 +293,7 @@ int main(int argc, char** argv)
 			 * So the unsigned variants are at +0x10, not +0x20 -- +0x20
 			 * lands in the signed dm-1 block and still sign-extends. */
 			const UNPACKFUNCTYPE fn =
-				VIFfuncTable[0][0][kFormats[i].fmt | (kFormats[i].usn ? 0x10 : 0)];
+				VIFfuncTable[0][kFormats[i].fmt | (kFormats[i].usn ? 0x10 : 0)];
 
 			memset(dest, 0xFF, sizeof(dest));
 			src[0] = source_for(name);
@@ -307,7 +307,7 @@ int main(int argc, char** argv)
 			{ src[0] = 0x88888888u; src[1] = 0x99999999u;
 			  src[2] = 0xAAAAAAAAu; src[3] = 0xBBBBBBBBu; }
 
-			fn(dest, src);
+			fn(dest, src, &vif0, &vif0Regs);
 			cases++;
 			if (dest[0] == w0 && dest[1] == w1 && dest[2] == w2 && dest[3] == w3)
 				pass++;

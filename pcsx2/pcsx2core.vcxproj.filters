@@ -401,7 +401,7 @@
     <ClCompile Include="Vif_Transfer.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Vif</Filter>
     </ClCompile>
-    <ClCompile Include="Vif_Unpack.cpp">
+    <ClCompile Include="Vif_Unpack.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Vif\Unpack</Filter>
     </ClCompile>
     <ClCompile Include="x86\newVif_Dynarec.cpp">

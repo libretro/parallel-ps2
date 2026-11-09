@@ -155,7 +155,7 @@ set(pcsx2Sources
 	Vif.cpp
 	Vif_Codes.c
 	Vif_Transfer.c
-	Vif_Unpack.cpp
+	Vif_Unpack.c
 	VirtualMemory.c
 	vtlb.cpp
 	VU0.cpp

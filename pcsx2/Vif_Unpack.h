@@ -17,45 +17,61 @@
 
 #include "../common/Pcsx2Defs.h"
 
+/* The VIF unpackers (Vif_Unpack.c): UNPACK's data into VU memory, the
+ * interpreted per-vector workers, and the hand-off to the recompiled
+ * ones (x86/newVif_Dynarec.cpp, arm64/Vif_Dynarec_arm64.cpp). */
+
 struct vifStruct;
+struct VIFregisters;
 
-typedef void (*UNPACKFUNCTYPE)(void* dest, const void* src);
-
-#define create_unpack_u_type(bits)		typedef void (*UNPACKFUNCTYPE_u##bits)(u32* dest, const u##bits* src)
-#define create_unpack_s_type(bits)		typedef void (*UNPACKFUNCTYPE_s##bits)(u32* dest, const s##bits* src)
-
-#define create_some_unpacks(bits)		\
-		create_unpack_u_type(bits);		\
-		create_unpack_s_type(bits)
-
-create_some_unpacks(32);
-create_some_unpacks(16);
-create_some_unpacks(8);
-
-PCSX2_ALIGN(16) extern const u8 nVifT[16];
-
-/* Array sub-dimension order: [vifidx] [mode] (VN * VL * USN * doMask) */
-PCSX2_ALIGN(16) extern const UNPACKFUNCTYPE VIFfuncTable[2][4][(4 * 4 * 2 * 2)];
-
-extern void resetNewVif(int idx);
-
-/* Both are templates on the VIF index. */
-#ifdef __cplusplus
-template< int idx >
-extern int nVifUnpack(const u8* data);
-
-template< int idx >
-extern void vifUnpackSetup(const u32* data);
-#endif
-
-/* The same for C (Vif_Codes.c), the unit as an argument: UNPACK's code
- * sets the transfer up, and its data is unpacked into VU memory, the
- * words taken returned. */
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* One vector from src into the quadword at dest, for the VIF state given:
+ * vif's MaskRow and MaskCol, and in the masked forms regs' MASK. */
+typedef void (*UNPACKFUNCTYPE)(void* dest, const void* src,
+	struct vifStruct* vif, const struct VIFregisters* regs);
+
+/* A recompiled per-cycle kernel: one vector from src into dest. */
+typedef u32 (*nVifCall)(void*, const void*);
+
+PCSX2_ALIGN(16) extern const u8 nVifT[16];
+
+/* [mode] [doMask, usn, VN, VL] -- the masked half after the unmasked one,
+ * the unsigned quarter of each after its signed one. The same workers
+ * serve both units. */
+PCSX2_ALIGN(16) extern const UNPACKFUNCTYPE VIFfuncTable[4][(4 * 4 * 2 * 2)];
+
+/* The recompilers fill these: ([USN][Masking][Unpack Type]) [curCycle],
+ * and the masks the interpreted SSE kernels read. */
+PCSX2_ALIGN(16) extern nVifCall nVifUpk[(2 * 2 * 16) * 4];
+PCSX2_ALIGN(16) extern u32      nVifMask[3][4][4];
+
+/* An UNPACK that arrives in parts is gathered here until it is whole. */
+typedef struct VifUnpackBuffer
+{
+	/* NUM is at most 256 vectors of a quadword each */
+	PCSX2_ALIGN(16) u8 buffer[256 * 16];
+	u32 bSize; /* bytes held */
+} VifUnpackBuffer;
+
+PCSX2_ALIGN(16) extern VifUnpackBuffer vifUnpackBuffer[2];
+
+extern void resetNewVif(int idx);
+
+/* UNPACK's code sets the transfer up, and its data is unpacked into VU
+ * memory, the words taken returned (Vif_Codes.c). */
 extern void vif_unpack_setup(int idx, const u32* data);
 extern int  vif_unpack(int idx, const u8* data);
+
+/* The interpreted unpack loop, for the recompilers' fallback. */
+extern void _nVifUnpack(int idx, const u8* data, uint mode, bool isFill);
+
+/* The recompilers (x86/newVif_Dynarec.cpp, arm64/Vif_Dynarec_arm64.cpp). */
+extern void dVifReset(int idx);
+extern void dvif_unpack(int idx, const u8* data, int isFill);
+
 #ifdef __cplusplus
 }
 #endif

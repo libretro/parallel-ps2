@@ -20,28 +20,23 @@
 #pragma once
 
 #include "Vif.h"
+#include "Vif_Unpack.h"
 #include "Vif_HashBucket.h"
 #include "VU.h"
 
-typedef u32  (*nVifCall)(void*, const void*);
 typedef void (*nVifrecCall)(uptr dest, uptr src);
 
-extern void _nVifUnpack  (int idx, const u8* data, uint mode, bool isFill);
 extern void  dVifReserve (int idx);
-extern void  dVifReset   (int idx);
 extern void  dVifRelease (int idx);
 extern void  VifUnpackSSE_Init();
 extern void  VifUnpackSSE_Destroy();
 
 _vifT extern void dVifUnpack(const u8* data, int isFill);
 
+/* The recompiler's state per unit. The partial-transfer buffer the
+ * interpreter needs is Vif_Unpack.c's vifUnpackBuffer. */
 struct nVifStruct
 {
-	// Buffer for partial transfers (should always be first to ensure alignment)
-	// Maximum buffer size is 256 (vifRegs.Num max range) * 16 (quadword)
-	alignas(16) u8 buffer[256*16];
-	u32            bSize; // Size of 'buffer'
-
 	// VIF0 or VIF1 - provided for debugging helpfulness only, and is generally unused.
 	// (templates are used for most or all VIF indexing)
 	u32                     idx;
@@ -51,13 +46,6 @@ struct nVifStruct
 	u8*                     recEndPtr;   // arm64 dynarec: end of the code region (overflow check)
 
 	vif_hash_bucket_t       vifBlocks;   // Vif Blocks
-
-
-	nVifStruct() = default;
 };
 
-extern void resetNewVif(int idx);
-
 alignas(16) extern nVifStruct nVif[2];
-alignas(16) extern nVifCall nVifUpk[(2 * 2 * 16) * 4]; // ([USN][Masking][Unpack Type]) [curCycle]
-alignas(16) extern u32      nVifMask[3][4][4];         // [MaskNumber][CycleNumber][Vector]

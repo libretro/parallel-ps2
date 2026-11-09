@@ -717,3 +717,8 @@ void mtvu_kick_pending(void) { vu1Thread.KickPending(); }
 /* VIF1's STCOL/STROW (Vif_Codes.c). */
 void mtvu_write_col(void) { vu1Thread.WriteCol(vif1); }
 void mtvu_write_row(void) { vu1Thread.WriteRow(vif1); }
+
+/* VIF1's unpacks (Vif_Unpack.c). */
+vifStruct* mtvu_vif(void) { return &vu1Thread.vif; }
+VIFregisters* mtvu_vif_regs(void) { return &vu1Thread.vifRegs; }
+void mtvu_vif_unpack(const u8* data, u32 size) { vu1Thread.VifUnpack(vif1, vif1Regs, data, size); }

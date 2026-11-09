@@ -244,7 +244,7 @@
     <ClCompile Include="Vif1_MFIFO.c" />
     <ClCompile Include="Vif_Codes.c" />
     <ClCompile Include="Vif_Transfer.c" />
-    <ClCompile Include="Vif_Unpack.cpp" />
+    <ClCompile Include="Vif_Unpack.c" />
     <ClCompile Include="x86\newVif_Dynarec.cpp" />
     <ClCompile Include="x86\newVif_UnpackSSE.cpp" />
     <ClCompile Include="SPR.c" />

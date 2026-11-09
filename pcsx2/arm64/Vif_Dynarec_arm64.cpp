@@ -203,8 +203,11 @@ void dVifReserve(int idx)
 	nVif[idx].recEndPtr = s_vifCode[idx] + (kVifCodeSize - 256 * 1024);
 }
 
+alignas(16) nVifStruct nVif[2];
+
 void dVifReset(int idx)
 {
+	nVif[idx].idx = idx;
 	vif_hash_reset(&nVif[idx].vifBlocks);
 	if (s_vifCode[idx])
 	{
@@ -596,3 +599,12 @@ _vifT __fi void dVifUnpack(const u8* data, int isFill)
 
 template void dVifUnpack<0>(const u8* data, int isFill);
 template void dVifUnpack<1>(const u8* data, int isFill);
+
+/* For Vif_Unpack.c. */
+void dvif_unpack(int idx, const u8* data, int isFill)
+{
+	if (idx)
+		dVifUnpack<1>(data, isFill);
+	else
+		dVifUnpack<0>(data, isFill);
+}

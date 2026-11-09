@@ -54,12 +54,11 @@ bool vif0Freeze(SaveStateBase *s)
 	SaveState_Freeze(s, vif0);
 
 	/* bSize is the length of the next block, and it comes out of the state
-	 * before it is used to size a copy into a fixed 4KB buffer -- past
-	 * which sit the dynarec's write and end pointers. Nothing bounded it. */
-	SaveState_Freeze(s, nVif[0].bSize);
-	if (nVif[0].bSize > sizeof(nVif[0].buffer))
-		nVif[0].bSize = 0;
-	SaveState_FreezeMem(s, nVif[0].buffer, nVif[0].bSize);
+	 * before it is used to size a copy into a fixed 4KB buffer. */
+	SaveState_Freeze(s, vifUnpackBuffer[0].bSize);
+	if (vifUnpackBuffer[0].bSize > sizeof(vifUnpackBuffer[0].buffer))
+		vifUnpackBuffer[0].bSize = 0;
+	SaveState_FreezeMem(s, vifUnpackBuffer[0].buffer, vifUnpackBuffer[0].bSize);
 
 	return SaveState_IsOkay(s);
 }
@@ -74,10 +73,10 @@ bool vif1Freeze(SaveStateBase *s)
 	SaveState_Freeze(s, vif1);
 
 	/* See vif0Freeze. */
-	SaveState_Freeze(s, nVif[1].bSize);
-	if (nVif[1].bSize > sizeof(nVif[1].buffer))
-		nVif[1].bSize = 0;
-	SaveState_FreezeMem(s, nVif[1].buffer, nVif[1].bSize);
+	SaveState_Freeze(s, vifUnpackBuffer[1].bSize);
+	if (vifUnpackBuffer[1].bSize > sizeof(vifUnpackBuffer[1].buffer))
+		vifUnpackBuffer[1].bSize = 0;
+	SaveState_FreezeMem(s, vifUnpackBuffer[1].buffer, vifUnpackBuffer[1].bSize);
 
 	return SaveState_IsOkay(s);
 }
