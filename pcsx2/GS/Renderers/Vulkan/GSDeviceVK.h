@@ -565,13 +565,14 @@ private:
 	/* (LRPS2_TEST_VK_PIPELINES=mixed: the keys in the order first drawn,
 	 * each with its place's parity: odd ones drawn with siblings) */
 	gs_flat_map_t m_tfx_test_order;
-	/* The siblings' libraries (vk_ext_graphics_pipeline_library): the pixel
-	 * shader parts by TFXLibraryKey(.., true), the vertex input, vertex
-	 * shader and output parts by TFXLibraryKey(.., false); a null pixel
-	 * shader part is being built on the warm-up thread. */
+	/* The siblings' libraries (vk_ext_graphics_pipeline_library), by their
+	 * TFXLibraryKey: the pixel shader parts, the vertex parts and the
+	 * output parts; a null shader part is being built on the warm-up
+	 * thread. */
 	gs_flat_map_t m_tfx_fs_libs;
-	gs_flat_map_t m_tfx_state_libs;
-	VkPipeline GetTFXLibrary(const PipelineSelector& sibling, bool fragment);
+	gs_flat_map_t m_tfx_pr_libs;
+	gs_flat_map_t m_tfx_fo_libs;
+	VkPipeline GetTFXLibrary(const PipelineSelector& sibling, u32 part);
 	bool m_gpl_failed = false; /* a library or a link failed: build whole */
 	/* The draw's pipeline is a sibling: the key it reads, pushed by
 	 * ApplyTFXState. */
@@ -664,7 +665,8 @@ private:
 	u32 m_siblings_built_here = 0;
 	u32 m_siblings_built_ahead = 0;
 	u32 m_siblings_linked = 0;       /* of those built here, linked from libraries */
-	u32 m_libs_built_here = 0;       /* libraries */
+	u32 m_libs_built_here = 0;       /* shader libraries: a draw-path build */
+	u32 m_fo_libs_made = 0;          /* output libraries (no shader) */
 	u32 m_libs_built_ahead = 0;
 	u32 m_jobs_in_flight = 0;        /* asked of the warm-up thread, not yet back */
 	/* dynamic: 0 a key's pipeline, 1 a sibling, 2 a sibling's pixel

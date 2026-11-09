@@ -1911,7 +1911,8 @@ GSDeviceVK::GSDeviceVK()
 	gs_flat_map_init(&m_tfx_pending, sizeof(PipelineSelector), 1);
 	gs_flat_map_init(&m_tfx_test_order, sizeof(PipelineSelector), 1);
 	gs_flat_map_init(&m_tfx_fs_libs, sizeof(PipelineSelector), sizeof(VkPipeline));
-	gs_flat_map_init(&m_tfx_state_libs, sizeof(PipelineSelector), sizeof(VkPipeline));
+	gs_flat_map_init(&m_tfx_pr_libs, sizeof(PipelineSelector), sizeof(VkPipeline));
+	gs_flat_map_init(&m_tfx_fo_libs, sizeof(PipelineSelector), sizeof(VkPipeline));
 	gs_flat_map_init(&m_samplers, sizeof(u32), sizeof(VkSampler));
 	gs_flat_map_init(&m_render_pass_cache, sizeof(u32), sizeof(VkRenderPass));
 	gs_flat_map_init(&m_render_pass_keys, sizeof(VkRenderPass), sizeof(u32));
@@ -1937,7 +1938,8 @@ GSDeviceVK::~GSDeviceVK()
 	gs_flat_map_free(&m_tfx_pending);
 	gs_flat_map_free(&m_tfx_test_order);
 	gs_flat_map_free(&m_tfx_fs_libs);
-	gs_flat_map_free(&m_tfx_state_libs);
+	gs_flat_map_free(&m_tfx_pr_libs);
+	gs_flat_map_free(&m_tfx_fo_libs);
 	gs_flat_map_free(&m_samplers);
 	gs_flat_map_free(&m_render_pass_cache);
 	gs_flat_map_free(&m_render_pass_keys);
@@ -2045,8 +2047,8 @@ void GSDeviceVK::Destroy()
 		log_cb(RETRO_LOG_INFO, "Vulkan pipelines: %u built on the render thread, %u ahead on the warm-up thread, %u of those handed over, %u of them while a sibling drew\n",
 			m_pipelines_built_here, m_pipelines_built_ahead, m_pipelines_taken, m_pipelines_async);
 	if (m_sibling_draws || m_siblings_built_here || m_siblings_built_ahead)
-		log_cb(RETRO_LOG_INFO, "Vulkan dynamic siblings: %u built on the render thread (%u of them linked from libraries), %u on the warm-up thread, %u draws drawn with one; libraries: %u built on the render thread, %u on the warm-up thread\n",
-			m_siblings_built_here, m_siblings_linked, m_siblings_built_ahead, m_sibling_draws, m_libs_built_here, m_libs_built_ahead);
+		log_cb(RETRO_LOG_INFO, "Vulkan dynamic siblings: %u built on the render thread (%u of them linked from libraries), %u on the warm-up thread, %u draws drawn with one; libraries: %u built on the render thread, %u on the warm-up thread, %u output parts made\n",
+			m_siblings_built_here, m_siblings_linked, m_siblings_built_ahead, m_sibling_draws, m_libs_built_here, m_libs_built_ahead, m_fo_libs_made);
 	if (m_mem_submits || m_mem_waits)
 		log_cb(RETRO_LOG_INFO, "Vulkan memory ceilings: %u submits early, %u waits for idle\n",
 			m_mem_submits, m_mem_waits);
@@ -2061,7 +2063,7 @@ void GSDeviceVK::Destroy()
 	m_plist_count = m_plist_cap = 0;
 	m_pipelines_built_here = m_pipelines_built_ahead = m_pipelines_taken = m_pipelines_async = 0;
 	m_sibling_draws = m_siblings_built_here = m_siblings_built_ahead = m_siblings_linked = 0;
-	m_libs_built_here = m_libs_built_ahead = 0;
+	m_libs_built_here = m_libs_built_ahead = m_fo_libs_made = 0;
 
 	DestroyBase();
 	/* With the pool's textures, and like them ahead of the wait for the
@@ -3837,7 +3839,8 @@ void GSDeviceVK::DestroyResources()
 	vk_pipe_destroy_all(&m_tfx_pipelines);
 	vk_pipe_destroy_all(&m_tfx_siblings);
 	vk_pipe_destroy_all(&m_tfx_fs_libs);
-	vk_pipe_destroy_all(&m_tfx_state_libs);
+	vk_pipe_destroy_all(&m_tfx_pr_libs);
+	vk_pipe_destroy_all(&m_tfx_fo_libs);
 	m_gpl_failed = false;
 	gs_flat_map_free(&m_tfx_pending);
 	m_tfx_dynamic   = false;
@@ -3951,8 +3954,8 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 	else
 	{
 		gpb.SetRenderPass(
-			GetTFXRenderPass(p.rt, p.ds, p.ps.colclip_hw, p.dss.date,
-				p.IsRTFeedbackLoop(), p.IsTestingAndSamplingDepth(),
+			GetTFXRenderPass(p.rt, p.ds, p.ps.colclip_hw, library ? false : p.dss.date,
+				p.IsRTFeedbackLoop(), library ? false : p.IsTestingAndSamplingDepth(),
 				p.rt ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 				p.ds ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_DONT_CARE),
 			0);
@@ -4101,58 +4104,192 @@ VkPipeline GSDeviceVK::GetTFXPipeline(const PipelineSelector& p)
 /* The dynamic sibling of a key's pipeline: from the table; else, with
  * build, built here, or without, asked of the warm-up thread for the next
  * draw that wants it. VK_NULL_HANDLE while there is none to draw with. */
-/* What a sibling's library depends on, as its key: for the pixel shader
- * part the module (the sibling's pixel selector), the render pass and the
- * depth/stencil state; for the rest (vertex input, vertex shader, output)
- * the topology, the vertex selector, the render pass and the blend. */
-static GSDeviceVK::PipelineSelector TFXLibraryKey(const GSDeviceVK::PipelineSelector& sibling, bool fragment)
+/* What a sibling's library part depends on, as its key. Every part keeps
+ * what its render pass is made from (the alpha test's first pass, the
+ * target and its format, the depth buffer, the feedback loop); the pass
+ * is built with neither the stencil load nor the depth layout, which leave
+ * it compatible, so parts of different draws link. Then:
+ *  - the pixel shader part (TFX_LIB_FS): the module, as few of them as
+ *    draw the same: the second output and the depth output are kept (the
+ *    dynamic shader writes depth as it was where it does not clamp, and
+ *    an output no blend reads is not seen), so only the flat colour, the
+ *    primitive ID and how the target is read tell them apart; and the
+ *    depth/stencil state, where it is not set on the command buffer;
+ *  - the vertex part (TFX_LIB_PR, with the vertex input): the topology and
+ *    the vertex selector;
+ *  - the output part (TFX_LIB_FO): the blend and the colour mask. It has
+ *    no shader in it, and is the only part made on the render thread. */
+enum { TFX_LIB_FS, TFX_LIB_PR, TFX_LIB_FO };
+
+static u32 TFXDateClass(u32 date)
 {
-	GSDeviceVK::PipelineSelector k{sibling};
-	k.line_width = 0;
-	if (fragment)
+	return (date == 1 || date == 2) ? 1u : (date == 3) ? 3u : 0u;
+}
+
+static GSDeviceVK::PipelineSelector TFXLibraryKey(const GSDeviceVK::PipelineSelector& s, u32 part, bool dynamic_ds)
+{
+	GSDeviceVK::PipelineSelector k;
+	k.rt                  = s.rt;
+	k.ds                  = s.ds;
+	k.feedback_loop_flags = s.feedback_loop_flags & GSDeviceVK::FeedbackLoopFlag_ReadAndWriteRT;
+	k.ps.date             = TFXDateClass(s.ps.date);
+	k.ps.colclip_hw       = s.ps.colclip_hw;
+	if (k.ps.date == 1)
 	{
-		k.topology = 0;
-		k.vs.key   = 0;
-		k.bs.key   = 0;
-		k.cms.key  = 0;
+		/* the alpha test's first pass: a pass of its own, into the image */
+		k.feedback_loop_flags = 0;
+		k.ps.colclip_hw       = 0;
 	}
-	else
+	switch (part)
 	{
-		/* the render pass's (and the alpha test's first pass's blend) */
-		GSHWDrawConfig::PSSelector ps;
-		ps.date       = k.ps.date;
-		ps.colclip_hw = k.ps.colclip_hw;
-		k.ps          = ps;
+		case TFX_LIB_FS:
+			k.ps.iip    = s.ps.iip;
+			k.ps.fbmask = s.ps.fbmask;
+			k.ps.zclamp = (k.ps.date != 1);
+			if (!dynamic_ds)
+				k.dss = s.dss;
+			break;
+		case TFX_LIB_PR:
+			k.topology = s.topology;
+			k.vs       = s.vs;
+			break;
+		default:
+			k.bs  = s.bs;
+			k.cms = s.cms;
+			break;
 	}
 	return k;
 }
 
-/* A sibling's library, from the table or built here. The pixel shader
- * part, the dynamic pixel shader compiled, costs more than a key's own
- * pipeline: with the warm-up thread there (and but for =async, which
- * builds every sibling here) it is asked of the thread instead, and is
- * none until it comes back. */
-VkPipeline GSDeviceVK::GetTFXLibrary(const PipelineSelector& sibling, bool fragment)
+static const VkGraphicsPipelineLibraryFlagsEXT s_tfx_lib_flags[3] = {
+	VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT,
+	VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT | VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT,
+	VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT};
+
+/* Every shader part a sibling can be linked from, in the order draws are
+ * likeliest to ask for them: by render pass, the pixel shader parts (the
+ * flat colour, the alpha test's primitive ID, how the target is read) and
+ * the vertex parts (each topology with its expansion, the texture
+ * coordinates, the flat colour). With all of them there a new key always
+ * draws at once with a sibling linked from them. Without the depth/stencil
+ * state on the command buffer the pixel shader parts hold that state too,
+ * and are left to the draws that ask (the list's are built ahead). Stores
+ * up to cap keys and their parts, and returns how many there are. */
+static u32 TFXLibraryCover(bool barrier, bool dynamic_ds, GSDeviceVK::PipelineSelector* out, u8* parts, u32 cap)
 {
-	const PipelineSelector lk = TFXLibraryKey(sibling, fragment);
-	gs_flat_map_t* table = fragment ? &m_tfx_fs_libs : &m_tfx_state_libs;
+	/* rt, ds, colclip_hw, feedback loop; the alpha test's first pass last */
+	static const u8 passes[][4] = {
+		{1, 1, 0, 0}, {1, 0, 0, 0}, {0, 1, 0, 0}, {1, 1, 1, 0}, {1, 0, 1, 0},
+		{1, 1, 0, 1}, {1, 0, 0, 1}, {1, 1, 1, 1}, {1, 0, 1, 1}};
+	/* topology, expansion */
+	static const u8 shapes[][2] = {
+		{(u8)GSHWDrawConfig::Topology::Triangle, (u8)GSHWDrawConfig::VSExpand::None},
+		{(u8)GSHWDrawConfig::Topology::Triangle, (u8)GSHWDrawConfig::VSExpand::Sprite},
+		{(u8)GSHWDrawConfig::Topology::Line, (u8)GSHWDrawConfig::VSExpand::None},
+		{(u8)GSHWDrawConfig::Topology::Point, (u8)GSHWDrawConfig::VSExpand::None},
+		{(u8)GSHWDrawConfig::Topology::Triangle, (u8)GSHWDrawConfig::VSExpand::Line},
+		{(u8)GSHWDrawConfig::Topology::Triangle, (u8)GSHWDrawConfig::VSExpand::Point}};
+	/* tme, fst */
+	static const u8 coords[][2] = {{1, 0}, {0, 0}, {1, 1}};
+	const u32 npasses = C89_ARRAY_SIZE(passes) + 2;
+	u32 n = 0, i, t, c, iip, date, rd;
+
+	for (i = 0; i < npasses; i++)
+	{
+		GSDeviceVK::PipelineSelector base;
+		if (i < C89_ARRAY_SIZE(passes))
+		{
+			if (passes[i][3] && !barrier)
+				continue;
+			base.rt                  = passes[i][0];
+			base.ds                  = passes[i][1];
+			base.ps.colclip_hw       = passes[i][2];
+			base.feedback_loop_flags = passes[i][3] ? GSDeviceVK::FeedbackLoopFlag_ReadAndWriteRT : 0;
+		}
+		else
+		{
+			base.rt      = 1;
+			base.ds      = i - C89_ARRAY_SIZE(passes);
+			base.ps.date = 1;
+		}
+		/* the pixel shader parts */
+		for (date = 0; dynamic_ds && date < 2; date++)
+		{
+			if (date && (!base.rt || base.ps.date == 1))
+				continue;
+			for (rd = 0; rd < 2; rd++)
+			{
+				/* (the target read as an input attachment only in a
+				 * feedback loop; sampled, in none) */
+				if (rd && (!base.rt || base.ps.date == 1 || (barrier && !base.feedback_loop_flags)))
+					continue;
+				for (iip = 0; iip < 2; iip++)
+				{
+					GSDeviceVK::PipelineSelector k{base};
+					if (date)
+						k.ps.date = 3;
+					k.ps.fbmask = rd;
+					k.ps.iip    = !iip;
+					if (n < cap)
+					{
+						out[n]   = TFXLibraryKey(k, TFX_LIB_FS, true);
+						parts[n] = TFX_LIB_FS;
+					}
+					n++;
+				}
+			}
+		}
+		/* the vertex parts */
+		for (t = 0; t < C89_ARRAY_SIZE(shapes); t++)
+			for (c = 0; c < C89_ARRAY_SIZE(coords); c++)
+				for (iip = 0; iip < 2; iip++)
+				{
+					GSDeviceVK::PipelineSelector k{base};
+					k.topology      = shapes[t][0];
+					k.vs.expand     = (GSHWDrawConfig::VSExpand)shapes[t][1];
+					k.vs.point_size = (shapes[t][0] == (u8)GSHWDrawConfig::Topology::Point);
+					k.vs.tme        = coords[c][0];
+					k.vs.fst        = coords[c][1];
+					k.vs.iip        = !iip;
+					if (n < cap)
+					{
+						out[n]   = TFXLibraryKey(k, TFX_LIB_PR, dynamic_ds);
+						parts[n] = TFX_LIB_PR;
+					}
+					n++;
+				}
+	}
+	return n;
+}
+
+/* A sibling's library part, from the table. The output part is made here
+ * (no shader: a fraction of a link). The others come from the warm-up
+ * thread, which builds every one a draw can ask for before the list
+ * (TFXLibraryCover); one not there yet is asked for and is none until it
+ * comes back, but for =async (every part built here) and without the
+ * thread, where it is built here, as a draw-path build. */
+VkPipeline GSDeviceVK::GetTFXLibrary(const PipelineSelector& sibling, u32 part)
+{
+	const PipelineSelector lk = TFXLibraryKey(sibling, part, m_optional_extensions.vk_ext_extended_dynamic_state);
+	gs_flat_map_t* table = (part == TFX_LIB_FS) ? &m_tfx_fs_libs : (part == TFX_LIB_PR) ? &m_tfx_pr_libs : &m_tfx_fo_libs;
 	const VkPipeline* found = vk_pipe_find(table, lk);
 	VkPipeline lib;
 	int inserted;
-	if (found && (*found != VK_NULL_HANDLE || fragment))
+	if (found && (*found != VK_NULL_HANDLE || part != TFX_LIB_FO))
+	{
+		if (*found == VK_NULL_HANDLE && m_test_pipelines == 3)
+			goto build;
 		return *found;
-	if (fragment && m_warm && m_test_pipelines < 3)
+	}
+	if (part != TFX_LIB_FO && m_warm && m_test_pipelines < 3)
 	{
 		/* (a null entry: asked for, or the thread could not take it) */
-		if (PipelineWarmQueue(lk, 2))
+		if (PipelineWarmQueue(lk, 2 + part))
 			vk_pipe_entry(table, lk, &inserted);
 		return VK_NULL_HANDLE;
 	}
-	lib = BuildTFXPipeline(lk, &m_modules, m_pipeline_cache, true,
-		fragment ? VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT :
-				   (VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT
-					| VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT
-					| VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT));
+build:
+	lib = BuildTFXPipeline(lk, &m_modules, m_pipeline_cache, part == TFX_LIB_FS, s_tfx_lib_flags[part]);
 	if (lib != VK_NULL_HANDLE)
 	{
 		VkPipeline* slot = vk_pipe_entry(table, lk, &inserted);
@@ -4161,8 +4298,13 @@ VkPipeline GSDeviceVK::GetTFXLibrary(const PipelineSelector& sibling, bool fragm
 			vkDestroyPipeline(vk_init_info.device, lib, nullptr);
 			return VK_NULL_HANDLE;
 		}
+		if (*slot != VK_NULL_HANDLE)
+			vkDestroyPipeline(vk_init_info.device, *slot, nullptr);
 		*slot = lib;
-		m_libs_built_here++;
+		if (part == TFX_LIB_FO)
+			m_fo_libs_made++;
+		else
+			m_libs_built_here++;
 	}
 	return lib;
 }
@@ -4191,18 +4333,20 @@ VkPipeline GSDeviceVK::GetTFXSibling(const PipelineSelector& key, bool build)
 	sibling = VK_NULL_HANDLE;
 	if (m_optional_extensions.vk_ext_graphics_pipeline_library && !m_gpl_failed)
 	{
-		const VkPipeline fs_lib = GetTFXLibrary(sk, true);
-		const VkPipeline libs[2] = {fs_lib != VK_NULL_HANDLE ? GetTFXLibrary(sk, false) : VK_NULL_HANDLE, fs_lib};
-		/* the pixel shader part not there yet: the key's own pipeline is
-		 * built here as without libraries, the part on the way (or asked
-		 * for again by the next key, if the thread had no room) */
-		if (fs_lib == VK_NULL_HANDLE && m_warm && m_test_pipelines < 3)
+		VkPipeline libs[3];
+		libs[0] = GetTFXLibrary(sk, TFX_LIB_FS);
+		libs[1] = GetTFXLibrary(sk, TFX_LIB_PR);
+		/* a shader part not there yet: the key's own pipeline is built
+		 * here as without libraries, the part on the way (or asked for
+		 * again by the next key, if the thread had no room) */
+		if ((libs[0] == VK_NULL_HANDLE || libs[1] == VK_NULL_HANDLE) && m_warm && m_test_pipelines < 3)
 			return VK_NULL_HANDLE;
-		if (libs[0] != VK_NULL_HANDLE && libs[1] != VK_NULL_HANDLE)
+		libs[2] = (libs[0] != VK_NULL_HANDLE && libs[1] != VK_NULL_HANDLE) ? GetTFXLibrary(sk, TFX_LIB_FO) : VK_NULL_HANDLE;
+		if (libs[2] != VK_NULL_HANDLE)
 		{
 			Vulkan::GraphicsPipelineBuilder gpb;
 			gpb.SetPipelineLayout(m_tfx_pipeline_layout);
-			gpb.SetLinkedLibraries(libs, 2);
+			gpb.SetLinkedLibraries(libs, 3);
 			sibling = gpb.Create(vk_init_info.device, m_pipeline_cache);
 		}
 		if (sibling != VK_NULL_HANDLE)
@@ -4594,8 +4738,8 @@ typedef struct PipelineWarmResult
 	GSDeviceVK::PipelineSelector sel;
 	VkPipeline pipeline;
 	u32 util;    /* the utility pipeline's id, or UP_COUNT for a TFX one */
-	u8 dynamic;  /* 1 a sibling (sel its VKDynamicPS selector), 2 a sibling's
-	              * pixel shader library (sel its TFXLibraryKey) */
+	u8 dynamic;  /* 1 a sibling (sel its VKDynamicPS selector), 2 + part a
+	              * sibling's shader library (sel its TFXLibraryKey) */
 	u8 job;      /* asked for by the render thread (PipelineWarmQueue) */
 } PipelineWarmResult;
 
@@ -4615,12 +4759,17 @@ struct GSDeviceVK::PipelineWarm
 	u32 util_built;           /* likewise */
 	u32 siblings_built;       /* likewise */
 	u32 libs_built;           /* likewise */
+	PipelineSelector* cover;  /* TFXLibraryCover's, built first */
+	u8* cover_parts;
+	u32 cover_count;
 	bool libs_only;           /* LRPS2_TEST_VK_WARM_LIBS_ONLY: the list's
 	                           * libraries, not its pipelines */
 	Modules mods;             /* the thread's own */
 	retro_spsc_t results;     /* thread -> render thread */
 	retro_spsc_t jobs;        /* render thread -> thread */
 	retro_eventcount_t wake;  /* a job, or stop */
+	retro_atomic_int_t covered;    /* the utility pipelines and the cover built */
+	retro_eventcount_t covered_ev; /* covered set */
 	retro_atomic_int_t stop;
 	sthread_t* thread;
 };
@@ -4661,11 +4810,11 @@ static bool PipelineWarmDoJob(GSDeviceVK::PipelineWarm* w)
 	res.util     = GSDeviceVK::UP_COUNT;
 	res.dynamic  = (u8)job.dynamic;
 	res.job      = 1;
-	res.pipeline = w->dev->BuildTFXPipeline(job.sel, &w->mods, w->cache, job.dynamic != 0,
-		(job.dynamic == 2) ? VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT : 0);
+	res.pipeline = w->dev->BuildTFXPipeline(job.sel, &w->mods, w->cache, job.dynamic == 1 || job.dynamic == 2 + TFX_LIB_FS,
+		(job.dynamic >= 2) ? s_tfx_lib_flags[job.dynamic - 2] : 0);
 	if (res.pipeline != VK_NULL_HANDLE)
 	{
-		if (job.dynamic == 2)
+		if (job.dynamic >= 2)
 			w->libs_built++;
 		else if (job.dynamic)
 			w->siblings_built++;
@@ -4703,7 +4852,26 @@ static void PipelineWarmThread(void* data)
 		PipelineWarmResultPut(w, &res);
 	}
 
-	res.util    = GSDeviceVK::UP_COUNT;
+	/* every shader part a sibling links from: then no new key waits */
+	res.util = GSDeviceVK::UP_COUNT;
+	for (i = 0; i < w->cover_count; i++)
+	{
+		while (PipelineWarmDoJob(w))
+			;
+		if (retro_atomic_load_acquire_int(&w->stop))
+			goto done;
+		res.sel      = w->cover[i];
+		res.dynamic  = (u8)(2 + w->cover_parts[i]);
+		res.pipeline = w->dev->BuildTFXPipeline(res.sel, &w->mods, w->cache, w->cover_parts[i] == TFX_LIB_FS,
+			s_tfx_lib_flags[w->cover_parts[i]]);
+		if (res.pipeline == VK_NULL_HANDLE)
+			continue;
+		w->libs_built++;
+		PipelineWarmResultPut(w, &res);
+	}
+	retro_atomic_store_release_int(&w->covered, 1);
+	retro_eventcount_notify(&w->covered_ev);
+
 	res.dynamic = 0;
 	for (i = 0; i < (w->libs_only ? 0u : w->count); i++)
 	{
@@ -4725,13 +4893,15 @@ static void PipelineWarmThread(void* data)
 	 * links new siblings from in a fraction of a build */
 	{
 	const bool libs = w->dev->GetOptionalExtensions().vk_ext_graphics_pipeline_library;
-	res.dynamic = libs ? 2 : 1;
-	for (i = 0, n = 0; i < w->count; i++)
+	const bool dynamic_ds = w->dev->GetOptionalExtensions().vk_ext_extended_dynamic_state;
+	res.dynamic = libs ? 2 + TFX_LIB_FS : 1;
+	/* (where the cover has every pixel shader part, none) */
+	for (i = 0, n = 0; i < ((libs && dynamic_ds) ? 0u : w->count); i++)
 	{
 		GSDeviceVK::PipelineSelector sk{w->list[i]};
 		VKDynamicPS(sk.ps);
 		if (libs)
-			sk = TFXLibraryKey(sk, true);
+			sk = TFXLibraryKey(sk, TFX_LIB_FS, dynamic_ds);
 		for (j = 0; j < n; j++)
 			if (w->list[w->count + j] == sk)
 				break;
@@ -4773,6 +4943,8 @@ static void PipelineWarmThread(void* data)
 	}
 
 done:
+	retro_atomic_store_release_int(&w->covered, 1);
+	retro_eventcount_notify(&w->covered_ev);
 	/* a pipeline needs its modules only to be made */
 	GSDeviceVK::DestroyModules(&w->mods);
 }
@@ -4783,12 +4955,24 @@ void GSDeviceVK::PipelineWarmStart()
 	VkPipelineCacheCreateInfo ci;
 	/* the utility pipelines, the list's siblings and the list, and the
 	 * render thread's jobs */
-	const u32 results = UP_COUNT + 2 * m_plist_count + PIPELINE_JOBS;
+	const bool cover = m_optional_extensions.vk_ext_graphics_pipeline_library && !m_gpl_failed;
+	const u32 cover_count = cover ? TFXLibraryCover(m_features.texture_barrier,
+		m_optional_extensions.vk_ext_extended_dynamic_state, nullptr, nullptr, 0) : 0u;
+	const u32 results = UP_COUNT + cover_count + 2 * m_plist_count + PIPELINE_JOBS;
 
 	if (m_warm)
 		return;
 	if (!(w = (PipelineWarm*)calloc(1, sizeof(*w))))
 		return;
+	if (cover_count)
+	{
+		w->cover       = (PipelineSelector*)malloc(cover_count * sizeof(*w->cover));
+		w->cover_parts = (u8*)malloc(cover_count);
+		if (!w->cover || !w->cover_parts)
+			goto fail;
+		w->cover_count = TFXLibraryCover(m_features.texture_barrier,
+			m_optional_extensions.vk_ext_extended_dynamic_state, w->cover, w->cover_parts, cover_count);
+	}
 	w->dev   = this;
 	w->count = m_plist_count;
 	/* (tests/vkpipewarm: every key a miss whose pixel shader part is there) */
@@ -4804,10 +4988,13 @@ void GSDeviceVK::PipelineWarmStart()
 	if (w->cache == VK_NULL_HANDLE
 		|| (m_plist_count && !(w->list = (PipelineSelector*)malloc(2 * m_plist_count * sizeof(*w->list)))))
 		goto fail;
+	retro_atomic_int_init(&w->covered, 0);
 	if (!retro_eventcount_init(&w->wake))
 		goto fail;
-	if (!retro_spsc_init(&w->results, (size_t)results * sizeof(PipelineWarmResult)))
+	if (!retro_eventcount_init(&w->covered_ev))
 		goto fail_wake;
+	if (!retro_spsc_init(&w->results, (size_t)results * sizeof(PipelineWarmResult)))
+		goto fail_covered;
 	if (!retro_spsc_init(&w->jobs, (size_t)PIPELINE_JOBS * sizeof(PipelineWarmJob)))
 		goto fail_results;
 	if (m_plist_count)
@@ -4816,18 +5003,40 @@ void GSDeviceVK::PipelineWarmStart()
 		goto fail_jobs;
 	m_warm           = w;
 	m_jobs_in_flight = 0;
+	/* Every shader part a draw can link a sibling from is built before the
+	 * device is handed over, as the game boots, and not as it plays: a new
+	 * key then never has a pipeline built on the draw path. With the
+	 * driver's cache this is a lookup a part. */
+	if (w->cover_count)
+	{
+		while (!retro_atomic_load_acquire_int(&w->covered))
+		{
+			const int key = retro_eventcount_prepare_wait(&w->covered_ev);
+			if (retro_atomic_load_acquire_int(&w->covered))
+			{
+				retro_eventcount_cancel_wait(&w->covered_ev);
+				break;
+			}
+			retro_eventcount_commit_wait(&w->covered_ev, key);
+		}
+		PipelineWarmTake();
+	}
 	return;
 
 fail_jobs:
 	retro_spsc_free(&w->jobs);
 fail_results:
 	retro_spsc_free(&w->results);
+fail_covered:
+	retro_eventcount_free(&w->covered_ev);
 fail_wake:
 	retro_eventcount_free(&w->wake);
 fail:
 	if (w->cache != VK_NULL_HANDLE)
 		vkDestroyPipelineCache(vk_init_info.device, w->cache, nullptr);
 	free(w->list);
+	free(w->cover);
+	free(w->cover_parts);
 	free(w);
 }
 
@@ -4866,10 +5075,10 @@ bool GSDeviceVK::PipelineWarmTake()
 			else
 				vkDestroyPipeline(vk_init_info.device, res.pipeline, nullptr);
 		}
-		else if (res.dynamic == 2)
+		else if (res.dynamic >= 2)
 		{
 			int inserted;
-			VkPipeline* lib = vk_pipe_entry(&m_tfx_fs_libs, res.sel, &inserted);
+			VkPipeline* lib = vk_pipe_entry((res.dynamic == 2 + TFX_LIB_FS) ? &m_tfx_fs_libs : &m_tfx_pr_libs, res.sel, &inserted);
 			if (lib && *lib == VK_NULL_HANDLE)
 				*lib = res.pipeline;
 			else if (res.pipeline != VK_NULL_HANDLE)
@@ -4941,8 +5150,11 @@ void GSDeviceVK::PipelineWarmStop()
 	vkDestroyPipelineCache(vk_init_info.device, w->cache, nullptr);
 	retro_spsc_free(&w->jobs);
 	retro_spsc_free(&w->results);
+	retro_eventcount_free(&w->covered_ev);
 	retro_eventcount_free(&w->wake);
 	free(w->list);
+	free(w->cover);
+	free(w->cover_parts);
 	free(w);
 	m_warm           = nullptr;
 	m_jobs_in_flight = 0;

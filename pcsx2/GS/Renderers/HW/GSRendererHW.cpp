@@ -4455,7 +4455,9 @@ void GSRendererHW::EmulateZbuffer(const GSTextureCache::Target* ds)
 	const bool clamp_z = static_cast<u32>(GSVector4i(m_vt.m_max.p).z) > max_z;
 
 	m_conf.cb_vs.max_depth = GSVector2i(0xFFFFFFFF);
-	//ps_cb.MaxDepth = GSVector4(0.0f, 0.0f, 0.0f, 1.0f);
+	/* No clamp: the most depth there is, so a shader that writes depth
+	 * whether it clamps or not (Vulkan's dynamic one) writes it as it was. */
+	m_conf.cb_ps.TA_MaxDepth_Af.z = 1.0f;
 	m_conf.ps.zclamp = 0;
 
 	if (clamp_z)
@@ -9017,6 +9019,7 @@ GSHWDrawConfig& GSRendererHW::BeginHLEHardwareDraw(
 	GSHWDrawConfig& config = m_conf;
 	memset(&config.cb_vs, 0, sizeof(config.cb_vs));
 	memset(&config.cb_ps, 0, sizeof(config.cb_ps));
+	config.cb_ps.TA_MaxDepth_Af.z = 1.0f; /* no clamp (EmulateZbuffer) */
 
 	// Reused between draws, since the draw config is shared, you can't have multiple draws in flight anyway.
 	static GSVertex vertices[4];

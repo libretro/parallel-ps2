@@ -179,12 +179,15 @@ paraLLEl-GS builds its pipelines ahead on its own threads. The rule is
 not met yet. These draw paths still compile, and each one is a bug to
 remove, most-played first:
 
-- Vulkan, `GSDeviceVK::GetTFXPipelineMissed`: a key with no ready
-  sibling is built whole (`BuildTFXPipeline`), and with no warm-up
-  thread every key is. `GetTFXSibling` builds a sibling whole where
-  there are no graphics pipeline libraries, and `GetTFXLibrary` builds
-  the vertex/output library there. `tests/vkpipewarm` still expects a
-  run from nothing to build some on the render thread.
+- Vulkan without graphics pipeline libraries (or without depth/stencil
+  state on the command buffer, whose pixel shader parts the cover cannot
+  hold): `GSDeviceVK::GetTFXPipelineMissed` builds a key with no ready
+  sibling whole (`BuildTFXPipeline`), and `GetTFXSibling` builds the
+  sibling whole; with no warm-up thread every key is built so. With the
+  libraries, the warm-up thread builds every shader part a sibling links
+  from (`TFXLibraryCover`) before the device is handed over, and the draw
+  path only makes output parts (no shader) and links; `tests/vkpipewarm`
+  holds a run from nothing to none built on the render thread.
 - D3D12, `GSDevice12::GetTFXPipeline`: a miss creates the PSO
   (`AddMissingTFXPipeline`), and `GetTFXVertexShader` and
   `GetTFXPixelShader` compile on a miss.
@@ -198,12 +201,15 @@ remove, most-played first:
 
 The way out is the same everywhere: a small covering set built before
 the first frame, so that every key has a correct pipeline ready, and
-the specialised pipelines built by workers. On Vulkan that means a
-fragment library whose key holds only what shapes the module's
-interface, and a sibling fast-linked (no link-time optimisation) from
-libraries that were all built ahead. Fast-linking such libraries, and
-creating a library with no shader in it, are the only pipeline calls
-the draw path may make.
+the specialised pipelines built by workers. On Vulkan that is a pixel
+shader library whose key holds only what shapes the module's interface,
+vertex libraries by topology and vertex selector, both by render pass
+compatibility class, and a sibling fast-linked (no link-time
+optimisation) from them. Fast-linking libraries that were all built
+ahead, and creating a library with no shader in it, are the only
+pipeline calls the draw path may make. The cover is built while the
+game boots (device creation waits for it): boot may take longer the
+first time, play may not.
 
 ### Invariants
 

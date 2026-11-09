@@ -80,7 +80,7 @@ namespace Vulkan
 			MAX_VERTEX_BUFFERS = 8,
 			MAX_ATTACHMENTS = 2,
 			MAX_DYNAMIC_STATE = 16,
-			MAX_LIBRARIES = 2
+			MAX_LIBRARIES = 3
 		};
 
 		GraphicsPipelineBuilder();

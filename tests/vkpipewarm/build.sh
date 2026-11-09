@@ -34,11 +34,11 @@
 #    (=sync): a sibling drawn after a utility draw's push constants and
 #    then a pipeline of its own reads its own key, pushed again
 #    (sibling_key_after_clut);
-#  - with graphics pipeline libraries, a key whose sibling's pixel shader
-#    part is there draws with a sibling linked from it, nothing built on
-#    the render thread, and from nothing no more is built there than
-#    without them; without them (LRPS2_TEST_VK_NO_GPL) every pipeline is
-#    built whole as before; the picture is the same every way - which
+#  - with graphics pipeline libraries, every shader part a sibling links
+#    from is built before the device is handed over, and from nothing a
+#    new key draws with a sibling linked from them, nothing built on the
+#    render thread; without them (LRPS2_TEST_VK_NO_GPL) every pipeline is
+#    built whole on it, as before; the picture is the same every way - which
 #    holds the pixel shader part of a sibling that blends with its second
 #    output (dual_blend: (Cs - Cd) * As + Cd, As none of Cs's channels)
 #    to having it: built from a key with no blend, it was once built
@@ -319,16 +319,17 @@ for c in dest_alpha mip_tw8 depth_states $MIXED_CASES; do
 done
 
 # 6. Where the device has graphics pipeline libraries (lavapipe does):
-#  - from nothing, a key whose sibling's pixel shader part is not built yet
-#    is built whole on the render thread as without them, and the part is
-#    asked of the thread; no more is built there than without libraries;
-#  - with the parts there (the list's, built by the thread: and only those,
-#    LRPS2_TEST_VK_WARM_LIBS_ONLY, so every key is a miss), every key draws
-#    at once with a sibling linked from them while the thread builds its
-#    own: none is built on the render thread;
+#  - from nothing, nothing is built on the render thread: every shader
+#    part a sibling links from (TFXLibraryCover) is built by the thread
+#    before the device is handed over, so every new key draws at once with
+#    a sibling linked from them while the thread builds its own, and only
+#    output parts (no shader) are made on the render thread;
+#  - with the parts there and the list's pipelines not built
+#    (LRPS2_TEST_VK_WARM_LIBS_ONLY, so every key is a miss), likewise;
 #  - the picture is the same either way.
 # 7. Without the libraries, every pipeline is built whole as before them,
-# and the picture is the same too.
+# and the picture is the same too. (Those builds are on the draw path:
+# the rule's last violation on Vulkan, AGENTS.md.)
 linked=0
 for c in $CASES; do
 	rm -rf "$WORK/libs" "$WORK/whole"
@@ -347,13 +348,17 @@ for c in $CASES; do
 		fi
 	done
 	l=$(sed -n 's/.*(\([0-9]*\) of them linked from libraries).*/\1/p' "$WORK/$c.linked.log")
-	[ "$(here "$c.libs")" -le "$(here "$c.whole")" ] ||
-		{ echo "  FAIL: $c built $(here "$c.libs") on the render thread from nothing with libraries, $(here "$c.whole") without"; fail=1; }
-	[ "$(here "$c.linked")" = 0 ] || { echo "  FAIL: $c built $(here "$c.linked") on the render thread with libraries to link from"; fail=1; }
+	l0=$(sed -n 's/.*(\([0-9]*\) of them linked from libraries).*/\1/p' "$WORK/$c.libs.log")
+	for r in libs linked; do
+		[ "$(here "$c.$r")" = 0 ] || { echo "  FAIL: $c ($r) built $(here "$c.$r") on the render thread with libraries to link from"; fail=1; }
+		k=$(sed -n 's/.*libraries: \([0-9]*\) built on the render thread.*/\1/p' "$WORK/$c.$r.log")
+		[ "${k:-0}" = 0 ] || { echo "  FAIL: $c ($r) built $k shader libraries on the render thread"; fail=1; }
+	done
+	[ "${l0:-0}" -gt 0 ] || { echo "  FAIL: $c linked no sibling from nothing"; fail=1; }
 	[ "${l:-0}" -gt 0 ] || { echo "  FAIL: $c linked no sibling from its libraries"; fail=1; }
 	grep -q "Graphics pipeline libraries are NOT in use" "$WORK/$c.whole.log" || { echo "  FAIL: $c: the libraries were not left off"; fail=1; }
-	printf '  %s: from nothing %s built on the render thread, %s without libraries; with the libraries %s siblings linked, none built (longest frame %s)\n' \
-		$c "$(here "$c.libs")" "$(here "$c.whole")" "${l:-0}" "$(longest "$c.linked")"
+	printf '  %s: from nothing none built on the render thread, %s siblings linked (%s without libraries); with the list %s linked (longest frame %s)\n' \
+		$c "${l0:-0}" "$(here "$c.whole")" "${l:-0}" "$(longest "$c.linked")"
 done
 
 # 8. No run asked the device for VK_EXT_extended_dynamic_state3: the blend
