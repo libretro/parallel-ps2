@@ -16,8 +16,14 @@
 #pragma once
 
 #include "Gif_hw.h"
+#include "ps2/HwInternal.h"
 
-struct gifStruct {
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct gifStruct
+{
 	int  gifstate;
 	bool gspath3done;
 
@@ -26,27 +32,29 @@ struct gifStruct {
 	u32 mfifocycles;
 	u32 gifqwc;
 	bool gifmfifoirq;
-};
+} gifStruct;
 
-alignas(16) extern gifStruct gif;
-
-struct GIF_Fifo
+/* The GIF's 16-quadword DMA FIFO. */
+typedef struct GIF_Fifo
 {
-	unsigned int data[64]; //16 QW FIFO
+	unsigned int data[64];
 	unsigned int fifoSize;
+} GIF_Fifo;
 
-	int write_fifo(u32* pMem, int size);
-	int read_fifo();
+PCSX2_ALIGN(16) extern gifStruct gif;
+PCSX2_ALIGN(16) extern GIF_Fifo gif_fifo;
 
-	void init();
-};
-
-extern GIF_Fifo gif_fifo;
-
-
-#include "ps2/HwInternal.h"
+extern void gif_fifo_init(void);
+/* Takes up to size quadwords from pMem; returns how many it took. */
+extern int  gif_fifo_write(u32* pMem, int size);
+/* Hands what it holds to PATH3; returns the quadwords taken. */
+extern int  gif_fifo_read(void);
 
 extern void GIFdma(void);
 extern void mfifoGIFtransfer(void);
 extern void gifMFIFOInterrupt(void);
 extern void gifCheckPathStatus(bool calledFromGIF);
+
+#ifdef __cplusplus
+}
+#endif

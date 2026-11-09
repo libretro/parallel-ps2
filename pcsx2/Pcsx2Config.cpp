@@ -807,6 +807,11 @@ bool emu_config_ophflag_hack(void)
 	return CHECK_OPHFLAGHACK;
 }
 
+bool emu_config_giffifo_hack(void)
+{
+	return CHECK_GIFFIFOHACK;
+}
+
 bool emu_config_dmabusy_hack(void)
 {
 	return CHECK_DMABUSYHACK;

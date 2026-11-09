@@ -413,7 +413,7 @@
     <ClCompile Include="SPR.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\SPR</Filter>
     </ClCompile>
-    <ClCompile Include="Gif.cpp">
+    <ClCompile Include="Gif.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Gif</Filter>
     </ClCompile>
     <ClCompile Include="R5900OpcodeTables.cpp">

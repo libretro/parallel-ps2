@@ -18,7 +18,7 @@
 #include "Common.h"
 
 /* The GIF as the EE hardware and the VIF DMA see it: its paths, its
- * registers on page 3 (gifRegs, a view of eeHw), and what Gif.cpp and
+ * registers on page 3 (gifRegs, a view of eeHw), and what Gif.c and
  * Gif_Unit.cpp answer about the GIF unit, readable from C and C++. */
 
 typedef enum GIF_PATH {
@@ -181,13 +181,22 @@ typedef struct GIFregisters
 extern "C" {
 #endif
 
-/* Gif.cpp: the GIF unit's paths, as the VIF DMA asks after them. */
+/* Gif_Unit.cpp: the GIF unit and its paths, as the VIF and GIF DMA ask
+ * after them. */
 extern int  gif_unit_check_paths(bool p1, bool p2, bool p3);
 extern int  gif_unit_execute(bool isPath3, bool isResume);
 extern bool gif_unit_can_do_path2(void);
 extern bool gif_unit_can_do_path2hl(void);
+extern bool gif_unit_can_do_path3(void);
+extern bool gif_unit_path3_masked(void);
+extern bool gif_unit_signal_queued(void);
+/* PATH3 DMA data of size bytes; returns the bytes taken. */
+extern u32  gif_unit_transfer_dma(u8* pMem, u32 size);
+extern void gif_unit_reset(bool softReset);
 extern bool gif_path_is_done(int path);
 extern bool gif_path_is_idle(int path);
+extern int  gif_path_state(int path);
+extern void gif_path_set_state(int path, int state);
 
 #ifdef __cplusplus
 }

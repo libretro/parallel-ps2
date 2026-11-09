@@ -247,6 +247,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/Vif0_Dma.c \
 	$(LRPS2_DIR)/Vif1_Dma.c \
 	$(LRPS2_DIR)/Vif1_MFIFO.c \
+	$(LRPS2_DIR)/Gif.c \
 	$(LRPS2_DIR)/SaveStateBase.c \
 	$(LRPS2_DIR)/SaveStateFreeze.c
 
@@ -293,7 +294,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/FPU.cpp \
 	$(LRPS2_DIR)/GameDatabase.cpp \
 	$(LRPS2_DIR)/GameDatabaseBuiltin.cpp \
-	$(LRPS2_DIR)/Gif.cpp \
 	$(LRPS2_DIR)/Gif_Unit.cpp \
 	$(LRPS2_DIR)/GS.cpp \
 	$(LRPS2_DIR)/Interpreter.cpp \

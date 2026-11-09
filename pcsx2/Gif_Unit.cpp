@@ -250,3 +250,19 @@ bool gifFreeze(SaveStateBase *s)
 
 	return true;
 }
+
+/* The GIF unit as the VIF and GIF DMA (Vif1_Dma.c, Vif1_MFIFO.c, Gif.c)
+ * ask after it (Gif_hw.h). */
+int gif_unit_check_paths(bool p1, bool p2, bool p3) { return gifUnit.checkPaths(p1, p2, p3); }
+int gif_unit_execute(bool isPath3, bool isResume) { return gifUnit.Execute(isPath3, isResume); }
+bool gif_unit_can_do_path2(void) { return gifUnit.CanDoPath2(); }
+bool gif_unit_can_do_path2hl(void) { return gifUnit.CanDoPath2HL(); }
+bool gif_unit_can_do_path3(void) { return gifUnit.CanDoPath3(); }
+bool gif_unit_path3_masked(void) { return gifUnit.Path3Masked(); }
+bool gif_unit_signal_queued(void) { return gifUnit.gsSIGNAL.queued != 0; }
+u32 gif_unit_transfer_dma(u8* pMem, u32 size) { return gifUnit.TransferGSPacketData(GIF_TRANS_DMA, pMem, size); }
+void gif_unit_reset(bool softReset) { gifUnit.Reset(softReset); }
+bool gif_path_is_done(int path) { return gifUnit.gifPath[path].isDone(); }
+bool gif_path_is_idle(int path) { return gifUnit.gifPath[path].state == GIF_PATH_IDLE; }
+int gif_path_state(int path) { return (int)gifUnit.gifPath[path].state; }
+void gif_path_set_state(int path, int state) { gifUnit.gifPath[path].state = (GIF_PATH_STATE)state; }

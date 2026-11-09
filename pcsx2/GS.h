@@ -29,14 +29,6 @@ extern "C"
 #endif
 u32 GetVerticalFrequencyMilliHz(void);
 
-enum CSR_FifoState
-{
-	CSR_FIFO_NORMAL = 0, // Somwhere in between (Neither empty or almost full).
-	CSR_FIFO_EMPTY, // Empty
-	CSR_FIFO_FULL, // Almost Full
-	CSR_FIFO_RESERVED // Reserved / Unused.
-};
-
 // --------------------------------------------------------------------------------------
 //  tGS_CSR
 // --------------------------------------------------------------------------------------
@@ -177,81 +169,6 @@ struct GSRegSIGBLID
 
 #define GSCSRr ((u32&)*(PS2MEM_GS + 0x1000))
 
-/* The GS CSR is written by the EE and GIF threads - a status bit here, a
- * FIFO level there - and read by the GS thread, which takes the FIELD bit
- * once per vsync as the pageflip id.  ThreadSanitizer, over four
- * load/unload cycles: MTGS::MainLoop against rcntUpdate, on this word.
- *
- * The writes were bit-field assignments and, for FIELD, |= and ^= on the
- * whole word - read-modify-writes with no atomicity, so two threads
- * updating different bits could lose one of them outright, quite apart
- * from the reader seeing a half-written value.
- *
- * These accessors are the only way the register should be touched from
- * code that can run on more than one thread: a mask per field, an atomic
- * read-modify-write per update, and one acquire load for readers.
- * Multi-bit fields go through a CAS loop because the value has to be
- * spliced into bits the other threads own. */
-#define GS_CSR_SIGNAL   0x00000001u
-#define GS_CSR_FINISH   0x00000002u
-#define GS_CSR_HSINT    0x00000004u
-#define GS_CSR_VSINT    0x00000008u
-#define GS_CSR_EDWINT   0x00000010u
-#define GS_CSR_FLUSH    0x00000100u
-#define GS_CSR_RESET    0x00000200u
-#define GS_CSR_NFIELD   0x00001000u
-#define GS_CSR_FIELD    0x00002000u
-#define GS_CSR_FIFO     0x0000c000u
-#define GS_CSR_FIFO_SH  14
-#define GS_CSR_REV      0x00ff0000u
-#define GS_CSR_REV_SH   16
-#define GS_CSR_ID       0xff000000u
-#define GS_CSR_ID_SH    24
-
-static __fi retro_atomic_int_t* gsCSRword(void)
-{
-	return (retro_atomic_int_t*)(PS2MEM_GS + 0x1000);
-}
-
-static __fi u32 gsCSRload(void)
-{
-	return (u32)retro_atomic_load_acquire_int(gsCSRword());
-}
-
-static __fi void gsCSRset(u32 mask)
-{
-	retro_atomic_fetch_or_int(gsCSRword(), (int)mask);
-}
-
-static __fi void gsCSRclear(u32 mask)
-{
-	retro_atomic_fetch_and_int(gsCSRword(), (int)~mask);
-}
-
-/* No fetch_xor in the atomics header; CAS is the portable spelling and
- * this runs once per vsync. */
-static __fi void gsCSRflip(u32 mask)
-{
-	for (;;)
-	{
-		const int old_v = retro_atomic_load_acquire_int(gsCSRword());
-		const int new_v = (int)((u32)old_v ^ mask);
-		if (retro_atomic_cas_int(gsCSRword(), old_v, new_v))
-			return;
-	}
-}
-
-/* Replace the bits under `mask' with `value', already shifted. */
-static __fi void gsCSRfield(u32 mask, u32 value)
-{
-	for (;;)
-	{
-		const int old_v = retro_atomic_load_acquire_int(gsCSRword());
-		const int new_v = (int)(((u32)old_v & ~mask) | (value & mask));
-		if (retro_atomic_cas_int(gsCSRword(), old_v, new_v))
-			return;
-	}
-}
 #define GSIMR ((tGS_IMR&)*(PS2MEM_GS + 0x1010))
 #define GSSIGLBLID ((GSRegSIGBLID&)*(PS2MEM_GS + 0x1080))
 

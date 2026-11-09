@@ -97,8 +97,8 @@ void WriteFIFO_GIF(const mem128_t* value)
 {
 	if ((!gifUnit.CanDoPath3() || gif_fifo.fifoSize > 0))
 	{
-		gif_fifo.write_fifo((u32*)value, 1);
-		gif_fifo.read_fifo();
+		gif_fifo_write((u32*)value, 1);
+		gif_fifo_read();
 	}
 	else
 	{

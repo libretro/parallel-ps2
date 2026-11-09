@@ -332,6 +332,10 @@ tests/eevif/eevif_test
 tests/eevif/eevif_test.exe
 tests/eevif/.got.txt
 tests/eevif/.obj/
+tests/eegif/eegif_test
+tests/eegif/eegif_test.exe
+tests/eegif/.got.txt
+tests/eegif/.obj/
 tests/p2io/p2io_test.exe
 tests/stdlib/.build/
 tests/stdlib/.probe.cpp

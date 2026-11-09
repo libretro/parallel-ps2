@@ -248,7 +248,7 @@ bool emu_config_viffifo_hack(void) { return s_viffifo; }
 void gifHwReset(void) { answer(0x6a, 0, 0); }
 void gifFifoReset(void) { answer(0x69, 0, 0); }
 
-/* What Gif.cpp now does for the GIF's own registers; the C++ did it in
+/* What Gif.c now does for the GIF's own registers; the C++ did it in
  * Hw.cpp and Dmac.cpp, so the harness carries the same steps for the C
  * build to call. GIF_MODE's kick checks GIF DMA and FIFO state the stub
  * world does not have; both are zero here, as in the C++ run. */

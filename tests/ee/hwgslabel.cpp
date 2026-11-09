@@ -38,7 +38,15 @@ alignas(16) u8 s_vu1thread[sizeof(VU_Thread)];
 asm(".globl vu1Thread\n.set vu1Thread, s_vu1thread");
 alignas(16) vifStruct vif1;
 
+alignas(16) cpuRegisters cpuRegs;
+
+/* The rest of the GIF unit, which the C glue at the end of Gif_Unit.cpp
+ * reaches: never run here. */
 void Gif_AddBlankGSPacket(u32, GIF_PATH) { }
+void Gif_AddCompletedGSPacket(GS_Packet&, GIF_PATH) { }
+void Gif_MTVU_KickSema() { }
+void gifCheckPathStatus(bool) { }
+void CPU_INT(EE_EventType, s32) { }
 void hwIntcIrq(int) { }
 void SaveState_FreezeMem(SaveStateBase*, void*, int) { }
 bool SaveState_FreezeTag(SaveStateBase*, const char*) { return true; }

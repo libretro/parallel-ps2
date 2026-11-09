@@ -119,7 +119,7 @@ set(pcsx2Sources
 	Vif1_MFIFO.c
 	SaveStateBase.c
 	SaveStateFreeze.c
-	Gif.cpp
+	Gif.c
 	Gif_Unit.cpp
 	GS.cpp
 	HostFS.c

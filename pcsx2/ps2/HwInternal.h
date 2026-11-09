@@ -41,7 +41,7 @@ extern void WriteFIFO_VIF1(const mem128_t* value);
 extern void WriteFIFO_GIF(const mem128_t* value);
 extern void WriteFIFO_IPUin(const mem128_t* value);
 
-/* Gif.cpp: the GIF's registers on page 3, its DMA, and its reset. The
+/* Gif.c: the GIF's registers on page 3, its DMA, and its reset. The
  * read and write return like the other units': the value read, and false
  * when the write was taken care of. */
 extern u32  gifRead32(u32 mem);
@@ -65,6 +65,7 @@ extern void mtvu_kick_pending(void);
 
 /* Pcsx2Config.cpp: the gamefixes the handlers check. */
 extern bool emu_config_ophflag_hack(void);
+extern bool emu_config_giffifo_hack(void);
 extern bool emu_config_dmabusy_hack(void);
 extern bool emu_config_viffifo_hack(void);
 extern bool emu_config_vif1stall_hack(void);
