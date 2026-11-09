@@ -38,9 +38,12 @@
 #include "../Config.h"
 
 #include "HostFS.h"
-extern void psxBREAK();
 
 u32 g_psxMaxRecMem = 0;
+
+/* used for constant propagation */
+u32 g_psxConstRegs[32];
+u32 g_psxHasConstReg, g_psxFlushedConstReg;
 
 static uptr psxRecLUT[0x10000];
 u32 psxhwLUT[0x10000];
@@ -205,7 +208,6 @@ static void _DynGen_Dispatchers(void)
 }
 
 ////////////////////////////////////////////////////
-using namespace R3000A;
 
 void _psxFlushConstReg(int reg)
 {

@@ -167,25 +167,31 @@ fi
 
 echo "== IOP dispatch tables vs the MIPS I encoding =="
 "$CC" -O1 -g -Wall $SANFLAGS -o "$DIR/iop_tabaudit" "$DIR/tabaudit.c"
-"$DIR/iop_tabaudit" "$ROOT/pcsx2/R3000AOpcodeTables.cpp" "$ROOT/pcsx2/x86/iR3000Atables.cpp"
+"$DIR/iop_tabaudit" "$ROOT/pcsx2/R3000AOpcodeTables.c" "$ROOT/pcsx2/x86/iR3000Atables.cpp"
 
 echo "== IOP recompilers: RFE raises pending interrupts =="
 "$CC" -O1 -g -Wall $SANFLAGS -o "$DIR/iop_rfeintc" "$DIR/rfeintc.c"
 "$DIR/iop_rfeintc" "$ROOT/pcsx2/x86/iR3000Atables.cpp" "$ROOT/pcsx2/arm64/recR3000A_arm64.cpp"
 
-echo "== IOP driven through R3000AOpcodeTables.cpp vs console =="
+echo "== IOP driven through R3000AOpcodeTables.c vs console =="
 EXPECTED="${PS2AUTOTESTS:-}/tests/cpu/iop"
 if [ -d "$EXPECTED" ]; then
 	${CC:-cc} -std=gnu89 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 		-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 		-I "$ROOT/libretro/libretro-common/include" \
 		-c "$ROOT/pcsx2/IopGte.c" -o "$DIR/IopGte_real.o"
+	for c in R3000AOpcodeTables R3000AInterpreter; do
+		${CC:-cc} -std=gnu89 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
+			-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
+			-I "$ROOT/libretro/libretro-common/include" \
+			-c "$ROOT/pcsx2/$c.c" -o "$DIR/${c}_real.o"
+	done
 	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 		-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 		-I "$ROOT/libretro/libretro-common/include" \
 		-o "$DIR/iop_hwrealiop" "$DIR/hwrealiop.cpp" \
-		"$ROOT/pcsx2/R3000AOpcodeTables.cpp" "$DIR/IopGte_real.o" \
-		"$ROOT/pcsx2/R3000AInterpreter.cpp"
+		"$DIR/R3000AOpcodeTables_real.o" "$DIR/IopGte_real.o" \
+		"$DIR/R3000AInterpreter_real.o"
 	"$DIR/iop_hwrealiop" "$EXPECTED"
 else
 	echo "  skipped: set PS2AUTOTESTS to a ps2autotests checkout to run this"

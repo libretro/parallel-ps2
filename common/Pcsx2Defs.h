@@ -393,31 +393,6 @@ PCSX2_DEFINE_MINMAX(d,   double)
 #define C89_ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #endif
 
-#ifdef __cplusplus
-
-// --------------------------------------------------------------------------------------
-//  ImplementEnumOperators  (macro)
-// --------------------------------------------------------------------------------------
-// This macro implements ++/-- operators for any conforming enumeration.  In order for an
-// enum to conform, it must have _FIRST and _COUNT members defined, and must have a full
-// compliment of sequential members (no custom assignments) --- looking like so:
-//
-// enum Dummy {
-//    Dummy_FIRST,
-//    Dummy_Item = Dummy_FIRST,
-//    Dummy_Crap,
-//    Dummy_COUNT
-// };
-//
-// The macro also defines utility functions for bounds checking enumerations:
-//   EnumIsValid(value);   // returns TRUE if the enum value is between FIRST and COUNT.
-//   EnumAssert(value);
-//
-// It also defines a *prototype* for converting the enumeration to a string.  Note that this
-// method is not implemented!  You must implement it yourself if you want to use it:
-//   EnumToString(value);
-//
-
 #include <compat/strl.h>
 #include <string.h>
 
@@ -435,7 +410,7 @@ PCSX2_DEFINE_MINMAX(d,   double)
  * kind of check at 13 out of 96. One copy is easier to keep correct than
  * three.
  */
-static inline void pcsx2_path_join(char* out, size_t out_size,
+static PCSX2_INLINE void pcsx2_path_join(char* out, size_t out_size,
 		const char* base, const char* next)
 {
 	size_t n = base ? strlen(base) : 0;
@@ -463,6 +438,31 @@ static inline void pcsx2_path_join(char* out, size_t out_size,
 	}
 }
 
+
+#ifdef __cplusplus
+
+// --------------------------------------------------------------------------------------
+//  ImplementEnumOperators  (macro)
+// --------------------------------------------------------------------------------------
+// This macro implements ++/-- operators for any conforming enumeration.  In order for an
+// enum to conform, it must have _FIRST and _COUNT members defined, and must have a full
+// compliment of sequential members (no custom assignments) --- looking like so:
+//
+// enum Dummy {
+//    Dummy_FIRST,
+//    Dummy_Item = Dummy_FIRST,
+//    Dummy_Crap,
+//    Dummy_COUNT
+// };
+//
+// The macro also defines utility functions for bounds checking enumerations:
+//   EnumIsValid(value);   // returns TRUE if the enum value is between FIRST and COUNT.
+//   EnumAssert(value);
+//
+// It also defines a *prototype* for converting the enumeration to a string.  Note that this
+// method is not implemented!  You must implement it yourself if you want to use it:
+//   EnumToString(value);
+//
 
 #define ImplementEnumOperators(enumName) \
 	static __fi enumName& operator++(enumName& src) \

@@ -18,98 +18,98 @@
 #include "IopGte.h"
 #include "IopMem.h"
 
-// Note: Branch instructions of the Interpreter are defined externally because
-// the recompiler shouldn't be using them (it isn't entirely safe, due to the
-// delay slot and event handling differences between recs and ints)
-void psxBGEZ();
-void psxBGEZAL();
-void psxBGTZ();
-void psxBLEZ();
-void psxBLTZ();
-void psxBLTZAL();
+/* Note: Branch instructions of the Interpreter are defined externally because */
+/* the recompiler shouldn't be using them (it isn't entirely safe, due to the */
+/* delay slot and event handling differences between recs and ints) */
+void psxBGEZ(void);
+void psxBGEZAL(void);
+void psxBGTZ(void);
+void psxBLEZ(void);
+void psxBLTZ(void);
+void psxBLTZAL(void);
 
-void psxBEQ();
-void psxBNE();
-void psxJ();
-void psxJAL();
+void psxBEQ(void);
+void psxBNE(void);
+void psxJ(void);
+void psxJAL(void);
 
-void psxJR();
-void psxJALR();
+void psxJR(void);
+void psxJALR(void);
 
 /*********************************************************
 * Arithmetic with immediate operand                      *
 * Format:  OP rt, rs, immediate                          *
 *********************************************************/
-void psxADDI() 	{ if (!_Rt_) return; _rRt_ = _u32(_rRs_) + _Imm_ ; }		// Rt = Rs + Im 	(Exception on Integer Overflow)
-void psxADDIU() {															// Rt = Rs + Im
+void psxADDI(void) 	{ if (!_Rt_) return; _rRt_ = _u32(_rRs_) + _Imm_ ; }		/* Rt = Rs + Im 	(Exception on Integer Overflow) */
+void psxADDIU(void) {															/* Rt = Rs + Im */
 	if (!_Rt_)
 		return;
 	_rRt_ = _u32(_rRs_) + _Imm_ ;
 }
-void psxANDI() 	{ if (!_Rt_) return; _rRt_ = _u32(_rRs_) & _ImmU_; }		// Rt = Rs And Im
-void psxORI() 	{ if (!_Rt_) return; _rRt_ = _u32(_rRs_) | _ImmU_; }		// Rt = Rs Or  Im
-void psxXORI() 	{ if (!_Rt_) return; _rRt_ = _u32(_rRs_) ^ _ImmU_; }		// Rt = Rs Xor Im
-void psxSLTI() 	{ if (!_Rt_) return; _rRt_ = _i32(_rRs_) < _Imm_ ; }		// Rt = Rs < Im		(Signed)
-void psxSLTIU() { if (!_Rt_) return; _rRt_ = _u32(_rRs_) < (u32)_Imm_; }	// Rt = Rs < Im		(Unsigned)
+void psxANDI(void) 	{ if (!_Rt_) return; _rRt_ = _u32(_rRs_) & _ImmU_; }		/* Rt = Rs And Im */
+void psxORI(void) 	{ if (!_Rt_) return; _rRt_ = _u32(_rRs_) | _ImmU_; }		/* Rt = Rs Or  Im */
+void psxXORI(void) 	{ if (!_Rt_) return; _rRt_ = _u32(_rRs_) ^ _ImmU_; }		/* Rt = Rs Xor Im */
+void psxSLTI(void) 	{ if (!_Rt_) return; _rRt_ = _i32(_rRs_) < _Imm_ ; }		/* Rt = Rs < Im		(Signed) */
+void psxSLTIU(void) { if (!_Rt_) return; _rRt_ = _u32(_rRs_) < (u32)_Imm_; }	/* Rt = Rs < Im		(Unsigned) */
 
 /*********************************************************
 * Register arithmetic                                    *
 * Format:  OP rd, rs, rt                                 *
 *********************************************************/
-void psxADD()	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) + _u32(_rRt_); }	// Rd = Rs + Rt		(Exception on Integer Overflow)
-void psxADDU() 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) + _u32(_rRt_); }	// Rd = Rs + Rt
-void psxSUB() 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) - _u32(_rRt_); }	// Rd = Rs - Rt		(Exception on Integer Overflow)
-void psxSUBU() 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) - _u32(_rRt_); }	// Rd = Rs - Rt
-void psxAND() 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) & _u32(_rRt_); }	// Rd = Rs And Rt
-void psxOR() 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) | _u32(_rRt_); }	// Rd = Rs Or  Rt
-void psxXOR() 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) ^ _u32(_rRt_); }	// Rd = Rs Xor Rt
-void psxNOR() 	{ if (!_Rd_) return; _rRd_ =~(_u32(_rRs_) | _u32(_rRt_)); }// Rd = Rs Nor Rt
-void psxSLT() 	{ if (!_Rd_) return; _rRd_ = _i32(_rRs_) < _i32(_rRt_); }	// Rd = Rs < Rt		(Signed)
-void psxSLTU() 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) < _u32(_rRt_); }	// Rd = Rs < Rt		(Unsigned)
+void psxADD(void)	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) + _u32(_rRt_); }	/* Rd = Rs + Rt		(Exception on Integer Overflow) */
+void psxADDU(void) 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) + _u32(_rRt_); }	/* Rd = Rs + Rt */
+void psxSUB(void) 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) - _u32(_rRt_); }	/* Rd = Rs - Rt		(Exception on Integer Overflow) */
+void psxSUBU(void) 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) - _u32(_rRt_); }	/* Rd = Rs - Rt */
+void psxAND(void) 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) & _u32(_rRt_); }	/* Rd = Rs And Rt */
+void psxOR(void) 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) | _u32(_rRt_); }	/* Rd = Rs Or  Rt */
+void psxXOR(void) 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) ^ _u32(_rRt_); }	/* Rd = Rs Xor Rt */
+void psxNOR(void) 	{ if (!_Rd_) return; _rRd_ =~(_u32(_rRs_) | _u32(_rRt_)); }/* Rd = Rs Nor Rt */
+void psxSLT(void) 	{ if (!_Rd_) return; _rRd_ = _i32(_rRs_) < _i32(_rRt_); }	/* Rd = Rs < Rt		(Signed) */
+void psxSLTU(void) 	{ if (!_Rd_) return; _rRd_ = _u32(_rRs_) < _u32(_rRt_); }	/* Rd = Rs < Rt		(Unsigned) */
 
 /*********************************************************
 * Register mult/div & Register trap logic                *
 * Format:  OP rs, rt                                     *
 *********************************************************/
-void psxDIV() {
+void psxDIV(void) {
 	if (_rRt_ == 0) {
-		// Division by 0
+		/* Division by 0 */
 		_rLo_ = _i32(_rRs_) < 0 ? 1 : 0xFFFFFFFFu;
 		_rHi_ = _rRs_;
 
 	} else if (_rRs_ == 0x80000000u && _rRt_ == 0xFFFFFFFFu) {
-		// x86 overflow
+		/* x86 overflow */
 		_rLo_ = 0x80000000u;
 		_rHi_ = 0;
 
 	} else {
-		// Normal behavior
+		/* Normal behavior */
 		_rLo_ = _i32(_rRs_) / _i32(_rRt_);
 		_rHi_ = _i32(_rRs_) % _i32(_rRt_);
 	}
 }
 
-void psxDIVU() {
+void psxDIVU(void) {
 	if (_rRt_ == 0) {
-		// Division by 0
+		/* Division by 0 */
 		_rLo_ = 0xFFFFFFFFu;
 		_rHi_ = _rRs_;
 
 	} else {
-		// Normal behavior
+		/* Normal behavior */
 		_rLo_ = _rRs_ / _rRt_;
 		_rHi_ = _rRs_ % _rRt_;
 	}
 }
 
-void psxMULT() {
+void psxMULT(void) {
 	u64 res = (s64)((s64)_i32(_rRs_) * (s64)_i32(_rRt_));
 
 	psxRegs.GPR.n.lo = (u32)(res & 0xffffffff);
 	psxRegs.GPR.n.hi = (u32)((res >> 32) & 0xffffffff);
 }
 
-void psxMULTU() {
+void psxMULTU(void) {
 	u64 res = (u64)((u64)_u32(_rRs_) * (u64)_u32(_rRt_));
 
 	psxRegs.GPR.n.lo = (u32)(res & 0xffffffff);
@@ -120,9 +120,9 @@ void psxMULTU() {
 * Shift arithmetic with constant shift                   *
 * Format:  OP rd, rt, sa                                 *
 *********************************************************/
-void psxSLL() { if (!_Rd_) return; _rRd_ = _u32(_rRt_) << _Sa_; } // Rd = Rt << sa
-void psxSRA() { if (!_Rd_) return; _rRd_ = _i32(_rRt_) >> _Sa_; } // Rd = Rt >> sa (arithmetic)
-void psxSRL() { if (!_Rd_) return; _rRd_ = _u32(_rRt_) >> _Sa_; } // Rd = Rt >> sa (logical)
+void psxSLL(void) { if (!_Rd_) return; _rRd_ = _u32(_rRt_) << _Sa_; } /* Rd = Rt << sa */
+void psxSRA(void) { if (!_Rd_) return; _rRd_ = _i32(_rRt_) >> _Sa_; } /* Rd = Rt >> sa (arithmetic) */
+void psxSRL(void) { if (!_Rd_) return; _rRd_ = _u32(_rRt_) >> _Sa_; } /* Rd = Rt >> sa (logical) */
 
 /*********************************************************
 * Shift arithmetic with variant register shift           *
@@ -138,47 +138,47 @@ void psxSRL() { if (!_Rd_) return; _rRd_ = _u32(_rRt_) >> _Sa_; } // Rd = Rt >> 
  *
  * rpsxSLLV in x86/iR3000Atables.cpp masks, and so does SLLV in
  * R5900OpcodeImpl.cpp for the EE. This was the odd one out. */
-void psxSLLV() { if (!_Rd_) return; _rRd_ = _u32(_rRt_) << (_u32(_rRs_) & 0x1f); } // Rd = Rt << rs
-void psxSRAV() { if (!_Rd_) return; _rRd_ = _i32(_rRt_) >> (_u32(_rRs_) & 0x1f); } // Rd = Rt >> rs (arithmetic)
-void psxSRLV() { if (!_Rd_) return; _rRd_ = _u32(_rRt_) >> (_u32(_rRs_) & 0x1f); } // Rd = Rt >> rs (logical)
+void psxSLLV(void) { if (!_Rd_) return; _rRd_ = _u32(_rRt_) << (_u32(_rRs_) & 0x1f); } /* Rd = Rt << rs */
+void psxSRAV(void) { if (!_Rd_) return; _rRd_ = _i32(_rRt_) >> (_u32(_rRs_) & 0x1f); } /* Rd = Rt >> rs (arithmetic) */
+void psxSRLV(void) { if (!_Rd_) return; _rRd_ = _u32(_rRt_) >> (_u32(_rRs_) & 0x1f); } /* Rd = Rt >> rs (logical) */
 
 /*********************************************************
 * Load higher 16 bits of the first word in GPR with imm  *
 * Format:  OP rt, immediate                              *
 *********************************************************/
-void psxLUI() { if (!_Rt_) return; _rRt_ = psxRegs.code << 16; } // Upper halfword of Rt = Im
+void psxLUI(void) { if (!_Rt_) return; _rRt_ = psxRegs.code << 16; } /* Upper halfword of Rt = Im */
 
 /*********************************************************
 * Move from HI/LO to GPR                                 *
 * Format:  OP rd                                         *
 *********************************************************/
-void psxMFHI() { if (!_Rd_) return; _rRd_ = _rHi_; } // Rd = Hi
-void psxMFLO() { if (!_Rd_) return; _rRd_ = _rLo_; } // Rd = Lo
+void psxMFHI(void) { if (!_Rd_) return; _rRd_ = _rHi_; } /* Rd = Hi */
+void psxMFLO(void) { if (!_Rd_) return; _rRd_ = _rLo_; } /* Rd = Lo */
 
 /*********************************************************
 * Move to GPR to HI/LO & Register jump                   *
 * Format:  OP rs                                         *
 *********************************************************/
-void psxMTHI() { _rHi_ = _rRs_; } // Hi = Rs
-void psxMTLO() { _rLo_ = _rRs_; } // Lo = Rs
+void psxMTHI(void) { _rHi_ = _rRs_; } /* Hi = Rs */
+void psxMTLO(void) { _rLo_ = _rRs_; } /* Lo = Rs */
 
 /*********************************************************
 * Special purpose instructions                           *
 * Format:  OP                                            *
 *********************************************************/
-void psxBREAK() {
-	// Break exception - psx rom doens't handles this
+void psxBREAK(void) {
+	/* Break exception - psx rom doens't handles this */
 	psxRegs.pc -= 4;
 	psxException(0x24, iopIsDelaySlot);
 }
 
-void psxSYSCALL() {
+void psxSYSCALL(void) {
 	psxRegs.pc -= 4;
 	psxException(0x20, iopIsDelaySlot);
 
 }
 
-void psxRFE() {
+void psxRFE(void) {
 	psxRegs.CP0.n.Status = (psxRegs.CP0.n.Status & 0xfffffff0) |
 						  ((psxRegs.CP0.n.Status & 0x3c) >> 2);
 }
@@ -190,7 +190,7 @@ void psxRFE() {
 
 #define _oB_ (_u32(_rRs_) + _Imm_)
 
-void psxLB() {
+void psxLB(void) {
 	if (_Rt_) {
 		_rRt_ = (s8 )iopMemRead8(_oB_);
 	} else {
@@ -198,7 +198,7 @@ void psxLB() {
 	}
 }
 
-void psxLBU() {
+void psxLBU(void) {
 	if (_Rt_) {
 		_rRt_ = iopMemRead8(_oB_);
 	} else {
@@ -206,7 +206,7 @@ void psxLBU() {
 	}
 }
 
-void psxLH() {
+void psxLH(void) {
 	if (_Rt_) {
 		_rRt_ = (s16)iopMemRead16(_oB_);
 	} else {
@@ -214,7 +214,7 @@ void psxLH() {
 	}
 }
 
-void psxLHU() {
+void psxLHU(void) {
 	if (_Rt_) {
 		_rRt_ = iopMemRead16(_oB_);
 	} else {
@@ -222,7 +222,7 @@ void psxLHU() {
 	}
 }
 
-void psxLW() {
+void psxLW(void) {
 	if (_Rt_) {
 		_rRt_ = iopMemRead32(_oB_);
 	} else {
@@ -230,7 +230,7 @@ void psxLW() {
 	}
 }
 
-void psxLWL() {
+void psxLWL(void) {
 	u32 shift = (_oB_ & 3) << 3;
 	u32 mem = iopMemRead32(_oB_ & 0xfffffffc);
 
@@ -249,7 +249,7 @@ void psxLWL() {
 	*/
 }
 
-void psxLWR() {
+void psxLWR(void) {
 	u32 shift = (_oB_ & 3) << 3;
 	u32 mem = iopMemRead32(_oB_ & 0xfffffffc);
 
@@ -268,11 +268,11 @@ void psxLWR() {
 	*/
 }
 
-void psxSB() { iopMemWrite8 (_oB_, _u8 (_rRt_)); }
-void psxSH() { iopMemWrite16(_oB_, _u16(_rRt_)); }
-void psxSW() { iopMemWrite32(_oB_, _u32(_rRt_)); }
+void psxSB(void) { iopMemWrite8 (_oB_, _u8 (_rRt_)); }
+void psxSH(void) { iopMemWrite16(_oB_, _u16(_rRt_)); }
+void psxSW(void) { iopMemWrite32(_oB_, _u32(_rRt_)); }
 
-void psxSWL() {
+void psxSWL(void) {
 	u32 shift = (_oB_ & 3) << 3;
 	u32 mem = iopMemRead32(_oB_ & 0xfffffffc);
 
@@ -289,7 +289,7 @@ void psxSWL() {
 	*/
 }
 
-void psxSWR() {
+void psxSWR(void) {
 	u32 shift = (_oB_ & 3) << 3;
 	u32 mem = iopMemRead32(_oB_ & 0xfffffffc);
 
@@ -310,13 +310,13 @@ void psxSWR() {
 * Moves between GPR and COPx                             *
 * Format:  OP rt, fs                                     *
 *********************************************************/
-void psxMFC0() { if (!_Rt_) return; _rRt_ = (int)_rFs_; }
-void psxCFC0() { if (!_Rt_) return; _rRt_ = (int)_rFs_; }
+void psxMFC0(void) { if (!_Rt_) return; _rRt_ = (int)_rFs_; }
+void psxCFC0(void) { if (!_Rt_) return; _rRt_ = (int)_rFs_; }
 
-void psxMTC0() { _rFs_ = _u32(_rRt_); }
-void psxCTC0() { _rFs_ = _u32(_rRt_); }
+void psxMTC0(void) { _rFs_ = _u32(_rRt_); }
+void psxCTC0(void) { _rFs_ = _u32(_rRt_); }
 
-void psxCTC2() { _c2dRd_ = _u32(_rRt_); };
+void psxCTC2(void) { _c2dRd_ = _u32(_rRt_); }
 /*********************************************************
 * Unknown instruction (would generate an exception)       *
 * Format:  ?                                             *
@@ -324,39 +324,39 @@ void psxCTC2() { _c2dRd_ = _u32(_rRt_); };
 void psxNULL(void) {
 }
 
-void psxSPECIAL() {
+void psxSPECIAL(void) {
 	psxSPC[_Funct_]();
 }
 
-void psxREGIMM() {
+void psxREGIMM(void) {
 	psxREG[_Rt_]();
 }
 
-void psxCOP0() {
+void psxCOP0(void) {
 	psxCP0[_Rs_]();
 }
 
-void psxCOP2() {
+void psxCOP2(void) {
 	psxCP2[_Funct_]();
 }
 
-void psxBASIC() {
+void psxBASIC(void) {
 	psxCP2BSC[_Rs_]();
 }
 
-void(*psxBSC[64])() = {
-	psxSPECIAL, psxREGIMM, psxJ   , psxJAL  , psxBEQ , psxBNE , psxBLEZ, psxBGTZ, //7
-	psxADDI   , psxADDIU , psxSLTI, psxSLTIU, psxANDI, psxORI , psxXORI, psxLUI , //15
-	psxCOP0   , psxNULL  , psxCOP2, psxNULL , psxNULL, psxNULL, psxNULL, psxNULL, //23
-	psxNULL   , psxNULL  , psxNULL, psxNULL , psxNULL, psxNULL, psxNULL, psxNULL, //31
-	psxLB     , psxLH    , psxLWL , psxLW   , psxLBU , psxLHU , psxLWR , psxNULL, //39
-	psxSB     , psxSH    , psxSWL , psxSW   , psxNULL, psxNULL, psxSWR , psxNULL, //47
-	psxNULL   , psxNULL  , gteLWC2, psxNULL , psxNULL, psxNULL, psxNULL, psxNULL, //55
-	psxNULL   , psxNULL  , gteSWC2, psxNULL  , psxNULL, psxNULL, psxNULL, psxNULL //63
+void (*psxBSC[64])(void) = {
+	psxSPECIAL, psxREGIMM, psxJ   , psxJAL  , psxBEQ , psxBNE , psxBLEZ, psxBGTZ, /* 7 */
+	psxADDI   , psxADDIU , psxSLTI, psxSLTIU, psxANDI, psxORI , psxXORI, psxLUI , /* 15 */
+	psxCOP0   , psxNULL  , psxCOP2, psxNULL , psxNULL, psxNULL, psxNULL, psxNULL, /* 23 */
+	psxNULL   , psxNULL  , psxNULL, psxNULL , psxNULL, psxNULL, psxNULL, psxNULL, /* 31 */
+	psxLB     , psxLH    , psxLWL , psxLW   , psxLBU , psxLHU , psxLWR , psxNULL, /* 39 */
+	psxSB     , psxSH    , psxSWL , psxSW   , psxNULL, psxNULL, psxSWR , psxNULL, /* 47 */
+	psxNULL   , psxNULL  , gteLWC2, psxNULL , psxNULL, psxNULL, psxNULL, psxNULL, /* 55 */
+	psxNULL   , psxNULL  , gteSWC2, psxNULL  , psxNULL, psxNULL, psxNULL, psxNULL /* 63 */
 };
 
 
-void(*psxSPC[64])() = {
+void (*psxSPC[64])(void) = {
 	psxSLL , psxNULL , psxSRL , psxSRA , psxSLLV   , psxNULL , psxSRLV, psxSRAV,
 	psxJR  , psxJALR , psxNULL, psxNULL, psxSYSCALL, psxBREAK, psxNULL, psxNULL,
 	psxMFHI, psxMTHI , psxMFLO, psxMTLO, psxNULL   , psxNULL , psxNULL, psxNULL,
@@ -367,32 +367,32 @@ void(*psxSPC[64])() = {
 	psxNULL, psxNULL , psxNULL, psxNULL, psxNULL   , psxNULL , psxNULL, psxNULL
 };
 
-void(*psxREG[32])() = {
+void (*psxREG[32])(void) = {
 	psxBLTZ  , psxBGEZ  , psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL,
 	psxNULL  , psxNULL  , psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL,
 	psxBLTZAL, psxBGEZAL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL,
 	psxNULL  , psxNULL  , psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL
 };
 
-void(*psxCP0[32])() = {
+void (*psxCP0[32])(void) = {
 	psxMFC0, psxNULL, psxCFC0, psxNULL, psxMTC0, psxNULL, psxCTC0, psxNULL,
 	psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL,
 	psxRFE , psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL,
 	psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL
 };
 
-void (*psxCP2[64])() = {
-	psxBASIC, gteRTPS , psxNULL , psxNULL, psxNULL, psxNULL , gteNCLIP, psxNULL, // 00
-	psxNULL , psxNULL , psxNULL , psxNULL, gteOP  , psxNULL , psxNULL , psxNULL, // 08
-	gteDPCS , gteINTPL, gteMVMVA, gteNCDS, gteCDP , psxNULL , gteNCDT , psxNULL, // 10
-	psxNULL , psxNULL , psxNULL , gteNCCS, gteCC  , psxNULL , gteNCS  , psxNULL, // 18
-	gteNCT  , psxNULL , psxNULL , psxNULL, psxNULL, psxNULL , psxNULL , psxNULL, // 20
-	gteSQR  , gteDCPL , gteDPCT , psxNULL, psxNULL, gteAVSZ3, gteAVSZ4, psxNULL, // 28
-	gteRTPT , psxNULL , psxNULL , psxNULL, psxNULL, psxNULL , psxNULL , psxNULL, // 30
-	psxNULL , psxNULL , psxNULL , psxNULL, psxNULL, gteGPF  , gteGPL  , gteNCCT  // 38
+void (*psxCP2[64])(void) = {
+	psxBASIC, gteRTPS , psxNULL , psxNULL, psxNULL, psxNULL , gteNCLIP, psxNULL, /* 00 */
+	psxNULL , psxNULL , psxNULL , psxNULL, gteOP  , psxNULL , psxNULL , psxNULL, /* 08 */
+	gteDPCS , gteINTPL, gteMVMVA, gteNCDS, gteCDP , psxNULL , gteNCDT , psxNULL, /* 10 */
+	psxNULL , psxNULL , psxNULL , gteNCCS, gteCC  , psxNULL , gteNCS  , psxNULL, /* 18 */
+	gteNCT  , psxNULL , psxNULL , psxNULL, psxNULL, psxNULL , psxNULL , psxNULL, /* 20 */
+	gteSQR  , gteDCPL , gteDPCT , psxNULL, psxNULL, gteAVSZ3, gteAVSZ4, psxNULL, /* 28 */
+	gteRTPT , psxNULL , psxNULL , psxNULL, psxNULL, psxNULL , psxNULL , psxNULL, /* 30 */
+	psxNULL , psxNULL , psxNULL , psxNULL, psxNULL, gteGPF  , gteGPL  , gteNCCT  /* 38 */
 };
 
-void(*psxCP2BSC[32])() = {
+void (*psxCP2BSC[32])(void) = {
 	gteMFC2, psxNULL, gteCFC2, psxNULL, gteMTC2, psxNULL, gteCTC2, psxNULL,
 	psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL,
 	psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL, psxNULL,

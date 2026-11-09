@@ -308,4 +308,8 @@ tests/iophw/.got.txt
 tests/iopdev/iopdev_test
 tests/iopdev/iopdev_test.exe
 tests/iopdev/.got.txt
+tests/iopcore/iopcore_test
+tests/iopcore/iopcore_test.exe
+tests/iopcore/.got.txt
+tests/iopcore/.scratch/
 tests/p2io/p2io_test.exe

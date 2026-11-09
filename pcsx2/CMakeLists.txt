@@ -116,7 +116,7 @@ set(pcsx2Sources
 	HostFS.c
 	Hw.cpp
 	Interpreter.cpp
-	IopBios.cpp
+	IopBios.c
 	IopCounters.c
 	IopDma.c
 	IopHw.c
@@ -136,9 +136,9 @@ set(pcsx2Sources
 	Patch.cpp
 	Pcsx2Config.cpp
 	PerformanceMetrics.cpp
-	R3000A.cpp
-	R3000AInterpreter.cpp
-	R3000AOpcodeTables.cpp
+	R3000A.c
+	R3000AInterpreter.c
+	R3000AOpcodeTables.c
 	R5900.cpp
 	R5900OpcodeImpl.cpp
 	R5900OpcodeTables.cpp

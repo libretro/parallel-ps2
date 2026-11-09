@@ -485,7 +485,7 @@
     <ClCompile Include="R5900OpcodeImpl.cpp">
       <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
     </ClCompile>
-    <ClCompile Include="IopBios.cpp">
+    <ClCompile Include="IopBios.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
     <ClCompile Include="IopCounters.c">
@@ -500,13 +500,13 @@
     <ClCompile Include="IopMem.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="R3000A.cpp">
+    <ClCompile Include="R3000A.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="R3000AInterpreter.cpp">
+    <ClCompile Include="R3000AInterpreter.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="R3000AOpcodeTables.cpp">
+    <ClCompile Include="R3000AOpcodeTables.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
     <ClCompile Include="Sio.c">

@@ -37,10 +37,6 @@ extern u32 g_psxMaxRecMem;
 		/*	branch = 2; */ \
 	}
 
-extern void psxLWL();
-extern void psxLWR();
-extern void psxSWL();
-extern void psxSWR();
 
 static int rpsxAllocRegIfUsed(int reg, int mode)
 {

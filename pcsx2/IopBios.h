@@ -36,40 +36,37 @@
 #define IOP_SEEK_CUR 1
 #define IOP_SEEK_END 2
 
-/* The IOP HLE file and directory objects.
- *
- * These were two abstract classes with pure-virtual close() and defaulted
- * virtual read/write/lseek returning -IOP_EIO. Each had exactly one
- * subclass -- HostFile and HostDir in IopBios.cpp -- so every virtual call
- * resolved to a single implementation and the defaulted overrides were
- * never reached. The abstraction is gone: the concrete types are declared
- * here and the call sites call them directly. Both types are local to
- * IopBios.cpp -- nothing outside it ever named them -- so the header no
- * longer declares them at all.
- */
-typedef int (*irxHLE)(); // return 1 if handled, otherwise 0
-typedef void (*irxDEBUG)();
+#include "common/Pcsx2Types.h"
 
-namespace R3000A
-{
-	u32 irxImportTableAddr(u32 entrypc);
-	/* An IRX import table names its module in an 8-byte field, NUL-padded.
-	 * irxImportName reads it as two little-endian words with everything
-	 * after the first NUL zeroed, so a short name compares equal to its
-	 * constant regardless of what the padding held; the lookups take those
-	 * two words. No string is built anywhere on this path. */
-	void irxImportName(u32 table, u32* name0, u32* name1);
-	irxHLE irxImportHLE(u32 name0, u32 name1, u16 index);
-	irxDEBUG irxImportDebug(u32 name0, u32 name1, u16 index);
-	int irxImportExec(u32 import_table, u16 index);
-	int irxImportExecCached(u32 stubpc, u16 index); // C.71: cached psxJ hook path
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-	namespace ioman
-	{
-		void reset();
-	}
-} // namespace R3000A
+typedef int (*irxHLE)(void); /* return 1 if handled, otherwise 0 */
+typedef void (*irxDEBUG)(void);
 
-extern void Hle_SetElfPath(const char* elfFileName);
-extern void Hle_ClearElfPath();
+u32 irxImportTableAddr(u32 entrypc);
+/* An IRX import table names its module in an 8-byte field, NUL-padded.
+ * irxImportName reads it as two little-endian words with everything
+ * after the first NUL zeroed, so a short name compares equal to its
+ * constant regardless of what the padding held; the lookups take those
+ * two words. No string is built anywhere on this path. */
+void irxImportName(u32 table, u32* name0, u32* name1);
+irxHLE irxImportHLE(u32 name0, u32 name1, u16 index);
+irxDEBUG irxImportDebug(u32 name0, u32 name1, u16 index);
+int irxImportExec(u32 import_table, u16 index);
+/* The interpreter's J hook: cached per stub pc */
+int irxImportExecCached(u32 stubpc, u16 index);
 
+/* Closes every file and directory host: has open. */
+void irxIomanReset(void);
+
+void Hle_SetElfPath(const char* elfFileName);
+void Hle_ClearElfPath(void);
+
+/* Pcsx2Config.cpp: host: is open to a running game */
+bool emu_config_host_fs(void);
+
+#ifdef __cplusplus
+}
+#endif

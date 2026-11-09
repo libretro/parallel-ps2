@@ -60,20 +60,16 @@ alignas(16) u8 iopHw[0x10000];
 int iopIsDelaySlot = 0;
 void iopEventTest() { }
 bool psxBiosCall() { return false; }
-/* EmuConfig has a real constructor in Pcsx2Config.cpp, which pulls in far
- * more than this harness needs. Only the branch path reads it and these
- * blocks never branch, so zeroed storage under the right symbol is enough. */
-/* EmuConfig has a real constructor in Pcsx2Config.cpp, which pulls in far
- * more than this harness needs. Only the branch path reads it, and these
- * blocks never branch, so zeroed storage aliased to the symbol is enough. */
-alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
-asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
-namespace R3000A { int irxImportExecCached(u32, u16) { return 0; } }
+/* The interpreter's IRX injection check and J-stub hook; these blocks
+ * neither reach 0x1630 nor jump. */
+extern "C" bool emu_config_irx_injected(void) { return false; }
+extern "C" int irxImportExecCached(u32, u16) { return 0; }
 
 /* ---- the harness ------------------------------------------------------ */
 
-/* Declared without C linkage: these are C++ symbols in the opcode tables,
- * and an extern "C" block here silently fails to resolve them. */
+/* The opcode tables are C (R3000AOpcodeTables.c). */
+extern "C" {
+
 	void psxADDU(); void psxSUBU(); void psxAND(); void psxOR();
 	void psxXOR(); void psxNOR(); void psxSLT(); void psxSLTU();
 	void psxSLLV(); void psxSRLV(); void psxSRAV();
@@ -85,6 +81,7 @@ namespace R3000A { int irxImportExecCached(u32, u16) { return 0; } }
 	void psxSB(); void psxSH(); void psxSW();
 	void psxLWL(); void psxLWR(); void psxSWL(); void psxSWR();
 	void psxMTSA(); void psxSLTI();
+}
 
 enum Shape { RRR, RRI, RRS, RI, MULDIV, LOAD, STORE };
 
@@ -403,7 +400,7 @@ int main(int argc, char** argv)
 		if (pass != n) failures++;
 	}
 
-	printf("hwrealiop: %d cases across %d ops, driven through R3000AOpcodeTables.cpp\n",
+	printf("hwrealiop: %d cases across %d ops, driven through R3000AOpcodeTables.c\n",
 	       total, NOPS);
 	return failures != 0;
 }

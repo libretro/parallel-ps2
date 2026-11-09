@@ -1,0 +1,73 @@
+programs 40: bfc5d2946eaa2a8c
+programs 80: c38685931fb15fc3
+programs 120: ed1745bab2c6c24b
+programs 160: 8cc476676d8d07dd
+programs 200: c205dbdb06505bca
+programs 240: 69ee84cd720f411d
+programs 280: 63c065d8f89e454e
+programs 320: 6d05bc08f457d4bf
+programs 360: 3f38a989ccda11f5
+programs 400: eed3033699faad1d
+programs: f73ae4756d40f040
+mkdir host:sub: ret 1 v0 0 pc 1234
+mkdir host:sub again: ret 1 v0 0 pc 1234
+open f.bin for writing: ret 1 v0 256 pc 1234
+write 0x6000: ret 1 v0 24576 pc 1234
+write 0x6000 again: ret 1 v0 24576 pc 1234
+write 0x6000 again: ret 1 v0 24576 pc 1234
+write 0x6000 again: ret 1 v0 24576 pc 1234
+close: ret 1 v0 0 pc 1234
+close it again: ret 0 v0 -559038737 pc 8020
+open f.bin to read: ret 1 v0 256 pc 1234
+lseek end: ret 1 v0 -1 pc 1234
+lseek 0x5ff0: ret 1 v0 -1 pc 1234
+lseek bad whence: ret 1 v0 -5 pc 1234
+read 0x40: ret 1 v0 64 pc 1234
+read 0x5000: ret 1 v0 20480 pc 1234
+read past the end: ret 1 v0 53200 pc 1234
+close: ret 1 v0 0 pc 1234
+open f.bin to append: ret 1 v0 256 pc 1234
+write 3: ret 1 v0 3 pc 1234
+lseek cur: ret 1 v0 -1 pc 1234
+close: ret 1 v0 0 pc 1234
+write to stdout: ret 1 v0 5 pc 1234
+getstat f.bin: ret 1 v0 0 pc 1234
+  stat: 14000000 00000000 03800100 00000000 00000000 00282e01 09096500 0014210b 090b6800 00000000
+getstatx f.bin: ret 1 v0 0 pc 1234
+  statx: 04200000 00000000 03800100 00000000 00000000 00282e01 09096500 0014210b 090b6800 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+getstat sub: ret 1 v0 0 pc 1234
+  stat: 20000000 00000000 00100000 00000000 00000000 00282e01 09096500 0014210b 090b6800 00000000
+getstat a missing file: ret 1 v0 -2 pc 1234
+  stat: (not shown)
+dopen sub: ret 1 v0 256 pc 1234
+dread: ret 1 v0 1 pc 1234
+  entry stat: 14000000 00000000 03800100 00000000 00000000 00282e01 09096500 0014210b 090b6800 00000000
+  entry name f.bin
+dreadx: ret 1 v0 0 pc 1234
+dread at the end: ret 1 v0 0 pc 1234
+dclose: ret 1 v0 0 pc 1234
+dclose again: ret 0 v0 -559038737 pc 8020
+close a dir fd as a file: ret 0 v0 -559038737 pc 8020
+open outside: ret 1 v0 -2 pc 1234
+open the root as a file: ret 1 v0 -2 pc 1234
+dopen the root: ret 1 v0 256 pc 1234
+dclose it: ret 1 v0 0 pc 1234
+open with a backslash: ret 1 v0 256 pc 1234
+close it: ret 1 v0 0 pc 1234
+not host:: ret 0 v0 -559038737 pc 8020
+fds: last v0 -24
+open after reset: ret 1 v0 256 pc 1234
+open while a game runs: ret 0 v0 -559038737 pc 8020
+rmdir a full directory: ret 1 v0 -5 pc 1234
+remove a directory: ret -1 v0 -5 pc 1234
+rmdir a file: ret 1 v0 -5 pc 1234
+remove f.bin: ret -1 v0 0 pc 1234
+remove it again: ret -1 v0 -5 pc 1234
+rmdir sub: ret 1 v0 0 pc 1234
+Kprintf: ret 1 v0 -559038737 pc 1234
+RegisterLibraryEntries: ret 0 v0 -559038737 pc 8020
+RegisterIntrHandler: ret 0 v0 -559038737 pc 8020
+sceSifRegisterRpc: ret 0 v0 -559038737 pc 8020
+an export nothing handles: ret 0 v0 -559038737 pc 8020
+open with no elf path: ret 1 v0 -2 pc 1234
+hle: 409f9f82ecb184cf

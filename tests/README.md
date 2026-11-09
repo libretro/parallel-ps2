@@ -56,7 +56,7 @@ right. Where the two disagree, that disagreement is the finding.
 | ee | hwgslabel.cpp | 4 | Gif_Unit.cpp |
 | fpu | hwrealfpu.cpp | 939 across 25 ops | FPU.cpp |
 | fpu | hwfpu.c, hwfcr.c, hwbranch.c | 595 | ps2float.c + transcription |
-| iop | hwrealiop.cpp | 563 across 33 ops | R3000AOpcodeTables.cpp |
+| iop | hwrealiop.cpp | 563 across 33 ops | R3000AOpcodeTables.c |
 | iop | hwalu, hwlsu, hwmuldiv, hwbranch | 722 | transcription |
 | iop | hwgtefuzz.cpp | 1100 | IopGte.cpp |
 | vu | hwrealvu.cpp | 479 across 28 ops | VUops.cpp, VU0.cpp |

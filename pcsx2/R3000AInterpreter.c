@@ -14,24 +14,24 @@
  */
 
 
+#include <string.h>
+
 #include "R3000A.h"
 #include "Common.h"
-#include "Config.h"
 
-#include "R5900OpcodeTables.h"
 #include "IopBios.h"
 #include "IopHw.h"
 
 
-static bool branch2 = 0;
+static bool branch2 = false;
 static u32 branchPC;
 
 static __fi void execI(void)
 {
-	// Inject IRX hack
-	if (psxRegs.pc == 0x1630 && strlen(EmuConfig.CurrentIRX) > 3)
+	/* Inject IRX hack */
+	if (psxRegs.pc == 0x1630 && emu_config_irx_injected())
 	{
-		// FIXME do I need to increase the module count (0x1F -> 0x20)
+		/* FIXME do I need to increase the module count (0x1F -> 0x20) */
 		if (iopMemRead32(0x20018) == 0x1F)
 			iopMemWrite32(0x20094, 0xbffc0000);
 	}
@@ -41,17 +41,18 @@ static __fi void execI(void)
 	psxRegs.pc+= 4;
 	psxRegs.cycle++;
 
-	//One of the Iop to EE delta clocks to be set in PS1 mode.
+	/* One of the Iop to EE delta clocks to be set in PS1 mode. */
 	if ((psxHu32(HW_ICFG) & (1 << 3)))
 		psxRegs.iopCycleEE -= 9;
-	else //default ps2 mode value
+	else /* default ps2 mode value */
 		psxRegs.iopCycleEE -= 8;
 	psxBSC[psxRegs.code >> 26]();
 }
 
 static void doBranch(s32 tar)
 {
-	branch2 = iopIsDelaySlot = true;
+	iopIsDelaySlot = 1;
+	branch2 = true;
 	branchPC = tar;
 	execI();
 	iopIsDelaySlot = false;
@@ -66,12 +67,12 @@ static void doBranch(s32 tar)
 * Format:  OP rs, offset                                 *
 *********************************************************/
 
-void psxBGEZ()         // Branch if Rs >= 0
+void psxBGEZ(void)         /* Branch if Rs >= 0 */
 {
 	if (_i32(_rRs_) >= 0) doBranch(_BranchTarget_);
 }
 
-void psxBGEZAL()   // Branch if Rs >= 0 and link
+void psxBGEZAL(void)   /* Branch if Rs >= 0 and link */
 {
 	/* The link is written before the condition is read, so with rs == 31
 	 * the test sees the return address rather than the old value. That is
@@ -88,21 +89,21 @@ void psxBGEZAL()   // Branch if Rs >= 0 and link
 	}
 }
 
-void psxBGTZ()          // Branch if Rs >  0
+void psxBGTZ(void)          /* Branch if Rs >  0 */
 {
 	if (_i32(_rRs_) > 0) doBranch(_BranchTarget_);
 }
 
-void psxBLEZ()         // Branch if Rs <= 0
+void psxBLEZ(void)         /* Branch if Rs <= 0 */
 {
 	if (_i32(_rRs_) <= 0) doBranch(_BranchTarget_);
 }
-void psxBLTZ()          // Branch if Rs <  0
+void psxBLTZ(void)          /* Branch if Rs <  0 */
 {
 	if (_i32(_rRs_) < 0) doBranch(_BranchTarget_);
 }
 
-void psxBLTZAL()    // Branch if Rs <  0 and link
+void psxBLTZAL(void)    /* Branch if Rs <  0 and link */
 {
 	_SetLink(31);
 	if (_i32(_rRs_) < 0)
@@ -116,12 +117,12 @@ void psxBLTZAL()    // Branch if Rs <  0 and link
 * Format:  OP rs, rt, offset                             *
 *********************************************************/
 
-void psxBEQ()   // Branch if Rs == Rt
+void psxBEQ(void)   /* Branch if Rs == Rt */
 {
 	if (_i32(_rRs_) == _i32(_rRt_)) doBranch(_BranchTarget_);
 }
 
-void psxBNE()   // Branch if Rs != Rt
+void psxBNE(void)   /* Branch if Rs != Rt */
 {
 	if (_i32(_rRs_) != _i32(_rRt_)) doBranch(_BranchTarget_);
 }
@@ -132,9 +133,9 @@ void psxBNE()   // Branch if Rs != Rt
 *********************************************************/
 void psxJ(void)
 {
-	// check for iop module import table magic (C.71: cached resolution)
+	/* check for iop module import table magic (C.71: cached resolution) */
 	u32 delayslot = iopMemRead32(psxRegs.pc);
-	if (delayslot >> 16 == 0x2400 && R3000A::irxImportExecCached(psxRegs.pc, delayslot & 0xffff))
+	if (delayslot >> 16 == 0x2400 && irxImportExecCached(psxRegs.pc, delayslot & 0xffff))
 		return;
 
 	doBranch(_JumpTarget_);
@@ -180,7 +181,7 @@ void psxJALR(void)
 static void intReserve(void) { }
 static void intAlloc(void) { }
 static void intReset(void) { intAlloc(); }
-static void intClear(u32 Addr, u32 Size) { }
+static void intClear(u32 Addr, u32 Size) { (void)Addr; (void)Size; }
 static void intShutdown(void) { }
 
 static s32 intExecuteBlock( s32 eeCycles )
@@ -202,13 +203,13 @@ static s32 intExecuteBlock( s32 eeCycles )
 }
 
 #ifdef ARCH_ARM64
-// arm64 recompiler (Phase C.2b) helper: run a single IOP basic block through the
-// interpreter -- instructions until the next taken branch (and its delay slot,
-// which execI()/doBranch() handle). The arm64 JIT currently emits one per-PC
-// block per basic block, each of which calls this; Phase C.2b-2 replaces the
-// body with natively translated instructions. Mirrors intExecuteBlock's inner
-// loop (incl. the BIOS HLE entry hook) so behaviour is identical.
-extern "C" void iopRunBasicBlock_arm64(void)
+/* arm64 recompiler (Phase C.2b) helper: run a single IOP basic block through the */
+/* interpreter -- instructions until the next taken branch (and its delay slot, */
+/* which execI()/doBranch() handle). The arm64 JIT currently emits one per-PC */
+/* block per basic block, each of which calls this; Phase C.2b-2 replaces the */
+/* body with natively translated instructions. Mirrors intExecuteBlock's inner */
+/* loop (incl. the BIOS HLE entry hook) so behaviour is identical. */
+void iopRunBasicBlock_arm64(void)
 {
 	if ((psxHu32(HW_ICFG) & 8) && ((psxRegs.pc & 0x1fffffffU) == 0xa0 || (psxRegs.pc & 0x1fffffffU) == 0xb0 || (psxRegs.pc & 0x1fffffffU) == 0xc0))
 		psxBiosCall();

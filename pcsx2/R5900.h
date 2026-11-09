@@ -241,7 +241,14 @@ extern "C" {
 }
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* R5900.cpp; R3000A.c reads it */
 extern retro_atomic_int_t eeEventTestIsActive;
+#ifdef __cplusplus
+}
+#endif
 
 void intUpdateCPUCycles();
 void intSetBranch();

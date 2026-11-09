@@ -23,7 +23,7 @@ typedef union GPRRegs {
 		u32 r0, at, v0, v1, a0, a1, a2, a3,
 			t0, t1, t2, t3, t4, t5, t6, t7,
 			s0, s1, s2, s3, s4, s5, s6, s7,
-			t8, t9, k0, k1, gp, sp, s8, ra, hi, lo; // hi needs to be at index 32! don't change
+			t8, t9, k0, k1, gp, sp, s8, ra, hi, lo; /* hi needs to be at index 32! don't change */
 	} n;
 	u32 r[34]; /* Lo, Hi in r[33] and r[32] */
 } GPRRegs;
@@ -111,21 +111,21 @@ typedef struct psxRegisters {
 	u32 interrupt;
 	u32 pcWriteback;
 
-	// Controls when branch tests are performed.
+	/* Controls when branch tests are performed. */
 	u32 iopNextEventCycle;
 
-	// This value is used when the IOP execution is broken to return control to the EE.
-	// (which happens when the IOP throws EE-bound interrupts).  It holds the value of
-	// iopCycleEE (which is set to zero to facilitate the code break), so that the unrun
-	// cycles can be accounted for later.
+	/* This value is used when the IOP execution is broken to return control to the EE. */
+	/* (which happens when the IOP throws EE-bound interrupts).  It holds the value of */
+	/* iopCycleEE (which is set to zero to facilitate the code break), so that the unrun */
+	/* cycles can be accounted for later. */
 	s32 iopBreak;
 
-	// Tracks current number of cycles IOP can run in EE cycles. When it dips below zero,
-	// control is returned to the EE.
+	/* Tracks current number of cycles IOP can run in EE cycles. When it dips below zero, */
+	/* control is returned to the EE. */
 	s32 iopCycleEE;
 
-	u32 sCycle[32];		// start cycle for signaled ints
-	s32 eCycle[32];		// cycle delta for signaled ints (sCycle + eCycle == branch cycle)
+	u32 sCycle[32];		/* start cycle for signaled ints */
+	s32 eCycle[32];		/* cycle delta for signaled ints (sCycle + eCycle == branch cycle) */
 } psxRegisters;
 
 /* MSVC decorates C++ data symbols; the ELF ABI does not. A variable a C
@@ -142,47 +142,47 @@ extern "C" {
 
 #ifndef _PC_
 
-#define _i32(x) (s32)x //R3000A
-#define _u32(x) (u32)x //R3000A
+#define _i32(x) (s32)x /* R3000A */
+#define _u32(x) (u32)x /* R3000A */
 
-#define _i16(x) (s16)x // Not used
-#define _u16(x) (u16)x // Not used
+#define _i16(x) (s16)x /* Not used */
+#define _u16(x) (u16)x /* Not used */
 
-#define _i8(x) (s8)x // Not used
-#define _u8(x) (u8)x //R3000A - once
+#define _i8(x) (s8)x /* Not used */
+#define _u8(x) (u8)x /* R3000A - once */
 
 /**** R3000A Instruction Macros ****/
-#define _PC_       psxRegs.pc       // The next PC to be executed
+#define _PC_       psxRegs.pc       /* The next PC to be executed */
 
-#define _Funct_          ((psxRegs.code      ) & 0x3F)  // The funct part of the instruction register
-#define _Rd_             ((psxRegs.code >> 11) & 0x1F)  // The rd part of the instruction register
-#define _Rt_             ((psxRegs.code >> 16) & 0x1F)  // The rt part of the instruction register
-#define _Rs_             ((psxRegs.code >> 21) & 0x1F)  // The rs part of the instruction register
-#define _Sa_             ((psxRegs.code >>  6) & 0x1F)  // The sa part of the instruction register
-#define _Im_             ((u16)psxRegs.code) // The immediate part of the instruction register
-#define _InstrucTarget_  (psxRegs.code & 0x03ffffff)    // The target part of the instruction register
+#define _Funct_          ((psxRegs.code      ) & 0x3F)  /* The funct part of the instruction register */
+#define _Rd_             ((psxRegs.code >> 11) & 0x1F)  /* The rd part of the instruction register */
+#define _Rt_             ((psxRegs.code >> 16) & 0x1F)  /* The rt part of the instruction register */
+#define _Rs_             ((psxRegs.code >> 21) & 0x1F)  /* The rs part of the instruction register */
+#define _Sa_             ((psxRegs.code >>  6) & 0x1F)  /* The sa part of the instruction register */
+#define _Im_             ((u16)psxRegs.code) /* The immediate part of the instruction register */
+#define _InstrucTarget_  (psxRegs.code & 0x03ffffff)    /* The target part of the instruction register */
 
-#define _Imm_	((short)psxRegs.code) // sign-extended immediate
-#define _ImmU_	(psxRegs.code&0xffff) // zero-extended immediate
+#define _Imm_	((short)psxRegs.code) /* sign-extended immediate */
+#define _ImmU_	(psxRegs.code&0xffff) /* zero-extended immediate */
 
-#define _rRs_   psxRegs.GPR.r[_Rs_]   // Rs register
-#define _rRt_   psxRegs.GPR.r[_Rt_]   // Rt register
-#define _rRd_   psxRegs.GPR.r[_Rd_]   // Rd register
-#define _rSa_   psxRegs.GPR.r[_Sa_]   // Sa register
-#define _rFs_   psxRegs.CP0.r[_Rd_]   // Fs register
+#define _rRs_   psxRegs.GPR.r[_Rs_]   /* Rs register */
+#define _rRt_   psxRegs.GPR.r[_Rt_]   /* Rt register */
+#define _rRd_   psxRegs.GPR.r[_Rd_]   /* Rd register */
+#define _rSa_   psxRegs.GPR.r[_Sa_]   /* Sa register */
+#define _rFs_   psxRegs.CP0.r[_Rd_]   /* Fs register */
 
-#define _c2dRs_ psxRegs.CP2D.r[_Rs_]  // Rs cop2 data register
-#define _c2dRt_ psxRegs.CP2D.r[_Rt_]  // Rt cop2 data register
-#define _c2dRd_ psxRegs.CP2D.r[_Rd_]  // Rd cop2 data register
-#define _c2dSa_ psxRegs.CP2D.r[_Sa_]  // Sa cop2 data register
+#define _c2dRs_ psxRegs.CP2D.r[_Rs_]  /* Rs cop2 data register */
+#define _c2dRt_ psxRegs.CP2D.r[_Rt_]  /* Rt cop2 data register */
+#define _c2dRd_ psxRegs.CP2D.r[_Rd_]  /* Rd cop2 data register */
+#define _c2dSa_ psxRegs.CP2D.r[_Sa_]  /* Sa cop2 data register */
 
-#define _rHi_   psxRegs.GPR.n.hi   // The HI register
-#define _rLo_   psxRegs.GPR.n.lo   // The LO register
+#define _rHi_   psxRegs.GPR.n.hi   /* The HI register */
+#define _rLo_   psxRegs.GPR.n.lo   /* The LO register */
 
-#define _JumpTarget_    ((_InstrucTarget_ << 2) + (_PC_ & 0xf0000000))   // Calculates the target during a jump instruction
-#define _BranchTarget_  (((s32)(s16)_Imm_ * 4) + _PC_)                 // Calculates the target during a branch instruction
+#define _JumpTarget_    ((_InstrucTarget_ << 2) + (_PC_ & 0xf0000000))   /* Calculates the target during a jump instruction */
+#define _BranchTarget_  (((s32)(s16)_Imm_ * 4) + _PC_)                 /* Calculates the target during a branch instruction */
 
-#define _SetLink(x)     psxRegs.GPR.r[x] = _PC_ + 4;       // Sets the return address in the link register
+#define _SetLink(x)     psxRegs.GPR.r[x] = _PC_ + 4;       /* Sets the return address in the link register */
 
 #endif
 
@@ -191,52 +191,55 @@ extern "C" {
 #endif
 	extern s32 psxNextDeltaCounter;
 	extern u32 psxNextStartCounter;
-#ifdef __cplusplus
-}
-#endif
+
+/* Used to signal to the EE when important actions that need IOP attention
+ * have happened (hsyncs, vsyncs, IOP exceptions, etc). R3000A.c */
 extern bool iopEventAction;
 
-// Branching status used when throwing exceptions.
+/* Branching status used when throwing exceptions. x86/CpuState.cpp */
 extern int iopIsDelaySlot;
 
-// --------------------------------------------------------------------------------------
-//  R3000Acpu
-// --------------------------------------------------------------------------------------
+/* --------------------------------------------------------------------------
+ *  R3000Acpu
+ * -------------------------------------------------------------------------- */
 
 typedef struct R3000Acpu {
 	void (*Reserve)(void);
 	void (*Reset)(void);
-	s32 (*ExecuteBlock)( s32 eeCycles );		// executes the given number of EE cycles.
+	s32 (*ExecuteBlock)( s32 eeCycles );		/* executes the given number of EE cycles. */
 	void (*Clear)(u32 Addr, u32 Size);
 	void (*Shutdown)(void);
 } R3000Acpu;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 /* CDVD.c clears what DMA3 wrote through it */
 extern R3000Acpu *psxCpu;
-#ifdef __cplusplus
-}
-#endif
 extern R3000Acpu psxInt;
 extern R3000Acpu psxRec;
 
 extern void psxReset(void);
+extern void psxShutdown(void);
 extern void psxException(u32 code, u32 step);
 extern void iopEventTest(void);
 
-// Subsets
-extern void (*psxBSC[64])();
-extern void (*psxSPC[64])();
-extern void (*psxREG[32])();
-extern void (*psxCP0[32])();
-extern void (*psxCP2[64])();
-extern void (*psxCP2BSC[32])();
+/* The interpreter's opcode tables (R3000AOpcodeTables.c) */
+extern void (*psxBSC[64])(void);
+extern void (*psxSPC[64])(void);
+extern void (*psxREG[32])(void);
+extern void (*psxCP0[32])(void);
+extern void (*psxCP2[64])(void);
+extern void (*psxCP2BSC[32])(void);
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/* The interpreter's instructions the recompilers call */
+extern void psxBREAK(void);
+extern void psxLWL(void);
+extern void psxLWR(void);
+extern void psxSWL(void);
+extern void psxSWR(void);
+
+/* Pcsx2Config.cpp: an IRX is set to be injected into the IOP's module
+ * list (the interpreter's hook at 0x1630) */
+extern bool emu_config_irx_injected(void);
+
 /* ps2/Iop/PsxBios.c */
 extern void psxBiosReset(void);
 extern bool psxBiosCall(void);

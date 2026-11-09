@@ -22,7 +22,7 @@
  *  a test that calls the implementations directly. The prefix is the only
  *  difference, so one reference serves both.
  *
- *  Usage: tests/iop/tabaudit <R3000AOpcodeTables.cpp> [iR3000Atables.cpp]
+ *  Usage: tests/iop/tabaudit <R3000AOpcodeTables.c> [iR3000Atables.cpp]
  */
 
 #include <stdio.h>
@@ -73,7 +73,13 @@ static const char* find_def(const char* src, const char* decl)
 	while ((p = strstr(p, decl)) != NULL)
 	{
 		const char* q = p + strlen(decl);
-		while (*q == ' ' || *q == '\t' || *q == '\n' || *q == '(' || *q == ')') q++;
+		/* the parameter list: () in C++, (void) in C */
+		for (;;)
+		{
+			while (*q == ' ' || *q == '\t' || *q == '\n' || *q == '(' || *q == ')') q++;
+			if (!strncmp(q, "void", 4)) { q += 4; continue; }
+			break;
+		}
 		if (*q == '=') return p;
 		p += strlen(decl);
 	}
@@ -99,6 +105,8 @@ static int read_table(const char* src, const char* decl, char out[][32], int n)
 		if (p >= end) break;
 		if (p[0] == '/' && p[1] == '/')            /* line comment */
 		{ while (p < end && *p != '\n') p++; continue; }
+		if (p[0] == '/' && p[1] == '*')            /* block comment */
+		{ const char* c = strstr(p + 2, "*/"); p = c ? c + 2 : end; continue; }
 		q = p;
 		while (q < end && *q != ',' && *q != ' ' && *q != '\t' && *q != '\n') q++;
 		len = (int)(q - p);
@@ -175,7 +183,7 @@ static int check(const char* what, char got[][32], int got_n,
 
 int main(int argc, char** argv)
 {
-	const char* path = (argc > 1) ? argv[1] : "R3000AOpcodeTables.cpp";
+	const char* path = (argc > 1) ? argv[1] : "R3000AOpcodeTables.c";
 	FILE* f = fopen(path, "rb");
 	char* src;
 	long len;

@@ -25,6 +25,8 @@
 #include "CDVD/CDVDcommon.h"
 #include "MemoryCardFile.h"
 #include "R5900.h"
+#include "R3000A.h"
+#include "IopBios.h"
 
 #include <file/file_path.h>
 
@@ -781,6 +783,16 @@ bool emu_config_mcd_ejection(void)
 bool emu_config_boot2_injection(void)
 {
 	return EmuConfig.UseBOOT2Injection;
+}
+
+bool emu_config_irx_injected(void)
+{
+	return strlen(EmuConfig.CurrentIRX) > 3;
+}
+
+bool emu_config_host_fs(void)
+{
+	return EmuConfig.HostFs;
 }
 
 

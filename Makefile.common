@@ -289,16 +289,12 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/GS.cpp \
 	$(LRPS2_DIR)/Hw.cpp \
 	$(LRPS2_DIR)/Interpreter.cpp \
-	$(LRPS2_DIR)/IopBios.cpp \
 	$(LRPS2_DIR)/MMI.cpp \
 	$(LRPS2_DIR)/MTGS.cpp \
 	$(LRPS2_DIR)/MTVU.cpp \
 	$(LRPS2_DIR)/Patch.cpp \
 	$(LRPS2_DIR)/Pcsx2Config.cpp \
 	$(LRPS2_DIR)/PerformanceMetrics.cpp \
-	$(LRPS2_DIR)/R3000A.cpp \
-	$(LRPS2_DIR)/R3000AInterpreter.cpp \
-	$(LRPS2_DIR)/R3000AOpcodeTables.cpp \
 	$(LRPS2_DIR)/R5900.cpp \
 	$(LRPS2_DIR)/R5900OpcodeImpl.cpp \
 	$(LRPS2_DIR)/R5900OpcodeTables.cpp \
@@ -383,7 +379,11 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/ps2/BiosTools.cpp
 
 SOURCES_C += \
+	$(LRPS2_DIR)/IopBios.c \
 	$(LRPS2_DIR)/IopMem.c \
+	$(LRPS2_DIR)/R3000A.c \
+	$(LRPS2_DIR)/R3000AInterpreter.c \
+	$(LRPS2_DIR)/R3000AOpcodeTables.c \
 	$(LRPS2_DIR)/Mdec.c \
 	$(LRPS2_DIR)/ps2/pgif.c \
 	$(LRPS2_DIR)/ps2/Iop/IopHwRead.c \
