@@ -606,6 +606,10 @@ private:
 		PGS::atomic_bool done;
 	};
 	std::vector<std::unique_ptr<CompilationTask>> compilation_tasks;
+	/* The small passes' pipelines built so far (kick_compilation_tasks
+	 * waits for all of them), and their eventcount. */
+	retro_atomic_size_t small_built;
+	retro_eventcount_t small_built_event;
 
 	uint64_t query_timeline(const Vulkan::SemaphoreHolder &sem) const;
 

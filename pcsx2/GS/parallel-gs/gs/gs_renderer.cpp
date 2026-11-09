@@ -595,6 +595,9 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 
 	// Pre-prime all potential shader variants early.
 	std::vector<Vulkan::DeferredPipelineCompile> tasks;
+	/* What every frame dispatches, built before the first (the caller
+	 * waits for them): the binning passes, and the small ones below. */
+	std::vector<Vulkan::DeferredPipelineCompile> small_tasks;
 	compilation_tasks_active = true;
 
 	{
@@ -695,14 +698,37 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 								flags | (rates->sample_y ? VARIANT_FLAG_HAS_SUPER_SAMPLE_REFERENCE_BIT : 0);
 						cmd->set_specialization_constant(5, active_flags);
 						cmd->extract_pipeline_state(deferred);
-						tasks.push_back(deferred);
+						/* (the plain variants, which nearly every draw
+						 * takes, are waited for) */
+						if (flags == 0)
+							small_tasks.push_back(deferred);
+						else
+							tasks.push_back(deferred);
 
 						if (rates->sample_y != 0)
 						{
 							active_flags |= VARIANT_FLAG_HAS_TEXTURE_ARRAY_BIT;
 							cmd->set_specialization_constant(5, active_flags);
 							cmd->extract_pipeline_state(deferred);
-							tasks.push_back(deferred);
+							if (flags == 0)
+								small_tasks.push_back(deferred);
+							else
+								tasks.push_back(deferred);
+
+							/* The same pass's single-sample dispatch: the
+							 * native rate, with the pass's subgroup size. */
+							cmd->set_specialization_constant(0, 0);
+							cmd->set_specialization_constant(1, 0);
+							for (unsigned array = 0; array < 2; array++)
+							{
+								cmd->set_specialization_constant(5, flags | VARIANT_FLAG_HAS_SUPER_SAMPLE_REFERENCE_BIT |
+								                                    (array ? VARIANT_FLAG_HAS_TEXTURE_ARRAY_BIT : 0));
+								cmd->extract_pipeline_state(deferred);
+								if (flags == 0)
+									small_tasks.push_back(deferred);
+								else
+									tasks.push_back(deferred);
+							}
 						}
 
 						if (rates->sample_x == 0 && rates->sample_y == 0 && can_potentially_super_sample())
@@ -710,7 +736,10 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 							cmd->set_specialization_constant(
 								5, flags | VARIANT_FLAG_HAS_SUPER_SAMPLE_REFERENCE_BIT);
 							cmd->extract_pipeline_state(deferred);
-							tasks.push_back(deferred);
+							if (flags == 0)
+								small_tasks.push_back(deferred);
+							else
+								tasks.push_back(deferred);
 						}
 					}
 				}
@@ -837,7 +866,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 					{
 						cmd->set_specialization_constant(1, feedback);
 						cmd->extract_pipeline_state(deferred);
-						tasks.push_back(deferred);
+						small_tasks.push_back(deferred);
 					}
 				}
 			}
@@ -947,6 +976,61 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 		}
 	}
 
+	/* The small passes every frame dispatches, each with all the state
+	 * it is dispatched with (the dispatch sets each in full): triangle
+	 * setup at each rate with or without a texture array, field render
+	 * and super-sampled copies; the qword clears; the single-sample
+	 * heuristic; CLUT writes; texture analysis; EXTWRITE. */
+	{
+		Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
+		Vulkan::DeferredPipelineCompile deferred = {};
+		const uint32_t rates[2][2] = { { 0, 0 }, { sampling_rate_x_log2, sampling_rate_y_log2 } };
+		static const uint8_t arrays[5][3] = { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 }, { 1, 0, 1 }, { 1, 1, 1 } };
+		unsigned r, a;
+
+		cmd->enable_subgroup_size_control(false);
+		cmd->set_program(shaders.triangle_setup);
+		cmd->set_specialization_constant_mask(0x1f);
+		for (r = 0; r < (rate ? 2u : 1u); r++)
+			for (a = 0; a < 5; a++)
+			{
+				cmd->set_specialization_constant(0, rates[r][0]);
+				cmd->set_specialization_constant(1, rates[r][1]);
+				cmd->set_specialization_constant(2, uint32_t(arrays[a][0]));
+				cmd->set_specialization_constant(3, uint32_t(arrays[a][1]));
+				cmd->set_specialization_constant(4, uint32_t(arrays[a][2]));
+				cmd->extract_pipeline_state(deferred);
+				small_tasks.push_back(deferred);
+			}
+
+		cmd->set_specialization_constant_mask(0);
+		cmd->set_program(shaders.qword_clear);
+		cmd->extract_pipeline_state(deferred);
+		small_tasks.push_back(deferred);
+		cmd->set_program(shaders.sampler_feedback);
+		cmd->extract_pipeline_state(deferred);
+		small_tasks.push_back(deferred);
+
+		cmd->set_specialization_constant_mask(1);
+		cmd->set_program(shaders.single_sample_heuristic);
+		cmd->set_specialization_constant(
+				0, std::min<uint32_t>(512u, device->get_gpu_properties().limits.maxComputeWorkGroupSize[0]));
+		cmd->extract_pipeline_state(deferred);
+		small_tasks.push_back(deferred);
+		cmd->set_program(shaders.clut_write);
+		cmd->set_specialization_constant(0, vram_size - 1);
+		cmd->extract_pipeline_state(deferred);
+		small_tasks.push_back(deferred);
+
+		cmd->set_specialization_constant_mask(3);
+		cmd->set_program(shaders.extwrite);
+		cmd->set_specialization_constant(0, vram_size - 1);
+		cmd->set_specialization_constant(1, uint32_t(can_potentially_super_sample()));
+		cmd->extract_pipeline_state(deferred);
+		small_tasks.push_back(deferred);
+		device->submit_discard(cmd);
+	}
+
 	if (num_first)
 		qsort(first, num_first, sizeof(*first), compare_hash);
 	for (i = 0; i < scanout_tasks.size(); i++)
@@ -959,6 +1043,17 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 			ordered.push_back(tasks[i]);
 	free(first);
 	tasks.swap(ordered);
+	{
+		/* (the small ones ahead of all, so each thread starts on them) */
+		size_t n = 0;
+		for (i = 0; i < small_tasks.size(); i++)
+			if (!small_tasks[i].program->has_pipeline(small_tasks[i].hash))
+				small_tasks[n++] = small_tasks[i];
+		small_tasks.resize(n);
+		tasks.insert(tasks.begin(), small_tasks.begin(), small_tasks.end());
+	}
+	const size_t num_small = small_tasks.size();
+	retro_atomic_store_release_size(&small_built, 0);
 
 	size_t num_tasks = tasks.size();
 	size_t target_threads = (cpu_features_get_core_amount() + 1) / 2;
@@ -990,8 +1085,11 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 		task_state->done.store(false, PGS::memory_order_relaxed);
 
 		const unsigned builder = unsigned(thread_index);
-		task_state->thread = PGS::thread([this, task_state, builder, moved_tasks = std::move(deferred)]()
+		const size_t first_task = thread_index;
+		const size_t stride = target_threads;
+		task_state->thread = PGS::thread([this, task_state, builder, first_task, stride, num_small, moved_tasks = std::move(deferred)]()
 		{
+			size_t index = first_task;
 			// Compiles pipelines only, never records a command buffer,
 			// so it can share index 0 rather than take a pool of its own.
 			Util::register_thread_index(0);
@@ -1008,12 +1106,30 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 							device, task, Vulkan::CommandBuffer::CompileMode::AsyncThread);
 				if (built.pipeline != VK_NULL_HANDLE)
 					device->hand_over_pipeline(builder, task.program, task.hash, built);
+				if (index < num_small)
+				{
+					retro_atomic_fetch_add_size(&small_built, 1);
+					retro_eventcount_notify(&small_built_event);
+				}
+				index += stride;
 			}
 			// Published last: the non-blocking drain joins on seeing this.
 			task_state->done.store(true, PGS::memory_order_release);
 		});
 
 		compilation_tasks.push_back(std::move(async_task));
+	}
+
+	/* The small passes before any frame dispatches one. */
+	while (retro_atomic_load_acquire_size(&small_built) < num_small)
+	{
+		const int key = retro_eventcount_prepare_wait(&small_built_event);
+		if (retro_atomic_load_acquire_size(&small_built) >= num_small)
+		{
+			retro_eventcount_cancel_wait(&small_built_event);
+			break;
+		}
+		retro_eventcount_commit_wait(&small_built_event, key);
 	}
 }
 
@@ -1022,8 +1138,10 @@ GSRenderer::GSRenderer(PageTracker &tracker_)
 {
 	timeline_value = 0;
 	last_submitted_timeline = 0;
-	if (!retro_eventcount_init(&submitted_event) || !retro_eventcount_init(&signalled_event))
+	if (!retro_eventcount_init(&submitted_event) || !retro_eventcount_init(&signalled_event)
+	    || !retro_eventcount_init(&small_built_event))
 		LOGE("Failed to create the timeline waiter's eventcounts.\n");
+	retro_atomic_size_init(&small_built, 0);
 	timeline_thread = PGS::thread([this]() {
 		Util::set_current_thread_name("PGS-Waiter");
 		uint64_t last_waited = 0;
@@ -1355,6 +1473,7 @@ GSRenderer::~GSRenderer()
 		timeline_thread.join();
 	retro_eventcount_free(&submitted_event);
 	retro_eventcount_free(&signalled_event);
+	retro_eventcount_free(&small_built_event);
 
 	check_bug_feedback();
 }
@@ -1401,6 +1520,8 @@ void GSRenderer::flush_qword_clears()
 
 	uint32_t count = qword_clears.size();
 	VkDeviceSize offset = allocate_device_scratch(count * sizeof(qword_clears.front()), buffers.rebar_scratch, qword_clears.data());
+	clear_cmd->enable_subgroup_size_control(false);
+	clear_cmd->set_specialization_constant_mask(0);
 	clear_cmd->set_program(shaders.qword_clear);
 	clear_cmd->set_storage_buffer(0, 0, *buffers.rebar_scratch.buffer, offset, count * sizeof(qword_clears.front()));
 	clear_cmd->push_constants(&count, 0, sizeof(count));
@@ -2309,6 +2430,7 @@ void GSRenderer::dispatch_triangle_setup(Vulkan::CommandBuffer &cmd, const Rende
 
 	cmd.push_constants(&push, 0, sizeof(push));
 
+	cmd.enable_subgroup_size_control(false);
 	cmd.set_program(shaders.triangle_setup);
 	cmd.set_specialization_constant_mask(0x1f);
 	cmd.set_specialization_constant(0, sampling_rate_x_log2);
@@ -2332,6 +2454,7 @@ void GSRenderer::dispatch_triangle_setup(Vulkan::CommandBuffer &cmd, const Rende
 
 void GSRenderer::dispatch_single_sample_heuristic(Vulkan::CommandBuffer &cmd, const RenderPass &rp)
 {
+	cmd.enable_subgroup_size_control(false);
 	cmd.set_specialization_constant_mask(1);
 	cmd.set_program(shaders.single_sample_heuristic);
 
@@ -3798,6 +3921,8 @@ uint32_t GSRenderer::update_palette_cache(const PaletteUploadDescriptor &desc)
 
 void GSRenderer::dispatch_texture_analysis(Vulkan::CommandBuffer &cmd, const RenderPass &rp)
 {
+	cmd.enable_subgroup_size_control(false);
+	cmd.set_specialization_constant_mask(0);
 	cmd.set_program(shaders.sampler_feedback);
 	memcpy(cmd.allocate_typed_constant_data<TextureAnalysis>(1, 0, texture_analysis.size()),
 	       texture_analysis.data(),
@@ -4049,6 +4174,7 @@ void GSRenderer::flush_palette_upload()
 		return;
 
 	Vulkan::CommandBuffer &cmd = *direct_cmd;
+	cmd.enable_subgroup_size_control(false);
 	cmd.set_program(shaders.clut_write);
 	cmd.set_specialization_constant_mask(1);
 	cmd.set_specialization_constant(0, vram_size - 1);
@@ -5451,6 +5577,7 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 
 	if (priv.extwrite.WRITE)
 	{
+		cmd.enable_subgroup_size_control(false);
 		cmd.set_program(shaders.extwrite);
 		cmd.set_specialization_constant_mask(3);
 		cmd.set_specialization_constant(0, vram_size - 1);

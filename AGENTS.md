@@ -206,9 +206,18 @@ remove, most-played first:
   those threads it stays drawn with one. `tests/glnegotiate` holds every
   case to none built on the render thread and to the Vulkan picture with
   programs of their own and with dynamic ones alone.
-- paraLLEl-GS: from nothing, a pipeline the list did not name is built
-  on the frame's threads (`tests/pgspipelines` allows up to a first
-  run's count).
+- paraLLEl-GS: the passes every frame dispatches (binning, triangle
+  setup, the qword clears, the single-sample heuristic, CLUT writes,
+  texture analysis, EXTWRITE) and the plain shading variants at each
+  sampling rate are built on the compile threads before the device is
+  handed over, and `tests/pgspipelines` holds every lane to none built
+  on the frame's threads from nothing. A shading variant past that (AA1,
+  SCANMSK, feedback, a primitive range, a format pair the enumeration
+  does not prime) is built on a frame's thread when the compile threads
+  have not reached it, or never will: the shading pass needs a dynamic
+  variant, as Vulkan's TFX has, before that goes. Each of those passes
+  sets every piece of state its pipeline is keyed on (subgroup size,
+  specialization constants), so what is built ahead is what it binds.
 
 The way out is the same everywhere: a small covering set built before
 the first frame, so that every key has a correct pipeline ready, and

@@ -5,8 +5,11 @@
 # will do) on tests/swdraw's scan_* cases: points drawn and read back, on
 # a display the renderer scans out.
 #
-# A first run starts with an empty cache directory and writes the list of
-# the pipelines the frame's threads took. The driver's cache file is then
+# A first run starts with an empty cache directory, builds none on the
+# frame's threads either - every pass a frame dispatches, and the plain
+# shading variants at each rate, are built on the compile threads before
+# the device is handed over - and writes the list of the pipelines the
+# frames took. The driver's cache file is then
 # deleted, as a driver update makes it useless, and the next run must
 # build none on the frame's threads, compute or graphics: the list and the
 # compile threads give it every one, the GS memory the case leaves is the
@@ -20,7 +23,8 @@
 # list it leaves is one the next run uses.
 #
 # Every scanout the core options reach gets a lane of its own, cold and
-# then with the driver's cache deleted: the field mode deinterlaced or
+# then with the driver's cache deleted, none built on the frame's
+# threads either way: the field mode deinterlaced or
 # not interlaced, two circuits merged by PMODE.ALP or by alpha, a 16-bit
 # display, high-res scanout at 2x, 4x, 4x anti-aliased at the full field
 # height (each with the super sampling it needs), the sharp backbuffer,
@@ -125,7 +129,7 @@ same_image()
 }
 
 run cold
-expect cold cold
+expect cold 0
 COLD=$(built cold)
 [ -s "$LIST" ] || { echo "pgspipelines: FAIL: no pipeline list written"; exit 1; }
 if [ "$COUNT" = 1 ] && [ "$(gfx_all cold)" -eq 0 ]; then
@@ -188,6 +192,7 @@ lane()
 	OPTS=$3
 	rm -rf "$DATA"
 	run "$1_cold"
+	expect "$1_cold" 0
 	if [ "$COUNT" = 1 ] && [ "$(gfx_all "$1_cold")" -eq 0 ]; then
 		echo "pgspipelines: FAIL: $1: no scanout pipeline was built"
 		fail=1
