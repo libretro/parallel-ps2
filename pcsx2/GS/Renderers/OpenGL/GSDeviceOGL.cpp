@@ -801,12 +801,56 @@ bool GSDeviceOGL::CreateTextureFX()
 	for (u32 key = 0; key < C89_ARRAY_SIZE(m_om_dss); key++)
 		m_om_dss[key] = CreateDepthStencil(OMDepthStencilSelector(key));
 
+	/* Every dynamic program, as the game boots: then no draw waits for a
+	 * program, and a new selector's own is compiled by the driver's
+	 * threads (KHR_parallel_shader_compile) while a dynamic one draws.
+	 * With the program cache this is a binary loaded each. */
+	{
+		u32 iip, expand, date;
+		const u32 expands = m_features.vs_expand ? 4u : 1u;
+		m_dynamic_ready = true;
+		for (iip = 0; iip < 2; iip++)
+			for (expand = 0; expand < expands; expand++)
+				for (date = 0; date < 3; date++)
+				{
+					/* (the primitive ID test only where there is one) */
+					if (date && !m_features.primitive_id)
+						continue;
+					if (BuildDynamicProgram(&m_dynamic[iip][expand][date], iip, expand, date) && m_dynamic[iip][expand][date].IsValid())
+						m_programs_built_ahead++;
+					else
+						m_dynamic_ready = false;
+				}
+		m_parallel_compile = GLAD_GL_KHR_parallel_shader_compile || GLAD_GL_ARB_parallel_shader_compile;
+		if (GLAD_GL_KHR_parallel_shader_compile)
+			glMaxShaderCompilerThreadsKHR(0xFFFFFFFFu);
+		else if (GLAD_GL_ARB_parallel_shader_compile)
+			glMaxShaderCompilerThreadsARB(0xFFFFFFFFu);
+		/* (tests/glnegotiate: "sync", every program built as it is first
+		 * drawn with, here; "dynamic", every draw with a dynamic one) */
+		{
+			const char* mode = getenv("LRPS2_TEST_GL_PROGRAMS");
+			m_test_programs = !mode ? 0 : !strcmp(mode, "sync") ? 1 : !strcmp(mode, "dynamic") ? 2 : 0;
+		}
+		if (m_dynamic_ready && !m_parallel_compile)
+			log_cb(RETRO_LOG_WARN, "OpenGL: no parallel shader compile; new draw states stay on the dynamic programs\n");
+	}
+
 	GLProgram::ResetLastProgram();
 	return true;
 }
 
 void GSDeviceOGL::DestroyResources()
 {
+	if (m_programs_built_here || m_programs_built_ahead)
+		log_cb(RETRO_LOG_INFO, "OpenGL programs: %u built on the render thread, %u as the device was created, %u compiled by the driver's threads; %u draws drawn with a dynamic program\n",
+			m_programs_built_here, m_programs_built_ahead, m_programs_async, m_dynamic_draws);
+	m_programs_built_here = m_programs_built_ahead = m_programs_async = m_dynamic_draws = 0;
+	for (u32 i = 0; i < 2; i++)
+		for (u32 j = 0; j < 4; j++)
+			for (u32 k = 0; k < 3; k++)
+				m_dynamic[i][j][k].Destroy();
+	m_dynamic_ready = false;
 	m_shader_cache.Close();
 
 	if (m_palette_ss != 0)
@@ -978,6 +1022,7 @@ void GSDeviceOGL::RestoreAPIState()
 	// Force UBOs to be reuploaded, we don't know what else was bound there.
 	memset(&m_vs_cb_cache, 0xFF, sizeof(m_vs_cb_cache));
 	memset(&m_ps_cb_cache, 0xFF, sizeof(m_ps_cb_cache));
+	m_dynamic_key_valid = false;
 }
 
 void GSDeviceOGL::DrawPrimitive()
@@ -1325,73 +1370,106 @@ bool GSDeviceOGL::GetVSSource(gs_str_t* out, VSSelector sel)
 	return ok;
 }
 
+/* The pixel selector fields as tfx_fs.glsl's macros, each in the bits
+ * after the last and none across a word: the dynamic pixel shader's PsKey
+ * (GLKeyPlace). */
+#define GL_PS_FIELDS(X) \
+	X(PS_FST, fst, 1) X(PS_WMS, wms, 2) X(PS_WMT, wmt, 2) X(PS_ADJS, adjs, 1) X(PS_ADJT, adjt, 1) \
+	X(PS_AEM_FMT, aem_fmt, 2) X(PS_PAL_FMT, pal_fmt, 2) X(PS_DST_FMT, dst_fmt, 2) X(PS_DEPTH_FMT, depth_fmt, 2) \
+	X(PS_CHANNEL_FETCH, channel, 3) X(PS_URBAN_CHAOS_HLE, urban_chaos_hle, 1) \
+	X(PS_TALES_OF_ABYSS_HLE, tales_of_abyss_hle, 1) X(PS_TEX_IS_FB, tex_is_fb, 1) X(PS_AEM, aem, 1) \
+	X(PS_TFX, tfx, 3) X(PS_TCC, tcc, 1) X(PS_ATST, atst, 3) X(PS_AFAIL, afail, 3) X(PS_FOG, fog, 1) \
+	X(PS_BLEND_HW, blend_hw, 3) X(PS_A_MASKED, a_masked, 1) X(PS_FBA, fba, 1) X(PS_LTF, ltf, 1) \
+	X(PS_AUTOMATIC_LOD, automatic_lod, 1) X(PS_MANUAL_LOD, manual_lod, 1) X(PS_COLCLIP, colclip, 1) \
+	X(PS_DATE, date, 3) X(PS_TCOFFSETHACK, tcoffsethack, 1) X(PS_REGION_RECT, region_rect, 1) \
+	X(PS_SAMPLE_MAP, sample_map, 1) X(PS_NATIVE_TAPS, native_taps, 1) X(PS_BLEND_A, blend_a, 2) \
+	X(PS_BLEND_B, blend_b, 2) X(PS_BLEND_C, blend_c, 2) X(PS_BLEND_D, blend_d, 2) X(PS_IIP, iip, 1) \
+	X(PS_SHUFFLE, shuffle, 1) X(PS_SHUFFLE_SAME, shuffle_same, 1) X(PS_PROCESS_BA, process_ba, 2) \
+	X(PS_PROCESS_RG, process_rg, 2) X(PS_SHUFFLE_ACROSS, shuffle_across, 1) X(PS_READ16_SRC, real16src, 1) \
+	X(PS_WRITE_RG, write_rg, 1) X(PS_FBMASK, fbmask, 1) X(PS_COLCLIP_HW, colclip_hw, 1) \
+	X(PS_RTA_CORRECTION, rta_correction, 1) X(PS_RTA_SRC_CORRECTION, rta_source_correction, 1) \
+	X(PS_DITHER, dither, 2) X(PS_DITHER_ADJUST, dither_adjust, 1) X(PS_ZCLAMP, zclamp, 1) \
+	X(PS_BLEND_MIX, blend_mix, 2) X(PS_ROUND_INV, round_inv, 1) X(PS_FIXED_ONE_A, fixed_one_a, 1) \
+	X(PS_PABE, pabe, 1) X(PS_SCANMSK, scanmsk, 2) X(PS_NO_COLOR, no_color, 1) X(PS_NO_COLOR1, no_color1, 1)
+
+/* The next field's place: in the word it starts in, else the next. */
+static u32 GLKeyPlace(u32* at, u32 bits)
+{
+	u32 place;
+	if ((*at & 31u) + bits > 32u)
+		*at = (*at + 31u) & ~31u;
+	place = *at;
+	*at += bits;
+	return place;
+}
+
+/* The dynamic shaders' key: the pixel selector (PsKey), then the vertex
+ * selector's texture coordinates and point size (VsKey). */
+static void GLDynamicKey(const GSHWDrawConfig::PSSelector& sel, GSHWDrawConfig::VSSelector vs, u32* key)
+{
+	u32 at = 0, place;
+	memset(key, 0, 8 * sizeof(u32));
+#define GL_PACK(name, field, bits) \
+	place = GLKeyPlace(&at, bits); \
+	key[place >> 5] |= (static_cast<u32>(sel.field) & ((1u << bits) - 1u)) << (place & 31u);
+	GL_PS_FIELDS(GL_PACK)
+#undef GL_PACK
+	key[4] = vs.fst | (vs.point_size << 1);
+}
+
 bool GSDeviceOGL::GetPSSource(gs_str_t* out, const PSSelector& sel)
 {
 	log_cb(RETRO_LOG_INFO, "Compiling new pixel shader with selector 0x%" PRIX64 "%08X\n", (uint64_t)sel.key_hi, (unsigned)sel.key_lo);
 
 	gs_str_t macro;
-	bool ok;
+	bool ok = true;
 	gs_str_init(&macro);
-	ok = GSDeviceOGLAppendShaderMacro(&macro, "PS_FST", sel.fst)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_WMS", sel.wms)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_WMT", sel.wmt)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_ADJS", sel.adjs)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_ADJT", sel.adjt)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_AEM_FMT", sel.aem_fmt)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_PAL_FMT", sel.pal_fmt)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_DST_FMT", sel.dst_fmt)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_DEPTH_FMT", sel.depth_fmt)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_CHANNEL_FETCH", sel.channel)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_URBAN_CHAOS_HLE", sel.urban_chaos_hle)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_TALES_OF_ABYSS_HLE", sel.tales_of_abyss_hle)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_TEX_IS_FB", sel.tex_is_fb)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_AEM", sel.aem)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_TFX", sel.tfx)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_TCC", sel.tcc)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_ATST", static_cast<u32>(sel.atst))
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_AFAIL", static_cast<u32>(sel.afail))
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_FOG", sel.fog)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_BLEND_HW", sel.blend_hw)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_A_MASKED", sel.a_masked)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_FBA", sel.fba)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_LTF", sel.ltf)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_AUTOMATIC_LOD", sel.automatic_lod)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_MANUAL_LOD", sel.manual_lod)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_COLCLIP", sel.colclip)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_DATE", sel.date)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_TCOFFSETHACK", sel.tcoffsethack)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_REGION_RECT", sel.region_rect)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_SAMPLE_MAP", sel.sample_map)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_NATIVE_TAPS", sel.native_taps)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_BLEND_A", sel.blend_a)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_BLEND_B", sel.blend_b)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_BLEND_C", sel.blend_c)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_BLEND_D", sel.blend_d)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_IIP", sel.iip)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_SHUFFLE", sel.shuffle)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_SHUFFLE_SAME", sel.shuffle_same)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_PROCESS_BA", sel.process_ba)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_PROCESS_RG", sel.process_rg)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_SHUFFLE_ACROSS", sel.shuffle_across)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_READ16_SRC", sel.real16src)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_WRITE_RG", sel.write_rg)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_FBMASK", sel.fbmask)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_COLCLIP_HW", sel.colclip_hw)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_RTA_CORRECTION", sel.rta_correction)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_RTA_SRC_CORRECTION", sel.rta_source_correction)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_DITHER", sel.dither)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_DITHER_ADJUST", sel.dither_adjust)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_ZCLAMP", sel.zclamp)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_BLEND_MIX", sel.blend_mix)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_ROUND_INV", sel.round_inv)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_FIXED_ONE_A", sel.fixed_one_a)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_PABE", sel.pabe)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_SCANMSK", sel.scanmsk)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_NO_COLOR", sel.no_color)
-		&& GSDeviceOGLAppendShaderMacro(&macro, "PS_NO_COLOR1", sel.no_color1)
-		&& GetShaderSource(out, "ps_main", GL_FRAGMENT_SHADER, tfx_fs_glsl_shader_raw, GS_STR(&macro));
+#define GL_MACRO(name, field, bits) ok = ok && GSDeviceOGLAppendShaderMacro(&macro, #name, static_cast<int>(sel.field));
+	GL_PS_FIELDS(GL_MACRO)
+#undef GL_MACRO
+	ok = ok && GetShaderSource(out, "ps_main", GL_FRAGMENT_SHADER, tfx_fs_glsl_shader_raw, GS_STR(&macro));
 	gs_str_free(&macro);
 	return ok;
+}
+
+/* The dynamic program of a flat colour (iip), a vertex expansion and an
+ * alpha test class (GLDynamicDate): every field read from the key but
+ * what shapes the interface. The second output and the depth output are
+ * kept but in the alpha test's first pass, which writes neither. */
+bool GSDeviceOGL::BuildDynamicProgram(GLProgram* prog, u32 iip, u32 expand, u32 date)
+{
+	gs_str_t macro;
+	char buf[64];
+	u32 at = 0, place;
+	bool ok;
+	gs_str_init(&macro);
+	ok = GSDeviceOGLAppendShaderMacro(&macro, "VS_DYNAMIC", 1)
+		&& GSDeviceOGLAppendShaderMacro(&macro, "VS_IIP", static_cast<int>(iip))
+		&& GSDeviceOGLAppendShaderMacro(&macro, "VS_EXPAND", static_cast<int>(expand))
+		&& GetShaderSource(&m_src_vs, "vs_main", GL_VERTEX_SHADER, tfx_vs_glsl_shader_raw, GS_STR(&macro));
+	gs_str_clear(&macro);
+	ok = ok && GSDeviceOGLAppendShaderMacro(&macro, "PS_DYNAMIC", 1)
+		&& GSDeviceOGLAppendShaderMacro(&macro, "IF_IIP", static_cast<int>(iip))
+		&& GSDeviceOGLAppendShaderMacro(&macro, "IF_PRIMID", date != 0)
+		&& GSDeviceOGLAppendShaderMacro(&macro, "IF_DATE3", date == 2)
+		&& GSDeviceOGLAppendShaderMacro(&macro, "IF_ZCLAMP", date != 1);
+#define GL_DYN(name, field, bits) \
+	place = GLKeyPlace(&at, bits); \
+	snprintf(buf, sizeof(buf), "#define " #name " int((PsKey[%u] >> %uu) & %uu)\n", place >> 5, place & 31u, (1u << bits) - 1u); \
+	ok = ok && gs_str_cat(&macro, buf);
+	GL_PS_FIELDS(GL_DYN)
+#undef GL_DYN
+	ok = ok && GetShaderSource(&m_src_ps, "ps_main", GL_FRAGMENT_SHADER, tfx_fs_glsl_shader_raw, GS_STR(&macro))
+		&& GetProgram(prog, &m_src_vs, &m_src_ps);
+	gs_str_free(&macro);
+	return ok;
+}
+
+/* The alpha test class a dynamic program is built for: none, its first
+ * pass (1 and 2) or the primitive ID test (3). */
+static u32 GLDynamicDate(u32 date)
+{
+	return (date == 1 || date == 2) ? 1u : (date == 3) ? 2u : 0u;
 }
 
 // Copy a sub part of a texture into another
@@ -2134,8 +2212,15 @@ __fi static void WriteToStreamBuffer(GLStreamBuffer* sb, u32 index, u32 align, c
 	glBindBufferRange(GL_UNIFORM_BUFFER, index, sb->GetGLBufferId(), res.buffer_offset, size);
 }
 
+/* The dynamic programs' key, at binding 2 (cb_key). */
+void GSDeviceOGL::WriteDynamicKey()
+{
+	WriteToStreamBuffer(m_fragment_uniform_stream_buffer, 2, m_uniform_buffer_alignment, m_dynamic_key, sizeof(m_dynamic_key));
+}
+
 void GSDeviceOGL::SetupPipeline(const ProgramSelector& psel)
 {
+	GLProgram* prog;
 	if (m_last_program && m_last_program_selector == psel)
 	{
 		m_last_program->Bind();
@@ -2148,17 +2233,46 @@ void GSDeviceOGL::SetupPipeline(const ProgramSelector& psel)
 	{
 		int inserted;
 
-		GLProgram* const prog = new GLProgram();
-		if (GetVSSource(&m_src_vs, psel.vs) && GetPSSource(&m_src_ps, psel.ps))
-			GetProgram(prog, &m_src_vs, &m_src_ps);
+		prog = new GLProgram();
+		if (!m_dynamic_ready || m_test_programs == 1)
+		{
+			/* (without the dynamic programs: built here, as before them) */
+			if (GetVSSource(&m_src_vs, psel.vs) && GetPSSource(&m_src_ps, psel.ps))
+				GetProgram(prog, &m_src_vs, &m_src_ps);
+			m_programs_built_here++;
+		}
+		/* Compiled and linked by the driver's threads while a dynamic
+		 * program draws; without them it stays drawn with one. */
+		else if (m_parallel_compile && m_test_programs != 2 && GetVSSource(&m_src_vs, psel.vs) && GetPSSource(&m_src_ps, psel.ps))
+			prog->StartCompile(GS_STR(&m_src_vs), GS_STR_LEN(&m_src_vs), GS_STR(&m_src_ps), GS_STR_LEN(&m_src_ps));
 		found = static_cast<GLProgram**>(gs_flat_map_insert(&m_programs, &psel, hash, &inserted));
 		if (!found)
 			abort(); /* out of memory, as the map's emplace was without exceptions */
 		*found = prog;
 	}
+	prog = *found;
+	if (prog->IsPending() && prog->Poll() > 0)
+		m_programs_async++;
+
+	if (!prog->IsValid() || prog->IsPending())
+	{
+		u32 key[8];
+		const u32 expand = m_features.vs_expand ? static_cast<u32>(psel.vs.expand) : 0u;
+		GLDynamicKey(psel.ps, psel.vs, key);
+		if (!m_dynamic_key_valid || memcmp(key, m_dynamic_key, sizeof(key)))
+		{
+			memcpy(m_dynamic_key, key, sizeof(key));
+			m_dynamic_key_valid = true;
+			WriteDynamicKey();
+		}
+		m_dynamic[psel.vs.iip][expand][GLDynamicDate(psel.ps.date)].Bind();
+		m_dynamic_draws++;
+		m_last_program = nullptr;
+		return;
+	}
 
 	m_last_program_selector = psel;
-	m_last_program          = *found;
+	m_last_program          = prog;
 	m_last_program->Bind();
 }
 

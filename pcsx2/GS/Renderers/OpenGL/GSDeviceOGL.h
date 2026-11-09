@@ -227,6 +227,25 @@ private:
 	GLProgram* m_last_program = nullptr;
 	GLShaderCache m_shader_cache;
 
+	/* No program is compiled on the draw path. The dynamic programs (by
+	 * flat colour, vertex expansion and alpha test class: they read the
+	 * selectors from m_dynamic_key) are built as the device is created; a
+	 * selector without a program of its own draws with one while the
+	 * driver's threads compile its own (KHR_parallel_shader_compile), and
+	 * without those threads stays drawn with one. */
+	GLProgram m_dynamic[2][4][3];
+	u32 m_dynamic_key[8] = {};
+	bool m_dynamic_key_valid = false;
+	bool m_dynamic_ready = false;
+	bool m_parallel_compile = false;
+	u8 m_test_programs = 0; /* LRPS2_TEST_GL_PROGRAMS: 1 sync, 2 dynamic */
+	u32 m_programs_built_here = 0;
+	u32 m_programs_built_ahead = 0;
+	u32 m_programs_async = 0;
+	u32 m_dynamic_draws = 0;
+	bool BuildDynamicProgram(GLProgram* prog, u32 iip, u32 expand, u32 date);
+	void WriteDynamicKey();
+
 	GLuint m_palette_ss = 0;
 
 	GSHWDrawConfig::VSConstantBuffer m_vs_cb_cache;

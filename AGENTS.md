@@ -199,8 +199,13 @@ remove, most-played first:
   created, a new pixel selector draws with its dynamic shader while the
   worker builds its own, and `tests/d3dswdraw` holds every case to none
   built on the render thread.
-- OpenGL, `GSDeviceOGL::SetupPipeline`: a miss compiles and links the
-  program.
+- OpenGL: none on the draw path. The dynamic programs (by flat colour,
+  vertex expansion and destination alpha test class) are built as the
+  device is created; a new selector draws with one while the driver's
+  threads compile its own (`KHR_parallel_shader_compile`), and without
+  those threads it stays drawn with one. `tests/glnegotiate` holds every
+  case to none built on the render thread and to the Vulkan picture with
+  programs of their own and with dynamic ones alone.
 - paraLLEl-GS: from nothing, a pipeline the list did not name is built
   on the frame's threads (`tests/pgspipelines` allows up to a first
   run's count).

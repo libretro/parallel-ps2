@@ -45,6 +45,14 @@ class GLProgram
 
 		bool Link();
 
+		/* Compiled and linked without waiting (KHR_parallel_shader_compile):
+		 * Poll() is 0 while the driver works, 1 once the program is ready,
+		 * -1 if it failed (the program is then none). */
+		bool StartCompile(const char* vertex_shader, size_t vertex_length, const char* fragment_shader, size_t fragment_length);
+		int Poll();
+		bool IsPending() const { return m_pending; }
+		bool IsValid() const { return m_program_id != 0; }
+
 		void Bind() const;
 
 		void Destroy();
@@ -86,6 +94,7 @@ class GLProgram
 
 	private:
 		GLuint m_program_id = 0;
+		bool m_pending = false;
 		GLuint m_vertex_shader_id = 0;
 		GLuint m_fragment_shader_id = 0;
 

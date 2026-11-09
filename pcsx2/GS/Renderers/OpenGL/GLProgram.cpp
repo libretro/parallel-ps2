@@ -29,6 +29,8 @@ GLProgram::GLProgram(GLProgram&& prog)
 {
 	m_program_id              = prog.m_program_id;
 	prog.m_program_id         = 0;
+	m_pending                 = prog.m_pending;
+	prog.m_pending            = false;
 	m_vertex_shader_id        = prog.m_vertex_shader_id;
 	prog.m_vertex_shader_id   = 0;
 	m_fragment_shader_id      = prog.m_fragment_shader_id;
@@ -215,6 +217,57 @@ void GLProgram::BindFragDataIndexed(GLuint color_number, const char* name)
 	glBindFragDataLocationIndexed(m_program_id, color_number, 0, name);
 }
 
+bool GLProgram::StartCompile(const char* vertex_shader, size_t vertex_length, const char* fragment_shader, size_t fragment_length)
+{
+	const GLchar* src;
+	GLint len;
+	m_vertex_shader_id   = glCreateShader(GL_VERTEX_SHADER);
+	m_fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
+	src = vertex_shader;
+	len = static_cast<GLint>(vertex_length);
+	glShaderSource(m_vertex_shader_id, 1, &src, &len);
+	glCompileShader(m_vertex_shader_id);
+	src = fragment_shader;
+	len = static_cast<GLint>(fragment_length);
+	glShaderSource(m_fragment_shader_id, 1, &src, &len);
+	glCompileShader(m_fragment_shader_id);
+	m_program_id = glCreateProgram();
+	glAttachShader(m_program_id, m_vertex_shader_id);
+	glAttachShader(m_program_id, m_fragment_shader_id);
+	glLinkProgram(m_program_id);
+	m_pending = true;
+	return true;
+}
+
+int GLProgram::Poll()
+{
+	GLint done = GL_FALSE, status = GL_FALSE;
+	if (!m_pending)
+		return m_program_id ? 1 : -1;
+	glGetProgramiv(m_program_id, GL_COMPLETION_STATUS_KHR, &done);
+	if (!done)
+		return 0;
+	m_pending = false;
+	glGetProgramiv(m_program_id, GL_LINK_STATUS, &status);
+	if (status != GL_TRUE)
+	{
+		char* info_log = GLProgramInfoLog(m_vertex_shader_id, false);
+		char* fs_log   = GLProgramInfoLog(m_fragment_shader_id, false);
+		char* pr_log   = GLProgramInfoLog(m_program_id, true);
+		log_cb(RETRO_LOG_ERROR, "Program failed to compile or link:\n%s%s%s\n", info_log ? info_log : "",
+			fs_log ? fs_log : "", pr_log ? pr_log : "");
+		free(info_log);
+		free(fs_log);
+		free(pr_log);
+		Destroy();
+		return -1;
+	}
+	glDeleteShader(m_vertex_shader_id);
+	glDeleteShader(m_fragment_shader_id);
+	m_vertex_shader_id = m_fragment_shader_id = 0;
+	return 1;
+}
+
 bool GLProgram::Link()
 {
 	glLinkProgram(m_program_id);
@@ -276,6 +329,7 @@ void GLProgram::Destroy()
 	}
 
 	m_uniform_locations.count = 0;
+	m_pending = false;
 }
 
 int GLProgram::RegisterUniform(const char* name)
@@ -468,6 +522,8 @@ GLProgram& GLProgram::operator=(GLProgram&& prog)
 	Destroy();
 	m_program_id = prog.m_program_id;
 	prog.m_program_id = 0;
+	m_pending = prog.m_pending;
+	prog.m_pending = false;
 	m_vertex_shader_id = prog.m_vertex_shader_id;
 	prog.m_vertex_shader_id = 0;
 	m_fragment_shader_id = prog.m_fragment_shader_id;

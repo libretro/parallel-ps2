@@ -8,6 +8,12 @@
 # on Mesa; t4_from_target_shaded, which the Vulkan renderer draws through
 # its 4-bit view of a target on the GPU, only has to run and present.
 #
+# No program is built on the render thread: a new draw state draws with a
+# dynamic program while the driver's threads compile its own; and each
+# case presents the same picture with every program built as it is
+# first drawn with (LRPS2_TEST_GL_PROGRAMS=sync) and with every draw drawn
+# with a dynamic one (=dynamic).
+#
 # Runs the built core: pcsx2_libretro.so/.dll/.dylib at the top of the
 # tree, or LRPS2_CORE. Without one, or without an OpenGL context, the
 # harness is still compiled and the run is skipped; without a Vulkan
@@ -58,11 +64,16 @@ vulkan=1
 for c in $SAME $RUNS; do
 	rm -rf "$WORK/gl" "$WORK/vk"
 	mkdir -p "$WORK/gl" "$WORK/vk"
-	if ! GN_RGB=1 GN_FRAMES=$(cat "$WORK/$c.frames") LRPS2_BIOS="$WORK/$c.bin" timeout 300 "$WORK/glnegotiate$EXE" "$CORE" "$WORK/gl" > "$WORK/$c.gl.log" 2>&1; then
+	if ! GN_VERBOSE=1 GN_RGB=1 GN_FRAMES=$(cat "$WORK/$c.frames") LRPS2_BIOS="$WORK/$c.bin" timeout 300 "$WORK/glnegotiate$EXE" "$CORE" "$WORK/gl" > "$WORK/$c.gl.log" 2>&1; then
 		cat "$WORK/$c.gl.log"
 		echo "  FAIL: $c on the OpenGL renderer"
 		fail=1
 		continue
+	fi
+	n=$(sed -n 's/.*OpenGL programs: \([0-9]*\) built on the render thread.*/\1/p' "$WORK/$c.gl.log")
+	if [ "${n:-x}" != 0 ] && ! grep -q "^glnegotiate: skip" "$WORK/$c.gl.log"; then
+		echo "  FAIL: $c: ${n:-?} programs built on the render thread"
+		fail=1
 	fi
 	if grep -q "^glnegotiate: skip" "$WORK/$c.gl.log"; then
 		cat "$WORK/$c.gl.log"
@@ -108,6 +119,19 @@ for c in $SAME $RUNS; do
 	else
 		printf '  %s: the same picture on both renderers (%s)\n' $c "$g"
 	fi
+	# Every program of its own, built as it is first drawn with, and
+	# every draw with a dynamic program: the same picture.
+	for mode in sync dynamic; do
+		rm -rf "$WORK/gl"
+		mkdir -p "$WORK/gl"
+		LRPS2_TEST_GL_PROGRAMS=$mode GN_RGB=1 GN_FRAMES=$(cat "$WORK/$c.frames") LRPS2_BIOS="$WORK/$c.bin" \
+			timeout 300 "$WORK/glnegotiate$EXE" "$CORE" "$WORK/gl" > "$WORK/$c.gl$mode.log" 2>&1
+		m=$(sed -n 's/.*image: .*hash \([0-9a-f]*\)$/\1/p' "$WORK/$c.gl$mode.log")
+		if [ "$m" != "$v" ]; then
+			echo "  FAIL: $c: the OpenGL renderer ($mode) draws ${m:-nothing}, the Vulkan renderer ${v:-nothing}"
+			fail=1
+		fi
+	done
 done
 
 # The CPU sprite renderer (a hardware hack) draws many_copies' sprites
