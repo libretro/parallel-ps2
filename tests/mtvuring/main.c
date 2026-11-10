@@ -1,11 +1,11 @@
 /* MTVU ring pointer protocol, modelled exactly, hammered concurrently.
  *
- * This now models the FIXED protocol, which MTVU.cpp carries; FIXED=0
+ * This now models the FIXED protocol, which MTVU.c carries; FIXED=0
  * builds the one it replaced, which fails in a few thousand packets.
  *
  * WHAT THIS IS FOR
  *
- * MTVU.cpp's WaitOnSize carries a FIXME: "there is a bug somewhere in
+ * MTVU.c's wait on size carries a FIXME: "there is a bug somewhere in
  * the queue pointer management. It creates a deadlock/corruption in SotC
  * intro. I added a 4KB safety net which seem to avoid to trigger the
  * bug. Note: a wait lock instead of a yield also helps to avoid the
@@ -99,7 +99,7 @@ static retro_atomic_int_t ato_write_pos;
 static int                write_pos;         /* writer-local */
 static int                read_pos;          /* reader-local */
 static retro_atomic_int_t done;
-static retro_asym_eventcount_t ec_space;   /* MTVU.cpp ecRingSpace */
+static retro_asym_eventcount_t ec_space;   /* MTVU.c ecRingSpace */
 
 /* What the checker needs: the writer's next sequence number and the
  * reader's expected one. A mismatch is corruption. */
@@ -160,7 +160,7 @@ static int wait_on_size(int size)
       if (retro_atomic_load_acquire_int(&ran_off))
          return 0;
       retro_atomic_store_release_int(&writer_filled, 1);
-      /* MTVU.cpp's wait: a spin budget, then park on the eventcount the
+      /* MTVU.c's wait: a spin budget, then park on the eventcount the
        * reader notifies after publishing. A missed notify shows up here
        * as a hang, which is the failure this models. */
       if (spins < SPIN_BUDGET)
@@ -181,7 +181,7 @@ static int wait_on_size(int size)
    }
 }
 #else
-/* MTVU.cpp WaitOnSize, transcribed. */
+/* MTVU.c mtvu_wait_on_size, transcribed. */
 static void wait_on_size(int size)
 {
    for (;;)

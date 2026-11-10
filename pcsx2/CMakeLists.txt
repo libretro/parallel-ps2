@@ -138,7 +138,7 @@ set(pcsx2Sources
 	MemoryCardProtocol.c
 	MMI.c
 	MTGS.c
-	MTVU.cpp
+	MTVU.c
 	MultitapProtocol.c
 	FormatString.cpp
 	Patch.cpp

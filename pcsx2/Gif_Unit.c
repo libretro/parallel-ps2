@@ -657,7 +657,7 @@ bool gif_unit_init(void)
 			gif_unit_shutdown();
 			return false;
 		}
-		/* MTVU only ever drives path 1 (MTVU.cpp posts exclusively to
+		/* MTVU only ever drives path 1 (MTVU.c posts exclusively to
 		 * gifPath[GIF_PATH_1]), so the packet queue exists only there. */
 		gif_mtvu_init_queue(&path->mtvu, i == GIF_PATH_1);
 		gif_path_reset(path, false);

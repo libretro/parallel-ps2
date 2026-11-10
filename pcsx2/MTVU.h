@@ -21,131 +21,67 @@
 #include "Vif_Dma.h"
 #include "VUmicro.h"
 
+/* The VU1 worker (MTVU.c). The EE thread produces into the ring and the
+ * worker consumes it; one u32 is never written, so the two positions
+ * meet only when the ring is empty. */
+#define MTVU_BUFFER_SIZE ((16u * 1024 * 1024) / sizeof(s32)) /* u32s, a power of two */
 
-// Notes:
-// - This class should only be accessed from the EE thread...
-// - buffer_size must be power of 2
-// - ring-buffer has no complete pending packets when read_pos==write_pos
-class VU_Thread final {
-	static const s32 buffer_size = (_1mb * 16) / sizeof(s32);
+/* mtvuInterrupts: GS Signal, Finish and Label, and VU1's E and T bits. */
+#define MTVU_INT_FINISH  (1 << 0)
+#define MTVU_INT_SIGNAL  (1 << 1)
+#define MTVU_INT_LABEL   (1 << 2)
+#define MTVU_INT_VU_EBIT (1 << 3)
+#define MTVU_INT_VU_TBIT (1 << 4)
 
-	u32 buffer[buffer_size];
-	// Note: keep atomic on separate cache line to avoid CPU conflict
-	alignas(__cachelinesize) retro_atomic_int_t m_ato_read_pos; // Only modified by VU thread
-	alignas(__cachelinesize) retro_atomic_int_t m_ato_write_pos;    // Only modified by EE thread
-	alignas(__cachelinesize) int  m_read_pos; // temporary read pos (local to the VU thread)
-	int  m_write_pos; // temporary write pos (local to the EE thread)
+typedef struct VU_Thread
+{
+	u32 buffer[MTVU_BUFFER_SIZE];
+	/* Each cursor on its own line. */
+	PCSX2_ALIGN(__cachelinesize) retro_atomic_int_t ato_read_pos;  /* published by the worker */
+	PCSX2_ALIGN(__cachelinesize) retro_atomic_int_t ato_write_pos; /* published by the EE */
+	PCSX2_ALIGN(__cachelinesize) int read_pos;                     /* the worker's own */
+	int write_pos;                                                 /* the EE's own */
 	WorkEventCount semaEvent;
-	retro_atomic_int_t m_shutdown_flag = RETRO_ATOMIC_INT_INITIALIZER(0);
+	retro_atomic_int_t shutdown_flag;
+	sthread_t* thread;
 
-	sthread_t* m_thread;
-	static void ThreadEntry(void* self);
-
-public:
-	alignas(16)  vifStruct        vif;
-	alignas(16)  VIFregisters     vifRegs;
-	/* VU1 -> GS: "a path-1 packet was pushed to gsPackQueue". An
-	 * eventcount, not a semaphore: the count the semaphore kept was a
-	 * second copy of the queue's occupancy, and the queue is the one
-	 * that cannot drift. notify is a release store, what the VU1 thread
-	 * pays per program. */
-	/* The EE waits here for ring space. Single producer -- only the VU
-	 * worker publishes m_ato_read_pos -- which is what lets the notify
-	 * be a release store rather than a fence. */
+	PCSX2_ALIGN(16) vifStruct    vif;
+	PCSX2_ALIGN(16) VIFregisters vifRegs;
+	/* The EE waits here for ring space. Single producer -- only the
+	 * worker publishes ato_read_pos -- so notify is a release store. */
 	retro_asym_eventcount_t ecRingSpace;
+	/* VU1 -> GS: a path-1 packet was pushed to the GIF's queue. The
+	 * queue's occupancy is the count; this only wakes the GS. */
 	retro_asym_eventcount_t ecXGkick;
-	/* Posted by MTGS once per PopGSPacketMTVU.  WaitGS(isMTVU=true)
-	 * sleeps on this until MTGS consumes a path-1 packet, replacing
-	 * the old slock rendezvous + Timeslice poll (which protected no
-	 * data - it was a scheduling construct). */
-	/* GS -> VU1: "a path-1 packet was popped". An eventcount, not a
-	 * semaphore: the waiter wants to know that progress happened, not how
-	 * much, and the old drain-the-credit-then-wait was this primitive
-	 * being simulated on a counter. notify is a release store and a
-	 * relaxed load -- what the GS thread pays per packet. */
+	/* GS -> VU1: a path-1 packet was popped. The waiter wants to know
+	 * that progress happened, not how much. */
 	retro_asym_eventcount_t ecP1Progress;
-	retro_atomic_int_t vuCycles[4]; // Used for VU cycle stealing hack
-	u32 vuCycleIdx;  // Used for VU cycle stealing hack
+	retro_atomic_int_t vuCycles[4]; /* the VU cycle stealing hack */
+	u32 vuCycleIdx;
 	u32 vuFBRST;
 
-	enum InterruptFlag {
-		InterruptFlagFinish = 1 << 0,
-		InterruptFlagSignal = 1 << 1,
-		InterruptFlagLabel  = 1 << 2,
-		InterruptFlagVUEBit = 1 << 3,
-		InterruptFlagVUTBit = 1 << 4,
-	};
+	retro_atomic_int_t mtvuInterrupts; /* MTVU_INT_* */
+	retro_atomic_64_t  gsLabel;        /* the GS Label command */
+	retro_atomic_64_t  gsSignal;       /* the GS Signal command */
+} VU_Thread;
 
-	retro_atomic_int_t mtvuInterrupts; // Used for GS Signal, Finish etc, plus VU End/T-Bit
-	retro_atomic_64_t gsLabel; // Used for GS Label command
-	retro_atomic_64_t gsSignal; // Used for GS Signal command
-
-	VU_Thread();
-	~VU_Thread();
-
-
-	/// Returns true if the VU thread has been started.
-	__fi bool IsOpen() const { return m_thread != NULL; }
-	/// The worker's handle, for VMManager to pin it.
-	__fi sthread_t* GetThread() const { return m_thread; }
-
-	/// Ensures the VU thread is started.
-	void Open();
-
-	/// Shuts down the VU thread if it is currently running.
-	void Close();
-
-	void Reset();
-
-	// Get MTVU to start processing its packets if it isn't already
-	void KickStart();
-
-	// C.80: flush a deferred VifUnpack notify if one is pending (lazy kick).
-	// Called from the VIF1 DMA/MFIFO end-of-transfer tails to bound how long
-	// the worker can sleep on published-but-unnotified unpack data.
-	void KickPending();
-
-	// Waits till MTVU is done processing, and queues writes to VU1 memory:
-	// mtvu_wait_vu and mtvu_write_* (VUmicro.h), C for Memory.c.
-	friend void mtvu_wait_vu(void);
-	friend void* mtvu_write_mem_begin(int data_mem, u32 addr, u32 size);
-	friend void mtvu_write_mem_commit(void);
-
-	void Get_MTVUChanges();
-
-	void ExecuteVU(u32 vu_addr, u32 vif_top, u32 vif_itop, u32 fbrst);
-
-	void VifUnpack(vifStruct& _vif, VIFregisters& _vifRegs, const u8* data, u32 size);
-
-	void WriteVIRegs(REG_VI* viRegs);
-
-	void WriteVFRegs(VECTOR* vfRegs);
-
-	void WriteCol(vifStruct& _vif);
-
-	void WriteRow(vifStruct& _vif);
-
-private:
-	void ExecuteRingBuffer();
-
-	bool HasSpace(s32 size, bool& need_wrap);
-	bool WaitOnSize(s32 size);
-	void ReserveSpace(s32 size);
-
-	s32 GetReadPos();
-	s32 GetWritePos();
-
-	u32* GetWritePtr();
-
-	u32 Read();
-	void Read(void* dest, u32 size);
-	void ReadRegs(VIFregisters* dest);
-
-	void Write(u32 val);
-	void Write(const void* src, u32 size);
-	void WriteRegs(VIFregisters* src);
-
-	u32 Get_vuCycles();
-};
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern VU_Thread vu1Thread;
+
+/* retro_init and retro_deinit: the worker's eventcounts, made and freed. */
+void mtvu_init(void);
+void mtvu_shutdown(void);
+
+/* EE thread. open starts the worker if it is not running; close stops
+ * it; reset empties the ring. */
+void mtvu_open(void);
+void mtvu_close(void);
+void mtvu_reset(void);
+bool mtvu_is_open(void);
+/* The worker's handle, for VMManager to pin it. */
+sthread_t* mtvu_thread(void);
+#ifdef __cplusplus
+}
+#endif

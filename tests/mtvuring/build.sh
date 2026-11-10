@@ -1,7 +1,7 @@
 #!/bin/sh
 # MTVU ring pointer protocol under concurrency.
 #
-# The protocol MTVU.cpp carries, exercised concurrently. FIXED=0 builds
+# The protocol MTVU.c carries, exercised concurrently. FIXED=0 builds
 # the one it replaced -- the queue-pointer bug behind the SotC intro
 # corruption and the 4KB safety net -- which fails in a few thousand
 # packets, and is built here too so the difference stays visible.

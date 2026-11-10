@@ -3,6 +3,9 @@
 
 #include "../common/Pcsx2Defs.h"
 
+/* The stack for threads that run recompiled code: microVU recurses. */
+#define VM_EMU_THREAD_STACK_SIZE (2u * 1024 * 1024)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -21,6 +24,9 @@ bool vm_paused(void);
 /* libretro/main.cpp: the frame timing changed, so retro_run reports the
  * new AV info. Set from the EE's vsync (Counters.c). */
 extern bool pending_update_av_info;
+
+/* The stack for threads that run recompiled code: microVU recurses. */
+#define VM_EMU_THREAD_STACK_SIZE (2u * 1024 * 1024)
 
 #ifdef __cplusplus
 }

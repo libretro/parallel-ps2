@@ -22,8 +22,9 @@ extern "C" {
 #define EMU_HOT_EE_TIMING   (1u << 6) /* Gamefixes.EETimingHack */
 
 extern u32 emu_hot;
-/* Speedhacks.EECycleRate. */
+/* Speedhacks.EECycleRate and EECycleSkip. */
 extern s32 emu_hot_ee_cycle_rate;
+extern u32 emu_hot_ee_cycle_skip;
 
 void emu_config_sync_hot(void);
 /* vtlb.c, when the fastmem area cannot be had: turns it off and resyncs. */

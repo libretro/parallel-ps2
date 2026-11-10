@@ -45,8 +45,6 @@ struct VMBootParameters
 
 namespace VMManager
 {
-	/// The stack size to use for threads running recompilers
-	static constexpr std::size_t EMU_THREAD_STACK_SIZE = 2 * 1024 * 1024; // µVU likes recursion
 									      //
 	/// Returns the current state of the VM.
 	VMState GetState();

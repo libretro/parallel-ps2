@@ -856,6 +856,7 @@ bool emu_config_instant_vu1(void)
 
 u32 emu_hot;
 s32 emu_hot_ee_cycle_rate;
+u32 emu_hot_ee_cycle_skip;
 
 void emu_config_sync_hot(void)
 {
@@ -870,6 +871,7 @@ void emu_config_sync_hot(void)
 	if (EmuConfig.Gamefixes.EETimingHack)      w |= EMU_HOT_EE_TIMING;
 	emu_hot               = w;
 	emu_hot_ee_cycle_rate = EmuConfig.Speedhacks.EECycleRate;
+	emu_hot_ee_cycle_skip = EmuConfig.Speedhacks.EECycleSkip;
 }
 
 void emu_config_disable_fastmem(void)

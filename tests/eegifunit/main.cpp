@@ -210,7 +210,7 @@ void mtgs_wait_gs(bool isMTVU) { gs_wait(isMTVU); }
 void Gif_AddCompletedGSPacket(const GS_Packet* p, GIF_PATH path) { gs_packet(p, path); }
 void Gif_AddBlankGSPacket(u32 size, GIF_PATH path) { gs_blank(size, path); }
 void Gif_MTVU_KickSema(void) { mix(0x14); }
-/* The VU1 thread's half of an A+D write (MTVU.cpp): its own state, which
+/* The VU1 thread's half of an A+D write (MTVU.c): its own state, which
  * this harness does not keep. */
 void Gif_HandlerAD_MTVU(u8*) { }
 bool emu_config_thread_vu1(void) { return s_thread_vu1; }

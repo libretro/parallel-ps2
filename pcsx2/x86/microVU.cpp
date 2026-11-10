@@ -409,7 +409,7 @@ void vucpu_rec_vu0_reserve(void)
 void vucpu_rec_vu1_reserve(void)
 {
 	mVUinit(&microVU1, 1);
-	vu1Thread.Open();
+	mtvu_open();
 }
 
 static void rec_vu0_shutdown(void)
@@ -418,7 +418,7 @@ static void rec_vu0_shutdown(void)
 }
 static void rec_vu1_shutdown(void)
 {
-	if (vu1Thread.IsOpen())
+	if (mtvu_is_open())
 		mtvu_wait_vu();
 	mVUclose(&microVU1);
 }
@@ -431,7 +431,7 @@ static void rec_vu0_reset(void)
 static void rec_vu1_reset(void)
 {
 	mtvu_wait_vu();
-	vu1Thread.Get_MTVUChanges();
+	mtvu_get_changes();
 	mVUreset(&microVU1, 1);
 }
 

@@ -52,14 +52,14 @@ extern void mVUincCycles(microVU& mVU, int x);
 //------------------------------------------------------------------
 static void mVUTBit()
 {
-	u32 old = vu1Thread.mtvuInterrupts.fetch_or(VU_Thread::InterruptFlagVUTBit, std::memory_order_release);
-	if (old & VU_Thread::InterruptFlagVUTBit)
+	const u32 old = (u32)retro_atomic_fetch_or_int(&vu1Thread.mtvuInterrupts, MTVU_INT_VU_TBIT); /* acq_rel >= release */
+	if (old & MTVU_INT_VU_TBIT)
 		log_cb(RETRO_LOG_WARN, "Old TBit not registered\n");
 }
 
 static void mVUEBit()
 {
-	vu1Thread.mtvuInterrupts.fetch_or(VU_Thread::InterruptFlagVUEBit, std::memory_order_release);
+	retro_atomic_fetch_or_int(&vu1Thread.mtvuInterrupts, MTVU_INT_VU_EBIT); /* acq_rel >= release */
 }
 
 void mVU0clearlpStateJIT() { if (!microVU0.prog.cleared) std::memset(&microVU0.prog.lpState, 0, sizeof(microVU0.prog.lpState)); }

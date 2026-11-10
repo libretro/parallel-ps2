@@ -879,7 +879,7 @@ void VMManager::Reset()
 	}
 
 	mtvu_wait_vu();
-	vu1Thread.Reset();
+	mtvu_reset();
 	mtgs_wait_gs(false);
 
 	const bool game_was_started = g_GameStarted;
@@ -961,7 +961,7 @@ void VMManager::InitializeCPUProviders()
 	// enabled the EE would push to vu1Thread's ring and wait on its WorkSema
 	// forever (boot hang / black screen). The worker runs VU1 through
 	// CpuVU1->Execute(), so it works with the VU interpreter provider too.
-	vu1Thread.Open();
+	mtvu_open();
 	// arm64 VIF unpack dynarec (C.19, NEON port transplanted from ARMSX2).
 	dVifReserve(0);
 	dVifReserve(1);
@@ -990,7 +990,7 @@ void VMManager::ShutdownCPUProviders()
 #else
 	vucpu_rec_vu0.Shutdown();
 	vucpu_rec_vu1.Shutdown(); // waits on the MTVU worker, then mVUclose
-	vu1Thread.Close();
+	mtvu_close();
 	dVifRelease(1);
 	dVifRelease(0);
 	VifUnpackSSE_Destroy();
@@ -1352,7 +1352,7 @@ static void SetMTVUAndAffinityControlDefault(Pcsx2Config& c)
 {
 	VMManager::EnsureCPUInfoInitialized();
 	// arm64 MTVU status: the worker thread spawns (InitializeCPUProviders) and
-	// sets VPU_STAT busy around interpreter VU1 programs (MTVU.cpp), which makes
+	// sets VPU_STAT busy around interpreter VU1 programs (MTVU.c), which makes
 	// MTVU produce correct XGKICK output. However, games driving a CONTINUOUS
 	// VU1 program (an endless microprogram streaming XGKICK packets, e.g. GT3's
 	// arcade attract) deadlock the one-packet-per-program MTVU handoff with the
@@ -1441,7 +1441,7 @@ void VMManager::SetEmuThreadAffinities()
 		if (EmuConfig.Cpu.AffinityControlMode != 0)
 			log_cb(RETRO_LOG_ERROR, "Insufficient processors for affinity control.\n");
 
-		sthread_set_affinity(vu1Thread.GetThread(), 0);
+		sthread_set_affinity(mtvu_thread(), 0);
 		set_ee_affinity(0);
 		return;
 	}
@@ -1472,10 +1472,10 @@ void VMManager::SetEmuThreadAffinities()
 	{
 		const u64 vu_affinity = static_cast<u64>(1) << vu_index;
 		log_cb(RETRO_LOG_INFO, "VU thread is on processor %u (0x%llx)\n", vu_index, (unsigned long long)vu_affinity);
-		sthread_set_affinity(vu1Thread.GetThread(), vu_affinity);
+		sthread_set_affinity(mtvu_thread(), vu_affinity);
 	}
 	else
-		sthread_set_affinity(vu1Thread.GetThread(), 0);
+		sthread_set_affinity(mtvu_thread(), 0);
 }
 
 void VMManager::ApplyHardwareDefaults(Pcsx2Config& c)

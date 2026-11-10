@@ -58,7 +58,7 @@ extern void gsReset(void);
  * GS thread has caught up. */
 extern void mtgs_init_and_read_fifo(u8* mem, u32 qwc);
 
-/* MTVU.cpp: the VU1 thread's results taken in, and its pending unpack
+/* MTVU.c: the VU1 thread's results taken in, and its pending unpack
  * notifications flushed. */
 extern void mtvu_get_changes(void);
 extern void mtvu_kick_pending(void);

@@ -281,12 +281,12 @@ static __fi void mVUrestoreRegs(microVU* mVU, int fromMemory, int onlyNeeded)
 
 static void mVUTBit(void)
 {
-	retro_atomic_fetch_or_int(&vu1Thread.mtvuInterrupts, VU_Thread::InterruptFlagVUTBit); /* acq_rel >= release */
+	retro_atomic_fetch_or_int(&vu1Thread.mtvuInterrupts, MTVU_INT_VU_TBIT); /* acq_rel >= release */
 }
 
 static void mVUEBit(void)
 {
-	retro_atomic_fetch_or_int(&vu1Thread.mtvuInterrupts, VU_Thread::InterruptFlagVUEBit); /* acq_rel >= release */
+	retro_atomic_fetch_or_int(&vu1Thread.mtvuInterrupts, MTVU_INT_VU_EBIT); /* acq_rel >= release */
 }
 
 static inline u32 branchAddr(const mV)

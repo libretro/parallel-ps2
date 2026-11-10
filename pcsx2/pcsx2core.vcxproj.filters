@@ -347,7 +347,7 @@
     <ClCompile Include="GoemonTlb.c">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
     </ClCompile>
-    <ClCompile Include="MTVU.cpp">
+    <ClCompile Include="MTVU.c">
       <Filter>System\Ps2\EmotionEngine\VU</Filter>
     </ClCompile>
     <ClCompile Include="VUmicro.c">

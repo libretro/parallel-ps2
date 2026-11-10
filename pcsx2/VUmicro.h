@@ -97,7 +97,7 @@ extern void vu_memory_assign(const struct VirtualMemoryManager* main_map);
 extern void vu_memory_reset(void);
 extern void vu_memory_release(const struct VirtualMemoryManager* main_map);
 
-/* MTVU (MTVU.cpp): wait for the VU1 thread to drain its ring, and queue
+/* MTVU (MTVU.c): wait for the VU1 thread to drain its ring, and queue
  * writes to VU1 memory through it. A write of a known width takes a slot in
  * the ring with mtvu_write_mem_begin, stores the data straight into it and
  * publishes it with mtvu_write_mem_commit; the _micro/_data_mem forms copy
@@ -113,7 +113,7 @@ extern u64  emu_fpcr_set_vu(int unit);
 /* The EE FPU's control register; returns the previous one. */
 extern u64  emu_fpcr_set_fpu(void);
 extern void emu_fpcr_restore(u64 saved);
-/* MTVU.cpp: start a VU1 program on the VU1 thread. */
+/* MTVU.c: start a VU1 program on the VU1 thread. */
 extern void mtvu_execute_vu(u32 addr, u32 vif_top, u32 vif_itop, u32 fbrst);
 extern void* mtvu_write_mem_begin(int data_mem, u32 addr, u32 size);
 extern void mtvu_write_mem_commit(void);

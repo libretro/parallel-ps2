@@ -360,3 +360,5 @@ tests/stdlib/.build/
 tests/stdlib/.probe.cpp
 /tests/mtgsring/mtgsring
 /tests/mtgsring/mtgsring.exe
+/tests/mtvu/mtvu
+/tests/mtvu/mtvu.exe

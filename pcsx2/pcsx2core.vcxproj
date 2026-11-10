@@ -226,7 +226,7 @@
     <ClCompile Include="x86\ix86-32\recVTLB.cpp" />
     <ClCompile Include="vtlb.c" />
     <ClCompile Include="GoemonTlb.c" />
-    <ClCompile Include="MTVU.cpp" />
+    <ClCompile Include="MTVU.c" />
     <ClCompile Include="VUmicro.c" />
     <ClCompile Include="VUmicroMem.c" />
     <ClCompile Include="x86\microVU.cpp" />
