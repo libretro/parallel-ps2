@@ -403,7 +403,6 @@ private:
 	Util::SliceBackingAllocatorVA backing_va;
 	VkDeviceSize alignment = 0;
 	VkDeviceSize sub_block_size = 0;
-	PGS::mutex lock;
 
 	HeapInfo resource_heap = {}, sampler_heap = {};
 

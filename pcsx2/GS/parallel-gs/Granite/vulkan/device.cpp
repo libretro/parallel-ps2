@@ -44,11 +44,12 @@ static unsigned get_thread_index()
 {
 	return Util::get_current_thread_index();
 }
-#define LOCK() PGS::lock_guard _holder_##__COUNTER__{lock.lock}
-#define LOCK_MEMORY() PGS::lock_guard _holder_##__COUNTER__{lock.memory_lock}
+/* The device's state has one owner at a time and no lock (owned.hpp). */
+#define LOCK() OWNED()
+#define LOCK_MEMORY() OWNED()
 #define DRAIN_FRAME_LOCK() \
-	PGS::unique_lock _holder{lock.lock, PGS::defer_lock}; \
-	lock_drained(_holder)
+	OWNED(); \
+	wait_drained()
 
 using namespace Util;
 
@@ -2072,23 +2073,21 @@ void Device::decrement_frame_counter_nolock()
 }
 
 /* The frame advances (and wait_idle drains) only with every command
- * buffer requested in it submitted. Requests and submissions take
- * lock.lock, so with it held at a count of zero none is outstanding;
- * otherwise it is let go and the count awaited, without holding it. */
-void Device::lock_drained(PGS::unique_lock &holder)
+ * buffer requested in it submitted. The owner requests and submits its
+ * own, so this is normally zero already; otherwise it sleeps until the
+ * count comes down. */
+void Device::wait_drained()
 {
 	for (;;)
 	{
 		int key;
-		holder.lock();
 		if (retro_atomic_load_acquire_int(&lock.counter) == 0 || !lock.drained_ok)
 			return;
-		holder.unlock();
 		key = retro_eventcount_prepare_wait(&lock.drained);
 		if (retro_atomic_load_acquire_int(&lock.counter) == 0)
 		{
 			retro_eventcount_cancel_wait(&lock.drained);
-			continue;
+			return;
 		}
 		retro_eventcount_commit_wait(&lock.drained, key);
 	}
@@ -2203,7 +2202,6 @@ void Device::PerFrame::begin()
 
 	if (!allocations.empty())
 	{
-		PGS::lock_guard holder{device.lock.memory_lock};
 		for (auto &alloc : allocations)
 			alloc.free_immediate(managers.memory);
 	}

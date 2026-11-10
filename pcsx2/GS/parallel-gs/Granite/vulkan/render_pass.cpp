@@ -26,12 +26,13 @@
 #include "stack_allocator.hpp"
 #include "device.hpp"
 #include "quirks.hpp"
+#include "owned.hpp"
 #include <utility>
 #include <cstring>
 
 using namespace Util;
 
-#define LOCK() PGS::lock_guard holder__{lock}
+#define LOCK() OWNED()
 
 namespace Vulkan
 {

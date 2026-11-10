@@ -71,7 +71,6 @@ private:
 	VkSemaphore timeline_semaphore;
 	uint64_t timeline_value;
 	bool observed_wait = false;
-	PGS::mutex lock;
 };
 
 using Fence = Util::IntrusivePtr<FenceHolder>;

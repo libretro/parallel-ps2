@@ -72,6 +72,33 @@ jobs:
           WORKSEMA_REPS: 200
         run: sh tests/run-all.sh
 
+  # The renderer suites run the built core on lavapipe, and the suites job
+  # has no core, so they used to skip in CI. This builds one with
+  # Granite's ownership check on (util/owned.hpp: the device takes no
+  # lock, and the check aborts if two threads are ever in it at once) and
+  # runs them on it.
+  renderer:
+    name: renderer on a checked core
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install the build and lavapipe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3 liblzma-dev zlib1g-dev libgl-dev libegl1 mesa-vulkan-drivers libvulkan1 glslc
+
+      - name: Build the core with the ownership check
+        run: CXXFLAGS=-DGRANITE_OWNERSHIP_CHECK make -j"$(nproc)"
+
+      - name: Run the renderer suites on it
+        env:
+          LRPS2_CHECKED_CORE: ${{ github.workspace }}/pcsx2_libretro.so
+        run: sh tests/pgsowner/build.sh
+
   # The hardware-test suites compare against the PS2 test images and check
   # far less without them. A green tick above should not be read as those
   # having run, so this says which did what.

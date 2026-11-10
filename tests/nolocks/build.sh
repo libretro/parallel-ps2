@@ -3,19 +3,17 @@
 # rings and eventcounts, never a mutex, a condition variable or a
 # critical section. This fails on any of them in the core's own sources.
 # libretro-common is synced from RetroArch and its primitives are
-# allowed to use what they like underneath; paraLLEl-GS's Granite still
-# carries its own and is listed until it is done. The negative case
-# checks a stray lock is caught.
+# allowed to use what they like underneath. The negative case checks a
+# stray lock is caught.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
 
-PATTERN='\bslock_(new|lock|unlock|try_lock|free)\b|\bscond_(new|wait|signal|broadcast|free)\b|\bslock_t\b|\bscond_t\b|std::(recursive_|shared_|timed_)?mutex\b|std::(lock_guard|unique_lock|scoped_lock|condition_variable)\b|\bpthread_(mutex|cond|rwlock)_|\b(Enter|Leave|Initialize)CriticalSection\b|\bCRITICAL_SECTION\b|\bSRWLOCK\b|\bAcquireSRWLock|\bSLockGuard\b'
+PATTERN='\bPGS::(mutex|lock_guard|unique_lock|condition_variable)\b|\bRWSpinLock|\bslock_(new|lock|unlock|try_lock|free)\b|\bscond_(new|wait|signal|broadcast|free)\b|\bslock_t\b|\bscond_t\b|std::(recursive_|shared_|timed_)?mutex\b|std::(lock_guard|unique_lock|scoped_lock|condition_variable)\b|\bpthread_(mutex|cond|rwlock)_|\b(Enter|Leave|Initialize)CriticalSection\b|\bCRITICAL_SECTION\b|\bSRWLOCK\b|\bAcquireSRWLock|\bSLockGuard\b'
 
 scan() {
 	grep -rnE "$PATTERN" "$@" --include='*.c' --include='*.cpp' --include='*.h' --include='*.hpp' --include='*.inl' \
 		| grep -v '/libretro-common/' \
-		| grep -v '/parallel-gs/Granite/' \
 		| grep -v "^$DIR/" || true
 }
 

@@ -23,6 +23,7 @@
 #include "thread_prims.hpp"
 #include "memory_allocator.hpp"
 #include "device.hpp"
+#include "owned.hpp"
 #include <algorithm>
 
 #ifndef _WIN32
@@ -979,7 +980,7 @@ void DescriptorBufferAllocator::init_copy_func(DescriptorTypeInfo &info, VkDescr
 
 void DescriptorBufferAllocator::free(const DescriptorBufferAllocation *alloc, size_t count)
 {
-	PGS::lock_guard holder{lock};
+	OWNED();
 	for (size_t i = 0; i < count; i++)
 	{
 		total_size -= alloc[i].backing_slice.count;
@@ -991,7 +992,7 @@ DescriptorBufferAllocation DescriptorBufferAllocator::allocate(VkDeviceSize size
 {
 	size = (size + alignment - 1) & ~(alignment - 1);
 
-	PGS::lock_guard holder{lock};
+	OWNED();
 
 	DescriptorBufferAllocation alloc = {};
 	if (!Util::SliceAllocator::allocate(size, &alloc.backing_slice))
@@ -1036,7 +1037,7 @@ VkSampler DescriptorBufferAllocator::create_sampler(const VkSamplerCreateInfo *i
 	{
 		uint32_t index;
 		{
-			PGS::lock_guard holder{lock};
+			OWNED();
 			if (heap_sampler_indices.empty())
 				return VK_NULL_HANDLE;
 
@@ -1070,7 +1071,7 @@ void DescriptorBufferAllocator::destroy_sampler(VkSampler sampler)
 		if (sampler)
 		{
 			VK_ASSERT(((uint64_t)sampler) >> 63);
-			PGS::lock_guard holder{lock};
+			OWNED();
 			heap_sampler_indices.push_back((uint64_t)sampler);
 		}
 	}
@@ -1082,7 +1083,7 @@ void DescriptorBufferAllocator::destroy_sampler(VkSampler sampler)
 
 uint32_t DescriptorBufferAllocator::allocate_single_resource_heap_entry()
 {
-	PGS::lock_guard holder{lock};
+	OWNED();
 	if (heap_resource_indices.empty())
 	{
 		LOGE("Resource heap is empty.\n");
@@ -1096,7 +1097,7 @@ uint32_t DescriptorBufferAllocator::allocate_single_resource_heap_entry()
 
 void DescriptorBufferAllocator::free_single_resource_heap_entry(uint32_t index)
 {
-	PGS::lock_guard holder{lock};
+	OWNED();
 	heap_resource_indices.push_back(index);
 }
 

@@ -47,6 +47,7 @@
 #include "quirks.hpp"
 #include "small_vector.hpp"
 #include "deferred_list.hpp"
+#include "owned.hpp"
 #include <rthreads/retro_eventcount.h>
 
 namespace Util
@@ -448,8 +449,6 @@ private:
 
 	struct
 	{
-		PGS::mutex memory_lock;
-		PGS::mutex lock;
 		/* Command buffers requested and not yet submitted. The frame
 		 * advances only at zero; it sleeps on drained until then. */
 		retro_atomic_int_t counter;
@@ -457,8 +456,8 @@ private:
 		bool drained_ok = false;
 		bool async_frame_context = false;
 	} lock;
-	/* Hold lock.lock with no command buffer outstanding. */
-	void lock_drained(PGS::unique_lock &holder);
+	/* Until no command buffer is outstanding. */
+	void wait_drained();
 
 	struct PerFrame
 	{
