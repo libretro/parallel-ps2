@@ -205,6 +205,15 @@ else()
 		"$<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>"
 		"$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>"
 	)
+	if(NOT APPLE AND NOT WIN32)
+		# Unreferenced code and data stay out of the core, as in the
+		# Makefile build: one section per function and data item, and the
+		# linker keeps what the exports reach. Apple gets -dead_strip below;
+		# MinGW cannot drop functions (its linker keeps every .pdata unwind
+		# entry, which names each one) and MSVC has /OPT:REF.
+		add_compile_options(-ffunction-sections -fdata-sections)
+		add_link_options(-Wl,--gc-sections)
+	endif()
 endif()
 
 set(CONFIG_REL_NO_DEB $<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>>)

@@ -478,9 +478,6 @@ else
    IS_WINDOWS = 1
    IS_WIN_MINGW = 1
    SHARED    := -shared -Wl,--no-undefined -Wl,--version-script=link.T
-   ifeq ($(GCSCAN),1)
-      SHARED += -Wl,--gc-sections -Wl,--print-gc-sections -Wl,-Map=gcscan.map
-   endif
    HAVE_CDROM = 1
 
    # Match cmake target_compile_definitions on Windows + LIBRETRO=ON.
@@ -831,15 +828,32 @@ else
    endif
 endif
 
-# Dead-code scan (GCSCAN=1): split every function/data item into its own
-# section so the linker's --gc-sections can discard unreferenced ones and
-# --print-gc-sections (on SHARED above) reports each discard. The link.T
-# version script anchors the GC roots to the exported retro_* API, so
-# everything reachable from the libretro entry points is kept. Measurement
-# only -- do not ship a GCSCAN build.
+# Unreferenced code and data stay out of the core. Every function and data
+# item gets its own section and the linker keeps only what the exports
+# (link.T, libretro.osx.def) reach: vendored Granite, volk, Vulkan helpers
+# and emulator code the libretro build never calls, about 1.1 MB of text
+# on x86-64 Linux. GNU ld, gold, lld and mold take --gc-sections; Apple's
+# ld64 strips dead atoms with -dead_strip. Not MinGW: GNU ld's PE script
+# keeps every .pdata unwind entry, and each one names its function, so no
+# function can be dropped there and the split would only grow the DLL's
+# symbol table. GC_SECTIONS=0 links everything, for comparison. GCSCAN=1
+# (any GNU toolchain, MinGW included) also lists each discarded section
+# (--print-gc-sections) and writes gcscan.map; measurement only.
+GC_SECTIONS ?= 1
 ifeq ($(GCSCAN),1)
    CFLAGS   += -ffunction-sections -fdata-sections
    CXXFLAGS += -ffunction-sections -fdata-sections
+   SHARED   += -Wl,--gc-sections -Wl,--print-gc-sections -Wl,-Map=gcscan.map
+else ifeq ($(GC_SECTIONS),1)
+   ifneq (,$(findstring unix,$(platform)))
+      ifeq (,$(findstring SunOS,$(shell uname -a)))
+         CFLAGS   += -ffunction-sections -fdata-sections
+         CXXFLAGS += -ffunction-sections -fdata-sections
+         SHARED   += -Wl,--gc-sections
+      endif
+   else ifneq (,$(filter osx,$(platform))$(findstring ios,$(platform))$(findstring tvos,$(platform)))
+      SHARED += -Wl,-dead_strip
+   endif
 endif
 
 # Architecture / SIMD baseline.  cmake passes -march=native; for the static
