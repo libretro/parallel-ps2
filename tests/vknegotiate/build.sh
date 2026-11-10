@@ -46,6 +46,19 @@ for mode in v2 v2retry v1; do
 	rm -rf "$SCRATCH"
 done
 
+# paraLLEl-GS builds its device through Granite's Context, which enables
+# whatever the driver offers that Granite has a use for; the wrapper fails
+# on any extension in its unwanted list (mesh shaders, ray query, device
+# generated commands, profiling and crash-dump layers...).
+SCRATCH=$(mktemp -d)
+if ! VN_RENDERER=paraLLEl-GS timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: Vulkan negotiation, paraLLEl-GS device extensions"
+	exit 1
+fi
+rm -rf "$SCRATCH"
+echo "  paraLLEl-GS device: no extension the core has no use for"
+
 # A pipeline cache with junk after its header, left by a run before, and
 # the SPIR-V cache a build that compiled its shaders at run time kept: the
 # next run goes on with whatever the driver makes of the one, and takes

@@ -63,20 +63,6 @@ struct FlushStats
 	uint32_t num_copy_barriers;
 };
 
-enum class TimestampType
-{
-	SyncHostToVRAM,
-	CopyVRAM,
-	PaletteUpdate,
-	TextureUpload,
-	TriangleSetup,
-	Binning,
-	Shading,
-	Readback,
-	VSync,
-	Count
-};
-
 struct TexRect
 {
 	uint32_t x, y, width, height;
@@ -201,15 +187,12 @@ struct RenderPass
 	uint32_t num_textures;
 
 	uint32_t label_key;
-	uint32_t debug_capture_stride;
 
 	bool has_aa1;
 	bool has_scanmsk;
 	bool allow_blend_demote;
 
 	// For debugging. Aids capture tools.
-	bool feedback_color;
-	bool feedback_depth;
 
 	enum Feedback
 	{
@@ -315,8 +298,6 @@ public:
 
 	FlushStats consume_flush_stats();
 
-	double get_accumulated_timestamps(TimestampType type) const;
-	void set_enable_timestamps(bool enable);
 
 	void invalidate_super_sampling_state(uint32_t sampling_rate_x_log2, uint32_t sampling_rate_y_log2, bool copies_only);
 	/* Builds ahead the pipelines draws at this sampling rate and at the
@@ -525,8 +506,6 @@ private:
 
 	bool render_pass_instance_is_deduced_blur(const RenderPass &rp, uint32_t instance) const;
 
-	void bind_debug_resources(Vulkan::CommandBuffer &cmd, const RenderPass &rp, const RenderPass::Instance &instance);
-	Vulkan::ImageHandle feedback_color, feedback_depth, feedback_prim, feedback_vary;
 
 	void dispatch_cache_read_only_depth(Vulkan::CommandBuffer &cmd, const RenderPass &rp, uint32_t depth_psm, uint32_t instance);
 
@@ -563,19 +542,8 @@ private:
 	                    const uint32_t *dispatch_order,
 	                    uint32_t num_dispatches, bool prepare_only);
 
-	struct Timestamp
-	{
-		TimestampType type;
-		Vulkan::QueryPoolHandle ts_start;
-		Vulkan::QueryPoolHandle ts_end;
-	};
-	std::vector<Timestamp> timestamps;
-	void log_timestamps();
-	double timestamp_total_time[int(TimestampType::Count)] = {};
-
 	FlushStats stats = {}, total_stats = {};
 	void check_flush_stats();
-	bool enable_timestamps = false;
 
 	Vulkan::ImageHandle vsync_last_fields[4];
 	Vulkan::ImageHandle fastmad_deinterlace(Vulkan::CommandBuffer &cmd, const VSyncInfo &vsync);

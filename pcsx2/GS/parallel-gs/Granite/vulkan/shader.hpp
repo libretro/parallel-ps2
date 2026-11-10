@@ -322,7 +322,6 @@ class Program : public HashedObject<Program>
 {
 public:
 	Program(Device *device, Shader *vertex, Shader *fragment, const ImmutableSamplerBank *sampler_bank);
-	Program(Device *device, Shader *task, Shader *mesh, Shader *fragment, const ImmutableSamplerBank *sampler_bank);
 	Program(Device *device, Shader *compute, const ImmutableSamplerBank *sampler_bank);
 	~Program();
 

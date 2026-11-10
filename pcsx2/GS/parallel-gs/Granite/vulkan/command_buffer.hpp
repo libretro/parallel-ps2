@@ -26,7 +26,6 @@
 #include "buffer_pool.hpp"
 #include "vulkan_headers.hpp"
 #include "image.hpp"
-#include "query_pool.hpp"
 #include "render_pass.hpp"
 #include "sampler.hpp"
 #include "shader.hpp"
@@ -35,7 +34,6 @@
 
 namespace Vulkan
 {
-class DebugChannelInterface;
 
 static inline VkPipelineStageFlags convert_vk_stage2(VkPipelineStageFlags2 stages)
 {
@@ -233,31 +231,7 @@ struct VertexBindingState
 	VkDeviceSize offsets[VULKAN_NUM_VERTEX_BUFFERS];
 };
 
-enum CommandBufferSavedStateBits
-{
-	COMMAND_BUFFER_SAVED_BINDINGS_0_BIT = 1u << 0,
-	COMMAND_BUFFER_SAVED_BINDINGS_1_BIT = 1u << 1,
-	COMMAND_BUFFER_SAVED_BINDINGS_2_BIT = 1u << 2,
-	COMMAND_BUFFER_SAVED_BINDINGS_3_BIT = 1u << 3,
-	COMMAND_BUFFER_SAVED_VIEWPORT_BIT = 1u << 4,
-	COMMAND_BUFFER_SAVED_SCISSOR_BIT = 1u << 5,
-	COMMAND_BUFFER_SAVED_RENDER_STATE_BIT = 1u << 6,
-	COMMAND_BUFFER_SAVED_PUSH_CONSTANT_BIT = 1u << 7
-};
 static_assert(VULKAN_NUM_DESCRIPTOR_SETS == 4, "Number of descriptor sets != 4.");
-using CommandBufferSaveStateFlags = uint32_t;
-
-struct CommandBufferSavedState
-{
-	CommandBufferSaveStateFlags flags;
-	ResourceBindings bindings;
-	VkViewport viewport;
-	VkRect2D scissor;
-
-	PipelineState static_state;
-	PotentialState potential_static_state;
-	DynamicState dynamic_state;
-};
 
 struct DeferredPipelineCompile
 {
@@ -307,22 +281,10 @@ public:
 	void begin_region(const char *name, const float *color = nullptr);
 	void insert_label(const char *name, const float *color = nullptr);
 	void end_region();
-	void checkpoint(const char *tag);
 
 	Device &get_device()
 	{
 		return *device;
-	}
-
-	VkPipelineStageFlags2 swapchain_touched_in_stages() const
-	{
-		return uses_swapchain_in_stages;
-	}
-
-	// Only used when using swapchain in non-obvious ways, like compute or transfer.
-	void swapchain_touch_in_stages(VkPipelineStageFlags2 stages)
-	{
-		uses_swapchain_in_stages |= stages;
 	}
 
 	void set_thread_index(unsigned index_)
@@ -348,11 +310,6 @@ public:
 	bool get_is_secondary() const
 	{
 		return is_secondary;
-	}
-
-	void set_breadcrumbs_handle(BufferMarkerHandle handle)
-	{
-		breadcrumbs = handle;
 	}
 
 	void clear_image(const Image &image, const VkClearValue &value);
@@ -443,14 +400,10 @@ public:
 	void begin_render_pass(const RenderPassInfo &info, VkSubpassContents contents = VK_SUBPASS_CONTENTS_INLINE);
 	void next_subpass(VkSubpassContents contents = VK_SUBPASS_CONTENTS_INLINE);
 	void end_render_pass();
-	void submit_secondary(Util::IntrusivePtr<CommandBuffer> secondary);
 	inline unsigned get_current_subpass() const
 	{
 		return pipeline_state.subpass_index;
 	}
-	Util::IntrusivePtr<CommandBuffer> request_secondary_command_buffer(unsigned thread_index, unsigned subpass);
-	static Util::IntrusivePtr<CommandBuffer> request_secondary_command_buffer(Device &device,
-	                                                                          const RenderPassInfo &rp, unsigned thread_index, unsigned subpass);
 
 	void set_program(Program *program);
 
@@ -523,7 +476,6 @@ public:
 	          uint32_t first_instance = 0);
 	void draw_indexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0,
 	                  int32_t vertex_offset = 0, uint32_t first_instance = 0);
-	void draw_mesh_tasks(uint32_t tasks_x, uint32_t tasks_y, uint32_t tasks_z);
 
 	void dispatch(uint32_t groups_x, uint32_t groups_y, uint32_t groups_z);
 
@@ -534,16 +486,11 @@ public:
 	void draw_indexed_multi_indirect(const Buffer &buffer, VkDeviceSize offset, uint32_t draw_count, uint32_t stride,
 	                                 const Buffer &count, VkDeviceSize count_offset);
 	void dispatch_indirect(const Buffer &buffer, VkDeviceSize offset);
-	void draw_mesh_tasks_indirect(const Buffer &buffer, VkDeviceSize offset, uint32_t draw_count, uint32_t stride);
-	void draw_mesh_tasks_multi_indirect(const Buffer &buffer, VkDeviceSize offset, uint32_t draw_count, uint32_t stride,
-										const Buffer &count, VkDeviceSize count_offset);
 	void set_opaque_state();
 	void set_quad_state();
 	void set_opaque_sprite_state();
 	void set_transparent_sprite_state();
 
-	void save_state(CommandBufferSaveStateFlags flags, CommandBufferSavedState &state);
-	void restore_state(const CommandBufferSavedState &state);
 
 #define SET_STATIC_STATE(value)                               \
 	do                                                        \
@@ -838,18 +785,12 @@ public:
 		return type;
 	}
 
-	QueryPoolHandle write_timestamp(VkPipelineStageFlags2 stage);
-
 	// Used when recording command buffers in a thread, and submitting them in a different thread.
 	// Need to make sure that no further commands on the VkCommandBuffer happen.
 	void end_threaded_recording();
 	// End is called automatically by Device in submission. Should not be called by application.
 	void end();
-	void enable_profiling();
-	bool has_profiling() const;
 
-	void begin_debug_channel(DebugChannelInterface *iface, const char *tag, VkDeviceSize size);
-	void end_debug_channel();
 
 	void extract_pipeline_state(DeferredPipelineCompile &compile) const;
 
@@ -882,7 +823,6 @@ private:
 	const VolkDeviceTable &table;
 	VkCommandBuffer cmd;
 	Type type;
-	BufferMarkerHandle breadcrumbs;
 
 	const Framebuffer *framebuffer = nullptr;
 	const RenderPass *actual_render_pass = nullptr;
@@ -908,7 +848,6 @@ private:
 	uint32_t dirty_sets_rebind = 0;
 	uint32_t dirty_vbos = 0;
 	uint32_t active_vbos = 0;
-	VkPipelineStageFlags2 uses_swapchain_in_stages = 0;
 	bool is_compute = true;
 	bool is_secondary = false;
 	bool is_ended = false;
@@ -992,10 +931,6 @@ private:
 	void init_surface_transform(const RenderPassInfo &info);
 	VkSurfaceTransformFlagBitsKHR current_framebuffer_surface_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
 
-	bool profiling = false;
-	std::string debug_channel_tag;
-	Vulkan::BufferHandle debug_channel_buffer;
-	DebugChannelInterface *debug_channel_interface = nullptr;
 
 	void bind_pipeline(VkPipelineBindPoint bind_point, VkPipeline pipeline, uint32_t active_dynamic_state);
 
@@ -1017,8 +952,6 @@ private:
 	} barrier_batch;
 
 
-	template <typename T, typename... Ts> void checkpoint(Ts &&... ts);
-	template <typename T, typename... Ts> void checkpoint_with_signal(Ts &&... ts);
 };
 
 #ifdef GRANITE_VULKAN_SYSTEM_HANDLES

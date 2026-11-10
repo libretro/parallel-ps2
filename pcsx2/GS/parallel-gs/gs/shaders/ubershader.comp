@@ -107,15 +107,7 @@ layout(std430, set = DESCRIPTOR_SET_WORKGROUP_LIST, binding = 0) readonly buffer
 
 layout(set = 0, binding = BINDING_PHASE_LUT) uniform usampler2D uPhaseLUT;
 
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-layout(rgba8, set = 0, binding = BINDING_FEEDBACK_COLOR) writeonly uniform image2DArray FeedbackColor;
-layout(rgba32ui, set = 0, binding = BINDING_FEEDBACK_PRIM) writeonly uniform uimage2D FeedbackPrim;
-layout(rgba32f, set = 0, binding = BINDING_FEEDBACK_VARY) writeonly uniform image2DArray FeedbackVary;
-#endif
 
-#if defined(FEEDBACK_DEPTH) && FEEDBACK_DEPTH
-layout(r32ui, set = 0, binding = BINDING_FEEDBACK_DEPTH) writeonly uniform uimage2DArray FeedbackDepth;
-#endif
 
 layout(push_constant) uniform Registers
 {
@@ -439,25 +431,11 @@ const bool is_zb_24bit = ZB_FMT == PSMZ24 || ZB_FMT == PSMCT24;
 const bool is_zb_16bit = ZB_FMT == PSMZ16 || ZB_FMT == PSMZ16S || ZB_FMT == PSMCT16 || ZB_FMT == PSMCT16S;
 #endif
 
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-uint shade_count = 0u;
-uint last_shade_prim = 0u;
-uint coverage_count = 0u;
-uint texture_mask = 0u;
-vec4 last_stqf = vec4(0.0);
-vec4 last_rgba = vec4(0.0);
-uint last_z = 0;
-vec2 last_ij = vec2(0.0);
-bool last_z_passed = false;
-#endif
 ////
 
 bool z_test_coverage(uint z, bool z_test_greater)
 {
 	bool ret = z_test_greater ? z > fb_depth : z >= fb_depth;
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-	last_z_passed = ret;
-#endif
 	return ret;
 }
 
@@ -482,18 +460,6 @@ void begin_tile()
 		{
 			uint ref = uint(vram16.data[tile.fb_index + VRAM_SIZE_16]);
 
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-			if (sample_index == 0u)
-			{
-				imageStore(FeedbackColor,
-					ivec3((tile.fb_pixel >> SAMPLING_RATE_DIM_LOG2) - constants.base_pixel, 3),
-					unpackUnorm4x8(rgba16_to_rgba32(col, 0u, 0u, 0x80u)));
-
-				imageStore(FeedbackColor,
-					ivec3((tile.fb_pixel >> SAMPLING_RATE_DIM_LOG2) - constants.base_pixel, 4),
-					vec4(ref == 0xffff));
-			}
-#endif
 
 			if (ref == 0xffff)
 			{
@@ -514,18 +480,6 @@ void begin_tile()
 			uint ref = vram32.data[tile.fb_index + VRAM_SIZE_32];
 			const uint ref_mask = is_fb_24bit ? 0xffffffu : ~0u;
 
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-			if (sample_index == 0u)
-			{
-				imageStore(FeedbackColor,
-					ivec3((tile.fb_pixel >> SAMPLING_RATE_DIM_LOG2) - constants.base_pixel, 3),
-					unpackUnorm4x8(fb_color));
-
-				imageStore(FeedbackColor,
-					ivec3((tile.fb_pixel >> SAMPLING_RATE_DIM_LOG2) - constants.base_pixel, 4),
-					vec4((ref & ref_mask) == ref_mask));
-			}
-#endif
 
 			if ((ref & ref_mask) == ref_mask)
 			{
@@ -584,17 +538,7 @@ void begin_tile()
 	pending_shade_request.coverage = 0;
 	pending_shade_request.z_write = false;
 
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-	imageStore(FeedbackColor, ivec3(tile.fb_pixel - (constants.base_pixel << SAMPLING_RATE_DIM_LOG2), 1), unpackUnorm4x8(fb_color));
-	if (NUM_SAMPLES == 2 || NUM_SAMPLES == 8)
-		imageStore(FeedbackColor, ivec3((tile.fb_pixel ^ ivec2(1, 0)) - (constants.base_pixel << SAMPLING_RATE_DIM_LOG2), 1), unpackUnorm4x8(fb_color));
-#endif
 
-#if defined(FEEDBACK_DEPTH) && FEEDBACK_DEPTH
-	imageStore(FeedbackDepth, ivec3(tile.fb_pixel - (constants.base_pixel << SAMPLING_RATE_DIM_LOG2), 1), uvec4(fb_depth));
-	if (NUM_SAMPLES == 2 || NUM_SAMPLES == 8)
-		imageStore(FeedbackDepth, ivec3(tile.fb_pixel ^ ivec2(1, 0) - (constants.base_pixel << SAMPLING_RATE_DIM_LOG2), 1), uvec4(fb_depth));
-#endif
 }
 
 bool ballot_reduce_broadcast(bool value)
@@ -618,39 +562,8 @@ bool ballot_reduce_broadcast(bool value)
 
 void end_tile()
 {
-#if (defined(FEEDBACK_COLOR) && FEEDBACK_COLOR) || (defined(FEEDBACK_DEPTH) && FEEDBACK_DEPTH)
-	ivec2 base_pixel = constants.base_pixel << SAMPLING_RATE_DIM_LOG2;
-	ivec2 feedback_pixel = tile.fb_pixel - base_pixel;
-#endif
 
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-	vec4 fb_color_float = unpackUnorm4x8(fb_color);
-	imageStore(FeedbackColor, ivec3(feedback_pixel, 0), fb_color_float);
-	imageStore(FeedbackPrim, feedback_pixel, uvec4(shade_count, last_shade_prim, coverage_count, texture_mask));
-	imageStore(FeedbackVary, ivec3(feedback_pixel, 0), last_stqf);
-	imageStore(FeedbackVary, ivec3(feedback_pixel, 1), last_rgba);
 
-	vec2 depth_feedback = vec2(0.0);
-	if (coverage_count != 0)
-		depth_feedback = last_z_passed ? vec2(0.0, last_z) : vec2(last_z, 0.0);
-
-	imageStore(FeedbackVary, ivec3(feedback_pixel, 2), vec4(depth_feedback, last_ij));
-	if (NUM_SAMPLES == 2 || NUM_SAMPLES == 8)
-	{
-		ivec2 feedback_pixel_xor = feedback_pixel ^ ivec2(1, 0);
-		imageStore(FeedbackColor, ivec3(feedback_pixel_xor, 0), fb_color_float);
-		imageStore(FeedbackPrim, feedback_pixel_xor, uvec4(shade_count, last_shade_prim, coverage_count, texture_mask));
-		imageStore(FeedbackVary, ivec3(feedback_pixel_xor, 0), last_stqf);
-		imageStore(FeedbackVary, ivec3(feedback_pixel_xor, 1), last_rgba);
-		imageStore(FeedbackVary, ivec3(feedback_pixel_xor, 2), vec4(depth_feedback, last_ij));
-	}
-#endif
-
-#if defined(FEEDBACK_DEPTH) && FEEDBACK_DEPTH
-	imageStore(FeedbackDepth, ivec3(feedback_pixel, 0), uvec4(fb_depth));
-	if (NUM_SAMPLES == 2 || NUM_SAMPLES == 8)
-		imageStore(FeedbackDepth, ivec3(feedback_pixel, 0) ^ ivec3(1, 0, 0), uvec4(fb_depth));
-#endif
 
 	uint sample_index = gl_SubgroupInvocationID & (NUM_SAMPLES - 1);
 	bool super_sample_required_color = false;
@@ -763,14 +676,6 @@ void end_tile()
 
 	bool is_first_sample = !SUPER_SAMPLE || sample_index == 0;
 
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-	if (SUPER_SAMPLE && is_first_sample)
-	{
-		imageStore(FeedbackColor,
-			ivec3((tile.fb_pixel >> SAMPLING_RATE_DIM_LOG2) - constants.base_pixel, 2),
-			unpackUnorm4x8(fb_color));
-	}
-#endif
 
 	if (fb_color_dirty && is_first_sample)
 	{
@@ -939,10 +844,6 @@ ShadeResultEarly shade_early(uint primitive_index)
 		}
 	}
 
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-	last_z = z;
-	last_ij = vec2(i, j);
-#endif
 
 	res.request.z = z;
 	res.request.i = i;
@@ -1095,9 +996,6 @@ vec4 sample_texture(uint tex_word, uint filtering, vec2 uv, float q, bool perspe
 	bool min_linear = (tex_word & TEX_SAMPLER_MIN_LINEAR_BIT) != 0;
 	bool trilinear = (tex_word & TEX_SAMPLER_MIPMAP_LINEAR_BIT) != 0;
 
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-	texture_mask |= 1u << tex_index;
-#endif
 
 	TexInfo tex_info = texture_info.data[tex_index];
 	vec4 size = tex_info.sizes;
@@ -1135,9 +1033,6 @@ vec4 sample_texture(uint tex_word, uint filtering, vec2 uv, float q, bool perspe
 	}
 
 	// LOD clamping
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-	last_stqf.w = LOD;
-#endif
 
 #if 0
 	// Seems somewhat speculative if this is how hardware works.
@@ -1183,9 +1078,6 @@ vec4 sample_texture(uint tex_word, uint filtering, vec2 uv, float q, bool perspe
 	// We need to bias less than 1 / 512th texel, so that linear filter will RTE to correct subpixel.
 	// This is a 1 / 1024th pixel bias to counter-act any non-POT inv_scale_1 causing a round-down event.
 	const float UV_EPSILON_POST_SNAP = 16.0 / 1024.0;
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-	last_stqf.xy = vec2(uv_1);
-#endif
 
 	if (sampler_clamp_s)
 		uv_1.x = texture_clamp(uv_1.x, region_coords.xz, LOD_1);
@@ -1324,9 +1216,6 @@ vec4 compute_combined_color(
 	const float RGBA_EPSILON = 1.0 / 256.0;
 	vec4 color = floor(255.0 * (c0 + (c1 - c0) * i + (c2 - c0) * j) + RGBA_EPSILON);
 
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-	last_rgba = color;
-#endif
 
 	bool fog_enable = (combiner_mode & COMBINER_FOG_BIT) != 0;
 	bool tcc = (combiner_mode & COMBINER_TCC_BIT) != 0;
@@ -1338,9 +1227,6 @@ vec4 compute_combined_color(
 	{
 		vec3 stq = stqf0.xyz + stqf1.xyz * i + stqf2.xyz * j;
 		// Unsure if we should clip STQ here too to FP24.
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-		last_stqf.z = stq.z;
-#endif
 
 		vec2 uv = stq.xy;
 		if (perspective && stq.z != 1.0)
@@ -1671,10 +1557,6 @@ void shade_resolve()
 			{
 				has_work = false;
 				shade_resolve(pending_primitive_index, state_index, tex);
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-				shade_count++;
-				last_shade_prim = pending_primitive_index;
-#endif
 			}
 		}
 	}
@@ -1691,14 +1573,9 @@ void set_pending_shade_request(ShadeRequest request, uint prim_index)
 
 bool primitive_intersects_tile(uint index)
 {
-#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-	if (index < registers.lo_primitive_index || index > registers.hi_primitive_index)
-		return false;
-#else
 	if (HAS_PRIMITIVE_RANGE)
 		if (index < registers.lo_primitive_index || index > registers.hi_primitive_index)
 			return false;
-#endif
 
 	PrimitiveSetup setup = primitive_setup.data[index];
 	ivec4 bb = clip_bounding_box(setup.bb, ivec4(tile.tile_lo, tile.tile_hi));
@@ -1775,9 +1652,6 @@ void main()
 				// This can happen if we have an alpha-tested primitive in the pending queue.
 				if (pixel.request.coverage > 0)
 				{
-					#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-					coverage_count++;
-					#endif
 
 					// TODO: only write Z if full coverage
 					// Check if it's safe to resolve Z immediately.
@@ -1809,9 +1683,6 @@ void main()
 						pixel.request.z_write = false;
 						pending_shade_request.z_write = false;
 						write_z(pixel.request.z);
-						#if defined(FEEDBACK_COLOR) && FEEDBACK_COLOR
-						last_z_passed = true;
-						#endif
 					}
 
 					// We might have to remove opaque flag.

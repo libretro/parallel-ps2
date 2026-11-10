@@ -74,9 +74,6 @@ compare() {
 
 fail=0
 for v in "ubershader.comp:00:-DFEEDBACK_COLOR=0 -DFEEDBACK_DEPTH=0" \
-         "ubershader.comp:10:-DFEEDBACK_COLOR=1 -DFEEDBACK_DEPTH=0" \
-         "ubershader.comp:01:-DFEEDBACK_COLOR=0 -DFEEDBACK_DEPTH=1" \
-         "ubershader.comp:11:-DFEEDBACK_COLOR=1 -DFEEDBACK_DEPTH=1" \
          "triangle_setup.comp:ts:"; do
 	src=${v%%:*}; rest=${v#*:}; tag=${rest%%:*}; defs=${rest#*:}
 	# triangle_setup reads the grid's sampling offset only with the

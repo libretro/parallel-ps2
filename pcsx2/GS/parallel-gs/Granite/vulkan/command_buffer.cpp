@@ -27,30 +27,12 @@
 #include "thread_id.hpp"
 #include "vulkan_prerotate.hpp"
 #include "timer.hpp"
-#include "breadcrumbs.hpp"
 #include <string.h>
 
 using namespace Util;
 
 namespace Vulkan
 {
-template <typename T, typename... Ts>
-void CommandBuffer::checkpoint(Ts &&... ts)
-{
-	device->managers.breadcrumbs.checkpoint<T>(breadcrumbs, std::forward<Ts>(ts)...);
-}
-
-template <typename T, typename... Ts>
-void CommandBuffer::checkpoint_with_signal(Ts &&... ts)
-{
-	device->managers.breadcrumbs.checkpoint_with_signal<T>(breadcrumbs, std::forward<Ts>(ts)...);
-}
-
-void CommandBuffer::checkpoint(const char *tag)
-{
-	checkpoint<CheckpointString>(tag);
-}
-
 static inline uint32_t get_combined_spec_constant_mask(const DeferredPipelineCompile &compile)
 {
 	return compile.potential_static_state.spec_constant_mask |
@@ -134,7 +116,6 @@ void CommandBuffer::fill_buffer(const Buffer &dst, uint32_t value)
 void CommandBuffer::fill_buffer(const Buffer &dst, uint32_t value, VkDeviceSize offset, VkDeviceSize size)
 {
 	table.vkCmdFillBuffer(cmd, dst.get_buffer(), offset, size, value);
-	checkpoint<CheckpointString>("fill-buffer");
 }
 
 void CommandBuffer::copy_buffer(const Buffer &dst, VkDeviceSize dst_offset, const Buffer &src, VkDeviceSize src_offset,
@@ -144,7 +125,6 @@ void CommandBuffer::copy_buffer(const Buffer &dst, VkDeviceSize dst_offset, cons
 		src_offset, dst_offset, size,
 	};
 	table.vkCmdCopyBuffer(cmd, src.get_buffer(), dst.get_buffer(), 1, &region);
-	checkpoint_with_signal<CheckpointString>("copy-buffer");
 }
 
 void CommandBuffer::copy_buffer(const Buffer &dst, const Buffer &src)
@@ -156,7 +136,6 @@ void CommandBuffer::copy_buffer(const Buffer &dst, const Buffer &src)
 void CommandBuffer::copy_buffer(const Buffer &dst, const Buffer &src, const VkBufferCopy *copies, size_t count)
 {
 	table.vkCmdCopyBuffer(cmd, src.get_buffer(), dst.get_buffer(), count, copies);
-	checkpoint_with_signal<CheckpointString>("copy-buffer");
 }
 
 void CommandBuffer::copy_image(const Vulkan::Image &dst, const Vulkan::Image &src, const VkOffset3D &dst_offset,
@@ -174,7 +153,6 @@ void CommandBuffer::copy_image(const Vulkan::Image &dst, const Vulkan::Image &sr
 	table.vkCmdCopyImage(cmd, src.get_image(), src.get_layout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
 	               dst.get_image(), dst.get_layout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
 	               1, &region);
-	checkpoint_with_signal<CheckpointString>("copy-image");
 }
 
 void CommandBuffer::copy_image(const Image &dst, const Image &src)
@@ -208,7 +186,6 @@ void CommandBuffer::copy_image(const Image &dst, const Image &src)
 	table.vkCmdCopyImage(cmd, src.get_image(), src.get_layout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
 	                     dst.get_image(), dst.get_layout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
 	                     levels, regions);
-	checkpoint_with_signal<CheckpointString>("copy-image");
 }
 
 void CommandBuffer::copy_buffer_to_image(const Image &image, const Buffer &buffer, unsigned num_blits,
@@ -216,7 +193,6 @@ void CommandBuffer::copy_buffer_to_image(const Image &image, const Buffer &buffe
 {
 	table.vkCmdCopyBufferToImage(cmd, buffer.get_buffer(),
 	                             image.get_image(), image.get_layout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL), num_blits, blits);
-	checkpoint_with_signal<CheckpointString>("copy-buffer-to-image");
 }
 
 void CommandBuffer::copy_image_to_buffer(const Buffer &buffer, const Image &image, unsigned num_blits,
@@ -224,7 +200,6 @@ void CommandBuffer::copy_image_to_buffer(const Buffer &buffer, const Image &imag
 {
 	table.vkCmdCopyImageToBuffer(cmd, image.get_image(), image.get_layout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
 	                             buffer.get_buffer(), num_blits, blits);
-	checkpoint_with_signal<CheckpointString>("copy-image-to-buffer");
 }
 
 void CommandBuffer::copy_buffer_to_image(const Image &image, const Buffer &src, VkDeviceSize buffer_offset,
@@ -238,7 +213,6 @@ void CommandBuffer::copy_buffer_to_image(const Image &image, const Buffer &src, 
 	};
 	table.vkCmdCopyBufferToImage(cmd, src.get_buffer(), image.get_image(), image.get_layout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
 	                             1, &region);
-	checkpoint_with_signal<CheckpointString>("copy-buffer-to-image");
 }
 
 void CommandBuffer::copy_image_to_buffer(const Buffer &buffer, const Image &image, VkDeviceSize buffer_offset,
@@ -252,7 +226,6 @@ void CommandBuffer::copy_image_to_buffer(const Buffer &buffer, const Image &imag
 	};
 	table.vkCmdCopyImageToBuffer(cmd, image.get_image(), image.get_layout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
 	                             buffer.get_buffer(), 1, &region);
-	checkpoint_with_signal<CheckpointString>("copy-image-to-buffer");
 }
 
 void CommandBuffer::clear_image(const Image &image, const VkClearValue &value)
@@ -463,7 +436,6 @@ void CommandBuffer::barrier(const VkDependencyInfo &dep)
 #endif
 
 	table.vkCmdPipelineBarrier2(cmd, &dep);
-	checkpoint_with_signal<CheckpointString>("barrier");
 }
 
 void CommandBuffer::buffer_barrier(const Buffer &buffer,
@@ -775,8 +747,6 @@ void CommandBuffer::begin_context()
 	memset(&index_state, 0, sizeof(index_state));
 	memset(vbo.buffers, 0, sizeof(vbo.buffers));
 
-	if (debug_channel_buffer)
-		set_storage_buffer(VULKAN_NUM_DESCRIPTOR_SETS - 1, VULKAN_NUM_BINDINGS - 1, *debug_channel_buffer);
 
 	VK_ASSERT(!barrier_batch.active);
 }
@@ -820,62 +790,6 @@ void CommandBuffer::init_viewport_scissor(const RenderPassInfo &info, const Fram
 		0.0f, 1.0f
 	};
 	scissor = rect;
-}
-
-CommandBufferHandle CommandBuffer::request_secondary_command_buffer(Device &device, const RenderPassInfo &info,
-                                                                    unsigned thread_index, unsigned subpass)
-{
-	auto *fb = &device.request_framebuffer(info);
-	auto cmd = device.request_secondary_command_buffer_for_thread(thread_index, fb, subpass);
-	cmd->init_surface_transform(info);
-	cmd->begin_graphics();
-
-	cmd->framebuffer = fb;
-	cmd->pipeline_state.compatible_render_pass = &fb->get_compatible_render_pass();
-	cmd->actual_render_pass = &device.request_render_pass(info, false);
-
-	unsigned i;
-	for (i = 0; i < info.num_color_attachments; i++)
-		cmd->framebuffer_attachments[i] = info.color_attachments[i];
-	if (info.depth_stencil)
-		cmd->framebuffer_attachments[i++] = info.depth_stencil;
-
-	cmd->init_viewport_scissor(info, fb);
-	cmd->pipeline_state.subpass_index = subpass;
-	cmd->current_contents = VK_SUBPASS_CONTENTS_INLINE;
-
-	return cmd;
-}
-
-CommandBufferHandle CommandBuffer::request_secondary_command_buffer(unsigned thread_index_, unsigned subpass_)
-{
-	VK_ASSERT(framebuffer);
-	VK_ASSERT(!is_secondary);
-
-	auto secondary_cmd = device->request_secondary_command_buffer_for_thread(thread_index_, framebuffer, subpass_);
-	secondary_cmd->begin_graphics();
-
-	secondary_cmd->framebuffer = framebuffer;
-	secondary_cmd->pipeline_state.compatible_render_pass = pipeline_state.compatible_render_pass;
-	secondary_cmd->actual_render_pass = actual_render_pass;
-	memcpy(secondary_cmd->framebuffer_attachments, framebuffer_attachments, sizeof(framebuffer_attachments));
-
-	secondary_cmd->pipeline_state.subpass_index = subpass_;
-	secondary_cmd->viewport = viewport;
-	secondary_cmd->scissor = scissor;
-	secondary_cmd->current_contents = VK_SUBPASS_CONTENTS_INLINE;
-
-	return secondary_cmd;
-}
-
-void CommandBuffer::submit_secondary(CommandBufferHandle secondary)
-{
-	VK_ASSERT(!is_secondary);
-	VK_ASSERT(secondary->is_secondary);
-	VK_ASSERT(pipeline_state.subpass_index == secondary->pipeline_state.subpass_index);
-	VK_ASSERT(current_contents == VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-
-	device->submit_secondary(*this, *secondary);
 }
 
 void CommandBuffer::next_subpass(VkSubpassContents contents)
@@ -974,9 +888,6 @@ void CommandBuffer::begin_render_pass(const RenderPassInfo &info, VkSubpassConte
 			clear_values[i].color = info.clear_color[i];
 			num_clear_values = i + 1;
 		}
-
-		if (info.color_attachments[i]->get_image().is_swapchain_image())
-			swapchain_touch_in_stages(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
 	}
 
 	if (info.depth_stencil && (info.op_flags & RENDER_PASS_OP_CLEAR_DEPTH_STENCIL_BIT) != 0)
@@ -2155,20 +2066,6 @@ void CommandBuffer::set_program(Program *program)
 
 	set_program_layout(program->get_pipeline_layout());
 
-	if (program && device->get_device_features().supports_post_mortem)
-	{
-		static const ShaderStage stages[] = {
-			ShaderStage::Vertex,
-			ShaderStage::Fragment,
-			ShaderStage::Compute,
-			ShaderStage::Task,
-			ShaderStage::Mesh,
-		};
-
-		for (auto stage : stages)
-			if (auto *shader = program->get_shader(stage))
-				checkpoint<CheckpointShader>(shader);
-	}
 }
 
 void CommandBuffer::set_program_layout(const PipelineLayout *layout)
@@ -3546,7 +3443,6 @@ void CommandBuffer::draw(uint32_t vertex_count, uint32_t instance_count, uint32_
 	{
 		VK_ASSERT(pipeline_state.program->get_shader(ShaderStage::Vertex) != nullptr);
 		table.vkCmdDraw(cmd, vertex_count, instance_count, first_vertex, first_instance);
-		checkpoint_with_signal<CheckpointDraw>(vertex_count, instance_count, first_vertex, first_instance);
 	}
 	else
 		LOGE("Failed to flush render state, draw call will be dropped.\n");
@@ -3561,75 +3457,6 @@ void CommandBuffer::draw_indexed(uint32_t index_count, uint32_t instance_count, 
 	{
 		VK_ASSERT(pipeline_state.program->get_shader(ShaderStage::Vertex) != nullptr);
 		table.vkCmdDrawIndexed(cmd, index_count, instance_count, first_index, vertex_offset, first_instance);
-		checkpoint_with_signal<CheckpointDrawIndexed>(index_count, instance_count, first_index, vertex_offset, first_instance);
-	}
-	else
-		LOGE("Failed to flush render state, draw call will be dropped.\n");
-}
-
-void CommandBuffer::draw_mesh_tasks(uint32_t tasks_x, uint32_t tasks_y, uint32_t tasks_z)
-{
-	VK_ASSERT(!is_compute);
-
-	if (framebuffer_is_multiview && !get_device().get_device_features().mesh_shader_features.multiviewMeshShader)
-	{
-		LOGE("meshShader not supported in multiview, dropping draw call.\n");
-		return;
-	}
-
-	if (flush_render_state(true) != VK_NULL_HANDLE)
-	{
-		VK_ASSERT(pipeline_state.program->get_shader(ShaderStage::Mesh) != nullptr);
-		table.vkCmdDrawMeshTasksEXT(cmd, tasks_x, tasks_y, tasks_z);
-		checkpoint_with_signal<CheckpointMeshDispatch>(tasks_x, tasks_y, tasks_z);
-	}
-	else
-		LOGE("Failed to flush render state, draw call will be dropped.\n");
-}
-
-void CommandBuffer::draw_mesh_tasks_indirect(const Buffer &buffer, VkDeviceSize offset,
-                                             uint32_t draw_count, uint32_t stride)
-{
-	VK_ASSERT(!is_compute);
-
-	if (framebuffer_is_multiview && !get_device().get_device_features().mesh_shader_features.multiviewMeshShader)
-	{
-		LOGE("meshShader not supported in multiview, dropping draw call.\n");
-		return;
-	}
-
-	if (flush_render_state(true) != VK_NULL_HANDLE)
-	{
-		VK_ASSERT(pipeline_state.program->get_shader(ShaderStage::Mesh) != nullptr);
-		table.vkCmdDrawMeshTasksIndirectEXT(cmd, buffer.get_buffer(), offset, draw_count, stride);
-		checkpoint_with_signal<CheckpointMultiIndirectBase>("MeshMDI", buffer.get_device_address() + offset, draw_count, stride);
-	}
-	else
-		LOGE("Failed to flush render state, draw call will be dropped.\n");
-}
-
-void CommandBuffer::draw_mesh_tasks_multi_indirect(const Buffer &buffer, VkDeviceSize offset,
-                                                   uint32_t draw_count, uint32_t stride,
-                                                   const Buffer &count, VkDeviceSize count_offset)
-{
-	VK_ASSERT(!is_compute);
-
-	if (framebuffer_is_multiview && !get_device().get_device_features().mesh_shader_features.multiviewMeshShader)
-	{
-		LOGE("meshShader not supported in multiview, dropping draw call.\n");
-		return;
-	}
-
-	if (flush_render_state(true) != VK_NULL_HANDLE)
-	{
-		VK_ASSERT(pipeline_state.program->get_shader(ShaderStage::Mesh) != nullptr);
-		table.vkCmdDrawMeshTasksIndirectCountEXT(cmd, buffer.get_buffer(), offset,
-		                                         count.get_buffer(), count_offset,
-		                                         draw_count, stride);
-
-		checkpoint_with_signal<CheckpointMultiIndirectCountBase>("MeshMDI", buffer.get_device_address() + offset,
-		                                                         count.get_device_address() + count_offset,
-		                                                         draw_count, stride);
 	}
 	else
 		LOGE("Failed to flush render state, draw call will be dropped.\n");
@@ -3643,7 +3470,6 @@ void CommandBuffer::draw_indirect(const Vulkan::Buffer &buffer,
 	{
 		VK_ASSERT(pipeline_state.program->get_shader(ShaderStage::Vertex) != nullptr);
 		table.vkCmdDrawIndirect(cmd, buffer.get_buffer(), offset, draw_count, stride);
-		checkpoint_with_signal<CheckpointMultiIndirectBase>("DrawMDI", buffer.get_device_address() + offset, draw_count, stride);
 	}
 	else
 		LOGE("Failed to flush render state, draw call will be dropped.\n");
@@ -3665,9 +3491,6 @@ void CommandBuffer::draw_multi_indirect(const Buffer &buffer, VkDeviceSize offse
 		table.vkCmdDrawIndirectCount(cmd, buffer.get_buffer(), offset,
 		                             count.get_buffer(), count_offset,
 		                             draw_count, stride);
-		checkpoint_with_signal<CheckpointMultiIndirectCountBase>("DrawMDI", buffer.get_device_address() + offset,
-		                                                         count.get_device_address() + count_offset,
-		                                                         draw_count, stride);
 	}
 	else
 		LOGE("Failed to flush render state, draw call will be dropped.\n");
@@ -3689,9 +3512,6 @@ void CommandBuffer::draw_indexed_multi_indirect(const Buffer &buffer, VkDeviceSi
 		table.vkCmdDrawIndexedIndirectCount(cmd, buffer.get_buffer(), offset,
 		                                    count.get_buffer(), count_offset,
 		                                    draw_count, stride);
-		checkpoint_with_signal<CheckpointMultiIndirectCountBase>("DrawIndexedMDI", buffer.get_device_address() + offset,
-		                                                         count.get_device_address() + count_offset,
-		                                                         draw_count, stride);
 	}
 	else
 		LOGE("Failed to flush render state, draw call will be dropped.\n");
@@ -3705,7 +3525,6 @@ void CommandBuffer::draw_indexed_indirect(const Vulkan::Buffer &buffer,
 	{
 		VK_ASSERT(pipeline_state.program->get_shader(ShaderStage::Vertex) != nullptr);
 		table.vkCmdDrawIndexedIndirect(cmd, buffer.get_buffer(), offset, draw_count, stride);
-		checkpoint_with_signal<CheckpointMultiIndirectBase>("DrawIndexedIndirect", buffer.get_device_address() + offset, draw_count, stride);
 	}
 	else
 		LOGE("Failed to flush render state, draw call will be dropped.\n");
@@ -3717,7 +3536,6 @@ void CommandBuffer::dispatch_indirect(const Buffer &buffer, VkDeviceSize offset)
 	if (flush_compute_state(true) != VK_NULL_HANDLE)
 	{
 		table.vkCmdDispatchIndirect(cmd, buffer.get_buffer(), offset);
-		checkpoint_with_signal<CheckpointIndirectBase>("DispatchIndirect", buffer.get_device_address() + offset);
 	}
 	else
 		LOGE("Failed to flush render state, dispatch will be dropped.\n");
@@ -3729,7 +3547,6 @@ void CommandBuffer::dispatch(uint32_t groups_x, uint32_t groups_y, uint32_t grou
 	if (flush_compute_state(true) != VK_NULL_HANDLE)
 	{
 		table.vkCmdDispatch(cmd, groups_x, groups_y, groups_z);
-		checkpoint_with_signal<CheckpointDispatch>(groups_x, groups_y, groups_z);
 	}
 	else
 		LOGE("Failed to flush render state, dispatch will be dropped.\n");
@@ -3811,109 +3628,8 @@ void CommandBuffer::set_transparent_sprite_state()
 	set_dirty(COMMAND_BUFFER_DIRTY_STATIC_STATE_BIT);
 }
 
-void CommandBuffer::restore_state(const CommandBufferSavedState &state)
-{
-	auto &static_state = pipeline_state.static_state;
-	auto &potential_static_state = pipeline_state.potential_static_state;
-
-	for (unsigned i = 0; i < VULKAN_NUM_DESCRIPTOR_SETS; i++)
-	{
-		if (state.flags & (COMMAND_BUFFER_SAVED_BINDINGS_0_BIT << i))
-		{
-			if (memcmp(state.bindings.bindings[i], bindings.bindings[i], sizeof(bindings.bindings[i])))
-			{
-				memcpy(bindings.bindings[i], state.bindings.bindings[i], sizeof(bindings.bindings[i]));
-				memcpy(bindings.cookies[i], state.bindings.cookies[i], sizeof(bindings.cookies[i]));
-				memcpy(bindings.secondary_cookies[i], state.bindings.secondary_cookies[i], sizeof(bindings.secondary_cookies[i]));
-				dirty_sets_realloc |= 1u << i;
-			}
-		}
-	}
-
-	if (state.flags & COMMAND_BUFFER_SAVED_PUSH_CONSTANT_BIT)
-	{
-		if (memcmp(state.bindings.push_constant_data, bindings.push_constant_data, sizeof(bindings.push_constant_data)) != 0)
-		{
-			memcpy(bindings.push_constant_data, state.bindings.push_constant_data, sizeof(bindings.push_constant_data));
-			set_dirty(COMMAND_BUFFER_DIRTY_PUSH_CONSTANTS_BIT);
-		}
-	}
-
-	if ((state.flags & COMMAND_BUFFER_SAVED_VIEWPORT_BIT) && memcmp(&state.viewport, &viewport, sizeof(viewport)) != 0)
-	{
-		viewport = state.viewport;
-		set_dirty(COMMAND_BUFFER_DIRTY_VIEWPORT_BIT);
-	}
-
-	if ((state.flags & COMMAND_BUFFER_SAVED_SCISSOR_BIT) && memcmp(&state.scissor, &scissor, sizeof(scissor)) != 0)
-	{
-		scissor = state.scissor;
-		set_dirty(COMMAND_BUFFER_DIRTY_SCISSOR_BIT);
-	}
-
-	if (state.flags & COMMAND_BUFFER_SAVED_RENDER_STATE_BIT)
-	{
-		if (memcmp(&state.static_state, &static_state, sizeof(static_state)) != 0)
-		{
-			memcpy(&static_state, &state.static_state, sizeof(static_state));
-			set_dirty(COMMAND_BUFFER_DIRTY_STATIC_STATE_BIT);
-		}
-
-		if (memcmp(&state.potential_static_state, &potential_static_state, sizeof(potential_static_state)) != 0)
-		{
-			memcpy(&potential_static_state, &state.potential_static_state, sizeof(potential_static_state));
-			set_dirty(COMMAND_BUFFER_DIRTY_STATIC_STATE_BIT);
-		}
-
-		if (memcmp(&state.dynamic_state, &dynamic_state, sizeof(dynamic_state)) != 0)
-		{
-			memcpy(&dynamic_state, &state.dynamic_state, sizeof(dynamic_state));
-			set_dirty(COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT | COMMAND_BUFFER_DIRTY_DEPTH_BIAS_BIT |
-			          COMMAND_BUFFER_DIRTY_BLEND_CONSTANTS_BIT);
-		}
-	}
-}
-
-void CommandBuffer::save_state(CommandBufferSaveStateFlags flags, CommandBufferSavedState &state)
-{
-	for (unsigned i = 0; i < VULKAN_NUM_DESCRIPTOR_SETS; i++)
-	{
-		if (flags & (COMMAND_BUFFER_SAVED_BINDINGS_0_BIT << i))
-		{
-			memcpy(state.bindings.bindings[i], bindings.bindings[i], sizeof(bindings.bindings[i]));
-			memcpy(state.bindings.cookies[i], bindings.cookies[i], sizeof(bindings.cookies[i]));
-			memcpy(state.bindings.secondary_cookies[i], bindings.secondary_cookies[i],
-			       sizeof(bindings.secondary_cookies[i]));
-		}
-	}
-
-	if (flags & COMMAND_BUFFER_SAVED_VIEWPORT_BIT)
-		state.viewport = viewport;
-	if (flags & COMMAND_BUFFER_SAVED_SCISSOR_BIT)
-		state.scissor = scissor;
-
-	if (flags & COMMAND_BUFFER_SAVED_RENDER_STATE_BIT)
-	{
-		memcpy(&state.static_state, &pipeline_state.static_state, sizeof(pipeline_state.static_state));
-		state.potential_static_state = pipeline_state.potential_static_state;
-		state.dynamic_state = dynamic_state;
-	}
-
-	if (flags & COMMAND_BUFFER_SAVED_PUSH_CONSTANT_BIT)
-		memcpy(state.bindings.push_constant_data, bindings.push_constant_data, sizeof(bindings.push_constant_data));
-
-	state.flags = flags;
-}
-
-QueryPoolHandle CommandBuffer::write_timestamp(VkPipelineStageFlags2 stage)
-{
-	return device->write_timestamp(cmd, stage);
-}
-
 void CommandBuffer::end_threaded_recording()
 {
-	VK_ASSERT(!debug_channel_buffer);
-
 	if (is_ended || borrowed)
 		return;
 
@@ -3921,14 +3637,6 @@ void CommandBuffer::end_threaded_recording()
 
 	// We must end a command buffer on the same thread index we started it on.
 	VK_ASSERT(get_current_thread_index() == thread_index);
-
-	if (has_profiling())
-	{
-		auto &query_pool = device->get_performance_query_pool(device->get_physical_queue_type(type));
-		query_pool.end_command_buffer(cmd);
-	}
-
-	device->managers.breadcrumbs.end(breadcrumbs);
 
 	if (table.vkEndCommandBuffer(cmd) != VK_SUCCESS)
 		LOGE("Failed to end command buffer.\n");
@@ -3999,62 +3707,6 @@ void CommandBuffer::end_region()
 {
 	if (device->ext.supports_debug_utils && vkCmdEndDebugUtilsLabelEXT)
 		vkCmdEndDebugUtilsLabelEXT(cmd);
-}
-
-void CommandBuffer::enable_profiling()
-{
-	profiling = true;
-}
-
-bool CommandBuffer::has_profiling() const
-{
-	return profiling;
-}
-
-void CommandBuffer::begin_debug_channel(DebugChannelInterface *iface, const char *tag, VkDeviceSize size)
-{
-	if (debug_channel_buffer)
-		end_debug_channel();
-
-	debug_channel_tag = tag;
-	debug_channel_interface = iface;
-
-	BufferCreateInfo info = {};
-	info.size = size;
-	info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-	info.domain = BufferDomain::Device;
-	debug_channel_buffer = device->create_buffer(info);
-
-	fill_buffer(*debug_channel_buffer, 0);
-	buffer_barrier(*debug_channel_buffer,
-	               VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-	               VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-	               VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT);
-
-	set_storage_buffer(VULKAN_NUM_DESCRIPTOR_SETS - 1, VULKAN_NUM_BINDINGS - 1, *debug_channel_buffer);
-}
-
-void CommandBuffer::end_debug_channel()
-{
-	if (!debug_channel_buffer)
-		return;
-
-	BufferCreateInfo info = {};
-	info.size = debug_channel_buffer->get_create_info().size;
-	info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	info.domain = BufferDomain::CachedHost;
-	auto debug_channel_readback = device->create_buffer(info);
-	barrier(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-	        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_TRANSFER_READ_BIT);
-	copy_buffer(*debug_channel_readback, *debug_channel_buffer);
-	barrier(VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-	        VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
-
-	debug_channel_buffer.reset();
-	device->add_debug_channel_buffer(debug_channel_interface, std::move(debug_channel_tag), std::move(debug_channel_readback));
-	debug_channel_readback = {};
-	debug_channel_tag = {};
-	debug_channel_interface = nullptr;
 }
 
 #ifdef GRANITE_VULKAN_SYSTEM_HANDLES

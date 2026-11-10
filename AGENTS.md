@@ -379,6 +379,11 @@ first time, play may not.
   in-flight command buffer recorded is never patched in place.
 - **Clear and draw are separate states.** A clear never reuses a draw
   pipeline or inherits its dynamic state, nor the other way round.
+- **Granite carries only what paraLLEl-GS uses.** No profiling,
+  timestamp, breadcrumb or debug-channel layer, no WSI, and no device
+  extension the core never touches: everything Granite enables lands on
+  the frontend's device. `tests/vknegotiate` fails on any extension in
+  its unwanted list; drop vendored Granite code rather than gate it.
 
 ### Regressions to guard
 

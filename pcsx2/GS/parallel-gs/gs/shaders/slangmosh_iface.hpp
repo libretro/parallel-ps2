@@ -19,21 +19,14 @@ struct Shaders
 	Program vram_copy = {};
 	Program triangle_setup = {};
 	Program single_sample_heuristic = {};
-	Program ubershader[2][2] = {};
+	Program ubershader[1][1] = {};
 	Shader quad = {};
 	Shader sample_circuit[2] = {};
 	Shader blit_circuit = {};
 	Shader weave = {};
-	Shader sharpen_vert = {};
-	Shader sharpen_frag = {};
-	Shader upscale_vert = {};
-	Shader upscale_frag = {};
-	Shader blit = {};
 	Program extwrite = {};
 	Program qword_clear = {};
 	Program sampler_feedback = {};
-	Shader ui_vert = {};
-	Shader ui_frag[2][2] = {};
 	Shaders() = default;
 
 	template <typename Device, typename Layout, typename Resolver>

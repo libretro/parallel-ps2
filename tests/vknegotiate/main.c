@@ -166,6 +166,9 @@ static const struct retro_hw_render_context_negotiation_interface_vulkan *s_ifac
 static struct retro_hw_render_interface_vulkan s_vk;
 static int s_wrapper_calls;
 static int s_wrapper_extra;
+/* The first extension the core asked for that it has no use for, NULL
+ * while it asked for none of them. */
+static const char *s_wrapper_unwanted;
 static VkDevice s_wrapper_device;
 static unsigned s_frames, s_dupes, s_images, s_images_set;
 static int s_queue_locked;
@@ -1194,6 +1197,26 @@ static VkInstance vn_instance_wrapper(void *opaque, const VkInstanceCreateInfo *
 	return instance;
 }
 
+/* Device extensions the core must never turn on. Granite's debug and
+ * profiling layers that wanted the first group are gone, and nothing the
+ * core draws with needs the rest; each one enabled is driver state paid
+ * for on the frontend's device all the same. */
+static const char *const vn_unwanted_exts[] = {
+	"VK_KHR_performance_query", "VK_KHR_calibrated_timestamps",
+	"VK_EXT_calibrated_timestamps", "VK_AMD_buffer_marker",
+	"VK_NV_device_diagnostic_checkpoints", "VK_NV_device_diagnostics_config",
+	"VK_EXT_device_fault", "VK_KHR_device_fault",
+	"VK_AMD_device_coherent_memory", "VK_EXT_host_query_reset",
+	"VK_EXT_mesh_shader", "VK_KHR_ray_query", "VK_KHR_acceleration_structure",
+	"VK_KHR_deferred_host_operations", "VK_EXT_device_generated_commands",
+	"VK_KHR_compute_shader_derivatives", "VK_KHR_fragment_shader_barycentric",
+	"VK_EXT_index_type_uint8", "VK_EXT_conservative_rasterization",
+	"VK_EXT_astc_decode_mode", "VK_EXT_rgba10x6_formats",
+	"VK_EXT_image_compression_control",
+	"VK_EXT_image_compression_control_swapchain", "VK_AMD_anti_lag",
+	"VK_KHR_cooperative_matrix", "VK_VALVE_shader_mixed_float_dot_product"
+};
+
 /* RetroArch's wrapper in miniature: append what the frontend wants. */
 static VkDevice vn_device_wrapper(VkPhysicalDevice gpu, void *opaque,
 	const VkDeviceCreateInfo *ci)
@@ -1211,6 +1234,13 @@ static VkDevice vn_device_wrapper(VkPhysicalDevice gpu, void *opaque,
 	if (info.enabledExtensionCount >= 63)
 		return VK_NULL_HANDLE;
 	memcpy(exts, info.ppEnabledExtensionNames, info.enabledExtensionCount * sizeof(*exts));
+	for (i = 0; i < info.enabledExtensionCount && !s_wrapper_unwanted; i++)
+	{
+		size_t u;
+		for (u = 0; u < sizeof(vn_unwanted_exts) / sizeof(vn_unwanted_exts[0]); u++)
+			if (!strcmp(exts[i], vn_unwanted_exts[u]))
+				s_wrapper_unwanted = vn_unwanted_exts[u];
+	}
 	pvkEnumerateDeviceExtensionProperties(gpu, NULL, &nprops, props);
 	for (i = 0; i < nprops; i++)
 		if (!strcmp(props[i].extensionName, VN_EXTRA_EXT))
@@ -1785,6 +1815,8 @@ int main(int argc, char** argv)
 			VN_FAIL("device is not the one the wrapper created");
 		printf("  wrapper extension %s %s\n", VN_EXTRA_EXT,
 			s_wrapper_extra ? "added" : "not supported here");
+		if (s_wrapper_unwanted)
+			VN_FAIL("the core enabled %s, which nothing it does uses", s_wrapper_unwanted);
 	}
 	if (!ok)
 	{

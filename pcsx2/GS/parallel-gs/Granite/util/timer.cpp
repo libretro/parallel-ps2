@@ -21,75 +21,16 @@
  */
 
 #include "timer.hpp"
-#include "logging.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
 #include <time.h>
-#include <errno.h>
-#endif
-
-#ifdef __SSE2__
-#include <emmintrin.h>
 #endif
 
 namespace Util
 {
-FrameTimer::FrameTimer()
-{
-	reset();
-}
-
-void FrameTimer::reset()
-{
-	start = get_time();
-	last = start;
-	last_period = 0;
-}
-
-void FrameTimer::enter_idle()
-{
-	idle_start = get_time();
-}
-
-void FrameTimer::leave_idle()
-{
-	auto idle_end = get_time();
-	idle_time += idle_end - idle_start;
-}
-
-double FrameTimer::get_frame_time() const
-{
-	return double(last_period) * 1e-9;
-}
-
-double FrameTimer::frame()
-{
-	auto new_time = get_time() - idle_time;
-	last_period = new_time - last;
-	last = new_time;
-	return double(last_period) * 1e-9;
-}
-
-double FrameTimer::frame(double frame_time)
-{
-	last_period = int64_t(frame_time * 1e9);
-	last += last_period;
-	return frame_time;
-}
-
-double FrameTimer::get_elapsed() const
-{
-	return double(last - start) * 1e-9;
-}
-
-int64_t FrameTimer::get_time()
-{
-	return get_current_time_nsecs();
-}
-
 #ifdef _WIN32
 struct QPCFreq
 {
@@ -118,66 +59,5 @@ int64_t get_current_time_nsecs()
 		return 0;
 	return ts.tv_sec * 1000000000ll + ts.tv_nsec;
 #endif
-}
-
-void sleep_until_nsecs(int64_t timepoint)
-{
-#ifdef _WIN32
-	// Somewhat naive path. Improve this later.
-	int64_t d = get_current_time_nsecs() - timepoint;
-	if (d <= 0)
-		return;
-
-	// Assumes timer resolution has been set.
-	Sleep(d / 1000000);
-
-	// Spin the rest of the way.
-	while (get_current_time_nsecs() < timepoint)
-	{
-#ifdef __SSE2__
-		_mm_pause();
-#endif
-	}
-#elif defined(TIMER_ABSTIME) && !defined(__APPLE__)
-	constexpr auto timebase = CLOCK_MONOTONIC;
-	struct timespec ts = {};
-	ts.tv_sec = timepoint / 1000000000ll;
-	ts.tv_nsec = timepoint % 1000000000ll;
-	// Linux does not support clock_nanosleep with MONOTONIC_RAW :(
-	int ret;
-	while ((ret = clock_nanosleep(timebase, TIMER_ABSTIME, &ts, nullptr)) == EINTR) {}
-#else
-	/* Darwin has neither clock_nanosleep nor TIMER_ABSTIME, so the
-	 * absolute deadline is converted to a relative one and re-derived
-	 * after every interruption - nanosleep leaves the remainder in its
-	 * second argument, but only for signals, so recomputing from the
-	 * clock is both simpler and correct if the sleep is short. */
-	for (;;)
-	{
-		int64_t now = get_current_time_nsecs();
-		int64_t d = timepoint - now;
-		if (d <= 0)
-			break;
-
-		struct timespec ts = {};
-		ts.tv_sec = d / 1000000000ll;
-		ts.tv_nsec = d % 1000000000ll;
-		if (nanosleep(&ts, nullptr) == 0)
-			break;
-		if (errno != EINTR)
-			break;
-	}
-#endif
-}
-
-void Timer::start()
-{
-	t = get_current_time_nsecs();
-}
-
-double Timer::end()
-{
-	auto nt = get_current_time_nsecs();
-	return double(nt - t) * 1e-9;
 }
 }

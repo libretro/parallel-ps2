@@ -138,24 +138,6 @@ struct PromotedBackbuffer
 	Vulkan::ImageHandle img;
 };
 
-struct DebugMode
-{
-	bool feedback_render_target = false;
-	bool timestamps = false;
-	// Makes sure the CPU upload heuristics does the same thing every run.
-	bool deterministic_timeline_query = false;
-	bool disable_sampler_feedback = false;
-
-	enum class DrawDebugMode
-	{
-		None,
-		Strided,
-		Full,
-		Count
-	};
-	DrawDebugMode draw_mode = DrawDebugMode::None;
-};
-
 struct VSyncInfo
 {
 	uint32_t phase;
@@ -287,7 +269,6 @@ public:
 	void stop_compilation_tasks();
 
 	void set_super_sampling_rate(SuperSampling super_sampling, bool ordered_grid, bool super_sampled_textures);
-	void set_debug_mode(const DebugMode &mode);
 	void set_hacks(const Hacks &hacks);
 
 	// Optional interface if application wants to listen for these IRQ related events.
@@ -330,7 +311,6 @@ public:
 	bool vsync_can_skip(const VSyncInfo &info) const;
 
 	FlushStats consume_flush_stats();
-	double get_accumulated_timestamps(TimestampType type) const;
 
 	void read_transfer_fifo(void *data, uint32_t num_128b_words);
 
@@ -352,7 +332,6 @@ private:
 	PageTracker tracker;
 	GSRenderer renderer;
 	uint32_t vram_size = 0;
-	DebugMode debug_mode;
 	Hacks hacks;
 
 	std::vector<uint32_t> sync_host_vram_blocks;

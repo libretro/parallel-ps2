@@ -22,7 +22,6 @@
 
 #include "thread_prims.hpp"
 #include "memory_allocator.hpp"
-#include "timeline_trace_file.hpp"
 #include "device.hpp"
 #include <algorithm>
 
@@ -728,10 +727,7 @@ bool DeviceAllocator::internal_allocate(
 
 	VkDeviceMemory device_memory;
 	VkResult res;
-	{
-		GRANITE_SCOPED_TIMELINE_EVENT_FILE(device->get_system_handles().timeline_trace_file, "vkAllocateMemory");
-		res = table->vkAllocateMemory(device->get_device(), &info, nullptr, &device_memory);
-	}
+	res = table->vkAllocateMemory(device->get_device(), &info, nullptr, &device_memory);
 
 	// If we're importing, make sure we consume the native handle.
 	if (external && bool(*external) &&
@@ -770,11 +766,7 @@ bool DeviceAllocator::internal_allocate(
 		{
 			table->vkFreeMemory(device->get_device(), block_itr->memory, nullptr);
 			heap.size -= block_itr->size;
-			{
-				GRANITE_SCOPED_TIMELINE_EVENT_FILE(device->get_system_handles().timeline_trace_file,
-				                                   "vkAllocateMemory");
-				res = table->vkAllocateMemory(device->get_device(), &info, nullptr, &device_memory);
-			}
+			res = table->vkAllocateMemory(device->get_device(), &info, nullptr, &device_memory);
 			++block_itr;
 		}
 

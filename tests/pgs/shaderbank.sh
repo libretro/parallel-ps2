@@ -1,7 +1,7 @@
 #!/bin/sh
 # Read the paraLLEl-GS shader bank, and identify a module from its source.
 #
-# shaders/slangmosh.hpp is a precompiled SPIR-V bank -- thirty modules in
+# shaders/slangmosh.hpp is a precompiled SPIR-V bank -- sixteen modules in
 # one uint32 array -- and it ships name-stripped, so it says nothing about
 # what the GPU does with a given input. This splits it into one .spv per
 # module and disassembles them when spirv-dis is installed.
@@ -105,7 +105,6 @@ if [ -n "$SRC" ] && [ -d "$SRC" ]; then
 		case $s in *.frag) stage=frag ;; *.vert) stage=vert ;; esac
 		if ! glslangValidator --target-env vulkan1.3 -S $stage -I"$SRC" \
 		     -P'#extension GL_GOOGLE_include_directive : require' \
-		     -DFEEDBACK_COLOR=0 -DFEEDBACK_DEPTH=0 \
 		     -o "$OUT/re.spv" "$s" >"$OUT/re.log" 2>&1; then
 			printf '  %-26s does not compile against these headers\n' "$b"
 			continue

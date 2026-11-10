@@ -28,7 +28,6 @@
 #include "device_fossilize.hpp"
 #endif
 #include "format.hpp"
-#include "timeline_trace_file.hpp"
 #include "type_to_string.hpp"
 #include "quirks.hpp"
 #include "timer.hpp"
@@ -259,96 +258,6 @@ void Device::add_wait_semaphore_nolock(QueueIndices physical_type, Semaphore sem
 	VK_ASSERT(data.wait_semaphores.size() < 16 * 1024);
 }
 
-LinearHostImageHandle Device::create_linear_host_image(const LinearHostImageCreateInfo &info)
-{
-	if ((info.usage & ~VK_IMAGE_USAGE_SAMPLED_BIT) != 0)
-		return LinearHostImageHandle(nullptr);
-
-	ImageCreateInfo create_info;
-	create_info.width = info.width;
-	create_info.height = info.height;
-	create_info.domain =
-			(info.flags & LINEAR_HOST_IMAGE_HOST_CACHED_BIT) != 0 ?
-			ImageDomain::LinearHostCached :
-			ImageDomain::LinearHost;
-	create_info.levels = 1;
-	create_info.layers = 1;
-	create_info.initial_layout = VK_IMAGE_LAYOUT_GENERAL;
-	create_info.format = info.format;
-	create_info.samples = VK_SAMPLE_COUNT_1_BIT;
-	create_info.usage = info.usage;
-	create_info.type = VK_IMAGE_TYPE_2D;
-	create_info.layout = ImageLayout::General;
-
-	if ((info.flags & LINEAR_HOST_IMAGE_REQUIRE_LINEAR_FILTER_BIT) != 0)
-		create_info.misc |= IMAGE_MISC_VERIFY_FORMAT_FEATURE_SAMPLED_LINEAR_FILTER_BIT;
-	if ((info.flags & LINEAR_HOST_IMAGE_IGNORE_DEVICE_LOCAL_BIT) != 0)
-		create_info.misc |= IMAGE_MISC_LINEAR_IMAGE_IGNORE_DEVICE_LOCAL_BIT;
-
-	BufferHandle cpu_image;
-	auto gpu_image = create_image(create_info);
-	if (!gpu_image)
-	{
-		// Fall-back to staging buffer.
-		create_info.domain = ImageDomain::Physical;
-		create_info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-		create_info.misc = IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT | IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT;
-		create_info.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-		gpu_image = create_image(create_info);
-		if (!gpu_image)
-			return LinearHostImageHandle(nullptr);
-
-		BufferCreateInfo buffer;
-		buffer.domain =
-				(info.flags & LINEAR_HOST_IMAGE_HOST_CACHED_BIT) != 0 ?
-				BufferDomain::CachedHost :
-				BufferDomain::Host;
-		buffer.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-		buffer.size = info.width * info.height * TextureFormatLayout::format_block_size(info.format, format_to_aspect_mask(info.format));
-		cpu_image = create_buffer(buffer);
-		if (!cpu_image)
-			return LinearHostImageHandle(nullptr);
-	}
-
-	return LinearHostImageHandle(handle_pool.linear_images.allocate(this, std::move(gpu_image), std::move(cpu_image), info.stages));
-}
-
-void *Device::map_linear_host_image(const LinearHostImage &image, MemoryAccessFlags access)
-{
-	void *host = managers.memory.map_memory(image.get_host_visible_allocation(), access,
-	                                        0, image.get_host_visible_allocation().get_size());
-	return host;
-}
-
-void Device::unmap_linear_host_image_and_sync(const LinearHostImage &image, MemoryAccessFlags access)
-{
-	managers.memory.unmap_memory(image.get_host_visible_allocation(), access,
-	                             0, image.get_host_visible_allocation().get_size());
-	if (image.need_staging_copy())
-	{
-		// Kinda icky fallback, shouldn't really be used on discrete cards.
-		auto cmd = request_command_buffer(CommandBuffer::Type::AsyncTransfer);
-		cmd->image_barrier(image.get_image(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		                   VK_PIPELINE_STAGE_NONE, 0,
-		                   VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
-		cmd->copy_buffer_to_image(image.get_image(), image.get_host_visible_buffer(),
-		                          0, {},
-		                          { image.get_image().get_width(), image.get_image().get_height(), 1 },
-		                          0, 0, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 });
-
-		// Don't care about dstAccessMask, semaphore takes care of everything.
-		cmd->image_barrier(image.get_image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
-		                   VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-		                   VK_PIPELINE_STAGE_NONE, 0);
-
-		Semaphore sem;
-		submit(cmd, nullptr, 1, &sem);
-
-		// The queue type is an assumption. Should add some parameter for that.
-		add_wait_semaphore(CommandBuffer::Type::Generic, sem, image.get_used_pipeline_stages(), true);
-	}
-}
-
 void *Device::map_host_buffer(const Buffer &buffer, MemoryAccessFlags access)
 {
 	void *host = managers.memory.map_memory(buffer.get_allocation(), access, 0, buffer.get_create_info().size);
@@ -430,37 +339,6 @@ Program *Device::request_program(Shader *vertex, Shader *fragment, const Immutab
 	return ret;
 }
 
-Program *Device::request_program(Shader *task, Shader *mesh, Shader *fragment, const ImmutableSamplerBank *sampler_bank)
-{
-	if (!mesh || !fragment)
-		return nullptr;
-
-	if (!get_device_features().mesh_shader_features.meshShader)
-	{
-		LOGE("meshShader not supported.\n");
-		return nullptr;
-	}
-
-	if (task && !get_device_features().mesh_shader_features.taskShader)
-	{
-		LOGE("taskShader not supported.\n");
-		return nullptr;
-	}
-
-	Util::Hasher hasher;
-	hasher.u64(task ? task->get_hash() : 0);
-	hasher.u64(mesh->get_hash());
-	hasher.u64(fragment->get_hash());
-	ImmutableSamplerBank::hash(hasher, sampler_bank);
-
-	auto hash = hasher.get();
-	auto *ret = programs.find(hash);
-
-	if (!ret)
-		ret = programs.emplace_yield(hash, this, task, mesh, fragment, sampler_bank);
-	return ret;
-}
-
 Program *Device::request_program(const uint32_t *vertex_data, size_t vertex_size,
                                  const uint32_t *fragment_data, size_t fragment_size,
                                  const ResourceLayout *vertex_layout,
@@ -472,24 +350,6 @@ Program *Device::request_program(const uint32_t *vertex_data, size_t vertex_size
 	auto *vertex = request_shader(vertex_data, vertex_size, vertex_layout);
 	auto *fragment = request_shader(fragment_data, fragment_size, fragment_layout);
 	return request_program(vertex, fragment);
-}
-
-Program *Device::request_program(const uint32_t *task_data, size_t task_size,
-                                 const uint32_t *mesh_data, size_t mesh_size,
-                                 const uint32_t *fragment_data, size_t fragment_size,
-                                 const ResourceLayout *task_layout,
-                                 const ResourceLayout *mesh_layout,
-                                 const ResourceLayout *fragment_layout)
-{
-	if (!mesh_size || !fragment_size)
-		return nullptr;
-
-	Shader *task = nullptr;
-	if (task_size)
-		task = request_shader(task_data, task_size, task_layout);
-	auto *mesh = request_shader(mesh_data, mesh_size, mesh_layout);
-	auto *fragment = request_shader(fragment_data, fragment_size, fragment_layout);
-	return request_program(task, mesh, fragment);
 }
 
 const PipelineLayout *Device::request_pipeline_layout(const CombinedResourceLayout &layout,
@@ -1150,10 +1010,11 @@ void Device::init_workarounds()
 	}
 
 	// For whatever ridiculous reason, pipeline cache control causes GPU hangs on Pascal cards in parallel-rdp.
-	// Use mesh shaders as the sentinel to check for that.
+	// Use mesh shaders as the sentinel to check for that: Pascal does not expose them. The extension
+	// is only looked for, never enabled.
 	if (ext.driver_id == VK_DRIVER_ID_NVIDIA_PROPRIETARY &&
 	    (VK_VERSION_MAJOR(gpu_props.driverVersion) < 535 ||
-	     !ext.mesh_shader_features.meshShader))
+	     !ext.exposes_mesh_shader))
 	{
 		LOGW("Disabling pipeline cache control.\n");
 		workarounds.broken_pipeline_cache_control = true;
@@ -1253,30 +1114,8 @@ void Device::set_context(const Context &context)
 	 * frame rather than being made again past the first two megabytes. */
 	managers.staging.set_max_retained_blocks(256);
 	managers.descriptor_buffer.init(this);
-	managers.breadcrumbs.init(this);
 
 	init_stock_samplers();
-
-	for (int i = 0; i < QUEUE_INDEX_COUNT; i++)
-	{
-		if (queue_info.family_indices[i] == VK_QUEUE_FAMILY_IGNORED)
-			continue;
-
-		bool alias_pool = false;
-		for (int j = 0; j < i; j++)
-		{
-			if (queue_info.family_indices[i] == queue_info.family_indices[j])
-			{
-				alias_pool = true;
-				break;
-			}
-		}
-
-		if (!alias_pool)
-			queue_data[i].performance_query_pool.init_device(this, queue_info.family_indices[i]);
-	}
-
-	init_calibrated_timestamps();
 
 #ifdef GRANITE_VULKAN_SYSTEM_HANDLES
 	resource_manager.init();
@@ -1509,8 +1348,6 @@ void Device::request_staging_block_nolock(BufferBlock &block, VkDeviceSize size)
 
 void Device::submit(CommandBufferHandle &cmd, Fence *fence, unsigned semaphore_count, Semaphore *semaphores)
 {
-	cmd->end_debug_channel();
-
 	LOCK();
 	submit_nolock(std::move(cmd), fence, semaphore_count, semaphores);
 }
@@ -1610,17 +1447,6 @@ void Device::submit_nolock(CommandBufferHandle cmd, Fence *fence, unsigned semap
 	pool.signal_submitted(cmd->get_command_buffer());
 #endif
 
-	bool profiled_submit = cmd->has_profiling();
-
-	if (profiled_submit)
-	{
-		LOGI("Submitting profiled command buffer, draining GPU.\n");
-		Fence drain_fence;
-		submit_empty_nolock(physical_type, &drain_fence, nullptr, -1);
-		drain_fence->wait();
-		drain_fence->set_internal_sync_object();
-	}
-
 	cmd->end();
 	submissions.push_back(std::move(cmd));
 
@@ -1630,8 +1456,7 @@ void Device::submit_nolock(CommandBufferHandle cmd, Fence *fence, unsigned semap
 	{
 		submit_queue(physical_type, fence ? &signalled_fence : nullptr,
 		             nullptr,
-		             semaphore_count, semaphores,
-		             profiled_submit ? 0 : -1);
+		             semaphore_count, semaphores);
 	}
 
 	if (fence)
@@ -1641,18 +1466,6 @@ void Device::submit_nolock(CommandBufferHandle cmd, Fence *fence, unsigned semap
 			*fence = Fence(handle_pool.fences.allocate(this, signalled_fence.value, signalled_fence.timeline));
 		else
 			*fence = Fence(handle_pool.fences.allocate(this, signalled_fence.fence));
-	}
-
-	if (profiled_submit)
-	{
-		// Drain queue again and report results.
-		LOGI("Submitted profiled command buffer, draining GPU and report ...\n");
-		auto &query_pool = get_performance_query_pool(physical_type);
-		Fence drain_fence;
-		submit_empty_nolock(physical_type, &drain_fence, nullptr, fence || semaphore_count ? -1 : 0);
-		drain_fence->wait();
-		drain_fence->set_internal_sync_object();
-		query_pool.report();
 	}
 
 	decrement_frame_counter_nolock();
@@ -1669,16 +1482,16 @@ void Device::submit_empty(CommandBuffer::Type type, Fence *fence, SemaphoreHolde
 {
 	VK_ASSERT(!semaphore || !semaphore->is_proxy_timeline());
 	LOCK();
-	submit_empty_nolock(get_physical_queue_type(type), fence, semaphore, -1);
+	submit_empty_nolock(get_physical_queue_type(type), fence, semaphore);
 }
 
 void Device::submit_empty_nolock(QueueIndices physical_type, Fence *fence,
-                                 SemaphoreHolder *semaphore, int profiling_iteration)
+                                 SemaphoreHolder *semaphore)
 {
 	InternalFence signalled_fence = {};
 
 	submit_queue(physical_type, fence ? &signalled_fence : nullptr, semaphore,
-	             0, nullptr, profiling_iteration);
+	             0, nullptr);
 
 	if (fence)
 	{
@@ -1701,7 +1514,7 @@ void Device::submit_empty_inner(QueueIndices physical_type, InternalFence *fence
 
 	// Add external wait semaphores.
 	Helper::WaitSemaphores wait_semaphores;
-	Helper::BatchComposer composer(get_device_features().supports_low_latency2_nv ? wsi.low_latency.present_id : 0);
+	Helper::BatchComposer composer;
 	collect_wait_semaphores(data, wait_semaphores);
 	composer.add_wait_submissions(wait_semaphores);
 
@@ -1722,18 +1535,12 @@ void Device::submit_empty_inner(QueueIndices physical_type, InternalFence *fence
 	if (fence)
 		fence->fence = cleared_fence;
 
-	auto start_ts = write_calibrated_timestamp_nolock();
 	auto result = submit_batches(composer, queue, cleared_fence);
-	auto end_ts = write_calibrated_timestamp_nolock();
-	register_time_interval_nolock("CPU", std::move(start_ts), std::move(end_ts), "submit");
 
 	emit_implicit_sync_to_queues(physical_type);
 
 	if (result != VK_SUCCESS)
 		LOGE("vkQueueSubmit2 failed (code: %d).\n", int(result));
-
-	if (result == VK_ERROR_DEVICE_LOST)
-		managers.breadcrumbs.notify_device_hung();
 
 	if (!ext.vk12_features.timelineSemaphore)
 		data.need_fence = true;
@@ -1795,8 +1602,7 @@ void Device::collect_wait_semaphores(QueueData &data, Helper::WaitSemaphores &se
 	data.wait_semaphores.clear();
 }
 
-Helper::BatchComposer::BatchComposer(uint64_t present_id_nv_)
-	: present_id_nv(present_id_nv_)
+Helper::BatchComposer::BatchComposer()
 {
 	submits.emplace_back();
 }
@@ -1823,11 +1629,8 @@ void Helper::BatchComposer::add_wait_submissions(WaitSemaphores &sem)
 }
 
 SmallVector<VkSubmitInfo2, Helper::BatchComposer::MaxSubmissions> &
-Helper::BatchComposer::bake(int profiling_iteration)
+Helper::BatchComposer::bake()
 {
-	if (present_id_nv)
-		present_ids_nv.resize(submits.size());
-
 	for (size_t i = 0, n = submits.size(); i < n; i++)
 	{
 		auto &submit = submits[i];
@@ -1839,22 +1642,6 @@ Helper::BatchComposer::bake(int profiling_iteration)
 		submit.pSignalSemaphoreInfos = signals[i].data();
 		submit.waitSemaphoreInfoCount = uint32_t(waits[i].size());
 		submit.pWaitSemaphoreInfos = waits[i].data();
-
-		if (present_id_nv)
-		{
-			present_ids_nv[i].sType = VK_STRUCTURE_TYPE_LATENCY_SUBMISSION_PRESENT_ID_NV;
-			present_ids_nv[i].presentID = present_id_nv;
-			present_ids_nv[i].pNext = submit.pNext;
-			submit.pNext = &present_ids_nv[i];
-		}
-
-		if (profiling_iteration >= 0)
-		{
-			profiling_infos[i] = { VK_STRUCTURE_TYPE_PERFORMANCE_QUERY_SUBMIT_INFO_KHR };
-			profiling_infos[i].counterPassIndex = uint32_t(profiling_iteration);
-			profiling_infos[i].pNext = submit.pNext;
-			submit.pNext = &profiling_infos[i];
-		}
 	}
 
 	// Compact the submission array to avoid empty submissions.
@@ -2021,9 +1808,9 @@ VkResult Device::queue_submit(VkQueue queue, uint32_t count, const VkSubmitInfo2
 	return table->vkQueueSubmit2(queue, count, submits, fence);
 }
 
-VkResult Device::submit_batches(Helper::BatchComposer &composer, VkQueue queue, VkFence fence, int profiling_iteration)
+VkResult Device::submit_batches(Helper::BatchComposer &composer, VkQueue queue, VkFence fence)
 {
-	auto &submits = composer.bake(profiling_iteration);
+	auto &submits = composer.bake();
 	if (queue_lock_callback)
 		queue_lock_callback();
 
@@ -2039,7 +1826,7 @@ VkResult Device::submit_batches(Helper::BatchComposer &composer, VkQueue queue, 
 
 void Device::submit_queue(QueueIndices physical_type, InternalFence *fence,
                           SemaphoreHolder *external_semaphore,
-                          unsigned semaphore_count, Semaphore *semaphores, int profiling_iteration)
+                          unsigned semaphore_count, Semaphore *semaphores)
 {
 	auto &data = queue_data[physical_type];
 	Util::for_each_bit(data.has_incoming_queue_dependencies, [&](unsigned bits) {
@@ -2057,75 +1844,20 @@ void Device::submit_queue(QueueIndices physical_type, InternalFence *fence,
 		return;
 	}
 
-	if (get_device_features().supports_low_latency2_nv &&
-	    wsi.low_latency.need_submit_begin_marker &&
-	    wsi.low_latency.present_id &&
-	    wsi.low_latency.swapchain)
-	{
-		VkSetLatencyMarkerInfoNV marker_info = { VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV };
-		marker_info.presentID = wsi.low_latency.present_id;
-		table->vkSetLatencyMarkerNV(device, wsi.low_latency.swapchain, &marker_info);
-		wsi.low_latency.need_submit_begin_marker = false;
-	}
-
 	VkSemaphore timeline_semaphore = data.timeline_semaphore;
 	uint64_t timeline_value = ++data.current_timeline;
 
 	VkQueue queue = queue_info.queues[physical_type];
 	frame().timeline_fences[physical_type] = data.current_timeline;
 
-	Helper::BatchComposer composer(get_device_features().supports_low_latency2_nv ? wsi.low_latency.present_id : 0);
+	Helper::BatchComposer composer;
 	Helper::WaitSemaphores wait_semaphores;
 	collect_wait_semaphores(data, wait_semaphores);
 
 	composer.add_wait_submissions(wait_semaphores);
 
-	// Find first command buffer which uses WSI, we'll need to emit WSI acquire wait before the first command buffer
-	// that uses WSI image.
-
 	for (size_t i = 0, submissions_size = submissions.size(); i < submissions_size; i++)
-	{
-		auto &cmd = submissions[i];
-		VkPipelineStageFlags2 wsi_stages = cmd->swapchain_touched_in_stages();
-
-		if (wsi_stages != 0 && !wsi.consumed)
-		{
-			if (!can_touch_swapchain_in_command_buffer(physical_type))
-				LOGE("Touched swapchain in unsupported command buffer type %u.\n", unsigned(physical_type));
-
-			if (wsi.acquire && wsi.acquire->get_semaphore() != VK_NULL_HANDLE)
-			{
-				VK_ASSERT(wsi.acquire->is_signalled());
-				composer.add_wait_semaphore(*wsi.acquire, wsi_stages);
-				if (wsi.acquire->get_semaphore_type() == VK_SEMAPHORE_TYPE_BINARY)
-				{
-					if (wsi.acquire->is_external_object_compatible())
-						frame().destroyed_semaphores.push_back(wsi.acquire->get_semaphore());
-					else
-						frame().recycled_semaphores.push_back(wsi.acquire->get_semaphore());
-				}
-				wsi.acquire->consume();
-				wsi.acquire.reset();
-			}
-
-			composer.add_command_buffer(cmd->get_command_buffer());
-
-			VkSemaphore release = managers.semaphore.request_cleared_semaphore();
-			wsi.release = Semaphore(handle_pool.semaphores.allocate(this, release, true, true));
-			wsi.release->set_internal_sync_object();
-			composer.add_signal_semaphore(release, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0);
-			wsi.present_queue = queue;
-			wsi.present_queue_type = cmd->get_command_buffer_type();
-			wsi.consumed = true;
-		}
-		else
-		{
-			// After we have consumed WSI, we cannot keep using it, since we
-			// already signalled the semaphore.
-			VK_ASSERT(wsi_stages == 0);
-			composer.add_command_buffer(cmd->get_command_buffer());
-		}
-	}
+		composer.add_command_buffer(submissions[i]->get_command_buffer());
 
 	VkFence cleared_fence = fence && !ext.vk12_features.timelineSemaphore ?
 	                        managers.fence.request_cleared_fence() :
@@ -2144,16 +1876,10 @@ void Device::submit_queue(QueueIndices physical_type, InternalFence *fence,
 	emit_queue_signals(composer, external_semaphore, timeline_semaphore, timeline_value,
 	                   fence, semaphore_count, semaphores);
 
-	auto start_ts = write_calibrated_timestamp_nolock();
-	auto result = submit_batches(composer, queue, cleared_fence, profiling_iteration);
-	auto end_ts = write_calibrated_timestamp_nolock();
-	register_time_interval_nolock("CPU", std::move(start_ts), std::move(end_ts), "submit");
+	auto result = submit_batches(composer, queue, cleared_fence);
 
 	if (result != VK_SUCCESS)
 		LOGE("vkQueueSubmit2 failed (code: %d).\n", int(result));
-
-	if (result == VK_ERROR_DEVICE_LOST)
-		managers.breadcrumbs.notify_device_hung();
 
 	submissions.clear();
 
@@ -2212,14 +1938,6 @@ void Device::flush_frame_nolock()
 		flush_frame_nolock(i);
 }
 
-PerformanceQueryPool &Device::get_performance_query_pool(QueueIndices physical_index)
-{
-	for (int i = 0; i < physical_index; i++)
-		if (queue_info.family_indices[i] == queue_info.family_indices[physical_index])
-			return queue_data[i].performance_query_pool;
-	return queue_data[physical_index].performance_query_pool;
-}
-
 CommandBufferHandle Device::request_command_buffer(CommandBuffer::Type type)
 {
 	return request_command_buffer_for_thread(get_thread_index(), type);
@@ -2228,7 +1946,7 @@ CommandBufferHandle Device::request_command_buffer(CommandBuffer::Type type)
 CommandBufferHandle Device::request_command_buffer_for_thread(unsigned thread_index, CommandBuffer::Type type)
 {
 	LOCK();
-	return request_command_buffer_nolock(thread_index, type, false);
+	return request_command_buffer_nolock(thread_index, type);
 }
 
 CommandBufferHandle Device::request_borrowed_command_buffer(VkCommandBuffer cmd)
@@ -2241,29 +1959,11 @@ CommandBufferHandle Device::request_borrowed_command_buffer(VkCommandBuffer cmd)
 	return handle;
 }
 
-CommandBufferHandle Device::request_profiled_command_buffer(CommandBuffer::Type type)
-{
-	return request_profiled_command_buffer_for_thread(get_thread_index(), type);
-}
-
-CommandBufferHandle Device::request_profiled_command_buffer_for_thread(unsigned thread_index,
-                                                                       CommandBuffer::Type type)
-{
-	LOCK();
-	return request_command_buffer_nolock(thread_index, type, true);
-}
-
-CommandBufferHandle Device::request_command_buffer_nolock(unsigned thread_index, CommandBuffer::Type type, bool profiled)
+CommandBufferHandle Device::request_command_buffer_nolock(unsigned thread_index, CommandBuffer::Type type)
 {
 	auto physical_type = get_physical_queue_type(type);
 	auto &pool = frame().cmd_pools[physical_type][thread_index];
 	auto cmd = pool.request_command_buffer();
-
-	if (profiled && !ext.performance_query_features.performanceCounterQueryPools)
-	{
-		LOGW("Profiling is not supported on this device.\n");
-		profiled = false;
-	}
 
 	VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 	info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -2272,130 +1972,7 @@ CommandBufferHandle Device::request_command_buffer_nolock(unsigned thread_index,
 	CommandBufferHandle handle(handle_pool.command_buffers.allocate(this, cmd, legacy_pipeline_cache, type, false));
 	handle->set_thread_index(thread_index);
 
-	auto breadcrumbs = managers.breadcrumbs.allocate_command_buffer(cmd);
-	if (breadcrumbs.index != BufferMarkerHandle::Invalid)
-	{
-		handle->set_breadcrumbs_handle(breadcrumbs);
-		managers.breadcrumbs.begin(breadcrumbs);
-		frame().breadcrumbs.push_back(breadcrumbs);
-	}
-
-	if (profiled)
-	{
-		auto &query_pool = get_performance_query_pool(physical_type);
-		handle->enable_profiling();
-		query_pool.begin_command_buffer(handle->get_command_buffer());
-	}
-
 	return handle;
-}
-
-void Device::submit_secondary(CommandBuffer &primary, CommandBuffer &secondary)
-{
-	{
-		LOCK();
-		secondary.end();
-		decrement_frame_counter_nolock();
-
-#ifdef VULKAN_DEBUG
-		auto &pool = frame().cmd_pools[get_physical_queue_type(secondary.get_command_buffer_type())][secondary.get_thread_index()];
-		pool.signal_submitted(secondary.get_command_buffer());
-#endif
-	}
-
-	VkCommandBuffer secondary_cmd = secondary.get_command_buffer();
-	table->vkCmdExecuteCommands(primary.get_command_buffer(), 1, &secondary_cmd);
-}
-
-CommandBufferHandle Device::request_secondary_command_buffer_for_thread(unsigned thread_index,
-                                                                        const Framebuffer *framebuffer,
-                                                                        unsigned subpass,
-                                                                        CommandBuffer::Type type)
-{
-	LOCK();
-
-	auto &pool = frame().cmd_pools[get_physical_queue_type(type)][thread_index];
-	auto cmd = pool.request_secondary_command_buffer();
-	VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-	VkCommandBufferInheritanceInfo inherit = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO };
-
-	inherit.framebuffer = VK_NULL_HANDLE;
-	inherit.renderPass = framebuffer->get_compatible_render_pass().get_render_pass();
-	inherit.subpass = subpass;
-	info.pInheritanceInfo = &inherit;
-	info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-
-	VkBindHeapInfoEXT resource_heap = { VK_STRUCTURE_TYPE_BIND_HEAP_INFO_EXT };
-	VkBindHeapInfoEXT sampler_heap = { VK_STRUCTURE_TYPE_BIND_HEAP_INFO_EXT };
-	VkCommandBufferInheritanceDescriptorHeapInfoEXT inheritance_heap =
-		{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_DESCRIPTOR_HEAP_INFO_EXT };
-	inheritance_heap.pResourceHeapBindInfo = &resource_heap;
-	inheritance_heap.pSamplerHeapBindInfo = &sampler_heap;
-
-	if (ext.descriptor_heap_features.descriptorHeap)
-	{
-		auto heap = managers.descriptor_buffer.get_resource_heap();
-		resource_heap.heapRange.address = heap.va;
-		resource_heap.heapRange.size = heap.size;
-		resource_heap.reservedRangeOffset = heap.reserved_offset;
-		resource_heap.reservedRangeSize = heap.size - heap.reserved_offset;
-
-		heap = managers.descriptor_buffer.get_sampler_heap();
-		sampler_heap.heapRange.address = heap.va;
-		sampler_heap.heapRange.size = heap.size;
-		sampler_heap.reservedRangeOffset = heap.reserved_offset;
-		sampler_heap.reservedRangeSize = heap.size - heap.reserved_offset;
-
-		inherit.pNext = &inheritance_heap;
-	}
-
-	// Don't add breadcrumb stuff to secondaries for now. Need some extra thought on how that is supposed to work.
-
-	table->vkBeginCommandBuffer(cmd, &info);
-	add_frame_counter_nolock();
-	CommandBufferHandle handle(handle_pool.command_buffers.allocate(this, cmd, legacy_pipeline_cache, type, true));
-	handle->set_thread_index(thread_index);
-	return handle;
-}
-
-void Device::set_acquire_semaphore(unsigned index, Semaphore acquire)
-{
-	wsi.acquire = std::move(acquire);
-	wsi.index = index;
-	wsi.consumed = false;
-
-	if (wsi.acquire)
-	{
-		wsi.acquire->set_internal_sync_object();
-		VK_ASSERT(wsi.acquire->is_signalled());
-	}
-}
-
-void Device::set_present_id(VkSwapchainKHR swapchain, uint64_t present_id)
-{
-	if (wsi.low_latency.present_id != present_id)
-		wsi.low_latency.need_submit_begin_marker = true;
-	wsi.low_latency.swapchain = swapchain;
-	wsi.low_latency.present_id = present_id;
-}
-
-Semaphore Device::consume_release_semaphore()
-{
-	auto ret = std::move(wsi.release);
-	wsi.release.reset();
-	return ret;
-}
-
-VkQueue Device::get_current_present_queue() const
-{
-	VK_ASSERT(wsi.present_queue);
-	return wsi.present_queue;
-}
-
-CommandBuffer::Type Device::get_current_present_queue_type() const
-{
-	VK_ASSERT(wsi.present_queue);
-	return wsi.present_queue_type;
 }
 
 const Sampler &Device::get_stock_sampler(StockSampler sampler) const
@@ -2403,24 +1980,13 @@ const Sampler &Device::get_stock_sampler(StockSampler sampler) const
 	return samplers[static_cast<unsigned>(sampler)]->get_sampler();
 }
 
-bool Device::swapchain_touched() const
-{
-	return wsi.consumed;
-}
-
 Device::~Device()
 {
 	/* (whoever opened it has joined its builders by now) */
 	close_pipeline_handoff();
-	wsi.acquire.reset();
-	wsi.release.reset();
-	wsi.swapchain.clear();
 	managers.descriptor_buffer.teardown();
-	managers.breadcrumbs.deinit();
 
 	wait_idle();
-
-	managers.timestamps.log_simple();
 
 #ifdef GRANITE_VULKAN_SYSTEM_HANDLES
 	flush_shader_manager_cache();
@@ -2482,44 +2048,6 @@ void Device::init_frame_contexts(unsigned count)
 	}
 }
 
-void Device::init_external_swapchain(const std::vector<ImageHandle> &swapchain_images)
-{
-	DRAIN_FRAME_LOCK();
-	wsi.swapchain.clear();
-	wait_idle_nolock();
-
-	wsi.index = 0;
-	wsi.consumed = false;
-	for (auto &image : swapchain_images)
-	{
-		wsi.swapchain.push_back(image);
-		if (image)
-		{
-			wsi.swapchain.back()->set_internal_sync_object();
-			wsi.swapchain.back()->get_view().set_internal_sync_object();
-		}
-	}
-}
-
-bool Device::can_touch_swapchain_in_command_buffer(QueueIndices physical_type) const
-{
-	// If 0, we have virtual swap chain, so anything goes.
-	if (!wsi.queue_family_support_mask)
-		return true;
-
-	return (wsi.queue_family_support_mask & (1u << queue_info.family_indices[physical_type])) != 0;
-}
-
-bool Device::can_touch_swapchain_in_command_buffer(CommandBuffer::Type type) const
-{
-	return can_touch_swapchain_in_command_buffer(get_physical_queue_type(type));
-}
-
-void Device::set_swapchain_queue_family_support(uint32_t queue_family_support)
-{
-	wsi.queue_family_support_mask = queue_family_support;
-}
-
 BufferHandle Device::wrap_buffer(const BufferCreateInfo &info, VkBuffer buffer, bool supports_bda)
 {
 	VkDeviceAddress bda = 0;
@@ -2545,54 +2073,11 @@ ImageHandle Device::wrap_image(const ImageCreateInfo &info, VkImage image)
 	return img;
 }
 
-void Device::init_swapchain(const std::vector<VkImage> &swapchain_images, unsigned width, unsigned height, VkFormat format,
-                            VkSurfaceTransformFlagBitsKHR transform, VkImageUsageFlags usage, VkImageLayout layout)
-{
-	DRAIN_FRAME_LOCK();
-	wsi.swapchain.clear();
-
-	auto info = ImageCreateInfo::render_target(width, height, format);
-	info.usage = usage;
-
-	wsi.index = 0;
-	wsi.consumed = false;
-	for (auto &image : swapchain_images)
-	{
-		VkImageViewCreateInfo view_info = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-		view_info.image = image;
-		view_info.format = format;
-		view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-		view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-		view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-		view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-		view_info.subresourceRange.aspectMask = format_to_aspect_mask(format);
-		view_info.subresourceRange.baseMipLevel = 0;
-		view_info.subresourceRange.baseArrayLayer = 0;
-		view_info.subresourceRange.levelCount = 1;
-		view_info.subresourceRange.layerCount = 1;
-		view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-
-		CachedImageView view = {};
-		if (!managers.descriptor_buffer.create_image_view(view_info, usage, ImageLayout::Optimal, view))
-			LOGE("Failed to create view for backbuffer.");
-
-		auto backbuffer = ImageHandle(handle_pool.images.allocate(this, image, view, DeviceAllocation{}, info, VK_IMAGE_VIEW_TYPE_2D));
-		backbuffer->set_internal_sync_object();
-		backbuffer->disown_image();
-		backbuffer->get_view().set_internal_sync_object();
-		backbuffer->set_surface_transform(transform);
-		wsi.swapchain.push_back(backbuffer);
-		set_name(*backbuffer, "backbuffer");
-		backbuffer->set_swapchain_layout(layout);
-	}
-}
-
 Device::PerFrame::PerFrame(Device *device_, unsigned frame_index_)
     : device(*device_)
     , frame_index(frame_index_)
     , table(device_->get_device_table())
     , managers(device_->managers)
-    , query_pool_ts(device_, VK_QUERY_TYPE_TIMESTAMP)
 {
 	unsigned count = device_->num_thread_indices;
 	for (int i = 0; i < QUEUE_INDEX_COUNT; i++)
@@ -2884,13 +2369,6 @@ void Device::next_frame_context()
 {
 	DRAIN_FRAME_LOCK();
 
-	if (frame_context_begin_ts)
-	{
-		auto frame_context_end_ts = write_calibrated_timestamp_nolock();
-		register_time_interval_nolock("CPU", std::move(frame_context_begin_ts), std::move(frame_context_end_ts), "command submissions");
-		frame_context_begin_ts = {};
-	}
-
 	// Flush the frame here as we might have pending staging command buffers from init stage.
 	end_frame_nolock();
 
@@ -2912,152 +2390,6 @@ void Device::next_frame_context()
 	promote_read_write_caches_to_read_only();
 
 	frame().begin();
-	recalibrate_timestamps();
-	frame_context_begin_ts = write_calibrated_timestamp_nolock();
-}
-
-QueryPoolHandle Device::write_timestamp(VkCommandBuffer cmd, VkPipelineStageFlags2 stage)
-{
-	LOCK();
-	return write_timestamp_nolock(cmd, stage);
-}
-
-QueryPoolHandle Device::write_timestamp_nolock(VkCommandBuffer cmd, VkPipelineStageFlags2 stage)
-{
-	return frame().query_pool_ts.write_timestamp(cmd, stage);
-}
-
-QueryPoolHandle Device::write_calibrated_timestamp()
-{
-	LOCK();
-	return write_calibrated_timestamp_nolock();
-}
-
-QueryPoolHandle Device::write_calibrated_timestamp_nolock()
-{
-	if (!system_handles.timeline_trace_file)
-		return {};
-
-	auto handle = QueryPoolHandle(handle_pool.query.allocate(
-			this, false, VK_QUERY_TYPE_TIMESTAMP, VK_NULL_HANDLE, 0));
-	handle->signal_value(get_current_time_nsecs());
-	return handle;
-}
-
-void Device::init_calibrated_timestamps()
-{
-	calibrated_time_domain = VK_TIME_DOMAIN_DEVICE_KHR;
-	if (!get_device_features().supports_calibrated_timestamps)
-		return;
-
-	uint32_t count;
-	vkGetPhysicalDeviceCalibrateableTimeDomainsKHR(gpu, &count, nullptr);
-	std::vector<VkTimeDomainEXT> domains(count);
-	if (vkGetPhysicalDeviceCalibrateableTimeDomainsKHR(gpu, &count, domains.data()) != VK_SUCCESS)
-		return;
-
-	bool supports_device_domain = false;
-	for (auto &domain : domains)
-	{
-		if (domain == VK_TIME_DOMAIN_DEVICE_KHR)
-		{
-			supports_device_domain = true;
-			break;
-		}
-	}
-
-	if (!supports_device_domain)
-		return;
-
-	for (auto &domain : domains)
-	{
-#ifdef _WIN32
-		const auto supported_domain = VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_KHR;
-#else
-		const auto supported_domain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR;
-#endif
-		if (domain == supported_domain)
-		{
-			calibrated_time_domain = domain;
-			break;
-		}
-	}
-
-	if (calibrated_time_domain == VK_TIME_DOMAIN_DEVICE_KHR)
-	{
-		LOGE("Could not find a suitable time domain for calibrated timestamps.\n");
-		return;
-	}
-
-	if (!resample_calibrated_timestamps())
-	{
-		LOGE("Failed to get calibrated timestamps.\n");
-		calibrated_time_domain = VK_TIME_DOMAIN_DEVICE_KHR;
-		return;
-	}
-}
-
-bool Device::resample_calibrated_timestamps()
-{
-	VkCalibratedTimestampInfoKHR infos[2] = {};
-	infos[0].sType = VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR;
-	infos[1].sType = VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR;
-	infos[0].timeDomain = calibrated_time_domain;
-	infos[1].timeDomain = VK_TIME_DOMAIN_DEVICE_KHR;
-	uint64_t timestamps[2] = {};
-	uint64_t max_deviation;
-
-	if (table->vkGetCalibratedTimestampsKHR(device, 2, infos, timestamps, &max_deviation) != VK_SUCCESS)
-	{
-		LOGE("Failed to get calibrated timestamps.\n");
-		calibrated_time_domain = VK_TIME_DOMAIN_DEVICE_KHR;
-		return false;
-	}
-
-	calibrated_timestamp_host = timestamps[0];
-	calibrated_timestamp_device = timestamps[1];
-	calibrated_timestamp_device_accum = calibrated_timestamp_device;
-
-#ifdef _WIN32
-	LARGE_INTEGER freq;
-	QueryPerformanceFrequency(&freq);
-	calibrated_timestamp_host = int64_t(1e9 * calibrated_timestamp_host / double(freq.QuadPart));
-#endif
-	return true;
-}
-
-void Device::recalibrate_timestamps()
-{
-	if (calibrated_time_domain == VK_TIME_DOMAIN_DEVICE_KHR)
-		return;
-
-	// Recalibrate every once in a while ...
-	timestamp_calibration_counter++;
-	if (timestamp_calibration_counter < 64)
-		return;
-	timestamp_calibration_counter = 0;
-	resample_calibrated_timestamps();
-}
-
-void Device::register_time_interval(std::string tid, QueryPoolHandle start_ts, QueryPoolHandle end_ts,
-                                    const std::string &tag)
-{
-	LOCK();
-	register_time_interval_nolock(std::move(tid), std::move(start_ts), std::move(end_ts), tag);
-}
-
-void Device::register_time_interval_nolock(std::string tid, QueryPoolHandle start_ts, QueryPoolHandle end_ts,
-                                           const std::string &tag)
-{
-	if (start_ts && end_ts)
-	{
-		TimestampInterval *timestamp_tag = managers.timestamps.get_timestamp_tag(tag.c_str());
-#ifdef VULKAN_DEBUG
-		if (start_ts->is_signalled() && end_ts->is_signalled())
-			VK_ASSERT(end_ts->get_timestamp_ticks() >= start_ts->get_timestamp_ticks());
-#endif
-		frame().timestamp_intervals.push_back({ std::move(tid), std::move(start_ts), std::move(end_ts), timestamp_tag });
-	}
 }
 
 void Device::add_frame_counter_nolock()
@@ -3113,49 +2445,14 @@ bool Device::PerFrame::wait(uint64_t timeout)
 			info.pSemaphores = sems;
 			info.pValues = values;
 
-			if (device.ext.supports_post_mortem && timeout == UINT64_MAX)
-			{
-				// Some GPUs just timeout here rather than return device lost in finite time.
-				VkResult vr = table.vkWaitSemaphores(vkdevice, &info, PostMortemTimeout);
-
-				// Maybe we can read the latched device lost state now.
-				if (vr == VK_TIMEOUT)
-					vr = table.vkWaitSemaphores(vkdevice, &info, 0);
-
-				// If GPU doesn't complete in 2 seconds, something has gone very wrong.
-				if (vr != VK_SUCCESS)
-				{
-					managers.breadcrumbs.notify_device_hung();
-					return false;
-				}
-			}
-			else
-			{
-				if (table.vkWaitSemaphores(vkdevice, &info, timeout) != VK_SUCCESS)
-					return false;
-			}
+			if (table.vkWaitSemaphores(vkdevice, &info, timeout) != VK_SUCCESS)
+				return false;
 		}
 	}
 
 	// If we're using timeline semaphores, these paths should never be hit (or only for swapchain maintenance1).
 	if (!wait_and_recycle_fences.empty())
 	{
-		if (device.ext.supports_post_mortem && timeout == UINT64_MAX)
-		{
-			// Some GPUs just timeout here rather than return device lost in finite time.
-			VkResult vr = table.vkWaitForFences(vkdevice, wait_and_recycle_fences.size(), wait_and_recycle_fences.data(), VK_TRUE, PostMortemTimeout);
-
-			// Maybe we can read the latched device lost state now.
-			if (vr == VK_TIMEOUT)
-				vr = table.vkWaitForFences(vkdevice, wait_and_recycle_fences.size(), wait_and_recycle_fences.data(), VK_TRUE, 0);
-
-			// If GPU doesn't complete in 2 seconds, something has gone very wrong.
-			if (vr != VK_SUCCESS)
-			{
-				managers.breadcrumbs.notify_device_hung();
-				return false;
-			}
-		}
 
 		if (table.vkWaitForFences(vkdevice, wait_and_recycle_fences.size(), wait_and_recycle_fences.data(), VK_TRUE, timeout) != VK_SUCCESS)
 			return false;
@@ -3172,23 +2469,11 @@ void Device::PerFrame::begin()
 {
 	VkDevice vkdevice = device.get_device();
 
-	Vulkan::QueryPoolHandle wait_fence_ts;
-	if (!in_destructor)
-		wait_fence_ts = device.write_calibrated_timestamp_nolock();
-
 	wait(UINT64_MAX);
 
 	for (auto &cmd_pool : cmd_pools)
 		for (auto &pool : cmd_pool)
 			pool.begin();
-
-	query_pool_ts.begin();
-
-	for (auto &channel : debug_channels)
-		device.parse_debug_channel(channel);
-
-	// Free the debug channel buffers here, and they will immediately be recycled by the destroyed_buffers right below.
-	debug_channels.clear();
 
 	for (auto &block : vbo_blocks)
 		managers.vbo.recycle_block(block);
@@ -3224,8 +2509,6 @@ void Device::PerFrame::begin()
 	managers.descriptor_buffer.free(descriptor_buffer_allocs.data(), descriptor_buffer_allocs.size());
 	managers.descriptor_buffer.free_cached_descriptors(
 			cached_descriptor_payloads.data(), cached_descriptor_payloads.size());
-	for (auto &crumb : breadcrumbs)
-		managers.breadcrumbs.free_command_buffer(crumb);
 	VK_ASSERT(consumed_semaphores.empty());
 
 	if (!allocations.empty())
@@ -3247,58 +2530,6 @@ void Device::PerFrame::begin()
 	allocations.clear();
 	descriptor_buffer_allocs.clear();
 	cached_descriptor_payloads.clear();
-	breadcrumbs.clear();
-
-	if (!in_destructor)
-		device.register_time_interval_nolock("CPU", std::move(wait_fence_ts), device.write_calibrated_timestamp_nolock(), "fence + recycle");
-
-	int64_t min_timestamp_us = std::numeric_limits<int64_t>::max();
-	int64_t max_timestamp_us = 0;
-
-	for (auto &ts : timestamp_intervals)
-	{
-		if (ts.end_ts->is_signalled() && ts.start_ts->is_signalled())
-		{
-			VK_ASSERT(ts.start_ts->is_device_timebase() == ts.end_ts->is_device_timebase());
-
-			int64_t start_ts = ts.start_ts->get_timestamp_ticks();
-			int64_t end_ts = ts.end_ts->get_timestamp_ticks();
-			if (ts.start_ts->is_device_timebase())
-				ts.timestamp_tag->accumulate_time(device.convert_device_timestamp_delta(start_ts, end_ts));
-			else
-				ts.timestamp_tag->accumulate_time(1e-9 * double(end_ts - start_ts));
-
-			if (device.system_handles.timeline_trace_file)
-			{
-				start_ts = device.convert_timestamp_to_absolute_nsec(*ts.start_ts);
-				end_ts = device.convert_timestamp_to_absolute_nsec(*ts.end_ts);
-				min_timestamp_us = (std::min)(min_timestamp_us, start_ts);
-				max_timestamp_us = (std::max)(max_timestamp_us, end_ts);
-
-				auto *e = device.system_handles.timeline_trace_file->allocate_event();
-				e->set_desc(ts.timestamp_tag->get_tag().c_str());
-				e->set_tid(ts.tid.c_str());
-				e->pid = frame_index + 1;
-				e->start_ns = start_ts;
-				e->end_ns = end_ts;
-				device.system_handles.timeline_trace_file->submit_event(e);
-			}
-		}
-	}
-
-	if (device.system_handles.timeline_trace_file && min_timestamp_us <= max_timestamp_us)
-	{
-		auto *e = device.system_handles.timeline_trace_file->allocate_event();
-		e->set_desc("CPU + GPU full frame");
-		e->set_tid("Frame context");
-		e->pid = frame_index + 1;
-		e->start_ns = min_timestamp_us;
-		e->end_ns = max_timestamp_us;
-		device.system_handles.timeline_trace_file->submit_event(e);
-	}
-
-	managers.timestamps.mark_end_of_frame_context();
-	timestamp_intervals.clear();
 }
 
 Device::PerFrame::~PerFrame()
@@ -3421,15 +2652,6 @@ uint32_t Device::find_memory_type(BufferDomain domain, uint32_t mask) const
 
 		break;
 
-	case BufferDomain::DebugReadback:
-		if (!ext.supports_amd_buffer_marker)
-			return UINT32_MAX;
-
-		prio[1] = VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD | VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD |
-				  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		prio[0] = prio[0] | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-		prio[2] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-		break;
 	}
 
 	for (auto &p : prio)
@@ -3988,10 +3210,7 @@ InitialImageBuffer Device::create_image_staging_buffer(const ImageCreateInfo &in
 	buffer_info.domain = BufferDomain::Host;
 	buffer_info.size = layout.get_required_size();
 	buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	{
-		GRANITE_SCOPED_TIMELINE_EVENT_FILE(system_handles.timeline_trace_file, "allocate-image-staging-buffer");
-		result.buffer = create_buffer(buffer_info, nullptr);
-	}
+	result.buffer = create_buffer(buffer_info, nullptr);
 	set_name(*result.buffer, "image-upload-staging-buffer");
 
 	// And now, do the actual copy.
@@ -4000,7 +3219,6 @@ InitialImageBuffer Device::create_image_staging_buffer(const ImageCreateInfo &in
 
 	layout.set_buffer(mapped, layout.get_required_size());
 
-	GRANITE_SCOPED_TIMELINE_EVENT_FILE(system_handles.timeline_trace_file, "copy-image-staging-buffer");
 	for (unsigned level = 0; level < copy_levels; level++)
 	{
 		const auto &mip_info = layout.get_mip_info(level);
@@ -5513,72 +4731,14 @@ ImageHandle Device::get_transient_attachment(unsigned width, unsigned height, Vk
 	return transient_allocator.request_attachment(width, height, format, index, samples, layers);
 }
 
-ImageView &Device::get_swapchain_view()
-{
-	VK_ASSERT(wsi.index < wsi.swapchain.size());
-	return wsi.swapchain[wsi.index]->get_view();
-}
-
-ImageView &Device::get_swapchain_view(unsigned index)
-{
-	VK_ASSERT(index < wsi.swapchain.size());
-	return wsi.swapchain[index]->get_view();
-}
-
 unsigned Device::get_num_frame_contexts() const
 {
 	return unsigned(per_frame.size());
 }
 
-unsigned Device::get_num_swapchain_images() const
-{
-	return unsigned(wsi.swapchain.size());
-}
-
-unsigned Device::get_swapchain_index() const
-{
-	return wsi.index;
-}
-
 unsigned Device::get_current_frame_context() const
 {
 	return frame_context_index;
-}
-
-RenderPassInfo Device::get_swapchain_render_pass(SwapchainRenderPass style)
-{
-	RenderPassInfo info;
-	info.num_color_attachments = 1;
-	info.color_attachments[0] = &get_swapchain_view();
-	info.clear_attachments = ~0u;
-	info.store_attachments = 1u << 0;
-
-	switch (style)
-	{
-	case SwapchainRenderPass::Depth:
-	{
-		info.op_flags |= RENDER_PASS_OP_CLEAR_DEPTH_STENCIL_BIT;
-		auto att = get_transient_attachment(wsi.swapchain[wsi.index]->get_create_info().width,
-		                                    wsi.swapchain[wsi.index]->get_create_info().height,
-		                                    get_default_depth_format());
-		info.depth_stencil = &att->get_view();
-		break;
-	}
-
-	case SwapchainRenderPass::DepthStencil:
-	{
-		info.op_flags |= RENDER_PASS_OP_CLEAR_DEPTH_STENCIL_BIT;
-		auto att = get_transient_attachment(wsi.swapchain[wsi.index]->get_create_info().width,
-		                                    wsi.swapchain[wsi.index]->get_create_info().height,
-		                                    get_default_depth_stencil_format());
-		info.depth_stencil = &att->get_view();
-		break;
-	}
-
-	default:
-		break;
-	}
-	return info;
 }
 
 void Device::external_queue_lock()
@@ -5630,132 +4790,6 @@ void Device::set_name(const CommandBuffer &cmd, const char *name)
 	set_name((uint64_t)cmd.get_command_buffer(), VK_OBJECT_TYPE_COMMAND_BUFFER, name);
 }
 
-void Device::query_available_performance_counters(CommandBuffer::Type type, uint32_t *count,
-                                                  const VkPerformanceCounterKHR **counters,
-                                                  const VkPerformanceCounterDescriptionKHR **desc)
-{
-	auto &query_pool = get_performance_query_pool(get_physical_queue_type(type));
-	*count = query_pool.get_num_counters();
-	*counters = query_pool.get_available_counters();
-	*desc = query_pool.get_available_counter_descs();
-}
-
-bool Device::init_performance_counters(CommandBuffer::Type type, const std::vector<std::string> &names)
-{
-	return queue_data[get_physical_queue_type(type)].performance_query_pool.init_counters(names);
-}
-
-void Device::release_profiling()
-{
-	table->vkReleaseProfilingLockKHR(device);
-}
-
-bool Device::acquire_profiling()
-{
-	if (!ext.performance_query_features.performanceCounterQueryPools)
-		return false;
-
-	VkAcquireProfilingLockInfoKHR info = { VK_STRUCTURE_TYPE_ACQUIRE_PROFILING_LOCK_INFO_KHR };
-	info.timeout = UINT64_MAX;
-	if (table->vkAcquireProfilingLockKHR(device, &info) != VK_SUCCESS)
-	{
-		LOGE("Failed to acquire profiling lock.\n");
-		return false;
-	}
-
-	return true;
-}
-
-void Device::add_debug_channel_buffer(DebugChannelInterface *iface, std::string tag, Vulkan::BufferHandle buffer)
-{
-	buffer->set_internal_sync_object();
-	LOCK();
-	frame().debug_channels.push_back({ iface, std::move(tag), std::move(buffer) });
-}
-
-void Device::parse_debug_channel(const PerFrame::DebugChannel &channel)
-{
-	if (!channel.iface)
-		return;
-
-	auto *words = static_cast<const DebugChannelInterface::Word *>(map_host_buffer(*channel.buffer, MEMORY_ACCESS_READ_BIT));
-
-	size_t size = channel.buffer->get_create_info().size;
-	if (size <= sizeof(uint32_t))
-	{
-		LOGE("Debug channel buffer is too small.\n");
-		return;
-	}
-
-	// Format for the debug channel.
-	// Word 0: Atomic counter used by shader.
-	// Word 1-*: [total message length, code, x, y, z, args]
-
-	size -= sizeof(uint32_t);
-	size /= sizeof(uint32_t);
-
-	if (words[0].u32 > size)
-	{
-		LOGW("Debug channel overflowed and messaged were dropped. Consider increasing debug channel size to at least %u bytes.\n",
-		     unsigned((words[0].u32 + 1) * sizeof(uint32_t)));
-	}
-
-	words++;
-
-	while (size != 0 && words[0].u32 >= 5 && words[0].u32 <= size)
-	{
-		channel.iface->message(channel.tag, words[1].u32,
-		                       words[2].u32, words[3].u32, words[4].u32,
-		                       words[0].u32 - 5, &words[5]);
-		size -= words[0].u32;
-		words += words[0].u32;
-	}
-
-	unmap_host_buffer(*channel.buffer, MEMORY_ACCESS_READ_BIT);
-}
-
-static int64_t convert_to_signed_delta(uint64_t start_ticks, uint64_t end_ticks, unsigned valid_bits)
-{
-	unsigned shamt = 64 - valid_bits;
-	start_ticks <<= shamt;
-	end_ticks <<= shamt;
-	auto ticks_delta = int64_t(end_ticks - start_ticks);
-	ticks_delta >>= shamt;
-	return ticks_delta;
-}
-
-double Device::convert_device_timestamp_delta(uint64_t start_ticks, uint64_t end_ticks) const
-{
-	int64_t ticks_delta = convert_to_signed_delta(start_ticks, end_ticks, queue_info.timestamp_valid_bits);
-	return double(int64_t(ticks_delta)) * gpu_props.limits.timestampPeriod * 1e-9;
-}
-
-uint64_t Device::update_wrapped_device_timestamp(uint64_t ts)
-{
-	calibrated_timestamp_device_accum +=
-			convert_to_signed_delta(calibrated_timestamp_device_accum,
-			                        ts,
-			                        queue_info.timestamp_valid_bits);
-	return calibrated_timestamp_device_accum;
-}
-
-int64_t Device::convert_timestamp_to_absolute_nsec(const QueryPoolResult &handle)
-{
-	auto ts = int64_t(handle.get_timestamp_ticks());
-	if (handle.is_device_timebase())
-	{
-		if (calibrated_time_domain == VK_TIME_DOMAIN_DEVICE_KHR)
-			LOGW("Attempting to convert device timestamp to calibrated domain, but calibrated timestamps are not supported.");
-
-		// Ensure that we deal with timestamp wraparound correctly.
-		// On some hardware, we have < 64 valid bits and the timestamp counters will wrap around at some interval.
-		// As long as timestamps come in at a reasonably steady pace, we can deal with wraparound cleanly.
-		ts = update_wrapped_device_timestamp(ts);
-		ts = calibrated_timestamp_host + int64_t(double(ts - calibrated_timestamp_device) * gpu_props.limits.timestampPeriod);
-	}
-	return ts;
-}
-
 #ifdef GRANITE_VULKAN_SYSTEM_HANDLES
 ResourceManager &Device::get_resource_manager()
 {
@@ -5796,19 +4830,6 @@ const VolkDeviceTable &Device::get_device_table() const
 }
 
 #ifndef GRANITE_RENDERDOC_CAPTURE
-bool Device::init_renderdoc_capture()
-{
-	LOGE("RenderDoc API capture is not enabled in this build.\n");
-	return false;
-}
-
-void Device::begin_renderdoc_capture()
-{
-}
-
-void Device::end_renderdoc_capture()
-{
-}
 #endif
 
 bool Device::supports_subgroup_size_log2(bool subgroup_full_group, uint8_t subgroup_minimum_size_log2,
@@ -5858,16 +4879,6 @@ bool Device::supports_subgroup_size_log2(bool subgroup_full_group, uint8_t subgr
 const QueueInfo &Device::get_queue_info() const
 {
 	return queue_info;
-}
-
-void Device::timestamp_log_reset()
-{
-	managers.timestamps.reset();
-}
-
-void Device::timestamp_log(const TimestampIntervalReportCallback &cb) const
-{
-	managers.timestamps.log_simple(cb);
 }
 
 CommandBufferHandle request_command_buffer_with_ownership_transfer(

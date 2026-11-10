@@ -297,29 +297,6 @@ void GSInterface::flush_render_pass(FlushReason reason)
 		rp.has_aa1 = render_pass.has_aa1;
 		rp.has_scanmsk = render_pass.has_scanmsk;
 
-		// Debug stuff
-		rp.feedback_color = debug_mode.feedback_render_target;
-
-		if (debug_mode.feedback_render_target)
-			for (uint32_t i = 0; i < render_pass.num_instances && !rp.feedback_depth; i++)
-				rp.feedback_depth = render_pass.instances[i].z_sensitive;
-
-		switch (debug_mode.draw_mode)
-		{
-		case DebugMode::DrawDebugMode::Strided:
-			// Try to balance debuggability so there's not a million events to step through
-			// while being able to identify a faulty primitive.
-			rp.debug_capture_stride = 16;
-			break;
-
-		case DebugMode::DrawDebugMode::Full:
-			rp.debug_capture_stride = 1;
-			break;
-
-		default:
-			break;
-		}
-
 		rp.label_key = render_pass.label_key++;
 		rp.flush_reason = reason;
 		//////
@@ -443,8 +420,6 @@ void GSInterface::flush(PageTrackerFlushFlags flags, FlushReason reason)
 	{
 		uint64_t value = tracker.mark_submission_timeline();
 		renderer.flush_submit(value);
-		if (debug_mode.deterministic_timeline_query)
-			renderer.wait_timeline(value);
 	}
 }
 
@@ -1373,10 +1348,7 @@ void GSInterface::forget_in_render_pass_memoization()
 
 void GSInterface::recycle_image_handle(Vulkan::ImageHandle image)
 {
-	// If we're debugging we don't want the confusion of aliased image handles.
-	// It screws with debug label names.
-	if (!debug_mode.feedback_render_target)
-		renderer.recycle_image_handle(std::move(image));
+	renderer.recycle_image_handle(std::move(image));
 }
 
 uint64_t GSInterface::query_timeline()
@@ -1821,7 +1793,7 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 		else if (!long_term_cache_texture || skip_hazard_checks)
 			texture_page_rects_read_full();
 
-		if (!debug_mode.disable_sampler_feedback && long_term_cache_texture)
+		if (long_term_cache_texture)
 		{
 			// Framebuffer textures should be analyzed properly.
 			// It's very unlikely that these textures will persist across multiple render passes anyway.
@@ -1877,8 +1849,7 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 			}
 
 			renderer.commit_cached_texture(render_pass.tex_infos.size(),
-			                               desc.rect.levels == 1 && !long_term_cache_texture &&
-			                               !debug_mode.disable_sampler_feedback);
+			                               desc.rect.levels == 1 && !long_term_cache_texture);
 		}
 
 		texture_index = render_pass.tex_infos.size();
@@ -3540,8 +3511,6 @@ void GSInterface::fifo_readback_into(uint8_t *dst, uint32_t bytes)
 	{
 		host_timeline = tracker.mark_submission_timeline(FlushReason::HostAccess);
 		renderer.flush_submit(host_timeline);
-		if (debug_mode.deterministic_timeline_query)
-			renderer.wait_timeline(host_timeline);
 	}
 	renderer.wait_timeline(host_timeline);
 
@@ -4590,8 +4559,6 @@ void GSInterface::flush()
 	flush_pending_transfer(true);
 	uint64_t value = tracker.mark_submission_timeline();
 	renderer.flush_submit(value);
-	if (debug_mode.deterministic_timeline_query)
-		renderer.wait_timeline(value);
 }
 
 void GSInterface::clobber_register_state()
@@ -4762,12 +4729,6 @@ GIFPath &GSInterface::get_gif_path(uint32_t path)
 const GIFPath &GSInterface::get_gif_path(uint32_t path) const
 {
 	return paths[path];
-}
-
-void GSInterface::set_debug_mode(const DebugMode &mode)
-{
-	debug_mode = mode;
-	renderer.set_enable_timestamps(mode.timestamps);
 }
 
 void GSInterface::set_hacks(const Hacks &hacks_)
@@ -5055,11 +5016,6 @@ bool GSInterface::vsync_can_skip(const VSyncInfo &info) const
 FlushStats GSInterface::consume_flush_stats()
 {
 	return renderer.consume_flush_stats();
-}
-
-double GSInterface::get_accumulated_timestamps(TimestampType type) const
-{
-	return renderer.get_accumulated_timestamps(type);
 }
 
 void GSInterface::set_signal_interface(SignalInterface *iface)

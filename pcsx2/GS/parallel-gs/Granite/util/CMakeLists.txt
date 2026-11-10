@@ -19,7 +19,6 @@ add_granite_internal_lib(granite-util
         timer.cpp timer.hpp
         small_vector.hpp
         thread_id.cpp thread_id.hpp
-        timeline_trace_file.cpp timeline_trace_file.hpp
         thread_name.cpp thread_name.hpp
         dynamic_array.hpp
         arena_allocator.cpp arena_allocator.hpp

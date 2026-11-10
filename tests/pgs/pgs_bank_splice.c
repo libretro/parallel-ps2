@@ -14,7 +14,7 @@
  *   pgs_bank_splice in.hpp out.hpp NAME=module.spv [NAME=module.spv ...]
  *   pgs_bank_splice -x in.hpp NAME=module.spv [NAME=module.spv ...]
  *
- * NAME is the table's field: ubershader[0][1], sample_circuit[0],
+ * NAME is the table's field: ubershader[0][0], sample_circuit[0],
  * triangle_setup. A NAME the table does not carry is an error, as is a
  * module without the SPIR-V magic. Words the table does not hand out
  * (slangmosh emits a module the interface never declares) stay where

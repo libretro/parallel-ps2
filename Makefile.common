@@ -580,9 +580,6 @@ SOURCES_CXX += \
 # are not built in the libretro core.
 # string_helpers and thread_priority are also excluded: nm shows none of their
 # defined symbols are referenced anywhere we link in.
-# timeline_trace_file is needed because Granite's vulkan/device.cpp calls
-# allocate_event/submit_event directly on system_handles.timeline_trace_file
-# (only the GRANITE_SCOPED_TIMELINE_EVENT macros are GRANITE_SHIPPING-gated).
 SOURCES_CXX += \
 	$(GRANITE_DIR)/util/aligned_alloc.cpp \
 	$(GRANITE_DIR)/util/arena_allocator.cpp \
@@ -591,7 +588,6 @@ SOURCES_CXX += \
 	$(GRANITE_DIR)/util/slab_allocator.cpp \
 	$(GRANITE_DIR)/util/thread_id.cpp \
 	$(GRANITE_DIR)/util/thread_name.cpp \
-	$(GRANITE_DIR)/util/timeline_trace_file.cpp \
 	$(GRANITE_DIR)/util/timer.cpp
 
 # Granite vulkan
@@ -607,7 +603,6 @@ SOURCES_CXX += \
 # request_pipeline_event occurrence in the subtree was a definition, never a
 # call, so the whole mechanism and its two source files were removed.
 SOURCES_CXX += \
-	$(GRANITE_DIR)/vulkan/breadcrumbs.cpp \
 	$(GRANITE_DIR)/vulkan/buffer.cpp \
 	$(GRANITE_DIR)/vulkan/buffer_pool.cpp \
 	$(GRANITE_DIR)/vulkan/command_buffer.cpp \
@@ -621,7 +616,6 @@ SOURCES_CXX += \
 	$(GRANITE_DIR)/vulkan/image.cpp \
 	$(GRANITE_DIR)/vulkan/memory_allocator.cpp \
 	$(GRANITE_DIR)/vulkan/pipeline_cache.cpp \
-	$(GRANITE_DIR)/vulkan/query_pool.cpp \
 	$(GRANITE_DIR)/vulkan/render_pass.cpp \
 	$(GRANITE_DIR)/vulkan/sampler.cpp \
 	$(GRANITE_DIR)/vulkan/semaphore.cpp \

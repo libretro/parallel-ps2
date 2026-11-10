@@ -1513,7 +1513,6 @@ void GSRenderer::flush_attribute_scratch(AttributeScratch &scratch)
 			async_transfer_cmd->begin_region("AsyncTransfer");
 
 		async_transfer_cmd->begin_region("AttributeFlush");
-		async_transfer_cmd->checkpoint("attrib-copy");
 		async_transfer_cmd->copy_buffer(*scratch.gpu_buffer, scratch.flushed_to,
 		                                *scratch.buffer, scratch.flushed_to,
 		                                scratch.offset - scratch.flushed_to);
@@ -1730,7 +1729,6 @@ void GSRenderer::flush_qword_clears()
 
 	uint32_t wgx = (count + 63) / 64;
 
-	clear_cmd->checkpoint("qword-clears");
 
 	if (wgx <= device->get_gpu_properties().limits.maxComputeWorkGroupCount[0])
 	{
@@ -1851,7 +1849,6 @@ void GSRenderer::flush_submit(uint64_t value)
 	drain_compilation_tasks_nonblock();
 	device->next_frame_context();
 
-	log_timestamps();
 	check_bug_feedback();
 }
 
@@ -1871,34 +1868,11 @@ void GSRenderer::check_bug_feedback()
 #endif
 }
 
-void GSRenderer::log_timestamps()
-{
-	std::vector<Timestamp>::iterator itr = timestamps.begin();
-	for (; itr != timestamps.end() && itr->ts_start->is_signalled() && itr->ts_end->is_signalled(); ++itr)
-	{
-		double t = device->convert_device_timestamp_delta(
-				itr->ts_start->get_timestamp_ticks(), itr->ts_end->get_timestamp_ticks());
-		timestamp_total_time[int(itr->type)] += t;
-	}
-	timestamps.erase(timestamps.begin(), itr);
-}
-
 FlushStats GSRenderer::consume_flush_stats()
 {
 	FlushStats s = total_stats;
 	total_stats = {};
 	return s;
-}
-
-void GSRenderer::set_enable_timestamps(bool enable)
-{
-	enable_timestamps = enable;
-}
-
-double GSRenderer::get_accumulated_timestamps(TimestampType type) const
-{
-	assert(int(type) < int(TimestampType::Count));
-	return timestamp_total_time[int(type)];
 }
 
 TexRect GSRenderer::compute_effective_texture_rect(const TextureDescriptor &desc)
@@ -2180,26 +2154,17 @@ void GSRenderer::flush_host_vram_copy(const uint32_t *block_indices, uint32_t nu
 
 	cmd.begin_region("flush-host-vram-copy");
 
-	Vulkan::QueryPoolHandle start_ts, end_ts;
 
 	VkPipelineStageFlags2 stages = VK_PIPELINE_STAGE_2_COPY_BIT;
 	bool invalidate_super_sampling = can_potentially_super_sample();
 	if (invalidate_super_sampling)
 		stages |= VK_PIPELINE_STAGE_2_CLEAR_BIT;
 
-	// Cannot use more than one pipeline stage in timestamps.
-	if (enable_timestamps)
-		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_TRANSFER_BIT);
 
 	copy_blocks(cmd, *buffers.gpu, *buffers.cpu, block_indices, num_indices, invalidate_super_sampling,
 	            PGS_BLOCK_ALIGNMENT_BYTES);
 	stats.num_copies++;
 
-	if (enable_timestamps)
-	{
-		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_TRANSFER_BIT);
-		timestamps.push_back({ TimestampType::SyncHostToVRAM, std::move(start_ts), std::move(end_ts) });
-	}
 
 	cmd.barrier(stages, VK_ACCESS_2_TRANSFER_WRITE_BIT,
 	            stages, VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT);
@@ -2218,17 +2183,9 @@ void GSRenderer::flush_readback(const uint32_t *page_indices, uint32_t num_indic
 
 	cmd.begin_region("flush-readback");
 
-	Vulkan::QueryPoolHandle start_ts, end_ts;
-	if (enable_timestamps)
-		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_2_COPY_BIT);
 	copy_blocks(cmd, *buffers.cpu, *buffers.gpu, page_indices, num_indices, false, PageSize);
 	stats.num_copies++;
 
-	if (enable_timestamps)
-	{
-		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_2_COPY_BIT);
-		timestamps.push_back({ TimestampType::Readback, std::move(start_ts), std::move(end_ts) });
-	}
 
 	cmd.barrier(VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
 	            VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
@@ -2642,16 +2599,7 @@ void GSRenderer::dispatch_triangle_setup(Vulkan::CommandBuffer &cmd, const Rende
 	cmd.set_specialization_constant(3, bound_texture_has_array && allow_field_render);
 	cmd.set_specialization_constant(4, bound_texture_has_array && super_sampled_copies_only);
 
-	Vulkan::QueryPoolHandle start_ts, end_ts;
-	if (enable_timestamps)
-		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-	cmd.checkpoint("triangle-setup");
 	cmd.dispatch((rp.num_primitives + 63) / 64, 1, 1);
-	if (enable_timestamps)
-	{
-		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		timestamps.push_back({ TimestampType::TriangleSetup, std::move(start_ts), std::move(end_ts) });
-	}
 }
 
 void GSRenderer::dispatch_single_sample_heuristic(Vulkan::CommandBuffer &cmd, const RenderPass &rp)
@@ -2754,7 +2702,7 @@ void GSRenderer::dispatch_binning(Vulkan::CommandBuffer &cmd, const RenderPass &
 
 	cmd.enable_subgroup_size_control(true);
 	cmd.set_specialization_constant_mask(0x1f);
-	cmd.set_specialization_constant(1, uint32_t(rp.feedback_color || rp.feedback_depth));
+	cmd.set_specialization_constant(1, 0u);
 	cmd.set_specialization_constant(2, uint32_t(inst.sampling_rate_y_log2 != 0));
 	cmd.set_specialization_constant(3, hier_binning);
 
@@ -2805,20 +2753,11 @@ void GSRenderer::dispatch_binning(Vulkan::CommandBuffer &cmd, const RenderPass &
 
 	cmd.push_constants(&push, 0, sizeof(push));
 	cmd.set_program(shaders.binning);
-	Vulkan::QueryPoolHandle start_ts, end_ts;
-	if (enable_timestamps)
-		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
 	uint32_t tiles_x = align_coarse_tiles(inst.coarse_tiles_width, hier_binning) / hier_binning;
 	uint32_t tiles_y = align_coarse_tiles(inst.coarse_tiles_height, hier_binning) / hier_binning;
-	cmd.checkpoint("binning");
 	cmd.dispatch(tiles_x, tiles_y, 1);
 
-	if (enable_timestamps)
-	{
-		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		timestamps.push_back({ TimestampType::Binning, std::move(start_ts), std::move(end_ts) });
-	}
 	cmd.enable_subgroup_size_control(false);
 	cmd.set_specialization_constant_mask(0);
 }
@@ -2916,15 +2855,6 @@ void GSRenderer::dispatch_cache_read_only_depth(Vulkan::CommandBuffer &cmd, cons
 	cmd.end_region();
 }
 
-static bool image_info_need_recreate(const Vulkan::ImageCreateInfo &info, const Vulkan::ImageHandle &handle)
-{
-	return !handle ||
-	       handle->get_width() < info.width ||
-	       handle->get_height() < info.height ||
-	       handle->get_format() != info.format ||
-	       handle->get_create_info().layers != info.layers;
-}
-
 static void clear_image(Vulkan::CommandBuffer &cmd, const Vulkan::Image &img)
 {
 	cmd.image_barrier(img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -2934,77 +2864,6 @@ static void clear_image(Vulkan::CommandBuffer &cmd, const Vulkan::Image &img)
 	cmd.image_barrier(img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
 	                  VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
 	                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
-}
-
-void GSRenderer::bind_debug_resources(Vulkan::CommandBuffer &cmd,
-                                      const RenderPass &rp,
-                                      const RenderPass::Instance &inst)
-{
-	if (rp.feedback_color)
-	{
-		Vulkan::ImageCreateInfo info = Vulkan::ImageCreateInfo::immutable_2d_image(
-				inst.coarse_tiles_width << rp.coarse_tile_size_log2,
-				inst.coarse_tiles_height << rp.coarse_tile_size_log2,
-				VK_FORMAT_R8G8B8A8_UNORM);
-
-		info.width <<= inst.sampling_rate_y_log2;
-		info.height <<= inst.sampling_rate_y_log2;
-
-		info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-		info.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-		info.layers = inst.sampling_rate_y_log2 || inst.sampling_rate_x_log2 ? 5 : 2;
-
-		if (image_info_need_recreate(info, feedback_color))
-			feedback_color = device->create_image(info);
-
-		info.layers = 1;
-		info.format = VK_FORMAT_R32G32B32A32_UINT;
-		if (image_info_need_recreate(info, feedback_prim))
-			feedback_prim = device->create_image(info);
-
-		info.layers = 3;
-		info.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		if (image_info_need_recreate(info, feedback_vary))
-			feedback_vary = device->create_image(info);
-
-		if (inst.sampling_rate_x_log2 || inst.sampling_rate_y_log2)
-			device->set_name(*feedback_color, "DebugColor - [after, before, after 1x, before 1x, ref 1x]");
-		else
-			device->set_name(*feedback_color, "DebugColor - [after, before]");
-
-		device->set_name(*feedback_prim, "DebugStat - [ShadeCount, LastShadePrim, CoverageCount, TexMask]");
-		device->set_name(*feedback_vary, "DebugVary - [UV, Q, LOD] [RGBA] [Z, IJ]");
-
-		clear_image(cmd, *feedback_color);
-		clear_image(cmd, *feedback_prim);
-		clear_image(cmd, *feedback_vary);
-
-		cmd.set_storage_texture(0, BINDING_FEEDBACK_COLOR, feedback_color->get_view());
-		cmd.set_storage_texture(0, BINDING_FEEDBACK_PRIM, feedback_prim->get_view());
-		cmd.set_storage_texture(0, BINDING_FEEDBACK_VARY, feedback_vary->get_view());
-	}
-
-	if (rp.feedback_depth)
-	{
-		Vulkan::ImageCreateInfo info = Vulkan::ImageCreateInfo::immutable_2d_image(
-				inst.coarse_tiles_width << rp.coarse_tile_size_log2,
-				inst.coarse_tiles_height << rp.coarse_tile_size_log2,
-				VK_FORMAT_R32_UINT);
-
-		info.width <<= inst.sampling_rate_y_log2;
-		info.height <<= inst.sampling_rate_y_log2;
-
-		info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-		info.usage = VK_IMAGE_USAGE_STORAGE_BIT;
-		info.layers = 2;
-
-		if (image_info_need_recreate(info, feedback_depth))
-			feedback_depth = device->create_image(info);
-
-		clear_image(cmd, *feedback_depth);
-		cmd.set_storage_texture(0, BINDING_FEEDBACK_DEPTH, feedback_depth->get_view());
-		device->set_name(*feedback_depth, "DebugDepth - layer 0 = after - layer 1 = before");
-	}
 }
 
 /* A shading dispatch: with its own variant, else the dynamic one. */
@@ -3027,93 +2886,31 @@ void GSRenderer::dispatch_shading_commands(
 {
 	const RenderPass::Instance &inst = rp.instances[instance];
 
-	uint32_t stride = rp.debug_capture_stride ? rp.debug_capture_stride : num_primitives;
-	uint32_t lo_primitive_index = 0;
-	uint32_t hi_primitive_index = 0;
+	(void)base_primitive;
+	if (!num_primitives)
+		return;
 
-	bool debug = rp.feedback_color && device->consumes_debug_markers();
-
-	for (uint32_t i = 0; i < num_primitives; i += stride)
+	if (inst.sampling_rate_y_log2 != 0)
 	{
-		if (debug)
-		{
-			lo_primitive_index = i;
-			hi_primitive_index = std::min<uint32_t>(num_primitives, i + stride) - 1;
-			lo_primitive_index += base_primitive;
-			hi_primitive_index += base_primitive;
-			cmd.push_constants(&lo_primitive_index, offsetof(ShadingDescriptor, lo_primitive_index), sizeof(uint32_t));
-			cmd.push_constants(&hi_primitive_index, offsetof(ShadingDescriptor, hi_primitive_index), sizeof(uint32_t));
-
-			begin_region(cmd, "Prim [%u, %u]", lo_primitive_index, hi_primitive_index);
-			for (uint32_t j = lo_primitive_index; j <= hi_primitive_index; j++)
-			{
-				uint32_t s = buffers.prim[j].state;
-
-				uint32_t prim_instance = (s >> STATE_VERTEX_RENDER_PASS_INSTANCE_OFFSET) &
-				                         ((1 << STATE_VERTEX_RENDER_PASS_INSTANCE_COUNT) - 1);
-
-				if (prim_instance != instance)
-					continue;
-
-				insert_label(cmd, "Prim #%u", j);
-				insert_label(cmd,
-				             "  State: %u, ZTST: %u, ZGE: %u, ZWRITE: %u, AA1: %u, OPAQUE: %u, SPRITE: %u, QUAD: %u, IIP: %u, LINE: %u, FBMSK: 0x%x",
-				             (s >> STATE_INDEX_BIT_OFFSET) & ((1u << STATE_INDEX_BIT_COUNT) - 1u),
-				             (s >> STATE_BIT_Z_TEST) & 1,
-				             (s >> STATE_BIT_Z_TEST_GREATER) & 1,
-				             (s >> STATE_BIT_Z_WRITE) & 1,
-				             (s >> STATE_BIT_MULTISAMPLE) & 1,
-				             (s >> STATE_BIT_OPAQUE) & 1,
-				             (s >> STATE_BIT_SPRITE) & 1,
-				             (s >> STATE_BIT_PARALLELOGRAM) & 1,
-				             (s >> STATE_BIT_IIP) & 1,
-				             (s >> STATE_BIT_LINE) & 1,
-				             buffers.prim[j].fbmsk);
-
-				uint32_t alpha = buffers.prim[j].alpha;
-				insert_label(cmd, "  AFIX: %u, AREF: %u",
-				             (alpha >> ALPHA_AFIX_OFFSET) & ((1u << ALPHA_AFIX_BITS) - 1u),
-				             (alpha >> ALPHA_AREF_OFFSET) & ((1u << ALPHA_AREF_BITS) - 1u));
-
-				uint32_t tex = buffers.prim[j].tex;
-				insert_label(cmd, "  TEX: %u, MXL: %u, CLAMPS: %u, CLAMPT: %u, MAG: %u, MIN: %u, MIP: %u",
-				             (tex >> TEX_TEXTURE_INDEX_OFFSET) & ((1u << TEX_TEXTURE_INDEX_BITS) - 1u),
-				             (tex >> TEX_MAX_MIP_LEVEL_OFFSET) & ((1u << TEX_MAX_MIP_LEVEL_BITS) - 1u),
-				             (tex & TEX_SAMPLER_CLAMP_S_BIT) ? 1 : 0,
-				             (tex & TEX_SAMPLER_CLAMP_T_BIT) ? 1 : 0,
-				             (tex & TEX_SAMPLER_MAG_LINEAR_BIT) ? 1 : 0,
-				             (tex & TEX_SAMPLER_MIN_LINEAR_BIT) ? 1 : 0,
-				             (tex & TEX_SAMPLER_MIPMAP_LINEAR_BIT) ? 1 : 0);
-			}
-			cmd.end_region();
-		}
-
-		if (inst.sampling_rate_y_log2 != 0)
-		{
-			cmd.set_specialization_constant(0, inst.sampling_rate_x_log2);
-			cmd.set_specialization_constant(1, inst.sampling_rate_y_log2);
-			cmd.set_storage_buffer(DESCRIPTOR_SET_WORKGROUP_LIST, 0,
-			                       *work_list_super_sample.buffer, work_list_super_sample.offset + 256, VK_WHOLE_SIZE);
-			if (debug)
-				cmd.insert_label("super-sample");
-			dispatch_shading_indirect(cmd, *work_list_super_sample.buffer, work_list_super_sample.offset);
-		}
-
-		cmd.set_specialization_constant(0, 0);
-		cmd.set_specialization_constant(1, 0);
+		cmd.set_specialization_constant(0, inst.sampling_rate_x_log2);
+		cmd.set_specialization_constant(1, inst.sampling_rate_y_log2);
 		cmd.set_storage_buffer(DESCRIPTOR_SET_WORKGROUP_LIST, 0,
-		                       *work_list_single_sample.buffer, work_list_single_sample.offset + 256,
-		                       VK_WHOLE_SIZE);
-		if (debug)
-			cmd.insert_label("single-sample");
-		dispatch_shading_indirect(cmd, *work_list_single_sample.buffer, work_list_single_sample.offset);
+		                       *work_list_super_sample.buffer, work_list_super_sample.offset + 256, VK_WHOLE_SIZE);
+		dispatch_shading_indirect(cmd, *work_list_super_sample.buffer, work_list_super_sample.offset);
+	}
 
-		if (post_barrier || debug)
-		{
-			cmd.barrier(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-			            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-			            VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
-		}
+	cmd.set_specialization_constant(0, 0);
+	cmd.set_specialization_constant(1, 0);
+	cmd.set_storage_buffer(DESCRIPTOR_SET_WORKGROUP_LIST, 0,
+	                       *work_list_single_sample.buffer, work_list_single_sample.offset + 256,
+	                       VK_WHOLE_SIZE);
+	dispatch_shading_indirect(cmd, *work_list_single_sample.buffer, work_list_single_sample.offset);
+
+	if (post_barrier)
+	{
+		cmd.barrier(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+		            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+		            VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
 	}
 }
 
@@ -3194,7 +2991,6 @@ void GSRenderer::dispatch_shading(Vulkan::CommandBuffer &cmd, const RenderPass &
 	cmd.begin_region("shading");
 	const RenderPass::Instance &inst = rp.instances[instance];
 
-	bind_debug_resources(cmd, rp, inst);
 
 	// The shading itself runs at workgroup size == 64, we can handle multiple subgroups, but prefer large waves,
 	// since we're doing so much scalar work.
@@ -3301,7 +3097,7 @@ void GSRenderer::dispatch_shading(Vulkan::CommandBuffer &cmd, const RenderPass &
 	assert(inst.sampling_rate_x_log2 <= 2);
 	assert(inst.sampling_rate_y_log2 <= 3);
 
-	cmd.set_program(shaders.ubershader[int(rp.feedback_color)][int(rp.feedback_depth)]);
+	cmd.set_program(shaders.ubershader[0][0]);
 	ivec2 snap_raster_mask = ivec2{ -(1 << inst.sampling_rate_y_log2),
 	                               -(1 << inst.sampling_rate_y_log2) };
 	// Snap single-sampled raster to half-texel instead.
@@ -3511,7 +3307,6 @@ void GSRenderer::emit_copy_vram(Vulkan::CommandBuffer &cmd,
 			{
 				if (num_wgs == MaxWorkgroups)
 				{
-					cmd.checkpoint("copy-vram");
 					cmd.dispatch(num_wgs, 1, 1);
 					max_wgs -= num_wgs;
 					work_items = cmd.allocate_typed_constant_data<uvec4>(1, 0, std::min<uint32_t>(MaxWorkgroups, max_wgs));
@@ -3524,7 +3319,6 @@ void GSRenderer::emit_copy_vram(Vulkan::CommandBuffer &cmd,
 
 	if (num_wgs)
 	{
-		cmd.checkpoint("copy-vram");
 		cmd.dispatch(num_wgs, 1, 1);
 	}
 }
@@ -3889,9 +3683,6 @@ void GSRenderer::flush_rendering(const RenderPass &rp)
 
 	// Flush rendering work.
 	{
-		Vulkan::QueryPoolHandle start_ts, end_ts;
-		if (enable_timestamps)
-			start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
 		if (rp.num_instances == 1)
 		{
@@ -3977,11 +3768,6 @@ void GSRenderer::flush_rendering(const RenderPass &rp)
 		            VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
 		            VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
 
-		if (enable_timestamps)
-		{
-			end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-			timestamps.push_back({TimestampType::Shading, std::move(start_ts), std::move(end_ts)});
-		}
 
 		stats.num_primitives += rp.num_primitives;
 		check_flush_stats();
@@ -4171,7 +3957,6 @@ void GSRenderer::dispatch_texture_analysis(Vulkan::CommandBuffer &cmd, const Ren
 		uint32_t ssaa_sample_offset;
 	} push = { rp.num_primitives, uint32_t(texture_analysis.size()), ssaa_sample_offset };
 	cmd.push_constants(&push, 0, sizeof(push));
-	cmd.checkpoint("texture-analysis");
 	cmd.dispatch((rp.num_primitives + 255) / 256, 1, 1);
 }
 
@@ -4305,7 +4090,6 @@ void GSRenderer::upload_texture(const TextureUpload &upload)
 		cmd.set_storage_texture_level(0, 1, img.get_view(), level);
 		cmd.push_constants(&info, 0, sizeof(info));
 
-		cmd.checkpoint("upload-texture");
 
 		if (upload.indirection.buffer)
 			cmd.dispatch_indirect(*upload.indirection.indirect, upload.indirection.indirect_offset);
@@ -4480,9 +4264,6 @@ void GSRenderer::flush_palette_upload()
 		}
 	}
 
-	Vulkan::QueryPoolHandle start_ts, end_ts;
-	if (enable_timestamps)
-		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
 	Push push = {};
 	push.read_index = palette_uploads[0].incoming_clut_instance;
@@ -4510,7 +4291,6 @@ void GSRenderer::flush_palette_upload()
 				if (device->consumes_debug_markers())
 					insert_label(cmd, "Split [%u, %u)", push.wg_offset, push.wg_offset + push.count);
 
-				cmd.checkpoint("flush-palette-upload");
 				cmd.dispatch(1, 1, 1);
 
 				if (out_of_order_read)
@@ -4541,14 +4321,8 @@ void GSRenderer::flush_palette_upload()
 	cmd.push_constants(&push, 0, sizeof(push));
 	if (device->consumes_debug_markers())
 		insert_label(cmd, "Split [%u, %u)", push.wg_offset, push.wg_offset + push.count);
-	cmd.checkpoint("flush-palette-upload");
 	cmd.dispatch(1, 1, 1);
 
-	if (enable_timestamps)
-	{
-		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		timestamps.push_back({ TimestampType::PaletteUpdate, std::move(start_ts), std::move(end_ts) });
-	}
 
 	cmd.barrier(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
 	            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
@@ -4576,18 +4350,10 @@ void GSRenderer::flush_cache_upload()
 	cmd.barrier(dep);
 
 	cmd.begin_region("cache-upload");
-	Vulkan::QueryPoolHandle start_ts, end_ts;
-	if (enable_timestamps)
-		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 	// TODO: We could potentially sort this based on shader key to avoid some context rolls, but eeeeeh.
 	for (TextureUpload &upload : texture_uploads)
 		upload_texture(upload);
 
-	if (enable_timestamps)
-	{
-		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		timestamps.push_back({ TimestampType::TextureUpload, std::move(start_ts), std::move(end_ts) });
-	}
 	cmd.end_region();
 
 	dep.imageMemoryBarrierCount = post_image_barriers.size();
@@ -4618,9 +4384,6 @@ void GSRenderer::flush_transfer()
 
 	cmd.begin_region("vram-copy");
 
-	Vulkan::QueryPoolHandle start_ts, end_ts;
-	if (enable_timestamps)
-		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
 	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
 	            VK_PIPELINE_STAGE_2_CLEAR_BIT | VK_PIPELINE_STAGE_2_COPY_BIT,
@@ -4776,11 +4539,6 @@ void GSRenderer::flush_transfer()
 		emit_copy_vram(cmd, dispatch_order + dispatches[i].offset, dispatches[i].range, false);
 	cmd.end_region();
 
-	if (enable_timestamps)
-	{
-		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		timestamps.push_back({ TimestampType::CopyVRAM, std::move(start_ts), std::move(end_ts) });
-	}
 
 	pending_copies.clear();
 
@@ -4860,7 +4618,6 @@ void GSRenderer::sample_crtc_circuit(Vulkan::CommandBuffer &cmd, const Vulkan::I
 	                    (uint32_t(filtered) << 24);
 	cmd.push_constants(&push, 0, sizeof(push));
 
-	cmd.checkpoint("sample-crtc");
 	cmd.draw(3);
 
 	cmd.end_render_pass();
@@ -5687,9 +5444,6 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 	rp.clear_color[0].float32[1] = float(priv.bgcolor.G) * (1.0f / 255.0f);
 	rp.clear_color[0].float32[2] = float(priv.bgcolor.B) * (1.0f / 255.0f);
 
-	Vulkan::QueryPoolHandle start_ts, end_ts;
-	if (enable_timestamps)
-		start_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT);
 
 	cmd.begin_render_pass(rp);
 	cmd.set_opaque_sprite_state();
@@ -5724,7 +5478,6 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 
 			cmd.set_viewport(vp);
 
-			cmd.checkpoint("blit-circuit");
 			cmd.draw(3);
 		}
 	}
@@ -5785,7 +5538,6 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 					VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_FACTOR_ZERO);
 			}
 
-			cmd.checkpoint("blit-circuit");
 			cmd.draw(3);
 		}
 	}
@@ -5882,7 +5634,6 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 
 			// Is the write-back filtered at all? Probably not, but whatever.
 			cmd.set_texture(0, 1, *view, Vulkan::StockSampler::NearestClamp);
-			cmd.checkpoint("ext-feedback");
 			cmd.dispatch((push.resolution.x + 7) / 8, (push.resolution.y + 7) / 8, 1);
 			cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
 			            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -5937,11 +5688,6 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 
 	cmd.end_region();
 
-	if (enable_timestamps)
-	{
-		end_ts = cmd.write_timestamp(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT);
-		timestamps.push_back({ TimestampType::VSync, std::move(start_ts), std::move(end_ts) });
-	}
 
 	result.image = std::move(merged);
 	result.interlaced = should_deinterlace;
@@ -5988,7 +5734,6 @@ Vulkan::ImageHandle GSRenderer::fastmad_deinterlace(Vulkan::CommandBuffer &cmd, 
 	for (int i = 0; i < 4; i++)
 		cmd.set_texture(0, i, vsync_last_fields[i]->get_view());
 
-	cmd.checkpoint("fastmad");
 	cmd.draw(3);
 	cmd.end_render_pass();
 

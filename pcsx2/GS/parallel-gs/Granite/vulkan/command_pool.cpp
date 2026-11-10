@@ -69,8 +69,6 @@ CommandPool::~CommandPool()
 {
 	if (!buffers.empty())
 		table->vkFreeCommandBuffers(device->get_device(), pool, buffers.size(), buffers.data());
-	if (!secondary_buffers.empty())
-		table->vkFreeCommandBuffers(device->get_device(), pool, secondary_buffers.size(), secondary_buffers.data());
 	if (pool != VK_NULL_HANDLE)
 		table->vkDestroyCommandPool(device->get_device(), pool, nullptr);
 }
@@ -83,38 +81,6 @@ void CommandPool::signal_submitted(VkCommandBuffer cmd)
 #else
 	(void)cmd;
 #endif
-}
-
-VkCommandBuffer CommandPool::request_secondary_command_buffer()
-{
-	VK_ASSERT(pool != VK_NULL_HANDLE);
-
-	if (secondary_index < secondary_buffers.size())
-	{
-		auto ret = secondary_buffers[secondary_index++];
-#ifdef VULKAN_DEBUG
-		VK_ASSERT(in_flight.find(ret) == end(in_flight));
-		in_flight.insert(ret);
-#endif
-		return ret;
-	}
-	else
-	{
-		VkCommandBuffer cmd;
-		VkCommandBufferAllocateInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
-		info.commandPool = pool;
-		info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
-		info.commandBufferCount = 1;
-
-		table->vkAllocateCommandBuffers(device->get_device(), &info, &cmd);
-#ifdef VULKAN_DEBUG
-		VK_ASSERT(in_flight.find(cmd) == end(in_flight));
-		in_flight.insert(cmd);
-#endif
-		secondary_buffers.push_back(cmd);
-		secondary_index++;
-		return cmd;
-	}
 }
 
 VkCommandBuffer CommandPool::request_command_buffer()
@@ -157,10 +123,9 @@ void CommandPool::begin()
 #ifdef VULKAN_DEBUG
 	VK_ASSERT(in_flight.empty());
 #endif
-	if (index > 0 || secondary_index > 0)
+	if (index > 0)
 		table->vkResetCommandPool(device->get_device(), pool, 0);
 	index = 0;
-	secondary_index = 0;
 }
 
 void CommandPool::trim()
@@ -171,10 +136,7 @@ void CommandPool::trim()
 	table->vkResetCommandPool(device->get_device(), pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
 	if (!buffers.empty())
 		table->vkFreeCommandBuffers(device->get_device(), pool, buffers.size(), buffers.data());
-	if (!secondary_buffers.empty())
-		table->vkFreeCommandBuffers(device->get_device(), pool, secondary_buffers.size(), secondary_buffers.data());
 	buffers.clear();
-	secondary_buffers.clear();
 	table->vkTrimCommandPool(device->get_device(), pool, 0);
 }
 }

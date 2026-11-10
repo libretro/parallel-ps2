@@ -32,11 +32,6 @@
 #include "cli/fossilize_feature_filter.hpp"
 #endif
 
-namespace Util
-{
-class TimelineTraceFile;
-}
-
 namespace Granite
 {
 class Filesystem;
@@ -53,7 +48,7 @@ struct DeviceFeatures
 	bool supports_surface_capabilities2 = false;
 	bool supports_full_screen_exclusive = false;
 	bool supports_conservative_rasterization = false;
-	bool supports_calibrated_timestamps = false;
+	bool exposes_mesh_shader = false;
 	bool supports_memory_budget = false;
 	bool supports_video_queue = false;
 	bool supports_driver_properties = false;
@@ -77,9 +72,6 @@ struct DeviceFeatures
 	bool supports_low_latency2_nv = false;
 	bool supports_drm_modifiers = false;
 	bool supports_descriptor_buffer = false;
-	bool supports_amd_buffer_marker = false;
-	bool supports_nv_checkpoints = false;
-	bool supports_post_mortem = false;
 
 	bool supports_descriptor_buffer_or_heap = false;
 	uint32_t resource_heap_offset_alignment = 0;
@@ -98,13 +90,10 @@ struct DeviceFeatures
 	VkPhysicalDeviceVulkan14Properties vk14_props = {};
 
 	// KHR
-	VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR compute_shader_derivative_features = {};
-	VkPhysicalDevicePerformanceQueryFeaturesKHR performance_query_features = {};
 	VkPhysicalDevicePresentIdFeaturesKHR present_id_features = {};
 	VkPhysicalDevicePresentId2FeaturesKHR present_id2_features = {};
 	VkPhysicalDevicePresentWaitFeaturesKHR present_wait_features = {};
 	VkPhysicalDevicePresentWait2FeaturesKHR present_wait2_features = {};
-	VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR barycentric_features = {};
 	VkPhysicalDeviceVideoMaintenance1FeaturesKHR video_maintenance1_features = {};
 	VkPhysicalDevicePipelineBinaryFeaturesKHR pipeline_binary_features = {};
 	VkPhysicalDevicePipelineBinaryPropertiesKHR pipeline_binary_properties = {};
@@ -112,27 +101,15 @@ struct DeviceFeatures
 	VkPhysicalDeviceMaintenance5FeaturesKHR maintenance5_features = {};
 	VkPhysicalDeviceVideoEncodeAV1FeaturesKHR av1_features = {};
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR rtas_features = {};
-	VkPhysicalDeviceAccelerationStructurePropertiesKHR rtas_properties = {};
-	VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features = {};
 	VkPhysicalDeviceShaderUntypedPointersFeaturesKHR untyped_pointers_features = {};
-	VkPhysicalDeviceFaultFeaturesKHR fault_features_khr = {};
-	VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperative_matrix_features = {};
 	VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR intra_refresh_features = {};
 
 	// EXT
 	VkPhysicalDeviceExternalMemoryHostPropertiesEXT host_memory_properties = {};
-	VkPhysicalDeviceConservativeRasterizationPropertiesEXT conservative_rasterization_properties = {};
 	VkPhysicalDeviceMemoryPriorityFeaturesEXT memory_priority_features = {};
 	VkPhysicalDeviceASTCDecodeFeaturesEXT astc_decode_features = {};
 	VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR swapchain_maintenance1_features = {};
 	VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pageable_device_local_memory_features = {};
-	VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shader_features = {};
-	VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties = {};
-	VkPhysicalDeviceIndexTypeUint8FeaturesEXT index_type_uint8_features = {};
-	VkPhysicalDeviceRGBA10X6FormatsFeaturesEXT rgba10x6_formats_features = {};
-	VkPhysicalDeviceImageCompressionControlFeaturesEXT image_compression_control_features = {};
-	VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT image_compression_control_swapchain_features = {};
-	VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT device_generated_commands_features = {};
 	VkPhysicalDeviceDeviceGeneratedCommandsPropertiesEXT device_generated_commands_properties = {};
 	VkPhysicalDeviceRobustness2FeaturesEXT robustness2_features = {};
 	VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = {};
@@ -140,16 +117,11 @@ struct DeviceFeatures
 	VkPhysicalDevicePresentTimingFeaturesEXT present_timing_features = {};
 	VkPhysicalDeviceDescriptorHeapFeaturesEXT descriptor_heap_features = {};
 	VkPhysicalDeviceDescriptorHeapPropertiesEXT descriptor_heap_properties = {};
-	VkPhysicalDeviceFaultFeaturesEXT fault_features_ext = {};
 
 	// Vendor
 	VkPhysicalDeviceDescriptorPoolOverallocationFeaturesNV descriptor_pool_overallocation_features = {};
-	VkPhysicalDeviceAntiLagFeaturesAMD anti_lag_features = {};
-	VkPhysicalDeviceCoherentMemoryFeaturesAMD coherent_memory_features = {};
-	VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE shader_mixed_float_dot_product_features = {};
 
 	// Fallback feature structs (Vulkan 1.1)
-	VkPhysicalDeviceHostQueryResetFeatures host_query_reset_features = {};
 	VkPhysicalDevice16BitStorageFeaturesKHR storage_16bit_features = {};
 	// Fallback feature structs (Vulkan 1.2)
 	VkPhysicalDeviceFloat16Int8FeaturesKHR float16_int8_features = {};
@@ -193,7 +165,6 @@ enum ContextCreationFlagBits
 	CONTEXT_CREATION_ENABLE_VIDEO_AV1_BIT = 1 << 8,
 	CONTEXT_CREATION_ENABLE_DESCRIPTOR_BUFFER_BIT = 1 << 9,
 	CONTEXT_CREATION_ENABLE_DESCRIPTOR_HEAP_BIT = 1 << 10,
-	CONTEXT_CREATION_ENABLE_POST_MORTEM_BIT = 1 << 11,
 	CONTEXT_CREATION_ENABLE_VIDEO_FEATURE_ONLY_BIT = 1 << 12,
 };
 using ContextCreationFlags = uint32_t;
@@ -257,14 +228,6 @@ public:
 	// For deeper API interop scenarios.
 	void set_instance_factory(InstanceFactory *factory);
 	void set_device_factory(DeviceFactory *factory);
-
-	// Only takes effect if profiles are enabled in build. (GRANITE_VULKAN_PROFILES)
-	// If profile is non-null, forces a specific profile.
-	// If not supported, initialization fails.
-	// If not set, ignore profiles.
-	// If strict is false, the profile should be seen as a baseline and Granite will augment features on top.
-	// If true, the profile is a strict limit for device functionality. For validation purposes.
-	void set_required_profile(const char *profile, bool strict);
 
 	// Call before initializing instances. app_info may be freed after returning.
 	// API_VERSION must be at least 1.1.
@@ -371,7 +334,6 @@ public:
 
 	struct SystemHandles
 	{
-		Util::TimelineTraceFile *timeline_trace_file = nullptr;
 		Granite::Filesystem *filesystem = nullptr;
 		Granite::ThreadGroup *thread_group = nullptr;
 		Granite::AssetManager *asset_manager = nullptr;
@@ -427,8 +389,6 @@ private:
 	std::vector<const char *> enabled_device_extensions;
 	std::vector<const char *> enabled_instance_extensions;
 
-	std::string required_profile;
-	bool required_profile_strict = false;
 
 #ifdef VULKAN_DEBUG
 	VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
@@ -448,9 +408,6 @@ private:
 	void physical_device_feature_query(VkPhysicalDeviceFeatures2 *pdf2) override;
 #endif
 
-	bool init_profile();
-	VkResult create_instance_from_profile(const VkInstanceCreateInfo &info, VkInstance *pInstance);
-	VkResult create_device_from_profile(const VkDeviceCreateInfo &info, VkDevice *pDevice);
 
 	VkApplicationInfo get_promoted_application_info() const;
 };

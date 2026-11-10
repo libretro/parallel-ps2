@@ -5,7 +5,7 @@
 #   shaderbank_build.sh check [NAME ...]   rebuild and compare, all by default
 #   shaderbank_build.sh build NAME ...     rebuild and splice into the bank
 #
-# NAME is the bank's table field: clut_write, upload[1], ubershader[0][1].
+# NAME is the bank's table field: clut_write, upload[1], ubershader[0][0].
 # The bank is pcsx2/GS/parallel-gs/gs/shaders/slangmosh.hpp; the sources
 # sit beside it. Each module records the toolchain its shipped blob was
 # built with, and is only ever rebuilt with that one, so a rebuild of an
@@ -33,8 +33,6 @@
 #            2025.1~rc1-1~ubuntu0.24.04.2). "glslang-strip" adds
 #            spirv-opt --strip-debug.
 #
-# The Granite modules (sharpen_*, upscale_*, blit) come from Granite's own
-# assets at 9e32ac62; set GRANITE to such a checkout to include them.
 # A toolchain that is missing or a different version skips its modules;
 # check fails on any module that builds to other bytes.
 set -e
@@ -61,28 +59,15 @@ clut_write|clut_write.comp|compute||pinned
 vram_copy|vram_copy.comp|compute||pinned
 triangle_setup|triangle_setup.comp|compute||glslc
 single_sample_heuristic|single_sample_heuristic.comp|compute||pinned
-ubershader[0][0]|ubershader.comp|compute|FEEDBACK_COLOR=0 FEEDBACK_DEPTH=0|glslc
-ubershader[1][0]|ubershader.comp|compute|FEEDBACK_COLOR=1 FEEDBACK_DEPTH=0|glslc
-ubershader[0][1]|ubershader.comp|compute|FEEDBACK_COLOR=0 FEEDBACK_DEPTH=1|glslc
-ubershader[1][1]|ubershader.comp|compute|FEEDBACK_COLOR=1 FEEDBACK_DEPTH=1|glslc
+ubershader[0][0]|ubershader.comp|compute||glslc
 quad|quad.vert|vertex||pinned
 sample_circuit[0]|sample_circuit.frag|fragment|PROMOTED=0|glslang
 sample_circuit[1]|sample_circuit.frag|fragment|PROMOTED=1|glslang
 blit_circuit|blit_circuit.frag|fragment||pinned
 weave|weave.frag|fragment||glslang-strip
-sharpen_vert|@post/ffx-fsr/sharpen.vert|vertex||pinned
-sharpen_frag|@post/ffx-fsr/sharpen.frag|fragment||pinned
-upscale_vert|@post/ffx-fsr/upscale.vert|vertex||pinned
-upscale_frag|@post/ffx-fsr/upscale.frag|fragment||pinned
-blit|@blit.frag|fragment||pinned
 extwrite|extwrite.comp|compute||pinned
 qword_clear|qword_clear.comp|compute||pinned
 sampler_feedback|sampler_feedback.comp|compute||glslc
-ui_vert|ui.vert|vertex||pinned
-ui_frag[0][0]|ui.frag|fragment|TEX=0 LINEAR=0|pinned
-ui_frag[1][0]|ui.frag|fragment|TEX=1 LINEAR=0|pinned
-ui_frag[0][1]|ui.frag|fragment|TEX=0 LINEAR=1|pinned
-ui_frag[1][1]|ui.frag|fragment|TEX=1 LINEAR=1|pinned
 EOF
 }
 
@@ -105,14 +90,8 @@ toolchain_missing() {
 
 # compile SOURCE STAGE "DEFINES" TOOLCHAIN OUT
 compile() {
-	src=$1; stage=$2; defs=""; inc="-I$SHADERS"
+	src="$SHADERS/$1"; stage=$2; defs=""; inc="-I$SHADERS"
 	for d in $3; do defs="$defs -D$d"; done
-	case $src in
-	@*)
-		[ -n "$GRANITE" ] || { echo "GRANITE not set" >&2; return 1; }
-		src="$GRANITE/assets/shaders/${src#@}"; inc="-I$GRANITE/assets/shaders/inc" ;;
-	*) src="$SHADERS/$src" ;;
-	esac
 	case $4 in
 	pinned)
 		case $stage in compute) sd=STAGE_COMPUTE ;; vertex) sd=STAGE_VERTEX ;; *) sd=STAGE_FRAGMENT ;; esac
@@ -170,7 +149,6 @@ modules > "$TMP/list"
 while IFS='|' read -r NAME SRC STAGE DEFS TC; do
 	wanted "$@" || continue
 	why=$(toolchain_missing "$TC")
-	case $SRC in @*) [ -n "$GRANITE" ] || why="GRANITE not set" ;; esac
 	if [ -n "$why" ]; then
 		printf '  skip    %-24s %s\n' "$NAME" "$why"
 		continue

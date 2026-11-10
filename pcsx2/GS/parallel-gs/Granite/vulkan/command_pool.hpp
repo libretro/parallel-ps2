@@ -43,7 +43,6 @@ public:
 	void begin();
 	void trim();
 	VkCommandBuffer request_command_buffer();
-	VkCommandBuffer request_secondary_command_buffer();
 	void signal_submitted(VkCommandBuffer cmd);
 
 private:
@@ -51,11 +50,9 @@ private:
 	const VolkDeviceTable *table;
 	VkCommandPool pool = VK_NULL_HANDLE;
 	std::vector<VkCommandBuffer> buffers;
-	std::vector<VkCommandBuffer> secondary_buffers;
 #ifdef VULKAN_DEBUG
 	std::unordered_set<VkCommandBuffer> in_flight;
 #endif
 	unsigned index = 0;
-	unsigned secondary_index = 0;
 };
 }
