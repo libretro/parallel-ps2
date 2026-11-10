@@ -232,6 +232,10 @@ void VU_Thread::ExecuteRingBuffer(void)
 					vuCycleIdx = (vuCycleIdx + 1) & 3;
 					break;
 				}
+				/* The ring slot is the snapshot the EE stored into in place
+				 * (mtvu_write_mem_begin); this copy applies it to VU1
+				 * memory in order with the programs around it, which the
+				 * EE cannot do itself while one may be running. */
 				case MTVU_VU_WRITE_MICRO:
 				{
 					u32 vu_micro_addr = Read();

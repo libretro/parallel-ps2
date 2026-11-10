@@ -361,6 +361,10 @@ void gif_path_realign(Gif_Path* path)
 		else
 			Gif_AddBlankGSPacket(path->buffLimit - offset, path->idx);
 	}
+	/* The bytes moved are the packet still being parsed: what came
+	 * after its tag, usually a few bytes once per buffer's worth of
+	 * traffic. A mirrored ring would drop the move but not the wait
+	 * above, and the path's offsets are the saved state's layout. */
 	if (intersect)
 		memmove(path->buffer, &path->buffer[offset], path->curSize - offset);
 	else
