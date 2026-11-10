@@ -169,7 +169,39 @@ reason a reader can see.
   (`tests/latency`). No wall clock decides emulated progress, and a
   faster `retro_run` that advances less of the machine is not faster.
 
-## Shader compilation and stutter
+## Allocations during play
+
+`tests/vknegotiate` counts what the core allocates during play (glibc on
+Linux, no sanitizer): its frontend takes the core's `malloc`, `calloc`,
+`realloc` and aligned allocations (`operator new` comes through them),
+names each by the core's three innermost frames, and leaves out what the
+driver allocates while the core records into it. Five cases on the
+Vulkan, paraLLEl-GS and software renderers each have a ceiling there: a
+commit may lower one and no commit may raise one. To see where a case
+allocates, run it with `VN_COUNT_ALLOCS=1` and resolve the sites with
+`addr2line -f -C -e <core> <offset>`.
+
+What is left, by the count, largest first, every one a bug:
+
+- paraLLEl-GS's Granite tables: a pipeline taken from the compile
+  threads (`Program::stage_pipeline`, `add_pipeline`), descriptor sets
+  (`DescriptorSetAllocator`), command buffers and buffer blocks, and the
+  bindless pools grow as a session meets them. They want tables sized at
+  device creation with a defined full path.
+- The software renderer's JIT (`GSDrawScanlineCodeGenerator`,
+  `GSSetupPrimCodeGenerator`, Xbyak's labels): a draw function is
+  generated, and allocates, at a draw's first use, which is a compile on
+  the draw path too.
+- The texture cache: a new source or target (`SourceMap::Add`,
+  `Target::Create`, their object pools, `GetTargetSize`), the texture
+  behind it (`GSTextureVK::Create`), its framebuffer
+  (`GetLinkedFramebuffer`) and `GSLocalMemory::GetPixelOffset4`.
+- The EE and IOP recompilers: a block linked (`BaseBlocks_Link`) and a
+  load or store recorded (`vtlb_AddLoadStoreInfo`).
+- The Vulkan renderer's draw pipeline tables and list are sized when
+  the device is created, for the keys the list holds and 4096 more a
+  session; past those a table grows and the list takes no more.
+
 
 The target is the console's own behaviour: a game never waits for a
 shader. Starting a game for the first time, with no shader cache and no

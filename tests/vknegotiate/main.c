@@ -100,7 +100,20 @@ static void vn_pause_ms(unsigned ms) { Sleep(ms); }
 #if defined(__linux__) && defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 33))
 #include <malloc.h>
 #include <dirent.h>
+#include <execinfo.h>
+#include <link.h>
+#include <stdint.h>
 #define VN_HEAP_CHECK
+/* (a sanitizer brings its own allocator, not to be replaced) */
+#if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__)
+#if defined(__has_feature)
+#if !__has_feature(address_sanitizer) && !__has_feature(thread_sanitizer) && !__has_feature(memory_sanitizer)
+#define VN_ALLOC_COUNT
+#endif
+#else
+#define VN_ALLOC_COUNT
+#endif
+#endif
 #endif
 static double vn_now_ms(void)
 {
@@ -162,6 +175,124 @@ static PFN_vkGetInstanceProcAddr gipa;
 /* VN_COUNT_PIPELINES: the core's lookups go through these, so its
  * pipeline creation is counted by the thread that does it. */
 static PFN_vkGetDeviceProcAddr       vn_real_gdpa;
+#ifdef VN_ALLOC_COUNT
+/* VN_COUNT_ALLOCS=n: from retro_run n on, every allocation the core
+ * makes, on any thread - malloc, calloc, realloc, the aligned ones, and
+ * operator new through them - is counted, with the core's innermost
+ * frame it came from (an offset in the core, for addr2line) and the name
+ * of the thread. Only the core's own: one the driver makes while the
+ * core records into it, or this frontend makes, is not counted. Built
+ * with -rdynamic, so the core's calls come here. */
+extern void* __libc_malloc(size_t);
+extern void* __libc_calloc(size_t, size_t);
+extern void* __libc_realloc(void*, size_t);
+extern void* __libc_memalign(size_t, size_t);
+extern void  __libc_free(void*);
+#define VN_ALLOC_SITES 512
+static volatile int vn_alloc_on;
+static uintptr_t vn_core_lo, vn_core_hi;
+/* a site: the core's innermost frame and the two above it, as the core's
+ * own allocator wrappers name no caller by themselves */
+static uintptr_t vn_alloc_key[VN_ALLOC_SITES];
+static uintptr_t vn_alloc_at[VN_ALLOC_SITES][3];
+static long vn_alloc_hits[VN_ALLOC_SITES];
+static char vn_alloc_thread[VN_ALLOC_SITES][16];
+static long vn_alloc_total;
+static __thread int vn_alloc_inside;
+/* (not inlined: frame 0 is this, 1 the wrapper below, 2 its caller) */
+static __attribute__((noinline)) void vn_alloc_note(void)
+{
+	void* bt[24];
+	int n, i;
+	if (!vn_alloc_on || vn_alloc_inside)
+		return;
+	vn_alloc_inside = 1;
+	n = backtrace(bt, 24);
+	for (i = 2; i < n; i++)
+	{
+		const uintptr_t a = (uintptr_t)bt[i];
+		const uintptr_t up0 = (i + 1 < n) ? (uintptr_t)bt[i + 1] : 0;
+		const uintptr_t up1 = (i + 2 < n) ? (uintptr_t)bt[i + 2] : 0;
+		const uintptr_t key = a ^ (up0 * 31u) ^ (up1 * 131u);
+		unsigned k, h;
+		Dl_info di;
+		/* past the allocator (operator new and the C library's own);
+		 * the first frame after it is the core's, or the allocation is
+		 * another library's - the driver's while the core records */
+		if (dladdr(bt[i], &di) && di.dli_fname
+				&& (strstr(di.dli_fname, "libstdc++") || strstr(di.dli_fname, "libc.so")))
+			continue;
+		if (a < vn_core_lo || a >= vn_core_hi)
+			break;
+		__sync_fetch_and_add(&vn_alloc_total, 1);
+		h = (unsigned)(((key >> 2) * 2654435761u) % VN_ALLOC_SITES);
+		for (k = 0; k < VN_ALLOC_SITES; k++)
+		{
+			const unsigned j = (h + k) % VN_ALLOC_SITES;
+			if (!vn_alloc_key[j] && __sync_bool_compare_and_swap(&vn_alloc_key[j], 0, key))
+			{
+				vn_alloc_at[j][0] = a;
+				vn_alloc_at[j][1] = up0;
+				vn_alloc_at[j][2] = up1;
+				pthread_getname_np(pthread_self(), vn_alloc_thread[j], sizeof(vn_alloc_thread[j]));
+			}
+			if (vn_alloc_key[j] == key)
+			{
+				__sync_fetch_and_add(&vn_alloc_hits[j], 1);
+				break;
+			}
+		}
+		break;
+	}
+	vn_alloc_inside = 0;
+}
+void* malloc(size_t n) { vn_alloc_note(); return __libc_malloc(n); }
+void* calloc(size_t n, size_t m) { vn_alloc_note(); return __libc_calloc(n, m); }
+void* realloc(void* p, size_t n) { vn_alloc_note(); return __libc_realloc(p, n); }
+void free(void* p) { __libc_free(p); }
+void* memalign(size_t a, size_t n) { vn_alloc_note(); return __libc_memalign(a, n); }
+void* aligned_alloc(size_t a, size_t n) { vn_alloc_note(); return __libc_memalign(a, n); }
+int posix_memalign(void** out, size_t a, size_t n)
+{
+	vn_alloc_note();
+	*out = __libc_memalign(a, n);
+	return *out ? 0 : 12; /* ENOMEM */
+}
+/* The core's mapping: the object that holds the address in @data. */
+static int vn_core_range(struct dl_phdr_info* info, size_t size, void* data)
+{
+	const uintptr_t sym = *(const uintptr_t*)data;
+	uintptr_t lo = UINTPTR_MAX, hi = 0;
+	int i;
+	(void)size;
+	for (i = 0; i < info->dlpi_phnum; i++)
+		if (info->dlpi_phdr[i].p_type == PT_LOAD)
+		{
+			const uintptr_t a = info->dlpi_addr + info->dlpi_phdr[i].p_vaddr;
+			if (a < lo)
+				lo = a;
+			if (a + info->dlpi_phdr[i].p_memsz > hi)
+				hi = a + info->dlpi_phdr[i].p_memsz;
+		}
+	if (sym < lo || sym >= hi)
+		return 0;
+	vn_core_lo = lo;
+	vn_core_hi = hi;
+	return 1;
+}
+static void vn_alloc_report(void)
+{
+	unsigned j;
+	printf("  allocations: %ld by the core during play\n", vn_alloc_total);
+	for (j = 0; j < VN_ALLOC_SITES; j++)
+		if (vn_alloc_key[j])
+			printf("  allocation site: core+0x%lx 0x%lx 0x%lx on %s: %ld\n",
+				(unsigned long)(vn_alloc_at[j][0] - vn_core_lo),
+				(unsigned long)(vn_alloc_at[j][1] - vn_core_lo), (unsigned long)(vn_alloc_at[j][2] - vn_core_lo),
+				vn_alloc_thread[j], vn_alloc_hits[j]);
+}
+#endif
+
 static PFN_vkCreateComputePipelines  vn_real_ccp;
 static PFN_vkCreateGraphicsPipelines vn_real_cgp;
 static long vn_pipes_frame, vn_pipes_compile;
@@ -958,6 +1089,10 @@ static void vn_run(void (*run)(void))
 {
 	static unsigned runs;
 	s_run++;
+#ifdef VN_ALLOC_COUNT
+	if (getenv("VN_COUNT_ALLOCS") && s_run == (unsigned)atoi(getenv("VN_COUNT_ALLOCS")))
+		vn_alloc_on = 1;
+#endif
 	run();
 	if (getenv("VN_COUNT_CALLS"))
 		vc_report(s_run);
@@ -1544,6 +1679,15 @@ int main(int argc, char** argv)
 	h = vn_dlopen(argv[1]);
 	if (!h)
 		VN_FAIL("cannot load %s", argv[1]);
+#ifdef VN_ALLOC_COUNT
+	if (getenv("VN_COUNT_ALLOCS"))
+	{
+		void* bt[2];
+		uintptr_t sym = (uintptr_t)vn_sym(h, "retro_run");
+		backtrace(bt, 2); /* (loads what it needs before counting starts) */
+		dl_iterate_phdr(vn_core_range, &sym);
+	}
+#endif
 	set_environment = (retro_set_environment_t*)vn_sym(h, "retro_set_environment");
 	set_video       = (retro_set_video_refresh_t*)vn_sym(h, "retro_set_video_refresh");
 	set_audio       = (retro_set_audio_sample_t*)vn_sym(h, "retro_set_audio_sample");
@@ -1810,6 +1954,13 @@ int main(int argc, char** argv)
 			printf("  blend constants set %ld times in %d frames\n", vn_pipes_read(&vn_blend_sets), frames);
 	}
 	printf("  %d frames run, %u presented, %u duped, %u as images\n", frames, s_frames, s_dupes, s_images);
+#ifdef VN_ALLOC_COUNT
+	if (getenv("VN_COUNT_ALLOCS"))
+	{
+		vn_alloc_on = 0;
+		vn_alloc_report();
+	}
+#endif
 #ifdef VN_HEAP_CHECK
 	if (heap_flat && (!heap_warm_run || (int)(heap_warm_run + heap_flat) > frames))
 		VN_FAIL("pipelines still being built ahead after %d frames: heap %lu KB at the first, %lu KB now",

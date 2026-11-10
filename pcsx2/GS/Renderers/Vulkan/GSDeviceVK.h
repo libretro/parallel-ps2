@@ -675,6 +675,8 @@ private:
 	void PipelineListLoad();
 	void PipelineListSave();
 	void PipelineListAdd(const PipelineSelector& p);
+	bool PipelineListRoom(u32 loaded);
+	void TFXTablesReserve();
 	void PipelineWarmStart();
 	void PipelineWarmStop();
 	bool PipelineWarmTake();

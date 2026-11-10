@@ -16,7 +16,9 @@ ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
 case "$(uname -s)" in
 	MINGW*|MSYS*|CYGWIN*) CORE="$ROOT/pcsx2_libretro.dll";   LIBS="" ;;
 	Darwin)               CORE="$ROOT/pcsx2_libretro.dylib"; LIBS="" ;;
-	*)                    CORE="$ROOT/pcsx2_libretro.so";    LIBS="-ldl" ;;
+	# (-rdynamic: the core's allocations come to this frontend's malloc,
+	# for VN_COUNT_ALLOCS)
+	*)                    CORE="$ROOT/pcsx2_libretro.so";    LIBS="-ldl -rdynamic" ;;
 esac
 CORE=${LRPS2_CORE:-$CORE}
 
@@ -640,6 +642,56 @@ if ! VN_OPTIONS_AT="30:pcsx2_pgs_ssaa=4x SSAA (ordered, can high-res)" VN_FRAMES
 	exit 1
 fi
 echo "  pipelines built ahead: the heap stays flat after, and a rate set meanwhile has its own"
+
+# The core's own allocations while it plays (Linux, glibc): every one is
+# a bug (AGENTS.md, "No allocation mid-game"), and none may be added. Each
+# case is played from its first retro_run on each renderer, and what the
+# core allocates - not the driver while the core records, not this
+# frontend - must stay at or under what it was: a commit that removes one
+# lowers its number here. Over it, the sites are named (resolve them with
+# addr2line -f -C -e <core> <offset>).
+ALLOC_CEILINGS="
+Vulkan stream_ct32 87
+Vulkan depth_states 19
+Vulkan mip_tw8 21
+Vulkan dest_alpha 26
+Vulkan aa1_line 15
+paraLLEl-GS stream_ct32 427
+paraLLEl-GS depth_states 224
+paraLLEl-GS mip_tw8 261
+paraLLEl-GS dest_alpha 243
+paraLLEl-GS aa1_line 222
+Software_(HW) stream_ct32 99
+Software_(HW) depth_states 152
+Software_(HW) mip_tw8 78
+Software_(HW) dest_alpha 54
+Software_(HW) aa1_line 43"
+for c in stream_ct32 depth_states mip_tw8 dest_alpha aa1_line; do
+	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c > /dev/null
+done
+echo "$ALLOC_CEILINGS" | while read r c most; do
+	[ -n "$r" ] || continue
+	renderer=$(echo "$r" | tr _ ' ')
+	rm -rf "$SCRATCH/alloc" && mkdir -p "$SCRATCH/alloc"
+	VN_COUNT_ALLOCS=1 VN_FRAMES=60 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER="$renderer" \
+		timeout 600 "$DIR/vknegotiate" "$CORE" "$SCRATCH/alloc" v2 > "$SCRATCH/alloc.log" 2>&1 || true
+	n=$(sed -n 's/.*allocations: \([0-9]*\) by the core during play.*/\1/p' "$SCRATCH/alloc.log")
+	if [ -z "$n" ]; then
+		echo "  allocations during play: not counted here (glibc on Linux only)"
+		exit 2
+	fi
+	if [ "$n" -gt "$most" ]; then
+		grep "allocation site" "$SCRATCH/alloc.log" | sort -t: -k3 -n -r | head -n 20
+		echo "  FAIL: $c on $renderer: the core allocates $n times during play, $most before"
+		exit 1
+	fi
+	[ "$n" -lt "$most" ] && echo "  $c on $renderer: $n allocations during play, under the $most here: lower it"
+	true
+done
+case $? in
+	0) echo "  allocations during play: none more than before, five cases on three renderers" ;;
+	1) rm -rf "$SCRATCH"; exit 1 ;;
+esac
 
 # Cases whose failure is an out-of-bounds read or an overflow: they only
 # fail on their own against a core built with

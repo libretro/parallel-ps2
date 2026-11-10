@@ -2008,6 +2008,7 @@ bool GSDeviceVK::Create()
 	 * ones first, then the TFX ones the list has. Without the thread the
 	 * utility ones are built here. */
 	PipelineListLoad();
+	TFXTablesReserve();
 	PipelineWarmStart();
 	if (m_warm && !s_util_build_failed)
 		m_vr_ops = &s_vulkan_vr_ops;
@@ -4589,6 +4590,12 @@ void GSDeviceVK::PipelineCacheClose()
 #define PLIST_MAGIC   0x4C505653u /* "SVPL" */
 #define PLIST_VERSION 4u
 #define PLIST_MAX     65536u
+/* Keys a session may add to the list, made room for as it loads: a
+ * session past them lists no more (the next start builds those whole). */
+#define PLIST_SESSION_ROOM 4096u
+/* What the render thread may ask of the warm-up thread at once: room for
+ * its results is made at the start, so a result never waits for room. */
+#define PIPELINE_JOBS 64u
 /* flags: the selectors leave out the depth/stencil state (dss is zero) */
 #define PLIST_FLAG_DYNAMIC_DS 1u
 
@@ -4616,6 +4623,24 @@ static bool PipelineSelectorValid(const GSDeviceVK::PipelineSelector& p, bool dy
 		&& TFXPipelineKey(p) == p;
 }
 
+/* The draw pipeline tables, sized as the device is created for every
+ * key the list holds and may take, and every library the cover and those
+ * keys link from: drawing then grows none of them (past that bound, one
+ * grows). */
+void GSDeviceVK::TFXTablesReserve()
+{
+	const u32 keys = std::max<u32>(m_plist_cap, 1024u);
+	gs_flat_map_reserve(&m_tfx_pipelines, keys);
+	gs_flat_map_reserve(&m_tfx_siblings, keys);
+	gs_flat_map_reserve(&m_tfx_pending, PIPELINE_JOBS);
+	gs_flat_map_reserve(&m_tfx_fs_libs, keys);
+	gs_flat_map_reserve(&m_tfx_pr_libs, keys);
+	gs_flat_map_reserve(&m_tfx_fo_libs, keys);
+	gs_flat_map_reserve(&m_samplers, 256);
+	gs_flat_map_reserve(&m_render_pass_cache, 256);
+	gs_flat_map_reserve(&m_render_pass_keys, 256);
+}
+
 void GSDeviceVK::PipelineListAdd(const PipelineSelector& p)
 {
 	u32 i;
@@ -4624,18 +4649,9 @@ void GSDeviceVK::PipelineListAdd(const PipelineSelector& p)
 	for (i = 0; i < m_plist_count; i++)
 		if (m_plist[i] == p)
 			return;
+	/* (the room was made as the list loaded: none is made while drawing) */
 	if (m_plist_count == m_plist_cap)
-	{
-		const u32 cap = m_plist_cap ? m_plist_cap * 2 : 64;
-		PipelineSelector* grown;
-		if (cap > PLIST_MAX)
-			return;
-		grown = (PipelineSelector*)realloc(m_plist, cap * sizeof(*m_plist));
-		if (!grown)
-			return;
-		m_plist     = grown;
-		m_plist_cap = cap;
-	}
+		return;
 	memcpy(&m_plist[m_plist_count++], &p, sizeof(p));
 	m_plist_dirty = true;
 }
@@ -4656,7 +4672,10 @@ void GSDeviceVK::PipelineListLoad()
 		return;
 	PipelineListPath(path, sizeof(path));
 	if (!path_is_valid(path) || !filestream_read_file(path, &data, &len))
+	{
+		PipelineListRoom(0);
 		return;
+	}
 	if (len < (int64_t)(sizeof(h) + sizeof(hash)))
 		goto refuse;
 	memcpy(&h, data, sizeof(h));
@@ -4668,14 +4687,8 @@ void GSDeviceVK::PipelineListLoad()
 	memcpy(&hash, (const u8*)data + len - sizeof(hash), sizeof(hash));
 	if (XXH3_64bits(data, (size_t)len - sizeof(hash)) != hash)
 		goto refuse;
-	if (h.count > m_plist_cap)
-	{
-		PipelineSelector* grown = (PipelineSelector*)realloc(m_plist, h.count * sizeof(*m_plist));
-		if (!grown)
-			goto refuse;
-		m_plist     = grown;
-		m_plist_cap = h.count;
-	}
+	if (!PipelineListRoom(h.count))
+		goto refuse;
 	for (i = 0; i < h.count; i++)
 	{
 		PipelineSelector p;
@@ -4693,6 +4706,21 @@ refuse:
 	m_plist_count = 0;
 	m_plist_dirty = true; /* replaced by this session's */
 	free(data);
+	PipelineListRoom(0);
+}
+
+/* Room for @loaded keys and the ones a session may add, made now. */
+bool GSDeviceVK::PipelineListRoom(u32 loaded)
+{
+	const u32 cap = std::min<u32>(PLIST_MAX, loaded + PLIST_SESSION_ROOM);
+	PipelineSelector* grown;
+	if (cap <= m_plist_cap)
+		return true;
+	if (!(grown = (PipelineSelector*)realloc(m_plist, cap * sizeof(*m_plist))))
+		return false;
+	m_plist     = grown;
+	m_plist_cap = cap;
+	return true;
 }
 
 void GSDeviceVK::PipelineListSave()
@@ -4728,10 +4756,6 @@ void GSDeviceVK::PipelineListSave()
 }
 
 #ifdef HAVE_THREADS
-
-/* What the render thread may ask of the thread at once: room for its
- * results is made at the start, so a result never waits for room. */
-#define PIPELINE_JOBS 64u
 
 typedef struct PipelineWarmResult
 {
