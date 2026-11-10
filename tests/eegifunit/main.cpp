@@ -537,7 +537,7 @@ static void step(void)
 			gifRegs.stat.DIR = rnd_n(12) == 0;
 			break;
 		case 15:
-			/* The SIGNAL acknowledged, as a CSR write does (GS.cpp). */
+			/* The SIGNAL acknowledged, as a CSR write does (GS.c). */
 			if (rnd() & 1)
 				*(u32*)&g_RealGSMem[0x1000] |= 1;
 			else

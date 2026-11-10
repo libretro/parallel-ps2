@@ -13,6 +13,7 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <math.h>
 #include <compat/strl.h>
 #include "FormatString.h"
 #include "ParseNumber.h"
@@ -882,6 +883,17 @@ u64 emu_fpcr_set_vu(int unit)
 	const FPControlRegister prev = FPControlRegister::GetCurrent();
 	FPControlRegister::SetCurrent(unit ? EmuConfig.Cpu.VU1FPCR : EmuConfig.Cpu.VU0FPCR);
 	return prev.bitmask;
+}
+
+u32 emu_config_framerate_mhz(bool pal)
+{
+	return (u32)lrintf((pal ? EmuConfig.GS.FrameratePAL : EmuConfig.GS.FramerateNTSC) * 1000.0f);
+}
+
+u32 emu_config_default_framerate_mhz(bool pal)
+{
+	return (u32)((pal ? Pcsx2Config::GSOptions::DEFAULT_FRAME_RATE_PAL
+		: Pcsx2Config::GSOptions::DEFAULT_FRAME_RATE_NTSC) * 1000.0f);
 }
 
 u64 emu_fpcr_set_fpu(void)

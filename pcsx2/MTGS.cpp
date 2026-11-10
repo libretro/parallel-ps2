@@ -219,6 +219,11 @@ namespace MTGS
 
 bool MTGS::IsOpen() { return retro_atomic_load_acquire_int(&s_open_flag); }
 
+void mtgs_reset_gs(bool hardware_reset)
+{
+	MTGS::ResetGS(hardware_reset);
+}
+
 void MTGS::ResetGS(bool hardware_reset)
 {
 	// MTGS Reset process:
@@ -242,6 +247,11 @@ void MTGS::ResetGS(bool hardware_reset)
 
 	if (hardware_reset)
 		work_eventcount_notify(&s_sem_event);
+}
+
+void mtgs_post_vsync_start(void)
+{
+	MTGS::PostVsyncStart();
 }
 
 void MTGS::PostVsyncStart()

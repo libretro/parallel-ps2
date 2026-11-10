@@ -37,7 +37,7 @@ extern "C" {
 #endif
 extern psxCounter psxCounters[NUM_COUNTERS];
 /* Which counters the EE's blanks gate: bit 0 the HBlank, bits 1 and 3
- * the VBlank. Counters.cpp reads the first. */
+ * the VBlank. Counters.c reads the first. */
 extern u8 psxhblankgate;
 extern u8 psxvblankgate;
 

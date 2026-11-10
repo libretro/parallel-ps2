@@ -349,6 +349,11 @@ void vm_request_stop(void)
 	VMManager::SetState(VMState::Stopping);
 }
 
+bool vm_paused(void)
+{
+	return VMManager::GetState() == VMState::Paused;
+}
+
 bool vm_execution_interrupted(void)
 {
 	return VMManager::Internal::IsExecutionInterrupted();

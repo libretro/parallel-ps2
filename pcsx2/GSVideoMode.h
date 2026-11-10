@@ -43,7 +43,7 @@ typedef enum GS_VideoMode
 extern GS_VideoMode gsVideoMode;
 extern bool gsIsInterlaced;
 
-/* GS.cpp: records the mode and retimes the counters. */
+/* GS.c: records the mode and retimes the counters. */
 extern void gsSetVideoMode(GS_VideoMode mode);
 
 #ifdef __cplusplus

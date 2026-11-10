@@ -323,7 +323,7 @@
     <ClCompile Include="ps2\BiosTools.cpp">
       <Filter>System\Ps2</Filter>
     </ClCompile>
-    <ClCompile Include="Counters.cpp">
+    <ClCompile Include="Counters.c">
       <Filter>System\Ps2\EmotionEngine</Filter>
     </ClCompile>
     <ClCompile Include="FiFo.c">
@@ -581,7 +581,7 @@
     <ClCompile Include="IPU\yuv2rgb.cpp">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
-    <ClCompile Include="GS.cpp">
+    <ClCompile Include="GS.c">
       <Filter>System\Ps2\GS\GIF</Filter>
     </ClCompile>
     <ClCompile Include="MTGS.cpp">

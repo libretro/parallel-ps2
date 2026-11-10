@@ -217,7 +217,7 @@
     <ClCompile Include="Elfheader.c" />
     <ClCompile Include="x86\BaseblockEx.cpp" />
     <ClCompile Include="ps2\BiosTools.cpp" />
-    <ClCompile Include="Counters.cpp" />
+    <ClCompile Include="Counters.c" />
     <ClCompile Include="FiFo.c" />
     <ClCompile Include="Hw.c" />
     <ClCompile Include="Cache.c" />
@@ -300,7 +300,7 @@
     <ClCompile Include="CDVD\cdvd_gz.c" />
     <ClCompile Include="CDVD\cdvd_iso.c" />
     <ClCompile Include="CDVD\CDVDcommon.c" />
-    <ClCompile Include="GS.cpp" />
+    <ClCompile Include="GS.c" />
     <ClCompile Include="MTGS.cpp" />
     <ClCompile Include="x86\ix86-32\iCore-32.cpp" />
     <ClCompile Include="x86\iCore.cpp" />

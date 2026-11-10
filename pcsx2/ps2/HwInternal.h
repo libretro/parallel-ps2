@@ -51,7 +51,7 @@ extern void dmaGIF(void);
 extern void gifHwReset(void);  /* the GIF unit and its paths */
 extern void gifFifoReset(void); /* the 16-quadword FIFO */
 
-/* GS.cpp: the GS's part of hwReset. */
+/* GS.c: the GS's part of hwReset. */
 extern void gsReset(void);
 
 /* MTGS.cpp: a GS download into EE memory (VIF1 reversed), done once the
@@ -74,6 +74,10 @@ extern bool emu_config_viffifo_hack(void);
 extern bool emu_config_vif1stall_hack(void);
 extern bool emu_config_vusync_hack(void);
 extern bool emu_config_instant_vu1(void);
+/* The PAL or NTSC frame rate the user set, and the default, in mHz
+ * (Counters.c). */
+extern u32 emu_config_framerate_mhz(bool pal);
+extern u32 emu_config_default_framerate_mhz(bool pal);
 /* The user's launch arguments for the game (R5900.c's EELOAD hooks). */
 extern const char* emu_config_game_args(void);
 

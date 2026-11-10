@@ -96,7 +96,7 @@ endif()
 set(pcsx2Sources
 	Cache.c
 	COP0.c
-	Counters.cpp
+	Counters.c
 	GameDatabase.cpp
 	${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.cpp
 	Elfheader.c
@@ -121,7 +121,7 @@ set(pcsx2Sources
 	SaveStateFreeze.c
 	Gif.c
 	Gif_Unit.c
-	GS.cpp
+	GS.c
 	HostFS.c
 	Interpreter.c
 	IopBios.c

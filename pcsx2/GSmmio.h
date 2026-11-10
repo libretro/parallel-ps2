@@ -1,6 +1,6 @@
 /* The EE's view of the GS privileged registers: their storage, the CSR
  * accessors the EE, GIF and GS threads share, and the handlers the vtlb
- * maps over 0x12000000 (GS.cpp). C, so Memory.c and Gif.c reach them;
+ * maps over 0x12000000 (GS.c). C, so Memory.c and Gif.c reach them;
  * GS.h includes this. */
 #pragma once
 
