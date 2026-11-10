@@ -6,7 +6,7 @@
  *  every one of them through the interpreter's own dispatch table.
  *
  *  Reaching them takes the instruction encoding rather than a function
- *  pointer, because the EFU entry points are static. VU0microInterp.cpp
+ *  pointer, because the EFU entry points are static. VU0microInterp.c
  *  indexes VU0_LOWER_OPCODE with code >> 25, and the type-3 and type-4
  *  lower ops encode as bit 31 set, the source register at 11, the field
  *  selector at 21, and the opcode in the low ten bits -- the same layout

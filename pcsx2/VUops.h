@@ -71,6 +71,10 @@ typedef struct _VURegsNum
 	int cycles;
 } _VURegsNum;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef void (*FnPtr_VuVoid)(void);
 typedef void (*FnPtr_VuRegsN)(_VURegsNum *VUregsn);
 
@@ -90,3 +94,8 @@ extern void _vuTestLowerStalls(VURegs * VU, _VURegsNum *VUregsn);
 extern void _vuAddUpperStalls(VURegs * VU, _VURegsNum *VUregsn);
 extern void _vuAddLowerStalls(VURegs * VU, _VURegsNum *VUregsn);
 extern void _vuXGKICKTransfer(s32 cycles, bool flush);
+extern void _vuFlushAll(VURegs* VU);
+
+#ifdef __cplusplus
+}
+#endif

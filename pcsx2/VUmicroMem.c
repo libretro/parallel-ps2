@@ -13,20 +13,18 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cstring> /* memset */
-#include <utility>
+#include <string.h>
 
 #include "Common.h"
 #include "../common/Align.h"
 #include "VUmicro.h"
-#include "MTVU.h"
 
-alignas(16) VURegs vuRegs[2]{};
+PCSX2_ALIGN(16) VURegs vuRegs[2];
 
 /* VU0/1 on-chip memory */
 #define VU_MEMORY_RESERVE_ALIGNED pcsx2_page_align(VU_MEMORY_RESERVE_SIZE)
 
-void vu_memory_assign(const VirtualMemoryManager* main_map)
+void vu_memory_assign(const struct VirtualMemoryManager* main_map)
 {
 	u8* curpos = vmm_alloc(main_map, HOSTMEM_VUMEM_OFFSET, VU_MEMORY_RESERVE_ALIGNED);
 
@@ -39,7 +37,7 @@ void vu_memory_assign(const VirtualMemoryManager* main_map)
 	vuRegs[1].Mem   = curpos;
 }
 
-void vu_memory_release(const VirtualMemoryManager* main_map)
+void vu_memory_release(const struct VirtualMemoryManager* main_map)
 {
 	if (vuRegs[0].Micro)
 		vmm_free(main_map, vuRegs[0].Micro, VU_MEMORY_RESERVE_ALIGNED);
@@ -54,7 +52,7 @@ void vu_memory_reset(void)
 {
 	memset(vuRegs[0].Micro, 0, VU_MEMORY_RESERVE_ALIGNED);
 
-	// === VU0 Initialization ===
+	/* === VU0 Initialization === */
 	memset(&vuRegs[0].ACC, 0, sizeof(vuRegs[0].ACC));
 	memset(vuRegs[0].VF, 0, sizeof(vuRegs[0].VF));
 	memset(vuRegs[0].VI, 0, sizeof(vuRegs[0].VI));
@@ -64,7 +62,7 @@ void vu_memory_reset(void)
 	vuRegs[0].VF[0].f.w = 1.0f;
 	vuRegs[0].VI[0].UL  = 0;
 
-	// === VU1 Initialization ===
+	/* === VU1 Initialization === */
 	memset(&vuRegs[1].ACC, 0, sizeof(vuRegs[1].ACC));
 	memset(vuRegs[1].VF, 0, sizeof(vuRegs[1].VF));
 	memset(vuRegs[1].VI, 0, sizeof(vuRegs[1].VI));
@@ -83,7 +81,7 @@ bool vuMicroFreeze(SaveStateBase *s)
 	if (!(SaveState_FreezeTag(s,  "vuMicroRegs" )))
 		return false;
 
-	// VU0 state information
+	/* VU0 state information */
 
 	SaveState_Freeze(s, vuRegs[0].ACC);
 	SaveState_Freeze(s, vuRegs[0].VF);
@@ -122,7 +120,7 @@ bool vuMicroFreeze(SaveStateBase *s)
 	SaveState_Freeze(s, vuRegs[0].ialuwritepos);
 	SaveState_Freeze(s, vuRegs[0].ialucount);
 
-	// VU1 state information
+	/* VU1 state information */
 	SaveState_Freeze(s, vuRegs[1].ACC);
 	SaveState_Freeze(s, vuRegs[1].VF);
 	SaveState_Freeze(s, vuRegs[1].VI);

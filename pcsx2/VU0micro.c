@@ -13,26 +13,23 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
-// This module contains code shared by both the dynarec and interpreter versions
-// of the VU0 micro.
+/* This module contains code shared by both the dynarec and interpreter versions */
+/* of the VU0 micro. */
 
 #include "Common.h"
 #include "VUmicro.h"
 
-#include <cmath>
-
-// This is called by the COP2 as per the CTC instruction
+/* This is called by the COP2 as per the CTC instruction */
 void vu0ResetRegs(void)
 {
-	vuRegs[0].VI[REG_VPU_STAT].UL &= ~0xff; // stop vu0
-	vuRegs[0].VI[REG_FBRST].UL &= ~0xff; // stop vu0
+	vuRegs[0].VI[REG_VPU_STAT].UL &= ~0xff; /* stop vu0 */
+	vuRegs[0].VI[REG_FBRST].UL &= ~0xff; /* stop vu0 */
 	vif0Regs.stat.VEW = false;
 }
 
 static __fi u32 vu0DenormalizeMicroStatus(u32 nstatus)
 {
-	// from mVUallocSFLAGd()
+	/* from mVUallocSFLAGd() */
 	return ((nstatus >> 3) & 0x18u) | ((nstatus >> 11) & 0x1800u) | ((nstatus >> 14) & 0x3cf0000u);
 }
 
@@ -45,20 +42,21 @@ static __fi u32 vu0DenormalizeMicroStatus(u32 nstatus)
 
 void vu0ExecMicro(u32 addr)
 {
+	u32 CLIP, MAC, STATUS;
 	if (vuRegs[0].VI[REG_VPU_STAT].UL & 0x1)
 		vu0Finish();
 
-	// Need to copy the clip flag back to the interpreter in case COP2 has edited it
-	const u32 CLIP       = vuRegs[0].VI[REG_CLIP_FLAG].UL;
-	const u32 MAC        = vuRegs[0].VI[REG_MAC_FLAG].UL;
-	const u32 STATUS     = vuRegs[0].VI[REG_STATUS_FLAG].UL;
+	/* Need to copy the clip flag back to the interpreter in case COP2 has edited it */
+	CLIP   = vuRegs[0].VI[REG_CLIP_FLAG].UL;
+	MAC    = vuRegs[0].VI[REG_MAC_FLAG].UL;
+	STATUS = vuRegs[0].VI[REG_STATUS_FLAG].UL;
 	vuRegs[0].clipflag   = CLIP;
 	vuRegs[0].macflag    = MAC;
 	vuRegs[0].statusflag = STATUS;
 
-	// Copy flags to micro instances, since they may be out of sync if COP2 has run.
-	// We do this at program start time, because COP2 can't execute until the program has completed,
-	// but long-running program may be interrupted so we can't do it at dispatch time.
+	/* Copy flags to micro instances, since they may be out of sync if COP2 has run. */
+	/* We do this at program start time, because COP2 can't execute until the program has completed, */
+	/* but long-running program may be interrupted so we can't do it at dispatch time. */
 	vu0SetMicroFlags(vuRegs[0].micro_clipflags, CLIP);
 	vu0SetMicroFlags(vuRegs[0].micro_macflags, MAC);
 	vu0SetMicroFlags(vuRegs[0].micro_statusflags, vu0DenormalizeMicroStatus(STATUS));

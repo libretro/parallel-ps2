@@ -101,7 +101,7 @@ set(pcsx2Sources
 	${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.cpp
 	Elfheader.c
 	FW.c
-	FiFo.cpp
+	FiFo.c
 	FPU.cpp
 	ps2float.c
 	IopGte.c
@@ -159,12 +159,12 @@ set(pcsx2Sources
 	VirtualMemory.c
 	vtlb.cpp
 	VU0.cpp
-	VUmicro.cpp
-	VU0micro.cpp
-	VU0microInterp.cpp
-	VU1micro.cpp
-	VU1microInterp.cpp
-	VUmicroMem.cpp
+	VUmicro.c
+	VU0micro.c
+	VU0microInterp.c
+	VU1micro.c
+	VU1microInterp.c
+	VUmicroMem.c
 	VUops.cpp)
 
 # Main pcsx2 header

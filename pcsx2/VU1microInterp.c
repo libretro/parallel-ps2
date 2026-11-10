@@ -13,26 +13,21 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <string.h>
+
 #include "Common.h"
 #include "common/Pcsx2Defs.h"
 
 #include "VUmicro.h"
-#include "GS.h"
-#include "Gif_Unit.h"
-#include "MTVU.h"
+#include "ps2/HwInternal.h"
 
-#include <cfenv>
-
-extern void _vuFlushAll(VURegs* VU);
-extern void _vuXGKICKFlush(VURegs* VU);
-
-void _vu1ExecUpper(VURegs* VU, u32* ptr)
+static void _vu1ExecUpper(VURegs* VU, u32* ptr)
 {
 	VU->code = ptr[1];
 	VU1_UPPER_OPCODE[VU->code & 0x3f]();
 }
 
-void _vu1ExecLower(VURegs* VU, u32* ptr)
+static void _vu1ExecLower(VURegs* VU, u32* ptr)
 {
 	VU->code = ptr[0];
 	VU1_LOWER_OPCODE[VU->code >> 25]();
@@ -42,16 +37,17 @@ static void _vu1Exec(VURegs* VU)
 {
 	_VURegsNum lregs;
 	_VURegsNum uregs;
+	u64 cyclesBeforeOp;
 	u32* ptr;
 
 	ptr = (u32*)&VU->Micro[VU->VI[REG_TPC].UL];
 	VU->VI[REG_TPC].UL += 8;
 
-	if (ptr[1] & 0x40000000) // E flag
+	if (ptr[1] & 0x40000000) /* E flag */
 	{
 		VU->ebit = 2;
 	}
-	if (ptr[1] & 0x10000000) // D flag
+	if (ptr[1] & 0x10000000) /* D flag */
 	{
 		if (vuRegs[0].VI[REG_FBRST].UL & 0x400)
 		{
@@ -60,7 +56,7 @@ static void _vu1Exec(VURegs* VU)
 			VU->ebit = 1;
 		}
 	}
-	if (ptr[1] & 0x08000000) // T flag
+	if (ptr[1] & 0x08000000) /* T flag */
 	{
 		if (vuRegs[0].VI[REG_FBRST].UL & 0x800)
 		{
@@ -73,12 +69,12 @@ static void _vu1Exec(VURegs* VU)
 	VU->code = ptr[1];
 	VU1regs_UPPER_OPCODE[VU->code & 0x3f](&uregs);
 
-	u64 cyclesBeforeOp = vuRegs[1].cycle-1;
+	cyclesBeforeOp = vuRegs[1].cycle - 1;
 
 	_vuTestUpperStalls(VU, &uregs);
 
 	/* check upper flags */
-	if (ptr[1] & 0x80000000) // I Flag (Lower op is a float)
+	if (ptr[1] & 0x80000000) /* I Flag (Lower op is a float) */
 	{
 		_vuTestPipes(VU);
 
@@ -88,8 +84,8 @@ static void _vu1Exec(VURegs* VU)
 		_vu1ExecUpper(VU, ptr);
 
 		VU->VI[REG_I].UL = ptr[0];
-		//Lower not used, set to 0 to fill in the FMAC stall gap
-		//Could probably get away with just running upper stalls, but lets not tempt fate.
+		/* Lower not used, set to 0 to fill in the FMAC stall gap */
+		/* Could probably get away with just running upper stalls, but lets not tempt fate. */
 		memset(&lregs, 0, sizeof(lregs));
 	}
 	else
@@ -116,7 +112,7 @@ static void _vu1Exec(VURegs* VU)
 		{
 			if (lregs.VFwrite == uregs.VFwrite)
 			{
-				//log_cb(RETRO_LOG_WARN, "*PCSX2*: Warning, VF write to the same reg in both lower/upper cycle pc=%x\n", VU->VI[REG_TPC].UL);
+				/* log_cb(RETRO_LOG_WARN, "*PCSX2*: Warning, VF write to the same reg in both lower/upper cycle pc=%x\n", VU->VI[REG_TPC].UL); */
 				discard = 1;
 			}
 			if (lregs.VFread0 == uregs.VFwrite ||
@@ -130,12 +126,12 @@ static void _vu1Exec(VURegs* VU)
 		{
 			if (lregs.VIwrite & (1 << REG_CLIP_FLAG))
 			{
-				//log_cb(RETRO_LOG_WARN, "*PCSX2*: Warning, VI write to the same reg in both lower/upper cyclepc=%x\n", VU->VI[REG_TPC].UL);
+				/* log_cb(RETRO_LOG_WARN, "*PCSX2*: Warning, VI write to the same reg in both lower/upper cyclepc=%x\n", VU->VI[REG_TPC].UL); */
 				discard = 1;
 			}
 			if (lregs.VIread & (1 << REG_CLIP_FLAG))
 			{
-				//log_cb(RETRO_LOG_WARN, "*PCSX2*: Warning, VI read same cycle as write pc=%x\n", VU->VI[REG_TPC].UL);
+				/* log_cb(RETRO_LOG_WARN, "*PCSX2*: Warning, VI read same cycle as write pc=%x\n", VU->VI[REG_TPC].UL); */
 				_VI = VU->VI[REG_CLIP_FLAG];
 				vireg = REG_CLIP_FLAG;
 			}
@@ -168,7 +164,7 @@ static void _vu1Exec(VURegs* VU)
 			}
 		}
 	}
-	// Clear an FMAC read for use
+	/* Clear an FMAC read for use */
 	if (uregs.pipe == VUPIPE_FMAC || lregs.pipe == VUPIPE_FMAC)
 		_vuClearFMAC(VU);
 
@@ -201,17 +197,17 @@ static void _vu1Exec(VURegs* VU)
 
 			if(vuRegs[1].xgkickenable)
 				_vuXGKICKTransfer(0, true);
-			// In instant VU mode, VU1 goes WAY ahead of the CPU, 
-			// making the XGKick fall way behind
-			// We also have some code to update it in VIF Unpacks too, 
-			// since in some games (Aggressive Inline) overwrite the XGKick data
-			// VU currently flushes XGKICK on end, so this isn't needed, yet
-			if (INSTANT_VU1)
+			/* In instant VU mode, VU1 goes WAY ahead of the CPU, */
+			/* making the XGKick fall way behind */
+			/* We also have some code to update it in VIF Unpacks too, */
+			/* since in some games (Aggressive Inline) overwrite the XGKick data */
+			/* VU currently flushes XGKICK on end, so this isn't needed, yet */
+			if (emu_config_instant_vu1())
 				vuRegs[1].xgkicklastcycle = cpuRegs.cycle;
 		}
 	}
 
-	// Progress the write position of the FMAC pipeline by one place
+	/* Progress the write position of the FMAC pipeline by one place */
 	if (uregs.pipe == VUPIPE_FMAC || lregs.pipe == VUPIPE_FMAC)
 		VU->fmacwritepos = (VU->fmacwritepos + 1) & 3;
 }
@@ -239,10 +235,11 @@ static void interp_vu1_set_start_pc(u32 startPC)
 
 static void interp_vu1_execute(u32 cycles)
 {
-	const FPControlRegisterBackup fpcr_backup(EmuConfig.Cpu.VU1FPCR);
+	const u64 fpcr = emu_fpcr_set_vu(1);
+	u64 startcycles;
 
 	vuRegs[1].VI[REG_TPC].UL <<= 3;
-	u64 startcycles = vuRegs[1].cycle;
+	startcycles = vuRegs[1].cycle;
 
 	while ((vuRegs[1].cycle - startcycles) < cycles)
 	{
@@ -260,6 +257,7 @@ static void interp_vu1_execute(u32 cycles)
 	}
 	vuRegs[1].VI[REG_TPC].UL >>= 3;
 	vuRegs[1].nextBlockCycles = (vuRegs[1].cycle - cpuRegs.cycle) + 1;
+	emu_fpcr_restore(fpcr);
 }
 
 static void interp_vu1_shutdown(void) {}

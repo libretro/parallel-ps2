@@ -326,7 +326,7 @@
     <ClCompile Include="Counters.cpp">
       <Filter>System\Ps2\EmotionEngine</Filter>
     </ClCompile>
-    <ClCompile Include="FiFo.cpp">
+    <ClCompile Include="FiFo.c">
       <Filter>System\Ps2\EmotionEngine\Hardware</Filter>
     </ClCompile>
     <ClCompile Include="Hw.c">
@@ -347,10 +347,10 @@
     <ClCompile Include="MTVU.cpp">
       <Filter>System\Ps2\EmotionEngine\VU</Filter>
     </ClCompile>
-    <ClCompile Include="VUmicro.cpp">
+    <ClCompile Include="VUmicro.c">
       <Filter>System\Ps2\EmotionEngine\VU</Filter>
     </ClCompile>
-    <ClCompile Include="VUmicroMem.cpp">
+    <ClCompile Include="VUmicroMem.c">
       <Filter>System\Ps2\EmotionEngine\VU</Filter>
     </ClCompile>
     <ClCompile Include="x86\microVU.cpp">
@@ -359,16 +359,16 @@
     <ClCompile Include="VU0.cpp">
       <Filter>System\Ps2\EmotionEngine\VU\Interpreter</Filter>
     </ClCompile>
-    <ClCompile Include="VU0micro.cpp">
+    <ClCompile Include="VU0micro.c">
       <Filter>System\Ps2\EmotionEngine\VU\Interpreter</Filter>
     </ClCompile>
-    <ClCompile Include="VU0microInterp.cpp">
+    <ClCompile Include="VU0microInterp.c">
       <Filter>System\Ps2\EmotionEngine\VU\Interpreter</Filter>
     </ClCompile>
-    <ClCompile Include="VU1micro.cpp">
+    <ClCompile Include="VU1micro.c">
       <Filter>System\Ps2\EmotionEngine\VU\Interpreter</Filter>
     </ClCompile>
-    <ClCompile Include="VU1microInterp.cpp">
+    <ClCompile Include="VU1microInterp.c">
       <Filter>System\Ps2\EmotionEngine\VU\Interpreter</Filter>
     </ClCompile>
     <ClCompile Include="VUops.cpp">

@@ -794,6 +794,7 @@ void VU_Thread::WriteRow(vifStruct& _vif)
 /* The VU1 thread as the VIF DMA (Vif1_Dma.c, Vif1_MFIFO.c) reaches it. */
 void mtvu_get_changes(void) { vu1Thread.Get_MTVUChanges(); }
 void mtvu_kick_pending(void) { vu1Thread.KickPending(); }
+void mtvu_execute_vu(u32 addr, u32 vif_top, u32 vif_itop, u32 fbrst) { vu1Thread.ExecuteVU(addr, vif_top, vif_itop, fbrst); }
 
 /* VIF1's STCOL/STROW (Vif_Codes.c). */
 void mtvu_write_col(void) { vu1Thread.WriteCol(vif1); }

@@ -62,17 +62,17 @@ struct VUmicroCpu
 	void (*ResumeXGkick)(void); /* NULL when the provider has none */
 };
 
-/* Executes a block based on EE delta time (see VUmicro.cpp); SPR.c
- * catches the VUs up through it. */
+/* The VU micro units are C (VUmicro.c, VU0micro.c, VU1micro.c, the two
+ * interpreters and VUmicroMem.c); everything here carries C linkage. */
 #ifdef __cplusplus
 extern "C" {
 #endif
-void vucpu_execute_block(const struct VUmicroCpu* cpu, int startUp);
-#ifdef __cplusplus
-}
-#endif
 
-/* Called from recompiled code after a COP2 transfer; see VUmicro.cpp. */
+/* Executes a block based on EE delta time (see VUmicro.c); SPR.c
+ * catches the VUs up through it. */
+void vucpu_execute_block(const struct VUmicroCpu* cpu, int startUp);
+
+/* Called from recompiled code after a COP2 transfer; see VUmicro.c. */
 void vucpu_execute_block_jit(const struct VUmicroCpu* cpu, int interlocked);
 
 extern const struct VUmicroCpu vucpu_interp_vu0;
@@ -83,10 +83,6 @@ extern const struct VUmicroCpu vucpu_rec_vu1;
 void vucpu_rec_vu0_reserve(void);
 void vucpu_rec_vu1_reserve(void);
 
-/* COP2.c and Memory.c reach these, so they carry C linkage. */
-#ifdef __cplusplus
-extern "C" {
-#endif
 extern const struct VUmicroCpu* CpuVU0;
 extern const struct VUmicroCpu* CpuVU1;
 
@@ -106,8 +102,17 @@ extern void vu_memory_release(const struct VirtualMemoryManager* main_map);
  * publishes it with mtvu_write_mem_commit; the _micro/_data_mem forms copy
  * from a buffer. */
 extern void mtvu_wait_vu(void);
-/* Pcsx2Config.cpp: whether VU1 runs on its own thread (THREAD_VU1). */
+/* Pcsx2Config.cpp: whether VU1 runs on its own thread (THREAD_VU1), the
+ * EE cycle rate the VU0 interpreter scales its cycles by (as the VU sync
+ * hack allows, emu_config_vusync_hack in ps2/HwInternal.h), and the host
+ * rounding mode a VU unit runs under: set returns the mode it replaced,
+ * for restore to put back. */
 extern bool emu_config_thread_vu1(void);
+extern int  emu_config_ee_cycle_rate(void);
+extern u64  emu_fpcr_set_vu(int unit);
+extern void emu_fpcr_restore(u64 saved);
+/* MTVU.cpp: start a VU1 program on the VU1 thread. */
+extern void mtvu_execute_vu(u32 addr, u32 vif_top, u32 vif_itop, u32 fbrst);
 extern void* mtvu_write_mem_begin(int data_mem, u32 addr, u32 size);
 extern void mtvu_write_mem_commit(void);
 extern void mtvu_write_micro_mem(u32 vu_micro_addr, const void* data, u32 size);
@@ -120,32 +125,21 @@ extern void mtvu_write_row(void);
 extern struct vifStruct* mtvu_vif(void);
 extern struct VIFregisters* mtvu_vif_regs(void);
 extern void mtvu_vif_unpack(const u8* data, u32 size);
-#ifdef __cplusplus
-}
-#endif
 
 /* VU0 */
-extern void vu0ResetRegs();
+extern void vu0ResetRegs(void);
 extern void vu0Exec(VURegs* VU);
 /* VU0.cpp; Vif0_Dma.c finishes VU0 through it. */
-#ifdef __cplusplus
-extern "C" {
-#endif
 extern void vu0Finish(void);
-#ifdef __cplusplus
-}
-#endif
 
 /* VU1 */
-/* VU1micro.cpp; Dmac.c finishes VU1 through it. */
-#ifdef __cplusplus
-extern "C" {
-#endif
+/* VU1micro.c; Dmac.c finishes VU1 through it. */
 extern void vu1Finish(bool add_cycles);
-/* VU1micro.cpp; Vif_Codes.c starts VU1 programs through it. */
+/* VU1micro.c; Vif_Codes.c starts VU1 programs through it. */
 extern void vu1ExecMicro(u32 addr);
+extern void vu1ResetRegs(void);
+extern void vu1Exec(VURegs* VU);
+
 #ifdef __cplusplus
 }
 #endif
-extern void vu1ResetRegs();
-extern void vu1Exec(VURegs* VU);

@@ -13,15 +13,13 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <string.h>
+
 #include "Common.h"
 #include "common/Pcsx2Defs.h"
 
 #include "VUmicro.h"
-
-#include <cfenv>
-#include "Config.h"
-
-extern void _vuFlushAll(VURegs* VU);
+#include "ps2/HwInternal.h"
 
 static void _vu0ExecUpper(VURegs* VU, u32* ptr)
 {
@@ -39,18 +37,19 @@ static void _vu0Exec(VURegs* VU)
 {
 	_VURegsNum lregs;
 	_VURegsNum uregs;
+	u64 cyclesBeforeOp;
 	u32* ptr = (u32*)&VU->Micro[VU->VI[REG_TPC].UL];
 	VU->VI[REG_TPC].UL += 8;
 
-	if (ptr[1] & 0x40000000) // E flag
+	if (ptr[1] & 0x40000000) /* E flag */
 	{
 		VU->ebit = 2;
 	}
-	if (ptr[1] & 0x20000000 && VU == &vuRegs[0]) // M flag
+	if (ptr[1] & 0x20000000 && VU == &vuRegs[0]) /* M flag */
 	{
 		VU->flags |= VUFLAG_MFLAGSET;
 	}
-	if (ptr[1] & 0x10000000) // D flag
+	if (ptr[1] & 0x10000000) /* D flag */
 	{
 		if (vuRegs[0].VI[REG_FBRST].UL & 0x4)
 		{
@@ -59,7 +58,7 @@ static void _vu0Exec(VURegs* VU)
 			VU->ebit = 1;
 		}
 	}
-	if (ptr[1] & 0x08000000) // T flag
+	if (ptr[1] & 0x08000000) /* T flag */
 	{
 		if (vuRegs[0].VI[REG_FBRST].UL & 0x8)
 		{
@@ -72,12 +71,12 @@ static void _vu0Exec(VURegs* VU)
 	VU->code = ptr[1];
 	VU0regs_UPPER_OPCODE[VU->code & 0x3f](&uregs);
 
-	u64 cyclesBeforeOp = vuRegs[0].cycle - 1;
+	cyclesBeforeOp = vuRegs[0].cycle - 1;
 
 	_vuTestUpperStalls(VU, &uregs);
 
 	/* check upper flags */
-	if (ptr[1] & 0x80000000) // I flag
+	if (ptr[1] & 0x80000000) /* I flag */
 	{
 		_vuTestPipes(VU);
 
@@ -112,7 +111,7 @@ static void _vu0Exec(VURegs* VU)
 		{
 			if (lregs.VFwrite == uregs.VFwrite)
 			{
-				//				log_cb(RETRO_LOG_WARN, "*PCSX2*: Warning, VF write to the same reg in both lower/upper cycle\n");
+				/* log_cb(RETRO_LOG_WARN, "*PCSX2*: Warning, VF write to the same reg in both lower/upper cycle\n"); */
 				discard = 1;
 			}
 			if (lregs.VFread0 == uregs.VFwrite ||
@@ -126,7 +125,7 @@ static void _vu0Exec(VURegs* VU)
 		{
 			if (lregs.VIwrite & (1 << REG_CLIP_FLAG))
 			{
-				//log_cb(RETRO_LOG_WARN, "*PCSX2*: Warning, VI write to the same reg in both lower/upper cycle\n");
+				/* log_cb(RETRO_LOG_WARN, "*PCSX2*: Warning, VI write to the same reg in both lower/upper cycle\n"); */
 				discard = 1;
 			}
 			if (lregs.VIread & (1 << REG_CLIP_FLAG))
@@ -196,7 +195,7 @@ static void _vu0Exec(VURegs* VU)
 		}
 	}
 
-	// Progress the write position of the FMAC pipeline by one place
+	/* Progress the write position of the FMAC pipeline by one place */
 	if (uregs.pipe == VUPIPE_FMAC || lregs.pipe == VUPIPE_FMAC)
 		VU->fmacwritepos = (VU->fmacwritepos + 1) & 3;
 }
@@ -208,9 +207,9 @@ void vu0Exec(VURegs* VU)
 	_vu0Exec(VU);
 }
 
-// --------------------------------------------------------------------------------------
-//  VU0microInterpreter
-// --------------------------------------------------------------------------------------
+/* -------------------------------------------------------------------------------------- */
+/* VU0microInterpreter */
+/* -------------------------------------------------------------------------------------- */
 
 static void interp_vu0_reset(void)
 {
@@ -228,16 +227,18 @@ static void interp_vu0_set_start_pc(u32 startPC)
 
 static void interp_vu0_execute(u32 cycles)
 {
-	const FPControlRegisterBackup fpcr_backup(EmuConfig.Cpu.VU0FPCR);
+	const u64 fpcr = emu_fpcr_set_vu(0);
+	const int cycle_rate = emu_config_ee_cycle_rate();
+	u64 startcycles;
 
 	vuRegs[0].VI[REG_TPC].UL <<= 3;
 	vuRegs[0].flags &= ~VUFLAG_MFLAGSET;
-	u64 startcycles  = vuRegs[0].cycle;
+	startcycles = vuRegs[0].cycle;
 	while ((vuRegs[0].cycle - startcycles) < cycles)
 	{
 		if (!(vuRegs[0].VI[REG_VPU_STAT].UL & 0x1))
 		{
-			// Branches advance the PC to the new location if there was a branch in the E-Bit delay slot
+			/* Branches advance the PC to the new location if there was a branch in the E-Bit delay slot */
 			if (vuRegs[0].branch)
 			{
 				vuRegs[0].VI[REG_TPC].UL = vuRegs[0].branchpc;
@@ -253,28 +254,28 @@ static void interp_vu0_execute(u32 cycles)
 
 	vuRegs[0].VI[REG_TPC].UL >>= 3;
 
-	if (EmuConfig.Speedhacks.EECycleRate != 0 && (!EmuConfig.Gamefixes.VUSyncHack || EmuConfig.Speedhacks.EECycleRate < 0))
+	if (cycle_rate != 0 && (!emu_config_vusync_hack() || cycle_rate < 0))
 	{
 		u64 cycle_change = vuRegs[0].cycle - startcycles;
 		vuRegs[0].cycle -= cycle_change;
-		switch (pcsx2_min_i(static_cast<int>(EmuConfig.Speedhacks.EECycleRate), static_cast<int>(cycle_change)))
+		switch (pcsx2_min_i(cycle_rate, (int)cycle_change))
 		{
-			case -3: // 50%
+			case -3: /* 50% */
 				cycle_change *= 2.0f;
 				break;
-			case -2: // 60%
+			case -2: /* 60% */
 				cycle_change *= 1.6666667f;
 				break;
-			case -1: // 75%
+			case -1: /* 75% */
 				cycle_change *= 1.3333333f;
 				break;
-			case 1: // 130%
+			case 1: /* 130% */
 				cycle_change /= 1.3f;
 				break;
-			case 2: // 180%
+			case 2: /* 180% */
 				cycle_change /= 1.8f;
 				break;
-			case 3: // 300%
+			case 3: /* 300% */
 				cycle_change /= 3.0f;
 				break;
 			default:
@@ -284,6 +285,7 @@ static void interp_vu0_execute(u32 cycles)
 	}
 
 	vuRegs[0].nextBlockCycles = (vuRegs[0].cycle - cpuRegs.cycle) + 1;
+	emu_fpcr_restore(fpcr);
 }
 
 static void interp_vu0_shutdown(void) {}

@@ -847,6 +847,25 @@ bool emu_config_instant_vu1(void)
 	return INSTANT_VU1;
 }
 
+int emu_config_ee_cycle_rate(void)
+{
+	return EmuConfig.Speedhacks.EECycleRate;
+}
+
+u64 emu_fpcr_set_vu(int unit)
+{
+	const FPControlRegister prev = FPControlRegister::GetCurrent();
+	FPControlRegister::SetCurrent(unit ? EmuConfig.Cpu.VU1FPCR : EmuConfig.Cpu.VU0FPCR);
+	return prev.bitmask;
+}
+
+void emu_fpcr_restore(u64 saved)
+{
+	FPControlRegister r;
+	r.bitmask = (decltype(r.bitmask))saved;
+	FPControlRegister::SetCurrent(r);
+}
+
 
 /* A folder under DataRoot unless given absolute. */
 static void SetFolder(char* out, size_t out_size, const char* root, const char* value)

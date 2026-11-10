@@ -248,6 +248,13 @@ SOURCES_C += \
 	$(LRPS2_DIR)/Vif1_MFIFO.c \
 	$(LRPS2_DIR)/Gif.c \
 	$(LRPS2_DIR)/Gif_Unit.c \
+	$(LRPS2_DIR)/FiFo.c \
+	$(LRPS2_DIR)/VU0micro.c \
+	$(LRPS2_DIR)/VU0microInterp.c \
+	$(LRPS2_DIR)/VU1micro.c \
+	$(LRPS2_DIR)/VU1microInterp.c \
+	$(LRPS2_DIR)/VUmicro.c \
+	$(LRPS2_DIR)/VUmicroMem.c \
 	$(LRPS2_DIR)/Vif_Codes.c \
 	$(LRPS2_DIR)/Vif_Transfer.c \
 	$(LRPS2_DIR)/Vif_Unpack.c \
@@ -294,7 +301,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/Cache.cpp \
 	$(LRPS2_DIR)/COP0.cpp \
 	$(LRPS2_DIR)/Counters.cpp \
-	$(LRPS2_DIR)/FiFo.cpp \
 	$(LRPS2_DIR)/FPU.cpp \
 	$(LRPS2_DIR)/GameDatabase.cpp \
 	$(LRPS2_DIR)/GameDatabaseBuiltin.cpp \
@@ -312,12 +318,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/VMManager.cpp \
 	$(LRPS2_DIR)/vtlb.cpp \
 	$(LRPS2_DIR)/VU0.cpp \
-	$(LRPS2_DIR)/VU0micro.cpp \
-	$(LRPS2_DIR)/VU0microInterp.cpp \
-	$(LRPS2_DIR)/VU1micro.cpp \
-	$(LRPS2_DIR)/VU1microInterp.cpp \
-	$(LRPS2_DIR)/VUmicro.cpp \
-	$(LRPS2_DIR)/VUmicroMem.cpp \
 	$(LRPS2_DIR)/VUops.cpp
 
 # pcsx2/Frontend

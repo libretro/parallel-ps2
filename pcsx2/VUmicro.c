@@ -13,48 +13,49 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "Common.h"
 #include "VUmicro.h"
-#include "MTVU.h"
-#include "GS.h"
-#include "Gif_Unit.h"
+#include "ps2/HwInternal.h"
 
 const struct VUmicroCpu* CpuVU0 = NULL;
 const struct VUmicroCpu* CpuVU1 = NULL;
 
-__inline u32 CalculateMinRunCycles(u32 cycles, bool requiresAccurateCycles)
+static __fi u32 CalculateMinRunCycles(u32 cycles, bool requiresAccurateCycles)
 {
-	// If we're running an interlocked COP2 operation
-	// run for an exact amount of cycles
+	/* If we're running an interlocked COP2 operation */
+	/* run for an exact amount of cycles */
 	if(requiresAccurateCycles)
 		return cycles;
 
-	// Allow a minimum of 16 cycles to avoid running small blocks
-	// Running a block of like 3 cycles is highly inefficient
-	// so while sync isn't tight, it's okay to run ahead a little bit.
+	/* Allow a minimum of 16 cycles to avoid running small blocks */
+	/* Running a block of like 3 cycles is highly inefficient */
+	/* so while sync isn't tight, it's okay to run ahead a little bit. */
 	return pcsx2_max_i(16U, cycles);
 }
 
-// Executes a Block based on EE delta time
+/* Executes a Block based on EE delta time */
 void vucpu_execute_block(const struct VUmicroCpu* cpu, int startUp)
 {
-	const u32& stat = vuRegs[0].VI[REG_VPU_STAT].UL;
-	const int test  = cpu->idx ? 0x100 : 1;
+	const int test = cpu->idx ? 0x100 : 1;
 
-	if (cpu->idx && THREAD_VU1)
+	if (cpu->idx && emu_config_thread_vu1())
 	{
-		vu1Thread.Get_MTVUChanges();
+		mtvu_get_changes();
 		return;
 	}
 
-	if (!(stat & test))
+	if (!(vuRegs[0].VI[REG_VPU_STAT].UL & test))
 		return;
 
 	if (startUp)
 	{
 		cpu->Execute(16U);
 	}
-	else // Continue Executing
+	else /* Continue Executing */
 	{
 		u64 cycle = cpu->idx ? vuRegs[1].cycle : vuRegs[0].cycle;
 		s32 delta = (s32)(u32)(cpuRegs.cycle - cycle);
@@ -64,20 +65,17 @@ void vucpu_execute_block(const struct VUmicroCpu* cpu, int startUp)
 	}
 }
 
-// This function is called by VU0 Macro (COP2) after transferring some
-// EE data to VU0's registers. We want to run VU0 Micro right after this
-// to ensure that the register is used at the correct time.
-// This fixes spinning/hanging in some games like Ratchet and Clank's Intro.
+/* This function is called by VU0 Macro (COP2) after transferring some */
+/* EE data to VU0's registers. We want to run VU0 Micro right after this */
+/* to ensure that the register is used at the correct time. */
+/* This fixes spinning/hanging in some games like Ratchet and Clank's Intro. */
 void vucpu_execute_block_jit(const struct VUmicroCpu* cpu, int interlocked)
 {
-	const u32& stat = vuRegs[0].VI[REG_VPU_STAT].UL;
-	constexpr int test = 1;
-
-	if (stat & test) // VU is running
-	{ 
+	if (vuRegs[0].VI[REG_VPU_STAT].UL & 1) /* VU is running */
+	{
 		s64 delta = (s64)(u64)(cpuRegs.cycle - vuRegs[0].cycle);
 		if (delta > 0)
-			cpu->Execute(CalculateMinRunCycles(delta, interlocked)); // Execute the time since the last call
+			cpu->Execute(CalculateMinRunCycles(delta, interlocked)); /* Execute the time since the last call */
 	}
 }
 
@@ -173,11 +171,10 @@ void ps2_audit_vu_exec(int unit, int use_interp, unsigned char* regs_io, unsigne
 		 * FPCR-update elision assumes: force the unit's rounding mode
 		 * around the run and restore the host's after. The interpreter
 		 * computes in ps2float integer code and ignores MXCSR. */
-		const FPControlRegister host_fpcr = FPControlRegister::GetCurrent();
-		if (!use_interp)
-			FPControlRegister::SetCurrent(unit ? EmuConfig.Cpu.VU1FPCR : EmuConfig.Cpu.VU0FPCR);
+		const u64 host_fpcr = use_interp ? 0 : emu_fpcr_set_vu(unit);
 		cpu->Execute(max_cycles ? max_cycles : 2048);
-		FPControlRegister::SetCurrent(host_fpcr);
+		if (!use_interp)
+			emu_fpcr_restore(host_fpcr);
 	}
 	if (getenv("PS2_AUDIT_TRACE"))
 		fprintf(stderr, "[ATRACE] after: vf3=%08x tpc=%d stat=%x\n",

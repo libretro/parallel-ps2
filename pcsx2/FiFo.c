@@ -16,34 +16,28 @@
 #include "Common.h"
 
 #include "Gif.h"
-#include "GS.h"
 #include "Gif_Unit.h"
 #include "Vif.h"
 #include "Vif_Dma.h"
 #include "ps2/HwInternal.h"
 
-//////////////////////////////////////////////////////////////////////////
-/////////////////////////// Quick & dirty FIFO :D ////////////////////////
-//////////////////////////////////////////////////////////////////////////
-
-// Notes on FIFO implementation
-//
-// The FIFO consists of four separate pages of HW register memory, each mapped to a
-// PS2 device.  They are listed as follows:
-//
-// 0x4000 - 0x5000 : VIF0  (all registers map to 0x4000)
-// 0x5000 - 0x6000 : VIF1  (all registers map to 0x5000)
-// 0x6000 - 0x7000 : GS    (all registers map to 0x6000)
-// 0x7000 - 0x8000 : IPU   (registers map to 0x7000 and 0x7010, respectively)
+/* The FIFO is four pages of hardware register memory, each mapped to a
+ * PS2 device:
+ *
+ * 0x4000 - 0x5000 : VIF0  (all registers map to 0x4000)
+ * 0x5000 - 0x6000 : VIF1  (all registers map to 0x5000)
+ * 0x6000 - 0x7000 : GS    (all registers map to 0x6000)
+ * 0x7000 - 0x8000 : IPU   (registers map to 0x7000 and 0x7010, respectively)
+ */
 
 void ReadFIFO_VIF1(mem128_t* out)
 {
-	ZeroQWC(out); // Clear first in case no data gets written...
+	ZeroQWC(out); /* Clear first in case no data gets written... */
 	if (vif1Regs.stat.FDR)
 	{
 		if (vif1Regs.stat.FQC > 0)
 		{
-			MTGS::InitAndReadFIFO(reinterpret_cast<u8*>(out), 1);
+			mtgs_init_and_read_fifo((u8*)out, 1);
 			vif1.GSLastDownloadSize--;
 			if (vif1.GSLastDownloadSize <= 16)
 				gifRegs.stat.OPH = false;
@@ -52,9 +46,6 @@ void ReadFIFO_VIF1(mem128_t* out)
 	}
 }
 
-//////////////////////////////////////////////////////////////////////////
-// WriteFIFO Pages
-//
 void WriteFIFO_VIF0(const mem128_t* value)
 {
 	vif0ch.qwc += 1;
@@ -67,7 +58,6 @@ void WriteFIFO_VIF0(const mem128_t* value)
 	}
 	else
 		vif0Regs.stat.VPS = VPS_IDLE;
-
 }
 
 void WriteFIFO_VIF1(const mem128_t* value)
@@ -86,7 +76,7 @@ void WriteFIFO_VIF1(const mem128_t* value)
 	{
 		gifRegs.stat.APATH = 0;
 		gifRegs.stat.OPH = 0;
-		vif1Regs.stat.VGW = false; //Let vif continue if it's stuck on a flush
+		vif1Regs.stat.VGW = false; /* Let vif continue if it's stuck on a flush */
 
 		if (gif_unit_check_paths(1, 0, 1))
 			gif_unit_execute(false, true);

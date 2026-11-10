@@ -232,10 +232,15 @@
 // the token survives preprocessing as a bare identifier, and every use site
 // fails as `int PS2_AUDIT_EXPORT` redefinition plus C2144/C4430 on the
 // declaration that follows it.
-#if defined(_MSC_VER)
-#define PS2_AUDIT_EXPORT extern "C" __declspec(dllexport)
+#ifdef __cplusplus
+#define PS2_AUDIT_LINKAGE extern "C"
 #else
-#define PS2_AUDIT_EXPORT extern "C" __attribute__((visibility("default")))
+#define PS2_AUDIT_LINKAGE
+#endif
+#if defined(_MSC_VER)
+#define PS2_AUDIT_EXPORT PS2_AUDIT_LINKAGE __declspec(dllexport)
+#else
+#define PS2_AUDIT_EXPORT PS2_AUDIT_LINKAGE __attribute__((visibility("default")))
 #endif
 
 // --------------------------------------------------------------------------------------
