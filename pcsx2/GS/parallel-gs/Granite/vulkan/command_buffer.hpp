@@ -725,6 +725,7 @@ public:
 
 private:
 	friend class Util::ObjectPool<CommandBuffer>;
+	friend class Util::ThreadSafeObjectPool<CommandBuffer>;
 	CommandBuffer(Device *device, VkCommandBuffer cmd, VkPipelineCache cache, Type type, bool secondary);
 
 	Device *device;

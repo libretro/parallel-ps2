@@ -481,6 +481,7 @@ public:
 
 private:
 	friend class Util::ObjectPool<Image>;
+	friend class Util::ThreadSafeObjectPool<Image>;
 
 	Image(Device *device, VkImage image, const CachedImageView &default_view, const DeviceAllocation &alloc,
 	      const ImageCreateInfo &info, VkImageViewType view_type);

@@ -391,23 +391,21 @@ size_t PipelineCache::get_serialized_size() const
 	// Pipeline number count.
 	size += sizeof(uint32_t);
 
-	for (auto &mapping : binary_mapping.get_thread_unsafe())
-	{
+	binary_mapping.for_each([&](const PipelineBinaryMapping &mapping) {
 		// Count + Keys per pipeline.
 		size += sizeof(Util::Hash) + sizeof(uint64_t) + mapping.hashes.size() * sizeof(Util::Hash);
-	}
+	});
 
 	// Binary count.
 	size += sizeof(uint64_t);
 
-	for (auto &binary : binaries.get_thread_unsafe())
-	{
+	binaries.for_each([&](const Binary &binary) {
 		size += sizeof(Util::Hash); // Hash
 		size += sizeof(uint32_t); // Size
 		size += sizeof(uint32_t); // Key size
 		size += VK_MAX_PIPELINE_BINARY_KEY_SIZE_KHR;
 		size += (binary.payload_size + 7) & ~size_t(7); // Padded payload
-	}
+	});
 
 	return size;
 }
@@ -429,35 +427,25 @@ bool PipelineCache::serialize(void *data_, size_t size) const
 	data += sizeof(key.key);
 
 	uint32_t pipeline_count = 0;
-	for (auto &mapping : binary_mapping.get_thread_unsafe())
-	{
-		(void)mapping;
-		pipeline_count++;
-	}
+	binary_mapping.for_each([&](const PipelineBinaryMapping &) { pipeline_count++; });
 
 	memcpy(data, &pipeline_count, sizeof(pipeline_count));
 	data += sizeof(uint32_t);
 
 	auto *data64 = reinterpret_cast<uint64_t *>(data);
 
-	for (auto &mapping : binary_mapping.get_thread_unsafe())
-	{
+	binary_mapping.for_each([&](const PipelineBinaryMapping &mapping) {
 		*data64++ = mapping.get_hash();
 		*data64++ = mapping.hashes.size();
 		for (auto &hash : mapping.hashes)
 			*data64++ = hash;
-	}
+	});
 
 	uint32_t binary_count = 0;
-	for (auto &mapping : binaries.get_thread_unsafe())
-	{
-		(void)mapping;
-		binary_count++;
-	}
+	binaries.for_each([&](const Binary &) { binary_count++; });
 
 	*data64++ = binary_count;
-	for (auto &mapping : binaries.get_thread_unsafe())
-	{
+	binaries.for_each([&](const Binary &mapping) {
 		*data64++ = mapping.get_hash();
 		const uint32_t words[] = { uint32_t(mapping.payload_size), mapping.key.keySize };
 		memcpy(data64, words, sizeof(words));
@@ -483,7 +471,7 @@ bool PipelineCache::serialize(void *data_, size_t size) const
 		}
 
 		data64 += (mapping.payload_size + sizeof(uint64_t) - 1) / sizeof(uint64_t);
-	}
+	});
 
 	LOGI("Serialized %u pipelines and %u binary blobs.\n", pipeline_count, binary_count);
 	return true;

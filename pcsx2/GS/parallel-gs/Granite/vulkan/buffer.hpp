@@ -113,6 +113,7 @@ public:
 
 private:
 	friend class Util::ObjectPool<Buffer>;
+	friend class Util::ThreadSafeObjectPool<Buffer>;
 	Buffer(Device *device, VkBuffer buffer, const DeviceAllocation &alloc, const BufferCreateInfo &info,
 	       VkDeviceAddress bda);
 
@@ -170,6 +171,7 @@ public:
 
 private:
 	friend class Util::ObjectPool<BufferView>;
+	friend class Util::ThreadSafeObjectPool<BufferView>;
 	BufferView(Device *device, const CachedBufferView &view, const BufferViewCreateInfo &info);
 
 	Device *device;

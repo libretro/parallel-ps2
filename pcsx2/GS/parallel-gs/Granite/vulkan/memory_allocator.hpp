@@ -151,6 +151,7 @@ class DeviceAllocationOwner : public Util::IntrusivePtrEnabled<DeviceAllocationO
 {
 public:
 	friend class Util::ObjectPool<DeviceAllocationOwner>;
+	friend class Util::ThreadSafeObjectPool<DeviceAllocationOwner>;
 	friend struct DeviceAllocationDeleter;
 
 	~DeviceAllocationOwner();

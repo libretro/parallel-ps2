@@ -24,12 +24,15 @@
 
 #include "hash.hpp"
 #include "aligned_alloc.hpp"
-#include "read_write_lock.hpp"
 #include <retro_atomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <new>
 #include <utility>
+
+#ifndef RETRO_ATOMIC_HAS_PTR
+#error "InsertOnlyHashMap needs pointer atomics (retro_atomic.h)"
+#endif
 
 namespace Util
 {
@@ -61,8 +64,7 @@ namespace Util
  * pointer it loaded stays valid until the device is destroyed, which
  * happens only once no thread uses it.
  *
- * Without pointer atomics (retro_atomic.h's volatile fallback) the same
- * structure is kept behind a reader-writer lock. */
+ * It needs pointer atomics, which every target with Vulkan has. */
 template <typename T>
 class InsertOnlyHashMap
 {
@@ -73,11 +75,7 @@ public:
 		while (cap < initial_capacity)
 			cap <<= 1;
 		first_capacity = cap;
-#ifdef RETRO_ATOMIC_HAS_PTR
 		retro_atomic_ptr_init(&head, nullptr);
-#else
-		head = nullptr;
-#endif
 	}
 
 	InsertOnlyHashMap(const InsertOnlyHashMap &) = delete;
@@ -90,7 +88,6 @@ public:
 
 	T *find(Hash hash) const
 	{
-#ifdef RETRO_ATOMIC_HAS_PTR
 		const Segment *seg = static_cast<const Segment *>(retro_atomic_load_acquire_ptr(
 				const_cast<retro_atomic_ptr_t *>(&head)));
 		for (; seg; seg = seg->older)
@@ -100,14 +97,6 @@ public:
 				return t;
 		}
 		return nullptr;
-#else
-		lock.lock_read();
-		T *t = nullptr;
-		for (const Segment *seg = head; seg && !t; seg = seg->older)
-			t = seg->find(hash);
-		lock.unlock_read();
-		return t;
-#endif
 	}
 
 	/* The object for @hash: one made here from @p, or the one already
@@ -131,12 +120,7 @@ public:
 	template <typename F>
 	void for_each(F &&func)
 	{
-#ifdef RETRO_ATOMIC_HAS_PTR
 		Segment *seg = static_cast<Segment *>(retro_atomic_load_acquire_ptr(&head));
-#else
-		RWSpinLockReadHolder holder{lock};
-		Segment *seg = head;
-#endif
 		for (; seg; seg = seg->older)
 		{
 			for (size_t i = 0; i <= seg->mask; i++)
@@ -148,16 +132,17 @@ public:
 		}
 	}
 
+	template <typename F>
+	void for_each(F &&func) const
+	{
+		const_cast<InsertOnlyHashMap *>(this)->for_each([&](T &t) { func(static_cast<const T &>(t)); });
+	}
+
 	/* No lookup or insert may run alongside this. */
 	void clear()
 	{
-#ifdef RETRO_ATOMIC_HAS_PTR
 		Segment *seg = static_cast<Segment *>(retro_atomic_load_relaxed_ptr(&head));
 		retro_atomic_store_relaxed_ptr(&head, nullptr);
-#else
-		Segment *seg = head;
-		head = nullptr;
-#endif
 		while (seg)
 		{
 			Segment *older = seg->older;
@@ -177,7 +162,6 @@ private:
 	{
 		Segment *older; /* immutable once published */
 		size_t mask;
-#ifdef RETRO_ATOMIC_HAS_PTR
 		retro_atomic_int_t used;
 		retro_atomic_ptr_t slots[1];
 
@@ -185,15 +169,6 @@ private:
 		{
 			return static_cast<T *>(retro_atomic_load_acquire_ptr(const_cast<retro_atomic_ptr_t *>(&slots[i])));
 		}
-#else
-		int used;
-		void *slots[1];
-
-		T *load(size_t i) const
-		{
-			return static_cast<T *>(slots[i]);
-		}
-#endif
 
 		/* Linear probing on an insert-only table: an entry sits before
 		 * the first slot that was empty when it went in, and occupied
@@ -214,12 +189,7 @@ private:
 		}
 	};
 
-#ifdef RETRO_ATOMIC_HAS_PTR
 	retro_atomic_ptr_t head;
-#else
-	Segment *head;
-	mutable RWSpinLock lock;
-#endif
 	size_t first_capacity;
 
 	static T *sealed()
@@ -246,15 +216,12 @@ private:
 			return nullptr;
 		seg->older = older;
 		seg->mask = capacity - 1;
-#ifdef RETRO_ATOMIC_HAS_PTR
 		retro_atomic_int_init(&seg->used, 0);
 		for (size_t i = 0; i < capacity; i++)
 			retro_atomic_ptr_init(&seg->slots[i], nullptr);
-#endif
 		return seg;
 	}
 
-#ifdef RETRO_ATOMIC_HAS_PTR
 	/* Every empty slot of @seg sealed (any thread may help), then a
 	 * segment twice its size in front of it, unless one already is. */
 	bool grow(Segment *seg)
@@ -328,31 +295,5 @@ private:
 				return nullptr;
 		}
 	}
-#else
-	T *insert_yield(T *t)
-	{
-		const Hash hash = t->get_hash();
-		RWSpinLockWriteHolder holder{lock};
-		for (Segment *s = head; s; s = s->older)
-		{
-			T *found = s->find(hash);
-			if (found)
-				return found;
-		}
-		if (!head || size_t(head->used) * 2 >= head->mask + 1)
-		{
-			Segment *next = make_segment(head ? (head->mask + 1) * 2 : first_capacity, head);
-			if (!next)
-				return nullptr;
-			head = next;
-		}
-		size_t i = size_t(hash) & head->mask;
-		while (head->slots[i])
-			i = (i + 1) & head->mask;
-		head->slots[i] = t;
-		head->used++;
-		return t;
-	}
-#endif
 };
 }

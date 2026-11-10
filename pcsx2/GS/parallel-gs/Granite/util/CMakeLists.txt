@@ -11,9 +11,9 @@ add_granite_internal_lib(granite-util
         intrusive.hpp
         intrusive_list.hpp
         object_pool.hpp
+        slot_pool.hpp
         stack_allocator.hpp
         temporary_hashmap.hpp
-        read_write_lock.hpp
         unstable_remove_if.hpp
         intrusive_hash_map.hpp
         timer.cpp timer.hpp

@@ -50,9 +50,4 @@ void SlabAllocator::free(uint8_t *ptr)
 {
 	vacants.push_back(ptr);
 }
-
-void ThreadSafeSlabAllocator::init(size_t object_size)
-{
-	slab = SlabAllocator(object_size);
-}
 }

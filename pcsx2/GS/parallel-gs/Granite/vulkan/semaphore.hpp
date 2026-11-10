@@ -161,6 +161,7 @@ public:
 
 private:
 	friend class Util::ObjectPool<SemaphoreHolder>;
+	friend class Util::ThreadSafeObjectPool<SemaphoreHolder>;
 	SemaphoreHolder(Device *device_, VkSemaphore semaphore_, bool signalled_, bool owned_)
 		: device(device_)
 		, semaphore(semaphore_)

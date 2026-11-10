@@ -27,6 +27,7 @@
 #include "vulkan_headers.hpp"
 #include "small_vector.hpp"
 #include "intrusive_hash_map.hpp"
+#include "insert_only_hash_map.hpp"
 #include <memory>
 #include <utility>
 
@@ -55,7 +56,7 @@ private:
 			: hashes(std::move(hashes_)) {}
 		Util::SmallVector<Util::Hash> hashes;
 	};
-	Util::ThreadSafeIntrusiveHashMap<PipelineBinaryMapping> binary_mapping;
+	Util::InsertOnlyHashMap<PipelineBinaryMapping> binary_mapping;
 
 	struct Binary : Util::IntrusiveHashMapEnabled<Binary>
 	{
@@ -69,7 +70,7 @@ private:
 		const void *payload = nullptr;
 		size_t payload_size = 0;
 	};
-	Util::ThreadSafeIntrusiveHashMap<Binary> binaries;
+	Util::InsertOnlyHashMap<Binary> binaries;
 
 	bool place_binary(VkPipelineBinaryKHR binary, Util::Hash *hash);
 	bool parse(const void *payload, size_t size);

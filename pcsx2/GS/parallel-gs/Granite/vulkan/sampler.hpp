@@ -97,6 +97,7 @@ public:
 
 private:
 	friend class Util::ObjectPool<Sampler>;
+	friend class Util::ThreadSafeObjectPool<Sampler>;
 	Sampler(Device *device, VkSampler sampler, const SamplerCreateInfo &info, bool immutable);
 
 	Device *device;

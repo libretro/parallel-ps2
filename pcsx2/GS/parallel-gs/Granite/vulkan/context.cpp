@@ -147,7 +147,8 @@ bool Context::init_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface_compat, co
 	return true;
 }
 
-static PGS::mutex loader_init_lock;
+/* Set by init_loader, which the renderer calls once as it makes its
+ * device (GSRendererPGS), before any other thread can reach Vulkan. */
 static bool loader_init_once;
 static PFN_vkGetInstanceProcAddr instance_proc_addr;
 
@@ -158,7 +159,6 @@ PFN_vkGetInstanceProcAddr Context::get_instance_proc_addr()
 
 bool Context::init_loader(PFN_vkGetInstanceProcAddr addr, bool force_reload)
 {
-	PGS::lock_guard holder(loader_init_lock);
 	if (loader_init_once && !force_reload && !addr)
 		return true;
 

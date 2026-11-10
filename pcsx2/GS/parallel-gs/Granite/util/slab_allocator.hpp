@@ -21,7 +21,7 @@
  */
 
 #pragma once
-#include "thread_prims.hpp"
+#include "slot_pool.hpp"
 #include <stdint.h>
 #include <stdlib.h>
 #include <memory>
@@ -52,17 +52,17 @@ private:
 	size_t object_size = 0;
 };
 
+/* SlabAllocator for any thread, without a lock: a SlotPool's slots. */
 class ThreadSafeSlabAllocator
 {
 public:
 	ThreadSafeSlabAllocator() = default;
-	void init(size_t object_size);
+	void init(size_t object_size) { pool.init(object_size, 8); }
 
-	inline uint8_t *allocate() { PGS::lock_guard holder{lock}; return slab.allocate(); }
-	inline void free(uint8_t *ptr) { PGS::lock_guard holder{lock}; slab.free(ptr); }
+	inline uint8_t *allocate() { return static_cast<uint8_t *>(pool.take()); }
+	inline void free(uint8_t *ptr) { pool.give(ptr); }
 
 private:
-	SlabAllocator slab;
-	PGS::mutex lock;
+	SlotPool pool;
 };
 }

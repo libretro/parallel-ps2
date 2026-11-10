@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "thread_prims.hpp"
+#include "slot_pool.hpp"
 #include <memory>
 #include <vector>
 #include <algorithm>
@@ -98,35 +98,47 @@ protected:
 #endif
 };
 
+/* ObjectPool for objects made and freed on any thread, without a lock:
+ * the slots are a SlotPool's. */
 template<typename T>
-class ThreadSafeObjectPool : private ObjectPool<T>
+class ThreadSafeObjectPool
 {
 public:
+	ThreadSafeObjectPool()
+	{
+		pool.init(sizeof(T), alignof(T));
+	}
+
 	template<typename... P>
 	T *allocate(P &&... p)
 	{
-		PGS::lock_guard holder{lock};
-		return ObjectPool<T>::allocate(std::forward<P>(p)...);
+#ifndef OBJECT_POOL_DEBUG
+		void *mem = pool.take();
+		if (!mem)
+			return nullptr;
+		return new(mem) T(std::forward<P>(p)...);
+#else
+		return new T(std::forward<P>(p)...);
+#endif
 	}
 
 	void free(T *ptr)
 	{
 #ifndef OBJECT_POOL_DEBUG
 		ptr->~T();
-		PGS::lock_guard holder{lock};
-		this->vacants.push_back(ptr);
+		pool.give(ptr);
 #else
 		delete ptr;
 #endif
 	}
 
+	/* No allocate or free may run alongside this. */
 	void clear()
 	{
-		PGS::lock_guard holder{lock};
-		ObjectPool<T>::clear();
+		pool.clear();
 	}
 
 private:
-	PGS::mutex lock;
+	SlotPool pool;
 };
 }

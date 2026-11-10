@@ -36,8 +36,7 @@ template <typename T>
 using VulkanObjectPool = Util::ThreadSafeObjectPool<T>;
 template <typename T>
 using VulkanCache = Util::InsertOnlyHashMap<T>;
-template <typename T>
-using VulkanCacheReadWrite = Util::ThreadSafeIntrusiveHashMap<T>;
+
 
 enum QueueIndices
 {
