@@ -111,6 +111,8 @@ extern void mtvu_wait_vu(void);
 extern bool emu_config_thread_vu1(void);
 extern int  emu_config_ee_cycle_rate(void);
 extern u64  emu_fpcr_set_vu(int unit);
+/* The EE FPU's control register; returns the previous one. */
+extern u64  emu_fpcr_set_fpu(void);
 extern void emu_fpcr_restore(u64 saved);
 /* MTVU.cpp: start a VU1 program on the VU1 thread. */
 extern void mtvu_execute_vu(u32 addr, u32 vif_top, u32 vif_itop, u32 fbrst);

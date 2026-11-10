@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../../common/Pcsx2Defs.h"
+#include "../VMHost.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,10 +11,6 @@ extern "C" {
 
 /* The fast-boot option (libretro/main.cpp). */
 bool host_option_fast_boot(void);
-/* VMManager::Internal::GameStartingOnCPUThread (VMManager.cpp). */
-void vm_game_starting_on_cpu_thread(void);
-/* VMManager::SetState(VMState::Stopping) (VMManager.cpp). */
-void vm_request_stop(void);
 
 #ifdef __cplusplus
 }

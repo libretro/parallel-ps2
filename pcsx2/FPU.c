@@ -277,7 +277,7 @@ void intCFC1(void) {
 	 * FCR31, rather than the others reading zero.
 	 *
 	 * FCR0 is read out of fprc[0] rather than from a literal. cpuReset in
-	 * R5900.cpp already puts the revision there, and the literal that used
+	 * R5900.c already puts the revision there, and the literal that used
 	 * to be here said 0x2E00 where both that initialiser and the console
 	 * say 0x00002E30 -- so the right value was sitting in the struct while
 	 * this returned a different one. Scored against the Initial: line of

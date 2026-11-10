@@ -270,7 +270,7 @@
     <ClCompile Include="FPU.c" />
     <ClCompile Include="Interpreter.c" />
     <ClCompile Include="MMI.c" />
-    <ClCompile Include="R5900.cpp" />
+    <ClCompile Include="R5900.c" />
     <ClCompile Include="R5900OpcodeImpl.c" />
     <ClCompile Include="IopBios.c" />
     <ClCompile Include="IopCounters.c" />
@@ -448,6 +448,7 @@
     <ClInclude Include="Memory.h" />
     <ClInclude Include="VirtualMemory.h" />
     <ClInclude Include="VMManager.h" />
+    <ClInclude Include="VMHost.h" />
     <ClInclude Include="vtlb.h" />
     <ClInclude Include="MTVU.h" />
     <ClInclude Include="VU.h" />

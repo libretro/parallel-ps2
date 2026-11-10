@@ -102,12 +102,12 @@ extern "C" {
 }
 #endif
 
-extern void rcntUpdate(void);
-
-/* Counters.cpp; the EE hardware handlers (Hw.c) reach them. */
+/* Counters.cpp; the EE hardware handlers (Hw.c) reach them, and the EE
+ * event test (R5900.c) runs rcntUpdate. */
 #ifdef __cplusplus
 extern "C" {
 #endif
+extern void rcntUpdate(void);
 extern Counter counters[4];
 extern void rcntInit(void);
 extern u32 rcntRcount(int index);

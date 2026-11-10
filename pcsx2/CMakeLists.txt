@@ -147,7 +147,7 @@ set(pcsx2Sources
 	R3000A.c
 	R3000AInterpreter.c
 	R3000AOpcodeTables.c
-	R5900.cpp
+	R5900.c
 	R5900OpcodeImpl.c
 	R5900OpcodeTables.c
 	Sio.c
@@ -183,6 +183,7 @@ set(pcsx2Headers
 	Gif_Unit.h
 	GS.h
 	GSVideoMode.h
+	VMHost.h
 	Hardware.h
 	Host.h
 	HostFS.h

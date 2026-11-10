@@ -244,7 +244,7 @@ extern "C" {
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* R5900.cpp; R3000A.c reads it */
+/* R5900.c; R3000A.c reads it */
 extern retro_atomic_int_t eeEventTestIsActive;
 #ifdef __cplusplus
 }
@@ -275,7 +275,7 @@ static const u32 EELOAD_SIZE	= 0x20000; /* overestimate for searching */
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* R5900.cpp; the interpreter's boot loop (Interpreter.c) drives them. */
+/* R5900.c; the interpreter's boot loop (Interpreter.c) drives them. */
 extern u32 g_eeloadMain, g_eeloadExec;
 
 extern void eeGameStarting(void);
@@ -381,7 +381,7 @@ typedef enum EE_EventType
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* R5900.cpp; the SIF DMA units (Sif0.c, Sif1.c, sif2.c) schedule through it. */
+/* R5900.c; the SIF DMA units (Sif0.c, Sif1.c, sif2.c) schedule through it. */
 extern void CPU_INT( EE_EventType n, s32 ecycle );
 #ifdef __cplusplus
 }
@@ -396,11 +396,12 @@ extern uint dmacInterrupt(void);
 }
 #endif
 
-extern void cpuReset();
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* R5900.cpp; the interpreter ops (R5900OpcodeImpl.c) raise through it. */
+/* R5900.c */
+extern void cpuReset(void);
+/* R5900.c; the interpreter ops (R5900OpcodeImpl.c) raise through it. */
 extern void cpuException(u32 code, u32 bd);
 /* R5900OpcodeImpl.c; cpuReset clears the DECI2 state through it. */
 extern void Deci2Reset(void);
@@ -422,11 +423,12 @@ extern void GoemonUnloadTlb(u32 key);
 }
 #endif
 
-extern int  cpuTestCycle( u64 startCycle, s32 delta );
-/* R5900.cpp; the VIF DMA (Vif1_Dma.c, Vif1_MFIFO.c) paces itself on it. */
+/* R5900.c; the VIF DMA (Vif1_Dma.c, Vif1_MFIFO.c) paces itself on
+ * cpuGetCycles. */
 #ifdef __cplusplus
 extern "C" {
 #endif
+extern int  cpuTestCycle( u64 startCycle, s32 delta );
 extern int cpuGetCycles(void);
 #ifdef __cplusplus
 }
@@ -441,7 +443,7 @@ extern void _cpuEventTest_Shared(void);
 }
 #endif
 
-/* R5900.cpp; Hw.c and Dmac.c raise interrupts through them. */
+/* R5900.c; Hw.c and Dmac.c raise interrupts through them. */
 #ifdef __cplusplus
 extern "C" {
 #endif

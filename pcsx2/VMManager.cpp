@@ -344,6 +344,16 @@ void vm_request_stop(void)
 	VMManager::SetState(VMState::Stopping);
 }
 
+bool vm_execution_interrupted(void)
+{
+	return VMManager::Internal::IsExecutionInterrupted();
+}
+
+const char* vm_elf_override(void)
+{
+	return s_elf_override.c_str();
+}
+
 void VMManager::ApplyGameFixes()
 {
 	s_active_game_fixes = 0;

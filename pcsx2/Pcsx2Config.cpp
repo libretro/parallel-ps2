@@ -857,6 +857,16 @@ int emu_config_ee_cycle_rate(void)
 	return EmuConfig.Speedhacks.EECycleRate;
 }
 
+bool emu_config_instant_dma_hack(void)
+{
+	return CHECK_INSTANTDMAHACK;
+}
+
+bool emu_config_ee_timing_hack(void)
+{
+	return CHECK_EETIMINGHACK;
+}
+
 bool emu_config_ee_wait_loop(void)
 {
 	return EmuConfig.Speedhacks.WaitLoop;
@@ -872,6 +882,18 @@ u64 emu_fpcr_set_vu(int unit)
 	const FPControlRegister prev = FPControlRegister::GetCurrent();
 	FPControlRegister::SetCurrent(unit ? EmuConfig.Cpu.VU1FPCR : EmuConfig.Cpu.VU0FPCR);
 	return prev.bitmask;
+}
+
+u64 emu_fpcr_set_fpu(void)
+{
+	const FPControlRegister prev = FPControlRegister::GetCurrent();
+	FPControlRegister::SetCurrent(EmuConfig.Cpu.FPUFPCR);
+	return prev.bitmask;
+}
+
+const char* emu_config_game_args(void)
+{
+	return EmuConfig.CurrentGameArgs;
 }
 
 void emu_fpcr_restore(u64 saved)

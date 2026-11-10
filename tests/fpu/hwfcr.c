@@ -8,7 +8,7 @@
  *  through FCR31 all read as FCR31. Only those two exist.
  *
  *  Transcribed from CFC1 in pcsx2/FPU.c. The reset values come from
- *  R5900.cpp, which sets fprc[0] to 0x00002e30 and fprc[31] to
+ *  R5900.c, which sets fprc[0] to 0x00002e30 and fprc[31] to
  *  0x01000001 -- both matching the console.
  *
  *  Usage: tests/fpu/hwfcr <path-to-fcr.expected>
@@ -21,7 +21,7 @@
 typedef uint32_t u32;
 typedef int32_t  s32;
 
-/* Reset values, from cpuReset in pcsx2/R5900.cpp. */
+/* Reset values, from cpuReset in pcsx2/R5900.c. */
 #define FPRC0  0x00002e30u
 #define FPRC31 0x01000001u
 
