@@ -167,7 +167,7 @@ void psxJALR(void)
 	 * rpsxJALR in x86/iR3000Atables.cpp has always had this right: it moves
 	 * Rs into its writeback register before assigning Rd, and separately
 	 * refuses to swap the delay slot when the two match. JALR in
-	 * Interpreter.cpp does the same for the EE, taking a temp copy first.
+	 * Interpreter.c does the same for the EE, taking a temp copy first.
 	 * This was the odd one out. */
 	const u32 target = _u32(_rRs_);
 

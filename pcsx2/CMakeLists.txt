@@ -123,7 +123,7 @@ set(pcsx2Sources
 	Gif_Unit.c
 	GS.cpp
 	HostFS.c
-	Interpreter.cpp
+	Interpreter.c
 	IopBios.c
 	IopCounters.c
 	IopDma.c
@@ -148,7 +148,7 @@ set(pcsx2Sources
 	R3000AInterpreter.c
 	R3000AOpcodeTables.c
 	R5900.cpp
-	R5900OpcodeImpl.cpp
+	R5900OpcodeImpl.c
 	R5900OpcodeTables.c
 	Sio.c
 	SioFifo.c
@@ -182,6 +182,7 @@ set(pcsx2Headers
 	Gif_hw.h
 	Gif_Unit.h
 	GS.h
+	GSVideoMode.h
 	Hardware.h
 	Host.h
 	HostFS.h

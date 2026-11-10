@@ -89,7 +89,6 @@ void cpuReset()
 	psxReset();
 	pgifInit();
 
-	extern void Deci2Reset();		// lazy, no good header for it yet.
 	Deci2Reset();
 
 	g_SkipBiosHack = EmuConfig.UseBOOT2Injection;
@@ -691,12 +690,12 @@ void eeloadHook2(void)
  * a near nextEventCycle forces the first block boundary to test it),
  * so the block executes once and the fastjmp returns Execute. The
  * interpreter is stepped a bounded instruction count through its own
- * export (Interpreter.cpp). regs_io layout:
+ * export (Interpreter.c). regs_io layout:
  *   fpr[0..31] 4 bytes each | ACC 4 | FCR31 4 | ACCflag 4  (= 140)
  * -------------------------------------------------------------------------- */
 #define PS2_AUDIT_EE_SCRATCH 0x01000000u
 
-extern "C" void ps2_audit_ee_stepn(unsigned n); /* Interpreter.cpp */
+extern "C" void ps2_audit_ee_stepn(unsigned n); /* Interpreter.c */
 
 PS2_AUDIT_EXPORT
 void ps2_audit_ee_prep(const unsigned* words, unsigned nwords)

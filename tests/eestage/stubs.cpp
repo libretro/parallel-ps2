@@ -2,7 +2,7 @@
  *
  *  R5900OpcodeTables.c names every op in the instruction set, the COP2
  *  macro ops and the recompiler emitter set among them, so linking it with
- *  Interpreter.cpp drags in hundreds of symbols the harness never calls.
+ *  Interpreter.c drags in hundreds of symbols the harness never calls.
  *  Generated from the linker's list: anything actually reached aborts
  *  rather than silently returning.
  */
@@ -15,7 +15,6 @@ static void reached(const char* who)
 	abort();
 }
 
-enum GS_VideoMode : int;
 
 extern "C" {
 	void BC2F(void) { reached("BC2F"); }
@@ -35,8 +34,8 @@ extern "C" {
 	extern "C" void COP2_SPECIAL2(void) { reached("COP2_SPECIAL2()"); }
 	extern "C" void COP2_Unknown(void) { reached("COP2_Unknown()"); }
 	extern "C" void CTC2(void) { reached("CTC2()"); }
-	void GoemonPreloadTlb() { reached("GoemonPreloadTlb()"); }
-	void GoemonUnloadTlb(unsigned int) { reached("GoemonUnloadTlb(unsigned int)"); }
+	extern "C" void GoemonPreloadTlb(void) { reached("GoemonPreloadTlb"); }
+	extern "C" void GoemonUnloadTlb(unsigned int) { reached("GoemonUnloadTlb"); }
 	extern "C" void QMFC2(void) { reached("QMFC2()"); }
 	extern "C" void QMTC2(void) { reached("QMTC2()"); }
 	extern "C" void VABS(void) { reached("VABS()"); }
@@ -157,8 +156,8 @@ extern "C" {
 	extern "C" void VSUBy(void) { reached("VSUBy()"); }
 	extern "C" void VSUBz(void) { reached("VSUBz()"); }
 	extern "C" void VWAITQ(void) { reached("VWAITQ()"); }
-	void cpuException(unsigned int, unsigned int) { reached("cpuException(unsigned int, unsigned int)"); }
-	void gsSetVideoMode(GS_VideoMode) { reached("gsSetVideoMode(GS_VideoMode)"); }
+	extern "C" void cpuException(unsigned int, unsigned int) { reached("cpuException"); }
+	extern "C" void gsSetVideoMode(int) { reached("gsSetVideoMode"); }
 	extern "C" void recABS_S(void) { reached("recABS_S()"); }
 	extern "C" void recADD(void) { reached("recADD()"); }
 	extern "C" void recADDA_S(void) { reached("recADDA_S()"); }

@@ -2,7 +2,7 @@
  *
  *  Scores LB, LBU, LH, LHU, LW, LWU, LD and LQ against ps2autotests
  *  tests/cpu/ee/lsu.expected, using the semantics in
- *  pcsx2/R5900OpcodeImpl.cpp.
+ *  pcsx2/R5900OpcodeImpl.c.
  *
  *  The harness reads from a fixed 48-byte pattern with the base pointer
  *  at its middle row, so offsets run from -16 to +16 and the memory is
@@ -68,7 +68,7 @@ static const char* const kName[L_COUNT] =
 	{ "lb", "lbu", "lh", "lhu", "lw", "lwu", "ld", "lq",
 	  "lwl / lwr", "ldl / ldr" };
 
-/* Transcribed from R5900OpcodeImpl.cpp, masks and all. */
+/* Transcribed from R5900OpcodeImpl.c, masks and all. */
 static u64 do_lwl(u64 rt, int off)
 {
 	static const u32 mask[4]  = { 0xffffffu, 0x0000ffffu, 0x000000ffu, 0u };

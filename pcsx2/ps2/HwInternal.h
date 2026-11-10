@@ -74,6 +74,11 @@ extern bool emu_config_viffifo_hack(void);
 extern bool emu_config_vif1stall_hack(void);
 extern bool emu_config_vusync_hack(void);
 extern bool emu_config_instant_vu1(void);
+/* The interpreter's (Interpreter.c) cycle rate, wait-loop skip and
+ * Goemon TLB hook. */
+extern int emu_config_ee_cycle_rate(void);
+extern bool emu_config_ee_wait_loop(void);
+extern bool emu_config_goemon_tlb_hack(void);
 
 #ifdef __cplusplus
 }

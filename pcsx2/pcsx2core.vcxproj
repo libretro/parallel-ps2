@@ -268,10 +268,10 @@
     <ClCompile Include="COP0.c" />
     <ClCompile Include="COP2.cpp" />
     <ClCompile Include="FPU.c" />
-    <ClCompile Include="Interpreter.cpp" />
+    <ClCompile Include="Interpreter.c" />
     <ClCompile Include="MMI.c" />
     <ClCompile Include="R5900.cpp" />
-    <ClCompile Include="R5900OpcodeImpl.cpp" />
+    <ClCompile Include="R5900OpcodeImpl.c" />
     <ClCompile Include="IopBios.c" />
     <ClCompile Include="IopCounters.c" />
     <ClCompile Include="IopDma.c" />
@@ -498,6 +498,7 @@
     <ClInclude Include="CDVD\CDVD_host.h" />
     <ClInclude Include="CDVD\CDVDcommon.h" />
     <ClInclude Include="GS.h" />
+    <ClInclude Include="GSVideoMode.h" />
     <CustomBuildStep Include="rdebug\deci2.h">
     </CustomBuildStep>
     <CustomBuildStep Include="rdebug\deci2_dbgp.h">

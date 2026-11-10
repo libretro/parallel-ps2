@@ -1,4 +1,4 @@
-/* What the real Interpreter.cpp and R5900Opcode*.cpp need around them for
+/* What the real Interpreter.c and R5900Opcode*.c need around them for
  * tests/eestage, and C entry points for main.c. The EE sees a flat 32 MB
  * of RAM at every segment; a load from EESTAGE_EXIT ends execution. */
 #include <stdarg.h>

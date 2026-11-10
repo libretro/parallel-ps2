@@ -3,7 +3,7 @@
  *  Scores DIV, DIVU, MULT, MULTU and their pipeline-1 variants, plus the
  *  MADD family and the HI/LO moves, against ps2autotests
  *  tests/cpu/ee/muldiv.expected. Transcribed from
- *  pcsx2/R5900OpcodeImpl.cpp.
+ *  pcsx2/R5900OpcodeImpl.c.
  *
  *  Operand loading is simpler than the VU and MMI harnesses: SET_U32 here
  *  is a bare lui/ori with no pcpyld and no ISUBIU trick, so the decimal a
@@ -88,7 +88,7 @@ static int operand(char** pp, u32* out)
 enum { E_DIV, E_DIVU, E_MULT, E_MULTU, E_COUNT };
 static const char* const kName[E_COUNT] = { "div", "divu", "mult", "multu" };
 
-/* Transcribed from R5900OpcodeImpl.cpp. Only lane 0 is written; the
+/* Transcribed from R5900OpcodeImpl.c. Only lane 0 is written; the
  * pipeline-1 forms are the same arithmetic against lane 1 and are covered
  * by their own blocks in the capture. */
 static void apply(int op, u32 rs, u32 rt, HILO* h)

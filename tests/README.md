@@ -48,7 +48,7 @@ right. Where the two disagree, that disagreement is the finding.
 | mmi | hwreal.cpp | 2690 across 101 ops | MMI.c |
 | mmi | hwelem.c, hwpmfhl.c, hwsa.c | 1933 | transcription |
 | mmi | hwscore.c | 428, not printed as a count | transcription |
-| ee | hwrealee.cpp | 944 across 56 ops | R5900OpcodeImpl.cpp |
+| ee | hwrealee.cpp | 944 across 56 ops | R5900OpcodeImpl.c |
 | ee | hwalu, hwload, hwstore, hwmuldiv, hwbranch | 1186 | transcription |
 | ee | hwspr.cpp | 448 | SPR.cpp |
 | ee | hwperf.c | 85 | transcription |

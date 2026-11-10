@@ -172,24 +172,7 @@ struct GSRegSIGBLID
 #define GSIMR ((tGS_IMR&)*(PS2MEM_GS + 0x1010))
 #define GSSIGLBLID ((GSRegSIGBLID&)*(PS2MEM_GS + 0x1080))
 
-enum class GS_VideoMode : int
-{
-	Uninitialized,
-	Unknown,
-	NTSC,
-	PAL,
-	VESA,
-	SDTV_480P,
-	SDTV_576P,
-	HDTV_720P,
-	HDTV_1080I,
-	HDTV_1080P,
-	DVD_NTSC,
-	DVD_PAL
-};
-
-extern GS_VideoMode gsVideoMode;
-extern bool gsIsInterlaced;
+#include "GSVideoMode.h"
 
 /////////////////////////////////////////////////////////////////////////////
 // MTGS Threaded Class Declaration
@@ -260,7 +243,6 @@ extern void gsReset(void);
 #ifdef __cplusplus
 }
 #endif
-extern void gsSetVideoMode(GS_VideoMode mode);
 
 extern retro_atomic_int_t s_GSRegistersWritten;
 

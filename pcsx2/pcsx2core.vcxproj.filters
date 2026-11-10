@@ -473,7 +473,7 @@
     <ClCompile Include="FPU.c">
       <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
     </ClCompile>
-    <ClCompile Include="Interpreter.cpp">
+    <ClCompile Include="Interpreter.c">
       <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
     </ClCompile>
     <ClCompile Include="MMI.c">
@@ -482,7 +482,7 @@
     <ClCompile Include="R5900.cpp">
       <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
     </ClCompile>
-    <ClCompile Include="R5900OpcodeImpl.cpp">
+    <ClCompile Include="R5900OpcodeImpl.c">
       <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
     </ClCompile>
     <ClCompile Include="IopBios.c">
@@ -1554,6 +1554,9 @@
       <Filter>System\Ps2\GS\Renderers\Hardware</Filter>
     </ClInclude>
     <ClInclude Include="GS.h">
+      <Filter>System\Ps2\GS\GIF</Filter>
+    </ClInclude>
+    <ClInclude Include="GSVideoMode.h">
       <Filter>System\Ps2\GS\GIF</Filter>
     </ClInclude>
     <ClInclude Include="VirtualMemory.h">

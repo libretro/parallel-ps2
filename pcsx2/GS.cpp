@@ -37,7 +37,7 @@ void gsSetVideoMode(GS_VideoMode mode)
 void gsReset(void)
 {
 	MTGS::ResetGS(true);
-	gsVideoMode = GS_VideoMode::Uninitialized;
+	gsVideoMode = GS_VIDEOMODE_UNINITIALIZED;
 	memset(g_RealGSMem, 0, sizeof(g_RealGSMem));
 	UpdateVSyncRate(true);
 }
@@ -328,6 +328,9 @@ u64 gsRead64(u32 mem)
 	// Only SIGLBLID and CSR are readable, everything else mirrors CSR
 	return *(u64*)PS2GS_BASE(GS_CSR + (mem & 0x8));
 }
+
+/* Save states hold it as the int the old enum class was. */
+static_assert(sizeof(GS_VideoMode) == sizeof(int), "GS_VideoMode is saved as an int");
 
 bool gsFreeze(SaveStateBase *s)
 {

@@ -9,7 +9,7 @@
  * main taken for a new boot, and on arm64 it would lose the recompiler,
  * which runs in the game stage only.
  *
- * Driven on the real Interpreter.cpp and R5900OpcodeImpl.cpp: a boot that
+ * Driven on the real Interpreter.c and R5900OpcodeImpl.c: a boot that
  * reaches EELOAD main once, enters the game, does a misaligned load, then
  * jumps through EELOAD main again on its way out. EELOAD main must have
  * been hooked once, and the cancelled load must have left its register

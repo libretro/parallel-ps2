@@ -54,26 +54,7 @@ extern bool g_cop2MacroLast;      //   first op materializes x19/x27, last op re
 
 using namespace vixl::aarch64;
 
-extern "C" void eeRunBasicBlock_arm64(void); // Interpreter.cpp
-extern u32 cpuBlockCycles;                    // Interpreter.cpp
-// EE memory wrappers + misalign cancel (Interpreter.cpp), for native loads/stores.
-extern "C" u32  eeRead8_arm64(u32),  eeRead16_arm64(u32), eeRead32_arm64(u32);
-extern "C" u64  eeRead64_arm64(u32);
-extern "C" void eeWrite8_arm64(u32, u32),  eeWrite16_arm64(u32, u32);
-extern "C" void eeWrite32_arm64(u32, u32), eeWrite64_arm64(u32, u64);
-extern "C" void eeRead128_arm64(u32, u128*), eeWrite128_arm64(u32, const u128*);
-// Unaligned load/store family helpers (C.16): merge semantics, no misalign trap.
-extern "C" void eeLWL_arm64(u32, u32), eeLWR_arm64(u32, u32);
-extern "C" void eeLDL_arm64(u32, u32), eeLDR_arm64(u32, u32);
-extern "C" void eeSWL_arm64(u32, u32), eeSWR_arm64(u32, u32);
-extern "C" void eeSDL_arm64(u32, u32), eeSDR_arm64(u32, u32);
-// C.67: fused-unaligned-pair slow paths (exact two-access guest-order semantics).
-extern "C" u32  eeReadU32_arm64(u32);
-extern "C" u64  eeReadU64_arm64(u32);
-extern "C" void eeWriteU32_arm64(u32, u32), eeWriteU64_arm64(u32, u64);
-extern "C" void eeCancelInstruction_arm64(void);
-extern "C" void eeEventTest_arm64(void);
-extern "C" void eeUpdateCycles_arm64(void);
+#include "arm64/aR5900Glue.h" // the interpreter half: memory paths, loop hooks
 
 /* Interpreter ops called directly from JIT blocks (C.18): ops with
  * contained side effects (no control flow, no exception, no pc or
@@ -2105,7 +2086,7 @@ namespace
 	// ---- Integer mult/div + HI/LO moves (opcode 0x00) ----
 	// All bit-exact, side-effect-free integer ops on the low 32 bits, with the
 	// 64-bit HI/LO results stored sign-extended, matching the interpreter exactly
-	// (R5900OpcodeImpl.cpp MULT/MULTU/DIV/DIVU). HI/LO layout: see kHI/kLO above
+	// (R5900OpcodeImpl.c MULT/MULTU/DIV/DIVU). HI/LO layout: see kHI/kLO above
 	// (the mult/div path uses only their low 64 bits).
 
 	// Load the low 32 bits of a GPR into a w-register (r0 reads as zero).
@@ -3903,7 +3884,7 @@ namespace {
 		};
 
 		// JR/JALR target first: `jalr rd, rs` with rd == rs jumps to the old
-		// rs (JALR() in Interpreter.cpp reads it before _SetLink).
+		// rs (JALR() in Interpreter.c reads it before _SetLink).
 		if (is_jr) LoadGpr(m, x20, gpr, rs);
 		// Link value is ZERO-extended to match the interpreter's _SetLink
 		// (R5900.h: UD[0] = u32 pc+4) -- NOT sign-extended as real MIPS64 would.
@@ -3995,7 +3976,7 @@ namespace {
 		s_rc.FlushDirty(m, gpr); // block exit (not taken)
 		// Mirror the interpreter EXACTLY: of the non-likely conditionals, only
 		// BEQ/BNE call intEventTest() on the not-taken path (BGEZ/BGTZ/BLEZ/BLTZ
-		// and the AL forms do nothing there -- see Interpreter.cpp); the likely
+		// and the AL forms do nothing there -- see Interpreter.c); the likely
 		// branches BEQL/BNEL/BLEZL/BGTZL/BLTZL/BGEZL do. EXCEPTION: BC0FL/BC0TL
 		// and BC1FL/BC1TL are likely (skip the delay slot) but do NOT call
 		// intEventTest on not-taken -- COP0.c's BC0xL and FPU.c's BC1L
@@ -4494,7 +4475,7 @@ extern "C" bool eeFastmemFault_arm64(uintptr_t code_address)
 }
 
 
-extern "C" void eeJitRunBlock_arm64(void)
+void eeJitRunBlock_arm64(void)
 {
 
 	BlockForPC(cpuRegs.pc)();

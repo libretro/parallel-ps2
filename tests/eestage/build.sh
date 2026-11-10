@@ -1,6 +1,6 @@
 #!/bin/sh
 # The EE interpreter's execution stages across a cancelled instruction,
-# on the real Interpreter.cpp. MSYS2 MINGW64 builds and runs it as is.
+# on the real Interpreter.c. MSYS2 MINGW64 builds and runs it as is.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
@@ -28,8 +28,10 @@ for c in fastjmp/fastjmp string/stdstring string/rstrtod file/file_path compat/c
 done
 "$CC" -w $DEFS $OPT $INC -c "$P/memcard_ecc.c" -o "$OBJ/memcard_ecc.o"
 "$CC" -w $DEFS $OPT $INC -c "$P/R5900OpcodeTables.c" -o "$OBJ/R5900OpcodeTables.o"
+"$CC" -w $DEFS $OPT $INC -c "$P/R5900OpcodeImpl.c" -o "$OBJ/R5900OpcodeImpl.o"
+"$CC" -w $DEFS $OPT $INC -c "$P/Interpreter.c" -o "$OBJ/Interpreter.o"
 "$CXX" -std=c++17 -w $DEFS $OPT $INC -o "$DIR/eestage$EXE" \
-	"$DIR/glue.cpp" "$DIR/stubs.cpp" "$P/Interpreter.cpp" "$P/R5900OpcodeImpl.cpp" \
+	"$DIR/glue.cpp" "$DIR/stubs.cpp" \
 	"$P/Pcsx2Config.cpp" "$P/MemoryCardFile.c" \
 	"$P/FormatString.cpp" "$OBJ"/*.o $LIBS
 rm -rf "$OBJ"

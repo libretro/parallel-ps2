@@ -2,7 +2,7 @@
  *
  *  Scores SB, SH, SW, SD, SQ and the unaligned SWL/SWR and SDL/SDR pairs
  *  against ps2autotests tests/cpu/ee/lsu.expected, using the semantics in
- *  pcsx2/R5900OpcodeImpl.cpp.
+ *  pcsx2/R5900OpcodeImpl.c.
  *
  *  These are checked the other way round from the loads: the harness
  *  copies C_PATTERN into a buffer, stores into it at base + offset, and

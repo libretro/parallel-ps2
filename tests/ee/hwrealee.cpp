@@ -1,7 +1,7 @@
 /*  EE integer ops against console captures, driving the real code.
  *
  *  tests/ee/hwalu.c and hwload.c and hwstore.c transcribe the semantics
- *  out of pcsx2/R5900OpcodeImpl.cpp and score the copy, which catches a
+ *  out of pcsx2/R5900OpcodeImpl.c and score the copy, which catches a
  *  wrong answer but not drift. This links that file and calls the ops
  *  through their real entry points, building the instruction word so the
  *  _Rd_, _Rs_, _Rt_, _Sa_ and _Imm_ macros decode what the harness
@@ -40,7 +40,7 @@
 alignas(16) cpuRegisters cpuRegs;
 
 /* ---- stubs ------------------------------------------------------------
- * Everything R5900OpcodeImpl.cpp reaches for that this harness does not
+ * Everything R5900OpcodeImpl.c reaches for that this harness does not
  * exercise. The memory accessors are real; the rest are inert. */
 
 #define MEMSIZE 4096
@@ -615,7 +615,7 @@ int main(int argc, char** argv)
 		if (pass != n) failures++;
 	}
 
-	printf("hwrealee: %d cases across %d ops, driven through R5900OpcodeImpl.cpp\n",
+	printf("hwrealee: %d cases across %d ops, driven through R5900OpcodeImpl.c\n",
 	       total, NOPS);
 	return failures != 0;
 }

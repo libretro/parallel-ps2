@@ -857,6 +857,16 @@ int emu_config_ee_cycle_rate(void)
 	return EmuConfig.Speedhacks.EECycleRate;
 }
 
+bool emu_config_ee_wait_loop(void)
+{
+	return EmuConfig.Speedhacks.WaitLoop;
+}
+
+bool emu_config_goemon_tlb_hack(void)
+{
+	return EmuConfig.Gamefixes.GoemonTlbHack;
+}
+
 u64 emu_fpcr_set_vu(int unit)
 {
 	const FPControlRegister prev = FPControlRegister::GetCurrent();

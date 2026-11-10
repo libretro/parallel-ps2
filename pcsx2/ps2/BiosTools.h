@@ -24,7 +24,6 @@ typedef struct BiosDebugInformation
 	u32 iopModListAddr;
 } BiosDebugInformation;
 
-extern BiosDebugInformation CurrentBiosInformation;
 /* MSVC decorates C++ data symbols; the ELF ABI does not. A variable a C
  * unit references therefore has to be declared -- and so, through this
  * header, defined -- with C language linkage, or the Windows link fails
@@ -32,6 +31,9 @@ extern BiosDebugInformation CurrentBiosInformation;
 #ifdef __cplusplus
 extern "C" {
 #endif
+	/* R5900OpcodeImpl.c finds the EE thread list on StartThread and
+	 * ChangeThreadPriority. */
+	extern BiosDebugInformation CurrentBiosInformation;
 	extern bool AllowParams1;
 	extern bool AllowParams2;
 	extern u32 BiosChecksum;

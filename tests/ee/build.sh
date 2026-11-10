@@ -71,15 +71,16 @@ echo "== arm64 EE/IOP recs: JALR reads its target before the link =="
 "$CC" -O1 -g -Wall $SANFLAGS -o "$DIR/ee_linkorder" "$DIR/linkorder.c"
 "$DIR/ee_linkorder" "$ROOT/pcsx2/arm64/recR5900_arm64.cpp" "$ROOT/pcsx2/arm64/recR3000A_arm64.cpp"
 
-echo "== EE ALU driven through R5900OpcodeImpl.cpp vs console =="
+echo "== EE ALU driven through R5900OpcodeImpl.c vs console =="
 EXPECTED="${PS2AUTOTESTS:-}/tests/cpu/ee"
 if [ -d "$EXPECTED" ]; then
 	EEINC="-I $ROOT -I $ROOT/pcsx2 -I $ROOT/common -I $ROOT/common/include -I $ROOT/3rdparty/include -I $ROOT/libretro/libretro-common/include"
 	${CC:-cc} -std=gnu89 -O1 -w $SANFLAGS $EEINC -c "$ROOT/pcsx2/R5900OpcodeTables.c" -o "$DIR/ee_hwrealee_tab.o"
+	${CC:-cc} -std=gnu89 -O1 -w $SANFLAGS $EEINC -c "$ROOT/pcsx2/R5900OpcodeImpl.c" -o "$DIR/ee_hwrealee_impl.o"
 	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS $EEINC \
 		-o "$DIR/ee_hwrealee" "$DIR/hwrealee.cpp" "$DIR/hwrealee_stubs.cpp" \
-		"$ROOT/pcsx2/R5900OpcodeImpl.cpp" "$DIR/ee_hwrealee_tab.o" "$ROOT/libretro/libretro-common/queues/retro_spsc.c"
-	rm -f "$DIR/ee_hwrealee_tab.o"
+		"$DIR/ee_hwrealee_impl.o" "$DIR/ee_hwrealee_tab.o" "$ROOT/libretro/libretro-common/queues/retro_spsc.c"
+	rm -f "$DIR/ee_hwrealee_tab.o" "$DIR/ee_hwrealee_impl.o"
 	"$DIR/ee_hwrealee" "$EXPECTED"
 else
 	echo "  skipped: set PS2AUTOTESTS to a ps2autotests checkout to run this"

@@ -137,7 +137,7 @@ void psxSRL(void) { if (!_Rd_) return; _rRd_ = _u32(_rRt_) >> _Sa_; } /* Rd = Rt
  * shift with rs >= 32.
  *
  * rpsxSLLV in x86/iR3000Atables.cpp masks, and so does SLLV in
- * R5900OpcodeImpl.cpp for the EE. This was the odd one out. */
+ * R5900OpcodeImpl.c for the EE. This was the odd one out. */
 void psxSLLV(void) { if (!_Rd_) return; _rRd_ = _u32(_rRt_) << (_u32(_rRs_) & 0x1f); } /* Rd = Rt << rs */
 void psxSRAV(void) { if (!_Rd_) return; _rRd_ = _i32(_rRt_) >> (_u32(_rRs_) & 0x1f); } /* Rd = Rt >> rs (arithmetic) */
 void psxSRLV(void) { if (!_Rd_) return; _rRd_ = _u32(_rRt_) >> (_u32(_rRs_) & 0x1f); } /* Rd = Rt >> rs (logical) */

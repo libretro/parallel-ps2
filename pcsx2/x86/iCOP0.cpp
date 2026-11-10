@@ -212,7 +212,7 @@ void recTLBWR() { recCall(intTLBWR); }
 // g_branch = 2 still ending the block.
 //
 // intSetBranch() is likewise a no-op here: it sets branch2, which is static to
-// Interpreter.cpp and invisible to recompiled code.
+// Interpreter.c and invisible to recompiled code.
 // Reproduces everything recBranchCall did around the call, in the same order:
 // force the branch test, then iFlushCall(FLUSH_INTERPRETER).
 //

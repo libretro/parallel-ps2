@@ -272,11 +272,18 @@ static const u32 EEKERNEL_START	= 0;
 static const u32 EENULL_START	= 0x81FC0;
 static const u32 EELOAD_START	= 0x82000;
 static const u32 EELOAD_SIZE	= 0x20000; /* overestimate for searching */
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* R5900.cpp; the interpreter's boot loop (Interpreter.c) drives them. */
 extern u32 g_eeloadMain, g_eeloadExec;
 
 extern void eeGameStarting(void);
 extern void eeloadHook(void);
 extern void eeloadHook2(void);
+#ifdef __cplusplus
+}
+#endif
 
 // --------------------------------------------------------------------------------------
 //  R5900cpu
@@ -390,14 +397,30 @@ extern uint dmacInterrupt(void);
 #endif
 
 extern void cpuReset();
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* R5900.cpp; the interpreter ops (R5900OpcodeImpl.c) raise through it. */
 extern void cpuException(u32 code, u32 bd);
+/* R5900OpcodeImpl.c; cpuReset clears the DECI2 state through it. */
+extern void Deci2Reset(void);
+#ifdef __cplusplus
+}
+#endif
 /* Memory.c's unmapped-page handlers raise it. */
 #ifdef __cplusplus
 extern "C"
 #endif
 void cpuTlbMiss(u32 addr, u32 bd, u32 excode);
-extern void GoemonPreloadTlb();
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* Goemon's TLB cache, hooked from the interpreter's JAL and JR. */
+extern void GoemonPreloadTlb(void);
 extern void GoemonUnloadTlb(u32 key);
+#ifdef __cplusplus
+}
+#endif
 
 extern int  cpuTestCycle( u64 startCycle, s32 delta );
 /* R5900.cpp; the VIF DMA (Vif1_Dma.c, Vif1_MFIFO.c) paces itself on it. */
@@ -409,7 +432,14 @@ extern int cpuGetCycles(void);
 }
 #endif
 
-extern void _cpuEventTest_Shared(void);	// for internal use by the Dynarecs and Ints inside R5900:
+/* For the recompilers and the interpreter (Interpreter.c). */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern void _cpuEventTest_Shared(void);
+#ifdef __cplusplus
+}
+#endif
 
 /* R5900.cpp; Hw.c and Dmac.c raise interrupts through them. */
 #ifdef __cplusplus

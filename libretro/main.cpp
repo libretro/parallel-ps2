@@ -1895,9 +1895,9 @@ void retro_get_system_av_info(retro_system_av_info* info)
 
 	switch (gsVideoMode)
 	{
-		case GS_VideoMode::PAL:
-		case GS_VideoMode::DVD_PAL:
-		case GS_VideoMode::SDTV_576P:
+		case GS_VIDEOMODE_PAL:
+		case GS_VIDEOMODE_DVD_PAL:
+		case GS_VIDEOMODE_SDTV_576P:
 			retro_set_region(RETRO_REGION_PAL);
 			break;
 		default:

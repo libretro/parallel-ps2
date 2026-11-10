@@ -1,7 +1,7 @@
 /*  EE ALU three-register ops against console captures.
  *
  *  Scores all thirty-five ops in ps2autotests tests/cpu/ee/alu.expected
- *  against the semantics in pcsx2/R5900OpcodeImpl.cpp: the eighteen
+ *  against the semantics in pcsx2/R5900OpcodeImpl.c: the eighteen
  *  three-register ones, the five register-immediate, the eleven
  *  shift-by-immediate and compare-immediate, and LUI.
  *
@@ -120,7 +120,7 @@ static const char* const kName[A_COUNT] = {
 /* LUI prints one operand; everything else prints two. */
 static int one_operand(int op) { return op == A_LUI; }
 
-/* Transcribed from R5900OpcodeImpl.cpp. Each returns the new low
+/* Transcribed from R5900OpcodeImpl.c. Each returns the new low
  * doubleword of rd; `keep` says whether rd is left alone entirely, which
  * only the conditional moves do. */
 static u64 apply(int op, const Q* s, const Q* t, u64 rd_lo, int* keep)
@@ -158,7 +158,7 @@ static u64 apply(int op, const Q* s, const Q* t, u64 rd_lo, int* keep)
 	case A_MOVZ:  if (rt != 0) { *keep = 1; return rd_lo; } return rs;
 
 	/* Immediate forms. `rt` carries the immediate as printed; sign or zero
-	 * extension is per instruction, exactly as R5900OpcodeImpl.cpp does it. */
+	 * extension is per instruction, exactly as R5900OpcodeImpl.c does it. */
 	case A_ADDIU:  return (u64)(s64)(s32)((u32)rs + (u32)(s32)(s16)(u16)rt);
 	case A_DADDIU: return rs + (u64)(s64)(s16)(u16)rt;
 	case A_ANDI:   return rs & (u64)(u16)rt;

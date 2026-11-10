@@ -2,7 +2,7 @@
  *
  *  Scores MFSA, MTSA, MTSAB and MTSAH against ps2autotests
  *  tests/cpu/ee_simd/funnel.expected, transcribed from
- *  pcsx2/R5900OpcodeImpl.cpp.
+ *  pcsx2/R5900OpcodeImpl.c.
  *
  *  SA is four bits, a byte count QFSRV reads as sa * 8. Every write to it
  *  narrows to that: MTSA keeps the low four bits, MTSAB exclusive-ors the

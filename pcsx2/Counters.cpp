@@ -97,11 +97,11 @@ s32 nextDeltaCounter; // delta from nextStartCounter, in cycles, until the next 
 // For Analog/Double Strike and Interlace modes
 static bool IsInterlacedVideoMode(void)
 {
-	return (           gsVideoMode == GS_VideoMode::PAL 
-			|| gsVideoMode == GS_VideoMode::NTSC 
-			|| gsVideoMode == GS_VideoMode::DVD_NTSC 
-			|| gsVideoMode == GS_VideoMode::DVD_PAL 
-			|| gsVideoMode == GS_VideoMode::HDTV_1080I);
+	return (           gsVideoMode == GS_VIDEOMODE_PAL
+			|| gsVideoMode == GS_VIDEOMODE_NTSC
+			|| gsVideoMode == GS_VIDEOMODE_DVD_NTSC
+			|| gsVideoMode == GS_VIDEOMODE_DVD_PAL
+			|| gsVideoMode == GS_VIDEOMODE_HDTV_1080I);
 }
 
 static bool IsProgressiveVideoMode(void)
@@ -277,8 +277,8 @@ static void vSyncInfoCalc(vSyncTimingInfo* info, u32 vertical_mHz, u32 scansPerF
 	// Dynasty Warriors 3 Xtreme Legends - fake save corruption when loading save
 	// Jak II - random speedups
 	// Shadow of Rome - FMV audio issues
-	const bool ntsc_hblank = gsVideoMode != GS_VideoMode::PAL && gsVideoMode != GS_VideoMode::DVD_PAL &&
-		(gsVideoMode != GS_VideoMode::Uninitialized || vertical_mHz != DEFAULT_FRAME_RATE_PAL_MHZ);
+	const bool ntsc_hblank = gsVideoMode != GS_VIDEOMODE_PAL && gsVideoMode != GS_VIDEOMODE_DVD_PAL &&
+		(gsVideoMode != GS_VIDEOMODE_UNINITIALIZED || vertical_mHz != DEFAULT_FRAME_RATE_PAL_MHZ);
 	const u64 HalfFrame = Frame / 2;
 	// Scanline counts carried as numerators over 2: the vblank period is
 	// 22.5 (NTSC) / 24.5 (PAL) scanlines, plus 0.5 / 1.5 in progressive
@@ -362,8 +362,8 @@ u32 GetVerticalFrequencyMilliHz(void)
 
 	switch (gsVideoMode)
 	{
-		case GS_VideoMode::PAL:
-		case GS_VideoMode::DVD_PAL:
+		case GS_VIDEOMODE_PAL:
+		case GS_VIDEOMODE_DVD_PAL:
 		{
 			// Config floats snap to the milli-hertz grid once, here; the
 			// progressive "double strike" adjustment (-0.24 Hz) is then an
@@ -372,24 +372,24 @@ u32 GetVerticalFrequencyMilliHz(void)
 			const u32 mHz = (u32)lrintf(EmuConfig.GS.FrameratePAL * 1000.0f);
 			return IsProgressiveVideoMode() ? mHz - 240 : mHz;
 		}
-		case GS_VideoMode::NTSC:
-		case GS_VideoMode::DVD_NTSC:
+		case GS_VIDEOMODE_NTSC:
+		case GS_VIDEOMODE_DVD_NTSC:
 		{
 			const u32 mHz = (u32)lrintf(EmuConfig.GS.FramerateNTSC * 1000.0f);
 			return IsProgressiveVideoMode() ? mHz - 110 : mHz;
 		}
-		case GS_VideoMode::HDTV_1080P:
-		case GS_VideoMode::HDTV_1080I:
-		case GS_VideoMode::HDTV_720P:
-		case GS_VideoMode::SDTV_576P:
-		case GS_VideoMode::VESA:
+		case GS_VIDEOMODE_HDTV_1080P:
+		case GS_VIDEOMODE_HDTV_1080I:
+		case GS_VIDEOMODE_HDTV_720P:
+		case GS_VIDEOMODE_SDTV_576P:
+		case GS_VIDEOMODE_VESA:
 			return 60000;
-		case GS_VideoMode::Uninitialized:
+		case GS_VIDEOMODE_UNINITIALIZED:
 			/* SetGsCrt hasn't executed yet: seed from the boot region so
 			 * pre-init cycle math is computed against the rate the BIOS
 			 * would have programmed. */
 			return BootRegionIsPAL() ? DEFAULT_FRAME_RATE_PAL_MHZ : DEFAULT_FRAME_RATE_NTSC_MHZ;
-		case GS_VideoMode::SDTV_480P:
+		case GS_VIDEOMODE_SDTV_480P:
 		default:
 			// Pass NTSC vertical frequency value when unknown video mode is detected.
 			break;
@@ -420,32 +420,32 @@ void UpdateVSyncRate(bool force)
 
 		switch (gsVideoMode)
 		{
-			case GS_VideoMode::PAL:
-			case GS_VideoMode::DVD_PAL:
+			case GS_VIDEOMODE_PAL:
+			case GS_VIDEOMODE_DVD_PAL:
 				if (gsIsInterlaced)
 					total_scanlines = SCANLINES_TOTAL_PAL_I;
 				else
 					total_scanlines = SCANLINES_TOTAL_PAL_NI;
 				break;
-			case GS_VideoMode::SDTV_480P:
-			case GS_VideoMode::SDTV_576P:
-			case GS_VideoMode::HDTV_720P:
-			case GS_VideoMode::VESA:
+			case GS_VIDEOMODE_SDTV_480P:
+			case GS_VIDEOMODE_SDTV_576P:
+			case GS_VIDEOMODE_HDTV_720P:
+			case GS_VIDEOMODE_VESA:
 				total_scanlines = SCANLINES_TOTAL_NTSC_I;
 				break;
-			case GS_VideoMode::HDTV_1080P:
-			case GS_VideoMode::HDTV_1080I:
+			case GS_VIDEOMODE_HDTV_1080P:
+			case GS_VIDEOMODE_HDTV_1080I:
 				total_scanlines = SCANLINES_TOTAL_1080;
 				break;
-			case GS_VideoMode::Uninitialized: // SYSCALL instruction hasn't executed yet, give some temporary values.
+			case GS_VIDEOMODE_UNINITIALIZED: // SYSCALL instruction hasn't executed yet, give some temporary values.
 				if (BootRegionIsPAL())
 					total_scanlines = gsIsInterlaced ? SCANLINES_TOTAL_PAL_I : SCANLINES_TOTAL_PAL_NI;
 				else
 					total_scanlines = gsIsInterlaced ? SCANLINES_TOTAL_NTSC_I : SCANLINES_TOTAL_NTSC_NI;
 				break;
-			case GS_VideoMode::Unknown:
-			case GS_VideoMode::NTSC:
-			case GS_VideoMode::DVD_NTSC:
+			case GS_VIDEOMODE_UNKNOWN:
+			case GS_VIDEOMODE_NTSC:
+			case GS_VIDEOMODE_DVD_NTSC:
 			default:
 				if (gsIsInterlaced)
 					total_scanlines = SCANLINES_TOTAL_NTSC_I;
@@ -454,7 +454,7 @@ void UpdateVSyncRate(bool force)
 				break;
 		}
 
-		const bool video_mode_initialized = gsVideoMode != GS_VideoMode::Uninitialized;
+		const bool video_mode_initialized = gsVideoMode != GS_VIDEOMODE_UNINITIALIZED;
 
 		// NBA Jam 2004 PAL will fail to display 3D on the menu if this value isn't correct on reset.
 		if (video_mode_initialized && vSyncInfo.VideoMode != gsVideoMode)
@@ -1057,6 +1057,6 @@ bool rcntFreeze(SaveStateBase *s)
  * is no longer Uninitialized and the seed is irrelevant. */
 void rcntRefreshBootTiming(void)
 {
-	if (gsVideoMode == GS_VideoMode::Uninitialized)
+	if (gsVideoMode == GS_VIDEOMODE_UNINITIALIZED)
 		UpdateVSyncRate(false);
 }

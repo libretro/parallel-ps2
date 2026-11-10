@@ -1,7 +1,7 @@
 /*  EE branch conditions against console captures.
  *
  *  Scores the twenty branches and jumps in ps2autotests
- *  tests/cpu/ee/branch.expected against pcsx2/Interpreter.cpp.
+ *  tests/cpu/ee/branch.expected against pcsx2/Interpreter.c.
  *
  *  Each line reports three things -- followed or skipped, ra set or
  *  ignored, delay slot run or skipped -- and on the EE all three vary,
@@ -101,7 +101,7 @@ static int likely_form(int op)
 	    || op == E_BLEZL || op == E_BLTZL || op == E_BGEZALL || op == E_BLTZALL;
 }
 
-/* Transcribed from pcsx2/Interpreter.cpp; comparisons are on SD[0]. */
+/* Transcribed from pcsx2/Interpreter.c; comparisons are on SD[0]. */
 static int taken(int op, u64 rs, u64 rt)
 {
 	switch (op)

@@ -195,7 +195,7 @@ void recCACHE() //Interpreter only!
 
 // The twelve trap opcodes are one shape: compare Rs against Rt or a
 // sign-extended immediate, and raise if it holds. The interpreter's trap()
-// is two lines (R5900OpcodeImpl.cpp:991-995) and ignores its code argument,
+// is two lines (R5900OpcodeImpl.c:991-995) and ignores its code argument,
 // so it inlines here rather than being called.
 //
 // The block still ends -- g_branch = 2, and the forced branch test stays --

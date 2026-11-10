@@ -2,7 +2,7 @@
  *
  *  `jalr rd, rs` may name one register for both, and then the jump goes
  *  to the old rs: the interpreters read the target before the link is
- *  written (JALR() in Interpreter.cpp, psxJALR in R3000AInterpreter.cpp,
+ *  written (JALR() in Interpreter.c, psxJALR in R3000AInterpreter.cpp,
  *  the latter scored against the console's "jalr: rs/rd match" case in
  *  ps2autotests tests/cpu/iop/branchdelay). Both arm64 recompilers emit
  *  the link and the target read in one shared EmitBranch, so the order of
