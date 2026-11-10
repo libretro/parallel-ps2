@@ -73,6 +73,8 @@ void eeJitShutdown_arm64(void);
 void eeJitReset_arm64(void);
 void eeJitClear_arm64(u32 addr, u32 size);
 void eeJitRunBlock_arm64(void);
+/* vtlb.c's fault handler hands fastmem faults in JIT code here. */
+bool eeFastmemFault_arm64(uptr code_address);
 
 #ifdef __cplusplus
 }

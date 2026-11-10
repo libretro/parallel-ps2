@@ -216,22 +216,21 @@ typedef enum vtlb_ProtectionMode
 	ProtMode_NotRequired 	// page doesn't require any protection
 } vtlb_ProtectionMode;
 
-extern vtlb_ProtectionMode mmap_GetRamPageInfo(u32 paddr);
-extern void mmap_MarkCountedRamPage(u32 paddr);
-extern void mmap_ResetBlockTracking();
-/* Vif1_Dma.c lifts the protection before the GS writes into EE RAM. */
+/* vtlb.c's EE RAM page protection, which the recompilers drive. Vif1_Dma.c
+ * lifts the protection before the GS writes into EE RAM. */
 #ifdef __cplusplus
 extern "C" {
 #endif
+extern vtlb_ProtectionMode mmap_GetRamPageInfo(u32 paddr);
+extern void mmap_MarkCountedRamPage(u32 paddr);
+extern void mmap_ResetBlockTracking(void);
 extern void mmap_UnprotectRamRange(u32 paddr, u32 size);
 #ifdef __cplusplus
 }
 #endif
 
-// --------------------------------------------------------------------------------------
-//  Goemon game fix
-// --------------------------------------------------------------------------------------
-struct GoemonTlb {
+/* Goemon game fix: the game's own TLB cache table entry. */
+typedef struct GoemonTlb {
 	u32 valid;
 	u32 unk1; // could be physical address also
 	u32 unk2;
@@ -241,4 +240,4 @@ struct GoemonTlb {
 	u32 high_add;
 	u32 key; // uniq number attached to an allocation
 	u32 unk5;
-};
+} GoemonTlb;

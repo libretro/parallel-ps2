@@ -224,7 +224,8 @@
     <ClCompile Include="Memory.c" />
     <ClCompile Include="x86\iR5900Analysis.cpp" />
     <ClCompile Include="x86\ix86-32\recVTLB.cpp" />
-    <ClCompile Include="vtlb.cpp" />
+    <ClCompile Include="vtlb.c" />
+    <ClCompile Include="GoemonTlb.c" />
     <ClCompile Include="MTVU.cpp" />
     <ClCompile Include="VUmicro.c" />
     <ClCompile Include="VUmicroMem.c" />
@@ -449,6 +450,7 @@
     <ClInclude Include="VirtualMemory.h" />
     <ClInclude Include="VMManager.h" />
     <ClInclude Include="VMHost.h" />
+    <ClInclude Include="HotConfig.h" />
     <ClInclude Include="vtlb.h" />
     <ClInclude Include="MTVU.h" />
     <ClInclude Include="VU.h" />

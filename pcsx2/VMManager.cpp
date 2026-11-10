@@ -32,6 +32,7 @@
 #include "Counters.h"
 #include "CDVD/CDVD.h"
 #include "CDVD/CDVD_host.h"
+#include "HotConfig.h"
 #include "CDVD/cdvd_iso.h"
 #include "DEV9/DEV9.h"
 #include "Elfheader.h"
@@ -240,6 +241,9 @@ void VMManager::Internal::UpdateEmuFolders()
 
 void VMManager::Internal::CPUThreadInitialize(void)
 {
+	/* The hot settings word from the defaults, before the memory and
+	 * CPU providers below can read it; LoadSettings resyncs. */
+	emu_config_sync_hot();
 	/* The GIF paths' packet buffers, before anything that could reach
 	 * them. */
 	if (!gif_unit_init())
@@ -332,6 +336,7 @@ void VMManager::LoadSettings()
 	if (HasValidVM())
 		ApplyGameFixes();
 	cdvdApplySettings(EmuConfig.Speedhacks.fastCDVD);
+	emu_config_sync_hot();
 }
 
 void vm_game_starting_on_cpu_thread(void)

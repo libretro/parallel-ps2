@@ -157,7 +157,8 @@ set(pcsx2Sources
 	Vif_Transfer.c
 	Vif_Unpack.c
 	VirtualMemory.c
-	vtlb.cpp
+	vtlb.c
+	GoemonTlb.c
 	VU0.c
 	VUmicro.c
 	VU0micro.c
@@ -184,6 +185,7 @@ set(pcsx2Headers
 	GS.h
 	GSVideoMode.h
 	VMHost.h
+	HotConfig.h
 	Hardware.h
 	Host.h
 	HostFS.h

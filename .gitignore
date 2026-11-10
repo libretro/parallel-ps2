@@ -129,6 +129,7 @@ build*/
 /tests/vkpipekey/__pycache__/
 /tests/emitter/emitter_reach
 /tests/isofs/isofs_test
+/tests/goemontlb/goemontlb
 /tests/gsalign/gsalign_test
 /tests/gs/gs_vertex_oracle
 /tests/gs/gs_vertex_bench

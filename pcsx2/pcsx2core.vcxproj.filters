@@ -341,7 +341,10 @@
     <ClCompile Include="x86\ix86-32\recVTLB.cpp">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
     </ClCompile>
-    <ClCompile Include="vtlb.cpp">
+    <ClCompile Include="vtlb.c">
+      <Filter>System\Ps2\EmotionEngine\Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="GoemonTlb.c">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
     </ClCompile>
     <ClCompile Include="MTVU.cpp">
@@ -1515,6 +1518,9 @@
       <Filter>System</Filter>
     </ClInclude>
     <ClInclude Include="VMHost.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="HotConfig.h">
       <Filter>System</Filter>
     </ClInclude>
     <ClInclude Include="PAD\PAD.h">

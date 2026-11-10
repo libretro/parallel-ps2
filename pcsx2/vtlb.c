@@ -28,12 +28,10 @@
 	vtlb/vmap supports mapping to either of these locations, or some other (externaly) specified address.
 */
 
-#include <algorithm>
 #include "common/Pcsx2Defs.h"
 #include <rthreads/rthreads.h>
-#include <utility>
-#include <cstdlib> /* bsearch, realloc, free */
-#include <cstring> /* memset */
+#include <stdlib.h> /* bsearch, realloc, free */
+#include <string.h> /* memset */
 #include <retro_atomic.h>
 
 
@@ -47,9 +45,8 @@
 #include "Cache.h"
 #include "IopMem.h"
 #include "VUmicro.h"
-#include "Host.h"
 #include "R5900.h"
-#include "Config.h"
+#include "HotConfig.h"
 
 PCSX2_ALIGN(64) vtlb_map_t vtlbdata;
 
@@ -61,13 +58,13 @@ static vtlbHandler DefaultPhyHandler;
 static vtlbHandler UnmappedVirtHandler;
 static vtlbHandler UnmappedPhyHandler;
 
-struct FastmemVirtualMapping
+typedef struct FastmemVirtualMapping
 {
 	u32 offset;
 	u32 size;
-};
+} FastmemVirtualMapping;
 
-struct LoadstoreBackpatchInfo
+typedef struct LoadstoreBackpatchInfo
 {
 	u32 guest_pc;
 	u32 gpr_bitmask;
@@ -79,7 +76,7 @@ struct LoadstoreBackpatchInfo
 	bool is_signed;
 	bool is_load;
 	bool is_fpr;
-};
+} LoadstoreBackpatchInfo;
 
 #define FASTMEM_AREA_SIZE 0x100000000ULL
 #define FASTMEM_PAGE_COUNT ((u32)(FASTMEM_AREA_SIZE / VTLB_PAGE_SIZE))
@@ -87,7 +84,7 @@ struct LoadstoreBackpatchInfo
 
 static memshm_area_t* s_fastmem_area;
 bool vtlb_fastmem_unavailable;
-static u32* s_fastmem_virtual_mapping; // maps vaddr page -> mainmem offset; FASTMEM_PAGE_COUNT entries, NULL until fastmem init
+static u32* s_fastmem_virtual_mapping; /* maps vaddr page -> mainmem offset; FASTMEM_PAGE_COUNT entries, NULL until fastmem init */
 
 /* mainmem offset -> vaddr reverse multimap. Head table indexed by mainmem
  * page (all offsets handed out by vtlb_GetMainMemoryOffset* sit below the
@@ -172,23 +169,23 @@ static void fastmem_phys_release(void)
 	s_fastmem_phys_pool     = NULL;
 	s_fastmem_phys_pool_cap = 0;
 }
-// Backpatch info for fastmem loadstores, keyed by host code address.
-// code_address values are inserted in recompilation order (monotonically
-// increasing within a run) and the table is cleared on every cache reset,
-// so a sorted flat array kept ordered by code_address gives O(1) amortized
-// append on the common path and bsearch lookup on the fault path, without
-// the per-entry node allocation of std::unordered_map.
-struct LoadstoreBackpatchEntry
+/* Backpatch info for fastmem loadstores, keyed by host code address. */
+/* code_address values are inserted in recompilation order (monotonically */
+/* increasing within a run) and the table is cleared on every cache reset, */
+/* so a sorted flat array kept ordered by code_address gives O(1) amortized */
+/* append on the common path and bsearch lookup on the fault path, without */
+/* the per-entry node allocation of std::unordered_map. */
+typedef struct LoadstoreBackpatchEntry
 {
 	uptr                  code_address;
 	LoadstoreBackpatchInfo info;
-};
+} LoadstoreBackpatchEntry;
 static LoadstoreBackpatchEntry* s_fastmem_backpatch       = NULL;
 static size_t                   s_fastmem_backpatch_count = 0;
 static size_t                   s_fastmem_backpatch_cap   = 0;
 
-// Returns the index of code_address, or the insertion point (== count if it
-// belongs at the end). *found is set to whether an exact match was present.
+/* Returns the index of code_address, or the insertion point (== count if it */
+/* belongs at the end). *found is set to whether an exact match was present. */
 static size_t vtlb_BackpatchLowerBound(uptr code_address, bool* found)
 {
 	size_t lo = 0;
@@ -218,10 +215,10 @@ static void vtlb_BackpatchFree(void)
 	s_fastmem_backpatch_cap   = 0;
 }
 
-// Sorted, unique list of guest PCs that have faulted out of fastmem.
-// Raw buffer + realloc growth; bsearch for lookup.  Insert keeps the
-// array sorted by shifting tail entries (rare path - one append per
-// distinct faulting PC discovered, never reaches more than a few k).
+/* Sorted, unique list of guest PCs that have faulted out of fastmem. */
+/* Raw buffer + realloc growth; bsearch for lookup.  Insert keeps the */
+/* array sorted by shifting tail entries (rare path - one append per */
+/* distinct faulting PC discovered, never reaches more than a few k). */
 /* Guards s_fastmem_backpatch* and s_fastmem_faulting_pcs*.
  *
  * These were serialized only INCIDENTALLY, by the global mutex the
@@ -341,10 +338,11 @@ __inline int ConvertPageMask(u32 PageMask)
 
 __inline int CheckCache(u32 addr)
 {
+	int i;
 	if (((cpuRegs.CP0.n.Config >> 16) & 0x1) != 0)
 	{
 		u32 mask;
-		for (int i = 1; i < 48; i++)
+		for (i = 1; i < 48; i++)
 		{
 			if (((tlb[i].EntryLo1 & 0x38) >> 3) == 0x3)
 			{
@@ -364,10 +362,10 @@ __inline int CheckCache(u32 addr)
 	}
 	return false;
 }
-// --------------------------------------------------------------------------------------
-// Interpreter Implementations of VTLB Memory Operations.
-// --------------------------------------------------------------------------------------
-// See recVTLB.cpp for the dynarec versions.
+/* -------------------------------------------------------------------------------------- */
+/* Interpreter Implementations of VTLB Memory Operations. */
+/* -------------------------------------------------------------------------------------- */
+/* See recVTLB.cpp for the dynarec versions. */
 
 /* One concrete function per width. These were a single
  * template<typename DataType> whose body switched on sizeof(DataType) * 8 --
@@ -389,9 +387,9 @@ type vtlb_memRead##bits(u32 addr)                                              \
 		u32 paddr = (u32)((p - id) & ~POINTER_SIGN_BIT);                       \
 		return ((fp_type*)vtlbdata.RWFT[rwft_row][0][id])(paddr);              \
 	}                                                                          \
-	if (!CHECK_EEREC)                                                          \
+	if (!(emu_hot & EMU_HOT_EEREC))                                                          \
 	{                                                                          \
-		if (CHECK_CACHE && CheckCache(addr))                                   \
+		if ((emu_hot & EMU_HOT_EECACHE) && CheckCache(addr))                                   \
 			return cache_read(addr);                                           \
 	}                                                                          \
 	return *(type*)p;                                                          \
@@ -414,9 +412,9 @@ RETURNS_R128 vtlb_memRead128(u32 mem)
 		u32 paddr = (u32)((p - id) & ~POINTER_SIGN_BIT);
 		return ((vtlbMemR128FP*)vtlbdata.RWFT[4][0][id])(paddr);
 	}
-	if (!CHECK_EEREC)
+	if (!(emu_hot & EMU_HOT_EEREC))
 	{
-		if (CHECK_CACHE && CheckCache(mem))
+		if ((emu_hot & EMU_HOT_EECACHE) && CheckCache(mem))
 			return readCache128(mem);
 	}
 	return r128_load((const void*)p);
@@ -436,9 +434,9 @@ void vtlb_memWrite##bits(u32 addr, type data)                                  \
 		((fp_type*)vtlbdata.RWFT[rwft_row][1][id])(paddr, data);               \
 		return;                                                                \
 	}                                                                          \
-	if (!CHECK_EEREC)                                                          \
+	if (!(emu_hot & EMU_HOT_EEREC))                                                          \
 	{                                                                          \
-		if (CHECK_CACHE && CheckCache(addr))                                   \
+		if ((emu_hot & EMU_HOT_EECACHE) && CheckCache(addr))                                   \
 		{                                                                      \
 			cache_write(addr, data);                                           \
 			return;                                                            \
@@ -475,11 +473,11 @@ void TAKES_R128 vtlb_memWrite128(u32 mem, r128 value)
 #endif
 		return;
 	}
-	if (!CHECK_EEREC)
+	if (!(emu_hot & EMU_HOT_EEREC))
 	{
-		if (CHECK_CACHE && CheckCache(mem))
+		if ((emu_hot & EMU_HOT_EECACHE) && CheckCache(mem))
 		{
-			alignas(16) const u128 r = r128_to_u128(value);
+			PCSX2_ALIGN(16) const u128 r = r128_to_u128(value);
 			writeCache128(mem, &r);
 			return;
 		}
@@ -495,89 +493,22 @@ void TAKES_R128 vtlb_memWrite128(u32 mem, r128 value)
  * users either. Dead code with a template on it is still dead code; if a
  * caller ever appears, one concrete function per width is what it wants. */
 
-// --------------------------------------------------------------------------------------
-//  TLB Miss / BusError Handlers
-// --------------------------------------------------------------------------------------
-// These are valid VM memory errors that should typically be handled by the VM itself via
-// its own cpu exception system.
-//
-// [TODO]  Add first-chance debugging hooks to these exceptions!
-//
-// Important recompiler note: Mid-block Exception handling isn't reliable *yet* because
-// memory ops don't flush the PC prior to invoking the indirect handlers.
+/* -------------------------------------------------------------------------------------- */
+/* TLB Miss / BusError Handlers */
+/* -------------------------------------------------------------------------------------- */
+/* These are valid VM memory errors that should typically be handled by the VM itself via */
+/* its own cpu exception system. */
 
-static GoemonTlb* FindGoemonTlbCacheAddress()
-{
-	u32 tlbAddrs[] = {
-		0x3d5580, // Cache table address for JPN final
-		0x3db400, // Cache table address for June 22 prototype
-		0x3dcd80 // Cache table address for August 26 prototype
-	};
-	for (u32 i = 0; i < sizeof(tlbAddrs); i++)
-	{
-		GoemonTlb* testTlb = (GoemonTlb*)&eeMem->Main[tlbAddrs[i]];
-		if (testTlb[0].valid < 2)
-			return testTlb;
-	}
-	return NULL;
-}
+/* [TODO]  Add first-chance debugging hooks to these exceptions! */
 
-void GoemonPreloadTlb(void)
-{
-	GoemonTlb* tlb = FindGoemonTlbCacheAddress();
+/* Important recompiler note: Mid-block Exception handling isn't reliable *yet* because */
+/* memory ops don't flush the PC prior to invoking the indirect handlers. */
 
-	for (u32 i = 0; i < 150; i++)
-	{
-		if (tlb[i].valid == 0x1 && tlb[i].low_add != tlb[i].high_add)
-		{
 
-			u32 size = tlb[i].high_add - tlb[i].low_add;
-			u32 vaddr = tlb[i].low_add;
-			u32 paddr = tlb[i].physical_add;
-
-			// TODO: The old code (commented below) seems to check specifically for handler 0.  Is this really correct?
-			//if ((uptr)vtlbdata.vmap[vaddr>>VTLB_PAGE_BITS] == POINTER_SIGN_BIT) {
-			vtlb_virt_t vmv = vtlbdata.vmap[vaddr >> VTLB_PAGE_BITS];
-			if (vtlb_virt_is_handler(vmv, vaddr) && vtlb_virt_id(vmv) == 0)
-			{
-				vtlb_VMap(vaddr, paddr, size);
-				vtlb_VMap(0x20000000 | vaddr, paddr, size);
-			}
-		}
-	}
-}
-
-void GoemonUnloadTlb(u32 key)
-{
-	GoemonTlb* tlb = FindGoemonTlbCacheAddress();
-
-	for (u32 i = 0; i < 150; i++)
-	{
-		if (tlb[i].key == key)
-		{
-			if (tlb[i].valid == 0x1)
-			{
-				u32 size = tlb[i].high_add - tlb[i].low_add;
-				u32 vaddr = tlb[i].low_add;
-
-				vtlb_VMapUnmap(vaddr, size);
-				vtlb_VMapUnmap(0x20000000 | vaddr, size);
-
-				// Unmap the tlb in game cache table
-				// Note: Game copy FEFEFEFE for others data
-				tlb[i].valid = 0;
-				tlb[i].key = 0xFEFEFEFE;
-				tlb[i].low_add = 0xFEFEFEFE;
-				tlb[i].high_add = 0xFEFEFEFE;
-			}
-		}
-	}
-}
-
-// Generates a tlbMiss Exception
+/* Generates a tlbMiss Exception */
 static __ri void vtlb_Miss(u32 addr, u32 mode)
 {
-	// Hack to handle expected tlb miss by some games.
+	/* Hack to handle expected tlb miss by some games. */
 	if (Cpu == &intCpu)
 	{
 		if (mode)
@@ -585,12 +516,12 @@ static __ri void vtlb_Miss(u32 addr, u32 mode)
 		else
 			cpuTlbMiss(addr, cpuRegs.branch, EXC_CODE_TLBL);
 
-		// Exception handled. Current instruction need to be stopped
+		/* Exception handled. Current instruction need to be stopped */
 		Cpu->CancelInstruction();
 	}
 }
 
-// clang-format off
+/* clang-format off */
 /* One concrete function per width; these were four templates whose
  * instantiations differed only in the operand type. */
 static mem8_t  vtlbUnmappedVRead8(u32 addr)  { vtlb_Miss(addr, 0); return 0; }
@@ -624,14 +555,14 @@ static void vtlbUnmappedPWriteLg(u32 addr, const r128* data) { (void)addr; (void
 #else
 static void TAKES_R128 vtlbUnmappedPWriteLg(u32 addr, r128 data) { }
 #endif
-// clang-format on
+/* clang-format on */
 
-// --------------------------------------------------------------------------------------
-//  VTLB mapping errors
-// --------------------------------------------------------------------------------------
-// These errors are assertion/logic errors that should never occur if PCSX2 has been initialized
-// properly.  All addressable physical memory should be configured as TLBMiss or Bus Error.
-//
+/* -------------------------------------------------------------------------------------- */
+/* VTLB mapping errors */
+/* -------------------------------------------------------------------------------------- */
+/* These errors are assertion/logic errors that should never occur if PCSX2 has been initialized */
+/* properly.  All addressable physical memory should be configured as TLBMiss or Bus Error. */
+
 
 static mem8_t vtlbDefaultPhyRead8(u32 addr) { return 0; }
 static mem16_t vtlbDefaultPhyRead16(u32 addr) { return 0; }
@@ -648,18 +579,18 @@ static void vtlbDefaultPhyWrite128(u32 addr, const r128* data) { (void)addr; (vo
 static void TAKES_R128 vtlbDefaultPhyWrite128(u32 addr, r128 data) { }
 #endif
 
-// ===========================================================================================
-//  VTLB Public API -- Init/Term/RegisterHandler stuff
-// ===========================================================================================
-//
+/* =========================================================================================== */
+/* VTLB Public API -- Init/Term/RegisterHandler stuff */
+/* =========================================================================================== */
 
-// Assigns or re-assigns the callbacks for a VTLB memory handler.  The handler defines specific behavior
-// for how memory pages bound to the handler are read from / written to.  If any of the handler pointers
-// are NULL, the memory operations will be mapped to the BusError handler (thus generating BusError
-// exceptions if the emulated app attempts to access them).
-//
-// Note: All handlers persist across calls to vtlb_Reset(), but are wiped/invalidated by calls to vtlb_Init()
-//
+
+/* Assigns or re-assigns the callbacks for a VTLB memory handler.  The handler defines specific behavior */
+/* for how memory pages bound to the handler are read from / written to.  If any of the handler pointers */
+/* are NULL, the memory operations will be mapped to the BusError handler (thus generating BusError */
+/* exceptions if the emulated app attempts to access them). */
+
+/* Note: All handlers persist across calls to vtlb_Reset(), but are wiped/invalidated by calls to vtlb_Init() */
+
 void vtlb_ReassignHandler(vtlbHandler rv,
 	vtlbMemR8FP* r8, vtlbMemR16FP* r16, vtlbMemR32FP* r32, vtlbMemR64FP* r64, vtlbMemR128FP* r128,
 	vtlbMemW8FP* w8, vtlbMemW16FP* w16, vtlbMemW32FP* w32, vtlbMemW64FP* w64, vtlbMemW128FP* w128)
@@ -682,15 +613,15 @@ vtlbHandler vtlb_NewHandler(void)
 	return vtlbHandlerCount++;
 }
 
-// Registers a handler into the VTLB's internal handler array.  The handler defines specific behavior
-// for how memory pages bound to the handler are read from / written to.  If any of the handler pointers
-// are NULL, the memory operations will be mapped to the BusError handler (thus generating BusError
-// exceptions if the emulated app attempts to access them).
-//
-// Note: All handlers persist across calls to vtlb_Reset(), but are wiped/invalidated by calls to vtlb_Init()
-//
-// Returns a handle for the newly created handler  See vtlb_MapHandler for use of the return value.
-//
+/* Registers a handler into the VTLB's internal handler array.  The handler defines specific behavior */
+/* for how memory pages bound to the handler are read from / written to.  If any of the handler pointers */
+/* are NULL, the memory operations will be mapped to the BusError handler (thus generating BusError */
+/* exceptions if the emulated app attempts to access them). */
+
+/* Note: All handlers persist across calls to vtlb_Reset(), but are wiped/invalidated by calls to vtlb_Init() */
+
+/* Returns a handle for the newly created handler  See vtlb_MapHandler for use of the return value. */
+
 vtlbHandler vtlb_RegisterHandler(vtlbMemR8FP* r8, vtlbMemR16FP* r16, vtlbMemR32FP* r32, vtlbMemR64FP* r64, vtlbMemR128FP* r128,
 	vtlbMemW8FP* w8, vtlbMemW16FP* w16, vtlbMemW32FP* w32, vtlbMemW64FP* w64, vtlbMemW128FP* w128)
 {
@@ -700,13 +631,13 @@ vtlbHandler vtlb_RegisterHandler(vtlbMemR8FP* r8, vtlbMemR16FP* r16, vtlbMemR32F
 }
 
 
-// Maps the given hander (created with vtlb_RegisterHandler) to the specified memory region.
-// New mappings always assume priority over previous mappings, so place "generic" mappings for
-// large areas of memory first, and then specialize specific small regions of memory afterward.
-// A single handler can be mapped to many different regions by using multiple calls to this
-// function.
-//
-// The memory region start and size parameters must be pagesize aligned.
+/* Maps the given hander (created with vtlb_RegisterHandler) to the specified memory region. */
+/* New mappings always assume priority over previous mappings, so place "generic" mappings for */
+/* large areas of memory first, and then specialize specific small regions of memory afterward. */
+/* A single handler can be mapped to many different regions by using multiple calls to this */
+/* function. */
+
+/* The memory region start and size parameters must be pagesize aligned. */
 void vtlb_MapHandler(vtlbHandler handler, u32 start, u32 size)
 {
 	u32 end = start + (size - VTLB_PAGE_SIZE);
@@ -720,11 +651,11 @@ void vtlb_MapHandler(vtlbHandler handler, u32 start, u32 size)
 
 void vtlb_MapBlock(void* base, u32 start, u32 size, u32 blocksize)
 {
+	const sptr baseint = (sptr)base;
+	const u32 end      = start + (size - VTLB_PAGE_SIZE);
+
 	if (!blocksize)
 		blocksize = size;
-
-	sptr baseint = (sptr)base;
-	u32 end = start + (size - VTLB_PAGE_SIZE);
 
 	while (start <= end)
 	{
@@ -779,6 +710,7 @@ static u32 vtlb_HostAlignOffset(u32 offset)
 
 static bool vtlb_IsHostCoalesced(u32 page)
 {
+	u32 i, expected_offset;
 	if (__pagesize != VTLB_PAGE_SIZE)
 	{
 		const u32 shift = __pageshift - VTLB_PAGE_BITS;
@@ -790,7 +722,7 @@ static bool vtlb_IsHostCoalesced(u32 page)
 		if ((base_offset & __pagemask) != 0)
 			return false;
 
-		for (u32 i = 0, expected_offset = base_offset; i < count; i++, expected_offset += VTLB_PAGE_SIZE)
+		for (i = 0, expected_offset = base_offset; i < count; i++, expected_offset += VTLB_PAGE_SIZE)
 		{
 			if (s_fastmem_virtual_mapping[base + i] != expected_offset)
 				return false;
@@ -805,11 +737,11 @@ static bool vtlb_GetMainMemoryOffsetFromPtr(uptr ptr, u32* mainmem_offset, u32* 
 	const uptr vumem    = (uptr)vuRegs[0].Micro;
 	const u32 vumem_size = (u32)pcsx2_page_align(VU_MEMORY_RESERVE_SIZE);
 
-	// EE memory and ROMs.
+	/* EE memory and ROMs. */
 	if (ptr >= (uptr)eeMem->Main && page_end <= (uptr)eeMem->ZeroRead)
 	{
 		const u32 eemem_offset = (u32)(ptr - (uptr)eeMem->Main);
-		const bool writeable   = ((eemem_offset < Ps2MemSize::MainRam) ? (mmap_GetRamPageInfo(eemem_offset) != ProtMode_Write) : true);
+		const bool writeable   = ((eemem_offset < PS2MEM_MAIN_RAM) ? (mmap_GetRamPageInfo(eemem_offset) != ProtMode_Write) : true);
 		*mainmem_offset        = (eemem_offset + HOSTMEM_EEMEM_OFFSET);
 		*mainmem_size          = (offsetof(EEVM_MemoryAllocMess, ZeroRead) - eemem_offset);
 		prot->m_read           = true;
@@ -818,7 +750,7 @@ static bool vtlb_GetMainMemoryOffsetFromPtr(uptr ptr, u32* mainmem_offset, u32* 
 		return true;
 	}
 
-	// IOP memory.
+	/* IOP memory. */
 	if (ptr >= (uptr)iopMem->Main && page_end <= (uptr)iopMem->P)
 	{
 		const u32 iopmem_offset = (u32)(ptr - (uptr)iopMem->Main);
@@ -830,8 +762,8 @@ static bool vtlb_GetMainMemoryOffsetFromPtr(uptr ptr, u32* mainmem_offset, u32* 
 		return true;
 	}
 
-	// VU memory - this includes both data and code for VU0/VU1.
-	// Practically speaking, this is only data, because the code goes through a handler.
+	/* VU memory - this includes both data and code for VU0/VU1. */
+	/* Practically speaking, this is only data, because the code goes through a handler. */
 	if (ptr >= vumem && page_end <= vumem + vumem_size)
 	{
 		const u32 vumem_offset = (u32)(ptr - vumem);
@@ -843,19 +775,20 @@ static bool vtlb_GetMainMemoryOffsetFromPtr(uptr ptr, u32* mainmem_offset, u32* 
 		return true;
 	}
 
-	// We end up with some unknown mappings here; currently the IOP memory, instead of being physically mapped
-	// as 2MB, ends up being mapped as 8MB. But this shouldn't be virtual mapped anyway, so fallback to slowmem
-	// in such cases.
+	/* We end up with some unknown mappings here; currently the IOP memory, instead of being physically mapped */
+	/* as 2MB, ends up being mapped as 8MB. But this shouldn't be virtual mapped anyway, so fallback to slowmem */
+	/* in such cases. */
 	return false;
 }
 
 static bool vtlb_GetMainMemoryOffset(u32 paddr, u32* mainmem_offset, u32* mainmem_size, PageProtectionMode* prot)
 {
+	vtlb_phys_t vm;
 	if (paddr >= VTLB_PMAP_SZ)
 		return false;
 
-	// Handlers aren't in our shared memory, obviously.
-	const vtlb_phys_t vm = vtlbdata.pmap[paddr >> VTLB_PAGE_BITS];
+	/* Handlers aren't in our shared memory, obviously. */
+	vm = vtlbdata.pmap[paddr >> VTLB_PAGE_BITS];
 	if (vtlb_phys_is_handler(vm))
 		return false;
 
@@ -866,20 +799,20 @@ static void vtlb_CreateFastmemMapping(u32 vaddr, u32 mainmem_offset, const PageP
 {
 	const u32 page = vaddr / VTLB_PAGE_SIZE;
 
-	// current mapping is fine
+	/* current mapping is fine */
 	if (s_fastmem_virtual_mapping[page] == mainmem_offset)
 		return;
 
 	if (s_fastmem_virtual_mapping[page] != NO_FASTMEM_MAPPING)
 	{
-		// current mapping needs to be removed
+		/* current mapping needs to be removed */
 		const bool was_coalesced = vtlb_IsHostCoalesced(page);
 
 		s_fastmem_virtual_mapping[page] = NO_FASTMEM_MAPPING;
 		if (was_coalesced && !memshm_area_unmap(s_fastmem_area, (memshm_area_base(s_fastmem_area) + __pagesize * (vtlb_HostPage(page))), __pagesize))
 			log_cb(RETRO_LOG_ERROR, "Failed to unmap vaddr %08X\n", vaddr);
 
-		// remove reverse mapping
+		/* remove reverse mapping */
 		fastmem_phys_remove(mainmem_offset, vaddr);
 	}
 
@@ -903,41 +836,45 @@ static void vtlb_CreateFastmemMapping(u32 vaddr, u32 mainmem_offset, const PageP
 
 static void vtlb_RemoveFastmemMapping(u32 vaddr)
 {
+	const u32 page = vaddr / VTLB_PAGE_SIZE;
+	u32 mainmem_offset;
+	bool was_coalesced;
 	/* Fastmem not initialized (allocation failed at init time). The
-	 * VMap/VMapUnmap callers do not all gate on CHECK_FASTMEM, so
-	 * defend here against indexing an empty vector. */
+	 * VMap/VMapUnmap callers do not all gate on fastmem being on, so
+	 * defend here against indexing an empty table. */
 	if (!s_fastmem_virtual_mapping)
 		return;
 
-	const u32 page = vaddr / VTLB_PAGE_SIZE;
 	if (s_fastmem_virtual_mapping[page] == NO_FASTMEM_MAPPING)
 		return;
 
-	const u32 mainmem_offset = s_fastmem_virtual_mapping[page];
-	const bool was_coalesced = vtlb_IsHostCoalesced(page);
+	mainmem_offset = s_fastmem_virtual_mapping[page];
+	was_coalesced  = vtlb_IsHostCoalesced(page);
 	s_fastmem_virtual_mapping[page] = NO_FASTMEM_MAPPING;
 
 	if (was_coalesced && !memshm_area_unmap(s_fastmem_area, (memshm_area_base(s_fastmem_area) + __pagesize * (vtlb_HostPage(page))), __pagesize))
 		log_cb(RETRO_LOG_ERROR, "Failed to unmap vaddr %08X\n", vtlb_HostAlignOffset(vaddr));
 
-	// remove from reverse map
+	/* remove from reverse map */
 	fastmem_phys_remove(mainmem_offset, vaddr);
 }
 
 static void vtlb_RemoveFastmemMappings(u32 vaddr, u32 size)
 {
+	u32 i;
 	const u32 num_pages = size / VTLB_PAGE_SIZE;
-	for (u32 i = 0; i < num_pages; i++, vaddr += VTLB_PAGE_SIZE)
+	for (i = 0; i < num_pages; i++, vaddr += VTLB_PAGE_SIZE)
 		vtlb_RemoveFastmemMapping(vaddr);
 }
 
-static void vtlb_RemoveFastmemMappings(void)
+static void vtlb_RemoveAllFastmemMappings(void)
 {
-	// not initialized yet
+	u32 page;
+	/* not initialized yet */
 	if (!s_fastmem_virtual_mapping)
 		return;
 
-	for (u32 page = 0; page < FASTMEM_PAGE_COUNT; page++)
+	for (page = 0; page < FASTMEM_PAGE_COUNT; page++)
 	{
 		if (s_fastmem_virtual_mapping[page] == NO_FASTMEM_MAPPING)
 			continue;
@@ -964,16 +901,17 @@ static bool vtlb_GetGuestAddress(uptr host_addr, u32* guest_addr)
 
 static void vtlb_UpdateFastmemProtection(u32 paddr, u32 size, const PageProtectionMode prot)
 {
-	u32 mainmem_start, mainmem_size;
+	u32 i;
+	u32 mainmem_start, mainmem_size, current_mainmem, num_pages;
 	PageProtectionMode old_prot;
 	if (!vtlb_GetMainMemoryOffset(paddr, &mainmem_start, &mainmem_size, &old_prot))
 		return;
 
-	u32 current_mainmem = mainmem_start;
-	const u32 num_pages = pcsx2_min_i(size, mainmem_size) / VTLB_PAGE_SIZE;
-	for (u32 i = 0; i < num_pages; i++, current_mainmem += VTLB_PAGE_SIZE)
+	current_mainmem = mainmem_start;
+	num_pages       = pcsx2_min_i(size, mainmem_size) / VTLB_PAGE_SIZE;
+	for (i = 0; i < num_pages; i++, current_mainmem += VTLB_PAGE_SIZE)
 	{
-		// update virtual mapping mapping
+		/* update virtual mapping mapping */
 		u32 link = (current_mainmem / VTLB_PAGE_SIZE < FASTMEM_PHYS_PAGES) ? s_fastmem_phys_head[current_mainmem / VTLB_PAGE_SIZE] : 0;
 		while (link)
 		{
@@ -1014,7 +952,7 @@ void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 g
 	pos = vtlb_BackpatchLowerBound(code_address, &found);
 	if (found)
 	{
-		// Replace existing entry in place.
+		/* Replace existing entry in place. */
 		s_fastmem_backpatch[pos].info = info;
 		fastmem_unlock();
 		return;
@@ -1036,13 +974,19 @@ void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 g
 }
 
 #ifdef ARCH_ARM64
-extern "C" bool eeFastmemFault_arm64(uintptr_t code_address); // arm64 EE rec (C.50)
+#include "arm64/aR5900Glue.h"
 #endif
 
 static bool vtlb_BackpatchLoadStore(uptr code_address, uptr fault_address)
 {
 	uptr fastmem_start = (uptr)vtlbdata.fastmem_base;
 	uptr fastmem_end = fastmem_start + 0xFFFFFFFFu;
+#ifndef ARCH_ARM64
+	bool   found;
+	size_t pos;
+	const LoadstoreBackpatchInfo* info;
+	u32 info_guest_pc;
+#endif
 	if (fault_address < fastmem_start || fault_address > fastmem_end)
 		return false;
 
@@ -1050,41 +994,33 @@ static bool vtlb_BackpatchLoadStore(uptr code_address, uptr fault_address)
 	fastmem_lock();
 
 #ifdef ARCH_ARM64
-	// The arm64 EE rec (C.50) keeps its own site registry and pre-emits the slow
-	// stub next to every fastmem access, so backpatching is a single instruction
-	// rewrite over there -- none of the info block below is needed.
+	/* The arm64 EE rec (C.50) keeps its own site registry and pre-emits the slow */
+	/* stub next to every fastmem access, so backpatching is a single instruction */
+	/* rewrite over there -- none of the info block below is needed. */
 	{
 		bool handled = eeFastmemFault_arm64(code_address);
 		fastmem_unlock();
 		return handled;
 	}
-#endif
-
-	bool   found;
-	size_t pos = vtlb_BackpatchLowerBound(code_address, &found);
+#else
+	pos = vtlb_BackpatchLowerBound(code_address, &found);
 	if (!found)
 	{
 		fastmem_unlock();
 		return false;
 	}
 
-	const LoadstoreBackpatchInfo& info = s_fastmem_backpatch[pos].info;
-	const u32 info_guest_pc = info.guest_pc;
-#ifdef ARCH_ARM64
-	// No x86 recompiler / fastmem backpatching on arm64 (interpreter only).
-	fastmem_unlock();
-	return false;
-#else
-	const u32 guest_addr = (u32)(fault_address - fastmem_start);
-	vtlb_DynBackpatchLoadStore(code_address, info.code_size, info.guest_pc, guest_addr,
-		info.gpr_bitmask, info.fpr_bitmask, info.address_register, info.data_register,
-		info.size_in_bits, info.is_signed, info.is_load, info.is_fpr);
-#endif
+	info          = &s_fastmem_backpatch[pos].info;
+	info_guest_pc = info->guest_pc;
+	vtlb_DynBackpatchLoadStore(code_address, info->code_size, info->guest_pc,
+		(u32)(fault_address - fastmem_start),
+		info->gpr_bitmask, info->fpr_bitmask, info->address_register, info->data_register,
+		info->size_in_bits, info->is_signed, info->is_load, info->is_fpr);
 
-	// queue block for recompilation later
+	/* queue block for recompilation later */
 	Cpu->Clear(info_guest_pc, 1);
 
-	// and store the pc in the faulting list, so that we don't emit another fastmem loadstore
+	/* and store the pc in the faulting list, so that we don't emit another fastmem loadstore */
 	{
 		size_t lo = 0;
 		size_t hi = s_fastmem_faulting_pcs_count;
@@ -1139,6 +1075,7 @@ skip_faulting_pc_insert:;
 	s_fastmem_backpatch_count--;
 	fastmem_unlock();
 	return true;
+#endif
 }
 
 bool vtlb_IsFaultingPC(u32 guest_pc)
@@ -1151,17 +1088,18 @@ bool vtlb_IsFaultingPC(u32 guest_pc)
 	return faulting;
 }
 
-//virtual mappings
-//TODO: Add invalid paddr checks
+/* virtual mappings */
+/* TODO: Add invalid paddr checks */
 void vtlb_VMap(u32 vaddr, u32 paddr, u32 size)
 {
-	if (CHECK_FASTMEM)
+	u32 i;
+	if ((emu_hot & EMU_HOT_FASTMEM))
 	{
 		const u32 num_pages = size / VTLB_PAGE_SIZE;
 		u32 current_vaddr = vaddr;
 		u32 current_paddr = paddr;
 
-		for (u32 i = 0; i < num_pages; i++, current_vaddr += VTLB_PAGE_SIZE, current_paddr += VTLB_PAGE_SIZE)
+		for (i = 0; i < num_pages; i++, current_vaddr += VTLB_PAGE_SIZE, current_paddr += VTLB_PAGE_SIZE)
 		{
 			u32 hoffset, hsize;
 			PageProtectionMode mode;
@@ -1183,7 +1121,7 @@ void vtlb_VMap(u32 vaddr, u32 paddr, u32 size)
 		vtlbdata.vmap[vaddr >> VTLB_PAGE_BITS] = vmv;
 		if (vtlbdata.ppmap)
 		{
-			if (!(vaddr & 0x80000000)) // those address are already physical don't change them
+			if (!(vaddr & 0x80000000)) /* those address are already physical don't change them */
 				vtlbdata.ppmap[vaddr >> VTLB_PAGE_BITS] = paddr & ~VTLB_PAGE_MASK;
 		}
 
@@ -1195,9 +1133,11 @@ void vtlb_VMap(u32 vaddr, u32 paddr, u32 size)
 
 void vtlb_VMapBuffer(u32 vaddr, void* buffer, u32 size)
 {
-	if (CHECK_FASTMEM)
+	u32 i;
+	uptr bu8 = (uptr)buffer;
+	if ((emu_hot & EMU_HOT_FASTMEM))
 	{
-		if (buffer == eeMem->Scratch && size == Ps2MemSize::Scratch)
+		if (buffer == eeMem->Scratch && size == PS2MEM_SCRATCH)
 		{
 			PageProtectionMode mode;
 			u32 fm_vaddr      = vaddr;
@@ -1205,7 +1145,7 @@ void vtlb_VMapBuffer(u32 vaddr, void* buffer, u32 size)
 			mode.m_read       = true;
 			mode.m_write      = true;
 			mode.m_exec       = false;
-			for (u32 i = 0; i < (Ps2MemSize::Scratch / VTLB_PAGE_SIZE); i++, fm_vaddr += VTLB_PAGE_SIZE, fm_hostoffset += VTLB_PAGE_SIZE)
+			for (i = 0; i < (PS2MEM_SCRATCH / VTLB_PAGE_SIZE); i++, fm_vaddr += VTLB_PAGE_SIZE, fm_hostoffset += VTLB_PAGE_SIZE)
 				vtlb_CreateFastmemMapping(fm_vaddr, fm_hostoffset, mode);
 		}
 		else
@@ -1214,7 +1154,6 @@ void vtlb_VMapBuffer(u32 vaddr, void* buffer, u32 size)
 		}
 	}
 
-	uptr bu8 = (uptr)buffer;
 	while (size > 0)
 	{
 		vtlbdata.vmap[vaddr >> VTLB_PAGE_BITS] = vtlb_virt_from_ptr(bu8, vaddr);
@@ -1236,7 +1175,7 @@ void vtlb_VMapUnmap(u32 vaddr, u32 size)
 	}
 }
 
-// vtlb_Init -- Clears vtlb handlers and memory mappings.
+/* vtlb_Init -- Clears vtlb handlers and memory mappings. */
 void vtlb_Init(void)
 {
 	vtlbHandlerCount = 0;
@@ -1248,68 +1187,70 @@ void vtlb_Init(void)
 		baseName##Write8, baseName##Write16, baseName##Write32, \
 		baseName##Write64, baseName##WriteLg
 
-	//Register default handlers
-	//Unmapped Virt handlers _MUST_ be registered first.
-	//On address translation the top bit cannot be preserved.This is not normaly a problem since
-	//the physical address space can be 'compressed' to just 29 bits.However, to properly handle exceptions
-	//there must be a way to get the full address back.Thats why i use these 2 functions and encode the hi bit directly into em :)
+	/* Register default handlers */
+	/* Unmapped Virt handlers _MUST_ be registered first. */
+	/* On address translation the top bit cannot be preserved.This is not normaly a problem since */
+	/* the physical address space can be 'compressed' to just 29 bits.However, to properly handle exceptions */
+	/* there must be a way to get the full address back.Thats why i use these 2 functions and encode the hi bit directly into em :) */
 
 	UnmappedVirtHandler = vtlb_RegisterHandler(VTLB_BuildUnmappedHandler(vtlbUnmappedV));
 	UnmappedPhyHandler = vtlb_RegisterHandler(VTLB_BuildUnmappedHandler(vtlbUnmappedP));
 	DefaultPhyHandler = vtlb_RegisterHandler(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
-	//done !
+	/* done ! */
 
-	//Setup the initial mappings
+	/* Setup the initial mappings */
 	vtlb_MapHandler(DefaultPhyHandler, 0, VTLB_PMAP_SZ);
 
-	//Set the V space as unmapped
+	/* Set the V space as unmapped */
 	vtlb_VMapUnmap(0, (VTLB_VMAP_ITEMS - 1) * VTLB_PAGE_SIZE);
-	//yeah i know, its stupid .. but this code has to be here for now ;p
+	/* yeah i know, its stupid .. but this code has to be here for now ;p */
 	vtlb_VMapUnmap((VTLB_VMAP_ITEMS - 1) * VTLB_PAGE_SIZE, VTLB_PAGE_SIZE);
 
-	// The LUT is only used for 1 game so we allocate it only when the gamefix is enabled (save 4MB)
-	if (EmuConfig.Gamefixes.GoemonTlbHack)
+	/* The LUT is only used for 1 game so we allocate it only when the gamefix is enabled (save 4MB) */
+	if ((emu_hot & EMU_HOT_GOEMON_TLB))
 		vtlb_Alloc_Ppmap();
 }
 
-// vtlb_Reset -- Performs a COP0-level reset of the PS2's TLB.
-// This function should probably be part of the COP0 rather than here in VTLB.
+/* vtlb_Reset -- Performs a COP0-level reset of the PS2's TLB. */
+/* This function should probably be part of the COP0 rather than here in VTLB. */
 void vtlb_Reset(void)
 {
-	vtlb_RemoveFastmemMappings();
-	for (int i = 0; i < 48; i++)
+	int i;
+	vtlb_RemoveAllFastmemMappings();
+	for (i = 0; i < 48; i++)
 		UnmapTLB(&tlb[i], i);
 }
 
 void vtlb_Shutdown(void)
 {
-	vtlb_RemoveFastmemMappings();
+	vtlb_RemoveAllFastmemMappings();
 	vtlb_BackpatchFree();
 	s_fastmem_faulting_pcs_free();
 }
 
 void vtlb_ResetFastmem(void)
 {
-	vtlb_RemoveFastmemMappings();
+	size_t i;
+	vtlb_RemoveAllFastmemMappings();
 	vtlb_BackpatchClear();
 	s_fastmem_faulting_pcs_count = 0;
 
-	if (!CHECK_FASTMEM || !CHECK_EEREC || !vtlbdata.vmap)
+	if (!(emu_hot & EMU_HOT_FASTMEM) || !(emu_hot & EMU_HOT_EEREC) || !vtlbdata.vmap)
 		return;
 
-	// we need to go through and look at the vtlb pointers, to remap the host area
-	for (size_t i = 0; i < VTLB_VMAP_ITEMS; i++)
+	/* we need to go through and look at the vtlb pointers, to remap the host area */
+	for (i = 0; i < VTLB_VMAP_ITEMS; i++)
 	{
 		const vtlb_virt_t vm = vtlbdata.vmap[i];
 		const u32 vaddr = (u32)i << VTLB_PAGE_BITS;
-		// Handlers should be unmapped.
+		u32 mainmem_offset, mainmem_size;
+		PageProtectionMode prot;
+		/* Handlers should be unmapped. */
 		if (vtlb_virt_is_handler(vm, vaddr))
 			continue;
 
-		// Check if it's a physical mapping to our main memory area.
-		u32 mainmem_offset, mainmem_size;
-		PageProtectionMode prot;
+		/* Check if it's a physical mapping to our main memory area. */
 		if (vtlb_GetMainMemoryOffsetFromPtr(vtlb_virt_ptr(vm, vaddr), &mainmem_offset, &mainmem_size, &prot))
 			vtlb_CreateFastmemMapping(vaddr, mainmem_offset, prot);
 	}
@@ -1317,13 +1258,13 @@ void vtlb_ResetFastmem(void)
 
 #define VMAP_SIZE (sizeof(vtlb_virt_t) * VTLB_VMAP_ITEMS)
 
-// Reserves the vtlb core allocation used by various emulation components!
-// [TODO] basemem - request allocating memory at the specified virtual location, which can allow
-//    for easier debugging and/or 3rd party cheat programs.  If 0, the operating system
-//    default is used.
+/* Reserves the vtlb core allocation used by various emulation components! */
+/* [TODO] basemem - request allocating memory at the specified virtual location, which can allow */
+/* for easier debugging and/or 3rd party cheat programs.  If 0, the operating system */
+/* default is used. */
 bool vtlb_Core_Alloc(void)
 {
-	// Can't return regions to the bump allocator
+	/* Can't return regions to the bump allocator */
 	static vtlb_virt_t* vmap = NULL;
 	if (!vmap)
 	{
@@ -1377,7 +1318,7 @@ bool vtlb_Core_Alloc(void)
 			 * slowpath load/stores for every memory access. Slower but
 			 * functional. */
 			log_cb(RETRO_LOG_ERROR, "Failed to allocate fastmem area, disabling fastmem.\n");
-			EmuConfig.Cpu.Recompiler.EnableFastmem = false;
+			emu_config_disable_fastmem();
 			vtlb_fastmem_unavailable = true;
 		}
 		else
@@ -1404,15 +1345,15 @@ bool vtlb_Core_Alloc(void)
 
 #define PPMAP_SIZE (sizeof(*vtlbdata.ppmap) * VTLB_VMAP_ITEMS)
 
-// The LUT is only used for 1 game so we allocate it only when the gamefix is enabled (save 4MB)
-// However automatic gamefix is done after the standard init so a new init function was done.
+/* The LUT is only used for 1 game so we allocate it only when the gamefix is enabled (save 4MB) */
+/* However automatic gamefix is done after the standard init so a new init function was done. */
 void vtlb_Alloc_Ppmap(void)
 {
+	static u32* ppmap = NULL;
+	u32 i;
 	PageProtectionMode mode;
 	if (vtlbdata.ppmap)
 		return;
-
-	static u32* ppmap = NULL;
 
 	if (!ppmap)
 		ppmap = (u32*)vmm_bump_alloc(&GetVmMemory()->bump, PPMAP_SIZE);
@@ -1423,8 +1364,8 @@ void vtlb_Alloc_Ppmap(void)
 	mprotect(ppmap, PPMAP_SIZE, host_prot(mode));
 	vtlbdata.ppmap = ppmap;
 
-	// By default a 1:1 virtual to physical mapping
-	for (u32 i = 0; i < VTLB_VMAP_ITEMS; i++)
+	/* By default a 1:1 virtual to physical mapping */
+	for (i = 0; i < VTLB_VMAP_ITEMS; i++)
 		vtlbdata.ppmap[i] = i << VTLB_PAGE_BITS;
 }
 
@@ -1448,7 +1389,7 @@ void vtlb_Core_Free(void)
 		vtlbdata.ppmap = NULL;
 	}
 
-	vtlb_RemoveFastmemMappings();
+	vtlb_RemoveAllFastmemMappings();
 	vtlb_ClearLoadStoreInfo();
 
 	vtlbdata.fastmem_base = 0;
@@ -1459,60 +1400,61 @@ void vtlb_Core_Free(void)
 	s_fastmem_area = NULL;
 }
 
-// ===========================================================================================
-//  Memory Protection and Block Checking, vtlb Style!
-// ===========================================================================================
-// For the first time code is recompiled (executed), the PS2 ram page for that code is
-// protected using Virtual Memory (mprotect).  If the game modifies its own code then this
-// protection causes an *exception* to be raised (signal in Linux), which is handled by
-// unprotecting the page and switching the recompiled block to "manual" protection.
-//
-// Manual protection uses a simple brute-force memcmp of the recompiled code to the code
-// currently in RAM for *each time* the block is executed.  Fool-proof, but slow, which
-// is why we default to using the exception-based protection scheme described above.
-//
-// Why manual blocks?  Because many games contain code and data in the same 4k page, so
-// we *cannot* automatically recompile and reprotect pages, lest we end up recompiling and
-// reprotecting them constantly (Which would be very slow).  As a counter, the R5900 side
-// of the block checking code does try to periodically re-protect blocks [going from manual
-// back to protected], so that blocks which underwent a single invalidation don't need to
-// incur a permanent performance penalty.
-//
-// Page Granularity:
-// Fortunately for us MIPS and x86 use the same page granularity for TLB and memory
-// protection, so we can use a 1:1 correspondence when protecting pages.  Page granularity
-// is 4096 (4k), which is why you'll see a lot of 0xfff's, >><< 12's, and 0x1000's in the
-// code below.
-//
+/* =========================================================================================== */
+/* Memory Protection and Block Checking, vtlb Style! */
+/* =========================================================================================== */
+/* For the first time code is recompiled (executed), the PS2 ram page for that code is */
+/* protected using Virtual Memory (mprotect).  If the game modifies its own code then this */
+/* protection causes an *exception* to be raised (signal in Linux), which is handled by */
+/* unprotecting the page and switching the recompiled block to "manual" protection. */
 
-struct vtlb_PageProtectionInfo
+/* Manual protection uses a simple brute-force memcmp of the recompiled code to the code */
+/* currently in RAM for *each time* the block is executed.  Fool-proof, but slow, which */
+/* is why we default to using the exception-based protection scheme described above. */
+
+/* Why manual blocks?  Because many games contain code and data in the same 4k page, so */
+/* we *cannot* automatically recompile and reprotect pages, lest we end up recompiling and */
+/* reprotecting them constantly (Which would be very slow).  As a counter, the R5900 side */
+/* of the block checking code does try to periodically re-protect blocks [going from manual */
+/* back to protected], so that blocks which underwent a single invalidation don't need to */
+/* incur a permanent performance penalty. */
+
+/* Page Granularity: */
+/* Fortunately for us MIPS and x86 use the same page granularity for TLB and memory */
+/* protection, so we can use a 1:1 correspondence when protecting pages.  Page granularity */
+/* is 4096 (4k), which is why you'll see a lot of 0xfff's, >><< 12's, and 0x1000's in the */
+/* code below. */
+
+
+typedef struct vtlb_PageProtectionInfo
 {
-	// Ram De-mapping -- used to convert fully translated/mapped offsets (which reside with
-	// in the eeMem->Main block) back into their originating ps2 physical ram address.
-	// Values are assigned when pages are marked for protection.  since pages are automatically
-	// cleared and reset when TLB-remapped, stale values in this table (due to on-the-fly TLB
-	// changes) will be re-assigned the next time the page is accessed.
+	/* Ram De-mapping -- used to convert fully translated/mapped offsets (which reside with */
+	/* in the eeMem->Main block) back into their originating ps2 physical ram address. */
+	/* Values are assigned when pages are marked for protection.  since pages are automatically */
+	/* cleared and reset when TLB-remapped, stale values in this table (due to on-the-fly TLB */
+	/* changes) will be re-assigned the next time the page is accessed. */
 	u32 ReverseRamMap;
 
 	vtlb_ProtectionMode Mode;
-};
+} vtlb_PageProtectionInfo;
 
-alignas(16) static vtlb_PageProtectionInfo m_PageProtectInfo[Ps2MemSize::MainRam >> __pageshift];
+static PCSX2_ALIGN(16) vtlb_PageProtectionInfo m_PageProtectInfo[PS2MEM_MAIN_RAM >> __pageshift];
 
 
-// returns:
-//  ProtMode_NotRequired - unchecked block (resides in ROM, thus is integrity is constant)
-//  Or the current mode
-//
+/* returns: */
+/* ProtMode_NotRequired - unchecked block (resides in ROM, thus is integrity is constant) */
+/* Or the current mode */
+
 vtlb_ProtectionMode mmap_GetRamPageInfo(u32 paddr)
 {
+	uptr ptr, rampage;
 	paddr &= ~0xfff;
 
-	uptr ptr = (uptr)PSM(paddr);
-	uptr rampage = ptr - (uptr)eeMem->Main;
+	ptr     = (uptr)PSM(paddr);
+	rampage = ptr - (uptr)eeMem->Main;
 
-	if (!ptr || rampage >= Ps2MemSize::MainRam)
-		return ProtMode_NotRequired; //not in ram, no tracking done ...
+	if (!ptr || rampage >= PS2MEM_MAIN_RAM)
+		return ProtMode_NotRequired; /* not in ram, no tracking done ... */
 
 	rampage >>= __pageshift;
 
@@ -1520,43 +1462,45 @@ vtlb_ProtectionMode mmap_GetRamPageInfo(u32 paddr)
 }
 
 
-// paddr - physically mapped PS2 address
+/* paddr - physically mapped PS2 address */
 void mmap_MarkCountedRamPage(u32 paddr)
 {
 	PageProtectionMode mode;
+	uptr ptr;
+	int rampage;
 	paddr &= ~__pagemask;
 
-	uptr ptr = (uptr)PSM(paddr);
-	int rampage = (ptr - (uptr)eeMem->Main) >> __pageshift;
+	ptr     = (uptr)PSM(paddr);
+	rampage = (ptr - (uptr)eeMem->Main) >> __pageshift;
 
-	// Defensive: PSM() can yield a pointer outside Main (handler-mapped page,
-	// TLB-remapped, SPR) -- protecting a page outside Main both corrupts
-	// m_PageProtectInfo (OOB) and mprotects unrelated host memory.
-	if (!ptr || rampage < 0 || rampage >= (int)(Ps2MemSize::MainRam >> __pageshift))
+	/* Defensive: PSM() can yield a pointer outside Main (handler-mapped page, */
+	/* TLB-remapped, SPR) -- protecting a page outside Main both corrupts */
+	/* m_PageProtectInfo (OOB) and mprotects unrelated host memory. */
+	if (!ptr || rampage < 0 || rampage >= (int)(PS2MEM_MAIN_RAM >> __pageshift))
 	{
 		return;
 	}
 
-	// Important: Update the ReverseRamMap here because TLB changes could alter the paddr
-	// mapping into eeMem->Main.
+	/* Important: Update the ReverseRamMap here because TLB changes could alter the paddr */
+	/* mapping into eeMem->Main. */
 
 	m_PageProtectInfo[rampage].ReverseRamMap = paddr;
 
 	if (m_PageProtectInfo[rampage].Mode == ProtMode_Write)
-		return; // skip town if we're already protected.
+		return; /* skip town if we're already protected. */
 
 	m_PageProtectInfo[rampage].Mode = ProtMode_Write;
 	mode.m_read  = true;
 	mode.m_write = false;
 	mode.m_exec  = false;
 	mprotect(&eeMem->Main[rampage << __pageshift], __pagesize, host_prot(mode));
-	if (CHECK_FASTMEM)
+	if ((emu_hot & EMU_HOT_FASTMEM))
 		vtlb_UpdateFastmemProtection(rampage << __pageshift, __pagesize, mode);
 }
 
-// offset - offset of address relative to psM.
-// All recompiled blocks belonging to the page are cleared, and any new blocks recompiled
-// from code residing in this page will use manual protection.
+/* offset - offset of address relative to psM. */
+/* All recompiled blocks belonging to the page are cleared, and any new blocks recompiled */
+/* from code residing in this page will use manual protection. */
 static __fi void mmap_ClearCpuBlock(uint offset)
 {
 	PageProtectionMode mode;
@@ -1566,23 +1510,23 @@ static __fi void mmap_ClearCpuBlock(uint offset)
 	mode.m_write = true;
 	mode.m_exec  = false;
 	mprotect(&eeMem->Main[rampage << __pageshift], __pagesize, host_prot(mode));
-	if (CHECK_FASTMEM)
+	if ((emu_hot & EMU_HOT_FASTMEM))
 		vtlb_UpdateFastmemProtection(rampage << __pageshift, __pagesize, mode);
 	m_PageProtectInfo[rampage].Mode = ProtMode_Manual;
-	// Clear takes an instruction count, not a byte count -- every other
-	// caller passes one (COP0 uses 0x400 for a TLB page, CDVD uses
-	// BlockSize / 4, IopMem uses 1 for a word). Passing __pagesize here
-	// asks for four pages' worth of blocks.
+	/* Clear takes an instruction count, not a byte count -- every other */
+	/* caller passes one (COP0 uses 0x400 for a TLB page, CDVD uses */
+	/* BlockSize / 4, IopMem uses 1 for a word). Passing __pagesize here */
+	/* asks for four pages' worth of blocks. */
 	Cpu->Clear(m_PageProtectInfo[rampage].ReverseRamMap, __pagesize / 4);
 }
 
-// Unprotect a range of main RAM the way a write fault would, for writers that
-// reach EE memory without going through the fault handler: the reverse VIF1
-// download has the GS memcpy straight into RAM from the MTGS consumer thread,
-// where a protected page faults with no recompiled instruction behind it and
-// no handler on that thread, so it goes unhandled instead of being fixed up.
-// Invalidating the blocks is not enough on its own -- the protection has to
-// come off too, which is what mmap_ClearCpuBlock does.
+/* Unprotect a range of main RAM the way a write fault would, for writers that */
+/* reach EE memory without going through the fault handler: the reverse VIF1 */
+/* download has the GS memcpy straight into RAM from the MTGS consumer thread, */
+/* where a protected page faults with no recompiled instruction behind it and */
+/* no handler on that thread, so it goes unhandled instead of being fixed up. */
+/* Invalidating the blocks is not enough on its own -- the protection has to */
+/* come off too, which is what mmap_ClearCpuBlock does. */
 void mmap_UnprotectRamRange(u32 paddr, u32 size)
 {
 	u32 offset;
@@ -1593,8 +1537,8 @@ void mmap_UnprotectRamRange(u32 paddr, u32 size)
 
 	paddr &= ~__pagemask;
 	end = paddr + size;
-	if (end > Ps2MemSize::MainRam)
-		end = Ps2MemSize::MainRam;
+	if (end > PS2MEM_MAIN_RAM)
+		end = PS2MEM_MAIN_RAM;
 
 	for (offset = paddr; offset < end; offset += __pagesize)
 	{
@@ -1606,13 +1550,13 @@ void mmap_UnprotectRamRange(u32 paddr, u32 size)
 static bool vtlb_PageFaultHandler(const retro_fault_info_t* info)
 {
 	u32 vaddr;
-	if (CHECK_FASTMEM && vtlb_GetGuestAddress(info->addr, &vaddr))
+	if ((emu_hot & EMU_HOT_FASTMEM) && vtlb_GetGuestAddress(info->addr, &vaddr))
 	{
 		uptr ptr = (uptr)PSM(vaddr);
 		uptr offset = (ptr - (uptr)eeMem->Main);
 		/* Only main RAM has protection state; a direct-mapped pointer
 		 * elsewhere (ROM, scratchpad) would index past the table. */
-		if (ptr && offset < Ps2MemSize::MainRam && m_PageProtectInfo[offset >> __pageshift].Mode == ProtMode_Write)
+		if (ptr && offset < PS2MEM_MAIN_RAM && m_PageProtectInfo[offset >> __pageshift].Mode == ProtMode_Write)
 		{
 			mmap_ClearCpuBlock(offset);
 			return true;
@@ -1621,9 +1565,9 @@ static bool vtlb_PageFaultHandler(const retro_fault_info_t* info)
 	}
 	else
 	{
-		// get bad virtual address
+		/* get bad virtual address */
 		uptr offset = info->addr - (uptr)eeMem->Main;
-		if (offset >= Ps2MemSize::MainRam)
+		if (offset >= PS2MEM_MAIN_RAM)
 		{
 			return false;
 		}
@@ -1633,25 +1577,26 @@ static bool vtlb_PageFaultHandler(const retro_fault_info_t* info)
 	}
 }
 
-// Clears all block tracking statuses, manual protection flags, and write protection.
-// This does not clear any recompiler blocks.  It is assumed (and necessary) for the caller
-// to ensure the EErec is also reset in conjunction with calling this function.
-//  (this function is called by default from the eerecReset).
+/* Clears all block tracking statuses, manual protection flags, and write protection. */
+/* This does not clear any recompiler blocks.  It is assumed (and necessary) for the caller */
+/* to ensure the EErec is also reset in conjunction with calling this function. */
+/* (this function is called by default from the eerecReset). */
 void mmap_ResetBlockTracking(void)
 {
+	u32 page;
 	PageProtectionMode mode;
 	mode.m_read  = true;
 	mode.m_write = true;
 	mode.m_exec  = false;
 	if (eeMem)
-		mprotect(eeMem->Main, Ps2MemSize::MainRam, host_prot(mode));
+		mprotect(eeMem->Main, PS2MEM_MAIN_RAM, host_prot(mode));
 	/* A fastmem view of a page is write-protected only while the page is
 	 * in ProtMode_Write: only mmap_MarkCountedRamPage protects one, and a
 	 * view mapped later takes its protection from the mode. So only those
 	 * pages' views need their protection taken off. */
-	if (CHECK_FASTMEM)
+	if ((emu_hot & EMU_HOT_FASTMEM))
 	{
-		for (u32 page = 0; page < (Ps2MemSize::MainRam >> __pageshift); page++)
+		for (page = 0; page < (PS2MEM_MAIN_RAM >> __pageshift); page++)
 			if (m_PageProtectInfo[page].Mode == ProtMode_Write)
 				vtlb_UpdateFastmemProtection(page << __pageshift, __pagesize, mode);
 	}

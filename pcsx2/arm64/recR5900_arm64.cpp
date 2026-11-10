@@ -4445,7 +4445,7 @@ void eeJitShutdown_arm64(void)
 // while executing, which is the only time a fault can arrive -- and writes 4
 // bytes of RWX code cache. Returns false for any fault we don't own, which
 // lets the handler fall through to its default (abort) path.
-extern "C" bool eeFastmemFault_arm64(uintptr_t code_address)
+bool eeFastmemFault_arm64(uptr code_address)
 {
 	size_t lo = 0, hi = s_fm_sites.size();
 	while (lo < hi)

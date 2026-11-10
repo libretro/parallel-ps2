@@ -20,7 +20,7 @@
 
 
 #include <float.h>
-#include "ps2/HwInternal.h"
+#include "HotConfig.h"
 
 static int branch2 = 0;
 #ifdef ARCH_ARM64
@@ -47,7 +47,7 @@ static void intEventTest(void);
 void intUpdateCPUCycles(void)
 {
 	const bool lowcycles = (cpuBlockCycles <= 40);
-	const s8 cyclerate = (s8)emu_config_ee_cycle_rate();
+	const s8 cyclerate = (s8)emu_hot_ee_cycle_rate;
 	u32 scale_cycles = 0;
 
 	if (cyclerate == 0 || lowcycles || cyclerate < -99 || cyclerate > 3)
@@ -111,7 +111,7 @@ static __fi void _doBranch_shared(u32 tar)
 	{
 		if (Cpu == &intCpu)
 		{
-			if (intLastBranchTo == tar && emu_config_ee_wait_loop())
+			if (intLastBranchTo == tar && (emu_hot & EMU_HOT_WAITLOOP))
 			{
 				bool can_skip = true;
 				u32 i;
@@ -197,7 +197,7 @@ void intJAL(void)
 	/* 0x3563b8 is the start address of the function that invalidate entry in TLB cache */
 	/* 0x35c118 is the address in the June 22 prototype */
 	/* 0x35d628 is the address in the August 26 prototype */
-	if (emu_config_goemon_tlb_hack()) {
+	if ((emu_hot & EMU_HOT_GOEMON_TLB)) {
 		if (_JumpTarget_ == 0x3563b8 || _JumpTarget_ == 0x35d628 || _JumpTarget_ == 0x35c118)
 			GoemonUnloadTlb(cpuRegs.GPR.n.a0.UL[0]);
 	}
@@ -402,7 +402,7 @@ void intJR(void)
 	/* 0x33ad48 and 0x35060c are the return address of the function (0x356250) that populate the TLB cache */
 	/* 0x340600 and 0x356334 are the addresses in the June 22 prototype */
 	/* 0x341ad0 and 0x357844 are the addresses in the August 26 prototype */
-	if (emu_config_goemon_tlb_hack()) {
+	if ((emu_hot & EMU_HOT_GOEMON_TLB)) {
 		const u32 add = cpuRegs.GPR.r[_Rs_].UL[0];
 		if (add == 0x33ad48 || add == 0x35060c || add == 0x341ad0 || add == 0x357844 || add == 0x357844 || add == 0x356334)
 			GoemonPreloadTlb();

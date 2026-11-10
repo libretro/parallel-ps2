@@ -31,6 +31,7 @@
 #include "VUmicro.h"
 #include "COP0.h"
 #include "VMHost.h"
+#include "HotConfig.h"
 #include "ps2/HwInternal.h"
 
 #include "Counters.h"
@@ -202,7 +203,7 @@ int cpuTestCycle(u64 startCycle, s32 delta)
 
 static __fi void TESTINT(u8 n, void (*callback)())
 {
-	if (!g_GameStarted || emu_config_instant_dma_hack() || cpuTestCycle(cpuRegs.sCycle[n], cpuRegs.eCycle[n]))
+	if (!g_GameStarted || (emu_hot & EMU_HOT_INSTANT_DMA) || cpuTestCycle(cpuRegs.sCycle[n], cpuRegs.eCycle[n]))
 	{
 		cpuRegs.interrupt &= ~(1 << n);
 		cpuRegs.dmastall  &= ~(1 << n);
@@ -230,7 +231,7 @@ static __fi bool _cpuTestInterrupts(void)
 		   that depends on the cycle timings */
 		if ((cpuRegs.interrupt & (1 << VU_MTVU_BUSY)))
 		{
-			if (!g_GameStarted || emu_config_instant_dma_hack() || cpuTestCycle(cpuRegs.sCycle[VU_MTVU_BUSY], cpuRegs.eCycle[VU_MTVU_BUSY]))
+			if (!g_GameStarted || (emu_hot & EMU_HOT_INSTANT_DMA) || cpuTestCycle(cpuRegs.sCycle[VU_MTVU_BUSY], cpuRegs.eCycle[VU_MTVU_BUSY]))
 			{
 				cpuRegs.interrupt             &= ~(1 << VU_MTVU_BUSY);
 				cpuRegs.dmastall              &= ~(1 << VU_MTVU_BUSY);
@@ -376,7 +377,7 @@ void _cpuEventTest_Shared(void)
 		/* where a DMA buffer is overwritten without waiting for the transfer to end, which causes the fonts to get all messed up */
 		/* so to fix it, we run all the DMA's instantly when in the BIOS. */
 		/* Only use the lower 17 bits of the cpuRegs.interrupt as the upper bits are for VU0/1 sync which can't be done in a tight loop */
-		if ((!g_GameStarted || emu_config_instant_dma_hack()) && dmacRegs.ctrl.DMAE && !(psHu8(DMAC_ENABLER + 2) & 1) && (cpuRegs.interrupt & 0x1FFFF))
+		if ((!g_GameStarted || (emu_hot & EMU_HOT_INSTANT_DMA)) && dmacRegs.ctrl.DMAE && !(psHu8(DMAC_ENABLER + 2) & 1) && (cpuRegs.interrupt & 0x1FFFF))
 		{
 			while ((cpuRegs.interrupt & 0x1FFFF) && _cpuTestInterrupts())
 				;
@@ -500,7 +501,7 @@ void CPU_INT( EE_EventType n, s32 ecycle)
 	/* EE events happen 8 cycles in the future instead of whatever was requested. */
 	/* This can be used on games with PATH3 masking issues for example, or when */
 	/* some FMV look bad. */
-	if (emu_config_ee_timing_hack() && n < VIF_VU0_FINISH)
+	if ((emu_hot & EMU_HOT_EE_TIMING) && n < VIF_VU0_FINISH)
 		ecycle = 8;
 
 	cpuRegs.interrupt |= 1 << n;

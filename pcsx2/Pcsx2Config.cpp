@@ -21,6 +21,7 @@
 #include "HostFS.h"
 
 #include "Config.h"
+#include "HotConfig.h"
 #include "GS.h"
 #include "CDVD/CDVDcommon.h"
 #include "MemoryCardFile.h"
@@ -852,29 +853,28 @@ bool emu_config_instant_vu1(void)
 	return INSTANT_VU1;
 }
 
-int emu_config_ee_cycle_rate(void)
+u32 emu_hot;
+s32 emu_hot_ee_cycle_rate;
+
+void emu_config_sync_hot(void)
 {
-	return EmuConfig.Speedhacks.EECycleRate;
+	const Pcsx2Config::RecompilerOptions& rec = EmuConfig.Cpu.Recompiler;
+	u32 w = 0;
+	if (rec.EnableEE)                          w |= EMU_HOT_EEREC;
+	if (rec.EnableEECache)                     w |= EMU_HOT_EECACHE;
+	if (rec.EnableFastmem)                     w |= EMU_HOT_FASTMEM;
+	if (EmuConfig.Speedhacks.WaitLoop)         w |= EMU_HOT_WAITLOOP;
+	if (EmuConfig.Gamefixes.GoemonTlbHack)     w |= EMU_HOT_GOEMON_TLB;
+	if (EmuConfig.Gamefixes.InstantDMAHack)    w |= EMU_HOT_INSTANT_DMA;
+	if (EmuConfig.Gamefixes.EETimingHack)      w |= EMU_HOT_EE_TIMING;
+	emu_hot               = w;
+	emu_hot_ee_cycle_rate = EmuConfig.Speedhacks.EECycleRate;
 }
 
-bool emu_config_instant_dma_hack(void)
+void emu_config_disable_fastmem(void)
 {
-	return CHECK_INSTANTDMAHACK;
-}
-
-bool emu_config_ee_timing_hack(void)
-{
-	return CHECK_EETIMINGHACK;
-}
-
-bool emu_config_ee_wait_loop(void)
-{
-	return EmuConfig.Speedhacks.WaitLoop;
-}
-
-bool emu_config_goemon_tlb_hack(void)
-{
-	return EmuConfig.Gamefixes.GoemonTlbHack;
+	EmuConfig.Cpu.Recompiler.EnableFastmem = false;
+	emu_config_sync_hot();
 }
 
 u64 emu_fpcr_set_vu(int unit)

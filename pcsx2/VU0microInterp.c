@@ -20,6 +20,7 @@
 
 #include "VUmicro.h"
 #include "ps2/HwInternal.h"
+#include "HotConfig.h"
 
 static void _vu0ExecUpper(VURegs* VU, u32* ptr)
 {
@@ -228,7 +229,7 @@ static void interp_vu0_set_start_pc(u32 startPC)
 static void interp_vu0_execute(u32 cycles)
 {
 	const u64 fpcr = emu_fpcr_set_vu(0);
-	const int cycle_rate = emu_config_ee_cycle_rate();
+	const int cycle_rate = emu_hot_ee_cycle_rate;
 	u64 startcycles;
 
 	vuRegs[0].VI[REG_TPC].UL <<= 3;

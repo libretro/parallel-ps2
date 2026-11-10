@@ -74,14 +74,6 @@ extern bool emu_config_viffifo_hack(void);
 extern bool emu_config_vif1stall_hack(void);
 extern bool emu_config_vusync_hack(void);
 extern bool emu_config_instant_vu1(void);
-/* The interpreter's (Interpreter.c) cycle rate, wait-loop skip and
- * Goemon TLB hook. */
-extern int emu_config_ee_cycle_rate(void);
-extern bool emu_config_ee_wait_loop(void);
-extern bool emu_config_goemon_tlb_hack(void);
-/* The EE event test's (R5900.c) DMA and timing gamefixes. */
-extern bool emu_config_instant_dma_hack(void);
-extern bool emu_config_ee_timing_hack(void);
 /* The user's launch arguments for the game (R5900.c's EELOAD hooks). */
 extern const char* emu_config_game_args(void);
 

@@ -109,7 +109,6 @@ extern void mtvu_wait_vu(void);
  * rounding mode a VU unit runs under: set returns the mode it replaced,
  * for restore to put back. */
 extern bool emu_config_thread_vu1(void);
-extern int  emu_config_ee_cycle_rate(void);
 extern u64  emu_fpcr_set_vu(int unit);
 /* The EE FPU's control register; returns the previous one. */
 extern u64  emu_fpcr_set_fpu(void);
