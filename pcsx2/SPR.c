@@ -35,9 +35,9 @@ static void TestClearVUs(u32 madr, u32 qwc, bool isWrite)
 			/* Catch up VU1 too */
 			vucpu_execute_block(CpuVU1, 0);
 		}
-		if ((madr >= 0x11008000) && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100) && (!emu_config_thread_vu1() || !isWrite))
+		if ((madr >= 0x11008000) && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100) && (!EMU_THREAD_VU1 || !isWrite))
 		{
-			if (emu_config_thread_vu1())
+			if (EMU_THREAD_VU1)
 				mtvu_wait_vu();
 			else
 				CpuVU1->Execute(vu1RunCycles);
@@ -116,7 +116,7 @@ static __fi tDMA_TAG* SPRdmaGetAddr(u32 addr, bool write)
 		return (tDMA_TAG*)(write ? eeMem->ZeroWrite : eeMem->ZeroRead);
 	else if ((addr >= 0x11000000) && (addr < 0x11010000))
 	{
-		if (addr >= 0x11008000 && emu_config_thread_vu1())
+		if (addr >= 0x11008000 && EMU_THREAD_VU1)
 			mtvu_wait_vu();
 
 		/* Access for VU Memory */

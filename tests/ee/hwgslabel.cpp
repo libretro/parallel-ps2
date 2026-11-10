@@ -33,6 +33,8 @@
 #include "Vif_Dma.h"
 #include "SaveState.h"
 
+u32 emu_hot; /* HotConfig.h: VU1 runs on the EE thread here */
+
 alignas(16) u8 eeHw[0x10000];
 alignas(16) u8 g_RealGSMem[0x2000];
 alignas(16) vifStruct vif1;
@@ -49,7 +51,6 @@ void mtgs_wait_gs(bool) { }
 void gifCheckPathStatus(bool) { }
 void CPU_INT(EE_EventType, s32) { }
 void hwIntcIrq(int) { }
-bool emu_config_thread_vu1(void) { return false; }
 bool emu_config_xgkick_hack(void) { return false; }
 bool emu_config_enable_vu1(void) { return true; }
 void SaveState_FreezeMem(SaveStateBase*, void*, int) { }

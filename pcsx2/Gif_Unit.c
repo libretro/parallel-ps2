@@ -293,7 +293,7 @@ static __fi void gif_pack_clear(GS_Packet* p, u32 offset)
 /* Path 1 is the VU1 thread's when it runs VU1. */
 static __fi bool gif_path_is_mtvu(const Gif_Path* path)
 {
-	return !path->idx && emu_config_thread_vu1();
+	return !path->idx && EMU_THREAD_VU1;
 }
 
 static __fi s32 gif_path_read_amount(Gif_Path* path)
@@ -925,7 +925,7 @@ int gif_unit_execute(bool isPath3, bool isResume)
 
 u32 gif_unit_transfer(GIF_TRANSFER_TYPE tranType, u8* pMem, u32 size)
 {
-	if (emu_config_thread_vu1())
+	if (EMU_THREAD_VU1)
 	{
 		Gif_Path* path1 = &gifUnit.gifPath[GIF_PATH_1];
 		if (tranType == GIF_TRANS_XGKICK)
@@ -1046,7 +1046,7 @@ bool gifPathFreeze(SaveStateBase* s, u32 pathIdx)
 
 bool gifFreeze(SaveStateBase* s)
 {
-	bool mtvuMode = emu_config_thread_vu1();
+	bool mtvuMode = EMU_THREAD_VU1;
 	mtgs_wait_gs(false);
 	if (!(SaveState_FreezeTag(s, "Gif Unit")))
 		return false;

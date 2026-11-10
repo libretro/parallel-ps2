@@ -18,6 +18,7 @@
 #include "VU.h"
 #include "VUops.h"
 #include "R5900.h"
+#include "HotConfig.h"
 
 /* Macros rather than static const: in C a const object is not a constant
  * expression, so MSVC refuses the masks below as initializers. */
@@ -103,12 +104,9 @@ extern void vu_memory_release(const struct VirtualMemoryManager* main_map);
  * publishes it with mtvu_write_mem_commit; the _micro/_data_mem forms copy
  * from a buffer. */
 extern void mtvu_wait_vu(void);
-/* Pcsx2Config.cpp: whether VU1 runs on its own thread (THREAD_VU1), the
- * EE cycle rate the VU0 interpreter scales its cycles by (as the VU sync
- * hack allows, emu_config_vusync_hack in ps2/HwInternal.h), and the host
- * rounding mode a VU unit runs under: set returns the mode it replaced,
- * for restore to put back. */
-extern bool emu_config_thread_vu1(void);
+/* Pcsx2Config.cpp: the host rounding mode a VU unit runs under: set
+ * returns the mode it replaced, for restore to put back. Whether VU1 runs
+ * on its own thread is EMU_THREAD_VU1, in HotConfig.h. */
 extern u64  emu_fpcr_set_vu(int unit);
 /* The EE FPU's control register; returns the previous one. */
 extern u64  emu_fpcr_set_fpu(void);

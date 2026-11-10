@@ -31,6 +31,7 @@
 #include "MTVU.h"
 #include "Vif_Dynarec.h"
 #endif
+#include "HotConfig.h"
 
 /* ---- the record ---------------------------------------------------- */
 
@@ -75,7 +76,14 @@ alignas(16) vifStruct vif0, vif1;
 alignas(16) static u8 s_vumem0[0x1000], s_vumem1[0x4000];
 alignas(16) static u8 s_src[0x10000];
 
+u32 emu_hot; /* HotConfig.h; Pcsx2Config.cpp is not linked */
 static bool s_thread_vu1;
+/* What the core reads is the hot config's bit (HotConfig.h). */
+static void set_thread_vu1(bool on)
+{
+	s_thread_vu1 = on;
+	emu_hot = on ? (emu_hot | EMU_HOT_VU1_THREAD) : (emu_hot & ~EMU_HOT_VU1_THREAD);
+}
 alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
 asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
 
@@ -127,7 +135,6 @@ vifStruct* mtvu_vif(void) { return &s_mtvu_vif; }
 VIFregisters* mtvu_vif_regs(void) { return &s_mtvu_regs; }
 void mtvu_vif_unpack(const u8* data, u32 size) { mtvu_unpack(data, size); }
 void dvif_unpack(int idx, const u8* data, int isFill) { dynarec(idx, data, isFill); }
-bool emu_config_thread_vu1(void) { return s_thread_vu1; }
 }
 #define MTVU_VIF      (s_mtvu_vif)
 #define MTVU_VIFREGS  (s_mtvu_regs)
@@ -208,7 +215,7 @@ static void reset_world(void)
 		const u32 w = rnd();
 		memcpy(&s_src[i], &w, 4);
 	}
-	s_thread_vu1 = rnd_n(4) == 0;
+	set_thread_vu1(rnd_n(4) == 0);
 	{
 		Pcsx2Config* c = (Pcsx2Config*)s_emuconfig;
 		c->Cpu.Recompiler.EnableVU1          = s_thread_vu1;
@@ -312,7 +319,7 @@ static void fixes(void)
 	/* A partial UNPACK restored nearly full, then more data than the
 	 * buffer has room for: dropped, not written past it. */
 	reset_world();
-	s_thread_vu1 = false;
+	set_thread_vu1(false);
 	vif0.cmd = 0x6c;
 	vif0.pass = 1;
 	vif0.tag.size = 100;
@@ -328,7 +335,7 @@ static void fixes(void)
 	/* A partial UNPACK of a reserved format, which sizes to nothing: NUM
 	 * would be divided by its zero size. */
 	reset_world();
-	s_thread_vu1 = false;
+	set_thread_vu1(false);
 	vif1.cmd = 0x63;
 	vif1.pass = 1;
 	vif1.tag.size = 10;
@@ -342,7 +349,7 @@ static void fixes(void)
 
 	/* A partial filling UNPACK with CL 0: NUM would be divided by CL. */
 	reset_world();
-	s_thread_vu1 = false;
+	set_thread_vu1(false);
 	vif0.cmd = 0x6c;
 	vif0.pass = 1;
 	vif0.tag.size = 10;

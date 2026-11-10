@@ -310,7 +310,7 @@ static __fi u32 vifRead32(int idx, u32 mem)
 		case VIF0_COL0: case VIF0_COL1: case VIF0_COL2: case VIF0_COL3:
 			/* VIF1's row and column live with the VU1 thread when it runs
 			 * VIF1: read them once it has caught up. */
-			if (idx && emu_config_thread_vu1())
+			if (idx && EMU_THREAD_VU1)
 			{
 				mtvu_wait_vu();
 				vif = mtvu_vif();

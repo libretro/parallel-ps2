@@ -33,6 +33,7 @@
 #else
 #include "Gif_hw.h"
 #include "ps2/HwInternal.h"
+#include "HotConfig.h"
 #endif
 
 /* ---- the record ---------------------------------------------------- */
@@ -87,14 +88,26 @@ EEVM_MemoryAllocMess* eeMem;
 alignas(16) vifStruct vif0, vif1;
 
 
+u32 emu_hot; /* HotConfig.h; Pcsx2Config.cpp is not linked */
 static bool s_thread_vu1, s_instant_vu1, s_vusync, s_vif1stall;
+/* What the core reads is the hot config's bit (HotConfig.h). */
+static void set_thread_vu1(bool on)
+{
+	s_thread_vu1 = on;
+	emu_hot = on ? (emu_hot | EMU_HOT_VU1_THREAD) : (emu_hot & ~EMU_HOT_VU1_THREAD);
+}
+static void set_instant_vu1(bool on)
+{
+	s_instant_vu1 = on;
+	emu_hot = on ? (emu_hot | EMU_HOT_VU1_INSTANT) : (emu_hot & ~EMU_HOT_VU1_INSTANT);
+}
 alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
 asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
 static void set_config(void)
 {
 	Pcsx2Config* c = (Pcsx2Config*)s_emuconfig;
-	s_thread_vu1  = rnd_n(3) == 0;
-	s_instant_vu1 = rnd_n(2) == 0;
+	set_thread_vu1(rnd_n(3) == 0);
+	set_instant_vu1(rnd_n(2) == 0);
 	s_vusync      = rnd_n(3) == 0;
 	s_vif1stall   = rnd_n(3) == 0;
 	c->Cpu.Recompiler.EnableVU1          = s_thread_vu1;
@@ -166,8 +179,6 @@ bool gif_path_is_idle(int p) { return rec_state(p) == GIF_PATH_IDLE; }
 void mtvu_get_changes(void) { rec_changes(); }
 void mtvu_kick_pending(void) { rec_kick(); }
 void mtgs_init_and_read_fifo(u8* mem, u32 qwc) { rec_read_fifo(mem, qwc); }
-bool emu_config_thread_vu1(void) { return s_thread_vu1; }
-bool emu_config_instant_vu1(void) { return s_instant_vu1; }
 bool emu_config_vusync_hack(void) { return s_vusync; }
 bool emu_config_vif1stall_hack(void) { return s_vif1stall; }
 #endif

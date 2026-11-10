@@ -42,7 +42,7 @@ void vucpu_execute_block(const struct VUmicroCpu* cpu, int startUp)
 {
 	const int test = cpu->idx ? 0x100 : 1;
 
-	if (cpu->idx && emu_config_thread_vu1())
+	if (cpu->idx && EMU_THREAD_VU1)
 	{
 		mtvu_get_changes();
 		return;

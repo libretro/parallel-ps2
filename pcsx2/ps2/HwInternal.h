@@ -18,6 +18,7 @@
 #include "../Hw.h"
 
 #include "../../common/SingleRegisterTypes.h"
+#include "../HotConfig.h"
 
 /* What the EE hardware register handlers (Hw.c) and the DMAC (Dmac.c)
  * reach in the units that are still C++, with C linkage. */
@@ -73,7 +74,6 @@ extern bool emu_config_dmabusy_hack(void);
 extern bool emu_config_viffifo_hack(void);
 extern bool emu_config_vif1stall_hack(void);
 extern bool emu_config_vusync_hack(void);
-extern bool emu_config_instant_vu1(void);
 /* The PAL or NTSC frame rate the user set, and the default, in mHz
  * (Counters.c). */
 extern u32 emu_config_framerate_mhz(bool pal);

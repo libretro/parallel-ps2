@@ -48,6 +48,7 @@
 #include "MTVU.h"
 #else
 #include "Gif_Unit.h"
+#include "HotConfig.h"
 #endif
 
 /* ---- the record ---------------------------------------------------- */
@@ -92,7 +93,14 @@ alignas(4096) u8 eeHw[PS2MEM_HARDWARE];
 alignas(16) u8 g_RealGSMem[PS2MEM_GS_REGS];
 alignas(16) vifStruct vif1;
 
+u32 emu_hot; /* HotConfig.h; Pcsx2Config.cpp is not linked */
 static bool s_thread_vu1, s_xgkick_hack, s_enable_vu1;
+/* What the core reads is the hot config's bit (HotConfig.h). */
+static void set_thread_vu1(bool on)
+{
+	s_thread_vu1 = on;
+	emu_hot = on ? (emu_hot | EMU_HOT_VU1_THREAD) : (emu_hot & ~EMU_HOT_VU1_THREAD);
+}
 alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
 asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
 
@@ -100,7 +108,7 @@ static void set_config(void)
 {
 	Pcsx2Config* c = (Pcsx2Config*)s_emuconfig;
 	s_enable_vu1  = rnd_n(5) != 0;
-	s_thread_vu1  = s_enable_vu1 && rnd_n(3) == 0;
+	set_thread_vu1(s_enable_vu1 && rnd_n(3) == 0);
 	s_xgkick_hack = rnd_n(4) == 0;
 	c->Cpu.Recompiler.EnableVU1          = s_enable_vu1;
 	c->Speedhacks.vuThread               = s_thread_vu1;
@@ -213,7 +221,6 @@ void Gif_MTVU_KickSema(void) { mix(0x14); }
 /* The VU1 thread's half of an A+D write (MTVU.c): its own state, which
  * this harness does not keep. */
 void Gif_HandlerAD_MTVU(u8*) { }
-bool emu_config_thread_vu1(void) { return s_thread_vu1; }
 bool emu_config_xgkick_hack(void) { return s_xgkick_hack; }
 bool emu_config_enable_vu1(void) { return s_enable_vu1; }
 }
@@ -661,7 +668,7 @@ static void gif_pack_clear_for_test(GS_Packet* p)
 static void fresh_vu1_thread(void)
 {
 	reset_world();
-	s_thread_vu1 = true;
+	set_thread_vu1(true);
 	gif_unit_reset(false);
 	gs_catch_up();
 }
@@ -772,7 +779,7 @@ static void fixes(void)
 			u32 bad;
 			bool ok;
 			fresh_vu1_thread();
-			s_thread_vu1 = false;
+			set_thread_vu1(false);
 			gif_unit_transfer(GIF_TRANS_XGKICK, s_pkt, eop_packet(s_pkt));
 			memset(&st, 0, sizeof(st));
 			st.is_saving = true;

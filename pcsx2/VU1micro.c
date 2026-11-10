@@ -32,9 +32,9 @@ void vu1ResetRegs(void)
 void vu1Finish(bool add_cycles)
 {
 	u64 vu1cycles;
-	if (emu_config_thread_vu1())
+	if (EMU_THREAD_VU1)
 	{
-		if (emu_config_instant_vu1() || add_cycles)
+		if (EMU_INSTANT_VU1 || add_cycles)
 			mtvu_wait_vu();
 		mtvu_get_changes();
 		return;
@@ -51,7 +51,7 @@ void vu1Finish(bool add_cycles)
 void vu1ExecMicro(u32 addr)
 {
 	const int prof = PROFILE_ZONE_BEGIN(ZONE_VU1);
-	if (emu_config_thread_vu1())
+	if (EMU_THREAD_VU1)
 	{
 		vuRegs[0].VI[REG_VPU_STAT].UL &= ~0xFF00;
 		/* Okay this is a little bit of a hack, but with good reason. */
@@ -75,7 +75,7 @@ void vu1ExecMicro(u32 addr)
 	if ((s32)addr != -1) vuRegs[1].VI[REG_TPC].UL = addr & 0x7FF;
 
 	CpuVU1->SetStartPC(vuRegs[1].VI[REG_TPC].UL << 3);
-	if (!emu_config_instant_vu1())
+	if (!EMU_INSTANT_VU1)
 		vucpu_execute_block(CpuVU1, 1);
 	else
 		CpuVU1->Execute(vu1RunCycles);

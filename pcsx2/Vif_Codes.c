@@ -150,7 +150,7 @@ static __fi void vuExecMicro(int idx, u32 addr, bool requires_wait)
 
 	vifX->queued_gif_wait = requires_wait;
 
-	if (!idx || (!emu_config_thread_vu1() && !emu_config_instant_vu1()))
+	if (!idx || (!EMU_THREAD_VU1 && !EMU_INSTANT_VU1))
 		vifExecQueue_inl(idx);
 }
 
@@ -314,7 +314,7 @@ static __fi void vifCode_MPGcopy(int idx, u32 addr, const u32* data, int size)
 
 	vifExecQueue_inl(idx);
 
-	if (idx && emu_config_thread_vu1())
+	if (idx && EMU_THREAD_VU1)
 	{
 		if (((u64)addr + (u64)size * 4) > memSize)
 		{

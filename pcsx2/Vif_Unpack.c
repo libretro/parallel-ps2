@@ -40,12 +40,12 @@ static __fi u32 setVifRow(vifStruct* vif, u32 reg, u32 data)
  * runs it. Resolved once per unpack and handed down, not per element. */
 static __fi vifStruct* unpack_vif(int idx)
 {
-	return (idx && emu_config_thread_vu1()) ? mtvu_vif() : VIF_X(idx);
+	return (idx && EMU_THREAD_VU1) ? mtvu_vif() : VIF_X(idx);
 }
 
 static __fi VIFregisters* unpack_vif_regs(int idx)
 {
-	return (idx && emu_config_thread_vu1()) ? mtvu_vif_regs() : VIF_XREGS(idx);
+	return (idx && EMU_THREAD_VU1) ? mtvu_vif_regs() : VIF_XREGS(idx);
 }
 
 /* The unpack workers, one concrete set per (mode, doMask) pair and source
@@ -355,7 +355,7 @@ int vif_unpack(int idx, const u8* data)
 				vifRegs->num = 256;
 		}
 
-		if (!idx || !emu_config_thread_vu1())
+		if (!idx || !EMU_THREAD_VU1)
 			dvif_unpack(idx, data, isFill);
 		else
 			mtvu_vif_unpack(data, size);

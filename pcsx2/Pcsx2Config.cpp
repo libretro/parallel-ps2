@@ -799,11 +799,6 @@ bool emu_config_host_fs(void)
 	return EmuConfig.HostFs;
 }
 
-bool emu_config_thread_vu1(void)
-{
-	return THREAD_VU1;
-}
-
 bool emu_config_ophflag_hack(void)
 {
 	return CHECK_OPHFLAGHACK;
@@ -849,11 +844,6 @@ bool emu_config_vusync_hack(void)
 	return EmuConfig.Gamefixes.VUSyncHack;
 }
 
-bool emu_config_instant_vu1(void)
-{
-	return INSTANT_VU1;
-}
-
 u32 emu_hot;
 s32 emu_hot_ee_cycle_rate;
 u32 emu_hot_ee_cycle_skip;
@@ -869,6 +859,8 @@ void emu_config_sync_hot(void)
 	if (EmuConfig.Gamefixes.GoemonTlbHack)     w |= EMU_HOT_GOEMON_TLB;
 	if (EmuConfig.Gamefixes.InstantDMAHack)    w |= EMU_HOT_INSTANT_DMA;
 	if (EmuConfig.Gamefixes.EETimingHack)      w |= EMU_HOT_EE_TIMING;
+	if (THREAD_VU1)                            w |= EMU_HOT_VU1_THREAD;
+	if (INSTANT_VU1)                           w |= EMU_HOT_VU1_INSTANT;
 	emu_hot               = w;
 	emu_hot_ee_cycle_rate = EmuConfig.Speedhacks.EECycleRate;
 	emu_hot_ee_cycle_skip = EmuConfig.Speedhacks.EECycleSkip;

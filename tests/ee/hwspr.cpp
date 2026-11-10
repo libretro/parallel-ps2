@@ -48,6 +48,8 @@
 #include "MTVU.h"
 #include "SPR.h"
 
+u32 emu_hot; /* HotConfig.h: VU1 runs on the EE thread here */
+
 alignas(16) cpuRegisters cpuRegs;
 alignas(16) VURegs vuRegs[2];
 alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
@@ -72,7 +74,6 @@ void vucpu_execute_block(const VUmicroCpu*, int) { }
 void SaveState_FreezeMem(SaveStateBase*, void*, int) { }
 bool SaveState_FreezeTag(SaveStateBase*, const char*) { return true; }
 void mtvu_wait_vu(void) { }
-bool emu_config_thread_vu1(void) { return false; }
 /* Chain-mode tag handling; interleave never reads a tag. */
 bool dmach_transfer(DMACh*, tDMA_TAG*) { return true; }
 void dmach_unsafe_transfer(DMACh*, const tDMA_TAG*) { }

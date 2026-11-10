@@ -46,7 +46,6 @@ void dvif_unpack(int, const u8*, int) { }
 vifStruct* mtvu_vif(void) { return &vif1; }
 VIFregisters* mtvu_vif_regs(void) { return &vif1Regs; }
 void mtvu_vif_unpack(const u8*, u32) { }
-bool emu_config_thread_vu1(void) { return false; }
 }
 
 /* The formats the "Simple UNPACK" lines exercise, by the name the capture

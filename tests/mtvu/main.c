@@ -61,7 +61,6 @@ int  gif_unit_check_paths_queued(bool p1, bool p2, bool p3) { (void)p1; (void)p2
 u32  gif_unit_transfer(GIF_TRANSFER_TYPE type, u8* pMem, u32 size) { (void)type; (void)pMem; (void)size; transfers++; return 0; }
 void Gif_FinishIRQ(void) { finished++; }
 void hwIntcIrq(int n) { if (n == INTC_GS) irqs_gs++; }
-bool emu_config_instant_vu1(void) { return true; }
 void cpuSetNextEventDelta(s32 delta) { (void)delta; }
 s32 WorkEventCount_SpinBudget(void) { return 0; }
 
@@ -142,6 +141,7 @@ int main(void)
 	static u8 vu1_mem[0x4000], vu1_micro[0x4000];
 	vuRegs[1].Mem   = vu1_mem;
 	vuRegs[1].Micro = vu1_micro;
+	emu_hot         = EMU_HOT_VU1_INSTANT; /* no VU1 busy events to schedule */
 	run_once(0);
 	run_once(1); /* retro_deinit then retro_init again */
 	if (fails)

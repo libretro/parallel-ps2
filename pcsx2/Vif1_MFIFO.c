@@ -372,7 +372,7 @@ void vifMFIFOInterrupt(void)
 	g_vif1Cycles = 0;
 	vif1Regs.stat.FQC = pcsx2_min_u((u32)0x10, vif1ch.qwc);
 	vif1ch.chcr.STR   = false;
-	if (emu_config_thread_vu1())
+	if (EMU_THREAD_VU1)
 		mtvu_kick_pending(); /* C.80: MFIFO transfer done -- flush deferred unpack notify */
 	hwDmacIrq(DMAC_VIF1);
 	cpuRegs.dmastall &= ~(1 << DMAC_VIF1);

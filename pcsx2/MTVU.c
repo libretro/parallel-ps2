@@ -529,7 +529,7 @@ void mtvu_get_changes(void)
 	if (interrupts & MTVU_INT_VU_EBIT)
 	{
 		retro_atomic_fetch_and_int(&vu1Thread.mtvuInterrupts, ~MTVU_INT_VU_EBIT);
-		if (emu_config_instant_vu1())
+		if (EMU_INSTANT_VU1)
 			vuRegs[0].VI[REG_VPU_STAT].UL &= ~0xFF00;
 	}
 	if (interrupts & MTVU_INT_VU_TBIT)
@@ -635,7 +635,7 @@ void mtvu_execute_vu(u32 vu_addr, u32 vif_top, u32 vif_itop, u32 fbrst)
 	vuRegs[0].cycle += skip_cycles * emu_hot_ee_cycle_skip;
 	mtvu_get_changes();
 
-	if (!emu_config_instant_vu1())
+	if (!EMU_INSTANT_VU1)
 	{
 		vuRegs[0].VI[REG_VPU_STAT].UL |= 0x100;
 		CPU_INT(VU_MTVU_BUSY, cycles);

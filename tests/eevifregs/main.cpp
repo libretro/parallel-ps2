@@ -34,6 +34,7 @@
 #include "MTVU.h"
 #endif
 #include "ps2/HwInternal.h"
+#include "HotConfig.h"
 
 /* ---- the record ---------------------------------------------------- */
 
@@ -77,6 +78,7 @@ alignas(4096) u8 eeHw[PS2MEM_HARDWARE];
 u32 g_vif0Cycles, g_vif1Cycles;
 PCSX2_ALIGN(16) VifUnpackBuffer vifUnpackBuffer[2];
 
+u32 emu_hot; /* HotConfig.h; Pcsx2Config.cpp is not linked */
 static bool s_thread_vu1;
 alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
 asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
@@ -134,7 +136,6 @@ extern "C" {
 vifStruct* mtvu_vif(void) { return &s_mtvu_vif; }
 void mtvu_write_row(void) { handed(&vif1, false); }
 void mtvu_write_col(void) { handed(&vif1, true); }
-bool emu_config_thread_vu1(void) { return s_thread_vu1; }
 }
 #define MTVU_VIF (s_mtvu_vif)
 #endif
@@ -145,6 +146,7 @@ static void set_thread_vu1(bool on)
 {
 	Pcsx2Config* c = (Pcsx2Config*)s_emuconfig;
 	s_thread_vu1 = on;
+	emu_hot = on ? (emu_hot | EMU_HOT_VU1_THREAD) : (emu_hot & ~EMU_HOT_VU1_THREAD);
 	c->Cpu.Recompiler.EnableVU1          = on;
 	c->Speedhacks.vuThread               = on;
 	c->Cpu.Recompiler.EnableVu1SoftFloat = false;

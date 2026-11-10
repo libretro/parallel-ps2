@@ -31,6 +31,7 @@
 #include "Gif_hw.h"
 #endif
 #include "ps2/HwInternal.h"
+#include "HotConfig.h"
 
 /* ---- the record ---------------------------------------------------- */
 
@@ -85,14 +86,26 @@ alignas(16) vifStruct vif0, vif1;
 u32 g_vif0Cycles, g_vif1Cycles;
 alignas(16) static u8 s_micro0[0x1000], s_micro1[0x4000];
 
+u32 emu_hot; /* HotConfig.h; Pcsx2Config.cpp is not linked */
 static bool s_thread_vu1, s_instant_vu1, s_vif1stall;
+/* What the core reads is the hot config's bit (HotConfig.h). */
+static void set_thread_vu1(bool on)
+{
+	s_thread_vu1 = on;
+	emu_hot = on ? (emu_hot | EMU_HOT_VU1_THREAD) : (emu_hot & ~EMU_HOT_VU1_THREAD);
+}
+static void set_instant_vu1(bool on)
+{
+	s_instant_vu1 = on;
+	emu_hot = on ? (emu_hot | EMU_HOT_VU1_INSTANT) : (emu_hot & ~EMU_HOT_VU1_INSTANT);
+}
 alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
 asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
 static void set_config(void)
 {
 	Pcsx2Config* c = (Pcsx2Config*)s_emuconfig;
-	s_thread_vu1  = rnd_n(3) == 0;
-	s_instant_vu1 = rnd_n(2) == 0;
+	set_thread_vu1(rnd_n(3) == 0);
+	set_instant_vu1(rnd_n(2) == 0);
 	s_vif1stall   = rnd_n(3) == 0;
 	c->Cpu.Recompiler.EnableVU1          = s_thread_vu1;
 	c->Speedhacks.vuThread               = s_thread_vu1;
@@ -205,8 +218,6 @@ void mtvu_write_col(void) { rec_col(); }
 void mtvu_write_row(void) { rec_row(); }
 void vif_unpack_setup(int idx, const u32* data) { unpack_setup(idx, data); }
 int  vif_unpack(int idx, const u8* data) { return unpack_data(idx, data); }
-bool emu_config_thread_vu1(void) { return s_thread_vu1; }
-bool emu_config_instant_vu1(void) { return s_instant_vu1; }
 bool emu_config_vif1stall_hack(void) { return s_vif1stall; }
 #endif
 

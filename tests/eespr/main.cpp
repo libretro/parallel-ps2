@@ -26,6 +26,7 @@
 #include "VUmicro.h"
 #include "MTVU.h"
 #include "SPR.h"
+#include "HotConfig.h"
 
 /* ---- the record ---------------------------------------------------- */
 
@@ -71,16 +72,17 @@ EEVM_MemoryAllocMess* eeMem;
 static u8* s_vumem;
 
 /* THREAD_VU1 reads EmuConfig in the C++; the C asks through a call. */
+u32 emu_hot; /* HotConfig.h; Pcsx2Config.cpp is not linked */
 static bool s_thread_vu1;
 alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
 asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
 #ifndef EESPR_CXX_TREE
-bool emu_config_thread_vu1(void) { return s_thread_vu1; }
 #endif
 static void set_thread_vu1(bool on)
 {
 	Pcsx2Config* c = (Pcsx2Config*)s_emuconfig;
 	s_thread_vu1 = on;
+	emu_hot = on ? (emu_hot | EMU_HOT_VU1_THREAD) : (emu_hot & ~EMU_HOT_VU1_THREAD);
 	c->Cpu.Recompiler.EnableVU1          = on;
 	c->Speedhacks.vuThread               = on;
 	c->Cpu.Recompiler.EnableVu1SoftFloat = false;

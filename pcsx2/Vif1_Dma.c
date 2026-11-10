@@ -209,7 +209,7 @@ static __fi void vif1SetupTransfer(void)
 void vif1VUFinish(void)
 {
 	/* Sync up VU1 so we don't errantly wait. */
-	while (!emu_config_thread_vu1() && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
+	while (!EMU_THREAD_VU1 && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
 	{
 		const s64 cycle_diff = (int)(cpuRegs.cycle - vuRegs[1].cycle);
 
@@ -222,7 +222,7 @@ void vif1VUFinish(void)
 	{
 		mtvu_get_changes();
 
-		if (emu_config_thread_vu1() && !emu_config_instant_vu1() && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
+		if (EMU_THREAD_VU1 && !EMU_INSTANT_VU1 && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
 			CPU_INT(VIF_VU1_FINISH, cpuGetCycles());
 		else
 			CPU_INT(VIF_VU1_FINISH, 128);
@@ -234,7 +234,7 @@ void vif1VUFinish(void)
 	{
 		u64 _cycles = vuRegs[1].cycle;
 		vu1Finish(false);
-		if (emu_config_thread_vu1() && !emu_config_instant_vu1() && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
+		if (EMU_THREAD_VU1 && !EMU_INSTANT_VU1 && (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
 			CPU_INT(VIF_VU1_FINISH, cpuGetCycles());
 		else
 			CPU_INT(VIF_VU1_FINISH, vuRegs[1].cycle - _cycles);
@@ -421,7 +421,7 @@ void vif1Interrupt(void)
 	if (vif1.queued_program)
 		vifExecQueue(1);
 	g_vif1Cycles             = 0;
-	if (emu_config_thread_vu1())
+	if (EMU_THREAD_VU1)
 		mtvu_kick_pending(); /* C.80: DMA done -- flush any deferred unpack notify */
 	hwDmacIrq(DMAC_VIF1);
 	cpuRegs.dmastall        &= ~(1 << DMAC_VIF1);

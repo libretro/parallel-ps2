@@ -189,7 +189,7 @@ void cpuTlbMiss(u32 addr, u32 bd, u32 excode)
 int cpuGetCycles(void)
 {
 	const int cycles = (cpuRegs.sCycle[VU_MTVU_BUSY] + cpuRegs.eCycle[VU_MTVU_BUSY]) - cpuRegs.cycle;
-	return ((!emu_config_thread_vu1() || emu_config_instant_vu1())) ? 1 : pcsx2_max_i(1, cycles);
+	return ((!EMU_THREAD_VU1 || EMU_INSTANT_VU1)) ? 1 : pcsx2_max_i(1, cycles);
 }
 
 /* tests the cpu cycle against the given start and delta values. */

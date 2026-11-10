@@ -202,7 +202,7 @@ static void _vu1Exec(VURegs* VU)
 			/* We also have some code to update it in VIF Unpacks too, */
 			/* since in some games (Aggressive Inline) overwrite the XGKick data */
 			/* VU currently flushes XGKICK on end, so this isn't needed, yet */
-			if (emu_config_instant_vu1())
+			if (EMU_INSTANT_VU1)
 				vuRegs[1].xgkicklastcycle = cpuRegs.cycle;
 		}
 	}
