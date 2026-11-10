@@ -73,16 +73,6 @@ CommandPool::~CommandPool()
 		table->vkDestroyCommandPool(device->get_device(), pool, nullptr);
 }
 
-void CommandPool::signal_submitted(VkCommandBuffer cmd)
-{
-#ifdef VULKAN_DEBUG
-	VK_ASSERT(in_flight.find(cmd) != end(in_flight));
-	in_flight.erase(cmd);
-#else
-	(void)cmd;
-#endif
-}
-
 VkCommandBuffer CommandPool::request_command_buffer()
 {
 	VK_ASSERT(pool != VK_NULL_HANDLE);

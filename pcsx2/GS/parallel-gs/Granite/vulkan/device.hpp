@@ -44,7 +44,6 @@
 #include <unordered_map>
 #include <stdio.h>
 
-
 #include "quirks.hpp"
 #include "small_vector.hpp"
 
@@ -61,7 +60,6 @@ struct retro_spsc; /* libretro-common's retro_spsc.h */
 
 namespace Vulkan
 {
-
 struct HostReference
 {
 	const void *data;
@@ -173,13 +171,8 @@ public:
 	// Only called by main thread, during setup phase.
 	void set_context(const Context &context);
 
-
 	void init_frame_contexts(unsigned count);
 	const VolkDeviceTable &get_device_table() const;
-
-
-	unsigned get_num_frame_contexts() const;
-	unsigned get_current_frame_context() const;
 
 	size_t get_pipeline_cache_size();
 	bool get_pipeline_cache_data(uint8_t *data, size_t size);
@@ -263,18 +256,8 @@ public:
 
 	// Frame-pushing interface.
 	void next_frame_context();
-	bool next_frame_context_is_non_blocking();
-
-	// Normally, the main thread ensures forward progress of the frame context
-	// so that async tasks don't have to care about it,
-	// but in the case where async threads are continuously pumping Vulkan work
-	// in the background, they need to reclaim memory if WSI goes to sleep for a long period of time.
-	void next_frame_context_in_async_thread();
-	void set_enable_async_thread_frame_context(bool enable);
 
 	void wait_idle();
-	void end_frame_context();
-
 
 	// Set names for objects for debuggers and profilers.
 	void set_name(const Buffer &buffer, const char *name);
@@ -287,8 +270,6 @@ public:
 	void flush_frame();
 	CommandBufferHandle request_command_buffer(CommandBuffer::Type type = CommandBuffer::Type::Generic);
 	CommandBufferHandle request_command_buffer_for_thread(unsigned thread_index, CommandBuffer::Type type = CommandBuffer::Type::Generic);
-	// Must be given back with submit_discard().
-	CommandBufferHandle request_borrowed_command_buffer(VkCommandBuffer cmd);
 
 	void submit(CommandBufferHandle &cmd, Fence *fence = nullptr,
 	            unsigned semaphore_count = 0, Semaphore *semaphore = nullptr);
@@ -298,58 +279,33 @@ public:
 	                  SemaphoreHolder *semaphore = nullptr);
 	// Mark that there have been work submitted in this frame context outside our control
 	// that accesses resources Vulkan::Device owns.
-	void submit_external(CommandBuffer::Type type);
 	void submit_discard(CommandBufferHandle &cmd);
 	QueueIndices get_physical_queue_type(CommandBuffer::Type queue_type) const;
 
 	// Request shaders and programs. These objects are owned by the Device.
 	Shader *request_shader(const uint32_t *code, size_t size, const ResourceLayout *layout = nullptr);
-	Shader *request_shader_by_hash(Util::Hash hash);
-	Program *request_program(const uint32_t *vertex_data, size_t vertex_size,
-	                         const uint32_t *fragment_data, size_t fragment_size,
-	                         const ResourceLayout *vertex_layout = nullptr,
-	                         const ResourceLayout *fragment_layout = nullptr);
 	Program *request_program(const uint32_t *compute_data, size_t compute_size,
 	                         const ResourceLayout *layout = nullptr);
 	Program *request_program(Shader *vertex, Shader *fragment, const ImmutableSamplerBank *sampler_bank = nullptr);
 	Program *request_program(Shader *compute, const ImmutableSamplerBank *sampler_bank = nullptr);
 
-	const ImmutableYcbcrConversion *request_immutable_ycbcr_conversion(const VkSamplerYcbcrConversionCreateInfo &info);
 	const ImmutableSampler *request_immutable_sampler(const SamplerCreateInfo &info, const ImmutableYcbcrConversion *ycbcr);
 
 	// Map and unmap buffer objects.
 	void *map_host_buffer(const Buffer &buffer, MemoryAccessFlags access);
 	void unmap_host_buffer(const Buffer &buffer, MemoryAccessFlags access);
-	void *map_host_buffer(const Buffer &buffer, MemoryAccessFlags access, VkDeviceSize offset, VkDeviceSize length);
 	void unmap_host_buffer(const Buffer &buffer, MemoryAccessFlags access, VkDeviceSize offset, VkDeviceSize length);
-
 
 	// Create buffers and images.
 	BufferHandle create_buffer(const BufferCreateInfo &info, const void *initial = nullptr);
-	BufferHandle create_imported_host_buffer(const BufferCreateInfo &info, VkExternalMemoryHandleTypeFlagBits type, void *host_buffer);
 	ImageHandle create_image(const ImageCreateInfo &info, const ImageInitialData *initial = nullptr);
 	ImageHandle create_image_from_staging_buffer(const ImageCreateInfo &info, const InitialImageBuffer *buffer);
-	BufferHandle wrap_buffer(const BufferCreateInfo &info, VkBuffer buffer, bool supports_bda = true);
-	// Does not create any default image views. Only wraps the VkImage
-	// as a non-owned handle for purposes of API interop.
-	ImageHandle wrap_image(const ImageCreateInfo &info, VkImage img);
-	DeviceAllocationOwnerHandle take_device_allocation_ownership(Image &image);
-	DeviceAllocationOwnerHandle allocate_memory(const MemoryAllocateInfo &info);
-
-	// Create staging buffers for images.
 
 	// This is deprecated and considered slow path.
 	// If number of subresources is 1, the fast path can be taken.
 	InitialImageBuffer create_image_staging_buffer(const ImageCreateInfo &info, const ImageInitialData *initial);
 
-	// Only takes a reference to the layout.
-	// Ideal path when uploading resources since it's compatible with host image copy, etc.
-	InitialImageBuffer create_image_staging_buffer(const TextureFormatLayout &layout);
-
-	// Create image view, buffer views and samplers.
-	ImageViewHandle create_image_view(const ImageViewCreateInfo &view_info);
 	BufferViewHandle create_buffer_view(const BufferViewCreateInfo &view_info);
-	SamplerHandle create_sampler(const SamplerCreateInfo &info);
 
 	BindlessDescriptorPoolHandle create_bindless_descriptor_pool(BindlessResourceType type,
 	                                                             unsigned num_sets, unsigned num_descriptors);
@@ -362,26 +318,7 @@ public:
 	                                 const void *pNext,
 	                                 VkImageFormatProperties2 *properties2) const;
 
-	VkFormat get_default_depth_stencil_format() const;
-	VkFormat get_default_depth_format() const;
-	ImageHandle get_transient_attachment(unsigned width, unsigned height, VkFormat format,
-	                                     unsigned index = 0, unsigned samples = 1, unsigned layers = 1);
-
 	// Semaphore API:
-	// Semaphores in Granite are abstracted to support both binary and timeline semaphores
-	// internally.
-	// In practice this means that semaphores behave like single-use binary semaphores,
-	// with one signal and one wait.
-	// A single semaphore handle is not reused for multiple submissions, and they must be recycled through
-	// the device. The intended use is device.submit(&sem), device.add_wait_semaphore(sem); dispose(sem);
-	// For timeline semaphores, the semaphore is just a proxy object which
-	// holds the internally owned VkSemaphore + timeline value and is otherwise lightweight.
-	//
-	// However, there are various use cases where we explicitly need semaphore objects:
-	// - Interoperate with other code that only accepts VkSemaphore.
-	// - Interoperate with external objects. We need to know whether to use binary or timeline.
-	//   For timelines, we need to know which handle type to use (OPAQUE or ID3D12Fence).
-	//   Binary external semaphore is always opaque with TEMPORARY semantics.
 
 	void add_wait_semaphore(CommandBuffer::Type type, Semaphore semaphore, VkPipelineStageFlags2 stages, bool flush);
 
@@ -389,22 +326,10 @@ public:
 	// free the semaphore when GPU usage of it is complete.
 	Semaphore request_semaphore(VkSemaphoreTypeKHR type, VkSemaphore handle = VK_NULL_HANDLE, bool transfer_ownership = false);
 
-	// Requests a binary or timeline semaphore that can be used to import/export.
-	// These semaphores cannot be used directly by add_wait_semaphore() and submit_empty().
-	// See request_timeline_semaphore_as_binary() for how to use timelines.
-	Semaphore request_semaphore_external(VkSemaphoreTypeKHR type,
-	                                     VkExternalSemaphoreHandleTypeFlagBits handle_type);
-
 	// The created semaphore does not hold ownership of the VkSemaphore object.
 	// This is used when we want to wait on or signal an external timeline semaphore at a specific timeline value.
 	// We must collapse the timeline to a "binary" semaphore before we can call submit_empty or add_wait_semaphore().
 	Semaphore request_timeline_semaphore_as_binary(const SemaphoreHolder &holder, uint64_t value);
-
-	// A proxy semaphore which lets us grab a semaphore handle before we signal it.
-	// Move assignment can be used to move a payload.
-	// Mostly useful to deal better with render graph implementation.
-	// For time being however, we'll support moving the payload over to the proxy object.
-	Semaphore request_proxy_semaphore();
 
 	// For compat with existing code that uses this entry point.
 	inline Semaphore request_legacy_semaphore() { return request_semaphore(VK_SEMAPHORE_TYPE_BINARY_KHR); }
@@ -443,10 +368,6 @@ public:
 	void set_queue_lock(std::function<void ()> lock_callback,
 	                    std::function<void ()> unlock_callback);
 
-	// Alternative form, when we have to provide lock callbacks to external APIs.
-	void external_queue_lock();
-	void external_queue_unlock();
-
 	const ImplementationWorkarounds &get_workarounds() const
 	{
 		return workarounds;
@@ -462,22 +383,15 @@ public:
 		return debug_marker_sensitive;
 	}
 
-
-	// A split version of VkEvent handling which lets us record a wait command before signal is recorded.
-
 	const Context::SystemHandles &get_system_handles() const
 	{
 		return system_handles;
 	}
 
-	void configure_default_geometry_samplers(float max_aniso, float lod_bias);
-
 	bool supports_subgroup_size_log2(bool subgroup_full_group,
 	                                 uint8_t subgroup_minimum_size_log2,
 	                                 uint8_t subgroup_maximum_size_log2,
 	                                 VkShaderStageFlagBits stage = VK_SHADER_STAGE_COMPUTE_BIT) const;
-
-	const QueueInfo &get_queue_info() const;
 
 private:
 	VkInstance instance = VK_NULL_HANDLE;
@@ -494,11 +408,8 @@ private:
 	void bake_program(Program &program, const ImmutableSamplerBank *sampler_bank);
 	void merge_combined_resource_layout(CombinedResourceLayout &layout, const Program &program);
 
-	void request_vertex_block(BufferBlock &block, VkDeviceSize size);
-	void request_index_block(BufferBlock &block, VkDeviceSize size);
 	void request_uniform_block(BufferBlock &block, VkDeviceSize size);
 	void request_staging_block(BufferBlock &block, VkDeviceSize size);
-
 
 	const PipelineLayout *request_pipeline_layout(const CombinedResourceLayout &layout,
 	                                              const ImmutableSamplerBank *immutable_samplers);
@@ -522,7 +433,6 @@ private:
 
 	// Make sure this is deleted last.
 	HandlePool handle_pool;
-
 
 	struct Managers
 	{
@@ -585,13 +495,11 @@ private:
 		std::vector<DescriptorBufferAllocation> descriptor_buffer_allocs;
 		std::vector<CachedDescriptorPayload> cached_descriptor_payloads;
 
-
 		bool in_destructor = false;
 	};
 	// The per frame structure must be destroyed after
 	// the hashmap data structures below, so it must be declared before.
 	std::vector<std::unique_ptr<PerFrame>> per_frame;
-
 
 	struct QueueData
 	{
@@ -636,7 +544,6 @@ private:
 	uint32_t find_memory_type(BufferDomain domain, uint32_t mask) const;
 	uint32_t find_memory_type(ImageDomain domain, uint32_t mask) const;
 	uint32_t find_memory_type(uint32_t required, uint32_t mask) const;
-	bool memory_type_is_device_optimal(uint32_t type) const;
 	bool memory_type_is_host_visible(uint32_t type) const;
 
 	const ImmutableSampler *samplers[static_cast<unsigned>(StockSampler::Count)] = {};
@@ -734,10 +641,6 @@ private:
 	void wait_idle_nolock();
 	void end_frame_nolock();
 
-
-	Fence request_legacy_fence();
-
-
 	ImplementationWorkarounds workarounds;
 	void init_workarounds();
 
@@ -748,32 +651,6 @@ private:
 
 	void promote_read_write_caches_to_read_only();
 };
-
-// A fairly complex helper used for async queue readbacks.
-// Typically used for things like headless backend which emulates WSI through readbacks + encode.
-struct OwnershipTransferInfo
-{
-	CommandBuffer::Type old_queue;
-	CommandBuffer::Type new_queue;
-	VkImageLayout old_image_layout;
-	VkImageLayout new_image_layout;
-	VkPipelineStageFlags2 dst_pipeline_stage;
-	VkAccessFlags2 dst_access;
-};
-
-// For an image which was last accessed in old_queue, requests a command buffer
-// for new_queue. Commands will be enqueued as necessary in new_queue to ensure that a complete ownership
-// transfer has taken place.
-// If queue family for old_queue differs from new_queue, a release barrier is enqueued in old_queue.
-// In new_queue we perform either an acquire barrier or a simple pipeline barrier to change layout if required.
-// If semaphore is a valid handle, it will be waited on in either old_queue to perform release barrier
-// or new_queue depending on what is required.
-// If the image uses CONCURRENT sharing mode, acquire/release barriers are skipped.
-CommandBufferHandle request_command_buffer_with_ownership_transfer(
-		Device &device,
-		const Vulkan::Image &image,
-		const OwnershipTransferInfo &info,
-		const Vulkan::Semaphore &semaphore);
 
 using DeviceHandle = Util::IntrusivePtr<Device>;
 }

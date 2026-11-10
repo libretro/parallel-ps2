@@ -75,28 +75,6 @@ void SamplerDeleter::operator()(Sampler *sampler)
 	sampler->device->handle_pool.samplers.free(sampler);
 }
 
-SamplerCreateInfo Sampler::fill_sampler_info(const VkSamplerCreateInfo &info)
-{
-	SamplerCreateInfo sampler_info = {};
-
-	sampler_info.mag_filter = info.magFilter;
-	sampler_info.min_filter = info.minFilter;
-	sampler_info.mipmap_mode = info.mipmapMode;
-	sampler_info.address_mode_u = info.addressModeU;
-	sampler_info.address_mode_v = info.addressModeV;
-	sampler_info.address_mode_w = info.addressModeW;
-	sampler_info.mip_lod_bias = info.mipLodBias;
-	sampler_info.anisotropy_enable = info.anisotropyEnable;
-	sampler_info.max_anisotropy = info.maxAnisotropy;
-	sampler_info.compare_enable = info.compareEnable;
-	sampler_info.compare_op = info.compareOp;
-	sampler_info.min_lod = info.minLod;
-	sampler_info.max_lod = info.maxLod;
-	sampler_info.border_color = info.borderColor;
-	sampler_info.unnormalized_coordinates = info.unnormalizedCoordinates;
-	return sampler_info;
-}
-
 VkSamplerCreateInfo Sampler::fill_vk_sampler_info(const SamplerCreateInfo &sampler_info)
 {
 	VkSamplerCreateInfo info = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };

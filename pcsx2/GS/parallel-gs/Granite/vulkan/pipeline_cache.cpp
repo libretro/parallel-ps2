@@ -379,11 +379,6 @@ bool PipelineCache::parse(const void *payload_, size_t size)
 	return size == 0;
 }
 
-bool PipelineCache::has_new_binary_entries() const
-{
-	return new_entries.load(PGS::memory_order_acquire);
-}
-
 size_t PipelineCache::get_serialized_size() const
 {
 	// Granite's magic UUID.

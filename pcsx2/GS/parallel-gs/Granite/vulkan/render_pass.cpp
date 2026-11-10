@@ -925,16 +925,6 @@ static const ImageView *get_image_view(const RenderPassInfo &info, unsigned inde
 		return info.depth_stencil;
 }
 
-void Framebuffer::compute_attachment_dimensions(const RenderPassInfo &info, unsigned index,
-                                                uint32_t &width, uint32_t &height)
-{
-	auto *view = get_image_view(info, index);
-	VK_ASSERT(view);
-	unsigned lod = view->get_create_info().base_level;
-	width = view->get_image().get_width(lod);
-	height = view->get_image().get_height(lod);
-}
-
 void Framebuffer::compute_dimensions(const RenderPassInfo &info, uint32_t &width, uint32_t &height)
 {
 	width = UINT32_MAX;
@@ -1047,32 +1037,4 @@ void TransientAttachmentAllocator::begin_frame()
 	attachments.begin_frame();
 }
 
-ImageHandle TransientAttachmentAllocator::request_attachment(unsigned width, unsigned height, VkFormat format,
-                                                             unsigned index, unsigned samples, unsigned layers)
-{
-	Hasher h;
-	h.u32(width);
-	h.u32(height);
-	h.u32(format);
-	h.u32(index);
-	h.u32(samples);
-	h.u32(layers);
-
-	auto hash = h.get();
-
-	LOCK();
-	auto *node = attachments.request(hash);
-	if (node)
-		return node->handle;
-
-	auto image_info = ImageCreateInfo::transient_render_target(width, height, format);
-
-	image_info.samples = static_cast<VkSampleCountFlagBits>(samples);
-	image_info.layers = layers;
-	node = attachments.emplace(hash, device->create_image(image_info, nullptr));
-	node->handle->set_internal_sync_object();
-	node->handle->get_view().set_internal_sync_object();
-	device->set_name(*node->handle, "AttachmentAllocator");
-	return node->handle;
-}
 }

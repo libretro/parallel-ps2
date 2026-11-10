@@ -55,8 +55,6 @@ struct ResourceLayout
 	enum { Version = 7 };
 
 	bool unserialize(const uint8_t *data, size_t size);
-	bool serialize(uint8_t *data, size_t size) const;
-	static size_t serialization_size();
 };
 static_assert(sizeof(DescriptorSetLayout) % 8 == 0, "Size of DescriptorSetLayout does not align to 64 bits.");
 
@@ -297,7 +295,6 @@ public:
 		return module;
 	}
 
-	static const char *stage_to_name(ShaderStage stage);
 	static Util::Hash hash(const uint32_t *data, size_t size);
 
 private:
@@ -345,7 +342,6 @@ public:
 	void stage_pipeline(Util::Hash hash, const Pipeline &pipeline);
 	/* Whether the table or the staged set has one for @hash. */
 	bool has_pipeline(Util::Hash hash) const;
-
 
 private:
 	void set_shader(ShaderStage stage, Shader *handle);

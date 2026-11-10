@@ -321,7 +321,6 @@ class SliceAllocator
 public:
 	bool allocate(uint32_t count, Util::AllocatedSlice *slice);
 	void free(const Util::AllocatedSlice &slice);
-	void prime(const void *opaque_meta);
 
 protected:
 	SliceAllocator() = default;

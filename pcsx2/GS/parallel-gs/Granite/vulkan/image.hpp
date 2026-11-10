@@ -211,7 +211,6 @@ public:
 
 	unsigned get_view_width() const;
 	unsigned get_view_height() const;
-	unsigned get_view_depth() const;
 
 private:
 	Device *device;
@@ -269,23 +268,6 @@ struct ImageCreateInfo
 	void *pnext = nullptr;
 	ExternalHandle external;
 	ImageLayout layout = ImageLayout::Optimal;
-
-	static ImageCreateInfo immutable_image(const TextureFormatLayout &layout)
-	{
-		Vulkan::ImageCreateInfo info;
-		info.width = layout.get_width();
-		info.height = layout.get_height();
-		info.type = layout.get_image_type();
-		info.depth = layout.get_depth();
-		info.format = layout.get_format();
-		info.layers = layout.get_layers();
-		info.levels = layout.get_levels();
-		info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
-		info.initial_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-		info.samples = VK_SAMPLE_COUNT_1_BIT;
-		info.domain = ImageDomain::Physical;
-		return info;
-	}
 
 	static ImageCreateInfo immutable_2d_image(unsigned width, unsigned height, VkFormat format, bool mipmapped = false)
 	{
@@ -473,10 +455,6 @@ public:
 		return alloc;
 	}
 
-	void disown_image();
-	void disown_memory_allocation();
-	DeviceAllocation take_allocation_ownership();
-
 	void set_surface_transform(VkSurfaceTransformFlagBitsKHR transform)
 	{
 		surface_transform = transform;
@@ -500,8 +478,6 @@ public:
 	{
 		return surface_transform;
 	}
-
-	ExternalHandle export_handle();
 
 private:
 	friend class Util::ObjectPool<Image>;

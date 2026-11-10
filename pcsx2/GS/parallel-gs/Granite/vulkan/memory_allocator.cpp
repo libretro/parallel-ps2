@@ -62,45 +62,6 @@ void DeviceAllocation::free_immediate()
 	offset = 0;
 }
 
-ExternalHandle DeviceAllocation::export_handle(Device &device)
-{
-	ExternalHandle h;
-
-	if (exportable_types == 0)
-	{
-		LOGE("Cannot export from this allocation.\n");
-		return h;
-	}
-
-	auto &table = device.get_device_table();
-
-#ifdef _WIN32
-	VkMemoryGetWin32HandleInfoKHR handle_info = { VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR };
-	handle_info.handleType = static_cast<VkExternalMemoryHandleTypeFlagBits>(exportable_types);
-	handle_info.memory = base;
-	h.memory_handle_type = handle_info.handleType;
-
-	if (table.vkGetMemoryWin32HandleKHR(device.get_device(), &handle_info, &h.handle) != VK_SUCCESS)
-	{
-		LOGE("Failed to export memory handle.\n");
-		h.handle = nullptr;
-	}
-#else
-	VkMemoryGetFdInfoKHR fd_info = { VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR };
-	fd_info.handleType = static_cast<VkExternalMemoryHandleTypeFlagBits>(exportable_types);
-	fd_info.memory = base;
-	h.memory_handle_type = fd_info.handleType;
-
-	if (table.vkGetMemoryFdKHR(device.get_device(), &fd_info, &h.handle) != VK_SUCCESS)
-	{
-		LOGE("Failed to export memory handle.\n");
-		h.handle = -1;
-	}
-#endif
-
-	return h;
-}
-
 void DeviceAllocation::free_immediate(DeviceAllocator &allocator)
 {
 	if (alloc)
@@ -228,17 +189,6 @@ bool Allocator::allocate_dedicated(uint32_t size, AllocationMode mode, DeviceAll
 		alloc->exportable_types = external->memory_handle_type;
 
 	return true;
-}
-
-DeviceAllocation DeviceAllocation::make_imported_allocation(VkDeviceMemory memory, VkDeviceSize size,
-                                                            uint32_t memory_type)
-{
-	DeviceAllocation alloc = {};
-	alloc.base = memory;
-	alloc.offset = 0;
-	alloc.size = size;
-	alloc.memory_type = memory_type;
-	return alloc;
 }
 
 bool Allocator::allocate(uint32_t size, uint32_t alignment, AllocationMode mode, DeviceAllocation *alloc)
@@ -806,11 +756,6 @@ DeviceAllocationOwner::~DeviceAllocationOwner()
 		device->free_memory(alloc);
 }
 
-const DeviceAllocation &DeviceAllocationOwner::get_allocation() const
-{
-	return alloc;
-}
-
 void DeviceAllocationDeleter::operator()(DeviceAllocationOwner *owner)
 {
 	owner->device->handle_pool.allocations.free(owner);
@@ -1030,12 +975,6 @@ void DescriptorBufferAllocator::init_copy_func(DescriptorTypeInfo &info, VkDescr
 	info.func = get_optimized_copy_func(info.size);
 	info.func_n = get_optimized_copy_n_func(info.size);
 	info.slab.init(info.size);
-}
-
-void DescriptorBufferAllocator::free(const DescriptorBufferAllocation &alloc)
-{
-	PGS::lock_guard holder{lock};
-	Util::SliceAllocator::free(alloc.backing_slice);
 }
 
 void DescriptorBufferAllocator::free(const DescriptorBufferAllocation *alloc, size_t count)

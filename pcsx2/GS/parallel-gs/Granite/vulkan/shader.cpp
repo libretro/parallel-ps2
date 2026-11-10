@@ -747,47 +747,8 @@ PipelineLayout::~PipelineLayout()
 			table.vkDestroyDescriptorUpdateTemplate(device->get_device(), update, nullptr);
 }
 
-const char *Shader::stage_to_name(ShaderStage stage)
-{
-	switch (stage)
-	{
-	case ShaderStage::Compute:
-		return "compute";
-	case ShaderStage::Vertex:
-		return "vertex";
-	case ShaderStage::Fragment:
-		return "fragment";
-	case ShaderStage::Task:
-		return "task";
-	case ShaderStage::Mesh:
-		return "mesh";
-	default:
-		return "unknown";
-	}
-}
-
 // Implicitly also checks for endian issues.
 static const uint16_t reflection_magic[] = { 'G', 'R', 'A', ResourceLayout::Version };
-
-size_t ResourceLayout::serialization_size()
-{
-	return sizeof(ResourceLayout) + sizeof(reflection_magic);
-}
-
-bool ResourceLayout::serialize(uint8_t *data, size_t size) const
-{
-	if (size != serialization_size())
-		return false;
-
-	// Cannot serialize externally defined immutable samplers.
-	for (auto &set : sets)
-		if (set.immutable_sampler_mask != 0)
-			return false;
-
-	memcpy(data, reflection_magic, sizeof(reflection_magic));
-	memcpy(data + sizeof(reflection_magic), this, sizeof(*this));
-	return true;
-}
 
 bool ResourceLayout::unserialize(const uint8_t *data, size_t size)
 {

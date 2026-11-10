@@ -34,7 +34,6 @@
 
 namespace Vulkan
 {
-
 static inline VkPipelineStageFlags convert_vk_stage2(VkPipelineStageFlags2 stages)
 {
 	constexpr VkPipelineStageFlags2 transfer_mask =
@@ -312,72 +311,32 @@ public:
 		return is_secondary;
 	}
 
-	void clear_image(const Image &image, const VkClearValue &value);
-	void clear_image(const Image &image, const VkClearValue &value, VkImageAspectFlags aspect);
-	void clear_quad(unsigned attachment, const VkClearRect &rect, const VkClearValue &value,
-	                VkImageAspectFlags = VK_IMAGE_ASPECT_COLOR_BIT);
-	void clear_quad(const VkClearRect &rect, const VkClearAttachment *attachments, unsigned num_attachments);
-
 	void fill_buffer(const Buffer &dst, uint32_t value);
 	void fill_buffer(const Buffer &dst, uint32_t value, VkDeviceSize offset, VkDeviceSize size);
 	void copy_buffer(const Buffer &dst, VkDeviceSize dst_offset, const Buffer &src, VkDeviceSize src_offset,
 	                 VkDeviceSize size);
 	void copy_buffer(const Buffer &dst, const Buffer &src);
-	void copy_buffer(const Buffer &dst, const Buffer &src, const VkBufferCopy *copies, size_t count);
-	void copy_image(const Image &dst, const Image &src);
 	void copy_image(const Image &dst, const Image &src,
 	                const VkOffset3D &dst_offset, const VkOffset3D &src_offset,
 	                const VkExtent3D &extent,
 	                const VkImageSubresourceLayers &dst_subresource,
 	                const VkImageSubresourceLayers &src_subresource);
 
-	void copy_buffer_to_image(const Image &image, const Buffer &buffer, VkDeviceSize buffer_offset,
-	                          const VkOffset3D &offset, const VkExtent3D &extent, unsigned row_length,
-	                          unsigned slice_height, const VkImageSubresourceLayers &subresrouce);
 	void copy_buffer_to_image(const Image &image, const Buffer &buffer, unsigned num_blits, const VkBufferImageCopy *blits);
-
-	void copy_image_to_buffer(const Buffer &buffer, const Image &image, unsigned num_blits, const VkBufferImageCopy *blits);
-	void copy_image_to_buffer(const Buffer &dst, const Image &src, VkDeviceSize buffer_offset, const VkOffset3D &offset,
-	                          const VkExtent3D &extent, unsigned row_length, unsigned slice_height,
-	                          const VkImageSubresourceLayers &subresrouce);
-
-	void begin_barrier_batch();
-	void end_barrier_batch();
-
-	void full_barrier();
-	void pixel_barrier();
 
 	// Simplified global memory barrier.
 	void barrier(VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
 	             VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access);
 
-
 	// Full expressive barrier.
 	void barrier(const VkDependencyInfo &dep);
-
-	void buffer_barrier(const Buffer &buffer,
-	                    VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
-	                    VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access);
 
 	void image_barrier(const Image &image,
 	                   VkImageLayout old_layout, VkImageLayout new_layout,
 	                   VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
 	                   VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access);
 
-	void buffer_barriers(uint32_t buffer_barriers, const VkBufferMemoryBarrier2 *buffers);
 	void image_barriers(uint32_t image_barriers, const VkImageMemoryBarrier2 *images);
-
-	void release_buffer_barrier(const Buffer &buffer, VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
-	                            uint32_t dst_queue_family = VK_QUEUE_FAMILY_EXTERNAL);
-	void acquire_buffer_barrier(const Buffer &buffer, VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access,
-	                            uint32_t src_queue_family = VK_QUEUE_FAMILY_EXTERNAL);
-	void release_image_barrier(const Image &image,
-	                           VkImageLayout old_layout, VkImageLayout new_layout,
-	                           VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
-	                           uint32_t dst_queue_family = VK_QUEUE_FAMILY_EXTERNAL);
-	void acquire_image_barrier(const Image &image, VkImageLayout old_layout, VkImageLayout new_layout,
-	                           VkPipelineStageFlags2 dst_stage, VkAccessFlags2 dst_access,
-	                           uint32_t src_queue_family = VK_QUEUE_FAMILY_EXTERNAL);
 
 	void blit_image(const Image &dst,
 	                const Image &src,
@@ -398,7 +357,6 @@ public:
 	void generate_mipmap(const Image &image);
 
 	void begin_render_pass(const RenderPassInfo &info, VkSubpassContents contents = VK_SUBPASS_CONTENTS_INLINE);
-	void next_subpass(VkSubpassContents contents = VK_SUBPASS_CONTENTS_INLINE);
 	void end_render_pass();
 	inline unsigned get_current_subpass() const
 	{
@@ -407,23 +365,13 @@ public:
 
 	void set_program(Program *program);
 
-	// Pipeline state must not change between calling this and dispatching.
-	// Ideally it's called right before execute indirect commands.
-
 	void set_buffer_view(unsigned set, unsigned binding, const BufferView &view);
-	void set_storage_buffer_view(unsigned set, unsigned binding, const BufferView &view);
-	void set_input_attachments(unsigned set, unsigned start_binding);
 	void set_texture(unsigned set, unsigned binding, const ImageView &view);
-	void set_unorm_texture(unsigned set, unsigned binding, const ImageView &view);
-	void set_srgb_texture(unsigned set, unsigned binding, const ImageView &view);
 	void set_texture(unsigned set, unsigned binding, const ImageView &view, const Sampler &sampler);
 	void set_texture(unsigned set, unsigned binding, const ImageView &view, StockSampler sampler);
-	void set_storage_texture(unsigned set, unsigned binding, const ImageView &view);
 	void set_storage_texture_level(unsigned set, unsigned binding, const ImageView &view, unsigned level);
-	void set_unorm_storage_texture(unsigned set, unsigned binding, const ImageView &view);
 	void set_sampler(unsigned set, unsigned binding, const Sampler &sampler);
 	void set_sampler(unsigned set, unsigned binding, StockSampler sampler);
-	void set_uniform_buffer(unsigned set, unsigned binding, const Buffer &buffer);
 	void set_uniform_buffer(unsigned set, unsigned binding, const Buffer &buffer, VkDeviceSize offset,
 	                        VkDeviceSize range);
 	void set_storage_buffer(unsigned set, unsigned binding, const Buffer &buffer);
@@ -442,46 +390,20 @@ public:
 		return static_cast<T *>(allocate_constant_data(set, binding, count * sizeof(T)));
 	}
 
-	void *allocate_vertex_data(unsigned binding, VkDeviceSize size, VkDeviceSize stride,
-	                           VkVertexInputRate step_rate = VK_VERTEX_INPUT_RATE_VERTEX);
-	void *allocate_index_data(VkDeviceSize size, VkIndexType index_type);
-
 	void *update_buffer(const Buffer &buffer, VkDeviceSize offset, VkDeviceSize size);
-	void update_buffer_inline(const Buffer &buffer, VkDeviceSize offset, VkDeviceSize size,
-	                          const void *data);
-	void *update_image(const Image &image, const VkOffset3D &offset, const VkExtent3D &extent, uint32_t row_length,
-	                   uint32_t image_height, const VkImageSubresourceLayers &subresource);
-	void *update_image(const Image &image, uint32_t row_length = 0, uint32_t image_height = 0);
 	BufferBlockAllocation request_scratch_buffer_memory(VkDeviceSize size);
 
 	void set_viewport(const VkViewport &viewport);
-	const VkViewport &get_viewport() const;
 	void set_scissor(const VkRect2D &rect);
-
-	void set_vertex_attrib(uint32_t attrib, uint32_t binding, VkFormat format, VkDeviceSize offset);
-	void set_vertex_binding(uint32_t binding, const Buffer &buffer, VkDeviceSize offset, VkDeviceSize stride,
-	                        VkVertexInputRate step_rate = VK_VERTEX_INPUT_RATE_VERTEX);
-	void set_index_buffer(const Buffer &buffer, VkDeviceSize offset, VkIndexType index_type);
 
 	void draw(uint32_t vertex_count, uint32_t instance_count = 1, uint32_t first_vertex = 0,
 	          uint32_t first_instance = 0);
-	void draw_indexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0,
-	                  int32_t vertex_offset = 0, uint32_t first_instance = 0);
 
 	void dispatch(uint32_t groups_x, uint32_t groups_y, uint32_t groups_z);
 
-	void draw_indirect(const Buffer &buffer, VkDeviceSize offset, uint32_t draw_count, uint32_t stride);
-	void draw_indexed_indirect(const Buffer &buffer, VkDeviceSize offset, uint32_t draw_count, uint32_t stride);
-	void draw_multi_indirect(const Buffer &buffer, VkDeviceSize offset, uint32_t draw_count, uint32_t stride,
-	                         const Buffer &count, VkDeviceSize count_offset);
-	void draw_indexed_multi_indirect(const Buffer &buffer, VkDeviceSize offset, uint32_t draw_count, uint32_t stride,
-	                                 const Buffer &count, VkDeviceSize count_offset);
 	void dispatch_indirect(const Buffer &buffer, VkDeviceSize offset);
 	void set_opaque_state();
-	void set_quad_state();
 	void set_opaque_sprite_state();
-	void set_transparent_sprite_state();
-
 
 #define SET_STATIC_STATE(value)                               \
 	do                                                        \
@@ -782,7 +704,6 @@ public:
 	// End is called automatically by Device in submission. Should not be called by application.
 	void end();
 
-
 	void extract_pipeline_state(DeferredPipelineCompile &compile) const;
 
 	enum class CompileMode
@@ -801,10 +722,6 @@ public:
 	 * whether or not a render pass is begun. */
 	void extract_graphics_pipeline_state(DeferredPipelineCompile &compile,
 	                                     const RenderPass &pass, unsigned subpass) const;
-	bool flush_pipeline_state_without_blocking();
-
-	VkPipeline get_current_compute_pipeline();
-	VkPipeline get_current_graphics_pipeline();
 
 private:
 	friend class Util::ObjectPool<CommandBuffer>;
@@ -886,7 +803,6 @@ private:
 	void rebind_descriptor_offset(uint32_t set, uint32_t &first_set, uint32_t &set_count);
 	void allocate_descriptor_offset(uint32_t set, uint32_t &first_set, uint32_t &set_count);
 	void flush_descriptor_offsets(uint32_t &first_set, uint32_t &set_count);
-	void validate_descriptor_binds(uint32_t set);
 	void allocate_descriptor_heap_set(uint32_t set);
 	void rebind_descriptor_heap_set(uint32_t set);
 
@@ -922,7 +838,6 @@ private:
 	void init_surface_transform(const RenderPassInfo &info);
 	VkSurfaceTransformFlagBitsKHR current_framebuffer_surface_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
 
-
 	void bind_pipeline(VkPipelineBindPoint bind_point, VkPipeline pipeline, uint32_t active_dynamic_state);
 
 	void set_surface_transform_specialization_constants();
@@ -941,10 +856,7 @@ private:
 		Util::SmallVector<VkImageMemoryBarrier2> image_barriers;
 		bool active = false;
 	} barrier_batch;
-
-
 };
-
 
 using CommandBufferHandle = Util::IntrusivePtr<CommandBuffer>;
 }

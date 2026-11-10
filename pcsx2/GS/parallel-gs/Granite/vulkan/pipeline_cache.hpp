@@ -40,7 +40,6 @@ public:
 	~PipelineCache();
 
 	bool init_from_payload(const void *payload, size_t size, bool persistent_mapping);
-	bool has_new_binary_entries() const;
 	size_t get_serialized_size() const;
 	bool serialize(void *data, size_t size) const;
 

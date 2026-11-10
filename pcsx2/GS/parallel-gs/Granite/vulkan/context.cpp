@@ -147,17 +147,6 @@ bool Context::init_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface_compat, co
 	return true;
 }
 
-bool Context::init_instance_and_device(const char * const *instance_ext, uint32_t instance_ext_count,
-                                       const char * const *device_ext, uint32_t device_ext_count,
-                                       ContextCreationFlags flags)
-{
-	if (!init_instance(instance_ext, instance_ext_count, flags))
-		return false;
-	if (!init_device(VK_NULL_HANDLE, VK_NULL_HANDLE, device_ext, device_ext_count, flags))
-		return false;
-	return true;
-}
-
 static PGS::mutex loader_init_lock;
 static bool loader_init_once;
 static PFN_vkGetInstanceProcAddr instance_proc_addr;
@@ -225,31 +214,6 @@ bool Context::init_loader(PFN_vkGetInstanceProcAddr addr, bool force_reload)
 	return true;
 }
 
-bool Context::init_device_from_instance(VkInstance instance_, VkPhysicalDevice gpu_, VkSurfaceKHR surface,
-                                        const char **required_device_extensions, unsigned num_required_device_extensions,
-                                        const VkPhysicalDeviceFeatures *required_features,
-                                        ContextCreationFlags flags)
-{
-	destroy_device();
-	destroy_instance();
-
-	instance = instance_;
-	owned_instance = false;
-	owned_device = true;
-
-	if (!create_instance(nullptr, 0, flags))
-		return false;
-
-	if (!create_device(gpu_, surface, required_device_extensions, num_required_device_extensions, required_features, flags))
-	{
-		destroy_device();
-		LOGE("Failed to create Vulkan device.\n");
-		return false;
-	}
-
-	return true;
-}
-
 void Context::destroy_device()
 {
 	if (device != VK_NULL_HANDLE)
@@ -293,17 +257,6 @@ Context::~Context()
 const VkApplicationInfo &Context::get_application_info() const
 {
 	return user_application_info.get_application_info();
-}
-
-void Context::notify_validation_error(const char *msg)
-{
-	if (message_callback)
-		message_callback(msg);
-}
-
-void Context::set_notification_callback(std::function<void(const char *)> func)
-{
-	message_callback = std::move(func);
 }
 
 #ifdef VULKAN_DEBUG

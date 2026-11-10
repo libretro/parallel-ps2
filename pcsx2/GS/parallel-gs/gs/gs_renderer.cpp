@@ -2863,17 +2863,6 @@ void GSRenderer::dispatch_cache_read_only_depth(Vulkan::CommandBuffer &cmd, cons
 	cmd.end_region();
 }
 
-static void clear_image(Vulkan::CommandBuffer &cmd, const Vulkan::Image &img)
-{
-	cmd.image_barrier(img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-	                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-	                  VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-	cmd.clear_image(img, {}, VK_IMAGE_ASPECT_COLOR_BIT);
-	cmd.image_barrier(img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
-	                  VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-	                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
-}
-
 /* A shading dispatch: with its own variant, else the dynamic one. */
 void GSRenderer::dispatch_shading_indirect(Vulkan::CommandBuffer &cmd, const Vulkan::Buffer &buffer, VkDeviceSize offset)
 {

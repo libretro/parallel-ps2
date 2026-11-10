@@ -62,8 +62,6 @@ struct DescriptorSetLayout
 	enum { UNSIZED_ARRAY = 0x7f };
 };
 
-// Avoid -Wclass-memaccess warnings since we hash DescriptorSetLayout.
-
 static const unsigned VULKAN_NUM_SETS_PER_POOL = 64;
 static const unsigned VULKAN_DESCRIPTOR_RING_SIZE = 16;
 
@@ -108,8 +106,6 @@ public:
 	uint32_t get_descriptor_base() const;
 
 	void push_texture(const ImageView &view);
-	void push_texture_unorm(const ImageView &view);
-	void push_texture_srgb(const ImageView &view);
 	void update();
 
 private:

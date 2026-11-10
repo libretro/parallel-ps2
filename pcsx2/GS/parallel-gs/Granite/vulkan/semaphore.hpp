@@ -144,13 +144,6 @@ public:
 		signalled = false;
 	}
 
-	// If successful, importing takes ownership of the handle/fd.
-	// Application can use dup() / DuplicateHandle() to keep a reference.
-	// Imported semaphores are assumed to be signalled, or pending to be signalled.
-	// All imports are performed with TEMPORARY permanence.
-	ExternalHandle export_to_handle();
-	bool import_from_handle(ExternalHandle handle);
-
 	VkExternalSemaphoreFeatureFlags get_external_features() const
 	{
 		return external_compatible_features;

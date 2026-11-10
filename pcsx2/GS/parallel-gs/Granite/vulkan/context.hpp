@@ -28,7 +28,6 @@
 #include <memory>
 #include <functional>
 
-
 namespace Granite
 {
 class Filesystem;
@@ -239,20 +238,6 @@ public:
 	                 const char * const *device_ext, uint32_t device_ext_count,
 	                 ContextCreationFlags flags = 0);
 
-	// Simplified initialization which calls init_instance and init_device in succession with NULL GPU and surface.
-	// Provided for compat with older code.
-	bool init_instance_and_device(const char * const *instance_ext, uint32_t instance_ext_count,
-	                              const char * const *device_ext, uint32_t device_ext_count,
-	                              ContextCreationFlags flags = 0);
-
-	// Deprecated. For libretro Vulkan context negotiation v1.
-	// Use InstanceFactory and DeviceFactory for more advanced scenarios in v2.
-	bool init_device_from_instance(VkInstance instance, VkPhysicalDevice gpu, VkSurfaceKHR surface,
-	                               const char **required_device_extensions,
-	                               unsigned num_required_device_extensions,
-	                               const VkPhysicalDeviceFeatures *required_features,
-	                               ContextCreationFlags flags = 0);
-
 	Context();
 	Context(const Context &) = delete;
 	void operator=(const Context &) = delete;
@@ -308,9 +293,6 @@ public:
 
 	const VkApplicationInfo &get_application_info() const;
 
-	void notify_validation_error(const char *msg);
-	void set_notification_callback(std::function<void (const char *)> func);
-
 	void set_num_thread_indices(unsigned indices)
 	{
 		num_thread_indices = indices;
@@ -342,7 +324,6 @@ public:
 	{
 		return handles;
 	}
-
 
 	const VkPhysicalDeviceFeatures2 &get_physical_device_features() const
 	{
@@ -377,7 +358,6 @@ private:
 	std::vector<const char *> enabled_device_extensions;
 	std::vector<const char *> enabled_instance_extensions;
 
-
 #ifdef VULKAN_DEBUG
 	VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
 	bool force_no_validation = false;
@@ -388,7 +368,6 @@ private:
 	void destroy_device();
 
 	bool physical_device_supports_surface_and_profile(VkPhysicalDevice candidate_gpu, VkSurfaceKHR surface) const;
-
 
 	VkApplicationInfo get_promoted_application_info() const;
 };

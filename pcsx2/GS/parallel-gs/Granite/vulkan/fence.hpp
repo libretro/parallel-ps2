@@ -45,8 +45,6 @@ public:
 	friend class WSI;
 
 	~FenceHolder();
-	void wait();
-	bool wait_timeout(uint64_t nsec);
 
 private:
 	friend class Util::ObjectPool<FenceHolder>;
@@ -66,8 +64,6 @@ private:
 	{
 		VK_ASSERT(value > 0);
 	}
-
-	const VkFence &get_fence() const;
 
 	Device *device;
 	VkFence fence;

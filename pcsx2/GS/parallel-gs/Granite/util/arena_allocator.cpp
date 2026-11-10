@@ -150,18 +150,6 @@ void SliceAllocator::free(const Util::AllocatedSlice &slice)
 		global_allocator->free(slice.buffer_index);
 }
 
-void SliceAllocator::prime(const void *opaque_meta)
-{
-	for (auto &alloc : allocators)
-	{
-		if (alloc.global_allocator)
-		{
-			alloc.global_allocator->prime(alloc.get_sub_block_size() * Util::LegionAllocator::NumSubBlocks, opaque_meta);
-			break;
-		}
-	}
-}
-
 bool SliceAllocator::allocate(uint32_t count, Util::AllocatedSlice *slice)
 {
 	for (auto &alloc : allocators)

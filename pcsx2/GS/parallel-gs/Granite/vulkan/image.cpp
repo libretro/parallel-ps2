@@ -111,11 +111,6 @@ unsigned ImageView::get_view_height() const
 	return height;
 }
 
-unsigned ImageView::get_view_depth() const
-{
-	return info.image->get_depth(info.base_level);
-}
-
 Image::Image(Device *device_, VkImage image_, const CachedImageView &default_view, const DeviceAllocation &alloc_,
              const ImageCreateInfo &create_info_, VkImageViewType view_type)
     : Cookie(device_)
@@ -136,28 +131,6 @@ Image::Image(Device *device_, VkImage image_, const CachedImageView &default_vie
 		info.layers = create_info.layers;
 		view = ImageViewHandle(device->handle_pool.image_views.allocate(device, default_view, info));
 	}
-}
-
-DeviceAllocation Image::take_allocation_ownership()
-{
-	DeviceAllocation ret = {};
-	std::swap(ret, alloc);
-	return ret;
-}
-
-ExternalHandle Image::export_handle()
-{
-	return alloc.export_handle(*device);
-}
-
-void Image::disown_image()
-{
-	owns_image = false;
-}
-
-void Image::disown_memory_allocation()
-{
-	owns_memory_allocation = false;
 }
 
 Image::~Image()

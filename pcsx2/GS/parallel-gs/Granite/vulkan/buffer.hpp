@@ -100,8 +100,6 @@ public:
 		return alloc;
 	}
 
-	ExternalHandle export_handle();
-
 	VkDeviceAddress get_device_address() const
 	{
 		VK_ASSERT(bda);

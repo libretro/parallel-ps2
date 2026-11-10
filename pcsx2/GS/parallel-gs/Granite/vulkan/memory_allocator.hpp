@@ -123,10 +123,6 @@ public:
 		return host_base != nullptr;
 	}
 
-	static DeviceAllocation make_imported_allocation(VkDeviceMemory memory, VkDeviceSize size, uint32_t memory_type);
-
-	ExternalHandle export_handle(Device &device);
-
 private:
 	VkDeviceMemory base = VK_NULL_HANDLE;
 	uint8_t *host_base = nullptr;
@@ -158,7 +154,6 @@ public:
 	friend struct DeviceAllocationDeleter;
 
 	~DeviceAllocationOwner();
-	const DeviceAllocation &get_allocation() const;
 
 private:
 	DeviceAllocationOwner(Device *device, const DeviceAllocation &alloc);
@@ -367,7 +362,6 @@ public:
 	HeapInfo get_sampler_heap() const { return sampler_heap; }
 
 	DescriptorBufferAllocation allocate(VkDeviceSize size);
-	void free(const DescriptorBufferAllocation &alloc);
 	void free(const DescriptorBufferAllocation *alloc, size_t count);
 
 	uint32_t get_descriptor_size_for_type(VkDescriptorType type) const;

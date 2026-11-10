@@ -43,7 +43,6 @@ public:
 	void begin();
 	void trim();
 	VkCommandBuffer request_command_buffer();
-	void signal_submitted(VkCommandBuffer cmd);
 
 private:
 	Device *device;
