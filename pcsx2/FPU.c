@@ -13,15 +13,13 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cmath>
-
 #include "Common.h"
 #include "ps2float.h"
 
-// Helper Macros
-//****************************************************************
+/* Helper Macros */
 
-// IEEE 754 Values
+
+/* IEEE 754 Values */
 #define PosInfinity 0x7f800000
 #define NegInfinity 0xff800000
 #define posFmax 0x7F7FFFFF
@@ -32,35 +30,35 @@
 	Setting it to ~0x00000000 = Compares Exact Value. (comment out this macro for faster Exact Compare method)
 	Setting it to ~0x00000001 = Discards the least significant bit when comparing.
 	Setting it to ~0x00000003 = Discards the least 2 significant bits when comparing... etc..  */
-//#define comparePrecision ~0x00000001
+/* #define comparePrecision ~0x00000001 */
 
-// Operands
+/* Operands */
 #define _Ft_         ( ( cpuRegs.code >> 16 ) & 0x1F )
 #define _Fs_         ( ( cpuRegs.code >> 11 ) & 0x1F )
 #define _Fd_         ( ( cpuRegs.code >>  6 ) & 0x1F )
 
-// Floats
+/* Floats */
 #define _FtValf_     fpuRegs.fpr[ _Ft_ ].f
 #define _FsValf_     fpuRegs.fpr[ _Fs_ ].f
 #define _FdValf_     fpuRegs.fpr[ _Fd_ ].f
 #define _FAValf_     fpuRegs.ACC.f
 
-// U32's
+/* U32's */
 #define _FtValUl_    fpuRegs.fpr[ _Ft_ ].UL
 #define _FsValUl_    fpuRegs.fpr[ _Fs_ ].UL
 #define _FdValUl_    fpuRegs.fpr[ _Fd_ ].UL
 #define _FAValUl_    fpuRegs.ACC.UL
 
-// S32's - useful for ensuring sign extension when needed.
+/* S32's - useful for ensuring sign extension when needed. */
 #define _FtValSl_    fpuRegs.fpr[ _Ft_ ].SL
 #define _FsValSl_    fpuRegs.fpr[ _Fs_ ].SL
 #define _FdValSl_    fpuRegs.fpr[ _Fd_ ].SL
 #define _FAValSl_    fpuRegs.ACC.SL
 
-// FPU Control Reg (FCR31)
+/* FPU Control Reg (FCR31) */
 #define _ContVal_    fpuRegs.fprc[ 31 ]
 
-// FCR31 Flags
+/* FCR31 Flags */
 #define FPUflagC	0X00800000
 #define FPUflagI	0X00020000
 #define FPUflagD	0X00010000
@@ -70,12 +68,6 @@
 #define FPUflagSD	0X00000020
 #define FPUflagSO	0X00000010
 #define FPUflagSU	0X00000008
-
-//****************************************************************
-
-// If we have an infinity value, then Overflow has occured.
-
-// If we have a denormal value, then Underflow has occured.
 
 /* Soft-float variants: flags arrive packed in the high word of the
  * ps2f_* result instead of being recomputed from the stored value. */
@@ -123,7 +115,7 @@ static __fi u32 fp_min(u32 a, u32 b)
 	cFlagsToSet2 = Flags to set if (z == 0)
 	( Denormals are counted as "0" )
 */
-static bool checkDivideByZero(u32& xReg, u32 yDivisorReg, u32 zDividendReg, u32 cFlagsToSet1, u32 cFlagsToSet2) {
+static bool checkDivideByZero(u32* xReg, u32 yDivisorReg, u32 zDividendReg, u32 cFlagsToSet1, u32 cFlagsToSet2) {
 
 	if ( (yDivisorReg & 0x7F800000) == 0 ) {
 		_ContVal_ |= ( (zDividendReg & 0x7F800000) == 0 ) ? cFlagsToSet2 : cFlagsToSet1;
@@ -147,7 +139,7 @@ static bool checkDivideByZero(u32& xReg, u32 yDivisorReg, u32 zDividendReg, u32 
 		 * tests/cpu/ee_fpu/muldiv.expected that was 27 of 36 on DIV, all
 		 * nine misses being zero divisors, while ps2float.c called
 		 * directly scores 36. */
-		xReg = ( (yDivisorReg ^ zDividendReg) & 0x80000000 )
+		*xReg = ( (yDivisorReg ^ zDividendReg) & 0x80000000 )
 		     | PS2F_MAX_FLOATING_POINT_VALUE;
 		return true;
 	}
@@ -164,7 +156,7 @@ static bool checkDivideByZero(u32& xReg, u32 yDivisorReg, u32 zDividendReg, u32 
 #define clearFPUFlags(cFlags) _ContVal_ &= ~(cFlags)
 
 #ifdef comparePrecision
-// This compare discards the least-significant bit(s) in order to solve some rounding issues.
+/* This compare discards the least-significant bit(s) in order to solve some rounding issues. */
 	#define C_cond_S(cond) {  \
 		FPRreg tempA, tempB;  \
 		tempA.UL = _FsValUl_ & comparePrecision;  \
@@ -174,7 +166,7 @@ static bool checkDivideByZero(u32& xReg, u32 yDivisorReg, u32 zDividendReg, u32 
 					( _ContVal_ & ~FPUflagC );  \
 	}
 #else
-// Used for Comparing; This compares if the floats are exactly the same.
+/* Used for Comparing; This compares if the floats are exactly the same. */
 	#define C_cond_S(cond) {  \
 	   _ContVal_ = (fpuCompareFull(_FsValUl_) cond fpuCompareFull(_FtValUl_)) ?  \
 				   ( _ContVal_ | FPUflagC ) :  \
@@ -182,28 +174,24 @@ static bool checkDivideByZero(u32& xReg, u32 yDivisorReg, u32 zDividendReg, u32 
 	}
 #endif
 
-// Conditional Branch
+/* Conditional Branch */
 #define BC1(cond)                               \
    if ( ( _ContVal_ & FPUflagC ) cond 0 ) {   \
       intDoBranch( _BranchTarget_ );            \
    }
 
-// Conditional Branch
+/* Conditional Branch */
 #define BC1L(cond)                              \
    if ( ( _ContVal_ & FPUflagC ) cond 0 ) {   \
       intDoBranch( _BranchTarget_ );            \
    } else cpuRegs.pc += 4;
 
-namespace R5900 {
-namespace Interpreter {
-namespace OpcodeImpl {
-namespace COP1 {
 
-//****************************************************************
-// FPU Opcodes
-//****************************************************************
 
-float fpuDouble(u32 f)
+/* FPU Opcodes */
+
+
+static __fi float fpuDouble(u32 f)
 {
 	switch(f & 0x7f800000){
 		case 0x0:
@@ -230,58 +218,58 @@ static s32 fpuCompareFull(u32 f)
 	return (s32)f;
 }
 
-void ABS_S() {
+void intABS_S(void) {
 	_FdValUl_ = _FsValUl_ & 0x7fffffff;
 	clearFPUFlags( FPUflagO | FPUflagU );
 }
 
-void ADD_S() {
+void intADD_S(void) {
 	u64 res = ps2f_add(_FsValUl_, _FtValUl_);
 	_FdValUl_ = ps2f_raw(res);
 	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
 	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
 }
 
-void ADDA_S() {
+void intADDA_S(void) {
 	u64 res = ps2f_add(_FsValUl_, _FtValUl_);
 	_FAValUl_ = ps2f_raw(res);
 	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
 	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
 }
 
-void BC1F() {
+void intBC1F(void) {
 	BC1(==);
 }
 
-void BC1FL() {
-	BC1L(==); // Equal to 0
+void intBC1FL(void) {
+	BC1L(==); /* Equal to 0 */
 }
 
-void BC1T() {
+void intBC1T(void) {
 	BC1(!=);
 }
 
-void BC1TL() {
-	BC1L(!=); // different from 0
+void intBC1TL(void) {
+	BC1L(!=); /* different from 0 */
 }
 
-void C_EQ() {
+void intC_EQ(void) {
 	C_cond_S(==);
 }
 
-void C_F() {
-	clearFPUFlags( FPUflagC ); //clears C regardless
+void intC_F(void) {
+	clearFPUFlags( FPUflagC ); /* clears C regardless */
 }
 
-void C_LE() {
+void intC_LE(void) {
 	C_cond_S(<=);
 }
 
-void C_LT() {
+void intC_LT(void) {
 	C_cond_S(<);
 }
 
-void CFC1() {
+void intCFC1(void) {
 	if (!_Rt_) return;
 
 	/* Only FCR0 and FCR31 exist. The console decodes a single bit of the
@@ -311,24 +299,24 @@ void CFC1() {
 		cpuRegs.GPR.r[_Rt_].SD[0] = (s32)fpuRegs.fprc[0];
 }
 
-void CTC1() {
+void intCTC1(void) {
 	if ( _Fs_ != 31 ) return;
 	fpuRegs.fprc[_Fs_] = cpuRegs.GPR.r[_Rt_].UL[0];
 }
 
-void CVT_S() {
+void intCVT_S(void) {
 	_FdValf_ = (float)_FsValSl_;
 	_FdValf_ = fpuDouble(_FdValUl_);
 }
 
-void CVT_W() {
+void intCVT_W(void) {
 	if ( ( _FsValUl_ & 0x7F800000 ) <= 0x4E800000 ) { _FdValSl_ = (s32)_FsValf_; }
 	else if ( ( _FsValUl_ & 0x80000000 ) == 0 ) { _FdValUl_ = 0x7fffffff; }
 	else { _FdValUl_ = 0x80000000; }
 }
 
-void DIV_S() {
-	if (checkDivideByZero( _FdValUl_, _FtValUl_, _FsValUl_, FPUflagD | FPUflagSD, FPUflagI | FPUflagSI)) return;
+void intDIV_S(void) {
+	if (checkDivideByZero( &_FdValUl_, _FtValUl_, _FsValUl_, FPUflagD | FPUflagSD, FPUflagI | FPUflagSI)) return;
 	/* DIV.S clamps but leaves O/U and SO/SU alone, as both recompilers do. */
 	_FdValUl_ = ps2f_raw(ps2f_div(_FsValUl_, _FtValUl_));
 }
@@ -337,81 +325,82 @@ void DIV_S() {
 	determining the flags that are set. Hopefully this shorter
 	method provides a similar outcome and is faster. (cottonvibes)
 */
-void MADD_S() {
+void intMADD_S(void) {
 	u64 res = ps2f_madd(_FAValUl_, _FsValUl_, _FtValUl_, 0);
 	_FdValUl_ = ps2f_raw(res);
 	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
 	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
 }
 
-void MADDA_S() {
+void intMADDA_S(void) {
 	u64 res = ps2f_madd(_FAValUl_, _FsValUl_, _FtValUl_, 0);
 	_FAValUl_ = ps2f_raw(res);
 	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
 	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
 }
 
-void MAX_S() {
+void intMAX_S(void) {
 	_FdValUl_  = fp_max( _FsValUl_, _FtValUl_ );
 	clearFPUFlags( FPUflagO | FPUflagU );
 }
 
-void MFC1() {
+void intMFC1(void) {
 	if ( !_Rt_ ) return;
-	cpuRegs.GPR.r[_Rt_].SD[0] = _FsValSl_;		// sign extension into 64bit
+	cpuRegs.GPR.r[_Rt_].SD[0] = _FsValSl_;		/* sign extension into 64bit */
 }
 
-void MIN_S() {
+void intMIN_S(void) {
 	_FdValUl_ = fp_min(_FsValUl_, _FtValUl_);
 	clearFPUFlags( FPUflagO | FPUflagU );
 }
 
-void MOV_S() {
+void intMOV_S(void) {
 	_FdValUl_ = _FsValUl_;
 }
 
-void MSUB_S() {
+void intMSUB_S(void) {
 	u64 res = ps2f_msub(_FAValUl_, _FsValUl_, _FtValUl_, 0);
 	_FdValUl_ = ps2f_raw(res);
 	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
 	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
 }
 
-void MSUBA_S() {
+void intMSUBA_S(void) {
 	u64 res = ps2f_msub(_FAValUl_, _FsValUl_, _FtValUl_, 0);
 	_FAValUl_ = ps2f_raw(res);
 	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
 	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
 }
 
-void MTC1() {
+void intMTC1(void) {
 	_FsValUl_ = cpuRegs.GPR.r[_Rt_].UL[0];
 }
 
-void MUL_S() {
+void intMUL_S(void) {
 	u64 res = ps2f_mul(_FsValUl_, _FtValUl_);
 	_FdValUl_ = ps2f_raw(res);
 	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
 	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
 }
 
-void MULA_S() {
+void intMULA_S(void) {
 	u64 res = ps2f_mul(_FsValUl_, _FtValUl_);
 	_FAValUl_ = ps2f_raw(res);
 	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
 	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
 }
 
-void NEG_S() {
+void intNEG_S(void) {
 	_FdValUl_  = (_FsValUl_ ^ 0x80000000);
 	clearFPUFlags( FPUflagO | FPUflagU );
 }
 
-void RSQRT_S() {
+void intRSQRT_S(void) {
+	const u32 ft = _FtValUl_;
+	u64 res;
 	clearFPUFlags(FPUflagD | FPUflagI);
 
-	u32 ft = _FtValUl_;
-	u64 res = ps2f_rsqrt(_FsValUl_, ft);
+	res = ps2f_rsqrt(_FsValUl_, ft);
 	_FdValUl_ = ps2f_raw(res);
 	/* ps2f_rsqrt drops Ft's sign before the sqrt, so a negative non-zero
 	 * Ft raises I here. O/U stay untouched, as in both recompilers. */
@@ -420,48 +409,46 @@ void RSQRT_S() {
 	checkDivideByZeroInvalidSoft(res, FPUflagD | FPUflagSD, FPUflagI | FPUflagSI);
 }
 
-void SQRT_S() {
+void intSQRT_S(void) {
+	u64 res;
 	clearFPUFlags(FPUflagI | FPUflagD);
 
-	u64 res = ps2f_sqrt(_FtValUl_);
+	res = ps2f_sqrt(_FtValUl_);
 	_FdValUl_ = ps2f_raw(res);
 	if (checkDivideByZeroInvalidSoft(res, FPUflagD | FPUflagSD, FPUflagI | FPUflagSI)) return;
 	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
 	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
 }
 
-void SUB_S() {
+void intSUB_S(void) {
 	u64 res = ps2f_sub(_FsValUl_, _FtValUl_);
 	_FdValUl_ = ps2f_raw(res);
 	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
 	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
 }
 
-void SUBA_S() {
+void intSUBA_S(void) {
 	u64 res = ps2f_sub(_FsValUl_, _FtValUl_);
 	_FAValUl_ = ps2f_raw(res);
 	if (checkOverflowUnderflowSoft(res, FPUflagO | FPUflagSO, 1)) return;
 	checkOverflowUnderflowSoft(res, FPUflagU | FPUflagSU, 0);
 }
 
-}	// End Namespace COP1
 
-/////////////////////////////////////////////////////////////////////
-// COP1 (FPU)  Load/Store Instructions
 
-// These are actually EE opcodes but since they're related to FPU registers and such they
-// seem more appropriately located here.
+/* COP1 (FPU)  Load/Store Instructions */
 
-void LWC1(void) {
-	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + (s16)(cpuRegs.code & 0xffff);	// force sign extension to 32bit
-	if (addr & 0x00000003) return;  // Should signal an exception?
+/* These are actually EE opcodes but since they're related to FPU registers and such they */
+/* seem more appropriately located here. */
+
+void intLWC1(void) {
+	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + (s16)(cpuRegs.code & 0xffff);	/* force sign extension to 32bit */
+	if (addr & 0x00000003) return;  /* Should signal an exception? */
 	fpuRegs.fpr[_Rt_].UL = memRead32(addr);
 }
 
-void SWC1(void) {
-	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + (s16)(cpuRegs.code & 0xffff);	// force sign extension to 32bit
-	if (addr & 0x00000003) return;  // Should signal an exception?
+void intSWC1(void) {
+	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + (s16)(cpuRegs.code & 0xffff);	/* force sign extension to 32bit */
+	if (addr & 0x00000003) return;  /* Should signal an exception? */
 	memWrite32(addr, fpuRegs.fpr[_Rt_].UL);
 }
-
-} } }

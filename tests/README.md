@@ -45,21 +45,21 @@ right. Where the two disagree, that disagreement is the finding.
 
 | Suite | Harness | Cases | Through |
 |---|---|---|---|
-| mmi | hwreal.cpp | 2690 across 101 ops | MMI.cpp |
+| mmi | hwreal.cpp | 2690 across 101 ops | MMI.c |
 | mmi | hwelem.c, hwpmfhl.c, hwsa.c | 1933 | transcription |
 | mmi | hwscore.c | 428, not printed as a count | transcription |
 | ee | hwrealee.cpp | 944 across 56 ops | R5900OpcodeImpl.cpp |
 | ee | hwalu, hwload, hwstore, hwmuldiv, hwbranch | 1186 | transcription |
 | ee | hwspr.cpp | 448 | SPR.cpp |
 | ee | hwperf.c | 85 | transcription |
-| ee | hwcpcond.cpp | 6 | COP0.cpp |
+| ee | hwcpcond.cpp | 6 | COP0.c |
 | ee | hwgslabel.cpp | 4 | Gif_Unit.c |
-| fpu | hwrealfpu.cpp | 939 across 25 ops | FPU.cpp |
+| fpu | hwrealfpu.cpp | 939 across 25 ops | FPU.c |
 | fpu | hwfpu.c, hwfcr.c, hwbranch.c | 595 | ps2float.c + transcription |
 | iop | hwrealiop.cpp | 563 across 33 ops | R3000AOpcodeTables.c |
 | iop | hwalu, hwlsu, hwmuldiv, hwbranch | 722 | transcription |
 | iop | hwgtefuzz.cpp | 1100 | IopGte.cpp |
-| vu | hwrealvu.cpp | 479 across 28 ops | VUops.cpp, VU0.cpp |
+| vu | hwrealvu.cpp | 479 across 28 ops | VUops.cpp, VU0.c |
 | vu | hwclip, hwrandom, hwint, hwefu, hwfdiv, hwctc2 | 295 | transcription |
 | vif | hwunpack.cpp, hwcycle.cpp | 42 formats + 16 write modes + 4 layout + 342 write cycles | Vif_Unpack.c |
 | emitter | hwas.cpp | 9213 | c89ops.h vs GNU as |

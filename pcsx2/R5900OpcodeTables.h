@@ -16,7 +16,11 @@
 
 #include "common/Pcsx2Defs.h"
 
-enum Syscall : u8
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+enum Syscall
 {
 	SetGsCrt = 2,
 	ExecPS2 = 7,
@@ -32,20 +36,19 @@ enum Syscall : u8
 	Deci2Call = 124
 };
 
-// TODO : Move these into the OpcodeTables namespace
-extern  void (*Int_COP2PrintTable[32])();
-extern  void (*Int_COP2BC2PrintTable[32])();
-extern  void (*Int_COP2SPECIAL1PrintTable[64])();
-extern  void (*Int_COP2SPECIAL2PrintTable[128])();
+extern  void (*Int_COP2PrintTable[32])(void);
+extern  void (*Int_COP2BC2PrintTable[32])(void);
+extern  void (*Int_COP2SPECIAL1PrintTable[64])(void);
+extern  void (*Int_COP2SPECIAL2PrintTable[128])(void);
 
-void COP2_BC2();
-void COP2_SPECIAL();
-void COP2_SPECIAL2();
-void COP2_Unknown();
+void COP2_BC2(void);
+void COP2_SPECIAL(void);
+void COP2_SPECIAL2(void);
+void COP2_Unknown(void);
 
-// reserve the lower 8 bits for opcode specific types
-// which of these are actually used depends on the opcode
-// flags further below
+/* reserve the lower 8 bits for opcode specific types */
+/* which of these are actually used depends on the opcode */
+/* flags further below */
 #define MEMTYPE_MASK         (0x07 << 0)
 #define MEMTYPE_BYTE         (0x01 << 0)
 #define MEMTYPE_HALF         (0x02 << 0)
@@ -88,8 +91,7 @@ void COP2_Unknown();
 #define IS_LEFT         0x00080000
 #define IS_RIGHT        0x00100000
 
-/* Dynarec opcode handlers: plain global names; the R5900::Dynarec::
- * OpcodeImpl namespaces are gone from the recompiler sources. */
+/* Recompiler handlers the tables name directly. */
 void recNULL(void);
 void recUnknown(void);
 void recMMI_Unknown(void);
@@ -118,506 +120,460 @@ void recTLTIU(void);
 void recTEQI(void);
 void recTNEI(void);
 
-namespace R5900
+/* The opcode table entry for every EE instruction and coprocessor op.
+ * getsubclass is set on the entries that index a further table. */
+typedef struct OPCODE
 {
+	const char Name[16];
+	u8 cycles;
+	u32 flags;
+	const struct OPCODE* (*getsubclass)(u32 op);
+	void (*interpret)(void);
+	void (*recompile)(void);
+} OPCODE;
 
+/* The instruction at cpuRegs.pc, and the one encoded by op. */
+const OPCODE* R5900_GetCurrentInstruction(void);
+const OPCODE* R5900_GetInstruction(u32 op);
 
-	///////////////////////////////////////////////////////////////////////////
-	// Encapsulates information about every opcode on the Emotion Engine and
-	// it's many co-processors.
-	struct OPCODE
-	{
-		// Textual name of the instruction.
-		const char Name[16];
+extern const OPCODE tbl_Standard[64];
 
-		// Number of cycles this instruction normally uses.
-		u8 cycles;
+const OPCODE* Class_SPECIAL(u32 op);
+const OPCODE* Class_REGIMM(u32 op);
+const OPCODE* Class_MMI(u32 op);
+const OPCODE* Class_MMI0(u32 op);
+const OPCODE* Class_MMI1(u32 op);
+const OPCODE* Class_MMI2(u32 op);
+const OPCODE* Class_MMI3(u32 op);
+const OPCODE* Class_COP0(u32 op);
+const OPCODE* Class_COP0_BC0(u32 op);
+const OPCODE* Class_COP0_C0(u32 op);
+const OPCODE* Class_COP1(u32 op);
+const OPCODE* Class_COP1_BC1(u32 op);
+const OPCODE* Class_COP1_S(u32 op);
+const OPCODE* Class_COP1_W(u32 op);
 
-		// Information about the opcode
-		u32 flags;
+/* Interpreter op handlers, one per encoding: int plus the mnemonic, as
+ * the recompiler's are rec plus the mnemonic. */
+void intCOP2(void);
+void intUnknown(void);
+void intMMI_Unknown(void);
+void intCOP0_Unknown(void);
+void intCOP1_Unknown(void);
+int intCPCOND0(void);
+void intJ(void);
+void intJAL(void);
+void intBEQ(void);
+void intBNE(void);
+void intBLEZ(void);
+void intBGTZ(void);
+void intADDI(void);
+void intADDIU(void);
+void intSLTI(void);
+void intSLTIU(void);
+void intANDI(void);
+void intORI(void);
+void intXORI(void);
+void intLUI(void);
+void intBEQL(void);
+void intBNEL(void);
+void intBLEZL(void);
+void intBGTZL(void);
+void intDADDI(void);
+void intDADDIU(void);
+void intLDL(void);
+void intLDR(void);
+void intLB(void);
+void intLH(void);
+void intLWL(void);
+void intLW(void);
+void intLBU(void);
+void intLHU(void);
+void intLWR(void);
+void intLWU(void);
+void intSB(void);
+void intSH(void);
+void intSWL(void);
+void intSW(void);
+void intSDL(void);
+void intSDR(void);
+void intSWR(void);
+void intCACHE(void);
+void intLWC1(void);
+void intPREF(void);
+void intLQC2(void);
+void intLD(void);
+void intSQC2(void);
+void intSD(void);
+void intLQ(void);
+void intSQ(void);
+void intSWC1(void);
 
-		const OPCODE& (*getsubclass)(u32 op);
+/* Special Opcodes */
+void intSLL(void);
+void intSRL(void);
+void intSRA(void);
+void intSLLV(void);
+void intSRLV(void);
+void intSRAV(void);
+void intJR(void);
+void intJALR(void);
+void intSYSCALL(void);
+void intBREAK(void);
+void intSYNC(void);
+void intMFHI(void);
+void intMTHI(void);
+void intMFLO(void);
+void intMTLO(void);
+void intDSLLV(void);
+void intDSRLV(void);
+void intDSRAV(void);
+void intMULT(void);
+void intMULTU(void);
+void intDIV(void);
+void intDIVU(void);
+void intADD(void);
+void intADDU(void);
+void intSUB(void);
+void intSUBU(void);
+void intAND(void);
+void intOR(void);
+void intXOR(void);
+void intNOR(void);
+void intSLT(void);
+void intSLTU(void);
+void intDADD(void);
+void intDADDU(void);
+void intDSUB(void);
+void intDSUBU(void);
+void intTGE(void);
+void intTGEU(void);
+void intTLT(void);
+void intTLTU(void);
+void intTEQ(void);
+void intTNE(void);
+void intDSLL(void);
+void intDSRL(void);
+void intDSRA(void);
+void intDSLL32(void);
+void intDSRL32(void);
+void intDSRA32(void);
+void intMOVZ(void);
+void intMOVN(void);
+void intMFSA(void);
+void intMTSA(void);
 
-		// Process the instruction using the interpreter.
-		// The action is performed immediately on the EE's cpu state.
-		void (*interpret)();
+/* Regimm Opcodes */
+void intBLTZ(void);
+void intBGEZ(void);
+void intBLTZL(void);
+void intBGEZL(void);
+void intTGEI(void);
+void intTGEIU(void);
+void intTLTI(void);
+void intTLTIU(void);
+void intTEQI(void);
+void intTNEI(void);
+void intBLTZAL(void);
+void intBGEZAL(void);
+void intBLTZALL(void);
+void intBGEZALL(void);
+void intMTSAB(void);
+void intMTSAH(void);
 
-		// Generate recompiled code for this instruction, injected into
-		// the current EErec block state.
-		void (*recompile)();
-	};
+/* Mmi Opcodes */
+void intMADD(void);
+void intMADDU(void);
+void intMADD1(void);
+void intMADDU1(void);
+void intMFHI1(void);
+void intMTHI1(void);
+void intMFLO1(void);
+void intMTLO1(void);
+void intMULT1(void);
+void intMULTU1(void);
+void intDIV1(void);
+void intDIVU1(void);
+void intPLZCW(void);
+void intPMFHL(void);
+void intPMTHL(void);
+void intPSLLH(void);
+void intPSRLH(void);
+void intPSRAH(void);
+void intPSLLW(void);
+void intPSRLW(void);
+void intPSRAW(void);
 
-	// Returns the current real instruction, as per the current cpuRegs settings.
-	const OPCODE& GetCurrentInstruction();
-	const OPCODE& GetInstruction(u32 op);
-	namespace OpcodeTables
-	{
-		using ::R5900::OPCODE;
+/* Mmi0 Opcodes */
+void intPADDW(void);
+void intPSUBW(void);
+void intPCGTW(void);
+void intPMAXW(void);
+void intPADDH(void);
+void intPSUBH(void);
+void intPCGTH(void);
+void intPMAXH(void);
+void intPADDB(void);
+void intPSUBB(void);
+void intPCGTB(void);
+void intPADDSW(void);
+void intPSUBSW(void);
+void intPEXTLW(void);
+void intPPACW(void);
+void intPADDSH(void);
+void intPSUBSH(void);
+void intPEXTLH(void);
+void intPPACH(void);
+void intPADDSB(void);
+void intPSUBSB(void);
+void intPEXTLB(void);
+void intPPACB(void);
+void intPEXT5(void);
+void intPPAC5(void);
 
-		extern const OPCODE tbl_Standard[64];
-	}
+/* Mmi1 Opcodes */
+void intPABSW(void);
+void intPCEQW(void);
+void intPMINW(void);
+void intPADSBH(void);
+void intPABSH(void);
+void intPCEQH(void);
+void intPMINH(void);
+void intPCEQB(void);
+void intPADDUW(void);
+void intPSUBUW(void);
+void intPEXTUW(void);
+void intPADDUH(void);
+void intPSUBUH(void);
+void intPEXTUH(void);
+void intPADDUB(void);
+void intPSUBUB(void);
+void intPEXTUB(void);
+void intQFSRV(void);
 
-	namespace Opcodes
-	{
-		using ::R5900::OPCODE;
+/* Mmi2 Opcodes */
+void intPMADDW(void);
+void intPSLLVW(void);
+void intPSRLVW(void);
+void intPMSUBW(void);
+void intPMFHI(void);
+void intPMFLO(void);
+void intPINTH(void);
+void intPMULTW(void);
+void intPDIVW(void);
+void intPCPYLD(void);
+void intPMADDH(void);
+void intPHMADH(void);
+void intPAND(void);
+void intPXOR(void);
+void intPMSUBH(void);
+void intPHMSBH(void);
+void intPEXEH(void);
+void intPREVH(void);
+void intPMULTH(void);
+void intPDIVBW(void);
+void intPEXEW(void);
+void intPROT3W(void);
 
-		const OPCODE& Class_SPECIAL(u32 op);
-		const OPCODE& Class_REGIMM(u32 op);
-		const OPCODE& Class_MMI(u32 op);
-		const OPCODE& Class_MMI0(u32 op);
-		const OPCODE& Class_MMI1(u32 op);
-		const OPCODE& Class_MMI2(u32 op);
-		const OPCODE& Class_MMI3(u32 op);
+/* Mmi3 Opcodes */
+void intPMADDUW(void);
+void intPSRAVW(void);
+void intPMTHI(void);
+void intPMTLO(void);
+void intPINTEH(void);
+void intPMULTUW(void);
+void intPDIVUW(void);
+void intPCPYUD(void);
+void intPOR(void);
+void intPNOR(void);
+void intPEXCH(void);
+void intPCPYH(void);
+void intPEXCW(void);
 
-		const OPCODE& Class_COP0(u32 op);
-		const OPCODE& Class_COP0_BC0(u32 op);
-		const OPCODE& Class_COP0_C0(u32 op);
+/* Cop0 Opcodes */
+void intMFC0(void);
+void intMTC0(void);
+void intBC0F(void);
+void intBC0T(void);
+void intBC0FL(void);
+void intBC0TL(void);
+void intTLBR(void);
+void intTLBWI(void);
+void intTLBWR(void);
+void intTLBP(void);
+void intERET(void);
+void intDI(void);
+void intEI(void);
 
-		const OPCODE& Class_COP1(u32 op);
-		const OPCODE& Class_COP1_BC1(u32 op);
-		const OPCODE& Class_COP1_S(u32 op);
-		const OPCODE& Class_COP1_W(u32 op);
-	}
+/* Cop1 Opcodes - Floating Point Unit */
+void intMFC1(void);
+void intCFC1(void);
+void intMTC1(void);
+void intCTC1(void);
+void intBC1F(void);
+void intBC1T(void);
+void intBC1FL(void);
+void intBC1TL(void);
+void intADD_S(void);
+void intSUB_S(void);
+void intMUL_S(void);
+void intDIV_S(void);
+void intSQRT_S(void);
+void intABS_S(void);
+void intMOV_S(void);
+void intNEG_S(void);
+void intRSQRT_S(void);
+void intADDA_S(void);
+void intSUBA_S(void);
+void intMULA_S(void);
+void intMADD_S(void);
+void intMSUB_S(void);
+void intMADDA_S(void);
+void intMSUBA_S(void);
+void intCVT_W(void);
+void intMAX_S(void);
+void intMIN_S(void);
+void intC_F(void);
+void intC_EQ(void);
+void intC_LT(void);
+void intC_LE(void);
+void intCVT_S(void);
 
-	namespace Interpreter {
-	namespace OpcodeImpl
-	{
-		using namespace ::R5900;
-
-		void COP2();
-
-		void Unknown();
-		void MMI_Unknown();
-		void COP0_Unknown();
-		void COP1_Unknown();
-
-// **********************Standard Opcodes**************************
-		void J();
-		void JAL();
-		void BEQ();
-		void BNE();
-		void BLEZ();
-		void BGTZ();
-		void ADDI();
-		void ADDIU();
-		void SLTI();
-		void SLTIU();
-		void ANDI();
-		void ORI();
-		void XORI();
-		void LUI();
-		void BEQL();
-		void BNEL();
-		void BLEZL();
-		void BGTZL();
-		void DADDI();
-		void DADDIU();
-		void LDL();
-		void LDR();
-		void LB();
-		void LH();
-		void LWL();
-		void LW();
-		void LBU();
-		void LHU();
-		void LWR();
-		void LWU();
-		void SB();
-		void SH();
-		void SWL();
-		void SW();
-		void SDL();
-		void SDR();
-		void SWR();
-		void CACHE();
-		void LWC1();
-		void PREF();
-		void LQC2();
-		void LD();
-		void SQC2();
-		void SD();
-		void LQ();
-		void SQ();
-		void SWC1();
-//*****************end of standard opcodes**********************
-//********************SPECIAL OPCODES***************************
-		void SLL();
-		void SRL();
-		void SRA();
-		void SLLV();
-		void SRLV();
-		void SRAV();
-		void JR();
-		void JALR();
-		void SYSCALL();
-		void BREAK();
-		void SYNC();
-		void MFHI();
-		void MTHI();
-		void MFLO();
-		void MTLO();
-		void DSLLV();
-		void DSRLV();
-		void DSRAV();
-		void MULT();
-		void MULTU();
-		void DIV();
-		void DIVU();
-		void ADD();
-		void ADDU();
-		void SUB();
-		void SUBU();
-		void AND();
-		void OR();
-		void XOR();
-		void NOR();
-		void SLT();
-		void SLTU();
-		void DADD();
-		void DADDU();
-		void DSUB();
-		void DSUBU();
-		void TGE();
-		void TGEU();
-		void TLT();
-		void TLTU();
-		void TEQ();
-		void TNE();
-		void DSLL();
-		void DSRL();
-		void DSRA();
-		void DSLL32();
-		void DSRL32();
-		void DSRA32();
-		void MOVZ();
-		void MOVN();
-		void MFSA();
-		void MTSA();
-//*******************END OF SPECIAL OPCODES************************
-//***********************REGIMM OPCODES****************************
-		void BLTZ();
-		void BGEZ();
-		void BLTZL();
-		void BGEZL();
-		void TGEI();
-		void TGEIU();
-		void TLTI();
-		void TLTIU();
-		void TEQI();
-		void TNEI();
-		void BLTZAL();
-		void BGEZAL();
-		void BLTZALL();
-		void BGEZALL();
-		void MTSAB();
-		void MTSAH();
-//*******************END OF REGIMM OPCODES***********************
-//***********************MMI OPCODES*****************************
-		void MADD();
-		void MADDU();
-		void MADD1();
-		void MADDU1();
-		void MFHI1();
-		void MTHI1();
-		void MFLO1();
-		void MTLO1();
-		void MULT1();
-		void MULTU1();
-		void DIV1();
-		void DIVU1();
-
-		namespace MMI {
-		void PLZCW();
-		void PMFHL();
-		void PMTHL();
-		void PSLLH();
-		void PSRLH();
-		void PSRAH();
-		void PSLLW();
-		void PSRLW();
-		void PSRAW();
-//********************END OF MMI OPCODES***********************
-//***********************MMI0 OPCODES**************************
-		void PADDW();
-		void PSUBW();
-		void PCGTW();
-		void PMAXW();
-		void PADDH();
-		void PSUBH();
-		void PCGTH();
-		void PMAXH();
-		void PADDB();
-		void PSUBB();
-		void PCGTB();
-		void PADDSW();
-		void PSUBSW();
-		void PEXTLW();
-		void PPACW();
-		void PADDSH();
-		void PSUBSH();
-		void PEXTLH();
-		void PPACH();
-		void PADDSB();
-		void PSUBSB();
-		void PEXTLB();
-		void PPACB();
-		void PEXT5();
-		void PPAC5();
-//******************END OF MMI0 OPCODES***********************
-//*********************MMI1 OPCODES***************************
-		void PABSW();
-		void PCEQW();
-		void PMINW();
-		void PADSBH();
-		void PABSH();
-		void PCEQH();
-		void PMINH();
-		void PCEQB();
-		void PADDUW();
-		void PSUBUW();
-		void PEXTUW();
-		void PADDUH();
-		void PSUBUH();
-		void PEXTUH();
-		void PADDUB();
-		void PSUBUB();
-		void PEXTUB();
-		void QFSRV();
-//*****************END OF MMI1 OPCODES***********************
-//*********************MMI2 OPCODES**************************
-		void PMADDW();
-		void PSLLVW();
-		void PSRLVW();
-		void PMSUBW();
-		void PMFHI();
-		void PMFLO();
-		void PINTH();
-		void PMULTW();
-		void PDIVW();
-		void PCPYLD();
-		void PMADDH();
-		void PHMADH();
-		void PAND();
-		void PXOR();
-		void PMSUBH();
-		void PHMSBH();
-		void PEXEH();
-		void PREVH();
-		void PMULTH();
-		void PDIVBW();
-		void PEXEW();
-		void PROT3W();
-//********************END OF MMI2 OPCODES********************
-//***********************MMI3 OPCODES************************
-		void PMADDUW();
-		void PSRAVW();
-		void PMTHI();
-		void PMTLO();
-		void PINTEH();
-		void PMULTUW();
-		void PDIVUW();
-		void PCPYUD();
-		void POR();
-		void PNOR();
-		void PEXCH();
-		void PCPYH();
-		void PEXCW();
-		}
-//**********************END OF MMI3 OPCODES********************
-//*************************COP0 OPCODES************************
-		namespace COP0 {
-		void MFC0();
-		void MTC0();
-		void BC0F();
-		void BC0T();
-		void BC0FL();
-		void BC0TL();
-		void TLBR();
-		void TLBWI();
-		void TLBWR();
-		void TLBP();
-		void ERET();
-		void DI();
-		void EI();
-		}
-//********************END OF COP0 OPCODES************************
-//************COP1 OPCODES - Floating Point Unit*****************
-		namespace COP1 {
-		void MFC1();
-		void CFC1();
-		void MTC1();
-		void CTC1();
-		void BC1F();
-		void BC1T();
-		void BC1FL();
-		void BC1TL();
-		void ADD_S();
-		void SUB_S();
-		void MUL_S();
-		void DIV_S();
-		void SQRT_S();
-		void ABS_S();
-		void MOV_S();
-		void NEG_S();
-		void RSQRT_S();
-		void ADDA_S();
-		void SUBA_S();
-		void MULA_S();
-		void MADD_S();
-		void MSUB_S();
-		void MADDA_S();
-		void MSUBA_S();
-		void CVT_W();
-		void MAX_S();
-		void MIN_S();
-		void C_F();
-		void C_EQ();
-		void C_LT();
-		void C_LE();
-		void CVT_S();
-		}
-	} }
-}	// End namespace R5900
-
-//****************************************************************************
-//** COP2 - (VU0)                                                           **
-//****************************************************************************
-void QMFC2();
-void CFC2();
-void QMTC2();
-void CTC2();
-/* Defined in COP2.c, so they carry C linkage. */
-#ifdef __cplusplus
-extern "C" {
-#endif
+/*  */
+/* Cop2 - (VU0) */
+/*  */
+void QMFC2(void);
+void CFC2(void);
+void QMTC2(void);
+void CTC2(void);
 void BC2F(void);
 void BC2T(void);
 void BC2FL(void);
 void BC2TL(void);
 void VCALLMS(void);
 void VCALLMSR(void);
+/* Special 1 VU0 Table */
+void VADDx(void);
+void VADDy(void);
+void VADDz(void);
+void VADDw(void);
+void VSUBx(void);
+void VSUBy(void);
+void VSUBz(void);
+void VSUBw(void);
+void VMADDx(void);
+void VMADDy(void);
+void VMADDz(void);
+void VMADDw(void);
+void VMSUBx(void);
+void VMSUBy(void);
+void VMSUBz(void);
+void VMSUBw(void);
+void VMAXx(void);
+void VMAXy(void);
+void VMAXz(void);
+void VMAXw(void);
+void VMINIx(void);
+void VMINIy(void);
+void VMINIz(void);
+void VMINIw(void);
+void VMULx(void);
+void VMULy(void);
+void VMULz(void);
+void VMULw(void);
+void VMULq(void);
+void VMAXi(void);
+void VMULi(void);
+void VMINIi(void);
+void VADDq(void);
+void VMADDq(void);
+void VADDi(void);
+void VMADDi(void);
+void VSUBq(void);
+void VMSUBq(void);
+void VSUBi(void);
+void VMSUBi(void);
+void VADD(void);
+void VMADD(void);
+void VMUL(void);
+void VMAX(void);
+void VSUB(void);
+void VMSUB(void);
+void VOPMSUB(void);
+void VMINI(void);
+void VIADD(void);
+void VISUB(void);
+void VIADDI(void);
+void VIAND(void);
+void VIOR(void);
+
+/* Special2 VU0 Table */
+void VADDAx(void);
+void VADDAy(void);
+void VADDAz(void);
+void VADDAw(void);
+void VSUBAx(void);
+void VSUBAy(void);
+void VSUBAz(void);
+void VSUBAw(void);
+void VMADDAx(void);
+void VMADDAy(void);
+void VMADDAz(void);
+void VMADDAw(void);
+void VMSUBAx(void);
+void VMSUBAy(void);
+void VMSUBAz(void);
+void VMSUBAw(void);
+void VITOF0(void);
+void VITOF4(void);
+void VITOF12(void);
+void VITOF15(void);
+void VFTOI0(void);
+void VFTOI4(void);
+void VFTOI12(void);
+void VFTOI15(void);
+void VMULAx(void);
+void VMULAy(void);
+void VMULAz(void);
+void VMULAw(void);
+void VMULAq(void);
+void VABS(void);
+void VMULAi(void);
+void VCLIPw(void);
+void VADDAq(void);
+void VMADDAq(void);
+void VADDAi(void);
+void VMADDAi(void);
+void VSUBAq(void);
+void VMSUBAq(void);
+void VSUBAi(void);
+void VMSUBAi(void);
+void VADDA(void);
+void VMADDA(void);
+void VMULA(void);
+void VSUBA(void);
+void VMSUBA(void);
+void VOPMULA(void);
+void VNOP(void);
+void VMOVE(void);
+void VMR32(void);
+void VLQI(void);
+void VSQI(void);
+void VLQD(void);
+void VSQD(void);
+void VDIV(void);
+void VSQRT(void);
+void VRSQRT(void);
+void VWAITQ(void);
+void VMTIR(void);
+void VMFIR(void);
+void VILWR(void);
+void VISWR(void);
+void VRNEXT(void);
+void VRGET(void);
+void VRINIT(void);
+void VRXOR(void);
+
 #ifdef __cplusplus
 }
 #endif
-//*****************SPECIAL 1 VUO TABLE*******************************
-void VADDx();
-void VADDy();
-void VADDz();
-void VADDw();
-void VSUBx();
-void VSUBy();
-void VSUBz();
-void VSUBw();
-void VMADDx();
-void VMADDy();
-void VMADDz();
-void VMADDw();
-void VMSUBx();
-void VMSUBy();
-void VMSUBz();
-void VMSUBw();
-void VMAXx();
-void VMAXy();
-void VMAXz();
-void VMAXw();
-void VMINIx();
-void VMINIy();
-void VMINIz();
-void VMINIw();
-void VMULx();
-void VMULy();
-void VMULz();
-void VMULw();
-void VMULq();
-void VMAXi();
-void VMULi();
-void VMINIi();
-void VADDq();
-void VMADDq();
-void VADDi();
-void VMADDi();
-void VSUBq();
-void VMSUBq();
-void VSUBi();
-void VMSUBi();
-void VADD();
-void VMADD();
-void VMUL();
-void VMAX();
-void VSUB();
-void VMSUB();
-void VOPMSUB();
-void VMINI();
-void VIADD();
-void VISUB();
-void VIADDI();
-void VIAND();
-void VIOR();
-//***********************************END OF SPECIAL1 VU0 TABLE*****************************
-//******************************SPECIAL2 VUO TABLE*****************************************
-void VADDAx();
-void VADDAy();
-void VADDAz();
-void VADDAw();
-void VSUBAx();
-void VSUBAy();
-void VSUBAz();
-void VSUBAw();
-void VMADDAx();
-void VMADDAy();
-void VMADDAz();
-void VMADDAw();
-void VMSUBAx();
-void VMSUBAy();
-void VMSUBAz();
-void VMSUBAw();
-void VITOF0();
-void VITOF4();
-void VITOF12();
-void VITOF15();
-void VFTOI0();
-void VFTOI4();
-void VFTOI12();
-void VFTOI15();
-void VMULAx();
-void VMULAy();
-void VMULAz();
-void VMULAw();
-void VMULAq();
-void VABS();
-void VMULAi();
-void VCLIPw();
-void VADDAq();
-void VMADDAq();
-void VADDAi();
-void VMADDAi();
-void VSUBAq();
-void VMSUBAq();
-void VSUBAi();
-void VMSUBAi();
-void VADDA();
-void VMADDA();
-void VMULA();
-void VSUBA();
-void VMSUBA();
-void VOPMULA();
-void VNOP();
-void VMOVE();
-void VMR32();
-void VLQI();
-void VSQI();
-void VLQD();
-void VSQD();
-void VDIV();
-void VSQRT();
-void VRSQRT();
-void VWAITQ();
-void VMTIR();
-void VMFIR();
-void VILWR();
-void VISWR();
-void VRNEXT();
-void VRGET();
-void VRINIT();
-void VRXOR();
-//*******************END OF SPECIAL2 *********************

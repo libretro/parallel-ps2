@@ -1,4 +1,4 @@
-/*  EE FPU flag behaviour of DIV.S and RSQRT.S, through the real FPU.cpp.
+/*  EE FPU flag behaviour of DIV.S and RSQRT.S, through the real FPU.c.
  *
  *  The console-capture suites score results, not FCR31, so these flag
  *  rules had nothing guarding them. The reference is what both
@@ -19,6 +19,7 @@
 #include <fenv.h>
 
 #include "Common.h"
+#include "R5900OpcodeTables.h"
 #include "R5900.h"
 
 alignas(16) cpuRegisters cpuRegs;
@@ -28,10 +29,6 @@ u32 vtlb_memRead32(u32) { return 0; }
 void vtlb_memWrite32(u32, u32) {}
 void intDoBranch(u32) {}
 
-namespace R5900 { namespace Interpreter { namespace OpcodeImpl { namespace COP1 {
-	void DIV_S(); void RSQRT_S();
-} } } }
-using namespace R5900::Interpreter::OpcodeImpl::COP1;
 
 #define FS 1
 #define FT 2
@@ -81,23 +78,23 @@ int main(void)
 
 	/* DIV.S: an overflowing and an underflowing quotient touch no O/U bit,
 	 * whether those bits start clear or set. */
-	run("div overflow, flags clear",  DIV_S, huge, tiny, 0, FLAGS_OU, 0, 0, 0);
-	run("div underflow, flags clear", DIV_S, tiny, huge, 0, FLAGS_OU, 0, 0, 0);
-	run("div overflow, flags set",    DIV_S, huge, tiny, FLAGS_OU, FLAGS_OU, FLAGS_OU, 0, 0);
+	run("div overflow, flags clear",  intDIV_S, huge, tiny, 0, FLAGS_OU, 0, 0, 0);
+	run("div underflow, flags clear", intDIV_S, tiny, huge, 0, FLAGS_OU, 0, 0, 0);
+	run("div overflow, flags set",    intDIV_S, huge, tiny, FLAGS_OU, FLAGS_OU, FLAGS_OU, 0, 0);
 	/* ps2autotests ee_fpu/fcr "Underflow": FLT_MIN / 3 leaves FCR31 at
 	 * 01000001 on the console, no U or SU. */
-	run("div FLT_MIN / 3, as on console", DIV_S, tiny, 0x40400000u, 0, FLAGS_OU, 0, 0, 0);
-	run("div ordinary, flags set",    DIV_S, 0x40000000u, 0x3F800000u, FLAGS_OU,
+	run("div FLT_MIN / 3, as on console", intDIV_S, tiny, 0x40400000u, 0, FLAGS_OU, 0, 0, 0);
+	run("div ordinary, flags set",    intDIV_S, 0x40000000u, 0x3F800000u, FLAGS_OU,
 		FLAGS_OU, FLAGS_OU, 1, 0x40000000u);
 
 	/* RSQRT.S: negative Ft raises I/SI and uses |Ft|: 1 / sqrt(4) = 0.5. */
-	run("rsqrt negative ft raises I",  RSQRT_S, 0x3F800000u, 0xC0800000u, 0,
+	run("rsqrt negative ft raises I",  intRSQRT_S, 0x3F800000u, 0xC0800000u, 0,
 		FLAG_I | FLAG_SI, FLAG_I | FLAG_SI, 1, 0x3F000000u);
-	run("rsqrt positive ft, no I",     RSQRT_S, 0x3F800000u, 0x40800000u, 0,
+	run("rsqrt positive ft, no I",     intRSQRT_S, 0x3F800000u, 0x40800000u, 0,
 		FLAG_I | FLAG_SI, 0, 1, 0x3F000000u);
-	run("rsqrt overflow, flags clear", RSQRT_S, huge, tiny, 0, FLAGS_OU, 0, 0, 0);
-	run("rsqrt overflow, flags set",   RSQRT_S, huge, tiny, FLAGS_OU, FLAGS_OU, FLAGS_OU, 0, 0);
-	run("rsqrt underflow, flags clear", RSQRT_S, tiny, 0x7E800000u, 0, FLAGS_OU, 0, 0, 0);
+	run("rsqrt overflow, flags clear", intRSQRT_S, huge, tiny, 0, FLAGS_OU, 0, 0, 0);
+	run("rsqrt overflow, flags set",   intRSQRT_S, huge, tiny, FLAGS_OU, FLAGS_OU, FLAGS_OU, 0, 0);
+	run("rsqrt underflow, flags clear", intRSQRT_S, tiny, 0x7E800000u, 0, FLAGS_OU, 0, 0, 0);
 
 	if (failures)
 	{

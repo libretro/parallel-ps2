@@ -16,8 +16,6 @@
  */
 
 #pragma once
-extern void _vu0WaitMicro(void);
-extern void _vu0FinishMicro(void);
 
 /* vuRegs[0] by name; a reference alias at file scope was a C++ way of
  * writing what the array subscript already says. */

@@ -27,9 +27,10 @@ for c in fastjmp/fastjmp string/stdstring string/rstrtod file/file_path compat/c
 	"$CC" -w $DEFS $OPT $INC -c "$LC/$c.c" -o "$OBJ/$(echo $c | tr / _).o"
 done
 "$CC" -w $DEFS $OPT $INC -c "$P/memcard_ecc.c" -o "$OBJ/memcard_ecc.o"
+"$CC" -w $DEFS $OPT $INC -c "$P/R5900OpcodeTables.c" -o "$OBJ/R5900OpcodeTables.o"
 "$CXX" -std=c++17 -w $DEFS $OPT $INC -o "$DIR/eestage$EXE" \
 	"$DIR/glue.cpp" "$DIR/stubs.cpp" "$P/Interpreter.cpp" "$P/R5900OpcodeImpl.cpp" \
-	"$P/R5900OpcodeTables.cpp" "$P/Pcsx2Config.cpp" "$P/MemoryCardFile.c" \
+	"$P/Pcsx2Config.cpp" "$P/MemoryCardFile.c" \
 	"$P/FormatString.cpp" "$OBJ"/*.o $LIBS
 rm -rf "$OBJ"
 "$DIR/eestage$EXE"

@@ -178,7 +178,13 @@ typedef struct
 	uptr fastmem_base;
 } vtlb_map_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 PCSX2_ALIGN(64) extern vtlb_map_t vtlbdata;
+#ifdef __cplusplus
+}
+#endif
 
 static VTLB_INLINE vtlb_phys_t vtlb_phys_from_ptr(sptr ptr) { return ptr; }
 static VTLB_INLINE vtlb_phys_t vtlb_phys_from_handler(vtlbHandler handler) { return (vtlb_phys_t)(handler | POINTER_SIGN_BIT); }

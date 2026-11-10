@@ -188,7 +188,7 @@ void recCACHE() //Interpreter only!
 	//xMOV(ptr32[&cpuRegs.code], (u32)cpuRegs.code );
 	//xMOV(ptr32[&cpuRegs.pc], (u32)pc );
 	//iFlushCall(FLUSH_EVERYTHING);
-	//xFastCall((void*)(uptr)R5900::Interpreter::OpcodeImpl::CACHE );
+	//xFastCall((void*)(uptr)intCACHE );
 	//branch = 2;
 }
 

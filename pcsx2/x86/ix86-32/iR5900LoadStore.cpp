@@ -32,7 +32,6 @@ static int RETURN_READ_IN_RAX(void)
 * Format:  OP rt, offset(base)                           *
 *********************************************************/
 
-using namespace ::R5900::Interpreter::OpcodeImpl;
 
 //////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -265,7 +264,7 @@ void recLWL(void)
 	_deleteEEreg(_Rs_, 1);
 	_deleteEEreg(_Rt_, 1);
 
-	recCall(LWL);
+	recCall(intLWL);
 #endif
 }
 
@@ -330,7 +329,7 @@ void recLWR()
 	_deleteEEreg(_Rs_, 1);
 	_deleteEEreg(_Rt_, 1);
 
-	recCall(LWR);
+	recCall(intLWR);
 #endif
 }
 
@@ -406,7 +405,7 @@ void recSWL()
 	iFlushCall(FLUSH_INTERPRETER);
 	_deleteEEreg(_Rs_, 1);
 	_deleteEEreg(_Rt_, 1);
-	recCall(SWL);
+	recCall(intSWL);
 #endif
 }
 
@@ -479,7 +478,7 @@ void recSWR()
 	iFlushCall(FLUSH_INTERPRETER);
 	_deleteEEreg(_Rs_, 1);
 	_deleteEEreg(_Rt_, 1);
-	recCall(SWR);
+	recCall(intSWR);
 #endif
 }
 
@@ -593,7 +592,7 @@ void recLDL()
 	iFlushCall(FLUSH_INTERPRETER);
 	_deleteEEreg(_Rs_, 1);
 	_deleteEEreg(_Rt_, 1);
-	recCall(LDL);
+	recCall(intLDL);
 #endif
 }
 
@@ -676,7 +675,7 @@ void recLDR()
 	iFlushCall(FLUSH_INTERPRETER);
 	_deleteEEreg(_Rs_, 1);
 	_deleteEEreg(_Rt_, 1);
-	recCall(LDR);
+	recCall(intLDR);
 #endif
 }
 
@@ -790,7 +789,7 @@ void recSDL(void)
 	iFlushCall(FLUSH_INTERPRETER);
 	_deleteEEreg(_Rs_, 1);
 	_deleteEEreg(_Rt_, 1);
-	recCall(SDL);
+	recCall(intSDL);
 #endif
 }
 
@@ -874,7 +873,7 @@ void recSDR(void)
 	iFlushCall(FLUSH_INTERPRETER);
 	_deleteEEreg(_Rs_, 1);
 	_deleteEEreg(_Rt_, 1);
-	recCall(SDR);
+	recCall(intSDR);
 #endif
 }
 
@@ -889,7 +888,7 @@ void recSDR(void)
 void recLWC1(void)
 {
 #ifndef FPU_RECOMPILE
-	recCall(::R5900::Interpreter::OpcodeImpl::LWC1);
+	recCall(intLWC1);
 #else
 
 	const vtlb_ReadRegAllocCallback alloc_cb = []() { return _allocFPtoXMMreg(_Rt_, MODE_WRITE); };
@@ -915,7 +914,7 @@ void recLWC1(void)
 void recSWC1(void)
 {
 #ifndef FPU_RECOMPILE
-	recCall(::R5900::Interpreter::OpcodeImpl::SWC1);
+	recCall(intSWC1);
 #else
 	const int regt = _allocFPtoXMMreg(_Rt_, MODE_READ);
 	if (GPR_IS_CONST1(_Rs_))

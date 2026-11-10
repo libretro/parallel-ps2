@@ -1,6 +1,6 @@
 /*  EE performance counters against console captures.
  *
- *  Scores the register decode in pcsx2/COP0.cpp against ps2autotests
+ *  Scores the register decode in pcsx2/COP0.c against ps2autotests
  *  tests/cpu/ee_cop0/performance.expected, the last capture file in the
  *  cpu tree that nothing read.
  *
@@ -44,7 +44,7 @@ typedef uint32_t u32;
  * capture's own line reports reading it back. */
 #define PCCR_BOTH_CYCLES 0x00008020u
 
-/* The decode, transcribed from the register-25 arms of COP0.cpp's MFC0
+/* The decode, transcribed from the register-25 arms of COP0.c's MFC0
  * and MTC0. Kept beside the real thing rather than calling it because
  * COP0_UpdatePCCR walks the cycle counters, which a harness has none of;
  * the arithmetic that picks a register is what the capture pins. */

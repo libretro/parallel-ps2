@@ -95,25 +95,6 @@ bool SaveState_FreezeTag(SaveStateBase*, const char*) { return true; }
 
 /* ---- the harness ------------------------------------------------------ */
 
-namespace R5900 { namespace Interpreter { namespace OpcodeImpl {
-	void ADDU(); void SUBU(); void AND(); void OR(); void XOR(); void NOR();
-	void SLT(); void SLTU(); void DADDU(); void DSUBU();
-	void MOVN(); void MOVZ();
-	void SLLV(); void SRLV(); void SRAV();
-	void DSLLV(); void DSRLV(); void DSRAV();
-	void ADDIU(); void ANDI(); void DADDIU(); void ORI(); void XORI();
-	void SLTI(); void SLTIU(); void LUI();
-	void SLL(); void SRL(); void SRA();
-	void DSLL(); void DSRL(); void DSRA();
-	void DSLL32(); void DSRL32(); void DSRA32();
-	void LB(); void LBU(); void LH(); void LHU(); void LW(); void LWU();
-	void LD(); void LQ(); void LWL(); void LWR(); void LDL(); void LDR();
-	void SB(); void SH(); void SW(); void SD(); void SQ();
-	void SWL(); void SWR(); void SDL(); void SDR();
-	void DIV(); void DIVU(); void MULT(); void MULTU();
-	void MFHI(); void MFLO(); void MTHI(); void MTLO();
-} } }
-using namespace R5900::Interpreter::OpcodeImpl;
 
 /* HILO_MOVE: one operand, and the result is a pipeline register or rd
  * depending on the direction. */
@@ -121,36 +102,36 @@ enum Shape { RRR, RRI, RRS, RI, LOAD, STORE, MULDIV, HILO_MOVE };
 
 static const struct { const char* name; void (*fn)(); Shape shape; int swap; }
 kOps[] = {
-	{ "addu",ADDU,RRR,0 },{ "subu",SUBU,RRR,0 },{ "and",AND,RRR,0 },
-	{ "or",OR,RRR,0 },{ "xor",XOR,RRR,0 },{ "nor",NOR,RRR,0 },
-	{ "slt",SLT,RRR,0 },{ "sltu",SLTU,RRR,0 },
-	{ "daddu",DADDU,RRR,0 },{ "dsubu",DSUBU,RRR,0 },
-	{ "movn",MOVN,RRR,0 },{ "movz",MOVZ,RRR,0 },
+	{ "addu",intADDU,RRR,0 },{ "subu",intSUBU,RRR,0 },{ "and",intAND,RRR,0 },
+	{ "or",intOR,RRR,0 },{ "xor",intXOR,RRR,0 },{ "nor",intNOR,RRR,0 },
+	{ "slt",intSLT,RRR,0 },{ "sltu",intSLTU,RRR,0 },
+	{ "daddu",intDADDU,RRR,0 },{ "dsubu",intDSUBU,RRR,0 },
+	{ "movn",intMOVN,RRR,0 },{ "movz",intMOVZ,RRR,0 },
 	/* The variable shifts assemble as rd, rt, rs -- value first, amount
 	 * second -- so the printed operands go in swapped. */
-	{ "sllv",SLLV,RRR,1 },{ "srlv",SRLV,RRR,1 },{ "srav",SRAV,RRR,1 },
-	{ "dsllv",DSLLV,RRR,1 },{ "dsrlv",DSRLV,RRR,1 },{ "dsrav",DSRAV,RRR,1 },
-	{ "addiu",ADDIU,RRI,0 },{ "andi",ANDI,RRI,0 },{ "daddiu",DADDIU,RRI,0 },
-	{ "ori",ORI,RRI,0 },{ "xori",XORI,RRI,0 },
-	{ "slti",SLTI,RRI,0 },{ "sltiu",SLTIU,RRI,0 },
-	{ "lui",LUI,RI,0 },
-	{ "sll",SLL,RRS,0 },{ "srl",SRL,RRS,0 },{ "sra",SRA,RRS,0 },
-	{ "dsll",DSLL,RRS,0 },{ "dsrl",DSRL,RRS,0 },{ "dsra",DSRA,RRS,0 },
-	{ "dsll32",DSLL32,RRS,0 },{ "dsrl32",DSRL32,RRS,0 },{ "dsra32",DSRA32,RRS,0 },
+	{ "sllv",intSLLV,RRR,1 },{ "srlv",intSRLV,RRR,1 },{ "srav",intSRAV,RRR,1 },
+	{ "dsllv",intDSLLV,RRR,1 },{ "dsrlv",intDSRLV,RRR,1 },{ "dsrav",intDSRAV,RRR,1 },
+	{ "addiu",intADDIU,RRI,0 },{ "andi",intANDI,RRI,0 },{ "daddiu",intDADDIU,RRI,0 },
+	{ "ori",intORI,RRI,0 },{ "xori",intXORI,RRI,0 },
+	{ "slti",intSLTI,RRI,0 },{ "sltiu",intSLTIU,RRI,0 },
+	{ "lui",intLUI,RI,0 },
+	{ "sll",intSLL,RRS,0 },{ "srl",intSRL,RRS,0 },{ "sra",intSRA,RRS,0 },
+	{ "dsll",intDSLL,RRS,0 },{ "dsrl",intDSRL,RRS,0 },{ "dsra",intDSRA,RRS,0 },
+	{ "dsll32",intDSLL32,RRS,0 },{ "dsrl32",intDSRL32,RRS,0 },{ "dsra32",intDSRA32,RRS,0 },
 	/* Loads and stores run against the backing array; the base register
 	 * holds the pattern's base and the offset comes from the line. */
-	{ "lb",LB,LOAD,0 },{ "lbu",LBU,LOAD,0 },{ "lh",LH,LOAD,0 },
-	{ "lhu",LHU,LOAD,0 },{ "lw",LW,LOAD,0 },{ "lwu",LWU,LOAD,0 },
-	{ "ld",LD,LOAD,0 },{ "lq",LQ,LOAD,0 },
-	{ "sb",SB,STORE,0 },{ "sh",SH,STORE,0 },{ "sw",SW,STORE,0 },
-	{ "sd",SD,STORE,0 },{ "sq",SQ,STORE,0 },
-	{ "div",DIV,MULDIV,0 },{ "divu",DIVU,MULDIV,0 },
-	{ "mult",MULT,MULDIV,0 },{ "multu",MULTU,MULDIV,0 },
+	{ "lb",intLB,LOAD,0 },{ "lbu",intLBU,LOAD,0 },{ "lh",intLH,LOAD,0 },
+	{ "lhu",intLHU,LOAD,0 },{ "lw",intLW,LOAD,0 },{ "lwu",intLWU,LOAD,0 },
+	{ "ld",intLD,LOAD,0 },{ "lq",intLQ,LOAD,0 },
+	{ "sb",intSB,STORE,0 },{ "sh",intSH,STORE,0 },{ "sw",intSW,STORE,0 },
+	{ "sd",intSD,STORE,0 },{ "sq",intSQ,STORE,0 },
+	{ "div",intDIV,MULDIV,0 },{ "divu",intDIVU,MULDIV,0 },
+	{ "mult",intMULT,MULDIV,0 },{ "multu",intMULTU,MULDIV,0 },
 	/* The HI/LO moves. Nothing in the tree scored these either -- the
 	 * audit that turned up the second pipeline found them in the same
 	 * pass. */
-	{ "mfhi",MFHI,HILO_MOVE,0 },{ "mflo",MFLO,HILO_MOVE,0 },
-	{ "mthi",MTHI,HILO_MOVE,0 },{ "mtlo",MTLO,HILO_MOVE,0 },
+	{ "mfhi",intMFHI,HILO_MOVE,0 },{ "mflo",intMFLO,HILO_MOVE,0 },
+	{ "mthi",intMTHI,HILO_MOVE,0 },{ "mtlo",intMTLO,HILO_MOVE,0 },
 };
 
 /* C_PATTERN from the lsu harness, and the two bases its load and store
@@ -599,17 +580,17 @@ int main(int argc, char** argv)
 		static const struct { const char* name; void (*fn)(); u64 rs; u32 imm; u64 want; }
 		kSpec[] = {
 			/* Sign-extending: 0xffff means -1. */
-			{ "addiu",  ADDIU,  0x0000000000000001ull, 0xFFFFu, 0x0000000000000000ull },
-			{ "addiu",  ADDIU,  0x0000000000000000ull, 0xFFFFu, 0xFFFFFFFFFFFFFFFFull },
-			{ "daddiu", DADDIU, 0x0000000000000001ull, 0xFFFFu, 0x0000000000000000ull },
-			{ "slti",   SLTI,   0xFFFFFFFFFFFFFFFEull, 0xFFFFu, 1 },  /* -2 < -1 */
-			{ "slti",   SLTI,   0x0000000000000000ull, 0xFFFFu, 0 },
-			{ "sltiu",  SLTIU,  0x0000000000000000ull, 0xFFFFu, 1 },  /* 0 < ffff..ff */
-			{ "sltiu",  SLTIU,  0x0000000000010000ull, 0xFFFFu, 1 },  /* zero-ext says 0 */
+			{ "addiu",  intADDIU,  0x0000000000000001ull, 0xFFFFu, 0x0000000000000000ull },
+			{ "addiu",  intADDIU,  0x0000000000000000ull, 0xFFFFu, 0xFFFFFFFFFFFFFFFFull },
+			{ "daddiu", intDADDIU, 0x0000000000000001ull, 0xFFFFu, 0x0000000000000000ull },
+			{ "slti",   intSLTI,   0xFFFFFFFFFFFFFFFEull, 0xFFFFu, 1 },  /* -2 < -1 */
+			{ "slti",   intSLTI,   0x0000000000000000ull, 0xFFFFu, 0 },
+			{ "sltiu",  intSLTIU,  0x0000000000000000ull, 0xFFFFu, 1 },  /* 0 < ffff..ff */
+			{ "sltiu",  intSLTIU,  0x0000000000010000ull, 0xFFFFu, 1 },  /* zero-ext says 0 */
 			/* Zero-extending: 0xffff means 65535, not -1. */
-			{ "andi",   ANDI,   0xFFFFFFFFFFFFFFFFull, 0xFFFFu, 0x000000000000FFFFull },
-			{ "ori",    ORI,    0x0000000000000000ull, 0xFFFFu, 0x000000000000FFFFull },
-			{ "xori",   XORI,   0x0000000000000000ull, 0xFFFFu, 0x000000000000FFFFull },
+			{ "andi",   intANDI,   0xFFFFFFFFFFFFFFFFull, 0xFFFFu, 0x000000000000FFFFull },
+			{ "ori",    intORI,    0x0000000000000000ull, 0xFFFFu, 0x000000000000FFFFull },
+			{ "xori",   intXORI,   0x0000000000000000ull, 0xFFFFu, 0x000000000000FFFFull },
 		};
 		const int n = (int)(sizeof(kSpec)/sizeof(kSpec[0]));
 		int i, pass = 0;

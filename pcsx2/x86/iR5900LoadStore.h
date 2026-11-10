@@ -15,35 +15,42 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*********************************************************
 * Load and store for GPR                                 *
 * Format:  OP rt, offset(base)                           *
 *********************************************************/
 
 
-	void recLB();
-	void recLBU();
-	void recLH();
-	void recLHU();
-	void recLW();
-	void recLWU();
-	void recLWL();
-	void recLWR();
-	void recLD();
-	void recLDR();
-	void recLDL();
-	void recLQ();
-	void recSB();
-	void recSH();
-	void recSW();
-	void recSWL();
-	void recSWR();
-	void recSD();
-	void recSDL();
-	void recSDR();
-	void recSQ();
-	void recLWC1();
-	void recSWC1();
-	void recLQC2();
-	void recSQC2();
+	void recLB(void);
+	void recLBU(void);
+	void recLH(void);
+	void recLHU(void);
+	void recLW(void);
+	void recLWU(void);
+	void recLWL(void);
+	void recLWR(void);
+	void recLD(void);
+	void recLDR(void);
+	void recLDL(void);
+	void recLQ(void);
+	void recSB(void);
+	void recSH(void);
+	void recSW(void);
+	void recSWL(void);
+	void recSWR(void);
+	void recSD(void);
+	void recSDL(void);
+	void recSDR(void);
+	void recSQ(void);
+	void recLWC1(void);
+	void recSWC1(void);
+	void recLQC2(void);
+	void recSQC2(void);
 
+#ifdef __cplusplus
+}
+#endif

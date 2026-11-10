@@ -7,7 +7,7 @@
  *  The console aliases: FCR0 through FCR15 all read as FCR0, and FCR16
  *  through FCR31 all read as FCR31. Only those two exist.
  *
- *  Transcribed from CFC1 in pcsx2/FPU.cpp. The reset values come from
+ *  Transcribed from CFC1 in pcsx2/FPU.c. The reset values come from
  *  R5900.cpp, which sets fprc[0] to 0x00002e30 and fprc[31] to
  *  0x01000001 -- both matching the console.
  *
@@ -25,7 +25,7 @@ typedef int32_t  s32;
 #define FPRC0  0x00002e30u
 #define FPRC31 0x01000001u
 
-/* Transcribed from CFC1 in pcsx2/FPU.cpp. */
+/* Transcribed from CFC1 in pcsx2/FPU.c. */
 static u32 cfc1(int fs, u32 fprc31)
 {
 	/* FCR31 reads drop the always-zero bits and set the always-one ones. */

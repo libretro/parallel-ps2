@@ -1,6 +1,6 @@
 /*  DMAC CPCOND0 against console captures.
  *
- *  Scores CPCOND0 in pcsx2/COP0.cpp against ps2autotests
+ *  Scores CPCOND0 in pcsx2/COP0.c against ps2autotests
  *  tests/dma/dmac/cpcond.expected, which nothing read.
  *
  *  CPCOND0 is the signal the EE's BC0F and BC0T branch on, and it is a
@@ -32,12 +32,12 @@
 
 #include "Common.h"
 
-/* The DMAC registers the signal reads. Real ones, since COP0.cpp's
+/* The DMAC registers the signal reads. Real ones, since COP0.c's
  * CPCOND0 indexes them through dmacRegs. */
 alignas(16) u8 eeHw[0x10000];
 alignas(16) cpuRegisters cpuRegs;
 
-/* COP0.cpp's other reachable symbols: the TLB array and the branch and
+/* COP0.c's other reachable symbols: the TLB array and the branch and
  * memory paths CPCOND0 itself never enters. */
 static EEVM_MemoryAllocMess s_eemem;
 EEVM_MemoryAllocMess* eeMem = &s_eemem;
@@ -53,9 +53,7 @@ R5900cpu* Cpu = &s_cpu;
 #define CPC9 (1u << 9)
 #define CIS9 (1u << 9)
 
-namespace R5900 { namespace Interpreter { namespace OpcodeImpl { namespace COP0 {
-	int CPCOND0();
-} } } }
+#include "R5900OpcodeTables.h"
 
 int main(void)
 {
@@ -78,7 +76,7 @@ int main(void)
 		memset(eeHw, 0, sizeof(eeHw));
 		dmacRegs.pcr.CPC  = kSteps[i].cpc >> 0;
 		dmacRegs.stat.CIS = kSteps[i].cis >> 0;
-		got = R5900::Interpreter::OpcodeImpl::COP0::CPCOND0();
+		got = intCPCOND0();
 		if (got == kSteps[i].want) pass++;
 		else
 			printf("  %-28s console %d, ours %d\n",

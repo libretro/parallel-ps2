@@ -15,14 +15,21 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*********************************************************
 * Jump to target                                         *
 * Format:  OP target                                     *
 *********************************************************/
 
 
-	void recJ();
-	void recJAL();
-	void recJR();
-	void recJALR();
+	void recJ(void);
+	void recJAL(void);
+	void recJR(void);
+	void recJALR(void);
 
+#ifdef __cplusplus
+}
+#endif

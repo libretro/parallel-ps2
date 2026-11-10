@@ -332,7 +332,7 @@
     <ClCompile Include="Hw.c">
       <Filter>System\Ps2\EmotionEngine\Hardware</Filter>
     </ClCompile>
-    <ClCompile Include="Cache.cpp">
+    <ClCompile Include="Cache.c">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
     </ClCompile>
     <ClCompile Include="Memory.c">
@@ -356,7 +356,7 @@
     <ClCompile Include="x86\microVU.cpp">
       <Filter>System\Ps2\EmotionEngine\VU\Dynarec\microVU</Filter>
     </ClCompile>
-    <ClCompile Include="VU0.cpp">
+    <ClCompile Include="VU0.c">
       <Filter>System\Ps2\EmotionEngine\VU\Interpreter</Filter>
     </ClCompile>
     <ClCompile Include="VU0micro.c">
@@ -416,7 +416,7 @@
     <ClCompile Include="Gif.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Gif</Filter>
     </ClCompile>
-    <ClCompile Include="R5900OpcodeTables.cpp">
+    <ClCompile Include="R5900OpcodeTables.c">
       <Filter>System\Ps2\EmotionEngine\EE</Filter>
     </ClCompile>
     <ClCompile Include="x86\iCOP0.cpp">
@@ -464,19 +464,19 @@
     <ClCompile Include="x86\ix86-32\iR5900Templates.cpp">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
-    <ClCompile Include="COP0.cpp">
+    <ClCompile Include="COP0.c">
       <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
     </ClCompile>
     <ClCompile Include="COP2.cpp">
       <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
     </ClCompile>
-    <ClCompile Include="FPU.cpp">
+    <ClCompile Include="FPU.c">
       <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
     </ClCompile>
     <ClCompile Include="Interpreter.cpp">
       <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
     </ClCompile>
-    <ClCompile Include="MMI.cpp">
+    <ClCompile Include="MMI.c">
       <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
     </ClCompile>
     <ClCompile Include="R5900.cpp">

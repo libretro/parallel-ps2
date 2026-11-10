@@ -60,7 +60,7 @@ fi
 
 echo "== EE dispatch tables vs the R5900 encoding =="
 "$CC" -O1 -g -Wall $SANFLAGS -o "$DIR/ee_tabaudit" "$DIR/tabaudit.c"
-"$DIR/ee_tabaudit" "$ROOT/pcsx2/R5900OpcodeTables.cpp"
+"$DIR/ee_tabaudit" "$ROOT/pcsx2/R5900OpcodeTables.c"
 
 echo "== arm64 EE/IOP recs: register-file access widths vs their headers =="
 "$CC" -O1 -g -Wall $SANFLAGS -o "$DIR/ee_cyclewidth" "$DIR/cyclewidth.c"
@@ -74,11 +74,12 @@ echo "== arm64 EE/IOP recs: JALR reads its target before the link =="
 echo "== EE ALU driven through R5900OpcodeImpl.cpp vs console =="
 EXPECTED="${PS2AUTOTESTS:-}/tests/cpu/ee"
 if [ -d "$EXPECTED" ]; then
-	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
-		-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
-		-I "$ROOT/libretro/libretro-common/include" \
+	EEINC="-I $ROOT -I $ROOT/pcsx2 -I $ROOT/common -I $ROOT/common/include -I $ROOT/3rdparty/include -I $ROOT/libretro/libretro-common/include"
+	${CC:-cc} -std=gnu89 -O1 -w $SANFLAGS $EEINC -c "$ROOT/pcsx2/R5900OpcodeTables.c" -o "$DIR/ee_hwrealee_tab.o"
+	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS $EEINC \
 		-o "$DIR/ee_hwrealee" "$DIR/hwrealee.cpp" "$DIR/hwrealee_stubs.cpp" \
-		"$ROOT/pcsx2/R5900OpcodeImpl.cpp" "$ROOT/pcsx2/R5900OpcodeTables.cpp" "$ROOT/libretro/libretro-common/queues/retro_spsc.c"
+		"$ROOT/pcsx2/R5900OpcodeImpl.cpp" "$DIR/ee_hwrealee_tab.o" "$ROOT/libretro/libretro-common/queues/retro_spsc.c"
+	rm -f "$DIR/ee_hwrealee_tab.o"
 	"$DIR/ee_hwrealee" "$EXPECTED"
 else
 	echo "  skipped: set PS2AUTOTESTS to a ps2autotests checkout to run this"
@@ -110,8 +111,9 @@ rm -f "$DIR/ee_hwgslabel_gif.o"
 "$DIR/ee_hwgslabel"
 
 echo "== DMAC CPCOND0 vs console =="
-${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
-	-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
-	-I "$ROOT/libretro/libretro-common/include" \
-	-o "$DIR/ee_hwcpcond" "$DIR/hwcpcond.cpp" "$ROOT/pcsx2/COP0.cpp"
+CPCINC="-I $ROOT -I $ROOT/pcsx2 -I $ROOT/common -I $ROOT/common/include -I $ROOT/3rdparty/include -I $ROOT/libretro/libretro-common/include"
+${CC:-cc} -std=gnu89 -O1 -w $SANFLAGS $CPCINC -c "$ROOT/pcsx2/COP0.c" -o "$DIR/ee_hwcpcond_cop0.o"
+${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS $CPCINC \
+	-o "$DIR/ee_hwcpcond" "$DIR/hwcpcond.cpp" "$DIR/ee_hwcpcond_cop0.o"
+rm -f "$DIR/ee_hwcpcond_cop0.o"
 "$DIR/ee_hwcpcond"

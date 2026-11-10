@@ -1,6 +1,6 @@
 /*  EE FPU arithmetic against console captures.
  *
- *  Scores the FPU ops in pcsx2/FPU.cpp against ps2autotests
+ *  Scores the FPU ops in pcsx2/FPU.c against ps2autotests
  *  tests/cpu/ee_fpu/{arithmetic,muldiv,sqrt}.expected.
  *
  *  Every one of them is a direct call into pcsx2/ps2float.c -- ADD_S is
@@ -44,7 +44,7 @@ kOps[F_COUNT] = {
 	{ "rsqrt", "sqrt",       2, 0 },
 	{ "madd",  "muldiv",     2, 1 },
 	{ "msub",  "muldiv",     2, 1 },
-	/* CVT_W / CVT_S and the four compares live in FPU.cpp rather than
+	/* CVT_W / CVT_S and the four compares live in FPU.c rather than
 	 * ps2float.c, so unlike everything above these are transcribed. */
 	{ "cvt.w.s", "convert",  1, 0 },
 	{ "cvt.s.w", "convert",  1, 0 },
@@ -56,7 +56,7 @@ kOps[F_COUNT] = {
 /* Ops whose captures print true/false rather than a value. */
 static int is_compare(int op) { return op >= F_CEQ; }
 
-/* Mirrors CVT_W in pcsx2/FPU.cpp: in range it truncates, out of range it
+/* Mirrors CVT_W in pcsx2/FPU.c: in range it truncates, out of range it
  * pins to INT_MAX or INT_MIN by sign. */
 static u32 cvt_w(u32 f)
 {
@@ -159,7 +159,7 @@ int main(int argc, char** argv)
 
 	/* Match the emulator. VMManager sets the host rounding mode to the
 	 * EE/VU chop-toward-zero setting at VM start, and CVT_S and the compares
-	 * are plain host float in FPU.cpp, so they inherit it. Left at the
+	 * are plain host float in FPU.c, so they inherit it. Left at the
 	 * default, CVT_S scores 26 of 32 here and reads as a conversion bug --
 	 * console cvt.s.w(7fffffff) is 4effffff, the truncation, against
 	 * 4f000000 rounded to nearest -- when it is this harness in the wrong

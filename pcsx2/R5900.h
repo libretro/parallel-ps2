@@ -250,14 +250,14 @@ extern retro_atomic_int_t eeEventTestIsActive;
 }
 #endif
 
-void intUpdateCPUCycles();
-void intSetBranch();
 
 // This is a special form of the interpreter's doBranch that is run from various
 // parts of the Recs (namely COP0's branch codes and stuff).
 #ifdef __cplusplus
 extern "C" {
 #endif
+void intUpdateCPUCycles(void);
+void intSetBranch(void);
 void intDoBranch(u32 target);
 #ifdef __cplusplus
 }
@@ -326,9 +326,15 @@ typedef struct R5900cpu
 	void (*Clear)(u32 Addr, u32 Size);
 } R5900cpu;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern R5900cpu *Cpu;
 extern R5900cpu intCpu;
 extern R5900cpu recCpu;
+#ifdef __cplusplus
+}
+#endif
 
 enum EE_intProcessStatus
 {

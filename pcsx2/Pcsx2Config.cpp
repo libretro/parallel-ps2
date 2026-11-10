@@ -817,6 +817,11 @@ bool emu_config_xgkick_hack(void)
 	return CHECK_XGKICKHACK;
 }
 
+bool emu_config_enable_ee(void)
+{
+	return EmuConfig.Cpu.Recompiler.EnableEE;
+}
+
 bool emu_config_enable_vu1(void)
 {
 	return EmuConfig.Cpu.Recompiler.EnableVU1;

@@ -87,6 +87,7 @@ extern const struct VUmicroCpu* CpuVU0;
 extern const struct VUmicroCpu* CpuVU1;
 
 extern void vu0ExecMicro(u32 addr);
+extern void _vu0WaitMicro(void);
 extern void _vu0FinishMicro(void);
 
 /* The VU memory block in the main map: points vuRegs at it, clears it, and
@@ -129,8 +130,10 @@ extern void mtvu_vif_unpack(const u8* data, u32 size);
 /* VU0 */
 extern void vu0ResetRegs(void);
 extern void vu0Exec(VURegs* VU);
-/* VU0.cpp; Vif0_Dma.c finishes VU0 through it. */
+/* VU0.c; Vif0_Dma.c finishes VU0 through it. */
 extern void vu0Finish(void);
+/* VU0.c: runs VU0 until it catches up with the EE. */
+extern void vu0Sync(void);
 
 /* VU1 */
 /* VU1micro.c; Dmac.c finishes VU1 through it. */

@@ -10,7 +10,7 @@
  *  way and it went unnoticed for a long time.
  *
  *  This emits each sequence through the same macros the recompiler uses,
- *  executes it, and compares against the semantics in pcsx2/MMI.cpp. A
+ *  executes it, and compares against the semantics in pcsx2/MMI.c. A
  *  divide that faults takes the process with it, which is the loudest
  *  possible failure and exactly what is wanted here.
  *
@@ -42,7 +42,7 @@ typedef struct { int32_t quot, rem; } Result;
 typedef Result (*DivFn)(int32_t dividend, int32_t divisor);
 
 /* ---------------------------------------------------------------------- */
-/* References, transcribed from pcsx2/MMI.cpp.                            */
+/* References, transcribed from pcsx2/MMI.c.                            */
 
 static void ref_signed(int32_t dd, int32_t dv, int32_t* q, int32_t* r)
 {

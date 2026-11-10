@@ -13,7 +13,6 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
 /* TODO
  -Fix the flags Proper as they aren't handle now..
  -Add BC Table opcodes
@@ -24,13 +23,10 @@
 
 #include "Common.h"
 
-#include <cmath>
-
 #include "R5900OpcodeTables.h"
 #include "VUmicro.h"
 #include "Vif_Dma.h"
-#include "MTVU.h"
-#include "Config.h"
+#include "ps2/HwInternal.h"
 
 #define _Ft_ _Rt_
 #define _Fs_ _Rd_
@@ -48,24 +44,24 @@ void COP2_SPECIAL2(void) {
 
 void COP2_Unknown(void) { }
 
-//****************************************************************************
-
 static __fi void _vu0run(bool breakOnMbit, bool addCycles, bool sync_only) {
+	u64 startcycle;
+	s32 runCycles;
 
 	if (!(vuRegs[0].VI[REG_VPU_STAT].UL & 1)) return;
 
-	//VU0 is ahead of the EE and M-Bit is already encountered, so no need to wait for it, just catch up the EE
+	/* VU0 is ahead of the EE and M-Bit is already encountered, so no need to wait for it, just catch up the EE */
 	if ((vuRegs[0].flags & VUFLAG_MFLAGSET) && breakOnMbit && (s64)(cpuRegs.cycle - vuRegs[0].cycle) <= 0)
 	{
 		cpuRegs.cycle = vuRegs[0].cycle;
 		return;
 	}
 
-	if(!EmuConfig.Cpu.Recompiler.EnableEE)
+	if (!emu_config_enable_ee())
 		intUpdateCPUCycles();
 
-	u64 startcycle = cpuRegs.cycle;
-	s32 runCycles  = 0x7fffffff;
+	startcycle = cpuRegs.cycle;
+	runCycles  = 0x7fffffff;
 
 	if (sync_only)
 	{
@@ -75,16 +71,16 @@ static __fi void _vu0run(bool breakOnMbit, bool addCycles, bool sync_only) {
 			return;
 	}
 
-	do { // Run VU until it finishes or M-Bit
+	do { /* Run VU until it finishes or M-Bit */
 		CpuVU0->Execute(runCycles);
-	} while ((vuRegs[0].VI[REG_VPU_STAT].UL & 1) // E-bit Termination
-	  &&	!sync_only && (!breakOnMbit || (!(vuRegs[0].flags & VUFLAG_MFLAGSET) && (s32)(cpuRegs.cycle - vuRegs[0].cycle) > 0)));	// M-bit Break
+	} while ((vuRegs[0].VI[REG_VPU_STAT].UL & 1) /* E-bit Termination */
+	  &&	!sync_only && (!breakOnMbit || (!(vuRegs[0].flags & VUFLAG_MFLAGSET) && (s32)(cpuRegs.cycle - vuRegs[0].cycle) > 0)));	/* M-bit Break */
 
-	// Add cycles if called from EE's COP2
+	/* Add cycles if called from EE's COP2 */
 	if (addCycles)
 	{
 		cpuRegs.cycle += (vuRegs[0].cycle - startcycle);
-		vucpu_execute_block(CpuVU1, 0); // Catch up VU1 as it's likely fallen behind
+		vucpu_execute_block(CpuVU1, 0); /* Catch up VU1 as it's likely fallen behind */
 
 		if (vuRegs[0].VI[REG_VPU_STAT].UL & 1)
 		{
@@ -94,42 +90,38 @@ static __fi void _vu0run(bool breakOnMbit, bool addCycles, bool sync_only) {
 	}
 }
 
-void _vu0WaitMicro(void)   { _vu0run(1, 1, 0); } // Runs VU0 Micro Until E-bit or M-Bit End
-void _vu0FinishMicro(void) { _vu0run(0, 1, 0); } // Runs VU0 Micro Until E-Bit End
-void vu0Finish(void)	   { _vu0run(0, 0, 0); } // Runs VU0 Micro Until E-Bit End (doesn't stall EE)
-void vu0Sync(void)	   { _vu0run(0, 0, 1); } // Runs VU0 until it catches up
+void _vu0WaitMicro(void)   { _vu0run(1, 1, 0); } /* Runs VU0 Micro Until E-bit or M-Bit End */
+void _vu0FinishMicro(void) { _vu0run(0, 1, 0); } /* Runs VU0 Micro Until E-Bit End */
+void vu0Finish(void)	   { _vu0run(0, 0, 0); } /* Runs VU0 Micro Until E-Bit End (doesn't stall EE) */
+void vu0Sync(void)	   { _vu0run(0, 0, 1); } /* Runs VU0 until it catches up */
 
-namespace R5900 {
-namespace Interpreter{
-namespace OpcodeImpl
+void intLQC2(void)
 {
-	void LQC2(void)
+	u32 addr;
+	vu0Sync();
+	addr = cpuRegs.GPR.r[_Rs_].UL[0] + (s16)cpuRegs.code;
+	if (_Ft_)
 	{
-		vu0Sync();
-		u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + (s16)cpuRegs.code;
-		if (_Ft_)
-		{
-			memRead128(addr, &vuRegs[0].VF[_Ft_].UQ);
-		}
-		else
-		{
-			u128 val;
- 			memRead128(addr, &val);
-		}
+		memRead128(addr, &vuRegs[0].VF[_Ft_].UQ);
 	}
-
-	// Asadr.Changed
-	//TODO: check this
-	// HUH why ? doesn't make any sense ...
-	void SQC2() {
-		vu0Sync();
-		u32 addr = _Imm_ + cpuRegs.GPR.r[_Rs_].UL[0];
-		memWrite128(addr, &vuRegs[0].VF[_Ft_].UQ);
+	else
+	{
+		u128 val;
+		memRead128(addr, &val);
 	}
-}}}
+}
 
+/* Asadr.Changed */
+/* TODO: check this */
+/* HUH why ? doesn't make any sense ... */
+void intSQC2(void) {
+	u32 addr;
+	vu0Sync();
+	addr = _Imm_ + cpuRegs.GPR.r[_Rs_].UL[0];
+	memWrite128(addr, &vuRegs[0].VF[_Ft_].UQ);
+}
 
-void QMFC2() {
+void QMFC2(void) {
 	vu0Sync();
 
 	if (cpuRegs.code & 1) {
@@ -141,7 +133,7 @@ void QMFC2() {
 	cpuRegs.GPR.r[_Rt_].UD[1] = vuRegs[0].VF[_Fs_].UD[1];
 }
 
-void QMTC2() {
+void QMTC2(void) {
 	vu0Sync();
 	if (cpuRegs.code & 1) {
 		_vu0WaitMicro();
@@ -152,7 +144,7 @@ void QMTC2() {
 	vuRegs[0].VF[_Fs_].UD[1] = cpuRegs.GPR.r[_Rt_].UD[1];
 }
 
-void CFC2() {
+void CFC2(void) {
 	vu0Sync();
 	if (cpuRegs.code & 1) {
 		_vu0FinishMicro();
@@ -174,7 +166,7 @@ void CFC2() {
 
 }
 
-void CTC2() {
+void CTC2(void) {
 	vu0Sync();
 
 	if (cpuRegs.code & 1) {
@@ -184,32 +176,32 @@ void CTC2() {
 	if (_Fs_ == 0) return;
 
 	switch(_Fs_) {
-		case REG_MAC_FLAG: // read-only
-		case REG_TPC:      // read-only
-		case REG_VPU_STAT: // read-only
+		case REG_MAC_FLAG: /* read-only */
+		case REG_TPC:      /* read-only */
+		case REG_VPU_STAT: /* read-only */
 			break;
 		case REG_R:
 			vuRegs[0].VI[REG_R].UL = ((cpuRegs.GPR.r[_Rt_].UL[0] & 0x7FFFFF) | 0x3F800000);
 			break;
 		case REG_FBRST:
 			vuRegs[0].VI[REG_FBRST].UL = cpuRegs.GPR.r[_Rt_].UL[0] & 0x0C0C;
-			if (cpuRegs.GPR.r[_Rt_].UL[0] & 0x2) // VU0 Reset
+			if (cpuRegs.GPR.r[_Rt_].UL[0] & 0x2) /* VU0 Reset */
 				vu0ResetRegs();
-			if (cpuRegs.GPR.r[_Rt_].UL[0] & 0x200) // VU1 Reset
+			if (cpuRegs.GPR.r[_Rt_].UL[0] & 0x200) /* VU1 Reset */
 				vu1ResetRegs();
 			break;
-		case REG_CMSAR1: // REG_CMSAR1
+		case REG_CMSAR1: /* REG_CMSAR1 */
 			vu1Finish(true);
-			vu1ExecMicro(cpuRegs.GPR.r[_Rt_].US[0]);	// Execute VU1 Micro SubRoutine
+			vu1ExecMicro(cpuRegs.GPR.r[_Rt_].US[0]);	/* Execute VU1 Micro SubRoutine */
 			break;
 		case REG_CLIP_FLAG:
-			// The interpreter's FMAC pipeline snapshots VU->clipflag rather
-			// than reading VI, so update both here. vu0ExecMicro re-seeds it
-			// from VI at program start for exactly this case, which covers a
-			// following micro program; this keeps the two consistent from the
-			// write itself. Falls through to store VI as well.
+			/* The interpreter's FMAC pipeline snapshots VU->clipflag rather */
+			/* than reading VI, so update both here. vu0ExecMicro re-seeds it */
+			/* from VI at program start for exactly this case, which covers a */
+			/* following micro program; this keeps the two consistent from the */
+			/* write itself. Falls through to store VI as well. */
 			vuRegs[0].clipflag = cpuRegs.GPR.r[_Rt_].UL[0];
-			[[fallthrough]];
+			/* fallthrough */
 		default:
 			vuRegs[0].VI[_Fs_].UL = cpuRegs.GPR.r[_Rt_].UL[0];
 			break;

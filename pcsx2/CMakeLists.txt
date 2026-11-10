@@ -94,15 +94,15 @@ endif()
 
 # Main pcsx2 source
 set(pcsx2Sources
-	Cache.cpp
-	COP0.cpp
+	Cache.c
+	COP0.c
 	Counters.cpp
 	GameDatabase.cpp
 	${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.cpp
 	Elfheader.c
 	FW.c
 	FiFo.c
-	FPU.cpp
+	FPU.c
 	ps2float.c
 	IopGte.c
 	COP2.c
@@ -136,7 +136,7 @@ set(pcsx2Sources
 	memcard_ecc.c
 	NearPlace.c
 	MemoryCardProtocol.c
-	MMI.cpp
+	MMI.c
 	MTGS.cpp
 	MTVU.cpp
 	MultitapProtocol.c
@@ -149,7 +149,7 @@ set(pcsx2Sources
 	R3000AOpcodeTables.c
 	R5900.cpp
 	R5900OpcodeImpl.cpp
-	R5900OpcodeTables.cpp
+	R5900OpcodeTables.c
 	Sio.c
 	SioFifo.c
 	Vif.c
@@ -158,7 +158,7 @@ set(pcsx2Sources
 	Vif_Unpack.c
 	VirtualMemory.c
 	vtlb.cpp
-	VU0.cpp
+	VU0.c
 	VUmicro.c
 	VU0micro.c
 	VU0microInterp.c

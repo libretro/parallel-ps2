@@ -44,12 +44,8 @@
 // the analysis-flag plumbing they gate on.
 #include "arm64/AsmHelpers.h"
 #include "arm64/aR5900Analysis.h"
-#include "VUmicro.h" // _vu0FinishMicro
+#include "VUmicro.h" // _vu0FinishMicro, _vu0WaitMicro, vu0Sync
 #include "../Config.h"
-// vu0Sync() lives in VU0.cpp with no header declaration (the interpreter ops call
-// it from the same TU); the C.58 COP2 transfers need it by address.
-extern void vu0Sync();
-extern void _vu0WaitMicro();
 
 bool recVUMacroIsMode0(u32 op);   // aVU_Macro.inl (classify COP2 SPECIAL ALU)
 bool recVUMacroEmitMode0(u32 op); // aVU_Macro.inl (emit via microVU0 single-op emitters)
@@ -79,16 +75,11 @@ extern "C" void eeCancelInstruction_arm64(void);
 extern "C" void eeEventTest_arm64(void);
 extern "C" void eeUpdateCycles_arm64(void);
 
-// Interpreter op implementations invoked directly from JIT blocks (C.18): ops
-// with contained side effects (no control flow, no exception, no pc /
-// cpuBlockCycles reads) execute via a plain call with cpuRegs.code staged,
-// so the block continues natively instead of handing off its whole tail.
-namespace R5900 { namespace Interpreter { namespace OpcodeImpl {
-	void CACHE();
-	void COP2(); // top-level COP2 dispatcher (Int_COP2PrintTable[rs])
-	namespace COP0 { void MFC0(); void MTC0(); int CPCOND0(); }
-	namespace MMI  { void QFSRV(); }
-} } }
+/* Interpreter ops called directly from JIT blocks (C.18): ops with
+ * contained side effects (no control flow, no exception, no pc or
+ * cpuBlockCycles reads) run as a plain call with cpuRegs.code staged, so
+ * the block continues natively instead of handing off its whole tail.
+ * Declared in R5900OpcodeTables.h. */
 
 namespace
 {
@@ -639,7 +630,7 @@ namespace
 		       funct == 0x30 || funct == 0x32 || funct == 0x34 || funct == 0x36;
 	}
 
-	// ---- C.23: native S-format ADD/SUB/MUL (bit-exact port of pcsx2/FPU.cpp) ----
+	// ---- C.23: native S-format ADD/SUB/MUL (bit-exact port of pcsx2/FPU.c) ----
 	// The interpreter's ADD_S/SUB_S/MUL_S are, e.g.:
 	//   _FdValf_ = fpuDouble(Fs) + fpuDouble(Ft);
 	//   if (checkOverflow(_FdValUl_, O|SO)) return;
@@ -648,7 +639,7 @@ namespace
 	// inf/nan -> signed posFmax 0x7f7fffff; else passthrough) and the "+"/"-"/"*"
 	// is a real IEEE single-precision op (fpuDouble returns a `float`, despite the
 	// name). This is NOT the x86 recompiler's double-promotion "full" mode (see
-	// armsx2-pcsx2's aR5900FPU.cpp emitToPS2FPUFullCore) -- that targets a
+	// armsx2-pcsx2's aR5900FPU.c emitToPS2FPUFullCore) -- that targets a
 	// different ground truth (the x86 JIT) with extra magnitude-preserving range.
 	// Our target is the plain interpreter, so the natural translation is: clamp
 	// each operand's raw bits, do the arithmetic natively in AArch64 single
@@ -677,7 +668,7 @@ namespace
 	}
 
 	// checkOverflow(wd, O|SO) then, only if no overflow, checkUnderflow(wd, U|SU) --
-	// exact mirror of pcsx2/FPU.cpp for the ADD_S/SUB_S/MUL_S family. wd holds the
+	// exact mirror of pcsx2/FPU.c for the ADD_S/SUB_S/MUL_S family. wd holds the
 	// raw result bits (updated in place with the clamped value); xfbase must hold
 	// &fpuRegs. Scratch: w2, w3.
 	inline void EmitFpuOverflowUnderflow(MacroAssembler& m, const Register& wd, const Register& xfbase)
@@ -907,7 +898,7 @@ namespace
 	// funct 0x1c MADD.S / 0x1d MSUB.S: temp = fpuDouble(Fs)*fpuDouble(Ft);
 	// fd = fpuDouble(ACC) +/- fpuDouble(temp.UL) -- BOTH the intermediate
 	// product and ACC are re-clamped through fpuDouble before the add/sub
-	// (pcsx2/FPU.cpp MADD_S/MSUB_S). Then the usual O|SO / U|SU result check.
+	// (pcsx2/FPU.c MADD_S/MSUB_S). Then the usual O|SO / U|SU result check.
 	// There is NO fused multiply-add on the EE -- the product is a rounded
 	// single, so native Fmul + Fadd (not Fmadd) is the exact translation.
 	// The accumulate stage runs the exact double pipeline: ACC enters raw
@@ -954,7 +945,7 @@ namespace
 	}
 
 	// checkOverflow(wd,0) + checkUnderflow(wd,0): DIV.S/SQRT.S/RSQRT.S pass
-	// cFlagsToSet=0 to both checks (pcsx2/FPU.cpp), so the raw result bits get
+	// cFlagsToSet=0 to both checks (pcsx2/FPU.c), so the raw result bits get
 	// value-clamped exactly like EmitFpuOverflowUnderflow but FCR31 is NEVER
 	// touched (neither set nor cleared) -- a real ground-truth quirk, not an
 	// oversight, so no fbase param here.
@@ -1217,7 +1208,7 @@ namespace
 	}
 
 	// funct 0x28 MAX.S / 0x29 MIN.S: pure signed-int32 comparison on the raw
-	// bits (pcsx2/FPU.cpp fp_max/fp_min) -- NOT a float compare: no fpuDouble
+	// bits (pcsx2/FPU.c fp_max/fp_min) -- NOT a float compare: no fpuDouble
 	// clamp, no overflow/underflow. Two negative operands invert the natural
 	// signed-int order vs float magnitude, hence the bothNeg swap. Clears O|U
 	// (same bits ABS_S/NEG_S clear). NOTE: xfbase is x1, so w1 must NOT be
@@ -1270,10 +1261,10 @@ namespace
 		// Only FCR0 and FCR31 exist and the hardware decodes one bit of the
 		// register number, so 0-15 read as FCR0 and 16-31 as FCR31. FCR31 reads
 		// drop the always-zero bits and set the always-one ones. This used to
-		// mirror FPU.cpp's interpreter, which returned a literal 0x2E00 for
+		// mirror FPU.c's interpreter, which returned a literal 0x2E00 for
 		// FCR0, zero for everything but 0 and 31, and an unmasked FCR31 -- all
 		// three wrong against ps2autotests tests/cpu/ee_fpu/fcr.expected, which
-		// prints the whole file after reset. FPU.cpp is fixed; this follows it
+		// prints the whole file after reset. FPU.c is fixed; this follows it
 		// so the three engines agree.
 		if (rs == 0x02) // CFC1 rt, fs
 		{
@@ -1655,7 +1646,7 @@ namespace
 			return;
 		}
 
-		// Source element index per destination element, matching MMI.cpp.
+		// Source element index per destination element, matching MMI.c.
 		// Two-source forms take rs elements as indices 8..15 (halfwords) so
 		// the tables stay uniform.
 		static const int kPexew[4]  = { 2, 1, 0, 3 };
@@ -1714,7 +1705,7 @@ namespace
 	// subtract the product of the lower one, writing the combined value to
 	// the even word and the upper product alone to the odd word. PHMSBH
 	// stores that second value complemented -- undocumented, but what the
-	// hardware does and what MMI.cpp reproduces.
+	// hardware does and what MMI.c reproduces.
 	//
 	// All four then fill rd, when written, from LO word 0, HI word 0, LO word
 	// 2 and HI word 2, read back after the products are in place, exactly as
@@ -1972,7 +1963,7 @@ namespace
 	// PDIVBW, which has four. Without these a block containing one runs
 	// entirely on the interpreter.
 	//
-	// Both mirror MMI.cpp _PDIVW/_PDIVBW, including the two results the EE
+	// Both mirror MMI.c _PDIVW/_PDIVBW, including the two results the EE
 	// defines where hardware division would otherwise misbehave: INT_MIN / -1
 	// gives INT_MIN remainder 0, and division by zero gives a quotient of
 	// (dividend < 0) ? 1 : -1 with the dividend as the remainder. SDIV traps
@@ -2192,7 +2183,7 @@ namespace
 
 	// MADD/MADDU (+ pipeline-1 MADD1/MADDU1, off=8): multiply-accumulate into
 	// the 64-bit {HI.low32, LO.low32} accumulator, split back sign-extended.
-	// Mirrors MMI.cpp MADD: temp = (u64)LO.UL[0] | ((u64)HI.UL[0]<<32) + rs*rt;
+	// Mirrors MMI.c MADD: temp = (u64)LO.UL[0] | ((u64)HI.UL[0]<<32) + rs*rt;
 	// LO.SD = sext(temp[31:0]); HI.SD = sext(temp[63:32]); rd = LO.SD[0].
 	void EmitMadd(MacroAssembler& m, const Register& gpr, bool is_unsigned, u32 rs, u32 rt, u32 rd, u32 off = 0)
 	{
@@ -2210,7 +2201,7 @@ namespace
 		if (rd) StoreGpr(m, x1, gpr, rd);            // rd = LO.SD[0]
 	}
 
-	// Per-opcode cycle cost, mirroring R5900OpcodeTables.cpp exactly (Cycles::*):
+	// Per-opcode cycle cost, mirroring R5900OpcodeTables.c exactly (Cycles::*):
 	// Default=9, Branch=11, CopDefault=7, Mult=2*8=16, Div=14*8=112, Load=14,
 	// Store=14, MMI_Default=14. Used to accumulate cpuBlockCycles accurately
 	// (cpuBlockCycles += cost * (2 - CP0.Config[18]), summed over the block's ops).
@@ -2240,7 +2231,7 @@ namespace
 				if (((insn >> 21) & 31) == 0x08) return 11;     // BC0x (Branch)
 				return 7;                                       // MFC0/MTC0 (CopDefault)
 			case 0x11:                                          // COP1
-				// Per R5900OpcodeTables.cpp: BC1F/T(L) = Branch(11); MUL/MULA/
+				// Per R5900OpcodeTables.c: BC1F/T(L) = Branch(11); MUL/MULA/
 				// MADD/MSUB/MADDA/MSUBA.S = FPU_Mult(4*8=32), DIV.S/SQRT.S =
 				// 6*8=48, RSQRT.S = 8*8=64; everything else we translate (MFC1/
 				// MTC1/MOV/NEG/ABS/ADD/SUB/ADDA/SUBA/MAX/MIN/CVT/C.cond) is
@@ -2749,7 +2740,7 @@ namespace {
 	// Once the VU0 syncs are done these are plain register moves, but they were
 	// still going out through EmitInterpOpCall, which flushes the GPR register
 	// cache before the call and drops the whole thing afterwards -- expensive in
-	// a COP2-heavy block. Emit them natively instead, mirroring VU0.cpp exactly:
+	// a COP2-heavy block. Emit them natively instead, mirroring VU0.c exactly:
 	//
 	//   * every one of them calls vu0Sync() first;
 	//   * the interlock bit is cpuRegs.code & 1, which we know while COMPILING,
@@ -3334,7 +3325,7 @@ namespace {
 				// implementation called inline (C.18).
 				if (IsQfsrv(insn))
 				{
-					EmitInterpOpCall(m, gpr, insn, &R5900::Interpreter::OpcodeImpl::MMI::QFSRV);
+					EmitInterpOpCall(m, gpr, insn, &intQFSRV);
 					return true;
 				}
 				return false;
@@ -3364,13 +3355,13 @@ namespace {
 				// whole GPR register cache.
 				if (EmitCop2Transfer(m, gpr, insn))
 					return true;
-				EmitInterpOpCall(m, gpr, insn, &R5900::Interpreter::OpcodeImpl::COP2);
+				EmitInterpOpCall(m, gpr, insn, &intCOP2);
 				return true;
 
 			// interpreter implementation called inline (C.18). Top GT3 attract
 			// block-breaker (19.4M handoffs / 10500 frames).
 			case 0x2f:
-				EmitInterpOpCall(m, gpr, insn, &R5900::Interpreter::OpcodeImpl::CACHE);
+				EmitInterpOpCall(m, gpr, insn, &intCACHE);
 				return true;
 
 			// COP0 (0x10): MFC0/MTC0 via inline interpreter call (C.18) -- MFC0
@@ -3381,7 +3372,7 @@ namespace {
 				if (rs == 0x00)
 				{
 					// MFC0 rt, rd. rd is a compile-time constant, so most of
-					// COP0.cpp's switch collapses to a load here rather than a
+					// COP0.c's switch collapses to a load here rather than a
 					// call into the interpreter:
 					//
 					//   24        reads nothing at all, a plain nop
@@ -3394,14 +3385,14 @@ namespace {
 					// load -- emitting them would mean duplicating side
 					// effects that already exist in one place.
 					const u32 rd_ = (insn >> 11) & 31;
-					// COP0.cpp returns early when rt is zero unless rd is 9,
+					// COP0.c returns early when rt is zero unless rd is 9,
 					// the one register read for its side effect rather than
 					// its value, so nothing at all happens here either.
 					if (!rt && rd_ != 9)
 						return true;
 					if (rd_ == 9 || rd_ == 25)
 					{
-						EmitInterpOpCall(m, gpr, insn, &R5900::Interpreter::OpcodeImpl::COP0::MFC0);
+						EmitInterpOpCall(m, gpr, insn, &intMFC0);
 						return true;
 					}
 					if (rd_ == 24)
@@ -3413,7 +3404,7 @@ namespace {
 					StoreGpr(m, x0, gpr, rt);
 					return true;
 				}
-				if (rs == 0x04) { EmitInterpOpCall(m, gpr, insn, &R5900::Interpreter::OpcodeImpl::COP0::MTC0); return true; }
+				if (rs == 0x04) { EmitInterpOpCall(m, gpr, insn, &intMTC0); return true; }
 				// CO-format EI/DI (funct 0x38/0x39), C.43: both just conditionally
 				// toggle the COP0 Status EIE bit -- no memory, no control flow. EI
 				// also lowers nextEventCycle, which the next branch's event gate
@@ -3423,8 +3414,8 @@ namespace {
 				// either. DI here is immediate (the interpreter's DI is too; the
 				// x86 rec's one-instruction delay is a rec-only quirk). ERET/TLB
 				// (control flow / TLB state) stay interpreter handoffs.
-				if (rs == 0x10 && funct == 0x38) { EmitInterpOpCall(m, gpr, insn, &R5900::Interpreter::OpcodeImpl::COP0::EI); return true; }
-				if (rs == 0x10 && funct == 0x39) { EmitInterpOpCall(m, gpr, insn, &R5900::Interpreter::OpcodeImpl::COP0::DI); return true; }
+				if (rs == 0x10 && funct == 0x38) { EmitInterpOpCall(m, gpr, insn, &intEI); return true; }
+				if (rs == 0x10 && funct == 0x39) { EmitInterpOpCall(m, gpr, insn, &intDI); return true; }
 				return false;
 
 			// LWC1 ft, off(base): fpr[ft].UL = read32(addr). Unlike integer LW, a
@@ -3481,7 +3472,7 @@ namespace {
 			// register, NOT a GPR -- so unlike the interpreter-call path this
 			// leaves the EE register cache alone instead of flushing it and then
 			// dropping it wholesale, on an op MMX7 executes ~827K times.
-			// Faithful to VU0.cpp: the address is NOT 16-byte aligned here (LQ/SQ
+			// Faithful to VU0.c: the address is NOT 16-byte aligned here (LQ/SQ
 			// mask it, LQC2/SQC2 hand the raw address to memRead128/memWrite128),
 			// and LQC2 with ft == 0 still performs the read -- the load can have
 			// side effects -- it just throws the value away.
@@ -3806,7 +3797,7 @@ namespace {
 			else if (rt == 0x11) { one = true; cond = ge; tconst = t; link = 31; }
 			else return false;
 		}
-		// BC0F/BC0T(+L): branch on CPCOND0 == 0/1 (COP0.cpp: DMAC CIS|~CPC
+		// BC0F/BC0T(+L): branch on CPCOND0 == 0/1 (COP0.c: DMAC CIS|~CPC
 		// all-clear). Taken/not-taken semantics match the BLEZ class (interp
 		// BC0F does nothing on not-taken; the likely forms skip the delay
 		// slot + event test like the other likely branches).
@@ -3822,7 +3813,7 @@ namespace {
 		// BC1F/BC1T(+L): branch on the FCR31 C flag (0x00800000) clear/set.
 		// Same not-taken semantics as BC0x: nothing on the non-likely forms,
 		// and the likely forms skip the delay slot WITHOUT an event test
-		// (FPU.cpp's BC1L macro only does `cpuRegs.pc += 4`).
+		// (FPU.c's BC1L macro only does `cpuRegs.pc += 4`).
 		else if (op == 0x11 && rs == 0x08)
 		{
 			const u32 t = bpc + 4 + simm * 4;
@@ -3937,7 +3928,7 @@ namespace {
 		if (bc0)
 		{
 			// CPCOND0 is a plain int() reading dmacRegs; call it directly.
-			m.Mov(x16, reinterpret_cast<uint64_t>(&R5900::Interpreter::OpcodeImpl::COP0::CPCOND0));
+			m.Mov(x16, reinterpret_cast<uint64_t>(&intCPCOND0));
 			m.Blr(x16);
 			m.Cmp(w0, 0); // eq -> CPCOND0()==0 (BC0F taken), ne -> ==1 (BC0T taken)
 		}
@@ -4007,7 +3998,7 @@ namespace {
 		// and the AL forms do nothing there -- see Interpreter.cpp); the likely
 		// branches BEQL/BNEL/BLEZL/BGTZL/BLTZL/BGEZL do. EXCEPTION: BC0FL/BC0TL
 		// and BC1FL/BC1TL are likely (skip the delay slot) but do NOT call
-		// intEventTest on not-taken -- COP0.cpp's BC0xL and FPU.cpp's BC1L
+		// intEventTest on not-taken -- COP0.c's BC0xL and FPU.c's BC1L
 		// macro only do `cpuRegs.pc += 4`. Always
 		// WITHOUT intUpdateCPUCycles (no cpuBlockCycles flush). Deviating in
 		// either direction (extra/missing test points, or flushing first) shifts
@@ -4025,7 +4016,7 @@ namespace {
 	// all remaining breakers, dragging the handler tails through the
 	// interpreter with them). It is a branch with NO delay slot: pc <-
 	// ErrorEPC/EPC selected by Status.ERL, that bit (ERL, else EXL) clears,
-	// and nextEventCycle pulls to within 4 cycles -- COP0.cpp's ERET does the
+	// and nextEventCycle pulls to within 4 cycles -- COP0.c's ERET does the
 	// pull BEFORE the branch flushes cpuBlockCycles into cpuRegs.cycle, so the
 	// pull here reads the PRE-flush cycle to match the interpreter handoff
 	// exactly. Then the usual taken-branch tail: fused cycle flush, gated

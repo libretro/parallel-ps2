@@ -15,12 +15,19 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-	void recLUI();
-	void recMFLO();
-	void recMFHI();
-	void recMTLO();
-	void recMTHI();
-	void recMOVN();
-	void recMOVZ();
 
+	void recLUI(void);
+	void recMFLO(void);
+	void recMFHI(void);
+	void recMTLO(void);
+	void recMTHI(void);
+	void recMOVN(void);
+	void recMOVZ(void);
+
+#ifdef __cplusplus
+}
+#endif

@@ -220,7 +220,7 @@
     <ClCompile Include="Counters.cpp" />
     <ClCompile Include="FiFo.c" />
     <ClCompile Include="Hw.c" />
-    <ClCompile Include="Cache.cpp" />
+    <ClCompile Include="Cache.c" />
     <ClCompile Include="Memory.c" />
     <ClCompile Include="x86\iR5900Analysis.cpp" />
     <ClCompile Include="x86\ix86-32\recVTLB.cpp" />
@@ -229,7 +229,7 @@
     <ClCompile Include="VUmicro.c" />
     <ClCompile Include="VUmicroMem.c" />
     <ClCompile Include="x86\microVU.cpp" />
-    <ClCompile Include="VU0.cpp" />
+    <ClCompile Include="VU0.c" />
     <ClCompile Include="VU0micro.c" />
     <ClCompile Include="VU0microInterp.c" />
     <ClCompile Include="VU1micro.c" />
@@ -249,7 +249,7 @@
     <ClCompile Include="x86\newVif_UnpackSSE.cpp" />
     <ClCompile Include="SPR.c" />
     <ClCompile Include="Gif.c" />
-    <ClCompile Include="R5900OpcodeTables.cpp" />
+    <ClCompile Include="R5900OpcodeTables.c" />
     <ClCompile Include="x86\iCOP0.cpp" />
     <ClCompile Include="x86\iFPU.cpp" />
     <ClCompile Include="x86\iFPUd.cpp" />
@@ -265,11 +265,11 @@
     <ClCompile Include="x86\ix86-32\iR5900MultDiv.cpp" />
     <ClCompile Include="x86\ix86-32\iR5900Shift.cpp" />
     <ClCompile Include="x86\ix86-32\iR5900Templates.cpp" />
-    <ClCompile Include="COP0.cpp" />
+    <ClCompile Include="COP0.c" />
     <ClCompile Include="COP2.cpp" />
-    <ClCompile Include="FPU.cpp" />
+    <ClCompile Include="FPU.c" />
     <ClCompile Include="Interpreter.cpp" />
-    <ClCompile Include="MMI.cpp" />
+    <ClCompile Include="MMI.c" />
     <ClCompile Include="R5900.cpp" />
     <ClCompile Include="R5900OpcodeImpl.cpp" />
     <ClCompile Include="IopBios.c" />

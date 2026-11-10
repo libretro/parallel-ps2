@@ -3,7 +3,7 @@
  *
  *  The companion to tests/iop/tabaudit.c, for the larger EE tables. Every
  *  other test in this tree calls the op implementations directly, so
- *  nothing checks that R5900OpcodeTables.cpp points each encoding at the
+ *  nothing checks that R5900OpcodeTables.c points each encoding at the
  *  right one. A swapped pair there passes every test and breaks every
  *  game.
  *
@@ -19,9 +19,8 @@
  *  There is deliberately no second audit here for the EE recompiler, the
  *  way tests/iop/tabaudit.c has one for rpsxBSC and friends. The EE has
  *  no separate recompiler table to drift: OPCODE in R5900OpcodeTables.h
- *  carries both an interpret and a recompile pointer, and MakeOpcode
- *  fills them from one name token, as Interpreter::OpcodeImpl::name and
- *  ::rec##name. A slot cannot hold the interpreter for one op and the
+ *  carries both an interpret and a recompile pointer, and OP_ENTRY
+ *  fills them from one name token, as int##name and rec##name. A slot cannot hold the interpreter for one op and the
  *  emitter for another. The IOP needed its own audit precisely because it
  *  does keep two tables, in R3000AOpcodeTables.c and iR3000Atables.cpp,
  *  which can disagree.
@@ -33,7 +32,7 @@
  *  compare. A misplaced case there is the same class of bug as a swapped
  *  table entry, and nothing here would catch it.
  *
- *  Usage: tests/ee/tabaudit <path-to-R5900OpcodeTables.cpp>
+ *  Usage: tests/ee/tabaudit <path-to-R5900OpcodeTables.c>
  */
 
 #include <stdio.h>
@@ -207,7 +206,7 @@ static int check(const char* what, char got[][32], int got_n,
 
 int main(int argc, char** argv)
 {
-	const char* path = (argc > 1) ? argv[1] : "R5900OpcodeTables.cpp";
+	const char* path = (argc > 1) ? argv[1] : "R5900OpcodeTables.c";
 	FILE* f = fopen(path, "rb");
 	char* src;
 	long len;

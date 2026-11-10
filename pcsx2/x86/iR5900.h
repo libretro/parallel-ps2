@@ -20,6 +20,20 @@
 #include "../VU.h"
 #include "iCore.h"
 
+/* The rec op declarations, C linkage, so R5900OpcodeTables.c can name
+ * them and every unit defining one sees its declaration. */
+#include "iR5900AritImm.h"
+#include "iR5900Arit.h"
+#include "iR5900MultDiv.h"
+#include "iR5900Shift.h"
+#include "iR5900Branch.h"
+#include "iR5900Jump.h"
+#include "iR5900LoadStore.h"
+#include "iR5900Move.h"
+#include "iMMI.h"
+#include "iCOP0.h"
+#include "iFPU.h"
+
 // Register containing a pointer to our fastmem (4GB) area
 #define RFASTMEMBASE XE_BP /* rbp: fastmem base */
 
@@ -141,9 +155,9 @@ void eeRecompileCodeRC2(R5900FNPTR constcode, R5900FNPTR_INFO noconstcode, int x
 	void rec##fn(void) \
 	{ \
 		if (CHECK_FPU_FULL) \
-			eeFPURecompileCode(DOUBLE_rec##fn##_xmm, R5900::Interpreter::OpcodeImpl::COP1::fn, xmminfo); \
+			eeFPURecompileCode(DOUBLE_rec##fn##_xmm, int##fn, xmminfo); \
 		else \
-			eeFPURecompileCode(rec##fn##_xmm, R5900::Interpreter::OpcodeImpl::COP1::fn, xmminfo); \
+			eeFPURecompileCode(rec##fn##_xmm, int##fn, xmminfo); \
 	}
 
 /* Arithmetic ops whose SSE sequences diverge from the exact FPU: in soft
@@ -155,12 +169,12 @@ void eeRecompileCodeRC2(R5900FNPTR constcode, R5900FNPTR_INFO noconstcode, int x
 		if (CHECK_FPU_SOFT_REC) \
 		{ \
 			iFlushCall(FLUSH_INTERPRETER); \
-			xe_fastcall0(R5900::Interpreter::OpcodeImpl::COP1::fn); \
+			xe_fastcall0(int##fn); \
 		} \
 		else if (CHECK_FPU_FULL) \
-			eeFPURecompileCode(DOUBLE_rec##fn##_xmm, R5900::Interpreter::OpcodeImpl::COP1::fn, xmminfo); \
+			eeFPURecompileCode(DOUBLE_rec##fn##_xmm, int##fn, xmminfo); \
 		else \
-			eeFPURecompileCode(rec##fn##_xmm, R5900::Interpreter::OpcodeImpl::COP1::fn, xmminfo); \
+			eeFPURecompileCode(rec##fn##_xmm, int##fn, xmminfo); \
 	}
 
 /* Ops whose single-mode emission is itself byte-exact against the model
@@ -168,7 +182,7 @@ void eeRecompileCodeRC2(R5900FNPTR constcode, R5900FNPTR_INFO noconstcode, int x
 #define FPURECOMPILE_CONSTCODE_EXACT_SS(fn, xmminfo) \
 	void rec##fn(void) \
 	{ \
-		eeFPURecompileCode(rec##fn##_xmm, R5900::Interpreter::OpcodeImpl::COP1::fn, xmminfo); \
+		eeFPURecompileCode(rec##fn##_xmm, int##fn, xmminfo); \
 	}
 
 /* Ops where the double-precision emission is the best host approximation
@@ -183,11 +197,11 @@ void eeRecompileCodeRC2(R5900FNPTR constcode, R5900FNPTR_INFO noconstcode, int x
 		if (CHECK_FPU_SOFT_REC) \
 		{ \
 			iFlushCall(FLUSH_INTERPRETER); \
-			xe_fastcall0(R5900::Interpreter::OpcodeImpl::COP1::fn); \
+			xe_fastcall0(int##fn); \
 		} \
 		else \
 			eeFPURecompileCode(CHECK_FPU_ACC_ARITH ? DOUBLE_rec##fn##_xmm : rec##fn##_xmm, \
-				R5900::Interpreter::OpcodeImpl::COP1::fn, xmminfo); \
+				int##fn, xmminfo); \
 	}
 
 /* Ops whose double-precision emission is byte-exact against the ps2float
@@ -197,7 +211,7 @@ void eeRecompileCodeRC2(R5900FNPTR constcode, R5900FNPTR_INFO noconstcode, int x
 	void rec##fn(void) \
 	{ \
 		eeFPURecompileCode(CHECK_FPU_ACC_ARITH ? DOUBLE_rec##fn##_xmm : rec##fn##_xmm, \
-			R5900::Interpreter::OpcodeImpl::COP1::fn, xmminfo); \
+			int##fn, xmminfo); \
 	}
 
 // rd = rs op rt (all regs need to be in xmm)

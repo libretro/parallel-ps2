@@ -15,26 +15,33 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*********************************************************
 * Shift arithmetic with constant shift                   *
 * Format:  OP rd, rt, sa                                 *
 *********************************************************/
 
 
-	void recSLL();
-	void recSRL();
-	void recSRA();
-	void recDSLL();
-	void recDSRL();
-	void recDSRA();
-	void recDSLL32();
-	void recDSRL32();
-	void recDSRA32();
+	void recSLL(void);
+	void recSRL(void);
+	void recSRA(void);
+	void recDSLL(void);
+	void recDSRL(void);
+	void recDSRA(void);
+	void recDSLL32(void);
+	void recDSRL32(void);
+	void recDSRA32(void);
 
-	void recSLLV();
-	void recSRLV();
-	void recSRAV();
-	void recDSLLV();
-	void recDSRLV();
-	void recDSRAV();
+	void recSLLV(void);
+	void recSRLV(void);
+	void recSRAV(void);
+	void recDSLLV(void);
+	void recDSRLV(void);
+	void recDSRAV(void);
 
+#ifdef __cplusplus
+}
+#endif

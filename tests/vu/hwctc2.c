@@ -3,7 +3,7 @@
  *  ps2autotests tests/cpu/vu0_macro/transfer.expected writes 0xffffffff
  *  to each VI control register with CTC2 and reads it back with CFC2, so
  *  each line is that register's writable mask. This scores the CTC2 and
- *  CFC2 semantics in pcsx2/VU0.cpp against them.
+ *  CFC2 semantics in pcsx2/VU0.c against them.
  *
  *  Only the masking is modelled. The registers whose writes have side
  *  effects beyond the store -- FBRST resetting a VU, CMSAR1 kicking off a
@@ -42,7 +42,7 @@ enum {
 	REG_VPU_STAT = 29, REG_CMSAR1 = 31
 };
 
-/* Transcribed from CTC2 followed by CFC2 in pcsx2/VU0.cpp: what a write of
+/* Transcribed from CTC2 followed by CFC2 in pcsx2/VU0.c: what a write of
  * `v` leaves readable in VI[fs]. */
 static u32 ctc2_then_cfc2(int fs, u32 v)
 {

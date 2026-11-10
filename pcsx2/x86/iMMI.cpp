@@ -159,7 +159,7 @@ void recPMFHL()
 		{
 			// Saturating 64-to-32 narrow, twice: each lane forms a signed
 			// 64-bit value from HI:LO and clamps it into a sign-extended
-			// s32. Transcribed from MMI.cpp:182-203.
+			// s32. Transcribed from MMI.c (PMFHL).
 			//
 			// Note the upper bound is tested with >=, not >, so a value of
 			// exactly 0x7fffffff takes the saturating branch rather than the

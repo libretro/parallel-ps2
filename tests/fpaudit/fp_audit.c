@@ -81,7 +81,7 @@ static u32 hard_madd(u32 acc, u32 s, u32 t)
 	float m = bits_to_f(clamp_sp(s)) * bits_to_f(clamp_sp(t));
 	return clamp1(f_to_bits(bits_to_f(clamp1(acc)) + bits_to_f(clamp1(f_to_bits(m)))));
 }
-/* The reference is the interpreter's own fp_max/fp_min (pcsx2/FPU.cpp),
+/* The reference is the interpreter's own fp_max/fp_min (pcsx2/FPU.c),
  * itself differentially proven earlier: both-negative flips the integer
  * ordering, everything else is plain signed compare. */
 static u32 fp_model_max(u32 a, u32 b)

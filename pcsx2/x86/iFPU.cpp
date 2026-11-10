@@ -79,7 +79,7 @@ alignas(16) static const u32 s_pos[4] = {0x7fffffff, 0xffffffff, 0xffffffff, 0xf
 	void rec##f() \
 	{ \
 		iFlushCall(FLUSH_INTERPRETER); \
-		xe_fastcall0(R5900::Interpreter::OpcodeImpl::COP1::f); \
+		xe_fastcall0(int##f); \
 		g_branch = 2; \
 	}
 
@@ -88,7 +88,7 @@ alignas(16) static const u32 s_pos[4] = {0x7fffffff, 0xffffffff, 0xffffffff, 0xf
 	void rec##f() \
 	{ \
 		iFlushCall(FLUSH_INTERPRETER); \
-		xe_fastcall0(R5900::Interpreter::OpcodeImpl::COP1::f); \
+		xe_fastcall0(int##f); \
 	}
 //------------------------------------------------------------------
 
@@ -894,7 +894,7 @@ void recCVT_S_xmm(int info)
 void recCVT_S(void)
 {
 	/* Float version is fully accurate, no double version */
-	eeFPURecompileCode(recCVT_S_xmm, R5900::Interpreter::OpcodeImpl::COP1::CVT_S, XMMINFO_WRITED | XMMINFO_READS);
+	eeFPURecompileCode(recCVT_S_xmm, intCVT_S, XMMINFO_WRITED | XMMINFO_READS);
 }
 
 void recCVT_W(void)

@@ -1,7 +1,7 @@
 /*  FPU branch conditions against console captures.
  *
  *  Scores BC1F, BC1FL, BC1T and BC1TL against ps2autotests
- *  tests/cpu/ee_fpu/branch.expected, using the macros in pcsx2/FPU.cpp.
+ *  tests/cpu/ee_fpu/branch.expected, using the macros in pcsx2/FPU.c.
  *
  *  These branch on FCR31's C flag rather than on register operands, so
  *  the harness sets it two ways and the capture prints which: either a
@@ -29,7 +29,7 @@ static const char* const kName[F_COUNT] = { "bc1f", "bc1fl", "bc1t", "bc1tl" };
 
 static int likely_form(int op) { return op == F_BC1FL || op == F_BC1TL; }
 
-/* From the BC1 and BC1L macros in FPU.cpp: the F forms branch when the C
+/* From the BC1 and BC1L macros in FPU.c: the F forms branch when the C
  * flag is clear, the T forms when it is set. */
 static int taken(int op, int cflag)
 {

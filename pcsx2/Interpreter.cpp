@@ -99,10 +99,10 @@ static void execI(void)
 	// interprete instruction
 	cpuRegs.code = memRead32( pc );
 
-	const R5900::OPCODE& opcode = R5900::GetCurrentInstruction();
-	cpuBlockCycles += opcode.cycles * (2 - ((cpuRegs.CP0.n.Config >> 18) & 0x1));
+	const OPCODE* opcode = R5900_GetCurrentInstruction();
+	cpuBlockCycles += opcode->cycles * (2 - ((cpuRegs.CP0.n.Config >> 18) & 0x1));
 
-	opcode.interpret();
+	opcode->interpret();
 }
 
 static __fi void _doBranch_shared(u32 tar)
@@ -184,9 +184,6 @@ void intSetBranch(void)
 // necessary branch test logic that the recs need to maintain sync with the
 // cpuRegs.pc and delaySlot instruction and such.
 
-namespace R5900 {
-namespace Interpreter {
-namespace OpcodeImpl {
 
 /*********************************************************
 * Jump to target                                         *
@@ -195,12 +192,12 @@ namespace OpcodeImpl {
 // fixme: looking at the other branching code, shouldn't those _SetLinks in BGEZAL and such only be set
 // if the condition is true? --arcum42
 
-void J()
+void intJ()
 {
 	doBranch(_JumpTarget_);
 }
 
-void JAL()
+void intJAL()
 {
 	// 0x3563b8 is the start address of the function that invalidate entry in TLB cache
 	// 0x35c118 is the address in the June 22 prototype
@@ -218,7 +215,7 @@ void JAL()
 * Format:  OP rs, rt, offset                             *
 *********************************************************/
 
-void BEQ()  // Branch if Rs == Rt
+void intBEQ()  // Branch if Rs == Rt
 {
 	if (cpuRegs.GPR.r[_Rs_].SD[0] == cpuRegs.GPR.r[_Rt_].SD[0])
 		doBranch(_BranchTarget_);
@@ -226,7 +223,7 @@ void BEQ()  // Branch if Rs == Rt
 		intEventTest();
 }
 
-void BNE()  // Branch if Rs != Rt
+void intBNE()  // Branch if Rs != Rt
 {
 	if (cpuRegs.GPR.r[_Rs_].SD[0] != cpuRegs.GPR.r[_Rt_].SD[0])
 		doBranch(_BranchTarget_);
@@ -239,7 +236,7 @@ void BNE()  // Branch if Rs != Rt
 * Format:  OP rs, offset                                 *
 *********************************************************/
 
-void BGEZ()    // Branch if Rs >= 0
+void intBGEZ()    // Branch if Rs >= 0
 {
 	if(cpuRegs.GPR.r[_Rs_].SD[0] >= 0)
 	{
@@ -247,7 +244,7 @@ void BGEZ()    // Branch if Rs >= 0
 	}
 }
 
-void BGEZAL() // Branch if Rs >= 0 and link
+void intBGEZAL() // Branch if Rs >= 0 and link
 {
 	_SetLink(31);
 	if (cpuRegs.GPR.r[_Rs_].SD[0] >= 0)
@@ -256,7 +253,7 @@ void BGEZAL() // Branch if Rs >= 0 and link
 	}
 }
 
-void BGTZ()    // Branch if Rs >  0
+void intBGTZ()    // Branch if Rs >  0
 {
 	if (cpuRegs.GPR.r[_Rs_].SD[0] > 0)
 	{
@@ -264,7 +261,7 @@ void BGTZ()    // Branch if Rs >  0
 	}
 }
 
-void BLEZ()   // Branch if Rs <= 0
+void intBLEZ()   // Branch if Rs <= 0
 {
 	if (cpuRegs.GPR.r[_Rs_].SD[0] <= 0)
 	{
@@ -272,7 +269,7 @@ void BLEZ()   // Branch if Rs <= 0
 	}
 }
 
-void BLTZ()    // Branch if Rs <  0
+void intBLTZ()    // Branch if Rs <  0
 {
 	if (cpuRegs.GPR.r[_Rs_].SD[0] < 0)
 	{
@@ -280,7 +277,7 @@ void BLTZ()    // Branch if Rs <  0
 	}
 }
 
-void BLTZAL()  // Branch if Rs <  0 and link
+void intBLTZAL()  // Branch if Rs <  0 and link
 {
 	_SetLink(31);
 	if (cpuRegs.GPR.r[_Rs_].SD[0] < 0)
@@ -295,7 +292,7 @@ void BLTZAL()  // Branch if Rs <  0 and link
 *********************************************************/
 
 
-void BEQL()    // Branch if Rs == Rt
+void intBEQL()    // Branch if Rs == Rt
 {
 	if(cpuRegs.GPR.r[_Rs_].SD[0] == cpuRegs.GPR.r[_Rt_].SD[0])
 	{
@@ -308,7 +305,7 @@ void BEQL()    // Branch if Rs == Rt
 	}
 }
 
-void BNEL()     // Branch if Rs != Rt
+void intBNEL()     // Branch if Rs != Rt
 {
 	if(cpuRegs.GPR.r[_Rs_].SD[0] != cpuRegs.GPR.r[_Rt_].SD[0])
 	{
@@ -321,7 +318,7 @@ void BNEL()     // Branch if Rs != Rt
 	}
 }
 
-void BLEZL()    // Branch if Rs <= 0
+void intBLEZL()    // Branch if Rs <= 0
 {
 	if(cpuRegs.GPR.r[_Rs_].SD[0] <= 0)
 	{
@@ -334,7 +331,7 @@ void BLEZL()    // Branch if Rs <= 0
 	}
 }
 
-void BGTZL()     // Branch if Rs >  0
+void intBGTZL()     // Branch if Rs >  0
 {
 	if(cpuRegs.GPR.r[_Rs_].SD[0] > 0)
 	{
@@ -347,7 +344,7 @@ void BGTZL()     // Branch if Rs >  0
 	}
 }
 
-void BLTZL()     // Branch if Rs <  0
+void intBLTZL()     // Branch if Rs <  0
 {
 	if(cpuRegs.GPR.r[_Rs_].SD[0] < 0)
 	{
@@ -360,7 +357,7 @@ void BLTZL()     // Branch if Rs <  0
 	}
 }
 
-void BGEZL()     // Branch if Rs >= 0
+void intBGEZL()     // Branch if Rs >= 0
 {
 	if(cpuRegs.GPR.r[_Rs_].SD[0] >= 0)
 	{
@@ -373,7 +370,7 @@ void BGEZL()     // Branch if Rs >= 0
 	}
 }
 
-void BLTZALL()   // Branch if Rs <  0 and link
+void intBLTZALL()   // Branch if Rs <  0 and link
 {
 	_SetLink(31);
 	if(cpuRegs.GPR.r[_Rs_].SD[0] < 0)
@@ -387,7 +384,7 @@ void BLTZALL()   // Branch if Rs <  0 and link
 	}
 }
 
-void BGEZALL()   // Branch if Rs >= 0 and link
+void intBGEZALL()   // Branch if Rs >= 0 and link
 {
 	_SetLink(31);
 	if(cpuRegs.GPR.r[_Rs_].SD[0] >= 0)
@@ -405,7 +402,7 @@ void BGEZALL()   // Branch if Rs >= 0 and link
 * Register jump                                          *
 * Format:  OP rs, rd                                     *
 *********************************************************/
-void JR()
+void intJR()
 {
 	// 0x33ad48 and 0x35060c are the return address of the function (0x356250) that populate the TLB cache
 	// 0x340600 and 0x356334 are the addresses in the June 22 prototype
@@ -418,7 +415,7 @@ void JR()
 	doBranch(cpuRegs.GPR.r[_Rs_].UL[0]);
 }
 
-void JALR()
+void intJALR()
 {
 	u32 temp = cpuRegs.GPR.r[_Rs_].UL[0];
 
@@ -427,7 +424,6 @@ void JALR()
 	doBranch(temp);
 }
 
-} } }		// end namespace R5900::Interpreter::OpcodeImpl
 
 
 // --------------------------------------------------------------------------------------

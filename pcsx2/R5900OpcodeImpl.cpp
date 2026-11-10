@@ -74,24 +74,19 @@ static __fi bool _add32_Overflow( s32 x, s32 y, s64 &ret )
 }
 
 
-const R5900::OPCODE& R5900::GetCurrentInstruction()
+const OPCODE* R5900_GetCurrentInstruction(void)
 {
-	const OPCODE* opcode = &R5900::OpcodeTables::tbl_Standard[_Opcode_];
-
-	while( opcode->getsubclass != NULL )
-		opcode = &opcode->getsubclass(cpuRegs.code);
-
-	return *opcode;
+	return R5900_GetInstruction(cpuRegs.code);
 }
 
-const R5900::OPCODE& R5900::GetInstruction(u32 op)
+const OPCODE* R5900_GetInstruction(u32 op)
 {
-	const OPCODE* opcode = &R5900::OpcodeTables::tbl_Standard[op >> 26];
+	const OPCODE* opcode = &tbl_Standard[op >> 26];
 
-	while(opcode->getsubclass)
-		opcode = &opcode->getsubclass(op);
+	while (opcode->getsubclass)
+		opcode = opcode->getsubclass(op);
 
-	return *opcode;
+	return opcode;
 }
 
 static u32 deci2addr = 0;
@@ -178,20 +173,16 @@ static int __Deci2Call(int call, u32 *addr)
 	return 0;
 }
 
-namespace R5900 {
-namespace Interpreter {
-namespace OpcodeImpl {
-
-void COP2(void)
+void intCOP2(void)
 {
 	Int_COP2PrintTable[_Rs_]();
 }
 
-void Unknown(void) { }
+void intUnknown(void) { }
 
-void MMI_Unknown(void)  { }
-void COP0_Unknown(void) { }
-void COP1_Unknown(void) { }
+void intMMI_Unknown(void)  { }
+void intCOP0_Unknown(void) { }
+void intCOP1_Unknown(void) { }
 
 
 
@@ -206,7 +197,7 @@ void COP1_Unknown(void) { }
 //    handled even though the result is discarded.
 
 // Rt = Rs + Im signed [exception on overflow]
-void ADDI()
+void intADDI()
 {
 	s64 result;
 	bool overflow = _add32_Overflow( cpuRegs.GPR.r[_Rs_].SD[0], _Imm_, result );
@@ -217,7 +208,7 @@ void ADDI()
 // Rt = Rs + Im signed !!! [overflow ignored]
 // This instruction is effectively identical to ADDI.  It is not a true unsigned operation,
 // but rather it is a signed operation that ignores overflows.
-void ADDIU()
+void intADDIU()
 {
 	if (!_Rt_) return;
 	cpuRegs.GPR.r[_Rt_].UD[0] = u64(s64(s32(cpuRegs.GPR.r[_Rs_].UL[0] + u32(s32(_Imm_)))));
@@ -226,7 +217,7 @@ void ADDIU()
 // Rt = Rs + Im [exception on overflow]
 // This is the full 64 bit version of ADDI.  Overflow occurs at 64 bits instead
 // of at 32 bits.
-void DADDI()
+void intDADDI()
 {
 	s64 result;
 	bool overflow = _add64_Overflow( cpuRegs.GPR.r[_Rs_].SD[0], _Imm_, result );
@@ -237,16 +228,16 @@ void DADDI()
 // Rt = Rs + Im [overflow ignored]
 // This instruction is effectively identical to DADDI.  It is not a true unsigned operation,
 // but rather it is a signed operation that ignores overflows.
-void DADDIU()
+void intDADDIU()
 {
 	if (!_Rt_) return;
 	cpuRegs.GPR.r[_Rt_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0] + u64(s64(_Imm_));
 }
-void ANDI() 	{ if (!_Rt_) return; cpuRegs.GPR.r[_Rt_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0] & (u64)_ImmU_; } // Rt = Rs And Im (zero-extended)
-void ORI() 	    { if (!_Rt_) return; cpuRegs.GPR.r[_Rt_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0] | (u64)_ImmU_; } // Rt = Rs Or  Im (zero-extended)
-void XORI() 	{ if (!_Rt_) return; cpuRegs.GPR.r[_Rt_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0] ^ (u64)_ImmU_; } // Rt = Rs Xor Im (zero-extended)
-void SLTI()     { if (!_Rt_) return; cpuRegs.GPR.r[_Rt_].UD[0] = (cpuRegs.GPR.r[_Rs_].SD[0] < (s64)(_Imm_)) ? 1 : 0; } // Rt = Rs < Im (signed)
-void SLTIU()    { if (!_Rt_) return; cpuRegs.GPR.r[_Rt_].UD[0] = (cpuRegs.GPR.r[_Rs_].UD[0] < (u64)(_Imm_)) ? 1 : 0; } // Rt = Rs < Im (unsigned)
+void intANDI() 	{ if (!_Rt_) return; cpuRegs.GPR.r[_Rt_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0] & (u64)_ImmU_; } // Rt = Rs And Im (zero-extended)
+void intORI() 	    { if (!_Rt_) return; cpuRegs.GPR.r[_Rt_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0] | (u64)_ImmU_; } // Rt = Rs Or  Im (zero-extended)
+void intXORI() 	{ if (!_Rt_) return; cpuRegs.GPR.r[_Rt_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0] ^ (u64)_ImmU_; } // Rt = Rs Xor Im (zero-extended)
+void intSLTI()     { if (!_Rt_) return; cpuRegs.GPR.r[_Rt_].UD[0] = (cpuRegs.GPR.r[_Rs_].SD[0] < (s64)(_Imm_)) ? 1 : 0; } // Rt = Rs < Im (signed)
+void intSLTIU()    { if (!_Rt_) return; cpuRegs.GPR.r[_Rt_].UD[0] = (cpuRegs.GPR.r[_Rs_].UD[0] < (u64)(_Imm_)) ? 1 : 0; } // Rt = Rs < Im (unsigned)
 
 /*********************************************************
 * Register arithmetic                                    *
@@ -254,7 +245,7 @@ void SLTIU()    { if (!_Rt_) return; cpuRegs.GPR.r[_Rt_].UD[0] = (cpuRegs.GPR.r[
 *********************************************************/
 
 // Rd = Rs + Rt		(Exception on Integer Overflow)
-void ADD()
+void intADD()
 {
 	s64 result;
 	bool overflow = _add32_Overflow( cpuRegs.GPR.r[_Rs_].SD[0], cpuRegs.GPR.r[_Rt_].SD[0], result );
@@ -262,7 +253,7 @@ void ADD()
 	cpuRegs.GPR.r[_Rd_].SD[0] = result;
 }
 
-void DADD()
+void intDADD()
 {
 	s64 result;
 	bool overflow = _add64_Overflow( cpuRegs.GPR.r[_Rs_].SD[0], cpuRegs.GPR.r[_Rt_].SD[0], result );
@@ -271,7 +262,7 @@ void DADD()
 }
 
 // Rd = Rs - Rt		(Exception on Integer Overflow)
-void SUB()
+void intSUB()
 {
 	s64 result;
 	bool overflow = _add32_Overflow( cpuRegs.GPR.r[_Rs_].SD[0], -cpuRegs.GPR.r[_Rt_].SD[0], result );
@@ -280,7 +271,7 @@ void SUB()
 }
 
 // Rd = Rs - Rt		(Exception on Integer Overflow)
-void DSUB()
+void intDSUB()
 {
 	s64 result;
 	bool overflow = _add64_Overflow( cpuRegs.GPR.r[_Rs_].SD[0], -cpuRegs.GPR.r[_Rt_].SD[0], result );
@@ -288,16 +279,16 @@ void DSUB()
 	cpuRegs.GPR.r[_Rd_].SD[0] = result;
 }
 
-void ADDU() 	{ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = u64(s64(s32(cpuRegs.GPR.r[_Rs_].UL[0]  + cpuRegs.GPR.r[_Rt_].UL[0]))); }	// Rd = Rs + Rt
-void DADDU()    { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]  + cpuRegs.GPR.r[_Rt_].UD[0]; }
-void SUBU() 	{ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = u64(s64(s32(cpuRegs.GPR.r[_Rs_].UL[0]  - cpuRegs.GPR.r[_Rt_].UL[0]))); }	// Rd = Rs - Rt
-void DSUBU() 	{ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]  - cpuRegs.GPR.r[_Rt_].UD[0]; }
-void AND() 	    { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]  & cpuRegs.GPR.r[_Rt_].UD[0]; }	// Rd = Rs And Rt
-void OR() 	    { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]  | cpuRegs.GPR.r[_Rt_].UD[0]; }	// Rd = Rs Or  Rt
-void XOR() 	    { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]  ^ cpuRegs.GPR.r[_Rt_].UD[0]; }	// Rd = Rs Xor Rt
-void NOR() 	    { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] =~(cpuRegs.GPR.r[_Rs_].UD[0] | cpuRegs.GPR.r[_Rt_].UD[0]); }// Rd = Rs Nor Rt
-void SLT()		{ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (cpuRegs.GPR.r[_Rs_].SD[0] < cpuRegs.GPR.r[_Rt_].SD[0]) ? 1 : 0; }	// Rd = Rs < Rt (signed)
-void SLTU()		{ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (cpuRegs.GPR.r[_Rs_].UD[0] < cpuRegs.GPR.r[_Rt_].UD[0]) ? 1 : 0; }	// Rd = Rs < Rt (unsigned)
+void intADDU() 	{ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = u64(s64(s32(cpuRegs.GPR.r[_Rs_].UL[0]  + cpuRegs.GPR.r[_Rt_].UL[0]))); }	// Rd = Rs + Rt
+void intDADDU()    { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]  + cpuRegs.GPR.r[_Rt_].UD[0]; }
+void intSUBU() 	{ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = u64(s64(s32(cpuRegs.GPR.r[_Rs_].UL[0]  - cpuRegs.GPR.r[_Rt_].UL[0]))); }	// Rd = Rs - Rt
+void intDSUBU() 	{ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]  - cpuRegs.GPR.r[_Rt_].UD[0]; }
+void intAND() 	    { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]  & cpuRegs.GPR.r[_Rt_].UD[0]; }	// Rd = Rs And Rt
+void intOR() 	    { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]  | cpuRegs.GPR.r[_Rt_].UD[0]; }	// Rd = Rs Or  Rt
+void intXOR() 	    { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]  ^ cpuRegs.GPR.r[_Rt_].UD[0]; }	// Rd = Rs Xor Rt
+void intNOR() 	    { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] =~(cpuRegs.GPR.r[_Rs_].UD[0] | cpuRegs.GPR.r[_Rt_].UD[0]); }// Rd = Rs Nor Rt
+void intSLT()		{ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (cpuRegs.GPR.r[_Rs_].SD[0] < cpuRegs.GPR.r[_Rt_].SD[0]) ? 1 : 0; }	// Rd = Rs < Rt (signed)
+void intSLTU()		{ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (cpuRegs.GPR.r[_Rs_].UD[0] < cpuRegs.GPR.r[_Rt_].UD[0]) ? 1 : 0; }	// Rd = Rs < Rt (unsigned)
 
 /*********************************************************
 * Register mult/div & Register trap logic                *
@@ -310,7 +301,7 @@ void SLTU()		{ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (cpuRegs.GPR.r[_Rs
 // HI gets the value of rs.
 
 // Result is stored in HI/LO [no arithmetic exceptions]
-void DIV()
+void intDIV()
 {
 	if (cpuRegs.GPR.r[_Rs_].UL[0] == 0x80000000 && cpuRegs.GPR.r[_Rt_].UL[0] == 0xffffffff)
 	{
@@ -330,7 +321,7 @@ void DIV()
 }
 
 // Result is stored in HI/LO [no arithmetic exceptions]
-void DIVU()
+void intDIVU()
 {
 	if (cpuRegs.GPR.r[_Rt_].UL[0] != 0)
 	{
@@ -347,7 +338,7 @@ void DIVU()
 }
 
 // Result is written to both HI/LO and to the _Rd_ (Lo only)
-void MULT()
+void intMULT()
 {
 	s64 res = (s64)cpuRegs.GPR.r[_Rs_].SL[0] * cpuRegs.GPR.r[_Rt_].SL[0];
 
@@ -359,7 +350,7 @@ void MULT()
 }
 
 // Result is written to both HI/LO and to the _Rd_ (Lo only)
-void MULTU()
+void intMULTU()
 {
 	u64 res = (u64)cpuRegs.GPR.r[_Rs_].UL[0] * cpuRegs.GPR.r[_Rt_].UL[0];
 
@@ -374,7 +365,7 @@ void MULTU()
 * Load higher 16 bits of the first word in GPR with imm  *
 * Format:  OP rt, immediate                              *
 *********************************************************/
-void LUI() {
+void intLUI() {
 	if (!_Rt_) return;
 	cpuRegs.GPR.r[_Rt_].UD[0] = (s32)(cpuRegs.code << 16);
 }
@@ -383,41 +374,41 @@ void LUI() {
 * Move from HI/LO to GPR                                 *
 * Format:  OP rd                                         *
 *********************************************************/
-void MFHI() { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.HI.UD[0]; } // Rd = Hi
-void MFLO() { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.LO.UD[0]; } // Rd = Lo
+void intMFHI() { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.HI.UD[0]; } // Rd = Hi
+void intMFLO() { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.LO.UD[0]; } // Rd = Lo
 
 /*********************************************************
 * Move to GPR to HI/LO & Register jump                   *
 * Format:  OP rs                                         *
 *********************************************************/
-void MTHI() { cpuRegs.HI.UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]; } // Hi = Rs
-void MTLO() { cpuRegs.LO.UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]; } // Lo = Rs
+void intMTHI() { cpuRegs.HI.UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]; } // Hi = Rs
+void intMTLO() { cpuRegs.LO.UD[0] = cpuRegs.GPR.r[_Rs_].UD[0]; } // Lo = Rs
 
 
 /*********************************************************
 * Shift arithmetic with constant shift                   *
 * Format:  OP rd, rt, sa                                 *
 *********************************************************/
-void SRA()   { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].SL[0] >> _Sa_); } // Rd = Rt >> sa (arithmetic)
-void SRL()   { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].UL[0] >> _Sa_); } // Rd = Rt >> sa (logical) [sign extend!!]
-void SLL()   { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].UL[0] << _Sa_); } // Rd = Rt << sa
-void DSLL()  { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (u64)(cpuRegs.GPR.r[_Rt_].UD[0] << _Sa_); }
-void DSLL32(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (u64)(cpuRegs.GPR.r[_Rt_].UD[0] << (_Sa_+32));}
-void DSRA()  { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = cpuRegs.GPR.r[_Rt_].SD[0] >> _Sa_; }
-void DSRA32(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = cpuRegs.GPR.r[_Rt_].SD[0] >> (_Sa_+32);}
-void DSRL()  { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rt_].UD[0] >> _Sa_; }
-void DSRL32(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rt_].UD[0] >> (_Sa_+32);}
+void intSRA()   { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].SL[0] >> _Sa_); } // Rd = Rt >> sa (arithmetic)
+void intSRL()   { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].UL[0] >> _Sa_); } // Rd = Rt >> sa (logical) [sign extend!!]
+void intSLL()   { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].UL[0] << _Sa_); } // Rd = Rt << sa
+void intDSLL()  { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (u64)(cpuRegs.GPR.r[_Rt_].UD[0] << _Sa_); }
+void intDSLL32(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (u64)(cpuRegs.GPR.r[_Rt_].UD[0] << (_Sa_+32));}
+void intDSRA()  { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = cpuRegs.GPR.r[_Rt_].SD[0] >> _Sa_; }
+void intDSRA32(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = cpuRegs.GPR.r[_Rt_].SD[0] >> (_Sa_+32);}
+void intDSRL()  { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rt_].UD[0] >> _Sa_; }
+void intDSRL32(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rt_].UD[0] >> (_Sa_+32);}
 
 /*********************************************************
 * Shift arithmetic with variant register shift           *
 * Format:  OP rd, rt, rs                                 *
 *********************************************************/
-void SLLV() { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].UL[0] << (cpuRegs.GPR.r[_Rs_].UL[0] &0x1f));} // Rd = Rt << rs
-void SRAV() { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].SL[0] >> (cpuRegs.GPR.r[_Rs_].UL[0] &0x1f));} // Rd = Rt >> rs (arithmetic)
-void SRLV() { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].UL[0] >> (cpuRegs.GPR.r[_Rs_].UL[0] &0x1f));} // Rd = Rt >> rs (logical)
-void DSLLV(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (u64)(cpuRegs.GPR.r[_Rt_].UD[0] << (cpuRegs.GPR.r[_Rs_].UL[0] &0x3f));}
-void DSRAV(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s64)(cpuRegs.GPR.r[_Rt_].SD[0] >> (cpuRegs.GPR.r[_Rs_].UL[0] &0x3f));}
-void DSRLV(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (u64)(cpuRegs.GPR.r[_Rt_].UD[0] >> (cpuRegs.GPR.r[_Rs_].UL[0] &0x3f));}
+void intSLLV() { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].UL[0] << (cpuRegs.GPR.r[_Rs_].UL[0] &0x1f));} // Rd = Rt << rs
+void intSRAV() { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].SL[0] >> (cpuRegs.GPR.r[_Rs_].UL[0] &0x1f));} // Rd = Rt >> rs (arithmetic)
+void intSRLV() { if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s32)(cpuRegs.GPR.r[_Rt_].UL[0] >> (cpuRegs.GPR.r[_Rs_].UL[0] &0x1f));} // Rd = Rt >> rs (logical)
+void intDSLLV(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (u64)(cpuRegs.GPR.r[_Rt_].UD[0] << (cpuRegs.GPR.r[_Rs_].UL[0] &0x3f));}
+void intDSRAV(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].SD[0] = (s64)(cpuRegs.GPR.r[_Rt_].SD[0] >> (cpuRegs.GPR.r[_Rs_].UL[0] &0x3f));}
+void intDSRLV(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (u64)(cpuRegs.GPR.r[_Rt_].UD[0] >> (cpuRegs.GPR.r[_Rs_].UL[0] &0x3f));}
 
 /*********************************************************
 * Load and store for GPR                                 *
@@ -434,7 +425,7 @@ void DSRLV(){ if (!_Rd_) return; cpuRegs.GPR.r[_Rd_].UD[0] = (u64)(cpuRegs.GPR.r
 //    exceptions, since the lower bits of the address are used to determine the portions
 //    of the address/register operations.
 
-void LB()
+void intLB()
 {
 	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 	s8 temp = memRead8(addr);
@@ -443,7 +434,7 @@ void LB()
 	cpuRegs.GPR.r[_Rt_].SD[0] = temp;
 }
 
-void LBU()
+void intLBU()
 {
 	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 	u8 temp = memRead8(addr);
@@ -452,7 +443,7 @@ void LBU()
 	cpuRegs.GPR.r[_Rt_].UD[0] = temp;
 }
 
-void LH()
+void intLH()
 {
 	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 
@@ -465,7 +456,7 @@ void LH()
 	cpuRegs.GPR.r[_Rt_].SD[0] = temp;
 }
 
-void LHU()
+void intLHU()
 {
 	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 
@@ -478,7 +469,7 @@ void LHU()
 	cpuRegs.GPR.r[_Rt_].UD[0] = temp;
 }
 
-void LW()
+void intLW()
 {
 	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 
@@ -491,7 +482,7 @@ void LW()
 	cpuRegs.GPR.r[_Rt_].SD[0] = (s32)temp;
 }
 
-void LWU()
+void intLWU()
 {
 	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 
@@ -504,7 +495,7 @@ void LWU()
 	cpuRegs.GPR.r[_Rt_].UD[0] = temp;
 }
 
-void LWL()
+void intLWL()
 {
 	static const u32 LWL_MASK[4] = { 0xffffff, 0x0000ffff, 0x000000ff, 0x00000000 };
 	static const u8 LWL_SHIFT[4] = { 24, 16, 8, 0 };
@@ -529,7 +520,7 @@ void LWL()
 	*/
 }
 
-void LWR()
+void intLWR()
 {
 	static const u32 LWR_MASK[4] = { 0x000000, 0xff000000, 0xffff0000, 0xffffff00 };
 	static const u8 LWR_SHIFT[4] = { 0, 8, 16, 24 };
@@ -576,7 +567,7 @@ static GPR_reg* gpr_GetWritePtr( uint gpr )
 	return (( gpr == 0 ) ? &m_dummy_gpr_zero : &cpuRegs.GPR.r[gpr]);
 }
 
-void LD()
+void intLD()
 {
 	s32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 
@@ -597,7 +588,7 @@ static const u64 LDR_MASK[8] =
 	0xffffffff00000000ULL, 0xffffffffff000000ULL, 0xffffffffffff0000ULL, 0xffffffffffffff00ULL
 };
 
-void LDL()
+void intLDL()
 {
 	static const u8 LDL_SHIFT[8] = { 56, 48, 40, 32, 24, 16, 8, 0 };
 	u32 addr  = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
@@ -608,7 +599,7 @@ void LDL()
 								(mem << LDL_SHIFT[shift]);
 }
 
-void LDR()
+void intLDR()
 {
 	static const u8 LDR_SHIFT[8] = { 0, 8, 16, 24, 32, 40, 48, 56 };
 	u32 addr  = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
@@ -619,7 +610,7 @@ void LDR()
 								(mem >> LDR_SHIFT[shift]);
 }
 
-void LQ()
+void intLQ()
 {
 	// MIPS Note: LQ and SQ are special and "silently" align memory addresses, thus
 	// an address error due to unaligned access isn't possible like it is on other loads/stores.
@@ -627,13 +618,13 @@ void LQ()
 	memRead128(addr & ~0xf, (u128*)gpr_GetWritePtr(_Rt_));
 }
 
-void SB()
+void intSB()
 {
 	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 	memWrite8(addr, cpuRegs.GPR.r[_Rt_].UC[0]);
 }
 
-void SH()
+void intSH()
 {
 	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 
@@ -643,7 +634,7 @@ void SH()
 	memWrite16(addr, cpuRegs.GPR.r[_Rt_].US[0]);
 }
 
-void SW()
+void intSW()
 {
 	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 
@@ -653,7 +644,7 @@ void SW()
 	memWrite32(addr, cpuRegs.GPR.r[_Rt_].UL[0]);
 }
 
-void SWL()
+void intSWL()
 {
 	static const u32 SWL_MASK[4] = { 0xffffff00, 0xffff0000, 0xff000000, 0x00000000 };
 	static const u8 SWL_SHIFT[4] = { 24, 16, 8, 0 };
@@ -675,7 +666,7 @@ void SWL()
 	*/
 }
 
-void SWR() {
+void intSWR() {
 	static const u32 SWR_MASK[4] = { 0x00000000, 0x000000ff, 0x0000ffff, 0x00ffffff };
 	static const u8 SWR_SHIFT[4] = { 0, 8, 16, 24 };
 	u32 addr  = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
@@ -696,7 +687,7 @@ void SWR() {
 	*/
 }
 
-void SD()
+void intSD()
 {
 	u32 addr = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 
@@ -707,7 +698,7 @@ void SD()
 }
 
 
-void SDL()
+void intSDL()
 {
 	static const u64 SDL_MASK[8] =
 	{	0xffffffffffffff00ULL, 0xffffffffffff0000ULL, 0xffffffffff000000ULL, 0xffffffff00000000ULL,
@@ -723,7 +714,7 @@ void SDL()
 }
 
 
-void SDR()
+void intSDR()
 {
 	static const u64 SDR_MASK[8] =
 	{	0x0000000000000000ULL, 0x00000000000000ffULL, 0x000000000000ffffULL, 0x0000000000ffffffULL,
@@ -738,7 +729,7 @@ void SDR()
 	memWrite64(addr & ~7, mem );
 }
 
-void SQ()
+void intSQ()
 {
 	// MIPS Note: LQ and SQ are special and "silently" align memory addresses, thus
 	// an address error due to unaligned access isn't possible like it is on other loads/stores.
@@ -751,12 +742,12 @@ void SQ()
 * Format:  OP rd, rs, rt                                 *
 *********************************************************/
 
-void MOVZ() {
+void intMOVZ() {
 	if (!_Rd_) return;
 	if (cpuRegs.GPR.r[_Rt_].UD[0] == 0)
 		cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0];
 }
-void MOVN() {
+void intMOVN() {
 	if (!_Rd_) return;
 	if (cpuRegs.GPR.r[_Rt_].UD[0] != 0)
 		cpuRegs.GPR.r[_Rd_].UD[0] = cpuRegs.GPR.r[_Rs_].UD[0];
@@ -767,7 +758,7 @@ void MOVN() {
 * Format:  OP                                            *
 *********************************************************/
 
-void SYSCALL(void)
+void intSYSCALL(void)
 {
 	u8 call;
 
@@ -968,17 +959,17 @@ void SYSCALL(void)
 	cpuException(0x20, cpuRegs.branch);
 }
 
-void BREAK() {
+void intBREAK() {
 	cpuRegs.pc -= 4;
 	cpuException(0x24, cpuRegs.branch);
 }
 
-void MFSA() {
+void intMFSA() {
 	if (!_Rd_) return;
 	cpuRegs.GPR.r[_Rd_].UD[0] = (u64)cpuRegs.sa;
 }
 
-void MTSA() {
+void intMTSA() {
 	/* SA is four bits, a byte count for QFSRV. recMTSA in
 	 * x86/iR5900Misc.cpp has always masked it -- its comment says so --
 	 * and this had not, so the two engines disagreed for any value above
@@ -992,14 +983,14 @@ void MTSA() {
 // to the cache) and one which synchronizes the instruction pipeline (effectively
 // a stall in either case).  Our emulation model does not track EE-side pipeline
 // status or stalls, nor does it implement the CACHE.  Thus SYNC need do nothing.
-void SYNC()
+void intSYNC()
 {
 }
 
 // Used to prefetch data into the EE's cache, or schedule a dirty write-back.
 // CACHE is not emulated at this time (nor is there any need to emulate it), so
 // this function does nothing in the context of our emulator.
-void PREF()
+void intPREF()
 {
 }
 
@@ -1013,35 +1004,33 @@ static void trap(u16 code=0)
 * Register trap                                          *
 * Format:  OP rs, rt                                     *
 *********************************************************/
-void TGE()  { if (cpuRegs.GPR.r[_Rs_].SD[0] >= cpuRegs.GPR.r[_Rt_].SD[0]) trap(_TrapCode_); }
-void TGEU() { if (cpuRegs.GPR.r[_Rs_].UD[0] >= cpuRegs.GPR.r[_Rt_].UD[0]) trap(_TrapCode_); }
-void TLT()  { if (cpuRegs.GPR.r[_Rs_].SD[0] <  cpuRegs.GPR.r[_Rt_].SD[0]) trap(_TrapCode_); }
-void TLTU() { if (cpuRegs.GPR.r[_Rs_].UD[0] <  cpuRegs.GPR.r[_Rt_].UD[0]) trap(_TrapCode_); }
-void TEQ()  { if (cpuRegs.GPR.r[_Rs_].SD[0] == cpuRegs.GPR.r[_Rt_].SD[0]) trap(_TrapCode_); }
-void TNE()  { if (cpuRegs.GPR.r[_Rs_].SD[0] != cpuRegs.GPR.r[_Rt_].SD[0]) trap(_TrapCode_); }
+void intTGE()  { if (cpuRegs.GPR.r[_Rs_].SD[0] >= cpuRegs.GPR.r[_Rt_].SD[0]) trap(_TrapCode_); }
+void intTGEU() { if (cpuRegs.GPR.r[_Rs_].UD[0] >= cpuRegs.GPR.r[_Rt_].UD[0]) trap(_TrapCode_); }
+void intTLT()  { if (cpuRegs.GPR.r[_Rs_].SD[0] <  cpuRegs.GPR.r[_Rt_].SD[0]) trap(_TrapCode_); }
+void intTLTU() { if (cpuRegs.GPR.r[_Rs_].UD[0] <  cpuRegs.GPR.r[_Rt_].UD[0]) trap(_TrapCode_); }
+void intTEQ()  { if (cpuRegs.GPR.r[_Rs_].SD[0] == cpuRegs.GPR.r[_Rt_].SD[0]) trap(_TrapCode_); }
+void intTNE()  { if (cpuRegs.GPR.r[_Rs_].SD[0] != cpuRegs.GPR.r[_Rt_].SD[0]) trap(_TrapCode_); }
 
 /*********************************************************
 * Trap with immediate operand                            *
 * Format:  OP rs, rt                                     *
 *********************************************************/
-void TGEI()  { if (cpuRegs.GPR.r[_Rs_].SD[0] >= _Imm_) trap(); }
-void TLTI()  { if (cpuRegs.GPR.r[_Rs_].SD[0] <  _Imm_) trap(); }
-void TEQI()  { if (cpuRegs.GPR.r[_Rs_].SD[0] == _Imm_) trap(); }
-void TNEI()  { if (cpuRegs.GPR.r[_Rs_].SD[0] != _Imm_) trap(); }
-void TGEIU() { if (cpuRegs.GPR.r[_Rs_].UD[0] >= (u64)_Imm_) trap(); }
-void TLTIU() { if (cpuRegs.GPR.r[_Rs_].UD[0] <  (u64)_Imm_) trap(); }
+void intTGEI()  { if (cpuRegs.GPR.r[_Rs_].SD[0] >= _Imm_) trap(); }
+void intTLTI()  { if (cpuRegs.GPR.r[_Rs_].SD[0] <  _Imm_) trap(); }
+void intTEQI()  { if (cpuRegs.GPR.r[_Rs_].SD[0] == _Imm_) trap(); }
+void intTNEI()  { if (cpuRegs.GPR.r[_Rs_].SD[0] != _Imm_) trap(); }
+void intTGEIU() { if (cpuRegs.GPR.r[_Rs_].UD[0] >= (u64)_Imm_) trap(); }
+void intTLTIU() { if (cpuRegs.GPR.r[_Rs_].UD[0] <  (u64)_Imm_) trap(); }
 
 /*********************************************************
 * Sa intructions                                         *
 * Format:  OP rs, rt                                     *
 *********************************************************/
 
-void MTSAB() {
+void intMTSAB() {
 	cpuRegs.sa = ((cpuRegs.GPR.r[_Rs_].UL[0] & 0xF) ^ (_Imm_ & 0xF));
 }
 
-void MTSAH() {
+void intMTSAH() {
 	cpuRegs.sa = ((cpuRegs.GPR.r[_Rs_].UL[0] & 0x7) ^ (_Imm_ & 0x7)) << 1;
 }
-
-} }	} // end namespace R5900::Interpreter::OpcodeImpl

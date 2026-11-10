@@ -25,6 +25,8 @@
 #include "Common.h"
 #include "VUops.h"
 #include "VUmicro.h"
+#include "R5900OpcodeTables.h"
+#include "ps2/HwInternal.h"
 
 alignas(16) VURegs vuRegs[2];
 
@@ -68,7 +70,7 @@ alignas(16) u8 s_vu1thread[sizeof(VU_Thread)];
 asm(".globl vu1Thread\n.set vu1Thread, s_vu1thread");
 
 void CPU_INT(EE_EventType, int) { }
-/* VU0.cpp's other dependencies: the VU scheduling and COP2 dispatch that
+/* VU0.c's other dependencies: the VU scheduling and COP2 dispatch that
  * QMFC2 and QMTC2 do not reach. */
 void intUpdateCPUCycles() { }
 void vu0ResetRegs() { }
@@ -80,9 +82,10 @@ void vucpu_execute_block(const VUmicroCpu*, int) { }
 static VUmicroCpu s_vu0cpu, s_vu1cpu;
 const VUmicroCpu* CpuVU0 = &s_vu0cpu;
 const VUmicroCpu* CpuVU1 = &s_vu1cpu;
-void (*Int_COP2BC2PrintTable[32])() = {};
-void (*Int_COP2SPECIAL1PrintTable[64])() = {};
-void (*Int_COP2SPECIAL2PrintTable[128])() = {};
+void (*Int_COP2BC2PrintTable[32])(void) = {};
+void (*Int_COP2SPECIAL1PrintTable[64])(void) = {};
+void (*Int_COP2SPECIAL2PrintTable[128])(void) = {};
+bool emu_config_enable_ee(void) { return false; }
 RETURNS_R128 vtlb_memRead128(u32) { r128 v; memset(&v, 0, sizeof(v)); return v; }
 void vtlb_memWrite128(u32, r128) { }
 
@@ -531,14 +534,9 @@ static int run_clip(int* total)
  * applies to the decimal operands here too.
  */
 
-/* VUops.cpp defines the macro-mode entry points at global scope, not in
- * the OpcodeImpl::COP2 namespace the EE's other interpreters use. */
-extern void VIADD(); extern void VIADDI(); extern void VIAND();
-extern void VIOR(); extern void VISUB();
-
-/* QMFC2 and QMTC2 live in VU0.cpp, which this links for them. Its other
- * dependencies are the VU scheduling machinery these two do not reach. */
-extern void QMFC2(); extern void QMTC2();
+/* The macro-mode entry points (VUops.cpp) and QMFC2/QMTC2 (VU0.c, linked
+ * for them) come from R5900OpcodeTables.h. VU0.c's other dependencies are
+ * the VU scheduling machinery these two do not reach. */
 
 /* ---- the VU0 quadword moves ------------------------------------------
  *

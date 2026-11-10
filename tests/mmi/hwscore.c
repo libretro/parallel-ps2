@@ -47,7 +47,7 @@ static const u64 C_HILO_LO  = 0x123456789ABCDEF0ull;
 static const u64 C_HILO_HI1 = 0x23456789ABCDEF01ull;
 static const u64 C_HILO_LO1 = 0x456789ABCDEF0123ull;
 
-/* Current semantics, transcribed from pcsx2/MMI.cpp. Each entry must be kept
+/* Current semantics, transcribed from pcsx2/MMI.c. Each entry must be kept
  * in step with the interpreter function it names. */
 enum { OP_PMADDW, OP_PMSUBW, OP_PMADDUW, OP_PMULTW, OP_PMULTUW, OP_PMULTH,
        OP_PMADDH, OP_PMSUBH, OP_PHMADH, OP_PHMSBH, OP_PDIVW, OP_PDIVBW,

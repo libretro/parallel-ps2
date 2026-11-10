@@ -15,14 +15,21 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*********************************************************
 * Register mult/div & Register trap logic                *
 * Format:  OP rs, rt                                     *
 *********************************************************/
 
 
-	void recMULT();
-	void recMULTU();
-	void recDIV();
-	void recDIVU();
+	void recMULT(void);
+	void recMULTU(void);
+	void recDIV(void);
+	void recDIVU(void);
 
+#ifdef __cplusplus
+}
+#endif

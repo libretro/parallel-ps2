@@ -26,7 +26,6 @@
 #include "common/emitter/c89ops.h"
 #include "iCOP0.h"
 
-namespace Interp = R5900::Interpreter::OpcodeImpl::COP0;
 /*********************************************************
 *   COP0 opcodes                                         *
 *                                                        *
@@ -86,7 +85,7 @@ void recBC0TL()
 
 // TLBR copies one TLB entry into the CP0 registers. It is pure register
 // shuffling -- no mapping state is touched -- so unlike the other three TLB
-// ops it does not need to call into COP0.cpp at all.
+// ops it does not need to call into COP0.c at all.
 //
 //   PageMask = tlb[i].PageMask
 //   EntryHi  = tlb[i].EntryHi & ~(tlb[i].PageMask | 0x1f00)
@@ -203,8 +202,8 @@ void recTLBP()
 		xe_fwd_set8(done);
 	}
 }
-void recTLBWI() { recCall(Interp::TLBWI); }
-void recTLBWR() { recCall(Interp::TLBWR); }
+void recTLBWI() { recCall(intTLBWI); }
+void recTLBWR() { recCall(intTLBWR); }
 
 // recBranchCall forces nextEventCycle = cycle before calling, which makes the
 // interpreter's own "if (nextEventCycle - cycle > 4) nextEventCycle = cycle+4"
@@ -284,7 +283,7 @@ void recDI()
 	//xMOV(eax, ptr[&cpuRegs.cycle ]);
 	//xMOV(ptr[&g_nextBranchCycle], eax);
 
-	//xFastCall((void*)(uptr)Interp::DI );
+	//xFastCall((void*)(uptr)intDI );
 
 	// Fixes booting issues in the following games:
 	// Jak X, Namco 50th anniversary, Spongebob the Movie, Spongebob Battle for Bikini Bottom,
@@ -373,7 +372,7 @@ void recMFC0()
 
 	if (_Rd_ == 12)
 	{
-		/* Status reads back only its implemented bits. MFC0 in COP0.cpp has
+		/* Status reads back only its implemented bits. MFC0 in COP0.c has
 		 * always masked with this and the recompiler had not, so the two
 		 * engines returned different values for any bit outside it -- and
 		 * they can be set, since the write path both share, _WriteCP0Status,
@@ -439,7 +438,7 @@ void recMTC0()
 					  xe_add64_ri(XE_AX, sbc_); }
 					xe_mov64_mr(&cpuRegs.cycle, XE_AX); // update cycles
 					xe_fastcall0(COP0_UpdatePCCR);
-					/* Same PCCR mask the interpreter applies; see COP0.cpp. */
+					/* Same PCCR mask the interpreter applies; see COP0.c. */
 					xe_mov32_mi(&cpuRegs.PERF.n.pccr,
 						g_cpuConstRegs[_Rt_].UL[0] & 0x800ffbfeu);
 				}
@@ -508,7 +507,7 @@ void recMTC0()
 					  xe_add64_ri(XE_AX, sbc_); }
 					xe_mov64_mr(&cpuRegs.cycle, XE_AX); // update cycles
 					xe_fastcall0(COP0_UpdatePCCR);
-					/* Same PCCR mask the interpreter applies; see COP0.cpp. */
+					/* Same PCCR mask the interpreter applies; see COP0.c. */
 					_eeMoveGPRtoM((uptr)&cpuRegs.PERF.n.pccr, _Rt_);
 					xe_and32_mi(&cpuRegs.PERF.n.pccr, 0x800ffbfeu);
 				}

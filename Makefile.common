@@ -255,6 +255,12 @@ SOURCES_C += \
 	$(LRPS2_DIR)/VU1microInterp.c \
 	$(LRPS2_DIR)/VUmicro.c \
 	$(LRPS2_DIR)/VUmicroMem.c \
+	$(LRPS2_DIR)/Cache.c \
+	$(LRPS2_DIR)/COP0.c \
+	$(LRPS2_DIR)/FPU.c \
+	$(LRPS2_DIR)/MMI.c \
+	$(LRPS2_DIR)/R5900OpcodeTables.c \
+	$(LRPS2_DIR)/VU0.c \
 	$(LRPS2_DIR)/Vif_Codes.c \
 	$(LRPS2_DIR)/Vif_Transfer.c \
 	$(LRPS2_DIR)/Vif_Unpack.c \
@@ -298,15 +304,11 @@ endif
 # ============================================================================
 SOURCES_CXX += \
 	$(LRPS2_DIR)/FormatString.cpp \
-	$(LRPS2_DIR)/Cache.cpp \
-	$(LRPS2_DIR)/COP0.cpp \
 	$(LRPS2_DIR)/Counters.cpp \
-	$(LRPS2_DIR)/FPU.cpp \
 	$(LRPS2_DIR)/GameDatabase.cpp \
 	$(LRPS2_DIR)/GameDatabaseBuiltin.cpp \
 	$(LRPS2_DIR)/GS.cpp \
 	$(LRPS2_DIR)/Interpreter.cpp \
-	$(LRPS2_DIR)/MMI.cpp \
 	$(LRPS2_DIR)/MTGS.cpp \
 	$(LRPS2_DIR)/MTVU.cpp \
 	$(LRPS2_DIR)/Patch.cpp \
@@ -314,10 +316,8 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/PerformanceMetrics.cpp \
 	$(LRPS2_DIR)/R5900.cpp \
 	$(LRPS2_DIR)/R5900OpcodeImpl.cpp \
-	$(LRPS2_DIR)/R5900OpcodeTables.cpp \
 	$(LRPS2_DIR)/VMManager.cpp \
 	$(LRPS2_DIR)/vtlb.cpp \
-	$(LRPS2_DIR)/VU0.cpp \
 	$(LRPS2_DIR)/VUops.cpp
 
 # pcsx2/Frontend

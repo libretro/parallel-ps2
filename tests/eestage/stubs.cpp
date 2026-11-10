@@ -1,6 +1,6 @@
 /*  Stubs for tests/eestage.
  *
- *  R5900OpcodeTables.cpp names every op in the instruction set, the COP2
+ *  R5900OpcodeTables.c names every op in the instruction set, the COP2
  *  macro ops and the recompiler emitter set among them, so linking it with
  *  Interpreter.cpp drags in hundreds of symbols the harness never calls.
  *  Generated from the linker's list: anything actually reached aborts
@@ -29,554 +29,546 @@ extern "C" {
 	void cdvdReadLanguageParams(unsigned char* config) { (void)config; reached("cdvdReadLanguageParams"); }
 	void dmaGetAddr(void) { reached("dmaGetAddr"); }
 }
-	void CFC2() { reached("CFC2()"); }
-	void COP2_BC2() { reached("COP2_BC2()"); }
-	void COP2_SPECIAL() { reached("COP2_SPECIAL()"); }
-	void COP2_SPECIAL2() { reached("COP2_SPECIAL2()"); }
-	void COP2_Unknown() { reached("COP2_Unknown()"); }
-	void CTC2() { reached("CTC2()"); }
+	extern "C" void CFC2(void) { reached("CFC2()"); }
+	extern "C" void COP2_BC2(void) { reached("COP2_BC2()"); }
+	extern "C" void COP2_SPECIAL(void) { reached("COP2_SPECIAL()"); }
+	extern "C" void COP2_SPECIAL2(void) { reached("COP2_SPECIAL2()"); }
+	extern "C" void COP2_Unknown(void) { reached("COP2_Unknown()"); }
+	extern "C" void CTC2(void) { reached("CTC2()"); }
 	void GoemonPreloadTlb() { reached("GoemonPreloadTlb()"); }
 	void GoemonUnloadTlb(unsigned int) { reached("GoemonUnloadTlb(unsigned int)"); }
-	void QMFC2() { reached("QMFC2()"); }
-	void QMTC2() { reached("QMTC2()"); }
-	void VABS() { reached("VABS()"); }
-	void VADD() { reached("VADD()"); }
-	void VADDA() { reached("VADDA()"); }
-	void VADDAi() { reached("VADDAi()"); }
-	void VADDAq() { reached("VADDAq()"); }
-	void VADDAw() { reached("VADDAw()"); }
-	void VADDAx() { reached("VADDAx()"); }
-	void VADDAy() { reached("VADDAy()"); }
-	void VADDAz() { reached("VADDAz()"); }
-	void VADDi() { reached("VADDi()"); }
-	void VADDq() { reached("VADDq()"); }
-	void VADDw() { reached("VADDw()"); }
-	void VADDx() { reached("VADDx()"); }
-	void VADDy() { reached("VADDy()"); }
-	void VADDz() { reached("VADDz()"); }
-	void VCLIPw() { reached("VCLIPw()"); }
-	void VDIV() { reached("VDIV()"); }
-	void VFTOI0() { reached("VFTOI0()"); }
-	void VFTOI12() { reached("VFTOI12()"); }
-	void VFTOI15() { reached("VFTOI15()"); }
-	void VFTOI4() { reached("VFTOI4()"); }
-	void VIADD() { reached("VIADD()"); }
-	void VIADDI() { reached("VIADDI()"); }
-	void VIAND() { reached("VIAND()"); }
-	void VILWR() { reached("VILWR()"); }
-	void VIOR() { reached("VIOR()"); }
-	void VISUB() { reached("VISUB()"); }
-	void VISWR() { reached("VISWR()"); }
-	void VITOF0() { reached("VITOF0()"); }
-	void VITOF12() { reached("VITOF12()"); }
-	void VITOF15() { reached("VITOF15()"); }
-	void VITOF4() { reached("VITOF4()"); }
-	void VLQD() { reached("VLQD()"); }
-	void VLQI() { reached("VLQI()"); }
-	void VMADD() { reached("VMADD()"); }
-	void VMADDA() { reached("VMADDA()"); }
-	void VMADDAi() { reached("VMADDAi()"); }
-	void VMADDAq() { reached("VMADDAq()"); }
-	void VMADDAw() { reached("VMADDAw()"); }
-	void VMADDAx() { reached("VMADDAx()"); }
-	void VMADDAy() { reached("VMADDAy()"); }
-	void VMADDAz() { reached("VMADDAz()"); }
-	void VMADDi() { reached("VMADDi()"); }
-	void VMADDq() { reached("VMADDq()"); }
-	void VMADDw() { reached("VMADDw()"); }
-	void VMADDx() { reached("VMADDx()"); }
-	void VMADDy() { reached("VMADDy()"); }
-	void VMADDz() { reached("VMADDz()"); }
-	void VMAX() { reached("VMAX()"); }
-	void VMAXi() { reached("VMAXi()"); }
-	void VMAXw() { reached("VMAXw()"); }
-	void VMAXx() { reached("VMAXx()"); }
-	void VMAXy() { reached("VMAXy()"); }
-	void VMAXz() { reached("VMAXz()"); }
-	void VMFIR() { reached("VMFIR()"); }
-	void VMINI() { reached("VMINI()"); }
-	void VMINIi() { reached("VMINIi()"); }
-	void VMINIw() { reached("VMINIw()"); }
-	void VMINIx() { reached("VMINIx()"); }
-	void VMINIy() { reached("VMINIy()"); }
-	void VMINIz() { reached("VMINIz()"); }
-	void VMOVE() { reached("VMOVE()"); }
-	void VMR32() { reached("VMR32()"); }
-	void VMSUB() { reached("VMSUB()"); }
-	void VMSUBA() { reached("VMSUBA()"); }
-	void VMSUBAi() { reached("VMSUBAi()"); }
-	void VMSUBAq() { reached("VMSUBAq()"); }
-	void VMSUBAw() { reached("VMSUBAw()"); }
-	void VMSUBAx() { reached("VMSUBAx()"); }
-	void VMSUBAy() { reached("VMSUBAy()"); }
-	void VMSUBAz() { reached("VMSUBAz()"); }
-	void VMSUBi() { reached("VMSUBi()"); }
-	void VMSUBq() { reached("VMSUBq()"); }
-	void VMSUBw() { reached("VMSUBw()"); }
-	void VMSUBx() { reached("VMSUBx()"); }
-	void VMSUBy() { reached("VMSUBy()"); }
-	void VMSUBz() { reached("VMSUBz()"); }
-	void VMTIR() { reached("VMTIR()"); }
-	void VMUL() { reached("VMUL()"); }
-	void VMULA() { reached("VMULA()"); }
-	void VMULAi() { reached("VMULAi()"); }
-	void VMULAq() { reached("VMULAq()"); }
-	void VMULAw() { reached("VMULAw()"); }
-	void VMULAx() { reached("VMULAx()"); }
-	void VMULAy() { reached("VMULAy()"); }
-	void VMULAz() { reached("VMULAz()"); }
-	void VMULi() { reached("VMULi()"); }
-	void VMULq() { reached("VMULq()"); }
-	void VMULw() { reached("VMULw()"); }
-	void VMULx() { reached("VMULx()"); }
-	void VMULy() { reached("VMULy()"); }
-	void VMULz() { reached("VMULz()"); }
-	void VNOP() { reached("VNOP()"); }
-	void VOPMSUB() { reached("VOPMSUB()"); }
-	void VOPMULA() { reached("VOPMULA()"); }
-	void VRGET() { reached("VRGET()"); }
-	void VRINIT() { reached("VRINIT()"); }
-	void VRNEXT() { reached("VRNEXT()"); }
-	void VRSQRT() { reached("VRSQRT()"); }
-	void VRXOR() { reached("VRXOR()"); }
-	void VSQD() { reached("VSQD()"); }
-	void VSQI() { reached("VSQI()"); }
-	void VSQRT() { reached("VSQRT()"); }
-	void VSUB() { reached("VSUB()"); }
-	void VSUBA() { reached("VSUBA()"); }
-	void VSUBAi() { reached("VSUBAi()"); }
-	void VSUBAq() { reached("VSUBAq()"); }
-	void VSUBAw() { reached("VSUBAw()"); }
-	void VSUBAx() { reached("VSUBAx()"); }
-	void VSUBAy() { reached("VSUBAy()"); }
-	void VSUBAz() { reached("VSUBAz()"); }
-	void VSUBi() { reached("VSUBi()"); }
-	void VSUBq() { reached("VSUBq()"); }
-	void VSUBw() { reached("VSUBw()"); }
-	void VSUBx() { reached("VSUBx()"); }
-	void VSUBy() { reached("VSUBy()"); }
-	void VSUBz() { reached("VSUBz()"); }
-	void VWAITQ() { reached("VWAITQ()"); }
+	extern "C" void QMFC2(void) { reached("QMFC2()"); }
+	extern "C" void QMTC2(void) { reached("QMTC2()"); }
+	extern "C" void VABS(void) { reached("VABS()"); }
+	extern "C" void VADD(void) { reached("VADD()"); }
+	extern "C" void VADDA(void) { reached("VADDA()"); }
+	extern "C" void VADDAi(void) { reached("VADDAi()"); }
+	extern "C" void VADDAq(void) { reached("VADDAq()"); }
+	extern "C" void VADDAw(void) { reached("VADDAw()"); }
+	extern "C" void VADDAx(void) { reached("VADDAx()"); }
+	extern "C" void VADDAy(void) { reached("VADDAy()"); }
+	extern "C" void VADDAz(void) { reached("VADDAz()"); }
+	extern "C" void VADDi(void) { reached("VADDi()"); }
+	extern "C" void VADDq(void) { reached("VADDq()"); }
+	extern "C" void VADDw(void) { reached("VADDw()"); }
+	extern "C" void VADDx(void) { reached("VADDx()"); }
+	extern "C" void VADDy(void) { reached("VADDy()"); }
+	extern "C" void VADDz(void) { reached("VADDz()"); }
+	extern "C" void VCLIPw(void) { reached("VCLIPw()"); }
+	extern "C" void VDIV(void) { reached("VDIV()"); }
+	extern "C" void VFTOI0(void) { reached("VFTOI0()"); }
+	extern "C" void VFTOI12(void) { reached("VFTOI12()"); }
+	extern "C" void VFTOI15(void) { reached("VFTOI15()"); }
+	extern "C" void VFTOI4(void) { reached("VFTOI4()"); }
+	extern "C" void VIADD(void) { reached("VIADD()"); }
+	extern "C" void VIADDI(void) { reached("VIADDI()"); }
+	extern "C" void VIAND(void) { reached("VIAND()"); }
+	extern "C" void VILWR(void) { reached("VILWR()"); }
+	extern "C" void VIOR(void) { reached("VIOR()"); }
+	extern "C" void VISUB(void) { reached("VISUB()"); }
+	extern "C" void VISWR(void) { reached("VISWR()"); }
+	extern "C" void VITOF0(void) { reached("VITOF0()"); }
+	extern "C" void VITOF12(void) { reached("VITOF12()"); }
+	extern "C" void VITOF15(void) { reached("VITOF15()"); }
+	extern "C" void VITOF4(void) { reached("VITOF4()"); }
+	extern "C" void VLQD(void) { reached("VLQD()"); }
+	extern "C" void VLQI(void) { reached("VLQI()"); }
+	extern "C" void VMADD(void) { reached("VMADD()"); }
+	extern "C" void VMADDA(void) { reached("VMADDA()"); }
+	extern "C" void VMADDAi(void) { reached("VMADDAi()"); }
+	extern "C" void VMADDAq(void) { reached("VMADDAq()"); }
+	extern "C" void VMADDAw(void) { reached("VMADDAw()"); }
+	extern "C" void VMADDAx(void) { reached("VMADDAx()"); }
+	extern "C" void VMADDAy(void) { reached("VMADDAy()"); }
+	extern "C" void VMADDAz(void) { reached("VMADDAz()"); }
+	extern "C" void VMADDi(void) { reached("VMADDi()"); }
+	extern "C" void VMADDq(void) { reached("VMADDq()"); }
+	extern "C" void VMADDw(void) { reached("VMADDw()"); }
+	extern "C" void VMADDx(void) { reached("VMADDx()"); }
+	extern "C" void VMADDy(void) { reached("VMADDy()"); }
+	extern "C" void VMADDz(void) { reached("VMADDz()"); }
+	extern "C" void VMAX(void) { reached("VMAX()"); }
+	extern "C" void VMAXi(void) { reached("VMAXi()"); }
+	extern "C" void VMAXw(void) { reached("VMAXw()"); }
+	extern "C" void VMAXx(void) { reached("VMAXx()"); }
+	extern "C" void VMAXy(void) { reached("VMAXy()"); }
+	extern "C" void VMAXz(void) { reached("VMAXz()"); }
+	extern "C" void VMFIR(void) { reached("VMFIR()"); }
+	extern "C" void VMINI(void) { reached("VMINI()"); }
+	extern "C" void VMINIi(void) { reached("VMINIi()"); }
+	extern "C" void VMINIw(void) { reached("VMINIw()"); }
+	extern "C" void VMINIx(void) { reached("VMINIx()"); }
+	extern "C" void VMINIy(void) { reached("VMINIy()"); }
+	extern "C" void VMINIz(void) { reached("VMINIz()"); }
+	extern "C" void VMOVE(void) { reached("VMOVE()"); }
+	extern "C" void VMR32(void) { reached("VMR32()"); }
+	extern "C" void VMSUB(void) { reached("VMSUB()"); }
+	extern "C" void VMSUBA(void) { reached("VMSUBA()"); }
+	extern "C" void VMSUBAi(void) { reached("VMSUBAi()"); }
+	extern "C" void VMSUBAq(void) { reached("VMSUBAq()"); }
+	extern "C" void VMSUBAw(void) { reached("VMSUBAw()"); }
+	extern "C" void VMSUBAx(void) { reached("VMSUBAx()"); }
+	extern "C" void VMSUBAy(void) { reached("VMSUBAy()"); }
+	extern "C" void VMSUBAz(void) { reached("VMSUBAz()"); }
+	extern "C" void VMSUBi(void) { reached("VMSUBi()"); }
+	extern "C" void VMSUBq(void) { reached("VMSUBq()"); }
+	extern "C" void VMSUBw(void) { reached("VMSUBw()"); }
+	extern "C" void VMSUBx(void) { reached("VMSUBx()"); }
+	extern "C" void VMSUBy(void) { reached("VMSUBy()"); }
+	extern "C" void VMSUBz(void) { reached("VMSUBz()"); }
+	extern "C" void VMTIR(void) { reached("VMTIR()"); }
+	extern "C" void VMUL(void) { reached("VMUL()"); }
+	extern "C" void VMULA(void) { reached("VMULA()"); }
+	extern "C" void VMULAi(void) { reached("VMULAi()"); }
+	extern "C" void VMULAq(void) { reached("VMULAq()"); }
+	extern "C" void VMULAw(void) { reached("VMULAw()"); }
+	extern "C" void VMULAx(void) { reached("VMULAx()"); }
+	extern "C" void VMULAy(void) { reached("VMULAy()"); }
+	extern "C" void VMULAz(void) { reached("VMULAz()"); }
+	extern "C" void VMULi(void) { reached("VMULi()"); }
+	extern "C" void VMULq(void) { reached("VMULq()"); }
+	extern "C" void VMULw(void) { reached("VMULw()"); }
+	extern "C" void VMULx(void) { reached("VMULx()"); }
+	extern "C" void VMULy(void) { reached("VMULy()"); }
+	extern "C" void VMULz(void) { reached("VMULz()"); }
+	extern "C" void VNOP(void) { reached("VNOP()"); }
+	extern "C" void VOPMSUB(void) { reached("VOPMSUB()"); }
+	extern "C" void VOPMULA(void) { reached("VOPMULA()"); }
+	extern "C" void VRGET(void) { reached("VRGET()"); }
+	extern "C" void VRINIT(void) { reached("VRINIT()"); }
+	extern "C" void VRNEXT(void) { reached("VRNEXT()"); }
+	extern "C" void VRSQRT(void) { reached("VRSQRT()"); }
+	extern "C" void VRXOR(void) { reached("VRXOR()"); }
+	extern "C" void VSQD(void) { reached("VSQD()"); }
+	extern "C" void VSQI(void) { reached("VSQI()"); }
+	extern "C" void VSQRT(void) { reached("VSQRT()"); }
+	extern "C" void VSUB(void) { reached("VSUB()"); }
+	extern "C" void VSUBA(void) { reached("VSUBA()"); }
+	extern "C" void VSUBAi(void) { reached("VSUBAi()"); }
+	extern "C" void VSUBAq(void) { reached("VSUBAq()"); }
+	extern "C" void VSUBAw(void) { reached("VSUBAw()"); }
+	extern "C" void VSUBAx(void) { reached("VSUBAx()"); }
+	extern "C" void VSUBAy(void) { reached("VSUBAy()"); }
+	extern "C" void VSUBAz(void) { reached("VSUBAz()"); }
+	extern "C" void VSUBi(void) { reached("VSUBi()"); }
+	extern "C" void VSUBq(void) { reached("VSUBq()"); }
+	extern "C" void VSUBw(void) { reached("VSUBw()"); }
+	extern "C" void VSUBx(void) { reached("VSUBx()"); }
+	extern "C" void VSUBy(void) { reached("VSUBy()"); }
+	extern "C" void VSUBz(void) { reached("VSUBz()"); }
+	extern "C" void VWAITQ(void) { reached("VWAITQ()"); }
 	void cpuException(unsigned int, unsigned int) { reached("cpuException(unsigned int, unsigned int)"); }
 	void gsSetVideoMode(GS_VideoMode) { reached("gsSetVideoMode(GS_VideoMode)"); }
-	void recABS_S() { reached("recABS_S()"); }
-	void recADD() { reached("recADD()"); }
-	void recADDA_S() { reached("recADDA_S()"); }
-	void recADDI() { reached("recADDI()"); }
-	void recADDIU() { reached("recADDIU()"); }
-	void recADDU() { reached("recADDU()"); }
-	void recADD_S() { reached("recADD_S()"); }
-	void recAND() { reached("recAND()"); }
-	void recANDI() { reached("recANDI()"); }
-	void recBC0F() { reached("recBC0F()"); }
-	void recBC0FL() { reached("recBC0FL()"); }
-	void recBC0T() { reached("recBC0T()"); }
-	void recBC0TL() { reached("recBC0TL()"); }
-	void recBC1F() { reached("recBC1F()"); }
-	void recBC1FL() { reached("recBC1FL()"); }
-	void recBC1T() { reached("recBC1T()"); }
-	void recBC1TL() { reached("recBC1TL()"); }
-	void recBEQ() { reached("recBEQ()"); }
-	void recBEQL() { reached("recBEQL()"); }
-	void recBGEZ() { reached("recBGEZ()"); }
-	void recBGEZAL() { reached("recBGEZAL()"); }
-	void recBGEZALL() { reached("recBGEZALL()"); }
-	void recBGEZL() { reached("recBGEZL()"); }
-	void recBGTZ() { reached("recBGTZ()"); }
-	void recBGTZL() { reached("recBGTZL()"); }
-	void recBLEZ() { reached("recBLEZ()"); }
-	void recBLEZL() { reached("recBLEZL()"); }
-	void recBLTZ() { reached("recBLTZ()"); }
-	void recBLTZAL() { reached("recBLTZAL()"); }
-	void recBLTZALL() { reached("recBLTZALL()"); }
-	void recBLTZL() { reached("recBLTZL()"); }
-	void recBNE() { reached("recBNE()"); }
-	void recBNEL() { reached("recBNEL()"); }
-	void recBREAK() { reached("recBREAK()"); }
-	void recCACHE() { reached("recCACHE()"); }
-	void recCFC1() { reached("recCFC1()"); }
-	void recCOP0_Unknown() { reached("recCOP0_Unknown()"); }
-	void recCOP1_Unknown() { reached("recCOP1_Unknown()"); }
-	void recCOP2() { reached("recCOP2()"); }
-	void recCTC1() { reached("recCTC1()"); }
-	void recCVT_S() { reached("recCVT_S()"); }
-	void recCVT_W() { reached("recCVT_W()"); }
-	void recC_EQ() { reached("recC_EQ()"); }
-	void recC_F() { reached("recC_F()"); }
-	void recC_LE() { reached("recC_LE()"); }
-	void recC_LT() { reached("recC_LT()"); }
-	void recDADD() { reached("recDADD()"); }
-	void recDADDI() { reached("recDADDI()"); }
-	void recDADDIU() { reached("recDADDIU()"); }
-	void recDADDU() { reached("recDADDU()"); }
-	void recDI() { reached("recDI()"); }
-	void recDIV() { reached("recDIV()"); }
-	void recDIV1() { reached("recDIV1()"); }
-	void recDIVU() { reached("recDIVU()"); }
-	void recDIVU1() { reached("recDIVU1()"); }
-	void recDIV_S() { reached("recDIV_S()"); }
-	void recDSLL() { reached("recDSLL()"); }
-	void recDSLL32() { reached("recDSLL32()"); }
-	void recDSLLV() { reached("recDSLLV()"); }
-	void recDSRA() { reached("recDSRA()"); }
-	void recDSRA32() { reached("recDSRA32()"); }
-	void recDSRAV() { reached("recDSRAV()"); }
-	void recDSRL() { reached("recDSRL()"); }
-	void recDSRL32() { reached("recDSRL32()"); }
-	void recDSRLV() { reached("recDSRLV()"); }
-	void recDSUB() { reached("recDSUB()"); }
-	void recDSUBU() { reached("recDSUBU()"); }
-	void recEI() { reached("recEI()"); }
-	void recERET() { reached("recERET()"); }
-	void recJ() { reached("recJ()"); }
-	void recJAL() { reached("recJAL()"); }
-	void recJALR() { reached("recJALR()"); }
-	void recJR() { reached("recJR()"); }
-	void recLB() { reached("recLB()"); }
-	void recLBU() { reached("recLBU()"); }
-	void recLD() { reached("recLD()"); }
-	void recLDL() { reached("recLDL()"); }
-	void recLDR() { reached("recLDR()"); }
-	void recLH() { reached("recLH()"); }
-	void recLHU() { reached("recLHU()"); }
-	void recLQ() { reached("recLQ()"); }
-	void recLQC2() { reached("recLQC2()"); }
-	void recLUI() { reached("recLUI()"); }
-	void recLW() { reached("recLW()"); }
-	void recLWC1() { reached("recLWC1()"); }
-	void recLWL() { reached("recLWL()"); }
-	void recLWR() { reached("recLWR()"); }
-	void recLWU() { reached("recLWU()"); }
-	void recMADD() { reached("recMADD()"); }
-	void recMADD1() { reached("recMADD1()"); }
-	void recMADDA_S() { reached("recMADDA_S()"); }
-	void recMADDU() { reached("recMADDU()"); }
-	void recMADDU1() { reached("recMADDU1()"); }
-	void recMADD_S() { reached("recMADD_S()"); }
-	void recMAX_S() { reached("recMAX_S()"); }
-	void recMFC0() { reached("recMFC0()"); }
-	void recMFC1() { reached("recMFC1()"); }
-	void recMFHI() { reached("recMFHI()"); }
-	void recMFHI1() { reached("recMFHI1()"); }
-	void recMFLO() { reached("recMFLO()"); }
-	void recMFLO1() { reached("recMFLO1()"); }
-	void recMFSA() { reached("recMFSA()"); }
-	void recMIN_S() { reached("recMIN_S()"); }
-	void recMMI_Unknown() { reached("recMMI_Unknown()"); }
-	void recMOVN() { reached("recMOVN()"); }
-	void recMOVZ() { reached("recMOVZ()"); }
-	void recMOV_S() { reached("recMOV_S()"); }
-	void recMSUBA_S() { reached("recMSUBA_S()"); }
-	void recMSUB_S() { reached("recMSUB_S()"); }
-	void recMTC0() { reached("recMTC0()"); }
-	void recMTC1() { reached("recMTC1()"); }
-	void recMTHI() { reached("recMTHI()"); }
-	void recMTHI1() { reached("recMTHI1()"); }
-	void recMTLO() { reached("recMTLO()"); }
-	void recMTLO1() { reached("recMTLO1()"); }
-	void recMTSA() { reached("recMTSA()"); }
-	void recMTSAB() { reached("recMTSAB()"); }
-	void recMTSAH() { reached("recMTSAH()"); }
-	void recMULA_S() { reached("recMULA_S()"); }
-	void recMULT() { reached("recMULT()"); }
-	void recMULT1() { reached("recMULT1()"); }
-	void recMULTU() { reached("recMULTU()"); }
-	void recMULTU1() { reached("recMULTU1()"); }
-	void recMUL_S() { reached("recMUL_S()"); }
-	void recNEG_S() { reached("recNEG_S()"); }
-	void recNOR() { reached("recNOR()"); }
-	void recOR() { reached("recOR()"); }
-	void recORI() { reached("recORI()"); }
-	void recPABSH() { reached("recPABSH()"); }
-	void recPABSW() { reached("recPABSW()"); }
-	void recPADDB() { reached("recPADDB()"); }
-	void recPADDH() { reached("recPADDH()"); }
-	void recPADDSB() { reached("recPADDSB()"); }
-	void recPADDSH() { reached("recPADDSH()"); }
-	void recPADDSW() { reached("recPADDSW()"); }
-	void recPADDUB() { reached("recPADDUB()"); }
-	void recPADDUH() { reached("recPADDUH()"); }
-	void recPADDUW() { reached("recPADDUW()"); }
-	void recPADDW() { reached("recPADDW()"); }
-	void recPADSBH() { reached("recPADSBH()"); }
-	void recPAND() { reached("recPAND()"); }
-	void recPCEQB() { reached("recPCEQB()"); }
-	void recPCEQH() { reached("recPCEQH()"); }
-	void recPCEQW() { reached("recPCEQW()"); }
-	void recPCGTB() { reached("recPCGTB()"); }
-	void recPCGTH() { reached("recPCGTH()"); }
-	void recPCGTW() { reached("recPCGTW()"); }
-	void recPCPYH() { reached("recPCPYH()"); }
-	void recPCPYLD() { reached("recPCPYLD()"); }
-	void recPCPYUD() { reached("recPCPYUD()"); }
-	void recPDIVBW() { reached("recPDIVBW()"); }
-	void recPDIVUW() { reached("recPDIVUW()"); }
-	void recPDIVW() { reached("recPDIVW()"); }
-	void recPEXCH() { reached("recPEXCH()"); }
-	void recPEXCW() { reached("recPEXCW()"); }
-	void recPEXEH() { reached("recPEXEH()"); }
-	void recPEXEW() { reached("recPEXEW()"); }
-	void recPEXT5() { reached("recPEXT5()"); }
-	void recPEXTLB() { reached("recPEXTLB()"); }
-	void recPEXTLH() { reached("recPEXTLH()"); }
-	void recPEXTLW() { reached("recPEXTLW()"); }
-	void recPEXTUB() { reached("recPEXTUB()"); }
-	void recPEXTUH() { reached("recPEXTUH()"); }
-	void recPEXTUW() { reached("recPEXTUW()"); }
-	void recPHMADH() { reached("recPHMADH()"); }
-	void recPHMSBH() { reached("recPHMSBH()"); }
-	void recPINTEH() { reached("recPINTEH()"); }
-	void recPINTH() { reached("recPINTH()"); }
-	void recPLZCW() { reached("recPLZCW()"); }
-	void recPMADDH() { reached("recPMADDH()"); }
-	void recPMADDUW() { reached("recPMADDUW()"); }
-	void recPMADDW() { reached("recPMADDW()"); }
-	void recPMAXH() { reached("recPMAXH()"); }
-	void recPMAXW() { reached("recPMAXW()"); }
-	void recPMFHI() { reached("recPMFHI()"); }
-	void recPMFHL() { reached("recPMFHL()"); }
-	void recPMFLO() { reached("recPMFLO()"); }
-	void recPMINH() { reached("recPMINH()"); }
-	void recPMINW() { reached("recPMINW()"); }
-	void recPMSUBH() { reached("recPMSUBH()"); }
-	void recPMSUBW() { reached("recPMSUBW()"); }
-	void recPMTHI() { reached("recPMTHI()"); }
-	void recPMTHL() { reached("recPMTHL()"); }
-	void recPMTLO() { reached("recPMTLO()"); }
-	void recPMULTH() { reached("recPMULTH()"); }
-	void recPMULTUW() { reached("recPMULTUW()"); }
-	void recPMULTW() { reached("recPMULTW()"); }
-	void recPNOR() { reached("recPNOR()"); }
-	void recPOR() { reached("recPOR()"); }
-	void recPPAC5() { reached("recPPAC5()"); }
-	void recPPACB() { reached("recPPACB()"); }
-	void recPPACH() { reached("recPPACH()"); }
-	void recPPACW() { reached("recPPACW()"); }
-	void recPREF() { reached("recPREF()"); }
-	void recPREVH() { reached("recPREVH()"); }
-	void recPROT3W() { reached("recPROT3W()"); }
-	void recPSLLH() { reached("recPSLLH()"); }
-	void recPSLLVW() { reached("recPSLLVW()"); }
-	void recPSLLW() { reached("recPSLLW()"); }
-	void recPSRAH() { reached("recPSRAH()"); }
-	void recPSRAVW() { reached("recPSRAVW()"); }
-	void recPSRAW() { reached("recPSRAW()"); }
-	void recPSRLH() { reached("recPSRLH()"); }
-	void recPSRLVW() { reached("recPSRLVW()"); }
-	void recPSRLW() { reached("recPSRLW()"); }
-	void recPSUBB() { reached("recPSUBB()"); }
-	void recPSUBH() { reached("recPSUBH()"); }
-	void recPSUBSB() { reached("recPSUBSB()"); }
-	void recPSUBSH() { reached("recPSUBSH()"); }
-	void recPSUBSW() { reached("recPSUBSW()"); }
-	void recPSUBUB() { reached("recPSUBUB()"); }
-	void recPSUBUH() { reached("recPSUBUH()"); }
-	void recPSUBUW() { reached("recPSUBUW()"); }
-	void recPSUBW() { reached("recPSUBW()"); }
-	void recPXOR() { reached("recPXOR()"); }
-	void recQFSRV() { reached("recQFSRV()"); }
-	void recRSQRT_S() { reached("recRSQRT_S()"); }
-	void recSB() { reached("recSB()"); }
-	void recSD() { reached("recSD()"); }
-	void recSDL() { reached("recSDL()"); }
-	void recSDR() { reached("recSDR()"); }
-	void recSH() { reached("recSH()"); }
-	void recSLL() { reached("recSLL()"); }
-	void recSLLV() { reached("recSLLV()"); }
-	void recSLT() { reached("recSLT()"); }
-	void recSLTI() { reached("recSLTI()"); }
-	void recSLTIU() { reached("recSLTIU()"); }
-	void recSLTU() { reached("recSLTU()"); }
-	void recSQ() { reached("recSQ()"); }
-	void recSQC2() { reached("recSQC2()"); }
-	void recSQRT_S() { reached("recSQRT_S()"); }
-	void recSRA() { reached("recSRA()"); }
-	void recSRAV() { reached("recSRAV()"); }
-	void recSRL() { reached("recSRL()"); }
-	void recSRLV() { reached("recSRLV()"); }
-	void recSUB() { reached("recSUB()"); }
-	void recSUBA_S() { reached("recSUBA_S()"); }
-	void recSUBU() { reached("recSUBU()"); }
-	void recSUB_S() { reached("recSUB_S()"); }
-	void recSW() { reached("recSW()"); }
-	void recSWC1() { reached("recSWC1()"); }
-	void recSWL() { reached("recSWL()"); }
-	void recSWR() { reached("recSWR()"); }
-	void recSYNC() { reached("recSYNC()"); }
-	void recSYSCALL() { reached("recSYSCALL()"); }
-	void recTEQ() { reached("recTEQ()"); }
-	void recTEQI() { reached("recTEQI()"); }
-	void recTGE() { reached("recTGE()"); }
-	void recTGEI() { reached("recTGEI()"); }
-	void recTGEIU() { reached("recTGEIU()"); }
-	void recTGEU() { reached("recTGEU()"); }
-	void recTLBP() { reached("recTLBP()"); }
-	void recTLBR() { reached("recTLBR()"); }
-	void recTLBWI() { reached("recTLBWI()"); }
-	void recTLBWR() { reached("recTLBWR()"); }
-	void recTLT() { reached("recTLT()"); }
-	void recTLTI() { reached("recTLTI()"); }
-	void recTLTIU() { reached("recTLTIU()"); }
-	void recTLTU() { reached("recTLTU()"); }
-	void recTNE() { reached("recTNE()"); }
-	void recTNEI() { reached("recTNEI()"); }
-	void recUnknown() { reached("recUnknown()"); }
-	void recXOR() { reached("recXOR()"); }
-	void recXORI() { reached("recXORI()"); }
-namespace R5900 { namespace Interpreter { namespace OpcodeImpl {
-	void CACHE() { reached("R5900::Interpreter::OpcodeImpl::CACHE()"); }
-	void DIV1() { reached("R5900::Interpreter::OpcodeImpl::DIV1()"); }
-	void DIVU1() { reached("R5900::Interpreter::OpcodeImpl::DIVU1()"); }
-	void LQC2() { reached("R5900::Interpreter::OpcodeImpl::LQC2()"); }
-	void LWC1() { reached("R5900::Interpreter::OpcodeImpl::LWC1()"); }
-	void MADD() { reached("R5900::Interpreter::OpcodeImpl::MADD()"); }
-	void MADD1() { reached("R5900::Interpreter::OpcodeImpl::MADD1()"); }
-	void MADDU() { reached("R5900::Interpreter::OpcodeImpl::MADDU()"); }
-	void MADDU1() { reached("R5900::Interpreter::OpcodeImpl::MADDU1()"); }
-	void MFHI1() { reached("R5900::Interpreter::OpcodeImpl::MFHI1()"); }
-	void MFLO1() { reached("R5900::Interpreter::OpcodeImpl::MFLO1()"); }
-	void MTHI1() { reached("R5900::Interpreter::OpcodeImpl::MTHI1()"); }
-	void MTLO1() { reached("R5900::Interpreter::OpcodeImpl::MTLO1()"); }
-	void MULT1() { reached("R5900::Interpreter::OpcodeImpl::MULT1()"); }
-	void MULTU1() { reached("R5900::Interpreter::OpcodeImpl::MULTU1()"); }
-	void SQC2() { reached("R5900::Interpreter::OpcodeImpl::SQC2()"); }
-	void SWC1() { reached("R5900::Interpreter::OpcodeImpl::SWC1()"); }
-}}}
-namespace R5900 { namespace Interpreter { namespace OpcodeImpl { namespace COP0 {
-	void BC0F() { reached("R5900::Interpreter::OpcodeImpl::COP0::BC0F()"); }
-	void BC0FL() { reached("R5900::Interpreter::OpcodeImpl::COP0::BC0FL()"); }
-	void BC0T() { reached("R5900::Interpreter::OpcodeImpl::COP0::BC0T()"); }
-	void BC0TL() { reached("R5900::Interpreter::OpcodeImpl::COP0::BC0TL()"); }
-	void DI() { reached("R5900::Interpreter::OpcodeImpl::COP0::DI()"); }
-	void EI() { reached("R5900::Interpreter::OpcodeImpl::COP0::EI()"); }
-	void ERET() { reached("R5900::Interpreter::OpcodeImpl::COP0::ERET()"); }
-	void MFC0() { reached("R5900::Interpreter::OpcodeImpl::COP0::MFC0()"); }
-	void MTC0() { reached("R5900::Interpreter::OpcodeImpl::COP0::MTC0()"); }
-	void TLBP() { reached("R5900::Interpreter::OpcodeImpl::COP0::TLBP()"); }
-	void TLBR() { reached("R5900::Interpreter::OpcodeImpl::COP0::TLBR()"); }
-	void TLBWI() { reached("R5900::Interpreter::OpcodeImpl::COP0::TLBWI()"); }
-	void TLBWR() { reached("R5900::Interpreter::OpcodeImpl::COP0::TLBWR()"); }
-}}}}
-namespace R5900 { namespace Interpreter { namespace OpcodeImpl { namespace COP1 {
-	void ABS_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::ABS_S()"); }
-	void ADDA_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::ADDA_S()"); }
-	void ADD_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::ADD_S()"); }
-	void BC1F() { reached("R5900::Interpreter::OpcodeImpl::COP1::BC1F()"); }
-	void BC1FL() { reached("R5900::Interpreter::OpcodeImpl::COP1::BC1FL()"); }
-	void BC1T() { reached("R5900::Interpreter::OpcodeImpl::COP1::BC1T()"); }
-	void BC1TL() { reached("R5900::Interpreter::OpcodeImpl::COP1::BC1TL()"); }
-	void CFC1() { reached("R5900::Interpreter::OpcodeImpl::COP1::CFC1()"); }
-	void CTC1() { reached("R5900::Interpreter::OpcodeImpl::COP1::CTC1()"); }
-	void CVT_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::CVT_S()"); }
-	void CVT_W() { reached("R5900::Interpreter::OpcodeImpl::COP1::CVT_W()"); }
-	void C_EQ() { reached("R5900::Interpreter::OpcodeImpl::COP1::C_EQ()"); }
-	void C_F() { reached("R5900::Interpreter::OpcodeImpl::COP1::C_F()"); }
-	void C_LE() { reached("R5900::Interpreter::OpcodeImpl::COP1::C_LE()"); }
-	void C_LT() { reached("R5900::Interpreter::OpcodeImpl::COP1::C_LT()"); }
-	void DIV_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::DIV_S()"); }
-	void MADDA_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::MADDA_S()"); }
-	void MADD_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::MADD_S()"); }
-	void MAX_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::MAX_S()"); }
-	void MFC1() { reached("R5900::Interpreter::OpcodeImpl::COP1::MFC1()"); }
-	void MIN_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::MIN_S()"); }
-	void MOV_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::MOV_S()"); }
-	void MSUBA_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::MSUBA_S()"); }
-	void MSUB_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::MSUB_S()"); }
-	void MTC1() { reached("R5900::Interpreter::OpcodeImpl::COP1::MTC1()"); }
-	void MULA_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::MULA_S()"); }
-	void MUL_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::MUL_S()"); }
-	void NEG_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::NEG_S()"); }
-	void RSQRT_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::RSQRT_S()"); }
-	void SQRT_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::SQRT_S()"); }
-	void SUBA_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::SUBA_S()"); }
-	void SUB_S() { reached("R5900::Interpreter::OpcodeImpl::COP1::SUB_S()"); }
-}}}}
-namespace R5900 { namespace Interpreter { namespace OpcodeImpl { namespace MMI {
-	void PABSH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PABSH()"); }
-	void PABSW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PABSW()"); }
-	void PADDB() { reached("R5900::Interpreter::OpcodeImpl::MMI::PADDB()"); }
-	void PADDH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PADDH()"); }
-	void PADDSB() { reached("R5900::Interpreter::OpcodeImpl::MMI::PADDSB()"); }
-	void PADDSH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PADDSH()"); }
-	void PADDSW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PADDSW()"); }
-	void PADDUB() { reached("R5900::Interpreter::OpcodeImpl::MMI::PADDUB()"); }
-	void PADDUH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PADDUH()"); }
-	void PADDUW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PADDUW()"); }
-	void PADDW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PADDW()"); }
-	void PADSBH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PADSBH()"); }
-	void PAND() { reached("R5900::Interpreter::OpcodeImpl::MMI::PAND()"); }
-	void PCEQB() { reached("R5900::Interpreter::OpcodeImpl::MMI::PCEQB()"); }
-	void PCEQH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PCEQH()"); }
-	void PCEQW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PCEQW()"); }
-	void PCGTB() { reached("R5900::Interpreter::OpcodeImpl::MMI::PCGTB()"); }
-	void PCGTH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PCGTH()"); }
-	void PCGTW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PCGTW()"); }
-	void PCPYH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PCPYH()"); }
-	void PCPYLD() { reached("R5900::Interpreter::OpcodeImpl::MMI::PCPYLD()"); }
-	void PCPYUD() { reached("R5900::Interpreter::OpcodeImpl::MMI::PCPYUD()"); }
-	void PDIVBW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PDIVBW()"); }
-	void PDIVUW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PDIVUW()"); }
-	void PDIVW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PDIVW()"); }
-	void PEXCH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PEXCH()"); }
-	void PEXCW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PEXCW()"); }
-	void PEXEH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PEXEH()"); }
-	void PEXEW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PEXEW()"); }
-	void PEXT5() { reached("R5900::Interpreter::OpcodeImpl::MMI::PEXT5()"); }
-	void PEXTLB() { reached("R5900::Interpreter::OpcodeImpl::MMI::PEXTLB()"); }
-	void PEXTLH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PEXTLH()"); }
-	void PEXTLW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PEXTLW()"); }
-	void PEXTUB() { reached("R5900::Interpreter::OpcodeImpl::MMI::PEXTUB()"); }
-	void PEXTUH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PEXTUH()"); }
-	void PEXTUW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PEXTUW()"); }
-	void PHMADH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PHMADH()"); }
-	void PHMSBH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PHMSBH()"); }
-	void PINTEH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PINTEH()"); }
-	void PINTH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PINTH()"); }
-	void PLZCW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PLZCW()"); }
-	void PMADDH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMADDH()"); }
-	void PMADDUW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMADDUW()"); }
-	void PMADDW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMADDW()"); }
-	void PMAXH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMAXH()"); }
-	void PMAXW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMAXW()"); }
-	void PMFHI() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMFHI()"); }
-	void PMFHL() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMFHL()"); }
-	void PMFLO() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMFLO()"); }
-	void PMINH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMINH()"); }
-	void PMINW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMINW()"); }
-	void PMSUBH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMSUBH()"); }
-	void PMSUBW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMSUBW()"); }
-	void PMTHI() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMTHI()"); }
-	void PMTHL() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMTHL()"); }
-	void PMTLO() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMTLO()"); }
-	void PMULTH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMULTH()"); }
-	void PMULTUW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMULTUW()"); }
-	void PMULTW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PMULTW()"); }
-	void PNOR() { reached("R5900::Interpreter::OpcodeImpl::MMI::PNOR()"); }
-	void POR() { reached("R5900::Interpreter::OpcodeImpl::MMI::POR()"); }
-	void PPAC5() { reached("R5900::Interpreter::OpcodeImpl::MMI::PPAC5()"); }
-	void PPACB() { reached("R5900::Interpreter::OpcodeImpl::MMI::PPACB()"); }
-	void PPACH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PPACH()"); }
-	void PPACW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PPACW()"); }
-	void PREVH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PREVH()"); }
-	void PROT3W() { reached("R5900::Interpreter::OpcodeImpl::MMI::PROT3W()"); }
-	void PSLLH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSLLH()"); }
-	void PSLLVW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSLLVW()"); }
-	void PSLLW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSLLW()"); }
-	void PSRAH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSRAH()"); }
-	void PSRAVW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSRAVW()"); }
-	void PSRAW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSRAW()"); }
-	void PSRLH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSRLH()"); }
-	void PSRLVW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSRLVW()"); }
-	void PSRLW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSRLW()"); }
-	void PSUBB() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSUBB()"); }
-	void PSUBH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSUBH()"); }
-	void PSUBSB() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSUBSB()"); }
-	void PSUBSH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSUBSH()"); }
-	void PSUBSW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSUBSW()"); }
-	void PSUBUB() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSUBUB()"); }
-	void PSUBUH() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSUBUH()"); }
-	void PSUBUW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSUBUW()"); }
-	void PSUBW() { reached("R5900::Interpreter::OpcodeImpl::MMI::PSUBW()"); }
-	void PXOR() { reached("R5900::Interpreter::OpcodeImpl::MMI::PXOR()"); }
-	void QFSRV() { reached("R5900::Interpreter::OpcodeImpl::MMI::QFSRV()"); }
-}}}}
+	extern "C" void recABS_S(void) { reached("recABS_S()"); }
+	extern "C" void recADD(void) { reached("recADD()"); }
+	extern "C" void recADDA_S(void) { reached("recADDA_S()"); }
+	extern "C" void recADDI(void) { reached("recADDI()"); }
+	extern "C" void recADDIU(void) { reached("recADDIU()"); }
+	extern "C" void recADDU(void) { reached("recADDU()"); }
+	extern "C" void recADD_S(void) { reached("recADD_S()"); }
+	extern "C" void recAND(void) { reached("recAND()"); }
+	extern "C" void recANDI(void) { reached("recANDI()"); }
+	extern "C" void recBC0F(void) { reached("recBC0F()"); }
+	extern "C" void recBC0FL(void) { reached("recBC0FL()"); }
+	extern "C" void recBC0T(void) { reached("recBC0T()"); }
+	extern "C" void recBC0TL(void) { reached("recBC0TL()"); }
+	extern "C" void recBC1F(void) { reached("recBC1F()"); }
+	extern "C" void recBC1FL(void) { reached("recBC1FL()"); }
+	extern "C" void recBC1T(void) { reached("recBC1T()"); }
+	extern "C" void recBC1TL(void) { reached("recBC1TL()"); }
+	extern "C" void recBEQ(void) { reached("recBEQ()"); }
+	extern "C" void recBEQL(void) { reached("recBEQL()"); }
+	extern "C" void recBGEZ(void) { reached("recBGEZ()"); }
+	extern "C" void recBGEZAL(void) { reached("recBGEZAL()"); }
+	extern "C" void recBGEZALL(void) { reached("recBGEZALL()"); }
+	extern "C" void recBGEZL(void) { reached("recBGEZL()"); }
+	extern "C" void recBGTZ(void) { reached("recBGTZ()"); }
+	extern "C" void recBGTZL(void) { reached("recBGTZL()"); }
+	extern "C" void recBLEZ(void) { reached("recBLEZ()"); }
+	extern "C" void recBLEZL(void) { reached("recBLEZL()"); }
+	extern "C" void recBLTZ(void) { reached("recBLTZ()"); }
+	extern "C" void recBLTZAL(void) { reached("recBLTZAL()"); }
+	extern "C" void recBLTZALL(void) { reached("recBLTZALL()"); }
+	extern "C" void recBLTZL(void) { reached("recBLTZL()"); }
+	extern "C" void recBNE(void) { reached("recBNE()"); }
+	extern "C" void recBNEL(void) { reached("recBNEL()"); }
+	extern "C" void recBREAK(void) { reached("recBREAK()"); }
+	extern "C" void recCACHE(void) { reached("recCACHE()"); }
+	extern "C" void recCFC1(void) { reached("recCFC1()"); }
+	extern "C" void recCOP0_Unknown(void) { reached("recCOP0_Unknown()"); }
+	extern "C" void recCOP1_Unknown(void) { reached("recCOP1_Unknown()"); }
+	extern "C" void recCOP2(void) { reached("recCOP2()"); }
+	extern "C" void recCTC1(void) { reached("recCTC1()"); }
+	extern "C" void recCVT_S(void) { reached("recCVT_S()"); }
+	extern "C" void recCVT_W(void) { reached("recCVT_W()"); }
+	extern "C" void recC_EQ(void) { reached("recC_EQ()"); }
+	extern "C" void recC_F(void) { reached("recC_F()"); }
+	extern "C" void recC_LE(void) { reached("recC_LE()"); }
+	extern "C" void recC_LT(void) { reached("recC_LT()"); }
+	extern "C" void recDADD(void) { reached("recDADD()"); }
+	extern "C" void recDADDI(void) { reached("recDADDI()"); }
+	extern "C" void recDADDIU(void) { reached("recDADDIU()"); }
+	extern "C" void recDADDU(void) { reached("recDADDU()"); }
+	extern "C" void recDI(void) { reached("recDI()"); }
+	extern "C" void recDIV(void) { reached("recDIV()"); }
+	extern "C" void recDIV1(void) { reached("recDIV1()"); }
+	extern "C" void recDIVU(void) { reached("recDIVU()"); }
+	extern "C" void recDIVU1(void) { reached("recDIVU1()"); }
+	extern "C" void recDIV_S(void) { reached("recDIV_S()"); }
+	extern "C" void recDSLL(void) { reached("recDSLL()"); }
+	extern "C" void recDSLL32(void) { reached("recDSLL32()"); }
+	extern "C" void recDSLLV(void) { reached("recDSLLV()"); }
+	extern "C" void recDSRA(void) { reached("recDSRA()"); }
+	extern "C" void recDSRA32(void) { reached("recDSRA32()"); }
+	extern "C" void recDSRAV(void) { reached("recDSRAV()"); }
+	extern "C" void recDSRL(void) { reached("recDSRL()"); }
+	extern "C" void recDSRL32(void) { reached("recDSRL32()"); }
+	extern "C" void recDSRLV(void) { reached("recDSRLV()"); }
+	extern "C" void recDSUB(void) { reached("recDSUB()"); }
+	extern "C" void recDSUBU(void) { reached("recDSUBU()"); }
+	extern "C" void recEI(void) { reached("recEI()"); }
+	extern "C" void recERET(void) { reached("recERET()"); }
+	extern "C" void recJ(void) { reached("recJ()"); }
+	extern "C" void recJAL(void) { reached("recJAL()"); }
+	extern "C" void recJALR(void) { reached("recJALR()"); }
+	extern "C" void recJR(void) { reached("recJR()"); }
+	extern "C" void recLB(void) { reached("recLB()"); }
+	extern "C" void recLBU(void) { reached("recLBU()"); }
+	extern "C" void recLD(void) { reached("recLD()"); }
+	extern "C" void recLDL(void) { reached("recLDL()"); }
+	extern "C" void recLDR(void) { reached("recLDR()"); }
+	extern "C" void recLH(void) { reached("recLH()"); }
+	extern "C" void recLHU(void) { reached("recLHU()"); }
+	extern "C" void recLQ(void) { reached("recLQ()"); }
+	extern "C" void recLQC2(void) { reached("recLQC2()"); }
+	extern "C" void recLUI(void) { reached("recLUI()"); }
+	extern "C" void recLW(void) { reached("recLW()"); }
+	extern "C" void recLWC1(void) { reached("recLWC1()"); }
+	extern "C" void recLWL(void) { reached("recLWL()"); }
+	extern "C" void recLWR(void) { reached("recLWR()"); }
+	extern "C" void recLWU(void) { reached("recLWU()"); }
+	extern "C" void recMADD(void) { reached("recMADD()"); }
+	extern "C" void recMADD1(void) { reached("recMADD1()"); }
+	extern "C" void recMADDA_S(void) { reached("recMADDA_S()"); }
+	extern "C" void recMADDU(void) { reached("recMADDU()"); }
+	extern "C" void recMADDU1(void) { reached("recMADDU1()"); }
+	extern "C" void recMADD_S(void) { reached("recMADD_S()"); }
+	extern "C" void recMAX_S(void) { reached("recMAX_S()"); }
+	extern "C" void recMFC0(void) { reached("recMFC0()"); }
+	extern "C" void recMFC1(void) { reached("recMFC1()"); }
+	extern "C" void recMFHI(void) { reached("recMFHI()"); }
+	extern "C" void recMFHI1(void) { reached("recMFHI1()"); }
+	extern "C" void recMFLO(void) { reached("recMFLO()"); }
+	extern "C" void recMFLO1(void) { reached("recMFLO1()"); }
+	extern "C" void recMFSA(void) { reached("recMFSA()"); }
+	extern "C" void recMIN_S(void) { reached("recMIN_S()"); }
+	extern "C" void recMMI_Unknown(void) { reached("recMMI_Unknown()"); }
+	extern "C" void recMOVN(void) { reached("recMOVN()"); }
+	extern "C" void recMOVZ(void) { reached("recMOVZ()"); }
+	extern "C" void recMOV_S(void) { reached("recMOV_S()"); }
+	extern "C" void recMSUBA_S(void) { reached("recMSUBA_S()"); }
+	extern "C" void recMSUB_S(void) { reached("recMSUB_S()"); }
+	extern "C" void recMTC0(void) { reached("recMTC0()"); }
+	extern "C" void recMTC1(void) { reached("recMTC1()"); }
+	extern "C" void recMTHI(void) { reached("recMTHI()"); }
+	extern "C" void recMTHI1(void) { reached("recMTHI1()"); }
+	extern "C" void recMTLO(void) { reached("recMTLO()"); }
+	extern "C" void recMTLO1(void) { reached("recMTLO1()"); }
+	extern "C" void recMTSA(void) { reached("recMTSA()"); }
+	extern "C" void recMTSAB(void) { reached("recMTSAB()"); }
+	extern "C" void recMTSAH(void) { reached("recMTSAH()"); }
+	extern "C" void recMULA_S(void) { reached("recMULA_S()"); }
+	extern "C" void recMULT(void) { reached("recMULT()"); }
+	extern "C" void recMULT1(void) { reached("recMULT1()"); }
+	extern "C" void recMULTU(void) { reached("recMULTU()"); }
+	extern "C" void recMULTU1(void) { reached("recMULTU1()"); }
+	extern "C" void recMUL_S(void) { reached("recMUL_S()"); }
+	extern "C" void recNEG_S(void) { reached("recNEG_S()"); }
+	extern "C" void recNOR(void) { reached("recNOR()"); }
+	extern "C" void recOR(void) { reached("recOR()"); }
+	extern "C" void recORI(void) { reached("recORI()"); }
+	extern "C" void recPABSH(void) { reached("recPABSH()"); }
+	extern "C" void recPABSW(void) { reached("recPABSW()"); }
+	extern "C" void recPADDB(void) { reached("recPADDB()"); }
+	extern "C" void recPADDH(void) { reached("recPADDH()"); }
+	extern "C" void recPADDSB(void) { reached("recPADDSB()"); }
+	extern "C" void recPADDSH(void) { reached("recPADDSH()"); }
+	extern "C" void recPADDSW(void) { reached("recPADDSW()"); }
+	extern "C" void recPADDUB(void) { reached("recPADDUB()"); }
+	extern "C" void recPADDUH(void) { reached("recPADDUH()"); }
+	extern "C" void recPADDUW(void) { reached("recPADDUW()"); }
+	extern "C" void recPADDW(void) { reached("recPADDW()"); }
+	extern "C" void recPADSBH(void) { reached("recPADSBH()"); }
+	extern "C" void recPAND(void) { reached("recPAND()"); }
+	extern "C" void recPCEQB(void) { reached("recPCEQB()"); }
+	extern "C" void recPCEQH(void) { reached("recPCEQH()"); }
+	extern "C" void recPCEQW(void) { reached("recPCEQW()"); }
+	extern "C" void recPCGTB(void) { reached("recPCGTB()"); }
+	extern "C" void recPCGTH(void) { reached("recPCGTH()"); }
+	extern "C" void recPCGTW(void) { reached("recPCGTW()"); }
+	extern "C" void recPCPYH(void) { reached("recPCPYH()"); }
+	extern "C" void recPCPYLD(void) { reached("recPCPYLD()"); }
+	extern "C" void recPCPYUD(void) { reached("recPCPYUD()"); }
+	extern "C" void recPDIVBW(void) { reached("recPDIVBW()"); }
+	extern "C" void recPDIVUW(void) { reached("recPDIVUW()"); }
+	extern "C" void recPDIVW(void) { reached("recPDIVW()"); }
+	extern "C" void recPEXCH(void) { reached("recPEXCH()"); }
+	extern "C" void recPEXCW(void) { reached("recPEXCW()"); }
+	extern "C" void recPEXEH(void) { reached("recPEXEH()"); }
+	extern "C" void recPEXEW(void) { reached("recPEXEW()"); }
+	extern "C" void recPEXT5(void) { reached("recPEXT5()"); }
+	extern "C" void recPEXTLB(void) { reached("recPEXTLB()"); }
+	extern "C" void recPEXTLH(void) { reached("recPEXTLH()"); }
+	extern "C" void recPEXTLW(void) { reached("recPEXTLW()"); }
+	extern "C" void recPEXTUB(void) { reached("recPEXTUB()"); }
+	extern "C" void recPEXTUH(void) { reached("recPEXTUH()"); }
+	extern "C" void recPEXTUW(void) { reached("recPEXTUW()"); }
+	extern "C" void recPHMADH(void) { reached("recPHMADH()"); }
+	extern "C" void recPHMSBH(void) { reached("recPHMSBH()"); }
+	extern "C" void recPINTEH(void) { reached("recPINTEH()"); }
+	extern "C" void recPINTH(void) { reached("recPINTH()"); }
+	extern "C" void recPLZCW(void) { reached("recPLZCW()"); }
+	extern "C" void recPMADDH(void) { reached("recPMADDH()"); }
+	extern "C" void recPMADDUW(void) { reached("recPMADDUW()"); }
+	extern "C" void recPMADDW(void) { reached("recPMADDW()"); }
+	extern "C" void recPMAXH(void) { reached("recPMAXH()"); }
+	extern "C" void recPMAXW(void) { reached("recPMAXW()"); }
+	extern "C" void recPMFHI(void) { reached("recPMFHI()"); }
+	extern "C" void recPMFHL(void) { reached("recPMFHL()"); }
+	extern "C" void recPMFLO(void) { reached("recPMFLO()"); }
+	extern "C" void recPMINH(void) { reached("recPMINH()"); }
+	extern "C" void recPMINW(void) { reached("recPMINW()"); }
+	extern "C" void recPMSUBH(void) { reached("recPMSUBH()"); }
+	extern "C" void recPMSUBW(void) { reached("recPMSUBW()"); }
+	extern "C" void recPMTHI(void) { reached("recPMTHI()"); }
+	extern "C" void recPMTHL(void) { reached("recPMTHL()"); }
+	extern "C" void recPMTLO(void) { reached("recPMTLO()"); }
+	extern "C" void recPMULTH(void) { reached("recPMULTH()"); }
+	extern "C" void recPMULTUW(void) { reached("recPMULTUW()"); }
+	extern "C" void recPMULTW(void) { reached("recPMULTW()"); }
+	extern "C" void recPNOR(void) { reached("recPNOR()"); }
+	extern "C" void recPOR(void) { reached("recPOR()"); }
+	extern "C" void recPPAC5(void) { reached("recPPAC5()"); }
+	extern "C" void recPPACB(void) { reached("recPPACB()"); }
+	extern "C" void recPPACH(void) { reached("recPPACH()"); }
+	extern "C" void recPPACW(void) { reached("recPPACW()"); }
+	extern "C" void recPREF(void) { reached("recPREF()"); }
+	extern "C" void recPREVH(void) { reached("recPREVH()"); }
+	extern "C" void recPROT3W(void) { reached("recPROT3W()"); }
+	extern "C" void recPSLLH(void) { reached("recPSLLH()"); }
+	extern "C" void recPSLLVW(void) { reached("recPSLLVW()"); }
+	extern "C" void recPSLLW(void) { reached("recPSLLW()"); }
+	extern "C" void recPSRAH(void) { reached("recPSRAH()"); }
+	extern "C" void recPSRAVW(void) { reached("recPSRAVW()"); }
+	extern "C" void recPSRAW(void) { reached("recPSRAW()"); }
+	extern "C" void recPSRLH(void) { reached("recPSRLH()"); }
+	extern "C" void recPSRLVW(void) { reached("recPSRLVW()"); }
+	extern "C" void recPSRLW(void) { reached("recPSRLW()"); }
+	extern "C" void recPSUBB(void) { reached("recPSUBB()"); }
+	extern "C" void recPSUBH(void) { reached("recPSUBH()"); }
+	extern "C" void recPSUBSB(void) { reached("recPSUBSB()"); }
+	extern "C" void recPSUBSH(void) { reached("recPSUBSH()"); }
+	extern "C" void recPSUBSW(void) { reached("recPSUBSW()"); }
+	extern "C" void recPSUBUB(void) { reached("recPSUBUB()"); }
+	extern "C" void recPSUBUH(void) { reached("recPSUBUH()"); }
+	extern "C" void recPSUBUW(void) { reached("recPSUBUW()"); }
+	extern "C" void recPSUBW(void) { reached("recPSUBW()"); }
+	extern "C" void recPXOR(void) { reached("recPXOR()"); }
+	extern "C" void recQFSRV(void) { reached("recQFSRV()"); }
+	extern "C" void recRSQRT_S(void) { reached("recRSQRT_S()"); }
+	extern "C" void recSB(void) { reached("recSB()"); }
+	extern "C" void recSD(void) { reached("recSD()"); }
+	extern "C" void recSDL(void) { reached("recSDL()"); }
+	extern "C" void recSDR(void) { reached("recSDR()"); }
+	extern "C" void recSH(void) { reached("recSH()"); }
+	extern "C" void recSLL(void) { reached("recSLL()"); }
+	extern "C" void recSLLV(void) { reached("recSLLV()"); }
+	extern "C" void recSLT(void) { reached("recSLT()"); }
+	extern "C" void recSLTI(void) { reached("recSLTI()"); }
+	extern "C" void recSLTIU(void) { reached("recSLTIU()"); }
+	extern "C" void recSLTU(void) { reached("recSLTU()"); }
+	extern "C" void recSQ(void) { reached("recSQ()"); }
+	extern "C" void recSQC2(void) { reached("recSQC2()"); }
+	extern "C" void recSQRT_S(void) { reached("recSQRT_S()"); }
+	extern "C" void recSRA(void) { reached("recSRA()"); }
+	extern "C" void recSRAV(void) { reached("recSRAV()"); }
+	extern "C" void recSRL(void) { reached("recSRL()"); }
+	extern "C" void recSRLV(void) { reached("recSRLV()"); }
+	extern "C" void recSUB(void) { reached("recSUB()"); }
+	extern "C" void recSUBA_S(void) { reached("recSUBA_S()"); }
+	extern "C" void recSUBU(void) { reached("recSUBU()"); }
+	extern "C" void recSUB_S(void) { reached("recSUB_S()"); }
+	extern "C" void recSW(void) { reached("recSW()"); }
+	extern "C" void recSWC1(void) { reached("recSWC1()"); }
+	extern "C" void recSWL(void) { reached("recSWL()"); }
+	extern "C" void recSWR(void) { reached("recSWR()"); }
+	extern "C" void recSYNC(void) { reached("recSYNC()"); }
+	extern "C" void recSYSCALL(void) { reached("recSYSCALL()"); }
+	extern "C" void recTEQ(void) { reached("recTEQ()"); }
+	extern "C" void recTEQI(void) { reached("recTEQI()"); }
+	extern "C" void recTGE(void) { reached("recTGE()"); }
+	extern "C" void recTGEI(void) { reached("recTGEI()"); }
+	extern "C" void recTGEIU(void) { reached("recTGEIU()"); }
+	extern "C" void recTGEU(void) { reached("recTGEU()"); }
+	extern "C" void recTLBP(void) { reached("recTLBP()"); }
+	extern "C" void recTLBR(void) { reached("recTLBR()"); }
+	extern "C" void recTLBWI(void) { reached("recTLBWI()"); }
+	extern "C" void recTLBWR(void) { reached("recTLBWR()"); }
+	extern "C" void recTLT(void) { reached("recTLT()"); }
+	extern "C" void recTLTI(void) { reached("recTLTI()"); }
+	extern "C" void recTLTIU(void) { reached("recTLTIU()"); }
+	extern "C" void recTLTU(void) { reached("recTLTU()"); }
+	extern "C" void recTNE(void) { reached("recTNE()"); }
+	extern "C" void recTNEI(void) { reached("recTNEI()"); }
+	extern "C" void recUnknown(void) { reached("recUnknown()"); }
+	extern "C" void recXOR(void) { reached("recXOR()"); }
+	extern "C" void recXORI(void) { reached("recXORI()"); }
+	extern "C" void intCACHE(void) { reached("intCACHE()"); }
+	extern "C" void intDIV1(void) { reached("intDIV1()"); }
+	extern "C" void intDIVU1(void) { reached("intDIVU1()"); }
+	extern "C" void intLQC2(void) { reached("intLQC2()"); }
+	extern "C" void intLWC1(void) { reached("intLWC1()"); }
+	extern "C" void intMADD(void) { reached("intMADD()"); }
+	extern "C" void intMADD1(void) { reached("intMADD1()"); }
+	extern "C" void intMADDU(void) { reached("intMADDU()"); }
+	extern "C" void intMADDU1(void) { reached("intMADDU1()"); }
+	extern "C" void intMFHI1(void) { reached("intMFHI1()"); }
+	extern "C" void intMFLO1(void) { reached("intMFLO1()"); }
+	extern "C" void intMTHI1(void) { reached("intMTHI1()"); }
+	extern "C" void intMTLO1(void) { reached("intMTLO1()"); }
+	extern "C" void intMULT1(void) { reached("intMULT1()"); }
+	extern "C" void intMULTU1(void) { reached("intMULTU1()"); }
+	extern "C" void intSQC2(void) { reached("intSQC2()"); }
+	extern "C" void intSWC1(void) { reached("intSWC1()"); }
+	extern "C" void intBC0F(void) { reached("intBC0F()"); }
+	extern "C" void intBC0FL(void) { reached("intBC0FL()"); }
+	extern "C" void intBC0T(void) { reached("intBC0T()"); }
+	extern "C" void intBC0TL(void) { reached("intBC0TL()"); }
+	extern "C" void intDI(void) { reached("intDI()"); }
+	extern "C" void intEI(void) { reached("intEI()"); }
+	extern "C" void intERET(void) { reached("intERET()"); }
+	extern "C" void intMFC0(void) { reached("intMFC0()"); }
+	extern "C" void intMTC0(void) { reached("intMTC0()"); }
+	extern "C" void intTLBP(void) { reached("intTLBP()"); }
+	extern "C" void intTLBR(void) { reached("intTLBR()"); }
+	extern "C" void intTLBWI(void) { reached("intTLBWI()"); }
+	extern "C" void intTLBWR(void) { reached("intTLBWR()"); }
+	extern "C" void intABS_S(void) { reached("intABS_S()"); }
+	extern "C" void intADDA_S(void) { reached("intADDA_S()"); }
+	extern "C" void intADD_S(void) { reached("intADD_S()"); }
+	extern "C" void intBC1F(void) { reached("intBC1F()"); }
+	extern "C" void intBC1FL(void) { reached("intBC1FL()"); }
+	extern "C" void intBC1T(void) { reached("intBC1T()"); }
+	extern "C" void intBC1TL(void) { reached("intBC1TL()"); }
+	extern "C" void intCFC1(void) { reached("intCFC1()"); }
+	extern "C" void intCTC1(void) { reached("intCTC1()"); }
+	extern "C" void intCVT_S(void) { reached("intCVT_S()"); }
+	extern "C" void intCVT_W(void) { reached("intCVT_W()"); }
+	extern "C" void intC_EQ(void) { reached("intC_EQ()"); }
+	extern "C" void intC_F(void) { reached("intC_F()"); }
+	extern "C" void intC_LE(void) { reached("intC_LE()"); }
+	extern "C" void intC_LT(void) { reached("intC_LT()"); }
+	extern "C" void intDIV_S(void) { reached("intDIV_S()"); }
+	extern "C" void intMADDA_S(void) { reached("intMADDA_S()"); }
+	extern "C" void intMADD_S(void) { reached("intMADD_S()"); }
+	extern "C" void intMAX_S(void) { reached("intMAX_S()"); }
+	extern "C" void intMFC1(void) { reached("intMFC1()"); }
+	extern "C" void intMIN_S(void) { reached("intMIN_S()"); }
+	extern "C" void intMOV_S(void) { reached("intMOV_S()"); }
+	extern "C" void intMSUBA_S(void) { reached("intMSUBA_S()"); }
+	extern "C" void intMSUB_S(void) { reached("intMSUB_S()"); }
+	extern "C" void intMTC1(void) { reached("intMTC1()"); }
+	extern "C" void intMULA_S(void) { reached("intMULA_S()"); }
+	extern "C" void intMUL_S(void) { reached("intMUL_S()"); }
+	extern "C" void intNEG_S(void) { reached("intNEG_S()"); }
+	extern "C" void intRSQRT_S(void) { reached("intRSQRT_S()"); }
+	extern "C" void intSQRT_S(void) { reached("intSQRT_S()"); }
+	extern "C" void intSUBA_S(void) { reached("intSUBA_S()"); }
+	extern "C" void intSUB_S(void) { reached("intSUB_S()"); }
+	extern "C" void intPABSH(void) { reached("intPABSH()"); }
+	extern "C" void intPABSW(void) { reached("intPABSW()"); }
+	extern "C" void intPADDB(void) { reached("intPADDB()"); }
+	extern "C" void intPADDH(void) { reached("intPADDH()"); }
+	extern "C" void intPADDSB(void) { reached("intPADDSB()"); }
+	extern "C" void intPADDSH(void) { reached("intPADDSH()"); }
+	extern "C" void intPADDSW(void) { reached("intPADDSW()"); }
+	extern "C" void intPADDUB(void) { reached("intPADDUB()"); }
+	extern "C" void intPADDUH(void) { reached("intPADDUH()"); }
+	extern "C" void intPADDUW(void) { reached("intPADDUW()"); }
+	extern "C" void intPADDW(void) { reached("intPADDW()"); }
+	extern "C" void intPADSBH(void) { reached("intPADSBH()"); }
+	extern "C" void intPAND(void) { reached("intPAND()"); }
+	extern "C" void intPCEQB(void) { reached("intPCEQB()"); }
+	extern "C" void intPCEQH(void) { reached("intPCEQH()"); }
+	extern "C" void intPCEQW(void) { reached("intPCEQW()"); }
+	extern "C" void intPCGTB(void) { reached("intPCGTB()"); }
+	extern "C" void intPCGTH(void) { reached("intPCGTH()"); }
+	extern "C" void intPCGTW(void) { reached("intPCGTW()"); }
+	extern "C" void intPCPYH(void) { reached("intPCPYH()"); }
+	extern "C" void intPCPYLD(void) { reached("intPCPYLD()"); }
+	extern "C" void intPCPYUD(void) { reached("intPCPYUD()"); }
+	extern "C" void intPDIVBW(void) { reached("intPDIVBW()"); }
+	extern "C" void intPDIVUW(void) { reached("intPDIVUW()"); }
+	extern "C" void intPDIVW(void) { reached("intPDIVW()"); }
+	extern "C" void intPEXCH(void) { reached("intPEXCH()"); }
+	extern "C" void intPEXCW(void) { reached("intPEXCW()"); }
+	extern "C" void intPEXEH(void) { reached("intPEXEH()"); }
+	extern "C" void intPEXEW(void) { reached("intPEXEW()"); }
+	extern "C" void intPEXT5(void) { reached("intPEXT5()"); }
+	extern "C" void intPEXTLB(void) { reached("intPEXTLB()"); }
+	extern "C" void intPEXTLH(void) { reached("intPEXTLH()"); }
+	extern "C" void intPEXTLW(void) { reached("intPEXTLW()"); }
+	extern "C" void intPEXTUB(void) { reached("intPEXTUB()"); }
+	extern "C" void intPEXTUH(void) { reached("intPEXTUH()"); }
+	extern "C" void intPEXTUW(void) { reached("intPEXTUW()"); }
+	extern "C" void intPHMADH(void) { reached("intPHMADH()"); }
+	extern "C" void intPHMSBH(void) { reached("intPHMSBH()"); }
+	extern "C" void intPINTEH(void) { reached("intPINTEH()"); }
+	extern "C" void intPINTH(void) { reached("intPINTH()"); }
+	extern "C" void intPLZCW(void) { reached("intPLZCW()"); }
+	extern "C" void intPMADDH(void) { reached("intPMADDH()"); }
+	extern "C" void intPMADDUW(void) { reached("intPMADDUW()"); }
+	extern "C" void intPMADDW(void) { reached("intPMADDW()"); }
+	extern "C" void intPMAXH(void) { reached("intPMAXH()"); }
+	extern "C" void intPMAXW(void) { reached("intPMAXW()"); }
+	extern "C" void intPMFHI(void) { reached("intPMFHI()"); }
+	extern "C" void intPMFHL(void) { reached("intPMFHL()"); }
+	extern "C" void intPMFLO(void) { reached("intPMFLO()"); }
+	extern "C" void intPMINH(void) { reached("intPMINH()"); }
+	extern "C" void intPMINW(void) { reached("intPMINW()"); }
+	extern "C" void intPMSUBH(void) { reached("intPMSUBH()"); }
+	extern "C" void intPMSUBW(void) { reached("intPMSUBW()"); }
+	extern "C" void intPMTHI(void) { reached("intPMTHI()"); }
+	extern "C" void intPMTHL(void) { reached("intPMTHL()"); }
+	extern "C" void intPMTLO(void) { reached("intPMTLO()"); }
+	extern "C" void intPMULTH(void) { reached("intPMULTH()"); }
+	extern "C" void intPMULTUW(void) { reached("intPMULTUW()"); }
+	extern "C" void intPMULTW(void) { reached("intPMULTW()"); }
+	extern "C" void intPNOR(void) { reached("intPNOR()"); }
+	extern "C" void intPOR(void) { reached("intPOR()"); }
+	extern "C" void intPPAC5(void) { reached("intPPAC5()"); }
+	extern "C" void intPPACB(void) { reached("intPPACB()"); }
+	extern "C" void intPPACH(void) { reached("intPPACH()"); }
+	extern "C" void intPPACW(void) { reached("intPPACW()"); }
+	extern "C" void intPREVH(void) { reached("intPREVH()"); }
+	extern "C" void intPROT3W(void) { reached("intPROT3W()"); }
+	extern "C" void intPSLLH(void) { reached("intPSLLH()"); }
+	extern "C" void intPSLLVW(void) { reached("intPSLLVW()"); }
+	extern "C" void intPSLLW(void) { reached("intPSLLW()"); }
+	extern "C" void intPSRAH(void) { reached("intPSRAH()"); }
+	extern "C" void intPSRAVW(void) { reached("intPSRAVW()"); }
+	extern "C" void intPSRAW(void) { reached("intPSRAW()"); }
+	extern "C" void intPSRLH(void) { reached("intPSRLH()"); }
+	extern "C" void intPSRLVW(void) { reached("intPSRLVW()"); }
+	extern "C" void intPSRLW(void) { reached("intPSRLW()"); }
+	extern "C" void intPSUBB(void) { reached("intPSUBB()"); }
+	extern "C" void intPSUBH(void) { reached("intPSUBH()"); }
+	extern "C" void intPSUBSB(void) { reached("intPSUBSB()"); }
+	extern "C" void intPSUBSH(void) { reached("intPSUBSH()"); }
+	extern "C" void intPSUBSW(void) { reached("intPSUBSW()"); }
+	extern "C" void intPSUBUB(void) { reached("intPSUBUB()"); }
+	extern "C" void intPSUBUH(void) { reached("intPSUBUH()"); }
+	extern "C" void intPSUBUW(void) { reached("intPSUBUW()"); }
+	extern "C" void intPSUBW(void) { reached("intPSUBW()"); }
+	extern "C" void intPXOR(void) { reached("intPXOR()"); }
+	extern "C" void intQFSRV(void) { reached("intQFSRV()"); }

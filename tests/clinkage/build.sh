@@ -15,6 +15,13 @@
 #     again and the link fails on the duplicate. (EELOAD_START and its
 #     three neighbours, count_leading_zero.)
 #
+#   - a C++ unit declares a C unit's function itself, without extern "C",
+#     so it calls the mangled name and nothing defines it. vu0Sync, when
+#     VU0 became C: the arm64 recompiler had its own extern for it, and
+#     the arm64 units are not built on an x86 host, so the x86 checks
+#     below never saw the call. They are cross-built here when
+#     aarch64-linux-gnu-g++ is installed.
+#
 #   - a C unit references a VARIABLE whose declaration has C++ language
 #     linkage. This one is invisible here however hard you look at the
 #     symbols: the ELF ABI does not decorate data symbols, so `psxRegs`
@@ -69,6 +76,22 @@ while read -r f; do printf '%s\0%s\0' "$f" "$TMP/cxx/$(obj "$f")"; done |
 xargs -0 -n2 -P "$JOBS" sh -c 'g++ -O0 -DNDEBUG -std=c++17 -DPCSX2_CORE '"$INC"' -c "$1" -o "$2" 2>/dev/null || true' _
 echo "C++ objects: $(ls "$TMP/cxx" | wc -l)"
 
+# The arm64 recompiler units only build for aarch64. Their calls into C
+# are checked with everyone else's; their own definitions are not, since
+# nothing on the C side links against them on this host.
+mkdir -p "$TMP/a64"
+if command -v aarch64-linux-gnu-g++ >/dev/null 2>&1; then
+	for f in $(find "$ROOT/pcsx2/arm64" -name '*.cpp' | sort); do
+		aarch64-linux-gnu-g++ -O0 -DNDEBUG -std=c++17 -DPCSX2_CORE -D_ARCH_64=1 \
+		    -DVIXL_INCLUDE_TARGET_AARCH64 -I"$ROOT/3rdparty/vixl/src" $INC \
+		    -c "$f" -o "$TMP/a64/$(obj "$f")" 2>/dev/null ||
+			{ echo "FAIL: $f does not cross-compile for aarch64"; exit 1; }
+	done
+	echo "arm64 C++  : $(ls "$TMP/a64" | wc -l)"
+else
+	echo "arm64 C++  : skipped, no aarch64-linux-gnu-g++"
+fi
+
 nm "$TMP"/c/*.o   | awk '$2 ~ /^[TDBRG]$/   { print $3 }' | sort    > "$TMP/def_c_all"
 sort -u "$TMP/def_c_all" > "$TMP/def_c"
 nm "$TMP"/cxx/*.o | awk '$2 ~ /^[TDBRGWVi]$/ { print $3 }' | sort -u > "$TMP/def_cxx"
@@ -103,6 +126,29 @@ while read -r sym; do
 	fi
 done < "$TMP/undef"
 [ "$bad" = 0 ] && echo "  ok"
+
+echo
+echo "== every C function the C++ units call is declared extern \"C\" =="
+# A C++ reference to _Z<len><name>... where <name> is a C unit's function
+# and no C++ unit defines that mangled symbol: the declaration the caller
+# saw lacks extern "C". Nested (_ZN) names cannot be C functions.
+nm "$TMP"/c/*.o | awk '$2 ~ /^[TW]$/ { print $3 }' | sort -u > "$TMP/def_c_text"
+nm "$TMP"/cxx/*.o $(ls "$TMP"/a64/*.o 2>/dev/null) | awk '$1 == "U" { print $2 }' |
+	grep '^_Z[0-9]' | sort -u > "$TMP/undef_cxx"
+nm "$TMP"/cxx/*.o $(ls "$TMP"/a64/*.o 2>/dev/null) | awk 'NF == 3 { print $3 }' | sort -u > "$TMP/def_cxx_any"
+awk 'NR == FNR { c[$1] = 1; next }
+     { if (match($1, /^_Z[0-9]+/)) { n = substr($1, 3, RLENGTH - 2) + 0;
+       name = substr($1, RLENGTH + 1, n); if (name in c) print $1 " " name } }' \
+	"$TMP/def_c_text" "$TMP/undef_cxx" > "$TMP/cxx_to_c"
+rbad=0
+while read -r sym name; do
+	[ -n "$sym" ] || continue
+	grep -qxF "$sym" "$TMP/def_cxx_any" && continue
+	echo "  FAIL: a C++ unit calls $name as $sym; the C definition is"
+	echo "        unmangled, so the declaration it saw needs extern \"C\""
+	rbad=1
+done < "$TMP/cxx_to_c"
+[ "$rbad" = 0 ] && echo "  ok" || bad=1
 
 echo
 echo "== every variable the C units need is declared extern \"C\" =="

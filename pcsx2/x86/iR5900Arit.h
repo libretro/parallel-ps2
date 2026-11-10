@@ -15,24 +15,31 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*********************************************************
 * Register arithmetic                                    *
 * Format:  OP rd, rs, rt                                 *
 *********************************************************/
 
 
-	void recADD();
-	void recADDU();
-	void recDADD();
-	void recDADDU();
-	void recSUB();
-	void recSUBU();
-	void recDSUB();
-	void recDSUBU();
-	void recAND();
-	void recOR();
-	void recXOR();
-	void recNOR();
-	void recSLT();
-	void recSLTU();
+	void recADD(void);
+	void recADDU(void);
+	void recDADD(void);
+	void recDADDU(void);
+	void recSUB(void);
+	void recSUBU(void);
+	void recDSUB(void);
+	void recDSUBU(void);
+	void recAND(void);
+	void recOR(void);
+	void recXOR(void);
+	void recNOR(void);
+	void recSLT(void);
+	void recSLTU(void);
 
+#ifdef __cplusplus
+}
+#endif

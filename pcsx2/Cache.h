@@ -18,6 +18,11 @@
 #include "Common.h"
 #include "../common/SingleRegisterTypes.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 void writeCache8(u32 mem, u8 value);
 void writeCache16(u32 mem, u16 value);
 void writeCache32(u32 mem, u32 value);
@@ -28,3 +33,7 @@ u16 readCache16(u32 mem);
 u32 readCache32(u32 mem);
 u64 readCache64(u32 mem);
 RETURNS_R128 readCache128(u32 mem);
+
+#ifdef __cplusplus
+}
+#endif

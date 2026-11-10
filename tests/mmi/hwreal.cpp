@@ -1,10 +1,10 @@
 /*  MMI against console captures, driving the real implementations.
  *
  *  tests/mmi/hwelem.c and hwpmfhl.c transcribe the semantics out of
- *  pcsx2/MMI.cpp and score the copy. That catches a wrong answer but not
- *  drift: if MMI.cpp changes, the transcription keeps passing.
+ *  pcsx2/MMI.c and score the copy. That catches a wrong answer but not
+ *  drift: if MMI.c changes, the transcription keeps passing.
  *
- *  This links MMI.cpp instead and calls the ops through their real entry
+ *  This links MMI.c instead and calls the ops through their real entry
  *  points, building the instruction word so the _Rd_, _Rs_ and _Rt_
  *  macros decode the registers this harness intends. The file touches
  *  only cpuRegs, so a definition of it is the whole of what it needs.
@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "Common.h"
+#include "R5900OpcodeTables.h"
 #include "R5900.h"
 
 alignas(16) cpuRegisters cpuRegs;
@@ -48,62 +49,12 @@ static void get_reg(int r, Q* q)
 	q->w[2] = cpuRegs.GPR.r[r].UL[2]; q->w[3] = cpuRegs.GPR.r[r].UL[3];
 }
 
-/* The ops under test, by their MMI.cpp entry points. */
-namespace R5900 { namespace Interpreter { namespace OpcodeImpl { namespace MMI {
-	void PADDW(); void PSUBW(); void PCGTW(); void PMAXW();
-	void PADDH(); void PSUBH(); void PCGTH(); void PMAXH();
-	void PADDB(); void PSUBB(); void PCGTB();
-	void PADDSW(); void PSUBSW(); void PADDSH(); void PSUBSH();
-	void PADDSB(); void PSUBSB();
-	void PADDUW(); void PSUBUW(); void PADDUH(); void PSUBUH();
-	void PADDUB(); void PSUBUB();
-	void PAND(); void POR(); void PXOR(); void PNOR();
-	void PCEQW(); void PCEQH(); void PCEQB();
-	void PMINH(); void PMINW();
-	void PEXTLW(); void PEXTLH(); void PEXTLB();
-	void PEXTUW(); void PEXTUH(); void PEXTUB();
-	void PCPYLD(); void PCPYUD(); void PCPYH(); void PREVH();
-	void PPACW(); void PPACH(); void PPACB();
-	void PABSW(); void PABSH(); void PADSBH();
-	void PEXCH(); void PEXCW(); void PEXEH(); void PEXEW();
-	void PEXT5(); void PINTEH(); void PINTH(); void PLZCW(); void PROT3W();
-	void PSLLH(); void PSLLW(); void PSRAH(); void PSRAW();
-	void PSRLH(); void PSRLW();
-	void PSLLVW(); void PSRLVW(); void PSRAVW();
-	void PMADDW(); void PMSUBW(); void PMADDUW();
-	void PMULTW(); void PMULTUW();
-	void PMADDH(); void PMSUBH(); void PMULTH();
-	void PHMADH(); void PHMSBH();
-	void PDIVW(); void PDIVUW(); void PDIVBW();
-	void PMFHI(); void PMFLO(); void PMTHI(); void PMTLO();
-	void PMFHL(); void PMTHL();
-} } } }
-
-/* The second pipeline and the accumulate forms. MMI.cpp puts these in
- * OpcodeImpl rather than OpcodeImpl::MMI -- its own comment calls them
- * "non-MMI instructions" that live in the MMI opcode class because they
- * had nowhere else to go -- so they need their own declaration. */
-namespace R5900 { namespace Interpreter { namespace OpcodeImpl {
-	void MADD(); void MADDU(); void MADD1(); void MADDU1();
-	void MULT1(); void MULTU1(); void DIV1(); void DIVU1();
-	void MFHI1(); void MFLO1(); void MTHI1(); void MTLO1();
-} } }
-using R5900::Interpreter::OpcodeImpl::MADD;
-using R5900::Interpreter::OpcodeImpl::MADDU;
-using R5900::Interpreter::OpcodeImpl::MADD1;
-using R5900::Interpreter::OpcodeImpl::MADDU1;
-using R5900::Interpreter::OpcodeImpl::MULT1;
-using R5900::Interpreter::OpcodeImpl::MULTU1;
-using R5900::Interpreter::OpcodeImpl::DIV1;
-using R5900::Interpreter::OpcodeImpl::DIVU1;
-using R5900::Interpreter::OpcodeImpl::MFHI1;
-using R5900::Interpreter::OpcodeImpl::MFLO1;
-using R5900::Interpreter::OpcodeImpl::MTHI1;
-using R5900::Interpreter::OpcodeImpl::MTLO1;
-using namespace R5900::Interpreter::OpcodeImpl::MMI;
+/* The ops under test, by their MMI.c entry points, all declared in
+ * R5900OpcodeTables.h: the MMI ops and the second-pipeline and
+ * accumulate forms that share their opcode class. */
 
 /* How a line's operands map onto the instruction word. TWO is the usual
- * rs,rt pair; ONE has a single source, which MMI.cpp reads from rt; IMM
+ * rs,rt pair; ONE has a single source, which MMI.c reads from rt; IMM
  * takes a shift amount in sa rather than a second register; VSHIFT is the
  * variable-shift trio, which assemble as rd, rt, rs -- value first,
  * amount second -- so the operands go in swapped. */
@@ -112,83 +63,83 @@ enum { A_TWO, A_ONE, A_IMM, A_VSHIFT, A_HILO, A_HILO1, A_HILO_TO,
 
 static const struct { const char* name; const char* file; void (*fn)(); int form; }
 kOps[] = {
-	{ "paddw","arithmetic",PADDW,A_TWO },{ "psubw","arithmetic",PSUBW,A_TWO },
-	{ "pcgtw","compare",PCGTW,A_TWO },{ "pmaxw","arithmetic",PMAXW,A_TWO },
-	{ "paddh","arithmetic",PADDH,A_TWO },{ "psubh","arithmetic",PSUBH,A_TWO },
-	{ "pcgth","compare",PCGTH,A_TWO },{ "pmaxh","arithmetic",PMAXH,A_TWO },
-	{ "paddb","arithmetic",PADDB,A_TWO },{ "psubb","arithmetic",PSUBB,A_TWO },
-	{ "pcgtb","compare",PCGTB,A_TWO },
-	{ "paddsw","arithmetic",PADDSW,A_TWO },{ "psubsw","arithmetic",PSUBSW,A_TWO },
-	{ "paddsh","arithmetic",PADDSH,A_TWO },{ "psubsh","arithmetic",PSUBSH,A_TWO },
-	{ "paddsb","arithmetic",PADDSB,A_TWO },{ "psubsb","arithmetic",PSUBSB,A_TWO },
-	{ "padduw","arithmetic",PADDUW,A_TWO },{ "psubuw","arithmetic",PSUBUW,A_TWO },
-	{ "padduh","arithmetic",PADDUH,A_TWO },{ "psubuh","arithmetic",PSUBUH,A_TWO },
-	{ "paddub","arithmetic",PADDUB,A_TWO },{ "psubub","arithmetic",PSUBUB,A_TWO },
-	{ "pand","logic",PAND,A_TWO },{ "por","logic",POR,A_TWO },
-	{ "pxor","logic",PXOR,A_TWO },{ "pnor","logic",PNOR,A_TWO },
-	{ "pceqw","compare",PCEQW,A_TWO },{ "pceqh","compare",PCEQH,A_TWO },
-	{ "pceqb","compare",PCEQB,A_TWO },
-	{ "pminh","arithmetic",PMINH,A_TWO },{ "pminw","arithmetic",PMINW,A_TWO },
-	{ "pextlw","shuffle",PEXTLW,A_TWO },{ "pextlh","shuffle",PEXTLH,A_TWO },
-	{ "pextlb","shuffle",PEXTLB,A_TWO },
-	{ "pextuw","shuffle",PEXTUW,A_TWO },{ "pextuh","shuffle",PEXTUH,A_TWO },
-	{ "pextub","shuffle",PEXTUB,A_TWO },
-	{ "pcpyld","shuffle",PCPYLD,A_TWO },{ "pcpyud","shuffle",PCPYUD,A_TWO },
+	{ "paddw","arithmetic",intPADDW,A_TWO },{ "psubw","arithmetic",intPSUBW,A_TWO },
+	{ "pcgtw","compare",intPCGTW,A_TWO },{ "pmaxw","arithmetic",intPMAXW,A_TWO },
+	{ "paddh","arithmetic",intPADDH,A_TWO },{ "psubh","arithmetic",intPSUBH,A_TWO },
+	{ "pcgth","compare",intPCGTH,A_TWO },{ "pmaxh","arithmetic",intPMAXH,A_TWO },
+	{ "paddb","arithmetic",intPADDB,A_TWO },{ "psubb","arithmetic",intPSUBB,A_TWO },
+	{ "pcgtb","compare",intPCGTB,A_TWO },
+	{ "paddsw","arithmetic",intPADDSW,A_TWO },{ "psubsw","arithmetic",intPSUBSW,A_TWO },
+	{ "paddsh","arithmetic",intPADDSH,A_TWO },{ "psubsh","arithmetic",intPSUBSH,A_TWO },
+	{ "paddsb","arithmetic",intPADDSB,A_TWO },{ "psubsb","arithmetic",intPSUBSB,A_TWO },
+	{ "padduw","arithmetic",intPADDUW,A_TWO },{ "psubuw","arithmetic",intPSUBUW,A_TWO },
+	{ "padduh","arithmetic",intPADDUH,A_TWO },{ "psubuh","arithmetic",intPSUBUH,A_TWO },
+	{ "paddub","arithmetic",intPADDUB,A_TWO },{ "psubub","arithmetic",intPSUBUB,A_TWO },
+	{ "pand","logic",intPAND,A_TWO },{ "por","logic",intPOR,A_TWO },
+	{ "pxor","logic",intPXOR,A_TWO },{ "pnor","logic",intPNOR,A_TWO },
+	{ "pceqw","compare",intPCEQW,A_TWO },{ "pceqh","compare",intPCEQH,A_TWO },
+	{ "pceqb","compare",intPCEQB,A_TWO },
+	{ "pminh","arithmetic",intPMINH,A_TWO },{ "pminw","arithmetic",intPMINW,A_TWO },
+	{ "pextlw","shuffle",intPEXTLW,A_TWO },{ "pextlh","shuffle",intPEXTLH,A_TWO },
+	{ "pextlb","shuffle",intPEXTLB,A_TWO },
+	{ "pextuw","shuffle",intPEXTUW,A_TWO },{ "pextuh","shuffle",intPEXTUH,A_TWO },
+	{ "pextub","shuffle",intPEXTUB,A_TWO },
+	{ "pcpyld","shuffle",intPCPYLD,A_TWO },{ "pcpyud","shuffle",intPCPYUD,A_TWO },
 	/* Single-source, and their lines carry one operand: "pcpyh 0: ...".
 	 * Marked A_TWO the parser demands a comma, finds none and skips the
 	 * whole block -- both scored 0 of 0 while the run passed. */
-	{ "pcpyh","shuffle",PCPYH,A_ONE },{ "prevh","shuffle",PREVH,A_ONE },
-	{ "ppacw","shuffle",PPACW,A_TWO },{ "ppach","shuffle",PPACH,A_TWO },
-	{ "ppacb","shuffle",PPACB,A_TWO },
-	{ "pabsw","arithmetic",PABSW,A_ONE },{ "pabsh","arithmetic",PABSH,A_ONE },
-	{ "padsbh","arithmetic",PADSBH,A_TWO },
-	{ "pexch","shuffle",PEXCH,A_ONE },{ "pexcw","shuffle",PEXCW,A_ONE },
-	{ "pexeh","shuffle",PEXEH,A_ONE },{ "pexew","shuffle",PEXEW,A_ONE },
-	{ "pext5","shuffle",PEXT5,A_ONE },{ "prot3w","shuffle",PROT3W,A_ONE },
-	{ "pinteh","shuffle",PINTEH,A_TWO },{ "pinth","shuffle",PINTH,A_TWO },
-	{ "plzcw","logic",PLZCW,A_ONE },
-	{ "psllh","logic",PSLLH,A_IMM },{ "psrlh","logic",PSRLH,A_IMM },
-	{ "psrah","logic",PSRAH,A_IMM },{ "psllw","logic",PSLLW,A_IMM },
-	{ "psrlw","logic",PSRLW,A_IMM },{ "psraw","logic",PSRAW,A_IMM },
-	{ "psllvw","logic",PSLLVW,A_VSHIFT },{ "psrlvw","logic",PSRLVW,A_VSHIFT },
-	{ "psravw","logic",PSRAVW,A_VSHIFT },
+	{ "pcpyh","shuffle",intPCPYH,A_ONE },{ "prevh","shuffle",intPREVH,A_ONE },
+	{ "ppacw","shuffle",intPPACW,A_TWO },{ "ppach","shuffle",intPPACH,A_TWO },
+	{ "ppacb","shuffle",intPPACB,A_TWO },
+	{ "pabsw","arithmetic",intPABSW,A_ONE },{ "pabsh","arithmetic",intPABSH,A_ONE },
+	{ "padsbh","arithmetic",intPADSBH,A_TWO },
+	{ "pexch","shuffle",intPEXCH,A_ONE },{ "pexcw","shuffle",intPEXCW,A_ONE },
+	{ "pexeh","shuffle",intPEXEH,A_ONE },{ "pexew","shuffle",intPEXEW,A_ONE },
+	{ "pext5","shuffle",intPEXT5,A_ONE },{ "prot3w","shuffle",intPROT3W,A_ONE },
+	{ "pinteh","shuffle",intPINTEH,A_TWO },{ "pinth","shuffle",intPINTH,A_TWO },
+	{ "plzcw","logic",intPLZCW,A_ONE },
+	{ "psllh","logic",intPSLLH,A_IMM },{ "psrlh","logic",intPSRLH,A_IMM },
+	{ "psrah","logic",intPSRAH,A_IMM },{ "psllw","logic",intPSLLW,A_IMM },
+	{ "psrlw","logic",intPSRLW,A_IMM },{ "psraw","logic",intPSRAW,A_IMM },
+	{ "psllvw","logic",intPSLLVW,A_VSHIFT },{ "psrlvw","logic",intPSRLVW,A_VSHIFT },
+	{ "psravw","logic",intPSRAVW,A_VSHIFT },
 	/* The accumulators and the HI/LO moves. These read and write HI and LO
 	 * as well as rd, and the capture prints all three, so the seed named on
 	 * each line has to be applied before the op runs. This is the family
 	 * the PMADDW errata bug lived in, which is reason enough to drive it
 	 * through the real code rather than a copy. */
-	{ "pmaddw","muldiv",PMADDW,A_HILO },{ "pmsubw","muldiv",PMSUBW,A_HILO },
-	{ "pmadduw","muldiv",PMADDUW,A_HILO },
-	{ "pmultw","muldiv",PMULTW,A_HILO },{ "pmultuw","muldiv",PMULTUW,A_HILO },
-	{ "pmaddh","muldiv",PMADDH,A_HILO },{ "pmsubh","muldiv",PMSUBH,A_HILO },
-	{ "pmulth","muldiv",PMULTH,A_HILO },
-	{ "phmadh","muldiv",PHMADH,A_HILO },{ "phmsbh","muldiv",PHMSBH,A_HILO },
-	{ "pdivw","muldiv",PDIVW,A_HILO },{ "pdivuw","muldiv",PDIVUW,A_HILO },
-	{ "pdivbw","muldiv",PDIVBW,A_HILO },
-	{ "pmfhi","muldiv",PMFHI,A_HILO1 },{ "pmflo","muldiv",PMFLO,A_HILO1 },
+	{ "pmaddw","muldiv",intPMADDW,A_HILO },{ "pmsubw","muldiv",intPMSUBW,A_HILO },
+	{ "pmadduw","muldiv",intPMADDUW,A_HILO },
+	{ "pmultw","muldiv",intPMULTW,A_HILO },{ "pmultuw","muldiv",intPMULTUW,A_HILO },
+	{ "pmaddh","muldiv",intPMADDH,A_HILO },{ "pmsubh","muldiv",intPMSUBH,A_HILO },
+	{ "pmulth","muldiv",intPMULTH,A_HILO },
+	{ "phmadh","muldiv",intPHMADH,A_HILO },{ "phmsbh","muldiv",intPHMSBH,A_HILO },
+	{ "pdivw","muldiv",intPDIVW,A_HILO },{ "pdivuw","muldiv",intPDIVUW,A_HILO },
+	{ "pdivbw","muldiv",intPDIVBW,A_HILO },
+	{ "pmfhi","muldiv",intPMFHI,A_HILO1 },{ "pmflo","muldiv",intPMFLO,A_HILO1 },
 	/* PMTHI and PMTLO write HI or LO and leave rd alone, so the quad their
 	 * lines print is the source register, not a result. Comparing it as rd
 	 * scores 1 of 28 while the HI/LO values it is actually testing match
 	 * on every case. */
-	{ "pmthi","muldiv",PMTHI,A_HILO_TO },{ "pmtlo","muldiv",PMTLO,A_HILO_TO },
+	{ "pmthi","muldiv",intPMTHI,A_HILO_TO },{ "pmtlo","muldiv",intPMTLO,A_HILO_TO },
 	/* PMFHL and PMTHL pick their variant from sa, which the harness
 	 * encodes into the instruction word anyway, so the five forms of one
 	 * and the single form of the other are just six more table rows. */
-	{ "pmfhl.lw","muldiv",PMFHL,A_PMFHL },{ "pmfhl.uw","muldiv",PMFHL,A_PMFHL },
-	{ "pmfhl.slw","muldiv",PMFHL,A_PMFHL },{ "pmfhl.lh","muldiv",PMFHL,A_PMFHL },
-	{ "pmfhl.sh","muldiv",PMFHL,A_PMFHL },
-	{ "pmthl.lw","muldiv",PMTHL,A_PMTHL },
+	{ "pmfhl.lw","muldiv",intPMFHL,A_PMFHL },{ "pmfhl.uw","muldiv",intPMFHL,A_PMFHL },
+	{ "pmfhl.slw","muldiv",intPMFHL,A_PMFHL },{ "pmfhl.lh","muldiv",intPMFHL,A_PMFHL },
+	{ "pmfhl.sh","muldiv",intPMFHL,A_PMFHL },
+	{ "pmthl.lw","muldiv",intPMTHL,A_PMTHL },
 	/* Second-pipeline and accumulate forms, from tests/cpu/ee/muldiv
 	 * rather than ee_simd -- see the file column below. */
-	{ "madd","ee_muldiv",MADD,A_HILO },{ "maddu","ee_muldiv",MADDU,A_HILO },
-	{ "madd1","ee_muldiv",MADD1,A_HILO },{ "maddu1","ee_muldiv",MADDU1,A_HILO },
-	{ "mult1","ee_muldiv",MULT1,A_HILO },{ "multu1","ee_muldiv",MULTU1,A_HILO },
-	{ "div1","ee_muldiv",DIV1,A_HILO },{ "divu1","ee_muldiv",DIVU1,A_HILO },
-	{ "mfhi1","ee_muldiv",MFHI1,A_HILO1 },{ "mflo1","ee_muldiv",MFLO1,A_HILO1 },
-	{ "mthi1","ee_muldiv",MTHI1,A_HILO_TO },{ "mtlo1","ee_muldiv",MTLO1,A_HILO_TO },
+	{ "madd","ee_muldiv",intMADD,A_HILO },{ "maddu","ee_muldiv",intMADDU,A_HILO },
+	{ "madd1","ee_muldiv",intMADD1,A_HILO },{ "maddu1","ee_muldiv",intMADDU1,A_HILO },
+	{ "mult1","ee_muldiv",intMULT1,A_HILO },{ "multu1","ee_muldiv",intMULTU1,A_HILO },
+	{ "div1","ee_muldiv",intDIV1,A_HILO },{ "divu1","ee_muldiv",intDIVU1,A_HILO },
+	{ "mfhi1","ee_muldiv",intMFHI1,A_HILO1 },{ "mflo1","ee_muldiv",intMFLO1,A_HILO1 },
+	{ "mthi1","ee_muldiv",intMTHI1,A_HILO_TO },{ "mtlo1","ee_muldiv",intMTLO1,A_HILO_TO },
 };
 
-/* sa value for each PMFHL variant, in the order MMI.cpp switches on. */
+/* sa value for each PMFHL variant, in the order MMI.c switches on. */
 static u32 pmfhl_sa(const char* name)
 {
 	if (!strcmp(name, "pmfhl.lw"))  return 0x00;
@@ -410,7 +361,7 @@ int main(int argc, char** argv)
 			}
 			else if (kOps[op].form == A_ONE)
 			{
-				/* Single source: MMI.cpp reads it from rt. */
+				/* Single source: MMI.c reads it from rt. */
 				if (comma) { *colon = ':'; continue; }
 				if (!operand(args, &rt, &named_t)) { *colon = ':'; continue; }
 				rs = rt; named_s = named_t;
@@ -423,7 +374,7 @@ int main(int argc, char** argv)
 				if (kOps[op].form == A_IMM)
 				{
 					/* Second operand is a shift amount, and the value being
-					 * shifted is the first one, which MMI.cpp reads from rt. */
+					 * shifted is the first one, which MMI.c reads from rt. */
 					char* q = comma + 1;
 					while (*q == ' ') q++;
 					sa = (u32)strtoul(q, NULL, 10) & 0x1F;
@@ -518,6 +469,6 @@ int main(int argc, char** argv)
 		  failures++; }
 	}
 
-	printf("hwreal: %d cases across %d ops, driven through MMI.cpp\n", total, NOPS);
+	printf("hwreal: %d cases across %d ops, driven through MMI.c\n", total, NOPS);
 	return failures != 0;
 }

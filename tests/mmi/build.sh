@@ -10,7 +10,7 @@
 #
 #   divcheck.c   emits the guarded divide sequences through the same
 #                macros the recompiler uses, executes them, and compares
-#                against pcsx2/MMI.cpp. Catches the same bug by running
+#                against pcsx2/MMI.c. Catches the same bug by running
 #                it: a sign-extended dividend fed to an unsigned divide
 #                either returns the wrong quotient or raises #DE, and the
 #                second of those takes the process down with SIGFPE.
@@ -64,13 +64,14 @@ else
 	echo "  skipped: set PS2AUTOTESTS to a ps2autotests checkout to run this"
 fi
 
-echo "== MMI driven through MMI.cpp vs console =="
+echo "== MMI driven through MMI.c vs console =="
 EXPECTED="${PS2AUTOTESTS:-}/tests/cpu/ee_simd"
 if [ -d "$EXPECTED" ]; then
-	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
-		-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
-		-I "$ROOT/libretro/libretro-common/include" \
-		-o "$DIR/mmi_hwreal" "$DIR/hwreal.cpp" "$ROOT/pcsx2/MMI.cpp"
+	MMIINC="-I $ROOT -I $ROOT/pcsx2 -I $ROOT/common -I $ROOT/common/include -I $ROOT/3rdparty/include -I $ROOT/libretro/libretro-common/include"
+	${CC:-cc} -std=gnu89 -O1 -w $SANFLAGS $MMIINC -c "$ROOT/pcsx2/MMI.c" -o "$DIR/mmi_hwreal_mmi.o"
+	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS $MMIINC \
+		-o "$DIR/mmi_hwreal" "$DIR/hwreal.cpp" "$DIR/mmi_hwreal_mmi.o"
+	rm -f "$DIR/mmi_hwreal_mmi.o"
 	"$DIR/mmi_hwreal" "$EXPECTED"
 else
 	echo "  skipped: set PS2AUTOTESTS to a ps2autotests checkout to run this"

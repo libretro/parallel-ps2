@@ -42,7 +42,6 @@
 #ifndef PCSX2_C89_EMITTER
 #include "tests/emitter/reference/internal.h"
 #endif
-using namespace R5900;
 
 static int eeRecNeedsReset = 0;
 static int eeCpuExecuting = 0;
@@ -795,14 +794,14 @@ void recSYSCALL(void)
 			return;
 		}
 	}
-	recCall(R5900::Interpreter::OpcodeImpl::SYSCALL);
+	recCall(intSYSCALL);
 	g_branch = 2; // Indirect branch with event check.
 }
 
 ////////////////////////////////////////////////////
 void recBREAK(void)
 {
-	recCall(R5900::Interpreter::OpcodeImpl::BREAK);
+	recCall(intBREAK);
 	g_branch = 2; // Indirect branch with event check.
 }
 
@@ -1437,7 +1436,7 @@ void recompileNextInstruction(int delayslot, int swapped_delay_slot)
 	if (g_pCurInstInfo->info & EEINST_COP2_FLUSH_VU0_REGISTERS)
 		_flushCOP2regs();
 
-	const OPCODE& opcode = GetCurrentInstruction();
+	const OPCODE* opcode = R5900_GetCurrentInstruction();
 
 	// if this instruction is a jump or a branch, exit right away
 	if (delayslot)
@@ -1510,8 +1509,8 @@ void recompileNextInstruction(int delayslot, int swapped_delay_slot)
 	else
 	{
 		//If the COP0 DIE bit is disabled, cycles should be doubled.
-		s_nBlockCycles += opcode.cycles * (2 - ((cpuRegs.CP0.n.Config >> 18) & 0x1));
-		opcode.recompile();
+		s_nBlockCycles += opcode->cycles * (2 - ((cpuRegs.CP0.n.Config >> 18) & 0x1));
+		opcode->recompile();
 	}
 
 	if (!swapped_delay_slot)

@@ -1,6 +1,7 @@
 #include "Common.h"
 #include "ps2float.h"
 #include "VUops.h"
+#include "R5900OpcodeTables.h"
 #include "GS.h"
 #include "Gif_Unit.h"
 #include "MTVU.h"

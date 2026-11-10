@@ -57,7 +57,7 @@ static int operand(const char* p, u32* out)
 static const u32 kRs[4] = { 0x12345678u, 0x9ABCDEF0u, 0x11223344u, 0xDEADBEEFu };
 static const u32 kRt[4] = { 0xAABBCCDDu, 0x12121212u, 0xFFFFFFFFu, 0x1337C0DEu };
 
-/* Transcribed from QFSRV in pcsx2/MMI.cpp. */
+/* Transcribed from QFSRV in pcsx2/MMI.c. */
 static void qfsrv(u32 sa, u32 out[4])
 {
 	const u64 rs0 = ((u64)kRs[1] << 32) | kRs[0];

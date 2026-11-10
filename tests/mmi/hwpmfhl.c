@@ -2,7 +2,7 @@
  *
  *  Scores the five PMFHL variants plus PMFHI, PMFLO, PMTHI, PMTLO and
  *  PMTHL.LW against ps2autotests tests/cpu/ee_simd/muldiv.expected,
- *  transcribed from pcsx2/MMI.cpp.
+ *  transcribed from pcsx2/MMI.c.
  *
  *  These sit outside what tests/mmi/hwelem.c and hwscore.c already cover
  *  -- those two take the arithmetic, shuffle, compare, logic and the
@@ -61,7 +61,7 @@ static int seed(const char* line)
 	return 0;
 }
 
-/* PMFHL_CLAMP from MMI.cpp: a signed 32-bit word saturated into 16 bits. */
+/* PMFHL_CLAMP from MMI.c: a signed 32-bit word saturated into 16 bits. */
 static u16 clamp16(u32 v)
 {
 	const s32 s = (s32)v;
@@ -72,7 +72,7 @@ static u16 clamp16(u32 v)
 
 static u16 half(const Q* q, int i) { return (u16)(q->w[i >> 1] >> ((i & 1) * 16)); }
 
-/* Transcribed from PMFHL in pcsx2/MMI.cpp; sa selects the variant. */
+/* Transcribed from PMFHL in pcsx2/MMI.c; sa selects the variant. */
 static Q pmfhl(int sa)
 {
 	Q r; int i;

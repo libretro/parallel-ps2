@@ -99,7 +99,7 @@ static int operand(const char* tok, Q* out)
 	return 1;
 }
 
-/* Semantics, transcribed from pcsx2/MMI.cpp. */
+/* Semantics, transcribed from pcsx2/MMI.c. */
 static void pabsw(const Q* rt, Q* rd)
 { int n; for (n = 0; n < 4; n++) {
 	if (rt->UL[n] == 0x80000000u) rd->UL[n] = 0x7FFFFFFFu;

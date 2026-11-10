@@ -379,7 +379,7 @@ static __fi u32 gte_sat5(s32 v)
 	return (u32)v;
 }
 
-u32 MFC2(int reg)
+static u32 MFC2(int reg)
 {
 	switch (reg & 0x1F)
 	{
@@ -401,7 +401,7 @@ u32 MFC2(int reg)
 	}
 }
 
-void MTC2(u32 value, int reg)
+static void MTC2(u32 value, int reg)
 {
 	switch (reg & 0x1F)
 	{
@@ -457,7 +457,7 @@ void MTC2(u32 value, int reg)
 	}
 }
 
-u32 CFC2(int reg)
+static u32 CFC2(int reg)
 {
 	const u32 r = psxRegs.CP2C.r[reg & 0x1F];
 	switch (reg & 0x1F)
@@ -476,7 +476,7 @@ u32 CFC2(int reg)
 	}
 }
 
-void CTC2(u32 value, int reg)
+static void CTC2(u32 value, int reg)
 {
 	/* The write mask: the 16-bit control registers only latch their low
 	 * half - the stored high half survives and sign extension happens
