@@ -87,6 +87,8 @@ template <typename... Args>
 static void insert_label(Vulkan::CommandBuffer &cmd, const char *fmt, Args... args)
 {
 	char label[256];
+	if (!cmd.get_device().consumes_debug_markers())
+		return;
 	snprintf(label, sizeof(label), fmt, args...);
 	cmd.insert_label(label, LabelColor);
 }
@@ -95,6 +97,8 @@ template <typename... Args>
 static void begin_region(Vulkan::CommandBuffer &cmd, const char *fmt, Args... args)
 {
 	char label[256];
+	if (!cmd.get_device().consumes_debug_markers())
+		return;
 	snprintf(label, sizeof(label), fmt, args...);
 	cmd.begin_region(label);
 }

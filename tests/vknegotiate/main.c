@@ -439,10 +439,11 @@ static VKAPI_ATTR void VKAPI_CALL vn_sbc(VkCommandBuffer cb, const float c[4])
 enum { VC_SUBMIT, VC_WAIT_FENCE, VC_WAIT_SEM, VC_QUEUE_IDLE, VC_DEVICE_IDLE, VC_DISPATCH, VC_GROUPS,
 	VC_DISPATCH_IND, VC_RENDER_PASS, VC_DRAW, VC_BARRIER, VC_COPY_B2I, VC_COPY_I2B, VC_COPY_BUF,
 	VC_COPY_IMG, VC_FILL, VC_ALLOC, VC_ALLOC_MB, VC_FREE, VC_CREATE_IMAGE, VC_CREATE_BUFFER,
-	VC_INVALIDATE, VC_FENCE_STATUS, VC_DESC_SETS, VC_COUNT };
+	VC_INVALIDATE, VC_FENCE_STATUS, VC_DESC_SETS, VC_LABEL, VC_NAME, VC_COUNT };
 static const char* const vc_names[VC_COUNT] = { "submit", "waitfence", "waitsem", "qidle", "devidle",
 	"dispatch", "groups", "dispatch_ind", "rpass", "draw", "barrier", "b2i", "i2b", "copybuf", "copyimg",
-	"fill", "alloc", "allocMB", "free", "mkimage", "mkbuffer", "invalidate", "fencepoll", "descsets" };
+	"fill", "alloc", "allocMB", "free", "mkimage", "mkbuffer", "invalidate", "fencepoll", "descsets",
+	"labels", "names" };
 static long vc[VC_COUNT];
 #define VC_ADD(i, n) __sync_fetch_and_add(&vc[i], (long)(n))
 #define VC_REAL(name) static PFN_##name vc_##name
@@ -455,6 +456,8 @@ VC_REAL(vkCmdCopyBufferToImage); VC_REAL(vkCmdCopyImageToBuffer); VC_REAL(vkCmdC
 VC_REAL(vkCmdCopyImage); VC_REAL(vkCmdFillBuffer); VC_REAL(vkAllocateMemory); VC_REAL(vkFreeMemory);
 VC_REAL(vkCreateImage); VC_REAL(vkCreateBuffer); VC_REAL(vkInvalidateMappedMemoryRanges);
 VC_REAL(vkGetFenceStatus); VC_REAL(vkAllocateDescriptorSets);
+VC_REAL(vkCmdBeginDebugUtilsLabelEXT); VC_REAL(vkCmdInsertDebugUtilsLabelEXT); VC_REAL(vkCmdEndDebugUtilsLabelEXT);
+VC_REAL(vkSetDebugUtilsObjectNameEXT);
 static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkQueueSubmit(VkQueue q, uint32_t n, const VkSubmitInfo* s, VkFence f)
 { VC_ADD(VC_SUBMIT, n); return vc_vkQueueSubmit(q, n, s, f); }
 static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkQueueSubmit2(VkQueue q, uint32_t n, const VkSubmitInfo2* s, VkFence f)
@@ -517,6 +520,16 @@ static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkInvalidateMappedMemoryRanges(VkDevic
 { VC_ADD(VC_INVALIDATE, n); return vc_vkInvalidateMappedMemoryRanges(d, n, r); }
 static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkGetFenceStatus(VkDevice d, VkFence f)
 { VC_ADD(VC_FENCE_STATUS, 1); return vc_vkGetFenceStatus(d, f); }
+/* Debug labels and object names: worth recording only for a tool that
+ * reads them, and none is attached here. */
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdBeginDebugUtilsLabelEXT(VkCommandBuffer c, const VkDebugUtilsLabelEXT* l)
+{ VC_ADD(VC_LABEL, 1); vc_vkCmdBeginDebugUtilsLabelEXT(c, l); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdInsertDebugUtilsLabelEXT(VkCommandBuffer c, const VkDebugUtilsLabelEXT* l)
+{ VC_ADD(VC_LABEL, 1); vc_vkCmdInsertDebugUtilsLabelEXT(c, l); }
+static VKAPI_ATTR void VKAPI_CALL vcw_vkCmdEndDebugUtilsLabelEXT(VkCommandBuffer c)
+{ VC_ADD(VC_LABEL, 1); vc_vkCmdEndDebugUtilsLabelEXT(c); }
+static VKAPI_ATTR VkResult VKAPI_CALL vcw_vkSetDebugUtilsObjectNameEXT(VkDevice d, const VkDebugUtilsObjectNameInfoEXT* i)
+{ VC_ADD(VC_NAME, 1); return vc_vkSetDebugUtilsObjectNameEXT(d, i); }
 
 /* The wrapper for @name, its real entry point fetched through @real; NULL
  * when the name is not counted. */
@@ -533,7 +546,8 @@ static PFN_vkVoidFunction vc_wrap(const char* name, PFN_vkVoidFunction real)
 	VC_TRY(vkCmdCopyBufferToImage) VC_TRY(vkCmdCopyImageToBuffer) VC_TRY(vkCmdCopyBuffer)
 	VC_TRY(vkCmdCopyImage) VC_TRY(vkCmdFillBuffer) VC_TRY(vkAllocateMemory) VC_TRY(vkFreeMemory)
 	VC_TRY(vkCreateImage) VC_TRY(vkCreateBuffer) VC_TRY(vkInvalidateMappedMemoryRanges) VC_TRY(vkAllocateDescriptorSets)
-	VC_TRY(vkGetFenceStatus)
+	VC_TRY(vkGetFenceStatus) VC_TRY(vkCmdBeginDebugUtilsLabelEXT) VC_TRY(vkCmdInsertDebugUtilsLabelEXT)
+	VC_TRY(vkCmdEndDebugUtilsLabelEXT) VC_TRY(vkSetDebugUtilsObjectNameEXT)
 #undef VC_TRY
 	return NULL;
 }

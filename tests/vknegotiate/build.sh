@@ -95,6 +95,21 @@ for renderer in Vulkan paraLLEl-GS; do
 	fi
 done
 
+# Debug labels, regions and object names are for a tool that reads them.
+# None is attached here, so drawing on paraLLEl-GS records none: each was
+# a formatted string and a driver call per pass, frame after frame.
+"$SCRATCH/swdraw" --bios "$SCRATCH/depth_narrowed.bin" depth_narrowed
+VN_COUNT_CALLS=1 VN_FRAMES=40 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/depth_narrowed.bin" VN_RENDERER=paraLLEl-GS \
+	timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/labels.log" 2>&1 || true
+marks=$(grep 'run [0-9]*: calls' "$SCRATCH/labels.log" | grep -oE '(labels|names)=[0-9]+' | cut -d= -f2 | awk '{ n += $1 } END { print n + 0 }')
+draws=$(sed -n 's/.*run 40: calls.* draw=\([0-9]*\).*/\1/p' "$SCRATCH/labels.log")
+if ! grep -q "vknegotiate v2: ok" "$SCRATCH/labels.log" || [ -z "$draws" ] || [ "$marks" -ne 0 ]; then
+	rm -rf "$SCRATCH"
+	echo "  FAIL: paraLLEl-GS with no tool attached: $marks debug labels and names, ${draws:-no} draws a frame"
+	exit 1
+fi
+echo "  paraLLEl-GS with no tool attached: no debug labels or names, $draws draw a frame"
+
 # A copy out of a block, then an upload over that block in the same
 # packet: the copy reads what was there before the upload, and the state
 # holds the block it went to. paraLLEl-GS only: the Vulkan renderer's

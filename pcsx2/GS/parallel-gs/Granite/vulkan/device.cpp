@@ -4079,7 +4079,8 @@ void Device::set_queue_lock(std::function<void()> lock_callback, std::function<v
 
 void Device::set_name(uint64_t object, VkObjectType type, const char *name)
 {
-	if (ext.supports_debug_utils)
+	/* Names, like labels, only for a tool that reads them. */
+	if (debug_marker_sensitive)
 	{
 		VkDebugUtilsObjectNameInfoEXT info = { VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT };
 		info.objectType = type;

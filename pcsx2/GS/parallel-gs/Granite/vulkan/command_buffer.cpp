@@ -2807,9 +2807,12 @@ void CommandBuffer::end()
 		device->free_descriptor_buffer_allocation_nolock(desc_buffer);
 }
 
+/* Labels and regions are recorded only for a tool that reads them
+ * (Device::consumes_debug_markers): with none attached each is a driver
+ * call on the draw path that nothing ever sees. */
 void CommandBuffer::insert_label(const char *name, const float *color)
 {
-	if (!device->ext.supports_debug_utils || !vkCmdInsertDebugUtilsLabelEXT)
+	if (!device->consumes_debug_markers() || !vkCmdInsertDebugUtilsLabelEXT)
 		return;
 
 	VkDebugUtilsLabelEXT info = { VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT };
@@ -2830,7 +2833,7 @@ void CommandBuffer::insert_label(const char *name, const float *color)
 
 void CommandBuffer::begin_region(const char *name, const float *color)
 {
-	if (!device->ext.supports_debug_utils || !vkCmdBeginDebugUtilsLabelEXT)
+	if (!device->consumes_debug_markers() || !vkCmdBeginDebugUtilsLabelEXT)
 		return;
 
 	VkDebugUtilsLabelEXT info = { VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT };
@@ -2851,7 +2854,7 @@ void CommandBuffer::begin_region(const char *name, const float *color)
 
 void CommandBuffer::end_region()
 {
-	if (device->ext.supports_debug_utils && vkCmdEndDebugUtilsLabelEXT)
+	if (device->consumes_debug_markers() && vkCmdEndDebugUtilsLabelEXT)
 		vkCmdEndDebugUtilsLabelEXT(cmd);
 }
 
