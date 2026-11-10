@@ -116,11 +116,15 @@ int main(int argc, char **argv)
       fail++;
    }
 
+   /* The modelled expression is the arm for everything but a palette
+    * read, which takes the native tap's centre: a palette entry is one
+    * value per native pixel. */
    fail += check_shader(dir, "DX11/tfx.fx",
-         "float2 p0 = (gi + (un - un0) / rx * step(1.0001f, ts)) * ts + 0.5f;");
+         "float2 p0 = (PS_PAL_FMT != 0) ? gi * ts + 0.5f : (gi + (un - un0) / rx * step(1.0001f, ts)) * ts + 0.5f;");
    fail += check_shader(dir, "OpenGL/tfx_fs.glsl",
-         "vec2 p0 = (gi + (un - un0) / rx * step(1.0001f, ts)) * ts + 0.5f;");
-   /* Vulkan declares p0 before the palette branch. */
+         "vec2 p0 = ((PS_PAL_FMT != 0)) ? gi * ts + 0.5f : (gi + (un - un0) / rx * step(1.0001f, ts)) * ts + 0.5f;");
+   /* Vulkan declares p0 before the palette branch and sets each arm. */
+   fail += check_shader(dir, "Vulkan/shaders/tfx.glsl", "p0 = gi * ts + 0.5f;");
    fail += check_shader(dir, "Vulkan/shaders/tfx.glsl",
          "p0 = (gi + (un - un0) / rx * step(1.0001f, ts)) * ts + 0.5f;");
 
