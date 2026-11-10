@@ -134,11 +134,6 @@ ImmutableSampler::ImmutableSampler(Util::Hash hash, Device *device_, const Sampl
 
 	VkSampler vk_sampler = device->managers.descriptor_buffer.create_sampler(&info);
 
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	// Immutable samplers are on the chopping block ...
-	if (!device->get_device_features().supports_descriptor_buffer_or_heap)
-		device->register_sampler(vk_sampler, hash, info);
-#endif
 
 	sampler = SamplerHandle(device->handle_pool.samplers.allocate(device, vk_sampler, sampler_info, true));
 }
@@ -156,9 +151,6 @@ ImmutableYcbcrConversion::ImmutableYcbcrConversion(Util::Hash hash, Device *devi
 		}
 		else
 		{
-#ifdef GRANITE_VULKAN_FOSSILIZE
-			device->register_sampler_ycbcr_conversion(conversion, info);
-#endif
 		}
 	}
 	else

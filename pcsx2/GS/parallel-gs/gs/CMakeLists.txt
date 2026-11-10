@@ -5,7 +5,6 @@
 
 add_library(parallel-gs STATIC
         gs_registers.hpp
-        gs_registers_debug.hpp
         gs_register_addr.hpp
         gs_interface.cpp gs_interface.hpp
         gs_util.cpp gs_util.hpp
@@ -22,8 +21,4 @@ target_include_directories(parallel-gs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 if(PROFILER)
 	target_include_directories(parallel-gs PRIVATE ${CMAKE_SOURCE_DIR})
 	target_compile_definitions(parallel-gs PRIVATE ENABLE_PCSX2_PROFILER)
-endif()
-
-if (PARALLEL_GS_DEBUG)
-    target_compile_definitions(parallel-gs PRIVATE PARALLEL_GS_DEBUG=1)
 endif()

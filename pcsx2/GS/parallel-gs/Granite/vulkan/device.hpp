@@ -44,15 +44,6 @@
 #include <unordered_map>
 #include <stdio.h>
 
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-#include "shader_manager.hpp"
-#include "resource_manager.hpp"
-#endif
-
-
-#ifdef GRANITE_VULKAN_FOSSILIZE
-#include "fossilize.hpp"
-#endif
 
 #include "quirks.hpp"
 #include "small_vector.hpp"
@@ -135,9 +126,6 @@ private:
 
 class Device
 	: public Util::IntrusivePtrEnabled<Device, std::default_delete<Device>, HandleCounter>
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	, public Fossilize::StateCreatorInterface
-#endif
 {
 public:
 	// Device-based objects which need to poke at internal data structures when their lifetimes end.
@@ -185,11 +173,6 @@ public:
 	// Only called by main thread, during setup phase.
 	void set_context(const Context &context);
 
-	// This is asynchronous in nature. See query_initialization_progress().
-	// Kicks off Fossilize and shader manager caching.
-	void begin_shader_caches();
-	// For debug or trivial applications, blocks until all shader cache work is done.
-	void wait_shader_caches();
 
 	void init_frame_contexts(unsigned count);
 	const VolkDeviceTable &get_device_table() const;
@@ -454,33 +437,6 @@ public:
 	void get_memory_budget(HeapBudget *budget);
 
 	const Sampler &get_stock_sampler(StockSampler sampler) const;
-
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-	// To obtain ShaderManager, ShaderModules must be observed to be complete
-	// in query_initialization_progress().
-	ShaderManager &get_shader_manager();
-	ResourceManager &get_resource_manager();
-	Granite::FileMappingHandle persistent_pipeline_cache;
-#endif
-
-	// Useful for loading screens or otherwise figuring out
-	// when we can start rendering in a stable state.
-	enum class InitializationStage
-	{
-		CacheMaintenance,
-		// When this is done, shader modules and the shader manager have been populated.
-		// At this stage it is safe to use shaders in a configuration where we
-		// don't have SPIRV-Cross and/or shaderc to do on the fly compilation.
-		// For shipping configurations. We can still compile pipelines, but it may stutter.
-		ShaderModules,
-		// When this is done, pipelines should never stutter if Fossilize knows about the pipeline.
-		Pipelines
-	};
-
-	// 0 -> not started
-	// [1, 99] rough percentage of completion
-	// >= 100 done
-	unsigned query_initialization_progress(InitializationStage status) const;
 
 	// For some platforms, the device and queue might be shared, possibly across threads, so need some mechanism to
 	// lock the global device and queue.
@@ -781,53 +737,6 @@ private:
 
 	Fence request_legacy_fence();
 
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-	ShaderManager shader_manager;
-	ResourceManager resource_manager;
-	void init_shader_manager_cache(Granite::TaskGroup *shader_compilation_group);
-	void flush_shader_manager_cache();
-#endif
-
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	bool enqueue_create_sampler(Fossilize::Hash hash, const VkSamplerCreateInfo *create_info, VkSampler *sampler) override;
-	bool enqueue_create_descriptor_set_layout(Fossilize::Hash hash, const VkDescriptorSetLayoutCreateInfo *create_info, VkDescriptorSetLayout *layout) override;
-	bool enqueue_create_pipeline_layout(Fossilize::Hash hash, const VkPipelineLayoutCreateInfo *create_info, VkPipelineLayout *layout) override;
-	bool enqueue_create_shader_module(Fossilize::Hash hash, const VkShaderModuleCreateInfo *create_info, VkShaderModule *module) override;
-	bool enqueue_create_render_pass(Fossilize::Hash hash, const VkRenderPassCreateInfo *create_info, VkRenderPass *render_pass) override;
-	bool enqueue_create_render_pass2(Fossilize::Hash hash, const VkRenderPassCreateInfo2 *create_info, VkRenderPass *render_pass) override;
-	bool enqueue_create_compute_pipeline(Fossilize::Hash hash, const VkComputePipelineCreateInfo *create_info, VkPipeline *pipeline) override;
-	bool enqueue_create_graphics_pipeline(Fossilize::Hash hash, const VkGraphicsPipelineCreateInfo *create_info, VkPipeline *pipeline) override;
-	bool enqueue_create_raytracing_pipeline(Fossilize::Hash hash, const VkRayTracingPipelineCreateInfoKHR *create_info, VkPipeline *pipeline) override;
-	bool fossilize_replay_graphics_pipeline(Fossilize::Hash hash, VkGraphicsPipelineCreateInfo &info);
-	bool fossilize_replay_compute_pipeline(Fossilize::Hash hash, VkComputePipelineCreateInfo &info);
-
-	void replay_tag_simple(Fossilize::ResourceTag tag);
-
-	void register_graphics_pipeline(Fossilize::Hash hash, const VkGraphicsPipelineCreateInfo &info);
-	void register_compute_pipeline(Fossilize::Hash hash, const VkComputePipelineCreateInfo &info);
-	void register_render_pass(VkRenderPass render_pass, Fossilize::Hash hash, const VkRenderPassCreateInfo2KHR &info);
-	void register_descriptor_set_layout(VkDescriptorSetLayout layout, Fossilize::Hash hash, const VkDescriptorSetLayoutCreateInfo &info);
-	void register_pipeline_layout(VkPipelineLayout layout, Fossilize::Hash hash, const VkPipelineLayoutCreateInfo &info);
-	void register_shader_module(VkShaderModule module, Fossilize::Hash hash, const VkShaderModuleCreateInfo &info);
-	void register_sampler(VkSampler sampler, Fossilize::Hash hash, const VkSamplerCreateInfo &info);
-	void register_sampler_ycbcr_conversion(VkSamplerYcbcrConversion ycbcr, const VkSamplerYcbcrConversionCreateInfo &info);
-
-	struct RecorderState;
-	std::unique_ptr<RecorderState> recorder_state;
-
-	struct ReplayerState;
-	std::unique_ptr<ReplayerState> replayer_state;
-
-	void promote_write_cache_to_readonly() const;
-	void promote_readonly_db_from_assets() const;
-
-	void init_pipeline_state(const Fossilize::FeatureFilter &filter,
-	                         const VkPhysicalDeviceFeatures2 &pdf2,
-	                         const VkApplicationInfo &application_info);
-	void flush_pipeline_state();
-	void block_until_shader_module_ready();
-	void block_until_pipeline_ready();
-#endif
 
 	ImplementationWorkarounds workarounds;
 	void init_workarounds();

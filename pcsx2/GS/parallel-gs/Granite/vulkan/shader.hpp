@@ -30,11 +30,6 @@
 #include "vulkan_headers.hpp"
 #include "enum_cast.hpp"
 
-namespace spirv_cross
-{
-struct SPIRType;
-}
-
 namespace Vulkan
 {
 class Device;
@@ -302,7 +297,6 @@ public:
 		return module;
 	}
 
-	static bool reflect_resource_layout(ResourceLayout &layout, const uint32_t *spirv_data, size_t spirv_size);
 	static const char *stage_to_name(ShaderStage stage);
 	static Util::Hash hash(const uint32_t *data, size_t size);
 

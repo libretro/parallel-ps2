@@ -38,9 +38,6 @@
 #include <windows.h>
 #endif
 
-#if defined(ANDROID) && defined(HAVE_SWAPPY)
-#include "swappy/swappyVk.h"
-#endif
 
 //#undef VULKAN_DEBUG
 
@@ -258,10 +255,6 @@ void Context::destroy_device()
 	if (device != VK_NULL_HANDLE)
 		device_table.vkDeviceWaitIdle(device);
 
-#if defined(ANDROID) && defined(HAVE_SWAPPY)
-	if (device != VK_NULL_HANDLE)
-		SwappyVk_destroyDevice(device);
-#endif
 
 	if (owned_device && device != VK_NULL_HANDLE)
 	{
@@ -1040,34 +1033,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		}
 	}
 
-#if defined(ANDROID) && defined(HAVE_SWAPPY)
-	// Enable additional extensions required by SwappyVk.
-	std::unique_ptr<char[]> swappy_str_buffer;
-	if (requires_swapchain)
-	{
-		uint32_t required_swappy_extension_count = 0;
-
-		// I'm really not sure why the API just didn't return static const char * strings here,
-		// but oh well.
-		SwappyVk_determineDeviceExtensions(gpu, uint32_t(queried_extensions.size()),
-		                                   queried_extensions.data(),
-		                                   &required_swappy_extension_count,
-		                                   nullptr);
-		swappy_str_buffer.reset(new char[required_swappy_extension_count * (VK_MAX_EXTENSION_NAME_SIZE + 1)]);
-
-		std::vector<char *> extension_buffer;
-		extension_buffer.reserve(required_swappy_extension_count);
-		for (uint32_t i = 0; i < required_swappy_extension_count; i++)
-			extension_buffer.push_back(swappy_str_buffer.get() + i * (VK_MAX_EXTENSION_NAME_SIZE + 1));
-		SwappyVk_determineDeviceExtensions(gpu, uint32_t(queried_extensions.size()),
-		                                   queried_extensions.data(),
-		                                   &required_swappy_extension_count,
-		                                   extension_buffer.data());
-
-		for (auto *required_ext : extension_buffer)
-			enabled_extensions.push_back(required_ext);
-	}
-#endif
 
 #ifdef _WIN32
 	if (ext.supports_surface_capabilities2 && has_extension(VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME))
@@ -1465,14 +1430,11 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 			ADD_CHAIN(ext.present_wait_features, PRESENT_WAIT_FEATURES_KHR);
 		}
 
-#if !defined(ANDROID) || !defined(HAVE_SWAPPY)
-		// Assume that swappy takes care of all this on Android.
 		if (has_extension(VK_EXT_PRESENT_TIMING_EXTENSION_NAME))
 		{
 			enabled_extensions.push_back(VK_EXT_PRESENT_TIMING_EXTENSION_NAME);
 			ADD_CHAIN(ext.present_timing_features, PRESENT_TIMING_FEATURES_EXT);
 		}
-#endif
 
 		if (ext.supports_surface_maintenance1)
 		{
@@ -1790,13 +1752,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		ext.pdf2 = &pdf2;
 	}
 
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	feature_filter.init(ext.device_api_core_version,
-	                    const_cast<const char **>(device_info.ppEnabledExtensionNames),
-	                    device_info.enabledExtensionCount,
-	                    &pdf2, &props);
-	feature_filter.set_device_query_interface(this);
-#endif
 
 	volkLoadDeviceTable(&device_table, device);
 
@@ -1825,9 +1780,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 
 			queue_info.counts[i] = queue_offsets[queue_info.family_indices[i]];
 
-#if defined(ANDROID) && defined(HAVE_SWAPPY)
-			SwappyVk_setQueueFamilyIndex(device, queue_info.queues[i], queue_info.family_indices[i]);
-#endif
 		}
 		else
 		{
@@ -1909,32 +1861,4 @@ bool InstanceFactory::factory_owns_created_instance()
 	return false;
 }
 
-#ifdef GRANITE_VULKAN_FOSSILIZE
-bool Context::format_is_supported(VkFormat format, VkFormatFeatureFlags features)
-{
-	if (gpu == VK_NULL_HANDLE)
-		return false;
-
-	VkFormatProperties props;
-	vkGetPhysicalDeviceFormatProperties(gpu, format, &props);
-	auto supported = props.bufferFeatures | props.linearTilingFeatures | props.optimalTilingFeatures;
-	return (supported & features) == features;
-}
-
-bool Context::descriptor_set_layout_is_supported(const VkDescriptorSetLayoutCreateInfo *set_layout)
-{
-	if (device == VK_NULL_HANDLE)
-		return false;
-
-	VkDescriptorSetLayoutSupport support = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_SUPPORT };
-	vkGetDescriptorSetLayoutSupport(device, set_layout, &support);
-	return support.supported == VK_TRUE;
-}
-
-void Context::physical_device_feature_query(VkPhysicalDeviceFeatures2 *pdf2_)
-{
-	if (gpu && vkGetPhysicalDeviceFeatures2)
-		vkGetPhysicalDeviceFeatures2(gpu, pdf2_);
-}
-#endif
 }

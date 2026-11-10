@@ -24,9 +24,6 @@
 #include "thread_prims.hpp"
 #include "device.hpp"
 #include <retro_spsc.h>
-#ifdef GRANITE_VULKAN_FOSSILIZE
-#include "device_fossilize.hpp"
-#endif
 #include "format.hpp"
 #include "type_to_string.hpp"
 #include "quirks.hpp"
@@ -41,9 +38,6 @@
 #include <windows.h>
 #endif
 
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-#include "string_helpers.hpp"
-#endif
 
 #include "thread_id.hpp"
 static unsigned get_thread_index()
@@ -82,10 +76,6 @@ Device::Device()
     : framebuffer_allocator(this)
     , transient_allocator(this)
 	, pipeline_binary_cache(this)
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-	, shader_manager(this)
-	, resource_manager(this)
-#endif
 {
 	compute_records = static_cast<ComputePipelineRecord *>(
 			calloc(COMPUTE_PIPELINE_RECORDS, sizeof(ComputePipelineRecord)));
@@ -587,26 +577,6 @@ bool Device::init_pipeline_cache(const uint8_t *data, size_t size, bool persiste
 
 void Device::init_pipeline_cache()
 {
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-	if (!system_handles.filesystem)
-		return;
-	auto file = system_handles.filesystem->open_readonly_mapping("cache://pipeline_cache.bin");
-	if (file)
-	{
-		if (ext.pipeline_binary_features.pipelineBinaries)
-			persistent_pipeline_cache = file;
-
-		auto size = file->get_size();
-		auto *mapped = file->data<uint8_t>();
-		if (mapped && !init_pipeline_cache(mapped, size, bool(persistent_pipeline_cache)))
-		{
-			LOGE("Failed to initialize pipeline cache.\n");
-			persistent_pipeline_cache.reset();
-		}
-	}
-	else if (!init_pipeline_cache(nullptr, 0))
-		LOGE("Failed to initialize pipeline cache.\n");
-#endif
 }
 
 void Device::record_compute_pipeline(const DeferredPipelineCompile &compile)
@@ -954,42 +924,6 @@ bool Device::get_pipeline_cache_data(uint8_t *data, size_t size)
 
 void Device::flush_pipeline_cache()
 {
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-	if (!system_handles.filesystem)
-		return;
-
-	if (ext.pipeline_binary_features.pipelineBinaries &&
-	    !pipeline_binary_cache.has_new_binary_entries() &&
-	    persistent_pipeline_cache)
-	{
-		LOGI("No new pipelines have been observed, skipping serialize.\n");
-		return;
-	}
-
-	size_t size = get_pipeline_cache_size();
-	if (!size)
-	{
-		LOGE("Failed to get pipeline cache size.\n");
-		return;
-	}
-
-	auto file = system_handles.filesystem->open_transactional_mapping(
-			"cache://pipeline_cache.bin", size);
-
-	if (!file)
-	{
-		LOGE("Failed to get pipeline cache data.\n");
-		return;
-	}
-
-	if (!get_pipeline_cache_data(file->mutable_data<uint8_t>(), size))
-	{
-		LOGE("Failed to get pipeline cache data.\n");
-		return;
-	}
-
-	persistent_pipeline_cache.reset();
-#endif
 }
 
 void Device::init_workarounds()
@@ -1116,40 +1050,7 @@ void Device::set_context(const Context &context)
 	managers.descriptor_buffer.init(this);
 
 	init_stock_samplers();
-
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-	resource_manager.init();
-#endif
 }
-
-void Device::begin_shader_caches()
-{
-	if (!ctx)
-	{
-		LOGE("No context. Forgot Device::set_context()?\n");
-		return;
-	}
-
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	init_pipeline_state(ctx->get_feature_filter(), ctx->get_physical_device_features(),
-	                    ctx->get_application_info());
-#elif defined(GRANITE_VULKAN_SYSTEM_HANDLES)
-	// Fossilize init will deal with init_shader_manager_cache()
-	init_shader_manager_cache(nullptr);
-#endif
-}
-
-#ifndef GRANITE_VULKAN_FOSSILIZE
-unsigned Device::query_initialization_progress(InitializationStage) const
-{
-	// If we don't have Fossilize, everything is considered done up front.
-	return 100;
-}
-
-void Device::wait_shader_caches()
-{
-}
-#endif
 
 void Device::init_timeline_semaphores()
 {
@@ -1379,29 +1280,6 @@ void Device::submit_and_sync_to_queues(CommandBufferHandle &cmd, uint32_t sync_t
 	// Verify that there is a flush path for the dependees which does not cause cycles.
 
 	// Disable checks for now, it has bugs.
-#if defined(VULKAN_DEBUG) && 0
-	uint32_t executing_queues = sync_to_queues;
-	uint32_t new_executing_queues = executing_queues;
-
-	while (new_executing_queues != 0)
-	{
-		auto tmp_queues = new_executing_queues;
-		new_executing_queues = 0;
-		Util::for_each_bit(tmp_queues, [&](unsigned i) {
-			if ((executing_queues & queue_data[i].has_incoming_queue_dependencies) != 0)
-			{
-				LOGE("Found cycle in internal staging commands.\n");
-				abort();
-			}
-			else
-			{
-				new_executing_queues |= queue_data[i].has_incoming_queue_dependencies;
-			}
-		});
-
-		executing_queues |= new_executing_queues;
-	}
-#endif
 }
 
 void Device::submit_discard_nolock(CommandBufferHandle &cmd)
@@ -1988,13 +1866,6 @@ Device::~Device()
 
 	wait_idle();
 
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-	flush_shader_manager_cache();
-#endif
-
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	flush_pipeline_state();
-#endif
 
 	if (legacy_pipeline_cache != VK_NULL_HANDLE || ext.pipeline_binary_features.pipelineBinaries)
 		flush_pipeline_cache();
@@ -2331,9 +2202,6 @@ void Device::wait_idle_nolock()
  * and no lock for a reader to hold. */
 void Device::promote_read_write_caches_to_read_only()
 {
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-	shader_manager.promote_read_write_caches_to_read_only();
-#endif
 }
 
 void Device::set_enable_async_thread_frame_context(bool enable)
@@ -4790,47 +4658,12 @@ void Device::set_name(const CommandBuffer &cmd, const char *name)
 	set_name((uint64_t)cmd.get_command_buffer(), VK_OBJECT_TYPE_COMMAND_BUFFER, name);
 }
 
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-ResourceManager &Device::get_resource_manager()
-{
-	return resource_manager;
-}
-
-ShaderManager &Device::get_shader_manager()
-{
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	if (query_initialization_progress(InitializationStage::ShaderModules) < 100)
-	{
-		LOGW("Querying shader manager before completion of module initialization.\n"
-		     "Application should not hit this case.\n"
-		     "Blocking until completion ... Try using DeviceShaderModuleReadyEvent or PipelineReadyEvent instead.\n");
-		block_until_shader_module_ready();
-	}
-#endif
-	return shader_manager;
-}
-#endif
-
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-void Device::init_shader_manager_cache(Granite::TaskGroup *shader_compilation_group)
-{
-	if (!shader_manager.load_shader_cache("assets://shader_cache.json", shader_compilation_group))
-		shader_manager.load_shader_cache("cache://shader_cache.json", shader_compilation_group);
-}
-
-void Device::flush_shader_manager_cache()
-{
-	shader_manager.save_shader_cache("cache://shader_cache.json");
-}
-#endif
 
 const VolkDeviceTable &Device::get_device_table() const
 {
 	return *table;
 }
 
-#ifndef GRANITE_RENDERDOC_CAPTURE
-#endif
 
 bool Device::supports_subgroup_size_log2(bool subgroup_full_group, uint8_t subgroup_minimum_size_log2,
                                          uint8_t subgroup_maximum_size_log2, VkShaderStageFlagBits stage) const

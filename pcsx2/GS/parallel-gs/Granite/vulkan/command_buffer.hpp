@@ -409,15 +409,6 @@ public:
 
 	// Pipeline state must not change between calling this and dispatching.
 	// Ideally it's called right before execute indirect commands.
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-	// Convenience functions for one-off shader binds.
-	void set_program(const std::string &task, const std::string &mesh, const std::string &fragment,
-	                 const std::vector<std::pair<std::string, int>> &defines = {});
-	void set_program(const std::string &vertex, const std::string &fragment,
-	                 const std::vector<std::pair<std::string, int>> &defines = {});
-	void set_program(const std::string &compute,
-	                 const std::vector<std::pair<std::string, int>> &defines = {});
-#endif
 
 	void set_buffer_view(unsigned set, unsigned binding, const BufferView &view);
 	void set_storage_buffer_view(unsigned set, unsigned binding, const BufferView &view);
@@ -954,26 +945,6 @@ private:
 
 };
 
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-struct CommandBufferUtil
-{
-	static void draw_fullscreen_quad(CommandBuffer &cmd, const std::string &vertex, const std::string &fragment,
-	                                 const std::vector<std::pair<std::string, int>> &defines = {});
-	static void draw_fullscreen_quad_depth(CommandBuffer &cmd, const std::string &vertex, const std::string &fragment,
-	                                       bool depth_test, bool depth_write, VkCompareOp depth_compare,
-	                                       const std::vector<std::pair<std::string, int>> &defines = {});
-	static void set_fullscreen_quad_vertex_state(CommandBuffer &cmd);
-	static void set_quad_vertex_state(CommandBuffer &cmd);
-
-	static void setup_fullscreen_quad(CommandBuffer &cmd, const std::string &vertex, const std::string &fragment,
-	                                  const std::vector<std::pair<std::string, int>> &defines = {},
-	                                  bool depth_test = false, bool depth_write = false,
-	                                  VkCompareOp depth_compare = VK_COMPARE_OP_ALWAYS);
-
-	static void draw_fullscreen_quad(CommandBuffer &cmd, unsigned instances = 1);
-	static void draw_quad(CommandBuffer &cmd, unsigned instances = 1);
-};
-#endif
 
 using CommandBufferHandle = Util::IntrusivePtr<CommandBuffer>;
 }

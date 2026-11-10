@@ -28,9 +28,6 @@
 #include <memory>
 #include <functional>
 
-#ifdef GRANITE_VULKAN_FOSSILIZE
-#include "cli/fossilize_feature_filter.hpp"
-#endif
 
 namespace Granite
 {
@@ -219,9 +216,6 @@ private:
 
 class Context
 	: public Util::IntrusivePtrEnabled<Context, std::default_delete<Context>, HandleCounter>
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	, public Fossilize::DeviceQueryInterface
-#endif
 {
 public:
 	// If these interface are set, factory->create() calls are used instead of global vkCreateInstance and vkCreateDevice.
@@ -349,12 +343,6 @@ public:
 		return handles;
 	}
 
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	const Fossilize::FeatureFilter &get_feature_filter() const
-	{
-		return feature_filter;
-	}
-#endif
 
 	const VkPhysicalDeviceFeatures2 &get_physical_device_features() const
 	{
@@ -400,13 +388,6 @@ private:
 	void destroy_device();
 
 	bool physical_device_supports_surface_and_profile(VkPhysicalDevice candidate_gpu, VkSurfaceKHR surface) const;
-
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	Fossilize::FeatureFilter feature_filter;
-	bool format_is_supported(VkFormat format, VkFormatFeatureFlags features) override;
-	bool descriptor_set_layout_is_supported(const VkDescriptorSetLayoutCreateInfo *set_layout) override;
-	void physical_device_feature_query(VkPhysicalDeviceFeatures2 *pdf2) override;
-#endif
 
 
 	VkApplicationInfo get_promoted_application_info() const;

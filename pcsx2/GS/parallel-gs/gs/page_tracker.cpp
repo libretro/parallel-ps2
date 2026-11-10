@@ -7,12 +7,6 @@
 #include "gs_interface.hpp"
 #include <algorithm>
 
-#if 0 && defined(PARALLEL_GS_DEBUG) && PARALLEL_GS_DEBUG
-#define TRACE(...) printf(__VA_ARGS__)
-#else
-#define TRACE(...) ((void)0)
-#endif
-
 namespace ParallelGS
 {
 PageTracker::PageTracker(GSInterface &cb_)
@@ -136,7 +130,6 @@ void PageTracker::mark_external_write(const PageRect &rect)
 			state.need_host_write_timeline_mask |= rect.block_mask;
 			state.texture_cache_needs_invalidate_block_mask |= rect.block_mask;
 			state.texture_cache_needs_invalidate_write_mask |= rect.block_mask;
-			TRACE("TRACKER || PAGE 0x%x, EXT write\n", page);
 		}
 	}
 
@@ -179,7 +172,6 @@ void PageTracker::mark_fb_write(const PageRect &rect)
 			state.texture_cache_needs_invalidate_block_mask |= UINT32_MAX;
 			state.texture_cache_needs_invalidate_write_mask |= UINT32_MAX;
 			state.pending_fb_access_mask |= rect.write_mask;
-			TRACE("TRACKER || PAGE 0x%x, FB write\n", page);
 		}
 	}
 
@@ -212,7 +204,6 @@ void PageTracker::mark_fb_read(const PageRect &rect)
 			state.fb_read_mask |= rect.block_mask;
 			state.need_host_write_timeline_mask |= rect.block_mask;
 			state.pending_fb_access_mask |= rect.write_mask;
-			TRACE("TRACKER || PAGE 0x%x, FB read\n", page & page_state_mask);
 		}
 	}
 }
@@ -263,9 +254,6 @@ bool PageTracker::mark_transfer_copy(const PageRect &dst_rect, const PageRect &s
 
 			state.flags &= ~PAGE_STATE_MAY_SUPER_SAMPLE_BIT;
 
-			TRACE("TRACKER || PAGE 0x%x, WRITE |= 0x%x -> 0x%x\n",
-			      page,
-			      dst_rect.block_mask, state.copy_write_block_mask);
 
 			if (invalidate_cached_textures(state.short_term_cached_textures, dst_rect.block_mask, dst_rect.write_mask, UINT32_MAX))
 				flush_cached();
@@ -289,9 +277,6 @@ bool PageTracker::mark_transfer_copy(const PageRect &dst_rect, const PageRect &s
 			state.need_host_write_timeline_mask |= src_rect.block_mask;
 			state.copy_read_block_mask |= src_rect.block_mask;
 
-			TRACE("TRACKER || PAGE 0x%x, READ |= 0x%x -> 0x%x\n",
-			      page & page_state_mask,
-			      src_rect.block_mask, state.copy_read_block_mask);
 
 			// If we detect a COPY hazard here, it means that we have overlapping copy, and need to handle it carefully.
 		}
@@ -349,7 +334,6 @@ void PageTracker::mark_texture_read(const PageRect &rect)
 void PageTracker::register_cached_clut_clobber(const PageRectCLUT &rect)
 {
 	csa_written_mask |= rect.csa_mask;
-	//TRACE("TRACKER || CSA mask |= 0x%x -> 0x%x\n", rect.csa_mask, csa_written_mask);
 
 	for (unsigned y = 0; y < rect.page_height; y++)
 	{
@@ -363,9 +347,6 @@ void PageTracker::register_cached_clut_clobber(const PageRectCLUT &rect)
 			register_accessed_readback_page(page);
 			state.need_host_write_timeline_mask |= rect.block_mask;
 			state.cached_read_block_mask |= rect.block_mask;
-			TRACE("TRACKER || PAGE 0x%x, CACHED |= 0x%x -> 0x%x\n",
-				  page,
-				  rect.block_mask, state.cached_read_block_mask);
 		}
 	}
 }
@@ -396,8 +377,6 @@ void PageTracker::register_short_term_cached_texture(
 				state.need_host_write_timeline_mask |= rect.block_mask;
 				state.cached_read_block_mask |= rect.block_mask;
 
-				TRACE("TRACKER || PAGE 0x%x, CACHED |= 0x%x -> 0x%x\n",
-				      page, rect.block_mask, state.cached_read_block_mask);
 
 				garbage_collect_texture_masked_handles(state.short_term_cached_textures);
 
@@ -483,8 +462,6 @@ PageTracker::register_cached_texture(const PageRect *level_rect, uint32_t levels
 					state.cached_read_block_mask |= rect.block_mask;
 				}
 
-				TRACE("TRACKER || PAGE 0x%x, CACHED |= 0x%x -> 0x%x\n",
-				      page, rect.block_mask, state.cached_read_block_mask);
 
 				garbage_collect_texture_masked_handles(state.cached_textures);
 				state.cached_textures.push_back({ tex, rect.block_mask, rect.write_mask, clut_instance });
@@ -513,7 +490,6 @@ void PageTracker::flush_render_pass(FlushReason reason)
 	// Call this after texture cache invalication so we can recycle textures more aggressively.
 	cb.flush(PAGE_TRACKER_FLUSH_FB_ALL, reason);
 
-	TRACE("TRACKER || FLUSH RENDER PASS\n");
 }
 
 void PageTracker::clear_copy_pages()
@@ -580,7 +556,6 @@ void PageTracker::flush_copy()
 {
 	cb.flush(PAGE_TRACKER_FLUSH_COPY_ALL, FlushReason::CopyHazard);
 	clear_copy_pages();
-	TRACE("TRACKER || FLUSH COPY\n");
 }
 
 void PageTracker::flush_cached()
@@ -590,7 +565,6 @@ void PageTracker::flush_cached()
 	clear_copy_pages();
 	clear_cache_pages();
 
-	TRACE("TRACKER || FLUSH CACHED\n");
 }
 
 BlockState PageTracker::get_block_state(const PageRect &rect) const
@@ -663,9 +637,6 @@ void PageTracker::mark_transfer_write(const PageRect &rect)
 
 			state.flags &= ~PAGE_STATE_MAY_SUPER_SAMPLE_BIT;
 
-			TRACE("TRACKER || PAGE 0x%x, WRITE |= 0x%x -> 0x%x\n",
-			      page,
-			      rect.block_mask, state.copy_write_block_mask);
 
 			if (invalidate_cached_textures(state.short_term_cached_textures, rect.block_mask, rect.write_mask, UINT32_MAX))
 				flush_cached();
@@ -934,8 +905,6 @@ void PageTracker::invalidate_texture_cache(uint32_t clut_instance)
 
 		if (!page.cached_textures.empty())
 		{
-			TRACE("TRACKER || PAGE 0x%x, invalidate texture mask 0x%x\n", unsigned(&page - page_state.data()),
-			      page.texture_cache_needs_invalidate_mask);
 			bool did_work = invalidate_cached_textures(
 					page.cached_textures,
 					page.texture_cache_needs_invalidate_block_mask,
@@ -950,7 +919,6 @@ void PageTracker::invalidate_texture_cache(uint32_t clut_instance)
 
 	if (csa_written_mask)
 	{
-		TRACE("TRACKER || invalidate CSA mask 0x%x\n", csa_written_mask);
 		bool did_work = invalidate_cached_textures(texture_cached_palette, csa_written_mask, UINT32_MAX, clut_instance);
 		invalidated = invalidated || did_work;
 		csa_written_mask = 0;

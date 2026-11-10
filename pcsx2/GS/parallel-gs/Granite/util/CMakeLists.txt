@@ -34,7 +34,6 @@ target_include_directories(granite-util PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # -I$(LIBRETRO_COMM_DIR)/include globally, so only CMake needed telling.
 target_include_directories(granite-util PUBLIC
         ${CMAKE_SOURCE_DIR}/libretro/libretro-common/include)
-target_link_libraries(granite-util PUBLIC granite-application-global-interface)
 if (NOT WIN32)
     target_link_libraries(granite-util PUBLIC dl)
     # bionic has no librt (clock_*/timer_* live in libc); linking it
@@ -43,7 +42,4 @@ if (NOT WIN32)
     if (NOT APPLE AND NOT ANDROID)
         target_link_libraries(granite-util PUBLIC rt)
     endif()
-endif()
-if (GRANITE_SHIPPING)
-    target_compile_definitions(granite-util PUBLIC GRANITE_SHIPPING)
 endif()

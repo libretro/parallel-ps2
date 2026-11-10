@@ -1056,9 +1056,6 @@ Pipeline CommandBuffer::build_compute_pipeline(Device *device, const DeferredPip
 	}
 
 	VkPipeline compute_pipeline = VK_NULL_HANDLE;
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	device->register_compute_pipeline(compile.hash, info);
-#endif
 
 	auto &table = device->get_device_table();
 
@@ -1460,9 +1457,6 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 	}
 
 	VkPipeline pipeline = VK_NULL_HANDLE;
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	device->register_graphics_pipeline(compile.hash, pipe);
-#endif
 
 	// Patch in mapping structs late since we don't want to capture it in Fossilize.
 	// It is somewhat device dependent.
@@ -2008,45 +2002,6 @@ void CommandBuffer::push_constants(const void *data, VkDeviceSize offset, VkDevi
 	set_dirty(COMMAND_BUFFER_DIRTY_PUSH_CONSTANTS_BIT);
 }
 
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-void CommandBuffer::set_program(const std::string &compute, const std::vector<std::pair<std::string, int>> &defines)
-{
-	auto *p = device->get_shader_manager().register_compute(compute);
-	if (p)
-	{
-		auto *variant = p->register_variant(defines);
-		set_program(variant->get_program());
-	}
-	else
-		set_program(nullptr);
-}
-
-void CommandBuffer::set_program(const std::string &vertex, const std::string &fragment,
-                                const std::vector<std::pair<std::string, int>> &defines)
-{
-	auto *p = device->get_shader_manager().register_graphics(vertex, fragment);
-	if (p)
-	{
-		auto *variant = p->register_variant(defines);
-		set_program(variant->get_program());
-	}
-	else
-		set_program(nullptr);
-}
-
-void CommandBuffer::set_program(const std::string &task, const std::string &mesh, const std::string &fragment,
-                                const std::vector<std::pair<std::string, int>> &defines)
-{
-	auto *p = device->get_shader_manager().register_graphics(task, mesh, fragment);
-	if (p)
-	{
-		auto *variant = p->register_variant(defines);
-		set_program(variant->get_program());
-	}
-	else
-		set_program(nullptr);
-}
-#endif
 
 void CommandBuffer::set_program(Program *program)
 {
@@ -3709,99 +3664,6 @@ void CommandBuffer::end_region()
 		vkCmdEndDebugUtilsLabelEXT(cmd);
 }
 
-#ifdef GRANITE_VULKAN_SYSTEM_HANDLES
-void CommandBufferUtil::set_quad_vertex_state(CommandBuffer &cmd)
-{
-#ifdef __APPLE__
-	// For *some* reason, Metal does not support tightly packed R8G8 ...
-	// Have to use RGBA8 <_<.
-	auto *data = static_cast<int8_t *>(cmd.allocate_vertex_data(0, 16, 4));
-	*data++ = -127;
-	*data++ = +127;
-	*data++ = 0;
-	*data++ = +127;
-	*data++ = +127;
-	*data++ = +127;
-	*data++ = 0;
-	*data++ = +127;
-	*data++ = -127;
-	*data++ = -127;
-	*data++ = 0;
-	*data++ = +127;
-	*data++ = +127;
-	*data++ = -127;
-	*data++ = 0;
-	*data++ = +127;
-
-	cmd.set_vertex_attrib(0, 0, VK_FORMAT_R8G8B8A8_SNORM, 0);
-#else
-	auto *data = static_cast<int8_t *>(cmd.allocate_vertex_data(0, 8, 2));
-	*data++ = -127;
-	*data++ = +127;
-	*data++ = +127;
-	*data++ = +127;
-	*data++ = -127;
-	*data++ = -127;
-	*data++ = +127;
-	*data++ = -127;
-
-	cmd.set_vertex_attrib(0, 0, VK_FORMAT_R8G8_SNORM, 0);
-#endif
-}
-
-void CommandBufferUtil::set_fullscreen_quad_vertex_state(CommandBuffer &cmd)
-{
-	auto *data = static_cast<float *>(cmd.allocate_vertex_data(0, 6 * sizeof(float), 2 * sizeof(float)));
-	*data++ = -1.0f;
-	*data++ = -3.0f;
-	*data++ = -1.0f;
-	*data++ = +1.0f;
-	*data++ = +3.0f;
-	*data++ = +1.0f;
-
-	cmd.set_vertex_attrib(0, 0, VK_FORMAT_R32G32_SFLOAT, 0);
-}
-
-void CommandBufferUtil::draw_fullscreen_quad(CommandBuffer &cmd, unsigned instances)
-{
-	cmd.set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-	cmd.draw(3, instances);
-}
-
-void CommandBufferUtil::draw_quad(CommandBuffer &cmd, unsigned instances)
-{
-	cmd.set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
-	cmd.draw(4, instances);
-}
-
-void CommandBufferUtil::draw_fullscreen_quad(CommandBuffer &cmd, const std::string &vertex, const std::string &fragment,
-                                             const std::vector<std::pair<std::string, int>> &defines)
-{
-	draw_fullscreen_quad_depth(cmd, vertex, fragment, false, false, VK_COMPARE_OP_ALWAYS, defines);
-}
-
-void CommandBufferUtil::draw_fullscreen_quad_depth(CommandBuffer &cmd, const std::string &vertex,
-                                                   const std::string &fragment,
-                                                   bool depth_test, bool depth_write, VkCompareOp depth_compare,
-                                                   const std::vector<std::pair<std::string, int>> &defines)
-{
-	setup_fullscreen_quad(cmd, vertex, fragment, defines, depth_test, depth_write, depth_compare);
-	draw_fullscreen_quad(cmd);
-}
-
-void CommandBufferUtil::setup_fullscreen_quad(Vulkan::CommandBuffer &cmd, const std::string &vertex,
-                                              const std::string &fragment,
-                                              const std::vector<std::pair<std::string, int>> &defines, bool depth_test,
-                                              bool depth_write, VkCompareOp depth_compare)
-{
-	cmd.set_program(vertex, fragment, defines);
-	cmd.set_quad_state();
-	set_fullscreen_quad_vertex_state(cmd);
-	cmd.set_depth_test(depth_test, depth_write);
-	cmd.set_depth_compare(depth_compare);
-	cmd.set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-}
-#endif
 
 void CommandBufferDeleter::operator()(Vulkan::CommandBuffer *cmd)
 {

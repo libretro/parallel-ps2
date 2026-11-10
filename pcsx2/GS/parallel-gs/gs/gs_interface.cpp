@@ -15,7 +15,6 @@
 #include "gs_interface.hpp"
 #include "gs_util.hpp"
 #include "shaders/swizzle_utils.h"
-#include "gs_registers_debug.hpp"
 #include "pgs_vertex_kernels.h"
 
 namespace ParallelGS
@@ -307,7 +306,6 @@ void GSInterface::flush_render_pass(FlushReason reason)
 		// have been cached properly.
 		promote_render_pass_to_backbuffer(rp);
 
-		TRACE_HEADER("FLUSH RENDER", rp);
 	}
 
 	// If we used memoization of CLUT and ended on an old instance, we need to notify the renderer
@@ -370,27 +368,23 @@ void GSInterface::flush(PageTrackerFlushFlags flags, FlushReason reason)
 		if (!block_buffer.empty())
 			renderer.flush_host_vram_copy(block_buffer.data(), block_buffer.size());
 
-		TRACE_HEADER("FLUSH HOST VRAM", Reg64<DummyBits>{0});
 	}
 
 	if ((flags & PAGE_TRACKER_FLUSH_COPY_BIT) != 0)
 	{
 		if ((flags & (PAGE_TRACKER_FLUSH_CACHE_BIT | PAGE_TRACKER_FLUSH_FB_BIT | PAGE_TRACKER_FLUSH_WRITE_BACK_BIT)) != 0)
 		{
-			TRACE_HEADER("FLUSH COPY", Reg64<DummyBits>{0});
 			renderer.flush_transfer();
 		}
 		else
 		{
 			// If we're not flushing anything beyond copies, it means we're just resolving a WAW hazard internally.
-			TRACE_HEADER("BARRIER COPY", Reg64<DummyBits>{0});
 			renderer.transfer_overlap_barrier();
 		}
 	}
 
 	if ((flags & PAGE_TRACKER_FLUSH_CACHE_BIT) != 0)
 	{
-		TRACE_HEADER("FLUSH CACHE UPLOAD", Reg64<DummyBits>{0});
 		renderer.flush_cache_upload();
 		// VRAM may have changed, so need to reset memoization state.
 		render_pass.num_memoized_palettes = 0;
@@ -401,7 +395,6 @@ void GSInterface::flush(PageTrackerFlushFlags flags, FlushReason reason)
 
 	if ((flags & PAGE_TRACKER_FLUSH_WRITE_BACK_BIT) != 0)
 	{
-		TRACE_HEADER("FLUSH WRITE BACK", Reg64<DummyBits>{0});
 		block_buffer.clear();
 		for (size_t i = 0, n = sync_vram_host_pages.size(); i < n; i++)
 		{
@@ -706,9 +699,6 @@ void GSInterface::handle_clut_upload(uint32_t ctx_index)
 	if (transfer_state.host_to_local_active &&
 	    transfer_state.host_to_local_payload.size() > transfer_state.last_flushed_qwords)
 	{
-#ifdef PARALLEL_GS_DEBUG
-		LOGW("Flushing partial transfer due to palette read.\n");
-#endif
 		flush_pending_transfer(true);
 	}
 
@@ -893,13 +883,11 @@ void GSInterface::handle_clut_upload(uint32_t ctx_index)
 		render_pass.num_memoized_palettes--;
 	}
 
-	TRACE_INDEXED("MEMOIZE CLUT", render_pass.num_memoized_palettes, palette_desc);
 	RenderPassState::MemoizedPaletteState &memoized = render_pass.memoized_palettes[render_pass.num_memoized_palettes++];
 	memoized.clut_instance = render_pass.clut_instance;
 	memoized.csa_mask = page.csa_mask;
 	memoized.upload = palette_desc;
 
-	TRACE("CACHE CLUT", palette_desc);
 
 	if (!replacing_clut)
 	{
@@ -996,7 +984,6 @@ void GSInterface::vertex_kick_xyz(Reg64<XYZBits> xyz)
 	                    &vertex_queue.attr[vertex_queue.slot(vertex_queue.count)]);
 
 	vertex_queue.count++;
-	TRACE_INDEXED("VERT", vertex_queue.count, xyz);
 }
 
 void GSInterface::vertex_kick_xyzf(Reg64<XYZFBits> xyzf)
@@ -1013,7 +1000,6 @@ void GSInterface::vertex_kick_xyzf(Reg64<XYZFBits> xyzf)
 	                    &vertex_queue.attr[vertex_queue.slot(vertex_queue.count)]);
 
 	vertex_queue.count++;
-	TRACE_INDEXED("VERT", vertex_queue.count, xyzf);
 }
 
 bool GSInterface::get_and_clear_dirty_flag(StateDirtyFlags flags)
@@ -1172,7 +1158,6 @@ uint32_t GSInterface::find_or_place_unique_state_vector(const StateVector &state
 	else
 	{
 		state_index = uint32_t(render_pass.state_vectors.size());
-		TRACE_INDEXED("STATE", state_index, state);
 		render_pass.state_vectors.push_back(state);
 		render_pass.state_vector_map.emplace_replace(hasher.get(), state_index);
 	}
@@ -1814,7 +1799,6 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 		Vulkan::ImageHandle image = tracker.find_cached_texture(hasher.get());
 		if (!image)
 		{
-			TRACE("CACHE IMAGE", desc);
 			desc.hash = hasher.get();
 			image = renderer.create_cached_texture(desc);
 
@@ -2752,7 +2736,6 @@ void GSInterface::drawing_kick_append()
 	// Check for degenerate BB. Can happen if primitive is clipped away completely by scissor.
 	if (bb.z < bb.x || bb.w < bb.y)
 	{
-		TRACE("Degenerate BB", bb);
 		return;
 	}
 
@@ -2783,7 +2766,6 @@ void GSInterface::drawing_kick_append()
 			         (render_pass.last_triangle_parallelogram_order.x << STATE_PARALLELOGRAM_PROVOKING_OFFSET);
 
 			render_pass.last_triangle_is_parallelogram_candidate = false;
-			TRACE("Promote Parallelogram", DummyBits{});
 			return;
 		}
 
@@ -2822,9 +2804,6 @@ void GSInterface::drawing_kick_append()
 	if (prim.desc.TME && transfer_state.host_to_local_active &&
 	    transfer_state.host_to_local_payload.size() > transfer_state.last_flushed_qwords)
 	{
-#ifdef PARALLEL_GS_DEBUG
-		LOGW("Flushing partial transfer due to texture read ...\n");
-#endif
 		flush_pending_transfer(true);
 	}
 
@@ -2957,7 +2936,6 @@ void GSInterface::drawing_kick_append()
 
 		if (bb.z < bb.x)
 		{
-			TRACE("Degenerate BB", bb);
 			return;
 		}
 	}
@@ -2999,8 +2977,6 @@ void GSInterface::drawing_kick_append()
 
 	prim_attr.bb = i16vec4{ int16_t(bb.x), int16_t(bb.y), int16_t(bb.z), int16_t(bb.w) };
 
-	TRACE("Primitive", prim_attr);
-	TRACE("DRAW", render_pass.primitive_count);
 
 	render_pass.prim[render_pass.primitive_count] = prim_attr;
 	memcpy(render_pass.positions + 3 * render_pass.primitive_count, pos, sizeof(pos));
@@ -3049,8 +3025,6 @@ void GSInterface::drawing_kick_primitive(bool adc)
 	{
 		if (!draw_is_degenerate())
 			drawing_kick_append<list_primitive, fan_primitive, quad, num_vertices>();
-		else
-			TRACE("Degenerate Draw", DummyBits{});
 	}
 
 	// We seem to do queue maintenance regardless after a vertex kick.
@@ -3170,14 +3144,6 @@ void GSInterface::flush_pending_transfer(bool keep_alive)
 	if (transfer_state.host_to_local_active &&
 	    payload_qwords > transfer_state.last_flushed_qwords)
 	{
-#ifdef PARALLEL_GS_DEBUG
-		if (transfer_state.copy.bitbltbuf.bits != registers.bitbltbuf.bits)
-			LOGW("Mismatch in bitbltbuf state.\n");
-		if (transfer_state.copy.trxpos.bits != registers.trxpos.bits)
-			LOGW("Mismatch in trxpos state.\n");
-		if (transfer_state.copy.trxreg.bits != registers.trxreg.bits)
-			LOGW("Mismatch in trxreg state.\n");
-#endif
 
 		PageRect dst_rect = compute_page_rect(transfer_state.copy.bitbltbuf.desc.DBP,
 										  transfer_state.copy.trxpos.desc.DSAX,
@@ -3216,9 +3182,6 @@ void GSInterface::flush_pending_transfer(bool keep_alive)
 
 				if (state_tracker.current_copy_cache_hazard_counter > state_tracker.max_copy_cache_hazard_counter)
 				{
-#ifdef PARALLEL_GS_DEBUG
-					LOGW("Increasing copy cache limit to %u.\n", state_tracker.current_copy_cache_hazard_counter);
-#endif
 					state_tracker.max_copy_cache_hazard_counter = state_tracker.current_copy_cache_hazard_counter;
 				}
 			}
@@ -3302,9 +3265,6 @@ void GSInterface::flush_pending_transfer(bool keep_alive)
 			PSM_DISPATCH(PSMZ24);
 #undef PSM_DISPATCH
 			default:
-#ifdef PARALLEL_GS_DEBUG
-				LOGW("Unsupported CPU upload format %u, falling back.\n", transfer_state.copy.bitbltbuf.desc.DPSM);
-#endif
 				copy_cpu = false;
 				break;
 			}
@@ -3325,7 +3285,6 @@ void GSInterface::flush_pending_transfer(bool keep_alive)
 		tracker.invalidate_texture_cache(render_pass.clut_instance);
 		invalidate_promoted_backbuffer(transfer_state.copy.bitbltbuf.desc.DBP / PGS_BLOCKS_PER_PAGE);
 
-		TRACE_HEADER("VRAM COPY", transfer_state.copy);
 	}
 
 	if (!keep_alive)
@@ -3840,13 +3799,11 @@ void GSInterface::a_d_PRIM(uint64_t payload)
 
 	reset_vertex_queue();
 
-	TRACE("PRIM", registers.prim);
 }
 
 void GSInterface::a_d_RGBAQ(uint64_t payload)
 {
 	registers.rgbaq.bits = payload;
-	TRACE("RGBAQ", registers.rgbaq);
 }
 
 void GSInterface::a_d_RGBAQUndocumented(uint64_t payload)
@@ -3858,13 +3815,11 @@ void GSInterface::a_d_RGBAQUndocumented(uint64_t payload)
 void GSInterface::a_d_ST(uint64_t payload)
 {
 	registers.st.bits = payload;
-	TRACE("ST", registers.st);
 }
 
 void GSInterface::a_d_UV(uint64_t payload)
 {
 	registers.uv.bits = payload;
-	TRACE("UV", registers.uv);
 }
 
 void GSInterface::a_d_XYZF2(uint64_t payload)
@@ -3884,7 +3839,6 @@ void GSInterface::a_d_TEX0_1(uint64_t payload)
 	update_internal_register(registers.ctx[0].tex0.bits, payload,
 	                         STATE_DIRTY_FEEDBACK_BIT | STATE_DIRTY_STATE_BIT |
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_TEX_BIT);
-	TRACE("TEX0_1", registers.ctx[0].tex0);
 	handle_tex0_write(0);
 	handle_miptbl_gen(0);
 }
@@ -3894,7 +3848,6 @@ void GSInterface::a_d_TEX0_2(uint64_t payload)
 	update_internal_register(registers.ctx[1].tex0.bits, payload,
 	                         STATE_DIRTY_FEEDBACK_BIT | STATE_DIRTY_STATE_BIT |
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_TEX_BIT);
-	TRACE("TEX0_2", registers.ctx[1].tex0);
 	handle_tex0_write(1);
 	handle_miptbl_gen(1);
 }
@@ -3903,20 +3856,17 @@ void GSInterface::a_d_CLAMP_1(uint64_t payload)
 {
 	update_internal_register(registers.ctx[0].clamp.bits, payload,
 	                         STATE_DIRTY_FEEDBACK_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_TEX_BIT);
-	TRACE("CLAMP_1", registers.ctx[0].clamp);
 }
 
 void GSInterface::a_d_CLAMP_2(uint64_t payload)
 {
 	update_internal_register(registers.ctx[1].clamp.bits, payload,
 	                         STATE_DIRTY_FEEDBACK_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_TEX_BIT);
-	TRACE("CLAMP_2", registers.ctx[1].clamp);
 }
 
 void GSInterface::a_d_FOG(uint64_t payload)
 {
 	registers.fog.bits = payload;
-	TRACE("FOG", registers.fog);
 }
 
 void GSInterface::a_d_XYZF3(uint64_t payload)
@@ -3935,14 +3885,12 @@ void GSInterface::a_d_TEX1_1(uint64_t payload)
 {
 	update_internal_register(registers.ctx[0].tex1.bits, payload,
 	                         STATE_DIRTY_FEEDBACK_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_TEX_BIT);
-	TRACE("TEX1_1", registers.ctx[0].tex1);
 }
 
 void GSInterface::a_d_TEX1_2(uint64_t payload)
 {
 	update_internal_register(registers.ctx[1].tex1.bits, payload,
 	                         STATE_DIRTY_FEEDBACK_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_TEX_BIT);
-	TRACE("TEX1_2", registers.ctx[1].tex1);
 }
 
 void GSInterface::a_d_TEX2_1(uint64_t payload) { a_d_TEX2<0>(payload); }
@@ -3950,7 +3898,6 @@ void GSInterface::a_d_TEX2_2(uint64_t payload) { a_d_TEX2<1>(payload); }
 void GSInterface::a_d_XYOFFSET_1(uint64_t payload)
 {
 	registers.ctx[0].xyoffset.bits = payload;
-	TRACE("XYOFFSET_1", registers.ctx[0].xyoffset);
 
 	if (registers.prim.desc.CTXT == 0)
 	{
@@ -3962,7 +3909,6 @@ void GSInterface::a_d_XYOFFSET_1(uint64_t payload)
 void GSInterface::a_d_XYOFFSET_2(uint64_t payload)
 {
 	registers.ctx[1].xyoffset.bits = payload;
-	TRACE("XYOFFSET_2", registers.ctx[1].xyoffset);
 
 	if (registers.prim.desc.CTXT == 1)
 	{
@@ -3974,7 +3920,6 @@ void GSInterface::a_d_XYOFFSET_2(uint64_t payload)
 void GSInterface::a_d_PRMODECONT(uint64_t payload)
 {
 	registers.prmodecont.bits = payload;
-	TRACE("PRMODECONT", registers.prmodecont);
 }
 
 void GSInterface::a_d_PRMODE(uint64_t payload)
@@ -4006,55 +3951,47 @@ void GSInterface::a_d_PRMODE(uint64_t payload)
 		if (!registers.prim.desc.TME)
 			state_tracker.dirty_flags &= ~STATE_DIRTY_TEX_BIT;
 
-		TRACE("PRMODE", registers.prim);
 	}
 }
 void GSInterface::a_d_TEXCLUT(uint64_t payload)
 {
 	registers.texclut.bits = payload;
-	TRACE("TEXCLUT", registers.texclut);
 }
 
 void GSInterface::a_d_SCANMSK(uint64_t payload)
 {
 	update_internal_register(registers.scanmsk.bits, payload,
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT);
-	TRACE("SCANMSK", registers.scanmsk);
 }
 
 void GSInterface::a_d_MIPTBP1_1(uint64_t payload)
 {
 	update_internal_register(registers.ctx[0].miptbl_1_3.bits, payload,
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_TEX_BIT);
-	TRACE("MIPTBP1_1", registers.ctx[0].miptbl_1_3);
 }
 
 void GSInterface::a_d_MIPTBP1_2(uint64_t payload)
 {
 	update_internal_register(registers.ctx[1].miptbl_1_3.bits, payload,
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_TEX_BIT);
-	TRACE("MIPTBP1_2", registers.ctx[1].miptbl_1_3);
 }
 
 void GSInterface::a_d_MIPTBP2_1(uint64_t payload)
 {
 	update_internal_register(registers.ctx[0].miptbl_4_6.bits, payload,
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_TEX_BIT);
-	TRACE("MIPTBP2_1", registers.ctx[0].miptbl_4_6);
 }
 
 void GSInterface::a_d_MIPTBP2_2(uint64_t payload)
 {
 	update_internal_register(registers.ctx[1].miptbl_4_6.bits, payload,
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_TEX_BIT);
-	TRACE("MIPTBP2_2", registers.ctx[1].miptbl_4_6);
 }
 
 void GSInterface::a_d_TEXA(uint64_t payload)
 {
 	update_internal_register(registers.texa.bits, payload,
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_TEX_BIT);
-	TRACE("TEXA", registers.texa);
 }
 
 void GSInterface::a_d_FOGCOL(uint64_t payload)
@@ -4062,7 +3999,6 @@ void GSInterface::a_d_FOGCOL(uint64_t payload)
 	registers.fogcol.bits = payload;
 	/* The cached primitive record carries the fog colour. */
 	state_tracker.dirty_flags |= STATE_DIRTY_PRIM_TEMPLATE_BIT;
-	TRACE("FOGCOL", registers.fogcol);
 }
 
 void GSInterface::a_d_TEXFLUSH(uint64_t)
@@ -4070,7 +4006,6 @@ void GSInterface::a_d_TEXFLUSH(uint64_t)
 	// We cannot rely on TEXFLUSH fully, unfortunately.
 	// We'll have to rely on our own tracking,
 	// but there are some edge cases where TEXFLUSH is a useful heuristic.
-	TRACE("TEXFLUSH", Reg64<DummyBits>{0});
 
 	// This is relevant for textures which are held during a render pass.
 	// If game never uses texflush, we should probably ignore any potential feedback hazards which are very unlikely to be real hazards.
@@ -4086,46 +4021,39 @@ void GSInterface::a_d_SCISSOR_1(uint64_t payload)
 {
 	update_internal_register(registers.ctx[0].scissor.bits, payload,
 	                         STATE_DIRTY_SCISSOR_BIT | STATE_DIRTY_DEGENERATE_BIT);
-	TRACE("SCISSOR_1", registers.ctx[0].scissor);
 }
 
 void GSInterface::a_d_SCISSOR_2(uint64_t payload)
 {
 	update_internal_register(registers.ctx[1].scissor.bits, payload,
 	                         STATE_DIRTY_SCISSOR_BIT | STATE_DIRTY_DEGENERATE_BIT);
-	TRACE("SCISSOR_2", registers.ctx[1].scissor);
 }
 
 void GSInterface::a_d_ALPHA_1(uint64_t payload)
 {
 	update_internal_register(registers.ctx[0].alpha.bits, payload,
 	                         STATE_DIRTY_STATE_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_DEGENERATE_BIT);
-	TRACE("ALPHA_1", registers.ctx[0].alpha);
 }
 
 void GSInterface::a_d_ALPHA_2(uint64_t payload)
 {
 	update_internal_register(registers.ctx[1].alpha.bits, payload,
 	                         STATE_DIRTY_STATE_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_DEGENERATE_BIT);
-	TRACE("ALPHA_2", registers.ctx[1].alpha);
 }
 
 void GSInterface::a_d_DIMX(uint64_t payload)
 {
 	update_internal_register(registers.dimx.bits, payload, STATE_DIRTY_STATE_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT);
-	TRACE("DIMX", registers.dimx);
 }
 
 void GSInterface::a_d_DTHE(uint64_t payload)
 {
 	update_internal_register(registers.dthe.bits, payload, STATE_DIRTY_STATE_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT);
-	TRACE("DTHE", registers.dthe);
 }
 
 void GSInterface::a_d_COLCLAMP(uint64_t payload)
 {
 	update_internal_register(registers.colclamp.bits, payload, STATE_DIRTY_STATE_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT);
-	TRACE("COLCLAMP", registers.colclamp);
 }
 
 void GSInterface::a_d_TEST_1(uint64_t payload)
@@ -4134,7 +4062,6 @@ void GSInterface::a_d_TEST_1(uint64_t payload)
 	                         STATE_DIRTY_DEGENERATE_BIT |
 	                         STATE_DIRTY_STATE_BIT |
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT);
-	TRACE("TEST_1", registers.ctx[0].test);
 }
 
 void GSInterface::a_d_TEST_2(uint64_t payload)
@@ -4143,25 +4070,21 @@ void GSInterface::a_d_TEST_2(uint64_t payload)
 	                         STATE_DIRTY_DEGENERATE_BIT |
 	                         STATE_DIRTY_STATE_BIT |
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT);
-	TRACE("TEST_2", registers.ctx[1].test);
 }
 
 void GSInterface::a_d_PABE(uint64_t payload)
 {
 	update_internal_register(registers.pabe.bits, payload, STATE_DIRTY_STATE_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT);
-	TRACE("PABE", registers.pabe);
 }
 
 void GSInterface::a_d_FBA_1(uint64_t payload)
 {
 	update_internal_register(registers.ctx[0].fba.bits, payload, STATE_DIRTY_STATE_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT);
-	TRACE("FBA_1", registers.ctx[0].fba);
 }
 
 void GSInterface::a_d_FBA_2(uint64_t payload)
 {
 	update_internal_register(registers.ctx[1].fba.bits, payload, STATE_DIRTY_STATE_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT);
-	TRACE("FBA_2", registers.ctx[1].fba);
 }
 
 void GSInterface::update_internal_register(uint64_t &reg, uint64_t value, StateDirtyFlags flags)
@@ -4169,7 +4092,6 @@ void GSInterface::update_internal_register(uint64_t &reg, uint64_t value, StateD
 	if (reg != value)
 	{
 		reg = value;
-		TRACE("DIRTY", flags);
 		state_tracker.dirty_flags |= flags;
 	}
 }
@@ -4180,7 +4102,6 @@ void GSInterface::a_d_FRAME_1(uint64_t payload)
 	                         STATE_DIRTY_DEGENERATE_BIT | STATE_DIRTY_FEEDBACK_BIT |
 	                         STATE_DIRTY_TEX_BIT | STATE_DIRTY_FB_BIT |
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_SCISSOR_BIT);
-	TRACE("FRAME_1", registers.ctx[0].frame);
 }
 
 void GSInterface::a_d_FRAME_2(uint64_t payload)
@@ -4189,7 +4110,6 @@ void GSInterface::a_d_FRAME_2(uint64_t payload)
 	                         STATE_DIRTY_DEGENERATE_BIT | STATE_DIRTY_FEEDBACK_BIT |
 	                         STATE_DIRTY_TEX_BIT | STATE_DIRTY_FB_BIT |
 	                         STATE_DIRTY_PRIM_TEMPLATE_BIT | STATE_DIRTY_SCISSOR_BIT);
-	TRACE("FRAME_2", registers.ctx[1].frame);
 }
 
 void GSInterface::a_d_ZBUF_1(uint64_t payload)
@@ -4197,7 +4117,6 @@ void GSInterface::a_d_ZBUF_1(uint64_t payload)
 	update_internal_register(registers.ctx[0].zbuf.bits, payload,
 	                         STATE_DIRTY_FEEDBACK_BIT | STATE_DIRTY_DEGENERATE_BIT |
 	                         STATE_DIRTY_TEX_BIT | STATE_DIRTY_FB_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT);
-	TRACE("ZBUF_1", registers.ctx[0].zbuf);
 }
 
 void GSInterface::a_d_ZBUF_2(uint64_t payload)
@@ -4205,31 +4124,26 @@ void GSInterface::a_d_ZBUF_2(uint64_t payload)
 	update_internal_register(registers.ctx[1].zbuf.bits, payload,
 	                         STATE_DIRTY_FEEDBACK_BIT | STATE_DIRTY_DEGENERATE_BIT |
 	                         STATE_DIRTY_TEX_BIT | STATE_DIRTY_FB_BIT | STATE_DIRTY_PRIM_TEMPLATE_BIT);
-	TRACE("ZBUF_2", registers.ctx[1].zbuf);
 }
 
 void GSInterface::a_d_BITBLTBUF(uint64_t payload)
 {
 	registers.bitbltbuf.bits = payload;
-	TRACE("BITBLTBUF", registers.bitbltbuf);
 }
 
 void GSInterface::a_d_TRXPOS(uint64_t payload)
 {
 	registers.trxpos.bits = payload;
-	TRACE("TRXPOS", registers.trxpos);
 }
 
 void GSInterface::a_d_TRXREG(uint64_t payload)
 {
 	registers.trxreg.bits = payload;
-	TRACE("TRXREG", registers.trxreg);
 }
 
 void GSInterface::a_d_TRXDIR(uint64_t payload)
 {
 	registers.trxdir.bits = payload;
-	TRACE("TRXDIR", registers.trxdir);
 	init_transfer();
 }
 
@@ -4303,7 +4217,6 @@ void GSInterface::packed_RGBAQ(const void *words)
 	registers.rgbaq.desc.A = rgba.A;
 	registers.rgbaq.desc.Q = registers.internal_q;
 
-	TRACE("RGBAQ", registers.rgbaq);
 }
 
 void GSInterface::packed_ST(const void *words)
@@ -4313,7 +4226,6 @@ void GSInterface::packed_ST(const void *words)
 	registers.st.desc.T = st.T;
 	registers.internal_q = st.Q;
 
-	TRACE("ST", registers.st);
 }
 
 void GSInterface::packed_UV(const void *words)
@@ -4321,7 +4233,6 @@ void GSInterface::packed_UV(const void *words)
 	const PackedUVBits &uv = *static_cast<const PackedUVBits *>(words);
 	registers.uv.desc.U = uv.U;
 	registers.uv.desc.V = uv.V;
-	TRACE("UV", registers.uv);
 }
 
 template <bool ADC>
@@ -4337,7 +4248,6 @@ void GSInterface::packed_XYZF(const void *words)
 	bits.desc.F = xyzf.F;
 	vertex_kick_xyzf(bits);
 
-	TRACE("ADC", adc);
 	drawing_kick(adc);
 }
 
@@ -4353,7 +4263,6 @@ void GSInterface::packed_XYZ(const void *words)
 	bits.desc.Z = xyz.Z;
 	vertex_kick_xyz(bits);
 
-	TRACE("ADC", adc);
 	drawing_kick(adc);
 }
 
@@ -4384,7 +4293,6 @@ void GSInterface::packed_XYZ(const void *words)
 		adc = ADC || xyz.ADC;
 	}
 
-	TRACE("ADC", adc);
 	drawing_kick<PRIM>(adc);
 }
 
@@ -4434,7 +4342,6 @@ void GSInterface::packed_FOG(const void *words)
 {
 	const PackedFOGBits &fog = *static_cast<const PackedFOGBits *>(words);
 	registers.fog.desc.FOG = fog.F;
-	TRACE("FOG", registers.fog);
 }
 
 void GSInterface::setup_handlers()
@@ -4612,7 +4519,6 @@ void GSInterface::gif_transfer(uint32_t path_index, const void *data, size_t siz
 		if (needs_gif_tag)
 		{
 			path.tag = qwords[i];
-			TRACE_HEADER("GIFTag", path.tag);
 			if (path.tag.FLG == GIFTagBits::PACKED && path.tag.PRE != 0 && path.tag.NLOOP)
 			{
 				// Set PRIM register.

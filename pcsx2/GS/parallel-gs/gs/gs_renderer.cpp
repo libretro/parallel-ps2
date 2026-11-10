@@ -18,7 +18,6 @@
 #endif
 #include "logging.hpp"
 #include "gs_interface.hpp"
-#include "gs_registers_debug.hpp"
 #include "bitops.hpp"
 #include "shaders/slangmosh.hpp"
 #include <retro_spsc.h>
@@ -62,6 +61,27 @@ static constexpr uint32_t MaxPendingCopiesWithoutFlush = 1023; // 10 bits. Reser
 
 // Pink-ish. Intended to look good in RenderDoc's default light theme.
 static constexpr float LabelColor[] = { 1.0f, 0.8f, 0.8f, 1.0f };
+
+static const char *psm_to_str(uint32_t psm)
+{
+	switch (psm)
+	{
+	case PSMCT32: return "PSMCT32";
+	case PSMCT24: return "PSMCT24";
+	case PSMCT16: return "PSMCT16";
+	case PSMCT16S: return "PSMCT16S";
+	case PSMT8: return "PSMT8";
+	case PSMT4: return "PSMT4";
+	case PSMT8H: return "PSMT8H";
+	case PSMT4HL: return "PSMT4HL";
+	case PSMT4HH: return "PSMT4HH";
+	case PSMZ32: return "PSMTZ32";
+	case PSMZ24: return "PSMTZ24";
+	case PSMZ16: return "PSMTZ16";
+	case PSMZ16S: return "PSMTZ16S";
+	default: return "?";
+	}
+}
 
 template <typename... Args>
 static void insert_label(Vulkan::CommandBuffer &cmd, const char *fmt, Args... args)
@@ -1469,18 +1489,6 @@ void GSRenderer::check_flush_stats()
 	    stats.num_copies >= MaxPendingCopies ||
 	    stats.num_palette_updates >= MaxPendingPaletteUploads)
 	{
-#ifdef PARALLEL_GS_DEBUG
-		LOGI("Too much pending work, flushing:\n");
-		LOGI("  %u primitives\n", stats.num_primitives);
-		LOGI("  %u render passes\n", stats.num_render_passes);
-		LOGI("  %u MiB allocated image memory\n", unsigned(stats.allocated_image_memory / (1024 * 1024)));
-		LOGI("  %u MiB allocated scratch memory\n", unsigned(stats.allocated_scratch_memory / (1024 * 1024)));
-		LOGI("  %u palette updates\n", stats.num_palette_updates);
-		LOGI("  %u copies\n", stats.num_copies);
-		LOGI("  %zu pending copies\n", pending_copies.size());
-		LOGI("  %u copy threads\n", stats.num_copy_threads);
-		LOGI("  %u copy barriers\n", stats.num_copy_barriers);
-#endif
 		tracker.mark_memory_pressure();
 	}
 
@@ -3387,34 +3395,6 @@ static const char *reason_to_str(FlushReason reason)
 	}
 }
 
-#ifdef PARALLEL_GS_DEBUG
-static inline void sanitize_state_indices(const PrimitiveAttribute *prims, const RenderPass &rp)
-{
-	for (uint32_t i = 0; i < rp.num_primitives; i++)
-	{
-		uint32_t tex_index = prims[i].tex & ((1u << TEX_TEXTURE_INDEX_BITS) - 1u);
-		uint32_t state_index = (prims[i].state >> STATE_INDEX_BIT_OFFSET) &
-		                       ((1u << STATE_INDEX_BIT_COUNT) - 1u);
-
-		if (state_index >= rp.num_states)
-			std::terminate();
-
-		if (tex_index >= 0x8000)
-		{
-			if (rp.feedback_mode == RenderPass::Feedback::None)
-				std::terminate();
-		}
-		else if ((rp.states[state_index].combiner & COMBINER_TME_BIT) != 0)
-		{
-			if (tex_index >= rp.num_textures)
-				std::terminate();
-		}
-
-		if ((rp.states[state_index].combiner & COMBINER_TME_BIT) == 0 && tex_index != 0)
-			std::terminate();
-	}
-}
-#endif
 
 void GSRenderer::flush_rendering(const RenderPass &rp, uint32_t instance,
                                  uint32_t base_primitive, uint32_t num_primitives)
@@ -3629,9 +3609,6 @@ void GSRenderer::flush_rendering(const RenderPass &rp)
 		return;
 	assert(rp.num_primitives <= MaxPrimitivesPerFlush);
 
-#ifdef PARALLEL_GS_DEBUG
-	sanitize_state_indices(buffers.prim, rp);
-#endif
 
 	ensure_clear_cmd();
 
@@ -3838,10 +3815,6 @@ void GSRenderer::move_image_handles_to_slab()
 
 	if (total_image_slab_size > image_slab_high_water_mark)
 	{
-#ifdef PARALLEL_GS_DEBUG
-		LOGW("New high watermark for image slab: %llu MiB.\n",
-		     static_cast<unsigned long long>(total_image_slab_size / (1024 * 1024)));
-#endif
 		image_slab_high_water_mark = total_image_slab_size;
 	}
 
@@ -3851,9 +3824,6 @@ void GSRenderer::move_image_handles_to_slab()
 	{
 		flush_slab_cache();
 
-#ifdef PARALLEL_GS_DEBUG
-		LOGW("Image slab pool was exhausted, flushing it ...\n");
-#endif
 	}
 }
 
@@ -4223,14 +4193,6 @@ void GSRenderer::flush_palette_upload()
 			clut_desc.co_uv = 0;
 			clut_desc.cbw = 0;
 		}
-#ifdef PARALLEL_GS_DEBUG
-		else
-		{
-			// CSM2
-			if (clut_desc.csa != 0)
-				LOGW("CSM2: CSA is not 0.\n");
-		}
-#endif
 
 		instance = (instance + 1) % CLUTInstances;
 		*desc++ = clut_desc;

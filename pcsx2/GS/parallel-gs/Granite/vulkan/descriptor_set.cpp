@@ -231,23 +231,6 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash, Device *device_, const
 		}
 	}
 
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	if (device->ext.supports_descriptor_buffer && !heap)
-	{
-		// Normalize the recorded flags.
-		if (bindless)
-		{
-			info.flags |= VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-			binding_flags |= VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-			                 VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-		}
-
-		info.flags &= ~VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
-	}
-
-	if (set_layout_pool)
-		device->register_descriptor_set_layout(set_layout_pool, get_hash(), info);
-#endif
 
 	// Push descriptors is not used with descriptor buffer.
 	if (!bindless && device->get_device_features().vk14_features.pushDescriptor &&
@@ -256,10 +239,6 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash, Device *device_, const
 		info.flags |= VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT;
 		if (table.vkCreateDescriptorSetLayout(device->get_device(), &info, nullptr, &set_layout_push) != VK_SUCCESS)
 			LOGE("Failed to create descriptor set layout.");
-#ifdef GRANITE_VULKAN_FOSSILIZE
-		if (set_layout_push)
-			device->register_descriptor_set_layout(set_layout_push, get_hash(), info);
-#endif
 	}
 }
 

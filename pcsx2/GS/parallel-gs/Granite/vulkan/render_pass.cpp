@@ -113,9 +113,6 @@ RenderPass::RenderPass(Hash hash, Device *device_, const VkRenderPassCreateInfo2
 	if (table.vkCreateRenderPass2(device->get_device(), &create_info, nullptr, &render_pass) != VK_SUCCESS)
 		LOGE("Failed to create render pass.");
 
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	device->register_render_pass(render_pass, get_hash(), create_info);
-#endif
 }
 
 /* What @info makes, without its images: the pass's signature. */
@@ -885,9 +882,6 @@ RenderPass::RenderPass(Hash hash, Device *device_, const RenderPassInfo &info)
 	if (table.vkCreateRenderPass2(device->get_device(), &rp_info, nullptr, &render_pass) != VK_SUCCESS)
 		LOGE("Failed to create render pass.");
 
-#ifdef GRANITE_VULKAN_FOSSILIZE
-	device->register_render_pass(render_pass, get_hash(), rp_info);
-#endif
 }
 
 RenderPass::~RenderPass()

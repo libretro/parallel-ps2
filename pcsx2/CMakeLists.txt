@@ -489,8 +489,6 @@ if(USE_VULKAN)
 		GS/Renderers/Vulkan/VKLoaderPlatformDefines.h
 	)
 
-	set(PARALLEL_GS_STANDALONE ON CACHE BOOL "" FORCE)
-	set(GRANITE_POSITION_INDEPENDENT ON CACHE BOOL "" FORCE)
 	message("Adding support for paraLLEl-GS")
 	add_subdirectory(GS/parallel-gs EXCLUDE_FROM_ALL)
 	target_link_libraries(PCSX2_FLAGS INTERFACE parallel-gs)
