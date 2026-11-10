@@ -559,6 +559,10 @@ static void recReserve(void)
 	code_reserve_init(&recMem);
 	recMemAssigned = 1;
 	code_reserve_assign(&recMem, &GetVmMemory()->code, HOSTMEM_EEREC_OFFSET, 64 * _1mb);
+	/* Fastmem sites, one per 64 bytes of cache: far denser than real
+	 * code, and recRecompile resets early should a cache fill up with
+	 * them. */
+	vtlb_ReserveLoadStoreInfo(recMem.size / 64);
 }
 
 static void recAlloc(void)
@@ -698,6 +702,7 @@ static void recResetRaw(void)
 static void recShutdown(void)
 {
 	code_reserve_release(&recMem);
+	vtlb_ReleaseLoadStoreInfo();
 	recMemAssigned = 0;
 	memalign_free(recRAMCopy);
 	recRAMCopy = NULL;
@@ -1821,8 +1826,11 @@ static void recRecompile(const u32 startpc)
 	u32 i = 0;
 	u32 willbranch3 = 0;
 
-	// if recPtr reached the mem limit reset whole mem
-	if (recPtr >= ((recMem.baseptr + recMem.size) - _64kb))
+	/* Reset the whole cache when the code buffer, or the fastmem site
+	 * table, has less than a block's worth left: a block is under 64 KB
+	 * of code, and a fastmem site takes at least 5 bytes of it. */
+	if (recPtr >= ((recMem.baseptr + recMem.size) - _64kb)
+		|| vtlb_LoadStoreInfoNearlyFull(_64kb / 5))
 		eeRecNeedsReset = 1;
 
 	if (eeRecNeedsReset)

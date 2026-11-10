@@ -85,6 +85,14 @@ extern void vtlb_VMapBuffer(u32 vaddr,void* buffer,u32 sz);
 extern void vtlb_VMapUnmap(u32 vaddr,u32 sz);
 
 extern void vtlb_ClearLoadStoreInfo(void);
+/* The fastmem backpatch table, sized with the recompiler's code cache
+ * for max_sites fastmem sites and freed with it. False when the pages
+ * cannot be had, which leaves every access on the slow path. */
+extern bool vtlb_ReserveLoadStoreInfo(size_t max_sites);
+extern void vtlb_ReleaseLoadStoreInfo(void);
+/* True when fewer than room more sites fit: the recompiler resets its
+ * cache then, as it does when the code buffer is nearly full. */
+extern bool vtlb_LoadStoreInfoNearlyFull(size_t room);
 extern void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register, u8 size_in_bits, bool is_signed, bool is_load, bool is_fpr);
 extern void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, u32 guest_addr, u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register, u8 size_in_bits, int is_signed, int is_load, int is_fpr);
 extern bool vtlb_IsFaultingPC(u32 guest_pc);

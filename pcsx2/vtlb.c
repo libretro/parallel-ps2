@@ -29,10 +29,8 @@
 */
 
 #include "common/Pcsx2Defs.h"
-#include <rthreads/rthreads.h>
-#include <stdlib.h> /* bsearch, realloc, free */
+#include <stdlib.h> /* bsearch, malloc, free */
 #include <string.h> /* memset */
-#include <retro_atomic.h>
 
 
 #include "../common/Align.h"
@@ -88,9 +86,10 @@ static u32* s_fastmem_virtual_mapping; /* maps vaddr page -> mainmem offset; FAS
 
 /* mainmem offset -> vaddr reverse multimap. Head table indexed by mainmem
  * page (all offsets handed out by vtlb_GetMainMemoryOffset* sit below the
- * bump allocator at 0x10000000), chaining index+1 links through a grown
- * node pool, so an all-zero table is the empty state and clearing is a
- * memset. Replaces a std::unordered_multimap and its per-entry nodes. */
+ * bump allocator at 0x10000000), chaining index+1 links through a node
+ * pool, so an all-zero table is the empty state and clearing is a memset.
+ * A virtual page holds one mapping at a time and its node goes with it,
+ * so the pool is sized for every page once, with the fastmem window. */
 #define FASTMEM_PHYS_PAGES ((u32)(HOSTMEM_BUMP_OFFSET / VTLB_PAGE_SIZE))
 typedef struct
 {
@@ -117,14 +116,7 @@ static void fastmem_phys_insert(u32 mainmem_offset, u32 vaddr)
 	else
 	{
 		if (s_fastmem_phys_pool_count == s_fastmem_phys_pool_cap)
-		{
-			u32 newcap = s_fastmem_phys_pool_cap ? s_fastmem_phys_pool_cap + (s_fastmem_phys_pool_cap >> 1) : 1024;
-			fastmem_phys_node_t* newpool = (fastmem_phys_node_t*)realloc(s_fastmem_phys_pool, newcap * sizeof(fastmem_phys_node_t));
-			if (!newpool)
-				return;
-			s_fastmem_phys_pool     = newpool;
-			s_fastmem_phys_pool_cap = newcap;
-		}
+			return; /* more views than pages: cannot happen */
 		node = s_fastmem_phys_pool_count++;
 	}
 	s_fastmem_phys_pool[node].vaddr = vaddr;
@@ -165,16 +157,28 @@ static void fastmem_phys_clear(void)
 static void fastmem_phys_release(void)
 {
 	fastmem_phys_clear();
-	free(s_fastmem_phys_pool);
+	if (s_fastmem_phys_pool)
+		host_munmap(s_fastmem_phys_pool, FASTMEM_PAGE_COUNT * sizeof(fastmem_phys_node_t));
 	s_fastmem_phys_pool     = NULL;
 	s_fastmem_phys_pool_cap = 0;
 }
-/* Backpatch info for fastmem loadstores, keyed by host code address. */
-/* code_address values are inserted in recompilation order (monotonically */
-/* increasing within a run) and the table is cleared on every cache reset, */
-/* so a sorted flat array kept ordered by code_address gives O(1) amortized */
-/* append on the common path and bsearch lookup on the fault path, without */
-/* the per-entry node allocation of std::unordered_map. */
+/* Backpatch info for fastmem loadstores, keyed by host code address, and
+ * the guest PCs that have faulted out of fastmem. Both are cleared on
+ * every recompiler cache reset; code addresses arrive in recompilation
+ * order, so a sorted array appends at the end and is searched on a fault.
+ *
+ * Sized once, by vtlb_ReserveLoadStoreInfo when the recompiler reserves
+ * its code cache, and never grown: the recompiler resets its cache while
+ * a block's worth of room is left (vtlb_LoadStoreInfoNearlyFull), and
+ * vtlb_IsFaultingPC refuses a fastmem site when there is no room at all,
+ * so every site it emits is in the table. The pages are mapped up front
+ * and committed as they are touched.
+ *
+ * One thread, no lock: the sites are registered as the EE recompiler
+ * compiles, a fault can only reach the table from EE recompiled code
+ * (nothing else touches the fastmem window), and both happen on the EE
+ * thread. The resets that clear them run there too, or with the EE
+ * paused for a settings change. */
 typedef struct LoadstoreBackpatchEntry
 {
 	uptr                  code_address;
@@ -207,96 +211,43 @@ static void vtlb_BackpatchClear(void)
 	s_fastmem_backpatch_count = 0;
 }
 
-static void vtlb_BackpatchFree(void)
-{
-	free(s_fastmem_backpatch);
-	s_fastmem_backpatch       = NULL;
-	s_fastmem_backpatch_count = 0;
-	s_fastmem_backpatch_cap   = 0;
-}
-
-/* Sorted, unique list of guest PCs that have faulted out of fastmem. */
-/* Raw buffer + realloc growth; bsearch for lookup.  Insert keeps the */
-/* array sorted by shifting tail entries (rare path - one append per */
-/* distinct faulting PC discovered, never reaches more than a few k). */
-/* Guards s_fastmem_backpatch* and s_fastmem_faulting_pcs*.
- *
- * These were serialized only INCIDENTALLY, by the global mutex the
- * page-fault filter used to take on entry.  That mutex is gone (it was
- * not async-signal-safe and it serialized every JIT fault
- * process-wide), so the exclusion has to be explicit and it has to
- * live here.  Without it, two threads faulting at once - EE and the
- * MTVU worker, which is the normal configuration - corrupt the
- * backpatch array and the sorted faulting-PC list.
- *
- * An atomic-flag spinlock, not a mutex: this runs inside the
- * SIGSEGV/VEH handler where pthread locks are not async-signal-safe.
- * Spinning is safe because nothing under the lock blocks, allocates,
- * or touches guest fastmem, so a nested fault while holding it cannot
- * occur and the holder is always another thread finishing bounded
- * work.
- *
- * The spin issues a CPU relax hint.  A bare exchange loop hammers the
- * cache line and starves the holder; measured on Windows/x86 it made
- * the lock-free path LOSE to a CRITICAL_SECTION (1.81 vs 1.48
- * us/fault, 4 threads), which is what a naive spin does under
- * contention. */
-#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
-#if defined(_MSC_VER)
-#define VTLB_CPU_RELAX() _mm_pause()
-#else
-#define VTLB_CPU_RELAX() __builtin_ia32_pause()
-#endif
-#elif defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__)
-#if defined(_MSC_VER)
-#define VTLB_CPU_RELAX() __yield()
-#else
-#define VTLB_CPU_RELAX() __asm__ __volatile__("yield" ::: "memory")
-#endif
-#else
-#define VTLB_CPU_RELAX() ((void)0)
-#endif
-
-static retro_atomic_int_t s_fastmem_lock;
-
-/* Spins before yielding.  Sized so an uncontended acquire and a normal
- * short hold never reach the yield, while a thread that has clearly
- * lost the race stops burning its slice.  sched_yield/SwitchToThread
- * are async-signal-safe, unlike a mutex. */
-#define VTLB_SPIN_BEFORE_YIELD 256
-
-static __fi void fastmem_lock(void)
-{
-	while (retro_atomic_exchange_int(&s_fastmem_lock, 1))
-	{
-		int spins = 0;
-		/* Read-only spin until it looks free, so the contended path
-		 * does not keep issuing exclusive-ownership RMWs at the
-		 * holder. */
-		while (retro_atomic_load_acquire_int(&s_fastmem_lock))
-		{
-			if (++spins < VTLB_SPIN_BEFORE_YIELD)
-				VTLB_CPU_RELAX();
-			else
-			{
-				spins = 0;
-				/* common/ already abstracts this (SwitchToThread /
-				 * sched_yield); both are async-signal-safe, unlike a
-				 * mutex.  Platform #ifdefs do not belong here. */
-				sthread_yield();
-			}
-		}
-	}
-}
-
-static __fi void fastmem_unlock(void)
-{
-	retro_atomic_store_release_int(&s_fastmem_lock, 0);
-}
-
 static u32*   s_fastmem_faulting_pcs       = NULL;
 static size_t s_fastmem_faulting_pcs_count = 0;
-static size_t s_fastmem_faulting_pcs_cap   = 0;
+
+void vtlb_ReleaseLoadStoreInfo(void)
+{
+	if (s_fastmem_backpatch)
+		host_munmap(s_fastmem_backpatch, s_fastmem_backpatch_cap * sizeof(LoadstoreBackpatchEntry));
+	if (s_fastmem_faulting_pcs)
+		host_munmap(s_fastmem_faulting_pcs, s_fastmem_backpatch_cap * sizeof(u32));
+	s_fastmem_backpatch          = NULL;
+	s_fastmem_faulting_pcs       = NULL;
+	s_fastmem_backpatch_count    = 0;
+	s_fastmem_faulting_pcs_count = 0;
+	s_fastmem_backpatch_cap      = 0;
+}
+
+bool vtlb_ReserveLoadStoreInfo(size_t max_sites)
+{
+	const PageProtectionMode rw = {true, true, false};
+	if (s_fastmem_backpatch_cap >= max_sites)
+		return true;
+	vtlb_ReleaseLoadStoreInfo();
+	s_fastmem_backpatch    = (LoadstoreBackpatchEntry*)host_mmap(NULL, max_sites * sizeof(LoadstoreBackpatchEntry), rw);
+	s_fastmem_faulting_pcs = (u32*)host_mmap(NULL, max_sites * sizeof(u32), rw);
+	if (!s_fastmem_backpatch || !s_fastmem_faulting_pcs)
+	{
+		vtlb_ReleaseLoadStoreInfo();
+		return false;
+	}
+	s_fastmem_backpatch_cap = max_sites;
+	return true;
+}
+
+bool vtlb_LoadStoreInfoNearlyFull(size_t room)
+{
+	return s_fastmem_backpatch_count + room > s_fastmem_backpatch_cap;
+}
 
 static int u32_compare(const void* a, const void* b)
 {
@@ -305,16 +256,6 @@ static int u32_compare(const void* a, const void* b)
 	return (av > bv) - (av < bv);
 }
 
-static void s_fastmem_faulting_pcs_free(void)
-{
-	/* OS pages, not heap - see the growth site in
-	 * vtlb_BackpatchLoadStore. */
-	host_munmap(s_fastmem_faulting_pcs,
-		s_fastmem_faulting_pcs_cap * sizeof(u32));
-	s_fastmem_faulting_pcs       = NULL;
-	s_fastmem_faulting_pcs_count = 0;
-	s_fastmem_faulting_pcs_cap   = 0;
-}
 
 /* The TLB entry's PageMask register field is not a usable address mask; the
  * bits above 12 encode the page size as a run of set bits. Convert it into an
@@ -805,15 +746,16 @@ static void vtlb_CreateFastmemMapping(u32 vaddr, u32 mainmem_offset, const PageP
 
 	if (s_fastmem_virtual_mapping[page] != NO_FASTMEM_MAPPING)
 	{
-		/* current mapping needs to be removed */
+		/* current mapping needs to be removed, with its reverse entry,
+		 * which is under the offset it showed, not the new one */
+		const u32  old_offset    = s_fastmem_virtual_mapping[page];
 		const bool was_coalesced = vtlb_IsHostCoalesced(page);
 
 		s_fastmem_virtual_mapping[page] = NO_FASTMEM_MAPPING;
 		if (was_coalesced && !memshm_area_unmap(s_fastmem_area, (memshm_area_base(s_fastmem_area) + __pagesize * (vtlb_HostPage(page))), __pagesize))
 			log_cb(RETRO_LOG_ERROR, "Failed to unmap vaddr %08X\n", vaddr);
 
-		/* remove reverse mapping */
-		fastmem_phys_remove(mainmem_offset, vaddr);
+		fastmem_phys_remove(old_offset, vaddr);
 	}
 
 	s_fastmem_virtual_mapping[page] = mainmem_offset;
@@ -925,10 +867,8 @@ static void vtlb_UpdateFastmemProtection(u32 paddr, u32 size, const PageProtecti
 
 void vtlb_ClearLoadStoreInfo(void)
 {
-	fastmem_lock();
 	vtlb_BackpatchClear();
 	s_fastmem_faulting_pcs_count = 0;
-	fastmem_unlock();
 }
 
 void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register, u8 size_in_bits, bool is_signed, bool is_load, bool is_fpr)
@@ -948,29 +888,22 @@ void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 g
 	info.is_load          = is_load;
 	info.is_fpr           = is_fpr;
 
-	fastmem_lock();
 	pos = vtlb_BackpatchLowerBound(code_address, &found);
 	if (found)
 	{
 		/* Replace existing entry in place. */
 		s_fastmem_backpatch[pos].info = info;
-		fastmem_unlock();
 		return;
 	}
 
+	/* vtlb_IsFaultingPC refused the site when there was no room. */
 	if (s_fastmem_backpatch_count == s_fastmem_backpatch_cap)
-	{
-		size_t newcap = s_fastmem_backpatch_cap ?
-			s_fastmem_backpatch_cap + (s_fastmem_backpatch_cap >> 1) : 64;
-		s_fastmem_backpatch     = (LoadstoreBackpatchEntry*)realloc(s_fastmem_backpatch, newcap * sizeof(LoadstoreBackpatchEntry));
-		s_fastmem_backpatch_cap = newcap;
-	}
+		return;
 	memmove(&s_fastmem_backpatch[pos + 1], &s_fastmem_backpatch[pos],
 		(s_fastmem_backpatch_count - pos) * sizeof(LoadstoreBackpatchEntry));
 	s_fastmem_backpatch[pos].code_address = code_address;
 	s_fastmem_backpatch[pos].info         = info;
 	s_fastmem_backpatch_count++;
-	fastmem_unlock();
 }
 
 #ifdef ARCH_ARM64
@@ -991,7 +924,6 @@ static bool vtlb_BackpatchLoadStore(uptr code_address, uptr fault_address)
 		return false;
 
 	/* Everything below touches the shared backpatch bookkeeping. */
-	fastmem_lock();
 
 #ifdef ARCH_ARM64
 	/* The arm64 EE rec (C.50) keeps its own site registry and pre-emits the slow */
@@ -999,14 +931,12 @@ static bool vtlb_BackpatchLoadStore(uptr code_address, uptr fault_address)
 	/* rewrite over there -- none of the info block below is needed. */
 	{
 		bool handled = eeFastmemFault_arm64(code_address);
-		fastmem_unlock();
 		return handled;
 	}
 #else
 	pos = vtlb_BackpatchLowerBound(code_address, &found);
 	if (!found)
 	{
-		fastmem_unlock();
 		return false;
 	}
 
@@ -1032,60 +962,33 @@ static bool vtlb_BackpatchLoadStore(uptr code_address, uptr fault_address)
 			else
 				hi = mid;
 		}
-		if (lo == s_fastmem_faulting_pcs_count || s_fastmem_faulting_pcs[lo] != info_guest_pc)
+		/* Full only past a table's worth of distinct faulting PCs in one
+		 * cache lifetime. Skipping the insert costs a second backpatch of
+		 * this PC later, not correctness. */
+		if ((lo == s_fastmem_faulting_pcs_count || s_fastmem_faulting_pcs[lo] != info_guest_pc)
+			&& s_fastmem_faulting_pcs_count < s_fastmem_backpatch_cap)
 		{
-			if (s_fastmem_faulting_pcs_count == s_fastmem_faulting_pcs_cap)
-			{
-				/* We are inside the page-fault signal handler here:
-				 * realloc() is not async-signal-safe.  In practice the
-				 * faulting thread is executing recompiled code and so
-				 * cannot itself hold the allocator lock, but that
-				 * invariant is fragile (instrumented builds, future
-				 * callers), so grow with raw OS pages instead and keep
-				 * the handler allocator-free.  On failure, skip the
-				 * bookkeeping: the only consequence is that this PC's
-				 * fastmem loadstore gets backpatched again on a later
-				 * fault, which is a performance detail, not a
-				 * correctness one. */
-				size_t newcap = s_fastmem_faulting_pcs_cap ?
-					s_fastmem_faulting_pcs_cap + (s_fastmem_faulting_pcs_cap >> 1) : 16;
-				const PageProtectionMode rw = {true, true, false};
-				u32* newbuf = (u32*)host_mmap(NULL, newcap * sizeof(u32), rw);
-				if (!newbuf)
-					goto skip_faulting_pc_insert;
-				if (s_fastmem_faulting_pcs)
-				{
-					memcpy(newbuf, s_fastmem_faulting_pcs,
-						s_fastmem_faulting_pcs_count * sizeof(u32));
-					host_munmap(s_fastmem_faulting_pcs,
-						s_fastmem_faulting_pcs_cap * sizeof(u32));
-				}
-				s_fastmem_faulting_pcs     = newbuf;
-				s_fastmem_faulting_pcs_cap = newcap;
-			}
 			memmove(&s_fastmem_faulting_pcs[lo + 1], &s_fastmem_faulting_pcs[lo],
 				(s_fastmem_faulting_pcs_count - lo) * sizeof(u32));
 			s_fastmem_faulting_pcs[lo] = info_guest_pc;
 			s_fastmem_faulting_pcs_count++;
 		}
-skip_faulting_pc_insert:;
 	}
 	memmove(&s_fastmem_backpatch[pos], &s_fastmem_backpatch[pos + 1],
 		(s_fastmem_backpatch_count - pos - 1) * sizeof(LoadstoreBackpatchEntry));
 	s_fastmem_backpatch_count--;
-	fastmem_unlock();
 	return true;
 #endif
 }
 
+/* True also when the backpatch table has no room for another site, so the
+ * recompiler takes the slow path and never emits a site it cannot patch. */
 bool vtlb_IsFaultingPC(u32 guest_pc)
 {
-	bool faulting;
-	fastmem_lock();
-	faulting = (s_fastmem_faulting_pcs_count != 0) &&
+	if (s_fastmem_backpatch_count >= s_fastmem_backpatch_cap)
+		return true;
+	return (s_fastmem_faulting_pcs_count != 0) &&
 		(bsearch(&guest_pc, s_fastmem_faulting_pcs, s_fastmem_faulting_pcs_count, sizeof(u32), u32_compare) != NULL);
-	fastmem_unlock();
-	return faulting;
 }
 
 /* virtual mappings */
@@ -1225,8 +1128,9 @@ void vtlb_Reset(void)
 void vtlb_Shutdown(void)
 {
 	vtlb_RemoveAllFastmemMappings();
-	vtlb_BackpatchFree();
-	s_fastmem_faulting_pcs_free();
+	/* Kept for the next VM: the recompiler reserved it with its cache. */
+	vtlb_BackpatchClear();
+	s_fastmem_faulting_pcs_count = 0;
 }
 
 void vtlb_ResetFastmem(void)
@@ -1323,10 +1227,16 @@ bool vtlb_Core_Alloc(void)
 		}
 		else
 		{
+			const PageProtectionMode rw = {true, true, false};
 			vtlb_fastmem_unavailable = false;
 			s_fastmem_virtual_mapping = (u32*)malloc(FASTMEM_PAGE_COUNT * sizeof(u32));
 			if (s_fastmem_virtual_mapping) /* NO_FASTMEM_MAPPING is all-ones */
 				memset(s_fastmem_virtual_mapping, 0xFF, FASTMEM_PAGE_COUNT * sizeof(u32));
+			if (!s_fastmem_phys_pool)
+			{
+				s_fastmem_phys_pool = (fastmem_phys_node_t*)host_mmap(NULL, FASTMEM_PAGE_COUNT * sizeof(fastmem_phys_node_t), rw);
+				s_fastmem_phys_pool_cap = s_fastmem_phys_pool ? FASTMEM_PAGE_COUNT : 0;
+			}
 			vtlbdata.fastmem_base = (uptr)memshm_area_base(s_fastmem_area);
 			log_cb(RETRO_LOG_INFO, "Fastmem area: %p - %p\n",
 				(void*)vtlbdata.fastmem_base,

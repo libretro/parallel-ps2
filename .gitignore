@@ -130,6 +130,8 @@ build*/
 /tests/emitter/emitter_reach
 /tests/isofs/isofs_test
 /tests/goemontlb/goemontlb
+/tests/fastmem/fastmem_table
+/tests/fastmem/fastmem_rmap
 /tests/gsalign/gsalign_test
 /tests/gs/gs_vertex_oracle
 /tests/gs/gs_vertex_bench
