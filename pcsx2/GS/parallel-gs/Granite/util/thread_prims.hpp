@@ -206,10 +206,15 @@ private:
 /* Holds the mutex, but can hand it back and re-take it, which is what a
  * condition variable needs and what the std::unique_lock call sites in
  * Granite use it for. */
+/* unique_lock(m, defer_lock): constructed without taking m. */
+struct defer_lock_t {};
+static constexpr defer_lock_t defer_lock{};
+
 class unique_lock
 {
 public:
 	explicit unique_lock(mutex &m) : m_mutex(&m), m_held(true) { m_mutex->lock(); }
+	unique_lock(mutex &m, defer_lock_t) : m_mutex(&m), m_held(false) {}
 	~unique_lock() { if (m_held) m_mutex->unlock(); }
 	unique_lock(const unique_lock &) = delete;
 	unique_lock &operator=(const unique_lock &) = delete;

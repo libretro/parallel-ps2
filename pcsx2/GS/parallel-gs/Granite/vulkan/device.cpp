@@ -47,10 +47,8 @@ static unsigned get_thread_index()
 #define LOCK() PGS::lock_guard _holder_##__COUNTER__{lock.lock}
 #define LOCK_MEMORY() PGS::lock_guard _holder_##__COUNTER__{lock.memory_lock}
 #define DRAIN_FRAME_LOCK() \
-	PGS::unique_lock _holder{lock.lock}; \
-	lock.cond.wait(_holder, [&]() { \
-		return lock.counter == 0; \
-	})
+	PGS::unique_lock _holder{lock.lock, PGS::defer_lock}; \
+	lock_drained(_holder)
 
 using namespace Util;
 
@@ -82,6 +80,8 @@ Device::Device()
 	graphics_records = static_cast<GraphicsPipelineRecord *>(
 			calloc(GRAPHICS_PIPELINE_RECORDS, sizeof(GraphicsPipelineRecord)));
 	cookie.store(0);
+	retro_atomic_int_init(&lock.counter, 0);
+	lock.drained_ok = retro_eventcount_init(&lock.drained);
 }
 
 Semaphore Device::request_semaphore(VkSemaphoreType type, VkSemaphore vk_semaphore, bool transfer_ownership)
@@ -1726,6 +1726,9 @@ Device::~Device()
 	transient_allocator.clear();
 
 	deinit_timeline_semaphores();
+	if (lock.drained_ok)
+		retro_eventcount_free(&lock.drained);
+	lock.drained_ok = false;
 }
 
 void Device::deinit_timeline_semaphores()
@@ -1782,7 +1785,32 @@ Device::PerFrame::PerFrame(Device *device_, unsigned frame_index_)
 
 void Device::free_memory_nolock(const DeviceAllocation &alloc)
 {
-	frame().allocations.push_back(alloc);
+	deferred.allocations.push(alloc);
+}
+
+void Device::drain_deferred(PerFrame &f)
+{
+	deferred.wait_and_recycle_fences.drain([&](VkFence v) { f.wait_and_recycle_fences.push_back(v); });
+	deferred.reset_fences.drain([&](VkFence v) {
+		table->vkResetFences(device, 1, &v);
+		managers.fence.recycle_fence(v);
+	});
+	deferred.allocations.drain([&](const DeviceAllocation &v) { f.allocations.push_back(v); });
+	deferred.destroyed_framebuffers.drain([&](VkFramebuffer v) { f.destroyed_framebuffers.push_back(v); });
+	deferred.destroyed_samplers.drain([&](VkSampler v) { f.destroyed_samplers.push_back(v); });
+	deferred.destroyed_image_views.drain([&](const CachedImageView &v) { f.destroyed_image_views.push_back(v); });
+	deferred.destroyed_buffer_views.drain([&](const CachedBufferView &v) { f.destroyed_buffer_views.push_back(v); });
+	deferred.destroyed_images.drain([&](VkImage v) { f.destroyed_images.push_back(v); });
+	deferred.destroyed_buffers.drain([&](VkBuffer v) { f.destroyed_buffers.push_back(v); });
+	deferred.destroyed_descriptor_pools.drain([&](VkDescriptorPool v) { f.destroyed_descriptor_pools.push_back(v); });
+	deferred.recycled_semaphores.drain([&](VkSemaphore v) { f.recycled_semaphores.push_back(v); });
+	deferred.destroyed_semaphores.drain([&](VkSemaphore v) { f.destroyed_semaphores.push_back(v); });
+	/* Consumed: signalled and never waited on. The frame's next
+	 * submission waits on them and recycles them, which is why the
+	 * drains come before end_frame. */
+	deferred.consumed_semaphores.drain([&](VkSemaphore v) { f.consumed_semaphores.push_back(v); });
+	deferred.descriptor_buffer_allocs.drain([&](const DescriptorBufferAllocation &v) { f.descriptor_buffer_allocs.push_back(v); });
+	deferred.cached_descriptor_payloads.drain([&](const CachedDescriptorPayload &v) { f.cached_descriptor_payloads.push_back(v); });
 }
 
 #ifdef VULKAN_DEBUG
@@ -1795,167 +1823,143 @@ static inline bool exists(const T &container, const U &value)
 
 #endif
 
+/* Handed back without a lock (Device::deferred), from any thread. */
 void Device::reset_fence(VkFence fence, bool observed_wait)
 {
-	LOCK();
 	reset_fence_nolock(fence, observed_wait);
 }
 
 void Device::destroy_buffer(VkBuffer buffer)
 {
-	LOCK();
 	destroy_buffer_nolock(buffer);
 }
 
 void Device::destroy_descriptor_pool(VkDescriptorPool desc_pool)
 {
-	LOCK();
 	destroy_descriptor_pool_nolock(desc_pool);
 }
 
 void Device::destroy_buffer_view(const CachedBufferView &view)
 {
-	LOCK();
 	destroy_buffer_view_nolock(view);
 }
 
 void Device::destroy_framebuffer(VkFramebuffer framebuffer)
 {
-	LOCK();
 	destroy_framebuffer_nolock(framebuffer);
 }
 
 void Device::destroy_image(VkImage image)
 {
-	LOCK();
 	destroy_image_nolock(image);
 }
 
 void Device::destroy_semaphore(VkSemaphore semaphore)
 {
-	LOCK();
 	destroy_semaphore_nolock(semaphore);
 }
 
 void Device::consume_semaphore(VkSemaphore semaphore)
 {
-	LOCK();
 	consume_semaphore_nolock(semaphore);
 }
 
 void Device::recycle_semaphore(VkSemaphore semaphore)
 {
-	LOCK();
 	recycle_semaphore_nolock(semaphore);
 }
 
 void Device::free_memory(const DeviceAllocation &alloc)
 {
-	LOCK();
 	free_memory_nolock(alloc);
 }
 
 void Device::destroy_sampler(VkSampler sampler)
 {
-	LOCK();
 	destroy_sampler_nolock(sampler);
 }
 
 void Device::destroy_image_view(const CachedImageView &view)
 {
-	LOCK();
 	destroy_image_view_nolock(view);
 }
 
 void Device::free_descriptor_buffer_allocation(const DescriptorBufferAllocation &alloc)
 {
-	LOCK();
 	free_descriptor_buffer_allocation_nolock(alloc);
 }
 
 void Device::free_cached_descriptor_payload(const CachedDescriptorPayload &payload)
 {
-	LOCK();
 	free_cached_descriptor_payload_nolock(payload);
 }
 
 void Device::destroy_image_view_nolock(const CachedImageView &view)
 {
-	frame().destroyed_image_views.push_back(view);
+	deferred.destroyed_image_views.push(view);
 }
 
 void Device::destroy_buffer_view_nolock(const CachedBufferView &view)
 {
-	frame().destroyed_buffer_views.push_back(view);
+	deferred.destroyed_buffer_views.push(view);
 }
 
 void Device::destroy_semaphore_nolock(VkSemaphore semaphore)
 {
-	VK_ASSERT(!exists(frame().destroyed_semaphores, semaphore));
-	frame().destroyed_semaphores.push_back(semaphore);
+	deferred.destroyed_semaphores.push(semaphore);
 }
 
 void Device::consume_semaphore_nolock(VkSemaphore semaphore)
 {
-	VK_ASSERT(!exists(frame().consumed_semaphores, semaphore));
-	frame().consumed_semaphores.push_back(semaphore);
+	deferred.consumed_semaphores.push(semaphore);
 }
 
 void Device::recycle_semaphore_nolock(VkSemaphore semaphore)
 {
-	VK_ASSERT(!exists(frame().recycled_semaphores, semaphore));
-	frame().recycled_semaphores.push_back(semaphore);
+	deferred.recycled_semaphores.push(semaphore);
 }
 
 void Device::reset_fence_nolock(VkFence fence, bool observed_wait)
 {
 	if (observed_wait)
-	{
-		table->vkResetFences(device, 1, &fence);
-		managers.fence.recycle_fence(fence);
-	}
+		deferred.reset_fences.push(fence);
 	else
-		frame().wait_and_recycle_fences.push_back(fence);
+		deferred.wait_and_recycle_fences.push(fence);
 }
 
 void Device::free_descriptor_buffer_allocation_nolock(const DescriptorBufferAllocation &alloc)
 {
-	frame().descriptor_buffer_allocs.push_back(alloc);
+	deferred.descriptor_buffer_allocs.push(alloc);
 }
 
 void Device::free_cached_descriptor_payload_nolock(const CachedDescriptorPayload &payload)
 {
-	frame().cached_descriptor_payloads.push_back(payload);
+	deferred.cached_descriptor_payloads.push(payload);
 }
 
 void Device::destroy_image_nolock(VkImage image)
 {
-	VK_ASSERT(!exists(frame().destroyed_images, image));
-	frame().destroyed_images.push_back(image);
+	deferred.destroyed_images.push(image);
 }
 
 void Device::destroy_buffer_nolock(VkBuffer buffer)
 {
-	VK_ASSERT(!exists(frame().destroyed_buffers, buffer));
-	frame().destroyed_buffers.push_back(buffer);
+	deferred.destroyed_buffers.push(buffer);
 }
 
 void Device::destroy_descriptor_pool_nolock(VkDescriptorPool desc_pool)
 {
-	VK_ASSERT(!exists(frame().destroyed_descriptor_pools, desc_pool));
-	frame().destroyed_descriptor_pools.push_back(desc_pool);
+	deferred.destroyed_descriptor_pools.push(desc_pool);
 }
 
 void Device::destroy_sampler_nolock(VkSampler sampler)
 {
-	VK_ASSERT(!exists(frame().destroyed_samplers, sampler));
-	frame().destroyed_samplers.push_back(sampler);
+	deferred.destroyed_samplers.push(sampler);
 }
 
 void Device::destroy_framebuffer_nolock(VkFramebuffer framebuffer)
 {
-	VK_ASSERT(!exists(frame().destroyed_framebuffers, framebuffer));
-	frame().destroyed_framebuffers.push_back(framebuffer);
+	deferred.destroyed_framebuffers.push(framebuffer);
 }
 
 void Device::wait_idle()
@@ -1967,7 +1971,10 @@ void Device::wait_idle()
 void Device::wait_idle_nolock()
 {
 	if (!per_frame.empty())
+	{
+		drain_deferred(frame());
 		end_frame_nolock();
+	}
 
 	if (device != VK_NULL_HANDLE)
 	{
@@ -2028,6 +2035,7 @@ void Device::next_frame_context()
 {
 	DRAIN_FRAME_LOCK();
 
+	drain_deferred(frame());
 	// Flush the frame here as we might have pending staging command buffers from init stage.
 	end_frame_nolock();
 
@@ -2053,14 +2061,37 @@ void Device::next_frame_context()
 
 void Device::add_frame_counter_nolock()
 {
-	lock.counter++;
+	retro_atomic_inc_int(&lock.counter);
 }
 
 void Device::decrement_frame_counter_nolock()
 {
-	VK_ASSERT(lock.counter > 0);
-	lock.counter--;
-	lock.cond.notify_all();
+	VK_ASSERT(retro_atomic_load_acquire_int(&lock.counter) > 0);
+	if (retro_atomic_fetch_sub_int(&lock.counter, 1) == 1 && lock.drained_ok)
+		retro_eventcount_notify(&lock.drained);
+}
+
+/* The frame advances (and wait_idle drains) only with every command
+ * buffer requested in it submitted. Requests and submissions take
+ * lock.lock, so with it held at a count of zero none is outstanding;
+ * otherwise it is let go and the count awaited, without holding it. */
+void Device::lock_drained(PGS::unique_lock &holder)
+{
+	for (;;)
+	{
+		int key;
+		holder.lock();
+		if (retro_atomic_load_acquire_int(&lock.counter) == 0 || !lock.drained_ok)
+			return;
+		holder.unlock();
+		key = retro_eventcount_prepare_wait(&lock.drained);
+		if (retro_atomic_load_acquire_int(&lock.counter) == 0)
+		{
+			retro_eventcount_cancel_wait(&lock.drained);
+			continue;
+		}
+		retro_eventcount_commit_wait(&lock.drained, key);
+	}
 }
 
 void Device::PerFrame::trim_command_pools()
@@ -2194,6 +2225,13 @@ void Device::PerFrame::begin()
 Device::PerFrame::~PerFrame()
 {
 	in_destructor = true;
+	/* Anything handed back since the last drain, from the caches torn
+	 * down after the device's own destructor, is deleted here. */
+	device.drain_deferred(*this);
+	/* No submission will wait on these now; the device is idle. */
+	for (auto &semaphore : consumed_semaphores)
+		destroyed_semaphores.push_back(semaphore);
+	consumed_semaphores.clear();
 	begin();
 }
 

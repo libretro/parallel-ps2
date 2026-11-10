@@ -25,6 +25,7 @@ static thread_local unsigned s_pops;
 
 #include "object_pool.hpp"
 #include "slab_allocator.hpp"
+#include "deferred_list.hpp"
 
 namespace
 {
@@ -94,6 +95,50 @@ void worker(void *arg)
 			s_slab.free(oldb);
 	}
 }
+}
+
+/* DeferredList (the device's deletion inbox): pushers on every thread,
+ * one thread draining as they go; every value comes out exactly once. */
+enum { PUSHERS = 3, PER_PUSHER = 100000 };
+Util::DeferredList<uint32_t> s_deferred;
+retro_atomic_int_t s_pushers_done;
+static unsigned char s_seen[PUSHERS * PER_PUSHER];
+
+static void pusher(void *arg)
+{
+	const uint32_t base = uint32_t(uintptr_t(arg)) * PER_PUSHER;
+	for (uint32_t i = 0; i < PER_PUSHER; i++)
+		if (!s_deferred.push(base + i))
+			retro_atomic_inc_int(&s_fails);
+	retro_atomic_inc_int(&s_pushers_done);
+}
+
+static int deferred_check(void)
+{
+	sthread_t *t[PUSHERS];
+	int i, missing = 0, twice = 0;
+	auto take = [&](uint32_t v) {
+		if (v >= uint32_t(PUSHERS * PER_PUSHER) || s_seen[v]++)
+			twice++;
+	};
+	retro_atomic_int_init(&s_pushers_done, 0);
+	for (i = 0; i < PUSHERS; i++)
+		t[i] = sthread_create(pusher, (void *)uintptr_t(i));
+	while (retro_atomic_load_acquire_int(&s_pushers_done) < PUSHERS)
+		s_deferred.drain(take);
+	for (i = 0; i < PUSHERS; i++)
+		sthread_join(t[i]);
+	s_deferred.drain(take);
+	for (i = 0; i < PUSHERS * PER_PUSHER; i++)
+		if (!s_seen[i])
+			missing++;
+	if (missing || twice)
+	{
+		printf("  FAIL: deferred list: %d values lost, %d seen twice\n", missing, twice);
+		return 1;
+	}
+	printf("  ok: deferred list: %d values pushed on %d threads, each drained once\n", PUSHERS * PER_PUSHER, PUSHERS);
+	return 0;
 }
 
 /* Obj's constructor leaves payload alone: payload[0] is the in-use flag,
@@ -172,5 +217,5 @@ int main(int argc, char **argv)
 	}
 	printf("  ok: %d live objects distinct; %d threads x %d take/give, none handed out twice\n",
 	       LIVE, THREADS, s_iters);
-	return 0;
+	return deferred_check();
 }

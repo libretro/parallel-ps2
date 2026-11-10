@@ -1,5 +1,5 @@
 #!/bin/sh
-# paraLLEl-GS's lock-free object pool and slab allocator (Granite
+# paraLLEl-GS's lock-free object pool, slab allocator and deletion list (Granite
 # util/slot_pool.hpp) under threads taking and giving back at once:
 # plain, and with TSan and ASan/UBSan where they are there. MSYS2
 # MINGW64 builds and runs the plain one.

@@ -46,6 +46,8 @@
 
 #include "quirks.hpp"
 #include "small_vector.hpp"
+#include "deferred_list.hpp"
+#include <rthreads/retro_eventcount.h>
 
 namespace Util
 {
@@ -448,10 +450,15 @@ private:
 	{
 		PGS::mutex memory_lock;
 		PGS::mutex lock;
-		PGS::condition_variable cond;
-		unsigned counter = 0;
+		/* Command buffers requested and not yet submitted. The frame
+		 * advances only at zero; it sleeps on drained until then. */
+		retro_atomic_int_t counter;
+		retro_eventcount_t drained;
+		bool drained_ok = false;
 		bool async_frame_context = false;
 	} lock;
+	/* Hold lock.lock with no command buffer outstanding. */
+	void lock_drained(PGS::unique_lock &holder);
 
 	struct PerFrame
 	{
@@ -497,6 +504,33 @@ private:
 
 		bool in_destructor = false;
 	};
+	/* What any thread hands back for deletion or recycling: pushed
+	 * without a lock, and filed into the frame that is current when the
+	 * frame advances (drain_deferred). An item filed a frame late is
+	 * deleted a frame late, which is always safe. Declared before
+	 * per_frame, so it outlives the frames that drain it as they go. */
+	struct Deferred
+	{
+		Util::DeferredList<VkFence> wait_and_recycle_fences;
+		Util::DeferredList<VkFence> reset_fences; /* waited on already */
+		Util::DeferredList<DeviceAllocation> allocations;
+		Util::DeferredList<VkFramebuffer> destroyed_framebuffers;
+		Util::DeferredList<VkSampler> destroyed_samplers;
+		Util::DeferredList<CachedImageView> destroyed_image_views;
+		Util::DeferredList<CachedBufferView> destroyed_buffer_views;
+		Util::DeferredList<VkImage> destroyed_images;
+		Util::DeferredList<VkBuffer> destroyed_buffers;
+		Util::DeferredList<VkDescriptorPool> destroyed_descriptor_pools;
+		Util::DeferredList<VkSemaphore> recycled_semaphores;
+		Util::DeferredList<VkSemaphore> destroyed_semaphores;
+		Util::DeferredList<VkSemaphore> consumed_semaphores;
+		Util::DeferredList<DescriptorBufferAllocation> descriptor_buffer_allocs;
+		Util::DeferredList<CachedDescriptorPayload> cached_descriptor_payloads;
+	} deferred;
+	/* Files everything handed back so far into @f. Called where the
+	 * frame advances, in wait_idle, and by a frame as it is destroyed. */
+	void drain_deferred(PerFrame &f);
+
 	// The per frame structure must be destroyed after
 	// the hashmap data structures below, so it must be declared before.
 	std::vector<std::unique_ptr<PerFrame>> per_frame;
