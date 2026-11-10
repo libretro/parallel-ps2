@@ -55,7 +55,9 @@ jobs:
           sudo apt-get update
           # g++-aarch64-linux-gnu: clinkage cross-builds the arm64 recompiler
           # units, which call into C and do not build on this host.
-          sudo apt-get install -y build-essential python3 liblzma-dev zlib1g-dev libgl-dev libegl1 libgl1-mesa-dri qemu-utils mame-tools cmake clang libc++-dev libc++abi-dev glslc g++-aarch64-linux-gnu
+          # gcc-mingw-w64-x86-64: cheaders compiles the C units with
+          # <windows.h> included, as MSVC's C mode includes it.
+          sudo apt-get install -y build-essential python3 liblzma-dev zlib1g-dev libgl-dev libegl1 libgl1-mesa-dri qemu-utils mame-tools cmake clang libc++-dev libc++abi-dev glslc g++-aarch64-linux-gnu gcc-mingw-w64-x86-64
 
       # run-all.sh finds every directory with a build.sh, so a suite added
       # later is covered here without touching this file.

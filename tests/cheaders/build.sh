@@ -36,9 +36,16 @@
 # so there is none here. Instead the preprocessed C view of each header is
 # searched for that spelling. The C spelling is a macro or an enum.
 #
-# So MSVC is the one lane with no real front end behind it. That rule is
-# the only MSVC-specific breakage seen so far; anything else it rejects
-# still reaches CI unchecked.
+# MSVC also differs in what a C unit includes. In C mode it has no
+# <stdatomic.h>, so retro_atomic.h takes its Interlocked backend and pulls
+# in <windows.h>; MinGW takes GCC's builtins and never does. A C unit that
+# names something the way winnt.h already does -- Cache.c's CacheData, an
+# enumerator of PROCESSOR_CACHE_TYPE -- builds everywhere but MSVC. So the
+# C units are compiled once more with MinGW and <windows.h> ahead of them,
+# as retro_atomic.h includes it.
+#
+# MSVC is still the one lane with no real front end behind it; anything
+# else it rejects reaches CI unchecked.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
@@ -51,6 +58,7 @@ A64=aarch64-linux-gnu-gcc
 A64XX=aarch64-linux-gnu-g++
 A64_CLANG="clang --target=aarch64-linux-gnu"
 A64_CLANGXX="clang++ --target=aarch64-linux-gnu"
+MINGW=x86_64-w64-mingw32-gcc
 
 TMP=${TMPDIR:-/tmp}/cheaders.$$
 mkdir -p "$TMP"
@@ -162,5 +170,18 @@ for f in $UNITS; do
 done
 
 echo
-[ "$fail" = 0 ] && echo "PASS: headers read as C89 and as C++, under gcc and clang on x86 and aarch64, and as MSVC C" || echo "FAIL"
+if command -v "$MINGW" >/dev/null 2>&1; then
+	echo "=== every C unit, with <windows.h> ahead, as MSVC C includes it ==="
+	printf '#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n' > "$TMP/win.h"
+	for f in $UNITS; do
+		printf '%-40s' "$(echo "$f" | sed "s|^$ROOT/||")"
+		check "mingw + windows.h" $MINGW $CFLAGS -w -msse4.1 $INC -include "$TMP/win.h" -fsyntax-only "$f" || continue
+		printf ' ok\n'
+	done
+else
+	echo "skipping the <windows.h> pass (no $MINGW)"
+fi
+
+echo
+[ "$fail" = 0 ] && echo "PASS: headers read as C89 and as C++, under gcc and clang on x86 and aarch64, and as MSVC C, <windows.h> included" || echo "FAIL"
 exit $fail

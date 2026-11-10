@@ -34,45 +34,45 @@
 #define LOCK_FLAG 0x8
 #define ALL_FLAGS 0xFFF
 
-typedef struct PCSX2_ALIGN(64) CacheData
+typedef struct PCSX2_ALIGN(64) EECacheData
 {
 	u8 bytes[64];
-} CacheData;
+} EECacheData;
 
-typedef struct CacheTag
+typedef struct EECacheTag
 {
 	uptr rawValue;
-} CacheTag;
+} EECacheTag;
 
-typedef struct CacheSet
+typedef struct EECacheSet
 {
-	CacheTag tags[2];
-	CacheData data[2];
-} CacheSet;
+	EECacheTag tags[2];
+	EECacheData data[2];
+} EECacheSet;
 
 /* One way of one set. */
-typedef struct CacheLine
+typedef struct EECacheLine
 {
-	CacheTag* tag;
-	CacheData* data;
+	EECacheTag* tag;
+	EECacheData* data;
 	int set;
-} CacheLine;
+} EECacheLine;
 
 static struct
 {
-	CacheSet sets[64];
+	EECacheSet sets[64];
 } cache;
 
-static __fi CacheLine cache_line(int set, int way)
+static __fi EECacheLine cache_line(int set, int way)
 {
-	CacheLine line;
+	EECacheLine line;
 	line.tag  = &cache.sets[set].tags[way];
 	line.data = &cache.sets[set].data[way];
 	line.set  = set;
 	return line;
 }
 
-static void cache_line_writeback(CacheLine line)
+static void cache_line_writeback(EECacheLine line)
 {
 	uptr target;
 	if (!((line.tag->rawValue & (DIRTY_FLAG | VALID_FLAG)) == (DIRTY_FLAG | VALID_FLAG)))
@@ -80,11 +80,11 @@ static void cache_line_writeback(CacheLine line)
 
 	target = (line.tag->rawValue & ~ALL_FLAGS) | (line.set << 6);
 
-	*(CacheData*)target = *line.data;
+	*(EECacheData*)target = *line.data;
 	line.tag->rawValue &= ~DIRTY_FLAG;
 }
 
-static void cache_line_load(CacheLine line, uptr ppf)
+static void cache_line_load(EECacheLine line, uptr ppf)
 {
 	line.tag->rawValue &= ALL_FLAGS;
 	line.tag->rawValue |= (ppf & ~ALL_FLAGS);
@@ -96,7 +96,7 @@ static void cache_line_load(CacheLine line, uptr ppf)
 /* Note the test: a way counts as a hit unless it is invalid AND holds
  * this tag, so way 0 nearly always answers. That is how this code has
  * always behaved; EnableEECache is never switched on in this core. */
-static __fi bool cache_way_hit(const CacheSet* set, uptr ppf, int checkWay, int* way)
+static __fi bool cache_way_hit(const EECacheSet* set, uptr ppf, int checkWay, int* way)
 {
 	if (!(set->tags[checkWay].rawValue & VALID_FLAG) && (set->tags[checkWay].rawValue & ~ALL_FLAGS) == (ppf & ~ALL_FLAGS))
 		return false;
@@ -105,7 +105,7 @@ static __fi bool cache_way_hit(const CacheSet* set, uptr ppf, int checkWay, int*
 	return true;
 }
 
-static bool findInCache(const CacheSet* set, uptr ppf, int* way)
+static bool findInCache(const EECacheSet* set, uptr ppf, int* way)
 {
 	return cache_way_hit(set, ppf, 0, way) || cache_way_hit(set, ppf, 1, way);
 }
@@ -113,14 +113,14 @@ static bool findInCache(const CacheSet* set, uptr ppf, int* way)
 static int getFreeCache(u32 mem, int* way)
 {
 	const int setIdx = (mem >> 6) & 0x3F;
-	CacheSet* set    = &cache.sets[setIdx];
+	EECacheSet* set    = &cache.sets[setIdx];
 	vtlb_virt_t vmv  = vtlbdata.vmap[mem >> VTLB_PAGE_BITS];
 	uptr ppf         = vtlb_virt_ptr(vmv, mem);
 
 	if (!findInCache(set, ppf, way))
 	{
 		int newWay     = (set->tags[0].rawValue & LRF_FLAG) ^ (set->tags[1].rawValue & LRF_FLAG);
-		CacheLine line = cache_line(setIdx, newWay);
+		EECacheLine line = cache_line(setIdx, newWay);
 		*way           = newWay;
 
 		cache_line_writeback(line);
@@ -205,7 +205,7 @@ RETURNS_R128 readCache128(u32 mem)
 }
 
 /* The line addr hits, if any; the set's way 1 only when way 0 misses. */
-static bool cache_hit_line(u32 addr, CacheLine* line)
+static bool cache_hit_line(u32 addr, EECacheLine* line)
 {
 	int way;
 	const int index = (addr >> 6) & 0x3F;
@@ -217,7 +217,7 @@ static bool cache_hit_line(u32 addr, CacheLine* line)
 	return true;
 }
 
-static void cache_line_invalidate(CacheLine line)
+static void cache_line_invalidate(EECacheLine line)
 {
 	line.tag->rawValue &= LRF_FLAG;
 	memset(line.data, 0, sizeof(*line.data));
@@ -227,7 +227,7 @@ void intCACHE(void)
 {
 	const u32 addr  = cpuRegs.GPR.r[_Rs_].UL[0] + _Imm_;
 	const int index = (addr >> 6) & 0x3F;
-	CacheLine line;
+	EECacheLine line;
 
 	switch (_Rt_)
 	{
