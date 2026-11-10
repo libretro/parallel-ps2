@@ -67,7 +67,6 @@ const vixl::aarch64::VRegister& armQRegister(int n)
 
 #ifdef INCLUDE_DISASSEMBLER
 #include "aarch64/disasm-aarch64.h"
-#include "../SLockGuard.h"
 #endif
 
 namespace a64 = vixl::aarch64;
@@ -78,15 +77,11 @@ thread_local size_t armAsmCapacity PCSX2_TLS_INITIAL_EXEC;
 thread_local ArmConstantPool* armConstantPool PCSX2_TLS_INITIAL_EXEC;
 
 #ifdef INCLUDE_DISASSEMBLER
-static slock_t* armDisasmMutex(void)
-{
-	/* First use creates it; C++11 makes the init thread-safe, and there is
-	 * no static-init order to worry about. */
-	static slock_t* lock = slock_new();
-	return lock;
-}
-static std::unique_ptr<a64::PrintDisassembler> armDisasm;
-static std::unique_ptr<a64::Decoder> armDisasmDecoder;
+/* One per thread that dumps code, as armAsm is: the EE and the VU1 worker
+ * each compile, and neither shares the other's decoder. A debug build's
+ * dump, made once per thread and kept for the thread's life. */
+static thread_local a64::PrintDisassembler* armDisasm;
+static thread_local a64::Decoder* armDisasmDecoder;
 #endif
 
 void armSetAsmPtr(void* ptr, size_t capacity, ArmConstantPool* pool)
@@ -152,12 +147,11 @@ u8* armEndBlock()
 void armDisassembleAndDumpCode(const void* ptr, size_t size)
 {
 #ifdef INCLUDE_DISASSEMBLER
-	SLockGuard lock(armDisasmMutex());
 	if (!armDisasm)
 	{
-		armDisasm = std::make_unique<a64::PrintDisassembler>(stderr);
-		armDisasmDecoder = std::make_unique<a64::Decoder>();
-		armDisasmDecoder->AppendVisitor(armDisasm.get());
+		armDisasm        = new a64::PrintDisassembler(stderr);
+		armDisasmDecoder = new a64::Decoder();
+		armDisasmDecoder->AppendVisitor(armDisasm);
 	}
 
 	armDisasmDecoder->Decode(static_cast<const vixl::aarch64::Instruction*>(ptr), static_cast<const vixl::aarch64::Instruction*>(ptr) + size);

@@ -2,36 +2,24 @@
  *
  * WHAT THIS TESTS
  *
- * The fault-handler rework replaced a pthread mutex held inside the
- * SIGSEGV handler with (a) a lock-free slot table keyed on thread
- * identity, (b) per-slot recursion flags, and (c) an atomic-flag
- * spinlock inside vtlb guarding the backpatch bookkeeping.
+ * The fault handler finds the faulting thread's slot in a lock-free
+ * table keyed on thread identity, guards re-entry with a per-slot
+ * recursion flag, and leaves the bookkeeping to the thread that
+ * faulted: vtlb's backpatch tables have one owner and take no lock.
  *
- * None of that was exercised where it was written: the container had
- * one vCPU and MTVU's >=3-hardware-thread gate meant only ONE thread
- * ever faulted.  Every interesting path - two threads in the handler
- * at once, spinlock contention, slot lookup under concurrent
- * register/unregister - is untested by construction there.
- *
- * This program drives exactly those paths: N threads take real
- * SIGSEGV page faults simultaneously, in a handler that reproduces
- * the shipped algorithm (slot table + per-slot recursion flag +
- * spinlock-guarded shared bookkeeping), while a churn thread
- * registers and unregisters to race the lookup.
+ * This program drives those paths: N threads take real SIGSEGV page
+ * faults simultaneously, in a handler that reproduces the shipped
+ * algorithm (slot table + per-slot recursion flag + per-thread
+ * bookkeeping), while a churn thread registers and unregisters to race
+ * the lookup.
  *
  * SCOPE - READ THIS
  *
  * This is a test of the ALGORITHM, not of the linked binary: the slot
- * table and spinlock are reproduced here rather than linked from
- * common/HostSys.cpp (which drags in most of the emulator).  It will
- * catch a design flaw - a lost slot, a dropped recursion flag, a
- * spinlock that fails to exclude, a torn shared counter.  It will NOT
- * catch a transcription error in HostSys.cpp itself.
- *
- * The authoritative in-situ test remains: run the emulator with MTVU
- * enabled under ThreadSanitizer on a >=3-hardware-thread host, on
- * content that faults heavily (any game during its memory-clear
- * phases).  This program is the fast, deterministic pre-check.
+ * table is reproduced here rather than linked from the core. It will
+ * catch a design flaw - a lost slot, a dropped recursion flag, two
+ * threads sharing a slot. It will NOT catch a transcription error in
+ * the core itself.
  *
  * USAGE (from repo root)
  *
@@ -44,18 +32,10 @@
  *
  *   - "SLOT LOST" / "NO SLOT"      : slot table lookup failed under churn
  *   - "RECURSION FLAG"             : per-slot flag not mutually exclusive
- *   - "COUNTER MISMATCH"           : spinlock failed to exclude
+ *   - "COUNTER MISMATCH"           : two threads shared a slot
  *   - TSan data race report        : ordering bug in the protocol
- *   - hang                         : spinlock deadlock (see note below)
  *
  * Exit 0 = clean.
- *
- * NOTE ON SPINLOCK SAFETY: spinning inside a signal handler is only
- * safe because nothing under the lock blocks, allocates, or faults.
- * This test deliberately keeps the critical section to plain memory
- * writes, matching vtlb's actual usage.  If a future change puts a
- * blocking call under that lock, this test will hang - which is the
- * correct alarm.
  */
 #ifndef _WIN32
 #define _GNU_SOURCE
@@ -152,63 +132,15 @@ static int slot_lookup(uintptr_t self)
    return -1;
 }
 
-/* Dispatch mode: 0 = lock-free (shipped), 1 = the pthread-mutex
- * design it replaced.  Mode 1 exists only to put a NUMBER on that
- * change - taking a mutex inside a signal handler is not
- * async-signal-safe and is exactly what the rework removed; do not
- * mistake it for a supported configuration. */
-static int use_mutex_mode;
-#ifndef _WIN32
-static pthread_mutex_t legacy_mutex = PTHREAD_MUTEX_INITIALIZER;
-#else
-static CRITICAL_SECTION legacy_cs;
-#endif
+/* ---- each thread's bookkeeping -------------------------------------- */
 
-/* vtlb's async-signal-safe spinlock, reproduced. */
-static volatile int shared_lock;
-
-#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
-#define CPU_RELAX() __builtin_ia32_pause()
-#elif defined(__aarch64__) || defined(__arm__)
-#define CPU_RELAX() __asm__ __volatile__("yield" ::: "memory")
-#else
-#define CPU_RELAX() ((void)0)
-#endif
-
-static void shared_lock_acquire(void)
-{
-   /* Test-then-test-and-set with a relax hint, matching vtlb.  A bare
-    * exchange loop hammers the line and starves the holder - that is
-    * what made this path lose to a CRITICAL_SECTION in the first
-    * A/B run. */
-   while (__atomic_exchange_n(&shared_lock, 1, __ATOMIC_ACQ_REL))
-   {
-      int spins = 0;
-      while (__atomic_load_n(&shared_lock, __ATOMIC_ACQUIRE))
-      {
-         if (++spins < 256)
-            CPU_RELAX();
-         else
-         {
-            spins = 0;
-            thread_yield();
-         }
-      }
-   }
-}
-
-static void shared_lock_release(void)
-{
-   __atomic_store_n(&shared_lock, 0, __ATOMIC_RELEASE);
-}
-
-/* ---- shared bookkeeping, guarded by the spinlock -------------------- */
-
-/* Non-atomic ON PURPOSE: correctness must come from the spinlock.  A
- * mismatch at the end proves the lock failed to exclude, and TSan
- * reports the race directly. */
-static uint64_t guarded_counter;
-static uint64_t guarded_shadow[8];
+/* vtlb's fault bookkeeping has one owner, the thread whose code faults,
+ * so it takes no lock: each slot here keeps its own, written only by the
+ * thread that holds the slot, inside its exclusive recursion guard.
+ * Non-atomic ON PURPOSE: a total short of the faults taken means two
+ * threads shared a slot, and TSan reports the race directly. */
+static uint64_t slot_counter[FAULT_SLOTS];
+static uint64_t slot_shadow[FAULT_SLOTS][8];
 
 static volatile int saw_no_slot;
 static volatile int saw_recursion_conflict;
@@ -303,34 +235,12 @@ static int fault_dispatch(void *fault_addr)
       abort();
    }
 
-   /* Critical section: exactly the shape of vtlb's bookkeeping -
-    * plain host-memory writes, no allocation, no blocking, no
-    * access to the faulting region. */
-   if (use_mutex_mode)
-   {
-#ifdef _WIN32
-      EnterCriticalSection(&legacy_cs);
-#else
-      pthread_mutex_lock(&legacy_mutex);
-#endif
-   }
-   else
-      shared_lock_acquire();
-
-   guarded_counter++;
+   /* The bookkeeping, as vtlb does it: plain host-memory writes, no
+    * allocation, no blocking, no access to the faulting region, and
+    * no lock -- the slot is this thread's alone. */
+   slot_counter[slot]++;
    for (i = 0; i < 8; i++)
-      guarded_shadow[i] = guarded_counter + (uint64_t)i;
-
-   if (use_mutex_mode)
-   {
-#ifdef _WIN32
-      LeaveCriticalSection(&legacy_cs);
-#else
-      pthread_mutex_unlock(&legacy_mutex);
-#endif
-   }
-   else
-      shared_lock_release();
+      slot_shadow[slot][i] = slot_counter[slot] + (uint64_t)i;
 
    /* "Handle" the fault: make the page accessible so we can resume,
     * mirroring vtlb's backpatch-and-continue. */
@@ -422,6 +332,7 @@ int main(int argc, char **argv)
    long              faults    = 50000;
    int               i;
    uint64_t          expected  = 0;
+   uint64_t          counted   = 0;
    double            t_start, elapsed;
 
    if (argc > 1) n_threads = atoi(argv[1]);
@@ -448,12 +359,6 @@ int main(int argc, char **argv)
 
    printf("fault dispatch stress: %d threads x %ld faults, %d slots\n",
           n_threads, faults, FAULT_SLOTS);
-#ifdef _WIN32
-   InitializeCriticalSection(&legacy_cs);
-#endif
-   use_mutex_mode = (getenv("FAULT_MUTEX_MODE") != NULL);
-   if (use_mutex_mode)
-      printf("  MODE: legacy pthread-mutex dispatch (A/B baseline only)\n");
 
    for (i = 0; i < n_threads; i++)
    {
@@ -493,9 +398,11 @@ int main(int argc, char **argv)
    elapsed = now_sec() - t_start;
    for (i = 0; i < n_threads; i++)
       expected += ctx[i].local_count;
+   for (i = 0; i < FAULT_SLOTS; i++)
+      counted += slot_counter[i];
 
    printf("  faults taken:     %llu\n", (unsigned long long)expected);
-   printf("  guarded counter:  %llu\n", (unsigned long long)guarded_counter);
+   printf("  slot counters:    %llu\n", (unsigned long long)counted);
    printf("  wall time:        %.3f s   (%.2f us/fault, %.0f faults/s)\n",
           elapsed, expected ? (elapsed * 1e6) / (double)expected : 0.0,
           elapsed > 0.0 ? (double)expected / elapsed : 0.0);
@@ -510,17 +417,17 @@ int main(int argc, char **argv)
       printf("FAIL: RECURSION FLAG - per-slot guard was not exclusive\n");
       return 4;
    }
-   if (guarded_counter != expected)
+   if (counted != expected)
    {
-      printf("FAIL: COUNTER MISMATCH - spinlock did not exclude "
+      printf("FAIL: COUNTER MISMATCH - two threads shared a slot "
              "(%llu != %llu, lost %lld)\n",
-             (unsigned long long)guarded_counter,
+             (unsigned long long)counted,
              (unsigned long long)expected,
-             (long long)expected - (long long)guarded_counter);
+             (long long)expected - (long long)counted);
       return 5;
    }
 
-   printf("PASS: slot table, recursion guards and spinlock held under "
+   printf("PASS: slot table, recursion guards and per-thread bookkeeping held under "
           "%d-way concurrent faulting.\n", n_threads);
    return 0;
 }

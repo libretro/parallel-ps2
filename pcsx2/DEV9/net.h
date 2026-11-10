@@ -103,16 +103,19 @@ protected:
 
 public:
 	NetAdapter();
+	/* Once the network thread runs (net.cpp), everything below but
+	 * wake_recv is called on it alone, and on the control side only
+	 * while it is stopped: nothing here takes a lock. */
 	virtual bool isInitialised() = 0;
-	virtual bool recv(NetPacket* pkt) = 0; //gets a packet from the host, on the RX thread
-	/* On the RX thread, once recv has nothing: return when it may have
+	virtual bool recv(NetPacket* pkt) = 0; /* a packet from the host */
+	/* Once recv has nothing: return when it may have
 	 * something, or after a bound. This default polls, every millisecond;
 	 * an adapter that can sleep on its host handles does. */
 	virtual void wait_recv();
 	/* Ends a wait_recv early, from any thread: what recv would find, or
 	 * whether it is called at all, may have changed. */
 	virtual void wake_recv() {}
-	virtual bool send(NetPacket* pkt); //sends the packet and deletes it when done
+	virtual bool send(NetPacket* pkt); /* a packet the PS2 sent, to the host */
 	virtual void reset(){};
 	virtual void reloadSettings() = 0;
 	virtual void close(){};
@@ -134,7 +137,7 @@ protected:
 #endif
 
 public:
-	/* The internal DHCP and DNS servers' replies, polled on the EE
+	/* The internal DHCP and DNS servers' replies, polled by the network
 	 * thread, which is their queues' one consumer. */
 	bool InternalServerRecv(NetPacket* pkt);
 

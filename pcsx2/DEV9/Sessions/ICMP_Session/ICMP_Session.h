@@ -21,10 +21,9 @@
 #include <vector>
 
 #include "DEV9/SimpleQueue.h"
-#include "DEV9/ThreadSafeMap.h"
+#include "DEV9/SessionMap.h"
 #include "DEV9/Sessions/BaseSession.h"
 #include "DEV9/PacketReader/IP/ICMP/ICMP_Packet.h"
-#include "../../../SLockGuard.h"
 
 namespace Sessions
 {
@@ -83,14 +82,13 @@ namespace Sessions
 		};
 
 		SimpleQueue<PacketReader::IP::ICMP::ICMP_Packet*> _recvBuff;
-		slock_t* ping_mutex;
 		std::vector<Ping*> pings;
-		ThreadSafeMap<Sessions::ConnectionKey, Sessions::BaseSession*>* connections;
+		SessionMap<Sessions::ConnectionKey, Sessions::BaseSession*>* connections;
 
 		retro_atomic_int_t open = RETRO_ATOMIC_INT_INITIALIZER(0);
 
 	public:
-		ICMP_Session(ConnectionKey parKey, PacketReader::IP::IP_Address parAdapterIP, ThreadSafeMap<Sessions::ConnectionKey, Sessions::BaseSession*>* parConnections);
+		ICMP_Session(ConnectionKey parKey, PacketReader::IP::IP_Address parAdapterIP, SessionMap<Sessions::ConnectionKey, Sessions::BaseSession*>* parConnections);
 
 		virtual PacketReader::IP::IP_Payload* Recv();
 		virtual bool PollInterest(uintptr_t* fd, int* events);

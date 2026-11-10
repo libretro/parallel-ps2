@@ -57,9 +57,6 @@ namespace VMManager
 	/// True when this host has enough hardware threads for the MTVU worker.
 	bool MtvuHardwareAllowed();
 
-	/// Returns the serial of the disc/executable currently running.
-	const char* GetDiscSerial();
-
 	/// Loads global settings (i.e. EmuConfig).
 	void LoadSettings();
 
@@ -116,8 +113,10 @@ namespace VMManager
 	/// before the options are, so an option still wins.
 	void ApplyHardwareDefaults(Pcsx2Config& c);
 
-	/// Returns a list of processors in the system, and their corresponding affinity mask.
-	/// This list is ordered by most performant to least performant for pinning threads to.
+	/* retro_init, before any thread that asks: the processors in affinity
+	 * order, read once. Read-only afterwards, so the GS, EE and frontend
+	 * threads read the list with nothing between them. */
+	void InitializeCPUInfo(void);
 	/* The processors in affinity order, *count of them. */
 	const u32* GetSortedProcessorList(u32* count);
 

@@ -189,6 +189,7 @@ static int fixture(void)
 	s_yaml = s_fixture;
 	g_shown = 8; /* the refusals are expected; count them, do not print */
 	GameDatabase_Unload();
+	GameDatabase_Load();
 	a = GameDatabase_FindGame("SLUS-00001");
 	b = GameDatabase_FindGame("SLES-00002");
 
@@ -243,7 +244,9 @@ static int fixture(void)
 	}
 
 	GameDatabase_Unload();
-	FCHECK(GameDatabase_FindGame("SLUS-00001") != NULL, "a lookup after unloading loads again");
+	FCHECK(GameDatabase_FindGame("SLUS-00001") == NULL, "a lookup after unloading finds nothing, and loads nothing");
+	GameDatabase_Load();
+	FCHECK(GameDatabase_FindGame("SLUS-00001") != NULL, "a load after unloading has the entries again");
 	GameDatabase_Unload();
 
 	printf("dbload: fixture %s\n", s_fixture_fails ? "FAIL" : "ok");
@@ -264,7 +267,7 @@ int main(int argc, char** argv)
 	{ fclose(f); fprintf(stderr, "short read\n"); return 2; }
 	fclose(f);
 
-	GameDatabase_EnsureLoaded();
+	GameDatabase_Load();
 
 	/* Spot-check that entries actually came out, so an empty parse cannot
 	 * pass by reporting nothing. WRC 4's serial is the one this suite grew

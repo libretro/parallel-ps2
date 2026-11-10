@@ -51,7 +51,7 @@ static void NetRxThreadEntry(void* arg)
 	NetRxThread();
 }
 
-/* Packets from the host. The RX thread receives them into this ring and
+/* Packets from the host. The network thread receives them into this ring and
  * net_rx_deliver() hands them to the SMAP on the EE thread, so the
  * emulated device is only ever touched by the thread that emulates it.
  * A record is a NetPacket's size field followed by its bytes, rounded up
@@ -64,13 +64,26 @@ static void NetRxThreadEntry(void* arg)
 static retro_spsc_t s_rx_ring;
 static bool s_rx_ring_ok;
 
-/* RX pump thread loops on this; the control side flips it on
- * start/stop.  volatile gives neither atomicity nor ordering in
- * C++; use release/acquire atomics for the cross-thread handshake. */
+/* What the PS2 sends, the other way: the EE writes records of the same
+ * form (tx_put) and the network thread sends them. A size of -1 is an
+ * adapter reset (ad_reset), with no bytes. The network thread is the one
+ * thread that touches the adapter, its sessions and the internal DHCP
+ * and DNS servers once it runs, so none of them needs a lock. A full
+ * ring drops the frame, as a full wire would: the EE never waits for
+ * the host. */
+#define NET_TX_RING_BYTES (256 * 1024)
+#define NET_TX_RESET (-1)
+static retro_spsc_t s_tx_ring;
+static bool s_tx_ring_ok;
+static unsigned s_tx_dropped; /* EE thread only */
+
+/* The network thread loops on this; the control side flips it on
+ * start/stop. */
 static retro_atomic_int_t RxRunning;
 
-/* The EE took records out of the ring (net_rx_deliver), or the RX thread
- * is to stop (TermNet): the RX thread waits on it for room. */
+/* The EE took records out of the receive ring (net_rx_deliver), put one
+ * in the transmit ring, or the network thread is to stop (TermNet): the
+ * network thread waits on it when the receive ring is full. */
 static retro_eventcount_t s_rx_room_ec;
 static bool s_rx_room_ec_ok;
 
@@ -79,12 +92,62 @@ static bool rx_ring_has_room(size_t bytes)
 	return retro_spsc_write_avail(&s_rx_ring) >= bytes;
 }
 
+/* Network thread: send what the EE queued, in order, through the
+ * thread's one packet buffer. */
+static void net_tx_drain(NetPacket* pkt)
+{
+	const size_t head = offsetof(NetPacket, buffer);
+	while (retro_spsc_read_avail(&s_tx_ring) >= head)
+	{
+		int    size;
+		size_t bytes;
+		retro_spsc_peek(&s_tx_ring, &size, sizeof(size));
+		bytes = NET_RX_RECORD_BYTES(size < 0 ? 0 : size);
+		/* Whole records only: the EE writes one in parts. */
+		if (retro_spsc_read_avail(&s_tx_ring) < bytes)
+			break;
+		retro_spsc_read(&s_tx_ring, pkt, bytes);
+		if (size == NET_TX_RESET)
+			nif->reset();
+		else
+			nif->send(pkt);
+	}
+}
+
+/* EE thread: queue a record -- the size field, then len bytes, padded
+ * to the record's length -- and wake the network thread. */
+static void net_tx_push(int size, const void* data, size_t len)
+{
+	static const char pad[8] = {0};
+	const size_t head  = offsetof(NetPacket, buffer);
+	const size_t bytes = NET_RX_RECORD_BYTES(len);
+	char field[offsetof(NetPacket, buffer)];
+	if (!s_tx_ring_ok || !retro_atomic_load_acquire_int(&RxRunning))
+		return;
+	if (retro_spsc_write_avail(&s_tx_ring) < bytes)
+	{
+		s_tx_dropped++;
+		return;
+	}
+	memset(field, 0, sizeof(field));
+	memcpy(field, &size, sizeof(size));
+	retro_spsc_write(&s_tx_ring, field, head);
+	if (len)
+		retro_spsc_write(&s_tx_ring, data, len);
+	if (bytes > head + len)
+		retro_spsc_write(&s_tx_ring, pad, bytes - head - len);
+	retro_eventcount_notify(&s_rx_room_ec);
+	nif->wake_recv();
+}
+
 void NetAdapter::wait_recv()
 {
 	retro_sleep(1);
 }
 
-//rx thread
+/* The network thread: sends what the EE queued, receives from the host
+ * and from the internal servers into the receive ring, and sleeps in the
+ * adapter's wait when there is neither. */
 void NetRxThread()
 {
 	NetPacket tmp;
@@ -92,6 +155,8 @@ void NetRxThread()
 	while (retro_atomic_load_acquire_int(&RxRunning))
 	{
 		bool full = false;
+
+		net_tx_drain(&tmp);
 
 		/* Receive only with room for the largest record, so a packet
 		 * taken from the host always fits; the rest wait in the host's
@@ -109,7 +174,7 @@ void NetRxThread()
 				full = true;
 				break;
 			}
-			if (!nif->recv(pkt))
+			if (!nif->recv(pkt) && !nif->InternalServerRecv(pkt))
 				break;
 			if (pkt->size <= 0 || pkt->size > (int)sizeof(pkt->buffer))
 				continue;
@@ -121,15 +186,18 @@ void NetRxThread()
 
 		if (!full)
 		{
-			/* The host has nothing: until the adapter may have. */
-			nif->wait_recv();
+			/* The host has nothing: until the adapter may have, or the
+			 * EE sends (net_tx_push wakes the wait). */
+			if (!retro_spsc_read_avail(&s_tx_ring))
+				nif->wait_recv();
 			continue;
 		}
 
-		/* No room: asleep until the EE takes records out. */
+		/* No room: asleep until the EE takes records out or sends. */
 		{
 			const int key = retro_eventcount_prepare_wait(&s_rx_room_ec);
-			if (rx_ring_has_room(largest) || !retro_atomic_load_acquire_int(&RxRunning))
+			if (rx_ring_has_room(largest) || retro_spsc_read_avail(&s_tx_ring)
+			 || !retro_atomic_load_acquire_int(&RxRunning))
 				retro_eventcount_cancel_wait(&s_rx_room_ec);
 			else
 				retro_eventcount_commit_wait(&s_rx_room_ec, key);
@@ -166,11 +234,11 @@ bool net_rx_deliver()
 			}
 			retro_spsc_read(&s_rx_ring, &tmp, bytes);
 		}
-		else if (!nif->InternalServerRecv(&tmp))
+		else
 			break;
 		delivered |= rx_process(&tmp);
 	}
-	/* Room for an RX thread waiting for it. */
+	/* Room for a network thread waiting for it. */
 	if (taken)
 		retro_eventcount_notify(&s_rx_room_ec);
 	return delivered;
@@ -178,15 +246,35 @@ bool net_rx_deliver()
 
 void tx_put(NetPacket* pkt)
 {
-	if (nif != nullptr)
-		nif->send(pkt);
-	//pkt must be copied if its not processed by here, since it can be allocated on the callers stack
+	if (nif != nullptr && pkt->size > 0 && pkt->size <= (int)sizeof(pkt->buffer))
+		net_tx_push(pkt->size, pkt->buffer, (size_t)pkt->size);
 }
 
 void ad_reset()
 {
 	if (nif != nullptr)
-		nif->reset();
+		net_tx_push(NET_TX_RESET, NULL, 0);
+}
+
+/* The control side: start and stop the network thread. While it is
+ * stopped the adapter is the caller's to touch. */
+static void net_thread_start(void)
+{
+	retro_atomic_store_release_int(&RxRunning, 1);
+	rx_thread = sthread_create(NetRxThreadEntry, NULL);
+}
+
+static void net_thread_stop(void)
+{
+	retro_atomic_store_release_int(&RxRunning, 0);
+	retro_eventcount_notify(&s_rx_room_ec);
+	nif->wake_recv();
+	log_cb(RETRO_LOG_INFO, "DEV9: Waiting for the network thread to terminate..\n");
+	sthread_join(rx_thread);
+	rx_thread = NULL;
+	if (s_tx_dropped)
+		log_cb(RETRO_LOG_WARN, "DEV9: %u frames dropped: the network thread fell behind\n", s_tx_dropped);
+	s_tx_dropped = 0;
 }
 
 NetAdapter* GetNetAdapter()
@@ -245,7 +333,15 @@ void InitNet()
 		EmuConfig.DEV9.EthEnable = false;
 		return;
 	}
-	retro_spsc_clear(&s_rx_ring);
+	if (!s_tx_ring_ok)
+		s_tx_ring_ok = retro_spsc_init(&s_tx_ring, NET_TX_RING_BYTES);
+	if (!s_tx_ring_ok)
+	{
+		log_cb(RETRO_LOG_ERROR, "DEV9: Failed to allocate the transmit ring\n");
+		delete na;
+		EmuConfig.DEV9.EthEnable = false;
+		return;
+	}
 	if (!s_rx_room_ec_ok)
 		s_rx_room_ec_ok = retro_eventcount_init(&s_rx_room_ec);
 	if (!s_rx_room_ec_ok)
@@ -256,11 +352,10 @@ void InitNet()
 		return;
 	}
 
+	retro_spsc_clear(&s_rx_ring);
+	retro_spsc_clear(&s_tx_ring);
 	nif = na;
-	retro_atomic_store_release_int(&RxRunning, 1);
-
-	rx_thread = sthread_create(NetRxThreadEntry, NULL);
-
+	net_thread_start();
 }
 
 void ReconfigureLiveNet(const Pcsx2Config& old_config)
@@ -279,7 +374,13 @@ void ReconfigureLiveNet(const Pcsx2Config& old_config)
 				return;
 			}
 			else
+			{
+				/* The adapter belongs to the network thread while it
+				 * runs. */
+				net_thread_stop();
 				nif->reloadSettings();
+				net_thread_start();
+			}
 		}
 		else
 			InitNet();
@@ -292,13 +393,9 @@ void TermNet()
 {
 	if (retro_atomic_load_acquire_int(&RxRunning))
 	{
-		retro_atomic_store_release_int(&RxRunning, 0);
-		retro_eventcount_notify(&s_rx_room_ec);
-		nif->wake_recv();
+		/* The thread first: then the adapter is this thread's to close. */
+		net_thread_stop();
 		nif->close();
-		log_cb(RETRO_LOG_INFO, "DEV9: Waiting for RX-net thread to terminate..\n");
-		sthread_join(rx_thread);
-		rx_thread = NULL;
 		log_cb(RETRO_LOG_INFO, "DEV9: Done\n");
 
 		delete nif;

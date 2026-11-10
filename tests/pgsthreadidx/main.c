@@ -12,6 +12,8 @@
 #include <stdio.h>
 
 #include <rthreads/rthreads.h>
+#include <rthreads/retro_eventcount.h>
+#include <retro_atomic.h>
 
 #define COUNT    4 /* GSRendererPGS's PGS_THREAD_INDEX_COUNT */
 #define SESSIONS 6
@@ -27,31 +29,47 @@ static void ask(void *slot)
 	*(unsigned*)slot = tid_get();
 }
 
-/* A thread kept across sessions: asks once per session when told to. */
-static slock_t  *s_lock;
-static scond_t  *s_cond;
-static int       s_round, s_answered, s_quit;
-static unsigned  s_kept_index;
+/* A thread kept across sessions: asks once per session when told to.
+ * The handshake is two counters and an eventcount; each side waits for
+ * the other's counter to move. */
+static retro_eventcount_t s_ec;
+static retro_atomic_int_t s_round, s_answered, s_quit;
+static unsigned           s_kept_index;
+
+/* Park until *v holds `want`, or the quit flag is up when `quit_too`. */
+static void wait_for(retro_atomic_int_t *v, int want, int quit_too)
+{
+	for (;;)
+	{
+		int key;
+		if (retro_atomic_load_acquire_int(v) == want
+		 || (quit_too && retro_atomic_load_acquire_int(&s_quit)))
+			return;
+		key = retro_eventcount_prepare_wait(&s_ec);
+		if (retro_atomic_load_acquire_int(v) == want
+		 || (quit_too && retro_atomic_load_acquire_int(&s_quit)))
+		{
+			retro_eventcount_cancel_wait(&s_ec);
+			return;
+		}
+		retro_eventcount_commit_wait(&s_ec, key);
+	}
+}
 
 static void kept_thread(void *unused)
 {
 	int seen = 0;
 	(void)unused;
-	slock_lock(s_lock);
 	for (;;)
 	{
-		while (s_round == seen && !s_quit)
-			scond_wait(s_cond, s_lock);
-		if (s_quit)
+		wait_for(&s_round, seen + 1, 1);
+		if (retro_atomic_load_acquire_int(&s_quit))
 			break;
-		seen = s_round;
-		slock_unlock(s_lock);
+		seen++;
 		s_kept_index = tid_get();
-		slock_lock(s_lock);
-		s_answered = seen;
-		scond_broadcast(s_cond);
+		retro_atomic_store_release_int(&s_answered, seen);
+		retro_eventcount_notify(&s_ec);
 	}
-	slock_unlock(s_lock);
 }
 
 int main(void)
@@ -59,9 +77,8 @@ int main(void)
 	sthread_t *kept, *t[COUNT];
 	int session, i, j, failures = 0;
 
-	s_lock = slock_new();
-	s_cond = scond_new();
-	kept   = sthread_create(kept_thread, NULL);
+	retro_eventcount_init(&s_ec);
+	kept = sthread_create(kept_thread, NULL);
 
 	for (session = 1; session <= SESSIONS; session++)
 	{
@@ -74,12 +91,9 @@ int main(void)
 		seen[n++] = tid_get();
 
 		/* The thread kept from the last session records again. */
-		slock_lock(s_lock);
-		s_round = session;
-		scond_broadcast(s_cond);
-		while (s_answered != session)
-			scond_wait(s_cond, s_lock);
-		slock_unlock(s_lock);
+		retro_atomic_store_release_int(&s_round, session);
+		retro_eventcount_notify(&s_ec);
+		wait_for(&s_answered, session, 0);
 		seen[n++] = s_kept_index;
 
 		/* And new threads, up to the pools there are. */
@@ -112,13 +126,10 @@ int main(void)
 		}
 	}
 
-	slock_lock(s_lock);
-	s_quit = 1;
-	scond_broadcast(s_cond);
-	slock_unlock(s_lock);
+	retro_atomic_store_release_int(&s_quit, 1);
+	retro_eventcount_notify(&s_ec);
 	sthread_join(kept);
-	scond_free(s_cond);
-	slock_free(s_lock);
+	retro_eventcount_free(&s_ec);
 
 	printf(failures ? "thread indices: FAILED (%d)\n" : "thread indices: ok, %d sessions\n",
 			failures ? failures : SESSIONS);

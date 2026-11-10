@@ -22,7 +22,6 @@
 #include "VMManager.h"
 #include "GS/Renderers/Common/GSCodeReserve.h"
 
-#include <sstream>
 
 #include <file/file_path.h>
 
@@ -45,7 +44,6 @@
 #include "Host.h"
 #include "IopBios.h"
 #include "MTVU.h"
-#include "SLockGuard.h"
 #include <rthreads/rthreads.h>
 #include "MemoryCardFile.h"
 #include "Patch.h"
@@ -136,7 +134,6 @@ namespace VMManager
 	static void UpdateRunningGame(bool resetting, bool game_starting, bool swapping_disc);
 
 	static void SetTimerResolutionIncreased(bool enabled);
-	static void EnsureCPUInfoInitialized();
 	static void SetEmuThreadAffinities();
 } // namespace VMManager
 
@@ -153,15 +150,8 @@ static bool s_cpu_implementation_changed = false;
 static sthread_t* s_vm_thread = NULL;
 static uintptr_t  s_vm_thread_id = 0;
 
-/* Plain, not recursive: nothing that runs under it re-takes it. GetDiscSerial
- * is a leaf, and the blocks that write under it call only findGame,
- * sioSetGameSerial and AutoEject_ClearAll, none of which read the serial
- * back through the lock. */
-static slock_t* s_info_mutex(void)
-{
-	static slock_t* lock = slock_new();
-	return lock;
-}
+/* The running game's identity. Written and read on the EE thread, or
+ * with the EE paused: there is no other reader. */
 static std::string s_disc_path;
 static u32 s_game_crc;
 static u32 s_patches_crc;
@@ -202,12 +192,6 @@ bool VMManager::HasValidVM()
 {
 	const VMState state = (VMState)retro_atomic_load_acquire_int(&s_state);
 	return (state >= VMState::Running && state <= VMState::Resetting);
-}
-
-const char* VMManager::GetDiscSerial()
-{
-	SLockGuard lock(s_info_mutex());
-	return s_game_serial;
 }
 
 void VMManager::Internal::UpdateEmuFolders()
@@ -253,6 +237,9 @@ void VMManager::Internal::CPUThreadInitialize(void)
 	USBinit();
 
 	sys_memory_init(&s_vm_memory);
+	/* Here rather than at the first lookup, which can be the EE starting
+	 * a game: the parse allocates. */
+	GameDatabase_Load();
 
 	InitializeCPUProviders();
 
@@ -271,8 +258,8 @@ void VMManager::Internal::CPUThreadShutdown(void)
 	/* After the VU1 worker, the last of the paths' users, has gone. */
 	gif_unit_shutdown();
 
-	/* Nothing consults the game database without a VM, and the next
-	 * load re-reads it lazily. */
+	/* Nothing consults the game database without a VM; the next VM's
+	 * start reads it again. */
 	GameDatabase_Unload();
 
 #if defined(__GLIBC__)
@@ -562,7 +549,6 @@ void VMManager::UpdateRunningGame(bool resetting, bool game_starting, bool swapp
 		return;
 
 	{
-		SLockGuard lock(s_info_mutex());
 		strlcpy(s_game_serial, new_serial, sizeof(s_game_serial));
 		s_game_crc    = new_crc;
 
@@ -815,18 +801,11 @@ void VMManager::Shutdown()
 		ElfCRC = 0;
 		ElfEntry = 0;
 
-		{
-			SLockGuard lock(s_info_mutex());
-			s_disc_path.clear();
-			s_elf_override.clear();
-			s_game_crc = 0;
-			s_patches_crc = 0;
-			s_game_serial[0] = '\0';
-		}
-		/* Outside the lock: a callback into the frontend is not something
-		 * to hold a lock across, and this one has nothing to read that the
-		 * lock protects -- the fields were just cleared and the EE thread,
-		 * the only other writer, is stopped here. */
+		s_disc_path.clear();
+		s_elf_override.clear();
+		s_game_crc = 0;
+		s_patches_crc = 0;
+		s_game_serial[0] = '\0';
 		Host::OnGameChanged(s_disc_path, s_elf_override, s_game_serial, 0);
 	}
 	s_active_game_fixes = 0;
@@ -1224,11 +1203,8 @@ void VMManager::CheckForMemoryCardConfigChanges(const Pcsx2Config& old_config)
 
 	// force reindexing, mc folder code is janky
 	{
-		SLockGuard lock(s_info_mutex());
 		const GameDatabaseEntry* game = GameDatabase_FindGame(s_game_serial);
 		const char* filters           = game ? game->memcardFilters : "";
-		/* while the lock is held: the serial is copied, and the entry
-		 * belongs to the database, which a VM shutdown unloads */
 		sioSetGameSerial(filters[0] ? filters : s_game_serial);
 	}
 }
@@ -1303,45 +1279,45 @@ void VMManager::SetTimerResolutionIncreased(bool enabled)
 
 #endif
 
-static std::vector<u32> s_processor_list;
-static slock_t* s_processor_list_mutex(void)
-{
-	/* First use creates it; C++11 makes the init thread-safe, and there is
-	 * no static-init order to worry about. */
-	static slock_t* lock = slock_new();
-	return lock;
-}
-static bool s_processor_list_initialized = false;
+/* Filled once in retro_init (VMManager::InitializeCPUInfo), before any
+ * thread that reads it exists, and never written again. */
+static u32    s_processor_list[64];
+static size_t s_processor_count;
+static bool   s_processor_list_initialized = false;
 
-static void InitializeCPUInfo(void)
+void VMManager::InitializeCPUInfo(void)
 {
+	unsigned order[64];
+	char     line[64 * 4 + 32];
+	size_t   i, count, pos;
+
+	if (s_processor_list_initialized)
+		return;
+	s_processor_list_initialized = true;
+
 	FPControlRegister::SetCurrent(FPControlRegister::GetDefault());
 
-	// features_cpu ranks the processors for us: strongest core first, and an
-	// SMT sibling behind the processor it shares a core with, which is the
-	// order the affinity assignment below indexes into. Platforms that
-	// publish no topology answer with the plain ascending order, and one that
-	// cannot name its processors at all answers with nothing, leaving
-	// affinity control switched off exactly as before.
-	unsigned order[64];
-	const size_t count = cpu_features_get_processor_order(order, C89_ARRAY_SIZE(order));
+	/* features_cpu ranks the processors: strongest core first, and an SMT
+	 * sibling behind the processor it shares a core with, which is the
+	 * order the affinity assignment indexes into. Platforms that publish
+	 * no topology answer in ascending order; one that cannot name its
+	 * processors answers with nothing, and affinity control stays off. */
+	count = cpu_features_get_processor_order(order, C89_ARRAY_SIZE(order));
 	if (count == 0)
 	{
 		log_cb(RETRO_LOG_ERROR, "No processor list available\n");
 		return;
 	}
 
-	s_processor_list.reserve(count);
-	std::stringstream ss;
-	ss << "Ordered processor list: ";
-	for (size_t i = 0; i < count; i++)
+	pos = (size_t)snprintf(line, sizeof(line), "Ordered processor list: ");
+	for (i = 0; i < count; i++)
 	{
-		if (i != 0)
-			ss << ", ";
-		ss << order[i];
-		s_processor_list.push_back(static_cast<u32>(order[i]));
+		s_processor_list[i] = (u32)order[i];
+		if (pos < sizeof(line))
+			pos += (size_t)snprintf(line + pos, sizeof(line) - pos, i ? ", %u" : "%u", order[i]);
 	}
-	log_cb(RETRO_LOG_INFO, "%s\n", ss.str().c_str());
+	s_processor_count = count;
+	log_cb(RETRO_LOG_INFO, "%s\n", line);
 }
 
 /* The MTVU and instant-VU1 defaults keep the platform guard they had: the
@@ -1350,7 +1326,6 @@ static void InitializeCPUInfo(void)
 #if defined(__linux__) || defined(_WIN32)
 static void SetMTVUAndAffinityControlDefault(Pcsx2Config& c)
 {
-	VMManager::EnsureCPUInfoInitialized();
 	// arm64 MTVU status: the worker thread spawns (InitializeCPUProviders) and
 	// sets VPU_STAT busy around interpreter VU1 programs (MTVU.c), which makes
 	// MTVU produce correct XGKICK output. However, games driving a CONTINUOUS
@@ -1405,16 +1380,6 @@ bool VMManager::MtvuHardwareAllowed()
 	return cpu_features_get_core_amount_physical() >= 3;
 }
 
-void VMManager::EnsureCPUInfoInitialized()
-{
-	SLockGuard lock(s_processor_list_mutex());
-	if (!s_processor_list_initialized)
-	{
-		InitializeCPUInfo();
-		s_processor_list_initialized = true;
-	}
-}
-
 void VMManager::SetVMThread(sthread_t* thread)
 {
 	s_vm_thread = thread;
@@ -1429,14 +1394,12 @@ static bool set_ee_affinity(u64 mask)
 
 void VMManager::SetEmuThreadAffinities()
 {
-	EnsureCPUInfoInitialized();
-
 	// not supported on this platform
-	if (s_processor_list.empty())
+	if (s_processor_count == 0)
 		return;
 
 	if (EmuConfig.Cpu.AffinityControlMode == 0 ||
-		s_processor_list.size() < (EmuConfig.Speedhacks.vuThread ? 3 : 2))
+		s_processor_count < (EmuConfig.Speedhacks.vuThread ? 3u : 2u))
 	{
 		if (EmuConfig.Cpu.AffinityControlMode != 0)
 			log_cb(RETRO_LOG_ERROR, "Insufficient processors for affinity control.\n");
@@ -1485,7 +1448,6 @@ void VMManager::ApplyHardwareDefaults(Pcsx2Config& c)
 
 const u32* VMManager::GetSortedProcessorList(u32* count)
 {
-	EnsureCPUInfoInitialized();
-	*count = static_cast<u32>(s_processor_list.size());
-	return s_processor_list.data();
+	*count = static_cast<u32>(s_processor_count);
+	return s_processor_list;
 }

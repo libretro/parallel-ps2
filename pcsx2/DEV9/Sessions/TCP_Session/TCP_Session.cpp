@@ -22,7 +22,6 @@
 #include <winsock2.h>
 #else
 #include <unistd.h>
-#include "../../../SLockGuard.h"
 #endif
 
 using namespace PacketReader;
@@ -46,7 +45,6 @@ namespace Sessions
 
 	void TCP_Session::IncrementMyNumber(u32 amount)
 	{
-		SLockGuard numberlock(myNumberSentry);
 		_OldMyNumbers.push_back(_MySequenceNumber);
 		_OldMyNumbers.erase(_OldMyNumbers.begin());
 
@@ -54,13 +52,10 @@ namespace Sessions
 	}
 	u32 TCP_Session::GetMyNumber()
 	{
-		SLockGuard numberlock(myNumberSentry);
 		return _MySequenceNumber;
 	}
 	std::tuple<u32, std::vector<u32>> TCP_Session::GetAllMyNumbers()
 	{
-		SLockGuard numberlock(myNumberSentry);
-
 		std::vector<u32> old;
 		old.reserve(_OldMyNumbers.size());
 		old.insert(old.end(), _OldMyNumbers.begin(), _OldMyNumbers.end());
@@ -69,7 +64,6 @@ namespace Sessions
 	}
 	void TCP_Session::ResetMyNumbers()
 	{
-		SLockGuard numberlock(myNumberSentry);
 		_MySequenceNumber = 1;
 		_OldMyNumbers.clear();
 		for (int i = 0; i < oldMyNumCount; i++)
@@ -79,7 +73,6 @@ namespace Sessions
 	TCP_Session::TCP_Session(ConnectionKey parKey, IP_Address parAdapterIP)
 		: BaseSession(parKey, parAdapterIP)
 	{
-		myNumberSentry = slock_new();
 	}
 
 	TCP_Packet* TCP_Session::CreateBasePacket(PayloadData* data)
@@ -150,6 +143,5 @@ namespace Sessions
 
 			delete retPay;
 		}
-		slock_free(myNumberSentry);
 	}
 } // namespace Sessions

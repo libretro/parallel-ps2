@@ -4,6 +4,7 @@
  * the driver model and the checks are in main.c. */
 #include <string.h>
 #include <retro_atomic.h>
+#include <rthreads/rthreads.h>
 
 #include "DEV9/DEV9.h"
 #include "DEV9/smap.h"
@@ -15,6 +16,11 @@ dev9Struct dev9;
 static u16 s_eeprom[32];
 
 static retro_atomic_int_t s_rxend_irqs;
+
+/* What reaches the adapter from the PS2's side, and on which thread: it
+ * belongs to the network thread, never the thread that sent. */
+static uintptr_t          s_tx_caller;
+static retro_atomic_int_t s_tx_frames, s_tx_resets, s_tx_on_caller, s_tx_out_of_order;
 
 extern "C" {
 
@@ -60,6 +66,15 @@ void smaprx_tx(const unsigned char* frame, int len)
 }
 
 void smaprx_close(void) { TermNet(); }
+void smaprx_reset(void) { ad_reset(); }
+void smaprx_tx_from_here(void) { s_tx_caller = sthread_get_current_thread_id(); }
+void smaprx_tx_stats(int* frames, int* resets, int* on_caller, int* out_of_order)
+{
+	*frames       = retro_atomic_load_acquire_int(&s_tx_frames);
+	*resets       = retro_atomic_load_acquire_int(&s_tx_resets);
+	*on_caller    = retro_atomic_load_acquire_int(&s_tx_on_caller);
+	*out_of_order = retro_atomic_load_acquire_int(&s_tx_out_of_order);
+}
 void smaprx_tick(void) { smap_async(1); }
 unsigned smaprx_frame_count(void) { return smap_read8(SMAP_R_RXFIFO_FRAME_CNT); }
 unsigned smaprx_bd_read(int bd, int word) { return smap_read16(SMAP_BD_RX_BASE + bd * 8 + word * 2); }
@@ -93,8 +108,23 @@ void smaprx_dma_read(unsigned* words, int bytes)
 SocketAdapter::SocketAdapter() { initialized = true; }
 SocketAdapter::~SocketAdapter() {}
 bool SocketAdapter::isInitialised() { return initialized; }
-bool SocketAdapter::send(NetPacket* pkt) { (void)pkt; return true; }
-void SocketAdapter::reset() {}
+/* Frames carry their index in their first byte. */
+bool SocketAdapter::send(NetPacket* pkt)
+{
+	const int n = retro_atomic_load_acquire_int(&s_tx_frames);
+	if (sthread_get_current_thread_id() == s_tx_caller)
+		retro_atomic_inc_int(&s_tx_on_caller);
+	if ((u8)pkt->buffer[0] != (u8)n)
+		retro_atomic_inc_int(&s_tx_out_of_order);
+	retro_atomic_store_release_int(&s_tx_frames, n + 1);
+	return true;
+}
+void SocketAdapter::reset()
+{
+	if (sthread_get_current_thread_id() == s_tx_caller)
+		retro_atomic_inc_int(&s_tx_on_caller);
+	retro_atomic_inc_int(&s_tx_resets);
+}
 void SocketAdapter::reloadSettings() {}
 void SocketAdapter::close() {}
 /* The stub's recv polls, as the base adapter's wait does. */

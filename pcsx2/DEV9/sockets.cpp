@@ -448,12 +448,11 @@ bool SocketAdapter::recv(NetPacket* pkt)
 	return false;
 }
 
-/* Whatever the PS2 sends can give the receive thread something to do. */
+/* On the network thread, which is about to look at what this changed:
+ * net_tx_push already woke it. */
 bool SocketAdapter::send(NetPacket* pkt)
 {
-	const bool ret = SendFrame(pkt);
-	wake_recv();
-	return ret;
+	return SendFrame(pkt);
 }
 
 bool SocketAdapter::SendFrame(NetPacket* pkt)
@@ -535,7 +534,6 @@ void SocketAdapter::reset()
 
 		session->Reset();
 	}
-	wake_recv();
 }
 
 void SocketAdapter::reloadSettings()

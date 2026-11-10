@@ -823,7 +823,7 @@ set(pcsx2DEV9Headers
 	DEV9/Sessions/UDP_Session/UDP_FixedPort.h
 	DEV9/Sessions/UDP_Session/UDP_Session.h
 	DEV9/SimpleQueue.h
-	DEV9/ThreadSafeMap.h
+	DEV9/SessionMap.h
 	DEV9/net.h
 	DEV9/smap.h
 	DEV9/sockets.h

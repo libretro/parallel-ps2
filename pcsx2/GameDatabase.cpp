@@ -39,13 +39,6 @@ namespace GameDatabaseSchema
 
 static constexpr char GAMEDB_YAML_FILE_NAME[] = "GameIndex.yaml";
 
-static slock_t* s_load_once_mutex(void)
-{
-	/* First use creates it; C++11 makes the init thread-safe, and there is
-	 * no static-init order to worry about. */
-	static slock_t* lock = slock_new();
-	return lock;
-}
 static bool s_load_once_done = false;
 
 /* The database while it is read: each entry's lists are runs in pools
@@ -1225,41 +1218,27 @@ static void gamedb_init(void)
 	}
 }
 
-void GameDatabase_EnsureLoaded(void)
+void GameDatabase_Load(void)
 {
-	// call_once semantics under the campaign lock family: double load
-	// impossible (mutex), racing callers both observe the completed
-	// state (done set before unlock, read under lock).
-	slock_t* lock = s_load_once_mutex();
-	slock_lock(lock);
-	if (!s_load_once_done)
-	{
-		log_cb(RETRO_LOG_INFO, "[GameDB] Has not been initialized yet, initializing...\n");
-		gamedb_init();
-		log_cb(RETRO_LOG_INFO, "[GameDB] %u games on record\n", s_entry_count);
-		s_load_once_done = true;
-	}
-	slock_unlock(lock);
+	if (s_load_once_done)
+		return;
+	log_cb(RETRO_LOG_INFO, "[GameDB] Has not been initialized yet, initializing...\n");
+	gamedb_init();
+	log_cb(RETRO_LOG_INFO, "[GameDB] %u games on record\n", s_entry_count);
+	s_load_once_done = true;
 }
 
 void GameDatabase_Unload(void)
 {
-	/* Held under the same lock GameDatabase_EnsureLoaded takes, so a
-	 * concurrent lookup either completes before the free or reloads after
-	 * it - it cannot observe a half-freed database.
-	 *
-	 * The parse is 12806 entries and ~50 ms of work, and every consumer of
+	/* The parse is 12806 entries and ~50 ms of work, and every consumer of
 	 * it - gamefixes, patches, the memcard and disc-swap paths - is a
 	 * VM-lifetime event. With no VM there is nothing to look a game up
 	 * for, so the cost is worth carrying only while content is loaded. */
-	slock_t* lock = s_load_once_mutex();
-	slock_lock(lock);
 	if (s_load_once_done)
 	{
 		gamedb_free_all();
 		s_load_once_done = false;
 	}
-	slock_unlock(lock);
 }
 
 const GameDatabaseEntry* GameDatabase_FindGame(const char* serial)
@@ -1267,7 +1246,6 @@ const GameDatabaseEntry* GameDatabase_FindGame(const char* serial)
 	const size_t len = strlen(serial);
 	u32 n;
 
-	GameDatabase_EnsureLoaded();
 	if (!s_index || !s_entries)
 		return nullptr;
 

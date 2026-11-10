@@ -2366,6 +2366,8 @@ void retro_init(void)
 
 	mtvu_init();
 	mtvu_reset();
+	/* Before any thread that reads it: read-only from here on. */
+	VMManager::InitializeCPUInfo();
 
 	if (setting_bios.empty())
 	{

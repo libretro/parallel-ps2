@@ -24,7 +24,7 @@
 #include "PacketReader/EthernetFrame.h"
 #include "Sessions/BaseSession.h"
 #include "SimpleQueue.h"
-#include "ThreadSafeMap.h"
+#include "SessionMap.h"
 
 class SocketAdapter : public NetAdapter
 {
@@ -44,10 +44,10 @@ class SocketAdapter : public NetAdapter
 	 * socket its Recv leaves ready. Receive thread only. */
 	bool rxReadyUnread = false;
 
-	//Sentrys replaced by the requirment for each session class to have thread safe destructor
+	/* The sessions: the network thread's alone (net.cpp). */
 
-	ThreadSafeMap<Sessions::ConnectionKey, Sessions::BaseSession*> connections;
-	ThreadSafeMap<u16, Sessions::BaseSession*> fixedUDPPorts;
+	SessionMap<Sessions::ConnectionKey, Sessions::BaseSession*> connections;
+	SessionMap<u16, Sessions::BaseSession*> fixedUDPPorts;
 
 public:
 	SocketAdapter();

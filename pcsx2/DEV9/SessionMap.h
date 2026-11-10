@@ -17,77 +17,38 @@
 
 #include <vector>
 #include <unordered_map>
-#include "../SLockGuard.h"
 
+/* The socket adapter's sessions by key. Touched by the network thread
+ * alone (net.cpp), so it is a plain map. */
 template <class Key, class T>
-class ThreadSafeMap
+class SessionMap
 {
-	// Exclusive lock for readers and writers alike: these maps hold a
-	// handful of network sessions touched per packet event, not per
-	// frame - shared-read parallelism is not worth a second lock kind.
-	slock_t* accessMutex;
-
 	std::unordered_map<Key, T> map;
 
 public:
-	ThreadSafeMap() { accessMutex = slock_new(); }
-	~ThreadSafeMap() { slock_free(accessMutex); }
-	ThreadSafeMap(const ThreadSafeMap&) = delete;
-	ThreadSafeMap& operator=(const ThreadSafeMap&) = delete;
+	void Add(Key key, T value) { map[key] = value; }
+	void Remove(Key key) { map.erase(key); }
+	void Clear() { map.clear(); }
 
-	void Add(Key key, T value)
-	{
-		SLockGuard modifyLock(accessMutex);
-		//Todo, check if key already exists?
-		map[key] = value;
-	}
-
-	void Remove(Key key)
-	{
-		SLockGuard modifyLock(accessMutex);
-		map.erase(key);
-	}
-
-	void Clear()
-	{
-		SLockGuard modifyLock(accessMutex);
-		map.clear();
-	}
-
+	/* A copy: a caller may remove the key it is visiting. */
 	std::vector<Key> GetKeys()
 	{
-		SLockGuard readLock(accessMutex);
-
 		std::vector<Key> keys;
 		keys.reserve(map.size());
-
 		for (auto iter = map.begin(); iter != map.end(); ++iter)
 			keys.push_back(iter->first);
-
 		return keys;
 	}
 
-	//Does not error or insert if no key is found
+	/* Does not insert when the key is missing. */
 	bool TryGetValue(Key key, T* value)
 	{
-		SLockGuard readLock(accessMutex);
 		auto search = map.find(key);
-		if (search != map.end())
-		{
-			*value = map[key];
-			return true;
-		}
-		else
+		if (search == map.end())
 			return false;
+		*value = search->second;
+		return true;
 	}
 
-	bool ContainsKey(Key key)
-	{
-		SLockGuard readLock(accessMutex);
-		auto search = map.find(key);
-		if (search != map.end())
-			return true;
-		else
-			return false;
-	}
+	bool ContainsKey(Key key) { return map.find(key) != map.end(); }
 };

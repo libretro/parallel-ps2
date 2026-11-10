@@ -29,7 +29,6 @@
 #include "DEV9/SimpleQueue.h"
 #include "DEV9/Sessions/BaseSession.h"
 #include "DEV9/PacketReader/IP/TCP/TCP_Packet.h"
-#include "../../../SLockGuard.h"
 
 namespace Sessions
 {
@@ -88,7 +87,6 @@ namespace Sessions
 		void SetExpectedSeq(u32 v) { retro_atomic_store_release_int(&expectedSeqWord, (int)v); }
 		std::vector<u32> receivedPS2SeqNumbers; //Accesed By Out Thread Only
 
-		slock_t* myNumberSentry;
 		const int oldMyNumCount = 2;
 		u32 _MySequenceNumber = 1;
 		std::vector<u32> _OldMyNumbers;

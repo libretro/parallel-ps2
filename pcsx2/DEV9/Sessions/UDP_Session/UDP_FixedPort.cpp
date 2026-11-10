@@ -32,7 +32,6 @@
 #include <retro_atomic.h>
 #include "UDP_FixedPort.h"
 #include "DEV9/PacketReader/IP/UDP/UDP_Packet.h"
-#include "../../../SLockGuard.h"
 
 using namespace PacketReader;
 using namespace PacketReader::IP;
@@ -45,7 +44,6 @@ namespace Sessions
 		, client{socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)}
 		, port(parPort)
 	{
-		connectionSentry = slock_new();
 		int ret;
 		if (client == INVALID_SOCKET)
 		{
@@ -202,8 +200,6 @@ namespace Sessions
 			destIP = *(IP_Address*)&sockaddr->sin_addr;
 			iRet->sourcePort = ntohs(sockaddr->sin_port);
 			{
-				SLockGuard numberlock(connectionSentry);
-
 				for (size_t i = 0; i < connections.size(); i++)
 				{
 					UDP_BaseSession* s = connections[i];
@@ -224,8 +220,6 @@ namespace Sessions
 
 	void UDP_FixedPort::Reset()
 	{
-		SLockGuard numberlock(connectionSentry);
-
 		for (size_t i = 0; i < connections.size(); i++)
 			connections[i]->Reset();
 	}
@@ -237,7 +231,6 @@ namespace Sessions
 		s->AddConnectionClosedHandler([&](BaseSession* session) { HandleChildConnectionClosed(session); });
 
 		{
-			SLockGuard numberlock(connectionSentry);
 			connections.push_back(s);
 		}
 		return s;
@@ -245,8 +238,6 @@ namespace Sessions
 
 	void UDP_FixedPort::HandleChildConnectionClosed(BaseSession* sender)
 	{
-		SLockGuard numberlock(connectionSentry);
-
 		UDP_BaseSession* const* conns = connections.data();
 		const size_t nconns = connections.size();
 		size_t ci;
@@ -275,6 +266,5 @@ namespace Sessions
 #endif
 			client = INVALID_SOCKET;
 		}
-		slock_free(connectionSentry);
 	}
 } // namespace Sessions

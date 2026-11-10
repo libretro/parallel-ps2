@@ -46,6 +46,10 @@ unsigned smaprx_txfifo_byte(int i);
 void smaprx_rxfifo_set(int i, unsigned v);
 void smaprx_dma_write(unsigned* words, int bytes);
 void smaprx_dma_read(unsigned* words, int bytes);
+void smaprx_tx(const unsigned char* frame, int len);
+void smaprx_reset(void);
+void smaprx_tx_from_here(void);
+void smaprx_tx_stats(int* frames, int* resets, int* on_caller, int* out_of_order);
 
 static void harness_log(enum retro_log_level level, const char* fmt, ...)
 {
@@ -207,6 +211,42 @@ int main(int argc, char** argv)
 			break;
 		}
 		sthread_yield();
+	}
+
+	/* The other way: what the PS2 sends reaches the adapter on the
+	 * network thread, in order, and an adapter reset with it. */
+	{
+		enum { TX_FRAMES = 2000 };
+		unsigned char out[64];
+		int frames = 0, resets = 0, on_caller = 0, out_of_order = 0;
+		unsigned i;
+		time_t tx_start;
+
+		smaprx_tx_from_here();
+		memset(out, 0, sizeof(out));
+		for (i = 0; i < TX_FRAMES; i++)
+		{
+			out[0] = (unsigned char)i;
+			smaprx_tx(out, (int)sizeof(out));
+			if (i == TX_FRAMES / 2)
+				smaprx_reset();
+		}
+		tx_start = time(NULL);
+		for (;;)
+		{
+			smaprx_tx_stats(&frames, &resets, &on_caller, &out_of_order);
+			if ((frames == TX_FRAMES && resets == 1) || time(NULL) - tx_start > TIME_LIMIT)
+				break;
+			sthread_yield();
+		}
+		if (frames != TX_FRAMES || resets != 1)
+			fail("sent frames or the reset never reached the adapter", (unsigned)frames);
+		if (on_caller)
+			fail("the adapter was entered on the sending thread, not the network thread", (unsigned)on_caller);
+		if (out_of_order)
+			fail("sent frames reached the adapter out of order", (unsigned)out_of_order);
+		if (!failures)
+			printf("  ok: %d frames and a reset sent through the network thread, in order\n", frames);
 	}
 
 	smaprx_close();

@@ -349,7 +349,7 @@
     <ClInclude Include="DEV9\SimpleQueue.h" />
     <ClInclude Include="DEV9\smap.h" />
     <ClInclude Include="DEV9\sockets.h" />
-    <ClInclude Include="DEV9\ThreadSafeMap.h" />
+    <ClInclude Include="DEV9\SessionMap.h" />
     <ClInclude Include="GS\Renderers\HW\GSHwHack.h" />
     <ClInclude Include="Frontend\InputManager.h" />
     <ClInclude Include="Frontend\LayeredSettingsInterface.h" />

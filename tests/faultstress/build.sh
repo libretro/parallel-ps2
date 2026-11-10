@@ -14,14 +14,14 @@ if [ "$WINDOWS" = "1" ]; then
   # MinGW: Win32 threads + vectored exception handler; no TSan on Windows.
   "$CC" -O2 -g -std=gnu99 -Wall -o "$DIR/fault_test.exe" "$DIR/main.c"
   echo "built: $DIR/fault_test.exe"
-  echo "note: ThreadSanitizer is unavailable on Windows - the counter"
-  echo "      mismatch check is your detector here; run with more threads"
-  echo "      and more faults for confidence, e.g. fault_test 4 500000"
+  "$DIR/fault_test.exe" 4 20000
 else
   "$CC" -O2 -g -std=gnu99 -Wall -o "$DIR/fault_test" "$DIR/main.c" -lpthread
   "$CC" -O1 -g -std=gnu99 -Wall -fsanitize=thread \
     -o "$DIR/fault_test_tsan" "$DIR/main.c" -lpthread
   echo "built: $DIR/fault_test $DIR/fault_test_tsan"
+  "$DIR/fault_test" 4 20000
+  TSAN_OPTIONS=halt_on_error=1 "$DIR/fault_test_tsan" 4 2000
 
   # And the same stress against the linked implementation, which is
   # libretro-common's faulthandler rather than a model of it.

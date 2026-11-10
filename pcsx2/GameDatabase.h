@@ -126,13 +126,14 @@ struct GameDatabaseEntry
 	u32 nDynaPatches;
 };
 
-/* Loads the database once; later calls return at once. */
-void GameDatabase_EnsureLoaded(void);
-/* Drops the loaded database. Safe at any time: a lookup after it loads
- * the file again. */
+/* The VM's thread, as the VM starts and as it ends: Load reads the
+ * database (once; a second call returns at once), Unload drops it.
+ * Lookups are made on the EE thread or with the EE paused, between the
+ * two, and only read. */
+void GameDatabase_Load(void);
 void GameDatabase_Unload(void);
-/* The entry for a serial, in either case, loading the database first;
- * NULL when there is none. */
+/* The entry for a serial, in either case; NULL when there is none or the
+ * database is not loaded. */
 const GameDatabaseEntry* GameDatabase_FindGame(const char* serial);
 /* The patch block for the CRC, or the default block; NULL for a CRC of 0
  * or when there is neither. */
