@@ -78,8 +78,7 @@ struct mtgs_frame
 	uint32_t pending;
 };
 
-/* Defined in MTGS.cpp. Plain C names and linkage: callable from a C
- * file the day the callers are one. */
+/* Defined in MTGS.c, with C linkage. */
 #ifdef __cplusplus
 extern "C" {
 #endif

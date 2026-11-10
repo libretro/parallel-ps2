@@ -678,6 +678,16 @@ void Gif_MTVU_KickSema()
 	retro_asym_eventcount_notify(&vu1Thread.ecXGkick);
 }
 
+struct retro_asym_eventcount* mtvu_ec_xgkick(void)
+{
+	return &vu1Thread.ecXGkick;
+}
+
+struct retro_asym_eventcount* mtvu_ec_p1_progress(void)
+{
+	return &vu1Thread.ecP1Progress;
+}
+
 void mtvu_wait_vu(void)
 {
 	// C.80: WaitForEmpty trusts the sema state machine -- flush any deferred

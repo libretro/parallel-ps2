@@ -2,7 +2,7 @@
 # Where in a vsync the EE is let go, what input its next frame reads,
 # and what the scanout reads.
 #
-# retro_run polls, latches and opens the frame gate; MTGS::MainLoop
+# retro_run polls, latches and opens the frame gate; mtgs_main_loop
 # consumes the EE's vsync packet, copies the privileged registers and
 # goes idle; the EE waits at the gate for the next retro_run. main.c runs
 # that order on the real work eventcount with a producer thread, and two

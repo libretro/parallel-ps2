@@ -137,7 +137,7 @@ set(pcsx2Sources
 	NearPlace.c
 	MemoryCardProtocol.c
 	MMI.c
-	MTGS.cpp
+	MTGS.c
 	MTVU.cpp
 	MultitapProtocol.c
 	FormatString.cpp

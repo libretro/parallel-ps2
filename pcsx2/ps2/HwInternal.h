@@ -54,7 +54,7 @@ extern void gifFifoReset(void); /* the 16-quadword FIFO */
 /* GS.c: the GS's part of hwReset. */
 extern void gsReset(void);
 
-/* MTGS.cpp: a GS download into EE memory (VIF1 reversed), done once the
+/* MTGS.c: a GS download into EE memory (VIF1 reversed), done once the
  * GS thread has caught up. */
 extern void mtgs_init_and_read_fifo(u8* mem, u32 qwc);
 

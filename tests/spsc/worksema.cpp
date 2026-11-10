@@ -38,7 +38,7 @@ extern "C" {
 }
 #include <unistd.h>
 
-/* The header wants this from its host; MTGS.cpp defines it in the core.
+/* The header wants this from its host; MTGS.c defines it in the core.
  * Two here, so the spin path is exercised even on a one-core box. */
 s32 WorkEventCount_SpinBudget(void) { return 2000; }
 

@@ -2,7 +2,7 @@
  * what the GS scans out.
  *
  * The EE posts a vsync to the GS ring and waits in WaitGS until the GS
- * has consumed it; MTGS::MainLoop, on the frontend's thread, consumes
+ * has consumed it; mtgs_main_loop, on the frontend's thread, consumes
  * it, takes its copy of the privileged registers and goes idle, which
  * releases WaitGS. The EE then waits at the frame gate. The next
  * retro_run polls the input, latches it and opens the gate, and the EE
@@ -11,7 +11,7 @@
  * EE starts nothing.
  *
  * Modelled here on the real work eventcount (pcsx2/WorkEventCount.h)
- * and a gate built as pcsx2/MTGS.cpp builds it, with a producer thread
+ * and a gate built as pcsx2/MTGS.c builds it, with a producer thread
  * as the EE and this thread as the frontend. Every frame must hold:
  *   - the scanout reads the vsync's registers;
  *   - the frame presented was drawn from the input polled in the same

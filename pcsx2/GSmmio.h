@@ -56,7 +56,7 @@ enum CSR_FifoState
 /* The GS CSR is written by the EE and GIF threads - a status bit here, a
  * FIFO level there - and read by the GS thread, which takes the FIELD bit
  * once per vsync as the pageflip id.  ThreadSanitizer, over four
- * load/unload cycles: MTGS::MainLoop against rcntUpdate, on this word.
+ * load/unload cycles: mtgs_main_loop against rcntUpdate, on this word.
  *
  * The writes were bit-field assignments and, for FIELD, |= and ^= on the
  * whole word - read-modify-writes with no atomicity, so two threads

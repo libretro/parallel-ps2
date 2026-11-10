@@ -584,7 +584,7 @@
     <ClCompile Include="GS.c">
       <Filter>System\Ps2\GS\GIF</Filter>
     </ClCompile>
-    <ClCompile Include="MTGS.cpp">
+    <ClCompile Include="MTGS.c">
       <Filter>System\Ps2\GS\GIF</Filter>
     </ClCompile>
     <ClCompile Include="x86\ix86-32\iCore-32.cpp">

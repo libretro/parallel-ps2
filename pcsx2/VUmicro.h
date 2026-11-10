@@ -127,6 +127,11 @@ extern void mtvu_write_row(void);
 extern struct vifStruct* mtvu_vif(void);
 extern struct VIFregisters* mtvu_vif_regs(void);
 extern void mtvu_vif_unpack(const u8* data, u32 size);
+/* The VU1 thread's eventcounts MTGS waits on: a path-1 packet queued
+ * (xgkick), and one popped (p1_progress). Fixed for the process. */
+struct retro_asym_eventcount;
+extern struct retro_asym_eventcount* mtvu_ec_xgkick(void);
+extern struct retro_asym_eventcount* mtvu_ec_p1_progress(void);
 
 /* VU0 */
 extern void vu0ResetRegs(void);

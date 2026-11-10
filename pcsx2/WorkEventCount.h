@@ -41,6 +41,7 @@
 #ifndef PCSX2_WORK_EVENTCOUNT_H
 #define PCSX2_WORK_EVENTCOUNT_H
 
+#include "../common/Pcsx2Types.h"
 #include <retro_atomic.h>
 #include <rthreads/retro_eventcount.h>
 #include <rthreads/retro_asym_eventcount.h>
@@ -90,8 +91,14 @@ typedef struct WorkEventCount
 #define WORK_EVENTCOUNT_EPOCH_BITS(epoch)  ((((uint32_t)(epoch)) << 1) >> 1)
 
 /* Iterations of a read-only spin worth spending to dodge a kernel
- * sleep/wake pair; 0 on single-core hosts. Defined in MTGS.cpp. */
+ * sleep/wake pair; 0 on single-core hosts. Defined in MTGS.c. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern s32 WorkEventCount_SpinBudget(void);
+#ifdef __cplusplus
+}
+#endif
 
 static INLINE void work_eventcount_init_mode(WorkEventCount *w, int symmetric)
 {

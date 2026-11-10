@@ -24,7 +24,7 @@
 
 /* The GIF unit (Gif_Unit.c): the three paths' packet buffers, the GS
  * packets parsed out of them for the GS thread, and path arbitration.
- * The GS thread (MTGS.cpp) reads each packet in place in its path's
+ * The GS thread (MTGS.c) reads each packet in place in its path's
  * buffer; the VU1 thread (MTVU.cpp) drives path 1 when it runs VU1. */
 
 #ifdef __cplusplus
@@ -193,7 +193,7 @@ extern u32       gif_path_pending_packets(Gif_Path* path);
 extern bool Gif_HandlerAD(u8* pMem);
 extern void Gif_FinishIRQ(void);
 
-/* MTGS.cpp: the GS thread's side. */
+/* MTGS.c: the GS thread's side. */
 extern void Gif_AddBlankGSPacket(u32 size, GIF_PATH path);
 extern void Gif_AddCompletedGSPacket(const GS_Packet* gsPack, GIF_PATH path);
 extern void mtgs_wait_gs(bool isMTVU);

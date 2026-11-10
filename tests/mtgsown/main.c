@@ -60,7 +60,7 @@ static void on_alarm(int sig)
 	_exit(1);
 }
 
-/* MTGS::MainLoop: consume what the eventcount says is there. */
+/* mtgs_main_loop: consume what the eventcount says is there. */
 static void drain(int flush_all)
 {
 	for (;;)
@@ -94,7 +94,7 @@ static int wait_drains(void)
 #endif
 }
 
-/* MTGS::WaitGS(false) */
+/* mtgs_wait_gs(false) */
 static void wait_gs(void)
 {
 	work_eventcount_notify(&ev);

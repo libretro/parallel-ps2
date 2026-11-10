@@ -237,7 +237,7 @@ static u32 pad_for_port(unsigned port)
 	return NUM_CONTROLLER_PORTS;
 }
 
-extern "C" void pad_input_latch(void)
+void pad_input_latch(void)
 {
 	unsigned port;
 	for (port = 0; port < NUM_CONTROLLER_PORTS; port++)

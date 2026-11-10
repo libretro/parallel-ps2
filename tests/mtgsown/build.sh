@@ -1,7 +1,7 @@
 #!/bin/sh
 # Who drains the GS ring when a thread waits on it.
 #
-# pcsx2/MTGSOwner.h is the rule MTGS::WaitGS uses; this runs it with the
+# pcsx2/MTGSOwner.h is the rule mtgs_wait_gs uses; this runs it with the
 # threads a frontend has under threaded video -- a video thread that
 # opens the GS and resumes the EE, an EE already waiting before the first
 # retro_run, a frontend whose first act is to wait too -- on the real

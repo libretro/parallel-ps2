@@ -166,7 +166,7 @@ static bool vk_negotiation_finish(retro_vulkan_context *context, VkInstance inst
 {
 	if (!GSDeviceVK::GetInstance() || vk_init_info.device == VK_NULL_HANDLE)
 	{
-		MTGS::CloseGS();
+		mtgs_close_gs();
 		if (vk_init_info.device != VK_NULL_HANDLE)
 		{
 			PFN_vkDestroyDevice destroy_device = (PFN_vkDestroyDevice)
@@ -209,8 +209,8 @@ bool create_device_vulkan(retro_vulkan_context *context, VkInstance instance, Vk
 		GSConfig.Adapter = props.deviceName;
 	}
 
-	if (!MTGS::IsOpen())
-		MTGS::TryOpenGS();
+	if (!mtgs_is_open())
+		mtgs_try_open_gs();
 
 	return vk_negotiation_finish(context, instance, get_instance_proc_addr);
 }
@@ -269,8 +269,8 @@ bool create_device2_vulkan(retro_vulkan_context *context, VkInstance instance, V
 		GSConfig.Adapter = props.deviceName;
 	}
 
-	if (!MTGS::IsOpen())
-		MTGS::TryOpenGS();
+	if (!mtgs_is_open())
+		mtgs_try_open_gs();
 
 	return vk_negotiation_finish(context, instance, get_instance_proc_addr);
 }

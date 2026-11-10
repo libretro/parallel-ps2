@@ -301,7 +301,7 @@
     <ClCompile Include="CDVD\cdvd_iso.c" />
     <ClCompile Include="CDVD\CDVDcommon.c" />
     <ClCompile Include="GS.c" />
-    <ClCompile Include="MTGS.cpp" />
+    <ClCompile Include="MTGS.c" />
     <ClCompile Include="x86\ix86-32\iCore-32.cpp" />
     <ClCompile Include="x86\iCore.cpp" />
     <ClCompile Include="CDVD\IsoFS\iso9660.c" />

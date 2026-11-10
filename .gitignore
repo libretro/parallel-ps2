@@ -358,3 +358,5 @@ tests/eegifunit/.obj/
 tests/p2io/p2io_test.exe
 tests/stdlib/.build/
 tests/stdlib/.probe.cpp
+/tests/mtgsring/mtgsring
+/tests/mtgsring/mtgsring.exe

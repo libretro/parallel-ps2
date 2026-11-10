@@ -427,11 +427,11 @@ static void cpu_thread_pause(void)
 	while (VMManager::GetState() == VMState::Running
 		&& retro_atomic_load_acquire_int(&cpu_thread_resumes_taken)
 		!= retro_atomic_load_acquire_int(&cpu_thread_resumes))
-		MTGS::MainLoop(true);
+		mtgs_main_loop(true);
 	VMManager::SetPaused(true);
 	mtgs_frame_gate_stop(1);
 	while((VMState)retro_atomic_load_acquire_int(&cpu_thread_state) != VMState::Paused)
-		MTGS::MainLoop(true);
+		mtgs_main_loop(true);
 }
 
 /* Counterpart to cpu_thread_pause(): count the resume, store the new
@@ -2030,8 +2030,8 @@ static void libretro_context_reset(void)
 #endif
 	}
 #endif
-	if (!MTGS::IsOpen())
-		MTGS::TryOpenGS();
+	if (!mtgs_is_open())
+		mtgs_try_open_gs();
 
 	if (defrost_requested)
 	{
@@ -2072,7 +2072,7 @@ static void libretro_context_destroy(void)
 		defrost_requested = true;
 	GS_HW_CONTEXT_END();
 
-	MTGS::CloseGS();
+	mtgs_close_gs();
 #ifdef ENABLE_VULKAN
 	if (hw_render.context_type == RETRO_HW_CONTEXT_VULKAN)
 		vk_libretro_shutdown();
@@ -2255,7 +2255,7 @@ static void cpu_thread_entry(VMBootParameters boot_params)
 	retro_atomic_store_release_int(&cpu_thread_boot_result, 1);
 	retro_eventcount_notify(&cpu_thread_boot_ec);
 	/* Initialize() left the VM in Paused.  Deliberately do NOT flip it
-	 * to Running here: retro_run opens the GS (MTGS::TryOpenGS) before
+	 * to Running here: retro_run opens the GS (mtgs_try_open_gs) before
 	 * its Paused->resume check, so keeping the EE parked until then
 	 * means GSopen/ResetPCRTC reads SMODE/PMODE with no concurrent
 	 * gsWrite from this thread (TSan: GSState::GetVideoMode vs
@@ -2272,7 +2272,7 @@ static void cpu_thread_entry(VMBootParameters boot_params)
 				switch (_st)
 				{
 					case VMState::Initializing:
-						MTGS::MainLoop(false);
+						mtgs_main_loop(false);
 						continue;
 
 					case VMState::Running:
@@ -3069,12 +3069,12 @@ void retro_unload_game(void)
 	s_unserialize_backup      = NULL;
 	s_unserialize_backup_size = 0;
 
-	if (MTGS::IsOpen())
+	if (mtgs_is_open())
 	{
 		/* The frame the EE had ready is dropped with the game. */
 		cpu_thread_pause();
 		mtgs_pending.pending = 0;
-		MTGS::CloseGS();
+		mtgs_close_gs();
 	}
 
 	VMManager::Shutdown();
@@ -3171,7 +3171,7 @@ static void update_av_info(void)
 		return;
 	}
 
-	if (hw_vulkan && MTGS::IsOpen())
+	if (hw_vulkan && mtgs_is_open())
 		cpu_thread_pause();
 
 	environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av_info);
@@ -3202,8 +3202,8 @@ void retro_run(void)
 		return;
 	}
 
-	if (!MTGS::IsOpen())
-		MTGS::TryOpenGS();
+	if (!mtgs_is_open())
+		mtgs_try_open_gs();
 
 	/* One frame, and that frame's audio. When something since the last
 	 * retro_run drained the ring, the frame the EE had ready is pending
@@ -3225,7 +3225,7 @@ void retro_run(void)
 	else
 		mtgs_frame_gate_open();
 
-	if (!MTGS::MainLoop(false))
+	if (!mtgs_main_loop(false))
 	{
 		/* Bounded-wait timeout: the EE thread delivered no vsync within
 		 * the window.  Dupe the previous frame so the frontend's frame
@@ -3541,7 +3541,7 @@ static void state_quiesce(void)
 {
 	cpu_thread_pause();
 	mtvu_wait_vu();
-	MTGS::WaitGS(false);
+	mtgs_wait_gs(false);
 }
 
 /* The frontend says the state stays in this instance, to be loaded

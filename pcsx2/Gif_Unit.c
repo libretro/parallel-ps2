@@ -581,7 +581,7 @@ void gif_path_finish_mtvu(Gif_Path* path, bool final_packet)
 {
 	path->gsPack.cycles = final_packet ? 0 : 1;
 	/* Counted where every space check reads it: the GS thread takes it
-	 * off once it has sent the packet (MTGS.cpp, MTVU_GSPACKET). */
+	 * off once it has sent the packet (MTGS.c, MTVU_GSPACKET). */
 	retro_atomic_fetch_add_int(&gifPathReadAmount[path->idx].v, path->gsPack.size + path->gsPack.readAmount);
 	/* Wait for room for a whole packet before writing any of it: a short
 	 * write would put a partial record in the queue and every packet after

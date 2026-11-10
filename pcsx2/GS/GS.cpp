@@ -539,6 +539,27 @@ int GSfreeze(FreezeAction mode, freezeData* data)
 	return ops->freeze(static_cast<int>(mode), data);
 }
 
+void gs_open_emu(u8* basemem)
+{
+	GSopen(EmuConfig.GS, EmuConfig.GS.Renderer, hw_render.context_type, basemem);
+}
+
+void gs_update_config_emu(void)
+{
+	GSUpdateConfig(EmuConfig.GS, hw_render.context_type);
+}
+
+static_assert((int)GSHardwareDownloadMode::Enabled        == GS_HW_DOWNLOAD_ENABLED
+           && (int)GSHardwareDownloadMode::NoReadbacks    == GS_HW_DOWNLOAD_NO_READBACKS
+           && (int)GSHardwareDownloadMode::Unsynchronized == GS_HW_DOWNLOAD_UNSYNCHRONIZED
+           && (int)GSHardwareDownloadMode::Disabled       == GS_HW_DOWNLOAD_DISABLED,
+	"GSEntry.h mirrors GSHardwareDownloadMode");
+
+int gs_hw_download_mode(void)
+{
+	return (int)EmuConfig.GS.HWDownloadMode;
+}
+
 void GSUpdateConfig(const Pcsx2Config::GSOptions& new_config, enum retro_hw_context_type api)
 {
 	Pcsx2Config::GSOptions old_config(GSConfig);

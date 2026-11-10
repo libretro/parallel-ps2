@@ -21,6 +21,7 @@
 
 
 #include <libretro.h>
+#include "GSEntry.h"
 
 enum class RenderAPI
 {
@@ -67,7 +68,6 @@ s16 GSLookupMoveHandlerFunctionId(const char* name, size_t length);
 
 void GSinit(void);
 void GSshutdown(void);
-bool GSIsHardwareRenderer(void);
 void GSopen(const Pcsx2Config::GSOptions& config, GSRendererType renderer, enum retro_hw_context_type api, u8* basemem);
 bool GSreopen(bool recreate_device, bool recreate_renderer, const Pcsx2Config::GSOptions& old_config);
 /* True once the GS lost its device and could make no other: it draws and
@@ -92,14 +92,7 @@ struct gs_renderer_ops
 	u8*  (*regs_mem)(void);
 };
 
-void GSreset(bool hardware_reset);
-void GSclose(void);
 void GSgifSoftReset(u32 mask);
-void GSInitAndReadFIFO(u8* mem, u32 size);
-void GSReadLocalMemoryUnsync(u8* mem, u32 qwc, u64 BITBLITBUF, u64 TRXPOS, u64 TRXREG);
-void GSgifTransfer(const u8* mem, u32 size);
-void GSvsync(u32 field, bool registers_written);
-int GSfreeze(FreezeAction mode, freezeData* data);
 
 void GSUpdateConfig(const Pcsx2Config::GSOptions& new_config, enum retro_hw_context_type api);
 

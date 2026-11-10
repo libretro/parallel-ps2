@@ -186,18 +186,11 @@ typedef struct GSRegSIGBLID
 enum MTGS_RingCommand
 {
 	GS_RINGTYPE_VSYNC,
-	GS_RINGTYPE_FREEZE,
 	GS_RINGTYPE_RESET, /* issues a GSreset() command. */
 	GS_RINGTYPE_GSPACKET,
 	GS_RINGTYPE_MTVU_GSPACKET,
 	GS_RINGTYPE_INIT_AND_READ_FIFO
 };
-
-
-typedef struct MTGS_FreezeData
-{
-	freezeData* fdata;
-} MTGS_FreezeData;
 
 /* -------------------------------------------------------------------------------------- */
 /* MTGS */
@@ -219,39 +212,22 @@ extern void (*gs_hw_context_end)(void);
 #define GS_HW_CONTEXT_BEGIN() do { if (gs_hw_context_begin) gs_hw_context_begin(); } while (0)
 #define GS_HW_CONTEXT_END()   do { if (gs_hw_context_end)   gs_hw_context_end();   } while (0)
 
-#ifdef __cplusplus
-namespace MTGS
-{
-	bool IsOpen();
-
-	/* Waits for the GS to empty out the entire ring buffer contents. */
-	void WaitGS(bool isMTVU);
-	void ResetGS(bool hardware_reset);
-
-	void WaitForClose();
-	void Freeze(FreezeAction mode, MTGS_FreezeData& data);
-
-	void PostVsyncStart();
-	void InitAndReadFIFO(u8* mem, u32 qwc);
-
-	/* Returns false only when the bounded libretro-thread wait timed
-	 * out before a vsync was consumed; flush_all callers always get
-	 * true. */
-	bool MainLoop(bool flush_all);
-
-	void ApplySettings();
-
-	void TryOpenGS(void);
-	void CloseGS(void);
-};
-#endif
-
-/* MTGS::PostVsyncStart and MTGS::ResetGS, for C units (MTGS.cpp). */
+/* MTGS.c: the GS command ring, drained on the frontend's thread. */
 #ifdef __cplusplus
 extern "C" {
 #endif
-extern void mtgs_post_vsync_start(void);
+extern bool mtgs_is_open(void);
+/* Waits for the GS to empty out the entire ring buffer contents. */
+extern void mtgs_wait_gs(bool isMTVU);
 extern void mtgs_reset_gs(bool hardware_reset);
+extern void mtgs_wait_for_close(void);
+extern void mtgs_post_vsync_start(void);
+/* False only when the bounded frontend-thread wait timed out before a
+ * vsync was consumed; flush_all callers always get true. */
+extern bool mtgs_main_loop(bool flush_all);
+extern void mtgs_apply_settings(void);
+extern void mtgs_try_open_gs(void);
+extern void mtgs_close_gs(void);
 #ifdef __cplusplus
 }
 #endif
@@ -282,7 +258,7 @@ extern retro_atomic_int_t s_GSRegistersWritten;
 /* MTGS command-ring size in u128 qwords (must be a power of two). */
 
 /* The upstream 8 MiB ring is sized for a free-running GS thread that can lag */
-/* the EE by many frames. In the libretro topology MTGS::PostVsyncStart blocks */
+/* the EE by many frames. In the libretro topology mtgs_post_vsync_start blocks */
 /* the EE on WaitGS every vsync, so the ring never accumulates more than roughly */
 /* a frame of packets. Measured peak occupancy on real content: ~22k qwords in */
 /* the worst case (Shadow of the Colossus colossus fights); Tekken Tag, DMC3 and */
