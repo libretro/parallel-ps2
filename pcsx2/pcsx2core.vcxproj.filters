@@ -320,7 +320,7 @@
     <ClCompile Include="x86\BaseblockEx.cpp">
       <Filter>System\Ps2</Filter>
     </ClCompile>
-    <ClCompile Include="ps2\BiosTools.cpp">
+    <ClCompile Include="ps2\BiosTools.c">
       <Filter>System\Ps2</Filter>
     </ClCompile>
     <ClCompile Include="Counters.c">

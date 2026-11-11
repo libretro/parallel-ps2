@@ -653,7 +653,7 @@ set(pcsx2LinuxHeaders
 
 # ps2 sources
 set(pcsx2ps2Sources
-	ps2/BiosTools.cpp
+	ps2/BiosTools.c
 	ps2/pgif.c
 	ps2/Iop/IopHwRead.c
 	ps2/Iop/IopHwWrite.c

@@ -31,6 +31,7 @@
 #include "IopBios.h"
 #include "VUmicro.h"
 #include "ps2/HwInternal.h"
+#include "ps2/BiosTools.h"
 
 #include <file/file_path.h>
 
@@ -792,6 +793,27 @@ bool emu_config_boot2_injection(void)
 bool emu_config_irx_injected(void)
 {
 	return strlen(EmuConfig.CurrentIRX) > 3;
+}
+
+/* For BiosTools.c. */
+void emu_config_bios_path(char* out, size_t out_size)
+{
+	EmuConfig.FullpathToBios(out, out_size);
+}
+
+const char* emu_config_bios_name(void)
+{
+	return EmuConfig.BaseFilenames.Bios;
+}
+
+const char* emu_config_current_irx(void)
+{
+	return EmuConfig.CurrentIRX;
+}
+
+const char* emu_folders_bios(void)
+{
+	return EmuFolders::Bios;
 }
 
 bool emu_config_host_fs(void)

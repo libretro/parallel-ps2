@@ -1,8 +1,7 @@
 #!/bin/sh
-# What IsBIOS makes of a BIOS image (pcsx2/ps2/BiosTools.cpp), built into
-# the test with the libretro-common file streams it reads through. CI's
-# SANFLAGS, or SANITIZER, pass through. --gc-sections drops the parts of
-# BiosTools.cpp the test never reaches.
+# What pcsx2/ps2/BiosTools.c makes of a BIOS image, the real unit linked
+# with the libretro-common file streams it reads through and built as
+# C89, as the core builds it. CI's SANFLAGS, or SANITIZER, pass through.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
@@ -25,11 +24,12 @@ for c in streams/file_stream vfs/vfs_implementation file/file_path \
 	"$CC" -O1 -g -w $SANFLAGS -D__LIBRETRO__ -I "$LC/include" \
 		-c "$LC/$c.c" -o "$OBJ/$(echo $c | tr / _).o"
 done
-"$CXX" -std=c++17 -O1 -g -w -msse4.1 $SANFLAGS -D__LIBRETRO__ \
-	-ffunction-sections -fdata-sections -Wl,--gc-sections \
-	-I "$ROOT" -I "$ROOT/pcsx2" -I "$ROOT/common" -I "$ROOT/3rdparty/include" \
-	-I "$LC/include" \
-	-o "$DIR/biosver_test$EXE" "$DIR/main.cpp" "$OBJ"/*.o
+"$CC" -std=gnu89 -O1 -g -Wall -Werror=declaration-after-statement $SANFLAGS -D__LIBRETRO__ \
+	-I "$ROOT" -I "$ROOT/pcsx2" -I "$ROOT/common" -I "$LC/include" \
+	-c "$ROOT/pcsx2/ps2/BiosTools.c" -o "$OBJ/biostools.o"
+"$CC" -std=gnu89 -O1 -g -w $SANFLAGS -D__LIBRETRO__ \
+	-I "$ROOT" -I "$ROOT/pcsx2" -I "$ROOT/common" -I "$LC/include" \
+	-o "$DIR/biosver_test$EXE" "$DIR/main.c" "$OBJ"/*.o
 rm -rf "$OBJ"
 SCRATCH="$DIR/.scratch"
 rm -rf "$SCRATCH" && mkdir -p "$SCRATCH"

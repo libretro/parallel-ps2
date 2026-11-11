@@ -220,7 +220,7 @@
     <ClCompile Include="SaveState.cpp" />
     <ClCompile Include="Elfheader.c" />
     <ClCompile Include="x86\BaseblockEx.cpp" />
-    <ClCompile Include="ps2\BiosTools.cpp" />
+    <ClCompile Include="ps2\BiosTools.c" />
     <ClCompile Include="Counters.c" />
     <ClCompile Include="FiFo.c" />
     <ClCompile Include="Hw.c" />

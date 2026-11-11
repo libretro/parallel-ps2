@@ -24,10 +24,14 @@ typedef struct BiosDebugInformation
 	u32 iopModListAddr;
 } BiosDebugInformation;
 
-/* MSVC decorates C++ data symbols; the ELF ABI does not. A variable a C
- * unit references therefore has to be declared -- and so, through this
- * header, defined -- with C language linkage, or the Windows link fails
- * on an undecorated reference while every other target is fine. */
+#define BIOS_DESCRIPTION_MAX 96
+#define BIOS_SERIAL_MAX      32
+#define BIOS_ZONE_MAX        16
+
+/* BiosTools.c is C; C++ callers (libretro/main.cpp, VMManager.cpp) see
+ * its data and functions with C linkage, which MSVC also needs for data:
+ * it decorates C++ data symbols, so an undecorated reference from a C
+ * unit would not link. */
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -44,29 +48,27 @@ extern "C" {
 	extern bool NoOSD;			/* Used for HLE OSD Config Params */
 	/* The BIOS image's path; empty when none is loaded. */
 	extern char BiosPath[];
-#ifdef __cplusplus
-}
-#endif
-#define BIOS_DESCRIPTION_MAX 96
-#define BIOS_SERIAL_MAX      32
-#define BIOS_ZONE_MAX        16
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 	extern char BiosDescription[];
+	extern char BiosSerial[];
+
+	bool LoadBIOS(void);
+	bool IsBIOS(const char *filename, u32 *version, char *description, size_t description_size, u32 *region, char *zone, size_t zone_size);
+	bool IsBIOSAvailable(const char* full_path);
+	/* The arcade BIOS a Python game boots with, as a file name in dir: the
+	 * selected one when it is a COH-H BIOS, otherwise the first COH-H BIOS
+	 * in dir by name. False when dir has none. */
+	bool FindArcadeBios(const char* dir, const char* selected, char* out, size_t out_size);
+
+	/* What BiosTools.c reads of the configuration (Pcsx2Config.cpp). */
+	/* The configured BIOS's full path into out; empty when none is set. */
+	void emu_config_bios_path(char* out, size_t out_size);
+	/* The configured BIOS's file name, for messages. */
+	const char* emu_config_bios_name(void);
+	/* The IRX run in place of the BIOS's, when emu_config_irx_injected(). */
+	const char* emu_config_current_irx(void);
+	bool emu_config_irx_injected(void);
+	/* The folder BIOS images are looked for in. */
+	const char* emu_folders_bios(void);
 #ifdef __cplusplus
 }
 #endif
-extern char BiosSerial[];
-#ifdef __cplusplus
-extern "C"
-#endif
-bool LoadBIOS(void);
-extern bool IsBIOS(const char *filename, u32 *version, char *description, size_t description_size, u32 *region, char *zone, size_t zone_size);
-extern bool IsBIOSAvailable(const char* full_path);
-/* The arcade BIOS a Python game boots with, as a file name in dir: the
- * selected one when it is a COH-H BIOS, otherwise the first COH-H BIOS
- * in dir by name. False when dir has none. */
-extern bool FindArcadeBios(const char* dir, const char* selected, char* out, size_t out_size);
-

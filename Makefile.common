@@ -377,10 +377,8 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/USB/usb-eyetoy/usb-eyetoy-webcam.cpp
 
 # pcsx2/ps2
-SOURCES_CXX += \
-	$(LRPS2_DIR)/ps2/BiosTools.cpp
-
 SOURCES_C += \
+	$(LRPS2_DIR)/ps2/BiosTools.c \
 	$(LRPS2_DIR)/IopBios.c \
 	$(LRPS2_DIR)/IopMem.c \
 	$(LRPS2_DIR)/R3000A.c \
