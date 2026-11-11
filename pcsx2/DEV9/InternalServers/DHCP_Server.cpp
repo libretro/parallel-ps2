@@ -92,10 +92,10 @@ namespace InternalServers
 
 		switch (EmuConfig.DEV9.ModeDNS1)
 		{
-			case Pcsx2Config::DEV9Options::DnsMode::Manual:
+			case EMU_DNS_MANUAL:
 				dns1 = *(IP_Address*)EmuConfig.DEV9.DNS1;
 				break;
-			case Pcsx2Config::DEV9Options::DnsMode::Internal:
+			case EMU_DNS_INTERNAL:
 				dns1 = {{{192, 0, 2, 1}}};
 				break;
 			default:
@@ -104,17 +104,17 @@ namespace InternalServers
 
 		switch (EmuConfig.DEV9.ModeDNS2)
 		{
-			case Pcsx2Config::DEV9Options::DnsMode::Manual:
+			case EMU_DNS_MANUAL:
 				dns2 = *(IP_Address*)EmuConfig.DEV9.DNS2;
 				break;
-			case Pcsx2Config::DEV9Options::DnsMode::Internal:
+			case EMU_DNS_INTERNAL:
 				dns2 = {{{192, 0, 2, 1}}};
 				break;
 			default:
 				break;
 		}
 
-		AutoDNS(adapter, EmuConfig.DEV9.ModeDNS1 == Pcsx2Config::DEV9Options::DnsMode::Auto, EmuConfig.DEV9.ModeDNS2 == Pcsx2Config::DEV9Options::DnsMode::Auto);
+		AutoDNS(adapter, EmuConfig.DEV9.ModeDNS1 == EMU_DNS_AUTO, EmuConfig.DEV9.ModeDNS2 == EMU_DNS_AUTO);
 		AutoBroadcast(ps2IP, netmask);
 	}
 

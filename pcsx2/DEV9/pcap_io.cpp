@@ -87,7 +87,7 @@ PCAPAdapter::PCAPAdapter()
 	std::string pcapAdapter = EmuConfig.DEV9.EthDevice;
 #endif
 
-	switched = EmuConfig.DEV9.EthApi == Pcsx2Config::DEV9Options::NetApi::PCAP_Switched;
+	switched = EmuConfig.DEV9.EthApi == EMU_NETAPI_PCAP_SWITCHED;
 
 	if (!InitPCAP(pcapAdapter, switched))
 	{
@@ -234,7 +234,7 @@ std::vector<AdapterEntry> PCAPAdapter::GetAdapters()
 	while (d != NULL)
 	{
 		AdapterEntry entry;
-		entry.type = Pcsx2Config::DEV9Options::NetApi::PCAP_Switched;
+		entry.type = EMU_NETAPI_PCAP_SWITCHED;
 #ifdef _WIN32
 		//guid
 		if (!string_starts_with(d->name, PCAPPREFIX))
@@ -272,7 +272,7 @@ std::vector<AdapterEntry> PCAPAdapter::GetAdapters()
 #endif
 
 		nic.push_back(entry);
-		entry.type = Pcsx2Config::DEV9Options::NetApi::PCAP_Bridged;
+		entry.type = EMU_NETAPI_PCAP_BRIDGED;
 		nic.push_back(entry);
 		d = d->next;
 	}

@@ -99,7 +99,7 @@ std::vector<AdapterEntry> SocketAdapter::GetAdapters()
 {
 	std::vector<AdapterEntry> nic;
 	AdapterEntry autoEntry;
-	autoEntry.type = Pcsx2Config::DEV9Options::NetApi::Sockets;
+	autoEntry.type = EMU_NETAPI_SOCKETS;
 	autoEntry.name = "Auto";
 	autoEntry.guid = "Auto";
 	nic.push_back(autoEntry);
@@ -146,7 +146,7 @@ std::vector<AdapterEntry> SocketAdapter::GetAdapters()
 			pAdapterInfo->OperStatus == IfOperStatusUp)
 		{
 			AdapterEntry entry;
-			entry.type = Pcsx2Config::DEV9Options::NetApi::Sockets;
+			entry.type = EMU_NETAPI_SOCKETS;
 			entry.name = WideStringToUTF8String(pAdapterInfo->FriendlyName);
 			entry.guid = pAdapterInfo->AdapterName;
 
@@ -174,7 +174,7 @@ std::vector<AdapterEntry> SocketAdapter::GetAdapters()
 			pAdapter->ifa_addr->sa_family == AF_INET)
 		{
 			AdapterEntry entry;
-			entry.type = Pcsx2Config::DEV9Options::NetApi::Sockets;
+			entry.type = EMU_NETAPI_SOCKETS;
 			entry.name = pAdapter->ifa_name;
 			entry.guid = pAdapter->ifa_name;
 

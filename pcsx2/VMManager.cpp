@@ -1178,7 +1178,7 @@ void VMManager::CheckForPatchConfigChanges(const Pcsx2Config& old_config)
 
 void VMManager::CheckForDEV9ConfigChanges(const Pcsx2Config& old_config)
 {
-	if (EmuConfig.DEV9 == old_config.DEV9)
+	if (emu_dev9_equal(&EmuConfig.DEV9, &old_config.DEV9))
 		return;
 
 	DEV9CheckChanges(old_config);

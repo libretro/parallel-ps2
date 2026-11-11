@@ -98,6 +98,40 @@ bool emu_cpu_recompilers_changed(const EmuCpuOptions* a, const EmuCpuOptions* b)
 		|| a->Recompiler.EnableVU1 != b->Recompiler.EnableVU1;
 }
 
+void emu_dev9_defaults(EmuDev9Options* o)
+{
+	memset(o, 0, sizeof(*o));
+	o->EthApi      = EMU_NETAPI_UNSET;
+	o->AutoMask    = true;
+	o->AutoGateway = true;
+	o->ModeDNS1    = EMU_DNS_AUTO;
+	o->ModeDNS2    = EMU_DNS_AUTO;
+	memcpy(o->HddFile, "DEV9hdd.raw", sizeof("DEV9hdd.raw"));
+	o->HddSizeSectors = 40u * (1024 * 1024 * 1024 / 512);
+}
+
+bool emu_dev9_equal(const EmuDev9Options* a, const EmuDev9Options* b)
+{
+	return a->EthEnable == b->EthEnable
+		&& a->EthApi == b->EthApi
+		&& strcmp(a->EthDevice, b->EthDevice) == 0
+		&& a->EthLogDNS == b->EthLogDNS
+		&& a->InterceptDHCP == b->InterceptDHCP
+		&& memcmp(a->PS2IP, b->PS2IP, 4) == 0
+		&& memcmp(a->Mask, b->Mask, 4) == 0
+		&& memcmp(a->Gateway, b->Gateway, 4) == 0
+		&& memcmp(a->DNS1, b->DNS1, 4) == 0
+		&& memcmp(a->DNS2, b->DNS2, 4) == 0
+		&& a->AutoMask == b->AutoMask
+		&& a->AutoGateway == b->AutoGateway
+		&& a->ModeDNS1 == b->ModeDNS1
+		&& a->ModeDNS2 == b->ModeDNS2
+		&& a->HddEnable == b->HddEnable
+		&& strcmp(a->HddFile, b->HddFile) == 0
+		&& strcmp(a->HddIdFile, b->HddIdFile) == 0
+		&& a->HddSizeSectors == b->HddSizeSectors;
+}
+
 void emu_gamefix_clear_all(EmuGamefixOptions* o)
 {
 	o->bitset = 0;

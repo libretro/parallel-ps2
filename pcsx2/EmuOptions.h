@@ -133,6 +133,54 @@ typedef struct EmuCpuOptions
 	u32 AffinityControlMode;
 } EmuCpuOptions;
 
+/* The network adapter API DEV9 uses. */
+enum EmuNetApi
+{
+	EMU_NETAPI_UNSET         = 0,
+	EMU_NETAPI_PCAP_BRIDGED  = 1,
+	EMU_NETAPI_PCAP_SWITCHED = 2,
+	EMU_NETAPI_TAP           = 3,
+	EMU_NETAPI_SOCKETS       = 4
+};
+
+/* Where a DNS server address the DHCP server hands out comes from. */
+enum EmuDnsMode
+{
+	EMU_DNS_MANUAL   = 0,
+	EMU_DNS_AUTO     = 1,
+	EMU_DNS_INTERNAL = 2
+};
+
+/* DEV9: the network adapter and the hard drive. */
+typedef struct EmuDev9Options
+{
+	bool EthEnable;
+	enum EmuNetApi EthApi;
+	/* The adapter to use; "Auto" picks one. */
+	char EthDevice[256];
+	bool EthLogDNS;
+
+	bool InterceptDHCP;
+	u8 PS2IP[4];
+	u8 Mask[4];
+	u8 Gateway[4];
+	u8 DNS1[4];
+	u8 DNS2[4];
+	bool AutoMask;
+	bool AutoGateway;
+	enum EmuDnsMode ModeDNS1;
+	enum EmuDnsMode ModeDNS2;
+
+	bool HddEnable;
+	char HddFile[PCSX2_PATH_MAX];
+	/* The drive's SCE security block; empty, <HddFile>.hddid is used
+	 * when there is one. */
+	char HddIdFile[PCSX2_PATH_MAX];
+	/* The PS2's HDD max size is 2TB, 2^32 512-byte sectors; without
+	 * 48-bit LBA the limit here is lower. */
+	u32 HddSizeSectors;
+} EmuDev9Options;
+
 /* NOTE: the order of the bits is the order of the game fixes panel. */
 typedef struct EmuGamefixOptions
 {
@@ -216,6 +264,11 @@ void emu_cpu_defaults(EmuCpuOptions* o);
 bool emu_cpu_equal(const EmuCpuOptions* a, const EmuCpuOptions* b);
 /* Whether a different set of recompilers runs: the CPUs need a reset. */
 bool emu_cpu_recompilers_changed(const EmuCpuOptions* a, const EmuCpuOptions* b);
+
+/* Defaults: no network, an automatic mask, gateway and DNS, and a 40 GB
+ * drive in DEV9hdd.raw, both off. */
+void emu_dev9_defaults(EmuDev9Options* o);
+bool emu_dev9_equal(const EmuDev9Options* a, const EmuDev9Options* b);
 
 /* Every game fix off. */
 void emu_gamefix_clear_all(EmuGamefixOptions* o);

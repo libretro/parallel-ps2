@@ -57,6 +57,28 @@ int main(void)
 		check(!emu_cpu_equal(&c, &d) && !emu_cpu_recompilers_changed(&c, &d), "fastmem is not a recompiler");
 	}
 
+	{
+		EmuDev9Options c, d;
+		emu_dev9_defaults(&c);
+		check(!c.EthEnable && c.EthApi == EMU_NETAPI_UNSET && !c.EthDevice[0] && c.AutoMask && c.AutoGateway
+			&& c.ModeDNS1 == EMU_DNS_AUTO && c.ModeDNS2 == EMU_DNS_AUTO && !c.HddEnable
+			&& !strcmp(c.HddFile, "DEV9hdd.raw") && !c.HddIdFile[0]
+			&& c.HddSizeSectors == 40u * (1024 * 1024 * 1024 / 512),
+			"DEV9 defaults: no network, automatic addressing, a 40 GB DEV9hdd.raw, both off");
+		d = c;
+		check(emu_dev9_equal(&c, &d), "a copy is equal");
+		d.Mask[3] = 255;
+		check(!emu_dev9_equal(&c, &d), "the subnet mask counts");
+		d = c;
+		d.HddIdFile[0] = 'x';
+		d.HddIdFile[1] = '\0';
+		check(!emu_dev9_equal(&c, &d), "so does the drive's security block");
+		/* Past the terminator does not. */
+		d = c;
+		d.HddFile[sizeof(d.HddFile) - 1] = 'x';
+		check(emu_dev9_equal(&c, &d), "what follows a path's terminator does not");
+	}
+
 	/* Every rounding mode reads back as set, on either architecture. */
 	{
 		FPControlRegister r = fpcr_emu_default();

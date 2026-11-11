@@ -1251,7 +1251,7 @@ static void check_variables(bool first_run)
 			s_option_config.DEV9.EthEnable = setting_dev9_eth;
 			if (setting_dev9_eth)
 			{
-				s_option_config.DEV9.EthApi = Pcsx2Config::DEV9Options::NetApi::Sockets;
+				s_option_config.DEV9.EthApi = EMU_NETAPI_SOCKETS;
 				strlcpy(s_option_config.DEV9.EthDevice, "Auto", sizeof(s_option_config.DEV9.EthDevice));
 			}
 			updated = true;
@@ -2610,7 +2610,7 @@ static bool libretro_load_python2(const char* path)
 			s_option_config.DEV9.HddSizeSectors = (uint)(size / 512);
 	}
 	s_option_config.DEV9.EthEnable = true;
-	s_option_config.DEV9.EthApi    = Pcsx2Config::DEV9Options::NetApi::Sockets;
+	s_option_config.DEV9.EthApi    = EMU_NETAPI_SOCKETS;
 	strlcpy(s_option_config.DEV9.EthDevice, "Auto", sizeof(s_option_config.DEV9.EthDevice));
 	s_option_config.Gamefixes.OPHFlagHack = true;
 	s_option_config.GS.PCRTCOverscan = true;

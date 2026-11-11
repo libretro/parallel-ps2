@@ -56,7 +56,7 @@ struct NetPacket
 
 struct AdapterEntry
 {
-	Pcsx2Config::DEV9Options::NetApi type;
+	enum EmuNetApi type;
 	//UTF8
 	std::string name;
 	std::string guid;

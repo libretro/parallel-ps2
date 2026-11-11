@@ -218,26 +218,6 @@ bool Pcsx2Config::GSOptions::UseHardwareRenderer() const
 	return (Renderer != GSRendererType::SW);
 }
 
-const char* Pcsx2Config::DEV9Options::NetApiNames[] = {
-	"Unset",
-	"PCAP Bridged",
-	"PCAP Switched",
-	"TAP",
-	"Sockets",
-	nullptr};
-
-const char* Pcsx2Config::DEV9Options::DnsModeNames[] = {
-	"Manual",
-	"Auto",
-	"Internal",
-	nullptr};
-
-Pcsx2Config::DEV9Options::DEV9Options()
-{
-	EthDevice[0] = '\0';
-	strlcpy(HddFile, "DEV9hdd.raw", sizeof(HddFile));
-	HddIdFile[0] = '\0';
-}
 
 
 
@@ -246,6 +226,7 @@ Pcsx2Config::DEV9Options::DEV9Options()
 Pcsx2Config::Pcsx2Config()
 {
 	emu_cpu_defaults(&Cpu);
+	emu_dev9_defaults(&DEV9);
 	emu_speedhack_defaults(&Speedhacks);
 	emu_gamefix_clear_all(&Gamefixes);
 	BaseFilenames.Bios[0] = '\0';
@@ -303,7 +284,7 @@ bool Pcsx2Config::operator==(const Pcsx2Config& right) const
 		OpEqu(bitset) &&
 		emu_cpu_equal(&Cpu, &right.Cpu) &&
 		OpEqu(GS) &&
-		OpEqu(DEV9) &&
+		emu_dev9_equal(&DEV9, &right.DEV9) &&
 		emu_speedhack_equal(&Speedhacks, &right.Speedhacks) &&
 		OpEqu(Gamefixes.bitset) &&
 		(strcmp(BaseFilenames.Bios, right.BaseFilenames.Bios) == 0) &&

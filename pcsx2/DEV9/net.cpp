@@ -284,13 +284,13 @@ NetAdapter* GetNetAdapter()
 	switch (EmuConfig.DEV9.EthApi)
 	{
 #ifdef _WIN32
-		case Pcsx2Config::DEV9Options::NetApi::TAP:
+		case EMU_NETAPI_TAP:
 			/* No TAP implementation is in the tree. */
 			log_cb(RETRO_LOG_ERROR, "DEV9: TAP backend not present in this core, use the Sockets api\n");
 			return 0;
 #endif
-		case Pcsx2Config::DEV9Options::NetApi::PCAP_Bridged:
-		case Pcsx2Config::DEV9Options::NetApi::PCAP_Switched:
+		case EMU_NETAPI_PCAP_BRIDGED:
+		case EMU_NETAPI_PCAP_SWITCHED:
 #ifdef HAVE_PCAP
 			na = static_cast<NetAdapter*>(new PCAPAdapter());
 			break;
@@ -298,7 +298,7 @@ NetAdapter* GetNetAdapter()
 			log_cb(RETRO_LOG_ERROR, "DEV9: PCAP backend not built into this core, use the Sockets api\n");
 			return 0;
 #endif
-		case Pcsx2Config::DEV9Options::NetApi::Sockets:
+		case EMU_NETAPI_SOCKETS:
 			na = static_cast<NetAdapter*>(new SocketAdapter());
 			break;
 		default:
