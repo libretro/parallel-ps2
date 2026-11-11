@@ -935,7 +935,7 @@
     <ClCompile Include="VMManager.c">
       <Filter>System</Filter>
     </ClCompile>
-    <ClCompile Include="PAD\PAD.cpp">
+    <ClCompile Include="PAD\PAD.c">
       <Filter>System\Ps2\PAD</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\HW\GSTextureReplacements.cpp">
@@ -1526,12 +1526,6 @@
       <Filter>System\Ps2\GS\Renderers\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="GS.h" />
-    <ClInclude Include="Frontend\InputBinding.h">
-      <Filter>Host</Filter>
-    </ClInclude>
-    <ClInclude Include="Frontend\InputManager.h">
-      <Filter>Host</Filter>
-    </ClInclude>
     <ClInclude Include="Frontend\LayeredSettingsInterface.h">
       <Filter>Host</Filter>
     </ClInclude>

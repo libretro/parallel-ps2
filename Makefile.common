@@ -340,7 +340,7 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/IPU/IPU_MultiISA.cpp
 
 # pcsx2/PAD
-SOURCES_CXX += $(LRPS2_DIR)/PAD/PAD.cpp
+SOURCES_C += $(LRPS2_DIR)/PAD/PAD.c
 
 # pcsx2/USB (OHCI host-controller core, HID, Python 2 and EyeToy device
 # models)

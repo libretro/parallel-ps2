@@ -1,4 +1,4 @@
-﻿/*  PCSX2 - PS2 Emulator for PCs
+/*  PCSX2 - PS2 Emulator for PCs
  *  Copyright (C) 2002-2021  PCSX2 Dev Team
  *
  *  PCSX2 is free software: you can redistribute it and/or modify it under the terms
@@ -13,20 +13,13 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <libretro.h>
-
 #include <string.h>
+#include <libretro.h>
 
 #include "PAD.h"
 
-#include "HostFS.h"
 #include "../../common/Pcsx2Defs.h"
-
-#include "../Frontend/InputManager.h"
-#include "../Host.h"
+#include "../Config.h"
 #include "../Sio.h"
 #include "../USB/USB.h"
 #include "../USB/usb-host.h"
@@ -44,7 +37,6 @@
 /* Total number of pad ports, across both multitaps. */
 #define NUM_CONTROLLER_PORTS 8
 
-#define DEFAULT_MOTOR_SCALE 1.0f
 #define Q8_ONE  256u
 #define Q16_ONE 65536u
 
@@ -67,49 +59,59 @@ enum PadCommands
 
 enum gamePadValues
 {
-	PAD_UP = 0,   //  0  - Directional pad ↑
-	PAD_RIGHT,    //  1  - Directional pad →
-	PAD_DOWN,     //  2  - Directional pad ↓
-	PAD_LEFT,     //  3  - Directional pad ←
-	PAD_TRIANGLE, //  4  - Triangle button ▲
-	PAD_CIRCLE,   //  5  - Circle button ●
-	PAD_CROSS,    //  6  - Cross button ✖
-	PAD_SQUARE,   //  7  - Square button ■
-	PAD_SELECT,   //  8  - Select button
-	PAD_START,    //  9  - Start button
-	PAD_L1,       // 10  - L1 button
-	PAD_L2,       // 11  - L2 button
-	PAD_R1,       // 12  - R1 button
-	PAD_R2,       // 13  - R2 button
-	PAD_L3,       // 14  - Left joystick button (L3)
-	PAD_R3,       // 15  - Right joystick button (R3)
-	PAD_ANALOG,   // 16  - Analog mode toggle
-	PAD_PRESSURE, // 17  - Pressure modifier
-	PAD_L_UP,     // 18  - Left joystick (Up) ↑
-	PAD_L_RIGHT,  // 19  - Left joystick (Right) →
-	PAD_L_DOWN,   // 20  - Left joystick (Down) ↓
-	PAD_L_LEFT,   // 21  - Left joystick (Left) ←
-	PAD_R_UP,     // 22  - Right joystick (Up) ↑
-	PAD_R_RIGHT,  // 23  - Right joystick (Right) →
-	PAD_R_DOWN,   // 24  - Right joystick (Down) ↓
-	PAD_R_LEFT,   // 25  - Right joystick (Left) ←
+	PAD_UP = 0, /* 0  - Directional pad ↑ */
+	PAD_RIGHT, /* 1  - Directional pad → */
+	PAD_DOWN, /* 2  - Directional pad ↓ */
+	PAD_LEFT, /* 3  - Directional pad ← */
+	PAD_TRIANGLE, /* 4  - Triangle button ▲ */
+	PAD_CIRCLE, /* 5  - Circle button ● */
+	PAD_CROSS, /* 6  - Cross button ✖ */
+	PAD_SQUARE, /* 7  - Square button ■ */
+	PAD_SELECT, /* 8  - Select button */
+	PAD_START, /* 9  - Start button */
+	PAD_L1,       /* 10  - L1 button */
+	PAD_L2,       /* 11  - L2 button */
+	PAD_R1,       /* 12  - R1 button */
+	PAD_R2,       /* 13  - R2 button */
+	PAD_L3,       /* 14  - Left joystick button (L3) */
+	PAD_R3,       /* 15  - Right joystick button (R3) */
+	PAD_ANALOG, /* 16  - Analog mode toggle */
+	PAD_PRESSURE, /* 17  - Pressure modifier */
+	PAD_L_UP, /* 18  - Left joystick (Up) ↑ */
+	PAD_L_RIGHT, /* 19  - Left joystick (Right) → */
+	PAD_L_DOWN, /* 20  - Left joystick (Down) ↓ */
+	PAD_L_LEFT, /* 21  - Left joystick (Left) ← */
+	PAD_R_UP, /* 22  - Right joystick (Up) ↑ */
+	PAD_R_RIGHT, /* 23  - Right joystick (Right) → */
+	PAD_R_DOWN, /* 24  - Right joystick (Down) ↓ */
+	PAD_R_LEFT, /* 25  - Right joystick (Left) ← */
 	MAX_KEYS
 };
 
-// Full state to manage save state
-struct PadFullFreezeData
+enum ControllerType
 {
-	char format[8];
-	// active slot for port
-	u8 slot[2];
-	PadFreezeData padData[2][4];
-	QueryInfo query;
+	NotConnected = 0,
+	DualShock2
+};
+
+enum VibrationCapabilities
+{
+	NoVibration = 0,
+	LargeSmallMotors,
+	SingleMotor
 };
 
 struct KeyStatus
 {
-	ControllerType m_type[NUM_CONTROLLER_PORTS] = {};
+	enum ControllerType m_type[NUM_CONTROLLER_PORTS];
 	u16 m_vibration_scale_q8[NUM_CONTROLLER_PORTS][2]; /* 8.8 fixed */
+};
+
+struct ControllerInfo
+{
+	enum ControllerType type;
+	const char* name;
+	enum VibrationCapabilities vibration_caps;
 };
 
 /* Combined "USB Keyboard + Mouse" port device: one menu selection that
@@ -117,45 +119,14 @@ struct KeyStatus
  * matching the two-device topology a real PS2 keyboard/mouse presented. */
 #define RETRO_DEVICE_KEYBOARD_AND_MOUSE RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_KEYBOARD, 0)
 
-static const InputBindingInfo s_dualshock2_binds[] = {
-	{"Up", "D-Pad Up", InputBindingInfo::Type::Button, PAD_UP, GenericInputBinding::DPadUp},
-	{"Right", "D-Pad Right", InputBindingInfo::Type::Button, PAD_RIGHT, GenericInputBinding::DPadRight},
-	{"Down", "D-Pad Down", InputBindingInfo::Type::Button, PAD_DOWN, GenericInputBinding::DPadDown},
-	{"Left", "D-Pad Left", InputBindingInfo::Type::Button, PAD_LEFT, GenericInputBinding::DPadLeft},
-	{"Triangle", "Triangle", InputBindingInfo::Type::Button, PAD_TRIANGLE, GenericInputBinding::Triangle},
-	{"Circle", "Circle", InputBindingInfo::Type::Button, PAD_CIRCLE, GenericInputBinding::Circle},
-	{"Cross", "Cross", InputBindingInfo::Type::Button, PAD_CROSS, GenericInputBinding::Cross},
-	{"Square", "Square", InputBindingInfo::Type::Button, PAD_SQUARE, GenericInputBinding::Square},
-	{"Select", "Select", InputBindingInfo::Type::Button, PAD_SELECT, GenericInputBinding::Select},
-	{"Start", "Start", InputBindingInfo::Type::Button, PAD_START, GenericInputBinding::Start},
-	{"L1", "L1 (Left Bumper)", InputBindingInfo::Type::Button, PAD_L1, GenericInputBinding::L1},
-	{"L2", "L2 (Left Trigger)", InputBindingInfo::Type::HalfAxis, PAD_L2, GenericInputBinding::L2},
-	{"R1", "R1 (Right Bumper)", InputBindingInfo::Type::Button, PAD_R1, GenericInputBinding::R1},
-	{"R2", "R2 (Right Trigger)", InputBindingInfo::Type::HalfAxis, PAD_R2, GenericInputBinding::R2},
-	{"L3", "L3 (Left Stick Button)", InputBindingInfo::Type::Button, PAD_L3, GenericInputBinding::L3},
-	{"R3", "R3 (Right Stick Button)", InputBindingInfo::Type::Button, PAD_R3, GenericInputBinding::R3},
-	{"Analog", "Analog Toggle", InputBindingInfo::Type::Button, PAD_ANALOG, GenericInputBinding::System},
-	{"Pressure", "Apply Pressure", InputBindingInfo::Type::Button, PAD_PRESSURE, GenericInputBinding::Unknown},
-	{"LUp", "Left Stick Up", InputBindingInfo::Type::HalfAxis, PAD_L_UP, GenericInputBinding::LeftStickUp},
-	{"LRight", "Left Stick Right", InputBindingInfo::Type::HalfAxis, PAD_L_RIGHT, GenericInputBinding::LeftStickRight},
-	{"LDown", "Left Stick Down", InputBindingInfo::Type::HalfAxis, PAD_L_DOWN, GenericInputBinding::LeftStickDown},
-	{"LLeft", "Left Stick Left", InputBindingInfo::Type::HalfAxis, PAD_L_LEFT, GenericInputBinding::LeftStickLeft},
-	{"RUp", "Right Stick Up", InputBindingInfo::Type::HalfAxis, PAD_R_UP, GenericInputBinding::RightStickUp},
-	{"RRight", "Right Stick Right", InputBindingInfo::Type::HalfAxis, PAD_R_RIGHT, GenericInputBinding::RightStickRight},
-	{"RDown", "Right Stick Down", InputBindingInfo::Type::HalfAxis, PAD_R_DOWN, GenericInputBinding::RightStickDown},
-	{"RLeft", "Right Stick Left", InputBindingInfo::Type::HalfAxis, PAD_R_LEFT, GenericInputBinding::RightStickLeft},
-	{"LargeMotor", "Large (Low Frequency) Motor", InputBindingInfo::Type::Motor, 0, GenericInputBinding::LargeMotor},
-	{"SmallMotor", "Small (High Frequency) Motor", InputBindingInfo::Type::Motor, 0, GenericInputBinding::SmallMotor},
+static const struct ControllerInfo s_controller_info[] = {
+	{NotConnected, "None", NoVibration},
+	{DualShock2, "DualShock2", LargeSmallMotors},
 };
 
-static const PAD::ControllerInfo s_controller_info[] = {
-	{NotConnected, "None", nullptr, 0, NoVibration},
-	{DualShock2, "DualShock2", s_dualshock2_binds, C89_ARRAY_SIZE(s_dualshock2_binds), LargeSmallMotors},
-};
+static struct KeyStatus g_key_status;
 
-static KeyStatus g_key_status;
-
-// Typical packet response on the bus
+/* Typical packet responses on the bus */
 static const u8 ConfigExit[7]    = {0x5A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 static const u8 noclue[7]        = {0x5A, 0x00, 0x00, 0x02, 0x00, 0x00, 0x5A};
 static const u8 setMode[7]       = {0x5A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -172,20 +143,19 @@ static const u8 queryAct[2][7]   = {
 	{0x5A, 0x00, 0x00, 0x01, 0x01, 0x01, 0x14}};
 
 static QueryInfo query;
-static Pad pads[2][4];
+static PadFreezeData pads[2][4];
 static int slots[2] = {0, 0};
 
-// Set true on reset; cleared after the pad's initial mode has been forced to
-// analog (when the force_analog option is on). Ensures we set the *starting*
-// mode only, without overriding later game-driven mode changes.
+/* Set on reset, cleared once the pad's starting mode has been made analog
+ * (with force_analog on): only the starting mode, never a mode the game
+ * sets later. */
 static bool force_analog_pending[2][4];
 
-extern retro_environment_t environ_cb;
 static retro_input_poll_t poll_cb;
 static retro_input_state_t input_cb;
-struct retro_rumble_interface rumble;
+static struct retro_rumble_interface rumble;
 
-/* What the pads, and the USB keyboard and mouse, report. Input::Update,
+/* What the pads, and the USB keyboard and mouse, report. pad_input_update,
  * on the frontend's thread, fills the staged copy; pad_input_latch makes
  * it the live one, which PADpoll and the USB HID devices read on the EE
  * thread. The latch runs only while the EE is held - at the frame gate,
@@ -285,26 +255,27 @@ static int16_t pad_latched_input(unsigned port, unsigned device, unsigned index,
 
 static int pad_type[NUM_CONTROLLER_PORTS] = { -1, -1, -1, -1, -1, -1, -1, -1 };
 
-PadSettings pad_settings[2];
+#define PAD_SETTINGS_DEFAULT { 133u * 65536u / 100u, Q8_ONE, 1, 1, 1, 1, 0, 0, false }
+PadSettings pad_settings[2] = { PAD_SETTINGS_DEFAULT, PAD_SETTINGS_DEFAULT };
 
 static int keymap[] =
 {
-	RETRO_DEVICE_ID_JOYPAD_L2,     // PAD_L2
-	RETRO_DEVICE_ID_JOYPAD_R2,     // PAD_R2
-	RETRO_DEVICE_ID_JOYPAD_L,      // PAD_L1
-	RETRO_DEVICE_ID_JOYPAD_R,      // PAD_R1
-	RETRO_DEVICE_ID_JOYPAD_X,      // PAD_TRIANGLE
-	RETRO_DEVICE_ID_JOYPAD_A,      // PAD_CIRCLE
-	RETRO_DEVICE_ID_JOYPAD_B,      // PAD_CROSS
-	RETRO_DEVICE_ID_JOYPAD_Y,      // PAD_SQUARE
-	RETRO_DEVICE_ID_JOYPAD_SELECT, // PAD_SELECT
-	RETRO_DEVICE_ID_JOYPAD_L3,     // PAD_L3
-	RETRO_DEVICE_ID_JOYPAD_R3,     // PAD_R3
-	RETRO_DEVICE_ID_JOYPAD_START,  // PAD_START
-	RETRO_DEVICE_ID_JOYPAD_UP,     // PAD_UP
-	RETRO_DEVICE_ID_JOYPAD_RIGHT,  // PAD_RIGHT
-	RETRO_DEVICE_ID_JOYPAD_DOWN,   // PAD_DOWN
-	RETRO_DEVICE_ID_JOYPAD_LEFT,   // PAD_LEFT
+	RETRO_DEVICE_ID_JOYPAD_L2,     /* PAD_L2 */
+	RETRO_DEVICE_ID_JOYPAD_R2,     /* PAD_R2 */
+	RETRO_DEVICE_ID_JOYPAD_L, /* PAD_L1 */
+	RETRO_DEVICE_ID_JOYPAD_R, /* PAD_R1 */
+	RETRO_DEVICE_ID_JOYPAD_X, /* PAD_TRIANGLE */
+	RETRO_DEVICE_ID_JOYPAD_A, /* PAD_CIRCLE */
+	RETRO_DEVICE_ID_JOYPAD_B, /* PAD_CROSS */
+	RETRO_DEVICE_ID_JOYPAD_Y, /* PAD_SQUARE */
+	RETRO_DEVICE_ID_JOYPAD_SELECT, /* PAD_SELECT */
+	RETRO_DEVICE_ID_JOYPAD_L3,     /* PAD_L3 */
+	RETRO_DEVICE_ID_JOYPAD_R3,     /* PAD_R3 */
+	RETRO_DEVICE_ID_JOYPAD_START, /* PAD_START */
+	RETRO_DEVICE_ID_JOYPAD_UP, /* PAD_UP */
+	RETRO_DEVICE_ID_JOYPAD_RIGHT, /* PAD_RIGHT */
+	RETRO_DEVICE_ID_JOYPAD_DOWN, /* PAD_DOWN */
+	RETRO_DEVICE_ID_JOYPAD_LEFT, /* PAD_LEFT */
 };
 
 enum AnalogButtons
@@ -313,10 +284,10 @@ enum AnalogButtons
 	ANALOG_BTN_R2,
 	ANALOG_BTN_L1,
 	ANALOG_BTN_R1,
-	ANALOG_BTN_TRIANGLE, // X
-	ANALOG_BTN_CIRCLE,   // A
-	ANALOG_BTN_CROSS,    // B
-	ANALOG_BTN_SQUARE,   // Y
+	ANALOG_BTN_TRIANGLE, /* X */
+	ANALOG_BTN_CIRCLE, /* A */
+	ANALOG_BTN_CROSS, /* B */
+	ANALOG_BTN_SQUARE, /* Y */
 	ANALOG_BTN_UP,
 	ANALOG_BTN_RIGHT,
 	ANALOG_BTN_DOWN,
@@ -344,8 +315,9 @@ static u32 isqrt64(u64 v)
 	return (u32)r;
 }
 
-static void process_analog(int &axis_x, int &axis_y, u32 sensitivity_q16, u16 deadzone)
+static void process_analog(int* axis_x, int* axis_y, u32 sensitivity_q16, u16 deadzone)
 {
+	s64 x, y;
 	/* All-integer path: this output is emulated machine state (the pad
 	 * bytes games read), so it must not depend on the host's libm, FPU
 	 * mode, or -ffast-math.  Sensitivity is 16.16 fixed point, snapped
@@ -360,13 +332,13 @@ static void process_analog(int &axis_x, int &axis_y, u32 sensitivity_q16, u16 de
 		/* The clamp is not optional: the caller negates these axes for
 		 * inversion (axis_invert_* == -1), and a raw -32768 would
 		 * otherwise become +32768 and wrap the 8-bit pad axis. */
-		axis_x = pcsx2_clamp_i(axis_x, -32767, 32767);
-		axis_y = pcsx2_clamp_i(axis_y, -32767, 32767);
+		*axis_x = pcsx2_clamp_i(*axis_x, -32767, 32767);
+		*axis_y = pcsx2_clamp_i(*axis_y, -32767, 32767);
 		return;
 	}
 
-	s64 x = axis_x;
-	s64 y = axis_y;
+	x = *axis_x;
+	y = *axis_y;
 
 	if (deadzone > 0)
 	{
@@ -375,34 +347,33 @@ static void process_analog(int &axis_x, int &axis_y, u32 sensitivity_q16, u16 de
 
 		if (magnitude > deadzone)
 		{
-			// If we're past the deadzone, scale our values so we can still
-			// use slow movements when the stick is not fully pushed
+			/* Past the deadzone, scaled so slow movements still work
+			 * with the stick not fully pushed. */
 			const u32 scaled_q16 = (u32)(((u64)(magnitude - deadzone) << 16) / (32767u - deadzone));
 			x = (x * (s64)scaled_q16) >> 16;
 			y = (y * (s64)scaled_q16) >> 16;
 		}
 		else
 		{
-			axis_x = 0;
-			axis_y = 0;
+			*axis_x = 0;
+			*axis_y = 0;
 			return;
 		}
 	}
 
-	// Apply sensitivity
-	x      = (x * (s64)sensitivity_q16) >> 16;
-	y      = (y * (s64)sensitivity_q16) >> 16;
-	axis_x = pcsx2_clamp_i((int)x, -32767, 32767);
-	axis_y = pcsx2_clamp_i((int)y, -32767, 32767);
+	/* the sensitivity */
+	x       = (x * (s64)sensitivity_q16) >> 16;
+	y       = (y * (s64)sensitivity_q16) >> 16;
+	*axis_x = pcsx2_clamp_i((int)x, -32767, 32767);
+	*axis_y = pcsx2_clamp_i((int)y, -32767, 32767);
 }
 
 static u8 process_button(u16 deadzone, u32 port, int id, u32 mask)
 {
 	u16 value = input_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, id);
 
-	// If value is 0, either it's really not pressed or
-	// the button is not analog, check if the bit is set
-	// and return either 0 or a full press
+	/* 0 is not pressed, or a button that is not analog: the bit says
+	 * which, and it is 0 or a full press. */
 	if (value == 0)
 	{
 		if (mask & (1 << id))
@@ -410,23 +381,18 @@ static u8 process_button(u16 deadzone, u32 port, int id, u32 mask)
 		return 0;
 	}
 
-	// Apply deadzone
+	/* the deadzone, and the range scaled past it */
 	if (deadzone > 0)
 	{
 		if (value <= deadzone)
 			return 0;
-		// Scale the range
 		value = (value - deadzone) * 32767 / (32767 - deadzone);
 	}
 
-	// 0..32767 -> 0..255
+	/* 0..32767 -> 0..255 */
 	return value >> 7;
 }
 
-namespace Input
-{
-	void Init()
-	{
 #define JOY_DESC(port) \
 		{ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "D-Pad Left" }, \
 		{ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "D-Pad Up" }, \
@@ -449,142 +415,147 @@ namespace Input
 		{ port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, "Right Analog X" }, \
 		{ port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, "Right Analog Y" }
 
-		/* Frontend ports 0 and 1 are the console ports; each multitap
-		 * the option plugs in adds three more (pcsx2_multitap). Only the
-		 * ports that have a pad are offered, so the frontend shows no
-		 * port that is never read. */
-		struct retro_input_descriptor desc[] = {
-			JOY_DESC(0), JOY_DESC(1), JOY_DESC(2), JOY_DESC(3),
-			JOY_DESC(4), JOY_DESC(5), JOY_DESC(6), JOY_DESC(7),
-			{},
-		};
+/* Frontend ports 0 and 1 are the console ports; each multitap the option
+ * plugs in adds three more (pcsx2_multitap). Only the ports that have a pad
+ * are offered, so the frontend shows no port that is never read. */
+static const struct retro_input_descriptor s_all_desc[] = {
+	JOY_DESC(0), JOY_DESC(1), JOY_DESC(2), JOY_DESC(3),
+	JOY_DESC(4), JOY_DESC(5), JOY_DESC(6), JOY_DESC(7)
+};
+#define DESC_PER_PORT 20 /* entries JOY_DESC adds */
 
-		static const struct retro_controller_description port_devices[] = {
-			{ "DualShock 2", RETRO_DEVICE_JOYPAD },
-			{ "USB Keyboard", RETRO_DEVICE_KEYBOARD },
-			{ "USB Mouse", RETRO_DEVICE_MOUSE },
-			{ "USB Keyboard + Mouse", RETRO_DEVICE_KEYBOARD_AND_MOUSE },
-			{},
-		};
+void pad_input_init(void)
+{
+	static const struct retro_controller_description port_devices[] = {
+		{ "DualShock 2", RETRO_DEVICE_JOYPAD },
+		{ "USB Keyboard", RETRO_DEVICE_KEYBOARD },
+		{ "USB Mouse", RETRO_DEVICE_MOUSE },
+		{ "USB Keyboard + Mouse", RETRO_DEVICE_KEYBOARD_AND_MOUSE },
+		{ NULL, 0 }
+	};
+	/* The PS2 has two USB ports; a multitap slot takes only a pad. */
+	static const struct retro_controller_description tap_devices[] = {
+		{ "DualShock 2", RETRO_DEVICE_JOYPAD },
+		{ NULL, 0 }
+	};
+	static const struct retro_controller_info all_ports[] = {
+		{ port_devices, sizeof(port_devices) / sizeof(*port_devices) },
+		{ port_devices, sizeof(port_devices) / sizeof(*port_devices) },
+		{ tap_devices, 1 }, { tap_devices, 1 }, { tap_devices, 1 },
+		{ tap_devices, 1 }, { tap_devices, 1 }, { tap_devices, 1 }
+	};
+	/* Static, as the frontend may keep the pointers; the offered ports
+	 * copied from the full tables each time, then terminated, so a load
+	 * with fewer ports leaves the full tables whole for the next. */
+	static struct retro_controller_info ports[NUM_CONTROLLER_PORTS + 1];
+	static struct retro_input_descriptor desc[NUM_CONTROLLER_PORTS * DESC_PER_PORT + 1];
+	unsigned nports;
 
-		/* The PS2 has two USB ports; a multitap slot takes only a pad. */
-		static const struct retro_controller_description tap_devices[] = {
-			{ "DualShock 2", RETRO_DEVICE_JOYPAD },
-			{},
-		};
+	pad_read_multitap_option();
+	nports = 2 + ((pad_multitap & 1) ? 3 : 0) + ((pad_multitap & 2) ? 3 : 0);
+	memcpy(ports, all_ports, nports * sizeof(ports[0]));
+	memset(&ports[nports], 0, sizeof(ports[0]));
+	memcpy(desc, s_all_desc, nports * DESC_PER_PORT * sizeof(desc[0]));
+	memset(&desc[nports * DESC_PER_PORT], 0, sizeof(desc[0]));
 
-		static const struct retro_controller_info all_ports[] = {
-			{ port_devices, sizeof(port_devices) / sizeof(*port_devices) },
-			{ port_devices, sizeof(port_devices) / sizeof(*port_devices) },
-			{ tap_devices, 1 }, { tap_devices, 1 }, { tap_devices, 1 },
-			{ tap_devices, 1 }, { tap_devices, 1 }, { tap_devices, 1 },
-			{},
-		};
-		/* Static, as the table was: the frontend may keep the pointer. */
-		static struct retro_controller_info ports[NUM_CONTROLLER_PORTS + 1];
-		unsigned nports;
-		const unsigned per_port = 20; /* entries JOY_DESC adds */
+	environ_cb(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &rumble);
+	environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)ports);
+	environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, desc);
 
-		pad_read_multitap_option();
-		nports = 2 + ((pad_multitap & 1) ? 3 : 0) + ((pad_multitap & 2) ? 3 : 0);
-		memcpy(ports, all_ports, nports * sizeof(ports[0]));
-		memset(&ports[nports], 0, sizeof(ports[0]));
-		memset(&desc[nports * per_port], 0, sizeof(desc[0]));
+	pad_input_shutdown();
+}
 
-		environ_cb(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &rumble);
-		environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)ports);
-		environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, desc);
+/* All released, staged and live: the EE is not running. */
+void pad_input_shutdown(void)
+{
+	unsigned pad;
+	memset(pad_staged, 0, sizeof(pad_staged));
+	for (pad = 0; pad < NUM_CONTROLLER_PORTS; pad++)
+		pad_staged[pad].buttons = 0xFFFFFFFF;
+	pad_input_latch();
+}
 
-		Shutdown();
-	}
+static void pad_rumble(PadFreezeData* p, u32 rumble_scale_q8, unsigned port);
 
-	/* All released, staged and live: the EE is not running. */
-	void Shutdown()
+void pad_input_update(void)
+{
+	unsigned port;
+	poll_cb();
+
+	for (port = 0; port < NUM_CONTROLLER_PORTS; port++)
 	{
-		memset(pad_staged, 0, sizeof(pad_staged));
-		for (unsigned pad = 0; pad < NUM_CONTROLLER_PORTS; pad++)
-			pad_staged[pad].buttons = 0xFFFFFFFF;
-		pad_input_latch();
-	}
+		const u32 pad = pad_for_port(port);
+		u32 mask, new_button_mask = 0xFFFF0000, btn_index = 0;
+		u32 con_port, con_slot;
+		const PadSettings* conf;
+		int i, new_lx, new_ly, new_rx, new_ry;
+		if (pad >= NUM_CONTROLLER_PORTS)
+			continue;
+		mask = input_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MASK);
+		sioConvertPadToPortAndSlot(pad, &con_port, &con_slot);
+		conf = &pad_settings[con_port];
 
-	void Update()
-	{
-		poll_cb();
-
-		for (unsigned port = 0; port < NUM_CONTROLLER_PORTS; port++)
+		for (i = 0; i < 16; ++i)
 		{
-			const u32 pad = pad_for_port(port);
-			if (pad >= NUM_CONTROLLER_PORTS)
-				continue;
-			u32 mask            = input_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MASK);
-			u32 new_button_mask = 0xFFFF0000;
-			u32 btn_index       = 0;
-			u32 con_port, con_slot;
-			sioConvertPadToPortAndSlot(pad, &con_port, &con_slot);
-			const auto &conf    = pad_settings[con_port];
-
-			for (int i = 0; i < 16; ++i)
+			/* Select, Start, L3 and R3 are not pressure sensitive */
+			if (keymap[i] == RETRO_DEVICE_ID_JOYPAD_SELECT || keymap[i] == RETRO_DEVICE_ID_JOYPAD_START ||
+					keymap[i] == RETRO_DEVICE_ID_JOYPAD_L3 || keymap[i] == RETRO_DEVICE_ID_JOYPAD_R3)
+				new_button_mask |= !(mask & (1 << keymap[i])) << i;
+			else
 			{
-				// Select, Start, L3 and R3 aren't pressure sensitive
-				if (keymap[i] == RETRO_DEVICE_ID_JOYPAD_SELECT || keymap[i] == RETRO_DEVICE_ID_JOYPAD_START ||
-						keymap[i] == RETRO_DEVICE_ID_JOYPAD_L3 || keymap[i] == RETRO_DEVICE_ID_JOYPAD_R3)
-					new_button_mask |= !(mask & (1 << keymap[i])) << i;
-				else
-				{
-					// Apply pressure level if needed/possible and deadzone
-					pad_staged[pad].analog[btn_index] = process_button(conf.button_deadzone, port, keymap[i], mask);
-					new_button_mask |= (pad_staged[pad].analog[btn_index] == 0) << i;
-					++btn_index;
-				}
+				/* the pressure, where there is one, and the deadzone */
+				pad_staged[pad].analog[btn_index] = process_button(conf->button_deadzone, port, keymap[i], mask);
+				new_button_mask |= (pad_staged[pad].analog[btn_index] == 0) << i;
+				++btn_index;
 			}
-
-			int new_lx = input_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
-			int new_ly = input_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
-			int new_rx = input_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X);
-			int new_ry = input_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y);
-
-			// Apply axis deadzone and sensitivity
-			process_analog(new_lx, new_ly, conf.axis_scale_q16, conf.axis_deadzone);
-			process_analog(new_rx, new_ry, conf.axis_scale_q16, conf.axis_deadzone);
-
-			// Apply axis inversion (axis_invert_* being either 1 or -1)
-			new_lx *= conf.axis_invert_lx;
-			new_ly *= conf.axis_invert_ly;
-			new_rx *= conf.axis_invert_rx;
-			new_ry *= conf.axis_invert_ry;
-
-			if (pad_type[port] == RETRO_DEVICE_KEYBOARD
-			 || pad_type[port] == RETRO_DEVICE_KEYBOARD_AND_MOUSE)
-			{
-				unsigned k;
-				memset(pad_staged[pad].keys, 0, sizeof(pad_staged[pad].keys));
-				for (k = 0; k < RETROK_LAST; k++)
-					if (input_cb(port, RETRO_DEVICE_KEYBOARD, 0, k))
-						pad_staged[pad].keys[k >> 3] |= (u8)(1u << (k & 7));
-			}
-			if (pad_type[port] == RETRO_DEVICE_MOUSE
-			 || pad_type[port] == RETRO_DEVICE_KEYBOARD_AND_MOUSE)
-			{
-				pad_staged[pad].mouse_x += input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
-				pad_staged[pad].mouse_y += input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
-				pad_staged[pad].mouse_buttons = (u8)(
-					  (input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT)   ? 1 : 0)
-					| (input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT)  ? 2 : 0)
-					| (input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE) ? 4 : 0));
-			}
-
-			pad_staged[pad].buttons = new_button_mask;
-			pad_staged[pad].lx      = new_lx;
-			pad_staged[pad].ly      = new_ly;
-			pad_staged[pad].rx      = new_rx;
-			pad_staged[pad].ry      = new_ry;
-
-			if (conf.rumble_scale_q8 > 0)
-				pads[con_port][con_slot].rumble(conf.rumble_scale_q8, port);
 		}
-	}
 
-} // namespace Input
+		new_lx = input_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
+		new_ly = input_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
+		new_rx = input_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X);
+		new_ry = input_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y);
+
+		/* the axis deadzone and sensitivity */
+		process_analog(&new_lx, &new_ly, conf->axis_scale_q16, conf->axis_deadzone);
+		process_analog(&new_rx, &new_ry, conf->axis_scale_q16, conf->axis_deadzone);
+
+		/* the inversion, each axis_invert_* 1 or -1 */
+		new_lx *= conf->axis_invert_lx;
+		new_ly *= conf->axis_invert_ly;
+		new_rx *= conf->axis_invert_rx;
+		new_ry *= conf->axis_invert_ry;
+
+		if (pad_type[port] == RETRO_DEVICE_KEYBOARD
+		 || pad_type[port] == RETRO_DEVICE_KEYBOARD_AND_MOUSE)
+		{
+			unsigned k;
+			memset(pad_staged[pad].keys, 0, sizeof(pad_staged[pad].keys));
+			for (k = 0; k < RETROK_LAST; k++)
+				if (input_cb(port, RETRO_DEVICE_KEYBOARD, 0, k))
+					pad_staged[pad].keys[k >> 3] |= (u8)(1u << (k & 7));
+		}
+		if (pad_type[port] == RETRO_DEVICE_MOUSE
+		 || pad_type[port] == RETRO_DEVICE_KEYBOARD_AND_MOUSE)
+		{
+			pad_staged[pad].mouse_x += input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
+			pad_staged[pad].mouse_y += input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
+			pad_staged[pad].mouse_buttons = (u8)(
+				  (input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT)   ? 1 : 0)
+				| (input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT)  ? 2 : 0)
+				| (input_cb(port, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE) ? 4 : 0));
+		}
+
+		pad_staged[pad].buttons = new_button_mask;
+		pad_staged[pad].lx      = new_lx;
+		pad_staged[pad].ly      = new_ly;
+		pad_staged[pad].rx      = new_rx;
+		pad_staged[pad].ry      = new_ry;
+
+		if (conf->rumble_scale_q8 > 0)
+			pad_rumble(&pads[con_port][con_slot], conf->rumble_scale_q8, port);
+	}
+}
+
 
 void retro_set_input_poll(retro_input_poll_t cb)
 {
@@ -653,17 +624,16 @@ void retro_set_controller_port_device(unsigned port, unsigned device)
 				break;
 		}
 
-		PAD::LoadConfig();
+		pad_load_config();
 	}
 }
 
-void do_rumble(u8 intensity, unsigned type, unsigned port)
+static void do_rumble(u8 intensity, unsigned type, unsigned port)
 {
+	/* 0..255 -> 0..65535 */
+	const u16 scaled = (u16)((intensity << 8) | intensity);
 	if (!rumble.set_rumble_state)
 		return;
-
-	// 0..255 -> 0..65535
-	u16 scaled = (intensity << 8) | intensity;
 
 	if (type == 0)
 		rumble.set_rumble_state(port, RETRO_RUMBLE_STRONG, scaled);
@@ -671,54 +641,51 @@ void do_rumble(u8 intensity, unsigned type, unsigned port)
 		rumble.set_rumble_state(port, RETRO_RUMBLE_WEAK, scaled);
 }
 
-void stop_rumble()
+static void stop_rumble(void)
 {
+	int port;
 	if (!rumble.set_rumble_state)
 		return;
 
-	for (int port = 0; port < NUM_CONTROLLER_PORTS; ++port)
+	for (port = 0; port < NUM_CONTROLLER_PORTS; ++port)
 	{
 		rumble.set_rumble_state(port, RETRO_RUMBLE_STRONG, 0);
 		rumble.set_rumble_state(port, RETRO_RUMBLE_WEAK, 0);
 	}
 }
 
-//////////////////////////////////////////////////////////////////////
-// Pad implementation
-//////////////////////////////////////////////////////////////////////
+/* the pads */
 
-void Pad::reset()
+static void pad_reset(PadFreezeData* p)
 {
-	memset(this, 0, sizeof(PadFreezeData));
-
-	mode           = MODE_DIGITAL;
-	umask[0]       = 0xFF;
-	umask[1]       = 0xFF;
-	umask[2]       = 0x03;
-	// Sets up vibrate variable.
-	nextVibrate[0] = 0;
-	nextVibrate[1] = 0;
-	memset(vibrate, 0xFF, sizeof(vibrate));
-	vibrate[0]     = 0x5A;
+	memset(p, 0, sizeof(*p));
+	p->mode     = MODE_DIGITAL;
+	p->umask[0] = 0xFF;
+	p->umask[1] = 0xFF;
+	p->umask[2] = 0x03;
+	memset(p->vibrate, 0xFF, sizeof(p->vibrate));
+	p->vibrate[0] = 0x5A;
 }
 
-void Pad::rumble(u32 rumble_scale_q8, unsigned port)
+static void pad_rumble(PadFreezeData* p, u32 rumble_scale_q8, unsigned port)
 {
-	if (nextVibrate[0] == currentVibrate[0] && nextVibrate[1] == currentVibrate[1])
+	unsigned i;
+	if (p->nextVibrate[0] == p->currentVibrate[0] && p->nextVibrate[1] == p->currentVibrate[1])
 		return;
 
-	for (int i = 0; i < 2; ++i)
+	for (i = 0; i < 2; ++i)
 	{
-		currentVibrate[i] = nextVibrate[i];
-		do_rumble((u8)pcsx2_min_u(((u32)currentVibrate[i] * rumble_scale_q8) >> 8, 255u), i, port);
+		p->currentVibrate[i] = p->nextVibrate[i];
+		do_rumble((u8)pcsx2_min_u(((u32)p->currentVibrate[i] * rumble_scale_q8) >> 8, 255u), i, port);
 	}
 }
 
-void Pad::stop_vibrate_all()
+static void pad_stop_vibrate_all(void)
 {
-	for (int port = 0; port < 2; port++)
+	int port, slot;
+	for (port = 0; port < 2; port++)
 	{
-		for (int slot = 0; slot < 4; slot++)
+		for (slot = 0; slot < 4; slot++)
 		{
 			pads[port][slot].nextVibrate[0] = 0;
 			pads[port][slot].nextVibrate[1] = 0;
@@ -730,19 +697,9 @@ void Pad::stop_vibrate_all()
 	stop_rumble();
 }
 
-//////////////////////////////////////////////////////////////////////
-// Pad implementation
-//////////////////////////////////////////////////////////////////////
-
-s32 PADinit(void)
+/* The bus with no query on it. */
+static void query_idle(void)
 {
-	for (int port = 0; port < 2; port++)
-		for (int slot = 0; slot < 4; slot++)
-		{
-			pads[port][slot].reset();
-			force_analog_pending[port][slot] = true;
-		}
-
 	query.port           = 0;
 	query.slot           = 0;
 	query.lastByte       = 1;
@@ -750,8 +707,28 @@ s32 PADinit(void)
 	query.numBytes       = 0;
 	query.queryDone      = 1;
 	memset(query.response, 0xF3, sizeof(query.response));
+}
 
-	for (int port = 0; port < 2; port++)
+/* A response of n bytes after the two the bus starts with. */
+static void query_set_result(const u8* rsp, u8 n)
+{
+	memcpy(query.response + 2, rsp, n);
+	query.numBytes = (u8)(2 + n);
+}
+
+s32 PADinit(void)
+{
+	int port, slot;
+	for (port = 0; port < 2; port++)
+		for (slot = 0; slot < 4; slot++)
+		{
+			pad_reset(&pads[port][slot]);
+			force_analog_pending[port][slot] = true;
+		}
+
+	query_idle();
+
+	for (port = 0; port < 2; port++)
 		slots[port] = 0;
 
 	return 0;
@@ -761,16 +738,16 @@ void PADshutdown(void) { }
 s32 PADopen(void)      { return 0; }
 void PADclose(void)    { }
 
-s32 PADsetSlot(u8 port, u8 slot)
+/* What PADpoll can do with a query without leaving the pads and the
+ * reply: see PADfreeze. */
+static bool query_valid(const QueryInfo* q)
 {
-	port--;
-	slot--;
-	if (port > 1 || slot > 3)
-		return 0;
-	// Even if no pad there, record the slot, as it is the active slot regardless.
-	slots[port] = slot;
-
-	return 1;
+	if (q->port >= 2 || q->slot >= 4 || q->numBytes > sizeof(q->response))
+		return false;
+	/* The longest a toggle runs; past it the vibrate bytes end. */
+	if (q->currentCommand == CMD_VIBRATION_TOGGLE && q->numBytes > 9)
+		return false;
+	return true;
 }
 
 s32 PADfreeze(FreezeAction mode, freezeData* data)
@@ -782,26 +759,30 @@ s32 PADfreeze(FreezeAction mode, freezeData* data)
 		data->size = sizeof(PadFullFreezeData);
 	else if (mode == FREEZE_LOAD)
 	{
-		PadFullFreezeData* pdata = (PadFullFreezeData*)(data->data);
+		const PadFullFreezeData* pdata = (const PadFullFreezeData*)(data->data);
+		int port, slot;
 
-		Pad::stop_vibrate_all();
+		pad_stop_vibrate_all();
 
 		if ((data->size != sizeof(PadFullFreezeData)))
 			return 0;
 
+		/* The query indexes the pads by its port and slot and the reply
+		 * by its byte counts, and a vibration toggle writes the pad's
+		 * vibrate bytes up to its byte count: a state whose query reaches
+		 * past any of them is refused, before anything is taken from it. */
+		if (!query_valid(&pdata->query))
+			return -1;
 		query = pdata->query;
-		if (pdata->query.slot < 4)
-			query = pdata->query;
 
-		// Tales of the Abyss - pad fix
-		// - restore data for both ports
-		for (int port = 0; port < 2; port++)
+		/* Tales of the Abyss: both ports restored */
+		for (port = 0; port < 2; port++)
 		{
-			for (int slot = 0; slot < 4; slot++)
+			for (slot = 0; slot < 4; slot++)
 			{
-				u8 mode = pdata->padData[port][slot].mode;
+				const u8 pmode = pdata->padData[port][slot].mode;
 
-				if (mode != MODE_DIGITAL && mode != MODE_ANALOG && mode != MODE_DS2_NATIVE)
+				if (pmode != MODE_DIGITAL && pmode != MODE_ANALOG && pmode != MODE_DS2_NATIVE)
 					break;
 
 				memcpy(&pads[port][slot], &pdata->padData[port][slot], sizeof(PadFreezeData));
@@ -813,20 +794,18 @@ s32 PADfreeze(FreezeAction mode, freezeData* data)
 	}
 	else if (mode == FREEZE_SAVE)
 	{
+		PadFullFreezeData* pdata = (PadFullFreezeData*)(data->data);
+		int port, slot;
 		if (data->size != sizeof(PadFullFreezeData))
 			return 0;
 
-		PadFullFreezeData* pdata = (PadFullFreezeData*)(data->data);
-
-		// Tales of the Abyss - pad fix
-		// - PCSX2 only saves port0 (save #1), then port1 (save #2)
-
+		/* Tales of the Abyss: both ports saved */
 		memset(pdata, 0, data->size);
 		pdata->query = query;
 
-		for (int port = 0; port < 2; port++)
+		for (port = 0; port < 2; port++)
 		{
-			for (int slot = 0; slot < 4; slot++)
+			for (slot = 0; slot < 4; slot++)
 				pdata->padData[port][slot] = pads[port][slot];
 
 			pdata->slot[port] = slots[port];
@@ -840,24 +819,19 @@ s32 PADfreeze(FreezeAction mode, freezeData* data)
 
 u8 PADstartPoll(int _port, int _slot)
 {
+	u32 ext_port;
 	if (_port >= 2)
 	{
-		query.port           = 0;
-		query.slot           = 0;
-		query.lastByte       = 1;
-		query.currentCommand = 0;
-		query.numBytes       = 0;
-		query.queryDone      = 1;
-		memset(query.response, 0xF3, sizeof(query.response));
+		query_idle();
 		return 0;
 	}
 
-	query.port = _port;
-	query.slot = _slot;
+	query.port = (u8)_port;
+	query.slot = (u8)_slot;
 
-	const u32 ext_port = sioConvertPortAndSlotToPad(query.port, query.slot);
+	ext_port = sioConvertPortAndSlotToPad(query.port, query.slot);
 
-	if (g_key_status.m_type[ext_port] == ControllerType::NotConnected)
+	if (g_key_status.m_type[ext_port] == NotConnected)
 	{
 		query.queryDone = 1;
 		query.numBytes  = 0;
@@ -873,12 +847,13 @@ u8 PADstartPoll(int _port, int _slot)
 
 u8 PADpoll(u8 value)
 {
+	PadFreezeData* pad;
 	if (query.lastByte + 1 >= query.numBytes)
 		return 0;
 	if (query.lastByte && query.queryDone)
 		return query.response[++query.lastByte];
 
-	Pad* pad = &pads[query.port][query.slot];
+	pad = &pads[query.port][query.slot];
 
 	if (query.lastByte == 0)
 	{
@@ -890,23 +865,22 @@ u8 PADpoll(u8 value)
 			case CMD_CONFIG_MODE:
 				if (pad->config)
 				{
-					// In config mode.  Might not actually be leaving it.
-					query.set_result(ConfigExit);
+					/* In config mode; might not be leaving it. */
+					query_set_result(ConfigExit, sizeof(ConfigExit));
 					return 0xF3;
 				}
-				// fallthrough on purpose (but I don't know why)
+				/* falls through, on purpose */
 				PCSX2_FALLTHROUGH;
 			case CMD_READ_DATA_AND_VIBRATE:
 				{
-					query.response[2] = 0x5A;
-
 					const u32 ext_port = sioConvertPortAndSlotToPad(query.port, query.slot);
 					const u32 buttons  = pad_live[ext_port].buttons;
+					query.response[2] = 0x5A;
 
-					// "Start in analog mode" option: on the first read after
-					// reset, promote a still-digital, unlocked pad to analog.
-					// Done once (latch) so we set only the starting mode and do
-					// not override later game-driven mode changes.
+					/* Start in analog mode: on the first read after reset a
+					 * still-digital, unlocked pad becomes analog, once, so
+					 * only the starting mode is set and never a mode the
+					 * game sets later. */
 					if (force_analog_pending[query.port][query.slot])
 					{
 						force_analog_pending[query.port][query.slot] = false;
@@ -934,7 +908,7 @@ u8 PADpoll(u8 value)
 					query.response[3]         = (buttons >> 8) & 0xFF;
 					query.response[4]         = (buttons >> 0) & 0xFF;
 
-					if (pad->mode != MODE_DIGITAL) // ANALOG || DS2 native
+					if (pad->mode != MODE_DIGITAL) /* analog or DS2 native */
 					{
 						query.response[5] = 0x80 + (pad_live[ext_port].rx >> 8);
 						query.response[6] = 0x80 + (pad_live[ext_port].ry >> 8);
@@ -970,12 +944,12 @@ u8 PADpoll(u8 value)
 				return pad->mode;
 
 			case CMD_SET_VREF_PARAM:
-				query.set_result(noclue);
+				query_set_result(noclue, sizeof(noclue));
 				query.queryDone = 1;
 				break;
 
 			case CMD_QUERY_DS2_ANALOG_MODE:
-				// Right?  Wrong?  No clue.
+				/* Right? Wrong? No clue. */
 				if (pad->mode == MODE_DIGITAL)
 				{
 					queryMaskMode[1] = 0;
@@ -988,16 +962,15 @@ u8 PADpoll(u8 value)
 					queryMaskMode[1] = pad->umask[0];
 					queryMaskMode[2] = pad->umask[1];
 					queryMaskMode[3] = pad->umask[2];
-					// Not entirely sure about this.
-					//queryMaskMode[3] = 0x01 | (pad->mode == MODE_DS2_NATIVE)*2;
+					/* Not certain: queryMaskMode[3] = 0x01 | (pad->mode == MODE_DS2_NATIVE) * 2 */
 					queryMaskMode[6] = 0x5A;
 				}
-				query.set_result(queryMaskMode);
+				query_set_result(queryMaskMode, sizeof(queryMaskMode));
 				query.queryDone = 1;
 				break;
 
 			case CMD_SET_MODE_AND_LOCK:
-				query.set_result(setMode);
+				query_set_result(setMode, sizeof(setMode));
 				pad->nextVibrate[0] = 0;
 				pad->nextVibrate[1] = 0;
 				memset(pad->vibrate, 0xFF, sizeof(pad->vibrate));
@@ -1006,25 +979,25 @@ u8 PADpoll(u8 value)
 
 			case CMD_QUERY_MODEL_AND_MODE:
 				if (IsDualshock2())
-					query.set_result(queryModelDS2);
+					query_set_result(queryModelDS2, sizeof(queryModelDS2));
 				else
-					query.set_result(queryModelDS1);
+					query_set_result(queryModelDS1, sizeof(queryModelDS1));
 				query.queryDone   = 1;
-				// Not digital mode.
+				/* not digital mode */
 				query.response[5] = (pad->mode & 0xF) != 1;
 				break;
 
 			case CMD_QUERY_ACT:
-				query.set_result(queryAct[0]);
+				query_set_result(queryAct[0], sizeof(queryAct[0]));
 				break;
 
 			case CMD_QUERY_COMB:
-				query.set_result(queryComb);
+				query_set_result(queryComb, sizeof(queryComb));
 				query.queryDone = 1;
 				break;
 
 			case CMD_QUERY_MODE:
-				query.set_result(queryMode);
+				query_set_result(queryMode, sizeof(queryMode));
 				break;
 
 			case CMD_VIBRATION_TOGGLE:
@@ -1037,7 +1010,7 @@ u8 PADpoll(u8 value)
 				break;
 
 			case CMD_SET_DS2_NATIVE_MODE:
-				query.set_result(setNativeMode);
+				query_set_result(setNativeMode, sizeof(setNativeMode));
 				if (!IsDualshock2())
 					query.queryDone = 1;
 				break;
@@ -1088,9 +1061,9 @@ u8 PADpoll(u8 value)
 			if (query.lastByte == 3)
 			{
 				if (value < 2)
-					query.set_result(queryAct[value]);
-				// bunch of 0's
-				// else query.set_result(setMode);
+					query_set_result(queryAct[value], sizeof(queryAct[value]));
+				/* bunch of 0's */
+				/* else query_set_result(setMode, sizeof(setMode)); */
 				query.queryDone = 1;
 			}
 			break;
@@ -1101,8 +1074,8 @@ u8 PADpoll(u8 value)
 				query.response[6] = 4 + value * 3;
 				query.queryDone = 1;
 			}
-			// bunch of 0's
-			//else data = setMode;
+			/* bunch of 0's */
+			/* else data = setMode; */
 			break;
 
 		case CMD_VIBRATION_TOGGLE:
@@ -1133,33 +1106,29 @@ bool PADcomplete(void) { return query.queryDone; }
 
 void pad_load_config(void)
 {
-	PAD::LoadConfig();
-}
-
-void PAD::LoadConfig()
-{
+	u32 i, port, c;
 	EmuConfig.MultitapPort0_Enabled = (pad_multitap & 1) != 0;
 	EmuConfig.MultitapPort1_Enabled = (pad_multitap & 2) != 0;
-	for (u32 i = 0; i < NUM_CONTROLLER_PORTS; i++)
+	for (i = 0; i < NUM_CONTROLLER_PORTS; i++)
 		g_key_status.m_type[i] = NotConnected;
-	for (u32 port = 0; port < NUM_CONTROLLER_PORTS; port++)
+	for (port = 0; port < NUM_CONTROLLER_PORTS; port++)
 	{
-		const u32 i = pad_for_port(port);
 		const char* type = s_pad_type_name[port] ? s_pad_type_name[port] : ((port == 0) ? "DualShock2" : "None");
+		i = pad_for_port(port);
 		if (i >= NUM_CONTROLLER_PORTS)
 			continue;
-		for (const ControllerInfo& info : s_controller_info)
+		for (c = 0; c < C89_ARRAY_SIZE(s_controller_info); c++)
 		{
-			if (!strcmp(type, info.name))
+			const struct ControllerInfo* info = &s_controller_info[c];
+			if (strcmp(type, info->name))
+				continue;
+			/* the motors at their default scale, 1.0 */
+			if (info->vibration_caps != NoVibration)
 			{
-				const u16 motor_scale = (u16)pcsx2_clamp_i(lrintf(DEFAULT_MOTOR_SCALE * 256.0f), 0, 65535);
-				if (info.vibration_caps != NoVibration)
-				{
-					g_key_status.m_vibration_scale_q8[i][0] = motor_scale;
-					g_key_status.m_vibration_scale_q8[i][1] = motor_scale;
-				}
-				g_key_status.m_type[i]     = info.type;
+				g_key_status.m_vibration_scale_q8[i][0] = Q8_ONE;
+				g_key_status.m_vibration_scale_q8[i][1] = Q8_ONE;
 			}
+			g_key_status.m_type[i] = info->type;
 		}
 	}
 }

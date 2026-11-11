@@ -306,7 +306,7 @@ set(pcsx2SPU2Headers
 
 # Host PAD
 set(pcsx2PADSources
-	PAD/PAD.cpp
+	PAD/PAD.c
 )
 set(pcsx2PADHeaders
 	PAD/PAD.h

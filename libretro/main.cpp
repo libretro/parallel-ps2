@@ -64,7 +64,6 @@
 #include "../pcsx2/GS/Renderers/Vulkan/GSTextureVK.h"
 #include <libretro_vulkan.h>
 #endif
-#include "../pcsx2/Frontend/InputManager.h"
 #include "../pcsx2/VMManager.h"
 #include "../pcsx2/GameDatabase.h"
 #include "patches.h"
@@ -2537,7 +2536,7 @@ static void libretro_teardown_cpu_thread(void)
 {
 	if (s_input_initialized)
 	{
-		Input::Shutdown();
+		pad_input_shutdown();
 		s_input_initialized = false;
 	}
 
@@ -2783,7 +2782,7 @@ bool retro_load_game(const struct retro_game_info* game)
 		return false;
 	}
 
-	Input::Init();
+	pad_input_init();
 	s_input_initialized = true;
 	if (s_python2_content)
 		environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS,
@@ -3119,7 +3118,7 @@ void retro_unload_game(void)
 	 * flagged, so it will not touch input a second time. */
 	if (s_input_initialized)
 	{
-		Input::Shutdown();
+		pad_input_shutdown();
 		s_input_initialized = false;
 	}
 	sthread_join(cpu_thread);
@@ -3213,7 +3212,7 @@ void retro_run(void)
 	if (pending_update_av_info)
 		update_av_info();
 
-	Input::Update();
+	pad_input_update();
 	usb_eyetoy::FrontendRun();
 
 	/* No renderer, or a GS that lost its device and could make no other:
