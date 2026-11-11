@@ -995,6 +995,12 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		{
 			VkCommandPoolCreateInfo pool_info = {
 				VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr, 0, m_graphics_queue_family_index};
+			/* The descriptor set table starts empty: the device is heap
+			 * memory, and a slot it left holding garbage reads as taken,
+			 * so nothing was ever cached and every lookup scanned all
+			 * 1024 slots. */
+			memset(resources.ds_cache, 0, sizeof(resources.ds_cache));
+			resources.ds_cache_used = 0;
 			res = vkCreateCommandPool(m_device, &pool_info, nullptr, &resources.command_pool);
 			if (res != VK_SUCCESS)
 				return false;

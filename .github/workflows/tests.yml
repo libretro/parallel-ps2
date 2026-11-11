@@ -99,6 +99,14 @@ jobs:
           LRPS2_CHECKED_CORE: ${{ github.workspace }}/pcsx2_libretro.so
         run: sh tests/pgsowner/build.sh
 
+      # The Vulkan renderers against lavapipe: negotiation, savestates,
+      # pictures against the software renderer, and what a frame
+      # allocates. The suites job has no Vulkan device, so these skip
+      # there -- which is how a frame came to allocate a descriptor set a
+      # draw with nothing failing.
+      - name: Run the Vulkan negotiation suite on it
+        run: sh tests/vknegotiate/build.sh
+
   # The suites that link a converted C unit, built with mingw-w64 and run
   # under wine. Built from Linux, mingw writes name.exe whatever -o says;
   # a script that then ran "name" ran the last Linux build instead, and

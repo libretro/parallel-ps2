@@ -202,6 +202,10 @@ static long vn_alloc_hits[VN_ALLOC_SITES];
 static char vn_alloc_thread[VN_ALLOC_SITES][16];
 static long vn_alloc_total;
 static __thread int vn_alloc_inside;
+/* VN_POISON_ALLOCS: what malloc and the aligned allocators hand back is
+ * filled with 0xA5 first, so memory the core reads before it writes is
+ * garbage on every run rather than whatever the heap held. */
+static int vn_alloc_poison;
 /* (not inlined: frame 0 is this, 1 the wrapper below, 2 its caller) */
 static __attribute__((noinline)) void vn_alloc_note(void)
 {
@@ -249,16 +253,22 @@ static __attribute__((noinline)) void vn_alloc_note(void)
 	}
 	vn_alloc_inside = 0;
 }
-void* malloc(size_t n) { vn_alloc_note(); return __libc_malloc(n); }
+static void* vn_poisoned(void* p, size_t n)
+{
+	if (p && vn_alloc_poison)
+		memset(p, 0xA5, n);
+	return p;
+}
+void* malloc(size_t n) { vn_alloc_note(); return vn_poisoned(__libc_malloc(n), n); }
 void* calloc(size_t n, size_t m) { vn_alloc_note(); return __libc_calloc(n, m); }
 void* realloc(void* p, size_t n) { vn_alloc_note(); return __libc_realloc(p, n); }
 void free(void* p) { __libc_free(p); }
-void* memalign(size_t a, size_t n) { vn_alloc_note(); return __libc_memalign(a, n); }
-void* aligned_alloc(size_t a, size_t n) { vn_alloc_note(); return __libc_memalign(a, n); }
+void* memalign(size_t a, size_t n) { vn_alloc_note(); return vn_poisoned(__libc_memalign(a, n), n); }
+void* aligned_alloc(size_t a, size_t n) { vn_alloc_note(); return vn_poisoned(__libc_memalign(a, n), n); }
 int posix_memalign(void** out, size_t a, size_t n)
 {
 	vn_alloc_note();
-	*out = __libc_memalign(a, n);
+	*out = vn_poisoned(__libc_memalign(a, n), n);
 	return *out ? 0 : 12; /* ENOMEM */
 }
 /* The core's mapping: the object that holds the address in @data. */
@@ -1720,6 +1730,9 @@ int main(int argc, char** argv)
 		}
 	}
 
+#ifdef VN_ALLOC_COUNT
+	vn_alloc_poison = getenv("VN_POISON_ALLOCS") != NULL;
+#endif
 	h = vn_dlopen(argv[1]);
 	if (!h)
 		VN_FAIL("cannot load %s", argv[1]);

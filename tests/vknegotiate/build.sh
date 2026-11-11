@@ -620,10 +620,12 @@ echo "  a mipmapped texture under shaded triangles: the same picture on every re
 # Sixteen sprites a frame reading two textures in turn (texture_alternate)
 # on the Vulkan renderer: the descriptor sets a frame allocates are the
 # bindings it has (the two textures, the target, the present), not one a
-# draw.
+# draw. The heap is poisoned: the table those sets are kept in was once
+# left as the heap had it, and whether it worked depended on what that
+# was.
 c=texture_alternate
 "$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
-VN_COUNT_CALLS=1 VN_FRAMES=40 VN_EXPECT_RUN=80102030,80405060 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=Vulkan \
+VN_POISON_ALLOCS=1 VN_COUNT_CALLS=1 VN_FRAMES=40 VN_EXPECT_RUN=80102030,80405060 VN_IDLE_BIOS=1 LRPS2_BIOS="$SCRATCH/$c.bin" VN_RENDERER=Vulkan \
 	timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/$c.log" 2>&1 || true
 sets=$(calls "$SCRATCH/$c.log" descsets); draws=$(calls "$SCRATCH/$c.log" draw)
 if ! grep -q "vknegotiate v2: ok" "$SCRATCH/$c.log" || [ -z "$draws" ] || [ "$draws" -lt 16 ] || [ "${sets:-0}" -gt 8 ]; then
@@ -679,21 +681,21 @@ echo "  pipelines built ahead: the heap stays flat after, and a rate set meanwhi
 # lowers its number here. Over it, the sites are named (resolve them with
 # addr2line -f -C -e <core> <offset>).
 ALLOC_CEILINGS="
-Vulkan stream_ct32 87
-Vulkan depth_states 19
-Vulkan mip_tw8 21
-Vulkan dest_alpha 26
-Vulkan aa1_line 15
-paraLLEl-GS stream_ct32 427
-paraLLEl-GS depth_states 224
-paraLLEl-GS mip_tw8 261
-paraLLEl-GS dest_alpha 243
-paraLLEl-GS aa1_line 222
-Software_(HW) stream_ct32 99
-Software_(HW) depth_states 152
-Software_(HW) mip_tw8 78
-Software_(HW) dest_alpha 54
-Software_(HW) aa1_line 43"
+Vulkan stream_ct32 86
+Vulkan depth_states 18
+Vulkan mip_tw8 20
+Vulkan dest_alpha 25
+Vulkan aa1_line 14
+paraLLEl-GS stream_ct32 423
+paraLLEl-GS depth_states 220
+paraLLEl-GS mip_tw8 257
+paraLLEl-GS dest_alpha 239
+paraLLEl-GS aa1_line 218
+Software_(HW) stream_ct32 98
+Software_(HW) depth_states 151
+Software_(HW) mip_tw8 77
+Software_(HW) dest_alpha 53
+Software_(HW) aa1_line 42"
 for c in stream_ct32 depth_states mip_tw8 dest_alpha aa1_line; do
 	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c > /dev/null
 done
