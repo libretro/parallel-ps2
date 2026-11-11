@@ -165,7 +165,7 @@ set(pcsx2Sources
 	VU1micro.c
 	VU1microInterp.c
 	VUmicroMem.c
-	VUops.cpp)
+	VUops.c)
 
 # Main pcsx2 header
 set(pcsx2Headers

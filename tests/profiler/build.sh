@@ -9,9 +9,20 @@ CC=${CC:-cc}
 CXX=${CXX:-c++}
 SANFLAGS="${SANFLAGS:-}"
 [ -n "$SANITIZER" ] && SANFLAGS="-fsanitize=$SANITIZER"
+EXE=""
+RUN=""
 case "$(uname -s 2>/dev/null)" in
   MINGW*|MSYS*|CYGWIN*) EXE=.exe ;;
-  *)                    EXE="" ;;
+esac
+# A mingw-w64 CC from Linux: its output is a .exe whatever -o says, and
+# it runs under wine, linked static so it needs none of the toolchain's
+# DLLs.
+case "$("$CC" -dumpmachine 2>/dev/null)" in
+  *mingw*)
+    EXE=.exe
+    LDSTATIC=-static
+    [ "$(uname -s 2>/dev/null)" = Linux ] && RUN="${WINE:-wine}"
+    ;;
 esac
 case "$CC" in
   *mingw*) LIBS="" ;;
@@ -26,6 +37,6 @@ rm -rf "$OBJ" && mkdir -p "$OBJ"
 	-DENABLE_PCSX2_PROFILER -D__LIBRETRO__ $INC -c "$DIR/main.c" -o "$OBJ/main.o"
 "$CXX" -std=c++17 -O1 -g -Wall $SANFLAGS \
 	-DENABLE_PCSX2_PROFILER -D__LIBRETRO__ $INC -c "$DIR/scope.cpp" -o "$OBJ/scope.o"
-"$CXX" $SANFLAGS -o "$DIR/profiler_test$EXE" "$OBJ"/*.o $LIBS
+"$CXX" $SANFLAGS $LDSTATIC -o "$DIR/profiler_test$EXE" "$OBJ"/*.o $LIBS
 rm -rf "$OBJ"
-"$DIR/profiler_test$EXE"
+$RUN "$DIR/profiler_test$EXE"

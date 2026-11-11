@@ -65,15 +65,16 @@ else
 	echo "  skipped: set PS2AUTOTESTS to a ps2autotests checkout to run this"
 fi
 
-echo "== VU EFU driven through VUops.cpp vs console =="
+echo "== VU EFU driven through VUops.c vs console =="
 EXPECTED="${PS2AUTOTESTS:-}/tests/vu/lower/efu.expected"
 if [ -f "$EXPECTED" ]; then
 	VUINC="-I $ROOT -I $ROOT/pcsx2 -I $ROOT/common -I $ROOT/common/include -I $ROOT/3rdparty/include -I $ROOT/libretro/libretro-common/include"
 	${CC:-cc} -std=gnu89 -O1 -w $SANFLAGS $VUINC -c "$ROOT/pcsx2/VU0.c" -o "$DIR/vu_hwrealvu_vu0.o"
+	${CC:-cc} -std=gnu89 -O1 -w $SANFLAGS $VUINC -c "$ROOT/pcsx2/VUops.c" -o "$DIR/vu_hwrealvu_vuops.o"
 	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS $VUINC \
 		-o "$DIR/vu_hwrealvu" "$DIR/hwrealvu.cpp" \
-		"$ROOT/pcsx2/VUops.cpp" "$DIR/vu_hwrealvu_vu0.o" "$ROOT/pcsx2/ps2float.c" "$ROOT/libretro/libretro-common/queues/retro_spsc.c"
-	rm -f "$DIR/vu_hwrealvu_vu0.o"
+		"$DIR/vu_hwrealvu_vuops.o" "$DIR/vu_hwrealvu_vu0.o" "$ROOT/pcsx2/ps2float.c" "$ROOT/libretro/libretro-common/queues/retro_spsc.c"
+	rm -f "$DIR/vu_hwrealvu_vu0.o" "$DIR/vu_hwrealvu_vuops.o"
 	"$DIR/vu_hwrealvu" "$EXPECTED" | tail -3
 else
 	echo "  skipped: set PS2AUTOTESTS to a ps2autotests checkout to run this"

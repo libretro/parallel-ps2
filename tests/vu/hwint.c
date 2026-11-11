@@ -1,6 +1,6 @@
 /*  VU integer lower ops against console captures.
  *
- *  Scores IADD, IADDI, IADDIU, IAND, IOR, ISUB and ISUBIU (pcsx2/VUops.cpp)
+ *  Scores IADD, IADDI, IADDIU, IAND, IOR, ISUB and ISUBIU (pcsx2/VUops.c)
  *  against ps2autotests tests/vu/lower/integer.expected.
  *
  *  Two harness details decide whether this measures the emulator or

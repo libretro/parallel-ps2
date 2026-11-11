@@ -353,7 +353,7 @@ struct Pcsx2Config
 				bool    EnableFpuSoftFloat : 1;
 				/* Per-unit VU soft float, audit-shaped: the bit keeps that
 				 * unit on the interpreter, whose float ops already compute
-				 * through the ps2float model (VUops.cpp), instead of the
+				 * through the ps2float model (VUops.c), instead of the
 				 * SSE recompiler. Exactness first; a per-op recompiler
 				 * dispatch can replace the routing later without touching
 				 * this surface. VU0 macro mode (COP2 through the EE rec)

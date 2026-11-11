@@ -885,6 +885,7 @@ void emu_config_sync_hot(void)
 	if (EmuConfig.Gamefixes.EETimingHack)      w |= EMU_HOT_EE_TIMING;
 	if (THREAD_VU1)                            w |= EMU_HOT_VU1_THREAD;
 	if (INSTANT_VU1)                           w |= EMU_HOT_VU1_INSTANT;
+	if (rec.vu0ExtraOverflow)                  w |= EMU_HOT_VU0_EXTRA_OVERFLOW;
 	emu_hot               = w;
 	emu_hot_ee_cycle_rate = EmuConfig.Speedhacks.EECycleRate;
 	emu_hot_ee_cycle_skip = EmuConfig.Speedhacks.EECycleSkip;

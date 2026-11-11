@@ -1,8 +1,8 @@
 /*  VU EFU ops against console captures, driving the real code.
  *
  *  tests/vu/hwefu.c transcribes EATAN, ESIN and EEXP out of
- *  pcsx2/VUops.cpp and scores the copy; the three that go through
- *  ps2float.c it links for real. This links VUops.cpp itself and calls
+ *  pcsx2/VUops.c and scores the copy; the three that go through
+ *  ps2float.c it links for real. This links VUops.c itself and calls
  *  every one of them through the interpreter's own dispatch table.
  *
  *  Reaching them takes the instruction encoding rather than a function
@@ -30,7 +30,7 @@
 
 alignas(16) VURegs vuRegs[2];
 
-/* VUops.cpp reaches for these on paths this harness never takes: XGKICK
+/* VUops.c reaches for these on paths this harness never takes: XGKICK
  * and the MTVU handoff. The EFU ops touch none of it, so they are storage
  * and no-ops rather than behaviour. */
 #include "Config.h"
@@ -39,12 +39,13 @@ alignas(16) VURegs vuRegs[2];
 
 alignas(16) cpuRegisters cpuRegs;
 alignas(16) u8 eeHw[0x10000];
-alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
-asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");
+/* VUops.c reads its gamefixes from the hot settings word. */
+extern "C" u32 emu_hot;
+u32 emu_hot;
 
 /* vuDouble's clamp of a maximal exponent to the largest finite value is
  * gated on Cpu.Recompiler.vu0ExtraOverflow, which defaults off -- it is a
- * per-game fix, not the normal path. The zeroed EmuConfig above therefore
+ * per-game fix, not the normal path. The zeroed emu_hot above therefore
  * matches the default, and that is deliberate: this harness scores the
  * configuration almost every game runs under.
  *
@@ -335,7 +336,7 @@ static int run_integer(const char* dir, int* total)
  * an LFSR over those bits. The expected values are the same ones
  * tests/vu/hwrandom.c inlines from ps2autotests
  * tests/vu/lower/random.expected -- what differs is that these go through
- * VUops.cpp and its dispatch rather than a copy of the algorithm.
+ * VUops.c and its dispatch rather than a copy of the algorithm.
  *
  * RINIT and RXOR are type-4 lower ops taking a field selector; RGET and
  * RNEXT are type-3 and write a VF register, which is where the result is
@@ -455,7 +456,7 @@ static int run_random(int* total)
  *
  * The scenarios and their expected flags are the fourteen basic cases in
  * ps2autotests tests/vu/upper/clip.cpp, the same ones tests/vu/hwclip.c
- * inlines; these go through VUops.cpp instead of a copy.
+ * inlines; these go through VUops.c instead of a copy.
  *
  * What they cover is the comparison: relaxing one of the six tests from
  * greater-than to greater-or-equal fails a case. What they do not cover is
@@ -534,7 +535,7 @@ static int run_clip(int* total)
  * applies to the decimal operands here too.
  */
 
-/* The macro-mode entry points (VUops.cpp) and QMFC2/QMTC2 (VU0.c, linked
+/* The macro-mode entry points (VUops.c) and QMFC2/QMTC2 (VU0.c, linked
  * for them) come from R5900OpcodeTables.h. VU0.c's other dependencies are
  * the VU scheduling machinery these two do not reach. */
 
@@ -799,7 +800,7 @@ int main(int argc, char** argv)
 	}
 	failures += run_quad_moves(&total);
 
-	printf("hwrealvu: %d cases across %d ops, driven through VUops.cpp\n",
+	printf("hwrealvu: %d cases across %d ops, driven through VUops.c\n",
 	       total, NOPS + NIOPS + 10);
 	return failures != 0;
 }

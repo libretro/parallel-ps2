@@ -374,7 +374,7 @@
     <ClCompile Include="VU1microInterp.c">
       <Filter>System\Ps2\EmotionEngine\VU\Interpreter</Filter>
     </ClCompile>
-    <ClCompile Include="VUops.cpp">
+    <ClCompile Include="VUops.c">
       <Filter>System\Ps2\EmotionEngine\VU\Interpreter</Filter>
     </ClCompile>
     <ClCompile Include="Sif.c">

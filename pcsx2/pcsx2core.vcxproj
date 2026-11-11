@@ -239,7 +239,7 @@
     <ClCompile Include="VU0microInterp.c" />
     <ClCompile Include="VU1micro.c" />
     <ClCompile Include="VU1microInterp.c" />
-    <ClCompile Include="VUops.cpp" />
+    <ClCompile Include="VUops.c" />
     <ClCompile Include="Sif.c" />
     <ClCompile Include="Sif0.c" />
     <ClCompile Include="Sif1.c" />

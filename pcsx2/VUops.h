@@ -59,7 +59,7 @@ static __fi float vu_itof_chop(s32 v)
 
 typedef struct _VURegsNum
 {
-	u8 pipe; // if 0xff, COP2
+	u8 pipe; /* if 0xff, COP2 */
 	u8 VFwrite;
 	u8 VFwxyzw;
 	u8 VFr0xyzw;

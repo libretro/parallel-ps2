@@ -99,6 +99,37 @@ jobs:
           LRPS2_CHECKED_CORE: ${{ github.workspace }}/pcsx2_libretro.so
         run: sh tests/pgsowner/build.sh
 
+  # The suites that link a converted C unit, built with mingw-w64 and run
+  # under wine. Built from Linux, mingw writes name.exe whatever -o says;
+  # a script that then ran "name" ran the last Linux build instead, and
+  # passed without ever running the Windows one.
+  mingw:
+    name: suites built with mingw-w64
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install mingw-w64 and wine
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 wine64
+
+      - name: Build and run them as Windows programs
+        env:
+          CC: x86_64-w64-mingw32-gcc
+          CXX: x86_64-w64-mingw32-g++
+          WINEDEBUG: -all
+        run: |
+          WINE=$(command -v wine || command -v wine64)
+          export WINE
+          for t in biosver perfmetrics profiler vuops; do
+            echo "== $t"
+            sh "tests/$t/build.sh"
+          done
+
   # PROFILER=1 adds a source and turns on the PROFILE_* macros in a dozen
   # units, none of which another build compiles: a change that broke them
   # went unseen until someone took a profile.

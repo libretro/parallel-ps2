@@ -22,6 +22,7 @@ extern "C" {
 #define EMU_HOT_EE_TIMING   (1u << 6) /* Gamefixes.EETimingHack */
 #define EMU_HOT_VU1_THREAD  (1u << 7) /* THREAD_VU1: VU1 runs on its own thread */
 #define EMU_HOT_VU1_INSTANT (1u << 8) /* Speedhacks.vu1Instant */
+#define EMU_HOT_VU0_EXTRA_OVERFLOW (1u << 9) /* Cpu.Recompiler.vu0ExtraOverflow */
 
 /* As truth values: MSVC's C89 bool is an unsigned char. */
 #define EMU_THREAD_VU1  ((emu_hot & EMU_HOT_VU1_THREAD) != 0)

@@ -1,6 +1,6 @@
 /*  VU random unit against console captures.
  *
- *  Scores RINIT, RXOR, RGET and RNEXT (pcsx2/VUops.cpp) against
+ *  Scores RINIT, RXOR, RGET and RNEXT (pcsx2/VUops.c) against
  *  ps2autotests tests/vu/lower/random.expected.
  *
  *  The R register is not a general 32-bit register: RINIT and RXOR keep
@@ -25,7 +25,7 @@ typedef uint32_t u32;
 
 static u32 R;
 
-/* Transcribed from VU0MI_RINIT / VU0MI_RXOR / AdvanceLFSR in VUops.cpp. */
+/* Transcribed from VU0MI_RINIT / VU0MI_RXOR / AdvanceLFSR in VUops.c. */
 static void rinit(u32 v) { R = 0x3F800000u | (v & 0x007FFFFFu); }
 static void rxor(u32 v)  { R = 0x3F800000u | ((R ^ v) & 0x007FFFFFu); }
 static u32  rget(void)   { return R; }

@@ -105,6 +105,15 @@ static bool write_image(const char* path, const char* romver)
 	return write_image_at(path, romver, 0, 0);
 }
 
+/* Windows' folder listing joins with '\\', where the test wrote '/'. */
+static bool same_path(const char* a, const char* b)
+{
+	for (; *a && *b; a++, b++)
+		if (*a != *b && !((*a == '/' || *a == '\\') && (*b == '/' || *b == '\\')))
+			return false;
+	return *a == *b;
+}
+
 static bool write_bytes(const char* path, unsigned char fill, size_t len)
 {
 	FILE* f = fopen(path, "wb");
@@ -232,7 +241,7 @@ int main(int argc, char** argv)
 		check(IsBIOSAvailable(""), "nothing configured, a BIOS in the folder: available");
 		check(LoadBIOS(), "LoadBIOS takes the folder's BIOS");
 		snprintf(path, sizeof(path), "%s/scph.bin", dir);
-		check(!strcmp(BiosPath, path), "BiosPath is the one it loaded");
+		check(same_path(BiosPath, path), "BiosPath is the one it loaded");
 		check(BiosRegion == 1 && BiosVersion == ((2u << 8) | 20u) && !BiosIsArcade && !NoOSD,
 			"its version and region; 4 MiB has an OSD");
 		check(!memcmp(eeMem->ROM + 0x2700, "RESET", 5) && !memcmp(eeMem->ROM + 0x2700 + 0x140, "0220AC", 6),

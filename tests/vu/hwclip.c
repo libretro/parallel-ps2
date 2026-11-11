@@ -1,6 +1,6 @@
 /*  VU CLIP against console captures.
  *
- *  Scores _vuCLIP (pcsx2/VUops.cpp) against the hardware results in
+ *  Scores _vuCLIP (pcsx2/VUops.c) against the hardware results in
  *  ps2autotests tests/vu/upper/clip.expected. Each case there resets the
  *  clip flag, runs one CLIP, waits out the pipeline and reads the flag
  *  back with FCGET, so a single CLIP from a known state is all that has
@@ -28,7 +28,7 @@
 typedef uint32_t u32; typedef int32_t s32;
 typedef struct { u32 x,y,z,w; } VF;
 
-/* Transcribed from _vuCLIP in pcsx2/VUops.cpp. */
+/* Transcribed from _vuCLIP in pcsx2/VUops.c. */
 static u32 clip(u32 flag, const VF* fs, const VF* ft)
 {
     s32 value = (s32)ft->w;

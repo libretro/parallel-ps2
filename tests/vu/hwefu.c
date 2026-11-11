@@ -15,7 +15,7 @@
  *  measured. The scalar ops read field Z of the source.
  *
  *  Not covered: the remaining EFU ops. ESADD, ERSADD, ELENG, ERLENG and
- *  ESUM are built from vuDouble and plain arithmetic inside VUops.cpp
+ *  ESUM are built from vuDouble and plain arithmetic inside VUops.c
  *  rather than ps2float.c, and EATAN, EEXP and ESIN are polynomial
  *  approximations there too, so scoring any of them means transcribing
  *  code instead of linking it. That is worth doing, but it is a different
@@ -34,9 +34,9 @@
 
 typedef uint32_t u32;
 
-/* Mirrors _vuCalculateEATAN and its callers in pcsx2/VUops.cpp, including
+/* Mirrors _vuCalculateEATAN and its callers in pcsx2/VUops.c, including
  * the (x-1)/(x+1) reduction the hardware applies. Unlike the three ps2float
- * ops this is transcribed, because it lives in VUops.cpp behind VURegs. */
+ * ops this is transcribed, because it lives in VUops.c behind VURegs. */
 static u32 eatan(u32 in)
 {
 	static const float c[9] = { 0.999999344348907f, -0.333298563957214f,
@@ -134,7 +134,7 @@ static int lookup(const char* tok, u32* out)
 #define ESIN_MIN_PASS 7
 #define EEXP_MIN_PASS 8
 
-/* Mirrors _vuChop/_vuPsMul/_vuPsAdd in pcsx2/VUops.cpp: round toward zero
+/* Mirrors _vuChop/_vuPsMul/_vuPsAdd in pcsx2/VUops.c: round toward zero
  * at 24 bits, no infinities, no denormals. */
 static float pschop(double d)
 {
@@ -152,7 +152,7 @@ static float pschop(double d)
 static float psmul(float a, float b) { return pschop((double)a * (double)b); }
 static float psadd(float a, float b) { return pschop((double)a + (double)b); }
 
-/* Mirrors _vuESIN in pcsx2/VUops.cpp, doubles and all. */
+/* Mirrors _vuESIN in pcsx2/VUops.c, doubles and all. */
 static u32 esin(u32 in)
 {
 	static const float c[5] = { 1.0f, -0.166666567325592f, 0.008333025500178f,
@@ -167,7 +167,7 @@ static u32 esin(u32 in)
 	return out;
 }
 
-/* Mirrors _vuEEXP in pcsx2/VUops.cpp. */
+/* Mirrors _vuEEXP in pcsx2/VUops.c. */
 static u32 eexp(u32 in)
 {
 	static const float c[6] = { 0.249998688697815f, 0.031257584691048f,

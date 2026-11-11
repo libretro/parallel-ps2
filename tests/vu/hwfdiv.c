@@ -2,7 +2,7 @@
  *
  *  Scores the Q-pipeline latency our interpreter uses for DIV, SQRT and
  *  RSQRT (the `cycles` fields in _vuRegsDIV, _vuRegsSQRT and _vuRegsRSQRT
- *  in pcsx2/VUops.cpp) against ps2autotests
+ *  in pcsx2/VUops.c) against ps2autotests
  *  tests/vu/lower/fdivdelay.expected.
  *
  *  The capture's "single delayed" sections issue the divide and then a run
@@ -25,7 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The latencies pcsx2/VUops.cpp assigns. Keep in step with _vuRegsDIV,
+/* The latencies pcsx2/VUops.c assigns. Keep in step with _vuRegsDIV,
  * _vuRegsSQRT and _vuRegsRSQRT. */
 static const struct { const char* name; int cycles; } kOps[] = {
 	{ "DIV",   7  },
