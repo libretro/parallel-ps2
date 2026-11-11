@@ -1,9 +1,9 @@
-# Generate GameDatabaseBuiltin.cpp from bin/resources/GameIndex.yaml.
+# Generate GameDatabaseBuiltin.c from bin/resources/GameIndex.yaml.
 # CMake-script twin of tools/gen_gamedb_builtin.sh for hosts without a
 # POSIX shell (MSVC runners). Output is byte-identical to the .sh script.
-# Usage: cmake -DYAML=<in> -DOUT=<out.cpp> -P gen_gamedb_builtin.cmake
+# Usage: cmake -DYAML=<in> -DOUT=<out.c> -P gen_gamedb_builtin.cmake
 if(NOT YAML OR NOT OUT)
-	message(FATAL_ERROR "gen_gamedb_builtin.cmake: -DYAML=<in> -DOUT=<out.cpp> required")
+	message(FATAL_ERROR "gen_gamedb_builtin.cmake: -DYAML=<in> -DOUT=<out.c> required")
 endif()
 file(READ "${YAML}" HEX HEX)
 # "0x..," per byte, 20 bytes per line (matches the awk layout).
@@ -18,13 +18,13 @@ if(NOT HEX MATCHES "\n$")
 	string(APPEND HEX "\n")
 endif()
 file(WRITE "${OUT}.tmp"
-"// Auto-generated from bin/resources/GameIndex.yaml. Do not edit by hand.
-// Generated at build time by tools/gen_gamedb_builtin.sh.
-//
-// Embeds the PCSX2 game-compatibility database into the core so it works
-// without an external <systemdir>/resources/GameIndex.yaml.
+"/* Auto-generated from bin/resources/GameIndex.yaml. Do not edit by hand.
+ * Generated at build time by tools/gen_gamedb_builtin.sh.
+ *
+ * Embeds the PCSX2 game-compatibility database into the core so it works
+ * without an external <systemdir>/resources/GameIndex.yaml. */
 
-#include <cstddef>
+#include <stddef.h>
 
 extern const unsigned char g_gameDatabaseBuiltin[];
 extern const size_t g_gameDatabaseBuiltinSize;

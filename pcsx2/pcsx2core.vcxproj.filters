@@ -605,7 +605,10 @@
     <ClCompile Include="CDVD\IsoFS\IsoFSCDVD.c">
       <Filter>System\IsoFS</Filter>
     </ClCompile>
-    <ClCompile Include="GameDatabase.cpp">
+    <ClCompile Include="GameDatabase.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="GameDatabaseFixes.cpp">
       <Filter>Misc</Filter>
     </ClCompile>
     <ClCompile Include="IPU\IPUdma.c">

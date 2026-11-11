@@ -175,7 +175,7 @@ build*/
 # emitter oracle build products
 tests/emitter/emitter_hwas
 tests/emitter/*.o
-pcsx2/GameDatabaseBuiltin.cpp
+pcsx2/GameDatabaseBuiltin.c
 /tests/mtgsown/mtgsown
 /tests/mtgsown/mtgsown_rule1
 /tests/mtgsown/mtgsown_rule2

@@ -32,6 +32,7 @@
 #include "ps2/HwInternal.h"
 #include "ps2/BiosTools.h"
 #include "PerformanceMetrics.h"
+#include "GameDatabase.h"
 
 #include <file/file_path.h>
 
@@ -604,6 +605,8 @@ static const char* const tbl_GamefixNames[] =
 	"VuAddSub",
 };
 
+static_assert(C89_ARRAY_SIZE(tbl_GamefixNames) == GamefixId_COUNT, "a name for every game fix");
+
 const char* EnumToString(GamefixId id)
 {
 	return tbl_GamefixNames[id];
@@ -810,6 +813,26 @@ const char* emu_config_current_irx(void)
 const char* emu_folders_bios(void)
 {
 	return EmuFolders::Bios;
+}
+
+/* For GameDatabase.c. */
+const char* emu_folders_resources(void)
+{
+	return EmuFolders::Resources;
+}
+
+const char* emu_config_gamefix_name(u32 id)
+{
+	return id < GamefixId_COUNT ? tbl_GamefixNames[id] : NULL;
+}
+
+bool emu_config_parse_speedhack_name(const char* name, size_t len, u32* out)
+{
+	SpeedHack id;
+	if (!Pcsx2Config::SpeedhackOptions::ParseSpeedHackName(name, len, &id))
+		return false;
+	*out = (u32)id;
+	return true;
 }
 
 /* For PerformanceMetrics.c. */

@@ -1,17 +1,17 @@
 # All flags, libraries, etc, that are shared between PCSX2 compilation files
-# GameDatabaseBuiltin.cpp is generated from the shipped GameIndex.yaml at
+# GameDatabaseBuiltin.c is generated from the shipped GameIndex.yaml at
 # build time. The static Makefile uses tools/gen_gamedb_builtin.sh (POSIX
 # shell + od + awk); CMake uses the byte-identical cmake -P twin so MSVC
 # runners without a shell can build too.
 add_custom_command(
-	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.cpp
+	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.c
 	COMMAND ${CMAKE_COMMAND}
 		-DYAML=${CMAKE_SOURCE_DIR}/bin/resources/GameIndex.yaml
-		-DOUT=${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.cpp
+		-DOUT=${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.c
 		-P ${CMAKE_SOURCE_DIR}/tools/gen_gamedb_builtin.cmake
 	DEPENDS ${CMAKE_SOURCE_DIR}/bin/resources/GameIndex.yaml
 	        ${CMAKE_SOURCE_DIR}/tools/gen_gamedb_builtin.cmake
-	COMMENT "Generating GameDatabaseBuiltin.cpp from GameIndex.yaml"
+	COMMENT "Generating GameDatabaseBuiltin.c from GameIndex.yaml"
 	VERBATIM)
 
 add_library(PCSX2_FLAGS INTERFACE)
@@ -97,8 +97,9 @@ set(pcsx2Sources
 	Cache.c
 	COP0.c
 	Counters.c
-	GameDatabase.cpp
-	${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.cpp
+	GameDatabase.c
+	GameDatabaseFixes.cpp
+	${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.c
 	Elfheader.c
 	FW.c
 	FiFo.c

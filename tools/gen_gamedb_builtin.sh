@@ -1,20 +1,20 @@
 #!/bin/sh
-# Generate GameDatabaseBuiltin.cpp from bin/resources/GameIndex.yaml.
+# Generate GameDatabaseBuiltin.c from bin/resources/GameIndex.yaml.
 # POSIX shell + od + awk only -- no new build dependencies.
 # Used by the static Makefile. The CMake build drives gen_gamedb_builtin.cmake
 # instead, because the MSVC Windows runner has no sh; keep the two in sync.
-# Usage: gen_gamedb_builtin.sh <yaml> <out.cpp>
+# Usage: gen_gamedb_builtin.sh <yaml> <out.c>
 set -e
 YAML="$1"; OUT="$2"
 {
 	printf '%s\n' \
-'// Auto-generated from bin/resources/GameIndex.yaml. Do not edit by hand.' \
-'// Generated at build time by tools/gen_gamedb_builtin.sh.' \
-'//' \
-'// Embeds the PCSX2 game-compatibility database into the core so it works' \
-'// without an external <systemdir>/resources/GameIndex.yaml.' \
+'/* Auto-generated from bin/resources/GameIndex.yaml. Do not edit by hand.' \
+' * Generated at build time by tools/gen_gamedb_builtin.sh.' \
+' *' \
+' * Embeds the PCSX2 game-compatibility database into the core so it works' \
+' * without an external <systemdir>/resources/GameIndex.yaml. */' \
 '' \
-'#include <cstddef>' \
+'#include <stddef.h>' \
 '' \
 'extern const unsigned char g_gameDatabaseBuiltin[];' \
 'extern const size_t g_gameDatabaseBuiltinSize;' \

@@ -74,16 +74,36 @@ static void test_log(enum retro_log_level level, const char* fmt, ...)
 }
 extern "C" retro_log_printf_t log_cb = test_log;
 
-/* The database reads its yaml through this. */
+/* The database reads GameIndex.yaml from the resources folder when the
+ * option says so and the file is there, else the copy built into the
+ * core. Here the folder is "/res", its file is s_yaml, and the built-in
+ * copy is one entry of its own. */
 static std::string s_yaml;
-namespace Host
+static bool s_external     = true;
+static bool s_file_present = true;
+static int s_file_reads;
+static char s_read_path[256];
+bool emu_config_external_gameindex(void) { return s_external; }
+extern "C" int64_t filestream_read_file(const char* path, void** buf, int64_t* len)
 {
-	std::optional<std::string> ReadResourceFileToString(const char* name)
-	{
-		(void)name;
-		return s_yaml;
-	}
+	char* copy;
+	s_file_reads++;
+	snprintf(s_read_path, sizeof(s_read_path), "%s", path);
+	*buf = NULL;
+	*len = 0;
+	if (!s_file_present)
+		return 0;
+	copy = (char*)malloc(s_yaml.size() + 1);
+	memcpy(copy, s_yaml.data(), s_yaml.size());
+	copy[s_yaml.size()] = '\0';
+	*buf = copy;
+	*len = (int64_t)s_yaml.size();
+	return 1;
 }
+const unsigned char g_gameDatabaseBuiltin[] =
+	"SLUS-77777:\n"
+	"  name: \"Built In\"\n";
+const size_t g_gameDatabaseBuiltinSize = sizeof(g_gameDatabaseBuiltin) - 1;
 
 /* The three gsHWFixes fields whose values are function names --
  * getSkipCount, beforeDraw and moveHandler -- are looked up in tables that
@@ -93,12 +113,12 @@ namespace Host
  * database unchecked, and they are the ones most likely to break on a GS
  * refactor, so it is worth knowing they are not covered rather than
  * assuming a green run includes them. */
-s16 GSLookupGetSkipCountFunctionId(const char*, size_t)
-{ return 0; }
-s16 GSLookupBeforeDrawFunctionId(const char*, size_t)
-{ return 0; }
-s16 GSLookupMoveHandlerFunctionId(const char*, size_t)
-{ return 0; }
+s16 GSLookupGetSkipCountFunctionId(const char* n, size_t l)
+{ (void)n; (void)l; return 0; }
+s16 GSLookupBeforeDrawFunctionId(const char* n, size_t l)
+{ (void)n; (void)l; return 0; }
+s16 GSLookupMoveHandlerFunctionId(const char* n, size_t l)
+{ (void)n; (void)l; return 0; }
 
 /* Memory card naming, reached for the memcardFilters field; C, as
  * MemoryCardFile.c is. */
@@ -204,20 +224,20 @@ static int fixture(void)
 	FCHECK(!strcmp(a->serial, "slus-00001"), "the serial is stored lower case");
 	FCHECK(GameDatabase_FindGame("SLUS-99999") == NULL && GameDatabase_FindGame("") == NULL,
 		"an unknown serial is not found");
-	FCHECK(a->eeRoundMode == FPRoundMode::Nearest && a->eeDivRoundMode == FPRoundMode::MaxCount
+	FCHECK(a->eeRoundMode == (u8)FPRoundMode::Nearest && a->eeDivRoundMode == GAMEDB_ROUND_UNSET
 		&& (int)a->vu0RoundMode == 3 && (int)a->vu1RoundMode == 1,
 		"round modes: vuRoundMode sets both, vu1RoundMode then overrides");
 	FCHECK((int)a->eeClampMode == 2 && (int)a->vu0ClampMode == 1 && (int)a->vu1ClampMode == 1,
 		"clamp modes");
 	FCHECK(a->nGameFixes == 2 && a->gameFixes[0] == Fix_XGKick && a->gameFixes[1] == Fix_SkipMpeg,
 		"game fixes in order, the repeat and the unknown one dropped");
-	FCHECK(a->nSpeedHacks == 2 && a->speedHacks[0].id == SpeedHack::MTVU && a->speedHacks[0].value == 0
-		&& a->speedHacks[1].id == SpeedHack::EECycleRate && a->speedHacks[1].value == 2,
+	FCHECK(a->nSpeedHacks == 2 && a->speedHacks[0].id == (u32)SpeedHack::MTVU && a->speedHacks[0].value == 0
+		&& a->speedHacks[1].id == (u32)SpeedHack::EECycleRate && a->speedHacks[1].value == 2,
 		"speed hacks in order, the unknown one dropped");
 	FCHECK(a->nGSHWFixes == 3
-		&& a->gsHWFixes[0].id == GameDatabaseSchema::GSHWFixId::TextureInsideRT && a->gsHWFixes[0].value == 2
-		&& a->gsHWFixes[1].id == GameDatabaseSchema::GSHWFixId::Mipmap && a->gsHWFixes[1].value == 1
-		&& a->gsHWFixes[2].id == GameDatabaseSchema::GSHWFixId::GetSkipCount,
+		&& a->gsHWFixes[0].id == GAMEDB_HWFIX_TEXTURE_INSIDE_RT && a->gsHWFixes[0].value == 2
+		&& a->gsHWFixes[1].id == GAMEDB_HWFIX_MIPMAP && a->gsHWFixes[1].value == 1
+		&& a->gsHWFixes[2].id == GAMEDB_HWFIX_GET_SKIP_COUNT,
 		"GS fixes in order, a bad value and an unknown name dropped");
 	FCHECK(!strcmp(a->memcardFilters, "SLUS-00001/SLUS-00002") && !strcmp(b->memcardFilters, ""),
 		"memory card filters joined with '/', empty when there are none");
@@ -245,9 +265,32 @@ static int fixture(void)
 
 	GameDatabase_Unload();
 	FCHECK(GameDatabase_FindGame("SLUS-00001") == NULL, "a lookup after unloading finds nothing, and loads nothing");
+	s_file_reads = 0;
 	GameDatabase_Load();
 	FCHECK(GameDatabase_FindGame("SLUS-00001") != NULL, "a load after unloading has the entries again");
+	FCHECK(s_file_reads == 1 && !strcmp(s_read_path, "/res/GameIndex.yaml"),
+		"the external database is GameIndex.yaml in the resources folder");
+	FCHECK(GameDatabase_FindGame("SLUS-77777") == NULL, "the external file, not the built-in copy");
 	GameDatabase_Unload();
+
+	/* The built-in copy: when the option is off, the file is not even
+	 * looked for; when it is on and the file is missing, it is the
+	 * fallback. */
+	s_external   = false;
+	s_file_reads = 0;
+	GameDatabase_Load();
+	FCHECK(s_file_reads == 0 && GameDatabase_FindGame("SLUS-77777") != NULL
+		&& GameDatabase_FindGame("SLUS-00001") == NULL,
+		"the option off: the built-in copy, the folder not read");
+	GameDatabase_Unload();
+	s_external     = true;
+	s_file_present = false;
+	GameDatabase_Load();
+	FCHECK(s_file_reads == 1 && GameDatabase_FindGame("SLUS-77777") != NULL
+		&& !strcmp(GameDatabase_FindGame("slus-77777")->name, "Built In"),
+		"the option on and no file: the built-in copy");
+	GameDatabase_Unload();
+	s_file_present = true;
 
 	printf("dbload: fixture %s\n", s_fixture_fails ? "FAIL" : "ok");
 	return s_fixture_fails;
@@ -261,6 +304,8 @@ int main(int argc, char** argv)
 	int entries = 0;
 
 	if (!f) { fprintf(stderr, "cannot open %s\n", path); return 2; }
+	/* where the external database is looked for */
+	strcpy(EmuFolders::Resources, "/res");
 	fseek(f, 0, SEEK_END); size = ftell(f); fseek(f, 0, SEEK_SET);
 	s_yaml.resize((size_t)size);
 	if (fread(&s_yaml[0], 1, (size_t)size, f) != (size_t)size)

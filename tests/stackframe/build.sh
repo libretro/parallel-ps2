@@ -40,7 +40,7 @@ while IFS= read -r cmd; do
 	} > "$WORK/$n.sh"
 done < "$WORK/cmds.txt"
 
-# A source the Makefile generates (GameDatabaseBuiltin.cpp, from the
+# A source the Makefile generates (GameDatabaseBuiltin.c, from the
 # shipped game index) does not exist in a fresh checkout until a build
 # makes it; make it the Makefile's own way, or its compile fails here.
 sed -E 's/^[^ ]+ -c -o[^ ]+ ([^ ]+\.(c|cc|cpp)) .*/\1/' "$WORK/cmds.txt" | while IFS= read -r src; do

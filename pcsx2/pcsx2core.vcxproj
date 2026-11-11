@@ -136,7 +136,8 @@
     <ClCompile Include="DEV9\sockets.cpp" />
     <ClCompile Include="DEV9\net.cpp" />
     <ClCompile Include="Frontend\LayeredSettingsInterface.cpp" />
-    <ClCompile Include="GameDatabase.cpp" />
+    <ClCompile Include="GameDatabase.c" />
+    <ClCompile Include="GameDatabaseFixes.cpp" />
     <ClCompile Include="Gif_Unit.c" />
     <ClCompile Include="GS\Renderers\DX11\D3D.cpp" />
     <ClCompile Include="GS\Renderers\DX12\GSDevice12.cpp" />

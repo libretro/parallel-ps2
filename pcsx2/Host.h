@@ -49,7 +49,4 @@ namespace Host
 	/// Reads a file from the resources directory of the application.
 	/// This may be outside of the "normal" filesystem on platforms such as Mac.
 	std::optional<std::vector<u8>> ReadResourceFile(const char* filename);
-
-	/// Reads a resource file file from the resources directory as a string.
-	std::optional<std::string> ReadResourceFileToString(const char* filename);
 } // namespace Host

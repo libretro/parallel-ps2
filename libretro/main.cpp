@@ -66,6 +66,7 @@
 #endif
 #include "../pcsx2/Frontend/InputManager.h"
 #include "../pcsx2/VMManager.h"
+#include "../pcsx2/GameDatabase.h"
 #include "patches.h"
 #include "../pcsx2/Patch.h"
 
@@ -236,9 +237,6 @@ static bool setting_gpu_palette_conversion     = false;
 static bool setting_preload_frame_data         = false;
 static bool setting_use_external_gameindex     = false;
 
-// Built-in GameIndex.yaml database, embedded in the core (GameDatabaseBuiltin.cpp).
-extern const unsigned char g_gameDatabaseBuiltin[];
-extern const size_t g_gameDatabaseBuiltinSize;
 static bool setting_align_sprite               = false;
 static bool setting_merge_sprite               = false;
 static bool setting_unscaled_palette_draw      = false;
@@ -3694,88 +3692,11 @@ std::optional<std::vector<u8>> Host::ReadResourceFile(const char* filename)
 	return ret;
 }
 
-std::optional<std::string> Host::ReadResourceFileToString(const char* filename)
+/* GameDatabase.c reads GameIndex.yaml from the resources folder only
+ * when this option is on, and falls back to its built-in copy. */
+bool emu_config_external_gameindex(void)
 {
-	// GameIndex.yaml (the game-compatibility database) is embedded in the core
-	// so games work without an external resources file. Behaviour:
-	//   "use external gameindex database" disabled (default): always built-in.
-	//   enabled: try <systemdir>/resources/GameIndex.yaml, fall back to built-in
-	//            if it is missing.
-	// This is scoped to GameIndex.yaml; all other resources use the normal
-	// external-only path below.
-	if (!strcmp(filename, "GameIndex.yaml"))
-	{
-		if (setting_use_external_gameindex)
-		{
-			char path[PCSX2_PATH_MAX];
-
-			pcsx2_path_join(path, sizeof(path), EmuFolders::Resources, filename);
-			void* ebuf = nullptr;
-			int64_t elen = 0;
-			std::optional<std::string> ext;
-			if (filestream_read_file(path, &ebuf, &elen))
-			{
-				ext.emplace();
-				if (elen > 0)
-					ext->assign(static_cast<const char*>(ebuf), static_cast<size_t>(elen));
-				free(ebuf);
-			}
-			if (ext.has_value())
-				return ext;
-			log_cb(RETRO_LOG_INFO,
-				"External GameIndex.yaml not found at \"%s\", using built-in database.\n",
-				path);
-		}
-		return std::string(reinterpret_cast<const char*>(g_gameDatabaseBuiltin),
-			g_gameDatabaseBuiltinSize);
-	}
-
-	char path[PCSX2_PATH_MAX];
-
-	pcsx2_path_join(path, sizeof(path), EmuFolders::Resources, filename);
-	void* rbuf = nullptr;
-	int64_t rlen = 0;
-	std::optional<std::string> ret;
-	if (filestream_read_file(path, &rbuf, &rlen))
-	{
-		ret.emplace();
-		if (rlen > 0)
-			ret->assign(static_cast<const char*>(rbuf), static_cast<size_t>(rlen));
-		free(rbuf);
-	}
-	if (!ret.has_value())
-	{
-		std::string str = std::string(filename) + " is missing, expect bugs.";
-		unsigned msg_interface_version = 0;
-		environ_cb(RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION, &msg_interface_version);
-
-		if (msg_interface_version >= 1)
-		{
-			retro_message_ext msg = {
-				str.c_str(),
-				3000,
-				3,
-				RETRO_LOG_WARN,
-				RETRO_MESSAGE_TARGET_OSD,
-				RETRO_MESSAGE_TYPE_NOTIFICATION,
-				-1
-			};
-			environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, &msg);
-		}
-		else
-		{
-			retro_message msg = {
-				str.c_str(),
-				180
-			};
-			environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
-		}
-
-		// OSD messages should be kept pretty short, but let's give the user a bit more info in logs.
-		log_cb(RETRO_LOG_ERROR, "Failed to read resource file to string \"%s\", path \"%s\"\n", filename, path);
-		log_cb(RETRO_LOG_WARN, "Please check the docs for more informations: https://docs.libretro.com/library/lrps2/\n");
-	}
-	return ret;
+	return setting_use_external_gameindex;
 }
 
 void Host::OnGameChanged(const std::string& disc_path,

@@ -61,10 +61,13 @@ extern bool GSSnapshotSave;
 extern bool GSSnapshotLoad;
 extern u64  GSSnapshotKey;
 
-// Returns the ID for the specified function, otherwise -1.
+/* The ID for the named function, otherwise -1. C linkage: the game
+ * database (GameDatabase.c) looks them up. */
+extern "C" {
 s16 GSLookupGetSkipCountFunctionId(const char* name, size_t length);
 s16 GSLookupBeforeDrawFunctionId(const char* name, size_t length);
 s16 GSLookupMoveHandlerFunctionId(const char* name, size_t length);
+}
 
 void GSinit(void);
 void GSshutdown(void);
