@@ -1581,7 +1581,7 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 	if (!src)
 		src = FindSourceInMap(TEX0, TEXA, psm_s, clut, gpu_clut, compare_lod, region, is_fixed_tex0, m_src.m_map[lookup_page]);
 
-	if (src && src->m_from_target && GSConfig.UserHacks_TextureInsideRt >= GSTextureInRtMode::MergeTargets && GSLocalMemory::GetUnwrappedEndBlockAddress(TEX0.TBP0, TEX0.TBW, TEX0.PSM, r) > src->m_from_target->m_end_block)
+	if (src && src->m_from_target && GSConfig.UserHacks_TextureInsideRt >= GS_TEXINRT_MERGE_TARGETS && GSLocalMemory::GetUnwrappedEndBlockAddress(TEX0.TBP0, TEX0.TBW, TEX0.PSM, r) > src->m_from_target->m_end_block)
 	{
 		m_src.RemoveAt(src);
 		src = nullptr;
@@ -1968,7 +1968,7 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 									((r.w - 1) / GSLocalMemory::m_psm[psm].pgs.y > 0 || (ReadEndX(bw, psm, r) - 1) / GSLocalMemory::m_psm[psm].pgs.x >= static_cast<int>(t->m_TEX0.TBW)) &&
 									PagesInTarget(t, bp, bw, psm, r)) ? 1 : 0;
 
-								if (GSConfig.UserHacks_TextureInsideRt >= GSTextureInRtMode::MergeTargets && GSLocalMemory::GetUnwrappedEndBlockAddress(bp, bw, psm, req_rect) > dst->m_end_block)
+								if (GSConfig.UserHacks_TextureInsideRt >= GS_TEXINRT_MERGE_TARGETS && GSLocalMemory::GetUnwrappedEndBlockAddress(bp, bw, psm, req_rect) > dst->m_end_block)
 									continue;
 								else
 								{
@@ -2120,7 +2120,7 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 				}
 				// Make sure the texture actually is INSIDE the RT, it's possibly not valid if it isn't.
 				// Also check BP >= TBP, create source isn't equpped to expand it backwards and all data comes from the target. (GH3)
-				else if (GSConfig.UserHacks_TextureInsideRt >= GSTextureInRtMode::InsideTargets &&
+				else if (GSConfig.UserHacks_TextureInsideRt >= GS_TEXINRT_INSIDE_TARGETS &&
 					(GSLocalMemory::m_psm[color_psm].bpp >= 16 || (possible_shuffle && GSLocalMemory::m_psm[color_psm].bpp == 8 && GSLocalMemory::m_psm[t->m_TEX0.PSM].bpp == 32)) && // Channel shuffles or non indexed lookups.
 					t->m_age <= 1 && (!found_t || t->m_last_draw > dst->m_last_draw) && CanTranslate(bp, bw, psm, block_boundary_rect, t->m_TEX0.TBP0, t->m_TEX0.PSM, t->m_TEX0.TBW))
 				{
@@ -2286,7 +2286,7 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 
 						// Strictly speaking this path is no longer needed, but I'm leaving it here for now because Guitar
 						// Hero III needs it to merge crowd textures.
-						else if (GSConfig.UserHacks_TextureInsideRt >= GSTextureInRtMode::MergeTargets && !tex_merge_rt)
+						else if (GSConfig.UserHacks_TextureInsideRt >= GS_TEXINRT_MERGE_TARGETS && !tex_merge_rt)
 						{
 							dst = t;
 							x_offset = 0;
@@ -2790,7 +2790,7 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVe
 				// And invalidate the target, we're drawing over it so we don't care what's there.
 				// We can't do this when upscaling, because of the vertex offset, the top/left rows often aren't drawn.
 
-				if (scale > 1.0f && GSConfig.UserHacks_HalfPixelOffset != GSHalfPixelOffset::Native)
+				if (scale > 1.0f && GSConfig.UserHacks_HalfPixelOffset != GS_HPO_NATIVE)
 				{
 					if (dst->m_type == RenderTarget)
 						g_gs_device->ClearRenderTarget(dst->m_texture, 0);
@@ -4173,7 +4173,7 @@ void GSTextureCache::InvalidateLocalMemReads(const GSOffset& off, const GSVector
 	// Could be reading Z24/32 back as CT32 (Gundam Battle Assault 3)
 	if (GSLocalMemory::m_psm[psm].bpp >= 16)
 	{
-		if (GSConfig.HWDownloadMode != GSHardwareDownloadMode::Enabled)
+		if (GSConfig.HWDownloadMode != GS_DOWNLOAD_ENABLED)
 			return;
 
 		bool z_found = false;
@@ -4438,7 +4438,7 @@ void GSTextureCache::InvalidateLocalMemReads(const GSOffset& off, const GSVector
 					}
 				}
 
-				if (GSConfig.HWDownloadMode != GSHardwareDownloadMode::Enabled)
+				if (GSConfig.HWDownloadMode != GS_DOWNLOAD_ENABLED)
 					continue;
 
 				// The draw rect and read rect overlap somewhat, we should update the target before downloading it.
@@ -4504,7 +4504,7 @@ bool GSTextureCache::Move(u32 SBP, u32 SBW, u32 SPSM, int sx, int sy, u32 DBP, u
 
 	// DX11/12 is a bit lame and can't partial copy depth targets. We could do this with a blit instead,
 	// but so far haven't seen anything which needs it.
-	const bool renderer_is_directx = (GSConfig.Renderer == GSRendererType::DX11 || GSConfig.Renderer == GSRendererType::DX12);
+	const bool renderer_is_directx = (GSConfig.Renderer == GS_RENDERER_DX11 || GSConfig.Renderer == GS_RENDERER_DX12);
 	if (renderer_is_directx)
 	{
 		if (spsm_s.depth || dpsm_s.depth)
@@ -5842,7 +5842,7 @@ GSTextureCache::Source* GSTextureCache::CreateSource(const GIFRegTEX0& TEX0, con
 	{
 		// lod won't contain the full range when using basic mipmapping, only that
 		// which is hashed, so we just allocate the full thing.
-		tlevels = (GSConfig.HWMipmapMode >= GSHWMipmapMode::Enabled) ?
+		tlevels = (GSConfig.HWMipmapMode >= GS_MIPMAP_ENABLED) ?
 		pcsx2_min_i(lod->y - lod->x + 1, GSDevice::GetMipmapLevelsForSize(tw, th)) : -1;
 		src->m_lod = *lod;
 	}
@@ -6634,7 +6634,7 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 	// expand/upload texture
 	const int tw = region.HasX() ? region.GetWidth() : (1 << TEX0.TW);
 	const int th = region.HasY() ? region.GetHeight() : (1 << TEX0.TH);
-	const int tlevels = lod ? ((GSConfig.HWMipmapMode >= GSHWMipmapMode::Enabled) ?
+	const int tlevels = lod ? ((GSConfig.HWMipmapMode >= GS_MIPMAP_ENABLED) ?
 		  pcsx2_min_i(lod->y - lod->x + 1, GSDevice::GetMipmapLevelsForSize(tw, th)) : -1) : 1;
 	GSTexture* tex = g_gs_device->CreateTexture(tw, th, tlevels, paltex ? GSTexture::Format::UNorm8 : GSTexture::Format::Color);
 	if (!tex)
@@ -7037,8 +7037,8 @@ GSTextureCache::Target* GSTextureCache::Target::Create(GIFRegTEX0 TEX0, int w, i
  * where a linear fetch has their mean. At native the one fragment. */
 float GSTextureCache::NativeSample(const Target* t)
 {
-	const bool shifted = GSConfig.UserHacks_HalfPixelOffset == GSHalfPixelOffset::Native ||
-		(GSConfig.UserHacks_HalfPixelOffset == GSHalfPixelOffset::Normal && t->m_half_pixel_shift);
+	const bool shifted = GSConfig.UserHacks_HalfPixelOffset == GS_HPO_NATIVE ||
+		(GSConfig.UserHacks_HalfPixelOffset == GS_HPO_NORMAL && t->m_half_pixel_shift);
 	return (t->m_scale != 1.0f && shifted) ? t->m_scale * 0.5f : 0.5f;
 }
 
@@ -7372,7 +7372,7 @@ void GSTextureCache::DropQueue(DropBatch* d, Target* t)
 	u32 run_channels;
 	u32 all;
 
-	if (GSConfig.HWDownloadMode != GSHardwareDownloadMode::Enabled || !t->m_texture)
+	if (GSConfig.HWDownloadMode != GS_DOWNLOAD_ENABLED || !t->m_texture)
 		return;
 	r = t->m_drawn_since_read.rintersect(t->m_valid);
 	if (r.rempty())

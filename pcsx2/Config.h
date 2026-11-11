@@ -27,126 +27,7 @@
 enum class CDVD_SourceType : uint8_t;
 
 
-// TODO - config - not a fan of the excessive use of enums and macros to make them work
-// a proper object would likely make more sense (if possible).
-
-
-enum class VsyncMode
-{
-	Off,
-	On,
-	Adaptive,
-};
-
-enum class GSRendererType : s8
-{
-	Auto = -1,
-	DX11 = 3,
-	OGL = 12,
-	SW = 13,
-	VK = 14,
-	DX12 = 15,
-	ParallelGS = 18
-};
-
-enum class GSInterlaceMode : u8
-{
-	Automatic,
-	Off,
-	WeaveTFF,
-	WeaveBFF,
-	BobTFF,
-	BobBFF,
-	BlendTFF,
-	BlendBFF,
-	AdaptiveTFF,
-	AdaptiveBFF,
-	Count
-};
-
-// Ordering was done to keep compatibility with older ini file.
-enum class BiFiltering : u8
-{
-	Nearest,
-	Forced,
-	PS2,
-	Forced_But_Sprite,
-};
-
-enum class GSLimit24BitDepth : u8
-{
-	Disabled,
-	PrioritizeUpper,
-	PrioritizeLower,
-};
-
-enum class GSHWMipmapMode : u8
-{
-	Disabled,
-	Enabled,
-	AllLevels,
-	Unclamped,
-	MaxCount
-};
-
-enum class TriFiltering : s8
-{
-	Automatic = -1,
-	Off,
-	PS2,
-	Forced,
-};
-
-enum class AccBlendLevel : u8
-{
-	Minimum,
-	Basic,
-	Medium,
-	High,
-	Full,
-	Maximum,
-};
-
-enum class TexturePreloadingLevel : u8
-{
-	Off,
-	Partial,
-	Full,
-};
-
-enum class GSHardwareDownloadMode : u8
-{
-	Enabled,
-	NoReadbacks,
-	Unsynchronized,
-	Disabled
-};
-
-enum class GSTextureInRtMode : u8
-{
-	Disabled,
-	InsideTargets,
-	MergeTargets,
-};
-
-enum GSHalfPixelOffset
-{
-	Off = 0,
-	Normal,
-	Special,
-	SpecialAggressive,
-	Native,
-	MaxCount
-};
-
-enum GSNativeScaling
-{
-	NativeScaling_Normal = 0,
-	NativeScaling_Aggressive,
-	NativeScaling_Off,
-	NativeScaling_MaxCount
-};
-
+#include "GS/GSOptionEnums.h"
 
 // --------------------------------------------------------------------------------------
 //  Pcsx2Config class
@@ -215,16 +96,16 @@ struct Pcsx2Config
 		float FramerateNTSC = DEFAULT_FRAME_RATE_NTSC;
 		float FrameratePAL = DEFAULT_FRAME_RATE_PAL;
 
-		GSInterlaceMode InterlaceMode = GSInterlaceMode::Automatic;
+		GSInterlaceMode InterlaceMode = GS_INTERLACE_AUTOMATIC;
 
-		GSRendererType Renderer = GSRendererType::Auto;
+		GSRendererType Renderer = GS_RENDERER_AUTO;
 		float UpscaleMultiplier = 1.0f;
 
-		AccBlendLevel AccurateBlendingUnit = AccBlendLevel::Basic;
-		GSHWMipmapMode HWMipmapMode = GSHWMipmapMode::Unclamped;
-		BiFiltering TextureFiltering = BiFiltering::PS2;
-		TexturePreloadingLevel TexturePreloading = TexturePreloadingLevel::Full;
-		GSHardwareDownloadMode HWDownloadMode = GSHardwareDownloadMode::Enabled;
+		AccBlendLevel AccurateBlendingUnit = GS_BLEND_BASIC;
+		GSHWMipmapMode HWMipmapMode = GS_MIPMAP_UNCLAMPED;
+		BiFiltering TextureFiltering = GS_BIFILTER_PS2;
+		TexturePreloadingLevel TexturePreloading = GS_PRELOAD_FULL;
+		GSHardwareDownloadMode HWDownloadMode = GS_DOWNLOAD_ENABLED;
 		u8 Dithering = 3;
 		u8 MaxAnisotropy = 0;
 		s16 GetSkipCountFunctionId = -1;
@@ -233,17 +114,17 @@ struct Pcsx2Config
 		int SkipDrawStart = 0;
 		int SkipDrawEnd = 0;
 
-		GSHalfPixelOffset UserHacks_HalfPixelOffset = GSHalfPixelOffset::Off;
+		GSHalfPixelOffset UserHacks_HalfPixelOffset = GS_HPO_OFF;
 		s8 UserHacks_RoundSprite = 0;
-		GSNativeScaling UserHacks_NativeScaling = GSNativeScaling::NativeScaling_Normal;
+		GSNativeScaling UserHacks_NativeScaling = GS_NATIVE_SCALING_NORMAL;
 		s32 UserHacks_TCOffsetX = 0;
 		s32 UserHacks_TCOffsetY = 0;
 		u8 UserHacks_CPUSpriteRenderBW = 0;
 		u8 UserHacks_CPUSpriteRenderLevel = 0;
 		u8 UserHacks_CPUCLUTRender = 0;
-		GSTextureInRtMode UserHacks_TextureInsideRt = GSTextureInRtMode::Disabled;
-		GSLimit24BitDepth UserHacks_Limit24BitDepth = GSLimit24BitDepth::Disabled;
-		TriFiltering TriFilter = TriFiltering::Automatic;
+		GSTextureInRtMode UserHacks_TextureInsideRt = GS_TEXINRT_DISABLED;
+		GSLimit24BitDepth UserHacks_Limit24BitDepth = GS_LIMIT24_DISABLED;
+		TriFiltering TriFilter = GS_TRIFILTER_AUTOMATIC;
 		s8 OverrideTextureBarriers = -1;
 		u8 PGSSuperSampling = 0;
 		u8 PGSHighResScanout = 0;

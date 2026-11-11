@@ -103,20 +103,20 @@ void GSVertexTrace::Update(const void* vertex, const u16* index, int v_count, in
 
 		switch (GSConfig.TextureFiltering)
 		{
-			case BiFiltering::Nearest:
+			case GS_BIFILTER_NEAREST:
 				m_filter.opt_linear = 0;
 				break;
 
-			case BiFiltering::Forced_But_Sprite:
+			case GS_BIFILTER_FORCED_BUT_SPRITE:
 				// Special case to reduce the number of glitch when upscaling is enabled
 				m_filter.opt_linear = (m_primclass == GS_SPRITE_CLASS) ? m_filter.linear : 1;
 				break;
 
-			case BiFiltering::Forced:
+			case GS_BIFILTER_FORCED:
 				m_filter.opt_linear = 1;
 				break;
 
-			case BiFiltering::PS2:
+			case GS_BIFILTER_PS2:
 			default:
 				m_filter.opt_linear = m_filter.linear;
 				break;

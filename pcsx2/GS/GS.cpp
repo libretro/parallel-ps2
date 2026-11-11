@@ -76,7 +76,7 @@ void GSshutdown(void)
 bool GSIsHardwareRenderer(void)
 {
 	// Null gets flagged as hw.
-	return (GSConfig.Renderer != GSRendererType::SW);
+	return (GSConfig.Renderer != GS_RENDERER_SW);
 }
 
 static GSRendererType GSsetRenderer(enum retro_hw_context_type api)
@@ -87,17 +87,17 @@ static GSRendererType GSsetRenderer(enum retro_hw_context_type api)
 		case RETRO_HW_CONTEXT_OPENGL_CORE:
 		case RETRO_HW_CONTEXT_OPENGLES3:
 		case RETRO_HW_CONTEXT_OPENGLES_VERSION:
-			return GSRendererType::OGL;
+			return GS_RENDERER_OGL;
 		case RETRO_HW_CONTEXT_VULKAN:
 #ifdef HAVE_PARALLEL_GS
-			return GSRendererType::ParallelGS;
+			return GS_RENDERER_PARALLEL_GS;
 #else
-			return GSRendererType::VK;
+			return GS_RENDERER_VK;
 #endif
 		case RETRO_HW_CONTEXT_D3D11:
-			return GSRendererType::DX11;
+			return GS_RENDERER_DX11;
 		case RETRO_HW_CONTEXT_D3D12:
-			return GSRendererType::DX12;
+			return GS_RENDERER_DX12;
 #if 0
 		case RETRO_HW_CONTEXT_D3D10: 
 		case RETRO_HW_CONTEXT_D3D9: 
@@ -106,7 +106,7 @@ static GSRendererType GSsetRenderer(enum retro_hw_context_type api)
 		default:
 			break;
 	}
-	return  GSRendererType::SW;
+	return  GS_RENDERER_SW;
 }
 
 /* A device that failed to come up: it destroys what it managed to make,
@@ -147,7 +147,7 @@ static bool OpenGSDevice(GSRendererType renderer, bool clear_state_on_fail)
 		case RETRO_HW_CONTEXT_VULKAN:
 #ifdef ENABLE_VULKAN
 			// PGS fuses device and renderer together.
-			if (renderer != GSRendererType::ParallelGS)
+			if (renderer != GS_RENDERER_PARALLEL_GS)
 			{
 				g_gs_device = new GSDeviceVK();
 				if (!g_gs_device->Create())
@@ -175,7 +175,7 @@ static bool OpenGSDevice(GSRendererType renderer, bool clear_state_on_fail)
 			/* No HW context available (e.g. SDL2 frontend). Only the
 			 * SW renderer can run in this configuration; HW renderers
 			 * have nowhere to draw. The caller is responsible for
-			 * having forced GSRendererType::SW before reaching here. */
+			 * having forced GS_RENDERER_SW before reaching here. */
 			g_gs_device = new GSDeviceSW();
 			if (!g_gs_device->Create())
 			{
@@ -321,7 +321,7 @@ static const struct gs_renderer_ops gsdx_renderer_ops = {
 static bool OpenGSRenderer(GSRendererType renderer, u8* basemem)
 {
 #ifdef HAVE_PARALLEL_GS
-	if (renderer == GSRendererType::ParallelGS)
+	if (renderer == GS_RENDERER_PARALLEL_GS)
 	{
 		g_pgs_renderer = new GSRendererPGS(basemem);
 		if (!g_pgs_renderer->Init())
@@ -332,7 +332,7 @@ static bool OpenGSRenderer(GSRendererType renderer, u8* basemem)
 	else
 #endif
 	{
-		if (renderer != GSRendererType::SW)
+		if (renderer != GS_RENDERER_SW)
 			g_gs_renderer = new GSRendererHW();
 		else
 			g_gs_renderer = MULTI_ISA_SELECT(makeGSRendererSW)(GSConfig.SWExtraThreads);
@@ -456,7 +456,7 @@ bool GSreopen(bool recreate_device, bool recreate_renderer, const Pcsx2Config::G
 
 void GSopen(const Pcsx2Config::GSOptions& config, GSRendererType renderer, enum retro_hw_context_type api, u8* basemem)
 {
-	if (renderer == GSRendererType::Auto)
+	if (renderer == GS_RENDERER_AUTO)
 		renderer  = GSsetRenderer(api);
 
 	GSConfig          = config;
@@ -549,10 +549,10 @@ void gs_update_config_emu(void)
 	GSUpdateConfig(EmuConfig.GS, hw_render.context_type);
 }
 
-static_assert((int)GSHardwareDownloadMode::Enabled        == GS_HW_DOWNLOAD_ENABLED
-           && (int)GSHardwareDownloadMode::NoReadbacks    == GS_HW_DOWNLOAD_NO_READBACKS
-           && (int)GSHardwareDownloadMode::Unsynchronized == GS_HW_DOWNLOAD_UNSYNCHRONIZED
-           && (int)GSHardwareDownloadMode::Disabled       == GS_HW_DOWNLOAD_DISABLED,
+static_assert((int)GS_DOWNLOAD_ENABLED        == GS_HW_DOWNLOAD_ENABLED
+           && (int)GS_DOWNLOAD_NO_READBACKS    == GS_HW_DOWNLOAD_NO_READBACKS
+           && (int)GS_DOWNLOAD_UNSYNCHRONIZED == GS_HW_DOWNLOAD_UNSYNCHRONIZED
+           && (int)GS_DOWNLOAD_DISABLED       == GS_HW_DOWNLOAD_DISABLED,
 	"GSEntry.h mirrors GSHardwareDownloadMode");
 
 int gs_hw_download_mode(void)
@@ -569,7 +569,7 @@ void GSUpdateConfig(const Pcsx2Config::GSOptions& new_config, enum retro_hw_cont
 	if (ops && ops->update_config)
 		ops->update_config();
 
-	if (GSConfig.Renderer == GSRendererType::Auto)
+	if (GSConfig.Renderer == GS_RENDERER_AUTO)
 		GSConfig.Renderer = GSsetRenderer(api);
 	/* (a stopped GS keeps its renderer to GSclose, but no device) */
 	if (!g_gs_renderer || GSHasStopped())

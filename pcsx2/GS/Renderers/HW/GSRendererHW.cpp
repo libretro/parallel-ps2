@@ -96,11 +96,11 @@ GSRendererHW::GSRendererHW()
 	m_vr_snapshot_scale  = 0.0f;
 	m_vr_age             = 0;
 	m_vr_frame           = 0;
-	m_mipmap = (GSConfig.HWMipmapMode >= GSHWMipmapMode::Enabled);
+	m_mipmap = (GSConfig.HWMipmapMode >= GS_MIPMAP_ENABLED);
 	SetTCOffset();
 	/* The same test CanUseTexIsFB starts with. */
 	m_pixel_feedback_ok = g_gs_device && g_gs_device->Features().texture_barrier &&
-		GSConfig.AccurateBlendingUnit != AccBlendLevel::Minimum;
+		GSConfig.AccurateBlendingUnit != GS_BLEND_MINIMUM;
 
 	g_texture_cache = new GSTextureCache();
 
@@ -214,10 +214,10 @@ void GSRendererHW::Reset(bool hardware_reset)
 void GSRendererHW::UpdateSettings(const Pcsx2Config::GSOptions& old_config)
 {
 	UpdateSettingsBase(old_config);
-	m_mipmap = (GSConfig.HWMipmapMode >= GSHWMipmapMode::Enabled);
+	m_mipmap = (GSConfig.HWMipmapMode >= GS_MIPMAP_ENABLED);
 	SetTCOffset();
 	m_pixel_feedback_ok = g_gs_device && g_gs_device->Features().texture_barrier &&
-		GSConfig.AccurateBlendingUnit != AccBlendLevel::Minimum;
+		GSConfig.AccurateBlendingUnit != GS_BLEND_MINIMUM;
 }
 
 void GSRendererHW::VSync(u32 field, bool registers_written, bool idle_frame)
@@ -251,7 +251,7 @@ void GSRendererHW::VSync(u32 field, bool registers_written, bool idle_frame)
 	{
 		g_texture_cache->RemoveAll(true, false, true);
 		g_gs_device->PurgePool();
-		GSConfig.TexturePreloading = TexturePreloadingLevel::Partial;
+		GSConfig.TexturePreloading = GS_PRELOAD_PARTIAL;
 	}
 
 	m_skip = 0;
@@ -1048,7 +1048,7 @@ GSVector4 GSRendererHW::RealignTargetTextureCoordinate(const GSTextureCache::Sou
 
 	if (PRIM->FST)
 	{
-		if (GSConfig.UserHacks_HalfPixelOffset == GSHalfPixelOffset::SpecialAggressive)
+		if (GSConfig.UserHacks_HalfPixelOffset == GS_HPO_SPECIAL_AGGRESSIVE)
 		{
 			if (!linear && t_position == 8)
 			{
@@ -3384,7 +3384,7 @@ void GSRendererHW::Draw()
 			m_lod.x = pcsx2_min_i(m_lod.x, mxl);
 			m_lod.y = pcsx2_min_i(m_lod.y, mxl);
 
-			if (GSConfig.HWMipmapMode < GSHWMipmapMode::AllLevels)
+			if (GSConfig.HWMipmapMode < GS_MIPMAP_ALL_LEVELS)
 			{
 				TEX0 = (m_lod.x == 0) ? m_cached_ctx.TEX0 : GetTex0Layer(m_lod.x);
 
@@ -3411,7 +3411,7 @@ void GSRendererHW::Draw()
 				TEX0 = m_cached_ctx.TEX0;
 			}
 		}
-		else if (GSConfig.HWMipmapMode >= GSHWMipmapMode::AllLevels && m_context->TEX1.MXL > 0 && !m_context->TEX1.LCM)
+		else if (GSConfig.HWMipmapMode >= GS_MIPMAP_ALL_LEVELS && m_context->TEX1.MXL > 0 && !m_context->TEX1.LCM)
 		{
 			mipmap_active = true;
 			hash_lod_range = GSVector2i(0, pcsx2_min_i(static_cast<int>(m_context->TEX1.MXL), 6));
@@ -3499,7 +3499,7 @@ void GSRendererHW::Draw()
 		else
 		{
 			src = tex_psm.depth ? g_texture_cache->LookupDepthSource(true, TEX0, env.TEXA, MIP_CLAMP, tmm.coverage, possible_shuffle, m_vt.IsLinear(), m_cached_ctx.FRAME.Block(), req_color, req_alpha) :
-				g_texture_cache->LookupSource(true, TEX0, env.TEXA, MIP_CLAMP, tmm.coverage, (GSConfig.HWMipmapMode >= GSHWMipmapMode::Enabled || GSConfig.TriFilter == TriFiltering::Forced) ? &hash_lod_range : nullptr,
+				g_texture_cache->LookupSource(true, TEX0, env.TEXA, MIP_CLAMP, tmm.coverage, (GSConfig.HWMipmapMode >= GS_MIPMAP_ENABLED || GSConfig.TriFilter == GS_TRIFILTER_FORCED) ? &hash_lod_range : nullptr,
 					possible_shuffle, m_vt.IsLinear(), m_cached_ctx.FRAME.Block(), req_color, req_alpha);
 
 			if (!src)
@@ -3557,8 +3557,8 @@ void GSRendererHW::Draw()
 	 * ones (realigning its coordinates) do for it. A snapped sprite is
 	 * drawn without the offsets that move a draw (see SetupIA). */
 	if (m_vt.m_primclass == GS_SPRITE_CLASS && GetUpscaleMultiplier() > 1.0f && !GSConfig.UserHacks_MergePPSprite &&
-		!((GSConfig.UserHacks_HalfPixelOffset == GSHalfPixelOffset::Normal || GSConfig.UserHacks_HalfPixelOffset == GSHalfPixelOffset::Special ||
-			GSConfig.UserHacks_HalfPixelOffset == GSHalfPixelOffset::SpecialAggressive) && src && src->m_target) &&
+		!((GSConfig.UserHacks_HalfPixelOffset == GS_HPO_NORMAL || GSConfig.UserHacks_HalfPixelOffset == GS_HPO_SPECIAL ||
+			GSConfig.UserHacks_HalfPixelOffset == GS_HPO_SPECIAL_AGGRESSIVE) && src && src->m_target) &&
 		!(IsPossibleChannelShuffle() && (!src || src->m_target || m_cached_ctx.FRAME.Block() == m_cached_ctx.TEX0.TBP0)) &&
 		!(src && GSLocalMemory::m_psm[m_cached_ctx.FRAME.PSM].bpp == 16 && GSLocalMemory::m_psm[m_cached_ctx.TEX0.PSM].bpp == 16))
 	{
@@ -3597,7 +3597,7 @@ void GSRendererHW::Draw()
 			m_downscale_source = src->m_from_target->GetScale() > 1.0f;
 		}
 		else
-			m_downscale_source = GSConfig.UserHacks_NativeScaling != GSNativeScaling::NativeScaling_Aggressive ? false : src->m_from_target->GetScale() > 1.0f; // Bad for GTA + Full Spectrum Warrior, good for Sacred Blaze + Parappa.
+			m_downscale_source = GSConfig.UserHacks_NativeScaling != GS_NATIVE_SCALING_AGGRESSIVE ? false : src->m_from_target->GetScale() > 1.0f; // Bad for GTA + Full Spectrum Warrior, good for Sacred Blaze + Parappa.
 	}
 	else
 	{
@@ -3656,8 +3656,8 @@ void GSRendererHW::Draw()
 		// Of course if this size is different (in width) or this is a shuffle happening, this will be bypassed.
 		const bool preserve_downscale_draw = abs(scale_draw) == 1 || (scale_draw == 0 && ((src && src->m_from_target && src->m_from_target->m_downscaled) || is_possible_mem_clear == ClearType::ClearWithDraw));
 
-		rt = g_texture_cache->LookupTarget(FRAME_TEX0, t_size, ((src && src->m_scale != 1) && GSConfig.UserHacks_NativeScaling == GSNativeScaling::NativeScaling_Normal && !possible_shuffle) ? GetTextureScaleFactor() : target_scale, GSTextureCache::RenderTarget, true,
-			fm, false, force_preload, preserve_rt_rgb, preserve_rt_alpha, unclamped_draw_rect, possible_shuffle, is_possible_mem_clear && FRAME_TEX0.TBP0 != m_cached_ctx.ZBUF.Block(), GSConfig.UserHacks_NativeScaling != GSNativeScaling::NativeScaling_Off && preserve_downscale_draw && is_possible_mem_clear != ClearType::NormalClear);
+		rt = g_texture_cache->LookupTarget(FRAME_TEX0, t_size, ((src && src->m_scale != 1) && GSConfig.UserHacks_NativeScaling == GS_NATIVE_SCALING_NORMAL && !possible_shuffle) ? GetTextureScaleFactor() : target_scale, GSTextureCache::RenderTarget, true,
+			fm, false, force_preload, preserve_rt_rgb, preserve_rt_alpha, unclamped_draw_rect, possible_shuffle, is_possible_mem_clear && FRAME_TEX0.TBP0 != m_cached_ctx.ZBUF.Block(), GSConfig.UserHacks_NativeScaling != GS_NATIVE_SCALING_OFF && preserve_downscale_draw && is_possible_mem_clear != ClearType::NormalClear);
 		if (rt)
 			g_texture_cache->SeedSubTargetFromEnclosing(rt);
 
@@ -4479,7 +4479,7 @@ void GSRendererHW::EmulateTextureShuffleAndFbmask(GSTextureCache::Target* rt, GS
 	// Uncomment to disable texture shuffle emulation.
 	// m_texture_shuffle_info.Disable();
 
-	const bool enable_fbmask_emulation = GSConfig.AccurateBlendingUnit != AccBlendLevel::Minimum;
+	const bool enable_fbmask_emulation = GSConfig.AccurateBlendingUnit != GS_BLEND_MINIMUM;
 	const GSDevice::FeatureSupport features = g_gs_device->Features();
 
 	if (m_texture_shuffle_info)
@@ -5130,9 +5130,9 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 	const bool blend_ad = m_conf.ps.blend_c == 1;
 	const bool alpha_mask = (m_cached_ctx.FRAME.FBMSK & 0xFF000000) == 0xFF000000;
 	bool blend_ad_alpha_masked = blend_ad && alpha_mask;
-	const bool is_basic_blend = GSConfig.AccurateBlendingUnit >= AccBlendLevel::Basic;
+	const bool is_basic_blend = GSConfig.AccurateBlendingUnit >= GS_BLEND_BASIC;
 	if (blend_ad_alpha_masked && (((is_basic_blend || (COLCLAMP.CLAMP == 0)) && features.texture_barrier)
-		|| ((GSConfig.AccurateBlendingUnit >= AccBlendLevel::Medium) || m_conf.require_one_barrier)))
+		|| ((GSConfig.AccurateBlendingUnit >= GS_BLEND_MEDIUM) || m_conf.require_one_barrier)))
 	{
 		// Swap Ad with As for hw blend.
 		m_conf.ps.a_masked = 1;
@@ -5218,22 +5218,22 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 
 		switch (GSConfig.AccurateBlendingUnit)
 		{
-			case AccBlendLevel::Maximum:
+			case GS_BLEND_MAXIMUM:
 				sw_blending |= true;
 				/* fallthrough */
-			case AccBlendLevel::Full:
+			case GS_BLEND_FULL:
 				sw_blending |= m_conf.ps.blend_a != m_conf.ps.blend_b && alpha_c0_high_max_one;
 				/* fallthrough */
-			case AccBlendLevel::High:
+			case GS_BLEND_HIGH:
 				sw_blending |= (alpha_c1_high_max_one || alpha_c1_high_no_rta_correct) || (m_conf.ps.blend_a != m_conf.ps.blend_b && alpha_c2_high_one);
 				/* fallthrough */
-			case AccBlendLevel::Medium:
+			case GS_BLEND_MEDIUM:
 				// Initial idea was to enable accurate blending for sprite rendering to handle
 				// correctly post-processing effect. Some games (ZoE) use tons of sprites as particles.
 				// In order to keep it fast, let's limit it to smaller draw call.
 				sw_blending |= m_vt.m_primclass == GS_SPRITE_CLASS && m_drawlist.count < 100;
 				/* fallthrough */
-			case AccBlendLevel::Basic:
+			case GS_BLEND_BASIC:
 				// Prefer sw blend if possible.
 				color_dest_blend &= !prefer_sw_blend;
 				color_dest_blend2 &= !prefer_sw_blend;
@@ -5247,7 +5247,7 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 				blend_mix &= !sw_blending;
 				sw_blending |= blend_mix;
 				/* fallthrough */
-			case AccBlendLevel::Minimum:
+			case GS_BLEND_MINIMUM:
 				break;
 		}
 	}
@@ -5258,23 +5258,23 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 
 		switch (GSConfig.AccurateBlendingUnit)
 		{
-			case AccBlendLevel::Maximum:
+			case GS_BLEND_MAXIMUM:
 				// Enable sw blend when prims don't overlap.
 				sw_blending |= no_prim_overlap;
 				/* fallthrough */
-			case AccBlendLevel::Full:
+			case GS_BLEND_FULL:
 				// Enable sw blend on cases where Alpha > 128 when prims don't overlap.
 				sw_blending |= (alpha_c0_high_max_one || alpha_c1_high_max_one || alpha_c2_high_one) && no_prim_overlap;
 				/* fallthrough */
-			case AccBlendLevel::High:
+			case GS_BLEND_HIGH:
 				// Enable sw blend on Cd*(Alpha + 1) cases where prims don't overlap.
 				sw_blending |= (m_conf.ps.blend_a == 1 && m_conf.ps.blend_d == 1) && no_prim_overlap;
 				/* fallthrough */
-			case AccBlendLevel::Medium:
+			case GS_BLEND_MEDIUM:
 				// Enable sw blend on Ad cases where prims don't overlap, blend_ad_alpha_masked, rta correction or ad_second_pass isn't possible.
 				sw_blending |= !(blend_ad_alpha_masked || ad_second_pass) && (alpha_c1_high_max_one || alpha_c1_high_no_rta_correct) && no_prim_overlap;
 				/* fallthrough */
-			case AccBlendLevel::Basic:
+			case GS_BLEND_BASIC:
 				// Prefer sw blend if possible.
 				color_dest_blend &= !prefer_sw_blend;
 				color_dest_blend2 &= !prefer_sw_blend;
@@ -5288,7 +5288,7 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 				blend_mix &= !sw_blending;
 				sw_blending |= blend_mix;
 				/* fallthrough */
-			case AccBlendLevel::Minimum:
+			case GS_BLEND_MINIMUM:
 				break;
 		}
 	}
@@ -5842,7 +5842,7 @@ __ri void GSRendererHW::EmulateTextureSampler(const GSTextureCache::Target* rt, 
 	 * offset), and a sample chosen by native pixel takes that grid; a
 	 * snapped sprite is drawn on the fragment grid's own. */
 	m_conf.cb_ps.ScaleFactor = GSVector4(scale_factor * (1.0f / 16.0f), 1.0f / scale_factor, scale_rt,
-		(GSConfig.UserHacks_HalfPixelOffset == GSHalfPixelOffset::Native && !m_sprite_edges_snapped) ? 0.5f * scale_rt : 0.0f);
+		(GSConfig.UserHacks_HalfPixelOffset == GS_HPO_NATIVE && !m_sprite_edges_snapped) ? 0.5f * scale_rt : 0.0f);
 
 	if ((m_conf.ps.tex_is_fb && rt->m_rt_alpha_scale) || (tex->m_target && tex->m_from_target && tex->m_target_direct && tex->m_from_target->m_rt_alpha_scale))
 		m_conf.ps.rta_source_correction = 1;
@@ -5867,7 +5867,7 @@ __ri void GSRendererHW::EmulateTextureSampler(const GSTextureCache::Target* rt, 
 	const bool shader_emulated_sampler = tex->m_palette || (tex->m_target && !m_conf.ps.shuffle && cpsm.fmt != 0) ||
 										 complex_wms_wmt || psm.depth || target_region;
 	const bool can_trilinear = !tex->m_palette && !tex->m_target && !m_conf.ps.shuffle;
-	bool trilinear_manual = need_mipmap && GSConfig.HWMipmapMode >= GSHWMipmapMode::Enabled;
+	bool trilinear_manual = need_mipmap && GSConfig.HWMipmapMode >= GS_MIPMAP_ENABLED;
 
 	/* A bilinear read of a scaled target keeps the native draw's filter: the
 	 * taps a native texel apart, with the weights of the native pixel, each
@@ -5904,7 +5904,7 @@ __ri void GSRendererHW::EmulateTextureSampler(const GSTextureCache::Target* rt, 
 	bool trilinear_auto = false; // Generate mipmaps if needed (basic).
 	switch (GSConfig.TriFilter)
 	{
-		case TriFiltering::Forced:
+		case GS_TRIFILTER_FORCED:
 		{
 			// Force bilinear otherwise we can end up with min/mag nearest and mip linear.
 			// We don't need to check for HWMipmapLevel::Off here, because forced trilinear implies forced mipmaps.
@@ -5912,29 +5912,29 @@ __ri void GSRendererHW::EmulateTextureSampler(const GSTextureCache::Target* rt, 
 			if (can_trilinear)
 			{
 				trilinear = static_cast<u8>(GS_MIN_FILTER::Linear_Mipmap_Linear);
-				trilinear_auto = !tex->m_target && (!need_mipmap || GSConfig.HWMipmapMode == GSHWMipmapMode::Disabled);
+				trilinear_auto = !tex->m_target && (!need_mipmap || GSConfig.HWMipmapMode == GS_MIPMAP_DISABLED);
 			}
 		}
 		break;
 
-		case TriFiltering::PS2:
-		case TriFiltering::Automatic:
+		case GS_TRIFILTER_PS2:
+		case GS_TRIFILTER_AUTOMATIC:
 		{
 			// Can only use PS2 trilinear when mipmapping is enabled.
-			if (need_mipmap && GSConfig.HWMipmapMode >= GSHWMipmapMode::Enabled && can_trilinear)
+			if (need_mipmap && GSConfig.HWMipmapMode >= GS_MIPMAP_ENABLED && can_trilinear)
 			{
 				trilinear = m_context->TEX1.MMIN;
-				trilinear_auto = !tex->m_target && GSConfig.HWMipmapMode == GSHWMipmapMode::Disabled;
+				trilinear_auto = !tex->m_target && GSConfig.HWMipmapMode == GS_MIPMAP_DISABLED;
 			}
 		}
 		break;
 
-		case TriFiltering::Off:
+		case GS_TRIFILTER_OFF:
 		default:
 			break;
 	}
 
-	if (GSConfig.HWMipmapMode >= GSHWMipmapMode::Unclamped && !shader_emulated_sampler &&
+	if (GSConfig.HWMipmapMode >= GS_MIPMAP_UNCLAMPED && !shader_emulated_sampler &&
 		m_context->TEX1.MXL > 0 && m_context->TEX1.MMIN >= 2 && m_context->TEX1.MMIN <= 5 && !m_context->TEX1.LCM)
 	{
 		trilinear = static_cast<u8>(m_vt.IsLinear() ? GS_MIN_FILTER::Linear_Mipmap_Linear : GS_MIN_FILTER::Nearest_Mipmap_Linear);
@@ -6123,7 +6123,7 @@ __ri void GSRendererHW::EmulateTextureSampler(const GSTextureCache::Target* rt, 
 		const GSVector4i clamp(m_cached_ctx.CLAMP.MINU, m_cached_ctx.CLAMP.MINV, m_cached_ctx.CLAMP.MAXU, m_cached_ctx.CLAMP.MAXV);
 		const GSVector4 region_repeat = GSVector4::cast(clamp);
 		const float last_sample = 1.0f - 0.5f / tex->GetScale();
-		const float first_sample = (GSConfig.UserHacks_HalfPixelOffset == GSHalfPixelOffset::Native) ? last_sample : 1.0f - last_sample;
+		const float first_sample = (GSConfig.UserHacks_HalfPixelOffset == GS_HPO_NATIVE) ? last_sample : 1.0f - last_sample;
 		const GSVector4 region_clamp = (GSVector4(clamp) + GSVector4(first_sample, first_sample, last_sample, last_sample)) / WH.xyxy();
 		if (wms >= CLAMP_REGION_CLAMP)
 		{
@@ -6141,9 +6141,9 @@ __ri void GSRendererHW::EmulateTextureSampler(const GSTextureCache::Target* rt, 
 	{
 		m_conf.cb_ps.LODParams.x = static_cast<float>(m_context->TEX1.K) / 16.0f;
 		m_conf.cb_ps.LODParams.y = static_cast<float>(1 << m_context->TEX1.L);
-		m_conf.cb_ps.LODParams.z = (GSConfig.HWMipmapMode >= GSHWMipmapMode::Unclamped) ?
+		m_conf.cb_ps.LODParams.z = (GSConfig.HWMipmapMode >= GS_MIPMAP_UNCLAMPED) ?
 									   log2f(rt ? rt->GetScale() : ds->GetScale()) :
-									   static_cast<float>((GSConfig.HWMipmapMode == GSHWMipmapMode::AllLevels) ? 0.0f : m_lod.x);
+									   static_cast<float>((GSConfig.HWMipmapMode == GS_MIPMAP_ALL_LEVELS) ? 0.0f : m_lod.x);
 		m_conf.cb_ps.LODParams.w = static_cast<float>(m_lod.y);
 		m_conf.ps.manual_lod = 1;
 	}
@@ -6386,7 +6386,7 @@ __ri void GSRendererHW::HandleTextureHazards(const GSTextureCache::Target* rt, c
 			// When using native HPO, the top-left column/row of pixels are often not drawn. Clamp these away to avoid sampling black,
 			// causing bleeding into the edges of the downsampled texture.
 			const u32 downsample_factor = static_cast<u32>(src_target->GetScale());
-			const GSVector2i clamp_min  = (GSConfig.UserHacks_HalfPixelOffset != GSHalfPixelOffset::Native) ? GSVector2i(0, 0) : GSVector2i(downsample_factor, downsample_factor);
+			const GSVector2i clamp_min  = (GSConfig.UserHacks_HalfPixelOffset != GS_HPO_NATIVE) ? GSVector2i(0, 0) : GSVector2i(downsample_factor, downsample_factor);
 			GSVector4i copy_rect = tmm.coverage;
 			if (target_region)
 				copy_rect += GSVector4i(source_region.GetMinX(), source_region.GetMinY()).xyxy();
@@ -6778,7 +6778,7 @@ bool GSRendererHW::CanUseTexIsFB(const GSTextureCache::Target* rt, const GSTextu
 	const TextureMinMaxResult& tmm)
 {
 	// Minimum blending or no barriers -> we can't use tex-is-fb.
-	if (GSConfig.AccurateBlendingUnit == AccBlendLevel::Minimum || !g_gs_device->Features().texture_barrier)
+	if (GSConfig.AccurateBlendingUnit == GS_BLEND_MINIMUM || !g_gs_device->Features().texture_barrier)
 		return false;
 
 	// If we're a shuffle, tex-is-fb is always fine.
@@ -7447,13 +7447,13 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 	 * blur over the picture), or to depth alone, by the same half pixel.
 	 * A snapped sprite already covers the native pixels the GS covers,
 	 * with its coordinates at their positions, and moves by neither. */
-	if ((GSConfig.UserHacks_HalfPixelOffset != GSHalfPixelOffset::Native || m_sprite_edges_snapped) && rtscale > 1.0f)
+	if ((GSConfig.UserHacks_HalfPixelOffset != GS_HPO_NATIVE || m_sprite_edges_snapped) && rtscale > 1.0f)
 	{
 		sx = 2.0f * rtscale / (rtsize.x << 4);
 		sy = 2.0f * rtscale / (rtsize.y << 4);
 		ox2 = -1.0f / rtsize.x;
 		oy2 = -1.0f / rtsize.y;
-		if (GSConfig.UserHacks_HalfPixelOffset == GSHalfPixelOffset::Normal && (!rt || rt->m_half_pixel_shift) && !m_sprite_edges_snapped)
+		if (GSConfig.UserHacks_HalfPixelOffset == GS_HPO_NORMAL && (!rt || rt->m_half_pixel_shift) && !m_sprite_edges_snapped)
 		{
 			ox2 *= rtscale;
 			oy2 *= rtscale;
@@ -8810,7 +8810,7 @@ bool GSRendererHW::TextureCoversWithoutGapsNotEqual()
 
 int GSRendererHW::IsScalingDraw(GSTextureCache::Source* src, bool no_gaps)
 {
-	if (GSConfig.UserHacks_NativeScaling == GSNativeScaling::NativeScaling_Off)
+	if (GSConfig.UserHacks_NativeScaling == GS_NATIVE_SCALING_OFF)
 		return 0;
 
 	const GSVector2i draw_size = GSVector2i(m_vt.m_max.p.x - m_vt.m_min.p.x, m_vt.m_max.p.y - m_vt.m_min.p.y);

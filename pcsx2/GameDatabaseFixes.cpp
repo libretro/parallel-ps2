@@ -223,7 +223,7 @@ static bool configMatchesHWFix(const Pcsx2Config::GSOptions& config, u32 id, int
 			return (static_cast<int>(config.UserHacks_Limit24BitDepth) == value);
 
 		case GAMEDB_HWFIX_TRILINEAR_FILTERING:
-			return (config.TriFilter == TriFiltering::Automatic || static_cast<int>(config.TriFilter) == value);
+			return (config.TriFilter == GS_TRIFILTER_AUTOMATIC || static_cast<int>(config.TriFilter) == value);
 
 		case GAMEDB_HWFIX_SKIP_DRAW_START:
 			return (config.SkipDrawStart == value);
@@ -244,7 +244,7 @@ static bool configMatchesHWFix(const Pcsx2Config::GSOptions& config, u32 id, int
 			return (static_cast<int>(config.TexturePreloading) <= value);
 
 		case GAMEDB_HWFIX_DEINTERLACE:
-			return (config.InterlaceMode == GSInterlaceMode::Automatic || static_cast<int>(config.InterlaceMode) == value);
+			return (config.InterlaceMode == GS_INTERLACE_AUTOMATIC || static_cast<int>(config.InterlaceMode) == value);
 
 		case GAMEDB_HWFIX_CPU_SPRITE_RENDER_BW:
 			return (config.UserHacks_CPUSpriteRenderBW == value);
@@ -256,7 +256,7 @@ static bool configMatchesHWFix(const Pcsx2Config::GSOptions& config, u32 id, int
 			return (config.UserHacks_CPUCLUTRender == value);
 
 		case GAMEDB_HWFIX_GPU_PALETTE_CONVERSION:
-			return (config.GPUPaletteConversion == ((value > 1) ? (config.TexturePreloading == TexturePreloadingLevel::Full) : (value != 0)));
+			return (config.GPUPaletteConversion == ((value > 1) ? (config.TexturePreloading == GS_PRELOAD_FULL) : (value != 0)));
 
 		case GAMEDB_HWFIX_MINIMUM_BLENDING_LEVEL:
 			return (static_cast<int>(config.AccurateBlendingUnit) >= value);
@@ -327,7 +327,7 @@ u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, Pcsx2Config::G
 
 			case GAMEDB_HWFIX_TEXTURE_INSIDE_RT:
 			{
-				if (value >= 0 && value <= static_cast<int>(GSTextureInRtMode::MergeTargets))
+				if (value >= 0 && value <= static_cast<int>(GS_TEXINRT_MERGE_TARGETS))
 					config.UserHacks_TextureInsideRt = static_cast<GSTextureInRtMode>(value);
 			}
 			break;
@@ -361,7 +361,7 @@ u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, Pcsx2Config::G
 				break;
 
 			case GAMEDB_HWFIX_MIPMAP:
-				if (value >= 0 && value < static_cast<int>(GSHWMipmapMode::MaxCount))
+				if (value >= 0 && value < static_cast<int>(GS_MIPMAP_COUNT))
 				{
 					config.HWMipmapMode = static_cast<GSHWMipmapMode>(value > 0);
 					/* Mipmapping is split across HWMipmapMode and the Mipmap master */
@@ -373,17 +373,17 @@ u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, Pcsx2Config::G
 				break;
 
 			case GAMEDB_HWFIX_LIMIT_24BIT_DEPTH:
-				if (value >= 0 && value <= static_cast<int>(GSLimit24BitDepth::PrioritizeLower))
+				if (value >= 0 && value <= static_cast<int>(GS_LIMIT24_PRIORITIZE_LOWER))
 					config.UserHacks_Limit24BitDepth = static_cast<GSLimit24BitDepth>(value);
 				break;
 
 			case GAMEDB_HWFIX_TRILINEAR_FILTERING:
 			{
-				if (value >= 0 && value <= static_cast<int>(TriFiltering::Forced))
+				if (value >= 0 && value <= static_cast<int>(GS_TRIFILTER_FORCED))
 				{
-					if (config.TriFilter == TriFiltering::Automatic)
+					if (config.TriFilter == GS_TRIFILTER_AUTOMATIC)
 						config.TriFilter = static_cast<TriFiltering>(value);
-					else if (config.TriFilter > TriFiltering::Off)
+					else if (config.TriFilter > GS_TRIFILTER_OFF)
 						log_cb(RETRO_LOG_WARN, "[GameDB] Game requires trilinear filtering to be disabled.\n");
 				}
 			}
@@ -398,7 +398,7 @@ u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, Pcsx2Config::G
 				break;
 
 			case GAMEDB_HWFIX_HALF_PIXEL_OFFSET:
-				if (value >= 0 && value < static_cast<int>(GSHalfPixelOffset::MaxCount))
+				if (value >= 0 && value < static_cast<int>(GS_HPO_COUNT))
 					config.UserHacks_HalfPixelOffset = static_cast<GSHalfPixelOffset>(value);
 				break;
 
@@ -414,16 +414,16 @@ u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, Pcsx2Config::G
 
 			case GAMEDB_HWFIX_TEXTURE_PRELOADING:
 			{
-				if (value >= 0 && value <= static_cast<int>(TexturePreloadingLevel::Full))
+				if (value >= 0 && value <= static_cast<int>(GS_PRELOAD_FULL))
 					config.TexturePreloading = (TexturePreloadingLevel)pcsx2_min_i((int)config.TexturePreloading, value);
 			}
 			break;
 
 			case GAMEDB_HWFIX_DEINTERLACE:
 			{
-				if (value >= static_cast<int>(GSInterlaceMode::Automatic) && value < static_cast<int>(GSInterlaceMode::Count))
+				if (value >= static_cast<int>(GS_INTERLACE_AUTOMATIC) && value < static_cast<int>(GS_INTERLACE_COUNT))
 				{
-					if (config.InterlaceMode == GSInterlaceMode::Automatic)
+					if (config.InterlaceMode == GS_INTERLACE_AUTOMATIC)
 						config.InterlaceMode = static_cast<GSInterlaceMode>(value);
 					else
 						log_cb(RETRO_LOG_WARN, "[GameDB] Game requires different deinterlace mode but it has been overridden by user setting.\n");
@@ -447,7 +447,7 @@ u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, Pcsx2Config::G
 			{
 				/* if 2, enable paltex when preloading is full, otherwise leave as-is */
 				if (value > 1)
-					config.GPUPaletteConversion = (config.TexturePreloading == TexturePreloadingLevel::Full) ? true : config.GPUPaletteConversion;
+					config.GPUPaletteConversion = (config.TexturePreloading == GS_PRELOAD_FULL) ? true : config.GPUPaletteConversion;
 				else
 					config.GPUPaletteConversion = (value != 0);
 			}
@@ -455,14 +455,14 @@ u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, Pcsx2Config::G
 
 			case GAMEDB_HWFIX_MINIMUM_BLENDING_LEVEL:
 			{
-				if (value >= 0 && value <= static_cast<int>(AccBlendLevel::Maximum))
+				if (value >= 0 && value <= static_cast<int>(GS_BLEND_MAXIMUM))
 					config.AccurateBlendingUnit = (AccBlendLevel)pcsx2_max_i((int)config.AccurateBlendingUnit, value);
 			}
 			break;
 
 			case GAMEDB_HWFIX_MAXIMUM_BLENDING_LEVEL:
 			{
-				if (value >= 0 && value <= static_cast<int>(AccBlendLevel::Maximum))
+				if (value >= 0 && value <= static_cast<int>(GS_BLEND_MAXIMUM))
 					config.AccurateBlendingUnit = (AccBlendLevel)pcsx2_min_i((int)config.AccurateBlendingUnit, value);
 			}
 			break;

@@ -1363,6 +1363,9 @@
     <ClInclude Include="GS\GSExtra.h">
       <Filter>System\Ps2\GS</Filter>
     </ClInclude>
+    <ClInclude Include="GS\GSOptionEnums.h">
+      <Filter>System\Ps2\GS</Filter>
+    </ClInclude>
     <ClInclude Include="GS\GSRegs.h">
       <Filter>System\Ps2\GS</Filter>
     </ClInclude>

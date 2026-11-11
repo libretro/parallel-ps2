@@ -73,7 +73,7 @@ bool GSState::Merge(int field)
 
 	// For Off interlace with FFMD half-frame mode, both circuits should read from the same single
 	// field to avoid reading garbage past the valid field buffer when DBY offsets stack fields.
-	if (PCRTCDisplays.FFMD && PCRTCDisplays.interlaced && GSConfig.InterlaceMode == GSInterlaceMode::Off &&
+	if (PCRTCDisplays.FFMD && PCRTCDisplays.interlaced && GSConfig.InterlaceMode == GS_INTERLACE_OFF &&
 		PCRTCDisplays.PCRTCDisplays[0].enabled && PCRTCDisplays.PCRTCDisplays[1].enabled)
 	{
 		PCRTCDisplays.PCRTCDisplays[1].framebufferRect = PCRTCDisplays.PCRTCDisplays[0].framebufferRect;
@@ -128,13 +128,13 @@ bool GSState::Merge(int field)
 	const bool scanmask_frame = m_scanmask_used && abs(PCRTCDisplays.PCRTCDisplays[0].displayRect.y - PCRTCDisplays.PCRTCDisplays[1].displayRect.y) != 1;
 	int field2 = 0;
 	int mode = 3; // If the game is manually deinterlacing then we need to bob (if we want to get away with no deinterlacing).
-	bool is_bob = GSConfig.InterlaceMode == GSInterlaceMode::BobTFF || GSConfig.InterlaceMode == GSInterlaceMode::BobBFF;
+	bool is_bob = GSConfig.InterlaceMode == GS_INTERLACE_BOB_TFF || GSConfig.InterlaceMode == GS_INTERLACE_BOB_BFF;
 
 	// FFMD (half frames) requires blend deinterlacing, so automatically use that. Same when SCANMSK is used but not blended in the merge circuit (Alpine Racer 3).
-	if (GSConfig.InterlaceMode != GSInterlaceMode::Automatic || (!m_regs->SMODE2.FFMD && !scanmask_frame))
+	if (GSConfig.InterlaceMode != GS_INTERLACE_AUTOMATIC || (!m_regs->SMODE2.FFMD && !scanmask_frame))
 	{
 		// If the game is offsetting each frame itself and we're using full height buffers, we can offset this with Bob.
-		if (game_deinterlacing && !scanmask_frame && GSConfig.InterlaceMode == GSInterlaceMode::Automatic)
+		if (game_deinterlacing && !scanmask_frame && GSConfig.InterlaceMode == GS_INTERLACE_AUTOMATIC)
 		{
 			mode = 1; // Bob.
 			is_bob = true;
@@ -241,7 +241,7 @@ bool GSState::Merge(int field)
 	const u32 c = (m_regs->BGCOLOR.U32[0] & 0x00FFFFFFu) | (m_regs->PMODE.ALP << 24);
 	g_gs_device->Merge(tex, src_gs_read, dst, fs, m_regs->PMODE, m_regs->EXTBUF, c);
 
-	if (isReallyInterlaced() && GSConfig.InterlaceMode != GSInterlaceMode::Off)
+	if (isReallyInterlaced() && GSConfig.InterlaceMode != GS_INTERLACE_OFF)
 	{
 		const float offset = is_bob ? (tex[1] ? tex_scale[1] : tex_scale[0]) : 0.0f;
 

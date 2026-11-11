@@ -185,7 +185,7 @@ static u8 setting_pgs_disable_mipmaps          = 0;
 static u8 setting_pgs_ss_tex                   = 0;
 static u8 setting_pgs_deblur                   = 0;
 static u8 setting_deinterlace_mode             = 0;
-static u8 setting_hw_download_mode             = 0; /* GSHardwareDownloadMode::Enabled */
+static u8 setting_hw_download_mode             = 0; /* GS_DOWNLOAD_ENABLED */
 static u8 setting_texture_filtering            = 0;
 static u8 setting_anisotropic_filtering        = 0;
 static u8 setting_dithering                    = 0;
@@ -657,7 +657,7 @@ static void check_variables(bool first_run)
 
 			if (first_run || setting_pgs_disable_mipmaps != pgs_disable_mipmaps_prev)
 			{
-				const u8 mipmap_mode = (u8)(setting_pgs_disable_mipmaps ? GSHWMipmapMode::Unclamped : GSHWMipmapMode::Enabled);
+				const u8 mipmap_mode = (u8)(setting_pgs_disable_mipmaps ? GS_MIPMAP_UNCLAMPED : GS_MIPMAP_ENABLED);
 				s_option_config.GS.HWMipmapMode = static_cast<decltype(s_option_config.GS.HWMipmapMode)>(mipmap_mode);
 				s_option_config.GS.Mipmap = !setting_pgs_disable_mipmaps;
 				s_option_config.GS.PGSDisableMipmaps = static_cast<decltype(s_option_config.GS.PGSDisableMipmaps)>(setting_pgs_disable_mipmaps);
@@ -719,25 +719,25 @@ static void check_variables(bool first_run)
 		{
 			u8 deinterlace_mode_prev = setting_deinterlace_mode;
 			if (!strcmp(var.value, "Automatic"))
-				setting_deinterlace_mode = (u8)GSInterlaceMode::Automatic;
+				setting_deinterlace_mode = (u8)GS_INTERLACE_AUTOMATIC;
 			else if (!strcmp(var.value, "Off"))
-				setting_deinterlace_mode = (u8)GSInterlaceMode::Off;
+				setting_deinterlace_mode = (u8)GS_INTERLACE_OFF;
 			else if (!strcmp(var.value, "Weave TFF"))
-				setting_deinterlace_mode = (u8)GSInterlaceMode::WeaveTFF;
+				setting_deinterlace_mode = (u8)GS_INTERLACE_WEAVE_TFF;
 			else if (!strcmp(var.value, "Weave BFF"))
-				setting_deinterlace_mode = (u8)GSInterlaceMode::WeaveBFF;
+				setting_deinterlace_mode = (u8)GS_INTERLACE_WEAVE_BFF;
 			else if (!strcmp(var.value, "Bob TFF"))
-				setting_deinterlace_mode = (u8)GSInterlaceMode::BobTFF;
+				setting_deinterlace_mode = (u8)GS_INTERLACE_BOB_TFF;
 			else if (!strcmp(var.value, "Bob BFF"))
-				setting_deinterlace_mode = (u8)GSInterlaceMode::BobBFF;
+				setting_deinterlace_mode = (u8)GS_INTERLACE_BOB_BFF;
 			else if (!strcmp(var.value, "Blend TFF"))
-				setting_deinterlace_mode = (u8)GSInterlaceMode::BlendTFF;
+				setting_deinterlace_mode = (u8)GS_INTERLACE_BLEND_TFF;
 			else if (!strcmp(var.value, "Blend BFF"))
-				setting_deinterlace_mode = (u8)GSInterlaceMode::BlendBFF;
+				setting_deinterlace_mode = (u8)GS_INTERLACE_BLEND_BFF;
 			else if (!strcmp(var.value, "Adaptive TFF"))
-				setting_deinterlace_mode = (u8)GSInterlaceMode::AdaptiveTFF;
+				setting_deinterlace_mode = (u8)GS_INTERLACE_ADAPTIVE_TFF;
 			else if (!strcmp(var.value, "Adaptive BFF"))
-				setting_deinterlace_mode = (u8)GSInterlaceMode::AdaptiveBFF;
+				setting_deinterlace_mode = (u8)GS_INTERLACE_ADAPTIVE_BFF;
 
 			if (first_run || setting_deinterlace_mode != deinterlace_mode_prev)
 			{
@@ -751,13 +751,13 @@ static void check_variables(bool first_run)
 		{
 			u8 hw_download_mode_prev = setting_hw_download_mode;
 			if (!strcmp(var.value, "Accurate"))
-				setting_hw_download_mode = (u8)GSHardwareDownloadMode::Enabled;
+				setting_hw_download_mode = (u8)GS_DOWNLOAD_ENABLED;
 			else if (!strcmp(var.value, "Disable Readbacks"))
-				setting_hw_download_mode = (u8)GSHardwareDownloadMode::NoReadbacks;
+				setting_hw_download_mode = (u8)GS_DOWNLOAD_NO_READBACKS;
 			else if (!strcmp(var.value, "Unsynchronized"))
-				setting_hw_download_mode = (u8)GSHardwareDownloadMode::Unsynchronized;
+				setting_hw_download_mode = (u8)GS_DOWNLOAD_UNSYNCHRONIZED;
 			else if (!strcmp(var.value, "Disabled"))
-				setting_hw_download_mode = (u8)GSHardwareDownloadMode::Disabled;
+				setting_hw_download_mode = (u8)GS_DOWNLOAD_DISABLED;
 
 			if (first_run || setting_hw_download_mode != hw_download_mode_prev)
 			{
@@ -818,18 +818,18 @@ static void check_variables(bool first_run)
 		{
 			int native_scaling_prev = setting_native_scaling;
 			if (!strcmp(var.value, "disabled"))
-				setting_native_scaling = GSNativeScaling::NativeScaling_Off;
+				setting_native_scaling = GS_NATIVE_SCALING_OFF;
 			else if (!strcmp(var.value, "Normal"))
-				setting_native_scaling = GSNativeScaling::NativeScaling_Normal;
+				setting_native_scaling = GS_NATIVE_SCALING_NORMAL;
 			else if (!strcmp(var.value, "Aggressive"))
-				setting_native_scaling = GSNativeScaling::NativeScaling_Aggressive;
+				setting_native_scaling = GS_NATIVE_SCALING_AGGRESSIVE;
 			else
 				setting_native_scaling = -1;
 
 			if (first_run || setting_native_scaling != native_scaling_prev)
 			{
 				s_option_config.GS.NativeScalingSet = setting_native_scaling >= 0;
-				s_option_config.GS.UserHacks_NativeScaling = static_cast<decltype(s_option_config.GS.UserHacks_NativeScaling)>(setting_native_scaling >= 0 ? setting_native_scaling : (int)GSNativeScaling::NativeScaling_Normal);
+				s_option_config.GS.UserHacks_NativeScaling = static_cast<decltype(s_option_config.GS.UserHacks_NativeScaling)>(setting_native_scaling >= 0 ? setting_native_scaling : (int)GS_NATIVE_SCALING_NORMAL);
 				updated = true;
 			}
 		}
@@ -839,13 +839,13 @@ static void check_variables(bool first_run)
 		{
 			s8 trilinear_filtering_prev = setting_trilinear_filtering;
 			if (!strcmp(var.value, "Automatic"))
-				setting_trilinear_filtering = (s8)TriFiltering::Automatic;
+				setting_trilinear_filtering = (s8)GS_TRIFILTER_AUTOMATIC;
 			else if (!strcmp(var.value, "disabled"))
-				setting_trilinear_filtering = (s8)TriFiltering::Off;
+				setting_trilinear_filtering = (s8)GS_TRIFILTER_OFF;
 			else if (!strcmp(var.value, "Trilinear (PS2)"))
-				setting_trilinear_filtering = (s8)TriFiltering::PS2;
+				setting_trilinear_filtering = (s8)GS_TRIFILTER_PS2;
 			else if (!strcmp(var.value, "Trilinear (Forced)"))
-				setting_trilinear_filtering = (s8)TriFiltering::Forced;
+				setting_trilinear_filtering = (s8)GS_TRIFILTER_FORCED;
 
 			if (first_run || setting_trilinear_filtering != trilinear_filtering_prev)
 			{
@@ -892,17 +892,17 @@ static void check_variables(bool first_run)
 		{
 			u8 blending_accuracy_prev = setting_blending_accuracy;
 			if (!strcmp(var.value, "Minimum"))
-				setting_blending_accuracy = (u8)AccBlendLevel::Minimum;
+				setting_blending_accuracy = (u8)GS_BLEND_MINIMUM;
 			else if (!strcmp(var.value, "Basic"))
-				setting_blending_accuracy = (u8)AccBlendLevel::Basic;
+				setting_blending_accuracy = (u8)GS_BLEND_BASIC;
 			else if (!strcmp(var.value, "Medium"))
-				setting_blending_accuracy = (u8)AccBlendLevel::Medium;
+				setting_blending_accuracy = (u8)GS_BLEND_MEDIUM;
 			else if (!strcmp(var.value, "High"))
-				setting_blending_accuracy = (u8)AccBlendLevel::High;
+				setting_blending_accuracy = (u8)GS_BLEND_HIGH;
 			else if (!strcmp(var.value, "Full"))
-				setting_blending_accuracy = (u8)AccBlendLevel::Full;
+				setting_blending_accuracy = (u8)GS_BLEND_FULL;
 			else if (!strcmp(var.value, "Maximum"))
-				setting_blending_accuracy = (u8)AccBlendLevel::Maximum;
+				setting_blending_accuracy = (u8)GS_BLEND_MAXIMUM;
 
 			if (first_run || setting_blending_accuracy != blending_accuracy_prev)
 			{
@@ -981,11 +981,11 @@ static void check_variables(bool first_run)
 			{
 				u8 texture_inside_rt_prev = setting_texture_inside_rt;
 				if (!strcmp(var.value, "disabled"))
-					setting_texture_inside_rt = (u8)GSTextureInRtMode::Disabled;
+					setting_texture_inside_rt = (u8)GS_TEXINRT_DISABLED;
 				else if (!strcmp(var.value, "Inside Target"))
-					setting_texture_inside_rt = (u8)GSTextureInRtMode::InsideTargets;
+					setting_texture_inside_rt = (u8)GS_TEXINRT_INSIDE_TARGETS;
 				else if (!strcmp(var.value, "Merge Targets"))
-					setting_texture_inside_rt = (u8)GSTextureInRtMode::MergeTargets;
+					setting_texture_inside_rt = (u8)GS_TEXINRT_MERGE_TARGETS;
 
 				if (first_run || setting_texture_inside_rt != texture_inside_rt_prev)
 				{
@@ -1068,15 +1068,15 @@ static void check_variables(bool first_run)
 			{
 				int half_pixel_offset_prev = setting_half_pixel_offset;
 				if (!strcmp(var.value, "disabled"))
-					setting_half_pixel_offset = GSHalfPixelOffset::Off;
+					setting_half_pixel_offset = GS_HPO_OFF;
 				else if (!strcmp(var.value, "Normal (Vertex)"))
-					setting_half_pixel_offset = GSHalfPixelOffset::Normal;
+					setting_half_pixel_offset = GS_HPO_NORMAL;
 				else if (!strcmp(var.value, "Special (Texture)"))
-					setting_half_pixel_offset = GSHalfPixelOffset::Special;
+					setting_half_pixel_offset = GS_HPO_SPECIAL;
 				else if (!strcmp(var.value, "Special (Texture - Aggressive)"))
-					setting_half_pixel_offset = GSHalfPixelOffset::SpecialAggressive;
+					setting_half_pixel_offset = GS_HPO_SPECIAL_AGGRESSIVE;
 				else if (!strcmp(var.value, "Align to Native"))
-					setting_half_pixel_offset = GSHalfPixelOffset::Native;
+					setting_half_pixel_offset = GS_HPO_NATIVE;
 
 				if (first_run || setting_half_pixel_offset != half_pixel_offset_prev)
 				{
@@ -1189,13 +1189,13 @@ static void check_variables(bool first_run)
 		{
 			u8 texture_filtering_prev = setting_texture_filtering;
 			if (!strcmp(var.value, "Nearest"))
-				setting_texture_filtering = (u8)BiFiltering::Nearest;
+				setting_texture_filtering = (u8)GS_BIFILTER_NEAREST;
 			else if (!strcmp(var.value, "Bilinear (Forced)"))
-				setting_texture_filtering = (u8)BiFiltering::Forced;
+				setting_texture_filtering = (u8)GS_BIFILTER_FORCED;
 			else if (!strcmp(var.value, "Bilinear (PS2)"))
-				setting_texture_filtering = (u8)BiFiltering::PS2;
+				setting_texture_filtering = (u8)GS_BIFILTER_PS2;
 			else if (!strcmp(var.value, "Bilinear (Forced excluding sprite)"))
-				setting_texture_filtering = (u8)BiFiltering::Forced_But_Sprite;
+				setting_texture_filtering = (u8)GS_BIFILTER_FORCED_BUT_SPRITE;
 
 			if (first_run || setting_texture_filtering != texture_filtering_prev)
 			{
@@ -2782,7 +2782,7 @@ bool retro_load_game(const struct retro_game_info* game)
 	}
 
 	if (is_software_setting(setting_renderer))
-		s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GSRendererType::SW);
+		s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_SW);
 
 	/* Whatever the last context needed taken, this one starts without;
 	 * the case below that needs it installs it (see GS.h). */
@@ -2793,7 +2793,7 @@ bool retro_load_game(const struct retro_game_info* game)
 	{
 		case RETRO_HW_CONTEXT_D3D12:
 			if (!is_software_setting(setting_renderer))
-				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GSRendererType::DX12);
+				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_DX12);
 #ifdef _WIN32
 			/* Ask for libretro_d3d12.h version 2, where the Vulkan case
 			 * below sets its own negotiation interface: once D3D12 is the
@@ -2804,7 +2804,7 @@ bool retro_load_game(const struct retro_game_info* game)
 			break;
 		case RETRO_HW_CONTEXT_D3D11:
 			if (!is_software_setting(setting_renderer))
-				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GSRendererType::DX11);
+				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_DX11);
 #ifdef _WIN32
 			/* Ask for libretro_d3d11.h version 2, as the D3D12 case does
 			 * for its own. See GSDevice11.cpp. */
@@ -2816,7 +2816,7 @@ bool retro_load_game(const struct retro_game_info* game)
 #ifdef HAVE_PARALLEL_GS
 			if (setting_renderer == "paraLLEl-GS")
 			{
-				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GSRendererType::ParallelGS);
+				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_PARALLEL_GS);
 				static const struct retro_hw_render_context_negotiation_interface_vulkan iface = {
 					RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN,
 					RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN_VERSION,
@@ -2832,7 +2832,7 @@ bool retro_load_game(const struct retro_game_info* game)
 #endif
 			{
 				if (!is_software_setting(setting_renderer))
-					s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GSRendererType::VK);
+					s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_VK);
 				{
 					static struct retro_hw_render_context_negotiation_interface_vulkan iface = {
 						RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN,
@@ -2854,11 +2854,11 @@ bool retro_load_game(const struct retro_game_info* game)
 #endif
 		case RETRO_HW_CONTEXT_NONE:
 			if (!is_software_setting(setting_renderer))
-				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GSRendererType::SW);
+				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_SW);
 			break;
 		default:
 			if (!is_software_setting(setting_renderer))
-				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GSRendererType::OGL);
+				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_OGL);
 			break;
 	}
 

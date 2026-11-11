@@ -3650,12 +3650,12 @@ __forceinline void GSState::VertexKick(u32 skip, u32& maxcount)
 	u32 next = m_vertex.next;
 	u32 xy_tail = m_vertex.xy_tail;
 
-	if (GSConfig.UserHacks_Limit24BitDepth != GSLimit24BitDepth::Disabled &&
+	if (GSConfig.UserHacks_Limit24BitDepth != GS_LIMIT24_DISABLED &&
 		GSIsHardwareRenderer() && GSLocalMemory::m_psm[m_context->ZBUF.PSM].bpp == 32)
 	{
-		if (GSConfig.UserHacks_Limit24BitDepth == GSLimit24BitDepth::PrioritizeUpper)
+		if (GSConfig.UserHacks_Limit24BitDepth == GS_LIMIT24_PRIORITIZE_UPPER)
 			m_v.XYZ.Z = ((m_v.XYZ.Z >> 8) & ~0xFF) | (m_v.XYZ.Z & 0xFF);
-		else if (GSConfig.UserHacks_Limit24BitDepth == GSLimit24BitDepth::PrioritizeLower)
+		else if (GSConfig.UserHacks_Limit24BitDepth == GS_LIMIT24_PRIORITIZE_LOWER)
 			m_v.XYZ.Z &= 0x00FFFFFF;
 	}
 
@@ -4677,7 +4677,7 @@ GSVector2i GSState::GSPCRTCRegs::GetResolution()
 	GSVector2i resolution;
 
 	const GSVector4i offsets = !GSConfig.PCRTCOverscan ? VideoModeOffsets[VideoModeRow()] : VideoModeOffsetsOverscan[VideoModeRow()];
-	const bool is_full_height = interlaced || (toggling_field && GSConfig.InterlaceMode != GSInterlaceMode::Off);
+	const bool is_full_height = interlaced || (toggling_field && GSConfig.InterlaceMode != GS_INTERLACE_OFF);
 
 	if (!GSConfig.PCRTCOffsets)
 	{
@@ -5024,7 +5024,7 @@ GSVector2i GSState::GSPCRTCRegs::GetFramebufferSize(int display)
 
 		// For Off mode with non-interlaced content, ensure the framebuffer covers the full display height
 		// (avoids truncation when the video mode offset cap is smaller than the actual frame height).
-		if (GSConfig.InterlaceMode == GSInterlaceMode::Off && !interlaced)
+		if (GSConfig.InterlaceMode == GS_INTERLACE_OFF && !interlaced)
 			combined_rect.w = pcsx2_max_f(combined_rect.w, pcsx2_max_f(PCRTCDisplays[0].displayRect.w, PCRTCDisplays[1].displayRect.w));
 
 		return GSVector2i(combined_rect.z, combined_rect.w);
@@ -5052,7 +5052,7 @@ GSVector2i GSState::GSPCRTCRegs::GetFramebufferSize(int display)
 		out_rect.w = pcsx2_min_f(out_rect.w, offset);
 
 		// For Off mode, ensure the framebuffer covers the full display height.
-		if (GSConfig.InterlaceMode == GSInterlaceMode::Off)
+		if (GSConfig.InterlaceMode == GS_INTERLACE_OFF)
 			out_rect.w = pcsx2_max_f(out_rect.w, PCRTCDisplays[display].displayRect.w);
 
 		return GSVector2i(out_rect.z, out_rect.w);
@@ -5108,7 +5108,7 @@ void GSState::GSPCRTCRegs::SetRects(int display, GSRegDISPLAY displayReg, GSRegD
 	PCRTCDisplays[display].framebufferOffsets.x = framebufferReg.DBX;
 	PCRTCDisplays[display].framebufferOffsets.y = framebufferReg.DBY;
 
-	const bool is_interlaced_resolution = interlaced || (toggling_field && GSConfig.InterlaceMode != GSInterlaceMode::Off);
+	const bool is_interlaced_resolution = interlaced || (toggling_field && GSConfig.InterlaceMode != GS_INTERLACE_OFF);
 
 	// If the interlace flag isn't set, but it's still interlacing, the height is likely reported wrong.
 	// Q-Ball Billiards.

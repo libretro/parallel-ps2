@@ -82,7 +82,7 @@ extern Pcsx2Config::GSOptions GSConfig;
 static constexpr u32 MAXIMUM_TEXTURE_HASH_CACHE_SIZE = 10; // 1024
 __fi static bool CanCacheTextureSize(u32 tw, u32 th)
 {
-	return (GSConfig.TexturePreloading == TexturePreloadingLevel::Full &&
+	return (GSConfig.TexturePreloading == GS_PRELOAD_FULL &&
 			tw <= MAXIMUM_TEXTURE_HASH_CACHE_SIZE && th <= MAXIMUM_TEXTURE_HASH_CACHE_SIZE);
 }
 
@@ -92,7 +92,7 @@ __fi static bool CanPreloadTextureSize(u32 tw, u32 th)
 	static constexpr u32 MAXIMUM_SIZE_IN_OTHER_DIRECTION = 8; // 256
 	static constexpr u32 MAXIMUM_SIZE_IN_BOTH_DIRECTIONS = 9; // 512
 
-	if (GSConfig.TexturePreloading < TexturePreloadingLevel::Partial)
+	if (GSConfig.TexturePreloading < GS_PRELOAD_PARTIAL)
 		return false;
 
 	// We use an area-based approach here. We want to hash long font maps,

@@ -320,8 +320,8 @@ void VMManager::LoadSettings()
 	 * wrongly. */
 	EmuConfig.GS.MaskUserHacks();
 	EmuConfig.GS.MaskUpscalingHacks();
-	if (s_active_no_interlacing_patches > 0 && EmuConfig.GS.InterlaceMode == GSInterlaceMode::Automatic)
-		EmuConfig.GS.InterlaceMode = GSInterlaceMode::Off;
+	if (s_active_no_interlacing_patches > 0 && EmuConfig.GS.InterlaceMode == GS_INTERLACE_AUTOMATIC)
+		EmuConfig.GS.InterlaceMode = GS_INTERLACE_OFF;
 	if (HasValidVM())
 		ApplyGameFixes();
 	cdvdApplySettings(EmuConfig.Speedhacks.fastCDVD);
@@ -530,9 +530,9 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 			message_append(message, sizeof(message), &message_len, "%s%u no-interlacing patches", (patch_count > 0 || cheat_count > 0 || s_active_widescreen_patches > 0) ? " and " : "", s_active_no_interlacing_patches);
 
 			// Disable interlacing in GS if active.
-			if (EmuConfig.GS.InterlaceMode == GSInterlaceMode::Automatic)
+			if (EmuConfig.GS.InterlaceMode == GS_INTERLACE_AUTOMATIC)
 			{
-				EmuConfig.GS.InterlaceMode = GSInterlaceMode::Off;
+				EmuConfig.GS.InterlaceMode = GS_INTERLACE_OFF;
 				mtgs_apply_settings();
 			}
 		}

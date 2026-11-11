@@ -1,6 +1,7 @@
 #!/bin/sh
 # pcsx2/Config.h is on its way to being a C header: it names no type from
-# the C++ standard library and includes none of its headers. A unit that
+# the C++ standard library and includes none of its headers, and the GS
+# option enumerations it takes from GS/GSOptionEnums.h are C89. A unit that
 # needs one includes it itself, rather than through Config.h -- which is
 # how the DX11 renderer came to rely on <array> arriving that way.
 set -e
@@ -24,6 +25,16 @@ if [ -n "$BAD" ]; then
 	exit 1
 fi
 echo "  none"
+
+echo "== the GS option enums compile as C89 =="
+printf '#include "GS/GSOptionEnums.h"\nint f(GSRendererType r, TriFiltering t);\n' > "$DIR/.c89.c"
+if ! ${CC:-cc} -std=c89 -pedantic-errors -Wall -fsyntax-only -I "$ROOT/pcsx2" "$DIR/.c89.c"; then
+	rm -f "$DIR/.c89.c"
+	echo "  FAIL: GSOptionEnums.h is not C89"
+	exit 1
+fi
+rm -f "$DIR/.c89.c"
+echo "  ok"
 
 echo "== negative: a stray include and type are caught =="
 printf '#include <string.h>\n#include <vector>\nstruct A { std::string s; };\n/* std::kept */\n' > "$DIR/.stray.h"

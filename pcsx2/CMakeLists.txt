@@ -397,6 +397,7 @@ set(pcsx2GSHeaders
 	GS/GSDrawingContext.h
 	GS/GSDrawingEnvironment.h
 	GS/GSExtra.h
+	GS/GSOptionEnums.h
 	GS/GSRegs.h
 	GS/GS.h
 	GS/GSLocalMemory.h

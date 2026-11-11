@@ -594,7 +594,7 @@ bool GSRendererPGS::Init()
 	 * which serialises the GS and EE threads via WaitGS and tanks the
 	 * frame rate on readback-heavy screens. */
 	hacks.unsynced_readbacks =
-		(GSConfig.HWDownloadMode >= GSHardwareDownloadMode::Unsynchronized);
+		(GSConfig.HWDownloadMode >= GS_DOWNLOAD_UNSYNCHRONIZED);
 	iface.set_hacks(hacks);
 
 	return true;
@@ -622,7 +622,7 @@ void GSRendererPGS::UpdateConfig()
 	hacks.disable_mipmaps = GSConfig.PGSDisableMipmaps != 0;
 	hacks.backbuffer_promotion = GSConfig.PGSSharpBackbuffer != 0;
 	hacks.unsynced_readbacks =
-		(GSConfig.HWDownloadMode >= GSHardwareDownloadMode::Unsynchronized);
+		(GSConfig.HWDownloadMode >= GS_DOWNLOAD_UNSYNCHRONIZED);
 	iface.set_hacks(hacks);
 }
 
@@ -846,7 +846,7 @@ void GSRendererPGS::VSync(u32 field, bool registers_written)
 	info.phase = field;
 
 	// Apparently this is needed for game-fixes.
-	if (GSConfig.InterlaceMode != GSInterlaceMode::Automatic)
+	if (GSConfig.InterlaceMode != GS_INTERLACE_AUTOMATIC)
 		info.phase ^= (static_cast<int>(GSConfig.InterlaceMode) - 2) & 1;
 
 	info.anti_blur = GSConfig.PCRTCAntiBlur;

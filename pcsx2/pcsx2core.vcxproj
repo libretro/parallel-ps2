@@ -391,6 +391,7 @@
     <ClInclude Include="GS\Renderers\OpenGL\GLState.h" />
     <ClInclude Include="GS\GS.h" />
     <ClInclude Include="GS\GSExtra.h" />
+    <ClInclude Include="GS\GSOptionEnums.h" />
     <ClInclude Include="GS\GSRegs.h" />
     <ClInclude Include="GS\GSAlignedClass.h" />
     <ClInclude Include="GS\GSBlock.h" />
