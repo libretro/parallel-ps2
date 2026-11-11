@@ -169,6 +169,8 @@ int main(int argc, char** argv)
 	u8 b[512];
 	u32 i;
 
+	/* EmuConfig is C: its defaults are set, as retro_init sets them. */
+	emu_config_init(&EmuConfig);
 	s_out = argc > 2 ? fopen(argv[2], "w") : stdout;
 	if (!s_out)
 		return 1;

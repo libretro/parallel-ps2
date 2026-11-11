@@ -29,13 +29,13 @@ ${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 	-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 	-I "$LC/include" \
 	-c -o "$DIR/dbload.o" "$DIR/dbload.cpp"
-for f in GameDatabaseFixes Pcsx2Config; do
+for f in GameDatabaseFixes; do
 	${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -I "$ROOT" -I "$ROOT/pcsx2" \
 		-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 		-I "$LC/include" -c -o "$DIR/dbload_$f.o" "$ROOT/pcsx2/$f.cpp"
 done
 # The reader and the option helpers are C89, as the core builds them.
-for f in GameDatabase EmuOptions; do
+for f in GameDatabase EmuOptions Pcsx2Config; do
 	${CC:-cc} -std=gnu89 -O1 -Wall -Wno-unused-function -Werror=declaration-after-statement $SANFLAGS \
 		-I "$ROOT" -I "$ROOT/pcsx2" -I "$ROOT/common" -I "$LC/include" \
 		-c -o "$DIR/dbload_$f.o" "$ROOT/pcsx2/$f.c"

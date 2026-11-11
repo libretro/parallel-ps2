@@ -72,7 +72,7 @@ EEVM_MemoryAllocMess* eeMem;
 static u8* s_vumem;
 
 /* THREAD_VU1 reads EmuConfig in the C++; the C asks through a call. */
-u32 emu_hot; /* HotConfig.h; Pcsx2Config.cpp is not linked */
+u32 emu_hot; /* HotConfig.h; Pcsx2Config.c is not linked */
 static bool s_thread_vu1;
 alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
 asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");

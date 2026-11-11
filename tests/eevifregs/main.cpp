@@ -78,7 +78,7 @@ alignas(4096) u8 eeHw[PS2MEM_HARDWARE];
 u32 g_vif0Cycles, g_vif1Cycles;
 PCSX2_ALIGN(16) VifUnpackBuffer vifUnpackBuffer[2];
 
-u32 emu_hot; /* HotConfig.h; Pcsx2Config.cpp is not linked */
+u32 emu_hot; /* HotConfig.h; Pcsx2Config.c is not linked */
 static bool s_thread_vu1;
 alignas(16) u8 s_emuconfig[sizeof(Pcsx2Config)];
 asm(".globl EmuConfig\n.set EmuConfig, s_emuconfig");

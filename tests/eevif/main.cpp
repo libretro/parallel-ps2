@@ -88,7 +88,7 @@ EEVM_MemoryAllocMess* eeMem;
 alignas(16) vifStruct vif0, vif1;
 
 
-u32 emu_hot; /* HotConfig.h; Pcsx2Config.cpp is not linked */
+u32 emu_hot; /* HotConfig.h; Pcsx2Config.c is not linked */
 static bool s_thread_vu1, s_instant_vu1, s_vusync, s_vif1stall;
 /* What the core reads is the hot config's bit (HotConfig.h). */
 static void set_thread_vu1(bool on)

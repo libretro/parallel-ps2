@@ -308,7 +308,7 @@
     <ClCompile Include="Patch.c">
       <Filter>Misc</Filter>
     </ClCompile>
-    <ClCompile Include="Pcsx2Config.cpp">
+    <ClCompile Include="Pcsx2Config.c">
       <Filter>System</Filter>
     </ClCompile>
     <ClCompile Include="SaveState.cpp">

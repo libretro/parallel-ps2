@@ -152,7 +152,7 @@ bool gamedb_hwfix_is_user_hack(u32 id);
 
 /* What GameDatabase.c reads from elsewhere: the database built into the
  * core (GameDatabaseBuiltin.c); whether to prefer GameIndex.yaml in the
- * resources folder (main.cpp) and that folder (Pcsx2Config.cpp); and the
+ * resources folder (main.cpp) and that folder (Pcsx2Config.c); and the
  * GS function names three fixes take (GSHwHack.cpp). */
 extern const unsigned char g_gameDatabaseBuiltin[];
 extern const size_t g_gameDatabaseBuiltinSize;

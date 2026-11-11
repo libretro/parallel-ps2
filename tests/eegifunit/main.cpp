@@ -93,7 +93,7 @@ alignas(4096) u8 eeHw[PS2MEM_HARDWARE];
 alignas(16) u8 g_RealGSMem[PS2MEM_GS_REGS];
 alignas(16) vifStruct vif1;
 
-u32 emu_hot; /* HotConfig.h; Pcsx2Config.cpp is not linked */
+u32 emu_hot; /* HotConfig.h; Pcsx2Config.c is not linked */
 static bool s_thread_vu1, s_xgkick_hack, s_enable_vu1;
 /* What the core reads is the hot config's bit (HotConfig.h). */
 static void set_thread_vu1(bool on)

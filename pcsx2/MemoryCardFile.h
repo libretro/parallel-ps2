@@ -57,7 +57,7 @@ s32 FileMcd_EraseBlock(uint port, uint slot, u32 adr);
 u64 FileMcd_GetCRC(uint port, uint slot);
 bool FileMcd_ReIndex(uint port, uint slot, const char* filter);
 
-/* What the configuration says (Pcsx2Config.cpp). A combined slot's card:
+/* What the configuration says (Pcsx2Config.c). A combined slot's card:
  * its whole path into path (empty for none), whether it is enabled. */
 bool emu_config_mcd(uint slot, char* path, size_t path_size);
 bool emu_config_multitap(uint port);

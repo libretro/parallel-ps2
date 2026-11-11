@@ -236,7 +236,7 @@ extern void psxLWR(void);
 extern void psxSWL(void);
 extern void psxSWR(void);
 
-/* Pcsx2Config.cpp: an IRX is set to be injected into the IOP's module
+/* Pcsx2Config.c: an IRX is set to be injected into the IOP's module
  * list (the interpreter's hook at 0x1630) */
 extern bool emu_config_irx_injected(void);
 

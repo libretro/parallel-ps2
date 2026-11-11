@@ -104,7 +104,7 @@ extern void vu_memory_release(const struct VirtualMemoryManager* main_map);
  * publishes it with mtvu_write_mem_commit; the _micro/_data_mem forms copy
  * from a buffer. */
 extern void mtvu_wait_vu(void);
-/* Pcsx2Config.cpp: the host rounding mode a VU unit runs under: set
+/* Pcsx2Config.c: the host rounding mode a VU unit runs under: set
  * returns the mode it replaced, for restore to put back. Whether VU1 runs
  * on its own thread is EMU_THREAD_VU1, in HotConfig.h. */
 extern u64  emu_fpcr_set_vu(int unit);

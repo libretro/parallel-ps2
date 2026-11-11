@@ -29,7 +29,7 @@ done
 for c in HostFS IopGte; do
 	"$CC" -std=gnu89 -O1 -g -w $SANFLAGS $DEFS $INC -c "$ROOT/pcsx2/$c.c" -o "$OBJ/$c.o"
 done
-SRC="$ROOT/pcsx2/Pcsx2Config.cpp $ROOT/pcsx2/EmuOptions.c"
+SRC="$ROOT/pcsx2/Pcsx2Config.c $ROOT/pcsx2/EmuOptions.c"
 if [ -n "$IOPCORE_TREE" ]; then
 	API=-DIOPCORE_CXX_TREE
 	for c in R3000A R3000AInterpreter R3000AOpcodeTables IopBios; do

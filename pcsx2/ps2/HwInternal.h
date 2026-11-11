@@ -64,7 +64,7 @@ extern void mtgs_init_and_read_fifo(u8* mem, u32 qwc);
 extern void mtvu_get_changes(void);
 extern void mtvu_kick_pending(void);
 
-/* Pcsx2Config.cpp: the gamefixes the handlers check. */
+/* Pcsx2Config.c: the gamefixes the handlers check. */
 extern bool emu_config_ophflag_hack(void);
 extern bool emu_config_giffifo_hack(void);
 extern bool emu_config_xgkick_hack(void);

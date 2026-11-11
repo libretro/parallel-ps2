@@ -42,6 +42,7 @@ unsigned smaprx_bd_empty_flag(void) { return SMAP_BD_RX_EMPTY; }
 void smaprx_open(void)
 {
 	int i;
+	emu_config_init(&EmuConfig);
 	memset(&dev9, 0, sizeof(dev9));
 	dev9.eeprom = s_eeprom; /* DEV9open maps it before the adapter sets the MAC */
 	smap_write8(SMAP_R_RXFIFO_CTRL, SMAP_RXFIFO_RESET);

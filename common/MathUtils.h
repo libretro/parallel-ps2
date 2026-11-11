@@ -14,8 +14,8 @@
  */
 
 #pragma once
-// Hopefully this file will be used for cross-source math utilities.
-// Currently these are strewn across the code base. Please collect them all!
+/* Hopefully this file will be used for cross-source math utilities. */
+/* Currently these are strewn across the code base. Please collect them all! */
 
 #include <string.h>
 
@@ -106,15 +106,15 @@ static PCSX2_INLINE u32 count_leading_zero(s32 n)
 #endif
 }
 
-// On GCC >= 4.7, this is equivalent to __builtin_clrsb(n);
+/* On GCC >= 4.7, this is equivalent to __builtin_clrsb(n); */
 static PCSX2_INLINE u32 count_leading_sign_bits(s32 n)
 {
-	// If the sign bit is 1, we invert the bits to 0 for count-leading-zero.
+	/* If the sign bit is 1, we invert the bits to 0 for count-leading-zero. */
 	if (n < 0)
 		n = ~n;
-	// If BSR is used directly, it would have an undefined value for 0.
+	/* If BSR is used directly, it would have an undefined value for 0. */
 	if (n == 0)
 		return 32;
-	// Perform our count leading zero.
+	/* Perform our count leading zero. */
 	return count_leading_zero(n);
 }

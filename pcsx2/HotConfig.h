@@ -1,6 +1,6 @@
 /* The settings the EE's hot paths test (every guest memory access, every
  * interpreted branch, every event test), as one word instead of a call or
- * a walk into EmuConfig. emu_config_sync_hot (Pcsx2Config.cpp) rebuilds
+ * a walk into EmuConfig. emu_config_sync_hot (Pcsx2Config.c) rebuilds
  * them from EmuConfig: CPU thread start takes the defaults,
  * VMManager::LoadSettings, the one place EmuConfig's CPU, speedhack and
  * gamefix settings are applied, ends with it, and so does vtlb's fastmem

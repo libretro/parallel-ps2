@@ -13,11 +13,11 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// --------------------------------------------------------------------------------------
-//  r64 / r128 - Types that are guaranteed to fit in one register
-// --------------------------------------------------------------------------------------
-// Note: Recompilers rely on some of these types and the registers they allocate to,
-// so be careful if you want to change them
+/* -------------------------------------------------------------------------------------- */
+/*  r64 / r128 - Types that are guaranteed to fit in one register */
+/* -------------------------------------------------------------------------------------- */
+/* Note: Recompilers rely on some of these types and the registers they allocate to, */
+/* so be careful if you want to change them */
 
 #pragma once
 

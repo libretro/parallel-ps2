@@ -19,7 +19,7 @@ ${CXX:-c++} -std=c++17 -O1 -w $SANFLAGS -D__LIBRETRO__ -I "$ROOT" -I "$ROOT/pcsx
 	-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 	-I "$LC/include" \
 	-o "$DIR/mcdid_test$EXE" "$DIR/main.cpp" \
-	"$ROOT/pcsx2/Pcsx2Config.cpp" "$ROOT/pcsx2/EmuOptions.c" "$OBJ/MemoryCardFile.o" \
+	"$ROOT/pcsx2/Pcsx2Config.c" "$ROOT/pcsx2/EmuOptions.c" "$OBJ/MemoryCardFile.o" \
 	"$ROOT/pcsx2/memcard_ecc.c" \
 	"$LC/string/stdstring.c" "$LC/string/rstrtod.c" "$LC/file/file_path.c" \
 	"$LC/compat/compat_strl.c" "$LC/encodings/encoding_utf.c" "$LC/time/rtime.c" \

@@ -2362,6 +2362,9 @@ void retro_init(void)
    	bool option_categories          = false;
 	enum retro_pixel_format xrgb888 = RETRO_PIXEL_FORMAT_XRGB8888;
 
+	/* EmuConfig is a C struct with no constructor: the defaults go in
+	 * before anything reads it, and again on each init after a deinit. */
+	emu_config_init(&EmuConfig);
 	environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &xrgb888);
 	if (environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
 		log_cb = log.log;

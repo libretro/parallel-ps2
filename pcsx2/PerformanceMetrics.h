@@ -38,7 +38,7 @@ void perf_metrics_reset(void);
 void perf_metrics_update(bool gs_register_write, bool fb_blit);
 enum perf_fps_method perf_metrics_internal_fps_method(void);
 
-/* Gamefixes.BlitInternalFPSHack (Pcsx2Config.cpp). */
+/* Gamefixes.BlitInternalFPSHack (Pcsx2Config.c). */
 bool emu_config_blit_internal_fps_hack(void);
 
 #ifdef __cplusplus

@@ -59,7 +59,7 @@ extern "C" {
 	 * in dir by name. False when dir has none. */
 	bool FindArcadeBios(const char* dir, const char* selected, char* out, size_t out_size);
 
-	/* What BiosTools.c reads of the configuration (Pcsx2Config.cpp). */
+	/* What BiosTools.c reads of the configuration (Pcsx2Config.c). */
 	/* The configured BIOS's full path into out; empty when none is set. */
 	void emu_config_bios_path(char* out, size_t out_size);
 	/* The configured BIOS's file name, for messages. */

@@ -476,6 +476,8 @@ static void fuzz(int steps)
 int main(int argc, char** argv)
 {
 	unsigned i;
+	/* EmuConfig is C: its defaults are set, as retro_init sets them. */
+	emu_config_init(&EmuConfig);
 	if (argc < 2)
 	{
 		fprintf(stderr, "usage: %s <transcript out>\n", argv[0]);

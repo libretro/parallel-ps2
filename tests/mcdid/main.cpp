@@ -54,6 +54,8 @@ int main(int argc, char** argv)
 	const char* dir = argc > 1 ? argv[1] : ".";
 	const u8* got;
 
+	/* EmuConfig is C: its defaults are set, as retro_init sets them. */
+	emu_config_init(&EmuConfig);
 	memset(card, 0xff, sizeof(card));
 	put(dir, "dongle.ps2", card, sizeof(card));
 	put(dir, "plain.ps2", card, sizeof(card));

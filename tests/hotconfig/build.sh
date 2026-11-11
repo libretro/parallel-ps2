@@ -8,7 +8,7 @@
 #   1. CPU, speedhack and gamefix settings, or EmuConfig as a whole, are
 #      written only inside the functions that resync afterwards
 #      (VMManager::LoadSettings and the ApplyGameFixes it calls, and the
-#      two Pcsx2Config.cpp functions in HotConfig.h);
+#      two Pcsx2Config.c functions in HotConfig.h);
 #   2. LoadSettings calls emu_config_sync_hot after ApplyGameFixes.
 #
 # A write anywhere else leaves the hot paths on the old value: a game

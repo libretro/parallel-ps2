@@ -19,12 +19,12 @@
 
 #include "MemoryTypes.h"
 
-// --------------------------------------------------------------------------------------
-//  Recompiler Stuffs
-// --------------------------------------------------------------------------------------
-// This code section contains recompiler vars that are used in "shared" code. Placing
-// them in iR5900.h would mean having to include that into more files than I care to
-// right now, so we're sticking them here for now until a better solution comes along.
+/* -------------------------------------------------------------------------------------- */
+/*  Recompiler Stuffs */
+/* -------------------------------------------------------------------------------------- */
+/* This code section contains recompiler vars that are used in "shared" code. Placing */
+/* them in iR5900.h would mean having to include that into more files than I care to */
+/* right now, so we're sticking them here for now until a better solution comes along. */
 
 /* MSVC decorates C++ data symbols; the ELF ABI does not. A variable a C
  * unit references therefore has to be declared -- and so, through this
@@ -36,7 +36,7 @@ extern "C" {
 	extern bool g_GameStarted;
 	extern bool g_GameLoading;
 	extern bool g_SkipBiosHack;
-	/* EmuConfig.UseBOOT2Injection, for C units (Pcsx2Config.cpp) */
+	/* EmuConfig.UseBOOT2Injection, for C units (Pcsx2Config.c) */
 	extern bool emu_config_boot2_injection(void);
 
 	extern s32 EEsCycle;
@@ -45,10 +45,10 @@ extern "C" {
 }
 #endif
 
-typedef union GPR_reg {   // Declare union type GPR register
+typedef union GPR_reg {   /* Declare union type GPR register */
 	u128 UQ;
 	s128 SQ;
-	u64 UD[2];      //128 bits
+	u64 UD[2];      /* 128 bits */
 	s64 SD[2];
 	u32 UL[4];
 	s32 SL[4];
@@ -75,23 +75,23 @@ typedef union PERFregs {
 		{
 			struct
 			{
-				u32 pad0:1;			// LSB should always be zero (or undefined)
-				u32 EXL0:1;			// enable PCR0 during Level 1 exception handling
-				u32 K0:1;			// enable PCR0 during Kernel Mode execution
-				u32 S0:1;			// enable PCR0 during Supervisor mode execution
-				u32 U0:1;			// enable PCR0 during User-mode execution
-				u32 Event0:5;		// PCR0 event counter (all values except 1 ignored at this time)
+				u32 pad0:1;			/* LSB should always be zero (or undefined) */
+				u32 EXL0:1;			/* enable PCR0 during Level 1 exception handling */
+				u32 K0:1;			/* enable PCR0 during Kernel Mode execution */
+				u32 S0:1;			/* enable PCR0 during Supervisor mode execution */
+				u32 U0:1;			/* enable PCR0 during User-mode execution */
+				u32 Event0:5;		/* PCR0 event counter (all values except 1 ignored at this time) */
 
-				u32 pad1:1;			// more zero/undefined padding [bit 10]
+				u32 pad1:1;			/* more zero/undefined padding [bit 10] */
 
-				u32 EXL1:1;			// enable PCR1 during Level 1 exception handling
-				u32 K1:1;			// enable PCR1 during Kernel Mode execution
-				u32 S1:1;			// enable PCR1 during Supervisor mode execution
-				u32 U1:1;			// enable PCR1 during User-mode execution
-				u32 Event1:5;		// PCR1 event counter (all values except 1 ignored at this time)
+				u32 EXL1:1;			/* enable PCR1 during Level 1 exception handling */
+				u32 K1:1;			/* enable PCR1 during Kernel Mode execution */
+				u32 S1:1;			/* enable PCR1 during Supervisor mode execution */
+				u32 U1:1;			/* enable PCR1 during User-mode execution */
+				u32 Event1:5;		/* PCR1 event counter (all values except 1 ignored at this time) */
 
 				u32 Reserved:11;
-				u32 CTE:1;			// Counter enable bit, no counting if set to zero.
+				u32 CTE:1;			/* Counter enable bit, no counting if set to zero. */
 			} b;
 
 			u32 val;
@@ -109,22 +109,22 @@ typedef union CP0regs {
 			BadVAddr, Count,     EntryHi,   Compare;
 		union {
 			struct {
-				u32 IE:1;		// Bit 0: Interrupt Enable flag.
-				u32 EXL:1;		// Bit 1: Exception Level, set on any exception not covered by ERL.
-				u32 ERL:1;		// Bit 2: Error level, set on Resetm NMI, perf/debug exceptions.
-				u32 KSU:2;		// Bits 3-4: Kernel [clear] / Supervisor [set] mode
+				u32 IE:1;		/* Bit 0: Interrupt Enable flag. */
+				u32 EXL:1;		/* Bit 1: Exception Level, set on any exception not covered by ERL. */
+				u32 ERL:1;		/* Bit 2: Error level, set on Resetm NMI, perf/debug exceptions. */
+				u32 KSU:2;		/* Bits 3-4: Kernel [clear] / Supervisor [set] mode */
 				u32 unused0:3;
-				u32 IM:8;		// Bits 10-15: Interrupt mask (bits 12,13,14 are unused)
-				u32 EIE:1;		// Bit 16: IE bit enabler.  When cleared, ints are disabled regardless of IE status.
-				u32 _EDI:1;		// Bit 17: Interrupt Enable (set enables ints in all modes, clear enables ints in kernel mode only)
-				u32 CH:1;		// Bit 18: Status of most recent cache instruction (set for hit, clear for miss)
+				u32 IM:8;		/* Bits 10-15: Interrupt mask (bits 12,13,14 are unused) */
+				u32 EIE:1;		/* Bit 16: IE bit enabler.  When cleared, ints are disabled regardless of IE status. */
+				u32 _EDI:1;		/* Bit 17: Interrupt Enable (set enables ints in all modes, clear enables ints in kernel mode only) */
+				u32 CH:1;		/* Bit 18: Status of most recent cache instruction (set for hit, clear for miss) */
 				u32 unused1:3;
-				u32 BEV:1;		// Bit 22: if set, use bootstrap for TLB/general exceptions
-				u32 DEV:1;		// Bit 23: if set, use bootstrap for perf/debug exceptions
+				u32 BEV:1;		/* Bit 22: if set, use bootstrap for TLB/general exceptions */
+				u32 DEV:1;		/* Bit 23: if set, use bootstrap for perf/debug exceptions */
 				u32 unused2:2;
-				u32 FR:1;		// (?)
+				u32 FR:1;		/* (?) */
 				u32 unused3:1;
-				u32 CU:4;		// Bits 28-31: Co-processor Usable flag
+				u32 CU:4;		/* Bits 28-31: Co-processor Usable flag */
 			} b;
 			u32 val;
 		} Status;
@@ -138,35 +138,35 @@ typedef union CP0regs {
 } CP0regs;
 
 typedef struct cpuRegisters {
-	GPRregs GPR;		// GPR regs
-	// NOTE: don't change order since recompiler uses it
+	GPRregs GPR;		/* GPR regs */
+	/* NOTE: don't change order since recompiler uses it */
 	GPR_reg HI;
-	GPR_reg LO;			// hi & log 128bit wide
-	CP0regs CP0;		// is COP0 32bit?
-	u32 sa;				// shift amount (32bit), needs to be 16 byte aligned
-	u32 pc;				// Program counter, when changing offset in struct, check iR5900-X.S to make sure offset is correct
-	u32 code;			// current instruction
+	GPR_reg LO;			/* hi & log 128bit wide */
+	CP0regs CP0;		/* is COP0 32bit? */
+	u32 sa;				/* shift amount (32bit), needs to be 16 byte aligned */
+	u32 pc;				/* Program counter, when changing offset in struct, check iR5900-X.S to make sure offset is correct */
+	u32 code;			/* current instruction */
 	PERFregs PERF;
 	u32 eCycle[32];
-	u64 sCycle[32];		// for internal counters
-	u64 cycle;			// calculate cpucycles..
+	u64 sCycle[32];		/* for internal counters */
+	u64 cycle;			/* calculate cpucycles.. */
 	u32 interrupt;
 	int branch;
-	int opmode;			// operating mode
+	int opmode;			/* operating mode */
 	u32 tempcycles;
 	u32 dmastall;
 	u32 pcWriteback;
 
-	// if cpuRegs.cycle is greater than this cycle, should check cpuEventTest for updates
+	/* if cpuRegs.cycle is greater than this cycle, should check cpuEventTest for updates */
 	u64 nextEventCycle;
 	u64 lastEventCycle;
 	u64 lastCOP0Cycle;
 	u64 lastPERFCycle[2];
 } cpuRegisters;
 
-// used for optimization
+/* used for optimization */
 typedef union GPR_reg64 {
-	u64 UD[1];      //64 bits
+	u64 UD[1];      /* 64 bits */
 	s64 SD[1];
 	u32 UL[2];
 	s32 SL[2];
@@ -179,14 +179,14 @@ typedef union GPR_reg64 {
 typedef union FPRreg {
 	float f;
 	u32 UL;
-	s32 SL;				// signed 32bit used for sign extension in interpreters.
+	s32 SL;				/* signed 32bit used for sign extension in interpreters. */
 } FPRreg;
 
 typedef struct fpuRegisters {
-	FPRreg fpr[32];		// 32bit floating point registers
-	u32 fprc[32];		// 32bit floating point control registers
-	FPRreg ACC;			// 32 bit accumulator
-	u32 ACCflag;        // an internal accumulator overflow flag
+	FPRreg fpr[32];		/* 32bit floating point registers */
+	u32 fprc[32];		/* 32bit floating point control registers */
+	FPRreg ACC;			/* 32 bit accumulator */
+	u32 ACCflag;        /* an internal accumulator overflow flag */
 } fpuRegisters;
 
 typedef struct tlbs
@@ -204,30 +204,30 @@ typedef struct tlbs
 
 #ifndef _PC_
 
-////////////////////////////////////////////////////////////////////
-// R5900 Instruction Macros
+/* ////////////////////////////////////////////////////////////////// */
+/* R5900 Instruction Macros */
 
-#define _PC_       cpuRegs.pc       // The next PC to be executed - only used in this header and R3000A.h
+#define _PC_       cpuRegs.pc       /* The next PC to be executed - only used in this header and R3000A.h */
 
-#define _Funct_          ((cpuRegs.code      ) & 0x3F)  // The funct part of the instruction register
-#define _Rd_             ((cpuRegs.code >> 11) & 0x1F)  // The rd part of the instruction register
-#define _Rt_             ((cpuRegs.code >> 16) & 0x1F)  // The rt part of the instruction register
-#define _Rs_             ((cpuRegs.code >> 21) & 0x1F)  // The rs part of the instruction register
-#define _Sa_             ((cpuRegs.code >>  6) & 0x1F)  // The sa part of the instruction register
-#define _Im_             ((u16)cpuRegs.code) // The immediate part of the instruction register
-#define _InstrucTarget_  (cpuRegs.code & 0x03ffffff)    // The target part of the instruction register
+#define _Funct_          ((cpuRegs.code      ) & 0x3F)  /* The funct part of the instruction register */
+#define _Rd_             ((cpuRegs.code >> 11) & 0x1F)  /* The rd part of the instruction register */
+#define _Rt_             ((cpuRegs.code >> 16) & 0x1F)  /* The rt part of the instruction register */
+#define _Rs_             ((cpuRegs.code >> 21) & 0x1F)  /* The rs part of the instruction register */
+#define _Sa_             ((cpuRegs.code >>  6) & 0x1F)  /* The sa part of the instruction register */
+#define _Im_             ((u16)cpuRegs.code) /* The immediate part of the instruction register */
+#define _InstrucTarget_  (cpuRegs.code & 0x03ffffff)    /* The target part of the instruction register */
 
-#define _Imm_	((s16)cpuRegs.code) // sign-extended immediate
-#define _ImmU_	(cpuRegs.code&0xffff) // zero-extended immediate
-#define _ImmSB_	(cpuRegs.code&0x8000) // gets the sign-bit of the immediate value
+#define _Imm_	((s16)cpuRegs.code) /* sign-extended immediate */
+#define _ImmU_	(cpuRegs.code&0xffff) /* zero-extended immediate */
+#define _ImmSB_	(cpuRegs.code&0x8000) /* gets the sign-bit of the immediate value */
 
 #define _Opcode_ (cpuRegs.code >> 26 )
 
-#define _JumpTarget_     ((_InstrucTarget_ << 2) + (_PC_ & 0xf0000000))   // Calculates the target during a jump instruction
-#define _BranchTarget_   (((s32)(s16)_Im_ * 4) + _PC_)                 // Calculates the target during a branch instruction
-#define _TrapCode_       ((u16)cpuRegs.code >> 6)	// error code for non-immediate trap instructions.
+#define _JumpTarget_     ((_InstrucTarget_ << 2) + (_PC_ & 0xf0000000))   /* Calculates the target during a jump instruction */
+#define _BranchTarget_   (((s32)(s16)_Im_ * 4) + _PC_)                 /* Calculates the target during a branch instruction */
+#define _TrapCode_       ((u16)cpuRegs.code >> 6)	/* error code for non-immediate trap instructions. */
 
-#define _SetLink(x)     (cpuRegs.GPR.r[x].UD[0] = _PC_ + 4)       // Sets the return address in the link register
+#define _SetLink(x)     (cpuRegs.GPR.r[x].UD[0] = _PC_ + 4)       /* Sets the return address in the link register */
 
 #endif
 
@@ -251,8 +251,8 @@ extern retro_atomic_int_t eeEventTestIsActive;
 #endif
 
 
-// This is a special form of the interpreter's doBranch that is run from various
-// parts of the Recs (namely COP0's branch codes and stuff).
+/* This is a special form of the interpreter's doBranch that is run from various */
+/* parts of the Recs (namely COP0's branch codes and stuff). */
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -285,51 +285,51 @@ extern void eeloadHook2(void);
 }
 #endif
 
-// --------------------------------------------------------------------------------------
-//  R5900cpu
-// --------------------------------------------------------------------------------------
+/* -------------------------------------------------------------------------------------- */
+/*  R5900cpu */
+/* -------------------------------------------------------------------------------------- */
 typedef struct R5900cpu
 {
-	// Memory allocation function, for allocating virtual memory spaces needed by
-	// the virtual cpu provider.  Allocating additional heap memory from this method is
-	// NOT recommended.  Heap allocations should be performed by Reset only.  This
-	// maximizes the likeliness of reservations claiming addresses they prefer.
+	/* Memory allocation function, for allocating virtual memory spaces needed by */
+	/* the virtual cpu provider.  Allocating additional heap memory from this method is */
+	/* NOT recommended.  Heap allocations should be performed by Reset only.  This */
+	/* maximizes the likeliness of reservations claiming addresses they prefer. */
 	void (*Reserve)();
 
-	// Deallocates ram allocated by Allocate, Reserve, and/or by runtime code execution.
-	//
+	/* Deallocates ram allocated by Allocate, Reserve, and/or by runtime code execution. */
+
 	void (*Shutdown)();
 
-	// Initializes / Resets code execution states. Typically implementation is only
-	// needed for recompilers, as interpreters have no internal execution states and
-	// rely on the CPU/VM states almost entirely.
-	//
+	/* Initializes / Resets code execution states. Typically implementation is only */
+	/* needed for recompilers, as interpreters have no internal execution states and */
+	/* rely on the CPU/VM states almost entirely. */
+
 	void (*Reset)();
 
-	// Executes code until a break is signaled.  Execution can be paused or suspended
-	// via thread-style signals that are handled by CheckExecutionState callbacks.
-	// Execution Breakages are handled the same way, where-by a signal causes the Execute
-	// call to return at the nearest state check (typically handled internally using
-	// either C++ exceptions or setjmp/longjmp).
-	//
-	//
+	/* Executes code until a break is signaled.  Execution can be paused or suspended */
+	/* via thread-style signals that are handled by CheckExecutionState callbacks. */
+	/* Execution Breakages are handled the same way, where-by a signal causes the Execute */
+	/* call to return at the nearest state check (typically handled internally using */
+	/* either C++ exceptions or setjmp/longjmp). */
+
+
 	void (*Execute)();
 
-	// Immediately exits execution of recompiled code if we are in a state to do so, or
-	// queues an exit as soon as it is safe. Safe in this case refers to whether we are
-	// currently executing events or not.
+	/* Immediately exits execution of recompiled code if we are in a state to do so, or */
+	/* queues an exit as soon as it is safe. Safe in this case refers to whether we are */
+	/* currently executing events or not. */
 	void (*ExitExecution)();
 
-	// Cancels the currently-executing instruction, returning to the main loop.
-	// Currently only works for the interpreter.
+	/* Cancels the currently-executing instruction, returning to the main loop. */
+	/* Currently only works for the interpreter. */
 	void (*CancelInstruction)();
 
-	// Manual recompiled code cache clear; typically useful to recompilers only.  Size is
-	// in MIPS words (32 bits).  Dev note: this callback is nearly obsolete, and might be
-	// better off replaced with some generic API callbacks from VTLB block protection.
-	// Also: the calls from COP0's TLB remap code should be replaced with full recompiler
-	// resets, since TLB remaps affect more than just the code they contain (code that
-	// may reference the remapped blocks via memory loads/stores, for example).
+	/* Manual recompiled code cache clear; typically useful to recompilers only.  Size is */
+	/* in MIPS words (32 bits).  Dev note: this callback is nearly obsolete, and might be */
+	/* better off replaced with some generic API callbacks from VTLB block protection. */
+	/* Also: the calls from COP0's TLB remap code should be replaced with full recompiler */
+	/* resets, since TLB remaps affect more than just the code they contain (code that */
+	/* may reference the remapped blocks via memory loads/stores, for example). */
 	void (*Clear)(u32 Addr, u32 Size);
 } R5900cpu;
 
@@ -366,10 +366,10 @@ typedef enum EE_EventType
 	DMAC_MFIFO_VIF,
 	DMAC_MFIFO_GIF,
 
-	// We're setting error conditions through hwDmacIrq, so these correspond to the conditions above.
-	DMAC_STALL_SIS		= 13, // SIS
-	DMAC_MFIFO_EMPTY	= 14, // MEIS
-	DMAC_BUS_ERROR		= 15, // BEIS
+	/* We're setting error conditions through hwDmacIrq, so these correspond to the conditions above. */
+	DMAC_STALL_SIS		= 13, /* SIS */
+	DMAC_MFIFO_EMPTY	= 14, /* MEIS */
+	DMAC_BUS_ERROR		= 15, /* BEIS */
 
 	DMAC_GIF_UNIT,
 	VIF_VU0_FINISH,
@@ -453,8 +453,8 @@ extern void cpuTestDMACInts(void);
 }
 #endif
 
-////////////////////////////////////////////////////////////////////
-// Exception Codes
+/* ////////////////////////////////////////////////////////////////// */
+/* Exception Codes */
 
 #define EXC_CODE(x)     ((x)<<2)
 

@@ -76,7 +76,7 @@ alignas(16) vifStruct vif0, vif1;
 alignas(16) static u8 s_vumem0[0x1000], s_vumem1[0x4000];
 alignas(16) static u8 s_src[0x10000];
 
-u32 emu_hot; /* HotConfig.h; Pcsx2Config.cpp is not linked */
+u32 emu_hot; /* HotConfig.h; Pcsx2Config.c is not linked */
 static bool s_thread_vu1;
 /* What the core reads is the hot config's bit (HotConfig.h). */
 static void set_thread_vu1(bool on)

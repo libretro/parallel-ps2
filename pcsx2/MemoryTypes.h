@@ -53,16 +53,16 @@ typedef u128 mem128_t;
 
 typedef struct EEVM_MemoryAllocMess
 {
-	u8 Main[PS2MEM_MAIN_RAM];			// Main memory (hard-wired to 32MB)
-	u8 Scratch[PS2MEM_SCRATCH];		// Scratchpad!
-	u8 ROM[PS2MEM_ROM];				// Boot rom (4MB)
-	u8 ROM1[PS2MEM_ROM1];				// DVD player (4MB)
-	u8 ROM2[PS2MEM_ROM2];				// Chinese extensions
+	u8 Main[PS2MEM_MAIN_RAM];			/* Main memory (hard-wired to 32MB) */
+	u8 Scratch[PS2MEM_SCRATCH];		/* Scratchpad! */
+	u8 ROM[PS2MEM_ROM];				/* Boot rom (4MB) */
+	u8 ROM1[PS2MEM_ROM1];				/* DVD player (4MB) */
+	u8 ROM2[PS2MEM_ROM2];				/* Chinese extensions */
 
-	// Two 1 megabyte (max DMA) buffers for reading and writing to high memory (>32MB).
-	// Such accesses are not documented as causing bus errors but as the memory does
-	// not exist, reads should continue to return 0 and writes should be discarded.
-	// Probably.
+	/* Two 1 megabyte (max DMA) buffers for reading and writing to high memory (>32MB). */
+	/* Such accesses are not documented as causing bus errors but as the memory does */
+	/* not exist, reads should continue to return 0 and writes should be discarded. */
+	/* Probably. */
 
 	u8 ZeroRead[_1mb];
 	u8 ZeroWrite[_1mb];
@@ -70,15 +70,15 @@ typedef struct EEVM_MemoryAllocMess
 
 typedef struct IopVM_MemoryAllocMess
 {
-	u8 Main[PS2MEM_IOP_RAM];			// Main memory (hard-wired to 2MB)
-	u8 P[_64kb];							// I really have no idea what this is... --air
-	u8 Sif[0x100];							// a few special SIF/SBUS registers (likely not needed)
+	u8 Main[PS2MEM_IOP_RAM];			/* Main memory (hard-wired to 2MB) */
+	u8 P[_64kb];							/* I really have no idea what this is... --air */
+	u8 Sif[0x100];							/* a few special SIF/SBUS registers (likely not needed) */
 } IopVM_MemoryAllocMess;
 
 
-// DevNote: EE and IOP hardware registers are done as a static array instead of a pointer in
-// order to allow for simpler macros and reference handles to be defined  (we can safely use
-// compile-time references to registers instead of having to use instance variables).
+/* DevNote: EE and IOP hardware registers are done as a static array instead of a pointer in */
+/* order to allow for simpler macros and reference handles to be defined  (we can safely use */
+/* compile-time references to registers instead of having to use instance variables). */
 
 /* MSVC decorates C++ data symbols; the ELF ABI does not. A variable a C
  * unit references therefore has to be declared -- and so, through this

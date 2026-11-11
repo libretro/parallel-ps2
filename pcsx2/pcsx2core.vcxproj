@@ -218,7 +218,7 @@
     <ClCompile Include="USB\shared\ringbuffer.cpp" />
     <ClCompile Include="VirtualMemory.c" />
     <ClCompile Include="VMManager.cpp" />
-    <ClCompile Include="Pcsx2Config.cpp" />
+    <ClCompile Include="Pcsx2Config.c" />
     <ClCompile Include="SaveState.cpp" />
     <ClCompile Include="Elfheader.c" />
     <ClCompile Include="x86\BaseblockEx.cpp" />

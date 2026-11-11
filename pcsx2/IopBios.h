@@ -64,7 +64,7 @@ void irxIomanReset(void);
 void Hle_SetElfPath(const char* elfFileName);
 void Hle_ClearElfPath(void);
 
-/* Pcsx2Config.cpp: host: is open to a running game */
+/* Pcsx2Config.c: host: is open to a running game */
 bool emu_config_host_fs(void);
 
 #ifdef __cplusplus

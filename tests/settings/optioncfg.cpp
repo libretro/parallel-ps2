@@ -31,6 +31,7 @@
 #include <string>
 #include <libretro.h>
 #include "Config.h"
+#include "ps2/HwInternal.h"
 
 static void test_log(enum retro_log_level level, const char* fmt, ...) { (void)level; (void)fmt; }
 extern "C" retro_log_printf_t log_cb = test_log;
@@ -40,6 +41,7 @@ int main(void)
 {
    int ok = 1;
    setvbuf(stdout, NULL, _IONBF, 0);
+   emu_config_init(&EmuConfig);
    printf("optioncfg\n");
 
    { Pcsx2Config a, b; emu_config_init(&a); emu_config_init(&b); emu_config_apply_option_fixups(&b);
@@ -98,6 +100,24 @@ int main(void)
       printf("  %s: and still takes the option's value for a field the options set\n",
              applied ? "ok" : "FAIL");
       ok &= kept && applied;
+   }
+
+   /* The vsync rate is read from the EE's SetGsCrt, under the EE's
+    * round-to-zero control register: 59.94 Hz must still come out as
+    * 59940 mHz, as it does under the host's own rounding. */
+   {
+      const FPControlRegister host = fpcr_get_current();
+      u32 near_ntsc, near_pal, chop_ntsc, chop_pal;
+      near_ntsc = emu_config_framerate_mhz(false);
+      near_pal  = emu_config_framerate_mhz(true);
+      fpcr_set_current(fpcr_set_round_mode(host, FPROUND_CHOP));
+      chop_ntsc = emu_config_framerate_mhz(false);
+      chop_pal  = emu_config_framerate_mhz(true);
+      fpcr_set_current(host);
+      int good = near_ntsc == 59940 && chop_ntsc == 59940 && near_pal == 50000 && chop_pal == 50000;
+      printf("  %s: frame rate in mHz under either rounding: NTSC %u/%u  PAL %u/%u\n",
+             good ? "ok" : "FAIL", near_ntsc, chop_ntsc, near_pal, chop_pal);
+      ok &= good;
    }
 
    printf(ok ? "optioncfg: ok\n" : "optioncfg: FAILED\n");

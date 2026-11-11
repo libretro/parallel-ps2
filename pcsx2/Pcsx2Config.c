@@ -13,17 +13,14 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <math.h>
+#include <string.h>
 #include <compat/strl.h>
-#include "ParseNumber.h"
-#include <float.h>
-#include <stdint.h>
-#include "HostFS.h"
+#include <file/file_path.h>
 
+/* Each header declaring an accessor defined here, so a declaration that
+ * drifts from its definition stops this unit compiling. */
 #include "Config.h"
 #include "HotConfig.h"
-#include "GS.h"
-#include "CDVD/CDVDcommon.h"
 #include "MemoryCardFile.h"
 #include "R5900.h"
 #include "R3000A.h"
@@ -34,35 +31,8 @@
 #include "PerformanceMetrics.h"
 #include "GameDatabase.h"
 
-#include <file/file_path.h>
-
-extern std::string libretro_content;
-
 Pcsx2Config EmuConfig;
 struct EmuFoldersData EmuFolders;
-
-/* EmuConfig holds the defaults from the start, as it did when it was a
- * class: settings are read into it before the VM first runs. */
-static struct EmuConfigDefaults
-{
-	EmuConfigDefaults() { emu_config_init(&EmuConfig); }
-} s_emu_config_defaults;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 void emu_config_init(Pcsx2Config* cfg)
 {
@@ -261,18 +231,18 @@ u32 emu_hot_ee_cycle_skip;
 
 void emu_config_sync_hot(void)
 {
-	const EmuRecompilerOptions& rec = EmuConfig.Cpu.Recompiler;
+	const EmuRecompilerOptions* rec = &EmuConfig.Cpu.Recompiler;
 	u32 w = 0;
-	if (rec.EnableEE)                          w |= EMU_HOT_EEREC;
-	if (rec.EnableEECache)                     w |= EMU_HOT_EECACHE;
-	if (rec.EnableFastmem)                     w |= EMU_HOT_FASTMEM;
+	if (rec->EnableEE)                         w |= EMU_HOT_EEREC;
+	if (rec->EnableEECache)                    w |= EMU_HOT_EECACHE;
+	if (rec->EnableFastmem)                    w |= EMU_HOT_FASTMEM;
 	if (EmuConfig.Speedhacks.WaitLoop)         w |= EMU_HOT_WAITLOOP;
 	if (EmuConfig.Gamefixes.GoemonTlbHack)     w |= EMU_HOT_GOEMON_TLB;
 	if (EmuConfig.Gamefixes.InstantDMAHack)    w |= EMU_HOT_INSTANT_DMA;
 	if (EmuConfig.Gamefixes.EETimingHack)      w |= EMU_HOT_EE_TIMING;
 	if (THREAD_VU1)                            w |= EMU_HOT_VU1_THREAD;
 	if (INSTANT_VU1)                           w |= EMU_HOT_VU1_INSTANT;
-	if (rec.vu0ExtraOverflow)                  w |= EMU_HOT_VU0_EXTRA_OVERFLOW;
+	if (rec->vu0ExtraOverflow)                 w |= EMU_HOT_VU0_EXTRA_OVERFLOW;
 	emu_hot               = w;
 	emu_hot_ee_cycle_rate = EmuConfig.Speedhacks.EECycleRate;
 	emu_hot_ee_cycle_skip = EmuConfig.Speedhacks.EECycleSkip;
@@ -293,7 +263,11 @@ u64 emu_fpcr_set_vu(int unit)
 
 u32 emu_config_framerate_mhz(bool pal)
 {
-	return (u32)lrintf((pal ? EmuConfig.GS.FrameratePAL : EmuConfig.GS.FramerateNTSC) * 1000.0f);
+	/* Rounded half up in double, not lrintf: this runs from the EE's
+	 * SetGsCrt with the EE's round-to-zero control register live, under
+	 * which lrintf took 59.94 Hz to 59939 mHz but 59940 everywhere else. */
+	const float hz = pal ? EmuConfig.GS.FrameratePAL : EmuConfig.GS.FramerateNTSC;
+	return (u32)((double)hz * 1000.0 + 0.5);
 }
 
 u32 emu_config_default_framerate_mhz(bool pal)
@@ -316,7 +290,7 @@ const char* emu_config_game_args(void)
 void emu_fpcr_restore(u64 saved)
 {
 	FPControlRegister r;
-	r.bitmask = (decltype(r.bitmask))saved;
+	r.bitmask = saved;
 	fpcr_set_current(r);
 }
 

@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "Common.h"
+#include "Config.h"
 #include "R5900.h"
 #include "Elfheader.h"
 #include "ps2/BiosTools.h"
@@ -48,6 +49,7 @@ extern "C" unsigned eestage_gpr(int n) { return cpuRegs.GPR.r[n].UL[0]; }
 
 extern "C" int eestage_init(void)
 {
+	emu_config_init(&EmuConfig);
 	s_ram = (u8*)calloc(1, EESTAGE_RAM);
 	return s_ram != NULL;
 }

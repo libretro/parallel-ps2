@@ -21,6 +21,7 @@
 
 #include <libretro.h>
 #include "Common.h"
+#include "Config.h"
 #include "R3000A.h"
 #include "R5900.h"
 #include "IopMem.h"
@@ -680,6 +681,8 @@ int main(int argc, char** argv)
 {
 	unsigned i;
 	int failures;
+	/* EmuConfig is C: its defaults are set, as retro_init sets them. */
+	emu_config_init(&EmuConfig);
 	if (argc < 3)
 	{
 		fprintf(stderr, "usage: %s <scratch dir> <transcript out>\n", argv[0]);
