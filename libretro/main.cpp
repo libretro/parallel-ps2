@@ -66,6 +66,7 @@
 #endif
 #include "../pcsx2/Frontend/InputManager.h"
 #include "../pcsx2/VMManager.h"
+#include "patches.h"
 #include "../pcsx2/Patch.h"
 
 #include "../pcsx2/SPU2/spu2.h"
@@ -3777,16 +3778,6 @@ std::optional<std::string> Host::ReadResourceFileToString(const char* filename)
 	return ret;
 }
 
-int lrps2_ingame_patches(const char *serial,
-		u32 game_crc,
-		const char *renderer,
-		bool nointerlacing_hint,
-		bool disable_mipmaps,
-		bool game_enhancements,
-		int8_t hint_widescreen,
-		int8_t uncapped_framerate,
-		int8_t language_unlock);
-
 void Host::OnGameChanged(const std::string& disc_path,
 	const std::string& elf_override, const std::string& game_serial,
 	u32 game_crc)
@@ -3799,15 +3790,24 @@ void Host::OnGameChanged(const std::string& disc_path,
 
 	log_cb(RETRO_LOG_INFO, "[GameDB] Serial: \"%s\"\n", serial);
 
-	ret = lrps2_ingame_patches(game_serial.c_str(),
-			game_crc,
-			setting_renderer.c_str(),
-			setting_hint_nointerlacing,
-			setting_pgs_disable_mipmaps,
-			setting_hint_game_enhancements,
-			setting_hint_widescreen,
-			setting_hint_uncapped_framerate,
-			setting_hint_language_unlock);
+	{
+		struct retro_variable var;
+		bool fastcdvd;
+		var.key   = "pcsx2_fastcdvd";
+		var.value = NULL;
+		fastcdvd  = environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var)
+			&& var.value && !strcmp(var.value, "enabled");
+		ret = lrps2_ingame_patches(game_serial.c_str(),
+				game_crc,
+				setting_renderer.c_str(),
+				setting_hint_nointerlacing,
+				setting_pgs_disable_mipmaps,
+				setting_hint_game_enhancements,
+				setting_hint_widescreen,
+				setting_hint_uncapped_framerate,
+				setting_hint_language_unlock,
+				fastcdvd);
+	}
 
 #if 0
 	if (

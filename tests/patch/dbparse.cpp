@@ -9,7 +9,7 @@
  *
  *  So this feeds bin/resources/GameIndex.yaml's patch blocks to
  *  LoadPatchesFromString and requires that every line is accepted. It
- *  links pcsx2/Patch.cpp rather than reimplementing the format, so it
+ *  links pcsx2/Patch.c rather than reimplementing the format, so it
  *  cannot drift from what the emulator actually parses.
  *
  *  What it checks:

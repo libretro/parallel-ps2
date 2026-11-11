@@ -14,7 +14,7 @@ target_sources(pcsx2_libretro PRIVATE
    ${CMAKE_SOURCE_DIR}/libretro/audio_queue.c
    ${CMAKE_SOURCE_DIR}/libretro/state_ext.c
    ${CMAKE_SOURCE_DIR}/libretro/main.cpp
-   ${CMAKE_SOURCE_DIR}/libretro/patches.cpp
+   ${CMAKE_SOURCE_DIR}/libretro/patches.c
    ${CMAKE_SOURCE_DIR}/libretro/USB.c
    ${CMAKE_SOURCE_DIR}/libretro/libretro-common/compat/compat_strl.c
    ${CMAKE_SOURCE_DIR}/libretro/libretro-common/compat/compat_posix_string.c

@@ -31,7 +31,8 @@ void vtlb_memWrite8 (u32 a, u8  v) { s_mem[clamp(a)] = v; }
 void vtlb_memWrite16(u32 a, u16 v) { memcpy(s_mem + clamp(a), &v, 2); }
 void vtlb_memWrite32(u32 a, u32 v) { memcpy(s_mem + clamp(a), &v, 4); }
 void vtlb_memWrite64(u32 a, u64 v) { memcpy(s_mem + clamp(a), &v, 8); }
-void* vtlb_GetPhyPtr(u32 a) { return s_mem + clamp(a); }
+/* Past the 64 KiB here is like a hardware page: no direct pointer. */
+void* vtlb_GetPhyPtr(u32 a) { a &= 0x1fffffff; return a < sizeof(s_mem) ? s_mem + a : NULL; }
 RETURNS_R128 vtlb_memRead128(u32) { r128 v; memset(&v, 0, sizeof(v)); return v; }
 void vtlb_memWrite128(u32, r128) { }
 extern "C" void iopMemWrite8 (u32 a, u8  v) { s_mem[clamp(a)] = v; }
@@ -181,6 +182,37 @@ int main(int argc, char** argv)
 		free(data);
 	}
 	ForgetLoadedPatches();
+
+	/* Dynamic patches: the words at pc+offset are compared in place, and
+	 * on a match the replacement is written. A pattern word with no
+	 * direct pointer is no match; it used to be dereferenced. */
+	printf("== dynamic patches ==\n");
+	{
+		static const DynamicPatchEntry pat[2] = { { 0x0, 0x11111111 }, { 0x4, 0x22222222 } };
+		static const DynamicPatchEntry rep[1] = { { 0x4, 0x33333333 } };
+		static const DynamicPatchEntry far_pat[2] = { { 0x0, 0x11111111 }, { 0x20000, 0x0 } };
+		DynamicPatch dp;
+		u32 w;
+		dp.pattern = pat; dp.npattern = 2; dp.replacement = rep; dp.nreplacement = 1;
+		vtlb_memWrite32(0x100, 0x11111111);
+		vtlb_memWrite32(0x104, 0x22222222);
+		LoadDynamicPatches(&dp, 1);
+		ApplyDynamicPatches(0x200);
+		CHECK(vtlb_memRead32(0x104) == 0x22222222, "no match at another pc: nothing written");
+		ApplyDynamicPatches(0x100);
+		w = vtlb_memRead32(0x104);
+		CHECK(w == 0x33333333, "a match: the replacement written");
+		ForgetLoadedPatches();
+		vtlb_memWrite32(0x104, 0x22222222);
+		ApplyDynamicPatches(0x100);
+		CHECK(vtlb_memRead32(0x104) == 0x22222222, "forgotten: not applied");
+
+		dp.pattern = far_pat;
+		LoadDynamicPatches(&dp, 1);
+		ApplyDynamicPatches(0x100);
+		CHECK(vtlb_memRead32(0x104) == 0x22222222, "a pattern word on an unmapped page: no match, no fault");
+		ForgetLoadedPatches();
+	}
 
 	{
 		char cmd[1200];

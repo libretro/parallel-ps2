@@ -170,7 +170,7 @@
     <ClCompile Include="IPU\ipu_idct.c" />
     <ClCompile Include="IPU\yuv2rgb.c" />
     <ClCompile Include="Mdec.c" />
-    <ClCompile Include="Patch.cpp" />
+    <ClCompile Include="Patch.c" />
     <ClCompile Include="ps2\Iop\PsxBios.c" />
     <ClCompile Include="ps2\pgif.c" />
     <ClCompile Include="Dmac.c" />

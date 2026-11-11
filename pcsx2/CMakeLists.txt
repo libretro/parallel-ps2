@@ -140,7 +140,7 @@ set(pcsx2Sources
 	MTGS.c
 	MTVU.c
 	MultitapProtocol.c
-	Patch.cpp
+	Patch.c
 	Pcsx2Config.cpp
 	PerformanceMetrics.c
 	R3000A.c

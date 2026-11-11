@@ -1,6 +1,6 @@
-/*  The core's built-in game patches (libretro/patches.cpp), driven with
+/*  The core's built-in game patches (libretro/patches.c), driven with
  *  every serial and CRC they name, under every renderer and hint
- *  setting. C89; the C++ it links against is behind ingame_glue.cpp.
+ *  setting. C89, as is everything it links; the stubs are in ingame_glue.c.
  *
  *  - Each patch block is reachable: every message it logs is logged by
  *    some serial. Two branches of one chain testing the same serial leave
@@ -12,7 +12,7 @@
  *    CRC: a bare percent sign is a conversion, reading an argument that
  *    was never passed.
  *
- *  Usage: tests/patch/patch_ingame libretro/patches.cpp
+ *  Usage: tests/patch/patch_ingame libretro/patches.c
  */
 
 #include <ctype.h>
@@ -210,7 +210,7 @@ int main(int argc, char **argv)
 	static const char *const renderers[] = {
 		"Auto", "paraLLEl-GS", "Software", "Software (HW)", "Software (SW)"
 	};
-	const char *path = argc > 1 ? argv[1] : "libretro/patches.cpp";
+	const char *path = argc > 1 ? argv[1] : "libretro/patches.c";
 	int s, c, r, ws, fps, i;
 	int calls = 0;
 	int dead  = 0;

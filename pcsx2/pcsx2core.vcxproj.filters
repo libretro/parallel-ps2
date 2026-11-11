@@ -305,7 +305,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Patch.cpp">
+    <ClCompile Include="Patch.c">
       <Filter>Misc</Filter>
     </ClCompile>
     <ClCompile Include="Pcsx2Config.cpp">

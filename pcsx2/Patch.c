@@ -13,14 +13,13 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _PC_ // disables MIPS opcode macros.
+#define _PC_ /* disables MIPS opcode macros. */
 
 #include "HostFS.h"   /* FS_OSPATH_SEPARATOR_* */
 #include "ParseNumber.h"
 #include "common/Pcsx2Defs.h"
 #include <encodings/deflate.h>
 
-#include "Config.h"
 #include "Common.h"
 #include "Patch.h"
 #include "IopMem.h"
@@ -131,11 +130,12 @@ static void writeCheat(void)
 
 static void handle_extended_t(IniPatch *p)
 {
+	u32 i;
 	if (SkipCount > 0)
 		SkipCount--;
 	else switch (PrevCheatType)
 	{
-	case 0x3040: // vvvvvvvv 00000000 Inc
+	case 0x3040: /* vvvvvvvv 00000000 Inc */
 	{
 		u32 mem = memRead32(PrevCheatAddr);
 		memWrite32(PrevCheatAddr, mem + (p->addr));
@@ -143,7 +143,7 @@ static void handle_extended_t(IniPatch *p)
 		break;
 	}
 
-	case 0x3050: // vvvvvvvv 00000000 Dec
+	case 0x3050: /* vvvvvvvv 00000000 Dec */
 	{
 		u32 mem = memRead32(PrevCheatAddr);
 		memWrite32(PrevCheatAddr, mem - (p->addr));
@@ -151,16 +151,16 @@ static void handle_extended_t(IniPatch *p)
 		break;
 	}
 
-	case 0x4000: // vvvvvvvv iiiiiiii
-		for (u32 i = 0; i < IterationCount; i++)
+	case 0x4000: /* vvvvvvvv iiiiiiii */
+		for (i = 0; i < IterationCount; i++)
 		{
 			memWrite32((u32)(PrevCheatAddr + (i * IterationIncrement)), (u32)(p->addr + ((u32)p->data * i)));
 		}
 		PrevCheatType = 0;
 		break;
 
-	case 0x5000: // bbbbbbbb 00000000
-		for (u32 i = 0; i < IterationCount; i++)
+	case 0x5000: /* bbbbbbbb 00000000 */
+		for (i = 0; i < IterationCount; i++)
 		{
 			u8 mem = memRead8(PrevCheatAddr + i);
 			memWrite8((p->addr + i) & 0x0FFFFFFF, mem);
@@ -168,22 +168,23 @@ static void handle_extended_t(IniPatch *p)
 		PrevCheatType = 0;
 		break;
 
-	case 0x6000: // 000Xnnnn iiiiiiii
+	case 0x6000: /* 000Xnnnn iiiiiiii */
 	{
-		// Get Number of pointers
+		u32 mem;
+		/* Get Number of pointers */
 		if (((u32)p->addr & 0x0000FFFF) == 0)
 			IterationCount = 1;
 		else
 			IterationCount = (u32)p->addr & 0x0000FFFF;
 
-		// Read first pointer
+		/* Read first pointer */
 		LastType = ((u32)p->addr & 0x000F0000) >> 16;
-		u32 mem = memRead32(PrevCheatAddr);
+		mem = memRead32(PrevCheatAddr);
 
 		PrevCheatAddr = mem + (u32)p->data;
 		IterationCount--;
 
-		// Check if needed to read another pointer
+		/* Check if needed to read another pointer */
 		if (IterationCount == 0)
 		{
 			PrevCheatType = 0;
@@ -199,15 +200,15 @@ static void handle_extended_t(IniPatch *p)
 	}
 		break;
 
-	case 0x6001: // 000Xnnnn iiiiiiii
+	case 0x6001: /* 000Xnnnn iiiiiiii */
 	{
-		// Read first pointer
+		/* Read first pointer */
 		u32 mem = memRead32(PrevCheatAddr & 0x0FFFFFFF);
 
 		PrevCheatAddr = mem + (u32)p->addr;
 		IterationCount--;
 
-		// Check if needed to read another pointer
+		/* Check if needed to read another pointer */
 		if (IterationCount == 0)
 		{
 			PrevCheatType = 0;
@@ -229,69 +230,69 @@ static void handle_extended_t(IniPatch *p)
 		break;
 
 	default:
-		if ((p->addr & 0xF0000000) == 0x00000000)				// 0aaaaaaa 0000000vv
+		if ((p->addr & 0xF0000000) == 0x00000000)				/* 0aaaaaaa 0000000vv */
 		{
 			memWrite8(p->addr & 0x0FFFFFFF, (u8)p->data & 0x000000FF);
 			PrevCheatType = 0;
 		}
-		else if ((p->addr & 0xF0000000) == 0x10000000)			// 1aaaaaaa 0000vvvv
+		else if ((p->addr & 0xF0000000) == 0x10000000)			/* 1aaaaaaa 0000vvvv */
 		{
 			memWrite16(p->addr & 0x0FFFFFFF, (u16)p->data & 0x0000FFFF);
 			PrevCheatType = 0;
 		}
-		else if ((p->addr & 0xF0000000) == 0x20000000)			// 2aaaaaaa vvvvvvvv
+		else if ((p->addr & 0xF0000000) == 0x20000000)			/* 2aaaaaaa vvvvvvvv */
 		{
 			memWrite32(p->addr & 0x0FFFFFFF, (u32)p->data);
 			PrevCheatType = 0;
 		}
-		else if ((p->addr & 0xFFFF0000) == 0x30000000)			// 300000vv 0aaaaaaa Inc
+		else if ((p->addr & 0xFFFF0000) == 0x30000000)			/* 300000vv 0aaaaaaa Inc */
 		{
 			u8 mem = memRead8((u32)p->data);
 			memWrite8((u32)p->data, mem + (p->addr & 0x000000FF));
 			PrevCheatType = 0;
 		}
-		else if ((p->addr & 0xFFFF0000) == 0x30100000)			// 301000vv 0aaaaaaa Dec
+		else if ((p->addr & 0xFFFF0000) == 0x30100000)			/* 301000vv 0aaaaaaa Dec */
 		{
 			u8 mem = memRead8((u32)p->data);
 			memWrite8((u32)p->data, mem - (p->addr & 0x000000FF));
 			PrevCheatType = 0;
 		}
-		else if ((p->addr & 0xFFFF0000) == 0x30200000)			// 3020vvvv 0aaaaaaa Inc
+		else if ((p->addr & 0xFFFF0000) == 0x30200000)			/* 3020vvvv 0aaaaaaa Inc */
 		{
 			u16 mem = memRead16((u32)p->data);
 			memWrite16((u32)p->data, mem + (p->addr & 0x0000FFFF));
 			PrevCheatType = 0;
 		}
-		else if ((p->addr & 0xFFFF0000) == 0x30300000)			// 3030vvvv 0aaaaaaa Dec
+		else if ((p->addr & 0xFFFF0000) == 0x30300000)			/* 3030vvvv 0aaaaaaa Dec */
 		{
 			u16 mem = memRead16((u32)p->data);
 			memWrite16((u32)p->data, mem - (p->addr & 0x0000FFFF));
 			PrevCheatType = 0;
 		}
-		else if ((p->addr & 0xFFFF0000) == 0x30400000)			// 30400000 0aaaaaaa Inc + Another line
+		else if ((p->addr & 0xFFFF0000) == 0x30400000)			/* 30400000 0aaaaaaa Inc + Another line */
 		{
 			PrevCheatType = 0x3040;
 			PrevCheatAddr = (u32)p->data;
 		}
-		else if ((p->addr & 0xFFFF0000) == 0x30500000)			// 30500000 0aaaaaaa Inc + Another line
+		else if ((p->addr & 0xFFFF0000) == 0x30500000)			/* 30500000 0aaaaaaa Inc + Another line */
 		{
 			PrevCheatType = 0x3050;
 			PrevCheatAddr = (u32)p->data;
 		}
-		else if ((p->addr & 0xF0000000) == 0x40000000)			// 4aaaaaaa nnnnssss + Another line
+		else if ((p->addr & 0xF0000000) == 0x40000000)			/* 4aaaaaaa nnnnssss + Another line */
 		{
 			IterationCount = ((u32)p->data & 0xFFFF0000) >> 16;
 			IterationIncrement = ((u32)p->data & 0x0000FFFF) * 4;
 			PrevCheatAddr = (u32)p->addr & 0x0FFFFFFF;
 			PrevCheatType = 0x4000;
 		}
-		else if ((p->addr & 0xF0000000) == 0x50000000)			// 5sssssss nnnnnnnn + Another line
+		else if ((p->addr & 0xF0000000) == 0x50000000)			/* 5sssssss nnnnnnnn + Another line */
 		{
 			PrevCheatAddr = (u32)p->addr & 0x0FFFFFFF;
 			IterationCount = ((u32)p->data);
 			PrevCheatType = 0x5000;
 		}
-		else if ((p->addr & 0xF0000000) == 0x60000000)			// 6aaaaaaa 000000vv + Another line/s
+		else if ((p->addr & 0xF0000000) == 0x60000000)			/* 6aaaaaaa 000000vv + Another line/s */
 		{
 			PrevCheatAddr = (u32)p->addr & 0x0FFFFFFF;
 			IterationIncrement = ((u32)p->data);
@@ -300,32 +301,32 @@ static void handle_extended_t(IniPatch *p)
 		}
 		else if ((p->addr & 0xF0000000) == 0x70000000)
 		{
-			if ((p->data & 0x00F00000) == 0x00000000)			// 7aaaaaaa 000000vv
+			if ((p->data & 0x00F00000) == 0x00000000)			/* 7aaaaaaa 000000vv */
 			{
 				u8 mem = memRead8((u32)p->addr & 0x0FFFFFFF);
 				memWrite8((u32)p->addr & 0x0FFFFFFF, (u8)(mem | (p->data & 0x000000FF)));
 			}
-			else if ((p->data & 0x00F00000) == 0x00100000)		// 7aaaaaaa 0010vvvv
+			else if ((p->data & 0x00F00000) == 0x00100000)		/* 7aaaaaaa 0010vvvv */
 			{
 				u16 mem = memRead16((u32)p->addr & 0x0FFFFFFF);
 				memWrite16((u32)p->addr & 0x0FFFFFFF, (u16)(mem | (p->data & 0x0000FFFF)));
 			}
-			else if ((p->data & 0x00F00000) == 0x00200000)		// 7aaaaaaa 002000vv
+			else if ((p->data & 0x00F00000) == 0x00200000)		/* 7aaaaaaa 002000vv */
 			{
 				u8 mem = memRead8((u32)p->addr & 0x0FFFFFFF);
 				memWrite8((u32)p->addr & 0x0FFFFFFF, (u8)(mem & (p->data & 0x000000FF)));
 			}
-			else if ((p->data & 0x00F00000) == 0x00300000)		// 7aaaaaaa 0030vvvv
+			else if ((p->data & 0x00F00000) == 0x00300000)		/* 7aaaaaaa 0030vvvv */
 			{
 				u16 mem = memRead16((u32)p->addr & 0x0FFFFFFF);
 				memWrite16((u32)p->addr & 0x0FFFFFFF, (u16)(mem & (p->data & 0x0000FFFF)));
 			}
-			else if ((p->data & 0x00F00000) == 0x00400000)		// 7aaaaaaa 004000vv
+			else if ((p->data & 0x00F00000) == 0x00400000)		/* 7aaaaaaa 004000vv */
 			{
 				u8 mem = memRead8((u32)p->addr & 0x0FFFFFFF);
 				memWrite8((u32)p->addr & 0x0FFFFFFF, (u8)(mem ^ (p->data & 0x000000FF)));
 			}
-			else if ((p->data & 0x00F00000) == 0x00500000)		// 7aaaaaaa 0050vvvv
+			else if ((p->data & 0x00F00000) == 0x00500000)		/* 7aaaaaaa 0050vvvv */
 			{
 				u16 mem = memRead16((u32)p->addr & 0x0FFFFFFF);
 				memWrite16((u32)p->addr & 0x0FFFFFFF, (u16)(mem ^ (p->data & 0x0000FFFF)));
@@ -335,14 +336,15 @@ static void handle_extended_t(IniPatch *p)
 		{
 			u32 addr = (u32)p->addr;
 			u32 data = (u32)p->data;
+			u8 type, cond;
 
-			// Since D-codes now have the additional functionality present in PS2rd which
-			// incorporates E-code-like functionality by making use of the unused bits in
-			// D-codes, the E-codes are now just converted to D-codes to reduce bloat.
+			/* Since D-codes now have the additional functionality present in PS2rd which */
+			/* incorporates E-code-like functionality by making use of the unused bits in */
+			/* D-codes, the E-codes are now just converted to D-codes to reduce bloat. */
 
 			if ((addr & 0xF0000000) == 0xE0000000)
 			{
-				// Ezyyvvvv taaaaaaa  ->  Daaaaaaa yytzvvvv
+				/* Ezyyvvvv taaaaaaa  ->  Daaaaaaa yytzvvvv */
 				addr = 0xD0000000 | ((u32)p->data & 0x0FFFFFFF);
 				data = 0x00000000 | ((u32)p->addr & 0x0000FFFF);
 				data = data | ((u32)p->addr & 0x00FF0000) << 8;
@@ -350,12 +352,12 @@ static void handle_extended_t(IniPatch *p)
 				data = data | ((u32)p->data & 0xF0000000) >> 8;
 			}
 
-			const u8 type = (data & 0x000F0000) >> 16;
-			const u8 cond = (data & 0x00F00000) >> 20;
+			type = (data & 0x000F0000) >> 16;
+			cond = (data & 0x00F00000) >> 20;
 
-			if (cond == 0)										// Daaaaaaa yy0zvvvv
+			if (cond == 0)										/* Daaaaaaa yy0zvvvv */
 			{
-				if (type == 0)										// Daaaaaaa yy00vvvv
+				if (type == 0)										/* Daaaaaaa yy00vvvv */
 				{
 					u16 mem = memRead16(addr & 0x0FFFFFFF);
 					if (mem != (data & 0x0000FFFF))
@@ -366,7 +368,7 @@ static void handle_extended_t(IniPatch *p)
 					}
 					PrevCheatType = 0;
 				}
-				else if (type == 1)									// Daaaaaaa yy0100vv
+				else if (type == 1)									/* Daaaaaaa yy0100vv */
 				{
 					u8 mem = memRead8(addr & 0x0FFFFFFF);
 					if (mem != (data & 0x000000FF))
@@ -378,9 +380,9 @@ static void handle_extended_t(IniPatch *p)
 					PrevCheatType = 0;
 				}
 			}
-			else if (cond == 1)									// Daaaaaaa yy1zvvvv
+			else if (cond == 1)									/* Daaaaaaa yy1zvvvv */
 			{
-				if (type == 0)										// Daaaaaaa yy10vvvv
+				if (type == 0)										/* Daaaaaaa yy10vvvv */
 				{
 					u16 mem = memRead16(addr & 0x0FFFFFFF);
 					if (mem == (data & 0x0000FFFF))
@@ -391,7 +393,7 @@ static void handle_extended_t(IniPatch *p)
 					}
 					PrevCheatType = 0;
 				}
-				else if (type == 1)									// Daaaaaaa yy1100vv
+				else if (type == 1)									/* Daaaaaaa yy1100vv */
 				{
 					u8 mem = memRead8(addr & 0x0FFFFFFF);
 					if (mem == (data & 0x000000FF))
@@ -403,9 +405,9 @@ static void handle_extended_t(IniPatch *p)
 					PrevCheatType = 0;
 				}
 			}
-			else if (cond == 2)									// Daaaaaaa yy2zvvvv
+			else if (cond == 2)									/* Daaaaaaa yy2zvvvv */
 			{
-				if (type == 0)										// Daaaaaaa yy20vvvv
+				if (type == 0)										/* Daaaaaaa yy20vvvv */
 				{
 					u16 mem = memRead16(addr & 0x0FFFFFFF);
 					if (mem >= (data & 0x0000FFFF))
@@ -416,7 +418,7 @@ static void handle_extended_t(IniPatch *p)
 					}
 					PrevCheatType = 0;
 				}
-				else if (type == 1)									// Daaaaaaa yy2100vv
+				else if (type == 1)									/* Daaaaaaa yy2100vv */
 				{
 					u8 mem = memRead8(addr & 0x0FFFFFFF);
 					if (mem >= (data & 0x000000FF))
@@ -428,9 +430,9 @@ static void handle_extended_t(IniPatch *p)
 					PrevCheatType = 0;
 				}
 			}
-			else if (cond == 3)									// Daaaaaaa yy3zvvvv
+			else if (cond == 3)									/* Daaaaaaa yy3zvvvv */
 			{
-				if (type == 0)										// Daaaaaaa yy30vvvv
+				if (type == 0)										/* Daaaaaaa yy30vvvv */
 				{
 					u16 mem = memRead16(addr & 0x0FFFFFFF);
 					if (mem <= (data & 0x0000FFFF))
@@ -441,7 +443,7 @@ static void handle_extended_t(IniPatch *p)
 					}
 					PrevCheatType = 0;
 				}
-				else if (type == 1)									// Daaaaaaa yy3100vv
+				else if (type == 1)									/* Daaaaaaa yy3100vv */
 				{
 					u8 mem = memRead8(addr & 0x0FFFFFFF);
 					if (mem <= (data & 0x000000FF))
@@ -453,9 +455,9 @@ static void handle_extended_t(IniPatch *p)
 					PrevCheatType = 0;
 				}
 			}
-			else if (cond == 4)									// Daaaaaaa yy4zvvvv
+			else if (cond == 4)									/* Daaaaaaa yy4zvvvv */
 			{
-				if (type == 0)										// Daaaaaaa yy40vvvv
+				if (type == 0)										/* Daaaaaaa yy40vvvv */
 				{
 					u16 mem = memRead16(addr & 0x0FFFFFFF);
 					if (mem & (data & 0x0000FFFF))
@@ -466,7 +468,7 @@ static void handle_extended_t(IniPatch *p)
 					}
 					PrevCheatType = 0;
 				}
-				else if (type == 1)									// Daaaaaaa yy4100vv
+				else if (type == 1)									/* Daaaaaaa yy4100vv */
 				{
 					u8 mem = memRead8(addr & 0x0FFFFFFF);
 					if (mem & (data & 0x000000FF))
@@ -478,9 +480,9 @@ static void handle_extended_t(IniPatch *p)
 					PrevCheatType = 0;
 				}
 			}
-			else if (cond == 5)									// Daaaaaaa yy5zvvvv
+			else if (cond == 5)									/* Daaaaaaa yy5zvvvv */
 			{
-				if (type == 0)										// Daaaaaaa yy50vvvv
+				if (type == 0)										/* Daaaaaaa yy50vvvv */
 				{
 					u16 mem = memRead16(addr & 0x0FFFFFFF);
 					if (!(mem & (data & 0x0000FFFF)))
@@ -491,7 +493,7 @@ static void handle_extended_t(IniPatch *p)
 					}
 					PrevCheatType = 0;
 				}
-				else if (type == 1)									// Daaaaaaa yy5100vv
+				else if (type == 1)									/* Daaaaaaa yy5100vv */
 				{
 					u8 mem = memRead8(addr & 0x0FFFFFFF);
 					if (!(mem & (data & 0x000000FF)))
@@ -503,9 +505,9 @@ static void handle_extended_t(IniPatch *p)
 					PrevCheatType = 0;
 				}
 			}
-			else if (cond == 6)									// Daaaaaaa yy6zvvvv
+			else if (cond == 6)									/* Daaaaaaa yy6zvvvv */
 			{
-				if (type == 0)										// Daaaaaaa yy60vvvv
+				if (type == 0)										/* Daaaaaaa yy60vvvv */
 				{
 					u16 mem = memRead16(addr & 0x0FFFFFFF);
 					if (mem | (data & 0x0000FFFF))
@@ -516,7 +518,7 @@ static void handle_extended_t(IniPatch *p)
 					}
 					PrevCheatType = 0;
 				}
-				else if (type == 1)									// Daaaaaaa yy6100vv
+				else if (type == 1)									/* Daaaaaaa yy6100vv */
 				{
 					u8 mem = memRead8(addr & 0x0FFFFFFF);
 					if (mem | (data & 0x000000FF))
@@ -528,9 +530,9 @@ static void handle_extended_t(IniPatch *p)
 					PrevCheatType = 0;
 				}
 			}
-			else if (cond == 7)									// Daaaaaaa yy7zvvvv
+			else if (cond == 7)									/* Daaaaaaa yy7zvvvv */
 			{
-				if (type == 0)										// Daaaaaaa yy70vvvv
+				if (type == 0)										/* Daaaaaaa yy70vvvv */
 				{
 					u16 mem = memRead16(addr & 0x0FFFFFFF);
 					if (!(mem | (data & 0x0000FFFF)))
@@ -541,7 +543,7 @@ static void handle_extended_t(IniPatch *p)
 					}
 					PrevCheatType = 0;
 				}
-				else if (type == 1)									// Daaaaaaa yy7100vv
+				else if (type == 1)									/* Daaaaaaa yy7100vv */
 				{
 					u8 mem = memRead8(addr & 0x0FFFFFFF);
 					if (!(mem | (data & 0x000000FF)))
@@ -557,27 +559,26 @@ static void handle_extended_t(IniPatch *p)
 	}
 }
 
-// Swaps endianess of InputNum
-// ex. 01020304 -> 04030201
-// BitLength is length of InputNum in bits, ex. double,64  word,32  short,16
+/* Swaps endianess of InputNum */
+/* ex. 01020304 -> 04030201 */
+/* BitLength is length of InputNum in bits, ex. double,64  word,32  short,16 */
 static u64 SwapEndian(u64 InputNum, u8 BitLength)
 {
-	if (BitLength == 64) // DOUBLE_LE_T
+	if (BitLength == 64) /* DOUBLE_LE_T */
 	{
-		InputNum = (InputNum & 0x00000000FFFFFFFF) << 32 | (InputNum & 0xFFFFFFFF00000000) >> 32; //Swaps 4 bytes
+		InputNum = (InputNum & 0x00000000FFFFFFFF) << 32 | (InputNum & 0xFFFFFFFF00000000) >> 32; /* Swaps 4 bytes */
 	}
-	if ((BitLength == 32)||(BitLength==64)) // WORD_LE_T
+	if ((BitLength == 32)||(BitLength==64)) /* WORD_LE_T */
 	{
-		InputNum = (InputNum & 0x0000FFFF0000FFFF) << 16 | (InputNum & 0xFFFF0000FFFF0000) >> 16; // Swaps 2 bytes
+		InputNum = (InputNum & 0x0000FFFF0000FFFF) << 16 | (InputNum & 0xFFFF0000FFFF0000) >> 16; /* Swaps 2 bytes */
 	}
-	InputNum = (InputNum & 0x00FF00FF00FF00FF) << 8 | (InputNum & 0xFF00FF00FF00FF00) >> 8;   // Swaps 1 byte
+	InputNum = (InputNum & 0x00FF00FF00FF00FF) << 8 | (InputNum & 0xFF00FF00FF00FF00) >> 8;   /* Swaps 1 byte */
 	return InputNum;
 }
 
 
 
-// Only used from Patch.cpp and we don't export this in any h file.
-// Patch.cpp itself declares this prototype, so make sure to keep in sync.
+/* Applies one patch now; ApplyLoadedPatches is the usual way in. */
 void _ApplyPatch(IniPatch *p)
 {
 	u64 ledata = 0;
@@ -756,12 +757,15 @@ static void _ApplyDynaPatch(const struct dyna_patch* patch, u32 address)
 
 	for (i = 0; i < patch->npattern; i++)
 	{
-		if (*static_cast<u32*>(PSM(address + pattern[i].offset)) != pattern[i].value)
+		/* A pattern word off mapped memory (a hardware page has no
+		 * direct pointer) is no match, not a fault. */
+		const u32* word = (const u32*)PSM(address + pattern[i].offset);
+		if (!word || *word != pattern[i].value)
 			return;
 	}
 
 	log_cb(RETRO_LOG_INFO, "Applying Dynamic Patch to address 0x%08X\n", address);
-	// If everything passes, apply the patch.
+	/* If everything passes, apply the patch. */
 	for (i = 0; i < patch->nreplacement; i++)
 		memWrite32(address + replacement[i].offset, replacement[i].value);
 }
@@ -772,43 +776,43 @@ static patch_table_func patch_author;
 static patch_table_func patch_comment;
 static patch_table_func patch_line;
 
-struct PatchTextTable
+typedef struct PatchTextTable
 {
 	int code;
 	const char* text;
 	patch_table_func* func;
-};
+} PatchTextTable;
 
 static const PatchTextTable commands_patch[] =
 	{
 		{1, "author", patch_author},
 		{2, "comment", patch_comment},
 		{3, "patch", patch_line},
-		{0, nullptr, nullptr} // Array Terminator
+		{0, NULL, NULL} /* Array Terminator */
 };
 
 static const PatchTextTable dataType[] =
 	{
-		{1, "byte", nullptr},
-		{2, "short", nullptr},
-		{3, "word", nullptr},
-		{4, "double", nullptr},
-		{5, "extended", nullptr},
-		{6, "leshort", nullptr},
-		{7, "leword", nullptr},
-		{8, "ledouble", nullptr},
-		{9, "bytes", nullptr},
-		{0, nullptr, nullptr} // Array Terminator
+		{1, "byte", NULL},
+		{2, "short", NULL},
+		{3, "word", NULL},
+		{4, "double", NULL},
+		{5, "extended", NULL},
+		{6, "leshort", NULL},
+		{7, "leword", NULL},
+		{8, "ledouble", NULL},
+		{9, "bytes", NULL},
+		{0, NULL, NULL} /* Array Terminator */
 };
 
 static const PatchTextTable cpuCore[] =
 	{
-		{1, "EE", nullptr},
-		{2, "IOP", nullptr},
-		{0, nullptr, nullptr} // Array Terminator
+		{1, "EE", NULL},
+		{2, "IOP", NULL},
+		{0, NULL, NULL} /* Array Terminator */
 };
 
-// IniFile Functions.
+/* IniFile Functions. */
 
 /* Trim a pnach line in place: leading and trailing whitespace off, and
  * everything from a "//" onward dropped -- a line that starts with one is
@@ -856,7 +860,7 @@ static int PatchTableExecute(const struct patch_piece* lhs, const struct patch_p
 	return Table[i].code;
 }
 
-// This routine is for executing the commands of the ini file.
+/* This routine is for executing the commands of the ini file. */
 static void inifile_command(const char* cmd)
 {
 	/* "key = value", each side stripped; no '=' is no command, and runs
@@ -873,8 +877,8 @@ static void inifile_command(const char* cmd)
 		patch_strip(&value);
 	}
 
-	// Is this really what we want to be doing here? Seems like just leaving it empty/blank
-	// would make more sense... --air
+	/* Is this really what we want to be doing here? Seems like just leaving it empty/blank */
+	/* would make more sense... --air */
 	if (value.n == 0)
 		value = key;
 
@@ -911,7 +915,7 @@ int LoadPatchesFromString(const char* patches)
 		p = nl + 1;
 	}
 
-	return static_cast<int>(s_patch_count - before);
+	return (int)(s_patch_count - before);
 }
 
 void ForgetLoadedPatches(void)
@@ -927,10 +931,10 @@ void ForgetLoadedPatches(void)
 static u32 rd16(const u8* p) { return p[0] | (p[1] << 8); }
 static u32 rd32(const u8* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((u32)p[3] << 24); }
 
-// This routine loads patches from a zip file
-// Returns number of patches loaded
-// Note: does not reset previously loaded patches (use ForgetLoadedPatches() for that)
-// Note: only load patches from the root folder of the zip
+/* This routine loads patches from a zip file */
+/* Returns number of patches loaded */
+/* Note: does not reset previously loaded patches (use ForgetLoadedPatches() for that) */
+/* Note: only load patches from the root folder of the zip */
 int LoadPatchesFromZip(const char* crc, const u8* zip_data, size_t zip_data_size)
 {
 	/* Minimal in-memory ZIP reader over rinflate, replacing libzip:
@@ -995,7 +999,7 @@ int LoadPatchesFromZip(const char* crc, const u8* zip_data, size_t zip_data_size
 			break;
 
 		if (name_len == pnach_len &&
-			Strncasecmp(reinterpret_cast<const char*>(name), pnach_filename, name_len) == 0)
+			Strncasecmp((const char*)(name), pnach_filename, name_len) == 0)
 		{
 			u32 lname, lextra;
 			size_t data_off;
@@ -1039,7 +1043,7 @@ int LoadPatchesFromZip(const char* crc, const u8* zip_data, size_t zip_data_size
 					return 0;
 				}
 				rinflate_set_in(z, src, comp_size);
-				rinflate_set_out(z, reinterpret_cast<uint8_t*>(pnach_data), uncomp);
+				rinflate_set_out(z, (uint8_t*)(pnach_data), uncomp);
 				r = rinflate_process(z, &rdn, &wr);
 				rinflate_free(z);
 				if (r != RDEFLATE_PROCESS_END || wr != uncomp)
@@ -1062,9 +1066,9 @@ int LoadPatchesFromZip(const char* crc, const u8* zip_data, size_t zip_data_size
 	return loaded;
 }
 
-// This routine loads patches from *.pnach files
-// Returns number of patches loaded
-// Note: does not reset previously loaded patches (use ForgetLoadedPatches() for that)
+/* This routine loads patches from *.pnach files */
+/* Returns number of patches loaded */
+/* Note: does not reset previously loaded patches (use ForgetLoadedPatches() for that) */
 int LoadPatchesFromDir(const char* crc, const char* folder, const char* friendly_name, bool show_error_when_missing)
 {
 	const size_t crc_len = strlen(crc);
@@ -1087,13 +1091,13 @@ int LoadPatchesFromDir(const char* crc, const char* folder, const char* friendly
 		{
 			const char* name = retro_dirent_get_name(dir);
 			char path[PCSX2_PATH_MAX];
-			void* pnach_buf   = nullptr;
+			void* pnach_buf   = NULL;
 			int64_t pnach_len = 0;
 			int loaded;
 
 			if (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0')))
 				continue;
-			if (retro_dirent_is_dir(dir, nullptr) || rl_fnmatch("*.pnach", name, 0) != 0)
+			if (retro_dirent_is_dir(dir, NULL) || rl_fnmatch("*.pnach", name, 0) != 0)
 				continue;
 			if ((size_t)snprintf(path, sizeof(path), "%s%c%s", folder, FS_OSPATH_SEPARATOR_CHARACTER, name) >= sizeof(path))
 				continue;
@@ -1111,7 +1115,7 @@ int LoadPatchesFromDir(const char* crc, const char* folder, const char* friendly
 				continue;
 
 			/* filestream_read_file terminates what it reads */
-			loaded = LoadPatchesFromString(static_cast<const char*>(pnach_buf));
+			loaded = LoadPatchesFromString((const char*)(pnach_buf));
 			free(pnach_buf);
 			total_loaded += loaded;
 
@@ -1131,26 +1135,26 @@ int LoadPatchesFromDir(const char* crc, const char* folder, const char* friendly
 	return total_loaded;
 }
 
-// PatchFunc Functions.
+/* PatchFunc Functions. */
 static void patch_comment(const struct patch_piece* text1, const struct patch_piece* text2)
 {
 	(void)text1;
-	log_cb(RETRO_LOG_INFO, "comment: %.*s\n", static_cast<int>(text2->n), text2->s);
+	log_cb(RETRO_LOG_INFO, "comment: %.*s\n", (int)(text2->n), text2->s);
 }
 
 static void patch_author(const struct patch_piece* text1, const struct patch_piece* text2)
 {
 	(void)text1;
-	log_cb(RETRO_LOG_INFO, "Author: %.*s\n", static_cast<int>(text2->n), text2->s);
+	log_cb(RETRO_LOG_INFO, "Author: %.*s\n", (int)(text2->n), text2->s);
 }
 
 static void patch_line(const struct patch_piece* cmd, const struct patch_piece* param)
 {
 #define PATCH_ERROR(fmt, ...) log_cb(RETRO_LOG_ERROR, "(Patch) Error Parsing: %.*s=%.*s: \n" fmt, \
-	static_cast<int>(cmd->n), cmd->s, static_cast<int>(param->n), param->s, \
+	(int)(cmd->n), cmd->s, (int)(param->n), param->s, \
 	__VA_ARGS__)
 
-	// [0]=PlaceToPatch,[1]=CpuType,[2]=MemAddr,[3]=OperandSize,[4]=WriteValue
+	/* [0]=PlaceToPatch,[1]=CpuType,[2]=MemAddr,[3]=OperandSize,[4]=WriteValue */
 	struct patch_piece pieces[5];
 	const struct patch_piece none = {"", 0};
 	const size_t npieces = patch_split(param->s, param->n, pieces, 5);
@@ -1170,13 +1174,13 @@ static void patch_line(const struct patch_piece* cmd, const struct patch_piece* 
 	if (iPatch.placetopatch >= _PPT_END_MARKER)
 	{
 		PATCH_ERROR("Invalid 'place' value '%.*s' (0 - once on startup, 1: continuously)",
-			static_cast<int>(pieces[0].n), pieces[0].s);
+			(int)(pieces[0].n), pieces[0].s);
 		return;
 	}
 
-	iPatch.cpu = (patch_cpu_type)PatchTableExecute(&pieces[1], &none, cpuCore);
+	iPatch.cpu = (enum patch_cpu_type)PatchTableExecute(&pieces[1], &none, cpuCore);
 	parse_number_u32(pieces[2].s, pieces[2].n, 16, &iPatch.addr);
-	iPatch.type = (patch_data_type)PatchTableExecute(&pieces[3], &none, dataType);
+	iPatch.type = (enum patch_data_type)PatchTableExecute(&pieces[3], &none, dataType);
 
 	if (iPatch.type == BYTES_T)
 	{
@@ -1189,7 +1193,7 @@ static void patch_line(const struct patch_piece* cmd, const struct patch_piece* 
 		if (hex->n == 0 || (hex->n & 1))
 		{
 			PATCH_ERROR("'bytes' payload must be whole bytes: '%.*s'",
-			            static_cast<int>(hex->n), hex->s);
+			            (int)(hex->n), hex->s);
 			return;
 		}
 
@@ -1200,7 +1204,7 @@ static void patch_line(const struct patch_piece* cmd, const struct patch_piece* 
 			if (!isxdigit((unsigned char)hex->s[i]) || !isxdigit((unsigned char)hex->s[i + 1]))
 			{
 				PATCH_ERROR("'bytes' payload is not hex: '%.*s'",
-				            static_cast<int>(hex->n), hex->s);
+				            (int)(hex->n), hex->s);
 				return;
 			}
 		}
@@ -1210,13 +1214,13 @@ static void patch_line(const struct patch_piece* cmd, const struct patch_piece* 
 
 	if (iPatch.cpu == 0)
 	{
-		PATCH_ERROR("Unrecognized CPU Target: '%.*s'", static_cast<int>(pieces[1].n), pieces[1].s);
+		PATCH_ERROR("Unrecognized CPU Target: '%.*s'", (int)(pieces[1].n), pieces[1].s);
 		return;
 	}
 
 	if (iPatch.type == 0)
 	{
-		PATCH_ERROR("Unrecognized Operand Size: '%.*s'", static_cast<int>(pieces[3].n), pieces[3].s);
+		PATCH_ERROR("Unrecognized Operand Size: '%.*s'", (int)(pieces[3].n), pieces[3].s);
 		return;
 	}
 
