@@ -18,6 +18,7 @@
 
 #include "common/Pcsx2Defs.h"
 #include "Patch.h"
+#include "EmuOptions.h"
 
 #ifdef __cplusplus
 #include "Config.h"
@@ -151,15 +152,12 @@ bool gamedb_hwfix_is_user_hack(u32 id);
 
 /* What GameDatabase.c reads from elsewhere: the database built into the
  * core (GameDatabaseBuiltin.c); whether to prefer GameIndex.yaml in the
- * resources folder (main.cpp) and that folder (Pcsx2Config.cpp); the
- * names of the game fixes and speed hacks (Pcsx2Config.cpp); and the GS
- * function names three fixes take (GSHwHack.cpp). */
+ * resources folder (main.cpp) and that folder (Pcsx2Config.cpp); and the
+ * GS function names three fixes take (GSHwHack.cpp). */
 extern const unsigned char g_gameDatabaseBuiltin[];
 extern const size_t g_gameDatabaseBuiltinSize;
 bool emu_config_external_gameindex(void);
 const char* emu_folders_resources(void);
-const char* emu_config_gamefix_name(u32 id);
-bool emu_config_parse_speedhack_name(const char* name, size_t len, u32* out);
 s16 GSLookupGetSkipCountFunctionId(const char* name, size_t length);
 s16 GSLookupBeforeDrawFunctionId(const char* name, size_t length);
 s16 GSLookupMoveHandlerFunctionId(const char* name, size_t length);

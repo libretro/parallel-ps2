@@ -1131,8 +1131,8 @@ void VMManager::Internal::GameStartingOnCPUThread()
 void VMManager::CheckForCPUConfigChanges(const Pcsx2Config& old_config)
 {
 	if (EmuConfig.Cpu == old_config.Cpu &&
-		EmuConfig.Gamefixes == old_config.Gamefixes &&
-		EmuConfig.Speedhacks == old_config.Speedhacks
+		EmuConfig.Gamefixes.bitset == old_config.Gamefixes.bitset &&
+		emu_speedhack_equal(&EmuConfig.Speedhacks, &old_config.Speedhacks)
 		)
 		return;
 

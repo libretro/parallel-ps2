@@ -306,7 +306,7 @@ static void gamedb_parse(struct gamedb_build* e, const char* serial, const ryaml
 			const char* name;
 			u32 id;
 			len = base; /* the name without it, as reported below */
-			for (id = 0; (name = emu_config_gamefix_name(id)) != NULL; id++)
+			for (id = 0; (name = emu_gamefix_name(id)) != NULL; id++)
 			{
 				if (strlen(name) == base && memcmp(name, fix, base) == 0)
 				{
@@ -337,13 +337,14 @@ static void gamedb_parse(struct gamedb_build* e, const char* serial, const ryaml
 		size_t id_len, value_len;
 		const char* id_name = yamlKey(yaml, n, &id_len);
 		const char* value   = yamlVal(yaml, n, &value_len);
-		u32 id;
+		enum SpeedHack which;
 		s32 parsed = 0;
 		bool inserted = false;
 
-		if (emu_config_parse_speedhack_name(id_name, id_len, &id)
+		if (emu_speedhack_parse_name(id_name, id_len, &which)
 			&& parse_number_s32(value, value_len, 10, &parsed))
 		{
+			const u32 id = (u32)which;
 			u32 hi;
 			for (hi = 0; hi < e->nhack; hi++)
 			{

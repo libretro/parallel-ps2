@@ -22,46 +22,15 @@
 
 #include "../common/General.h"
 #include "../common/FPControl.h"
+#include "EmuOptions.h"
 
 
 enum class CDVD_SourceType : uint8_t;
 
-enum GamefixId
-{
-	GamefixId_FIRST = 0,
-
-	Fix_FpuMultiply = GamefixId_FIRST,
-	Fix_GoemonTlbMiss,
-	Fix_SkipMpeg,
-	Fix_OPHFlag,
-	Fix_EETiming,
-	Fix_InstantDMA,
-	Fix_DMABusy,
-	Fix_GIFFIFO,
-	Fix_VIFFIFO,
-	Fix_VIF1Stall,
-	Fix_Ibit,
-	Fix_VUSync,
-	Fix_VUOverflow,
-	Fix_XGKick,
-	Fix_BlitInternalFPS,
-	Fix_FullVU0Sync,
-	Fix_VuAddSub,
-
-	GamefixId_COUNT
-};
 
 // TODO - config - not a fan of the excessive use of enums and macros to make them work
 // a proper object would likely make more sense (if possible).
 
-enum class SpeedHack
-{
-	MVUFlag,
-	InstantVU1,
-	MTVU,
-	EECycleRate,
-	MaxCount,
-};
 
 enum class VsyncMode
 {
@@ -179,9 +148,6 @@ enum GSNativeScaling
 	NativeScaling_MaxCount
 };
 
-// Template function for casting enumerations to their underlying type
-
-ImplementEnumOperators(GamefixId);
 
 // --------------------------------------------------------------------------------------
 //  Pcsx2Config class
@@ -196,91 +162,7 @@ ImplementEnumOperators(GamefixId);
 //
 struct Pcsx2Config
 {
-	// ------------------------------------------------------------------------
-	struct RecompilerOptions
-	{
-		union
-		{
-			u32 bitset;
-			struct 
-			{
-				bool
-					EnableEE         : 1,
-					EnableIOP        : 1,
-				        EnableVU0        : 1,
-				        EnableVU1        : 1;
-
-				bool
-					vu0Overflow      : 1,
-					vu0ExtraOverflow : 1,
-				        vu0SignOverflow  : 1,
-				        vu0Underflow     : 1;
-
-				bool
-					vu1Overflow      : 1,
-					vu1ExtraOverflow : 1,
-					vu1SignOverflow  : 1,
-					vu1Underflow     : 1;
-
-				bool
-					fpuOverflow      : 1,
-					fpuExtraOverflow : 1,
-					fpuFullMode      : 1;
-
-				bool    EnableEECache    : 1;
-				bool    EnableFastmem    : 1;
-				/* Route recompiled EE FPU arithmetic through ps2float. */
-				bool    EnableFpuSoftFloat : 1;
-				/* Per-unit VU soft float, audit-shaped: the bit keeps that
-				 * unit on the interpreter, whose float ops already compute
-				 * through the ps2float model (VUops.c), instead of the
-				 * SSE recompiler. Exactness first; a per-op recompiler
-				 * dispatch can replace the routing later without touching
-				 * this surface. VU0 macro mode (COP2 through the EE rec)
-				 * is NOT covered by the VU0 bit -- micro programs only. */
-				bool    EnableVu0SoftFloat : 1;
-				bool    EnableVu1SoftFloat : 1;
-				/* Hardware-exact VU multiply in the VU recompilers. */
-				bool    EnableVuExactMul : 1;
-				bool    EnableVuExactDiv : 1;
-				/* Exponent-distance operand masking for VU ADD/SUB. */
-				bool    EnableVuAccurateAddSub : 1;
-				/* EE FPU add/sub/mul family through the double pipeline. */
-				bool    EnableFpuAccurateArith : 1;
-			};
-		};
-
-		RecompilerOptions();
-		void ApplySanityCheck();
-
-
-		bool operator==(const RecompilerOptions& right) const
-		{
-			return bitset == right.bitset;
-		}
-
-		bool operator!=(const RecompilerOptions& right) const
-		{
-			return !(bitset == right.bitset);
-		}
-
-		u32 GetEEClampMode() const
-		{
-			return fpuFullMode ? 3 : (fpuExtraOverflow ? 2 : (fpuOverflow ? 1 : 0));
-		}
-
-		void SetEEClampMode(u32 value)
-		{
-			fpuOverflow = (value >= 1);
-			fpuExtraOverflow = (value >= 2);
-			fpuFullMode = (value >= 3);
-		}
-
-		u32 GetVUClampMode() const
-		{
-			return vu0SignOverflow ? 3 : (vu0ExtraOverflow ? 2 : (vu0Overflow ? 1 : 0));
-		}
-	};
+	typedef EmuRecompilerOptions RecompilerOptions;
 
 	// ------------------------------------------------------------------------
 	struct CpuOptions
@@ -305,7 +187,7 @@ struct Pcsx2Config
 				&& (VU0FPCR == right.VU0FPCR)
 				&& (VU1FPCR == right.VU1FPCR)
 				&& (AffinityControlMode == right.AffinityControlMode)
-				&& (Recompiler  == right.Recompiler);
+				&& (Recompiler.bitset == right.Recompiler.bitset);
 		}
 
 		bool operator!=(const CpuOptions& right) const
@@ -500,126 +382,12 @@ struct Pcsx2Config
 		}
 	};
 
-	// ------------------------------------------------------------------------
-	// NOTE: The GUI's GameFixes panel is dependent on the order of bits in this structure.
-	struct GamefixOptions
-	{
-		union
-		{
-			u32 bitset;
-			struct
-			{
-				bool
-					FpuMulHack    : 1, // Tales of Destiny hangs.
-					GoemonTlbHack : 1, // Goemon TLB miss hack. The game need to access unmapped virtual address. Instead to handle it as exception, TLB are preloaded at startup
-				        SkipMPEGHack   : 1, // Skips MPEG videos (Katamari and other games need this)
-				        OPHFlagHack    : 1, // Bleach Blade Battlers
-				        EETimingHack   : 1, // General purpose timing hack.
-			                InstantDMAHack : 1, // Instantly complete DMA's if possible, good for cache emulation problems.
-					DMABusyHack    : 1, // Denies writes to the DMAC when it's busy. This is correct behaviour but bad timing can cause problems.
-					GIFFIFOHack    : 1, // Enabled the GIF FIFO (more correct but slower)
-					VIFFIFOHack    : 1, // Pretends to fill the non-existant VIF FIFO Buffer.
-					VIF1StallHack  : 1, // Like above, processes FIFO data before the stall is allowed (to make sure data goes over).
-					IbitHack       : 1, // I bit hack. Needed to stop constant VU recompilation in some games
-					VUSyncHack     : 1, // Makes microVU run behind the EE to avoid VU register reading/writing sync issues. Useful for M-Bit games
-					VUOverflowHack : 1, // DEPRECATED no-op: overflow detection is now unconditional; kept so GameDB/config files parse
-					XgKickHack     : 1, // Erementar Gerad, adds more delay to VU XGkick instructions. Corrects the color of some graphics, but breaks Tri-ace games and others.
-					BlitInternalFPSHack : 1, // Disables privileged register write-based FPS detection.
-					FullVU0SyncHack     : 1, // Forces tight VU0 sync on every COP2 instruction.
-					/* Tri-Ace add/sub: per-title trigger for the masked
-					 * accurate add/sub path when the global option is
-					 * off. GameDB carries VuAddSubHack on the Star
-					 * Ocean 3 / Radiata Stories / Valkyrie Profile 2
-					 * family; the emission takes the union with the
-					 * global option, so turning the option on covers
-					 * these titles identically and the hack adds
-					 * nothing. */
-					VuAddSubHack        : 1;
-			};
-		};
+	typedef EmuGamefixOptions GamefixOptions;
+	typedef EmuSpeedhackOptions SpeedhackOptions;
 
-		GamefixOptions();
-		GamefixOptions& DisableAll();
-
-		bool Get(GamefixId id) const;
-		void Set(GamefixId id, bool enabled = true);
-		void Clear(GamefixId id) { Set(id, false); }
-
-		bool operator==(const GamefixOptions& right) const
-		{
-			return (bitset == right.bitset);
-		}
-
-		bool operator!=(const GamefixOptions& right) const
-		{
-			return !(bitset == right.bitset);
-		}
-	};
-
-	// ------------------------------------------------------------------------
-	struct SpeedhackOptions
-	{
-		static constexpr s8 MIN_EE_CYCLE_RATE = -3;
-		static constexpr s8 MAX_EE_CYCLE_RATE = 3;
-		static constexpr u8 MAX_EE_CYCLE_SKIP = 3;
-
-		union
-		{
-			u32 bitset;
-			struct
-			{
-				bool fastCDVD   : 1, // enables fast CDVD access
-				     IntcStat   : 1, // fast-forward through INTC_STAT waits.
-				     WaitLoop   : 1, // enables constant loop detection and fast-forwarding
-				     vuFlagHack : 1, // microVU specific flag hack
-				     vuThread   : 1, // Enable Threaded VU1
-				     vu1Instant : 1; // Enable Instant VU1 (Without MTVU only)
-			};
-		};
-
-		s8 EECycleRate; // EE cycle rate selector (1.0, 1.5, 2.0)
-		u8 EECycleSkip; // EE Cycle skip factor (0, 1, 2, or 3)
-
-		SpeedhackOptions();
-		SpeedhackOptions& DisableAll();
-
-		void Set(SpeedHack id, int value);
-		bool operator==(const SpeedhackOptions& right) const;
-		bool operator!=(const SpeedhackOptions& right) const;
-		static const char* GetSpeedHackName(SpeedHack id);
-		/* The hack a name (a run of len characters) names; false if none. */
-		static bool ParseSpeedHackName(const char* name, size_t len, SpeedHack* out);
-	};
-
-	// ------------------------------------------------------------------------
-	struct FilenameOptions
-	{
-		/* A BIOS filename, not a full path -- FullpathToBios joins it under
-		 * EmuFolders::Bios. PCSX2_PATH_MAX is generous for a leaf name and
-		 * matches what the rest of the tree uses. */
-		char Bios[PCSX2_PATH_MAX];
-
-		FilenameOptions();
-
-		bool operator==(const FilenameOptions& right) const
-		{
-			return (strcmp(Bios, right.Bios) == 0);
-		}
-
-		bool operator!=(const FilenameOptions& right) const
-		{
-			return !this->operator==(right);
-		}
-	};
-
-	// ------------------------------------------------------------------------
-	// Options struct for each memory card.
-	//
-	struct McdOptions
-	{
-		char Filename[PCSX2_PATH_MAX]; /* user-configured location of this card */
-		bool Enabled; // memory card enabled (if false, memcard will not show up in-game)
-	};
+	typedef EmuFilenameOptions FilenameOptions;
+	/* Options for each memory card. */
+	typedef EmuMcdOptions McdOptions;
 
 	// ------------------------------------------------------------------------
 

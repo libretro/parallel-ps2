@@ -24,7 +24,7 @@ for c in $LCSRC; do
 	"$CC" -O1 -g -w $SANFLAGS $DEFS -I"$LC/include" -c "$LC/$c" -o "$OBJ/lc_$(basename "$c" .c).o"
 done
 "$CC" -std=gnu89 -O1 -g -w $SANFLAGS $DEFS $INC -c "$ROOT/pcsx2/SaveStateBase.c" -o "$OBJ/ss.o"
-CXXSRC="$ROOT/pcsx2/Pcsx2Config.cpp"
+CXXSRC="$ROOT/pcsx2/Pcsx2Config.cpp $ROOT/pcsx2/EmuOptions.c"
 if [ -n "$IOPGLUE_TREE" ]; then
 	API=-DIOPGLUE_CXX_TREE
 	for c in IopCounters IopDma IopHw IopIrq; do

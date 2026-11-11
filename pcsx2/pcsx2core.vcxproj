@@ -136,6 +136,7 @@
     <ClCompile Include="DEV9\sockets.cpp" />
     <ClCompile Include="DEV9\net.cpp" />
     <ClCompile Include="Frontend\LayeredSettingsInterface.cpp" />
+    <ClCompile Include="EmuOptions.c" />
     <ClCompile Include="GameDatabase.c" />
     <ClCompile Include="GameDatabaseFixes.cpp" />
     <ClCompile Include="Gif_Unit.c" />
@@ -359,6 +360,7 @@
     <ClInclude Include="Frontend\InputBinding.h" />
     <ClInclude Include="Frontend\InputManager.h" />
     <ClInclude Include="Frontend\LayeredSettingsInterface.h" />
+    <ClInclude Include="EmuOptions.h" />
     <ClInclude Include="GameDatabase.h" />
     <ClInclude Include="Gif_Unit.h" />
     <ClInclude Include="GS\Renderers\DX11\D3D.h" />

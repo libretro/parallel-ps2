@@ -72,175 +72,7 @@ namespace EmuFolders
 	char Cache[PCSX2_PATH_MAX];
 } // namespace EmuFolders
 
-const char* const s_speed_hack_names[] =
-{
-	"mvuFlag",
-	"instantVU1",
-	"mtvu",
-	"eeCycleRate",
-};
 
-const char* Pcsx2Config::SpeedhackOptions::GetSpeedHackName(SpeedHack id)
-{
-	return s_speed_hack_names[static_cast<u32>(id)];
-}
-
-bool Pcsx2Config::SpeedhackOptions::ParseSpeedHackName(const char* name, size_t len, SpeedHack* out)
-{
-	for (u32 i = 0; i < C89_ARRAY_SIZE(s_speed_hack_names); i++)
-	{
-		if (strlen(s_speed_hack_names[i]) == len && memcmp(s_speed_hack_names[i], name, len) == 0)
-		{
-			*out = static_cast<SpeedHack>(i);
-			return true;
-		}
-	}
-
-	return false;
-}
-
-void Pcsx2Config::SpeedhackOptions::Set(SpeedHack id, int value)
-{
-	switch (id)
-	{
-		case SpeedHack::MVUFlag:
-			vuFlagHack = (value != 0);
-			break;
-		case SpeedHack::InstantVU1:
-			vu1Instant = (value != 0);
-			break;
-		case SpeedHack::MTVU:
-			vuThread = (value != 0);
-			break;
-		case SpeedHack::EECycleRate:
-			EECycleRate = static_cast<int>(pcsx2_clamp_i(value, MIN_EE_CYCLE_RATE, MAX_EE_CYCLE_RATE));
-			break;
-		default:
-			break;
-	}
-}
-
-bool Pcsx2Config::SpeedhackOptions::operator==(const SpeedhackOptions& right) const
-{
-	return OpEqu(bitset) && OpEqu(EECycleRate) && OpEqu(EECycleSkip);
-}
-
-bool Pcsx2Config::SpeedhackOptions::operator!=(const SpeedhackOptions& right) const
-{
-	return !operator==(right);
-}
-
-Pcsx2Config::SpeedhackOptions::SpeedhackOptions()
-{
-	DisableAll();
-
-	// Set recommended speedhacks to enabled by default. They'll still be off globally on resets.
-	WaitLoop = true;
-	IntcStat = true;
-	vuFlagHack = true;
-	vu1Instant = true;
-}
-
-Pcsx2Config::SpeedhackOptions& Pcsx2Config::SpeedhackOptions::DisableAll()
-{
-	bitset = 0;
-	EECycleRate = 0;
-	EECycleSkip = 0;
-
-	return *this;
-}
-
-
-Pcsx2Config::RecompilerOptions::RecompilerOptions()
-{
-	bitset = 0;
-
-	// All recs are enabled by default.
-
-	EnableEE = true;
-	EnableEECache = false;
-	EnableFpuSoftFloat = false;
-	EnableVu0SoftFloat = false;
-	EnableVu1SoftFloat = false;
-	EnableVuExactMul = false;
-	EnableVuExactDiv = false;
-	EnableVuAccurateAddSub = false;
-	/* Default-on per the fpaudit price tables: closes EE add/sub
-	 * exactly and gates the ABS/NEG and CVT.S.W accuracy fixes, at a
-	 * per-op cost of about two nanoseconds that measures within run
-	 * noise on real game frame throughput (three-rep Tekken
-	 * workload). The divide family stays on FpuSoftFloat, opt-in. */
-	EnableFpuAccurateArith = true;
-	EnableIOP = true;
-	EnableVU0 = true;
-	EnableVU1 = true;
-	EnableFastmem = true;
-
-	// vu and fpu clamping default to standard overflow.
-	vu0Overflow = true;
-	//vu0ExtraOverflow = false;
-	//vu0SignOverflow = false;
-	//vu0Underflow = false;
-	vu1Overflow = true;
-	//vu1ExtraOverflow = false;
-	//vu1SignOverflow = false;
-	//vu1Underflow = false;
-
-	fpuOverflow = true;
-	//fpuExtraOverflow = false;
-	//fpuFullMode = false;
-}
-
-void Pcsx2Config::RecompilerOptions::ApplySanityCheck()
-{
-	bool fpuIsRight = true;
-
-	if (fpuExtraOverflow)
-		fpuIsRight = fpuOverflow;
-
-	if (fpuFullMode)
-		fpuIsRight = fpuOverflow && fpuExtraOverflow;
-
-	if (!fpuIsRight)
-	{
-		// Values are wonky; assume the defaults.
-		fpuOverflow = RecompilerOptions().fpuOverflow;
-		fpuExtraOverflow = RecompilerOptions().fpuExtraOverflow;
-		fpuFullMode = RecompilerOptions().fpuFullMode;
-	}
-
-	bool vuIsOk = true;
-
-	if (vu0ExtraOverflow)
-		vuIsOk = vuIsOk && vu0Overflow;
-	if (vu0SignOverflow)
-		vuIsOk = vuIsOk && vu0ExtraOverflow;
-
-	if (!vuIsOk)
-	{
-		// Values are wonky; assume the defaults.
-		vu0Overflow = RecompilerOptions().vu0Overflow;
-		vu0ExtraOverflow = RecompilerOptions().vu0ExtraOverflow;
-		vu0SignOverflow = RecompilerOptions().vu0SignOverflow;
-		vu0Underflow = RecompilerOptions().vu0Underflow;
-	}
-
-	vuIsOk = true;
-
-	if (vu1ExtraOverflow)
-		vuIsOk = vuIsOk && vu1Overflow;
-	if (vu1SignOverflow)
-		vuIsOk = vuIsOk && vu1ExtraOverflow;
-
-	if (!vuIsOk)
-	{
-		// Values are wonky; assume the defaults.
-		vu1Overflow = RecompilerOptions().vu1Overflow;
-		vu1ExtraOverflow = RecompilerOptions().vu1ExtraOverflow;
-		vu1SignOverflow = RecompilerOptions().vu1SignOverflow;
-		vu1Underflow = RecompilerOptions().vu1Underflow;
-	}
-}
 
 
 bool Pcsx2Config::CpuOptions::CpusChanged(const CpuOptions& right) const
@@ -253,6 +85,7 @@ bool Pcsx2Config::CpuOptions::CpusChanged(const CpuOptions& right) const
 
 Pcsx2Config::CpuOptions::CpuOptions()
 {
+	emu_recompiler_defaults(&Recompiler);
 	FPUFPCR = DEFAULT_FPU_FP_CONTROL_REGISTER;
 
 	// Rounding defaults to nearest to match old behavior.
@@ -268,7 +101,7 @@ void Pcsx2Config::CpuOptions::ApplySanityCheck()
 {
 	AffinityControlMode = pcsx2_min_u(AffinityControlMode, 6);
 
-	Recompiler.ApplySanityCheck();
+	emu_recompiler_sanitize(&Recompiler);
 }
 
 
@@ -448,109 +281,13 @@ Pcsx2Config::DEV9Options::DEV9Options()
 
 
 
-static const char* const tbl_GamefixNames[] =
-{
-	"FpuMul",
-	"GoemonTlb",
-	"SkipMPEG",
-	"OPHFlag",
-	"EETiming",
-	"InstantDMA",
-	"DMABusy",
-	"GIFFIFO",
-	"VIFFIFO",
-	"VIF1Stall",
-	"Ibit",
-	"VUSync",
-	"VUOverflow",
-	"XGKick",
-	"BlitInternalFPS",
-	"FullVU0Sync",
-	"VuAddSub",
-};
-
-static_assert(C89_ARRAY_SIZE(tbl_GamefixNames) == GamefixId_COUNT, "a name for every game fix");
-
-const char* EnumToString(GamefixId id)
-{
-	return tbl_GamefixNames[id];
-}
-
-// all gamefixes are disabled by default.
-Pcsx2Config::GamefixOptions::GamefixOptions()
-{
-	DisableAll();
-}
-
-Pcsx2Config::GamefixOptions& Pcsx2Config::GamefixOptions::DisableAll()
-{
-	bitset = 0;
-	return *this;
-}
-
-void Pcsx2Config::GamefixOptions::Set(GamefixId id, bool enabled)
-{
-	switch (id)
-	{
-		case Fix_FpuMultiply:         FpuMulHack              = enabled; break;
-		case Fix_XGKick:              XgKickHack              = enabled; break;
-		case Fix_EETiming:            EETimingHack            = enabled; break;
-		case Fix_InstantDMA:          InstantDMAHack          = enabled; break;
-		case Fix_SkipMpeg:            SkipMPEGHack            = enabled; break;
-		case Fix_OPHFlag:             OPHFlagHack             = enabled; break;
-		case Fix_DMABusy:             DMABusyHack             = enabled; break;
-		case Fix_VIFFIFO:             VIFFIFOHack             = enabled; break;
-		case Fix_VIF1Stall:           VIF1StallHack           = enabled; break;
-		case Fix_GIFFIFO:             GIFFIFOHack             = enabled; break;
-		case Fix_GoemonTlbMiss:       GoemonTlbHack           = enabled; break;
-		case Fix_Ibit:                IbitHack                = enabled; break;
-		case Fix_VUSync:              VUSyncHack              = enabled; break;
-		case Fix_VUOverflow:          VUOverflowHack          = enabled; break;
-		case Fix_BlitInternalFPS:     BlitInternalFPSHack     = enabled; break;
-		case Fix_FullVU0Sync:         FullVU0SyncHack         = enabled; break;
-		case Fix_VuAddSub:            VuAddSubHack            = enabled; break;
-		default:
-					      break;
-	}
-}
-
-bool Pcsx2Config::GamefixOptions::Get(GamefixId id) const
-{
-	switch (id)
-	{
-		case Fix_FpuMultiply:         return FpuMulHack;
-		case Fix_XGKick:              return XgKickHack;
-		case Fix_EETiming:            return EETimingHack;
-		case Fix_InstantDMA:          return InstantDMAHack;
-		case Fix_SkipMpeg:            return SkipMPEGHack;
-		case Fix_OPHFlag:             return OPHFlagHack;
-		case Fix_DMABusy:             return DMABusyHack;
-		case Fix_VIFFIFO:             return VIFFIFOHack;
-		case Fix_VIF1Stall:           return VIF1StallHack;
-		case Fix_GIFFIFO:             return GIFFIFOHack;
-		case Fix_GoemonTlbMiss:       return GoemonTlbHack;
-		case Fix_Ibit:                return IbitHack;
-		case Fix_VUSync:              return VUSyncHack;
-		case Fix_VUOverflow:          return VUOverflowHack;
-		case Fix_BlitInternalFPS:     return BlitInternalFPSHack;
-		case Fix_FullVU0Sync:         return FullVU0SyncHack;
-		case Fix_VuAddSub:            return VuAddSubHack;
-		default:
-					      break;
-	}
-	return false; // unreachable, but we still need to suppress warnings >_<
-}
-
-
-Pcsx2Config::FilenameOptions::FilenameOptions()
-{
-	/* A char array has no default constructor; std::string did. */
-	Bios[0] = '\0';
-}
 
 
 Pcsx2Config::Pcsx2Config()
 {
+	emu_speedhack_defaults(&Speedhacks);
+	emu_gamefix_clear_all(&Gamefixes);
+	BaseFilenames.Bios[0] = '\0';
 	/* char arrays have no default constructor; the std::string fields they
 	 * replaced were empty on construction. */
 	CurrentIRX[0]      = '\0';
@@ -606,9 +343,9 @@ bool Pcsx2Config::operator==(const Pcsx2Config& right) const
 		OpEqu(Cpu) &&
 		OpEqu(GS) &&
 		OpEqu(DEV9) &&
-		OpEqu(Speedhacks) &&
-		OpEqu(Gamefixes) &&
-		OpEqu(BaseFilenames) &&
+		emu_speedhack_equal(&Speedhacks, &right.Speedhacks) &&
+		OpEqu(Gamefixes.bitset) &&
+		(strcmp(BaseFilenames.Bios, right.BaseFilenames.Bios) == 0) &&
 		(strcmp(GzipIsoIndexTemplate, right.GzipIsoIndexTemplate) == 0);
 	for (u32 i = 0; i < sizeof(Mcd) / sizeof(Mcd[0]); i++)
 	{
@@ -685,19 +422,6 @@ const char* emu_folders_resources(void)
 	return EmuFolders::Resources;
 }
 
-const char* emu_config_gamefix_name(u32 id)
-{
-	return id < GamefixId_COUNT ? tbl_GamefixNames[id] : NULL;
-}
-
-bool emu_config_parse_speedhack_name(const char* name, size_t len, u32* out)
-{
-	SpeedHack id;
-	if (!Pcsx2Config::SpeedhackOptions::ParseSpeedHackName(name, len, &id))
-		return false;
-	*out = (u32)id;
-	return true;
-}
 
 /* For PerformanceMetrics.c. */
 bool emu_config_blit_internal_fps_hack(void)
@@ -865,7 +589,7 @@ void EmuFolders::EnsureFoldersExist()
  * set and were identities on the defaults; measured, before this. */
 void Pcsx2Config::ApplyOptionFixups()
 {
-	Speedhacks.EECycleRate = pcsx2_clamp_i(Speedhacks.EECycleRate, SpeedhackOptions::MIN_EE_CYCLE_RATE, SpeedhackOptions::MAX_EE_CYCLE_RATE);
-	Speedhacks.EECycleSkip = pcsx2_min_i(Speedhacks.EECycleSkip, SpeedhackOptions::MAX_EE_CYCLE_SKIP);
+	Speedhacks.EECycleRate = pcsx2_clamp_i(Speedhacks.EECycleRate, EMU_EE_CYCLE_RATE_MIN, EMU_EE_CYCLE_RATE_MAX);
+	Speedhacks.EECycleSkip = pcsx2_min_i(Speedhacks.EECycleSkip, EMU_EE_CYCLE_SKIP_MAX);
 	GS.SkipDrawEnd         = pcsx2_max_i(GS.SkipDrawStart, GS.SkipDrawEnd);
 }

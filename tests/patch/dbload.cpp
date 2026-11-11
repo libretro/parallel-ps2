@@ -231,8 +231,8 @@ static int fixture(void)
 		"clamp modes");
 	FCHECK(a->nGameFixes == 2 && a->gameFixes[0] == Fix_XGKick && a->gameFixes[1] == Fix_SkipMpeg,
 		"game fixes in order, the repeat and the unknown one dropped");
-	FCHECK(a->nSpeedHacks == 2 && a->speedHacks[0].id == (u32)SpeedHack::MTVU && a->speedHacks[0].value == 0
-		&& a->speedHacks[1].id == (u32)SpeedHack::EECycleRate && a->speedHacks[1].value == 2,
+	FCHECK(a->nSpeedHacks == 2 && a->speedHacks[0].id == (u32)SPEEDHACK_MTVU && a->speedHacks[0].value == 0
+		&& a->speedHacks[1].id == (u32)SPEEDHACK_EE_CYCLE_RATE && a->speedHacks[1].value == 2,
 		"speed hacks in order, the unknown one dropped");
 	FCHECK(a->nGSHWFixes == 3
 		&& a->gsHWFixes[0].id == GAMEDB_HWFIX_TEXTURE_INSIDE_RT && a->gsHWFixes[0].value == 2

@@ -125,7 +125,7 @@ jobs:
         run: |
           WINE=$(command -v wine || command -v wine64)
           export WINE
-          for t in biosver perfmetrics profiler vuops; do
+          for t in biosver emuoptions perfmetrics profiler vuops; do
             echo "== $t"
             sh "tests/$t/build.sh"
           done

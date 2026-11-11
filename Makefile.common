@@ -317,6 +317,7 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/VMManager.cpp
 
 SOURCES_C += \
+	$(LRPS2_DIR)/EmuOptions.c \
 	$(LRPS2_DIR)/GameDatabase.c \
 	$(LRPS2_DIR)/GameDatabaseBuiltin.c \
 	$(LRPS2_DIR)/Patch.c \

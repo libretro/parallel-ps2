@@ -48,10 +48,10 @@ int main(void)
 
    { Pcsx2Config c; c.Speedhacks.EECycleRate = 99; c.Speedhacks.EECycleSkip = 99; c.GS.SkipDrawStart = 5; c.GS.SkipDrawEnd = 2;
      c.ApplyOptionFixups();
-     int good = c.Speedhacks.EECycleRate == Pcsx2Config::SpeedhackOptions::MAX_EE_CYCLE_RATE && c.Speedhacks.EECycleSkip == Pcsx2Config::SpeedhackOptions::MAX_EE_CYCLE_SKIP && c.GS.SkipDrawEnd == 5;
+     int good = c.Speedhacks.EECycleRate == EMU_EE_CYCLE_RATE_MAX && c.Speedhacks.EECycleSkip == EMU_EE_CYCLE_SKIP_MAX && c.GS.SkipDrawEnd == 5;
      printf("  %s: fixups clamp: EECycleRate 99->%d  EECycleSkip 99->%d  SkipDrawEnd(5,2)->%d\n", good ? "ok" : "FAIL", c.Speedhacks.EECycleRate, c.Speedhacks.EECycleSkip, c.GS.SkipDrawEnd); ok &= good;
-     Pcsx2Config d; d.Speedhacks.EECycleRate = Pcsx2Config::SpeedhackOptions::MIN_EE_CYCLE_RATE - 5; d.ApplyOptionFixups();
-     good = d.Speedhacks.EECycleRate == Pcsx2Config::SpeedhackOptions::MIN_EE_CYCLE_RATE;
+     Pcsx2Config d; d.Speedhacks.EECycleRate = EMU_EE_CYCLE_RATE_MIN - 5; d.ApplyOptionFixups();
+     good = d.Speedhacks.EECycleRate == EMU_EE_CYCLE_RATE_MIN;
      printf("  %s: EECycleRate below minimum clamps up to %d\n", good ? "ok" : "FAIL", d.Speedhacks.EECycleRate); ok &= good; }
 
    { strcpy(EmuFolders::DataRoot, "/data");

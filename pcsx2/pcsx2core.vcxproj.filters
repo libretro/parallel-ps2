@@ -605,6 +605,9 @@
     <ClCompile Include="CDVD\IsoFS\IsoFSCDVD.c">
       <Filter>System\IsoFS</Filter>
     </ClCompile>
+    <ClCompile Include="EmuOptions.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
     <ClCompile Include="GameDatabase.c">
       <Filter>Misc</Filter>
     </ClCompile>
@@ -1176,6 +1179,9 @@
     </ClInclude>
     <ClInclude Include="CDVD\IsoFS\iso9660.h">
       <Filter>System\IsoFS</Filter>
+    </ClInclude>
+    <ClInclude Include="EmuOptions.h">
+      <Filter>Misc</Filter>
     </ClInclude>
     <ClInclude Include="GameDatabase.h">
       <Filter>Misc</Filter>

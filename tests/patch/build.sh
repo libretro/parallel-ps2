@@ -34,10 +34,12 @@ for f in GameDatabaseFixes Pcsx2Config; do
 		-I "$ROOT/common" -I "$ROOT/common/include" -I "$ROOT/3rdparty/include" \
 		-I "$LC/include" -c -o "$DIR/dbload_$f.o" "$ROOT/pcsx2/$f.cpp"
 done
-# The reader is C89, as the core builds it.
-${CC:-cc} -std=gnu89 -O1 -Wall -Wno-unused-function -Werror=declaration-after-statement $SANFLAGS \
-	-I "$ROOT" -I "$ROOT/pcsx2" -I "$ROOT/common" -I "$LC/include" \
-	-c -o "$DIR/dbload_GameDatabase.o" "$ROOT/pcsx2/GameDatabase.c"
+# The reader and the option helpers are C89, as the core builds them.
+for f in GameDatabase EmuOptions; do
+	${CC:-cc} -std=gnu89 -O1 -Wall -Wno-unused-function -Werror=declaration-after-statement $SANFLAGS \
+		-I "$ROOT" -I "$ROOT/pcsx2" -I "$ROOT/common" -I "$LC/include" \
+		-c -o "$DIR/dbload_$f.o" "$ROOT/pcsx2/$f.c"
+done
 # libretro-common is C: built by the C compiler, as in the core. Through
 # the C++ driver its TSan annotations get C++ linkage and do not link.
 LCOBJS=""
@@ -50,7 +52,7 @@ for f in rthreads/retro_eventcount rthreads/retro_procbarrier \
 	LCOBJS="$LCOBJS $o"
 done
 ${CXX:-c++} $SANFLAGS -o "$DIR/patch_dbload" "$DIR/dbload.o" \
-	"$DIR/dbload_GameDatabase.o" "$DIR/dbload_GameDatabaseFixes.o" "$DIR/dbload_Pcsx2Config.o" \
+	"$DIR/dbload_GameDatabase.o" "$DIR/dbload_EmuOptions.o" "$DIR/dbload_GameDatabaseFixes.o" "$DIR/dbload_Pcsx2Config.o" \
 	$LCOBJS -lpthread
 "$DIR/patch_dbload" "$ROOT/bin/resources/GameIndex.yaml"
 

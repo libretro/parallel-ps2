@@ -97,6 +97,7 @@ set(pcsx2Sources
 	Cache.c
 	COP0.c
 	Counters.c
+	EmuOptions.c
 	GameDatabase.c
 	GameDatabaseFixes.cpp
 	${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.c
@@ -176,6 +177,7 @@ set(pcsx2Headers
 	COP0.h
 	Counters.h
 	Dmac.h
+	EmuOptions.h
 	GameDatabase.h
 	Elfheader.h
 	FW.h

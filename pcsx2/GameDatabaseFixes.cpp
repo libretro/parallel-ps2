@@ -23,7 +23,7 @@
 
 static_assert((int)FPRoundMode::MaxCount == GAMEDB_ROUND_UNSET,
 	"GAMEDB_ROUND_UNSET is one past the last FPRoundMode");
-static_assert((int)SpeedHack::MaxCount <= 256 && GamefixId_COUNT <= 256,
+static_assert(SPEEDHACK_COUNT <= 256 && GamefixId_COUNT <= 256,
 	"the database keeps fix and hack ids in a byte");
 
 static const char* const s_round_modes[GAMEDB_ROUND_UNSET] = {
@@ -140,14 +140,14 @@ u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* e, Pcsx2Config& config,
 		if (!applyAuto)
 		{
 			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping setting Speedhack '%s' to [mode=%d]\n",
-					Pcsx2Config::SpeedhackOptions::GetSpeedHackName((SpeedHack)it->id), it->value);
+					emu_speedhack_name((enum SpeedHack)it->id), it->value);
 			continue;
 		}
 		/* Legacy note - speedhacks are setup in the GameDB as integer values, but */
 		/* are effectively booleans like the gamefixes */
-		config.Speedhacks.Set((SpeedHack)it->id, it->value);
+		emu_speedhack_set(&config.Speedhacks, (enum SpeedHack)it->id, it->value);
 		log_cb(RETRO_LOG_INFO, "(GameDB) Setting Speedhack '%s' to [mode=%d]\n",
-				Pcsx2Config::SpeedhackOptions::GetSpeedHackName((SpeedHack)it->id), it->value);
+				emu_speedhack_name((enum SpeedHack)it->id), it->value);
 		num_applied_fixes++;
 	}
 
@@ -157,12 +157,12 @@ u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* e, Pcsx2Config& config,
 		const GamefixId id = (GamefixId)e->gameFixes[i];
 		if (!applyAuto)
 		{
-			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping Gamefix: %s\n", EnumToString(id));
+			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping Gamefix: %s\n", emu_gamefix_name(id));
 			continue;
 		}
 		/* if the fix is present, it is said to be enabled */
-		config.Gamefixes.Set(id, true);
-		log_cb(RETRO_LOG_INFO, "(GameDB) Enabled Gamefix: %s\n", EnumToString(id));
+		emu_gamefix_set(&config.Gamefixes, id, true);
+		log_cb(RETRO_LOG_INFO, "(GameDB) Enabled Gamefix: %s\n", emu_gamefix_name(id));
 		num_applied_fixes++;
 
 		/* The LUT is only used for 1 game so we allocate it only when the gamefix is enabled (save 4MB) */

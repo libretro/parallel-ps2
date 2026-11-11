@@ -32,7 +32,7 @@ done
 "$CC" -w $DEFS $OPT $INC -c "$P/Interpreter.c" -o "$OBJ/Interpreter.o"
 "$CXX" -std=c++17 -w $DEFS $OPT $INC -o "$DIR/eestage$EXE" \
 	"$DIR/glue.cpp" "$DIR/stubs.cpp" \
-	"$P/Pcsx2Config.cpp" "$P/MemoryCardFile.c" \
+	"$P/Pcsx2Config.cpp" "$P/EmuOptions.c" "$P/MemoryCardFile.c" \
 	"$OBJ"/*.o $LIBS
 rm -rf "$OBJ"
 "$DIR/eestage$EXE"
