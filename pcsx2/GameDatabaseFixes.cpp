@@ -21,7 +21,7 @@
 #include "GameDatabase.h"
 #include "vtlb.h"
 
-static_assert((int)FPRoundMode::MaxCount == GAMEDB_ROUND_UNSET,
+static_assert(FPROUND_COUNT == GAMEDB_ROUND_UNSET,
 	"GAMEDB_ROUND_UNSET is one past the last FPRoundMode");
 static_assert(SPEEDHACK_COUNT <= 256 && GamefixId_COUNT <= 256,
 	"the database keeps fix and hack ids in a byte");
@@ -47,7 +47,7 @@ u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* e, Pcsx2Config& config,
 		if (applyAuto)
 		{
 			log_cb(RETRO_LOG_INFO, "(GameDB) Changing EE/FPU divison roundmode to %d [%s]\n", (int)e->eeDivRoundMode, s_round_modes[e->eeDivRoundMode]);
-			config.Cpu.FPUDivFPCR.SetRoundMode((FPRoundMode)e->eeDivRoundMode);
+			config.Cpu.FPUDivFPCR = fpcr_set_round_mode(config.Cpu.FPUDivFPCR, (enum FPRoundMode)e->eeDivRoundMode);
 		}
 		else
 		{
@@ -60,7 +60,7 @@ u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* e, Pcsx2Config& config,
 		if (applyAuto)
 		{
 			log_cb(RETRO_LOG_INFO, "(GameDB) Changing EE/FPU roundmode to %d [%s]\n", (int)e->eeRoundMode, s_round_modes[e->eeRoundMode]);
-			config.Cpu.FPUFPCR.SetRoundMode((FPRoundMode)e->eeRoundMode);
+			config.Cpu.FPUFPCR = fpcr_set_round_mode(config.Cpu.FPUFPCR, (enum FPRoundMode)e->eeRoundMode);
 		}
 		else
 			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing EE/FPU roundmode to %d [%s]\n", (int)e->eeRoundMode, s_round_modes[e->eeRoundMode]);
@@ -71,7 +71,7 @@ u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* e, Pcsx2Config& config,
 		if (applyAuto)
 		{
 			log_cb(RETRO_LOG_INFO, "(GameDB) Changing VU0 roundmode to %d [%s]\n", (int)e->vu0RoundMode, s_round_modes[e->vu0RoundMode]);
-			config.Cpu.VU0FPCR.SetRoundMode((FPRoundMode)e->vu0RoundMode);
+			config.Cpu.VU0FPCR = fpcr_set_round_mode(config.Cpu.VU0FPCR, (enum FPRoundMode)e->vu0RoundMode);
 		}
 		else
 			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing VU0 roundmode to %d [%s]\n", (int)e->vu0RoundMode, s_round_modes[e->vu0RoundMode]);
@@ -82,7 +82,7 @@ u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* e, Pcsx2Config& config,
 		if (applyAuto)
 		{
 			log_cb(RETRO_LOG_INFO, "(GameDB) Changing VU1 roundmode to %d [%s]\n", (int)e->vu1RoundMode, s_round_modes[e->vu1RoundMode]);
-			config.Cpu.VU1FPCR.SetRoundMode((FPRoundMode)e->vu1RoundMode);
+			config.Cpu.VU1FPCR = fpcr_set_round_mode(config.Cpu.VU1FPCR, (enum FPRoundMode)e->vu1RoundMode);
 		}
 		else
 			log_cb(RETRO_LOG_WARN, "[GameDB] Skipping changing VU1 roundmode to %d [%s]\n", (int)e->vu1RoundMode, s_round_modes[e->vu1RoundMode]);

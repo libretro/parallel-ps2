@@ -224,7 +224,7 @@ static int fixture(void)
 	FCHECK(!strcmp(a->serial, "slus-00001"), "the serial is stored lower case");
 	FCHECK(GameDatabase_FindGame("SLUS-99999") == NULL && GameDatabase_FindGame("") == NULL,
 		"an unknown serial is not found");
-	FCHECK(a->eeRoundMode == (u8)FPRoundMode::Nearest && a->eeDivRoundMode == GAMEDB_ROUND_UNSET
+	FCHECK(a->eeRoundMode == (u8)FPROUND_NEAREST && a->eeDivRoundMode == GAMEDB_ROUND_UNSET
 		&& (int)a->vu0RoundMode == 3 && (int)a->vu1RoundMode == 1,
 		"round modes: vuRoundMode sets both, vu1RoundMode then overrides");
 	FCHECK((int)a->eeClampMode == 2 && (int)a->vu0ClampMode == 1 && (int)a->vu1ClampMode == 1,

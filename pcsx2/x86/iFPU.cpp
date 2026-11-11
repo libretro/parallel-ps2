@@ -1593,11 +1593,11 @@ void recSQRT_S_xmm(int info)
 	int roundmodeFlag = 0;
 	alignas(16) static FPControlRegister roundmode_nearest;
 
-	if (EmuConfig.Cpu.FPUFPCR.GetRoundMode() != FPRoundMode::Nearest)
+	if (fpcr_round_mode(EmuConfig.Cpu.FPUFPCR) != FPROUND_NEAREST)
 	{
 		// Set roundmode to nearest if it isn't already
 		roundmode_nearest = EmuConfig.Cpu.FPUFPCR;
-		roundmode_nearest.SetRoundMode(FPRoundMode::Nearest);
+		roundmode_nearest = fpcr_set_round_mode(roundmode_nearest, FPROUND_NEAREST);
 		xe_ldmxcsr_m(&roundmode_nearest.bitmask);
 		roundmodeFlag = 1;
 	}

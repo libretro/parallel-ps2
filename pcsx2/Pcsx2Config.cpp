@@ -43,18 +43,6 @@ extern std::string libretro_content;
 #define OpEqu(field) (field == right.field)
 
 // Default EE/VU control registers have exceptions off, DaZ/FTZ, and the rounding mode set to Chop/Zero.
-static constexpr FPControlRegister DEFAULT_FPU_FP_CONTROL_REGISTER = FPControlRegister::GetDefault()
-	.DisableExceptions()
-	.SetDenormalsAreZero(true)
-.SetFlushToZero(true)
-	.SetRoundMode(FPRoundMode::ChopZero);
-static constexpr FPControlRegister DEFAULT_VU_FP_CONTROL_REGISTER = FPControlRegister::GetDefault()
-	.DisableExceptions()
-	.SetDenormalsAreZero(true)
-.SetFlushToZero(true)
-	.SetRoundMode(FPRoundMode::ChopZero);
-
-
 Pcsx2Config EmuConfig;
 
 
@@ -75,34 +63,6 @@ namespace EmuFolders
 
 
 
-bool Pcsx2Config::CpuOptions::CpusChanged(const CpuOptions& right) const
-{
-	return (Recompiler.EnableEE != right.Recompiler.EnableEE ||
-			Recompiler.EnableIOP != right.Recompiler.EnableIOP ||
-			Recompiler.EnableVU0 != right.Recompiler.EnableVU0 ||
-			Recompiler.EnableVU1 != right.Recompiler.EnableVU1);
-}
-
-Pcsx2Config::CpuOptions::CpuOptions()
-{
-	emu_recompiler_defaults(&Recompiler);
-	FPUFPCR = DEFAULT_FPU_FP_CONTROL_REGISTER;
-
-	// Rounding defaults to nearest to match old behavior.
-	// TODO: Make it default to the same as the rest of the FPU operations, at some point.
-	FPUDivFPCR = FPControlRegister(DEFAULT_FPU_FP_CONTROL_REGISTER).SetRoundMode(FPRoundMode::Nearest);
-
-	VU0FPCR = DEFAULT_VU_FP_CONTROL_REGISTER;
-	VU1FPCR = DEFAULT_VU_FP_CONTROL_REGISTER;
-	AffinityControlMode = 0;
-}
-
-void Pcsx2Config::CpuOptions::ApplySanityCheck()
-{
-	AffinityControlMode = pcsx2_min_u(AffinityControlMode, 6);
-
-	emu_recompiler_sanitize(&Recompiler);
-}
 
 
 Pcsx2Config::GSOptions::GSOptions()
@@ -285,6 +245,7 @@ Pcsx2Config::DEV9Options::DEV9Options()
 
 Pcsx2Config::Pcsx2Config()
 {
+	emu_cpu_defaults(&Cpu);
 	emu_speedhack_defaults(&Speedhacks);
 	emu_gamefix_clear_all(&Gamefixes);
 	BaseFilenames.Bios[0] = '\0';
@@ -340,7 +301,7 @@ bool Pcsx2Config::operator==(const Pcsx2Config& right) const
 {
 	bool equal =
 		OpEqu(bitset) &&
-		OpEqu(Cpu) &&
+		emu_cpu_equal(&Cpu, &right.Cpu) &&
 		OpEqu(GS) &&
 		OpEqu(DEV9) &&
 		emu_speedhack_equal(&Speedhacks, &right.Speedhacks) &&
@@ -510,8 +471,8 @@ void emu_config_disable_fastmem(void)
 
 u64 emu_fpcr_set_vu(int unit)
 {
-	const FPControlRegister prev = FPControlRegister::GetCurrent();
-	FPControlRegister::SetCurrent(unit ? EmuConfig.Cpu.VU1FPCR : EmuConfig.Cpu.VU0FPCR);
+	const FPControlRegister prev = fpcr_get_current();
+	fpcr_set_current(unit ? EmuConfig.Cpu.VU1FPCR : EmuConfig.Cpu.VU0FPCR);
 	return prev.bitmask;
 }
 
@@ -528,8 +489,8 @@ u32 emu_config_default_framerate_mhz(bool pal)
 
 u64 emu_fpcr_set_fpu(void)
 {
-	const FPControlRegister prev = FPControlRegister::GetCurrent();
-	FPControlRegister::SetCurrent(EmuConfig.Cpu.FPUFPCR);
+	const FPControlRegister prev = fpcr_get_current();
+	fpcr_set_current(EmuConfig.Cpu.FPUFPCR);
 	return prev.bitmask;
 }
 
@@ -542,7 +503,7 @@ void emu_fpcr_restore(u64 saved)
 {
 	FPControlRegister r;
 	r.bitmask = (decltype(r.bitmask))saved;
-	FPControlRegister::SetCurrent(r);
+	fpcr_set_current(r);
 }
 
 

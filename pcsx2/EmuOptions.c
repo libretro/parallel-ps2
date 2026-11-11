@@ -69,50 +69,33 @@ void emu_recompiler_defaults(EmuRecompilerOptions* o)
 	o->fpuOverflow = true;
 }
 
-void emu_recompiler_sanitize(EmuRecompilerOptions* o)
+void emu_cpu_defaults(EmuCpuOptions* o)
 {
-	EmuRecompilerOptions def;
-	bool ok;
+	emu_recompiler_defaults(&o->Recompiler);
+	o->FPUFPCR = fpcr_emu_default();
+	/* Division rounds to nearest, as it always has. */
+	o->FPUDivFPCR = fpcr_set_round_mode(fpcr_emu_default(), FPROUND_NEAREST);
+	o->VU0FPCR    = fpcr_emu_default();
+	o->VU1FPCR    = fpcr_emu_default();
+	o->AffinityControlMode = 0;
+}
 
-	emu_recompiler_defaults(&def);
+bool emu_cpu_equal(const EmuCpuOptions* a, const EmuCpuOptions* b)
+{
+	return a->Recompiler.bitset == b->Recompiler.bitset
+		&& a->FPUFPCR.bitmask == b->FPUFPCR.bitmask
+		&& a->FPUDivFPCR.bitmask == b->FPUDivFPCR.bitmask
+		&& a->VU0FPCR.bitmask == b->VU0FPCR.bitmask
+		&& a->VU1FPCR.bitmask == b->VU1FPCR.bitmask
+		&& a->AffinityControlMode == b->AffinityControlMode;
+}
 
-	ok = true;
-	if (o->fpuExtraOverflow)
-		ok = o->fpuOverflow;
-	if (o->fpuFullMode)
-		ok = o->fpuOverflow && o->fpuExtraOverflow;
-	if (!ok)
-	{
-		o->fpuOverflow      = def.fpuOverflow;
-		o->fpuExtraOverflow = def.fpuExtraOverflow;
-		o->fpuFullMode      = def.fpuFullMode;
-	}
-
-	ok = true;
-	if (o->vu0ExtraOverflow)
-		ok = ok && o->vu0Overflow;
-	if (o->vu0SignOverflow)
-		ok = ok && o->vu0ExtraOverflow;
-	if (!ok)
-	{
-		o->vu0Overflow      = def.vu0Overflow;
-		o->vu0ExtraOverflow = def.vu0ExtraOverflow;
-		o->vu0SignOverflow  = def.vu0SignOverflow;
-		o->vu0Underflow     = def.vu0Underflow;
-	}
-
-	ok = true;
-	if (o->vu1ExtraOverflow)
-		ok = ok && o->vu1Overflow;
-	if (o->vu1SignOverflow)
-		ok = ok && o->vu1ExtraOverflow;
-	if (!ok)
-	{
-		o->vu1Overflow      = def.vu1Overflow;
-		o->vu1ExtraOverflow = def.vu1ExtraOverflow;
-		o->vu1SignOverflow  = def.vu1SignOverflow;
-		o->vu1Underflow     = def.vu1Underflow;
-	}
+bool emu_cpu_recompilers_changed(const EmuCpuOptions* a, const EmuCpuOptions* b)
+{
+	return a->Recompiler.EnableEE != b->Recompiler.EnableEE
+		|| a->Recompiler.EnableIOP != b->Recompiler.EnableIOP
+		|| a->Recompiler.EnableVU0 != b->Recompiler.EnableVU0
+		|| a->Recompiler.EnableVU1 != b->Recompiler.EnableVU1;
 }
 
 void emu_gamefix_clear_all(EmuGamefixOptions* o)

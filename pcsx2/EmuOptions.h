@@ -21,6 +21,7 @@
 #define PCSX2_EMUOPTIONS_H
 
 #include "../common/Pcsx2Defs.h"
+#include "../common/FPControl.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -118,6 +119,20 @@ typedef struct EmuRecompilerOptions
 	};
 } EmuRecompilerOptions;
 
+/* The CPUs: which recompilers run, and the host float control each unit
+ * runs under. */
+typedef struct EmuCpuOptions
+{
+	EmuRecompilerOptions Recompiler;
+
+	FPControlRegister FPUFPCR;
+	FPControlRegister FPUDivFPCR;
+	FPControlRegister VU0FPCR;
+	FPControlRegister VU1FPCR;
+
+	u32 AffinityControlMode;
+} EmuCpuOptions;
+
 /* NOTE: the order of the bits is the order of the game fixes panel. */
 typedef struct EmuGamefixOptions
 {
@@ -194,9 +209,13 @@ typedef struct EmuMcdOptions
 /* Defaults: every recompiler on, standard overflow clamping, the
  * accurate EE FPU arithmetic on. */
 void emu_recompiler_defaults(EmuRecompilerOptions* o);
-/* Clamp combinations that cannot be (extra without normal, and so on)
- * go back to the defaults. */
-void emu_recompiler_sanitize(EmuRecompilerOptions* o);
+
+/* Defaults: the recompilers' as above; every unit in the emulator's float
+ * control (fpcr_emu_default), except division, which rounds to nearest. */
+void emu_cpu_defaults(EmuCpuOptions* o);
+bool emu_cpu_equal(const EmuCpuOptions* a, const EmuCpuOptions* b);
+/* Whether a different set of recompilers runs: the CPUs need a reset. */
+bool emu_cpu_recompilers_changed(const EmuCpuOptions* a, const EmuCpuOptions* b);
 
 /* Every game fix off. */
 void emu_gamefix_clear_all(EmuGamefixOptions* o);

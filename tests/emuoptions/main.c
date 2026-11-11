@@ -2,7 +2,8 @@
  * defaults, the sanity pass over the clamp modes, every game fix through
  * set, get and its name, and the speed hacks' names, setter, clamp and
  * comparison. The options are one word of bits each, as the C++ config
- * and the hot settings sync read them. */
+ * and the hot settings sync read them. The float control register's
+ * rounding modes read back as set, x86's and AArch64's encodings alike. */
 #include <stdio.h>
 #include <string.h>
 
@@ -34,19 +35,65 @@ int main(void)
 	check(rec.vu0Overflow && !rec.vu0ExtraOverflow && rec.vu1Overflow && rec.fpuOverflow
 		&& !rec.fpuExtraOverflow && !rec.fpuFullMode, "clamping defaults to standard overflow");
 
-	/* Extra without normal, and full without extra, cannot be. */
-	rec.fpuOverflow = false;
-	rec.fpuExtraOverflow = true;
-	rec.vu1Overflow = true;
-	rec.vu1ExtraOverflow = true;
-	rec.vu1SignOverflow = true;
-	rec.vu0Overflow = false;
-	rec.vu0ExtraOverflow = false;
-	rec.vu0SignOverflow = true;
-	emu_recompiler_sanitize(&rec);
-	check(rec.fpuOverflow && !rec.fpuExtraOverflow, "FPU extra without normal goes back to the default");
-	check(rec.vu0Overflow && !rec.vu0SignOverflow, "VU0 sign without extra goes back to the default");
-	check(rec.vu1Overflow && rec.vu1ExtraOverflow && rec.vu1SignOverflow, "a full VU1 chain is kept");
+	{
+		EmuCpuOptions c, d;
+		emu_cpu_defaults(&c);
+		d = c;
+		check(fpcr_round_mode(c.FPUFPCR) == FPROUND_CHOP && fpcr_round_mode(c.VU0FPCR) == FPROUND_CHOP
+			&& fpcr_round_mode(c.FPUDivFPCR) == FPROUND_NEAREST,
+			"the units chop, division rounds to nearest");
+		check(c.FPUFPCR.bitmask == fpcr_emu_default().bitmask
+			&& c.FPUDivFPCR.bitmask == fpcr_set_round_mode(fpcr_emu_default(), FPROUND_NEAREST).bitmask,
+			"which is the emulator's float control, division's mode apart");
+		check(emu_cpu_equal(&c, &d) && !emu_cpu_recompilers_changed(&c, &d), "a copy is equal");
+		d.FPUDivFPCR = fpcr_set_round_mode(d.FPUDivFPCR, FPROUND_CHOP);
+		check(!emu_cpu_equal(&c, &d) && !emu_cpu_recompilers_changed(&c, &d),
+			"division's mode counts as a change, though no recompiler changes");
+		d = c;
+		d.Recompiler.EnableVU1 = false;
+		check(!emu_cpu_equal(&c, &d) && emu_cpu_recompilers_changed(&c, &d), "a recompiler off does");
+		d = c;
+		d.Recompiler.EnableFastmem = false;
+		check(!emu_cpu_equal(&c, &d) && !emu_cpu_recompilers_changed(&c, &d), "fastmem is not a recompiler");
+	}
+
+	/* Every rounding mode reads back as set, on either architecture. */
+	{
+		FPControlRegister r = fpcr_emu_default();
+		int m, ok = 1;
+		for (m = 0; m < FPROUND_COUNT; m++)
+		{
+			const FPControlRegister s = fpcr_set_round_mode(r, (enum FPRoundMode)m);
+			ok &= fpcr_round_mode(s) == (enum FPRoundMode)m
+				&& fpcr_set_round_mode(s, fpcr_round_mode(r)).bitmask == r.bitmask;
+		}
+		check(ok, "every rounding mode reads back, touching only the rounding bits");
+	}
+
+	/* And on the hardware: each mode, made current, rounds a third the
+	 * way it says. On AArch64 this is what catches the two infinities
+	 * swapped, which reading a mode back cannot. */
+	{
+		const FPControlRegister saved = fpcr_get_current();
+		float pos[FPROUND_COUNT], neg[FPROUND_COUNT];
+		int m, back = 1;
+		for (m = 0; m < FPROUND_COUNT; m++)
+		{
+			volatile float one = 1.0f, three = 3.0f;
+			fpcr_set_current(fpcr_set_round_mode(fpcr_default(), (enum FPRoundMode)m));
+			back &= fpcr_round_mode(fpcr_get_current()) == (enum FPRoundMode)m;
+			pos[m] = one / three;
+			neg[m] = -one / three;
+		}
+		fpcr_set_current(saved);
+		check(back, "each mode made current reads back from the hardware");
+		check(pos[FPROUND_POSITIVE_INFINITY] > pos[FPROUND_NEGATIVE_INFINITY]
+			&& neg[FPROUND_POSITIVE_INFINITY] > neg[FPROUND_NEGATIVE_INFINITY],
+			"toward +inf rounds a third up, toward -inf down");
+		check(pos[FPROUND_CHOP] == pos[FPROUND_NEGATIVE_INFINITY] && neg[FPROUND_CHOP] == neg[FPROUND_POSITIVE_INFINITY],
+			"chop rounds toward zero on both sides");
+		check(pos[FPROUND_NEAREST] == pos[FPROUND_POSITIVE_INFINITY], "nearest rounds a third up, to 0x3eaaaaab");
+	}
 
 	emu_gamefix_clear_all(&fix);
 	for (i = 0; i < GamefixId_COUNT; i++)

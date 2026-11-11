@@ -21,6 +21,10 @@ case "$("$CC" -dumpmachine 2>/dev/null)" in
     LDSTATIC=-static
     [ "$(uname -s 2>/dev/null)" = Linux ] && RUN="${WINE:-wine}"
     ;;
+  # An AArch64 cross compiler on another host: run it under qemu.
+  aarch64*)
+    [ "$(uname -m 2>/dev/null)" != aarch64 ] && RUN="${QEMU:-qemu-aarch64} -L /usr/aarch64-linux-gnu"
+    ;;
 esac
 INC="-I $ROOT -I $ROOT/pcsx2 -I $ROOT/libretro/libretro-common/include"
 "$CC" -std=gnu89 -O1 -g -Wall -Werror=declaration-after-statement $SANFLAGS $INC \

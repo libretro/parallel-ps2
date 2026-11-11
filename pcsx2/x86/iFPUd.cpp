@@ -833,11 +833,11 @@ void DOUBLE_recSQRT_S_xmm(int info)
 	int roundmodeFlag = 0;
 	const int t1reg = _allocTempXMMreg(XMMT_FPS);
 
-	if (EmuConfig.Cpu.FPUFPCR.GetRoundMode() != FPRoundMode::Nearest)
+	if (fpcr_round_mode(EmuConfig.Cpu.FPUFPCR) != FPROUND_NEAREST)
 	{
 		// Set roundmode to nearest if it isn't already
 		roundmode_nearest = EmuConfig.Cpu.FPUFPCR;
-		roundmode_nearest.SetRoundMode(FPRoundMode::Nearest);
+		roundmode_nearest = fpcr_set_round_mode(roundmode_nearest, FPROUND_NEAREST);
 		xe_ldmxcsr_m(&roundmode_nearest.bitmask);
 		roundmodeFlag = 1;
 	}
@@ -936,11 +936,11 @@ void DOUBLE_recRSQRT_S_xmm(int info)
 	// behavior for both recs? --air
 
 	int roundmodeFlag = 0;
-	if (EmuConfig.Cpu.FPUFPCR.GetRoundMode() != FPRoundMode::Nearest)
+	if (fpcr_round_mode(EmuConfig.Cpu.FPUFPCR) != FPROUND_NEAREST)
 	{
 		// Set roundmode to nearest if it isn't already
 		roundmode_nearest = EmuConfig.Cpu.FPUFPCR;
-		roundmode_nearest.SetRoundMode(FPRoundMode::Nearest);
+		roundmode_nearest = fpcr_set_round_mode(roundmode_nearest, FPROUND_NEAREST);
 		xe_ldmxcsr_m(&roundmode_nearest.bitmask);
 		roundmodeFlag = 1;
 	}

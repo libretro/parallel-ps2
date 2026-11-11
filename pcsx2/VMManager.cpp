@@ -780,7 +780,7 @@ bool VMManager::Initialize(VMBootParameters boot_params)
 	s_cpu_implementation_changed = false;
 	UpdateCPUImplementations();
 	Internal::ClearCPUExecutionCaches();
-	FPControlRegister::SetCurrent(EmuConfig.Cpu.FPUFPCR);
+	fpcr_set_current(EmuConfig.Cpu.FPUFPCR);
 	memBindConditionalHandlers(EmuConfig.Speedhacks.IntcStat, THREAD_VU1);
 
 	ForgetLoadedPatches();
@@ -834,7 +834,7 @@ void VMManager::Shutdown()
 
 	std::string().swap(s_elf_override);
 
-	FPControlRegister::SetCurrent(FPControlRegister::GetDefault());
+	fpcr_set_current(fpcr_default());
 
 	ForgetLoadedPatches();
 	irxIomanReset();
@@ -1130,14 +1130,14 @@ void VMManager::Internal::GameStartingOnCPUThread()
 
 void VMManager::CheckForCPUConfigChanges(const Pcsx2Config& old_config)
 {
-	if (EmuConfig.Cpu == old_config.Cpu &&
+	if (emu_cpu_equal(&EmuConfig.Cpu, &old_config.Cpu) &&
 		EmuConfig.Gamefixes.bitset == old_config.Gamefixes.bitset &&
 		emu_speedhack_equal(&EmuConfig.Speedhacks, &old_config.Speedhacks)
 		)
 		return;
 
 	log_cb(RETRO_LOG_INFO, "Updating CPU configuration...\n");
-	FPControlRegister::SetCurrent(EmuConfig.Cpu.FPUFPCR);
+	fpcr_set_current(EmuConfig.Cpu.FPUFPCR);
 	Internal::ClearCPUExecutionCaches();
 	memBindConditionalHandlers(EmuConfig.Speedhacks.IntcStat, THREAD_VU1);
 
@@ -1145,7 +1145,7 @@ void VMManager::CheckForCPUConfigChanges(const Pcsx2Config& old_config)
 		vtlb_ResetFastmem();
 
 	// did we toggle recompilers?
-	if (EmuConfig.Cpu.CpusChanged(old_config.Cpu))
+	if (emu_cpu_recompilers_changed(&EmuConfig.Cpu, &old_config.Cpu))
 	{
 		// This has to be done asynchronously, since we're still executing the
 		// cpu when this function is called. Break the execution as soon as
@@ -1313,7 +1313,7 @@ void VMManager::InitializeCPUInfo(void)
 		return;
 	s_processor_list_initialized = true;
 
-	FPControlRegister::SetCurrent(FPControlRegister::GetDefault());
+	fpcr_set_current(fpcr_default());
 
 	/* features_cpu ranks the processors: strongest core first, and an SMT
 	 * sibling behind the processor it shares a core with, which is the

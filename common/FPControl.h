@@ -1,216 +1,167 @@
-// SPDX-FileCopyrightText: 2002-2023 PCSX2 Dev Team
-// SPDX-License-Identifier: LGPL-3.0+
+/* SPDX-FileCopyrightText: 2002-2023 PCSX2 Dev Team
+ * SPDX-License-Identifier: LGPL-3.0+
+ *
+ * The host's floating-point control register: MXCSR on x86, FPCR on
+ * AArch64. A value of it is a plain word, set and read through the
+ * functions below, so C and C++ hold it alike. */
 
-// This file abstracts the floating-point control registers, known as MXCSR on x86, and FPCR on AArch64.
-
-#pragma once
+#ifndef PCSX2_FPCONTROL_H
+#define PCSX2_FPCONTROL_H
 
 #include "Pcsx2Defs.h"
 #include "VectorIntrin.h"
 
-enum class FPRoundMode : u8
+/* The order is MXCSR's rounding-control field. */
+enum FPRoundMode
 {
-	Nearest,
-	NegativeInfinity,
-	PositiveInfinity,
-	ChopZero,
-
-	MaxCount
+	FPROUND_NEAREST,
+	FPROUND_NEGATIVE_INFINITY,
+	FPROUND_POSITIVE_INFINITY,
+	FPROUND_CHOP,
+	FPROUND_COUNT
 };
 
-struct FPControlRegister
-{
 #if defined(_M_X86) || defined(_M_X64) || defined(_M_AMD64) || defined(__amd64__) || defined(__x86_64__) || defined(__x86_64)
+
+typedef struct FPControlRegister
+{
 	u32 bitmask;
+} FPControlRegister;
 
-	static constexpr u32 EXCEPTION_MASK = (0x3Fu << 7);
-	static constexpr u32 ROUNDING_CONTROL_SHIFT = 13;
-	static constexpr u32 ROUNDING_CONTROL_MASK = 3u;
-	static constexpr u32 ROUNDING_CONTROL_BITS = (ROUNDING_CONTROL_MASK << ROUNDING_CONTROL_SHIFT);
-	static constexpr u32 DENORMALS_ARE_ZERO_BIT = (1u << 6);
-	static constexpr u32 FLUSH_TO_ZERO_BIT = (1u << 15);
+#define FPCR_EXCEPTION_MASK   (0x3Fu << 7)
+#define FPCR_ROUNDING_SHIFT   13
+#define FPCR_ROUNDING_MASK    3u
+#define FPCR_DENORMALS_ZERO   (1u << 6)
+#define FPCR_FLUSH_TO_ZERO    (1u << 15)
 
-	__fi static FPControlRegister GetCurrent()
-	{
-		return FPControlRegister{_mm_getcsr()};
-	}
+static PCSX2_INLINE FPControlRegister fpcr_get_current(void)
+{
+	FPControlRegister r;
+	r.bitmask = _mm_getcsr();
+	return r;
+}
 
-	__fi static void SetCurrent(FPControlRegister value)
-	{
-		_mm_setcsr(value.bitmask);
-	}
+static PCSX2_INLINE void fpcr_set_current(FPControlRegister r)
+{
+	_mm_setcsr(r.bitmask);
+}
 
-	__fi static constexpr FPControlRegister GetDefault()
-	{
-		// 0x1f80 - all exceptions masked, nearest rounding
-		return FPControlRegister{0x1f80};
-	}
+/* All exceptions masked, nearest rounding. */
+static PCSX2_INLINE FPControlRegister fpcr_default(void)
+{
+	FPControlRegister r;
+	r.bitmask = 0x1f80;
+	return r;
+}
 
-	__fi constexpr FPControlRegister& EnableExceptions()
-	{
-		bitmask &= ~EXCEPTION_MASK;
-		return *this;
-	}
+static PCSX2_INLINE FPControlRegister fpcr_disable_exceptions(FPControlRegister r)
+{
+	r.bitmask |= FPCR_EXCEPTION_MASK;
+	return r;
+}
 
-	__fi constexpr FPControlRegister DisableExceptions()
-	{
-		bitmask |= EXCEPTION_MASK;
-		return *this;
-	}
+static PCSX2_INLINE enum FPRoundMode fpcr_round_mode(FPControlRegister r)
+{
+	return (enum FPRoundMode)((r.bitmask >> FPCR_ROUNDING_SHIFT) & FPCR_ROUNDING_MASK);
+}
 
-	__fi constexpr FPRoundMode GetRoundMode() const
-	{
-		return static_cast<FPRoundMode>((bitmask >> ROUNDING_CONTROL_SHIFT) & ROUNDING_CONTROL_MASK);
-	}
+static PCSX2_INLINE FPControlRegister fpcr_set_round_mode(FPControlRegister r, enum FPRoundMode mode)
+{
+	r.bitmask = (r.bitmask & ~(FPCR_ROUNDING_MASK << FPCR_ROUNDING_SHIFT))
+		| (((u32)mode & FPCR_ROUNDING_MASK) << FPCR_ROUNDING_SHIFT);
+	return r;
+}
 
-	__fi constexpr FPControlRegister& SetRoundMode(FPRoundMode mode)
-	{
-		// These bits match on x86.
-		bitmask = (bitmask & ~ROUNDING_CONTROL_BITS) | ((static_cast<u32>(mode) & ROUNDING_CONTROL_MASK) << ROUNDING_CONTROL_SHIFT);
-		return *this;
-	}
+static PCSX2_INLINE FPControlRegister fpcr_set_denormals_are_zero(FPControlRegister r, bool on)
+{
+	r.bitmask = on ? (r.bitmask | FPCR_DENORMALS_ZERO) : (r.bitmask & ~FPCR_DENORMALS_ZERO);
+	return r;
+}
 
-	__fi constexpr bool GetDenormalsAreZero() const
-	{
-		return ((bitmask & DENORMALS_ARE_ZERO_BIT) != 0);
-	}
+static PCSX2_INLINE FPControlRegister fpcr_set_flush_to_zero(FPControlRegister r, bool on)
+{
+	r.bitmask = on ? (r.bitmask | FPCR_FLUSH_TO_ZERO) : (r.bitmask & ~FPCR_FLUSH_TO_ZERO);
+	return r;
+}
 
-	__fi constexpr FPControlRegister SetDenormalsAreZero(bool daz)
-	{
-		if (daz)
-			bitmask |= DENORMALS_ARE_ZERO_BIT;
-		else
-			bitmask &= ~DENORMALS_ARE_ZERO_BIT;
-		return *this;
-	}
+#elif defined(_M_ARM64) || defined(__aarch64__)
 
-	__fi constexpr bool GetFlushToZero() const
-	{
-		return ((bitmask & FLUSH_TO_ZERO_BIT) != 0);
-	}
-
-	__fi constexpr FPControlRegister SetFlushToZero(bool ftz)
-	{
-		if (ftz)
-			bitmask |= FLUSH_TO_ZERO_BIT;
-		else
-			bitmask &= ~FLUSH_TO_ZERO_BIT;
-		return *this;
-	}
-
-	__fi constexpr bool operator==(const FPControlRegister& rhs) const { return bitmask == rhs.bitmask; }
-	__fi constexpr bool operator!=(const FPControlRegister& rhs) const { return bitmask != rhs.bitmask; }
-
-#elif (defined(_M_ARM64) || defined(__aarch64__))
+typedef struct FPControlRegister
+{
 	u64 bitmask;
+} FPControlRegister;
 
-	static constexpr u64 FZ_BIT = (0x1ULL << 24);
-	static constexpr u32 RMODE_SHIFT = 22;
-	static constexpr u64 RMODE_MASK = 0x3ULL;
-	static constexpr u64 RMODE_BITS = (RMODE_MASK << RMODE_SHIFT);
-	static constexpr u32 EXCEPTION_MASK = (0x3Fu << 5);
+#define FPCR_FZ_BIT         (1ULL << 24)
+#define FPCR_RMODE_SHIFT    22
+#define FPCR_RMODE_MASK     3ULL
+#define FPCR_EXCEPTION_MASK (0x3FULL << 5)
 
-	__fi static FPControlRegister GetCurrent()
-	{
-		u64 value;
-		asm volatile("\tmrs %0, FPCR\n"
-					 : "=r"(value));
-		return FPControlRegister{value};
-	}
+static PCSX2_INLINE FPControlRegister fpcr_get_current(void)
+{
+	FPControlRegister r;
+	__asm__ __volatile__("\tmrs %0, FPCR\n" : "=r"(r.bitmask));
+	return r;
+}
 
-	__fi static void SetCurrent(FPControlRegister value)
-	{
-		asm volatile("\tmsr FPCR, %0\n" ::"r"(value.bitmask));
-	}
+static PCSX2_INLINE void fpcr_set_current(FPControlRegister r)
+{
+	__asm__ __volatile__("\tmsr FPCR, %0\n" ::"r"(r.bitmask));
+}
 
-	__fi static constexpr FPControlRegister GetDefault()
-	{
-		// 0x0 - all exceptions masked, nearest rounding
-		return FPControlRegister{0x0};
-	}
+/* All exceptions masked, nearest rounding. */
+static PCSX2_INLINE FPControlRegister fpcr_default(void)
+{
+	FPControlRegister r;
+	r.bitmask = 0;
+	return r;
+}
 
-	__fi constexpr FPControlRegister& EnableExceptions()
-	{
-		bitmask |= EXCEPTION_MASK;
-		return *this;
-	}
+static PCSX2_INLINE FPControlRegister fpcr_disable_exceptions(FPControlRegister r)
+{
+	r.bitmask &= ~FPCR_EXCEPTION_MASK;
+	return r;
+}
 
-	__fi constexpr FPControlRegister& DisableExceptions()
-	{
-		bitmask &= ~EXCEPTION_MASK;
-		return *this;
-	}
+/* Negative and positive infinity are the other way round on A64. */
+static PCSX2_INLINE enum FPRoundMode fpcr_round_mode(FPControlRegister r)
+{
+	const u64 m = (r.bitmask >> FPCR_RMODE_SHIFT) & FPCR_RMODE_MASK;
+	return (enum FPRoundMode)((m == 0 || m == 3) ? m : (m ^ 3));
+}
 
-	__fi constexpr FPRoundMode GetRoundMode() const
-	{
-		// Negative/Positive infinity rounding is flipped on A64.
-		const u64 RMode = (bitmask >> RMODE_SHIFT) & RMODE_MASK;
-		return static_cast<FPRoundMode>((RMode == 0b00 || RMode == 0b11) ? RMode : (RMode ^ 0b11));
-	}
+static PCSX2_INLINE FPControlRegister fpcr_set_round_mode(FPControlRegister r, enum FPRoundMode mode)
+{
+	const u64 m = (mode == FPROUND_NEAREST || mode == FPROUND_CHOP) ? (u64)mode : ((u64)mode ^ 3);
+	r.bitmask = (r.bitmask & ~(FPCR_RMODE_MASK << FPCR_RMODE_SHIFT))
+		| ((m & FPCR_RMODE_MASK) << FPCR_RMODE_SHIFT);
+	return r;
+}
 
-	__fi constexpr FPControlRegister& SetRoundMode(FPRoundMode mode)
-	{
-		const u64 RMode = ((mode == FPRoundMode::Nearest || mode == FPRoundMode::ChopZero) ? static_cast<u64>(mode) : (static_cast<u64>(mode) ^ 0b11));
-		bitmask = (bitmask & ~RMODE_BITS) | ((RMode & RMODE_MASK) << RMODE_SHIFT);
-		return *this;
-	}
+/* Without FEAT_AFP most ARM chips, Apple Silicon among them, have no
+ * separate DaZ and FtZ: FZ flushes inputs and outputs both. */
+static PCSX2_INLINE FPControlRegister fpcr_set_denormals_are_zero(FPControlRegister r, bool on)
+{
+	r.bitmask = on ? (r.bitmask | FPCR_FZ_BIT) : (r.bitmask & ~FPCR_FZ_BIT);
+	return r;
+}
 
-	__fi constexpr bool GetDenormalsAreZero() const
-	{
-		// Without FEAT_AFP, most ARM chips don't have separate DaZ/FtZ. This includes Apple Silicon, which
-		// implements x86-like behavior with a vendor-specific extension that we cannot access from usermode.
-		// The FZ bit causes both inputs and outputs to be flushed to zero.
-		return ((bitmask & FZ_BIT) != 0);
-	}
+static PCSX2_INLINE FPControlRegister fpcr_set_flush_to_zero(FPControlRegister r, bool on)
+{
+	return fpcr_set_denormals_are_zero(r, on);
+}
 
-	__fi constexpr FPControlRegister SetDenormalsAreZero(bool daz)
-	{
-		if (daz)
-			bitmask |= FZ_BIT;
-		else
-			bitmask &= ~FZ_BIT;
-		return *this;
-	}
-
-	__fi constexpr bool GetFlushToZero() const
-	{
-		// See note in GetDenormalsAreZero().
-		return ((bitmask & FZ_BIT) != 0);
-	}
-
-	__fi constexpr FPControlRegister SetFlushToZero(bool ftz)
-	{
-		if (ftz)
-			bitmask |= FZ_BIT;
-		else
-			bitmask &= ~FZ_BIT;
-		return *this;
-	}
-
-	__fi constexpr bool operator==(const FPControlRegister& rhs) const { return bitmask == rhs.bitmask; }
-	__fi constexpr bool operator!=(const FPControlRegister& rhs) const { return bitmask != rhs.bitmask; }
 #else
 #error Unknown architecture.
 #endif
-};
 
-/// Helper to back up/restore FPCR.
-class FPControlRegisterBackup
+/* The emulator's: exceptions masked, denormals and underflow to zero,
+ * chop rounding -- what the EE FPU and the VUs do. */
+static PCSX2_INLINE FPControlRegister fpcr_emu_default(void)
 {
-public:
-	__fi FPControlRegisterBackup(FPControlRegister new_value)
-		: m_prev_val(FPControlRegister::GetCurrent())
-	{
-		FPControlRegister::SetCurrent(new_value);
-	}
-	__fi ~FPControlRegisterBackup()
-	{
-		FPControlRegister::SetCurrent(m_prev_val);
-	}
+	FPControlRegister r = fpcr_disable_exceptions(fpcr_default());
+	r = fpcr_set_denormals_are_zero(r, true);
+	r = fpcr_set_flush_to_zero(r, true);
+	return fpcr_set_round_mode(r, FPROUND_CHOP);
+}
 
-	FPControlRegisterBackup(const FPControlRegisterBackup&) = delete;
-	FPControlRegisterBackup& operator=(const FPControlRegisterBackup&) = delete;
-
-private:
-	FPControlRegister m_prev_val;
-};
+#endif

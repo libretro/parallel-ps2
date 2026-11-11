@@ -130,6 +130,30 @@ jobs:
             sh "tests/$t/build.sh"
           done
 
+  # The same, built for AArch64 and run under qemu: the float control
+  # register's encoding differs there (the infinity rounding modes are the
+  # other way round), and the x86 lanes never run that half.
+  aarch64:
+    name: suites built for AArch64
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the cross compiler and qemu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu qemu-user
+
+      - name: Build and run them as AArch64 programs
+        env:
+          CC: aarch64-linux-gnu-gcc
+        run: |
+          for t in emuoptions perfmetrics; do
+            echo "== $t"
+            sh "tests/$t/build.sh"
+          done
+
   # PROFILER=1 adds a source and turns on the PROFILE_* macros in a dozen
   # units, none of which another build compiles: a change that broke them
   # went unseen until someone took a profile.

@@ -21,7 +21,6 @@
 
 
 #include "../common/General.h"
-#include "../common/FPControl.h"
 #include "EmuOptions.h"
 
 
@@ -165,36 +164,7 @@ struct Pcsx2Config
 	typedef EmuRecompilerOptions RecompilerOptions;
 
 	// ------------------------------------------------------------------------
-	struct CpuOptions
-	{
-		RecompilerOptions Recompiler;
-
-		FPControlRegister FPUFPCR;
-		FPControlRegister FPUDivFPCR;
-		FPControlRegister VU0FPCR;
-		FPControlRegister VU1FPCR;
-
-		u32 AffinityControlMode;
-
-		CpuOptions();
-		void ApplySanityCheck();
-
-		bool CpusChanged(const CpuOptions& right) const;
-
-		bool operator==(const CpuOptions& right) const
-		{
-			return     (FPUFPCR    == right.FPUFPCR) 
-				&& (VU0FPCR == right.VU0FPCR)
-				&& (VU1FPCR == right.VU1FPCR)
-				&& (AffinityControlMode == right.AffinityControlMode)
-				&& (Recompiler.bitset == right.Recompiler.bitset);
-		}
-
-		bool operator!=(const CpuOptions& right) const
-		{
-			return !this->operator==(right);
-		}
-	};
+	typedef EmuCpuOptions CpuOptions;
 
 	// ------------------------------------------------------------------------
 	struct GSOptions
