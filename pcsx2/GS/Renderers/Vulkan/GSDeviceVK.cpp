@@ -4480,7 +4480,7 @@ typedef struct VKPipelineCacheHeader
 
 static void CachePath(char* path, size_t size, const char* name)
 {
-	fill_pathname_join(path, EmuFolders::Cache, name, size);
+	fill_pathname_join(path, EmuFolders.Cache, name, size);
 }
 
 /* The pipeline cache, with what the file holds when this device wrote it;

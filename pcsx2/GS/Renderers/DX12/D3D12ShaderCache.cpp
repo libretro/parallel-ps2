@@ -304,7 +304,7 @@ std::string D3D12ShaderCache::GetCacheBaseFileName(const std::string_view& type,
 
 	{
 		char path[PATH_MAX_LENGTH];
-		fill_pathname_join(path, EmuFolders::Cache, base_filename.c_str(), sizeof(path));
+		fill_pathname_join(path, EmuFolders.Cache, base_filename.c_str(), sizeof(path));
 		return path;
 	}
 }

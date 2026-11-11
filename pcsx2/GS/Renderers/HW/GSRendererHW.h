@@ -443,7 +443,7 @@ public:
 	GSVector2i GetTargetSize(const GSTextureCache::Source* tex = nullptr, const bool can_expand = true);
 
 	void Reset(bool hardware_reset);
-	void UpdateSettings(const Pcsx2Config::GSOptions& old_config);
+	void UpdateSettings(const EmuGSOptions& old_config);
 	void VSync(u32 field, bool registers_written, bool idle_frame);
 
 	GSTexture* GetOutput(int i, float& scale, int& y_offset);

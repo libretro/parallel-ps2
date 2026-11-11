@@ -256,6 +256,8 @@ static int fixture(void)
 	FCHECK(b->nDynaPatches == 0 && b->nPatches == 1, "the other entry has only its own");
 	{
 		Pcsx2Config on, off;
+		emu_config_init(&on);
+		emu_config_init(&off);
 		FCHECK(GameDatabase_ApplyGameFixes(a, on, true) == 7, "seven fixes apply: three clamps, two hacks, two game fixes");
 		FCHECK(GameDatabase_ApplyGameFixes(a, off, false) == 0, "none with the automatic fixes off");
 		/* the division mode alone, with the fixes off: logged by its own name */
@@ -305,7 +307,7 @@ int main(int argc, char** argv)
 
 	if (!f) { fprintf(stderr, "cannot open %s\n", path); return 2; }
 	/* where the external database is looked for */
-	strcpy(EmuFolders::Resources, "/res");
+	strcpy(EmuFolders.Resources, "/res");
 	fseek(f, 0, SEEK_END); size = ftell(f); fseek(f, 0, SEEK_SET);
 	s_yaml.resize((size_t)size);
 	if (fread(&s_yaml[0], 1, (size_t)size, f) != (size_t)size)
@@ -355,7 +357,11 @@ int main(int argc, char** argv)
 				continue;
 			{
 				Pcsx2Config on, off;
-				Pcsx2Config::GSOptions gs_auto, gs_manual;
+				EmuGSOptions gs_auto, gs_manual;
+				emu_config_init(&on);
+				emu_config_init(&off);
+				emu_gs_defaults(&gs_auto);
+				emu_gs_defaults(&gs_manual);
 				gs_manual.ManualUserHacks = true;
 				GameDatabase_ApplyGameFixes(e, on, true);
 				GameDatabase_ApplyGameFixes(e, off, false);

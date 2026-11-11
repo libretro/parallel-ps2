@@ -101,7 +101,7 @@ std::string GetHDDPath()
 	if (!path_is_absolute(hddPath.c_str()))
 	{
 		char joined[PATH_MAX_LENGTH];
-		fill_pathname_join(joined, EmuFolders::Settings, hddPath.c_str(), sizeof(joined));
+		fill_pathname_join(joined, EmuFolders.Settings, hddPath.c_str(), sizeof(joined));
 		hddPath = joined;
 	}
 

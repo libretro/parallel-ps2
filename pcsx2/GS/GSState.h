@@ -40,7 +40,7 @@ struct gs_state_ops
 	void       (*free)(GSState* gs);
 	void       (*destroy)(GSState* gs);
 	void       (*reset)(GSState* gs, bool hardware_reset);
-	void       (*update_settings)(GSState* gs, const Pcsx2Config::GSOptions* old_config);
+	void       (*update_settings)(GSState* gs, const EmuGSOptions* old_config);
 	void       (*update_render_fixes)(GSState* gs);
 	void       (*vsync)(GSState* gs, u32 field, bool registers_written, bool idle_frame);
 	void       (*draw)(GSState* gs);
@@ -536,7 +536,7 @@ public:
 	const struct gs_state_ops* m_ops = nullptr;
 
 	void ResetBase(bool hardware_reset);
-	void UpdateSettingsBase(const Pcsx2Config::GSOptions& old_config);
+	void UpdateSettingsBase(const EmuGSOptions& old_config);
 	void MoveBase();
 	void VSyncBase(u32 field, bool registers_written, bool idle_frame);
 
@@ -544,7 +544,7 @@ public:
 	{
 		if (m_ops && m_ops->reset) m_ops->reset(this, hardware_reset); else ResetBase(hardware_reset);
 	}
-	void UpdateSettings(const Pcsx2Config::GSOptions& old_config)
+	void UpdateSettings(const EmuGSOptions& old_config)
 	{
 		if (m_ops && m_ops->update_settings) m_ops->update_settings(this, &old_config); else UpdateSettingsBase(old_config);
 	}

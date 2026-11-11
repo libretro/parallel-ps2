@@ -75,7 +75,7 @@ __forceinline bool BitEqual(const T& a, const T& b)
 	return eqb;
 }
 
-extern Pcsx2Config::GSOptions GSConfig;
+extern EmuGSOptions GSConfig;
 
 // Maximum texture size to skip preload/hash path.
 // This is the width/height from the registers, i.e. not the power of 2.

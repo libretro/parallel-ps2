@@ -175,7 +175,7 @@ int main(int argc, char** argv)
 
 	/* A PS2 card on port 0 (made blank), a PS1 card on port 1, multitap
 	 * on port 0 with no cards behind it. */
-	strcpy(EmuFolders::MemoryCards, dir);
+	strcpy(EmuFolders.MemoryCards, dir);
 	snprintf(path, sizeof(path), "%s/ps1.mcr", dir);
 	{
 		FILE* f = fopen(path, "wb");

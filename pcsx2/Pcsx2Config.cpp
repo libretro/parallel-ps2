@@ -38,27 +38,15 @@
 
 extern std::string libretro_content;
 
-// This macro is actually useful for about any and every possible application of C++
-// equality operators.
-#define OpEqu(field) (field == right.field)
-
-// Default EE/VU control registers have exceptions off, DaZ/FTZ, and the rounding mode set to Chop/Zero.
 Pcsx2Config EmuConfig;
+struct EmuFoldersData EmuFolders;
 
-
-namespace EmuFolders
+/* EmuConfig holds the defaults from the start, as it did when it was a
+ * class: settings are read into it before the VM first runs. */
+static struct EmuConfigDefaults
 {
-	char AppRoot[PCSX2_PATH_MAX];
-	char DataRoot[PCSX2_PATH_MAX];
-	char Settings[PCSX2_PATH_MAX];
-	char Bios[PCSX2_PATH_MAX];
-	char MemoryCards[PCSX2_PATH_MAX];
-	char Cheats[PCSX2_PATH_MAX];
-	char CheatsWS[PCSX2_PATH_MAX];
-	char CheatsNI[PCSX2_PATH_MAX];
-	char Resources[PCSX2_PATH_MAX];
-	char Cache[PCSX2_PATH_MAX];
-} // namespace EmuFolders
+	EmuConfigDefaults() { emu_config_init(&EmuConfig); }
+} s_emu_config_defaults;
 
 
 
@@ -76,87 +64,79 @@ namespace EmuFolders
 
 
 
-Pcsx2Config::Pcsx2Config()
+void emu_config_init(Pcsx2Config* cfg)
 {
-	emu_cpu_defaults(&Cpu);
-	emu_gs_defaults(&GS);
-	emu_dev9_defaults(&DEV9);
-	emu_speedhack_defaults(&Speedhacks);
-	emu_gamefix_clear_all(&Gamefixes);
-	BaseFilenames.Bios[0] = '\0';
-	/* char arrays have no default constructor; the std::string fields they
-	 * replaced were empty on construction. */
-	CurrentIRX[0]      = '\0';
-	CurrentGameArgs[0] = '\0';
+	uint slot;
 
-	bitset = 0;
-	// Set defaults for fresh installs / reset settings
-	McdEnableEjection = true;
-	McdFolderAutoManage = true;
-	EnablePatches = true;
-	EnableGameFixes = true;
+	memset(cfg, 0, sizeof(*cfg));
+	emu_cpu_defaults(&cfg->Cpu);
+	emu_gs_defaults(&cfg->GS);
+	emu_dev9_defaults(&cfg->DEV9);
+	emu_speedhack_defaults(&cfg->Speedhacks);
+	emu_gamefix_clear_all(&cfg->Gamefixes);
 
-	// To be moved to FileMemoryCard pluign (someday)
-	for (uint slot = 0; slot < 8; ++slot)
+	/* Defaults for fresh installs and reset settings. */
+	cfg->McdEnableEjection   = true;
+	cfg->McdFolderAutoManage = true;
+	cfg->EnablePatches       = true;
+	cfg->EnableGameFixes     = true;
+
+	/* The two main slots on, the multitap slots off. */
+	for (slot = 0; slot < 8; ++slot)
 	{
-		Mcd[slot].Enabled = !FileMcd_IsMultitapSlot(slot); // enables main 2 slots
-		FileMcd_GetDefaultName(Mcd[slot].Filename, sizeof(Mcd[slot].Filename), slot);
+		cfg->Mcd[slot].Enabled = !FileMcd_IsMultitapSlot(slot);
+		FileMcd_GetDefaultName(cfg->Mcd[slot].Filename, sizeof(cfg->Mcd[slot].Filename), slot);
 	}
 
-	strlcpy(GzipIsoIndexTemplate, "$(f).pindex.tmp", sizeof(GzipIsoIndexTemplate));
+	strlcpy(cfg->GzipIsoIndexTemplate, "$(f).pindex.tmp", sizeof(cfg->GzipIsoIndexTemplate));
 }
 
-
-
-bool Pcsx2Config::MultitapEnabled(uint port) const
+bool emu_config_multitap_enabled(const Pcsx2Config* cfg, uint port)
 {
-	return (port == 0) ? MultitapPort0_Enabled : MultitapPort1_Enabled;
+	return (port == 0) ? cfg->MultitapPort0_Enabled : cfg->MultitapPort1_Enabled;
 }
 
-void Pcsx2Config::FullpathToBios(char* out, size_t out_size) const
+void emu_config_fullpath_to_bios(const Pcsx2Config* cfg, char* out, size_t out_size)
 {
 	out[0] = '\0';
-	if (BaseFilenames.Bios[0])
-		pcsx2_path_join(out, out_size, EmuFolders::Bios,
-				BaseFilenames.Bios);
+	if (cfg->BaseFilenames.Bios[0])
+		pcsx2_path_join(out, out_size, EmuFolders.Bios, cfg->BaseFilenames.Bios);
 }
 
-void Pcsx2Config::FullpathToMcd(char* out, size_t out_size, uint slot) const
+void emu_config_fullpath_to_mcd(const Pcsx2Config* cfg, char* out, size_t out_size, uint slot)
 {
 	/* A card named by its whole path (an arcade game's dongle) is where
 	 * it says. */
-	if (path_is_absolute(Mcd[slot].Filename))
-		strlcpy(out, Mcd[slot].Filename, out_size);
+	if (path_is_absolute(cfg->Mcd[slot].Filename))
+		strlcpy(out, cfg->Mcd[slot].Filename, out_size);
 	else
-		pcsx2_path_join(out, out_size, EmuFolders::MemoryCards,
-				Mcd[slot].Filename);
+		pcsx2_path_join(out, out_size, EmuFolders.MemoryCards, cfg->Mcd[slot].Filename);
 }
 
-bool Pcsx2Config::operator==(const Pcsx2Config& right) const
+bool emu_config_equal(const Pcsx2Config* a, const Pcsx2Config* b)
 {
-	bool equal =
-		OpEqu(bitset) &&
-		emu_cpu_equal(&Cpu, &right.Cpu) &&
-		emu_gs_equal(&GS, &right.GS) &&
-		emu_dev9_equal(&DEV9, &right.DEV9) &&
-		emu_speedhack_equal(&Speedhacks, &right.Speedhacks) &&
-		OpEqu(Gamefixes.bitset) &&
-		(strcmp(BaseFilenames.Bios, right.BaseFilenames.Bios) == 0) &&
-		(strcmp(GzipIsoIndexTemplate, right.GzipIsoIndexTemplate) == 0);
-	for (u32 i = 0; i < sizeof(Mcd) / sizeof(Mcd[0]); i++)
-	{
-		equal &= OpEqu(Mcd[i].Enabled);
-		equal &= (strcmp(Mcd[i].Filename, right.Mcd[i].Filename) == 0);
-	}
-
-	return equal;
+	u32 i;
+	if (a->bitset != b->bitset
+		|| !emu_cpu_equal(&a->Cpu, &b->Cpu)
+		|| !emu_gs_equal(&a->GS, &b->GS)
+		|| !emu_dev9_equal(&a->DEV9, &b->DEV9)
+		|| !emu_speedhack_equal(&a->Speedhacks, &b->Speedhacks)
+		|| a->Gamefixes.bitset != b->Gamefixes.bitset
+		|| strcmp(a->BaseFilenames.Bios, b->BaseFilenames.Bios) != 0
+		|| strcmp(a->GzipIsoIndexTemplate, b->GzipIsoIndexTemplate) != 0)
+		return false;
+	for (i = 0; i < sizeof(a->Mcd) / sizeof(a->Mcd[0]); i++)
+		if (a->Mcd[i].Enabled != b->Mcd[i].Enabled
+			|| strcmp(a->Mcd[i].Filename, b->Mcd[i].Filename) != 0)
+			return false;
+	return true;
 }
 
-void Pcsx2Config::CopyRuntimeConfig(Pcsx2Config& cfg)
+void emu_config_copy_runtime(Pcsx2Config* dst, const Pcsx2Config* src)
 {
-	UseBOOT2Injection = cfg.UseBOOT2Injection;
-	strlcpy(CurrentIRX, cfg.CurrentIRX, sizeof(CurrentIRX));
-	strlcpy(CurrentGameArgs, cfg.CurrentGameArgs, sizeof(CurrentGameArgs));
+	dst->UseBOOT2Injection = src->UseBOOT2Injection;
+	strlcpy(dst->CurrentIRX, src->CurrentIRX, sizeof(dst->CurrentIRX));
+	strlcpy(dst->CurrentGameArgs, src->CurrentGameArgs, sizeof(dst->CurrentGameArgs));
 }
 
 /* The memory cards' settings, for MemoryCardFile.c. */
@@ -166,13 +146,13 @@ bool emu_config_mcd(uint slot, char* path, size_t path_size)
 	if (slot >= sizeof(EmuConfig.Mcd) / sizeof(EmuConfig.Mcd[0]))
 		return false;
 	if (EmuConfig.Mcd[slot].Filename[0])
-		EmuConfig.FullpathToMcd(path, path_size, slot);
+		emu_config_fullpath_to_mcd(&EmuConfig, path, path_size, slot);
 	return EmuConfig.Mcd[slot].Enabled;
 }
 
 bool emu_config_multitap(uint port)
 {
-	return EmuConfig.MultitapEnabled(port);
+	return emu_config_multitap_enabled(&EmuConfig, port);
 }
 
 bool emu_config_mcd_ejection(void)
@@ -194,7 +174,7 @@ bool emu_config_irx_injected(void)
 /* For BiosTools.c. */
 void emu_config_bios_path(char* out, size_t out_size)
 {
-	EmuConfig.FullpathToBios(out, out_size);
+	emu_config_fullpath_to_bios(&EmuConfig, out, out_size);
 }
 
 const char* emu_config_bios_name(void)
@@ -209,13 +189,13 @@ const char* emu_config_current_irx(void)
 
 const char* emu_folders_bios(void)
 {
-	return EmuFolders::Bios;
+	return EmuFolders.Bios;
 }
 
 /* For GameDatabase.c. */
 const char* emu_folders_resources(void)
 {
-	return EmuFolders::Resources;
+	return EmuFolders.Resources;
 }
 
 
@@ -281,7 +261,7 @@ u32 emu_hot_ee_cycle_skip;
 
 void emu_config_sync_hot(void)
 {
-	const Pcsx2Config::RecompilerOptions& rec = EmuConfig.Cpu.Recompiler;
+	const EmuRecompilerOptions& rec = EmuConfig.Cpu.Recompiler;
 	u32 w = 0;
 	if (rec.EnableEE)                          w |= EMU_HOT_EEREC;
 	if (rec.EnableEECache)                     w |= EMU_HOT_EECACHE;
@@ -350,41 +330,38 @@ static void SetFolder(char* out, size_t out_size, const char* root, const char* 
 		pcsx2_path_join(out, out_size, root, value);
 }
 
-void EmuFolders::LoadConfig(const char* memcards)
+void emu_folders_load_config(const char* memcards)
 {
+	struct EmuFoldersData* f = &EmuFolders;
 	/* The only folder a core option sets is the memory cards'; the rest
 	 * are their defaults under DataRoot. */
-	SetFolder(Bios, sizeof(Bios), DataRoot, "bios");
-	SetFolder(MemoryCards, sizeof(MemoryCards), DataRoot, (memcards && memcards[0]) ? memcards : "memcards");
-	SetFolder(Cheats, sizeof(Cheats), DataRoot, "cheats");
-	SetFolder(CheatsWS, sizeof(CheatsWS), DataRoot, "cheats_ws");
-	SetFolder(CheatsNI, sizeof(CheatsNI), DataRoot, "cheats_ni");
-	SetFolder(Cache, sizeof(Cache), DataRoot, "cache");
+	SetFolder(f->Bios, sizeof(f->Bios), f->DataRoot, "bios");
+	SetFolder(f->MemoryCards, sizeof(f->MemoryCards), f->DataRoot, (memcards && memcards[0]) ? memcards : "memcards");
+	SetFolder(f->Cheats, sizeof(f->Cheats), f->DataRoot, "cheats");
+	SetFolder(f->CheatsWS, sizeof(f->CheatsWS), f->DataRoot, "cheats_ws");
+	SetFolder(f->CheatsNI, sizeof(f->CheatsNI), f->DataRoot, "cheats_ni");
+	SetFolder(f->Cache, sizeof(f->Cache), f->DataRoot, "cache");
 }
 
-void EmuFolders::EnsureFoldersExist()
+void emu_folders_ensure_exist(void)
 {
-	if (!path_is_valid(Bios))
-		path_mkdir(Bios);
-	if (!path_is_valid(MemoryCards))
-		path_mkdir(MemoryCards);
-	if (!path_is_valid(Cheats))
-		path_mkdir(Cheats);
-	if (!path_is_valid(CheatsWS))
-		path_mkdir(CheatsWS);
-	if (!path_is_valid(CheatsNI))
-		path_mkdir(CheatsNI);
-	if (!path_is_valid(Cache))
-		path_mkdir(Cache);
+	const char* const dirs[] = {
+		EmuFolders.Bios, EmuFolders.MemoryCards, EmuFolders.Cheats,
+		EmuFolders.CheatsWS, EmuFolders.CheatsNI, EmuFolders.Cache,
+	};
+	size_t i;
+	for (i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++)
+		if (!path_is_valid(dirs[i]))
+			path_mkdir(dirs[i]);
 }
 
 /* What LoadSave applied after reading, now applied to the option
  * config: the two Speedhacks clamps and the SkipDraw ordering. The FPU
  * control-register and DEV9 address blocks computed from keys no option
  * set and were identities on the defaults; measured, before this. */
-void Pcsx2Config::ApplyOptionFixups()
+void emu_config_apply_option_fixups(Pcsx2Config* cfg)
 {
-	Speedhacks.EECycleRate = pcsx2_clamp_i(Speedhacks.EECycleRate, EMU_EE_CYCLE_RATE_MIN, EMU_EE_CYCLE_RATE_MAX);
-	Speedhacks.EECycleSkip = pcsx2_min_i(Speedhacks.EECycleSkip, EMU_EE_CYCLE_SKIP_MAX);
-	GS.SkipDrawEnd         = pcsx2_max_i(GS.SkipDrawStart, GS.SkipDrawEnd);
+	cfg->Speedhacks.EECycleRate = pcsx2_clamp_i(cfg->Speedhacks.EECycleRate, EMU_EE_CYCLE_RATE_MIN, EMU_EE_CYCLE_RATE_MAX);
+	cfg->Speedhacks.EECycleSkip = pcsx2_min_i(cfg->Speedhacks.EECycleSkip, EMU_EE_CYCLE_SKIP_MAX);
+	cfg->GS.SkipDrawEnd         = pcsx2_max_i(cfg->GS.SkipDrawStart, cfg->GS.SkipDrawEnd);
 }

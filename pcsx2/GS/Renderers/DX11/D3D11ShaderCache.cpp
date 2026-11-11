@@ -254,7 +254,7 @@ std::string D3D11ShaderCache::GetCacheBaseFileName(D3D_FEATURE_LEVEL feature_lev
 
 	{
 		char path[PATH_MAX_LENGTH];
-		fill_pathname_join(path, EmuFolders::Cache, base_filename.c_str(), sizeof(path));
+		fill_pathname_join(path, EmuFolders.Cache, base_filename.c_str(), sizeof(path));
 		return path;
 	}
 }

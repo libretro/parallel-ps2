@@ -85,7 +85,7 @@
 /* Opens the CDVD source, with the gzip index settings of the moment. */
 static bool OpenCDVD(void)
 {
-	cdvd_iso_set_gz_index(EmuConfig.GzipIsoIndexTemplate, EmuFolders::DataRoot);
+	cdvd_iso_set_gz_index(EmuConfig.GzipIsoIndexTemplate, EmuFolders.DataRoot);
 	return DoCDVDopen();
 }
 
@@ -198,25 +198,25 @@ bool VMManager::HasValidVM()
 
 void VMManager::Internal::UpdateEmuFolders()
 {
-	const std::string old_cheats_directory(EmuFolders::Cheats);
-	const std::string old_cheats_ws_directory(EmuFolders::CheatsWS);
-	const std::string old_cheats_ni_directory(EmuFolders::CheatsNI);
-	const std::string old_memcards_directory(EmuFolders::MemoryCards);
+	const std::string old_cheats_directory(EmuFolders.Cheats);
+	const std::string old_cheats_ws_directory(EmuFolders.CheatsWS);
+	const std::string old_cheats_ni_directory(EmuFolders.CheatsNI);
+	const std::string old_memcards_directory(EmuFolders.MemoryCards);
 	/* Re-read them: the caller has just changed where the memory cards
 	 * live -- the per-content directory is set after load_game has already
 	 * configured the folders once -- and the comparisons below are against
 	 * what this call produces. Without it nothing here ever differs and
 	 * the cards stay in the shared directory. */
-	EmuFolders::LoadConfig(Host::OptionMemcardPath());
+	emu_folders_load_config(Host::OptionMemcardPath());
 
 
 	if (VMManager::HasValidVM())
 	{
-		if (EmuFolders::Cheats != old_cheats_directory || EmuFolders::CheatsWS != old_cheats_ws_directory ||
-			EmuFolders::CheatsNI != old_cheats_ni_directory)
+		if (EmuFolders.Cheats != old_cheats_directory || EmuFolders.CheatsWS != old_cheats_ws_directory ||
+			EmuFolders.CheatsNI != old_cheats_ni_directory)
 			VMManager::ReloadPatches();
 
-		if (EmuFolders::MemoryCards != old_memcards_directory)
+		if (EmuFolders.MemoryCards != old_memcards_directory)
 		{
 			FileMcd_EmuClose();
 			FileMcd_EmuOpen();
@@ -297,14 +297,14 @@ void VMManager::LoadSettings()
 	 * strings, the memory card types, fast boot -- is carried over from
 	 * the config as the caller had it.
 	 *
-	 * Kept rather than on the stack: a Pcsx2Config is 25 KB. Only one
-	 * thread applies settings at a time - the EE is paused, or it is the
-	 * EE booting. Moved from, as EmuConfig is assigned afresh next. */
+	 * Only those fields are set aside, not the whole 25 KB config; kept
+	 * off the stack, as only one thread applies settings at a time - the
+	 * EE is paused, or it is the EE booting. */
 	static Pcsx2Config runtime;
-	runtime = std::move(EmuConfig);
+	emu_config_copy_runtime(&runtime, &EmuConfig);
 	EmuConfig = Host::OptionConfig();
-	EmuConfig.CopyRuntimeConfig(runtime);
-	EmuConfig.ApplyOptionFixups();
+	emu_config_copy_runtime(&EmuConfig, &runtime);
+	emu_config_apply_option_fixups(&EmuConfig);
 	if (vtlb_fastmem_unavailable)
 		EmuConfig.Cpu.Recompiler.EnableFastmem = false;
 	if (!libretro_content.empty())
@@ -458,7 +458,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 	int cheat_count = 0;
 	if (EmuConfig.EnableCheats)
 	{
-		cheat_count = LoadPatchesFromDir(crc_string, EmuFolders::Cheats, "Cheats", true);
+		cheat_count = LoadPatchesFromDir(crc_string, EmuFolders.Cheats, "Cheats", true);
 		if (cheat_count > 0)
 		{
 			log_cb(RETRO_LOG_INFO, "Cheats Loaded: %d\n", cheat_count);
@@ -469,7 +469,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 	// wide screen patches
 	if (EmuConfig.EnableWideScreenPatches && crc != 0)
 	{
-		if ((s_active_widescreen_patches = LoadPatchesFromDir(crc_string, EmuFolders::CheatsWS, "Widescreen hacks", false)) > 0)
+		if ((s_active_widescreen_patches = LoadPatchesFromDir(crc_string, EmuFolders.CheatsWS, "Widescreen hacks", false)) > 0)
 			log_cb(RETRO_LOG_INFO, "Found widescreen patches in the cheats_ws folder --> skipping cheats_ws.zip\n");
 		else
 		{
@@ -502,7 +502,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 	// no-interlacing patches
 	if (EmuConfig.EnableNoInterlacingPatches && crc != 0)
 	{
-		if ((s_active_no_interlacing_patches = LoadPatchesFromDir(crc_string, EmuFolders::CheatsNI, "No-interlacing patches", false)) > 0)
+		if ((s_active_no_interlacing_patches = LoadPatchesFromDir(crc_string, EmuFolders.CheatsNI, "No-interlacing patches", false)) > 0)
 		{
 			log_cb(RETRO_LOG_INFO, "Found no-interlacing patches in the cheats_ni folder --> skipping cheats_ni.zip\n");
 		}
@@ -711,7 +711,7 @@ bool VMManager::Initialize(VMBootParameters boot_params)
 	// early out if we don't have a bios
 	char bios_path[PCSX2_PATH_MAX];
 
-	EmuConfig.FullpathToBios(bios_path, sizeof(bios_path));
+	emu_config_fullpath_to_bios(&EmuConfig, bios_path, sizeof(bios_path));
 	if (!IsBIOSAvailable(bios_path))
 	{
 		s_vm_thread_id = 0;

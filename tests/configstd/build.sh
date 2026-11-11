@@ -36,6 +36,20 @@ fi
 rm -f "$DIR/.c89.c"
 echo "  ok"
 
+echo "== Config.h compiles as C89 =="
+# The whole header as a C unit sees it: Pcsx2Config, EmuFolders and the
+# functions over them, with what Config.h pulls in from common/. Anonymous
+# unions stay (MSVC's C accepts them), so not -pedantic; everything else in
+# C89 is enforced, // comments and inline included.
+printf '#include "Config.h"\nint f(Pcsx2Config* c, char* b) { emu_config_fullpath_to_bios(c, b, 8); return c->GS.Renderer + (int)sizeof(EmuFolders.Bios); }\n' > "$DIR/.cfg89.c"
+if ! ${CC:-cc} -std=c89 -Wall -Werror -Wdeclaration-after-statement -fsyntax-only -I "$ROOT/pcsx2" -I "$ROOT" -I "$ROOT/libretro/libretro-common/include" "$DIR/.cfg89.c"; then
+	rm -f "$DIR/.cfg89.c"
+	echo "  FAIL: Config.h is not C89"
+	exit 1
+fi
+rm -f "$DIR/.cfg89.c"
+echo "  ok"
+
 echo "== negative: a stray include and type are caught =="
 printf '#include <string.h>\n#include <vector>\nstruct A { std::string s; };\n/* std::kept */\n' > "$DIR/.stray.h"
 N=$(lint "$DIR/.stray.h" | wc -l)

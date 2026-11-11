@@ -98,6 +98,11 @@ struct retro_hw_render_callback hw_render;
  * no Pcsx2Config field holds ride beside it. VMManager copies this at
  * every LoadSettings, then diffs old against new as it always did. */
 static Pcsx2Config s_option_config;
+/* Pcsx2Config is a C struct: its defaults are set, not constructed. */
+static struct OptionConfigDefaults
+{
+	OptionConfigDefaults() { emu_config_init(&s_option_config); }
+} s_option_config_defaults;
 static bool        s_option_fast_boot = true;
 static int         s_option_camera    = USB_CAMERA_NONE;
 static char        s_option_memcards[PCSX2_PATH_MAX];
@@ -484,14 +489,14 @@ static const char* dev9_ensure_hdd_image(u32 size_sectors)
 		return "DEV9hdd.raw";
 	for (i = 0; i < sizeof(names) / sizeof(names[0]); i++)
 	{
-		pcsx2_path_join(path, PCSX2_PATH_MAX, EmuFolders::Settings, names[i]);
+		pcsx2_path_join(path, PCSX2_PATH_MAX, EmuFolders.Settings, names[i]);
 		if (path_is_valid(path))
 		{
 			free(path);
 			return names[i];
 		}
 	}
-	pcsx2_path_join(path, PCSX2_PATH_MAX, EmuFolders::Settings, "DEV9hdd.raw");
+	pcsx2_path_join(path, PCSX2_PATH_MAX, EmuFolders.Settings, "DEV9hdd.raw");
 	if (!path_is_valid(path))
 	{
 		log_cb(RETRO_LOG_INFO, "DEV9: creating HDD image '%s'\n", path);
@@ -526,7 +531,7 @@ static void check_variables(bool first_run)
 		{
 			setting_bios = var.value;
 			/* BaseFilenames.Bios, which BiosTools joins under
-			 * EmuFolders::Bios. This is a Pcsx2Config field and always
+			 * EmuFolders.Bios. This is a Pcsx2Config field and always
 			 * was: the settings map reached it through EntryBuf, which
 			 * the conversion's mapping missed, and the selection went
 			 * into a variable nothing read. */
@@ -2551,9 +2556,9 @@ static void libretro_teardown_cpu_thread(void)
 static void libretro_pick_arcade_bios(void)
 {
 	char name[sizeof(s_option_config.BaseFilenames.Bios)];
-	if (!FindArcadeBios(EmuFolders::Bios, s_option_config.BaseFilenames.Bios, name, sizeof(name)))
+	if (!FindArcadeBios(EmuFolders.Bios, s_option_config.BaseFilenames.Bios, name, sizeof(name)))
 	{
-		log_cb(RETRO_LOG_WARN, "Python: no COH-H BIOS in %s; the selected BIOS is used\n", EmuFolders::Bios);
+		log_cb(RETRO_LOG_WARN, "Python: no COH-H BIOS in %s; the selected BIOS is used\n", EmuFolders.Bios);
 		return;
 	}
 	if (strcmp(name, s_option_config.BaseFilenames.Bios))
@@ -2697,23 +2702,19 @@ bool retro_load_game(const struct retro_game_info* game)
 	environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &format);
 	environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_base);
 
-	pcsx2_path_join(EmuFolders::AppRoot, sizeof(EmuFolders::AppRoot),
+	pcsx2_path_join(EmuFolders.AppRoot, sizeof(EmuFolders.AppRoot),
 			system_base, "pcsx2");
-	pcsx2_path_join(EmuFolders::Resources, sizeof(EmuFolders::Resources),
-			EmuFolders::AppRoot, "resources");
-	strlcpy(EmuFolders::DataRoot, EmuFolders::AppRoot,
-			sizeof(EmuFolders::DataRoot));
+	pcsx2_path_join(EmuFolders.Resources, sizeof(EmuFolders.Resources),
+			EmuFolders.AppRoot, "resources");
+	strlcpy(EmuFolders.DataRoot, EmuFolders.AppRoot,
+			sizeof(EmuFolders.DataRoot));
 	/* Settings is where upstream resolves relative data-file paths like
 	 * DEV9's HddFile; a libretro core keeps those in its system subdir. */
-	strlcpy(EmuFolders::Settings, EmuFolders::AppRoot,
-			sizeof(EmuFolders::Settings));
+	strlcpy(EmuFolders.Settings, EmuFolders.AppRoot,
+			sizeof(EmuFolders.Settings));
 
-	{
-		/* The defaults, kept rather than built on the stack each time:
-		 * a Pcsx2Config is 25 KB. */
-		static const Pcsx2Config defaults;
-		s_option_config = defaults;
-	}
+	/* The defaults, set in place. */
+	emu_config_init(&s_option_config);
 	VMManager::ApplyHardwareDefaults(s_option_config);
 	/* The two values that ride beside the config start over with it.
 	 * The settings map did this at every load: SetDefaults put the
@@ -2725,8 +2726,8 @@ bool retro_load_game(const struct retro_game_info* game)
 	s_option_memcards[0] = '\0';
 	s_option_fast_boot   = true;
 
-	EmuFolders::LoadConfig(s_option_memcards);
-	EmuFolders::EnsureFoldersExist();
+	emu_folders_load_config(s_option_memcards);
+	emu_folders_ensure_exist();
 	VMManager::Internal::CPUThreadInitialize();
 	s_cpu_thread_initialized = true;
 	VMManager::LoadSettings();
@@ -2761,7 +2762,7 @@ bool retro_load_game(const struct retro_game_info* game)
 
 	if (setting_bios.empty())
 	{
-		log_cb(RETRO_LOG_ERROR, "Could not find any valid PS2 BIOS File in \"%s\".\n", EmuFolders::Bios);
+		log_cb(RETRO_LOG_ERROR, "Could not find any valid PS2 BIOS File in \"%s\".\n", EmuFolders.Bios);
 		libretro_teardown_cpu_thread();
 		return false;
 	}
@@ -3676,7 +3677,7 @@ std::optional<std::vector<u8>> Host::ReadResourceFile(const char* filename)
 {
 	char path[PCSX2_PATH_MAX];
 
-	pcsx2_path_join(path, sizeof(path), EmuFolders::Resources, filename);
+	pcsx2_path_join(path, sizeof(path), EmuFolders.Resources, filename);
 	void* fbuf = nullptr;
 	int64_t flen = 0;
 	std::optional<std::vector<u8>> ret;

@@ -369,7 +369,7 @@ void GSState::ResetPCRTC()
 	PCRTCDisplays.SetRects(1, m_regs->DISP[1].DISPLAY, m_regs->DISP[1].DISPFB);
 }
 
-void GSState::UpdateSettingsBase(const Pcsx2Config::GSOptions& old_config)
+void GSState::UpdateSettingsBase(const EmuGSOptions& old_config)
 {
 	m_mipmap = GSConfig.Mipmap;
 

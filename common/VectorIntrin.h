@@ -13,8 +13,8 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/// Base defines and typedefs that are needed by all code in PCSX2
-/// Prefer this over including Pcsx2Defs.h to make sure everyone gets all the defines, as missing defines fail silently
+/* / Base defines and typedefs that are needed by all code in PCSX2 */
+/* / Prefer this over including Pcsx2Defs.h to make sure everyone gets all the defines, as missing defines fail silently */
 
 #pragma once
 
@@ -38,8 +38,8 @@
 #error PCSX2 requires compiling for at least SSE2, SSE 4.1 recommended
 #endif
 
-// Starting with AVX, processors have fast unaligned loads
-// Reduce code duplication by not compiling multiple versions
+/* Starting with AVX, processors have fast unaligned loads */
+/* Reduce code duplication by not compiling multiple versions */
 #if _M_SSE >= 0x500
 #define FAST_UNALIGNED 1
 #else
@@ -67,26 +67,26 @@
 #endif
 
 #ifdef __APPLE__
-#include <stdlib.h> // alloca
+#include <stdlib.h> /* alloca */
 #else
-#include <malloc.h> // alloca
+#include <malloc.h> /* alloca */
 #endif
 
 #if !defined(_WIN32)
 /* http://svn.reactos.org/svn/reactos/trunk/reactos/include/crt/mingw32/intrin_x86.h?view=markup */
-//
-// On Windows (MSVC, mingw-gcc, mingw-clang, clang-cl) <intrin.h> already
-// provides _BitScanForward / _BitScanReverse, included unconditionally
-// at the top of this file.  Defining our own here would conflict with
-// mingw-w64's declarations (which return 'unsigned char' rather than
-// 'int').  This block is therefore only for non-Windows targets: Linux,
-// macOS, etc., where <intrin.h> is unavailable and we synthesize the
-// functions from gcc / clang builtins.
-//
-// Note: __MINGW32__ is unreliable -- some MSYS2 mingw64 toolchains do
-// not define it -- so prefer the broader _WIN32 gate above.
 
-static inline int _BitScanForward(unsigned long* const Index, const unsigned long Mask)
+/* On Windows (MSVC, mingw-gcc, mingw-clang, clang-cl) <intrin.h> already */
+/* provides _BitScanForward / _BitScanReverse, included unconditionally */
+/* at the top of this file.  Defining our own here would conflict with */
+/* mingw-w64's declarations (which return 'unsigned char' rather than */
+/* 'int').  This block is therefore only for non-Windows targets: Linux, */
+/* macOS, etc., where <intrin.h> is unavailable and we synthesize the */
+/* functions from gcc / clang builtins. */
+
+/* Note: __MINGW32__ is unreliable -- some MSYS2 mingw64 toolchains do */
+/* not define it -- so prefer the broader _WIN32 gate above. */
+
+static __inline__ int _BitScanForward(unsigned long* const Index, const unsigned long Mask)
 {
 	if (Mask == 0)
 		return 0;
@@ -98,7 +98,7 @@ static inline int _BitScanForward(unsigned long* const Index, const unsigned lon
 	return 1;
 }
 
-static inline int _BitScanReverse(unsigned long* const Index, const unsigned long Mask)
+static __inline__ int _BitScanReverse(unsigned long* const Index, const unsigned long Mask)
 {
 	if (Mask == 0)
 		return 0;

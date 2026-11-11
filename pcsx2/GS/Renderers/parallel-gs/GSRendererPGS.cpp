@@ -310,9 +310,9 @@ GSRendererPGS::~GSRendererPGS()
 
 static bool pgs_pipeline_path(char *out, size_t size, const char *name)
 {
-	if (!EmuFolders::Cache[0])
+	if (!EmuFolders.Cache[0])
 		return false;
-	fill_pathname_join(out, EmuFolders::Cache, name, size);
+	fill_pathname_join(out, EmuFolders.Cache, name, size);
 	return true;
 }
 

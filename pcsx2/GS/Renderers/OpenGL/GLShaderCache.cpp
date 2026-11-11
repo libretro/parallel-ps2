@@ -298,12 +298,12 @@ GLShaderCache::CacheIndexKey GLShaderCache::GetCacheKey(const char* vertex_shade
 
 void GLShaderCache::GetIndexFileName(char* path, size_t size)
 {
-	fill_pathname_join(path, EmuFolders::Cache, "gl_programs.idx", size);
+	fill_pathname_join(path, EmuFolders.Cache, "gl_programs.idx", size);
 }
 
 void GLShaderCache::GetBlobFileName(char* path, size_t size)
 {
-	fill_pathname_join(path, EmuFolders::Cache, "gl_programs.bin", size);
+	fill_pathname_join(path, EmuFolders.Cache, "gl_programs.bin", size);
 }
 
 bool GLShaderCache::GetProgram(GLProgram* out_program, const char* vertex_shader, size_t vertex_length,

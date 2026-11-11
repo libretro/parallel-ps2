@@ -50,7 +50,7 @@ enum class GSDisplayAlignment
 	RightOrBottom
 };
 
-extern Pcsx2Config::GSOptions GSConfig;
+extern EmuGSOptions GSConfig;
 
 /* Set by the frontend's thread around the GS part of a savestate it takes
  * or loads in this same instance (runahead): the renderer keeps what it
@@ -71,8 +71,8 @@ s16 GSLookupMoveHandlerFunctionId(const char* name, size_t length);
 
 void GSinit(void);
 void GSshutdown(void);
-void GSopen(const Pcsx2Config::GSOptions& config, GSRendererType renderer, enum retro_hw_context_type api, u8* basemem);
-bool GSreopen(bool recreate_device, bool recreate_renderer, const Pcsx2Config::GSOptions& old_config);
+void GSopen(const EmuGSOptions& config, GSRendererType renderer, enum retro_hw_context_type api, u8* basemem);
+bool GSreopen(bool recreate_device, bool recreate_renderer, const EmuGSOptions& old_config);
 /* True once the GS lost its device and could make no other: it draws and
  * presents nothing until it is opened again. */
 bool GSHasStopped(void);
@@ -97,7 +97,7 @@ struct gs_renderer_ops
 
 void GSgifSoftReset(u32 mask);
 
-void GSUpdateConfig(const Pcsx2Config::GSOptions& new_config, enum retro_hw_context_type api);
+void GSUpdateConfig(const EmuGSOptions& new_config, enum retro_hw_context_type api);
 
 namespace Host
 {

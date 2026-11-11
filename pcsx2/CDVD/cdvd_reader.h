@@ -123,7 +123,7 @@ struct cdvd_reader
 
 /* The reader for path, chosen by extension, opened; NULL when it does not
  * open. gz_index_template and data_root place a gzip image's quick-access
- * index (EmuConfig.GzipIsoIndexTemplate, EmuFolders::DataRoot). */
+ * index (EmuConfig.GzipIsoIndexTemplate, EmuFolders.DataRoot). */
 cdvd_reader_t* cdvd_reader_open(const char* path,
 		const char* gz_index_template, const char* data_root);
 /* Closes and frees; NULL is fine. */

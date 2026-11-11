@@ -32,7 +32,7 @@
 static void       hw_free(GSState* gs)                     { delete HW(gs); }
 static void       hw_destroy(GSState* gs)                  { HW(gs)->Destroy(); }
 static void       hw_reset(GSState* gs, bool hard)         { HW(gs)->Reset(hard); }
-static void       hw_update_settings(GSState* gs, const Pcsx2Config::GSOptions* old_config) { HW(gs)->UpdateSettings(*old_config); }
+static void       hw_update_settings(GSState* gs, const EmuGSOptions* old_config) { HW(gs)->UpdateSettings(*old_config); }
 static void       hw_update_render_fixes(GSState* gs)      { HW(gs)->UpdateRenderFixes(); }
 static void       hw_vsync(GSState* gs, u32 field, bool registers_written, bool idle_frame) { HW(gs)->VSync(field, registers_written, idle_frame); }
 static void       hw_draw(GSState* gs)                     { HW(gs)->Draw(); }
@@ -211,7 +211,7 @@ void GSRendererHW::Reset(bool hardware_reset)
 	ResetBase(hardware_reset);
 }
 
-void GSRendererHW::UpdateSettings(const Pcsx2Config::GSOptions& old_config)
+void GSRendererHW::UpdateSettings(const EmuGSOptions& old_config)
 {
 	UpdateSettingsBase(old_config);
 	m_mipmap = (GSConfig.HWMipmapMode >= GS_MIPMAP_ENABLED);

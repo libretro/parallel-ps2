@@ -39,7 +39,7 @@ static void put(const char* dir, const char* name, const void* data, size_t n)
 static void open_cards(const char* dir)
 {
 	FileMcd_EmuClose();
-	strcpy(EmuFolders::MemoryCards, dir);
+	strcpy(EmuFolders.MemoryCards, dir);
 	EmuConfig.Mcd[0].Enabled = true;
 	strcpy(EmuConfig.Mcd[0].Filename, "dongle.ps2");
 	EmuConfig.Mcd[1].Enabled = true;
@@ -81,7 +81,7 @@ int main(int argc, char** argv)
 		put(dir, "game/card.bin", card, sizeof(card));
 		put(dir, "game/key.dat", id, sizeof(id));
 		FileMcd_EmuClose();
-		strcpy(EmuFolders::MemoryCards, "/nonexistent");
+		strcpy(EmuFolders.MemoryCards, "/nonexistent");
 		strcpy(EmuConfig.Mcd[0].Filename, abs_card);
 		FileMcd_SetIdPath(0, id_path);
 		FileMcd_EmuOpen();

@@ -15,14 +15,14 @@
 
 #pragma once
 
-// clang-format off
+/* clang-format off */
 
 #ifdef __CYGWIN__
 	#define __linux__
 #endif
 
-// make sure __POSIX__ is defined for all systems where we assume POSIX
-// compliance
+/* make sure __POSIX__ is defined for all systems where we assume POSIX */
+/* compliance */
 #if defined(__linux__) || defined(__APPLE__) || defined(__unix__) || defined(__CYGWIN__) || defined(__LINUX__)
 	#ifndef __POSIX__
 		#define __POSIX__ 1
@@ -39,14 +39,14 @@
 #endif
 
 #ifdef __cplusplus
-// The C++ standard doesn't allow `offsetof` to be used on non-constant values (e.g. `offsetof(class, field[i])`)
-// Use this in those situations
+/* The C++ standard doesn't allow `offsetof` to be used on non-constant values (e.g. `offsetof(class, field[i])`) */
+/* Use this in those situations */
 #define OFFSETOF(a, b) (reinterpret_cast<size_t>(&(static_cast<a*>(0)->b)))
 #endif
 
-// Coarse CPU family selector used to pick SIMD backends (SSE vs NEON), e.g. the
-// GSVector implementation. Mirrors the scheme used by the modern PCSX2/ARMSX2
-// tree so the arm64 GSVector headers can be shared.
+/* Coarse CPU family selector used to pick SIMD backends (SSE vs NEON), e.g. the */
+/* GSVector implementation. Mirrors the scheme used by the modern PCSX2/ARMSX2 */
+/* tree so the arm64 GSVector headers can be shared. */
 #if (defined(_M_ARM64) || defined(__aarch64__)) || defined(__aarch64__)
 	#define ARCH_ARM64
 #elif defined(_M_X86) || defined(__x86_64__) || defined(__i386__)
@@ -69,16 +69,16 @@
 #define __pageshift 12
 #define __cachelinesize 128
 #else
-// X86 uses a 4KB granularity and 64 byte cache lines.
+/* X86 uses a 4KB granularity and 64 byte cache lines. */
 #define __pagesize 0x1000
 #define __pageshift 12
 #define __cachelinesize 64
 #endif
 #define __pagemask (__pagesize - 1)
 
-// We use 4KB alignment for globals for both Apple 
-// and x86 platforms, since computing the
-// address on ARM64 is a single instruction (adrp).
+/* We use 4KB alignment for globals for both Apple */
+/* and x86 platforms, since computing the */
+/* address on ARM64 is a single instruction (adrp). */
 #define __pagealignsize 0x1000
 
 /* A compile-time check both languages can make: C89 has no static_assert,
@@ -102,15 +102,15 @@
 #define PCSX2_ALIGN(n)
 #endif
 
-// --------------------------------------------------------------------------------------
-//  Microsoft Visual Studio
-// --------------------------------------------------------------------------------------
-// Initial-exec TLS model: one GOT load + fs/tpidr-relative access instead of
-// a __tls_get_addr resolver call on every access (general-dynamic is the
-// -fPIC default). Used for the emitter write cursors, which are touched
-// multiple times per emitted instruction during recompilation bursts. Safe
-// for a dlopen'd core: glibc reserves static-TLS surplus for exactly this.
-// No-op on MSVC, whose TLS never goes through a resolver call.
+/* -------------------------------------------------------------------------------------- */
+/*  Microsoft Visual Studio */
+/* -------------------------------------------------------------------------------------- */
+/* Initial-exec TLS model: one GOT load + fs/tpidr-relative access instead of */
+/* a __tls_get_addr resolver call on every access (general-dynamic is the */
+/* -fPIC default). Used for the emitter write cursors, which are touched */
+/* multiple times per emitted instruction during recompilation bursts. Safe */
+/* for a dlopen'd core: glibc reserves static-TLS surplus for exactly this. */
+/* No-op on MSVC, whose TLS never goes through a resolver call. */
 #if defined(_MSC_VER)
 	#define PCSX2_TLS_INITIAL_EXEC
 #else
@@ -126,7 +126,7 @@
 #define __noreturn __declspec(noreturn)
 #endif
 
-// Don't know if there are Visual C++ equivalents of these.
+/* Don't know if there are Visual C++ equivalents of these. */
 #define likely(x) (!!(x))
 #define unlikely(x) (!!(x))
 
@@ -134,8 +134,8 @@
 #define CALLBACK __stdcall
 #endif
 
-// Portable read-prefetch into L1.  GCC/Clang have __builtin_prefetch.
-// MSVC routes through <intrin.h>: _mm_prefetch on x86, __prefetch on ARM64.
+/* Portable read-prefetch into L1.  GCC/Clang have __builtin_prefetch. */
+/* MSVC routes through <intrin.h>: _mm_prefetch on x86, __prefetch on ARM64. */
 #include <intrin.h>
 #if (defined(_M_ARM64) || defined(__aarch64__))
 #define __prefetch_r(p) __prefetch((const void*)(p))
@@ -145,26 +145,26 @@
 
 #else
 
-// --------------------------------------------------------------------------------------
-//  GCC / Intel Compilers Section
-// --------------------------------------------------------------------------------------
+/* -------------------------------------------------------------------------------------- */
+/*  GCC / Intel Compilers Section */
+/* -------------------------------------------------------------------------------------- */
 
 #define __assume(cond) do { if (!(cond)) __builtin_unreachable(); } while(0)
 
-// Portable read-prefetch into L1.  See MSVC counterpart above.
+/* Portable read-prefetch into L1.  See MSVC counterpart above. */
 #define __prefetch_r(p) __builtin_prefetch((const void*)(p))
 
-// SysV ABI passes vector parameters through registers unconditionally.
+/* SysV ABI passes vector parameters through registers unconditionally. */
 #ifndef _WIN32
 #define __vectorcall
 #ifndef CALLBACK
 #define CALLBACK
 #endif
 #else
-// MinGW / clang do not implement __vectorcall.  The Win64 ABI already passes
-// the first four FP/vector arguments through XMM registers, so dropping the
-// attribute keeps the calling convention compatible with anything compiled
-// in the same toolchain (which is what matters for the libretro core).
+/* MinGW / clang do not implement __vectorcall.  The Win64 ABI already passes */
+/* the first four FP/vector arguments through XMM registers, so dropping the */
+/* attribute keeps the calling convention compatible with anything compiled */
+/* in the same toolchain (which is what matters for the libretro core). */
 #if !defined(_MSC_VER)
 #define __vectorcall
 #endif
@@ -173,26 +173,26 @@
 #endif
 #endif
 
-// Inlining note: GCC needs ((unused)) attributes defined 
-// on inlined functions to suppress warnings when a static 
-// inlined function isn't used in the scope of a single file (which
-// happens *by design* like all the friggen time >_<)
+/* Inlining note: GCC needs ((unused)) attributes defined */
+/* on inlined functions to suppress warnings when a static */
+/* inlined function isn't used in the scope of a single file (which */
+/* happens *by design* like all the friggen time >_<) */
 
 #ifndef _inline
 #define _inline __inline__ __attribute__((unused))
 #endif
 
-// __forceinline / __fi / __ri: forced inlining, with inline linkage as
-// MSVC's builtin has it.  They belong on static functions, header
-// definitions and member functions -- places where every caller sees the
-// body.  A function called from another translation unit stays a plain
-// extern function; when its own TU wants the body inlined, that body is a
-// static __fi helper and the extern entry point calls it.
-//
-// mingw-w64 defines `__forceinline` itself, as `extern __inline__` with
-// gnu_inline semantics, and its system headers (winbase.h, _mingw.h ...)
-// depend on that definition, so it is left alone there.  The project's
-// own __fi / __ri / __releaseinline expand to nothing on mingw instead.
+/* __forceinline / __fi / __ri: forced inlining, with inline linkage as */
+/* MSVC's builtin has it.  They belong on static functions, header */
+/* definitions and member functions -- places where every caller sees the */
+/* body.  A function called from another translation unit stays a plain */
+/* extern function; when its own TU wants the body inlined, that body is a */
+/* static __fi helper and the extern entry point calls it. */
+
+/* mingw-w64 defines `__forceinline` itself, as `extern __inline__` with */
+/* gnu_inline semantics, and its system headers (winbase.h, _mingw.h ...) */
+/* depend on that definition, so it is left alone there.  The project's */
+/* own __fi / __ri / __releaseinline expand to nothing on mingw instead. */
 #ifdef NDEBUG
 #ifndef __forceinline
 #define __forceinline __inline__ __attribute__((always_inline, unused))
@@ -221,17 +221,17 @@
 
 #endif
 
-// --------------------------------------------------------------------------------------
-// PS2_AUDIT_EXPORT -- exported C entry points used by the fpaudit harness
-// (tests/fpaudit) via dlsym/GetProcAddress.
-// --------------------------------------------------------------------------------------
-// MSVC has no __attribute__((visibility)); it needs __declspec(dllexport).
-//
-// This block MUST stay outside the `#ifdef _MSC_VER / #else` compiler split
-// above: placed inside the GCC arm, MSVC never sees any definition at all,
-// the token survives preprocessing as a bare identifier, and every use site
-// fails as `int PS2_AUDIT_EXPORT` redefinition plus C2144/C4430 on the
-// declaration that follows it.
+/* -------------------------------------------------------------------------------------- */
+/* PS2_AUDIT_EXPORT -- exported C entry points used by the fpaudit harness */
+/* (tests/fpaudit) via dlsym/GetProcAddress. */
+/* -------------------------------------------------------------------------------------- */
+/* MSVC has no __attribute__((visibility)); it needs __declspec(dllexport). */
+
+/* This block MUST stay outside the `#ifdef _MSC_VER / #else` compiler split */
+/* above: placed inside the GCC arm, MSVC never sees any definition at all, */
+/* the token survives preprocessing as a bare identifier, and every use site */
+/* fails as `int PS2_AUDIT_EXPORT` redefinition plus C2144/C4430 on the */
+/* declaration that follows it. */
 #ifdef __cplusplus
 #define PS2_AUDIT_LINKAGE extern "C"
 #else
@@ -243,19 +243,19 @@
 #define PS2_AUDIT_EXPORT PS2_AUDIT_LINKAGE __attribute__((visibility("default")))
 #endif
 
-// --------------------------------------------------------------------------------------
-// __releaseinline / __ri -- a forceinline macro that is enabled for RELEASE/PUBLIC builds ONLY.
-// --------------------------------------------------------------------------------------
-// This is useful because forceinline can make certain types of debugging problematic since
-// functions that look like they should be called won't breakpoint since their code is
-// inlined, and it can make stack traces confusing or near useless.
-//
-// Use __releaseinline for things which are generally large functions where trace debugging
-// from Devel builds is likely useful; but which should be inlined in an optimized Release
-// environment.
-//
-// On mingw these expand to nothing; see the `__forceinline` comment block
-// above.  Everywhere else they are `__forceinline`.
+/* -------------------------------------------------------------------------------------- */
+/* __releaseinline / __ri -- a forceinline macro that is enabled for RELEASE/PUBLIC builds ONLY. */
+/* -------------------------------------------------------------------------------------- */
+/* This is useful because forceinline can make certain types of debugging problematic since */
+/* functions that look like they should be called won't breakpoint since their code is */
+/* inlined, and it can make stack traces confusing or near useless. */
+
+/* Use __releaseinline for things which are generally large functions where trace debugging */
+/* from Devel builds is likely useful; but which should be inlined in an optimized Release */
+/* environment. */
+
+/* On mingw these expand to nothing; see the `__forceinline` comment block */
+/* above.  Everywhere else they are `__forceinline`. */
 #ifdef __MINGW32__
 #define __releaseinline
 #define __ri
@@ -266,15 +266,15 @@
 #define __fi __forceinline
 #endif
 
-// __forceinline_odr is for inline functions defined in headers (e.g. the
-// GSVertex/quad helpers). It is `__forceinline` except on MinGW, where it
-// collapses to a plain `inline` for the reason given above.
-// Fallthrough annotation that degrades instead of failing to parse:
-// [[fallthrough]] is C++17 syntax and nothing older -- not C89, not C at
-// all, not pre-17 C++ -- so a bare attribute is a landmine for any file
-// that migrates toward C or an older standard. GCC>=7 and clang accept
-// the attribute spelling in C too; everything else gets a no-op, which
-// costs only the warning the annotation was silencing.
+/* __forceinline_odr is for inline functions defined in headers (e.g. the */
+/* GSVertex/quad helpers). It is `__forceinline` except on MinGW, where it */
+/* collapses to a plain `inline` for the reason given above. */
+/* Fallthrough annotation that degrades instead of failing to parse: */
+/* [[fallthrough]] is C++17 syntax and nothing older -- not C89, not C at */
+/* all, not pre-17 C++ -- so a bare attribute is a landmine for any file */
+/* that migrates toward C or an older standard. GCC>=7 and clang accept */
+/* the attribute spelling in C too; everything else gets a no-op, which */
+/* costs only the warning the annotation was silencing. */
 #ifndef PCSX2_FALLTHROUGH
 #if defined(__cplusplus) && (__cplusplus >= 201703L)
 #define PCSX2_FALLTHROUGH [[fallthrough]]
@@ -289,14 +289,14 @@
 
 #ifndef __forceinline_odr
 #if defined(_MSC_VER)
-// MSVC's __forceinline is a builtin that already carries inline linkage;
-// spelling `inline` beside it is warning C4141 in every including TU --
-// seven per inclusion of GSVertex.h alone. Forced inlining that needs a
-// per-compiler alphabet of spellings, one of which warns and another of
-// which is only a suggestion the optimizer may ignore, is exactly the
-// guarantee problem function-style inlining has always had; a macro would
-// not need any of this. Where that trade matters most in this codebase
-// (the emitter core), macros are what we use.
+/* MSVC's __forceinline is a builtin that already carries inline linkage; */
+/* spelling `inline` beside it is warning C4141 in every including TU -- */
+/* seven per inclusion of GSVertex.h alone. Forced inlining that needs a */
+/* per-compiler alphabet of spellings, one of which warns and another of */
+/* which is only a suggestion the optimizer may ignore, is exactly the */
+/* guarantee problem function-style inlining has always had; a macro would */
+/* not need any of this. Where that trade matters most in this codebase */
+/* (the emitter core), macros are what we use. */
 #define __forceinline_odr __forceinline
 #elif defined(__MINGW32__)
 #define __forceinline_odr inline
@@ -305,7 +305,7 @@
 #endif
 #endif
 
-// Makes sure that if anyone includes xbyak, it doesn't do anything bad
+/* Makes sure that if anyone includes xbyak, it doesn't do anything bad */
 #define XBYAK_ENABLE_OMITTED_OPERAND
 
 #if defined(__x86_64__) && !defined(_M_AMD64)
@@ -446,28 +446,28 @@ static PCSX2_INLINE void pcsx2_path_join(char* out, size_t out_size,
 
 #ifdef __cplusplus
 
-// --------------------------------------------------------------------------------------
-//  ImplementEnumOperators  (macro)
-// --------------------------------------------------------------------------------------
-// This macro implements ++/-- operators for any conforming enumeration.  In order for an
-// enum to conform, it must have _FIRST and _COUNT members defined, and must have a full
-// compliment of sequential members (no custom assignments) --- looking like so:
-//
-// enum Dummy {
-//    Dummy_FIRST,
-//    Dummy_Item = Dummy_FIRST,
-//    Dummy_Crap,
-//    Dummy_COUNT
-// };
-//
-// The macro also defines utility functions for bounds checking enumerations:
-//   EnumIsValid(value);   // returns TRUE if the enum value is between FIRST and COUNT.
-//   EnumAssert(value);
-//
-// It also defines a *prototype* for converting the enumeration to a string.  Note that this
-// method is not implemented!  You must implement it yourself if you want to use it:
-//   EnumToString(value);
-//
+/* -------------------------------------------------------------------------------------- */
+/*  ImplementEnumOperators  (macro) */
+/* -------------------------------------------------------------------------------------- */
+/* This macro implements ++/-- operators for any conforming enumeration.  In order for an */
+/* enum to conform, it must have _FIRST and _COUNT members defined, and must have a full */
+/* compliment of sequential members (no custom assignments) --- looking like so: */
+
+/* enum Dummy { */
+/*    Dummy_FIRST, */
+/*    Dummy_Item = Dummy_FIRST, */
+/*    Dummy_Crap, */
+/*    Dummy_COUNT */
+/* }; */
+
+/* The macro also defines utility functions for bounds checking enumerations: */
+/*   EnumIsValid(value);   // returns TRUE if the enum value is between FIRST and COUNT. */
+/*   EnumAssert(value); */
+
+/* It also defines a *prototype* for converting the enumeration to a string.  Note that this */
+/* method is not implemented!  You must implement it yourself if you want to use it: */
+/*   EnumToString(value); */
+
 
 #define ImplementEnumOperators(enumName) \
 	static __fi enumName& operator++(enumName& src) \
@@ -514,13 +514,13 @@ class pxEnumEnd_t
 static const pxEnumEnd_t pxEnumEnd = {};
 #endif
 
-// --------------------------------------------------------------------------------------
-//  DeclareNoncopyableObject
-// --------------------------------------------------------------------------------------
-// This macro provides an easy and clean method for ensuring objects are not copyable.
-// Simply add the macro to the head or tail of your class declaration, and attempts to
-// copy the class will give you a moderately obtuse compiler error.
-//
+/* -------------------------------------------------------------------------------------- */
+/*  DeclareNoncopyableObject */
+/* -------------------------------------------------------------------------------------- */
+/* This macro provides an easy and clean method for ensuring objects are not copyable. */
+/* Simply add the macro to the head or tail of your class declaration, and attempts to */
+/* copy the class will give you a moderately obtuse compiler error. */
+
 #ifndef DeclareNoncopyableObject
 #define DeclareNoncopyableObject(classname) \
 public: \
@@ -530,8 +530,8 @@ public: \
 
 #endif
 
-// --------------------------------------------------------------------------------------
-//  Handy Human-readable constants for common immediate values (_16kb -> _4gb)
+/* -------------------------------------------------------------------------------------- */
+/*  Handy Human-readable constants for common immediate values (_16kb -> _4gb) */
 
 /* C++ keeps the typed constants it always had; C gets macros of the same
  * values, since the SPU2 sources are built as C. */
@@ -571,11 +571,11 @@ static constexpr s64 _4gb = _1gb * 4;
 #define _4gb   (_1gb * 4)
 #endif
 
-// Disable some spammy warnings which wx appeared to disable.
-// We probably should fix these at some point.
+/* Disable some spammy warnings which wx appeared to disable. */
+/* We probably should fix these at some point. */
 #ifdef _MSC_VER
-#pragma warning(disable: 4244) // warning C4244: 'initializing': conversion from 'uptr' to 'uint', possible loss of data
-#pragma warning(disable: 4267) // warning C4267: 'initializing': conversion from 'size_t' to 'uint', possible loss of data
+#pragma warning(disable: 4244) /* warning C4244: 'initializing': conversion from 'uptr' to 'uint', possible loss of data */
+#pragma warning(disable: 4267) /* warning C4267: 'initializing': conversion from 'size_t' to 'uint', possible loss of data */
 #endif
 
 /* The frontend's logger. One symbol, C linkage, so the C translation

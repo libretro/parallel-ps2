@@ -58,7 +58,7 @@ extern retro_environment_t environ_cb;
 
 int m_disp_fb_sprite_blits = 0;
 
-Pcsx2Config::GSOptions GSConfig;
+EmuGSOptions GSConfig;
 
 void GSinit(void)
 {
@@ -362,7 +362,7 @@ static void CloseGSRenderer(void)
 	}
 }
 
-bool GSreopen(bool recreate_device, bool recreate_renderer, const Pcsx2Config::GSOptions& old_config)
+bool GSreopen(bool recreate_device, bool recreate_renderer, const EmuGSOptions& old_config)
 {
 	log_cb(RETRO_LOG_INFO, "Reopening GS with %s device and %s renderer\n", recreate_device ? "new" : "existing",
 		recreate_renderer ? "new" : "existing");
@@ -454,7 +454,7 @@ bool GSreopen(bool recreate_device, bool recreate_renderer, const Pcsx2Config::G
 	return ok;
 }
 
-void GSopen(const Pcsx2Config::GSOptions& config, GSRendererType renderer, enum retro_hw_context_type api, u8* basemem)
+void GSopen(const EmuGSOptions& config, GSRendererType renderer, enum retro_hw_context_type api, u8* basemem)
 {
 	if (renderer == GS_RENDERER_AUTO)
 		renderer  = GSsetRenderer(api);
@@ -560,9 +560,9 @@ int gs_hw_download_mode(void)
 	return (int)EmuConfig.GS.HWDownloadMode;
 }
 
-void GSUpdateConfig(const Pcsx2Config::GSOptions& new_config, enum retro_hw_context_type api)
+void GSUpdateConfig(const EmuGSOptions& new_config, enum retro_hw_context_type api)
 {
-	Pcsx2Config::GSOptions old_config(GSConfig);
+	EmuGSOptions old_config(GSConfig);
 	GSConfig = new_config;
 
 	const struct gs_renderer_ops* ops = GS_OPS();

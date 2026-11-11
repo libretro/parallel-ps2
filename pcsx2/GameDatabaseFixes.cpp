@@ -173,7 +173,7 @@ u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* e, Pcsx2Config& config,
 	return num_applied_fixes;
 }
 
-static bool configMatchesHWFix(const Pcsx2Config::GSOptions& config, u32 id, int value)
+static bool configMatchesHWFix(const EmuGSOptions& config, u32 id, int value)
 {
 	switch (id)
 	{
@@ -280,7 +280,7 @@ static bool configMatchesHWFix(const Pcsx2Config::GSOptions& config, u32 id, int
 	}
 }
 
-u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, Pcsx2Config::GSOptions& config)
+u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* e, EmuGSOptions& config)
 {
 	u32 i;
 

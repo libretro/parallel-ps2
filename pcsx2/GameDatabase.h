@@ -169,7 +169,7 @@ s16 GSLookupMoveHandlerFunctionId(const char* name, size_t length);
  * returns how many applied. */
 u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* entry, Pcsx2Config& config, bool applyAuto);
 /* Applies the GS hardware fixes to a config; returns how many applied. */
-u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* entry, Pcsx2Config::GSOptions& config);
+u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* entry, EmuGSOptions& config);
 #endif
 
 #endif
