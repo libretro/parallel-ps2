@@ -48,7 +48,7 @@ IPUStatus IPUCoreStatus;
 alignas(16) IPU_Fifo ipu_fifo;
 int coded_block_pattern;
 
-/* From IPU.cpp, which the harness does not link: the MPEG-2 non-linear
+/* From IPU.c, which the harness does not link: the MPEG-2 non-linear
  * quantiser scale table. */
 alignas(16) const int non_linear_quantizer_scale[32] =
 {

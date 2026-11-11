@@ -569,16 +569,22 @@
     <ClCompile Include="CDVD\CDVDcommon.c">
       <Filter>System\Ps2\Iop\CDVD</Filter>
     </ClCompile>
-    <ClCompile Include="IPU\IPU.cpp">
+    <ClCompile Include="IPU\IPU.c">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
     <ClCompile Include="IPU\IPU_Fifo.c">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
+    <ClCompile Include="IPU\ipu_csc.c">
+      <Filter>System\Ps2\IPU</Filter>
+    </ClCompile>
+    <ClCompile Include="IPU\ipu_idct.c">
+      <Filter>System\Ps2\IPU</Filter>
+    </ClCompile>
     <ClCompile Include="IPU\IPU_MultiISA.cpp">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
-    <ClCompile Include="IPU\yuv2rgb.cpp">
+    <ClCompile Include="IPU\yuv2rgb.c">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
     <ClCompile Include="GS.c">
@@ -629,7 +635,7 @@
     <ClCompile Include="ps2\Iop\PsxBios.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="IPU\IPUdither.cpp">
+    <ClCompile Include="IPU\IPUdither.c">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
     <ClCompile Include="FW.c">

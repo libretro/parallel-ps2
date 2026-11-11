@@ -13,22 +13,19 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cstring> /* memset */
+#include <string.h> /* memset */
+#include <stddef.h> /* offsetof */
 #include <limits.h>
 
 #include "../Common.h"
 
 #include "IPU.h"
-#include "IPU_MultiISA.h"
 #include "IPUdma.h"
+#include "ipu_modes.h"
 
-#include "../Config.h"
-
-
-// the BP doesn't advance and returns -1 if there is no data to be read
-alignas(16) tIPU_cmd ipu_cmd;
-alignas(16) tIPU_BP g_BP;
-alignas(16) decoder_t decoder;
+PCSX2_ALIGN(16) tIPU_cmd ipu_cmd;
+PCSX2_ALIGN(16) tIPU_BP g_BP;
+PCSX2_ALIGN(16) decoder_t decoder;
 IPUStatus IPUCoreStatus;
 
 static void (*IPUWorker)(void);
@@ -39,12 +36,12 @@ static void (*IPUWorker)(void);
  * sit here came from the mpeg2dec (VLC) port this decoder began as and
  * referenced structures that no longer exist. */
 rgb16_t g_ipu_vqclut[16];
-u16 g_ipu_thresh[2]; //thresholds for color conversions
+u16 g_ipu_thresh[2]; /* SETTH: the colour conversion thresholds */
 int coded_block_pattern = 0;
 
-alignas(16) u8 g_ipu_indx4[16*16/2];
+PCSX2_ALIGN(16) u8 g_ipu_indx4[16*16/2];
 
-alignas(16) const int non_linear_quantizer_scale[32] =
+PCSX2_ALIGN(16) const int non_linear_quantizer_scale[32] =
 {
 	0,  1,  2,  3,  4,  5,	6,	7,
 	8, 10, 12, 14, 16, 18,  20,  22,
@@ -53,17 +50,22 @@ alignas(16) const int non_linear_quantizer_scale[32] =
 };
 
 
-// Also defined in IPU_MultiISA.cpp, but IPU.cpp is not unshared.
-// whenever reading fractions of bytes. The low bits always come from the next byte
-// while the high bits come from the current byte
-__ri static u8 getBits32(u8* address)
+/* The next 32 bits of the stream, without advancing it (IPU_MultiISA.cpp
+ * has its own copy). Fractions of a byte take their low bits from the
+ * next byte and their high bits from the current one. Returns 0 when
+ * there is no data to read. */
+static __ri u8 getBits32(u8* address)
 {
+	const u8* readpos;
+	uint shift;
+
 	if (!ipu_bp_fill_buffer(&g_BP, 32))
 		return 0;
 
-	const u8* readpos = &g_BP.internal_qwc->_u8[g_BP.BP / 8];
+	readpos = &g_BP.internal_qwc->_u8[g_BP.BP / 8];
+	shift   = g_BP.BP & 7;
 
-	if (uint shift = (g_BP.BP & 7))
+	if (shift)
 	{
 		u32 mask = (0xff >> shift);
 		mask = mask | (mask << 8) | (mask << 16) | (mask << 24);
@@ -71,18 +73,15 @@ __ri static u8 getBits32(u8* address)
 		*(u32*)address = ((~mask & *(u32*)(readpos + 1)) >> (8 - shift)) | (((mask) & *(u32*)readpos) << shift);
 	}
 	else
-	{
-		// Bit position-aligned -- no masking/shifting necessary
-		*(u32*)address = *(u32*)readpos;
-	}
+		*(u32*)address = *(u32*)readpos; /* aligned: no masking or shifting */
 
 	return 1;
 }
 
-void tIPU_cmd::clear()
+void ipu_cmd_clear(void)
 {
-	memset(this, 0, sizeof(*this));
-	current = 0xffffffff;
+	memset(&ipu_cmd, 0, sizeof(ipu_cmd));
+	ipu_cmd.current = 0xffffffff;
 }
 
 void IPUProcessInterrupt(void)
@@ -91,12 +90,11 @@ void IPUProcessInterrupt(void)
 		IPUWorker();
 }
 
-/////////////////////////////////////////////////////////
-// Register accesses (run on EE thread)
+/* ---- register accesses, on the EE thread ---- */
 
 void ipuReset(void)
 {
-	IPUWorker = MULTI_ISA_SELECT(IPUWorker);
+	IPUWorker = ipu_select_worker();
 	memset(&ipuRegs, 0, sizeof(ipuRegs));
 	memset(&g_BP, 0, sizeof(g_BP));
 	memset(&decoder, 0, sizeof(decoder));
@@ -112,16 +110,15 @@ void ipuReset(void)
 	IPUCoreStatus.WaitingOnIPUFrom= false;
 	IPUCoreStatus.WaitingOnIPUTo = false;
 
-	decoder.picture_structure = FRAME_PICTURE;      //default: progressive...my guess:P
+	decoder.picture_structure = FRAME_PICTURE; /* progressive, by default */
 
 	ipu_fifo_init();
-	ipu_cmd.clear();
+	ipu_cmd_clear();
 	ipuDmaReset();
 }
 
 bool ipuFreeze(SaveStateBase *s)
 {
-	// Get a report of the status of the ipu variables when saving and loading savestates.
 	if (!(SaveState_FreezeTag(s, "IPU")))
 		return false;
 
@@ -195,11 +192,11 @@ bool ipuFreeze(SaveStateBase *s)
 
 u32 ipuRead32(u32 mem)
 {
-	mem &= 0xff;	// ipu repeats every 0x100
+	mem &= 0xff;	/* ipu repeats every 0x100 */
 
 	switch (mem)
 	{
-		ipucase(IPU_CMD) : // IPU_CMD
+		ipucase(IPU_CMD) : /* IPU_CMD */
 		{
 			if (ipu_cmd.CMD != SCE_IPU_FDEC && ipu_cmd.CMD != SCE_IPU_VDEC)
 			{
@@ -209,14 +206,14 @@ u32 ipuRead32(u32 mem)
 			return ipuRegs.cmd.DATA;
 		}
 
-		ipucase(IPU_CTRL): // IPU_CTRL
+		ipucase(IPU_CTRL): /* IPU_CTRL */
 		{
 			ipuRegs.ctrl.IFC = g_BP.IFC;
 			ipuRegs.ctrl.CBP = coded_block_pattern;
 			return ipuRegs.ctrl._u32;
 		}
 
-		ipucase(IPU_BP): // IPU_BP
+		ipucase(IPU_BP): /* IPU_BP */
 		{
 			ipuRegs.ipubp = g_BP.BP & 0x7f;
 			ipuRegs.ipubp |= g_BP.IFC << 8;
@@ -233,11 +230,11 @@ u32 ipuRead32(u32 mem)
 
 u64 ipuRead64(u32 mem)
 {
-	mem &= 0xff;	// ipu repeats every 0x100
+	mem &= 0xff;	/* ipu repeats every 0x100 */
 
 	switch (mem)
 	{
-		ipucase(IPU_CMD): // IPU_CMD
+		ipucase(IPU_CMD): /* IPU_CMD */
 		{
 			if (ipu_cmd.CMD != SCE_IPU_FDEC && ipu_cmd.CMD != SCE_IPU_VDEC)
 			{
@@ -248,14 +245,14 @@ u64 ipuRead64(u32 mem)
 			return ipuRegs.cmd._u64;
 		}
 
-		ipucase(IPU_CTRL): // 32-bit register; synthesize live fields as the 32-bit path does
+		ipucase(IPU_CTRL): /* 32-bit register; synthesize live fields as the 32-bit path does */
 		{
 			ipuRegs.ctrl.IFC = g_BP.IFC;
 			ipuRegs.ctrl.CBP = coded_block_pattern;
 			break;
 		}
 
-		ipucase(IPU_BP): // 32-bit register; synthesize live fields as the 32-bit path does
+		ipucase(IPU_BP): /* 32-bit register; synthesize live fields as the 32-bit path does */
 		{
 			ipuRegs.ipubp = g_BP.BP & 0x7f;
 			ipuRegs.ipubp |= g_BP.IFC << 8;
@@ -263,7 +260,7 @@ u64 ipuRead64(u32 mem)
 			break;
 		}
 
-		ipucase(IPU_TOP): // IPU_TOP
+		ipucase(IPU_TOP): /* IPU_TOP */
 		{
 			/* Return the value the decoder left here at the end of the
 			 * last BDEC/IDEC/VDEC/FDEC command.
@@ -311,11 +308,11 @@ void ipuSoftReset(void)
 
 	ipuRegs.ctrl._u32 &= 0x7F33F00;
 	ipuRegs.top = 0;
-	ipu_cmd.clear();
+	ipu_cmd_clear();
 	ipuRegs.cmd.BUSY = 0;
-	ipuRegs.cmd.DATA = 0; // required for Enthusia - Professional Racing after fix, or will freeze at start of next video.
+	ipuRegs.cmd.DATA = 0; /* Enthusia freezes at the start of its next video without this */
 
-	hwIntcIrq(INTC_IPU); // required for FightBox
+	hwIntcIrq(INTC_IPU); /* FightBox needs it */
 }
 
 static __fi void IPUCMD_WRITE_inl(u32 val);
@@ -326,26 +323,26 @@ bool ipuWrite32(u32 mem, u32 value)
 
 	switch (mem)
 	{
-		ipucase(IPU_CMD): // IPU_CMD
+		ipucase(IPU_CMD): /* IPU_CMD */
 			IPUCMD_WRITE_inl(value);
 			return false;
 
-		ipucase(IPU_CTRL): // IPU_CTRL
-			// CTRL = the first 16 bits of ctrl [0x8000ffff], + value for the next 16 bits,
-			// minus the reserved bits. (18-19; 27-29) [0x47f30000]
+		ipucase(IPU_CTRL): /* IPU_CTRL */
+			/* CTRL = the first 16 bits of ctrl [0x8000ffff], + value for the next 16 bits, */
+			/* minus the reserved bits. (18-19; 27-29) [0x47f30000] */
 			ipuRegs.ctrl._u32 = (value & 0x47f30000) | (ipuRegs.ctrl._u32 & 0x8000ffff);
 			if (ipuRegs.ctrl.IDP == 3) /* IPU Invalid Intra DC Precision, switching to 9 bits */
 				ipuRegs.ctrl.IDP = 1;
 
 			if (ipuRegs.ctrl.RST)
-				ipuSoftReset(); // RESET
+				ipuSoftReset(); /* RESET */
 			return false;
 	}
 	return true;
 }
 
-// returns FALSE when the writeback is handled, TRUE if the caller should do the
-// writeback itself.
+/* returns FALSE when the writeback is handled, TRUE if the caller should do the */
+/* writeback itself. */
 bool ipuWrite64(u32 mem, u64 value)
 {
 	mem &= 0xfff;
@@ -360,8 +357,8 @@ bool ipuWrite64(u32 mem, u64 value)
 	return true;
 }
 
-//////////////////////////////////////////////////////
-// IPU Commands (exec on worker thread only)
+
+/* IPU Commands (exec on worker thread only) */
 
 static void ipuBCLR(u32 val)
 {
@@ -374,8 +371,8 @@ static void ipuBCLR(u32 val)
 
 static __ri void ipuIDEC(tIPU_CMD_IDEC idec)
 {
-	//from IPU_CTRL
-	ipuRegs.ctrl.PCT = I_TYPE; //Intra DECoding;)
+	/* from IPU_CTRL */
+	ipuRegs.ctrl.PCT = I_TYPE; /* Intra DECoding;) */
 
 	decoder.coding_type			= ipuRegs.ctrl.PCT;
 	decoder.mpeg1				= ipuRegs.ctrl.MP1;
@@ -384,15 +381,15 @@ static __ri void ipuIDEC(tIPU_CMD_IDEC idec)
 	decoder.scantype			= ipuRegs.ctrl.AS;
 	decoder.intra_dc_precision	= ipuRegs.ctrl.IDP;
 
-//from IDEC value
+/* from IDEC value */
 	decoder.quantizer_scale		= idec.QSC;
 	decoder.frame_pred_frame_dct= !idec.DTD;
 	decoder.sgn = idec.SGN;
 	decoder.dte = idec.DTE;
 	decoder.ofm = idec.OFM;
 
-	//other stuff
-	decoder.dcr = 1; // resets DC prediction value
+	/* other stuff */
+	decoder.dcr = 1; /* resets DC prediction value */
 }
 
 static __ri void ipuBDEC(tIPU_CMD_BDEC bdec)
@@ -404,7 +401,7 @@ static __ri void ipuBDEC(tIPU_CMD_BDEC bdec)
 	decoder.scantype			= ipuRegs.ctrl.AS;
 	decoder.intra_dc_precision	= ipuRegs.ctrl.IDP;
 
-	//from BDEC value
+	/* from BDEC value */
 	decoder.quantizer_scale		= decoder.q_scale_type ? non_linear_quantizer_scale [bdec.QSC] : bdec.QSC << 1;
 	decoder.macroblock_modes	= bdec.DT ? DCT_TYPE_INTERLACED : 0;
 	decoder.dcr					= bdec.DCR;
@@ -420,26 +417,26 @@ static void ipuSETTH(u32 val)
 	g_ipu_thresh[1] = ((val >> 16) & 0x1ff);
 }
 
-// --------------------------------------------------------------------------------------
-//  IPU Worker / Dispatcher
-// --------------------------------------------------------------------------------------
+/* -------------------------------------------------------------------------------------- */
+/* IPU Worker / Dispatcher */
+/* -------------------------------------------------------------------------------------- */
 
-// When a command is written, we set some various busy flags and clear some other junk.
-// The actual decoding will be handled by IPUworker.
+/* When a command is written, we set some various busy flags and clear some other junk. */
+/* The actual decoding will be handled by IPUworker. */
 static __fi void IPUCMD_WRITE_inl(u32 val)
 {
 	ipuRegs.ctrl.ECD = 0;
 	ipuRegs.ctrl.SCD = 0;
-	ipu_cmd.clear();
+	ipu_cmd_clear();
 	ipu_cmd.current = val;
 
 	switch (ipu_cmd.CMD)
 	{
-		// BCLR and SETTH  require no data so they always execute inline:
+		/* BCLR and SETTH  require no data so they always execute inline: */
 
 		case SCE_IPU_BCLR:
 			ipuBCLR(val);
-			hwIntcIrq(INTC_IPU); //DMAC_TO_IPU
+			hwIntcIrq(INTC_IPU); /* DMAC_TO_IPU */
 			ipuRegs.ctrl.BUSY = 0;
 			return;
 
@@ -489,8 +486,8 @@ static __fi void IPUCMD_WRITE_inl(u32 val)
 
 	ipuRegs.ctrl.BUSY = 1;
 
-	// Have a short delay immitating the time it takes to run IDEC/BDEC, other commands are near instant.
-	// Mana Khemia/Metal Saga start IDEC then change IPU0 expecting there to be a delay before IDEC sends data.
+	/* Have a short delay immitating the time it takes to run IDEC/BDEC, other commands are near instant. */
+	/* Mana Khemia/Metal Saga start IDEC then change IPU0 expecting there to be a delay before IDEC sends data. */
 	if (ipu_cmd.CMD == SCE_IPU_IDEC || ipu_cmd.CMD == SCE_IPU_BDEC)
 	{
 		IPUCoreStatus.WaitingOnIPUFrom = false;

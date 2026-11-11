@@ -19,24 +19,6 @@
 #include "ipu_vlc.h"
 #include "../GS/MultiISA.h"
 
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif
-
-#ifdef _MSC_VER
-#define BigEndian(in) _byteswap_ulong(in)
-#else
-#define BigEndian(in) __builtin_bswap32(in) // or we could use the asm function bswap...
-#endif
-
-#ifdef _MSC_VER
-#define BigEndian64(in) _byteswap_uint64(in)
-#else
-#define BigEndian64(in) __builtin_bswap64(in) // or we could use the asm function bswap...
-#endif
-
-#include "ipu_macroblock.h"
-#include "ipu_decoder.h"
 
 
 /* yuv2rgb and ipu_dither reach mb8.Y, rgb32 and rgb16 with aligned
@@ -50,7 +32,6 @@ static_assert(offsetof(decoder_t, mb8)   % 16 == 0, "mb8 must stay 16-byte align
 static_assert(offsetof(decoder_t, rgb32) % 16 == 0, "rgb32 must stay 16-byte aligned within decoder_t");
 static_assert(offsetof(decoder_t, rgb16) % 16 == 0, "rgb16 must stay 16-byte aligned within decoder_t");
 
-alignas(16) extern decoder_t decoder;
 
 /* One build: the SSE2 form this is written in measures the same at every
  * tier, so there is nothing for a per-ISA copy to pick up. */
@@ -63,13 +44,8 @@ MULTI_ISA_DEF(
 	void IPUWorker();
 )
 
-// Quantization matrix
-extern rgb16_t g_ipu_vqclut[16]; //clut conversion table
-extern u16 g_ipu_thresh[2]; //thresholds for color conversions
-
-alignas(16) extern u8 g_ipu_indx4[16*16/2];
-alignas(16) extern const int non_linear_quantizer_scale[32];
-extern int coded_block_pattern;
+/* The IPU's shared state (decoder, g_ipu_*, coded_block_pattern) is
+ * declared in IPU.h. */
 
 struct mpeg2_scan_pack
 {

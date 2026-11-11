@@ -21,7 +21,7 @@
 #include "ipu_bp.h"
 
 /* The IPU as the EE hardware and the DMA see it: its registers on page 2
- * (IPU.cpp), its FIFOs (IPU_Fifo.c) and its two DMA channels (IPUdma.c),
+ * (IPU.c), its FIFOs (IPU_Fifo.c) and its two DMA channels (IPUdma.c),
  * readable from C and C++. */
 
 #define ipumsk( src ) ( (src) & 0xff )
@@ -90,7 +90,7 @@ typedef struct IPUDMAStatus {
 extern "C" {
 #endif
 
-/* IPU.cpp */
+/* IPU.c */
 PCSX2_ALIGN(16) extern tIPU_BP g_BP;
 extern void ipuReset(void);
 extern void IPUProcessInterrupt(void);

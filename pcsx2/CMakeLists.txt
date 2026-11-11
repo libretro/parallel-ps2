@@ -549,7 +549,7 @@ endif()
 
 # IPU sources
 set(pcsx2IPUSources
-	IPU/IPU.cpp
+	IPU/IPU.c
 	IPU/IPU_Fifo.c
 	IPU/IPUdither.c
 	IPU/ipu_csc.c
@@ -571,6 +571,7 @@ set(pcsx2IPUHeaders
 	IPU/IPUdma.h
 	IPU/ipu_dct_codes.h
 	IPU/ipu_dct_lut.h
+	IPU/ipu_modes.h
 	IPU/ipu_vlc.h
 	IPU/ipu_vlc_codes.h
 	IPU/ipu_bitstream.h

@@ -19,7 +19,7 @@
 #include <cstring>
 #include <cstdlib>
 
-/* The kernels read and write this; IPU.cpp is not linked. */
+/* The kernels read and write this; IPU.c is not linked. */
 alignas(16) decoder_t decoder;
 alignas(16) tIPU_BP g_BP;
 

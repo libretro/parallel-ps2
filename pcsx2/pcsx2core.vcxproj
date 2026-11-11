@@ -164,7 +164,11 @@
     <ClCompile Include="SPU2\spu2.cpp" />
     <ClCompile Include="IPU\IPUdma.c" />
     <ClCompile Include="IPU\IPU_Fifo.c" />
-    <ClCompile Include="IPU\IPUdither.cpp" />
+    <ClCompile Include="IPU\IPUdither.c" />
+    <ClCompile Include="IPU\IPU.c" />
+    <ClCompile Include="IPU\ipu_csc.c" />
+    <ClCompile Include="IPU\ipu_idct.c" />
+    <ClCompile Include="IPU\yuv2rgb.c" />
     <ClCompile Include="Mdec.c" />
     <ClCompile Include="Patch.cpp" />
     <ClCompile Include="ps2\Iop\PsxBios.c" />

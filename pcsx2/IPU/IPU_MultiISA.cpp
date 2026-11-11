@@ -76,6 +76,12 @@ alignas(16) const mpeg2_scan_pack mpeg2_scan = make_scan_pack();
 /* See ipu_decode_state.h. One copy, shared by every ISA's decoder. */
 struct ipu_decode_state ipu_decode = { 0, 1, 1 };
 
+/* IPU.c's way to the decoder for this CPU. */
+extern "C" ipu_worker_fn ipu_select_worker(void)
+{
+	return MULTI_ISA_SELECT(IPUWorker);
+}
+
 #endif
 
 MULTI_ISA_UNSHARED_START

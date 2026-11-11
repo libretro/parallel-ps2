@@ -22,7 +22,7 @@
 
 #include "../Common.h"
 
-union tIPU_CMD_IDEC
+typedef union tIPU_CMD_IDEC
 {
 	struct
 	{
@@ -37,9 +37,9 @@ union tIPU_CMD_IDEC
 		u32 cmd : 4;
 	};
 	u32 _u32;
-};
+} tIPU_CMD_IDEC;
 
-union tIPU_CMD_BDEC
+typedef union tIPU_CMD_BDEC
 {
 	struct
 	{
@@ -53,9 +53,9 @@ union tIPU_CMD_BDEC
 		u32 cmd : 4;
 	};
 	u32 _u32;
-};
+} tIPU_CMD_BDEC;
 
-union tIPU_CMD_CSC
+typedef union tIPU_CMD_CSC
 {
 	struct
 	{
@@ -66,7 +66,7 @@ union tIPU_CMD_CSC
 		u32 cmd : 4;
 	};
 	u32 _u32;
-};
+} tIPU_CMD_CSC;
 
 enum SCE_IPU
 {
@@ -82,7 +82,7 @@ enum SCE_IPU
 ,	SCE_IPU_SETTH
 };
 
-union tIPU_cmd
+typedef union tIPU_cmd
 {
 	struct
 	{
@@ -98,16 +98,42 @@ union tIPU_cmd
 	};
 
 	u128 _u128[2];
-
-	void clear();
-};
-
-
-
-alignas(16) extern tIPU_cmd ipu_cmd;
+} tIPU_cmd;
 
 #include "ipu_decode_state.h"
+#include "ipu_macroblock.h"
+#include "ipu_decoder.h"
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#define BigEndian(in) _byteswap_ulong(in)
+#define BigEndian64(in) _byteswap_uint64(in)
+#else
+#define BigEndian(in) __builtin_bswap32(in)
+#define BigEndian64(in) __builtin_bswap64(in)
+#endif
+
+/* IPU.c: the IPU's registers, its command dispatch and its state, which
+ * the decoder (IPU_MultiISA.cpp) shares. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+PCSX2_ALIGN(16) extern tIPU_cmd ipu_cmd;
+PCSX2_ALIGN(16) extern decoder_t decoder;
+extern rgb16_t g_ipu_vqclut[16]; /* the SETVQ CLUT */
+extern u16 g_ipu_thresh[2];      /* SETTH: the colour conversion thresholds */
+PCSX2_ALIGN(16) extern u8 g_ipu_indx4[16*16/2];
+PCSX2_ALIGN(16) extern const int non_linear_quantizer_scale[32];
+extern int coded_block_pattern;
+
+/* Clears the command and marks its option field unset. */
+extern void ipu_cmd_clear(void);
 extern void IPUCMD_WRITE(u32 val);
-extern void ipuSoftReset();
+extern void ipuSoftReset(void);
+/* IPU_MultiISA.cpp, compiled once: the decoder for this CPU. */
+typedef void (*ipu_worker_fn)(void);
+extern ipu_worker_fn ipu_select_worker(void);
+#ifdef __cplusplus
+}
+#endif
 

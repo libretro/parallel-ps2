@@ -24,44 +24,7 @@
 #include <cstdint>
 
 #include "ipu_vlc_codes.h"
-
-enum macroblock_modes
-{
-	MACROBLOCK_INTRA = 1,
-	MACROBLOCK_PATTERN = 2,
-	MACROBLOCK_MOTION_BACKWARD = 4,
-	MACROBLOCK_MOTION_FORWARD = 8,
-	MACROBLOCK_QUANT = 16,
-	DCT_TYPE_INTERLACED = 32
-};
-
-enum motion_type
-{
-	MOTION_TYPE_SHIFT = 6,
-	MOTION_TYPE_MASK = (3 * 64),
-	MOTION_TYPE_BASE = 64,
-	MC_FIELD = (1 * 64),
-	MC_FRAME = (2 * 64),
-	MC_16X8 = (2 * 64),
-	MC_DMV = (3 * 64)
-};
-
-/* picture structure */
-enum picture_structure
-{
-	TOP_FIELD = 1,
-	BOTTOM_FIELD = 2,
-	FRAME_PICTURE = 3
-};
-
-/* picture coding type */
-enum picture_coding_type
-{
-	I_TYPE = 1,
-	P_TYPE = 2,
-	B_TYPE = 3,
-	D_TYPE = 4
-};
+#include "ipu_modes.h"
 
 struct MBtab
 {
