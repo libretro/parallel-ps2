@@ -1,4 +1,4 @@
-/* What the C units ask of the VM manager (VMManager.cpp). C89. */
+/* What the C units ask of the VM manager (VMManager.c). C89. */
 #pragma once
 
 #include "../common/Pcsx2Defs.h"
@@ -10,15 +10,15 @@
 extern "C" {
 #endif
 
-/* VMManager::Internal::GameStartingOnCPUThread. */
+/* VMManager.c: the game is starting. */
 void vm_game_starting_on_cpu_thread(void);
-/* VMManager::Internal::IsExecutionInterrupted. */
+/* VMManager.c: execution is to stop. */
 bool vm_execution_interrupted(void);
 /* The ELF to boot instead of the disc's, empty when none. */
 const char* vm_elf_override(void);
-/* VMManager::SetState(VMState::Stopping). */
+/* vm_set_state(VM_STATE_STOPPING). */
 void vm_request_stop(void);
-/* VMManager::GetState() == VMState::Paused. */
+/* vm_get_state() == VM_STATE_PAUSED. */
 bool vm_paused(void);
 
 /* libretro/main.cpp: the frame timing changed, so retro_run reports the

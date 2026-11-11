@@ -1,4 +1,4 @@
-/* What the SIO asks the pads, with C linkage for the C units. */
+/* What the SIO and the VM ask the pads, with C linkage for the C units. */
 #pragma once
 
 #include "../../common/Pcsx2Types.h"
@@ -6,6 +6,13 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+s32 PADinit(void);
+void PADshutdown(void);
+s32 PADopen(void);
+void PADclose(void);
+/* The pads' settings again from the options. */
+void pad_load_config(void);
 
 u8 PADstartPoll(int port, int slot);
 u8 PADpoll(u8 value);

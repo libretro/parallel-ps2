@@ -22,7 +22,7 @@
  *     through untouched. Assigning the option config over EmuConfig
  *     wrote them too, and a USA disc came up at 50Hz with fast boot off
  *     because fast boot reverted on every settings change. The property
- *     is what VMManager::ApplySettings does -- reset, carry the runtime
+ *     is what vm_apply_settings does -- reset, carry the runtime
  *     config across, reload -- so that is what this models.
  */
 
@@ -35,7 +35,6 @@
 
 static void test_log(enum retro_log_level level, const char* fmt, ...) { (void)level; (void)fmt; }
 extern "C" retro_log_printf_t log_cb = test_log;
-std::string libretro_content;
 
 int main(void)
 {

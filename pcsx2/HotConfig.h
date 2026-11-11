@@ -2,7 +2,7 @@
  * interpreted branch, every event test), as one word instead of a call or
  * a walk into EmuConfig. emu_config_sync_hot (Pcsx2Config.c) rebuilds
  * them from EmuConfig: CPU thread start takes the defaults,
- * VMManager::LoadSettings, the one place EmuConfig's CPU, speedhack and
+ * vm_load_settings, the one place EmuConfig's CPU, speedhack and
  * gamefix settings are applied, ends with it, and so does vtlb's fastmem
  * fallback. tests/hotconfig keeps it that way. C89. */
 #pragma once

@@ -311,12 +311,10 @@ endif
 # ============================================================================
 # pcsx2 core - emulation
 # ============================================================================
-SOURCES_CXX += \
-	$(LRPS2_DIR)/GameDatabaseFixes.cpp \
-	$(LRPS2_DIR)/VMManager.cpp
-
 SOURCES_C += \
 	$(LRPS2_DIR)/EmuOptions.c \
+	$(LRPS2_DIR)/VMManager.c \
+	$(LRPS2_DIR)/GameDatabaseFixes.c \
 	$(LRPS2_DIR)/Pcsx2Config.c \
 	$(LRPS2_DIR)/GameDatabase.c \
 	$(LRPS2_DIR)/GameDatabaseBuiltin.c \

@@ -258,11 +258,11 @@ static int fixture(void)
 		Pcsx2Config on, off;
 		emu_config_init(&on);
 		emu_config_init(&off);
-		FCHECK(GameDatabase_ApplyGameFixes(a, on, true) == 7, "seven fixes apply: three clamps, two hacks, two game fixes");
-		FCHECK(GameDatabase_ApplyGameFixes(a, off, false) == 0, "none with the automatic fixes off");
+		FCHECK(GameDatabase_ApplyGameFixes(a, &on, true) == 7, "seven fixes apply: three clamps, two hacks, two game fixes");
+		FCHECK(GameDatabase_ApplyGameFixes(a, &off, false) == 0, "none with the automatic fixes off");
 		/* the division mode alone, with the fixes off: logged by its own name */
-		GameDatabase_ApplyGameFixes(b, off, false);
-		GameDatabase_ApplyGameFixes(b, on, true);
+		GameDatabase_ApplyGameFixes(b, &off, false);
+		GameDatabase_ApplyGameFixes(b, &on, true);
 	}
 
 	GameDatabase_Unload();
@@ -363,10 +363,10 @@ int main(int argc, char** argv)
 				emu_gs_defaults(&gs_auto);
 				emu_gs_defaults(&gs_manual);
 				gs_manual.ManualUserHacks = true;
-				GameDatabase_ApplyGameFixes(e, on, true);
-				GameDatabase_ApplyGameFixes(e, off, false);
-				GameDatabase_ApplyGSHardwareFixes(e, gs_auto);
-				GameDatabase_ApplyGSHardwareFixes(e, gs_manual);
+				GameDatabase_ApplyGameFixes(e, &on, true);
+				GameDatabase_ApplyGameFixes(e, &off, false);
+				GameDatabase_ApplyGSHardwareFixes(e, &gs_auto);
+				GameDatabase_ApplyGSHardwareFixes(e, &gs_manual);
 			}
 			applied++;
 		}
@@ -390,7 +390,6 @@ int main(int argc, char** argv)
 	return fixture() ? 1 : 0;
 }
 
-std::string libretro_content;
 
 
 /* Reached from Pcsx2Config's paths and the memory map; neither is entered

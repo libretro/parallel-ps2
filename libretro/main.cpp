@@ -106,17 +106,19 @@ static struct OptionConfigDefaults
 static bool        s_option_fast_boot = true;
 static int         s_option_camera    = USB_CAMERA_NONE;
 static char        s_option_memcards[PCSX2_PATH_MAX];
-const Pcsx2Config& Host::OptionConfig() { return s_option_config; }
+const Pcsx2Config* host_option_config(void) { return &s_option_config; }
 bool               host_option_fast_boot(void) { return s_option_fast_boot; }
-const char*        Host::OptionMemcardPath() { return s_option_memcards; }
+const char*        host_option_memcard_path(void) { return s_option_memcards; }
 
 bool pending_update_av_info = false;
-std::string libretro_content;
+/* The content's name without its extension; empty for shared cards. */
+static char s_content_name[PCSX2_PATH_MAX];
+const char* host_content_name(void) { return s_content_name; }
 
 static retro_atomic_int_t cpu_thread_state;
 /* Boot handshake: 0 = Initialize() still running, 1 = VM up, -1 = failed.
- * Written by cpu_thread_entry, read by retro_load_game.  VMManager::
- * Initialize() never waits on MTGS (GS opens lazily from retro_run), so
+ * Written by cpu_thread_entry, read by retro_load_game. vm_initialize()
+ * never waits on MTGS (GS opens lazily from retro_run), so
  * blocking retro_load_game on this cannot deadlock. */
 static retro_atomic_int_t cpu_thread_boot_result;
 /* The boot result is set once by the EE and waited for once by the
@@ -129,7 +131,10 @@ static sthread_t* cpu_thread = NULL;
 /* The boot parameters the EE thread starts with. Copied here so the
  * thread's entry takes a plain pointer; it reads them once at start. */
 static VMBootParameters cpu_thread_boot_params;
-static void cpu_thread_entry(VMBootParameters boot_params);
+/* The disc it boots; the thread reads it before retro_load_game returns,
+ * which waits on the boot. */
+static char cpu_thread_boot_filename[PCSX2_PATH_MAX];
+static void cpu_thread_entry(const VMBootParameters* boot_params);
 static void cpu_thread_entry_trampoline(void* arg)
 {
 	(void)arg;
@@ -139,7 +144,7 @@ static void cpu_thread_entry_trampoline(void* arg)
 	 * ahead of the boot handshake the entry publishes, which orders it
 	 * before the frontend's first read, and cleared before the join. */
 	mtgs_set_producer_thread(1);
-	cpu_thread_entry(cpu_thread_boot_params);
+	cpu_thread_entry(&cpu_thread_boot_params);
 	mtgs_set_producer_thread(0);
 }
 
@@ -428,13 +433,13 @@ static bool update_option_visibility(void)
 
 static void cpu_thread_pause(void)
 {
-	while (VMManager::GetState() == VMState::Running
+	while (vm_get_state() == VM_STATE_RUNNING
 		&& retro_atomic_load_acquire_int(&cpu_thread_resumes_taken)
 		!= retro_atomic_load_acquire_int(&cpu_thread_resumes))
 		mtgs_main_loop(true);
-	VMManager::SetPaused(true);
+	vm_set_paused(true);
 	mtgs_frame_gate_stop(1);
-	while((VMState)retro_atomic_load_acquire_int(&cpu_thread_state) != VMState::Paused)
+	while((enum vm_state)retro_atomic_load_acquire_int(&cpu_thread_state) != VM_STATE_PAUSED)
 		mtgs_main_loop(true);
 }
 
@@ -444,7 +449,7 @@ static void cpu_thread_resume(void)
 {
 	retro_atomic_fetch_add_int(&cpu_thread_resumes, 1);
 	mtgs_frame_gate_stop(0);
-	VMManager::SetPaused(false);
+	vm_set_paused(false);
 	if (cpu_thread_resume_ec_inited)
 		retro_eventcount_notify(&cpu_thread_resume_ec);
 }
@@ -1405,7 +1410,7 @@ static void check_variables(bool first_run)
 	 * MTGS ring is live - see the MainLoop handoff-mutex comment). On arm64
 	 * VMManager rewrites vuThread at boot from its hardware-default hook, which
 	 * runs after the settings layer is reset -- so the option also feeds
-	 * VMManager::g_MtvuMenuDefault, which survives that reset. */
+	 * vm_mtvu_menu_default, which survives that reset. */
 	if (first_run)
 	{
 		var.key = "pcsx2_mtvu";
@@ -1418,8 +1423,8 @@ static void check_variables(bool first_run)
 			 * raise THREAD_VU1 with no MTVU worker spawned - MainLoop
 			 * then waits forever on the handoff (boot hang on <3
 			 * hardware threads with pcsx2_mtvu=enabled). */
-			s_option_config.Speedhacks.vuThread = mtvu_on && VMManager::MtvuHardwareAllowed();
-			VMManager::g_MtvuMenuDefault = mtvu_on;
+			s_option_config.Speedhacks.vuThread = mtvu_on && vm_mtvu_hardware_allowed();
+			vm_mtvu_menu_default = mtvu_on;
 		}
 
 		var.key = "pcsx2_instant_vu1";
@@ -1439,7 +1444,7 @@ static void check_variables(bool first_run)
 		{
 			const bool fastmem_on = !strcmp(var.value, "enabled");
 			s_option_config.Cpu.Recompiler.EnableFastmem = fastmem_on;
-			VMManager::g_FastmemMenuDefault = fastmem_on;
+			vm_fastmem_menu_default = fastmem_on;
 		}
 
 		/* Restart-scoped: read when the GS device is created. */
@@ -1463,7 +1468,7 @@ static void check_variables(bool first_run)
 			if (ee_interpreter)
 			{
 				s_option_config.Cpu.Recompiler.EnableFastmem = false;
-				VMManager::g_FastmemMenuDefault = false;
+				vm_fastmem_menu_default = false;
 			}
 		}
 	}
@@ -1643,7 +1648,7 @@ static void check_variables(bool first_run)
 	if (!first_run && updated)
 	{
 		cpu_thread_pause();
-		VMManager::ApplySettings();
+		vm_apply_settings();
 	}
 }
 
@@ -1730,14 +1735,14 @@ static bool RETRO_CALLCONV set_eject_state(bool ejected)
 	 * being a VM at all, because
 	 * cpu_thread_pause waits for a thread that has to exist to answer -
 	 * a frontend may eject before content is loaded. */
-	const bool vm_live = VMManager::HasValidVM();
+	const bool vm_live = vm_has_valid_vm();
 	if (vm_live)
 		cpu_thread_pause();
 
 	if (ejected || image_index < 0 || image_index >= (int)disk_images.size())
 	{
 		cdvdCtrlTrayOpen();
-		VMManager::ChangeDisc(CDVD_SourceType::NoDisc, "");
+		vm_change_disc(CDVD_SourceType::NoDisc, "");
 	}
 	else if (disk_images[image_index].empty())
 	{
@@ -1745,11 +1750,11 @@ static bool RETRO_CALLCONV set_eject_state(bool ejected)
 		 * fill in later.  Closing the tray on one of those asked the VM
 		 * to mount "", which is not a disc. */
 		cdvdCtrlTrayOpen();
-		VMManager::ChangeDisc(CDVD_SourceType::NoDisc, "");
+		vm_change_disc(CDVD_SourceType::NoDisc, "");
 	}
 	else
 	{
-		VMManager::ChangeDisc(CDVD_SourceType::Iso, disk_images[image_index]);
+		vm_change_disc(CDVD_SourceType::Iso, disk_images[image_index].c_str());
 		cdvdCtrlTrayClose();
 	}
 
@@ -1963,7 +1968,7 @@ void retro_get_system_av_info(retro_system_av_info* info)
 void retro_reset(void)
 {
 	cpu_thread_pause();
-	VMManager::Reset();
+	vm_reset();
 	/* The frame and the audio the EE had ready are the old machine's.
 	 * The next retro_run starts the new one. */
 	mtgs_pending.pending = 0;
@@ -2238,19 +2243,19 @@ struct FaultThreadScope
 	~FaultThreadScope() { retro_faulthandler_unregister_thread(); }
 };
 
-static void cpu_thread_entry(VMBootParameters boot_params)
+static void cpu_thread_entry(const VMBootParameters* boot_params)
 {
 	FaultThreadScope fault_scope_;
-	if (!VMManager::Initialize(boot_params))
+	if (!vm_initialize(boot_params))
 	{
 		/* Initialize() flipped s_state to Shutdown on its way out.
 		 * Do NOT stomp it back to Running: HasValidVM() would come
 		 * true again and the loop below would reach
-		 * VMManager::Execute() -> Cpu->Execute() with Cpu == NULL -
+		 * vm_execute() -> Cpu->Execute() with Cpu == NULL -
 		 * an access violation reading offset 0x18 (offsetof(R5900cpu,
 		 * Execute)) on this raw thread.  Publish the result so
 		 * retro_load_game's boot handshake can fail the load. */
-		retro_atomic_store_release_int(&cpu_thread_state, (int)VMState::Shutdown);
+		retro_atomic_store_release_int(&cpu_thread_state, (int)VM_STATE_SHUTDOWN);
 		retro_atomic_store_release_int(&cpu_thread_boot_result, -1);
 		retro_eventcount_notify(&cpu_thread_boot_ec);
 		return;
@@ -2264,38 +2269,38 @@ static void cpu_thread_entry(VMBootParameters boot_params)
 	 * gsWrite from this thread (TSan: GSState::GetVideoMode vs
 	 * gsWrite64_page_00).  First retro_run resumes us. */
 
-	while (VMManager::GetState() != VMState::Shutdown)
+	while (vm_get_state() != VM_STATE_SHUTDOWN)
 	{
-		if (VMManager::HasValidVM())
+		if (vm_has_valid_vm())
 		{
 			for (;;)
 			{
-				VMState _st = VMManager::GetState();
+				enum vm_state _st = vm_get_state();
 				retro_atomic_store_release_int(&cpu_thread_state, (int)_st);
 				switch (_st)
 				{
-					case VMState::Initializing:
+					case VM_STATE_INITIALIZING:
 						mtgs_main_loop(false);
 						continue;
 
-					case VMState::Running:
+					case VM_STATE_RUNNING:
 						retro_atomic_store_release_int(&cpu_thread_resumes_taken,
 							retro_atomic_load_acquire_int(&cpu_thread_resumes));
-						VMManager::Execute();
+						vm_execute();
 						continue;
 
-					case VMState::Resetting:
-						VMManager::Reset();
+					case VM_STATE_RESETTING:
+						vm_reset();
 						continue;
 
-					case VMState::Stopping:
+					case VM_STATE_STOPPING:
 						return;
 
-					case VMState::Shutdown:
-						/* VMManager::Shutdown() flips s_state to Stopping
+					case VM_STATE_SHUTDOWN:
+						/* vm_shutdown() flips s_state to Stopping
 						 * and then to Shutdown internally before returning.
 						 * The cv.notify_one in retro_unload_game fires
-						 * AFTER VMManager::Shutdown() has returned, so by
+						 * AFTER vm_shutdown() has returned, so by
 						 * the time cpu_thread wakes from its cv wait, state
 						 * is already Shutdown - never Stopping. Without an
 						 * explicit case here, cpu_thread would fall to
@@ -2305,17 +2310,17 @@ static void cpu_thread_entry(VMBootParameters boot_params)
 						 * the Shutdown state and exits here immediately. */
 						return;
 
-					case VMState::Paused:
+					case VM_STATE_PAUSED:
 					{
 						/* Park until the libretro thread transitions us out of
 						 * Paused.  Every waker stores the new state and then
 						 * notifies; registering before the re-check is what
 						 * keeps that from being lost.  A full sleep lets a
 						 * paused core idle instead of waking to re-poll. */
-						while (VMManager::GetState() == VMState::Paused)
+						while (vm_get_state() == VM_STATE_PAUSED)
 						{
 							int key = retro_eventcount_prepare_wait(&cpu_thread_resume_ec);
-							if (VMManager::GetState() != VMState::Paused)
+							if (vm_get_state() != VM_STATE_PAUSED)
 							{
 								retro_eventcount_cancel_wait(&cpu_thread_resume_ec);
 								break;
@@ -2374,7 +2379,7 @@ void retro_init(void)
 	mtvu_init();
 	mtvu_reset();
 	/* Before any thread that reads it: read-only from here on. */
-	VMManager::InitializeCPUInfo();
+	vm_initialize_cpu_info();
 
 	if (setting_bios.empty())
 	{
@@ -2546,7 +2551,7 @@ static void libretro_teardown_cpu_thread(void)
 
 	if (s_cpu_thread_initialized)
 	{
-		VMManager::Internal::CPUThreadShutdown();
+		vm_cpu_thread_shutdown();
 		s_cpu_thread_initialized = false;
 
 	}
@@ -2624,7 +2629,7 @@ static bool libretro_load_python2(const char* path)
 	s_option_config.GS.PCRTCOverscan = true;
 
 	cdvd_set_nvram_files(d->nvram, d->ilink_id);
-	VMManager::SetPython2PatchFile(d->patch);
+	vm_set_python2_patch_file(d->patch);
 	libretro_pick_arcade_bios();
 	log_cb(RETRO_LOG_INFO, "Python 2: %s, input type %d\n", d->name[0] ? d->name : path, d->input_type);
 	ok = true;
@@ -2700,6 +2705,14 @@ bool retro_load_game(const struct retro_game_info* game)
 {
 	VMBootParameters boot_params;
 	const char* system_base = nullptr;
+
+	/* No disc, no ELF, the source by the file name, fast boot by the
+	 * option, until set below. */
+	cpu_thread_boot_filename[0] = '\0';
+	boot_params.filename     = cpu_thread_boot_filename;
+	boot_params.elf_override = NULL;
+	boot_params.source_type  = -1;
+	boot_params.fast_boot    = -1;
 	int format = RETRO_PIXEL_FORMAT_XRGB8888;
 
 	environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &format);
@@ -2718,7 +2731,7 @@ bool retro_load_game(const struct retro_game_info* game)
 
 	/* The defaults, set in place. */
 	emu_config_init(&s_option_config);
-	VMManager::ApplyHardwareDefaults(s_option_config);
+	vm_apply_hardware_defaults(&s_option_config);
 	/* The two values that ride beside the config start over with it.
 	 * The settings map did this at every load: SetDefaults put the
 	 * memory-card folder back to "memcards" and SetDefaultSettings put
@@ -2731,9 +2744,9 @@ bool retro_load_game(const struct retro_game_info* game)
 
 	emu_folders_load_config(s_option_memcards);
 	emu_folders_ensure_exist();
-	VMManager::Internal::CPUThreadInitialize();
+	vm_cpu_thread_initialize();
 	s_cpu_thread_initialized = true;
-	VMManager::LoadSettings();
+	vm_load_settings();
 
 	/* Before check_variables, which leaves the DEV9 options alone for a
 	 * Python 2 game. */
@@ -2743,7 +2756,7 @@ bool retro_load_game(const struct retro_game_info* game)
 	USBSetPerfectPool(false);
 	libretro_python1_release();
 	cdvd_set_nvram_files(NULL, NULL);
-	VMManager::SetPython2PatchFile(NULL);
+	vm_set_python2_patch_file(NULL);
 	s_option_config.DEV9.HddIdFile[0] = '\0';
 
 	check_variables(true);
@@ -2868,7 +2881,7 @@ bool retro_load_game(const struct retro_game_info* game)
 
 	/* Per-game cards are named after the content; empty, the shared
 	 * cards are used. */
-	libretro_content.clear();
+	s_content_name[0] = '\0';
 
 	if (!setting_shared_memory_cards && game && game->path)
 	{
@@ -2877,15 +2890,19 @@ bool retro_load_game(const struct retro_game_info* game)
 		environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &save_base);
 
 		strlcpy(s_option_memcards, save_base, sizeof(s_option_memcards));
-		VMManager::Internal::UpdateEmuFolders();
+		vm_update_emu_folders();
 
 		/* The content's name without its extension. */
 		const char* name = path_basename(game->path);
 		const char* ext  = strrchr(name, '.');
-		libretro_content.assign(name, ext ? (size_t)(ext - name) : strlen(name));
+		size_t len = ext ? (size_t)(ext - name) : strlen(name);
+		if (len >= sizeof(s_content_name))
+			len = sizeof(s_content_name) - 1;
+		memcpy(s_content_name, name, len);
+		s_content_name[len] = '\0';
 	}
 
-	VMManager::ApplySettings();
+	vm_apply_settings();
 
 	image_index = 0;
 	disk_images.clear();
@@ -2976,7 +2993,7 @@ bool retro_load_game(const struct retro_game_info* game)
 
 				apply_initial_image();
 				get_image_path(get_image_index(), game_abs, PCSX2_PATH_MAX);
-				boot_params.filename = game_abs;
+				strlcpy(cpu_thread_boot_filename, game_abs, sizeof(cpu_thread_boot_filename));
 
 				/* The playlist has been read; the handle was never
 				 * released, so every multi-disc load leaked an RFILE and
@@ -2988,7 +3005,7 @@ bool retro_load_game(const struct retro_game_info* game)
 		else
 		{
 			disk_images.push_back(game_path);
-			boot_params.filename = game_path;
+			strlcpy(cpu_thread_boot_filename, game_path.c_str(), sizeof(cpu_thread_boot_filename));
 		}
 	}
 
@@ -3014,9 +3031,9 @@ bool retro_load_game(const struct retro_game_info* game)
 			VM_EMU_THREAD_STACK_SIZE);
 	/* The EE pins itself during Initialize; the handle is for pins made
 	 * from this thread later, with the EE paused. */
-	VMManager::SetVMThread(cpu_thread);
+	vm_set_vm_thread(cpu_thread);
 
-	/* Wait for VMManager::Initialize() to succeed or fail so a bad
+	/* Wait for vm_initialize() to succeed or fail so a bad
 	 * BIOS path, unreadable disc image, or any other init failure is
 	 * reported to the frontend as a failed load instead of a black
 	 * screen (or, before the cpu_thread_entry guard above, a null
@@ -3082,7 +3099,7 @@ void retro_unload_game(void)
 		mtgs_close_gs();
 	}
 
-	VMManager::Shutdown();
+	vm_shutdown();
 	usb_eyetoy::FrontendUnload();
 	/* Shutdown() flipped state to Stopping; if cpu_thread is sleeping
 	 * in its 'case Paused' wait (post cpu_thread_pause above), it
@@ -3107,7 +3124,7 @@ void retro_unload_game(void)
 	}
 	sthread_join(cpu_thread);
 	cpu_thread = NULL;
-	VMManager::SetVMThread(NULL);
+	vm_set_vm_thread(NULL);
 	libretro_teardown_cpu_thread();
 	s_python1_content = false;
 
@@ -3222,7 +3239,7 @@ void retro_run(void)
 		return;
 	}
 
-	if ((VMState)retro_atomic_load_acquire_int(&cpu_thread_state) == VMState::Paused)
+	if ((enum vm_state)retro_atomic_load_acquire_int(&cpu_thread_state) == VM_STATE_PAUSED)
 	{
 		pad_input_latch();
 		cpu_thread_resume();
@@ -3448,7 +3465,7 @@ static bool state_read(const void* data, size_t size, bool keep_code)
 			|| g_eeloadExec != eeload_exec_before))
 		keep_code = false;
 	if (!keep_code)
-		VMManager::Internal::ClearCPUExecutionCaches();
+		vm_clear_cpu_execution_caches();
 	if (keep_code)
 		state_read_code(&loadme, eeMem->Main, sizeof(eeMem->Main), state_clear_ee_ram);
 	else
@@ -3649,7 +3666,7 @@ bool retro_unserialize(const void* data, size_t size)
 		 * This must run while the CPU thread is still paused: the
 		 * identity change runs ApplySettings, whose config diff can reset
 		 * the EE recompiler and execution caches. */
-		VMManager::RefreshRunningGameAfterStateLoad();
+		vm_refresh_running_game_after_state_load();
 	}
 
 	/* Paused until the next retro_run, which presents the frame the
@@ -3676,24 +3693,18 @@ void retro_cheat_reset(void) { }
 
 void retro_cheat_set(unsigned index, bool enabled, const char* code) { }
 
-std::optional<std::vector<u8>> Host::ReadResourceFile(const char* filename)
+void* host_read_resource_file(const char* filename, int64_t* size)
 {
 	char path[PCSX2_PATH_MAX];
+	void* fbuf = nullptr;
 
 	pcsx2_path_join(path, sizeof(path), EmuFolders.Resources, filename);
-	void* fbuf = nullptr;
-	int64_t flen = 0;
-	std::optional<std::vector<u8>> ret;
-	if (filestream_read_file(path, &fbuf, &flen))
-	{
-		ret.emplace();
-		if (flen > 0)
-			ret->assign(static_cast<const u8*>(fbuf), static_cast<const u8*>(fbuf) + flen);
-		free(fbuf);
-	}
-	if (!ret.has_value())
-		log_cb(RETRO_LOG_ERROR, "Failed to read resource file \"%s\", path \"%s\".\n", filename, path);
-	return ret;
+	*size = 0;
+	/* The buffer the stream read into is the caller's, not a copy. */
+	if (filestream_read_file(path, &fbuf, size))
+		return fbuf;
+	log_cb(RETRO_LOG_ERROR, "Failed to read resource file \"%s\", path \"%s\".\n", filename, path);
+	return NULL;
 }
 
 /* GameDatabase.c reads GameIndex.yaml from the resources folder only
@@ -3703,12 +3714,11 @@ bool emu_config_external_gameindex(void)
 	return setting_use_external_gameindex;
 }
 
-void Host::OnGameChanged(const std::string& disc_path,
-	const std::string& elf_override, const std::string& game_serial,
-	u32 game_crc)
+void host_on_game_changed(const char* disc_path, const char* elf_override,
+	const char* game_serial, u32 game_crc)
 {
 	int ret = 0;
-	const char *serial = game_serial.c_str();
+	const char *serial = game_serial;
 
 	if (!serial[0])
 		return;
@@ -3722,7 +3732,7 @@ void Host::OnGameChanged(const std::string& disc_path,
 		var.value = NULL;
 		fastcdvd  = environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var)
 			&& var.value && !strcmp(var.value, "enabled");
-		ret = lrps2_ingame_patches(game_serial.c_str(),
+		ret = lrps2_ingame_patches(game_serial,
 				game_crc,
 				setting_renderer.c_str(),
 				setting_hint_nointerlacing,

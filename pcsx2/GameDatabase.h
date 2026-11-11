@@ -20,8 +20,9 @@
 #include "Patch.h"
 #include "EmuOptions.h"
 
-#ifdef __cplusplus
 #include "Config.h"
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -162,14 +163,14 @@ s16 GSLookupGetSkipCountFunctionId(const char* name, size_t length);
 s16 GSLookupBeforeDrawFunctionId(const char* name, size_t length);
 s16 GSLookupMoveHandlerFunctionId(const char* name, size_t length);
 
+/* GameDatabaseFixes.c. Applies the core game fixes to a config;
+ * returns how many applied. */
+u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* entry, Pcsx2Config* config, bool applyAuto);
+/* Applies the GS hardware fixes to a config; returns how many applied. */
+u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* entry, EmuGSOptions* config);
+
 #ifdef __cplusplus
 }
-
-/* GameDatabaseFixes.cpp. Applies the core game fixes to a config;
- * returns how many applied. */
-u32 GameDatabase_ApplyGameFixes(const GameDatabaseEntry* entry, Pcsx2Config& config, bool applyAuto);
-/* Applies the GS hardware fixes to a config; returns how many applied. */
-u32 GameDatabase_ApplyGSHardwareFixes(const GameDatabaseEntry* entry, EmuGSOptions& config);
 #endif
 
 #endif

@@ -28,7 +28,7 @@ typedef struct BiosDebugInformation
 #define BIOS_SERIAL_MAX      32
 #define BIOS_ZONE_MAX        16
 
-/* BiosTools.c is C; C++ callers (libretro/main.cpp, VMManager.cpp) see
+/* BiosTools.c is C; C++ callers (libretro/main.cpp, VMManager.c) see
  * its data and functions with C linkage, which MSVC also needs for data:
  * it decorates C++ data symbols, so an undecorated reference from a C
  * unit would not link. */

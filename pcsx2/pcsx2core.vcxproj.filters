@@ -611,7 +611,7 @@
     <ClCompile Include="GameDatabase.c">
       <Filter>Misc</Filter>
     </ClCompile>
-    <ClCompile Include="GameDatabaseFixes.cpp">
+    <ClCompile Include="GameDatabaseFixes.c">
       <Filter>Misc</Filter>
     </ClCompile>
     <ClCompile Include="IPU\IPUdma.c">
@@ -932,7 +932,7 @@
     <ClCompile Include="Frontend\HostSettings.cpp">
       <Filter>Host</Filter>
     </ClCompile>
-    <ClCompile Include="VMManager.cpp">
+    <ClCompile Include="VMManager.c">
       <Filter>System</Filter>
     </ClCompile>
     <ClCompile Include="PAD\PAD.cpp">

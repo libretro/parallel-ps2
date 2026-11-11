@@ -69,8 +69,6 @@ s16 GSLookupBeforeDrawFunctionId(const char* name, size_t length);
 s16 GSLookupMoveHandlerFunctionId(const char* name, size_t length);
 }
 
-void GSinit(void);
-void GSshutdown(void);
 void GSopen(const EmuGSOptions& config, GSRendererType renderer, enum retro_hw_context_type api, u8* basemem);
 bool GSreopen(bool recreate_device, bool recreate_renderer, const EmuGSOptions& old_config);
 /* True once the GS lost its device and could make no other: it draws and

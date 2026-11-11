@@ -1131,6 +1131,11 @@ u8 PADpoll(u8 value)
 
 bool PADcomplete(void) { return query.queryDone; }
 
+void pad_load_config(void)
+{
+	PAD::LoadConfig();
+}
+
 void PAD::LoadConfig()
 {
 	EmuConfig.MultitapPort0_Enabled = (pad_multitap & 1) != 0;

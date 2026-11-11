@@ -80,7 +80,6 @@ bool mecha_mg_card_get(int slot, u8 mode, u8 out[8])
 }
 bool mecha_mg_card_put(int, u8, const u8 in[8]) { memcpy(s_put, in, 8); return true; }
 }
-std::string libretro_content;
 
 /* A pad that answers its poll with a running count. The C++ tree's are
  * C++ functions, the C tree's C ones. */

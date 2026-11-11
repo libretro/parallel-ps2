@@ -639,13 +639,8 @@ static flash_info_t devices[] = {
 
 void FLASHinit();
 void FLASHsave();
-s32 DEV9init();
-void DEV9close();
-s32 DEV9open();
-void DEV9shutdown();
 u32 FLASHread32(u32 addr, int size);
 void FLASHwrite32(u32 addr, u32 value, int size);
-void DEV9CheckChanges(const Pcsx2Config& old_config);
 
 #ifdef _WIN32
 #pragma warning(error : 4013)

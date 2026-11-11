@@ -17,36 +17,28 @@
 
 #include "../common/Pcsx2Defs.h"
 
-#include <ctime>
-#include <memory>
-#include <string>
-#include <optional>
-#include <vector>
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct Pcsx2Config;
-namespace Host
-{
-	/* The frontend's core options, as the config they set, and the three
-	 * values beside it that no Pcsx2Config field holds. */
-	const Pcsx2Config& OptionConfig();
-	const char*        OptionMemcardPath();
-	// Base setting retrieval, bypasses layers.
 
-	// Allows the emucore to write settings back to the frontend. Use with care.
-	
-	// Settings access, thread-safe.
+/* The frontend's core options, as the config they set, and the values
+ * beside it that no Pcsx2Config field holds. */
+const struct Pcsx2Config* host_option_config(void);
+const char* host_option_memcard_path(void);
+/* The content's name without its extension, which names the first
+ * memory card; empty for the shared cards. */
+const char* host_content_name(void);
 
-	/// The core options as the config they set; see OptionConfig() below.
+/* A file from the resources folder, read whole into memory the caller
+ * frees; NULL when it cannot be read. */
+void* host_read_resource_file(const char* filename, int64_t* size);
 
-	namespace Internal
-	{
-		/// Retrieves the base settings layer. Must call with lock held.
+/* The running game changed; its serial is empty when none runs. */
+void host_on_game_changed(const char* disc_path, const char* elf_override,
+	const char* game_serial, u32 game_crc);
 
-		/// Sets the base settings layer. Should be called by the host at initialization time.
-
-	} // namespace Internal
-	/// Reads a file from the resources directory of the application.
-	/// This may be outside of the "normal" filesystem on platforms such as Mac.
-	std::optional<std::vector<u8>> ReadResourceFile(const char* filename);
-} // namespace Host
+#ifdef __cplusplus
+}
+#endif

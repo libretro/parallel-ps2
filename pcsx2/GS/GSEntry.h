@@ -15,6 +15,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+void GSinit(void);
+void GSshutdown(void);
 void GSreset(bool hardware_reset);
 void GSclose(void);
 void GSInitAndReadFIFO(u8* mem, u32 size);

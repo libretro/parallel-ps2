@@ -20,14 +20,14 @@
 
 #include "../common/SingleRegisterTypes.h"
 
-// Specialized function pointers for each read type
+/* Specialized function pointers for each read type */
 typedef  mem8_t vtlbMemR8FP(u32 addr);
 typedef  mem16_t vtlbMemR16FP(u32 addr);
 typedef  mem32_t vtlbMemR32FP(u32 addr);
 typedef  mem64_t vtlbMemR64FP(u32 addr);
 typedef  RETURNS_R128 vtlbMemR128FP(u32 addr);
 
-// Specialized function pointers for each write type
+/* Specialized function pointers for each write type */
 typedef  void vtlbMemW8FP(u32 addr,mem8_t data);
 typedef  void vtlbMemW16FP(u32 addr,mem16_t data);
 typedef  void vtlbMemW32FP(u32 addr,mem32_t data);
@@ -79,7 +79,7 @@ extern void* vtlb_GetPhyPtr(u32 paddr);
 extern u32  vtlb_V2P(u32 vaddr);
 extern void vtlb_DynV2P(void);
 
-//virtual mappings
+/* virtual mappings */
 extern void vtlb_VMap(u32 vaddr,u32 paddr,u32 sz);
 extern void vtlb_VMapBuffer(u32 vaddr,void* buffer,u32 sz);
 extern void vtlb_VMapUnmap(u32 vaddr,u32 sz);
@@ -97,7 +97,7 @@ extern void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc
 extern void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, u32 guest_addr, u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register, u8 size_in_bits, int is_signed, int is_load, int is_fpr);
 extern bool vtlb_IsFaultingPC(u32 guest_pc);
 
-//Memory functions
+/* Memory functions */
 
 extern mem8_t  vtlb_memRead8 (u32 mem);
 extern mem16_t vtlb_memRead16(u32 mem);
@@ -123,7 +123,7 @@ extern void TAKES_R128 vtlb_memWrite128(u32 mem, r128 value);
  * arguments and an alias template. */
 #ifdef __cplusplus
 
-// "Safe" variants of vtlb, designed for external tools.
+/* "Safe" variants of vtlb, designed for external tools. */
 using vtlb_ReadRegAllocCallback = int(*)(void);
 extern int vtlb_DynGenReadNonQuad(u32 bits, int sign, int xmm, int addr_reg, vtlb_ReadRegAllocCallback dest_reg_alloc = nullptr);
 extern int vtlb_DynGenReadNonQuad_Const(u32 bits, int sign, int xmm, u32 addr_const, vtlb_ReadRegAllocCallback dest_reg_alloc = nullptr);
@@ -218,10 +218,10 @@ static VTLB_INLINE void* vtlb_virt_handler_raw(vtlb_virt_t v, int index, int wri
 
 typedef enum vtlb_ProtectionMode
 {
-	ProtMode_None = 0, 	// page is 'unaccounted' -- neither protected nor unprotected
-	ProtMode_Write, 	// page is under write protection (exception handler)
-	ProtMode_Manual, 	// page is under manual protection (self-checked at execution)
-	ProtMode_NotRequired 	// page doesn't require any protection
+	ProtMode_None = 0, 	/* page is 'unaccounted' -- neither protected nor unprotected */
+	ProtMode_Write, 	/* page is under write protection (exception handler) */
+	ProtMode_Manual, 	/* page is under manual protection (self-checked at execution) */
+	ProtMode_NotRequired 	/* page doesn't require any protection */
 } vtlb_ProtectionMode;
 
 /* vtlb.c's EE RAM page protection, which the recompilers drive. Vif1_Dma.c
@@ -240,12 +240,12 @@ extern void mmap_UnprotectRamRange(u32 paddr, u32 size);
 /* Goemon game fix: the game's own TLB cache table entry. */
 typedef struct GoemonTlb {
 	u32 valid;
-	u32 unk1; // could be physical address also
+	u32 unk1; /* could be physical address also */
 	u32 unk2;
 	u32 low_add;
 	u32 physical_add;
-	u32 unk3; // likely the size
+	u32 unk3; /* likely the size */
 	u32 high_add;
-	u32 key; // uniq number attached to an allocation
+	u32 key; /* uniq number attached to an allocation */
 	u32 unk5;
 } GoemonTlb;

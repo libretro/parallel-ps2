@@ -1881,7 +1881,7 @@ static void recRecompile(const u32 startpc)
 	if (g_GameLoading && HWADDR(startpc) == ElfEntry)
 	{
 		xe_fastcall0(eeGameStarting);
-		VMManager::Internal::EntryPointCompilingOnCPUThread();
+		vm_entry_point_compiling_on_cpu_thread();
 	}
 
 	g_branch = 0;

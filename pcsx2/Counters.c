@@ -1048,7 +1048,7 @@ bool rcntFreeze(SaveStateBase *s)
 }
 
 /* Re-seed the pre-init counter timing once the disc region is known.
- * VMManager::Initialize computes the first vsync rate before the CDVD
+ * vm_initialize computes the first vsync rate before the CDVD
  * reset path parses SYSTEM.CNF, so a PAL disc fast-booted on an NTSC
  * BIOS would otherwise keep the NTSC seed until SetGsCrt.  The rate
  * change guard inside UpdateVSyncRate makes this a no-op whenever the

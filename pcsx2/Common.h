@@ -25,8 +25,8 @@
 
 #include "SaveState.h"
 
-static const u32 BIAS = 2;				// Bus is half of the actual ps2 speed
-static const u32 PS2CLK = 294912000;	//hz	/* 294.912 mhz */
+static const u32 BIAS = 2;				/* Bus is half of the actual ps2 speed */
+static const u32 PS2CLK = 294912000;	/* hz: 294.912 MHz */
 #ifdef __cplusplus
 extern "C" {
 #endif

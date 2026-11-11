@@ -118,10 +118,6 @@ namespace Input
 	void Shutdown();
 }
 
-s32 PADinit();
-void PADshutdown();
-s32 PADopen();
-void PADclose();
 s32 PADsetSlot(u8 port, u8 slot);
 s32 PADfreeze(FreezeAction mode, freezeData* data);
 #include "PADsio.h"

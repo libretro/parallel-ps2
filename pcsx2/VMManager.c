@@ -15,7 +15,8 @@
 
 #include <stdarg.h>
 #include <stdio.h>
-#include <utility>
+#include <stdlib.h>
+#include <string.h>
 #include <compat/strl.h>
 #include <streams/file_stream.h>
 #include "common/Pcsx2Defs.h"
@@ -35,7 +36,7 @@
 #include "CDVD/CDVD_host.h"
 #include "HotConfig.h"
 #include "CDVD/cdvd_iso.h"
-#include "DEV9/DEV9.h"
+#include "DEV9/DEV9mmio.h"
 #include "Elfheader.h"
 #include "FW.h"
 #if defined(__GLIBC__)
@@ -43,6 +44,7 @@
 #endif
 #include "GameDatabase.h"
 #include "GS.h"
+#include "GS/GSEntry.h"
 #include "Host.h"
 #include "IopBios.h"
 #include "MTVU.h"
@@ -54,34 +56,20 @@
 #include "SaveState.h"
 #include "R3000A.h"
 #include "VUmicro.h"
-#include "newVif.h"
 #include "R5900.h"
 #include "SPU2/spu2.h"
-#include "DEV9/DEV9.h"
 #include "USB/USB.h"
-#include "Vif_Dynarec.h"
-#include "PAD/PAD.h"
+#include "Vif_Unpack.h"
+#include "PAD/PADsio.h"
 #include "Sio.h"
 #include "ps2/BiosTools.h"
 
 #ifdef _WIN32
-#include "common/RedtapeWindows.h"
-#include <objbase.h>
-#include <timeapi.h>
+/* timeBeginPeriod, and nothing else of Windows */
+#include <windows.h>
+#include <mmsystem.h>
 #endif
 
-// Resets all PS2 cpu execution caches, which does not affect that actual PS2 state/condition.
-// This can be called at any time outside the context of a Cpu->Execute() block without
-// bad things happening (recompilers will slow down for a brief moment since rec code blocks
-// are dumped).
-// Use this method to reset the recs when important global pointers like the MTGS are re-assigned.
-
-// This function returns part of EXTINFO data of the BIOS rom
-// This module contains information about Sony build environment at offst 0x10
-// first 15 symbols is build date/time that is unique per rom and can be used as unique serial
-// Example for romver 0160EC20010704
-// 20010704-160707,ROMconf,PS20160EC20010704.bin,kuma@rom-server/~/f10k/g/app/rom
-// 20010704-160707 can be used as unique ID for Bios
 /* Opens the CDVD source, with the gzip index settings of the moment. */
 static bool OpenCDVD(void)
 {
@@ -94,9 +82,9 @@ static void SysGetBiosDiscID(char* out, size_t out_size)
 	strlcpy(out, BiosSerial, out_size);
 }
 
-// This function always returns a valid DiscID -- using the Sony serial when possible, and
-// falling back on the CRC checksum of the ELF binary if the PS2 software being run is
-// homebrew or some other serial-less item.
+/* This function always returns a valid DiscID -- using the Sony serial when possible, and */
+/* falling back on the CRC checksum of the ELF binary if the PS2 software being run is */
+/* homebrew or some other serial-less item. */
 static void SysGetDiscID(char* out, size_t out_size)
 {
 	if (DiscSerial[0])
@@ -115,33 +103,18 @@ static void SysGetDiscID(char* out, size_t out_size)
 	snprintf(out, out_size, "%08x", ElfCRC);
 }
 
-namespace VMManager
-{
-	static void InitializeCPUProviders();
-	static void ShutdownCPUProviders();
-	static void UpdateCPUImplementations();
-
-	static void ApplyGameFixes();
-	static bool UpdateGameSettingsLayer();
-	static void CheckForConfigChanges(const Pcsx2Config& old_config);
-	static void CheckForCPUConfigChanges(const Pcsx2Config& old_config);
-	static void CheckForGSConfigChanges(const Pcsx2Config& old_config);
-	static void CheckForPatchConfigChanges(const Pcsx2Config& old_config);
-	static void CheckForDEV9ConfigChanges(const Pcsx2Config& old_config);
-	static void CheckForMemoryCardConfigChanges(const Pcsx2Config& old_config);
-
-	static bool AutoDetectSource(const std::string& filename);
-	static bool ApplyBootParameters(VMBootParameters params, std::string* state_to_load);
-	static void LoadPatches(const std::string& serial, u32 crc);
-	static void UpdateRunningGame(bool resetting, bool game_starting, bool swapping_disc);
-
-	static void SetTimerResolutionIncreased(bool enabled);
-	static void SetEmuThreadAffinities();
-} // namespace VMManager
+static void InitializeCPUProviders(void);
+static void ShutdownCPUProviders(void);
+static void UpdateCPUImplementations(void);
+static void ApplyGameFixes(void);
+static void LoadPatches(const char* serial, u32 crc);
+static void UpdateRunningGame(bool resetting, bool game_starting, bool swapping_disc);
+static void SetTimerResolutionIncreased(bool enabled);
+static void SetEmuThreadAffinities(void);
 
 static SysMainMemory s_vm_memory;
 
-static retro_atomic_int_t s_state = RETRO_ATOMIC_INT_INITIALIZER((int)VMState::Shutdown);
+static retro_atomic_int_t s_state = RETRO_ATOMIC_INT_INITIALIZER((int)VM_STATE_SHUTDOWN);
 static bool s_cpu_implementation_changed = false;
 /* The EE thread. Its sthread_t* is set by the frontend right after
  * create; its id is captured by Initialize, which runs on it. Affinity
@@ -154,69 +127,82 @@ static uintptr_t  s_vm_thread_id = 0;
 
 /* The running game's identity. Written and read on the EE thread, or
  * with the EE paused: there is no other reader. */
-static std::string s_disc_path;
+static char s_disc_path[PCSX2_PATH_MAX];
 static u32 s_game_crc;
 static u32 s_patches_crc;
 static char s_game_serial[64];
-static std::string s_elf_override;
+static char s_elf_override[PCSX2_PATH_MAX];
 static u32 s_active_game_fixes = 0;
-static std::vector<u8> s_widescreen_cheats_data;
+/* The cheat archives, as read: kept from the first load to the VM's
+ * end, so a reload of the patches reads neither again. */
+static u8* s_widescreen_cheats_data;
+static size_t s_widescreen_cheats_size;
 static bool s_widescreen_cheats_loaded = false;
-static std::vector<u8> s_no_interlacing_cheats_data;
+static u8* s_no_interlacing_cheats_data;
+static size_t s_no_interlacing_cheats_size;
 static bool s_no_interlacing_cheats_loaded = false;
 static s32 s_active_widescreen_patches = 0;
 static u32 s_active_no_interlacing_patches = 0;
 
-VMState VMManager::GetState()
+enum vm_state vm_get_state(void)
 {
-	return (VMState)retro_atomic_load_acquire_int(&s_state);
+	return (enum vm_state)retro_atomic_load_acquire_int(&s_state);
 }
 
-void VMManager::SetState(VMState state)
+void vm_set_state(enum vm_state state)
 {
-	// Some state transitions aren't valid.
-	const VMState old_state = (VMState)retro_atomic_load_acquire_int(&s_state);
-	SetTimerResolutionIncreased(state == VMState::Running);
+	const enum vm_state old_state = (enum vm_state)retro_atomic_load_acquire_int(&s_state);
+	SetTimerResolutionIncreased(state == VM_STATE_RUNNING);
 	retro_atomic_store_release_int(&s_state, (int)state);
 
-	if (state != VMState::Stopping && (state == VMState::Paused || old_state == VMState::Paused))
+	if (state != VM_STATE_STOPPING && (state == VM_STATE_PAUSED || old_state == VM_STATE_PAUSED))
 	{
-		const bool paused = (state == VMState::Paused);
-		if (!paused)
+		if (state != VM_STATE_PAUSED)
 			perf_metrics_reset();
 	}
-	// If stopping, break execution as soon as possible.
-	else if (state == VMState::Stopping && old_state == VMState::Running)
+	/* Stopping breaks execution as soon as it can. */
+	else if (state == VM_STATE_STOPPING && old_state == VM_STATE_RUNNING)
 		Cpu->ExitExecution();
 }
 
-bool VMManager::HasValidVM()
+bool vm_has_valid_vm(void)
 {
-	const VMState state = (VMState)retro_atomic_load_acquire_int(&s_state);
-	return (state >= VMState::Running && state <= VMState::Resetting);
+	const enum vm_state state = (enum vm_state)retro_atomic_load_acquire_int(&s_state);
+	return (state >= VM_STATE_RUNNING && state <= VM_STATE_RESETTING);
 }
 
-void VMManager::Internal::UpdateEmuFolders()
+/* The folders the patches and the memory cards come from, as they were
+ * before vm_update_emu_folders read them again; static, as four paths
+ * are too large for a frame. */
+static struct
 {
-	const std::string old_cheats_directory(EmuFolders.Cheats);
-	const std::string old_cheats_ws_directory(EmuFolders.CheatsWS);
-	const std::string old_cheats_ni_directory(EmuFolders.CheatsNI);
-	const std::string old_memcards_directory(EmuFolders.MemoryCards);
+	char cheats[PCSX2_PATH_MAX];
+	char cheats_ws[PCSX2_PATH_MAX];
+	char cheats_ni[PCSX2_PATH_MAX];
+	char memcards[PCSX2_PATH_MAX];
+} s_old_folders;
+
+void vm_update_emu_folders(void)
+{
+	strlcpy(s_old_folders.cheats, EmuFolders.Cheats, sizeof(s_old_folders.cheats));
+	strlcpy(s_old_folders.cheats_ws, EmuFolders.CheatsWS, sizeof(s_old_folders.cheats_ws));
+	strlcpy(s_old_folders.cheats_ni, EmuFolders.CheatsNI, sizeof(s_old_folders.cheats_ni));
+	strlcpy(s_old_folders.memcards, EmuFolders.MemoryCards, sizeof(s_old_folders.memcards));
 	/* Re-read them: the caller has just changed where the memory cards
 	 * live -- the per-content directory is set after load_game has already
 	 * configured the folders once -- and the comparisons below are against
 	 * what this call produces. Without it nothing here ever differs and
 	 * the cards stay in the shared directory. */
-	emu_folders_load_config(Host::OptionMemcardPath());
+	emu_folders_load_config(host_option_memcard_path());
 
-
-	if (VMManager::HasValidVM())
+	if (vm_has_valid_vm())
 	{
-		if (EmuFolders.Cheats != old_cheats_directory || EmuFolders.CheatsWS != old_cheats_ws_directory ||
-			EmuFolders.CheatsNI != old_cheats_ni_directory)
-			VMManager::ReloadPatches();
+		if (strcmp(EmuFolders.Cheats, s_old_folders.cheats) != 0
+			|| strcmp(EmuFolders.CheatsWS, s_old_folders.cheats_ws) != 0
+			|| strcmp(EmuFolders.CheatsNI, s_old_folders.cheats_ni) != 0)
+			vm_reload_patches();
 
-		if (EmuFolders.MemoryCards != old_memcards_directory)
+		if (strcmp(EmuFolders.MemoryCards, s_old_folders.memcards) != 0)
 		{
 			FileMcd_EmuClose();
 			FileMcd_EmuOpen();
@@ -225,7 +211,7 @@ void VMManager::Internal::UpdateEmuFolders()
 	}
 }
 
-void VMManager::Internal::CPUThreadInitialize(void)
+void vm_cpu_thread_initialize(void)
 {
 	/* The hot settings word from the defaults, before the memory and
 	 * CPU providers below can read it; LoadSettings resyncs. */
@@ -248,10 +234,14 @@ void VMManager::Internal::CPUThreadInitialize(void)
 	sys_memory_allocate(&s_vm_memory);
 }
 
-void VMManager::Internal::CPUThreadShutdown(void)
+void vm_cpu_thread_shutdown(void)
 {
-	std::vector<u8>().swap(s_widescreen_cheats_data);
-	std::vector<u8>().swap(s_no_interlacing_cheats_data);
+	free(s_widescreen_cheats_data);
+	free(s_no_interlacing_cheats_data);
+	s_widescreen_cheats_data       = NULL;
+	s_widescreen_cheats_size       = 0;
+	s_no_interlacing_cheats_data   = NULL;
+	s_no_interlacing_cheats_size   = 0;
 	s_widescreen_cheats_loaded     = false;
 	s_no_interlacing_cheats_loaded = false;
 
@@ -287,11 +277,9 @@ SysMainMemory* GetVmMemory(void)
 	return &s_vm_memory;
 }
 
-/* The frontend's content name; the first memory card is named after it. */
-extern std::string libretro_content;
-
-void VMManager::LoadSettings()
+void vm_load_settings(void)
 {
+	const char* content = host_content_name();
 	/* The options set the fields the options set, and nothing else: the
 	 * runtime state -- UseBOOT2Injection, the IRX and game-argument
 	 * strings, the memory card types, fast boot -- is carried over from
@@ -302,17 +290,18 @@ void VMManager::LoadSettings()
 	 * EE is paused, or it is the EE booting. */
 	static Pcsx2Config runtime;
 	emu_config_copy_runtime(&runtime, &EmuConfig);
-	EmuConfig = Host::OptionConfig();
+	EmuConfig = *host_option_config();
 	emu_config_copy_runtime(&EmuConfig, &runtime);
 	emu_config_apply_option_fixups(&EmuConfig);
 	if (vtlb_fastmem_unavailable)
 		EmuConfig.Cpu.Recompiler.EnableFastmem = false;
-	if (!libretro_content.empty())
+	/* The first memory card is named after the content. */
+	if (content[0])
 	{
-		snprintf(EmuConfig.Mcd[0].Filename, sizeof(EmuConfig.Mcd[0].Filename), "%s.ps2", libretro_content.c_str());
+		snprintf(EmuConfig.Mcd[0].Filename, sizeof(EmuConfig.Mcd[0].Filename), "%s.ps2", content);
 		EmuConfig.Mcd[1].Enabled = false;
 	}
-	PAD::LoadConfig();
+	pad_load_config();
 	/* The hack masks drop user hacks a global switch has disabled, so a
 	 * stale value cannot outlive it; the interlace line is what a
 	 * no-interlacing patch needs to take effect; and ApplyGameFixes is the
@@ -322,66 +311,55 @@ void VMManager::LoadSettings()
 	emu_gs_mask_upscaling_hacks(&EmuConfig.GS);
 	if (s_active_no_interlacing_patches > 0 && EmuConfig.GS.InterlaceMode == GS_INTERLACE_AUTOMATIC)
 		EmuConfig.GS.InterlaceMode = GS_INTERLACE_OFF;
-	if (HasValidVM())
+	if (vm_has_valid_vm())
 		ApplyGameFixes();
 	cdvdApplySettings(EmuConfig.Speedhacks.fastCDVD);
 	emu_config_sync_hot();
 }
 
-void vm_game_starting_on_cpu_thread(void)
-{
-	VMManager::Internal::GameStartingOnCPUThread();
-}
-
 void vm_request_stop(void)
 {
-	VMManager::SetState(VMState::Stopping);
+	vm_set_state(VM_STATE_STOPPING);
 }
 
 bool vm_paused(void)
 {
-	return VMManager::GetState() == VMState::Paused;
-}
-
-bool vm_execution_interrupted(void)
-{
-	return VMManager::Internal::IsExecutionInterrupted();
+	return vm_get_state() == VM_STATE_PAUSED;
 }
 
 const char* vm_elf_override(void)
 {
-	return s_elf_override.c_str();
+	return s_elf_override;
 }
 
-void VMManager::ApplyGameFixes()
+static void ApplyGameFixes(void)
 {
+	const GameDatabaseEntry* game;
 	s_active_game_fixes = 0;
 
 	if (s_game_crc == 0)
 		return;
 
-	const GameDatabaseEntry* game = GameDatabase_FindGame(s_game_serial);
+	game = GameDatabase_FindGame(s_game_serial);
 	if (!game)
 		return;
 
-	s_active_game_fixes += GameDatabase_ApplyGameFixes(game, EmuConfig, EmuConfig.EnableGameFixes);
-	s_active_game_fixes += GameDatabase_ApplyGSHardwareFixes(game, EmuConfig.GS);
+	s_active_game_fixes += GameDatabase_ApplyGameFixes(game, &EmuConfig, EmuConfig.EnableGameFixes);
+	s_active_game_fixes += GameDatabase_ApplyGSHardwareFixes(game, &EmuConfig.GS);
 }
 
-void VMManager::RefreshRunningGameAfterStateLoad()
+void vm_refresh_running_game_after_state_load(void)
 {
-	// The savestate has restored ElfCRC, g_GameStarted and g_GameLoading;
-	// UpdateRunningGame re-derives the serial from the disc and the CRC from
-	// the restored globals, and early-returns when nothing changed.
+	/* The state restored ElfCRC, g_GameStarted and g_GameLoading;
+	 * UpdateRunningGame re-derives the serial from the disc and the CRC
+	 * from them, and returns early when nothing changed. */
 	UpdateRunningGame(false, false, false);
 }
-
-bool VMManager::UpdateGameSettingsLayer(void) { return true; }
 
 /* SetPython2PatchFile; static, as a path is too large for a frame. */
 static char s_python2_patch_file[PCSX2_PATH_MAX];
 
-void VMManager::SetPython2PatchFile(const char* path)
+void vm_set_python2_patch_file(const char* path)
 {
 	strlcpy(s_python2_patch_file, path ? path : "", sizeof(s_python2_patch_file));
 }
@@ -423,12 +401,24 @@ static void message_append(char* buf, size_t size, size_t* len, const char* fmt,
 		*len = (*len + (size_t)n < size) ? *len + (size_t)n : size - 1;
 }
 
-void VMManager::LoadPatches(const std::string& serial, u32 crc)
+/* A cheat archive from the resources folder, read once per VM. */
+static void LoadCheatArchive(const char* name, u8** data, size_t* size, bool* loaded)
+{
+	int64_t len = 0;
+	if (*loaded)
+		return;
+	*loaded = true;
+	*data   = (u8*)host_read_resource_file(name, &len);
+	*size   = (*data && len > 0) ? (size_t)len : 0;
+}
+
+static void LoadPatches(const char* serial, u32 crc)
 {
 	/* Four counts and their joins: never near the size. */
 	char message[192];
 	size_t message_len = 0;
 	int patch_count = 0;
+	int cheat_count = 0;
 	char crc_string[9];
 	snprintf(crc_string, sizeof(crc_string), "%08X", crc);
 	s_patches_crc                   = crc;
@@ -440,7 +430,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 		patch_count = LoadPython2Patches();
 	else if (EmuConfig.EnablePatches)
 	{
-		const GameDatabaseEntry* game = GameDatabase_FindGame(serial.c_str());
+		const GameDatabaseEntry* game = GameDatabase_FindGame(serial);
 		if (game)
 		{
 			const char* patches = GameDatabase_FindPatch(game, crc);
@@ -454,8 +444,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 		}
 	}
 
-	// regular cheat patches
-	int cheat_count = 0;
+	/* the cheats */
 	if (EmuConfig.EnableCheats)
 	{
 		cheat_count = LoadPatchesFromDir(crc_string, EmuFolders.Cheats, "Cheats", true);
@@ -466,26 +455,19 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 		}
 	}
 
-	// wide screen patches
+	/* widescreen patches */
 	if (EmuConfig.EnableWideScreenPatches && crc != 0)
 	{
 		if ((s_active_widescreen_patches = LoadPatchesFromDir(crc_string, EmuFolders.CheatsWS, "Widescreen hacks", false)) > 0)
 			log_cb(RETRO_LOG_INFO, "Found widescreen patches in the cheats_ws folder --> skipping cheats_ws.zip\n");
 		else
 		{
-			// No ws cheat files found at the cheats_ws folder, try the ws cheats zip file.
-			if (!s_widescreen_cheats_loaded)
+			/* None in the cheats_ws folder: the archive. */
+			LoadCheatArchive("cheats_ws.zip", &s_widescreen_cheats_data,
+				&s_widescreen_cheats_size, &s_widescreen_cheats_loaded);
+			if (s_widescreen_cheats_size)
 			{
-				s_widescreen_cheats_loaded = true;
-
-				std::optional<std::vector<u8>> data = Host::ReadResourceFile("cheats_ws.zip");
-				if (data.has_value())
-					s_widescreen_cheats_data = std::move(data.value());
-			}
-
-			if (!s_widescreen_cheats_data.empty())
-			{
-				s_active_widescreen_patches = LoadPatchesFromZip(crc_string, s_widescreen_cheats_data.data(), s_widescreen_cheats_data.size());
+				s_active_widescreen_patches = LoadPatchesFromZip(crc_string, s_widescreen_cheats_data, s_widescreen_cheats_size);
 				log_cb(RETRO_LOG_INFO, "(Wide Screen Cheats DB) Patches Loaded: %d\n", s_active_widescreen_patches);
 			}
 		}
@@ -494,12 +476,11 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 		{
 			message_append(message, sizeof(message), &message_len, "%s%d widescreen patches", (patch_count > 0 || cheat_count > 0) ? " and " : "", s_active_widescreen_patches);
 
-			// Switch to 16:9 if widescreen patches are enabled, and AR is auto.
-			// TODO/FIXME - implement
+			/* TODO/FIXME - 16:9 when the aspect ratio is automatic */
 		}
 	}
 
-	// no-interlacing patches
+	/* no-interlacing patches */
 	if (EmuConfig.EnableNoInterlacingPatches && crc != 0)
 	{
 		if ((s_active_no_interlacing_patches = LoadPatchesFromDir(crc_string, EmuFolders.CheatsNI, "No-interlacing patches", false)) > 0)
@@ -508,19 +489,12 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 		}
 		else
 		{
-			// No ws cheat files found at the cheats_ws folder, try the ws cheats zip file.
-			if (!s_no_interlacing_cheats_loaded)
+			/* None in the cheats_ni folder: the archive. */
+			LoadCheatArchive("cheats_ni.zip", &s_no_interlacing_cheats_data,
+				&s_no_interlacing_cheats_size, &s_no_interlacing_cheats_loaded);
+			if (s_no_interlacing_cheats_size)
 			{
-				s_no_interlacing_cheats_loaded = true;
-
-				std::optional<std::vector<u8>> data = Host::ReadResourceFile("cheats_ni.zip");
-				if (data.has_value())
-					s_no_interlacing_cheats_data = std::move(data.value());
-			}
-
-			if (!s_no_interlacing_cheats_data.empty())
-			{
-				s_active_no_interlacing_patches = LoadPatchesFromZip(crc_string, s_no_interlacing_cheats_data.data(), s_no_interlacing_cheats_data.size());
+				s_active_no_interlacing_patches = LoadPatchesFromZip(crc_string, s_no_interlacing_cheats_data, s_no_interlacing_cheats_size);
 				log_cb(RETRO_LOG_INFO, "(No-Interlacing Cheats DB) Patches Loaded: %u\n", s_active_no_interlacing_patches);
 			}
 		}
@@ -529,7 +503,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 		{
 			message_append(message, sizeof(message), &message_len, "%s%u no-interlacing patches", (patch_count > 0 || cheat_count > 0 || s_active_widescreen_patches > 0) ? " and " : "", s_active_no_interlacing_patches);
 
-			// Disable interlacing in GS if active.
+			/* and the GS's interlacing off */
 			if (EmuConfig.GS.InterlaceMode == GS_INTERLACE_AUTOMATIC)
 			{
 				EmuConfig.GS.InterlaceMode = GS_INTERLACE_OFF;
@@ -548,12 +522,10 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 	}
 }
 
-void VMManager::UpdateRunningGame(bool resetting, bool game_starting, bool swapping_disc)
+static void UpdateRunningGame(bool resetting, bool game_starting, bool swapping_disc)
 {
-	// The CRC can be known before the game actually starts (at the bios), so when
-	// we have the CRC but we're still at the bios and the settings are changed
-	// (e.g. the user presses TAB to speed up emulation), we don't want to apply the
-	// settings as if the game is already running (title, loadeding patches, etc).
+	/* The CRC can be known at the BIOS, before the game starts; settings
+	 * changed there are not applied as though the game were running. */
 	const bool ingame      = (ElfCRC && (g_GameLoading || g_GameStarted));
 	u32 new_crc            = ingame ? ElfCRC : 0;
 	char new_serial[64];
@@ -567,124 +539,113 @@ void VMManager::UpdateRunningGame(bool resetting, bool game_starting, bool swapp
 		return;
 
 	{
+		const GameDatabaseEntry* game;
+		const char* memcardFilters;
 		strlcpy(s_game_serial, new_serial, sizeof(s_game_serial));
-		s_game_crc    = new_crc;
-
-		const GameDatabaseEntry* game = GameDatabase_FindGame(s_game_serial);
-		const char* memcardFilters    = game ? game->memcardFilters : "";
+		s_game_crc     = new_crc;
+		game           = GameDatabase_FindGame(s_game_serial);
+		memcardFilters = game ? game->memcardFilters : "";
 
 		sioSetGameSerial(memcardFilters[0] ? memcardFilters : s_game_serial);
 
-		// If we don't reset the timer here, when using folder memcards the reindex will cause an eject,
-		// which a bunch of games don't like since they access the memory card on boot.
+		/* If we don't reset the timer here, when using folder memcards the reindex will cause an eject, */
+		/* which a bunch of games don't like since they access the memory card on boot. */
 		if (game_starting || resetting)
 			AutoEject_ClearAll();
 	}
 
-	UpdateGameSettingsLayer();
-	ApplySettings();
+	vm_apply_settings();
 
 	if (!swapping_disc)
 	{
-		// Clear the memory card eject notification again when booting for the first time, or starting.
-		// Otherwise, games think the card was removed on boot.
+		/* Clear the memory card eject notification again when booting for the first time, or starting. */
+		/* Otherwise, games think the card was removed on boot. */
 		if (game_starting || resetting)
 			AutoEject_ClearAll();
 
-		// Check this here, for two cases: dynarec on, and when enable cheats is set per-game.
+		/* Check this here, for two cases: dynarec on, and when enable cheats is set per-game. */
 		if (s_patches_crc != s_game_crc)
-			ReloadPatches();
+			vm_reload_patches();
 	}
 
-	Host::OnGameChanged(s_disc_path, s_elf_override, s_game_serial, s_game_crc);
+	host_on_game_changed(s_disc_path, s_elf_override, s_game_serial, s_game_crc);
 }
 
-void VMManager::ReloadPatches()
+void vm_reload_patches(void)
 {
 	LoadPatches(s_game_serial, s_game_crc);
 }
 
-bool VMManager::IsElfFileName(const std::string_view path)
+bool vm_is_elf_file_name(const char* path)
 {
 	/* ".elf" in either case, at the end */
-	const size_t n = path.size();
+	const size_t n = strlen(path);
 	return n >= 4 && path[n - 4] == '.' && (path[n - 3] | 0x20) == 'e'
 		&& (path[n - 2] | 0x20) == 'l' && (path[n - 1] | 0x20) == 'f';
 }
 
-bool VMManager::AutoDetectSource(const std::string& filename)
+static bool AutoDetectSource(const char* filename)
 {
-	if (!filename.empty())
+	if (filename[0])
 	{
-		if (!path_is_valid(filename.c_str()))
+		if (!path_is_valid(filename))
 		{
-			log_cb(RETRO_LOG_ERROR, "Requested filename '{%s}' does not exist.\n", filename.c_str());
+			log_cb(RETRO_LOG_ERROR, "Requested filename '{%s}' does not exist.\n", filename);
 			return false;
 		}
 
-		if (IsElfFileName(filename))
+		if (vm_is_elf_file_name(filename))
 		{
-			// alternative way of booting an elf: change the elf override, with no disc
-			CDVDsys_ChangeSource(CDVD_SourceType::NoDisc);
-
-			s_elf_override = filename;
+			/* An ELF boots as the ELF override, with no disc. */
+			CDVDsys_ChangeSource(CDVD_SOURCE_NODISC);
+			strlcpy(s_elf_override, filename, sizeof(s_elf_override));
 			return true;
 		}
-		else
-		{
-			// TODO: Maybe we should check if it's a valid iso here...
-			CDVDsys_SetFile(CDVD_SourceType::Iso, filename.c_str());
-			CDVDsys_ChangeSource(CDVD_SourceType::Iso);
-			s_disc_path = filename;
-		}
+		CDVDsys_SetFile(CDVD_SOURCE_ISO, filename);
+		CDVDsys_ChangeSource(CDVD_SOURCE_ISO);
+		strlcpy(s_disc_path, filename, sizeof(s_disc_path));
 	}
 	else
 	{
-		// make sure we're not fast booting when we have no filename
-		CDVDsys_ChangeSource(CDVD_SourceType::NoDisc);
+		/* No fast boot without a disc. */
+		CDVDsys_ChangeSource(CDVD_SOURCE_NODISC);
 		EmuConfig.UseBOOT2Injection = false;
 	}
 	return true;
 }
 
-bool VMManager::ApplyBootParameters(VMBootParameters params, std::string* state_to_load)
+static bool ApplyBootParameters(const VMBootParameters* params)
 {
-	const bool default_fast_boot = host_option_fast_boot();
-	EmuConfig.UseBOOT2Injection = params.fast_boot.value_or(default_fast_boot);
+	const char* filename = params->filename ? params->filename : "";
+	EmuConfig.UseBOOT2Injection = (params->fast_boot >= 0) ? (params->fast_boot != 0) : host_option_fast_boot();
 
-	s_elf_override = std::move(params.elf_override);
-	s_disc_path.clear();
+	strlcpy(s_elf_override, params->elf_override ? params->elf_override : "", sizeof(s_elf_override));
+	s_disc_path[0] = '\0';
 
-	// resolve source type
-	if (params.source_type.has_value())
+	if (params->source_type >= 0)
 	{
-		if (params.source_type.value() == CDVD_SourceType::Iso && !path_is_valid(params.filename.c_str()))
+		const CDVD_SourceType type = (CDVD_SourceType)params->source_type;
+		if (params->source_type == CDVD_SOURCE_ISO && !path_is_valid(filename))
 		{
-			log_cb(RETRO_LOG_ERROR, "Requested filename '{%s}' does not exist.\n", params.filename.c_str());
+			log_cb(RETRO_LOG_ERROR, "Requested filename '{%s}' does not exist.\n", filename);
+			return false;
+		}
+		strlcpy(s_disc_path, filename, sizeof(s_disc_path));
+		CDVDsys_SetFile(type, s_disc_path);
+		CDVDsys_ChangeSource(type);
+	}
+	else if (!AutoDetectSource(filename))
+		return false;
+
+	if (s_elf_override[0])
+	{
+		if (!path_is_valid(s_elf_override))
+		{
+			log_cb(RETRO_LOG_ERROR, "Requested boot ELF '{%s}' does not exist.\n", s_elf_override);
 			return false;
 		}
 
-		// Use specified source type.
-		s_disc_path = std::move(params.filename);
-		CDVDsys_SetFile(params.source_type.value(), s_disc_path.c_str());
-		CDVDsys_ChangeSource(params.source_type.value());
-	}
-	else
-	{
-		// Automatic type detection of boot parameter based on filename.
-		if (!AutoDetectSource(params.filename))
-			return false;
-	}
-
-	if (!s_elf_override.empty())
-	{
-		if (!path_is_valid(s_elf_override.c_str()))
-		{
-			log_cb(RETRO_LOG_ERROR, "Requested boot ELF '{%s}' does not exist.\n", s_elf_override.c_str());
-			return false;
-		}
-
-		Hle_SetElfPath(s_elf_override.c_str());
+		Hle_SetElfPath(s_elf_override);
 		EmuConfig.UseBOOT2Injection = true;
 	}
 	else
@@ -695,27 +656,26 @@ bool VMManager::ApplyBootParameters(VMBootParameters params, std::string* state_
 	return true;
 }
 
-bool VMManager::Initialize(VMBootParameters boot_params)
+bool vm_initialize(const VMBootParameters* boot_params)
 {
-	std::string state_to_load;
-	retro_atomic_store_release_int(&s_state, (int)VMState::Initializing);
+	/* Static, as a path is too large for a frame; only the EE boots. */
+	static char bios_path[PCSX2_PATH_MAX];
+	retro_atomic_store_release_int(&s_state, (int)VM_STATE_INITIALIZING);
 	s_vm_thread_id = sthread_get_current_thread_id();
 
-	if (!ApplyBootParameters(std::move(boot_params), &state_to_load))
+	if (!ApplyBootParameters(boot_params))
 	{
 		s_vm_thread_id = 0;
-		retro_atomic_store_release_int(&s_state, (int)VMState::Shutdown);
+		retro_atomic_store_release_int(&s_state, (int)VM_STATE_SHUTDOWN);
 		return false;
 	}
 
-	// early out if we don't have a bios
-	char bios_path[PCSX2_PATH_MAX];
-
+	/* No BIOS, no VM. */
 	emu_config_fullpath_to_bios(&EmuConfig, bios_path, sizeof(bios_path));
 	if (!IsBIOSAvailable(bios_path))
 	{
 		s_vm_thread_id = 0;
-		retro_atomic_store_release_int(&s_state, (int)VMState::Shutdown);
+		retro_atomic_store_release_int(&s_state, (int)VM_STATE_SHUTDOWN);
 		return false;
 	}
 
@@ -730,7 +690,7 @@ bool VMManager::Initialize(VMBootParameters boot_params)
 		CDVDsys_ClearFiles();
 		FileMcd_EmuClose();
 		s_vm_thread_id = 0;
-		retro_atomic_store_release_int(&s_state, (int)VMState::Shutdown);
+		retro_atomic_store_release_int(&s_state, (int)VM_STATE_SHUTDOWN);
 		return false;
 	}
 
@@ -743,7 +703,7 @@ bool VMManager::Initialize(VMBootParameters boot_params)
 		CDVDsys_ClearFiles();
 		FileMcd_EmuClose();
 		s_vm_thread_id = 0;
-		retro_atomic_store_release_int(&s_state, (int)VMState::Shutdown);
+		retro_atomic_store_release_int(&s_state, (int)VM_STATE_SHUTDOWN);
 		return false;
 	}
 
@@ -756,7 +716,7 @@ bool VMManager::Initialize(VMBootParameters boot_params)
 		CDVDsys_ClearFiles();
 		FileMcd_EmuClose();
 		s_vm_thread_id = 0;
-		retro_atomic_store_release_int(&s_state, (int)VMState::Shutdown);
+		retro_atomic_store_release_int(&s_state, (int)VM_STATE_SHUTDOWN);
 		return false;
 	}
 
@@ -771,7 +731,7 @@ bool VMManager::Initialize(VMBootParameters boot_params)
 		CDVDsys_ClearFiles();
 		FileMcd_EmuClose();
 		s_vm_thread_id = 0;
-		retro_atomic_store_release_int(&s_state, (int)VMState::Shutdown);
+		retro_atomic_store_release_int(&s_state, (int)VM_STATE_SHUTDOWN);
 		return false;
 	}
 
@@ -779,7 +739,7 @@ bool VMManager::Initialize(VMBootParameters boot_params)
 
 	s_cpu_implementation_changed = false;
 	UpdateCPUImplementations();
-	Internal::ClearCPUExecutionCaches();
+	vm_clear_cpu_execution_caches();
 	fpcr_set_current(EmuConfig.Cpu.FPUFPCR);
 	memBindConditionalHandlers(EmuConfig.Speedhacks.IntcStat, THREAD_VU1);
 
@@ -789,7 +749,7 @@ bool VMManager::Initialize(VMBootParameters boot_params)
 	cpuReset();
 	hwReset();
 
-	retro_atomic_store_release_int(&s_state, (int)VMState::Paused);
+	retro_atomic_store_release_int(&s_state, (int)VM_STATE_PAUSED);
 
 	UpdateRunningGame(true, false, false);
 
@@ -800,15 +760,15 @@ bool VMManager::Initialize(VMBootParameters boot_params)
 	return true;
 }
 
-void VMManager::Shutdown()
+void vm_shutdown(void)
 {
-	// we'll probably already be stopping (this is how Qt calls shutdown),
-	// but just in case, so any of the stuff we call here knows we don't have a valid VM.
-	retro_atomic_store_release_int(&s_state, (int)VMState::Stopping);
+	/* Stopping, if not already, so nothing called below takes the VM
+	 * as valid. */
+	retro_atomic_store_release_int(&s_state, (int)VM_STATE_STOPPING);
 
 	SetTimerResolutionIncreased(false);
 
-	// sync everything
+	/* everything synced */
 	if (THREAD_VU1)
 		mtvu_wait_vu();
 	mtgs_wait_gs(false);
@@ -819,20 +779,16 @@ void VMManager::Shutdown()
 		ElfCRC = 0;
 		ElfEntry = 0;
 
-		s_disc_path.clear();
-		s_elf_override.clear();
+		s_disc_path[0] = '\0';
+		s_elf_override[0] = '\0';
 		s_game_crc = 0;
 		s_patches_crc = 0;
 		s_game_serial[0] = '\0';
-		Host::OnGameChanged(s_disc_path, s_elf_override, s_game_serial, 0);
+		host_on_game_changed(s_disc_path, s_elf_override, s_game_serial, 0);
 	}
 	s_active_game_fixes = 0;
 	s_active_widescreen_patches = 0;
 	s_active_no_interlacing_patches = 0;
-
-	UpdateGameSettingsLayer();
-
-	std::string().swap(s_elf_override);
 
 	fpcr_set_current(fpcr_default());
 
@@ -856,22 +812,22 @@ void VMManager::Shutdown()
 	PADshutdown();
 	DEV9shutdown();
 
-	retro_atomic_store_release_int(&s_state, (int)VMState::Shutdown);
+	retro_atomic_store_release_int(&s_state, (int)VM_STATE_SHUTDOWN);
 
-	// clear out any potentially-incorrect settings from the last game
-	LoadSettings();
+	/* none of the last game's settings left */
+	vm_load_settings();
 }
 
-void VMManager::Reset()
+void vm_reset(void)
 {
-	// If we're running, we're probably going to be executing this at event test time,
-	// at vsync, which happens in the middle of event handling. Resetting everything
-	// immediately here is a bad idea (tm), in fact, it breaks some games (e.g. TC:NYC).
-	// So, instead, we tell the rec to exit execution, _then_ reset. Paused is fine here,
-	// since the rec won't be running, so it's safe to immediately reset there.
-	if ((VMState)retro_atomic_load_acquire_int(&s_state) == VMState::Running)
+	bool game_was_started;
+	/* Running, this is likely the vsync's event test, in the middle of
+	 * event handling, where resetting at once breaks games (TC:NYC): the
+	 * recompiler is told to exit, and the reset follows. Paused, nothing
+	 * is executing and it resets at once. */
+	if ((enum vm_state)retro_atomic_load_acquire_int(&s_state) == VM_STATE_RUNNING)
 	{
-		retro_atomic_store_release_int(&s_state, (int)VMState::Resetting);
+		retro_atomic_store_release_int(&s_state, (int)VM_STATE_RESETTING);
 		return;
 	}
 
@@ -879,40 +835,42 @@ void VMManager::Reset()
 	mtvu_reset();
 	mtgs_wait_gs(false);
 
-	const bool game_was_started = g_GameStarted;
+	game_was_started = g_GameStarted;
 
 	s_active_game_fixes = 0;
 	s_active_widescreen_patches = 0;
 	s_active_no_interlacing_patches = 0;
 
-	Internal::ClearCPUExecutionCaches();
+	vm_clear_cpu_execution_caches();
 	memBindConditionalHandlers(EmuConfig.Speedhacks.IntcStat, THREAD_VU1);
 	UpdateVSyncRate(true);
 
 	cpuReset();
 	hwReset();
 
-	// gameid change, so apply settings
+	/* the game's identity changed: its settings again */
 	if (game_was_started)
 		UpdateRunningGame(true, false, false);
 
-	// If we were paused, state won't be resetting, so don't flip back to running.
-	if ((VMState)retro_atomic_load_acquire_int(&s_state) == VMState::Resetting)
-		retro_atomic_store_release_int(&s_state, (int)VMState::Running);
+	/* Paused, the state never went to resetting: it stays paused. */
+	if ((enum vm_state)retro_atomic_load_acquire_int(&s_state) == VM_STATE_RESETTING)
+		retro_atomic_store_release_int(&s_state, (int)VM_STATE_RUNNING);
 }
 
-bool VMManager::ChangeDisc(CDVD_SourceType source, std::string path)
+bool vm_change_disc(CDVD_SourceType source, const char* path)
 {
-	/* What to go back to, taken before the change replaces it. */
+	/* What to go back to, taken before the change replaces it; static,
+	 * as a path is too large for a frame. */
+	static char old_path[PCSX2_PATH_MAX];
 	const CDVD_SourceType old_type = CDVDsys_GetSourceType();
-	char old_path[PCSX2_PATH_MAX];
+	bool result;
 	strlcpy(old_path, CDVDsys_GetFile(old_type), sizeof(old_path));
 
 	CDVDsys_ChangeSource(source);
-	if (!path.empty())
-		CDVDsys_SetFile(source, path.c_str());
+	if (path && path[0])
+		CDVDsys_SetFile(source, path);
 
-	const bool result = OpenCDVD();
+	result = OpenCDVD();
 	if (!result)
 	{
 		/* Failed to open new disc image '{}'. Reverting to old image */
@@ -922,7 +880,7 @@ bool VMManager::ChangeDisc(CDVD_SourceType source, std::string path)
 		if (!OpenCDVD())
 		{
 			/* Failed to switch back to old disc image. Removing disc. */
-			CDVDsys_ChangeSource(CDVD_SourceType::NoDisc);
+			CDVDsys_ChangeSource(CDVD_SOURCE_NODISC);
 			OpenCDVD();
 		}
 	}
@@ -931,9 +889,9 @@ bool VMManager::ChangeDisc(CDVD_SourceType source, std::string path)
 	return result;
 }
 
-void VMManager::InitializeCPUProviders()
+static void InitializeCPUProviders(void)
 {
-	// arm64 has no x86 recompilers / SSE VIF unpack; the interpreters are used.
+	/* arm64 has no x86 recompilers / SSE VIF unpack; the interpreters are used. */
 #ifndef ARCH_ARM64
 	recCpu.Reserve();
 	psxRec.Reserve();
@@ -944,32 +902,32 @@ void VMManager::InitializeCPUProviders()
 	dVifReserve(0);
 	dVifReserve(1);
 #else
-	// arm64: reserve the IOP recompiler (psxRec, Phase C.2b) and the EE
-	// recompiler (recCpu, Phase C.3) so their code caches/self-tests come up.
+	/* arm64: reserve the IOP recompiler (psxRec, Phase C.2b) and the EE */
+	/* recompiler (recCpu, Phase C.3) so their code caches/self-tests come up. */
 	psxRec.Reserve();
 	recCpu.Reserve();
-	// C.28-4: the armsx2 microVU1 transplant is the default VU1 provider.
-	// Its Reserve() also opens vu1Thread (idempotent with the Open() below).
+	/* C.28-4: the armsx2 microVU1 transplant is the default VU1 provider. */
+	/* Its Reserve() also opens vu1Thread (idempotent with the Open() below). */
 	vucpu_rec_vu1_reserve();
-	// C.30-1: microVU0 for VU0 micro programs (VCALLMS/VCALLMSR).
+	/* C.30-1: microVU0 for VU0 micro programs (VCALLMS/VCALLMSR). */
 	vucpu_rec_vu0_reserve();
-	// The MTVU worker thread is normally spawned by vucpu_rec_vu1_reserve()
-	// (x86/microVU.cpp), which doesn't exist in this build -- with vuThread
-	// enabled the EE would push to vu1Thread's ring and wait on its WorkSema
-	// forever (boot hang / black screen). The worker runs VU1 through
-	// CpuVU1->Execute(), so it works with the VU interpreter provider too.
+	/* The MTVU worker thread is normally spawned by vucpu_rec_vu1_reserve() */
+	/* (x86/microVU.cpp), which doesn't exist in this build -- with vuThread */
+	/* enabled the EE would push to vu1Thread's ring and wait on its WorkSema */
+	/* forever (boot hang / black screen). The worker runs VU1 through */
+	/* CpuVU1->Execute(), so it works with the VU interpreter provider too. */
 	mtvu_open();
-	// arm64 VIF unpack dynarec (C.19, NEON port transplanted from ARMSX2).
+	/* arm64 VIF unpack dynarec (C.19, NEON port transplanted from ARMSX2). */
 	dVifReserve(0);
 	dVifReserve(1);
 #endif
 
 	gs_code_reserve_assign(&s_vm_memory.code);
 
-	VifUnpackSSE_Init(); // on arm64 this generates the NEON nVifUpk kernels (C.19)
+	VifUnpackSSE_Init(); /* on arm64 this generates the NEON nVifUpk kernels (C.19) */
 }
 
-void VMManager::ShutdownCPUProviders()
+static void ShutdownCPUProviders(void)
 {
 	gs_code_reserve_release();
 
@@ -986,7 +944,7 @@ void VMManager::ShutdownCPUProviders()
 	recCpu.Shutdown();
 #else
 	vucpu_rec_vu0.Shutdown();
-	vucpu_rec_vu1.Shutdown(); // waits on the MTVU worker, then mVUclose
+	vucpu_rec_vu1.Shutdown(); /* waits on the MTVU worker, then mVUclose */
 	mtvu_close();
 	dVifRelease(1);
 	dVifRelease(0);
@@ -996,15 +954,15 @@ void VMManager::ShutdownCPUProviders()
 #endif
 }
 
-void VMManager::UpdateCPUImplementations()
+static void UpdateCPUImplementations(void)
 {
 #ifndef ARCH_ARM64
 	Cpu    = CHECK_EEREC ? &recCpu : &intCpu;
 	psxCpu = CHECK_IOPREC ? &psxRec : &psxInt;
 #else
-	// arm64: IOP uses the arm64 recompiler (Phase C.2b). EE uses the arm64 EE
-	// recompiler (Phase C.3) when CHECK_EEREC is set; C.3-1 blocks call the
-	// interpreter so behaviour is identical while the JIT plumbing runs.
+	/* arm64: IOP uses the arm64 recompiler (Phase C.2b). EE uses the arm64 EE */
+	/* recompiler (Phase C.3) when CHECK_EEREC is set; C.3-1 blocks call the */
+	/* interpreter so behaviour is identical while the JIT plumbing runs. */
 	Cpu    = CHECK_EEREC ? &recCpu : &intCpu;
 	psxCpu = &psxRec;
 #endif
@@ -1023,8 +981,8 @@ void VMManager::UpdateCPUImplementations()
 		log_cb(RETRO_LOG_INFO, "VU1 soft float: running on the exact interpreter.\n");
 
 #ifdef ARCH_ARM64
-	// C.30-1: microVU0 runs VU0 micro programs natively (macro-mode COP2
-	// stays on the C.29-1 inline interpreter calls until C.30-2).
+	/* C.30-1: microVU0 runs VU0 micro programs natively (macro-mode COP2 */
+	/* stays on the C.29-1 inline interpreter calls until C.30-2). */
 	if (EmuConfig.Cpu.Recompiler.EnableVU0 && !CHECK_VU_SOFT_REC(0))
 		CpuVU0 = &vucpu_rec_vu0;
 #endif
@@ -1036,8 +994,8 @@ void VMManager::UpdateCPUImplementations()
 	if (EmuConfig.Cpu.Recompiler.EnableVU1 && !CHECK_VU_SOFT_REC(1))
 		CpuVU1 = &vucpu_rec_vu1;
 #else
-	// C.28-4: microVU1 (the armsx2 transplant, native VU codegen) is the VU1
-	// provider -- verified register-exact against the interpreter.
+	/* C.28-4: microVU1 (the armsx2 transplant, native VU codegen) is the VU1 */
+	/* provider -- verified register-exact against the interpreter. */
 	if (EmuConfig.Cpu.Recompiler.EnableVU1 && !CHECK_VU_SOFT_REC(1))
 	{
 		CpuVU1 = &vucpu_rec_vu1;
@@ -1046,13 +1004,13 @@ void VMManager::UpdateCPUImplementations()
 #endif
 }
 
-void VMManager::Internal::ClearCPUExecutionCaches()
+void vm_clear_cpu_execution_caches(void)
 {
 	Cpu->Reset();
 	psxCpu->Reset();
 
 #ifndef ARCH_ARM64
-	// mVU's VU0 needs to be properly initialized for macro mode even if it's not used for micro mode!
+	/* mVU's VU0 needs to be properly initialized for macro mode even if it's not used for micro mode! */
 	if (CHECK_EEREC && !EmuConfig.Cpu.Recompiler.EnableVU0)
 		vucpu_rec_vu0.Reset();
 #endif
@@ -1066,54 +1024,48 @@ void VMManager::Internal::ClearCPUExecutionCaches()
 #endif
 }
 
-void VMManager::Execute()
+void vm_execute(void)
 {
-	// Check for interpreter<->recompiler switches.
-	if (std::exchange(s_cpu_implementation_changed, false))
+	/* An interpreter/recompiler switch: the new ones in, and reset. */
+	if (s_cpu_implementation_changed)
 	{
-		// We need to switch the cpus out, and reset the new ones if so.
+		s_cpu_implementation_changed = false;
 		UpdateCPUImplementations();
-		Internal::ClearCPUExecutionCaches();
+		vm_clear_cpu_execution_caches();
 		vtlb_ResetFastmem();
 	}
 
-	// Execute until we're asked to stop.
+	/* until asked to stop */
 	Cpu->Execute();
 }
 
-void VMManager::SetPaused(bool paused)
+void vm_set_paused(bool paused)
 {
-	if (!HasValidVM())
+	if (!vm_has_valid_vm())
 		return;
 
 	if (paused)
 	{
 		log_cb(RETRO_LOG_DEBUG, "(VMManager) Pausing...\n");
-		SetState(VMState::Paused);
+		vm_set_state(VM_STATE_PAUSED);
 	}
 	else
 	{
 		log_cb(RETRO_LOG_DEBUG, "(VMManager) Resuming...\n");
-		SetState(VMState::Running);
+		vm_set_state(VM_STATE_RUNNING);
 	}
 }
 
-const std::string& VMManager::Internal::GetElfOverride()
+bool vm_execution_interrupted(void)
 {
-	return s_elf_override;
+	return (enum vm_state)retro_atomic_load_acquire_int(&s_state) != VM_STATE_RUNNING || s_cpu_implementation_changed;
 }
 
-bool VMManager::Internal::IsExecutionInterrupted()
+void vm_entry_point_compiling_on_cpu_thread(void)
 {
-	return (VMState)retro_atomic_load_acquire_int(&s_state) != VMState::Running || s_cpu_implementation_changed;
-}
-
-void VMManager::Internal::EntryPointCompilingOnCPUThread()
-{
-	// Classic chicken and egg problem here. We don't want to update the running game
-	// until the game entry point actually runs, because that can update settings, which
-	// can flush the JIT, etc. But we need to apply patches for games where the entry
-	// point is in the patch (e.g. WRC 4). So. Gross, but the only way to handle it really.
+	/* The running game is not updated until its entry point runs, as
+	 * that can change settings and flush the recompiler; but a game whose
+	 * entry point is in a patch (WRC 4) needs its patches now. */
 	{
 		char serial[64];
 		SysGetDiscID(serial, sizeof(serial));
@@ -1122,84 +1074,82 @@ void VMManager::Internal::EntryPointCompilingOnCPUThread()
 	ApplyLoadedPatches(1u << PPT_ONCE_ON_LOAD);
 }
 
-void VMManager::Internal::GameStartingOnCPUThread()
+void vm_game_starting_on_cpu_thread(void)
 {
 	UpdateRunningGame(false, true, false);
 	ApplyLoadedPatches((1u << PPT_ONCE_ON_LOAD) | (1u << PPT_COMBINED_0_1));
 }
 
-void VMManager::CheckForCPUConfigChanges(const Pcsx2Config& old_config)
+static void CheckForCPUConfigChanges(const Pcsx2Config* old_config)
 {
-	if (emu_cpu_equal(&EmuConfig.Cpu, &old_config.Cpu) &&
-		EmuConfig.Gamefixes.bitset == old_config.Gamefixes.bitset &&
-		emu_speedhack_equal(&EmuConfig.Speedhacks, &old_config.Speedhacks)
+	if (emu_cpu_equal(&EmuConfig.Cpu, &old_config->Cpu) &&
+		EmuConfig.Gamefixes.bitset == old_config->Gamefixes.bitset &&
+		emu_speedhack_equal(&EmuConfig.Speedhacks, &old_config->Speedhacks)
 		)
 		return;
 
 	log_cb(RETRO_LOG_INFO, "Updating CPU configuration...\n");
 	fpcr_set_current(EmuConfig.Cpu.FPUFPCR);
-	Internal::ClearCPUExecutionCaches();
+	vm_clear_cpu_execution_caches();
 	memBindConditionalHandlers(EmuConfig.Speedhacks.IntcStat, THREAD_VU1);
 
-	if (EmuConfig.Cpu.Recompiler.EnableFastmem != old_config.Cpu.Recompiler.EnableFastmem)
+	if (EmuConfig.Cpu.Recompiler.EnableFastmem != old_config->Cpu.Recompiler.EnableFastmem)
 		vtlb_ResetFastmem();
 
-	// did we toggle recompilers?
-	if (emu_cpu_recompilers_changed(&EmuConfig.Cpu, &old_config.Cpu))
-	{
-		// This has to be done asynchronously, since we're still executing the
-		// cpu when this function is called. Break the execution as soon as
-		// possible and reset next time we're called.
+	/* A recompiler toggled: switched at the next vm_execute, as the CPU
+	 * is still executing here. */
+	if (emu_cpu_recompilers_changed(&EmuConfig.Cpu, &old_config->Cpu))
 		s_cpu_implementation_changed = true;
-	}
 
-	if (EmuConfig.Cpu.AffinityControlMode != old_config.Cpu.AffinityControlMode ||
-		EmuConfig.Speedhacks.vuThread != old_config.Speedhacks.vuThread)
+	if (EmuConfig.Cpu.AffinityControlMode != old_config->Cpu.AffinityControlMode ||
+		EmuConfig.Speedhacks.vuThread != old_config->Speedhacks.vuThread)
 		SetEmuThreadAffinities();
 }
 
-void VMManager::CheckForGSConfigChanges(const Pcsx2Config& old_config)
+static void CheckForGSConfigChanges(const Pcsx2Config* old_config)
 {
-	if (emu_gs_equal(&EmuConfig.GS, &old_config.GS))
+	if (emu_gs_equal(&EmuConfig.GS, &old_config->GS))
 		return;
 	UpdateVSyncRate(true);
 	mtgs_apply_settings();
 }
 
-void VMManager::CheckForPatchConfigChanges(const Pcsx2Config& old_config)
+static void CheckForPatchConfigChanges(const Pcsx2Config* old_config)
 {
-	if (EmuConfig.EnableCheats == old_config.EnableCheats &&
-		EmuConfig.EnableWideScreenPatches == old_config.EnableWideScreenPatches &&
-		EmuConfig.EnablePatches == old_config.EnablePatches)
+	if (EmuConfig.EnableCheats == old_config->EnableCheats &&
+		EmuConfig.EnableWideScreenPatches == old_config->EnableWideScreenPatches &&
+		EmuConfig.EnablePatches == old_config->EnablePatches)
 		return;
 
-	ReloadPatches();
+	vm_reload_patches();
 }
 
-void VMManager::CheckForDEV9ConfigChanges(const Pcsx2Config& old_config)
+static void CheckForDEV9ConfigChanges(const Pcsx2Config* old_config)
 {
-	if (emu_dev9_equal(&EmuConfig.DEV9, &old_config.DEV9))
+	if (emu_dev9_equal(&EmuConfig.DEV9, &old_config->DEV9))
 		return;
 
 	DEV9CheckChanges(old_config);
 }
 
-void VMManager::CheckForMemoryCardConfigChanges(const Pcsx2Config& old_config)
+static void CheckForMemoryCardConfigChanges(const Pcsx2Config* old_config)
 {
 	bool changed = false;
+	size_t i;
+	u32 port, slot;
 
-	for (size_t i = 0; i < C89_ARRAY_SIZE(EmuConfig.Mcd); i++)
+	for (i = 0; i < C89_ARRAY_SIZE(EmuConfig.Mcd); i++)
 	{
-		if (EmuConfig.Mcd[i].Enabled != old_config.Mcd[i].Enabled ||
-			strcmp(EmuConfig.Mcd[i].Filename, old_config.Mcd[i].Filename) != 0)
+		if (EmuConfig.Mcd[i].Enabled != old_config->Mcd[i].Enabled ||
+			strcmp(EmuConfig.Mcd[i].Filename, old_config->Mcd[i].Filename) != 0)
 		{
 			changed = true;
 			break;
 		}
 	}
 
-	changed |= (EmuConfig.McdEnableEjection != old_config.McdEnableEjection);
-	changed |= (EmuConfig.McdFolderAutoManage != old_config.McdFolderAutoManage);
+	changed |= (EmuConfig.McdEnableEjection != old_config->McdEnableEjection);
+	changed |= (EmuConfig.McdFolderAutoManage != old_config->McdFolderAutoManage);
 
 	if (!changed)
 		return;
@@ -1207,19 +1157,19 @@ void VMManager::CheckForMemoryCardConfigChanges(const Pcsx2Config& old_config)
 	FileMcd_EmuClose();
 	FileMcd_EmuOpen();
 
-	// force card eject when files change
-	for (u32 port = 0; port < 2; port++)
+	/* a card whose file changed is ejected */
+	for (port = 0; port < 2; port++)
 	{
-		for (u32 slot = 0; slot < 4; slot++)
+		for (slot = 0; slot < 4; slot++)
 		{
 			const uint index = FileMcd_ConvertToSlot(port, slot);
-			if (EmuConfig.Mcd[index].Enabled != old_config.Mcd[index].Enabled ||
-				strcmp(EmuConfig.Mcd[index].Filename, old_config.Mcd[index].Filename) != 0)
+			if (EmuConfig.Mcd[index].Enabled != old_config->Mcd[index].Enabled ||
+				strcmp(EmuConfig.Mcd[index].Filename, old_config->Mcd[index].Filename) != 0)
 				AutoEject_Set(port, slot);
 		}
 	}
 
-	// force reindexing, mc folder code is janky
+	/* and the folder cards reindexed */
 	{
 		const GameDatabaseEntry* game = GameDatabase_FindGame(s_game_serial);
 		const char* filters           = game ? game->memcardFilters : "";
@@ -1227,28 +1177,32 @@ void VMManager::CheckForMemoryCardConfigChanges(const Pcsx2Config& old_config)
 	}
 }
 
-void VMManager::CheckForConfigChanges(const Pcsx2Config& old_config)
+static void CheckForConfigChanges(const Pcsx2Config* old_config)
 {
-	if (HasValidVM())
+	if (vm_has_valid_vm())
 	{
 		CheckForCPUConfigChanges(old_config);
 		CheckForPatchConfigChanges(old_config);
 		CheckForDEV9ConfigChanges(old_config);
 		CheckForMemoryCardConfigChanges(old_config);
 
-		if (EmuConfig.EnableCheats != old_config.EnableCheats ||
-			EmuConfig.EnableWideScreenPatches != old_config.EnableWideScreenPatches ||
-			EmuConfig.EnableNoInterlacingPatches != old_config.EnableNoInterlacingPatches)
-			VMManager::ReloadPatches();
+		if (EmuConfig.EnableCheats != old_config->EnableCheats ||
+			EmuConfig.EnableWideScreenPatches != old_config->EnableWideScreenPatches ||
+			EmuConfig.EnableNoInterlacingPatches != old_config->EnableNoInterlacingPatches)
+			vm_reload_patches();
 
 		CheckForGSConfigChanges(old_config);
 	}
 }
 
-void VMManager::ApplySettings()
+void vm_apply_settings(void)
 {
-	// if we're running, ensure the threads are synced
-	const bool running = ((VMState)retro_atomic_load_acquire_int(&s_state) == VMState::Running);
+	/* vm_load_settings builds the config afresh from the options and the
+	 * runtime fields, so nothing optional keeps a stale value; the old one
+	 * is kept to compare against, off the stack (see vm_load_settings). */
+	static Pcsx2Config old_config;
+	/* Running, the threads are synced first. */
+	const bool running = ((enum vm_state)retro_atomic_load_acquire_int(&s_state) == VM_STATE_RUNNING);
 	if (running)
 	{
 		if (THREAD_VU1)
@@ -1256,26 +1210,20 @@ void VMManager::ApplySettings()
 		mtgs_wait_gs(false);
 	}
 
-	/* LoadSettings builds the config afresh from the options and the
-	 * runtime fields, so nothing optional keeps a stale value; the old one
-	 * is kept to compare against, off the stack (see LoadSettings). */
-	static Pcsx2Config old_config;
 	old_config = EmuConfig;
-	LoadSettings();
-	CheckForConfigChanges(old_config);
+	vm_load_settings();
+	CheckForConfigChanges(&old_config);
 }
 
-bool VMManager::g_MtvuMenuDefault = true;
-bool VMManager::g_FastmemMenuDefault = true;
+bool vm_mtvu_menu_default    = true;
+bool vm_fastmem_menu_default = true;
 
 
 #ifdef _WIN32
 
-#include "common/RedtapeWindows.h"
-
 static bool s_timer_resolution_increased = false;
 
-void VMManager::SetTimerResolutionIncreased(bool enabled)
+static void SetTimerResolutionIncreased(bool enabled)
 {
 	if (s_timer_resolution_increased == enabled)
 		return;
@@ -1291,19 +1239,20 @@ void VMManager::SetTimerResolutionIncreased(bool enabled)
 
 #else
 
-void VMManager::SetTimerResolutionIncreased(bool enabled)
+static void SetTimerResolutionIncreased(bool enabled)
 {
+	(void)enabled;
 }
 
 #endif
 
-/* Filled once in retro_init (VMManager::InitializeCPUInfo), before any
+/* Filled once in retro_init (vm_initialize_cpu_info), before any
  * thread that reads it exists, and never written again. */
 static u32    s_processor_list[64];
 static size_t s_processor_count;
 static bool   s_processor_list_initialized = false;
 
-void VMManager::InitializeCPUInfo(void)
+void vm_initialize_cpu_info(void)
 {
 	unsigned order[64];
 	char     line[64 * 4 + 32];
@@ -1342,47 +1291,47 @@ void VMManager::InitializeCPUInfo(void)
  * processor list is available everywhere now, but which platforms write
  * these defaults is a separate question from how the CPU is queried. */
 #if defined(__linux__) || defined(_WIN32)
-static void SetMTVUAndAffinityControlDefault(Pcsx2Config& c)
+static void SetMTVUAndAffinityControlDefault(Pcsx2Config* c)
 {
-	// arm64 MTVU status: the worker thread spawns (InitializeCPUProviders) and
-	// sets VPU_STAT busy around interpreter VU1 programs (MTVU.c), which makes
-	// MTVU produce correct XGKICK output. However, games driving a CONTINUOUS
-	// VU1 program (an endless microprogram streaming XGKICK packets, e.g. GT3's
-	// arcade attract) deadlock the one-packet-per-program MTVU handoff with the
-	// VU1 INTERPRETER: the worker drip-feeds gsPack mid-program until path1's
-	// 9MB buffer fills (gif_path_copy -> WaitGS(true) with an empty
-	// gsPackQueue), while MTGS sits in semaXGkick.Wait() for a program end that
-	// never comes. Needs a partial-packet flush protocol (or a VU recompiler
-	// with upstream's XGKICK handling) -- until C.28-4 MTVU was opt-in
-	// (helps VU-light titles; MMX7 verified pixel-identical).
-	// C.28-4: with microVU1 as the default VU1 provider (native codegen,
-	// verified register-exact against the interpreter), MTVU and instant VU1 are
-	// safe defaults again -- the C.13c livelock and the 3M-cycle-budget wall
-	// were interpreter-provider problems, and microVU1 is now the only VU1
-	// provider.
-	const bool mtvu = VMManager::MtvuHardwareAllowed() && VMManager::g_MtvuMenuDefault;
+	/* arm64 MTVU status: the worker thread spawns (InitializeCPUProviders) and */
+	/* sets VPU_STAT busy around interpreter VU1 programs (MTVU.c), which makes */
+	/* MTVU produce correct XGKICK output. However, games driving a CONTINUOUS */
+	/* VU1 program (an endless microprogram streaming XGKICK packets, e.g. GT3's */
+	/* arcade attract) deadlock the one-packet-per-program MTVU handoff with the */
+	/* VU1 INTERPRETER: the worker drip-feeds gsPack mid-program until path1's */
+	/* 9MB buffer fills (gif_path_copy -> WaitGS(true) with an empty */
+	/* gsPackQueue), while MTGS sits in semaXGkick.Wait() for a program end that */
+	/* never comes. Needs a partial-packet flush protocol (or a VU recompiler */
+	/* with upstream's XGKICK handling) -- until C.28-4 MTVU was opt-in */
+	/* (helps VU-light titles; MMX7 verified pixel-identical). */
+	/* C.28-4: with microVU1 as the default VU1 provider (native codegen, */
+	/* verified register-exact against the interpreter), MTVU and instant VU1 are */
+	/* safe defaults again -- the C.13c livelock and the 3M-cycle-budget wall */
+	/* were interpreter-provider problems, and microVU1 is now the only VU1 */
+	/* provider. */
+	const bool mtvu = vm_mtvu_hardware_allowed() && vm_mtvu_menu_default;
 	log_cb(RETRO_LOG_INFO, "%s\n", mtvu ? "  MTVU enabled (pcsx2_mtvu; requires >= 3 physical cores)."
 	                     : "  MTVU disabled.");
-	c.Speedhacks.vuThread = mtvu;
-	// Instant VU1 assumes the VU1 provider finishes a program quickly (x86
-	// microVU). With the VU1 INTERPRETER, a continuous microprogram (endless
-	// loop streaming XGKICK -- GT3's arcade attract) burns the full
-	// vu1RunCycles=3M budget on EVERY kick: the EE thread spends seconds per
-	// frame inside InterpVU1::Execute and the frontend appears hung. Run VU1
-	// in small interleaved slices instead (upstream's non-instant scheduling).
+	c->Speedhacks.vuThread = mtvu;
+	/* Instant VU1 assumes the VU1 provider finishes a program quickly (x86 */
+	/* microVU). With the VU1 INTERPRETER, a continuous microprogram (endless */
+	/* loop streaming XGKICK -- GT3's arcade attract) burns the full */
+	/* vu1RunCycles=3M budget on EVERY kick: the EE thread spends seconds per */
+	/* frame inside InterpVU1::Execute and the frontend appears hung. Run VU1 */
+	/* in small interleaved slices instead (upstream's non-instant scheduling). */
 	log_cb(RETRO_LOG_INFO, "  Instant VU1 enabled (microVU1 native provider).\n");
-	c.Speedhacks.vu1Instant = true;
+	c->Speedhacks.vu1Instant = true;
 	/* Fastmem follows the same shape as MTVU: this default-setter can run
 	 * again on a settings reset after check_variables(true) has consumed
 	 * the option, so the option's value has to ride a VMManager global to
 	 * survive it. The truthful "which mode is this run in" line lives in
 	 * LoadSettings, printed from the config the recompilers actually
 	 * read - never from here, where the global may not be fed yet. */
-	c.Cpu.Recompiler.EnableFastmem = VMManager::g_FastmemMenuDefault;
+	c->Cpu.Recompiler.EnableFastmem = vm_fastmem_menu_default;
 }
 
 #else
-static void SetMTVUAndAffinityControlDefault(Pcsx2Config& c) { (void)c; }
+static void SetMTVUAndAffinityControlDefault(Pcsx2Config* c) { (void)c; }
 #endif
 
 /* Single source of truth for the MTVU hardware gate.  The worker is only
@@ -1393,12 +1342,12 @@ static void SetMTVUAndAffinityControlDefault(Pcsx2Config& c) { (void)c; }
  * vuThread must apply this same predicate, otherwise THREAD_VU1 can come
  * up true with no worker alive and mtgs_main_loop waits on a handoff
  * that never arrives (boot hang). */
-bool VMManager::MtvuHardwareAllowed()
+bool vm_mtvu_hardware_allowed(void)
 {
 	return cpu_features_get_core_amount_physical() >= 3;
 }
 
-void VMManager::SetVMThread(sthread_t* thread)
+void vm_set_vm_thread(sthread_t* thread)
 {
 	s_vm_thread = thread;
 }
@@ -1410,9 +1359,22 @@ static bool set_ee_affinity(u64 mask)
 	return s_vm_thread ? sthread_set_affinity(s_vm_thread, mask) : false;
 }
 
-void VMManager::SetEmuThreadAffinities()
+static void SetEmuThreadAffinities(void)
 {
-	// not supported on this platform
+	static const u8 processor_assignment[7][2][3] = {
+		/* EE xx GS  EE VU GS */
+		{{0, 2, 1}, {0, 1, 2}}, /* Disabled */
+		{{0, 2, 1}, {0, 1, 2}}, /* EE > VU > GS */
+		{{0, 2, 1}, {0, 2, 1}}, /* EE > GS > VU */
+		{{0, 2, 1}, {1, 0, 2}}, /* VU > EE > GS */
+		{{1, 2, 0}, {2, 0, 1}}, /* VU > GS > EE */
+		{{1, 2, 0}, {1, 2, 0}}, /* GS > EE > VU */
+		{{1, 2, 0}, {2, 1, 0}}, /* GS > VU > EE */
+	};
+	const u8* this_proc_assigment;
+	u32 ee_index, vu_index;
+	u64 ee_affinity;
+	/* not supported on this platform */
 	if (s_processor_count == 0)
 		return;
 
@@ -1427,31 +1389,20 @@ void VMManager::SetEmuThreadAffinities()
 		return;
 	}
 
-	static constexpr u8 processor_assignment[7][2][3] = {
-		//EE xx GS  EE VU GS
-		{{0, 2, 1}, {0, 1, 2}}, // Disabled
-		{{0, 2, 1}, {0, 1, 2}}, // EE > VU > GS
-		{{0, 2, 1}, {0, 2, 1}}, // EE > GS > VU
-		{{0, 2, 1}, {1, 0, 2}}, // VU > EE > GS
-		{{1, 2, 0}, {2, 0, 1}}, // VU > GS > EE
-		{{1, 2, 0}, {1, 2, 0}}, // GS > EE > VU
-		{{1, 2, 0}, {2, 1, 0}}, // GS > VU > EE
-	};
-
-	// steal vu's thread if mtvu is off
-	const u8* this_proc_assigment = processor_assignment[EmuConfig.Cpu.AffinityControlMode][EmuConfig.Speedhacks.vuThread];
-	const u32 ee_index = s_processor_list[this_proc_assigment[0]];
-	const u32 vu_index = s_processor_list[this_proc_assigment[1]];
+	/* without MTVU, the EE takes the VU's processor */
+	this_proc_assigment = processor_assignment[EmuConfig.Cpu.AffinityControlMode][EmuConfig.Speedhacks.vuThread];
+	ee_index = s_processor_list[this_proc_assigment[0]];
+	vu_index = s_processor_list[this_proc_assigment[1]];
 	log_cb(RETRO_LOG_INFO, "Processor order assignment: EE=%u, VU=%u, GS=%u\n",
 		this_proc_assigment[0], this_proc_assigment[1], this_proc_assigment[2]);
 
-	const u64 ee_affinity = static_cast<u64>(1) << ee_index;
+	ee_affinity = (u64)1 << ee_index;
 	log_cb(RETRO_LOG_INFO, "EE thread is on processor %u (0x%llx)\n", ee_index, (unsigned long long)ee_affinity);
 	set_ee_affinity(ee_affinity);
 
 	if (EmuConfig.Speedhacks.vuThread)
 	{
-		const u64 vu_affinity = static_cast<u64>(1) << vu_index;
+		const u64 vu_affinity = (u64)1 << vu_index;
 		log_cb(RETRO_LOG_INFO, "VU thread is on processor %u (0x%llx)\n", vu_index, (unsigned long long)vu_affinity);
 		sthread_set_affinity(mtvu_thread(), vu_affinity);
 	}
@@ -1459,13 +1410,13 @@ void VMManager::SetEmuThreadAffinities()
 		sthread_set_affinity(mtvu_thread(), 0);
 }
 
-void VMManager::ApplyHardwareDefaults(Pcsx2Config& c)
+void vm_apply_hardware_defaults(Pcsx2Config* c)
 {
 	SetMTVUAndAffinityControlDefault(c);
 }
 
-const u32* VMManager::GetSortedProcessorList(u32* count)
+const u32* vm_get_sorted_processor_list(u32* count)
 {
-	*count = static_cast<u32>(s_processor_count);
+	*count = (u32)s_processor_count;
 	return s_processor_list;
 }

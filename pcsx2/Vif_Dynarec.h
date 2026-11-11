@@ -26,10 +26,6 @@
 
 typedef void (*nVifrecCall)(uptr dest, uptr src);
 
-extern void  dVifReserve (int idx);
-extern void  dVifRelease (int idx);
-extern void  VifUnpackSSE_Init();
-extern void  VifUnpackSSE_Destroy();
 
 _vifT extern void dVifUnpack(const u8* data, int isFill);
 

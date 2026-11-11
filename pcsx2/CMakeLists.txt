@@ -99,7 +99,7 @@ set(pcsx2Sources
 	Counters.c
 	EmuOptions.c
 	GameDatabase.c
-	GameDatabaseFixes.cpp
+	GameDatabaseFixes.c
 	${CMAKE_CURRENT_BINARY_DIR}/GameDatabaseBuiltin.c
 	Elfheader.c
 	FW.c
@@ -634,7 +634,7 @@ else()
 endif()
 
 list(APPEND pcsx2FrontendSources
-	VMManager.cpp
+	VMManager.c
 )
 list(APPEND pcsx2FrontendHeaders
 	VMManager.h)

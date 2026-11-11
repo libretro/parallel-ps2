@@ -160,7 +160,7 @@ typedef struct Gif_Unit
 
 extern Gif_Unit gifUnit;
 
-/* The path buffers, allocated for a VM's life (VMManager.cpp). */
+/* The path buffers, allocated for a VM's life (VMManager.c). */
 extern bool gif_unit_init(void);
 extern void gif_unit_shutdown(void);
 

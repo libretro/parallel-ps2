@@ -13,7 +13,6 @@
 
 static void test_log(enum retro_log_level level, const char* fmt, ...) { (void)level; (void)fmt; }
 extern "C" retro_log_printf_t log_cb = test_log;
-std::string libretro_content;
 
 static int failures;
 

@@ -1299,7 +1299,7 @@ void GSRasterizerList::OnWorkerStartup(void* context)
 	/* The affinity mask is computed on the spawning thread at Create()
 	 * and captured by value: reading EmuConfig (AffinityControlMode,
 	 * THREAD_VU1) from inside the freshly started worker raced
-	 * VMManager::ApplySettings' whole-struct assignment on the CPU
+	 * vm_apply_settings' whole-struct assignment on the CPU
 	 * thread (TSan).  Create() runs in the GS-open path, which shares
 	 * the ordering discipline of every other GSopen-time config read. */
 	if (affinity)
@@ -1377,7 +1377,7 @@ IRasterizer* GSRasterizerList::Create(int threads)
 
 	const bool affinity_on = EmuConfig.Cpu.AffinityControlMode != 0;
 	u32 proc_count;
-	const u32* procs = VMManager::GetSortedProcessorList(&proc_count);
+	const u32* procs = vm_get_sorted_processor_list(&proc_count);
 	const u32 worker_proc_base = THREAD_VU1 ? 3 : 2;
 	for (int i = 0; i < threads; i++)
 	{

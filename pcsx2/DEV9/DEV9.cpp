@@ -1093,8 +1093,9 @@ void DEV9async(u32 cycles)
 	ata_async(dev9.ata, cycles);
 }
 
-void DEV9CheckChanges(const Pcsx2Config& old_config)
+void DEV9CheckChanges(const Pcsx2Config* old)
 {
+	const Pcsx2Config& old_config = *old;
 	if (!isRunning)
 		return;
 

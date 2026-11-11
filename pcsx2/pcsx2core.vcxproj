@@ -138,7 +138,7 @@
     <ClCompile Include="Frontend\LayeredSettingsInterface.cpp" />
     <ClCompile Include="EmuOptions.c" />
     <ClCompile Include="GameDatabase.c" />
-    <ClCompile Include="GameDatabaseFixes.cpp" />
+    <ClCompile Include="GameDatabaseFixes.c" />
     <ClCompile Include="Gif_Unit.c" />
     <ClCompile Include="GS\Renderers\DX11\D3D.cpp" />
     <ClCompile Include="GS\Renderers\DX12\GSDevice12.cpp" />
@@ -217,7 +217,7 @@
     <ClCompile Include="GS\MultiISA.cpp" />
     <ClCompile Include="USB\shared\ringbuffer.cpp" />
     <ClCompile Include="VirtualMemory.c" />
-    <ClCompile Include="VMManager.cpp" />
+    <ClCompile Include="VMManager.c" />
     <ClCompile Include="Pcsx2Config.c" />
     <ClCompile Include="SaveState.cpp" />
     <ClCompile Include="Elfheader.c" />

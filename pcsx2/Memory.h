@@ -18,7 +18,7 @@
 #include "VirtualMemory.h"
 #include "vtlb.h"
 
-#define PSM(mem)	(vtlb_GetPhyPtr((mem)&0x1fffffff)) //pcsx2 is a competition.The one with most hacks wins :D
+#define PSM(mem)	(vtlb_GetPhyPtr((mem)&0x1fffffff)) /* pcsx2 is a competition.The one with most hacks wins :D */
 
 #define psHu8(mem)	(*(u8 *)&eeHw[(mem) & 0xffff])
 #define psHu16(mem)	(*(u16*)&eeHw[(mem) & 0xffff])
@@ -40,16 +40,16 @@
 #define memWrite32 vtlb_memWrite32
 #define memWrite64 vtlb_memWrite64
 
-// This is a table of default virtual map addresses for ps2vm components.  These locations
-// are provided and used to assist in debugging and possibly hacking; as it makes it possible
-// for a programmer to know exactly where to look (consistently!) for the base address of
-// the various virtual machine components.  These addresses can be keyed directly into the
-// debugger's disasm window to get disassembly of recompiled code, and they can be used to help
-// identify recompiled code addresses in the callstack.
+/* This is a table of default virtual map addresses for ps2vm components.  These locations */
+/* are provided and used to assist in debugging and possibly hacking; as it makes it possible */
+/* for a programmer to know exactly where to look (consistently!) for the base address of */
+/* the various virtual machine components.  These addresses can be keyed directly into the */
+/* debugger's disasm window to get disassembly of recompiled code, and they can be used to help */
+/* identify recompiled code addresses in the callstack. */
 
-// All of these areas should be reserved as soon as possible during program startup, and its
-// important that none of the areas overlap.  In all but superVU's case, failure due to overlap
-// or other conflict will result in the operating system picking a preferred address for the mapping.
+/* All of these areas should be reserved as soon as possible during program startup, and its */
+/* important that none of the areas overlap.  In all but superVU's case, failure due to overlap */
+/* or other conflict will result in the operating system picking a preferred address for the mapping. */
 
 /* The host memory map: where each piece sits in the main and code maps. */
 #define HOSTMEM_MAIN_SIZE           0x14000000

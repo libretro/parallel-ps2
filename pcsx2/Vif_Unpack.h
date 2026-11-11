@@ -70,6 +70,11 @@ extern void _nVifUnpack(int idx, const u8* data, uint mode, bool isFill);
 
 /* The recompilers (x86/newVif_Dynarec.cpp, arm64/Vif_Dynarec_arm64.cpp). */
 extern void dVifReset(int idx);
+extern void dVifReserve(int idx);
+extern void dVifRelease(int idx);
+/* The unpack kernels, made and freed with the VM's CPU providers. */
+extern void VifUnpackSSE_Init(void);
+extern void VifUnpackSSE_Destroy(void);
 extern void dvif_unpack(int idx, const u8* data, int isFill);
 
 #ifdef __cplusplus
