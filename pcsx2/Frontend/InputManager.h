@@ -18,10 +18,13 @@
 #include <optional>
 #include <variant>
 #include <utility>
+#include <string>
+#include <vector>
 
 #include "../../common/Pcsx2Types.h"
 
 #include "../Config.h"
+#include "InputBinding.h"
 
 namespace InputManager
 {

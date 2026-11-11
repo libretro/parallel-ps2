@@ -82,7 +82,7 @@ PCAPAdapter::PCAPAdapter()
 #endif
 
 #ifdef _WIN32
-	std::string pcapAdapter = PCAPPREFIX + EmuConfig.DEV9.EthDevice;
+	std::string pcapAdapter = std::string(PCAPPREFIX) + EmuConfig.DEV9.EthDevice;
 #else
 	std::string pcapAdapter = EmuConfig.DEV9.EthDevice;
 #endif
@@ -91,7 +91,7 @@ PCAPAdapter::PCAPAdapter()
 
 	if (!InitPCAP(pcapAdapter, switched))
 	{
-		log_cb(RETRO_LOG_ERROR, "DEV9: Can't open Device '%s'\n", EmuConfig.DEV9.EthDevice.c_str());
+		log_cb(RETRO_LOG_ERROR, "DEV9: Can't open Device '%s'\n", EmuConfig.DEV9.EthDevice);
 		return;
 	}
 
@@ -129,7 +129,7 @@ PCAPAdapter::PCAPAdapter()
 	{
 		pcap_close(hpcap);
 		hpcap = nullptr;
-		log_cb(RETRO_LOG_ERROR, "DEV9: Can't open Device '%s'\n", EmuConfig.DEV9.EthDevice.c_str());
+		log_cb(RETRO_LOG_ERROR, "DEV9: Can't open Device '%s'\n", EmuConfig.DEV9.EthDevice);
 		return;
 	}
 

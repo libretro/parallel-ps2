@@ -15,6 +15,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <utility>
 #include <compat/strl.h>
 #include <streams/file_stream.h>
 #include "common/Pcsx2Defs.h"

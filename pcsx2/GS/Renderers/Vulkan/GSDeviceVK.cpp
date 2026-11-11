@@ -202,12 +202,8 @@ bool create_device_vulkan(retro_vulkan_context *context, VkInstance instance, Vk
 	vk_init_info.create_device_wrapper          = nullptr;
 	vk_init_info.create_device_wrapper_opaque   = nullptr;
 
-	if(gpu != VK_NULL_HANDLE) {
-		VkPhysicalDeviceProperties props = {};
-		vkGetPhysicalDeviceProperties    = (PFN_vkGetPhysicalDeviceProperties)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties");
-		vkGetPhysicalDeviceProperties(gpu, &props);
-		GSConfig.Adapter = props.deviceName;
-	}
+	if(gpu != VK_NULL_HANDLE)
+		vkGetPhysicalDeviceProperties = (PFN_vkGetPhysicalDeviceProperties)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties");
 
 	if (!mtgs_is_open())
 		mtgs_try_open_gs();
@@ -262,12 +258,7 @@ bool create_device2_vulkan(retro_vulkan_context *context, VkInstance instance, V
 	vk_init_info.create_device_wrapper          = create_device_wrapper;
 	vk_init_info.create_device_wrapper_opaque   = opaque;
 
-	{
-		VkPhysicalDeviceProperties props = {};
-		vkGetPhysicalDeviceProperties    = (PFN_vkGetPhysicalDeviceProperties)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties");
-		vkGetPhysicalDeviceProperties(gpu, &props);
-		GSConfig.Adapter = props.deviceName;
-	}
+	vkGetPhysicalDeviceProperties = (PFN_vkGetPhysicalDeviceProperties)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties");
 
 	if (!mtgs_is_open())
 		mtgs_try_open_gs();

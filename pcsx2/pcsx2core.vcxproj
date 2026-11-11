@@ -356,6 +356,7 @@
     <ClInclude Include="DEV9\sockets.h" />
     <ClInclude Include="DEV9\SessionMap.h" />
     <ClInclude Include="GS\Renderers\HW\GSHwHack.h" />
+    <ClInclude Include="Frontend\InputBinding.h" />
     <ClInclude Include="Frontend\InputManager.h" />
     <ClInclude Include="Frontend\LayeredSettingsInterface.h" />
     <ClInclude Include="GameDatabase.h" />

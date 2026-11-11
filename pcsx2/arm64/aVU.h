@@ -534,7 +534,7 @@ public:
 				blockEnd = blockList = newBlock;
 			}
 
-			std::memcpy(&newBlock->block, pBlock, sizeof(microBlock));
+			memcpy(&newBlock->block, pBlock, sizeof(microBlock));
 			thisBlock = &newBlock->block;
 
 			quickLookup.push_back({&newBlock->block, pBlock->pState.quick64[0]});

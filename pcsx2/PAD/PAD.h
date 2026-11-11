@@ -18,6 +18,7 @@
 #include <string>
 
 #include "../Config.h"
+#include "../Frontend/InputBinding.h"
 
 #include "../../common/Pcsx2Defs.h"
 

@@ -202,7 +202,7 @@ SocketAdapter::SocketAdapter()
 	AdapterUtils::Adapter adapter;
 	AdapterUtils::AdapterBuffer buffer;
 
-	if (strcmp(EmuConfig.DEV9.EthDevice.c_str(), "Auto") != 0)
+	if (strcmp(EmuConfig.DEV9.EthDevice, "Auto") != 0)
 	{
 		foundAdapter = AdapterUtils::GetAdapter(EmuConfig.DEV9.EthDevice, &adapter, &buffer);
 
@@ -543,7 +543,7 @@ void SocketAdapter::reloadSettings()
 	AdapterUtils::Adapter adapter;
 	AdapterUtils::AdapterBuffer buffer;
 
-	if (strcmp(EmuConfig.DEV9.EthDevice.c_str(), "Auto") != 0)
+	if (strcmp(EmuConfig.DEV9.EthDevice, "Auto") != 0)
 		foundAdapter = AdapterUtils::GetAdapter(EmuConfig.DEV9.EthDevice, &adapter, &buffer);
 	else
 		foundAdapter = AdapterUtils::GetAdapterAuto(&adapter, &buffer);

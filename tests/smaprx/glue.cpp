@@ -48,7 +48,7 @@ void smaprx_open(void)
 	for (i = 0; i < SMAP_BD_SIZE / 8; i++)
 		smap_write16(SMAP_BD_RX_BASE + i * 8, SMAP_BD_RX_EMPTY);
 	EmuConfig.DEV9.EthApi = Pcsx2Config::DEV9Options::NetApi::Sockets;
-	EmuConfig.DEV9.EthDevice = "Auto";
+	strlcpy(EmuConfig.DEV9.EthDevice, "Auto", sizeof(EmuConfig.DEV9.EthDevice));
 	EmuConfig.DEV9.EthEnable = true;
 	InitNet();
 }

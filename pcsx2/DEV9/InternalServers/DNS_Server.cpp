@@ -118,12 +118,9 @@ namespace InternalServers
 
 	void DNS_Server::LoadHostList()
 	{
+		/* No host entries are configured: every name goes to the
+		 * real DNS server. */
 		hosts.clear();
-		for (const Pcsx2Config::DEV9Options::HostEntry& entry : EmuConfig.DEV9.EthHosts)
-		{
-			if (entry.Enabled)
-				hosts.insert_or_assign(entry.Url, *(IP_Address*)entry.Address);
-		}
 	}
 
 	UDP_Packet* DNS_Server::Recv()

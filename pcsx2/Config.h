@@ -19,127 +19,12 @@
 
 #include "../common/Pcsx2Defs.h"
 
-#include <cstring>
-#include <utility>
-#include <array>
-#include <string>
-#include <optional>
-#include <vector>
 
 #include "../common/General.h"
 #include "../common/FPControl.h"
 
 
 enum class CDVD_SourceType : uint8_t;
-
-/// Generic setting information which can be reused in multiple components.
-struct SettingInfo
-{
-	using GetOptionsCallback = std::vector<std::pair<std::string, std::string>>(*)();
-
-	enum class Type
-	{
-		Boolean,
-		Integer,
-		IntegerList,
-		Float,
-		String,
-		StringList,
-		Path,
-	};
-
-	Type type;
-	const char* name;
-	const char* display_name;
-	const char* description;
-	const char* default_value;
-	const char* min_value;
-	const char* max_value;
-	const char* step_value;
-	const char* format;
-	const char* const* options; // For integer lists.
-	GetOptionsCallback get_options; // For string lists.
-	float multiplier;
-
-	const char* StringDefaultValue() const;
-	bool BooleanDefaultValue() const;
-	s32 IntegerDefaultValue() const;
-	s32 IntegerMinValue() const;
-	s32 IntegerMaxValue() const;
-	s32 IntegerStepValue() const;
-	float FloatDefaultValue() const;
-	float FloatMinValue() const;
-	float FloatMaxValue() const;
-	float FloatStepValue() const;
-};
-
-enum class GenericInputBinding : u8;
-
-// TODO(Stenzek): Move to InputCommon.h or something?
-struct InputBindingInfo
-{
-	enum class Type : u8
-	{
-		Unknown,
-		Button,
-		Axis,
-		HalfAxis,
-		Motor,
-		Pointer, // Receive relative mouse movement events, bind_index is offset by the axis.
-		Keyboard, // Receive host key events, bind_index is offset by the key code.
-		Device, // Used for special-purpose device selection, e.g. force feedback.
-		Macro,
-	};
-
-	const char* name;
-	const char* display_name;
-	Type bind_type;
-	u16 bind_index;
-	GenericInputBinding generic_mapping;
-};
-
-/// Generic input bindings. These roughly match a DualShock 4 or XBox One controller.
-/// They are used for automatic binding to PS2 controller types.
-enum class GenericInputBinding : u8
-{
-	Unknown,
-
-	DPadUp,
-	DPadRight,
-	DPadLeft,
-	DPadDown,
-
-	LeftStickUp,
-	LeftStickRight,
-	LeftStickDown,
-	LeftStickLeft,
-	L3,
-
-	RightStickUp,
-	RightStickRight,
-	RightStickDown,
-	RightStickLeft,
-	R3,
-
-	Triangle, // Y on XBox pads.
-	Circle, // B on XBox pads.
-	Cross, // A on XBox pads.
-	Square, // X on XBox pads.
-
-	Select, // Share on DS4, View on XBox pads.
-	Start, // Options on DS4, Menu on XBox pads.
-	System, // PS button on DS4, Guide button on XBox pads.
-
-	L1, // LB on Xbox pads.
-	L2, // Left trigger on XBox pads.
-	R1, // RB on XBox pads.
-	R2, // Right trigger on Xbox pads.
-
-	SmallMotor, // High frequency vibration.
-	LargeMotor, // Low frequency vibration.
-
-	Count,
-};
 
 enum GamefixId
 {
@@ -295,11 +180,6 @@ enum GSNativeScaling
 };
 
 // Template function for casting enumerations to their underlying type
-template <typename Enumeration>
-typename std::underlying_type<Enumeration>::type enum_cast(Enumeration E)
-{
-	return static_cast<typename std::underlying_type<Enumeration>::type>(E);
-}
 
 ImplementEnumOperators(GamefixId);
 
@@ -522,8 +402,6 @@ struct Pcsx2Config
 		u16 SWExtraThreads = 2;
 		u16 SWExtraThreadsHeight = 4;
 
-		std::string Adapter;
-
 		GSOptions();
 
 
@@ -535,10 +413,6 @@ struct Pcsx2Config
 
 		/// Returns true if any of the hardware renderers are selected.
 		bool UseHardwareRenderer() const;
-
-		/// Returns false if the compared to the old settings, we need to reopen GS.
-		/// (i.e. renderer change, swap chain mode change, etc.)
-		bool RestartOptionsAreEqual(const GSOptions& right) const;
 
 		/// Returns false if any options need to be applied to the MTGS.
 		bool OptionsAreEqual(const GSOptions& right) const;
@@ -567,30 +441,10 @@ struct Pcsx2Config
 		};
 		static const char* DnsModeNames[];
 
-		struct HostEntry
-		{
-			std::string Url;
-			std::string Desc;
-			u8 Address[4]{};
-			bool Enabled;
-
-			bool operator==(const HostEntry& right) const
-			{
-				return     (Url  == right.Url)
-					&& (Desc == right.Desc)
-					&& (*(int*)Address == *(int*)right.Address)
-					&& (Enabled == right.Enabled);
-			}
-
-			bool operator!=(const HostEntry& right) const
-			{
-				return !this->operator==(right);
-			}
-		};
-
 		bool EthEnable{false};
 		NetApi EthApi{NetApi::Unset};
-		std::string EthDevice;
+		/* The adapter to use; "Auto" picks one. */
+		char EthDevice[256];
 		bool EthLogDNS{false};
 
 		bool InterceptDHCP{false};
@@ -604,13 +458,11 @@ struct Pcsx2Config
 		DnsMode ModeDNS1{DnsMode::Auto};
 		DnsMode ModeDNS2{DnsMode::Auto};
 
-		std::vector<HostEntry> EthHosts;
-
 		bool HddEnable{false};
-		std::string HddFile;
+		char HddFile[PCSX2_PATH_MAX];
 		/* The drive's SCE security block; empty, <HddFile>.hddid is
 		 * used when there is one. */
-		std::string HddIdFile;
+		char HddIdFile[PCSX2_PATH_MAX];
 
 		/* The PS2's HDD max size is 2TB
 		 * which is 2^32 * 512 byte sectors
@@ -625,7 +477,7 @@ struct Pcsx2Config
 		{
 			return     (EthEnable == right.EthEnable)
 				&& (EthApi    == right.EthApi)
-				&& (EthDevice == right.EthDevice)
+				&& (strcmp(EthDevice, right.EthDevice) == 0)
 				&& (EthLogDNS == right.EthLogDNS)
 				&& (InterceptDHCP == right.InterceptDHCP)
 				&& (memcmp(PS2IP, right.PS2IP, 4) == 0)
@@ -636,10 +488,9 @@ struct Pcsx2Config
 				&& (AutoGateway == right.AutoGateway)
 				&& (ModeDNS1    == right.ModeDNS1)
 				&& (ModeDNS2    == right.ModeDNS2)
-				&& (EthHosts    == right.EthHosts)
 				&& (HddEnable   == right.HddEnable)
-				&& (HddFile     == right.HddFile)
-				&& (HddIdFile   == right.HddIdFile)
+				&& (strcmp(HddFile, right.HddFile) == 0)
+				&& (strcmp(HddIdFile, right.HddIdFile) == 0)
 				&& (HddSizeSectors == right.HddSizeSectors);
 		}
 
@@ -647,9 +498,6 @@ struct Pcsx2Config
 		{
 			return !this->operator==(right);
 		}
-
-	protected:
-		static void LoadIPHelper(u8* field, const std::string& setting);
 	};
 
 	// ------------------------------------------------------------------------
@@ -765,31 +613,6 @@ struct Pcsx2Config
 	};
 
 	// ------------------------------------------------------------------------
-	struct USBOptions
-	{
-		enum : u32
-		{
-			NUM_PORTS = 2
-		};
-
-		struct Port
-		{
-			s32 DeviceType;
-			u32 DeviceSubtype;
-
-			bool operator==(const USBOptions::Port& right) const;
-			bool operator!=(const USBOptions::Port& right) const;
-		};
-
-		std::array<Port, NUM_PORTS> Ports;
-
-		USBOptions();
-
-		bool operator==(const USBOptions& right) const;
-		bool operator!=(const USBOptions& right) const;
-	};
-
-	// ------------------------------------------------------------------------
 	// Options struct for each memory card.
 	//
 	struct McdOptions
@@ -832,9 +655,6 @@ struct Pcsx2Config
 	SpeedhackOptions Speedhacks;
 	GamefixOptions Gamefixes;
 	DEV9Options DEV9;
-#if 0
-	USBOptions USB;
-#endif
 
 	FilenameOptions BaseFilenames;
 

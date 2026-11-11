@@ -366,7 +366,7 @@ void ReconfigureLiveNet(const Pcsx2Config& old_config)
 		if (old_config.DEV9.EthEnable)
 		{
 			//Reload Net if adapter changed
-			if (EmuConfig.DEV9.EthDevice != old_config.DEV9.EthDevice ||
+			if (strcmp(EmuConfig.DEV9.EthDevice, old_config.DEV9.EthDevice) != 0 ||
 				EmuConfig.DEV9.EthApi != old_config.DEV9.EthApi)
 			{
 				TermNet();

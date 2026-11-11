@@ -1234,7 +1234,7 @@ static void check_variables(bool first_run)
 		if (first_run || setting_dev9_hdd != dev9_hdd_prev)
 		{
 			if (setting_dev9_hdd)
-				s_option_config.DEV9.HddFile = dev9_ensure_hdd_image(setting_dev9_hdd_sectors);
+				strlcpy(s_option_config.DEV9.HddFile, dev9_ensure_hdd_image(setting_dev9_hdd_sectors), sizeof(s_option_config.DEV9.HddFile));
 			s_option_config.DEV9.HddEnable = setting_dev9_hdd;
 			updated = true;
 		}
@@ -1252,7 +1252,7 @@ static void check_variables(bool first_run)
 			if (setting_dev9_eth)
 			{
 				s_option_config.DEV9.EthApi = Pcsx2Config::DEV9Options::NetApi::Sockets;
-				s_option_config.DEV9.EthDevice = "Auto";
+				strlcpy(s_option_config.DEV9.EthDevice, "Auto", sizeof(s_option_config.DEV9.EthDevice));
 			}
 			updated = true;
 		}
@@ -2600,8 +2600,8 @@ static bool libretro_load_python2(const char* path)
 	usb_python2_set_config(&cfg);
 
 	s_option_config.DEV9.HddEnable = true;
-	s_option_config.DEV9.HddFile   = d->hdd_image;
-	s_option_config.DEV9.HddIdFile = d->hdd_id;
+	strlcpy(s_option_config.DEV9.HddFile, d->hdd_image, sizeof(s_option_config.DEV9.HddFile));
+	strlcpy(s_option_config.DEV9.HddIdFile, d->hdd_id, sizeof(s_option_config.DEV9.HddIdFile));
 	if (hdd_image_kind(d->hdd_image) == HDD_IMAGE_RAW)
 	{
 		/* A raw image is the drive it holds, not the size option's. */
@@ -2611,7 +2611,7 @@ static bool libretro_load_python2(const char* path)
 	}
 	s_option_config.DEV9.EthEnable = true;
 	s_option_config.DEV9.EthApi    = Pcsx2Config::DEV9Options::NetApi::Sockets;
-	s_option_config.DEV9.EthDevice = "Auto";
+	strlcpy(s_option_config.DEV9.EthDevice, "Auto", sizeof(s_option_config.DEV9.EthDevice));
 	s_option_config.Gamefixes.OPHFlagHack = true;
 	s_option_config.GS.PCRTCOverscan = true;
 
@@ -2740,7 +2740,7 @@ bool retro_load_game(const struct retro_game_info* game)
 	libretro_python1_release();
 	cdvd_set_nvram_files(NULL, NULL);
 	VMManager::SetPython2PatchFile(NULL);
-	s_option_config.DEV9.HddIdFile.clear();
+	s_option_config.DEV9.HddIdFile[0] = '\0';
 
 	check_variables(true);
 	if (s_option_camera != USB_CAMERA_NONE)

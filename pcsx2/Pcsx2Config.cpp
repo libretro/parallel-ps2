@@ -57,88 +57,6 @@ static constexpr FPControlRegister DEFAULT_VU_FP_CONTROL_REGISTER = FPControlReg
 
 Pcsx2Config EmuConfig;
 
-const char* SettingInfo::StringDefaultValue() const
-{
-	return default_value ? default_value : "";
-}
-
-bool SettingInfo::BooleanDefaultValue() const
-{
-	bool value = false;
-	if (default_value)
-		parse_number_bool(default_value, strlen(default_value), &value);
-	return value;
-}
-
-s32 SettingInfo::IntegerDefaultValue() const
-{
-	s32 value = 0;
-	if (default_value)
-		parse_number_s32(default_value, strlen(default_value), 10, &value);
-	return value;
-}
-
-s32 SettingInfo::IntegerMinValue() const
-{
-	static constexpr s32 fallback_value = INT32_MIN;
-	s32 value = fallback_value;
-	if (min_value)
-		parse_number_s32(min_value, strlen(min_value), 10, &value);
-	return value;
-}
-
-s32 SettingInfo::IntegerMaxValue() const
-{
-	static constexpr s32 fallback_value = INT32_MAX;
-	s32 value = fallback_value;
-	if (max_value)
-		parse_number_s32(max_value, strlen(max_value), 10, &value);
-	return value;
-}
-
-s32 SettingInfo::IntegerStepValue() const
-{
-	static constexpr s32 fallback_value = 1;
-	s32 value = fallback_value;
-	if (step_value)
-		parse_number_s32(step_value, strlen(step_value), 10, &value);
-	return value;
-}
-
-float SettingInfo::FloatDefaultValue() const
-{
-	float value = 0.0f;
-	if (default_value)
-		parse_number_float(default_value, strlen(default_value), &value);
-	return value;
-}
-
-float SettingInfo::FloatMinValue() const
-{
-	static constexpr float fallback_value = FLT_MIN;
-	float value = fallback_value;
-	if (min_value)
-		parse_number_float(min_value, strlen(min_value), &value);
-	return value;
-}
-
-float SettingInfo::FloatMaxValue() const
-{
-	static constexpr float fallback_value = FLT_MAX;
-	float value = fallback_value;
-	if (max_value)
-		parse_number_float(max_value, strlen(max_value), &value);
-	return value;
-}
-
-float SettingInfo::FloatStepValue() const
-{
-	static constexpr float fallback_value = 0.1f;
-	float value = fallback_value;
-	if (step_value)
-		parse_number_float(step_value, strlen(step_value), &value);
-	return value;
-}
 
 namespace EmuFolders
 {
@@ -436,7 +354,6 @@ bool Pcsx2Config::GSOptions::OptionsAreEqual(const GSOptions& right) const
 		OpEqu(UserHacks_TextureInsideRt) &&
 		OpEqu(UserHacks_Limit24BitDepth) &&
 		OpEqu(OverrideTextureBarriers) &&
-		OpEqu(Adapter) &&
 		OpEqu(PGSSuperSampling) &&
 		OpEqu(PGSHighResScanout) &&
 		OpEqu(PGSDisableMipmaps) &&
@@ -450,16 +367,6 @@ bool Pcsx2Config::GSOptions::operator!=(const GSOptions& right) const
 	return !operator==(right);
 }
 
-bool Pcsx2Config::GSOptions::RestartOptionsAreEqual(const GSOptions& right) const
-{
-	return OpEqu(Renderer) &&
-		   OpEqu(Adapter) &&
-		   OpEqu(UseDebugDevice) &&
-		   OpEqu(DisableShaderCache) &&
-		   OpEqu(DisableFramebufferFetch) &&
-		   OpEqu(DisableVertexShaderExpand) &&
-		   OpEqu(OverrideTextureBarriers);
-}
 
 
 void Pcsx2Config::GSOptions::MaskUserHacks()
@@ -534,55 +441,12 @@ const char* Pcsx2Config::DEV9Options::DnsModeNames[] = {
 
 Pcsx2Config::DEV9Options::DEV9Options()
 {
-	HddFile = "DEV9hdd.raw";
+	EthDevice[0] = '\0';
+	strlcpy(HddFile, "DEV9hdd.raw", sizeof(HddFile));
+	HddIdFile[0] = '\0';
 }
 
 
-void Pcsx2Config::DEV9Options::LoadIPHelper(u8* field, const std::string& setting)
-{
-	const char* p = setting.c_str();
-	u8          octets[4];
-	int         i;
-
-	for (i = 0; i < 4; i++)
-	{
-		unsigned int v      = 0;
-		int          digits = 0;
-
-		while (*p >= '0' && *p <= '9')
-		{
-			v = v * 10 + (unsigned int)(*p - '0');
-			if (v > 255)
-				goto fail;
-			p++;
-			digits++;
-		}
-
-		if (digits == 0)
-			goto fail;
-
-		octets[i] = (u8)v;
-
-		if (i < 3)
-		{
-			if (*p != '.')
-				goto fail;
-			p++;
-		}
-	}
-
-	if (*p != '\0')
-		goto fail;
-
-	field[0] = octets[0];
-	field[1] = octets[1];
-	field[2] = octets[2];
-	field[3] = octets[3];
-	return;
-
-fail:
-	memset(field, 0, sizeof(field[0]) * 4);
-}
 
 static const char* const tbl_GamefixNames[] =
 {

@@ -205,8 +205,8 @@ static int dev9_ata_open(const std::string& hddPath)
 {
 	if (ata_open(dev9.ata, hddPath.c_str(), EmuConfig.DEV9.HddSizeSectors) != 0)
 		return -1;
-	if (!EmuConfig.DEV9.HddIdFile.empty())
-		ata_load_hdd_id(dev9.ata, EmuConfig.DEV9.HddIdFile.c_str());
+	if (EmuConfig.DEV9.HddIdFile[0])
+		ata_load_hdd_id(dev9.ata, EmuConfig.DEV9.HddIdFile);
 	else
 	{
 		char* id = (char*)malloc(hddPath.size() + 8);
@@ -225,7 +225,7 @@ static int dev9_ata_open(const std::string& hddPath)
 s32 DEV9open()
 {
 	log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9open\n");
-	log_cb(RETRO_LOG_DEBUG, "DEV9: open r+: %s\n", EmuConfig.DEV9.HddFile.c_str());
+	log_cb(RETRO_LOG_DEBUG, "DEV9: open r+: %s\n", EmuConfig.DEV9.HddFile);
 
 	std::string hddPath(GetHDDPath());
 
@@ -1112,8 +1112,8 @@ void DEV9CheckChanges(const Pcsx2Config& old_config)
 		{
 			//ATA::Open/Close dosn't set any regs
 			//So we can close/open to apply settings
-			if (EmuConfig.DEV9.HddFile != old_config.DEV9.HddFile ||
-				EmuConfig.DEV9.HddIdFile != old_config.DEV9.HddIdFile ||
+			if (strcmp(EmuConfig.DEV9.HddFile, old_config.DEV9.HddFile) != 0 ||
+				strcmp(EmuConfig.DEV9.HddIdFile, old_config.DEV9.HddIdFile) != 0 ||
 				EmuConfig.DEV9.HddSizeSectors != old_config.DEV9.HddSizeSectors)
 			{
 				ata_close(dev9.ata);
