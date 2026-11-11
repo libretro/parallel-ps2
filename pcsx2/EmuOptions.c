@@ -98,6 +98,128 @@ bool emu_cpu_recompilers_changed(const EmuCpuOptions* a, const EmuCpuOptions* b)
 		|| a->Recompiler.EnableVU1 != b->Recompiler.EnableVU1;
 }
 
+void emu_gs_defaults(EmuGSOptions* o)
+{
+	memset(o, 0, sizeof(*o));
+	o->PCRTCAntiBlur = true;
+	o->Mipmap        = true;
+	o->FramerateNTSC = EMU_GS_DEFAULT_FRAME_RATE_NTSC;
+	o->FrameratePAL = EMU_GS_DEFAULT_FRAME_RATE_PAL;
+	o->InterlaceMode = GS_INTERLACE_AUTOMATIC;
+	o->Renderer = GS_RENDERER_AUTO;
+	o->UpscaleMultiplier = 1.0f;
+	o->AccurateBlendingUnit = GS_BLEND_BASIC;
+	o->HWMipmapMode = GS_MIPMAP_UNCLAMPED;
+	o->TextureFiltering = GS_BIFILTER_PS2;
+	o->TexturePreloading = GS_PRELOAD_FULL;
+	o->HWDownloadMode = GS_DOWNLOAD_ENABLED;
+	o->Dithering = 3;
+	o->MaxAnisotropy = 0;
+	o->GetSkipCountFunctionId = -1;
+	o->BeforeDrawFunctionId = -1;
+	o->MoveHandlerFunctionId = -1;
+	o->SkipDrawStart = 0;
+	o->SkipDrawEnd = 0;
+	o->UserHacks_HalfPixelOffset = GS_HPO_OFF;
+	o->UserHacks_RoundSprite = 0;
+	o->UserHacks_NativeScaling = GS_NATIVE_SCALING_NORMAL;
+	o->UserHacks_TCOffsetX = 0;
+	o->UserHacks_TCOffsetY = 0;
+	o->UserHacks_CPUSpriteRenderBW = 0;
+	o->UserHacks_CPUSpriteRenderLevel = 0;
+	o->UserHacks_CPUCLUTRender = 0;
+	o->UserHacks_TextureInsideRt = GS_TEXINRT_DISABLED;
+	o->UserHacks_Limit24BitDepth = GS_LIMIT24_DISABLED;
+	o->TriFilter = GS_TRIFILTER_AUTOMATIC;
+	o->OverrideTextureBarriers = -1;
+	o->PGSSuperSampling = 0;
+	o->PGSHighResScanout = 0;
+	o->PGSDisableMipmaps = 0;
+	o->PGSSuperSampleTextures = 0;
+	o->PGSSharpBackbuffer = 0;
+	o->SWExtraThreads = 2;
+	o->SWExtraThreadsHeight = 4;
+}
+
+#define GS_EQU(f) (a->f == b->f)
+bool emu_gs_equal(const EmuGSOptions* a, const EmuGSOptions* b)
+{
+	return GS_EQU(FramerateNTSC) && GS_EQU(FrameratePAL)
+		&& GS_EQU(bitset)
+		&& GS_EQU(InterlaceMode)
+		&& GS_EQU(Renderer) && GS_EQU(UpscaleMultiplier)
+		&& GS_EQU(AccurateBlendingUnit) && GS_EQU(HWMipmapMode)
+		&& GS_EQU(TextureFiltering) && GS_EQU(TexturePreloading)
+		&& GS_EQU(HWDownloadMode) && GS_EQU(Dithering) && GS_EQU(MaxAnisotropy)
+		&& GS_EQU(SWExtraThreads) && GS_EQU(SWExtraThreadsHeight)
+		&& GS_EQU(TriFilter)
+		&& GS_EQU(GetSkipCountFunctionId) && GS_EQU(BeforeDrawFunctionId)
+		&& GS_EQU(MoveHandlerFunctionId)
+		&& GS_EQU(SkipDrawEnd) && GS_EQU(SkipDrawStart)
+		&& GS_EQU(UserHacks_HalfPixelOffset) && GS_EQU(UserHacks_RoundSprite)
+		&& GS_EQU(UserHacks_NativeScaling)
+		&& GS_EQU(UserHacks_TCOffsetX) && GS_EQU(UserHacks_TCOffsetY)
+		&& GS_EQU(UserHacks_CPUSpriteRenderBW) && GS_EQU(UserHacks_CPUSpriteRenderLevel)
+		&& GS_EQU(UserHacks_CPUCLUTRender)
+		&& GS_EQU(UserHacks_TextureInsideRt) && GS_EQU(UserHacks_Limit24BitDepth)
+		&& GS_EQU(OverrideTextureBarriers)
+		&& GS_EQU(PGSSuperSampling) && GS_EQU(PGSHighResScanout)
+		&& GS_EQU(PGSDisableMipmaps) && GS_EQU(PGSSharpBackbuffer)
+		&& GS_EQU(PGSSuperSampleTextures);
+}
+#undef GS_EQU
+
+void emu_gs_mask_user_hacks(EmuGSOptions* o)
+{
+	if (o->ManualUserHacks)
+		return;
+
+	o->UserHacks_AlignSpriteX               = false;
+	o->UserHacks_MergePPSprite              = false;
+	o->UserHacks_ForceEvenSpritePosition    = false;
+	o->UserHacks_NativePaletteDraw          = false;
+	o->UserHacks_Limit24BitDepth            = GS_LIMIT24_DISABLED;
+	o->UserHacks_DisableSafeFeatures        = false;
+	o->UserHacks_DisableRenderFixes         = false;
+	o->UserHacks_HalfPixelOffset            = GS_HPO_OFF;
+	o->UserHacks_RoundSprite                = 0;
+	if (!o->NativeScalingSet)
+		o->UserHacks_NativeScaling          = GS_NATIVE_SCALING_NORMAL;
+	o->GPUPaletteConversion                 = false;
+	o->PreloadFrameWithGSData               = false;
+	o->UserHacks_DisablePartialInvalidation = false;
+	o->UserHacks_DisableDepthSupport        = false;
+	o->UserHacks_CPUFBConversion            = false;
+	o->UserHacks_ReadTCOnClose              = false;
+	o->UserHacks_TextureInsideRt            = GS_TEXINRT_DISABLED;
+	o->UserHacks_EstimateTextureRegion      = false;
+	o->UserHacks_TCOffsetX                  = 0;
+	o->UserHacks_TCOffsetY                  = 0;
+	o->UserHacks_CPUSpriteRenderBW          = 0;
+	o->UserHacks_CPUSpriteRenderLevel       = 0;
+	o->UserHacks_CPUCLUTRender              = 0;
+	o->SkipDrawStart                        = 0;
+	o->SkipDrawEnd                          = 0;
+}
+
+void emu_gs_mask_upscaling_hacks(EmuGSOptions* o)
+{
+	if (o->UpscaleMultiplier > 1.0f && o->ManualUserHacks)
+		return;
+
+	o->UserHacks_AlignSpriteX            = false;
+	o->UserHacks_MergePPSprite           = false;
+	o->UserHacks_ForceEvenSpritePosition = false;
+	o->UserHacks_NativePaletteDraw       = false;
+	o->UserHacks_Limit24BitDepth         = GS_LIMIT24_DISABLED;
+	o->UserHacks_HalfPixelOffset         = GS_HPO_OFF;
+	o->UserHacks_RoundSprite             = 0;
+	if (!o->NativeScalingSet)
+		o->UserHacks_NativeScaling       = GS_NATIVE_SCALING_NORMAL;
+	o->UserHacks_TCOffsetX               = 0;
+	o->UserHacks_TCOffsetY               = 0;
+}
+
 void emu_dev9_defaults(EmuDev9Options* o)
 {
 	memset(o, 0, sizeof(*o));

@@ -598,7 +598,7 @@ void GSUpdateConfig(const Pcsx2Config::GSOptions& new_config, enum retro_hw_cont
 
 	// reload texture cache when trilinear filtering or TC options change
 	if (
-		(GSConfig.UseHardwareRenderer() && GSConfig.HWMipmapMode != old_config.HWMipmapMode) ||
+		(emu_gs_hardware_renderer(&GSConfig) && GSConfig.HWMipmapMode != old_config.HWMipmapMode) ||
 		GSConfig.TexturePreloading != old_config.TexturePreloading ||
 		GSConfig.TriFilter != old_config.TriFilter ||
 		GSConfig.GPUPaletteConversion != old_config.GPUPaletteConversion ||

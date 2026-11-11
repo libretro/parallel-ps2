@@ -79,6 +79,54 @@ int main(void)
 		check(emu_dev9_equal(&c, &d), "what follows a path's terminator does not");
 	}
 
+	{
+		EmuGSOptions g, h;
+		emu_gs_defaults(&g);
+		check(g.PCRTCAntiBlur && g.Mipmap && g.Renderer == GS_RENDERER_AUTO && g.UpscaleMultiplier == 1.0f
+			&& g.InterlaceMode == GS_INTERLACE_AUTOMATIC && g.TriFilter == GS_TRIFILTER_AUTOMATIC
+			&& g.AccurateBlendingUnit == GS_BLEND_BASIC && g.HWMipmapMode == GS_MIPMAP_UNCLAMPED
+			&& g.Dithering == 3 && g.GetSkipCountFunctionId == -1 && g.OverrideTextureBarriers == -1
+			&& g.SWExtraThreads == 2 && g.SWExtraThreadsHeight == 4
+			&& g.FramerateNTSC == EMU_GS_DEFAULT_FRAME_RATE_NTSC && g.FrameratePAL == EMU_GS_DEFAULT_FRAME_RATE_PAL
+			&& !g.ManualUserHacks && !g.UserHacks_AlignSpriteX && g.UserHacks_HalfPixelOffset == GS_HPO_OFF,
+			"GS defaults: automatic renderer at native resolution, no user hacks");
+		check(emu_gs_hardware_renderer(&g), "the automatic renderer counts as hardware");
+		h = g;
+		check(emu_gs_equal(&g, &h), "a copy is equal");
+		h.FrameratePAL = 50.5f;
+		check(!emu_gs_equal(&g, &h), "the frame rate counts");
+		h = g;
+		h.PGSSuperSampleTextures = 1;
+		check(!emu_gs_equal(&g, &h), "so does a paraLLEl-GS setting");
+		h.Renderer = GS_RENDERER_SW;
+		check(!emu_gs_hardware_renderer(&h), "the software renderer is not hardware");
+
+		/* Manual hacks off: every user hack goes, the native scaling the
+		 * user set stays. */
+		h = g;
+		h.UserHacks_AlignSpriteX = true;
+		h.UserHacks_TCOffsetX = 5;
+		h.SkipDrawEnd = 3;
+		h.UserHacks_NativeScaling = GS_NATIVE_SCALING_OFF;
+		h.NativeScalingSet = true;
+		emu_gs_mask_user_hacks(&h);
+		check(!h.UserHacks_AlignSpriteX && h.UserHacks_TCOffsetX == 0 && h.SkipDrawEnd == 0
+			&& h.UserHacks_NativeScaling == GS_NATIVE_SCALING_OFF,
+			"manual hacks off: the hacks are masked, a native scaling the user set is kept");
+		h.ManualUserHacks = true;
+		h.UserHacks_AlignSpriteX = true;
+		h.SkipDrawEnd = 3;
+		emu_gs_mask_user_hacks(&h);
+		check(h.UserHacks_AlignSpriteX && h.SkipDrawEnd == 3, "manual hacks on: they stay");
+		/* Upscaling hacks need upscaling and manual hacks both. */
+		emu_gs_mask_upscaling_hacks(&h);
+		check(!h.UserHacks_AlignSpriteX && h.SkipDrawEnd == 3, "at native resolution the upscaling hacks go, the rest stay");
+		h.UpscaleMultiplier = 2.0f;
+		h.UserHacks_AlignSpriteX = true;
+		emu_gs_mask_upscaling_hacks(&h);
+		check(h.UserHacks_AlignSpriteX, "upscaled with manual hacks: they stay");
+	}
+
 	/* Every rounding mode reads back as set, on either architecture. */
 	{
 		FPControlRegister r = fpcr_emu_default();

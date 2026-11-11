@@ -22,6 +22,7 @@
 
 #include "../common/Pcsx2Defs.h"
 #include "../common/FPControl.h"
+#include "GS/GSOptionEnums.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -132,6 +133,95 @@ typedef struct EmuCpuOptions
 
 	u32 AffinityControlMode;
 } EmuCpuOptions;
+
+#define EMU_GS_DEFAULT_FRAME_RATE_NTSC 59.94f
+#define EMU_GS_DEFAULT_FRAME_RATE_PAL  50.00f
+
+/* The GS: the renderer and how it draws. */
+typedef struct EmuGSOptions
+{
+	union
+	{
+		u64 bitset;
+
+		struct
+		{
+			bool
+				PCRTCAntiBlur : 1,
+				DisableInterlaceOffset : 1,
+				PCRTCOffsets : 1,
+				PCRTCOverscan : 1,
+				UseDebugDevice : 1,
+				DisableShaderCache : 1,
+				DisableFramebufferFetch : 1,
+				DisableVertexShaderExpand : 1,
+				SkipDuplicateFrames : 1;
+
+			bool
+				GPUPaletteConversion : 1,
+				PreloadFrameWithGSData : 1,
+				Mipmap : 1,
+				ManualUserHacks : 1,
+				/* The native scaling option is set by the user: it is not
+				 * masked with the hacks, and the game database's fix for it
+				 * does not apply. */
+				NativeScalingSet : 1,
+				UserHacks_AlignSpriteX : 1,
+				UserHacks_CPUFBConversion : 1,
+				UserHacks_ReadTCOnClose : 1,
+				UserHacks_DisableDepthSupport : 1,
+				UserHacks_DisablePartialInvalidation : 1,
+				UserHacks_DisableSafeFeatures : 1,
+				UserHacks_DisableRenderFixes : 1,
+				UserHacks_MergePPSprite : 1,
+				UserHacks_ForceEvenSpritePosition : 1,
+				UserHacks_NativePaletteDraw : 1,
+				UserHacks_EstimateTextureRegion : 1;
+		};
+	};
+
+	float FramerateNTSC;
+	float FrameratePAL;
+
+	GSInterlaceMode InterlaceMode;
+
+	GSRendererType Renderer;
+	float UpscaleMultiplier;
+
+	AccBlendLevel AccurateBlendingUnit;
+	GSHWMipmapMode HWMipmapMode;
+	BiFiltering TextureFiltering;
+	TexturePreloadingLevel TexturePreloading;
+	GSHardwareDownloadMode HWDownloadMode;
+	u8 Dithering;
+	u8 MaxAnisotropy;
+	s16 GetSkipCountFunctionId;
+	s16 BeforeDrawFunctionId;
+	s16 MoveHandlerFunctionId;
+	int SkipDrawStart;
+	int SkipDrawEnd;
+
+	GSHalfPixelOffset UserHacks_HalfPixelOffset;
+	s8 UserHacks_RoundSprite;
+	GSNativeScaling UserHacks_NativeScaling;
+	s32 UserHacks_TCOffsetX;
+	s32 UserHacks_TCOffsetY;
+	u8 UserHacks_CPUSpriteRenderBW;
+	u8 UserHacks_CPUSpriteRenderLevel;
+	u8 UserHacks_CPUCLUTRender;
+	GSTextureInRtMode UserHacks_TextureInsideRt;
+	GSLimit24BitDepth UserHacks_Limit24BitDepth;
+	TriFiltering TriFilter;
+	s8 OverrideTextureBarriers;
+	u8 PGSSuperSampling;
+	u8 PGSHighResScanout;
+	u8 PGSDisableMipmaps;
+	u8 PGSSuperSampleTextures;
+	u8 PGSSharpBackbuffer;
+
+	u16 SWExtraThreads;
+	u16 SWExtraThreadsHeight;
+} EmuGSOptions;
 
 /* The network adapter API DEV9 uses. */
 enum EmuNetApi
@@ -264,6 +354,23 @@ void emu_cpu_defaults(EmuCpuOptions* o);
 bool emu_cpu_equal(const EmuCpuOptions* a, const EmuCpuOptions* b);
 /* Whether a different set of recompilers runs: the CPUs need a reset. */
 bool emu_cpu_recompilers_changed(const EmuCpuOptions* a, const EmuCpuOptions* b);
+
+/* Defaults: the renderer chosen for the frontend's API, native
+ * resolution, the game database's interlacing and trilinear choices,
+ * basic blending, every user hack off. */
+void emu_gs_defaults(EmuGSOptions* o);
+/* Whether two configurations draw alike, the frame rates included. */
+bool emu_gs_equal(const EmuGSOptions* a, const EmuGSOptions* b);
+/* With manual hacks off, every user hack back to its default. */
+void emu_gs_mask_user_hacks(EmuGSOptions* o);
+/* Unless upscaling with manual hacks, the upscaling hacks back to theirs. */
+void emu_gs_mask_upscaling_hacks(EmuGSOptions* o);
+
+/* Any renderer but the software one. */
+static PCSX2_INLINE bool emu_gs_hardware_renderer(const EmuGSOptions* o)
+{
+	return o->Renderer != GS_RENDERER_SW;
+}
 
 /* Defaults: no network, an automatic mask, gateway and DNS, and a 40 GB
  * drive in DEV9hdd.raw, both off. */

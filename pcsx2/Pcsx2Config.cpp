@@ -65,158 +65,11 @@ namespace EmuFolders
 
 
 
-Pcsx2Config::GSOptions::GSOptions()
-{
-	bitset = 0;
-
-	PCRTCAntiBlur = true;
-	DisableInterlaceOffset = false;
-	PCRTCOffsets = false;
-	PCRTCOverscan = false;
-	UseDebugDevice = false;
-	DisableShaderCache = false;
-	DisableFramebufferFetch = false;
-	DisableVertexShaderExpand = false;
-	SkipDuplicateFrames = false;
-
-	HWDownloadMode = GS_DOWNLOAD_ENABLED;
-	GPUPaletteConversion = false;
-	PreloadFrameWithGSData = false;
-	Mipmap = true;
-
-	ManualUserHacks = false;
-	NativeScalingSet = false;
-	UserHacks_AlignSpriteX = false;
-	UserHacks_CPUFBConversion = false;
-	UserHacks_ReadTCOnClose = false;
-	UserHacks_DisableDepthSupport = false;
-	UserHacks_DisablePartialInvalidation = false;
-	UserHacks_DisableSafeFeatures = false;
-	UserHacks_DisableRenderFixes = false;
-	UserHacks_MergePPSprite = false;
-	UserHacks_ForceEvenSpritePosition = false;
-	UserHacks_NativePaletteDraw = false;
-	UserHacks_Limit24BitDepth = GS_LIMIT24_DISABLED;
-
-}
-
-bool Pcsx2Config::GSOptions::operator==(const GSOptions& right) const
-{
-	return (
-		OpEqu(FramerateNTSC) &&
-		OpEqu(FrameratePAL) &&
-
-		OptionsAreEqual(right));
-}
-
-bool Pcsx2Config::GSOptions::OptionsAreEqual(const GSOptions& right) const
-{
-	return (
-		OpEqu(bitset) &&
-
-		OpEqu(InterlaceMode) &&
-
-		OpEqu(Renderer) &&
-		OpEqu(UpscaleMultiplier) &&
-
-		OpEqu(AccurateBlendingUnit) &&
-		OpEqu(HWMipmapMode) &&
-		OpEqu(TextureFiltering) &&
-		OpEqu(TexturePreloading) &&
-		OpEqu(HWDownloadMode) &&
-		OpEqu(Dithering) &&
-		OpEqu(MaxAnisotropy) &&
-		OpEqu(SWExtraThreads) &&
-		OpEqu(SWExtraThreadsHeight) &&
-		OpEqu(TriFilter) &&
-		OpEqu(GetSkipCountFunctionId) &&
-		OpEqu(BeforeDrawFunctionId) &&
-		OpEqu(MoveHandlerFunctionId) &&
-		OpEqu(SkipDrawEnd) &&
-		OpEqu(SkipDrawStart) &&
-
-		OpEqu(UserHacks_HalfPixelOffset) &&
-		OpEqu(UserHacks_RoundSprite) &&
-		OpEqu(UserHacks_NativeScaling) &&
-		OpEqu(NativeScalingSet) &&
-		OpEqu(UserHacks_TCOffsetX) &&
-		OpEqu(UserHacks_TCOffsetY) &&
-		OpEqu(UserHacks_CPUSpriteRenderBW) &&
-		OpEqu(UserHacks_CPUSpriteRenderLevel) &&
-		OpEqu(UserHacks_CPUCLUTRender) &&
-		OpEqu(UserHacks_TextureInsideRt) &&
-		OpEqu(UserHacks_Limit24BitDepth) &&
-		OpEqu(OverrideTextureBarriers) &&
-		OpEqu(PGSSuperSampling) &&
-		OpEqu(PGSHighResScanout) &&
-		OpEqu(PGSDisableMipmaps) &&
-		OpEqu(PGSSharpBackbuffer) &&
-		OpEqu(PGSSuperSampleTextures)
-		);
-}
-
-bool Pcsx2Config::GSOptions::operator!=(const GSOptions& right) const
-{
-	return !operator==(right);
-}
 
 
 
-void Pcsx2Config::GSOptions::MaskUserHacks()
-{
-	if (ManualUserHacks)
-		return;
 
-	UserHacks_AlignSpriteX = false;
-	UserHacks_MergePPSprite = false;
-	UserHacks_ForceEvenSpritePosition = false;
-	UserHacks_NativePaletteDraw = false;
-	UserHacks_Limit24BitDepth = GS_LIMIT24_DISABLED;
-	UserHacks_DisableSafeFeatures = false;
-	UserHacks_DisableRenderFixes = false;
-	UserHacks_HalfPixelOffset = GS_HPO_OFF;
-	UserHacks_RoundSprite = 0;
-	if (!NativeScalingSet)
-		UserHacks_NativeScaling = GS_NATIVE_SCALING_NORMAL;
-	GPUPaletteConversion = false;
-	PreloadFrameWithGSData = false;
-	UserHacks_DisablePartialInvalidation = false;
-	UserHacks_DisableDepthSupport = false;
-	UserHacks_CPUFBConversion = false;
-	UserHacks_ReadTCOnClose = false;
-	UserHacks_TextureInsideRt = GS_TEXINRT_DISABLED;
-	UserHacks_EstimateTextureRegion = false;
-	UserHacks_TCOffsetX = 0;
-	UserHacks_TCOffsetY = 0;
-	UserHacks_CPUSpriteRenderBW = 0;
-	UserHacks_CPUSpriteRenderLevel = 0;
-	UserHacks_CPUCLUTRender = 0;
-	SkipDrawStart = 0;
-	SkipDrawEnd = 0;
-}
 
-void Pcsx2Config::GSOptions::MaskUpscalingHacks()
-{
-	if (UpscaleMultiplier > 1.0f && ManualUserHacks)
-		return;
-
-	UserHacks_AlignSpriteX = false;
-	UserHacks_MergePPSprite = false;
-	UserHacks_ForceEvenSpritePosition = false;
-	UserHacks_NativePaletteDraw = false;
-	UserHacks_Limit24BitDepth = GS_LIMIT24_DISABLED;
-	UserHacks_HalfPixelOffset = GS_HPO_OFF;
-	UserHacks_RoundSprite = 0;
-	if (!NativeScalingSet)
-		UserHacks_NativeScaling = GS_NATIVE_SCALING_NORMAL;
-	UserHacks_TCOffsetX = 0;
-	UserHacks_TCOffsetY = 0;
-}
-
-bool Pcsx2Config::GSOptions::UseHardwareRenderer() const
-{
-	return (Renderer != GS_RENDERER_SW);
-}
 
 
 
@@ -226,6 +79,7 @@ bool Pcsx2Config::GSOptions::UseHardwareRenderer() const
 Pcsx2Config::Pcsx2Config()
 {
 	emu_cpu_defaults(&Cpu);
+	emu_gs_defaults(&GS);
 	emu_dev9_defaults(&DEV9);
 	emu_speedhack_defaults(&Speedhacks);
 	emu_gamefix_clear_all(&Gamefixes);
@@ -283,7 +137,7 @@ bool Pcsx2Config::operator==(const Pcsx2Config& right) const
 	bool equal =
 		OpEqu(bitset) &&
 		emu_cpu_equal(&Cpu, &right.Cpu) &&
-		OpEqu(GS) &&
+		emu_gs_equal(&GS, &right.GS) &&
 		emu_dev9_equal(&DEV9, &right.DEV9) &&
 		emu_speedhack_equal(&Speedhacks, &right.Speedhacks) &&
 		OpEqu(Gamefixes.bitset) &&
@@ -464,8 +318,7 @@ u32 emu_config_framerate_mhz(bool pal)
 
 u32 emu_config_default_framerate_mhz(bool pal)
 {
-	return (u32)((pal ? Pcsx2Config::GSOptions::DEFAULT_FRAME_RATE_PAL
-		: Pcsx2Config::GSOptions::DEFAULT_FRAME_RATE_NTSC) * 1000.0f);
+	return (u32)((pal ? EMU_GS_DEFAULT_FRAME_RATE_PAL : EMU_GS_DEFAULT_FRAME_RATE_NTSC) * 1000.0f);
 }
 
 u64 emu_fpcr_set_fpu(void)

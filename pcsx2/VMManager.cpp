@@ -318,8 +318,8 @@ void VMManager::LoadSettings()
 	 * no-interlacing patch needs to take effect; and ApplyGameFixes is the
 	 * game database's, without which a game that needs one renders
 	 * wrongly. */
-	EmuConfig.GS.MaskUserHacks();
-	EmuConfig.GS.MaskUpscalingHacks();
+	emu_gs_mask_user_hacks(&EmuConfig.GS);
+	emu_gs_mask_upscaling_hacks(&EmuConfig.GS);
 	if (s_active_no_interlacing_patches > 0 && EmuConfig.GS.InterlaceMode == GS_INTERLACE_AUTOMATIC)
 		EmuConfig.GS.InterlaceMode = GS_INTERLACE_OFF;
 	if (HasValidVM())
@@ -1160,7 +1160,7 @@ void VMManager::CheckForCPUConfigChanges(const Pcsx2Config& old_config)
 
 void VMManager::CheckForGSConfigChanges(const Pcsx2Config& old_config)
 {
-	if (EmuConfig.GS == old_config.GS)
+	if (emu_gs_equal(&EmuConfig.GS, &old_config.GS))
 		return;
 	UpdateVSyncRate(true);
 	mtgs_apply_settings();
