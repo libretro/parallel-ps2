@@ -38,10 +38,18 @@
 
 #ifdef ENABLE_PCSX2_PROFILER
 
-#include "common/Pcsx2Types.h"
+#include "common/Pcsx2Defs.h"
 
-/* The zone list is outside the namespace: a C translation unit names the
- * same zones through PROFILE_ZONE_BEGIN. */
+#if defined(_MSC_VER)
+#include <intrin.h>
+#define PCSX2_PROFILE_TLS __declspec(thread)
+#else
+#if defined(__x86_64__) || defined(__i386__)
+#include <x86intrin.h>
+#endif
+#define PCSX2_PROFILE_TLS __thread
+#endif
+
 enum PCSX2ProfilerZone
 {
 	PCSX2_ZONE_IOP_EXEC,    /* IOP recompiler/interpreter dispatch */
@@ -63,125 +71,89 @@ enum PCSX2ProfilerZone
 };
 
 #ifdef __cplusplus
-
-#if defined(_M_X86) || defined(__x86_64__) || defined(__i386__)
-#include <x86intrin.h>
-#endif
-
-namespace PCSX2Profiler
-{
-	typedef enum PCSX2ProfilerZone Zone;
-
-	enum
-	{
-		ZONE_IOP_EXEC    = PCSX2_ZONE_IOP_EXEC,
-		ZONE_VU1         = PCSX2_ZONE_VU1,
-		ZONE_VIF_UNPACK  = PCSX2_ZONE_VIF_UNPACK,
-		ZONE_SPU2_MIX    = PCSX2_ZONE_SPU2_MIX,
-		ZONE_GS_TRANSFER = PCSX2_ZONE_GS_TRANSFER,
-		ZONE_GS_VSYNC    = PCSX2_ZONE_GS_VSYNC,
-		ZONE_GS_SYNC     = PCSX2_ZONE_GS_SYNC,
-		ZONE_GS_DRAWKICK = PCSX2_ZONE_GS_DRAWKICK,
-		ZONE_GS_REGWRITE = PCSX2_ZONE_GS_REGWRITE,
-		ZONE_GS_KICKTEX  = PCSX2_ZONE_GS_KICKTEX,
-		ZONE_GS_VS_FLUSH = PCSX2_ZONE_GS_VS_FLUSH,
-		ZONE_GS_VS_CIRC  = PCSX2_ZONE_GS_VS_CIRC,
-		ZONE_GS_VS_MERGE = PCSX2_ZONE_GS_VS_MERGE,
-		ZONE_GS_VS_IMG   = PCSX2_ZONE_GS_VS_IMG,
-		ZONE_GS_HANDOVER = PCSX2_ZONE_GS_HANDOVER,
-		ZONE_COUNT       = PCSX2_ZONE_COUNT
-	};
-
-	extern u64 g_zone_ticks[PCSX2_ZONE_COUNT];
-	extern u64 g_zone_calls[PCSX2_ZONE_COUNT];
-
-	/* Zones nest: a VU1 microprogram XGKICKs into GS transfer, and the EE
-	 * enters all of them. Charging a zone its whole span would count the
-	 * nested time twice and make any derived remainder meaningless -- the
-	 * first version of this reported -1.4%. Each zone is charged only the
-	 * time when it is innermost, so the columns are exclusive and the
-	 * remainder is real. */
-	/* Per-thread, not global. Two threads run zones concurrently -- the EE
-	 * thread (IOP, VU, VIF, SPU2) and the frontend thread that consumes the
-	 * MTGS ring (GS transfer, drawkick, vsync) -- and a shared cursor lets
-	 * one thread's open zone be closed by the other's, scrambling the
-	 * attribution while still summing to roughly wall time, which makes the
-	 * result look plausible and be wrong. Each thread now tracks its own
-	 * innermost zone; the accumulators stay shared, since a zone's total is
-	 * wanted across threads and the adds are per-thread disjoint in practice. */
-	extern thread_local int g_current;
-	extern thread_local u64 g_last;
-
-	/* The timestamp has to be cheap, because the hottest zone is entered tens
-	 * of thousands of times a frame: with clock_gettime this instrument cost
-	 * 42 ns per scope and 12% of a real frame on hardware, which distorts
-	 * every share it reports. The cycle counter is a few cycles instead, and
-	 * is converted to nanoseconds once at report time against a calibrated
-	 * tick rate -- no division on the hot path. */
-	static inline u64 NowTicks(void)
-	{
-#if defined(_M_X86) || defined(__x86_64__) || defined(__i386__)
-		return (u64)__rdtsc();
-#elif defined(__aarch64__) || defined(_M_ARM64)
-		u64 v;
-		asm volatile("mrs %0, cntvct_el0" : "=r"(v));
-		return v;
-#else
-		return NowNs();
-#endif
-	}
-
-	u64 NowNs(void);
-	void FrameEnd(void);
-
-	struct Scope
-	{
-		int prev;
-		int zone;
-
-		/* An int: the ZONE_* names above are an unnamed enum, which no
-		 * implicit conversion takes to the C enum Zone. */
-		explicit Scope(int z) : zone(z)
-		{
-			const u64 now = NowTicks();
-			if (g_current >= 0)
-				g_zone_ticks[g_current] += now - g_last;
-			prev = g_current;
-			g_current = (int)z;
-			g_last = now;
-			g_zone_calls[z]++;
-		}
-
-		~Scope()
-		{
-			const u64 now = NowTicks();
-			g_zone_ticks[zone] += now - g_last;
-			g_current = prev;
-			g_last = now;
-		}
-	};
-} // namespace PCSX2Profiler
-
-#define PROFILE_SCOPE(z) PCSX2Profiler::Scope profile_scope_##__LINE__(PCSX2Profiler::z)
-#define PROFILE_FRAME_END() PCSX2Profiler::FrameEnd()
-
-#endif /* __cplusplus */
-
-/* The same measurement for a C translation unit, which has no destructor
- * to close the scope with: begin returns what end has to hand back. The
- * caller keeps it in a local, so a function with one exit spells the pair
- * out and a function with several closes on each. */
-#ifdef __cplusplus
 extern "C" {
 #endif
-int  pcsx2_profile_zone_begin(int zone);
-void pcsx2_profile_zone_end(int zone, int prev);
+
+extern u64 pcsx2_profile_zone_ticks[PCSX2_ZONE_COUNT];
+extern u64 pcsx2_profile_zone_calls[PCSX2_ZONE_COUNT];
+
+/* Zones nest: a VU1 microprogram XGKICKs into GS transfer, and the EE
+ * enters all of them. Each zone is charged only the time when it is
+ * innermost, so the columns are exclusive.
+ *
+ * The innermost zone is per thread: the EE thread (IOP, VU, VIF, SPU2)
+ * and the thread consuming the MTGS ring (GS transfer, drawkick, vsync)
+ * run zones at once, and a shared cursor would let one close the other's.
+ * The accumulators stay shared; a zone's total is wanted across threads. */
+extern PCSX2_PROFILE_TLS int pcsx2_profile_current;
+extern PCSX2_PROFILE_TLS u64 pcsx2_profile_last;
+
+u64  pcsx2_profile_now_ns(void);
+/* Every 60 frames, prints the breakdown and starts the next. */
+void pcsx2_profile_frame_end(void);
+
 #ifdef __cplusplus
 }
 #endif
 
+/* The cycle counter, converted to nanoseconds only at report time: the
+ * hottest zone is entered tens of thousands of times a frame, and
+ * clock_gettime cost 42 ns a scope, 12% of a real frame. */
+static PCSX2_INLINE u64 pcsx2_profile_now_ticks(void)
+{
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+	return (u64)__rdtsc();
+#elif defined(__x86_64__) || defined(__i386__)
+	return (u64)__rdtsc();
+#elif defined(__aarch64__)
+	u64 v;
+	__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(v));
+	return v;
+#else
+	return pcsx2_profile_now_ns();
+#endif
+}
+
+/* begin returns what end has to hand back; C callers keep it in a local
+ * and close on every exit, C++ ones through PROFILE_SCOPE. Inline, so the
+ * instrument costs two counter reads and no calls. */
+static PCSX2_INLINE int pcsx2_profile_zone_begin(int zone)
+{
+	const u64 now = pcsx2_profile_now_ticks();
+	const int prev = pcsx2_profile_current;
+	if (prev >= 0)
+		pcsx2_profile_zone_ticks[prev] += now - pcsx2_profile_last;
+	pcsx2_profile_current = zone;
+	pcsx2_profile_last = now;
+	pcsx2_profile_zone_calls[zone]++;
+	return prev;
+}
+
+static PCSX2_INLINE void pcsx2_profile_zone_end(int zone, int prev)
+{
+	const u64 now = pcsx2_profile_now_ticks();
+	pcsx2_profile_zone_ticks[zone] += now - pcsx2_profile_last;
+	pcsx2_profile_current = prev;
+	pcsx2_profile_last = now;
+}
+
 #define PROFILE_ZONE_BEGIN(z) pcsx2_profile_zone_begin(PCSX2_##z)
 #define PROFILE_ZONE_END(z, prev) pcsx2_profile_zone_end(PCSX2_##z, (prev))
+#define PROFILE_FRAME_END() pcsx2_profile_frame_end()
+
+#ifdef __cplusplus
+/* The same pair, closed by a destructor. */
+struct PCSX2ProfileScope
+{
+	int zone;
+	int prev;
+	explicit PCSX2ProfileScope(int z) : zone(z), prev(pcsx2_profile_zone_begin(z)) {}
+	~PCSX2ProfileScope() { pcsx2_profile_zone_end(zone, prev); }
+};
+#define PROFILE_SCOPE_CAT2(a, b) a##b
+#define PROFILE_SCOPE_CAT(a, b) PROFILE_SCOPE_CAT2(a, b)
+#define PROFILE_SCOPE(z) PCSX2ProfileScope PROFILE_SCOPE_CAT(profile_scope_, __LINE__)(PCSX2_##z)
+#endif
 
 #else
 

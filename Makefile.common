@@ -312,14 +312,15 @@ endif
 # pcsx2 core - emulation
 # ============================================================================
 SOURCES_CXX += \
-	$(LRPS2_DIR)/FormatString.cpp \
 	$(LRPS2_DIR)/GameDatabase.cpp \
 	$(LRPS2_DIR)/GameDatabaseBuiltin.cpp \
 	$(LRPS2_DIR)/Patch.cpp \
 	$(LRPS2_DIR)/Pcsx2Config.cpp \
-	$(LRPS2_DIR)/PerformanceMetrics.cpp \
 	$(LRPS2_DIR)/VMManager.cpp \
 	$(LRPS2_DIR)/VUops.cpp
+
+SOURCES_C += \
+	$(LRPS2_DIR)/PerformanceMetrics.c
 
 # pcsx2/Frontend
 SOURCES_CXX += \
@@ -701,6 +702,6 @@ endif
 
 # Opt-in profiler source (see PROFILER=1 in the top-level Makefile).
 ifeq ($(PROFILER), 1)
-SOURCES_CXX += \
-	$(LRPS2_DIR)/Profiler.cpp
+SOURCES_C += \
+	$(LRPS2_DIR)/Profiler.c
 endif

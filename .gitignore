@@ -113,6 +113,8 @@ build*/
 /pcsx2_libretro.so
 
 # Test binaries (tests/*/build.sh outputs)
+/tests/perfmetrics/perfmetrics_test*
+/tests/profiler/profiler_test*
 /tests/spsc/spsc_test
 /tests/d3d12warm/d3d12warm_test*
 /tests/gshash/gshash_test

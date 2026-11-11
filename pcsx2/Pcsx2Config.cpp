@@ -15,7 +15,6 @@
 
 #include <math.h>
 #include <compat/strl.h>
-#include "FormatString.h"
 #include "ParseNumber.h"
 #include <float.h>
 #include <stdint.h>
@@ -32,6 +31,7 @@
 #include "VUmicro.h"
 #include "ps2/HwInternal.h"
 #include "ps2/BiosTools.h"
+#include "PerformanceMetrics.h"
 
 #include <file/file_path.h>
 
@@ -582,10 +582,6 @@ void Pcsx2Config::DEV9Options::LoadIPHelper(u8* field, const std::string& settin
 fail:
 	memset(field, 0, sizeof(field[0]) * 4);
 }
-std::string Pcsx2Config::DEV9Options::SaveIPHelper(u8* field)
-{
-	return FormatString::Format("%u.%u.%u.%u", field[0], field[1], field[2], field[3]);
-}
 
 static const char* const tbl_GamefixNames[] =
 {
@@ -814,6 +810,12 @@ const char* emu_config_current_irx(void)
 const char* emu_folders_bios(void)
 {
 	return EmuFolders::Bios;
+}
+
+/* For PerformanceMetrics.c. */
+bool emu_config_blit_internal_fps_hack(void)
+{
+	return EmuConfig.Gamefixes.BlitInternalFPSHack;
 }
 
 bool emu_config_host_fs(void)

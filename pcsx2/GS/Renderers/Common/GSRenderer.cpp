@@ -282,12 +282,12 @@ void GSState::VSyncBase(u32 field, bool registers_written, bool idle_frame)
 
 	if (GSConfig.SkipDuplicateFrames)
 	{
-		switch (PerformanceMetrics::GetInternalFPSMethod())
+		switch (perf_metrics_internal_fps_method())
 		{
-		case PerformanceMetrics::InternalFPSMethod::GSPrivilegedRegister:
+		case PERF_FPS_GS_PRIVILEGED_REGISTER:
 			is_unique_frame = registers_written;
 			break;
-		case PerformanceMetrics::InternalFPSMethod::DISPFBBlit:
+		case PERF_FPS_DISPFB_BLIT:
 			is_unique_frame = fb_sprite_frame;
 			break;
 		default:
@@ -344,12 +344,12 @@ void GSState::VSyncBase(u32 field, bool registers_written, bool idle_frame)
 		}
 	}
 
-	/* PerformanceMetrics::Update is only consulted by the
+	/* perf_metrics_update is only consulted by the
 	 * SkipDuplicateFrames code path above; if that feature is off, its
 	 * result is never read. Skip the per-frame call (and the wall-clock
 	 * read inside it) when not needed. */
 	if (GSConfig.SkipDuplicateFrames)
-		PerformanceMetrics::Update(registers_written, fb_sprite_frame);
+		perf_metrics_update(registers_written, fb_sprite_frame);
 }
 
 /* --- VR (GSVR.h) ---------------------------------------------------------

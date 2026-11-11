@@ -25,7 +25,7 @@ for c in $LCSRC; do
 done
 "$CC" -std=gnu89 -O1 -g -w $SANFLAGS $DEFS $INC -c "$ROOT/pcsx2/SaveStateBase.c" -o "$OBJ/ss.o"
 "$CC" -std=gnu89 -O1 -g -w $SANFLAGS $DEFS $INC -c "$ROOT/pcsx2/memcard_ecc.c" -o "$OBJ/ecc.o"
-CXXSRC="$ROOT/pcsx2/Pcsx2Config.cpp $ROOT/pcsx2/FormatString.cpp"
+CXXSRC="$ROOT/pcsx2/Pcsx2Config.cpp"
 if [ -n "$SIO_TREE" ]; then
 	API=-DSIO_CXX_API
 	CXXSRC="$CXXSRC $ROOT/pcsx2/Sio.cpp $ROOT/pcsx2/MemoryCardFile.cpp $ROOT/pcsx2/MemoryCardProtocol.cpp $ROOT/pcsx2/MultitapProtocol.cpp"

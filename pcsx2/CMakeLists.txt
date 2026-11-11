@@ -140,10 +140,9 @@ set(pcsx2Sources
 	MTGS.c
 	MTVU.c
 	MultitapProtocol.c
-	FormatString.cpp
 	Patch.cpp
 	Pcsx2Config.cpp
-	PerformanceMetrics.cpp
+	PerformanceMetrics.c
 	R3000A.c
 	R3000AInterpreter.c
 	R3000AOpcodeTables.c
@@ -206,7 +205,6 @@ set(pcsx2Headers
 	MemoryCardProtocol.h
 	MemoryTypes.h
 	MultitapProtocol.h
-	FormatString.h
 	ParseNumber.h
 	Patch.h
 	PerformanceMetrics.h
@@ -1095,6 +1093,6 @@ source_group(System/Ps2/USB REGULAR_EXPRESSION USB/*)
 # macros expand to nothing and no accumulators, clock reads or branches exist
 # anywhere in the binary.
 if(PROFILER)
-	target_sources(PCSX2 PRIVATE Profiler.cpp Profiler.h)
+	target_sources(PCSX2 PRIVATE Profiler.c Profiler.h)
 	target_compile_definitions(PCSX2 PRIVATE ENABLE_PCSX2_PROFILER)
 endif()

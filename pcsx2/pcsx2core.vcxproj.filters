@@ -911,7 +911,7 @@
     <ClCompile Include="MemoryCardFile.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="PerformanceMetrics.cpp">
+    <ClCompile Include="PerformanceMetrics.c">
       <Filter>System</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\Vulkan\GSTextureVK.cpp">

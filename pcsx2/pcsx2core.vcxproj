@@ -152,7 +152,7 @@
     <ClCompile Include="PAD\PAD.cpp" />
     <ClCompile Include="FW.c" />
     <ClCompile Include="MemoryCardFile.c" />
-    <ClCompile Include="PerformanceMetrics.cpp" />
+    <ClCompile Include="PerformanceMetrics.c" />
     <ClCompile Include="SPU2\Dma.cpp" />
     <ClCompile Include="SPU2\RegTable.cpp" />
     <ClCompile Include="SPU2\spu2freeze.cpp" />

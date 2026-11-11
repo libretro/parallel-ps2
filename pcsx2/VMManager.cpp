@@ -13,9 +13,10 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdarg.h>
+#include <stdio.h>
 #include <compat/strl.h>
 #include <streams/file_stream.h>
-#include "FormatString.h"
 #include "common/Pcsx2Defs.h"
 #include <retro_atomic.h>
 #include <features/features_cpu.h>
@@ -181,7 +182,7 @@ void VMManager::SetState(VMState state)
 	{
 		const bool paused = (state == VMState::Paused);
 		if (!paused)
-			PerformanceMetrics::Reset();
+			perf_metrics_reset();
 	}
 	// If stopping, break execution as soon as possible.
 	else if (state == VMState::Stopping && old_state == VMState::Running)
@@ -406,9 +407,26 @@ static int LoadPython2Patches(void)
 	return count;
 }
 
+/* printf onto the end of buf, which holds *len characters; past its
+ * size the text is cut, never overrun. */
+static void message_append(char* buf, size_t size, size_t* len, const char* fmt, ...)
+{
+	va_list ap;
+	int n;
+	if (*len >= size - 1)
+		return;
+	va_start(ap, fmt);
+	n = vsnprintf(buf + *len, size - *len, fmt, ap);
+	va_end(ap);
+	if (n > 0)
+		*len = (*len + (size_t)n < size) ? *len + (size_t)n : size - 1;
+}
+
 void VMManager::LoadPatches(const std::string& serial, u32 crc)
 {
-	std::string message;
+	/* Four counts and their joins: never near the size. */
+	char message[192];
+	size_t message_len = 0;
 	int patch_count = 0;
 	char crc_string[9];
 	snprintf(crc_string, sizeof(crc_string), "%08X", crc);
@@ -428,7 +446,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 			if (patches && (patch_count = LoadPatchesFromString(patches)) > 0)
 			{
 				log_cb(RETRO_LOG_INFO, "(GameDB) Patches Loaded: %d\n", patch_count);
-				message += FormatString::Format("%d game patches", patch_count);
+				message_append(message, sizeof(message), &message_len, "%d game patches", patch_count);
 			}
 
 			LoadDynamicPatches(game->dynaPatches, game->nDynaPatches);
@@ -443,7 +461,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 		if (cheat_count > 0)
 		{
 			log_cb(RETRO_LOG_INFO, "Cheats Loaded: %d\n", cheat_count);
-			message += FormatString::Format("%s%d cheat patches", (patch_count > 0) ? " and " : "", cheat_count);
+			message_append(message, sizeof(message), &message_len, "%s%d cheat patches", (patch_count > 0) ? " and " : "", cheat_count);
 		}
 	}
 
@@ -473,7 +491,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 
 		if (s_active_widescreen_patches > 0)
 		{
-			message += FormatString::Format("%s%d widescreen patches", (patch_count > 0 || cheat_count > 0) ? " and " : "", s_active_widescreen_patches);
+			message_append(message, sizeof(message), &message_len, "%s%d widescreen patches", (patch_count > 0 || cheat_count > 0) ? " and " : "", s_active_widescreen_patches);
 
 			// Switch to 16:9 if widescreen patches are enabled, and AR is auto.
 			// TODO/FIXME - implement
@@ -508,7 +526,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 
 		if (s_active_no_interlacing_patches > 0)
 		{
-			message += FormatString::Format("%s%u no-interlacing patches", (patch_count > 0 || cheat_count > 0 || s_active_widescreen_patches > 0) ? " and " : "", s_active_no_interlacing_patches);
+			message_append(message, sizeof(message), &message_len, "%s%u no-interlacing patches", (patch_count > 0 || cheat_count > 0 || s_active_widescreen_patches > 0) ? " and " : "", s_active_no_interlacing_patches);
 
 			// Disable interlacing in GS if active.
 			if (EmuConfig.GS.InterlaceMode == GSInterlaceMode::Automatic)
@@ -525,8 +543,7 @@ void VMManager::LoadPatches(const std::string& serial, u32 crc)
 
 	if (cheat_count > 0 || s_active_widescreen_patches > 0 || s_active_no_interlacing_patches > 0)
 	{
-		message += " are active.";
-		log_cb(RETRO_LOG_INFO, "%s\n", message.c_str());
+		log_cb(RETRO_LOG_INFO, "%.*s are active.\n", (int)message_len, message);
 	}
 }
 
@@ -777,7 +794,7 @@ bool VMManager::Initialize(VMBootParameters boot_params)
 
 	SetEmuThreadAffinities();
 
-	PerformanceMetrics::Clear();
+	perf_metrics_clear();
 
 	return true;
 }

@@ -9,7 +9,6 @@
 #include "common/Pcsx2Defs.h"
 #include "GS/GSState.h"
 #include "GS.h"
-#include "PerformanceMetrics.h"
 #ifdef ENABLE_PCSX2_PROFILER
 #include "Profiler.h"
 #else

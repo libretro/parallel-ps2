@@ -14,7 +14,6 @@
  */
 
 #include "GS/GS.h"
-#include "../../../FormatString.h"
 #include "common/Pcsx2Defs.h"
 #include <cfloat>
 #include "GS/GSUtil.h"

@@ -13,22 +13,36 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef PCSX2_PERFORMANCEMETRICS_H
+#define PCSX2_PERFORMANCEMETRICS_H
 
-#include <array>
+#include <boolean.h>
 
-namespace PerformanceMetrics
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The signal a game marks its finished internal frames with. */
+enum perf_fps_method
 {
-	enum class InternalFPSMethod
-	{
-		None,
-		GSPrivilegedRegister,
-		DISPFBBlit
-	};
+	PERF_FPS_NONE = 0,
+	PERF_FPS_GS_PRIVILEGED_REGISTER,
+	PERF_FPS_DISPFB_BLIT
+};
 
-	void Clear();
-	void Reset();
-	void Update(bool gs_register_write, bool fb_blit);
+/* Forget the method too, for a new game; reset only restarts the window. */
+void perf_metrics_clear(void);
+void perf_metrics_reset(void);
+/* Once a vsync: whether the frame wrote a privileged GS register, and
+ * whether it blitted to the display framebuffer. */
+void perf_metrics_update(bool gs_register_write, bool fb_blit);
+enum perf_fps_method perf_metrics_internal_fps_method(void);
 
-	InternalFPSMethod GetInternalFPSMethod();
-} // namespace PerformanceMetrics
+/* Gamefixes.BlitInternalFPSHack (Pcsx2Config.cpp). */
+bool emu_config_blit_internal_fps_hack(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

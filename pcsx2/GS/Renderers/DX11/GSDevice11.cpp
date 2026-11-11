@@ -14,7 +14,6 @@
  */
 
 #include "common/Align.h"
-#include "../../../FormatString.h"
 #include "common/Pcsx2Defs.h"
 #include <cfloat>
 
@@ -356,8 +355,9 @@ bool GSDevice11::Create()
 
 	for (size_t i = 0; i < C89_ARRAY_SIZE(m_merge.ps); i++)
 	{
-		const std::string entry_point(FormatString::Format("ps_main%u", (unsigned)i));
-		m_merge.ps[i] = m_shader_cache.GetPixelShader(m_dev.get(), merge_fx_shader_raw, sm_model.GetPtr(), entry_point.c_str());
+		char entry_point[32];
+		snprintf(entry_point, sizeof(entry_point), "ps_main%u", (unsigned)i);
+		m_merge.ps[i] = m_shader_cache.GetPixelShader(m_dev.get(), merge_fx_shader_raw, sm_model.GetPtr(), entry_point);
 		if (!m_merge.ps[i])
 			return false;
 	}
@@ -387,8 +387,9 @@ bool GSDevice11::Create()
 
 	for (size_t i = 0; i < C89_ARRAY_SIZE(m_interlace.ps); i++)
 	{
-		const std::string entry_point(FormatString::Format("ps_main%u", (unsigned)i));
-		m_interlace.ps[i] = m_shader_cache.GetPixelShader(m_dev.get(), interlace_fx_shader_raw, sm_model.GetPtr(), entry_point.c_str());
+		char entry_point[32];
+		snprintf(entry_point, sizeof(entry_point), "ps_main%u", (unsigned)i);
+		m_interlace.ps[i] = m_shader_cache.GetPixelShader(m_dev.get(), interlace_fx_shader_raw, sm_model.GetPtr(), entry_point);
 		if (!m_interlace.ps[i])
 			return false;
 	}
@@ -527,8 +528,9 @@ bool GSDevice11::Create()
 
 	for (size_t i = 0; i < C89_ARRAY_SIZE(m_date.primid_init_ps); i++)
 	{
-		const std::string entry_point(FormatString::Format("ps_stencil_image_init_%u", (unsigned)i));
-		m_date.primid_init_ps[i] = m_shader_cache.GetPixelShader(m_dev.get(), convert_fx_shader_raw, sm_model.GetPtr(), entry_point.c_str());
+		char entry_point[32];
+		snprintf(entry_point, sizeof(entry_point), "ps_stencil_image_init_%u", (unsigned)i);
+		m_date.primid_init_ps[i] = m_shader_cache.GetPixelShader(m_dev.get(), convert_fx_shader_raw, sm_model.GetPtr(), entry_point);
 		if (!m_date.primid_init_ps[i])
 			return false;
 	}
