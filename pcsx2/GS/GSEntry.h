@@ -25,6 +25,9 @@ void GSgifTransfer(const u8* mem, u32 size);
 void GSvsync(u32 field, bool registers_written);
 int  GSfreeze(FreezeAction mode, freezeData* data);
 bool GSIsHardwareRenderer(void);
+/* True once the GS lost its device and could make no other: it draws and
+ * presents nothing until it is opened again. */
+bool GSHasStopped(void);
 
 /* GSopen and GSUpdateConfig on EmuConfig.GS and the frontend's context. */
 void gs_open_emu(u8* basemem);

@@ -170,15 +170,15 @@ ifneq (,$(findstring android,$(platform)))
 endif
 
 # ============================================================================
-# libretro core entry points (C++)
+# libretro core entry points
 # ============================================================================
 SOURCES_C += \
+	$(LIBRETRO_DIR)/main.c \
+	$(LIBRETRO_DIR)/disk_list.c \
 	$(LIBRETRO_DIR)/audio_queue.c \
 	$(LIBRETRO_DIR)/patches.c \
 	$(LIBRETRO_DIR)/state_ext.c \
 	$(LIBRETRO_DIR)/USB.c
-SOURCES_CXX += \
-	$(LIBRETRO_DIR)/main.cpp
 
 # ============================================================================
 # DEV9 (SPEED expansion: ethernet + ATA hard drive)
@@ -394,7 +394,7 @@ SOURCES_CXX += \
 # `if(NOT _M_X86)` source swap in pcsx2/CMakeLists.txt.
 ifeq ($(IS_ARM64), 1)
 # JitHash.c is portable: on non-x86 it compiles to the exported
-# pcsx2_jithash_dump stub that libretro/main.cpp calls unconditionally from
+# pcsx2_jithash_dump stub that libretro/main.c calls unconditionally from
 # retro_deinit. Dropping it here is an aarch64 link error -- cmake's
 # pcsx2/CMakeLists.txt already keeps it in the arm64 list for this reason.
 SOURCES_C += \

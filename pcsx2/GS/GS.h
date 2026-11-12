@@ -52,14 +52,8 @@ enum class GSDisplayAlignment
 
 extern EmuGSOptions GSConfig;
 
-/* Set by the frontend's thread around the GS part of a savestate it takes
- * or loads in this same instance (runahead): the renderer keeps what it
- * holds on the GPU at the save, under GSSnapshotKey, and puts it back at
- * a load with the same key. The key is the machine's time, the EE cycle,
- * which the state carries anyway. */
-extern bool GSSnapshotSave;
-extern bool GSSnapshotLoad;
-extern u64  GSSnapshotKey;
+/* GSSnapshotSave, GSSnapshotLoad, GSSnapshotKey: ../GS.h. */
+#include "../GS.h"
 
 /* The ID for the named function, otherwise -1. C linkage: the game
  * database (GameDatabase.c) looks them up. */
@@ -71,9 +65,6 @@ s16 GSLookupMoveHandlerFunctionId(const char* name, size_t length);
 
 void GSopen(const EmuGSOptions& config, GSRendererType renderer, enum retro_hw_context_type api, u8* basemem);
 bool GSreopen(bool recreate_device, bool recreate_renderer, const EmuGSOptions& old_config);
-/* True once the GS lost its device and could make no other: it draws and
- * presents nothing until it is opened again. */
-bool GSHasStopped(void);
 /* What the rest of the core needs of a GS renderer, as a table of plain
  * functions. GS.cpp calls through whichever table is installed and knows
  * nothing else about the renderer behind it: the GSdx renderers fill one
@@ -97,11 +88,5 @@ void GSgifSoftReset(u32 mask);
 
 void GSUpdateConfig(const EmuGSOptions& new_config, enum retro_hw_context_type api);
 
-namespace Host
-{
-	/// Called when the GS is creating a render device.
-	/// This could also be fullscreen transition.
-	WindowInfo AcquireRenderWindow(void);
-}
 
 extern int m_disp_fb_sprite_blits;

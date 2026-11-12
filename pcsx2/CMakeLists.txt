@@ -866,7 +866,7 @@ if(NOT _M_X86)
 	# transplanted from ARMSX2 (C.19: AsmHelpers + Vif_UnpackNEON +
 	# Vif_Dynarec_arm64, replacing the former RecStubs.cpp reference routing).
 	# JitHash.c is portable: on non-x86 it compiles to the exported
-	# pcsx2_jithash_dump stub that libretro/main.cpp calls unconditionally
+	# pcsx2_jithash_dump stub that libretro/main.c calls unconditionally
 	# from retro_deinit. Dropping it from this list is an aarch64 link error.
 	set(pcsx2x86Sources x86/CpuState.c x86/JitHash.c arm64/recR3000A_arm64.cpp arm64/recR5900_arm64.cpp arm64/aVU.cpp
 		arm64/AsmHelpers.cpp arm64/Vif_UnpackNEON.cpp arm64/Vif_Dynarec_arm64.cpp)

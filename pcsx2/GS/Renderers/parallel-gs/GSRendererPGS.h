@@ -76,25 +76,5 @@ extern GSRendererPGS* g_pgs_renderer;
 /* What GS.cpp calls this renderer through; see gs_renderer_ops in GS.h. */
 extern const struct gs_renderer_ops pgs_renderer_ops;
 
-void pgs_set_hwrender_interface(retro_hw_render_interface_vulkan *iface);
-
-const VkApplicationInfo *pgs_get_application_info();
-bool pgs_create_device(retro_vulkan_context *context,
-	VkInstance instance, VkPhysicalDevice gpu, VkSurfaceKHR surface,
-	PFN_vkGetInstanceProcAddr get_instance_proc_addr,
-	const char **required_device_extensions, unsigned num_required_device_extensions,
-	const char **required_device_layers, unsigned num_required_device_layers,
-	const VkPhysicalDeviceFeatures *required_features);
-void pgs_destroy_device();
-VkInstance pgs_create_instance(PFN_vkGetInstanceProcAddr get_instance_proc_addr,
-                               const VkApplicationInfo *app,
-                               retro_vulkan_create_instance_wrapper_t create_instance_wrapper,
-                               void *opaque);
-bool pgs_create_device2(
-	struct retro_vulkan_context *context,
-	VkInstance instance,
-	VkPhysicalDevice gpu,
-	VkSurfaceKHR surface,
-	PFN_vkGetInstanceProcAddr get_instance_proc_addr,
-	retro_vulkan_create_device_wrapper_t create_device_wrapper,
-	void *opaque);
+/* pgs_* context negotiation: GSLibretroHooks.h. */
+#include "../../GSLibretroHooks.h"

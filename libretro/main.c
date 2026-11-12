@@ -8,21 +8,19 @@
 #include "audio_queue.h"
 #include "state_ext.h"
 
-#include <cstdint>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include <libretro.h>
 #include <stdarg.h>
 #include <file/file_path.h>
 #include <streams/file_stream.h>
 #include <vfs/vfs_hybrid.h>
 #include <compat/strl.h>
-#include <string>
-#include <vector>
-#include <type_traits>
-#include <chrono>
 
 #include "libretro_core_options.h"
 
-#include <cmath>
+#include <math.h>
 #include "../pcsx2/GS.h"
 #include "../pcsx2/MTGSOwner.h"
 #include "../pcsx2/SPU2/Global.h"
@@ -53,20 +51,14 @@
 
 #include "HostFS.h"
 
-#include "../pcsx2/GS/Renderers/Common/GSRenderer.h"
+#include "../common/WindowInfo.h"
 #include "../pcsx2/GS/GSVR.h"
-#ifdef ENABLE_VULKAN
-#ifdef HAVE_PARALLEL_GS
-#include "../pcsx2/GS/Renderers/parallel-gs/GSRendererPGS.h"
-#endif
-#include "../pcsx2/GS/Renderers/Vulkan/VKLoader.h"
-#include "../pcsx2/GS/Renderers/Vulkan/GSDeviceVK.h"
-#include "../pcsx2/GS/Renderers/Vulkan/GSTextureVK.h"
-#include <libretro_vulkan.h>
-#endif
+#include "../pcsx2/GS/GSEntry.h"
+#include "../pcsx2/GS/GSLibretroHooks.h"
 #include "../pcsx2/VMManager.h"
 #include "../pcsx2/GameDatabase.h"
 #include "patches.h"
+#include "disk_list.h"
 #include "../pcsx2/Patch.h"
 
 #include "../pcsx2/SPU2/spu2.h"
@@ -97,15 +89,21 @@ struct retro_hw_render_callback hw_render;
  * no Pcsx2Config field holds ride beside it. VMManager copies this at
  * every LoadSettings, then diffs old against new as it always did. */
 static Pcsx2Config s_option_config;
-/* Pcsx2Config is a C struct: its defaults are set, not constructed. */
-static struct OptionConfigDefaults
+/* Pcsx2Config is a C struct: its defaults are set, not constructed, by
+ * option_config_defaults() on the first libretro entry point that can
+ * reach it. */
+static bool s_option_config_ready = false;
+static void option_config_defaults(void)
 {
-	OptionConfigDefaults() { emu_config_init(&s_option_config); }
-} s_option_config_defaults;
+	if (s_option_config_ready)
+		return;
+	emu_config_init(&s_option_config);
+	s_option_config_ready = true;
+}
 static bool        s_option_fast_boot = true;
 static int         s_option_camera    = USB_CAMERA_NONE;
 static char        s_option_memcards[PCSX2_PATH_MAX];
-const Pcsx2Config* host_option_config(void) { return &s_option_config; }
+const Pcsx2Config* host_option_config(void) { option_config_defaults(); return &s_option_config; }
 bool               host_option_fast_boot(void) { return s_option_fast_boot; }
 const char*        host_option_memcard_path(void) { return s_option_memcards; }
 
@@ -143,7 +141,10 @@ static void cpu_thread_entry_trampoline(void* arg)
 	 * ahead of the boot handshake the entry publishes, which orders it
 	 * before the frontend's first read, and cleared before the join. */
 	mtgs_set_producer_thread(1);
+	/* Registered for the whole entry, so every way out unregisters. */
+	retro_faulthandler_register_thread();
 	cpu_thread_entry(&cpu_thread_boot_params);
+	retro_faulthandler_unregister_thread();
 	mtgs_set_producer_thread(0);
 }
 
@@ -164,26 +165,29 @@ static retro_atomic_int_t cpu_thread_resumes_taken;
 static retro_eventcount_t cpu_thread_resume_ec;
 static bool               cpu_thread_resume_ec_inited = false;
 
-static freezeData fd = {};
-static std::unique_ptr<u8[]> fd_data;
+static freezeData fd;
+static u8* fd_data = NULL;
+static size_t fd_capacity = 0;
 static bool defrost_requested = false;
 
-enum PluginType : u8
+enum PluginType
 {
 	PLUGIN_PGS = 0,
 	PLUGIN_GSDX_HW,
 	PLUGIN_GSDX_SW
 };
 
+/* One core option value per BIOS found; the option table holds no more. */
 struct BiosInfo
 {
-	std::string filename;
-	std::string description;
+	char filename[PCSX2_PATH_MAX];
+	char description[256];
 };
 
-static std::vector<BiosInfo> bios_info;
-static std::string setting_bios;
-static std::string setting_renderer;
+static struct BiosInfo bios_info[RETRO_NUM_CORE_OPTION_VALUES_MAX - 1];
+static unsigned bios_info_count = 0;
+static char setting_bios[PCSX2_PATH_MAX];
+static char setting_renderer[64];
 static int setting_upscale_multiplier          = 1;
 static int setting_half_pixel_offset           = 0;
 static int setting_native_scaling              = -1;
@@ -281,7 +285,7 @@ static bool update_option_visibility(void)
 	setting_show_shared_options         = true;
 	setting_show_hw_hacks               = true;
 
-	// Show/hide video options
+	/* Show/hide video options */
 	var.key = "pcsx2_renderer";
 	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
 	{
@@ -302,7 +306,7 @@ static bool update_option_visibility(void)
 			setting_show_parallel_options     = false;
 	}
 
-	// paraLLEl-GS options
+	/* paraLLEl-GS options */
 	if (setting_show_parallel_options != show_parallel_options_prev)
 	{
 		option_display.visible = setting_show_parallel_options;
@@ -318,7 +322,7 @@ static bool update_option_visibility(void)
 		updated                = true;
 	}
 
-	// GSdx HW/SW options
+	/* GSdx HW/SW options */
 	if (setting_show_gsdx_options != show_gsdx_options_prev)
 	{
 		option_display.visible = setting_show_gsdx_options;
@@ -330,7 +334,7 @@ static bool update_option_visibility(void)
 		updated                = true;
 	}
 
-	// GSdx HW only options, not compatible with SW
+	/* GSdx HW only options, not compatible with SW */
 	if (setting_show_gsdx_hw_only_options != show_gsdx_hw_only_options_prev)
 	{
 		option_display.visible = setting_show_gsdx_hw_only_options;
@@ -354,7 +358,7 @@ static bool update_option_visibility(void)
 		updated                = true;
 	}
 
-	// GSdx SW only options, not compatible with HW
+	/* GSdx SW only options, not compatible with HW */
 	if (setting_show_gsdx_sw_only_options != show_gsdx_sw_only_options_prev)
 	{
 		option_display.visible = setting_show_gsdx_sw_only_options;
@@ -364,7 +368,7 @@ static bool update_option_visibility(void)
 		updated                = true;
 	}
 
-	// Options compatible with both paraLLEl-GS and GSdx HW/SW
+	/* Options compatible with both paraLLEl-GS and GSdx HW/SW */
 	if (setting_show_shared_options != show_shared_options_prev)
 	{
 		option_display.visible = setting_show_shared_options;
@@ -384,7 +388,7 @@ static bool update_option_visibility(void)
 		updated                = true;
 	}
 
-	// Show/hide HW hacks
+	/* Show/hide HW hacks */
 	var.key = "pcsx2_enable_hw_hacks";
 	if ((environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value && !strcmp(var.value, "disabled")) ||
 			!setting_show_gsdx_hw_only_options)
@@ -468,14 +472,19 @@ static void cpu_thread_resume(void)
  *
  * The legacy value "Software" is treated as "Software (HW)" so old
  * configs still work. */
-static bool is_software_setting(const std::string& s)
+static bool is_software_setting(const char* s)
 {
-	return s == "Software" || s == "Software (HW)" || s == "Software (SW)";
+	return !strcmp(s, "Software") || !strcmp(s, "Software (HW)") || !strcmp(s, "Software (SW)");
 }
 
-static bool is_software_sw_setting(const std::string& s)
+static bool is_software_sw_setting(const char* s)
 {
-	return s == "Software (SW)";
+	return !strcmp(s, "Software (SW)");
+}
+
+static bool renderer_is(const char* name)
+{
+	return !strcmp(setting_renderer, name);
 }
 
 /* The HDD image: DEV9hdd.chd or DEV9hdd.vhd when the user put one there
@@ -515,14 +524,16 @@ static void check_variables(bool first_run)
 {
 	struct retro_variable var;
 	bool updated = false;
+	char input_settings[32];
+	int i;
 
 	if (first_run)
 	{
 		var.key = "pcsx2_renderer";
 		if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
 		{
-			setting_renderer = var.value;
-			if (setting_renderer == "paraLLEl-GS")
+			strlcpy(setting_renderer, var.value, sizeof(setting_renderer));
+			if (renderer_is("paraLLEl-GS"))
 				setting_plugin_type = PLUGIN_PGS;
 			else if (is_software_setting(setting_renderer))
 				setting_plugin_type = PLUGIN_GSDX_SW;
@@ -533,13 +544,13 @@ static void check_variables(bool first_run)
 		var.key = "pcsx2_bios";
 		if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
 		{
-			setting_bios = var.value;
+			strlcpy(setting_bios, var.value, sizeof(setting_bios));
 			/* BaseFilenames.Bios, which BiosTools joins under
 			 * EmuFolders.Bios. This is a Pcsx2Config field and always
 			 * was: the settings map reached it through EntryBuf, which
 			 * the conversion's mapping missed, and the selection went
 			 * into a variable nothing read. */
-			strlcpy(s_option_config.BaseFilenames.Bios, setting_bios.c_str(),
+			strlcpy(s_option_config.BaseFilenames.Bios, setting_bios,
 					sizeof(s_option_config.BaseFilenames.Bios));
 		}
 
@@ -594,7 +605,7 @@ static void check_variables(bool first_run)
 
 			if (first_run || setting_pgs_super_sampling != pgs_super_sampling_prev)
 			{
-				s_option_config.GS.PGSSuperSampling = static_cast<decltype(s_option_config.GS.PGSSuperSampling)>(setting_pgs_super_sampling);
+				s_option_config.GS.PGSSuperSampling = (setting_pgs_super_sampling);
 				updated = true;
 			}
 		}
@@ -607,7 +618,7 @@ static void check_variables(bool first_run)
 
 			if (first_run || setting_pgs_ss_tex != pgs_ss_tex_prev)
 			{
-				s_option_config.GS.PGSSuperSampleTextures = static_cast<decltype(s_option_config.GS.PGSSuperSampleTextures)>(setting_pgs_ss_tex);
+				s_option_config.GS.PGSSuperSampleTextures = (setting_pgs_ss_tex);
 				updated = true;
 			}
 		}
@@ -620,7 +631,7 @@ static void check_variables(bool first_run)
 
 			if (first_run || setting_pgs_deblur != pgs_deblur_prev)
 			{
-				s_option_config.GS.PGSSharpBackbuffer = static_cast<decltype(s_option_config.GS.PGSSharpBackbuffer)>(setting_pgs_deblur);
+				s_option_config.GS.PGSSharpBackbuffer = (setting_pgs_deblur);
 				updated = true;
 			}
 		}
@@ -643,11 +654,11 @@ static void check_variables(bool first_run)
 				setting_pgs_high_res_scanout = !strcmp(var.value, "enabled");
 
 			if (first_run)
-				s_option_config.GS.PGSHighResScanout = static_cast<decltype(s_option_config.GS.PGSHighResScanout)>(setting_pgs_high_res_scanout);
+				s_option_config.GS.PGSHighResScanout = (setting_pgs_high_res_scanout);
 			else if (setting_pgs_high_res_scanout != pgs_high_res_scanout_prev)
 			{
-				retro_system_av_info av_info;
-				s_option_config.GS.PGSHighResScanout = static_cast<decltype(s_option_config.GS.PGSHighResScanout)>(setting_pgs_high_res_scanout);
+				struct retro_system_av_info av_info;
+				s_option_config.GS.PGSHighResScanout = (setting_pgs_high_res_scanout);
 
 				retro_get_system_av_info(&av_info);
 				environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av_info);
@@ -656,7 +667,7 @@ static void check_variables(bool first_run)
 		}
 	}
 
-	// Options for both paraLLEl-GS and GSdx HW/SW
+	/* Options for both paraLLEl-GS and GSdx HW/SW */
 	{
 		var.key = "pcsx2_pgs_disable_mipmaps";
 		if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
@@ -667,9 +678,9 @@ static void check_variables(bool first_run)
 			if (first_run || setting_pgs_disable_mipmaps != pgs_disable_mipmaps_prev)
 			{
 				const u8 mipmap_mode = (u8)(setting_pgs_disable_mipmaps ? GS_MIPMAP_UNCLAMPED : GS_MIPMAP_ENABLED);
-				s_option_config.GS.HWMipmapMode = static_cast<decltype(s_option_config.GS.HWMipmapMode)>(mipmap_mode);
+				s_option_config.GS.HWMipmapMode = (mipmap_mode);
 				s_option_config.GS.Mipmap = !setting_pgs_disable_mipmaps;
-				s_option_config.GS.PGSDisableMipmaps = static_cast<decltype(s_option_config.GS.PGSDisableMipmaps)>(setting_pgs_disable_mipmaps);
+				s_option_config.GS.PGSDisableMipmaps = (setting_pgs_disable_mipmaps);
 				updated = true;
 			}
 		}
@@ -750,7 +761,7 @@ static void check_variables(bool first_run)
 
 			if (first_run || setting_deinterlace_mode != deinterlace_mode_prev)
 			{
-				s_option_config.GS.InterlaceMode = static_cast<decltype(s_option_config.GS.InterlaceMode)>(setting_deinterlace_mode);
+				s_option_config.GS.InterlaceMode = (setting_deinterlace_mode);
 				updated = true;
 			}
 		}
@@ -770,7 +781,7 @@ static void check_variables(bool first_run)
 
 			if (first_run || setting_hw_download_mode != hw_download_mode_prev)
 			{
-				s_option_config.GS.HWDownloadMode = static_cast<decltype(s_option_config.GS.HWDownloadMode)>(setting_hw_download_mode);
+				s_option_config.GS.HWDownloadMode = (setting_hw_download_mode);
 				updated = true;
 			}
 		}
@@ -793,15 +804,15 @@ static void check_variables(bool first_run)
 			if (first_run)
 				s_option_config.GS.UpscaleMultiplier = setting_upscale_multiplier;
 #if 0
-			// TODO: ATM it crashes when changed on-the-fly, re-enable when fixed
-			// also remove "(Restart)" from the core option label
-			//
-			// Likely fixed by the set_image retract in libretro_context_destroy
-			// (the reinit used to release a view onto a pool texture CloseGS had
-			// already destroyed) - retest in a frontend before re-enabling.
+			/* TODO: ATM it crashes when changed on-the-fly, re-enable when fixed */
+			/* also remove "(Restart)" from the core option label */
+
+			/* Likely fixed by the set_image retract in libretro_context_destroy */
+			/* (the reinit used to release a view onto a pool texture CloseGS had */
+			/* already destroyed) - retest in a frontend before re-enabling. */
 			else if (setting_upscale_multiplier != upscale_multiplier_prev)
 			{
-				retro_system_av_info av_info;
+				struct retro_system_av_info av_info;
 				s_option_config.GS.UpscaleMultiplier = setting_upscale_multiplier;
 
 				retro_get_system_av_info(&av_info);
@@ -838,7 +849,7 @@ static void check_variables(bool first_run)
 			if (first_run || setting_native_scaling != native_scaling_prev)
 			{
 				s_option_config.GS.NativeScalingSet = setting_native_scaling >= 0;
-				s_option_config.GS.UserHacks_NativeScaling = static_cast<decltype(s_option_config.GS.UserHacks_NativeScaling)>(setting_native_scaling >= 0 ? setting_native_scaling : (int)GS_NATIVE_SCALING_NORMAL);
+				s_option_config.GS.UserHacks_NativeScaling = (setting_native_scaling >= 0 ? setting_native_scaling : (int)GS_NATIVE_SCALING_NORMAL);
 				updated = true;
 			}
 		}
@@ -858,7 +869,7 @@ static void check_variables(bool first_run)
 
 			if (first_run || setting_trilinear_filtering != trilinear_filtering_prev)
 			{
-				s_option_config.GS.TriFilter = static_cast<decltype(s_option_config.GS.TriFilter)>(setting_trilinear_filtering);
+				s_option_config.GS.TriFilter = (setting_trilinear_filtering);
 				updated = true;
 			}
 		}
@@ -915,7 +926,7 @@ static void check_variables(bool first_run)
 
 			if (first_run || setting_blending_accuracy != blending_accuracy_prev)
 			{
-				s_option_config.GS.AccurateBlendingUnit = static_cast<decltype(s_option_config.GS.AccurateBlendingUnit)>(setting_blending_accuracy);
+				s_option_config.GS.AccurateBlendingUnit = (setting_blending_accuracy);
 				updated = true;
 			}
 		}
@@ -998,7 +1009,7 @@ static void check_variables(bool first_run)
 
 				if (first_run || setting_texture_inside_rt != texture_inside_rt_prev)
 				{
-					s_option_config.GS.UserHacks_TextureInsideRt = static_cast<decltype(s_option_config.GS.UserHacks_TextureInsideRt)>(setting_texture_inside_rt);
+					s_option_config.GS.UserHacks_TextureInsideRt = (setting_texture_inside_rt);
 					updated = true;
 				}
 			}
@@ -1089,7 +1100,7 @@ static void check_variables(bool first_run)
 
 				if (first_run || setting_half_pixel_offset != half_pixel_offset_prev)
 				{
-					s_option_config.GS.UserHacks_HalfPixelOffset = static_cast<decltype(s_option_config.GS.UserHacks_HalfPixelOffset)>(setting_half_pixel_offset);
+					s_option_config.GS.UserHacks_HalfPixelOffset = (setting_half_pixel_offset);
 					updated = true;
 				}
 			}
@@ -1208,7 +1219,7 @@ static void check_variables(bool first_run)
 
 			if (first_run || setting_texture_filtering != texture_filtering_prev)
 			{
-				s_option_config.GS.TextureFiltering = static_cast<decltype(s_option_config.GS.TextureFiltering)>(setting_texture_filtering);
+				s_option_config.GS.TextureFiltering = (setting_texture_filtering);
 				updated = true;
 			}
 		}
@@ -1487,7 +1498,7 @@ static void check_variables(bool first_run)
 
 		if (setting_hint_widescreen != setting_hint_widescreen_prev)
 		{
-			retro_system_av_info av_info;
+			struct retro_system_av_info av_info;
 			updated = true;
 			retro_get_system_av_info(&av_info);
 			environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &av_info.geometry);
@@ -1566,8 +1577,7 @@ static void check_variables(bool first_run)
 		}
 	}
 
-	char input_settings[32];
-	for (int i = 0; i < 2; ++i)
+	for (i = 0; i < 2; ++i)
 	{
 		var.key = input_settings;
 		snprintf(input_settings, sizeof(input_settings), "pcsx2_axis_scale%d", i + 1);
@@ -1652,13 +1662,13 @@ static void check_variables(bool first_run)
 }
 
 #ifdef ENABLE_VULKAN
-static retro_hw_render_interface_vulkan *vulkan;
+static struct retro_hw_render_interface_vulkan *vulkan;
 void vk_libretro_init_wraps(void);
 void vk_libretro_init(VkInstance instance, VkPhysicalDevice gpu, const char **required_device_extensions,
 	unsigned num_required_device_extensions, const char **required_device_layers,
 	unsigned num_required_device_layers, const VkPhysicalDeviceFeatures *required_features);
 void vk_libretro_shutdown(void);
-void vk_libretro_set_hwrender_interface(retro_hw_render_interface_vulkan *hw_render_interface);
+void vk_libretro_set_hwrender_interface(struct retro_hw_render_interface_vulkan *hw_render_interface);
 #endif
 
 void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb) { batch_cb = cb; }
@@ -1666,13 +1676,14 @@ void retro_set_video_refresh(retro_video_refresh_t cb) { video_cb = cb; }
 /* The core only ever uses batch_cb (audio_queue.h). The libretro API
  * still requires this symbol to exist, so accept the callback and
  * discard. */
-void retro_set_audio_sample(retro_audio_sample_t /*cb*/) { }
+void retro_set_audio_sample(retro_audio_sample_t cb) { (void)cb; }
 
 void retro_set_environment(retro_environment_t cb)
 {
 	bool no_game = true;
 	struct retro_core_options_update_display_callback update_display_cb;
 
+	option_config_defaults();
 	environ_cb = cb;
 	environ_cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &no_game);
 
@@ -1695,17 +1706,18 @@ void retro_set_environment(retro_environment_t cb)
 #endif
 }
 
-#define MAX_DISKS 10
-static std::vector<std::string> disk_images;
-static int image_index = 0;
+/* The playlist is disk_list.c; inserting and ejecting stays here, where
+ * the VM is. */
 static bool disk_ejected = false;
 
 static bool RETRO_CALLCONV get_eject_state(void) { return disk_ejected; }
-static unsigned RETRO_CALLCONV get_image_index(void) { return image_index; }
-static unsigned RETRO_CALLCONV get_num_images(void) { return disk_images.size(); }
+static unsigned RETRO_CALLCONV get_image_index(void) { return (unsigned)disk_list_index(); }
+static unsigned RETRO_CALLCONV get_num_images(void) { return disk_list_count(); }
 
 static bool RETRO_CALLCONV set_eject_state(bool ejected)
 {
+	bool vm_live;
+	int image_index;
 	if (get_eject_state() == ejected)
 		return false;
 
@@ -1734,26 +1746,27 @@ static bool RETRO_CALLCONV set_eject_state(bool ejected)
 	 * being a VM at all, because
 	 * cpu_thread_pause waits for a thread that has to exist to answer -
 	 * a frontend may eject before content is loaded. */
-	const bool vm_live = vm_has_valid_vm();
+	vm_live = vm_has_valid_vm();
 	if (vm_live)
 		cpu_thread_pause();
 
-	if (ejected || image_index < 0 || image_index >= (int)disk_images.size())
+	image_index = disk_list_index();
+	if (ejected || image_index < 0 || image_index >= (int)disk_list_count())
 	{
 		cdvdCtrlTrayOpen();
-		vm_change_disc(CDVD_SourceType::NoDisc, "");
+		vm_change_disc(CDVD_SOURCE_NODISC, "");
 	}
-	else if (disk_images[image_index].empty())
+	else if (!disk_list_path((unsigned)image_index)[0])
 	{
 		/* add_image_index() appends an empty slot for the frontend to
 		 * fill in later.  Closing the tray on one of those asked the VM
 		 * to mount "", which is not a disc. */
 		cdvdCtrlTrayOpen();
-		vm_change_disc(CDVD_SourceType::NoDisc, "");
+		vm_change_disc(CDVD_SOURCE_NODISC, "");
 	}
 	else
 	{
-		vm_change_disc(CDVD_SourceType::Iso, disk_images[image_index].c_str());
+		vm_change_disc(CDVD_SOURCE_ISO, disk_list_path((unsigned)image_index));
 		cdvdCtrlTrayClose();
 	}
 
@@ -1763,108 +1776,54 @@ static bool RETRO_CALLCONV set_eject_state(bool ejected)
 
 static bool RETRO_CALLCONV set_image_index(unsigned index)
 {
-	if (index >= disk_images.size())
-		return false;
-
-	image_index = index;
-	return true;
+	return disk_list_set_index(index);
 }
 
+/* libretro.h: "Passing NULL to this function indicates that the frontend
+ * has removed this disk image from its internal list", and its own
+ * example of doing so is replace_image_index(1, NULL). */
 static bool RETRO_CALLCONV replace_image_index(unsigned index, const struct retro_game_info* info)
 {
-	if (index >= disk_images.size())
-		return false;
-
-	/* libretro.h: "Passing NULL to this function indicates that the
-	 * frontend has removed this disk image from its internal list",
-	 * and its own example of doing so is replace_image_index(1, NULL).
-	 * info was dereferenced without being checked, so the documented
-	 * way to remove a disc crashed the core. */
-	if (!info || !info->path)
-	{
-		disk_images.erase(disk_images.begin() + index);
-		if (disk_images.empty())
-			image_index = -1;
-		else if (image_index > (int)index)
-			image_index--;
-		/* Removing the entry the tray is pointing at shifts whatever
-		 * followed it down into that slot; removing the last entry
-		 * leaves the index past the end. */
-		if (image_index >= (int)disk_images.size())
-			image_index = (int)disk_images.size() - 1;
-	}
-	else
-		disk_images[index] = info->path;
-
-	return true;
+	return disk_list_replace(index, info ? info->path : NULL);
 }
 
 static bool RETRO_CALLCONV add_image_index(void)
 {
-	disk_images.push_back("");
-	return true;
+	return disk_list_append(NULL);
 }
 
 /* The frontend calls set_initial_image() immediately before
- * retro_load_game, which is before the playlist has been read - so
- * disk_images is still empty and nothing here can be validated yet.
- * Both arguments are kept for retro_load_game to check once it knows
- * what the playlist contains. */
-static int initial_image_index = 0;
-static std::string initial_image_path;
-
+ * retro_load_game, which is before the playlist has been read: both
+ * arguments are kept for retro_load_game to check once it knows what the
+ * playlist contains. */
 static bool RETRO_CALLCONV set_initial_image(unsigned index, const char* path)
 {
-	initial_image_index = (int)index;
-	initial_image_path  = path ? path : "";
+	disk_list_set_initial(index, path);
 	return true;
-}
-
-/* Insert the disc the frontend asked to resume on, if the playlist
- * still agrees with what it was told.  libretro's contract is to fall
- * back to index 0 when the index is out of range or the path at that
- * index is not the one the frontend named, which is how a playlist
- * edited between sessions stops the wrong disc being inserted. */
-static void apply_initial_image(void)
-{
-	if (     initial_image_index > 0
-		 && initial_image_index < (int)disk_images.size()
-		 && (initial_image_path.empty()
-			 || disk_images[initial_image_index] == initial_image_path))
-		set_image_index((unsigned)initial_image_index);
-	else
-		set_image_index(0);
 }
 
 static bool RETRO_CALLCONV get_image_path(unsigned index, char* path, size_t len)
 {
-	if (index >= disk_images.size())
+	const char* p = disk_list_path(index);
+	if (!p || !p[0])
 		return false;
-
-	if (disk_images[index].empty())
-		return false;
-
-	strlcpy(path, disk_images[index].c_str(), len);
+	strlcpy(path, p, len);
 	return true;
 }
 
 static bool RETRO_CALLCONV get_image_label(unsigned index, char* label, size_t len)
 {
-	if (index >= disk_images.size())
-		return false;
-
-	if (disk_images[index].empty())
-		return false;
-
-	strlcpy(label, disk_images[index].c_str(), len);
-	return true;
+	return get_image_path(index, label, len);
 }
 
-extern "C" void pcsx2_jithash_dump(void);
+void pcsx2_jithash_dump(void);
 
 void retro_deinit(void)
 {
 	pcsx2_jithash_dump();
+	free(fd_data);
+	fd_data     = NULL;
+	fd_capacity = 0;
 	if (audio_queue_dropped)
 		log_cb(RETRO_LOG_WARN, "%u audio samples dropped: the frontend stopped taking audio\n",
 			(unsigned)audio_queue_dropped);
@@ -1872,7 +1831,7 @@ void retro_deinit(void)
 	mtvu_shutdown();
 }
 
-void retro_get_system_info(retro_system_info* info)
+void retro_get_system_info(struct retro_system_info* info)
 {
 #ifndef GIT_VERSION
 #define GIT_VERSION ""
@@ -1895,10 +1854,10 @@ unsigned retro_get_region(void)
 	return internal_setting_region;
 }
 
-void retro_get_system_av_info(retro_system_av_info* info)
+void retro_get_system_av_info(struct retro_system_av_info* info)
 {
 	unsigned pgs_scanout_log2  = setting_pgs_high_res_scanout >= 3 ? 2 : setting_pgs_high_res_scanout;
-	unsigned upscale_mul       = (setting_renderer == "paraLLEl-GS" && pgs_scanout_log2) ? (1u << pgs_scanout_log2) : setting_upscale_multiplier;
+	unsigned upscale_mul       = (renderer_is("paraLLEl-GS") && pgs_scanout_log2) ? (1u << pgs_scanout_log2) : setting_upscale_multiplier;
 
 	switch (gsVideoMode)
 	{
@@ -1919,7 +1878,7 @@ void retro_get_system_av_info(retro_system_av_info* info)
 	if (is_software_setting(setting_renderer) && upscale_mul > 2)
 		upscale_mul = 2;
 
-	if (setting_renderer != "paraLLEl-GS" || setting_pgs_high_res_scanout)
+	if (!renderer_is("paraLLEl-GS") || setting_pgs_high_res_scanout)
 	{
 		info->geometry.base_width  *= upscale_mul;
 		info->geometry.base_height *= upscale_mul;
@@ -1974,12 +1933,6 @@ void retro_reset(void)
 	audio_queue_discard();
 }
 
-/* See GSDevice12.cpp and GSDevice11.cpp. */
-#ifdef _WIN32
-extern "C" void gs_d3d12_negotiate_hw_interface(retro_environment_t cb);
-extern "C" void gs_d3d11_negotiate_hw_interface(retro_environment_t cb);
-#endif
-
 /* The GS's state across a context the frontend takes away and gives
  * back. Through GSfreeze, which calls whichever renderer is open through
  * its table (gs_renderer_ops, GS.h): this file has no need to know which
@@ -1992,8 +1945,18 @@ static bool freeze(void)
 		return false;
 	}
 
-	fd_data = std::make_unique<u8[]>(fd.size);
-	fd.data = fd_data.get();
+	/* Kept across context losses: a new block only when the GS state
+	 * grew, which a renderer or resolution change can do. */
+	if ((size_t)fd.size > fd_capacity)
+	{
+		free(fd_data);
+		fd_data     = (u8*)malloc(fd.size);
+		fd_capacity = fd_data ? (size_t)fd.size : 0;
+		if (!fd_data)
+			return false;
+	}
+	memset(fd_data, 0, fd.size);
+	fd.data = fd_data;
 
 	if (GSfreeze(FREEZE_SAVE, &fd) != 0)
 	{
@@ -2069,7 +2032,7 @@ static void libretro_context_destroy(void)
 	 * e.g. the disabled on-the-fly upscale switch). */
 	if (hw_render.context_type == RETRO_HW_CONTEXT_VULKAN && vulkan)
 	{
-		vulkan->set_image(vulkan->handle, nullptr, 0, nullptr, vulkan->queue_index);
+		vulkan->set_image(vulkan->handle, NULL, 0, NULL, vulkan->queue_index);
 		vulkan->wait_sync_index(vulkan->handle);
 	}
 #endif
@@ -2089,7 +2052,7 @@ static void libretro_context_destroy(void)
 #endif
 }
 
-static bool libretro_set_hw_render(retro_hw_context_type type)
+static bool libretro_set_hw_render(enum retro_hw_context_type type)
 {
 	hw_render.context_type       = type;
 	hw_render.context_reset      = libretro_context_reset;
@@ -2172,9 +2135,9 @@ static bool libretro_select_hw_render(void)
 	if (is_software_sw_setting(setting_renderer))
 		return libretro_set_hw_render(RETRO_HW_CONTEXT_NONE);
 
-	if (setting_renderer == "Auto" || is_software_setting(setting_renderer))
+	if (renderer_is("Auto") || is_software_setting(setting_renderer))
 	{
-		retro_hw_context_type context_type = RETRO_HW_CONTEXT_NONE;
+		enum retro_hw_context_type context_type = RETRO_HW_CONTEXT_NONE;
 		environ_cb(RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER, &context_type);
 		if (context_type != RETRO_HW_CONTEXT_NONE && libretro_set_hw_render(context_type))
 			return true;
@@ -2190,17 +2153,17 @@ static bool libretro_select_hw_render(void)
 			return libretro_set_hw_render(RETRO_HW_CONTEXT_NONE);
 	}
 #ifdef _WIN32
-	if (setting_renderer == "D3D11")
+	if (renderer_is("D3D11"))
 		return libretro_set_hw_render(RETRO_HW_CONTEXT_D3D11);
-	if (setting_renderer == "D3D12")
+	if (renderer_is("D3D12"))
 		return libretro_set_hw_render(RETRO_HW_CONTEXT_D3D12);
 #endif
 #ifdef ENABLE_VULKAN
-	if (               setting_renderer == "Vulkan" 
-			|| setting_renderer == "paraLLEl-GS")
+	if (               renderer_is("Vulkan") 
+			|| renderer_is("paraLLEl-GS"))
 		return libretro_set_hw_render(RETRO_HW_CONTEXT_VULKAN);
 #endif
-	if (setting_renderer == "OpenGL")
+	if (renderer_is("OpenGL"))
 	{
 		if (libretro_set_hw_render(RETRO_HW_CONTEXT_OPENGL_CORE))
 			return true;
@@ -2236,15 +2199,9 @@ static bool libretro_select_hw_render(void)
  * executes fastmem-faulting EE JIT (and microVU1 when MTVU is off).
  * Unregistered threads' faults chain to the previously installed
  * handler.  Scope-based so every return path unregisters. */
-struct FaultThreadScope
-{
-	FaultThreadScope() { retro_faulthandler_register_thread(); }
-	~FaultThreadScope() { retro_faulthandler_unregister_thread(); }
-};
 
 static void cpu_thread_entry(const VMBootParameters* boot_params)
 {
-	FaultThreadScope fault_scope_;
 	if (!vm_initialize(boot_params))
 	{
 		/* Initialize() flipped s_state to Shutdown on its way out.
@@ -2338,11 +2295,11 @@ static void cpu_thread_entry(const VMBootParameters* boot_params)
 
 #ifdef ENABLE_VULKAN
 /* Forward declarations */
-bool create_device_vulkan(retro_vulkan_context *context, VkInstance instance, VkPhysicalDevice gpu,
+bool create_device_vulkan(struct retro_vulkan_context *context, VkInstance instance, VkPhysicalDevice gpu,
 	VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr, const char **required_device_extensions,
 	unsigned num_required_device_extensions, const char **required_device_layers, unsigned num_required_device_layers,
 	const VkPhysicalDeviceFeatures *required_features);
-bool create_device2_vulkan(retro_vulkan_context *context, VkInstance instance, VkPhysicalDevice gpu,
+bool create_device2_vulkan(struct retro_vulkan_context *context, VkInstance instance, VkPhysicalDevice gpu,
 	VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
 	retro_vulkan_create_device_wrapper_t create_device_wrapper, void *opaque);
 const VkApplicationInfo *get_application_info_vulkan(void);
@@ -2365,70 +2322,7 @@ void retro_init(void)
 	struct retro_log_callback log;
    	bool option_categories          = false;
 	enum retro_pixel_format xrgb888 = RETRO_PIXEL_FORMAT_XRGB8888;
-
-	/* EmuConfig is a C struct with no constructor: the defaults go in
-	 * before anything reads it, and again on each init after a deinit. */
-	emu_config_init(&EmuConfig);
-	environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &xrgb888);
-	if (environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
-		log_cb = log.log;
-	else
-		log_cb = fallback_log;
-
-	mtvu_init();
-	mtvu_reset();
-	/* Before any thread that reads it: read-only from here on. */
-	vm_initialize_cpu_info();
-
-	if (setting_bios.empty())
-	{
-		const char* system_base = nullptr;
-		environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_base);
-
-		FILESYSTEM_FIND_RESULTS results = {};
-		char bios_dir[PCSX2_PATH_MAX];
-
-		pcsx2_path_join(bios_dir, sizeof(bios_dir), system_base, "pcsx2/bios");
-		if (FileSystem_FindFiles(bios_dir, "*", FILESYSTEM_FIND_FILES, &results))
-		{
-			u32 version, region;
-			static constexpr u32 MIN_BIOS_SIZE = 4 * _1mb;
-			static constexpr u32 MAX_BIOS_SIZE = 8 * _1mb;
-			char description[BIOS_DESCRIPTION_MAX];
-			char zone[BIOS_ZONE_MAX];
-			for (size_t fi = 0; fi < results.count; fi++)
-			{
-				const FILESYSTEM_FIND_DATA& fd = results.items[fi];
-				if (fd.Size < MIN_BIOS_SIZE || fd.Size > MAX_BIOS_SIZE)
-					continue;
-
-				if (IsBIOS(fd.FileName, &version, description, sizeof(description), &region, zone, sizeof(zone)))
-					bios_info.push_back({ std::string(path_basename(fd.FileName)), std::string(description) });
-			}
-
-			/* Find the BIOS core option and fill its values/labels/default_values */
-			for (unsigned i = 0; option_defs_us[i].key != NULL; i++)
-			{
-				if (!strcmp(option_defs_us[i].key, "pcsx2_bios"))
-				{
-					unsigned j;
-					for (j = 0; j < bios_info.size() && j < (RETRO_NUM_CORE_OPTION_VALUES_MAX - 1); j++)
-						option_defs_us[i].values[j] = { bios_info[j].filename.c_str(), bios_info[j].description.c_str() };
-
-					/* Make sure the next array is NULL 
-					 * and set the first BIOS found as the default value */
-					option_defs_us[i].values[j]     = { NULL, NULL };
-					option_defs_us[i].default_value = option_defs_us[i].values[0].value;
-					break;
-				}
-			}
-		}
-		FileSystem_FreeFindResults(&results);
-	}
-
-   	libretro_set_core_options(environ_cb, &option_categories);
-
-	static retro_disk_control_ext_callback disk_control = {
+	static struct retro_disk_control_ext_callback disk_control = {
 		set_eject_state,
 		get_eject_state,
 		get_image_index,
@@ -2441,67 +2335,87 @@ void retro_init(void)
 		get_image_label,
 	};
 
+	/* EmuConfig is a C struct with no constructor: the defaults go in
+	 * before anything reads it, and again on each init after a deinit. */
+	option_config_defaults();
+	emu_config_init(&EmuConfig);
+	environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &xrgb888);
+	if (environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
+		log_cb = log.log;
+	else
+		log_cb = fallback_log;
+
+	mtvu_init();
+	mtvu_reset();
+	/* Before any thread that reads it: read-only from here on. */
+	vm_initialize_cpu_info();
+
+	if (!setting_bios[0])
+	{
+		const char* system_base = NULL;
+		FILESYSTEM_FIND_RESULTS results;
+		char bios_dir[PCSX2_PATH_MAX];
+		environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_base);
+
+		memset(&results, 0, sizeof(results));
+
+		pcsx2_path_join(bios_dir, sizeof(bios_dir), system_base, "pcsx2/bios");
+		if (FileSystem_FindFiles(bios_dir, "*", FILESYSTEM_FIND_FILES, &results))
+		{
+			u32 version, region;
+			char description[BIOS_DESCRIPTION_MAX];
+			char zone[BIOS_ZONE_MAX];
+			size_t fi;
+			unsigned i;
+			bios_info_count = 0;
+			for (fi = 0; fi < results.count && bios_info_count < ARRAY_SIZE(bios_info); fi++)
+			{
+				const FILESYSTEM_FIND_DATA* bfd = &results.items[fi];
+				if (bfd->Size < 4 * _1mb || bfd->Size > 8 * _1mb)
+					continue;
+
+				if (IsBIOS(bfd->FileName, &version, description, sizeof(description), &region, zone, sizeof(zone)))
+				{
+					strlcpy(bios_info[bios_info_count].filename, path_basename(bfd->FileName),
+						sizeof(bios_info[bios_info_count].filename));
+					strlcpy(bios_info[bios_info_count].description, description,
+						sizeof(bios_info[bios_info_count].description));
+					bios_info_count++;
+				}
+			}
+
+			/* Find the BIOS core option and fill its values/labels/default_values */
+			for (i = 0; option_defs_us[i].key != NULL; i++)
+			{
+				if (!strcmp(option_defs_us[i].key, "pcsx2_bios"))
+				{
+					unsigned j;
+					for (j = 0; j < bios_info_count; j++)
+					{
+						option_defs_us[i].values[j].value = bios_info[j].filename;
+						option_defs_us[i].values[j].label = bios_info[j].description;
+					}
+
+					/* Make sure the next array is NULL 
+					 * and set the first BIOS found as the default value */
+					option_defs_us[i].values[j].value = NULL;
+					option_defs_us[i].values[j].label = NULL;
+					option_defs_us[i].default_value = option_defs_us[i].values[0].value;
+					break;
+				}
+			}
+		}
+		FileSystem_FreeFindResults(&results);
+	}
+
+   	libretro_set_core_options(environ_cb, &option_categories);
+
+
 	environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, &disk_control);
 
 	audio_queue_init();
 }
 
-static void get_first_track_from_cue(std::string &path)
-{
-	// PCSX2 doesn't handle cue files
-	// so just find the first 'FILE "<gametrack>.bin" BINARY' line
-	// and extract the track filename from it
-	char buffer[1024];
-	const char *line_start = "FILE \"";
-	const char *line_end = "\" BINARY";
-
-	/* Through the VFS, like every other file this core opens: fopen()
-	 * takes the path in the local 8-bit encoding, which on Windows
-	 * cannot name every path. */
-	RFILE *cue_file = filestream_open(path.c_str(),
-			RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-	if (!cue_file)
-	{
-		log_cb(RETRO_LOG_ERROR, "Failed to open cue file.\n");
-		return;
-	}
-
-	while (filestream_gets(cue_file, buffer, sizeof(buffer)))
-	{
-		std::string line(buffer);
-		size_t pos = line.find(line_start);
-		if (pos != std::string::npos)
-		{
-			size_t start = pos + strlen(line_start);
-			size_t end = line.find(line_end, start);
-			if (end != std::string::npos)
-			{
-				const std::string track(line.substr(start, end - start));
-				filestream_close(cue_file);
-				/* An absolute FILE entry is already the path; a relative
-				 * one is under the cue's own directory. */
-				if (path_is_absolute(track.c_str()))
-					path = track;
-				else
-				{
-					/* path_basedir writes "./" for a bare name. */
-					char *basedir = (char*)malloc(path.size() + 3);
-					if (basedir)
-					{
-						memcpy(basedir, path.c_str(), path.size() + 1);
-						path_basedir(basedir);
-						path = basedir + track;
-						free(basedir);
-					}
-				}
-				return;
-			}
-		}
-	}
-
-	log_cb(RETRO_LOG_ERROR, "Failed to find a valid track from cue file.\n");
-	filestream_close(cue_file);
-}
 
 /* What retro_load_game() has to undo when it fails.
  *
@@ -2543,7 +2457,7 @@ static void libretro_teardown_cpu_thread(void)
 #ifdef ENABLE_VULKAN
 	if (s_vulkan_library_loaded)
 	{
-		Vulkan::UnloadVulkanLibrary();
+		vk_unload_library();
 		s_vulkan_library_loaded = false;
 	}
 #endif
@@ -2703,8 +2617,10 @@ done:
 bool retro_load_game(const struct retro_game_info* game)
 {
 	VMBootParameters boot_params;
-	const char* system_base = nullptr;
+	const char* system_base = NULL;
+	int format;
 
+	option_config_defaults();
 	/* No disc, no ELF, the source by the file name, fast boot by the
 	 * option, until set below. */
 	cpu_thread_boot_filename[0] = '\0';
@@ -2712,7 +2628,7 @@ bool retro_load_game(const struct retro_game_info* game)
 	boot_params.elf_override = NULL;
 	boot_params.source_type  = -1;
 	boot_params.fast_boot    = -1;
-	int format = RETRO_PIXEL_FORMAT_XRGB8888;
+	format = RETRO_PIXEL_FORMAT_XRGB8888;
 
 	environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &format);
 	environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_base);
@@ -2775,7 +2691,7 @@ bool retro_load_game(const struct retro_game_info* game)
 		return false;
 	}
 
-	if (setting_bios.empty())
+	if (!setting_bios[0])
 	{
 		log_cb(RETRO_LOG_ERROR, "Could not find any valid PS2 BIOS File in \"%s\".\n", EmuFolders.Bios);
 		libretro_teardown_cpu_thread();
@@ -2798,7 +2714,7 @@ bool retro_load_game(const struct retro_game_info* game)
 	}
 
 	if (is_software_setting(setting_renderer))
-		s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_SW);
+		s_option_config.GS.Renderer = ((int)GS_RENDERER_SW);
 
 	/* Whatever the last context needed taken, this one starts without;
 	 * the case below that needs it installs it (see GS.h). */
@@ -2809,7 +2725,7 @@ bool retro_load_game(const struct retro_game_info* game)
 	{
 		case RETRO_HW_CONTEXT_D3D12:
 			if (!is_software_setting(setting_renderer))
-				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_DX12);
+				s_option_config.GS.Renderer = ((int)GS_RENDERER_DX12);
 #ifdef _WIN32
 			/* Ask for libretro_d3d12.h version 2, where the Vulkan case
 			 * below sets its own negotiation interface: once D3D12 is the
@@ -2820,7 +2736,7 @@ bool retro_load_game(const struct retro_game_info* game)
 			break;
 		case RETRO_HW_CONTEXT_D3D11:
 			if (!is_software_setting(setting_renderer))
-				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_DX11);
+				s_option_config.GS.Renderer = ((int)GS_RENDERER_DX11);
 #ifdef _WIN32
 			/* Ask for libretro_d3d11.h version 2, as the D3D12 case does
 			 * for its own. See GSDevice11.cpp. */
@@ -2830,39 +2746,39 @@ bool retro_load_game(const struct retro_game_info* game)
 #ifdef ENABLE_VULKAN
 		case RETRO_HW_CONTEXT_VULKAN:
 #ifdef HAVE_PARALLEL_GS
-			if (setting_renderer == "paraLLEl-GS")
+			if (renderer_is("paraLLEl-GS"))
 			{
-				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_PARALLEL_GS);
 				static const struct retro_hw_render_context_negotiation_interface_vulkan iface = {
 					RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN,
 					RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN_VERSION,
 					pgs_get_application_info,
 					pgs_create_device,
-					nullptr,
+					NULL,
 					pgs_create_instance,
 					pgs_create_device2,
 				};
+				s_option_config.GS.Renderer = ((int)GS_RENDERER_PARALLEL_GS);
 				environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE, (void*)&iface);
 			}
 			else
 #endif
 			{
 				if (!is_software_setting(setting_renderer))
-					s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_VK);
+					s_option_config.GS.Renderer = ((int)GS_RENDERER_VK);
 				{
 					static struct retro_hw_render_context_negotiation_interface_vulkan iface = {
 						RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN,
 						RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN_VERSION,
 						get_application_info_vulkan,
 						create_device_vulkan,
-						nullptr,
-						nullptr,
+						NULL,
+						NULL,
 						create_device2_vulkan,
 					};
 					iface.interface_version = libretro_vulkan_negotiation_version();
 					environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE, (void*)&iface);
 				}
-				Vulkan::LoadVulkanLibrary();
+				vk_load_library();
 				s_vulkan_library_loaded = true;
 				vk_libretro_init_wraps();
 			}
@@ -2870,11 +2786,11 @@ bool retro_load_game(const struct retro_game_info* game)
 #endif
 		case RETRO_HW_CONTEXT_NONE:
 			if (!is_software_setting(setting_renderer))
-				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_SW);
+				s_option_config.GS.Renderer = ((int)GS_RENDERER_SW);
 			break;
 		default:
 			if (!is_software_setting(setting_renderer))
-				s_option_config.GS.Renderer = static_cast<decltype(s_option_config.GS.Renderer)>((int)GS_RENDERER_OGL);
+				s_option_config.GS.Renderer = ((int)GS_RENDERER_OGL);
 			break;
 	}
 
@@ -2884,7 +2800,10 @@ bool retro_load_game(const struct retro_game_info* game)
 
 	if (!setting_shared_memory_cards && game && game->path)
 	{
-		const char* save_base = nullptr;
+		const char* save_base = NULL;
+		const char* name;
+		const char* ext;
+		size_t len;
 
 		environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &save_base);
 
@@ -2892,9 +2811,9 @@ bool retro_load_game(const struct retro_game_info* game)
 		vm_update_emu_folders();
 
 		/* The content's name without its extension. */
-		const char* name = path_basename(game->path);
-		const char* ext  = strrchr(name, '.');
-		size_t len = ext ? (size_t)(ext - name) : strlen(name);
+		name = path_basename(game->path);
+		ext = strrchr(name, '.');
+		len = ext ? (size_t)(ext - name) : strlen(name);
 		if (len >= sizeof(s_content_name))
 			len = sizeof(s_content_name) - 1;
 		memcpy(s_content_name, name, len);
@@ -2903,108 +2822,23 @@ bool retro_load_game(const struct retro_game_info* game)
 
 	vm_apply_settings();
 
-	image_index = 0;
-	disk_images.clear();
+	disk_list_clear();
 
 	/* A Python game has no disc: the BIOS boots it from its storage. */
 	if (game && game->path && !s_python2_content && !s_python1_content)
 	{
-		std::string game_path = game->path;
+		static char game_path[PCSX2_PATH_MAX];
+		strlcpy(game_path, game->path, sizeof(game_path));
 
 		if (!strcmp(path_get_extension(game->path), "cue"))
-			get_first_track_from_cue(game_path);
+			disk_list_cue_first_track(game_path, sizeof(game_path));
 
-		/* M3U file list support */
 		if (!strcmp(path_get_extension(game->path), "m3u"))
-		{
-			RFILE *fd = filestream_open(game->path, RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-			/* The line, the playlist's directory and the joined path. */
-			char *paths = fd ? (char*)malloc(3 * PCSX2_PATH_MAX) : NULL;
-
-			if (fd && !paths)
-				filestream_close(fd);
-			else if (fd)
-			{
-				int len;
-				char *linebuf  = paths;
-				char *game_dir = paths + PCSX2_PATH_MAX;
-				char *game_abs = paths + 2 * PCSX2_PATH_MAX;
-
-				game_dir[0] = '\0';
-				game_abs[0] = '\0';
-
-				snprintf(game_dir, PCSX2_PATH_MAX, "%s", game_path.c_str());
-				path_basedir(game_dir);
-
-				while ((filestream_gets(fd, linebuf, PCSX2_PATH_MAX) != NULL) && (disk_images.size() < MAX_DISKS))
-				{
-					if (linebuf[0] == '#' || linebuf[0] == ';')
-						continue;
-
-					len = strlen(linebuf);
-
-					if (len == 0)
-						continue;
-
-					if (linebuf[len-1] == '\n')
-					{
-						linebuf[len-1] = 0;
-						len--;
-					}
-
-					if (len && (linebuf[len-1] == '\r'))
-					{
-						linebuf[len-1] = 0;
-						len--;
-					}
-
-					/* The emptiness check above runs before the line
-					 * terminators come off, so a blank CRLF line is two
-					 * bytes there and zero here.  Joined to the playlist
-					 * directory it yields the directory itself, which
-					 * path_is_valid() is happy with - a trailing blank
-					 * line, which most editors leave, added the folder
-					 * as a disc. */
-					if (len == 0)
-						continue;
-
-					/* An absolute entry is already the path we want.
-					 * Joining it to the playlist's directory produced
-					 * things like '/tmp//tmp/game.iso', so every M3U
-					 * written with absolute paths - which is legal, and
-					 * what a generator that does not know where the
-					 * playlist will live has to emit - silently listed
-					 * no discs at all. */
-					if (path_is_absolute(linebuf))
-						strlcpy(game_abs, linebuf, PCSX2_PATH_MAX);
-					else
-						fill_pathname_join(game_abs, game_dir, linebuf, PCSX2_PATH_MAX);
-
-					if (path_is_valid(game_abs))
-					{
-						game_path = game_abs;
-						disk_images.push_back(game_path);
-
-						if (log_cb)
-							log_cb(RETRO_LOG_INFO, "Disk #%d added from M3U: \"%s\".\n", disk_images.size(), game_abs);
-					}
-				}
-
-				apply_initial_image();
-				get_image_path(get_image_index(), game_abs, PCSX2_PATH_MAX);
-				strlcpy(cpu_thread_boot_filename, game_abs, sizeof(cpu_thread_boot_filename));
-
-				/* The playlist has been read; the handle was never
-				 * released, so every multi-disc load leaked an RFILE and
-				 * the 64 KiB buffer the VFS attaches to it. */
-				filestream_close(fd);
-				free(paths);
-			}
-		}
+			disk_list_load_m3u(game->path, cpu_thread_boot_filename, sizeof(cpu_thread_boot_filename));
 		else
 		{
-			disk_images.push_back(game_path);
-			strlcpy(cpu_thread_boot_filename, game_path.c_str(), sizeof(cpu_thread_boot_filename));
+			disk_list_append(game_path);
+			strlcpy(cpu_thread_boot_filename, game_path, sizeof(cpu_thread_boot_filename));
 		}
 	}
 
@@ -3150,10 +2984,7 @@ void retro_unload_game(void)
  *    had ready is kept for this retro_run to present (MTGSOwner.h). */
 static void update_av_info(void)
 {
-	retro_system_av_info av_info;
-	retro_get_system_av_info(&av_info);
-	pending_update_av_info = false;
-
+	struct retro_system_av_info av_info;
 	static bool have_last          = false;
 	static double last_fps         = 0.0;
 	static double last_sample_rate = 0.0;
@@ -3162,18 +2993,25 @@ static void update_av_info(void)
 	static unsigned last_max_width  = 0;
 	static unsigned last_max_height = 0;
 	static float last_aspect       = 0.0f;
+	bool hw_vulkan;
+	bool timing_changed;
+	bool geometry_changed;
+	bool max_changed;
+	retro_get_system_av_info(&av_info);
+	pending_update_av_info = false;
 
-	const bool hw_vulkan = (hw_render.context_type == RETRO_HW_CONTEXT_VULKAN);
-	const bool timing_changed = !have_last
-		|| std::fabs(av_info.timing.fps - last_fps) > 0.25
+
+	hw_vulkan = (hw_render.context_type == RETRO_HW_CONTEXT_VULKAN);
+	timing_changed = !have_last
+		|| fabs(av_info.timing.fps - last_fps) > 0.25
 		|| av_info.timing.sample_rate != last_sample_rate;
-	const bool geometry_changed = !have_last
+	geometry_changed = !have_last
 		|| av_info.geometry.base_width != last_width
 		|| av_info.geometry.base_height != last_height
-		|| std::fabs(av_info.geometry.aspect_ratio - last_aspect) > 0.001f;
+		|| fabs(av_info.geometry.aspect_ratio - last_aspect) > 0.001f;
 	/* A larger frame than the frontend's framebuffer holds needs the
 	 * framebuffer made again, which only a new av info does. */
-	const bool max_changed = have_last
+	max_changed = have_last
 		&& (av_info.geometry.max_width != last_max_width || av_info.geometry.max_height != last_max_height);
 
 	have_last        = true;
@@ -3259,10 +3097,10 @@ void retro_run(void)
 	audio_queue_upload(mtgs_presented_mark, batch_cb);
 }
 
-WindowInfo Host::AcquireRenderWindow(void)
+WindowInfo host_acquire_render_window(void)
 {
 	WindowInfo wi;
-	retro_system_av_info av_info;
+	struct retro_system_av_info av_info;
 
 	retro_get_system_av_info(&av_info);
 
@@ -3273,14 +3111,14 @@ WindowInfo Host::AcquireRenderWindow(void)
 
 size_t retro_serialize_size(void)
 {
-	freezeData fP = {0, nullptr};
+	freezeData fP = {0, NULL};
 
 	size_t size   = _8mb;
-	size         += Ps2MemSize::MainRam;
-	size         += Ps2MemSize::IopRam;
-	size         += Ps2MemSize::Hardware;
-	size         += Ps2MemSize::IopHardware;
-	size         += Ps2MemSize::Scratch;
+	size         += PS2MEM_MAIN_RAM;
+	size         += PS2MEM_IOP_RAM;
+	size         += PS2MEM_HARDWARE;
+	size         += PS2MEM_IOP_HARDWARE;
+	size         += PS2MEM_SCRATCH;
 	size         += VU0_MEMSIZE;
 	size         += VU1_MEMSIZE;
 	size         += VU0_PROGSIZE;
@@ -3332,7 +3170,7 @@ static bool state_write(void* dst, size_t size)
 	SaveState_FreezeMem(saveme, vuRegs[1].Micro, VU1_PROGSIZE);
 
 	fP.size = 0;
-	fP.data = nullptr;
+	fP.data = NULL;
 	SPU2freeze(FREEZE_SIZE, &fP);
 	SaveState_PrepBlock(saveme, fP.size);
 	fP.data = SaveState_BlockPtr(saveme);
@@ -3340,7 +3178,7 @@ static bool state_write(void* dst, size_t size)
 	SaveState_CommitBlock(saveme, fP.size);
 
 	fP.size = 0;
-	fP.data = nullptr;
+	fP.data = NULL;
 	PADfreeze(FREEZE_SIZE, &fP);
 	SaveState_PrepBlock(saveme, fP.size);
 	fP.data = SaveState_BlockPtr(saveme);
@@ -3348,7 +3186,7 @@ static bool state_write(void* dst, size_t size)
 	SaveState_CommitBlock(saveme, fP.size);
 
 	fP.size = 0;
-	fP.data = nullptr;
+	fP.data = NULL;
 	GSfreeze(FREEZE_SIZE, &fP);
 	SaveState_PrepBlock(saveme, fP.size);
 	fP.data = SaveState_BlockPtr(saveme);
@@ -3417,10 +3255,17 @@ static bool state_read(const void* data, size_t size, bool keep_code)
 	/* The emulator's blocks end where the USB block starts, or the
 	 * extension block where a state has no USB block. */
 	const size_t full_size = size;
+	size_t usb_end;
+	size_t fw_end;
+	bool    started_before;
+	_Bool loading_before;
+	u32     entry_before;
+	u32 eeload_main_before;
+	u32 eeload_exec_before;
 	size = state_ext_strip(data, size);
-	const size_t usb_end = size;
+	usb_end = size;
 	size = USBStateStrip(data, size);
-	const size_t fw_end = size;
+	fw_end = size;
 	size = FWStateStrip(data, size);
 
 	/* The live size is what PrepBlock and FreezeMem bound against, so the
@@ -3435,14 +3280,17 @@ static bool state_read(const void* data, size_t size, bool keep_code)
 	 * place, and the PAD and GS defrosts read through const pointers. The
 	 * const_cast is discharged by that, and it saves copying the whole
 	 * state on every load. */
-	SaveState_Init(&loadme, (u8 *)const_cast<void *>(data), size, size, false);
+	SaveState_Init(&loadme, (u8 *)(void *)(data), size, size, false);
 
 	/* The virtual mappings follow the TLB: when the state brings entries
 	 * other than the ones the guest has set up, those come out of the
 	 * mappings and the state's go in. */
 	memcpy(s_tlb_before_load, tlb, sizeof(s_tlb_before_load));
-	const bool    started_before = g_GameStarted, loading_before = g_GameLoading;
-	const u32     entry_before = ElfEntry, eeload_main_before = g_eeloadMain, eeload_exec_before = g_eeloadExec;
+	started_before = g_GameStarted;
+	loading_before = g_GameLoading;
+	entry_before = ElfEntry;
+	eeload_main_before = g_eeloadMain;
+	eeload_exec_before = g_eeloadExec;
 	ok = SaveState_FreezeBios(&loadme) && SaveState_FreezeInternals(&loadme);
 	if (memcmp(s_tlb_before_load, tlb, sizeof(s_tlb_before_load)) != 0)
 	{
@@ -3498,7 +3346,7 @@ static bool state_read(const void* data, size_t size, bool keep_code)
 	}
 
 	fP.size = 0;
-	fP.data = nullptr;
+	fP.data = NULL;
 	SPU2freeze(FREEZE_SIZE, &fP);
 	SaveState_PrepBlock(&loadme, fP.size);
 	fP.data = SaveState_BlockPtr(&loadme);
@@ -3510,7 +3358,7 @@ static bool state_read(const void* data, size_t size, bool keep_code)
 	SaveState_CommitBlock(&loadme, fP.size);
 
 	fP.size = 0;
-	fP.data = nullptr;
+	fP.data = NULL;
 	PADfreeze(FREEZE_SIZE, &fP);
 	SaveState_PrepBlock(&loadme, fP.size);
 	fP.data = SaveState_BlockPtr(&loadme);
@@ -3527,7 +3375,7 @@ static bool state_read(const void* data, size_t size, bool keep_code)
 	 * session that wrote it; Defrost walks the payload by the version
 	 * header inside it, and its own size guard judges the real bytes
 	 * present. */
-	fP.size = static_cast<int>(size) - loadme.idx;
+	fP.size = (int)(size) - loadme.idx;
 	if (fP.size <= 0)
 	{
 		log_cb(RETRO_LOG_ERROR, "%s: no GS payload left "
@@ -3616,6 +3464,7 @@ bool retro_unserialize(const void* data, size_t size)
 	const size_t backup_size = retro_serialize_size();
 	u8* backup = NULL;
 	bool have_backup = false, ok;
+	bool same_instance;
 
 	state_quiesce();
 
@@ -3624,7 +3473,7 @@ bool retro_unserialize(const void* data, size_t size)
 	 * block, and every block after it would read as zeros. Running on from
 	 * that wipes main memory under live CPU state. Snapshot the machine
 	 * first and put it back if the load does not complete. */
-	const bool same_instance = !state_load_needs_rollback(size);
+	same_instance = !state_load_needs_rollback(size);
 	if (!same_instance)
 	{
 		if (s_unserialize_backup_size != backup_size)
@@ -3677,7 +3526,7 @@ size_t retro_get_memory_size(unsigned id)
 {
 	/* This only works because Scratch comes right after Main in eeMem */
 	if (RETRO_MEMORY_SYSTEM_RAM == id)
-		return Ps2MemSize::MainRam + Ps2MemSize::Scratch;
+		return PS2MEM_MAIN_RAM + PS2MEM_SCRATCH;
 	return 0;
 }
 
@@ -3695,7 +3544,7 @@ void retro_cheat_set(unsigned index, bool enabled, const char* code) { }
 void* host_read_resource_file(const char* filename, int64_t* size)
 {
 	char path[PCSX2_PATH_MAX];
-	void* fbuf = nullptr;
+	void* fbuf = NULL;
 
 	pcsx2_path_join(path, sizeof(path), EmuFolders.Resources, filename);
 	*size = 0;
@@ -3733,7 +3582,7 @@ void host_on_game_changed(const char* disc_path, const char* elf_override,
 			&& var.value && !strcmp(var.value, "enabled");
 		ret = lrps2_ingame_patches(game_serial,
 				game_crc,
-				setting_renderer.c_str(),
+				setting_renderer,
 				setting_hint_nointerlacing,
 				setting_pgs_disable_mipmaps,
 				setting_hint_game_enhancements,

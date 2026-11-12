@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-/* The frontend's logger, C linkage, defined in libretro/main.cpp. */
+/* The frontend's logger, C linkage, defined in libretro/main.c. */
 extern retro_log_printf_t log_cb;
 
 #define USB_TOKEN_SETUP 0x2d

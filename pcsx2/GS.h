@@ -212,6 +212,21 @@ extern void (*gs_hw_context_end)(void);
 #define GS_HW_CONTEXT_BEGIN() do { if (gs_hw_context_begin) gs_hw_context_begin(); } while (0)
 #define GS_HW_CONTEXT_END()   do { if (gs_hw_context_end)   gs_hw_context_end();   } while (0)
 
+/* Set by the frontend's thread around the GS part of a savestate it takes
+ * or loads in this same instance (runahead): the renderer keeps what it
+ * holds on the GPU at the save, under GSSnapshotKey, and puts it back at
+ * a load with the same key. The key is the machine's time, the EE cycle,
+ * which the state carries anyway. Defined in GS/GS.cpp. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern bool GSSnapshotSave;
+extern bool GSSnapshotLoad;
+extern u64  GSSnapshotKey;
+#ifdef __cplusplus
+}
+#endif
+
 /* MTGS.c: the GS command ring, drained on the frontend's thread. */
 #ifdef __cplusplus
 extern "C" {

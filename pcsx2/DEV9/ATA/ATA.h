@@ -88,7 +88,7 @@ void dev9_irq_cause_clear(int bits);
 /* (dev9.if_ctrl & SPD_IF_ATA_DMAEN) != 0 */
 int dev9_ata_dma_enabled(void);
 
-/* The frontend's logger, defined in libretro/main.cpp with C linkage;
+/* The frontend's logger, defined in libretro/main.c with C linkage;
  * callers put the newline in the format. */
 #include <libretro.h>
 extern retro_log_printf_t log_cb;

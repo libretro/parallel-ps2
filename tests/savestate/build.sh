@@ -89,7 +89,7 @@ gcc -O1 -g -std=gnu89 -Wall -Wextra -o "$TMP/mcdstate" "$DIR/mcdstate.c"
 echo
 echo "=== savestate load is all or nothing ==="
 gcc -O1 -g -std=gnu89 -Wall -Wextra -o "$TMP/loadorder" "$DIR/loadorder.c"
-"$TMP/loadorder" "$ROOT/libretro/main.cpp"
+"$TMP/loadorder" "$ROOT/libretro/main.c"
 
 # mingw gives __forceinline a storage class in C but not in C++; the header
 # carries no inline definitions today, but the SPU2 lane found that the hard

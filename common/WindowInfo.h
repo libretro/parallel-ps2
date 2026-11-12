@@ -16,11 +16,21 @@
 #pragma once
 #include "Pcsx2Defs.h"
 
-/// Contains the information required to create a graphics context in a window.
-struct WindowInfo
+/* What the GS needs of the window it renders into. */
+typedef struct WindowInfo
 {
-	/// Width of the surface in pixels.
-	u32 surface_width = 0;
-	/// Height of the surface in pixels.
-	u32 surface_height = 0;
-};
+	u32 surface_width;  /* in pixels */
+	u32 surface_height; /* in pixels */
+} WindowInfo;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The front end's answer when the GS creates a render device, which can
+ * also be a fullscreen transition. */
+WindowInfo host_acquire_render_window(void);
+
+#ifdef __cplusplus
+}
+#endif

@@ -18,7 +18,7 @@
 #include <stdlib.h>
 
 /* The exported entry point and the A/B mode flags exist on every */
-/* architecture and compiler: libretro/main.cpp calls the dump from */
+/* architecture and compiler: libretro/main.c calls the dump from */
 /* retro_deinit unconditionally, and the aarch64 link failed the moment */
 /* this TU compiled empty there. Only the hashing internals are x86-64. */
 #if defined(_MSC_VER)

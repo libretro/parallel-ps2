@@ -233,7 +233,7 @@ void GSDevice::DestroyBase()
 
 void GSDevice::AcquireWindow(void)
 {
-	m_window_info = Host::AcquireRenderWindow();
+	m_window_info = host_acquire_render_window();
 }
 
 void GSDevice::ClearRenderTarget(GSTexture* t, u32 c)

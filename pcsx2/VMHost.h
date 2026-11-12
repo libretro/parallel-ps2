@@ -21,7 +21,7 @@ void vm_request_stop(void);
 /* vm_get_state() == VM_STATE_PAUSED. */
 bool vm_paused(void);
 
-/* libretro/main.cpp: the frame timing changed, so retro_run reports the
+/* libretro/main.c: the frame timing changed, so retro_run reports the
  * new AV info. Set from the EE's vsync (Counters.c). */
 extern bool pending_update_av_info;
 

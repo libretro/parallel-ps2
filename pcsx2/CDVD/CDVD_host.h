@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-/* The fast-boot option (libretro/main.cpp). */
+/* The fast-boot option (libretro/main.c). */
 bool host_option_fast_boot(void);
 
 #ifdef __cplusplus

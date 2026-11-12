@@ -94,7 +94,7 @@ static void gs_d3d11_free_present_textures(void)
 static void gs_d3d11_context_begin(void);
 static void gs_d3d11_context_end(void);
 
-/* Called by main.cpp when D3D11 is the context that was accepted, and
+/* Called by main.c when D3D11 is the context that was accepted, and
  * only then. */
 extern "C" void gs_d3d11_negotiate_hw_interface(retro_environment_t cb)
 {

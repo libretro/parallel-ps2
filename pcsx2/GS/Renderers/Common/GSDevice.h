@@ -910,7 +910,7 @@ protected:
 	u64 m_pool_memory_usage[2] = {};
 	static constexpr u32 EXPAND_BUFFER_SIZE = sizeof(u16) * 16383 * 6;
 
-	WindowInfo m_window_info;
+	WindowInfo m_window_info = {};
 
 	GSTexture* m_merge = nullptr;
 	GSTexture* m_weavebob = nullptr;

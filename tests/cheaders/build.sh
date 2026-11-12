@@ -190,6 +190,16 @@ if command -v "$MINGW" >/dev/null 2>&1; then
 		check "mingw + windows.h" $MINGW $CFLAGS -msse4.1 $INC -include "$TMP/win.h" -fsyntax-only "$f" || continue
 		printf ' ok\n'
 	done
+	echo
+	# The units above build with no renderer enabled, so the front end's
+	# Vulkan and paraLLEl-GS halves - the renderer hooks it reaches through
+	# GSLibretroHooks.h - were never compiled for Windows here.
+	echo "=== libretro/main.c with every renderer enabled, as the builds have it ==="
+	FEAT="-DENABLE_VULKAN -DHAVE_PARALLEL_GS -DENABLE_OPENGL -DHAVE_OPENGL -DHAVE_HW -I$ROOT/3rdparty/vulkan-headers/include -I$ROOT/libretro"
+	for c in gcc "$MINGW"; do
+		printf '%-40s' "libretro/main.c ($c)"
+		check "$c, renderers on" $c $CFLAGS $FEAT -msse4.1 $INC -fsyntax-only "$ROOT/libretro/main.c" && printf ' ok\n'
+	done
 else
 	echo "skipping the <windows.h> pass (no $MINGW)"
 fi

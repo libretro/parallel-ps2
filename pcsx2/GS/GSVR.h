@@ -9,7 +9,7 @@
 
 /* --- VR -----------------------------------------------------------------
  * The 'VR' core option, as the GS sees it. The libretro side
- * (libretro/main.cpp) owns the option; the GS reads it at each vsync.
+ * (libretro/main.c) owns the option; the GS reads it at each vsync.
  *
  * A PS2 game hands the GS screen-space triangles, so there is no scene to
  * draw a second time from another eye. What the hardware renderer does
@@ -32,7 +32,7 @@ enum GSVRMode
 	GSVR_STEREOSCOPIC = 1,
 };
 
-/* Defined in libretro/main.cpp. */
+/* Defined in libretro/main.c. */
 extern int   gs_vr_mode;   /* GSVRMode */
 extern float gs_vr_depth;  /* depth strength, 1 the default */
 extern float gs_vr_aspect; /* the picture's display aspect ratio */

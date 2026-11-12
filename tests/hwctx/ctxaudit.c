@@ -15,10 +15,10 @@
  *  software renderer.
  *
  *  This checks that shape in the sources: libretro_set_hw_render and
- *  libretro_select_hw_render (libretro/main.cpp) and the GS context
+ *  libretro_select_hw_render (libretro/main.c) and the GS context
  *  switches (pcsx2/GS/GS.cpp).
  *
- *  Usage: tests/hwctx/ctxaudit <libretro/main.cpp> <pcsx2/GS/GS.cpp>
+ *  Usage: tests/hwctx/ctxaudit <libretro/main.c> <pcsx2/GS/GS.cpp>
  */
 
 #include <stdio.h>
@@ -104,7 +104,7 @@ int main(int argc, char** argv)
 
 	if (argc != 3)
 	{
-		fprintf(stderr, "usage: %s <libretro/main.cpp> <pcsx2/GS/GS.cpp>\n", argv[0]);
+		fprintf(stderr, "usage: %s <libretro/main.c> <pcsx2/GS/GS.cpp>\n", argv[0]);
 		return 2;
 	}
 	m = read_file(argv[1]);

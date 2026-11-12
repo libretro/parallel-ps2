@@ -65,7 +65,7 @@ extern retro_video_refresh_t video_cb;
  * submitted and the frontend records nothing here.
  *
  * Plain C on purpose: a struct that lives for the process, a function
- * with C linkage main.cpp calls before SET_HW_RENDER, and an array. */
+ * with C linkage main.c calls before SET_HW_RENDER, and an array. */
 
 #define GS_D3D12_MAX_SYNC_INDICES 32
 
@@ -185,7 +185,7 @@ GSDevice12::ComPtr<ID3D12RootSignature> GSDevice12::CreateRootSignature(const D3
 
 bool GSDevice12::SupportsTextureFormat(DXGI_FORMAT format)
 {
-	constexpr u32 required = D3D12_FORMAT_SUPPORT1_TEXTURE2D | D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE;
+	const u32 required = (u32)D3D12_FORMAT_SUPPORT1_TEXTURE2D | (u32)D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE;
 
 	D3D12_FEATURE_DATA_FORMAT_SUPPORT support = {format};
 	return SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT, &support, sizeof(support))) &&

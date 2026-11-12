@@ -263,3 +263,15 @@ namespace Vulkan
 	}
 
 } // namespace Vulkan
+
+#include "GS/GSLibretroHooks.h"
+
+int vk_load_library(void)
+{
+	return Vulkan::LoadVulkanLibrary() ? 1 : 0;
+}
+
+void vk_unload_library(void)
+{
+	Vulkan::UnloadVulkanLibrary();
+}

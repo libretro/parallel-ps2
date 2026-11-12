@@ -19,6 +19,7 @@
 
 #include "GS/GS.h"
 #include "GS/Renderers/Vulkan/GSDeviceVK.h"
+#include "GS/GSLibretroHooks.h"
 #include "GS/GSUtil.h"
 #include "Host.h"
 #include "GS.h"

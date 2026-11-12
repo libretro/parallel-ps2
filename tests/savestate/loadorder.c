@@ -13,9 +13,9 @@
  *  so state_load_needs_rollback lets it load without the copy, and
  *  only such a state keeps the compiled code its memory did not change.
  *
- *  This checks that shape in libretro/main.cpp.
+ *  This checks that shape in libretro/main.c.
  *
- *  Usage: tests/savestate/loadorder <libretro/main.cpp>
+ *  Usage: tests/savestate/loadorder <libretro/main.c>
  */
 
 #include <stdio.h>
@@ -59,7 +59,7 @@ int main(int argc, char** argv)
 
 	if (argc != 2)
 	{
-		fprintf(stderr, "usage: %s <libretro/main.cpp>\n", argv[0]);
+		fprintf(stderr, "usage: %s <libretro/main.c>\n", argv[0]);
 		return 2;
 	}
 	src = read_file(argv[1]);
@@ -109,7 +109,7 @@ int main(int argc, char** argv)
 			printf("  the rollback copy is not kept for every state but this session's own\n");
 			bad++;
 		}
-		if (!within(s, e, "const bool same_instance = !state_load_needs_rollback(size);")
+		if (!within(s, e, "same_instance = !state_load_needs_rollback(size);")
 		 || !within(s, e, "if (!same_instance)")
 		 || (snap && within(s, e, "if (!same_instance)") > snap))
 		{

@@ -589,7 +589,7 @@ static constexpr s64 _4gb = _1gb * 4;
 
 /* The frontend's logger and environment. One symbol each, C linkage, so
  * the C translation units name them as the C++ ones do (MSVC decorates a
- * C++ variable's name); main.cpp defines them and installs a stderr
+ * C++ variable's name); main.c defines them and installs a stderr
  * fallback logger when the frontend offers no log interface. Callers put
  * the newline in the format. */
 #include <libretro.h>
