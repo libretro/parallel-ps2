@@ -13,35 +13,36 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// SPDX-FileCopyrightText: 2002-2023 PCSX2 Dev Team
-// SPDX-License-Identifier: LGPL-3.0+
-//
-
 #pragma once
 
 #include "Vif.h"
 #include "Vif_Unpack.h"
 #include "Vif_HashBucket.h"
 #include "VU.h"
+#include "VirtualMemory.h"
 
 typedef void (*nVifrecCall)(uptr dest, uptr src);
 
-
+#ifdef __cplusplus
+/* The arm64 dynarec keeps its per-unit template. */
 _vifT extern void dVifUnpack(const u8* data, int isFill);
+extern "C" {
+#endif
 
 /* The recompiler's state per unit. The partial-transfer buffer the
  * interpreter needs is Vif_Unpack.c's vifUnpackBuffer. */
-struct nVifStruct
+typedef struct nVifStruct
 {
-	// VIF0 or VIF1 - provided for debugging helpfulness only, and is generally unused.
-	// (templates are used for most or all VIF indexing)
-	u32                     idx;
+	u32                     idx;         /* VIF0 or VIF1 */
+	struct CodeReserve      recReserve;  /* x86 dynarec; unused on arm64 */
+	u8*                     recWritePtr; /* current write pos into the reserve */
+	u8*                     recEndPtr;   /* arm64 dynarec: end of the code region (overflow check) */
+	vif_hash_bucket_t       vifBlocks;   /* Vif Blocks */
+} nVifStruct;
 
-	struct CodeReserve      recReserve;  // x86 dynarec; unused on arm64
-	u8*                     recWritePtr; // current write pos into the reserve
-	u8*                     recEndPtr;   // arm64 dynarec: end of the code region (overflow check)
+PCSX2_ALIGN(16) extern nVifStruct nVif[2];
 
-	vif_hash_bucket_t       vifBlocks;   // Vif Blocks
-};
 
-alignas(16) extern nVifStruct nVif[2];
+#ifdef __cplusplus
+}
+#endif

@@ -221,7 +221,7 @@
     <ClCompile Include="MTVU.c" />
     <ClCompile Include="VUmicro.c" />
     <ClCompile Include="VUmicroMem.c" />
-    <ClCompile Include="x86\microVU.cpp" />
+    <ClCompile Include="x86\microVU.c" />
     <ClCompile Include="VU0.c" />
     <ClCompile Include="VU0micro.c" />
     <ClCompile Include="VU0microInterp.c" />
@@ -238,8 +238,8 @@
     <ClCompile Include="Vif_Codes.c" />
     <ClCompile Include="Vif_Transfer.c" />
     <ClCompile Include="Vif_Unpack.c" />
-    <ClCompile Include="x86\newVif_Dynarec.cpp" />
-    <ClCompile Include="x86\newVif_UnpackSSE.cpp" />
+    <ClCompile Include="x86\newVif_Dynarec.c" />
+    <ClCompile Include="x86\newVif_UnpackSSE.c" />
     <ClCompile Include="SPR.c" />
     <ClCompile Include="Gif.c" />
     <ClCompile Include="R5900OpcodeTables.c" />

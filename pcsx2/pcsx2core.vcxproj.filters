@@ -356,7 +356,7 @@
     <ClCompile Include="VUmicroMem.c">
       <Filter>System\Ps2\EmotionEngine\VU</Filter>
     </ClCompile>
-    <ClCompile Include="x86\microVU.cpp">
+    <ClCompile Include="x86\microVU.c">
       <Filter>System\Ps2\EmotionEngine\VU\Dynarec\microVU</Filter>
     </ClCompile>
     <ClCompile Include="VU0.c">
@@ -407,10 +407,10 @@
     <ClCompile Include="Vif_Unpack.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Vif\Unpack</Filter>
     </ClCompile>
-    <ClCompile Include="x86\newVif_Dynarec.cpp">
+    <ClCompile Include="x86\newVif_Dynarec.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Vif\Unpack\newVif\Dynarec</Filter>
     </ClCompile>
-    <ClCompile Include="x86\newVif_UnpackSSE.cpp">
+    <ClCompile Include="x86\newVif_UnpackSSE.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Vif\Unpack\newVif\Dynarec</Filter>
     </ClCompile>
     <ClCompile Include="SPR.c">

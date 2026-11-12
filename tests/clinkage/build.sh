@@ -190,7 +190,7 @@ echo "== every C function a shared header declares has C linkage in C++ =="
 # included again from C++, each C function it names has its address
 # taken there, and a mangled reference in the probe is the bug.
 for f in $(find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP"); do
-	gcc -std=gnu89 -msse4.1 $INC -MM "$f" 2>/dev/null
+	gcc -std=gnu89 -msse4.1 $INC -MM "$f" 2>/dev/null || true
 done | tr ' \\' '\n\n' | grep '\.h$' | grep -v libretro-common | sort -u > "$TMP/c_headers"
 hbad=0
 while read -r hdr; do

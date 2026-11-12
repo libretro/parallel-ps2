@@ -15,128 +15,136 @@
 
 #pragma once
 
-//------------------------------------------------------------------
-// Micro VU - Pass 1 Functions
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Micro VU - Pass 1 Functions */
+/* ------------------------------------------------------------------ */
 
-//------------------------------------------------------------------
-// Helper Functions
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Helper Functions */
+/* ------------------------------------------------------------------ */
 
-// Read a VF reg
-static __ri void analyzeReg1(mV, int xReg, microVFreg& vfRead) {
+/* Read a VF reg */
+#define analyzeReg1(a0, a1, a2) analyzeReg1_(a0, a1, &(a2))
+static __ri void analyzeReg1_(mV, int xReg, microVFreg* vfRead) {
 	if (xReg) {
-		if (_X) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].x); vfRead.reg = xReg; vfRead.x = 1; }
-		if (_Y) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].y); vfRead.reg = xReg; vfRead.y = 1; }
-		if (_Z) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].z); vfRead.reg = xReg; vfRead.z = 1; }
-		if (_W) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].w); vfRead.reg = xReg; vfRead.w = 1; }
+		if (_X) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].x); vfRead->reg = xReg; vfRead->x = 1; }
+		if (_Y) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].y); vfRead->reg = xReg; vfRead->y = 1; }
+		if (_Z) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].z); vfRead->reg = xReg; vfRead->z = 1; }
+		if (_W) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].w); vfRead->reg = xReg; vfRead->w = 1; }
 	}
 }
 
-// Write to a VF reg
-static __ri void analyzeReg2(mV, int xReg, microVFreg& vfWrite, bool isLowOp)
+/* Write to a VF reg */
+#define analyzeReg2(a0, a1, a2, a3) analyzeReg2_(a0, a1, &(a2), a3)
+static __ri void analyzeReg2_(mV, int xReg, microVFreg* vfWrite, bool isLowOp)
 {
 	if (xReg)
 	{
 		#define bReg(x, y) mVUregsTemp.VFreg[y] = x; mVUregsTemp.VF[y]
-		if (_X) { bReg(xReg, isLowOp).x = 4; vfWrite.reg = xReg; vfWrite.x = 4; }
-		if (_Y) { bReg(xReg, isLowOp).y = 4; vfWrite.reg = xReg; vfWrite.y = 4; }
-		if (_Z) { bReg(xReg, isLowOp).z = 4; vfWrite.reg = xReg; vfWrite.z = 4; }
-		if (_W) { bReg(xReg, isLowOp).w = 4; vfWrite.reg = xReg; vfWrite.w = 4; }
+		if (_X) { bReg(xReg, isLowOp).x = 4; vfWrite->reg = xReg; vfWrite->x = 4; }
+		if (_Y) { bReg(xReg, isLowOp).y = 4; vfWrite->reg = xReg; vfWrite->y = 4; }
+		if (_Z) { bReg(xReg, isLowOp).z = 4; vfWrite->reg = xReg; vfWrite->z = 4; }
+		if (_W) { bReg(xReg, isLowOp).w = 4; vfWrite->reg = xReg; vfWrite->w = 4; }
 	}
 }
 
-// Read a VF reg (BC opcodes)
-static __ri void analyzeReg3(mV, int xReg, microVFreg& vfRead)
+/* Read a VF reg (BC opcodes) */
+#define analyzeReg3(a0, a1, a2) analyzeReg3_(a0, a1, &(a2))
+static __ri void analyzeReg3_(mV, int xReg, microVFreg* vfRead)
 {
 	if (xReg)
 	{
 		if (_bc_x)
 		{
 			mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].x);
-			vfRead.reg = xReg;
-			vfRead.x = 1;
+			vfRead->reg = xReg;
+			vfRead->x = 1;
 		}
 		else if (_bc_y)
 		{
 			mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].y);
-			vfRead.reg = xReg;
-			vfRead.y = 1;
+			vfRead->reg = xReg;
+			vfRead->y = 1;
 		}
 		else if (_bc_z)
 		{
 			mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].z);
-			vfRead.reg = xReg;
-			vfRead.z = 1;
+			vfRead->reg = xReg;
+			vfRead->z = 1;
 		}
 		else
 		{
 			mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].w);
-			vfRead.reg = xReg;
-			vfRead.w = 1;
+			vfRead->reg = xReg;
+			vfRead->w = 1;
 		}
 	}
 }
 
-// For Clip Opcode
-static __ri void analyzeReg4(mV, int xReg, microVFreg& vfRead)
+/* For Clip Opcode */
+#define analyzeReg4(a0, a1, a2) analyzeReg4_(a0, a1, &(a2))
+static __ri void analyzeReg4_(mV, int xReg, microVFreg* vfRead)
 {
 	if (xReg)
 	{
 		mVUstall   = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].w);
-		vfRead.reg = xReg;
-		vfRead.w   = 1;
+		vfRead->reg = xReg;
+		vfRead->w   = 1;
 	}
 }
 
-// Read VF reg (FsF/FtF)
-static __ri void analyzeReg5(mV, int xReg, int fxf, microVFreg& vfRead)
+/* Read VF reg (FsF/FtF) */
+#define analyzeReg5(a0, a1, a2, a3) analyzeReg5_(a0, a1, a2, &(a3))
+static __ri void analyzeReg5_(mV, int xReg, int fxf, microVFreg* vfRead)
 {
 	if (xReg)
 	{
 		switch (fxf)
 		{
-			case 0: mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].x); vfRead.reg = xReg; vfRead.x = 1; break;
-			case 1: mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].y); vfRead.reg = xReg; vfRead.y = 1; break;
-			case 2: mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].z); vfRead.reg = xReg; vfRead.z = 1; break;
-			case 3: mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].w); vfRead.reg = xReg; vfRead.w = 1; break;
+			case 0: mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].x); vfRead->reg = xReg; vfRead->x = 1; break;
+			case 1: mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].y); vfRead->reg = xReg; vfRead->y = 1; break;
+			case 2: mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].z); vfRead->reg = xReg; vfRead->z = 1; break;
+			case 3: mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].w); vfRead->reg = xReg; vfRead->w = 1; break;
 		}
 	}
 }
 
-// Flips xyzw stalls to yzwx (MR32 Opcode)
-static __ri void analyzeReg6(mV, int xReg, microVFreg& vfRead)
+/* Flips xyzw stalls to yzwx (MR32 Opcode) */
+#define analyzeReg6(a0, a1, a2) analyzeReg6_(a0, a1, &(a2))
+static __ri void analyzeReg6_(mV, int xReg, microVFreg* vfRead)
 {
 	if (xReg)
 	{
-		if (_X) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].y); vfRead.reg = xReg; vfRead.y = 1; }
-		if (_Y) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].z); vfRead.reg = xReg; vfRead.z = 1; }
-		if (_Z) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].w); vfRead.reg = xReg; vfRead.w = 1; }
-		if (_W) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].x); vfRead.reg = xReg; vfRead.x = 1; }
+		if (_X) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].y); vfRead->reg = xReg; vfRead->y = 1; }
+		if (_Y) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].z); vfRead->reg = xReg; vfRead->z = 1; }
+		if (_Z) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].w); vfRead->reg = xReg; vfRead->w = 1; }
+		if (_W) { mVUstall = pcsx2_max_i(mVUstall, mVUregs.VF[xReg].x); vfRead->reg = xReg; vfRead->x = 1; }
 	}
 }
 
-// Reading a VI reg
-static __ri void analyzeVIreg1(mV, int xReg, microVIreg& viRead)
+/* Reading a VI reg */
+#define analyzeVIreg1(a0, a1, a2) analyzeVIreg1_(a0, a1, &(a2))
+static __ri void analyzeVIreg1_(mV, int xReg, microVIreg* viRead)
 {
 	if (xReg)
 	{
 		mVUstall    = pcsx2_max_i(mVUstall, mVUregs.VI[xReg]);
-		viRead.reg  = xReg;
-		viRead.used = 1;
+		viRead->reg  = xReg;
+		viRead->used = 1;
 	}
 }
 
-// Writing to a VI reg
-static __ri void analyzeVIreg2(mV, int xReg, microVIreg& viWrite, int aCycles)
+/* Writing to a VI reg */
+#define analyzeVIreg2(a0, a1, a2, a3) analyzeVIreg2_(a0, a1, &(a2), a3)
+static __ri void analyzeVIreg2_(mV, int xReg, microVIreg* viWrite, int aCycles)
 {
 	if (xReg)
 	{
 		mVUconstReg[xReg].isValid = 0;
 		mVUregsTemp.VIreg = xReg;
 		mVUregsTemp.VI    = aCycles;
-		viWrite.reg  = xReg;
-		viWrite.used = aCycles;
+		viWrite->reg  = xReg;
+		viWrite->used = aCycles;
 	}
 }
 
@@ -182,9 +190,9 @@ static __ri void analyzeVIreg2(mV, int xReg, microVIreg& viWrite, int aCycles)
 		} \
 	}
 
-//------------------------------------------------------------------
-// FMAC1 - Normal FMAC Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* FMAC1 - Normal FMAC Opcodes */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeFMAC1(mV, int Fd, int Fs, int Ft)
 {
@@ -194,9 +202,9 @@ static __fi void mVUanalyzeFMAC1(mV, int Fd, int Fs, int Ft)
 	analyzeReg2(mVU, Fd, mVUup.VF_write, 0);
 }
 
-//------------------------------------------------------------------
-// FMAC2 - ABS/FTOI/ITOF Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* FMAC2 - ABS/FTOI/ITOF Opcodes */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeFMAC2(mV, int Fs, int Ft)
 {
@@ -204,9 +212,9 @@ static __fi void mVUanalyzeFMAC2(mV, int Fs, int Ft)
 	analyzeReg2(mVU, Ft, mVUup.VF_write, 0);
 }
 
-//------------------------------------------------------------------
-// FMAC3 - BC(xyzw) FMAC Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* FMAC3 - BC(xyzw) FMAC Opcodes */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeFMAC3(mV, int Fd, int Fs, int Ft)
 {
@@ -216,9 +224,9 @@ static __fi void mVUanalyzeFMAC3(mV, int Fd, int Fs, int Ft)
 	analyzeReg2(mVU, Fd, mVUup.VF_write, 0);
 }
 
-//------------------------------------------------------------------
-// FMAC4 - Clip FMAC Opcode
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* FMAC4 - Clip FMAC Opcode */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeFMAC4(mV, int Fs, int Ft)
 {
@@ -227,9 +235,9 @@ static __fi void mVUanalyzeFMAC4(mV, int Fs, int Ft)
 	analyzeReg4(mVU, Ft, mVUup.VF_read[1]);
 }
 
-//------------------------------------------------------------------
-// IALU - IALU Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* IALU - IALU Opcodes */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeIALU1(mV, int Id, int Is, int It)
 {
@@ -257,9 +265,9 @@ static __fi void mVUanalyzeIADDI(mV, int Is, int It, s16 imm)
 	}
 }
 
-//------------------------------------------------------------------
-// MR32 - MR32 Opcode
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* MR32 - MR32 Opcode */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeMR32(mV, int Fs, int Ft)
 {
@@ -271,9 +279,9 @@ static __fi void mVUanalyzeMR32(mV, int Fs, int Ft)
 	analyzeReg2(mVU, Ft, mVUlow.VF_write, 1);
 }
 
-//------------------------------------------------------------------
-// FDIV - DIV/SQRT/RSQRT Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* FDIV - DIV/SQRT/RSQRT Opcodes */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeFDIV(mV, int Fs, int Fsf, int Ft, int Ftf, u8 xCycles)
 {
@@ -282,9 +290,9 @@ static __fi void mVUanalyzeFDIV(mV, int Fs, int Fsf, int Ft, int Ftf, u8 xCycles
 	analyzeQreg(xCycles);
 }
 
-//------------------------------------------------------------------
-// EFU - EFU Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* EFU - EFU Opcodes */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeEFU1(mV, int Fs, int Fsf, u8 xCycles)
 {
@@ -298,9 +306,9 @@ static __fi void mVUanalyzeEFU2(mV, int Fs, u8 xCycles)
 	analyzePreg(xCycles);
 }
 
-//------------------------------------------------------------------
-// MFP - MFP Opcode
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* MFP - MFP Opcode */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeMFP(mV, int Ft)
 {
@@ -309,9 +317,9 @@ static __fi void mVUanalyzeMFP(mV, int Ft)
 	analyzeReg2(mVU, Ft, mVUlow.VF_write, 1);
 }
 
-//------------------------------------------------------------------
-// MOVE - MOVE Opcode
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* MOVE - MOVE Opcode */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeMOVE(mV, int Fs, int Ft)
 {
@@ -321,9 +329,9 @@ static __fi void mVUanalyzeMOVE(mV, int Fs, int Ft)
 	analyzeReg2(mVU, Ft, mVUlow.VF_write, 1);
 }
 
-//------------------------------------------------------------------
-// LQx - LQ/LQD/LQI Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* LQx - LQ/LQD/LQI Opcodes */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeLQ(mV, int Ft, int Is, bool writeIs)
 {
@@ -346,9 +354,9 @@ static __fi void mVUanalyzeLQ(mV, int Ft, int Is, bool writeIs)
 	}
 }
 
-//------------------------------------------------------------------
-// SQx - SQ/SQD/SQI Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* SQx - SQ/SQD/SQI Opcodes */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeSQ(mV, int Fs, int It, bool writeIt)
 {
@@ -361,9 +369,9 @@ static __fi void mVUanalyzeSQ(mV, int Fs, int It, bool writeIt)
 	}
 }
 
-//------------------------------------------------------------------
-// R*** - R Reg Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* R*** - R Reg Opcodes */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeR1(mV, int Fs, int Fsf)
 {
@@ -384,17 +392,19 @@ static __fi void mVUanalyzeR2(mV, int Ft, bool canBeNOP)
 	analyzeRreg();
 }
 
-//------------------------------------------------------------------
-// Sflag - Status Flag Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Sflag - Status Flag Opcodes */
+/* ------------------------------------------------------------------ */
 static __ri void flagSet(mV, bool setMacFlag)
 {
 	int curPC = iPC;
 	int calcOPS = 0;
+	int i;
+	int j;
 
-	//Check which ops need to do the flag settings, also check for runs of ops as they can do multiple calculations to get the sticky status flags (VP2)
-	//Make sure we get the last 4 calculations (Bloody Roar 3, possibly others)
-	for (int i = mVUcount, j = 0; i > 0; i--, j++)
+	/* Check which ops need to do the flag settings, also check for runs of ops as they can do multiple calculations to get the sticky status flags (VP2) */
+	/* Make sure we get the last 4 calculations (Bloody Roar 3, possibly others) */
+	for (i = mVUcount, j = 0; i > 0; i--, j++)
 	{
 		j += mVUstall;
 		incPC(-2);
@@ -436,9 +446,9 @@ static __ri void mVUanalyzeFSSET(mV)
 	mVUlow.readFlags = true;
 }
 
-//------------------------------------------------------------------
-// Mflag - Mac Flag Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Mflag - Mac Flag Opcodes */
+/* ------------------------------------------------------------------ */
 
 static __ri void mVUanalyzeMflag(mV, int Is, int It)
 {
@@ -456,9 +466,9 @@ static __ri void mVUanalyzeMflag(mV, int Is, int It)
 	}
 }
 
-//------------------------------------------------------------------
-// Cflag - Clip Flag Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Cflag - Clip Flag Opcodes */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeCflag(mV, int It)
 {
@@ -467,9 +477,9 @@ static __fi void mVUanalyzeCflag(mV, int It)
 	analyzeVIreg2(mVU, It, mVUlow.VI_write, 1);
 }
 
-//------------------------------------------------------------------
-// XGkick
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* XGkick */
+/* ------------------------------------------------------------------ */
 
 static __fi void mVUanalyzeXGkick(mV, int Fs, int xCycles)
 {
@@ -479,35 +489,41 @@ static __fi void mVUanalyzeXGkick(mV, int Fs, int xCycles)
 	analyzeVIreg1(mVU, Fs, mVUlow.VI_read[0]);
 	if (!CHECK_XGKICKHACK)
 	{
-		analyzeXGkick1(); // Stall will cause mVUincCycles() to trigger pending xgkick
+		analyzeXGkick1(); /* Stall will cause mVUincCycles() to trigger pending xgkick */
 		analyzeXGkick2(xCycles);
 	}
-	// Note: Technically XGKICK should stall on the next instruction,
-	// this code stalls on the same instruction. The only case where this
-	// will be a problem with, is if you have very-specifically placed
-	// FMxxx or FSxxx opcodes checking flags near this instruction AND
-	// the XGKICK instruction stalls. No-game should be effected by
-	// this minor difference.
+	/* Note: Technically XGKICK should stall on the next instruction, */
+	/* this code stalls on the same instruction. The only case where this */
+	/* will be a problem with, is if you have very-specifically placed */
+	/* FMxxx or FSxxx opcodes checking flags near this instruction AND */
+	/* the XGKICK instruction stalls. No-game should be effected by */
+	/* this minor difference. */
 }
 
-//------------------------------------------------------------------
-// Branches - Branch Opcodes
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Branches - Branch Opcodes */
+/* ------------------------------------------------------------------ */
 
-// If the VI reg is modified directly before the branch, then the VI
-// value read by the branch is the value the VI reg had at the start
-// of the instruction 4 instructions ago (assuming no stalls).
-// See: https://forums.pcsx2.net/Thread-blog-PS2-VU-Vector-Unit-Documentation-Part-1
-static void analyzeBranchVI(mV, int xReg, bool& infoVar)
+/* If the VI reg is modified directly before the branch, then the VI */
+/* value read by the branch is the value the VI reg had at the start */
+/* of the instruction 4 instructions ago (assuming no stalls). */
+/* See: https://forums.pcsx2.net/Thread-blog-PS2-VU-Vector-Unit-Documentation-Part-1 */
+#define analyzeBranchVI(a0, a1, a2) analyzeBranchVI_(a0, a1, &(a2))
+static void analyzeBranchVI_(mV, int xReg, bool* infoVar)
 {
+	int i;
+	int j;
+	int cyc;
+	int iEnd;
+	int bPC;
 	if (!xReg)
 		return;
-	if (mVUstall) // I assume a stall on branch means the vi reg is not modified directly b4 the branch...
+	if (mVUstall) /* I assume a stall on branch means the vi reg is not modified directly b4 the branch... */
 		return;
-	int i, j = 0;
-	int cyc  = 0;
-	int iEnd = 4;
-	int bPC  = iPC;
+	j = 0;
+	cyc = 0;
+	iEnd = 4;
+	bPC = iPC;
 	incPC2(-2);
 	for (i = 0; i < iEnd && cyc < iEnd; i++)
 	{
@@ -515,7 +531,7 @@ static void analyzeBranchVI(mV, int xReg, bool& infoVar)
 		{
 			if (mVUpBlock->pState.viBackUp == xReg)
 			{
-				infoVar = true;
+				*infoVar = true;
 				j = i;
 				i++;
 			}
@@ -524,7 +540,7 @@ static void analyzeBranchVI(mV, int xReg, bool& infoVar)
 		if ((mVUlow.VI_write.reg == xReg) && mVUlow.VI_write.used)
 		{
 			if (mVUlow.readFlags)
-				break; // Not sure if on the above "if (i)" case, if we need to "continue" or if we should "break"
+				break; /* Not sure if on the above "if (i)" case, if we need to "continue" or if we should "break" */
 			j = i;
 		}
 		else if (i == 0)
@@ -535,12 +551,12 @@ static void analyzeBranchVI(mV, int xReg, bool& infoVar)
 
 	if (i)
 	{
-		if (!infoVar)
+		if (!*infoVar)
 		{
 			iPC = bPC;
 			incPC2(-2 * (j + 1));
 			mVUlow.backupVI = true;
-			infoVar = true;
+			*infoVar = true;
 		}
 		iPC = bPC;
 	}
@@ -550,18 +566,18 @@ static void analyzeBranchVI(mV, int xReg, bool& infoVar)
 	}
 }
 
-// Branch in Branch Delay-Slots
+/* Branch in Branch Delay-Slots */
 static __ri int mVUbranchCheck(mV)
 {
 	if (!mVUcount && !isEvilBlock)
 		return 0;
 
-	// This means we have jumped from an evil branch situation, so this is another branch in delay slot
+	/* This means we have jumped from an evil branch situation, so this is another branch in delay slot */
 	if (isEvilBlock)
 	{
 		mVUlow.evilBranch = true;
 		mVUregs.blockType = 2;
-		mVUregs.needExactMatch |= 7; // This might not be necessary, but w/e...
+		mVUregs.needExactMatch |= 7; /* This might not be necessary, but w/e... */
 		mVUregs.flagInfo = 0;
 		return 1;
 	}
@@ -576,9 +592,9 @@ static __ri int mVUbranchCheck(mV)
 			incPC(2);
 			mVUlow.evilBranch = true;
 
-			mVUregs.blockType = 2; // Second branch doesn't need linking, so can let it run its evil block course (MGS2 for testing)
+			mVUregs.blockType = 2; /* Second branch doesn't need linking, so can let it run its evil block course (MGS2 for testing) */
 
-			mVUregs.needExactMatch |= 7; // This might not be necessary, but w/e...
+			mVUregs.needExactMatch |= 7; /* This might not be necessary, but w/e... */
 			mVUregs.flagInfo = 0;
 			return 1;
 		}

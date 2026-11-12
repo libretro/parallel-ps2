@@ -15,7 +15,7 @@
 // ...) to execute a COP2 SPECIAL ALU op natively on the EE thread, against
 // vuRegs[0] in memory. It lives in the aVU translation unit (included by aVU.cpp
 // after aVU_Upper.inl / aVU_Lower.inl) because those emitters are static to that
-// TU — the same reason x86 hosts microVU_Macro.inl inside microVU.cpp.
+// TU — the same reason x86 hosts microVU_Macro.inl inside microVU.c.
 //
 // Split vs x86 (intentional, agreed in MACRO_MODE_PLAN §3 / this session):
 //   * The EE<->VU0 sync prologue (mVUFinishVU0 on EEINST_COP2_{SYNC,FINISH}_VU0)

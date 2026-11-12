@@ -16,25 +16,25 @@
 
 #pragma once
 
-//------------------------------------------------------------------
-// Micro VU - Clamp Functions
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Micro VU - Clamp Functions */
+/* ------------------------------------------------------------------ */
 
-alignas(16) const u32 sse4_minvals[2][4] = {
-	{0xff7fffff, 0xffffffff, 0xffffffff, 0xffffffff}, //1000
-	{0xff7fffff, 0xff7fffff, 0xff7fffff, 0xff7fffff}, //1111
+PCSX2_ALIGN(16) const u32 sse4_minvals[2][4] = {
+	{0xff7fffff, 0xffffffff, 0xffffffff, 0xffffffff}, /* 1000 */
+	{0xff7fffff, 0xff7fffff, 0xff7fffff, 0xff7fffff}, /* 1111 */
 };
-alignas(16) const u32 sse4_maxvals[2][4] = {
-	{0x7f7fffff, 0x7fffffff, 0x7fffffff, 0x7fffffff}, //1000
-	{0x7f7fffff, 0x7f7fffff, 0x7f7fffff, 0x7f7fffff}, //1111
+PCSX2_ALIGN(16) const u32 sse4_maxvals[2][4] = {
+	{0x7f7fffff, 0x7fffffff, 0x7fffffff, 0x7fffffff}, /* 1000 */
+	{0x7f7fffff, 0x7f7fffff, 0x7f7fffff, 0x7f7fffff}, /* 1111 */
 };
 
-// Used for Result Clamping
-// Note: This function will not preserve NaN values' sign.
-// The theory behind this is that when we compute a result, and we've
-// gotten a NaN value, then something went wrong; and the NaN's sign
-// is not to be trusted. Games like positive values better usually,
-// and its faster... so just always make NaNs into positive infinity.
+/* Used for Result Clamping */
+/* Note: This function will not preserve NaN values' sign. */
+/* The theory behind this is that when we compute a result, and we've */
+/* gotten a NaN value, then something went wrong; and the NaN's sign */
+/* is not to be trusted. Games like positive values better usually, */
+/* and its faster... so just always make NaNs into positive infinity. */
 void mVUclamp1(microVU* mVU, int reg, int regT1, int xyzw, int bClampE)
 {
 	if (((!clampE && CHECK_VU_OVERFLOW(mVU->index)) || (clampE && bClampE)) && mVUra_checkVFClamp(mVU->regAlloc, reg))
@@ -53,11 +53,11 @@ void mVUclamp1(microVU* mVU, int reg, int regT1, int xyzw, int bClampE)
 	}
 }
 
-// Used for Operand Clamping
-// Note 1: If 'preserve sign' mode is on, it will preserve the sign of NaN values.
-// Note 2: Using regalloc here seems to contaminate some regs in certain games.
-// Must be some specific case I've overlooked (or I used regalloc improperly on an opcode)
-// so we just use a temporary mem location for our backup for now... (non-sse4 version only)
+/* Used for Operand Clamping */
+/* Note 1: If 'preserve sign' mode is on, it will preserve the sign of NaN values. */
+/* Note 2: Using regalloc here seems to contaminate some regs in certain games. */
+/* Must be some specific case I've overlooked (or I used regalloc improperly on an opcode) */
+/* so we just use a temporary mem location for our backup for now... (non-sse4 version only) */
 void mVUclamp2(microVU* mVU, int reg, int regT1in, int xyzw, int bClampE)
 {
 	if (((!clampE && CHECK_VU_SIGN_OVERFLOW(mVU->index)) || (clampE && bClampE && CHECK_VU_SIGN_OVERFLOW(mVU->index))) && mVUra_checkVFClamp(mVU->regAlloc, reg))
@@ -70,19 +70,19 @@ void mVUclamp2(microVU* mVU, int reg, int regT1in, int xyzw, int bClampE)
 		mVUclamp1(mVU, reg, regT1in, xyzw, bClampE);
 }
 
-// Used for operand clamping on every SSE instruction (add/sub/mul/div)
+/* Used for operand clamping on every SSE instruction (add/sub/mul/div) */
 void mVUclamp3(microVU* mVU, int reg, int regT1, int xyzw)
 {
 	if (clampE && mVUra_checkVFClamp(mVU->regAlloc, reg))
 		mVUclamp2(mVU, reg, regT1, xyzw, 1);
 }
 
-// Used for result clamping on every SSE instruction (add/sub/mul/div)
-// Note: Disabled in "preserve sign" mode because in certain cases it
-// makes too much code-gen, and you get jump8-overflows in certain
-// emulated opcodes (causing crashes). Since we're clamping the operands
-// with mVUclamp3, we should almost never be getting a NaN result,
-// but this clamp is just a precaution just-in-case.
+/* Used for result clamping on every SSE instruction (add/sub/mul/div) */
+/* Note: Disabled in "preserve sign" mode because in certain cases it */
+/* makes too much code-gen, and you get jump8-overflows in certain */
+/* emulated opcodes (causing crashes). Since we're clamping the operands */
+/* with mVUclamp3, we should almost never be getting a NaN result, */
+/* but this clamp is just a precaution just-in-case. */
 void mVUclamp4(microVU* mVU, int reg, int regT1, int xyzw)
 {
 	if (clampE && !CHECK_VU_SIGN_OVERFLOW(mVU->index) && mVUra_checkVFClamp(mVU->regAlloc, reg))

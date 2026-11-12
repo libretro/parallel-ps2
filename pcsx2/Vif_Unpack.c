@@ -449,7 +449,7 @@ static __fi void nvif_unpack_loop(int idx, bool doMode, bool isFill, const u8* d
 	const nVifCall* fnbase = &nVifUpk[((usn * 2 * 16) + upkNum) * (4 * 1)];
 	/* Two tables, two layouts. nVifUpk is filled by the recompilers with
 	 * usn at +32 and the mask at +16 -- see usnpart and maskpart in
-	 * x86/newVif_UnpackSSE.cpp and arm64/Vif_UnpackNEON.cpp -- and upkNum
+	 * x86/newVif_UnpackSSE.c and arm64/Vif_UnpackNEON.cpp -- and upkNum
 	 * already carries the mask bit at 0x10, so (usn * 2 * 16) + upkNum is
 	 * right for that one. VIFfuncTable is laid out the other way round:
 	 * UnpackModeSet emits signed-unmasked, unsigned-unmasked,

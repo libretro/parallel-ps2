@@ -701,8 +701,8 @@ set(pcsx2x86Sources
 	x86/ix86-32/iR5900Shift.c
 	x86/ix86-32/iR5900Templates.c
 	x86/ix86-32/recVTLB.c
-	x86/newVif_Dynarec.cpp
-	x86/newVif_UnpackSSE.cpp
+	x86/newVif_Dynarec.c
+	x86/newVif_UnpackSSE.c
 	)
 
 # x86 headers
@@ -727,7 +727,7 @@ set(pcsx2x86Headers
 	x86/microVU_Branch.inl
 	x86/microVU_Clamp.inl
 	x86/microVU_Compile.inl
-	x86/microVU.cpp
+	x86/microVU.c
 	x86/microVU_Execute.inl
 	x86/microVU_Flags.inl
 	x86/microVU.h

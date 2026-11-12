@@ -73,7 +73,8 @@ static __fi void mVUstatusFlagOp(mV)
 int findFlagInst(int* fFlag, int cycles)
 {
 	int j = 0, jValue = -1;
-	for (int i = 0; i < 4; i++)
+	int i;
+	for (i = 0; i < 4; i++)
 	{
 		if ((fFlag[i] <= cycles) && (fFlag[i] > jValue))
 		{
@@ -90,7 +91,8 @@ int sortFlag(int* fFlag, int* bFlag, int cycles)
 {
 	int lFlag = -5;
 	int x = 0;
-	for (int i = 0; i < 4; i++)
+	int i;
+	for (i = 0; i < 4; i++)
 	{
 		bFlag[i] = findFlagInst(fFlag, cycles);
 		if (lFlag != bFlag[i])
@@ -110,10 +112,12 @@ static __fi void mVUsetFlags(mV, microFlagCycles* mFC)
 {
 	int xS = 0, xM = 0, xC = 0;
 	int endPC = iPC;
-	u32 aCount = 0; /* Amount of instructions needed to get valid mac flag instances for block linking */
+	u32 aCount = 0;
+	int i;
+	u32 xCount; /* Amount of instructions needed to get valid mac flag instances for block linking */
 	/* Ensure last ~4+ instructions update mac/status flags 
 	 * (if next block's first 4 instructions will read them) */
-	for (int i = mVUcount; i > 0; i--, aCount++)
+	for (i = mVUcount; i > 0; i--, aCount++)
 	{
 		if (sFLAG.doFlag)
 		{
@@ -129,7 +133,7 @@ static __fi void mVUsetFlags(mV, microFlagCycles* mFC)
 
 	/* Status/Mac Flags Setup Code */
 
-	for (int i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++)
 	{
 		mFC->xStatus[i] = i;
 		mFC->xMac   [i] = i;
@@ -165,7 +169,7 @@ static __fi void mVUsetFlags(mV, microFlagCycles* mFC)
 	}
 
 	mFC->cycles = 0;
-	u32 xCount = mVUcount; /* Backup count */
+	xCount = mVUcount; /* Backup count */
 	iPC = mVUstartPC;
 	for (mVUcount = 0; mVUcount < xCount; mVUcount++)
 	{
@@ -327,28 +331,33 @@ static __fi void mVUsetupFlags(mV, microFlagCycles* mFC)
    once on different threads, so each has its own. */
 static u32 mVUflagVisitedPC[2][0x4000 / 8];
 
-struct mVUflagVisited
+typedef struct mVUflagVisited
 {
 	u32* pc;
 	u32  count;
-};
+} mVUflagVisited;
 
 /* Scan through instructions and check if flags are read (FSxxx, FMxxx, FCxxx opcodes) */
 static void _mVUflagPass(mV, u32 startPC, u32 sCount, u32 found, mVUflagVisited* v)
 {
-	for (u32 i = 0; i < v->count; i++)
+	u32 i;
+	int oldPC;
+	int oldBranch;
+	int aBranchAddr;
+	int branch;
+	for (i = 0; i < v->count; i++)
 	{
 		if (v->pc[i] == startPC)
 			return; /* Prevent infinite recursion */
 	}
 	v->pc[v->count++] = startPC;
 
-	int oldPC = iPC;
-	int oldBranch = mVUbranch;
-	int aBranchAddr = 0;
+	oldPC = iPC;
+	oldBranch = mVUbranch;
+	aBranchAddr = 0;
 	iPC = startPC / 4;
 	mVUbranch = 0;
-	for (int branch = 0; sCount < 4; sCount += found)
+	for (branch = 0; sCount < 4; sCount += found)
 	{
 		mVUregs.needExactMatch &= 7;
 		incPC(1);
@@ -404,7 +413,7 @@ static void _mVUflagPass(mV, u32 startPC, u32 sCount, u32 found, mVUflagVisited*
 	setCode();
 }
 
-static void mVUflagPass(mV, u32 startPC, u32 sCount = 0, u32 found = 0)
+static void mVUflagPass(mV, u32 startPC, u32 sCount, u32 found)
 {
 	/* At most microMemSize/8 distinct PCs can be visited (one per 8-byte
 	   instruction slot): 8192 for VU1 (0x4000), 2048 for VU0 (0x1000). */
@@ -425,20 +434,21 @@ void mVUsetFlagInfo(mV)
 	else if (mVUbranch <= 2) /* B/BAL */
 	{
 		incPC(-1);
-		mVUflagPass(mVU, branchAddr(mVU));
+		mVUflagPass(mVU, branchAddr(mVU), 0, 0);
 		incPC(1);
 
 		mVUregs.needExactMatch &= 0x7;
 	}
 	else if (mVUbranch <= 8) /* Conditional Branch */
 	{
+		int backupFlagInfo;
 		incPC(-1); /* Branch Taken */
-		mVUflagPass(mVU, branchAddr(mVU));
-		int backupFlagInfo = mVUregs.needExactMatch;
+		mVUflagPass(mVU, branchAddr(mVU), 0, 0);
+		backupFlagInfo = mVUregs.needExactMatch;
 		mVUregs.needExactMatch = 0;
 
 		incPC(4); /* Branch Not Taken */
-		mVUflagPass(mVU, xPC);
+		mVUflagPass(mVU, xPC, 0, 0);
 		incPC(-3);
 
 		mVUregs.needExactMatch |= backupFlagInfo;
@@ -449,7 +459,7 @@ void mVUsetFlagInfo(mV)
 		if (!doConstProp || !mVUlow.constJump.isValid)
 			mVUregs.needExactMatch |= 0x7;
 		else
-			mVUflagPass(mVU, (mVUlow.constJump.regValue * 8) & (mVU->microMemSize - 8));
+			mVUflagPass(mVU, (mVUlow.constJump.regValue * 8) & (mVU->microMemSize - 8), 0, 0);
 		mVUregs.needExactMatch &= 0x7;
 	}
 }

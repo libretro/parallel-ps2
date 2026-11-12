@@ -44,6 +44,11 @@
 # C units are compiled once more with MinGW and <windows.h> ahead of them,
 # as retro_atomic.h includes it.
 #
+# That pass keeps implicit declarations an error, and with them every
+# warning on: -w would silence the error too. C11's static_assert is a
+# macro in glibc's <assert.h> and in no MinGW header, so a C unit calling
+# it builds on Linux and calls an undefined function on Windows.
+#
 # MSVC is still the one lane with no real front end behind it; anything
 # else it rejects reaches CI unchecked.
 set -e
@@ -52,7 +57,7 @@ ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
 INC="-I$ROOT -I$ROOT/pcsx2 -I$ROOT/pcsx2/x86 -I$ROOT/common -I$ROOT/common/include"
 INC="$INC -I$ROOT/libretro/libretro-common/include -I$ROOT/3rdparty -I$ROOT/3rdparty/include"
 SKIP='parallel-gs|Granite|DX11|DX12|OpenGL|Vulkan|uwp|pcap_io'
-CFLAGS="-std=gnu89 -DNDEBUG -Wno-comment -Werror=declaration-after-statement"
+CFLAGS="-std=gnu89 -DNDEBUG -Wno-comment -Werror=declaration-after-statement -Werror=implicit-function-declaration"
 CXXFLAGS="-std=c++17 -DNDEBUG -DPCSX2_CORE"
 A64=aarch64-linux-gnu-gcc
 A64XX=aarch64-linux-gnu-g++
@@ -69,13 +74,17 @@ UNITS=$(find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP" | sort)
 # Tables spliced into the middle of one .c each, under macros that unit
 # defines first. Not headers; they are checked through their unit below.
 FRAGMENTS='pcsx2/SPU2/interpolate_table.h pcsx2/SPU2/reg_write_table.h'
+# microVU is one unit built from microVU.h, microVU_IR.h and the .inl
+# files they pull in; those are pieces of microVU.c, checked through it.
+UNITY='^pcsx2/(x86/microVU(_IR)?\.h|x86/microVU_[A-Za-z]+\.inl|microVU/[A-Za-z_]+\.inl)$'
 
 # What the C units include, transitively, minus the system headers.
 HEADERS=$(for f in $UNITS; do
 	gcc $CFLAGS -msse4.1 $INC -MM "$f" 2>/dev/null | tr ' \\' '\n\n' |
-	grep -E '\.(h|inl)$' | grep -v '^/usr'
-done | sed "s|^$ROOT/||" | sort -u)
+	grep -E '\.(h|inl)$' | grep -v '^/usr' || true
+done | xargs -r realpath -m --relative-to="$ROOT" | sort -u)
 for frag in $FRAGMENTS; do HEADERS=$(echo "$HEADERS" | grep -vx "$frag"); done
+HEADERS=$(echo "$HEADERS" | grep -vE "$UNITY")
 echo "$(echo "$HEADERS" | wc -l) headers reachable from $(echo "$UNITS" | wc -l) C units"
 
 fail=0
@@ -148,8 +157,11 @@ if command -v "$A64" >/dev/null 2>&1; then
 		printf ' ok\n'
 	done
 	echo
-	echo "=== every C unit, aarch64: $A64S ==="
-	for f in $UNITS; do
+	# The x86 recompilers are not built for aarch64 (Makefile.common's
+	# IS_ARM64 list); CpuState.c and JitHash.c are.
+	A64_UNITS=$(echo "$UNITS" | grep -vE '/pcsx2/x86/' ; echo "$UNITS" | grep -E '/pcsx2/x86/(CpuState|JitHash)\.c$')
+	echo "=== every C unit aarch64 builds: $A64S ==="
+	for f in $A64_UNITS; do
 		printf '%-40s' "$(echo "$f" | sed "s|^$ROOT/||")"
 		for cc in $A64S; do
 			case $cc in gcc) C=$A64 ;; clang) C=$A64_CLANG ;; esac
@@ -175,7 +187,7 @@ if command -v "$MINGW" >/dev/null 2>&1; then
 	printf '#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n' > "$TMP/win.h"
 	for f in $UNITS; do
 		printf '%-40s' "$(echo "$f" | sed "s|^$ROOT/||")"
-		check "mingw + windows.h" $MINGW $CFLAGS -w -msse4.1 $INC -include "$TMP/win.h" -fsyntax-only "$f" || continue
+		check "mingw + windows.h" $MINGW $CFLAGS -msse4.1 $INC -include "$TMP/win.h" -fsyntax-only "$f" || continue
 		printf ' ok\n'
 	done
 else

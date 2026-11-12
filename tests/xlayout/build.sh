@@ -34,13 +34,14 @@ PY=${PYTHON:-python3}
 
 TMP=${TMPDIR:-/tmp}/xlayout.$$
 mkdir -p "$TMP"
-trap 'rm -rf "$TMP"' EXIT
+trap '[ -n "$KEEP" ] || rm -rf "$TMP"' EXIT
 
 compare() { # $1 C source, $2 C++ source
-	gcc $CFLAGS $DBG $INC -c "$1" -o "$TMP/c.o"
-	g++ $CXXFLAGS $DBG $INC -c "$2" -o "$TMP/cxx.o"
-	readelf --debug-dump=info "$TMP/c.o" > "$TMP/c.txt"
-	readelf --debug-dump=info "$TMP/cxx.o" > "$TMP/cxx.txt"
+	rm -f "$TMP/c.o" "$TMP/cxx.o"
+	gcc $CFLAGS $DBG $INC -c "$1" -o "$TMP/c.o" || return 2
+	g++ $CXXFLAGS $DBG $INC -c "$2" -o "$TMP/cxx.o" || return 2
+	readelf --debug-dump=info "$TMP/c.o" > "$TMP/c.txt" || return 2
+	readelf --debug-dump=info "$TMP/cxx.o" > "$TMP/cxx.txt" || return 2
 	$PY "$DIR/xlayout.py" "$TMP/c.txt" "$TMP/cxx.txt"
 }
 
@@ -63,11 +64,14 @@ echo "negative: caught"
 
 UNITS=$(find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP" | sort)
 FRAGMENTS='pcsx2/SPU2/interpolate_table.h pcsx2/SPU2/reg_write_table.h'
+# microVU.c's own pieces are not headers anyone else reads.
+UNITY='^pcsx2/(x86/microVU(_IR)?\.h|x86/microVU_[A-Za-z]+\.inl|microVU/[A-Za-z_]+\.inl)$'
 HEADERS=$(for f in $UNITS; do
 	gcc $CFLAGS $INC -MM "$f" 2>/dev/null | tr ' \\' '\n\n' |
-	grep -E '\.h$' | grep -v '^/usr'
-done | sed "s|^$ROOT/||" | sort -u)
+	grep -E '\.h$' | grep -v '^/usr' || true
+done | xargs -r realpath -m --relative-to="$ROOT" | sort -u)
 for frag in $FRAGMENTS; do HEADERS=$(echo "$HEADERS" | grep -vx "$frag"); done
+HEADERS=$(echo "$HEADERS" | grep -vE "$UNITY")
 
 : > "$TMP/all.c"
 for h in $HEADERS; do printf '#include "%s"\n' "$ROOT/$h" >> "$TMP/all.c"; done

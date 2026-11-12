@@ -13,7 +13,7 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Micro VU recompiler! - author: cottonvibes(@gmail.com)
+/* Micro VU recompiler! - author: cottonvibes(@gmail.com) */
 
 #include <stdio.h>  /* fprintf: dispatcher-cache bound check */
 #include <memalign.h>
@@ -25,24 +25,25 @@
 #include "ps2float.h"
 
 
-//------------------------------------------------------------------
-// Micro VU - Main Functions
-//------------------------------------------------------------------
-alignas(__pagesize) static u8 vu0_RecDispatchers[mVUdispCacheSize];
-alignas(__pagesize) static u8 vu1_RecDispatchers[mVUdispCacheSize];
+/* ------------------------------------------------------------------ */
+/* Micro VU - Main Functions */
+/* ------------------------------------------------------------------ */
+PCSX2_ALIGN(__pagesize) static u8 vu0_RecDispatchers[mVUdispCacheSize];
+PCSX2_ALIGN(__pagesize) static u8 vu1_RecDispatchers[mVUdispCacheSize];
 
 static void mVUreserveCache(microVU* mVU)
 {
+	size_t alloc_offset;
 	/* Micro VU Recompiler Cache */
 	mVU->cache_reserve = (struct CodeReserve*)malloc(sizeof(struct CodeReserve));
 	code_reserve_init(mVU->cache_reserve);
 
-	const size_t alloc_offset = mVU->index ? HOSTMEM_MVU0REC_OFFSET : HOSTMEM_MVU1REC_OFFSET;
+	alloc_offset = mVU->index ? HOSTMEM_MVU0REC_OFFSET : HOSTMEM_MVU1REC_OFFSET;
 	code_reserve_assign(mVU->cache_reserve, &GetVmMemory()->code, alloc_offset, mVU->cacheSize * _1mb);
 	mVU->cache = mVU->cache_reserve->baseptr;
 }
 
-// Only run this once per VU! ;)
+/* Only run this once per VU! ;) */
 void mVUinit(microVU* mVU, uint vuIndex)
 {
 	memset(&mVU->prog, 0, sizeof(mVU->prog));
@@ -72,14 +73,16 @@ void mVUinit(microVU* mVU, uint vuIndex)
 	mVUra_init(mVU->regAlloc, mVU->index);
 }
 
-// Resets Rec Data
+/* Resets Rec Data */
 void mVUreset(microVU* mVU, int resetReserve)
 {
 	PageProtectionMode mode;
+	u8* z;
+	u32 i;
 	if (THREAD_VU1)
 	{
-		// If MTVU is toggled on during gameplay we need 
-		// to flush the running VU1 program, else it gets in a mess
+		/* If MTVU is toggled on during gameplay we need */
+		/* to flush the running VU1 program, else it gets in a mess */
 		if (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100)
 			CpuVU1->Execute(vu1RunCycles);
 		vuRegs[0].VI[REG_VPU_STAT].UL &= ~0x100;
@@ -118,28 +121,29 @@ void mVUreset(microVU* mVU, int resetReserve)
 	vuRegs[mVU->index].nextBlockCycles = 0;
 	memset(&mVU->prog.lpState, 0, sizeof(mVU->prog.lpState));
 
-	// Program Variables
+	/* Program Variables */
 	mVU->prog.cleared  =  1;
 	mVU->prog.isSame   = -1;
 	mVU->prog.cur      = NULL;
 	mVU->prog.total    =  0;
 	mVU->prog.curFrame =  0;
 
-	// Setup Dynarec Cache Limits for Each Program
-	u8* z = mVU->cache;
+	/* Setup Dynarec Cache Limits for Each Program */
+	z = mVU->cache;
 	memset(mVU->mscalMemo, 0, (mVU->progSize / 2) * sizeof(microMscalMemo)); /* dispatch cache resets: every memoized entry pointer dies */
 	mVU->prog.codeStart = z;
 	mVU->prog.codePtr   = z;
 	mVU->prog.codeEnd   = z + ((mVU->cacheSize - mVUcacheSafeZone) * _1mb);
 
-	for (u32 i = 0; i < (mVU->progSize / 2); i++)
+	for (i = 0; i < (mVU->progSize / 2); i++)
 	{
+		u32 j;
 		if (!mVU->prog.prog[i])
 		{
 			mVU->prog.prog[i] = mvu_proglist_new();
 			continue;
 		}
-		for (u32 j = 0; j < mVU->prog.prog[i]->count; j++)
+		for (j = 0; j < mVU->prog.prog[i]->count; j++)
 		{
 			mVUdeleteProg(mVU, &mVU->prog.prog[i]->data[j]);
 		}
@@ -153,21 +157,23 @@ void mVUreset(microVU* mVU, int resetReserve)
 	mprotect(mVU->dispCache, mVUdispCacheSize, host_prot(mode));
 }
 
-// Free Allocated Resources
+/* Free Allocated Resources */
 void mVUclose(microVU* mVU)
 {
+	u32 i;
 
 	code_reserve_release(mVU->cache_reserve);
 	free(mVU->cache_reserve);
 	mVU->cache_reserve = NULL;
 	mVU->cache_reserve = NULL;
 
-	// Delete Programs and Block Managers
-	for (u32 i = 0; i < (mVU->progSize / 2); i++)
+	/* Delete Programs and Block Managers */
+	for (i = 0; i < (mVU->progSize / 2); i++)
 	{
+		u32 j;
 		if (!mVU->prog.prog[i])
 			continue;
-		for (u32 j = 0; j < mVU->prog.prog[i]->count; j++)
+		for (j = 0; j < mVU->prog.prog[i]->count; j++)
 			mVUdeleteProg(mVU, &mVU->prog.prog[i]->data[j]);
 		mvu_proglist_delete(mVU->prog.prog[i]);
 		mVU->prog.prog[i] = NULL;
@@ -176,29 +182,31 @@ void mVUclose(microVU* mVU)
 	mVU->mscalMemo = NULL;
 }
 
-// Clears Block Data in specified range
+/* Clears Block Data in specified range */
 static __fi void mVUclear(mV, u32 addr, u32 size)
 {
 	if (!mVU->prog.cleared)
 	{
-		mVU->prog.cleared = 1; // Next execution searches/creates a new microprogram
-		memset(&mVU->prog.lpState, 0, sizeof(mVU->prog.lpState)); // Clear pipeline state
-		for (u32 i = 0; i < (mVU->progSize / 2); i++)
+		u32 i;
+		mVU->prog.cleared = 1; /* Next execution searches/creates a new microprogram */
+		memset(&mVU->prog.lpState, 0, sizeof(mVU->prog.lpState)); /* Clear pipeline state */
+		for (i = 0; i < (mVU->progSize / 2); i++)
 		{
-			mVU->prog.quick[i].block = NULL; // Clear current quick-reference block
-			mVU->prog.quick[i].prog = NULL; // Clear current quick-reference prog
+			mVU->prog.quick[i].block = NULL; /* Clear current quick-reference block */
+			mVU->prog.quick[i].prog = NULL; /* Clear current quick-reference prog */
 		}
 	}
 }
 
-//------------------------------------------------------------------
-// Micro VU - Private Functions
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Micro VU - Private Functions */
+/* ------------------------------------------------------------------ */
 
-// Deletes a program
+/* Deletes a program */
 static __ri void mVUdeleteProg(microVU* mVU, microProgram** prog)
 {
-	for (u32 i = 0; i < (mVU->progSize / 2); i++)
+	u32 i;
+	for (i = 0; i < (mVU->progSize / 2); i++)
 	{
 		if ((*prog)->block[i]) { mVUbm_destroy((*prog)->block[i]); free((*prog)->block[i]); }
 		(*prog)->block[i] = NULL;
@@ -209,7 +217,7 @@ static __ri void mVUdeleteProg(microVU* mVU, microProgram** prog)
 	*prog = NULL;
 }
 
-// Creates a new Micro Program
+/* Creates a new Micro Program */
 static __ri microProgram* mVUcreateProg(microVU* mVU, int startPC)
 {
 	microProgram* prog = (microProgram*)memalign_alloc(64, sizeof(microProgram));
@@ -218,11 +226,11 @@ static __ri microProgram* mVUcreateProg(microVU* mVU, int startPC)
 	prog->ranges = mvu_rangelist_new();
 	prog->startPC = startPC;
 	if(doWholeProgCompare)
-		mVUcacheProg(mVU, prog); // Cache Micro Program
+		mVUcacheProg(mVU, prog); /* Cache Micro Program */
 	return prog;
 }
 
-// Caches Micro Program
+/* Caches Micro Program */
 static __ri void mVUcacheProg(microVU* mVU, microProgram* prog)
 {
 	if (!doWholeProgCompare)
@@ -240,7 +248,7 @@ static __ri void mVUcacheProg(microVU* mVU, microProgram* prog)
 	}
 }
 
-// Generate Hash for partial program based on compiled ranges...
+/* Generate Hash for partial program based on compiled ranges... */
 u64 mVUrangesHash(microVU* mVU, microProgram* prog)
 {
 	union
@@ -248,11 +256,13 @@ u64 mVUrangesHash(microVU* mVU, microProgram* prog)
 		u64 v64;
 		u32 v32[2];
 	} hash = {0};
+	u32 r;
 
-	for (u32 r = 0; r < prog->ranges->count; r++)
+	for (r = 0; r < prog->ranges->count; r++)
 	{
 		const microRange* range = &prog->ranges->data[r];
-		for (int i = range->start / 4; i < range->end / 4; i++)
+		int i;
+		for (i = range->start / 4; i < range->end / 4; i++)
 		{
 			hash.v32[0] -= prog->data[i];
 			hash.v32[1] ^= prog->data[i];
@@ -261,7 +271,7 @@ u64 mVUrangesHash(microVU* mVU, microProgram* prog)
 	return hash.v64;
 }
 
-// Compare Cached microProgram to vuRegs[mVU->index].Micro
+/* Compare Cached microProgram to vuRegs[mVU->index].Micro */
 static __fi int mVUcmpProg(microVU* mVU, microProgram* prog)
 {
 	if (doWholeProgCompare)
@@ -271,7 +281,8 @@ static __fi int mVUcmpProg(microVU* mVU, microProgram* prog)
 	}
 	else
 	{
-		for (u32 r = 0; r < prog->ranges->count; r++)
+		u32 r;
+		for (r = 0; r < prog->ranges->count; r++)
 		{
 			const microRange* range = &prog->ranges->data[r];
 			if (memcmp((u8*)prog->data + range->start,
@@ -286,16 +297,17 @@ static __fi int mVUcmpProg(microVU* mVU, microProgram* prog)
 	return 1;
 }
 
-// Searches for Cached Micro Program and sets prog.cur to it (returns entry-point to program)
-_mVUt __fi void* mVUsearchProgUncached(u32 startPC, uptr pState)
+/* Searches for Cached Micro Program and sets prog.cur to it (returns entry-point to program) */
+static __fi void* mVUsearchProgUncached(int vuIndex, u32 startPC, uptr pState)
 {
 	microVU* mVU = mVUx;
 	microProgramQuick* quick = &mVU->prog.quick[vuRegs[mVU->index].start_pc / 8];
 	microProgramList*  list  = mVU->prog.prog [vuRegs[mVU->index].start_pc / 8];
 
-	if (!quick->prog) // If null, we need to search for new program
+	if (!quick->prog) /* If null, we need to search for new program */
 	{
-		for (u32 i = 0; i < list->count; i++)
+		u32 i;
+		for (i = 0; i < list->count; i++)
 		{
 			microProgram* p = list->data[i];
 			int b = !!(mVUcmpProg(mVU, p));
@@ -307,7 +319,7 @@ _mVUt __fi void* mVUsearchProgUncached(u32 startPC, uptr pState)
 				mvu_proglist_erase(list, i);
 				mvu_proglist_push_front(list, quick->prog);
 
-				// Sanity check, in case for some reason the program compilation aborted half way through (JALR for example)
+				/* Sanity check, in case for some reason the program compilation aborted half way through (JALR for example) */
 				if (quick->block == NULL)
 				{
 					void* entryPoint = mVUblockFetch(mVU, startPC, pState);
@@ -317,25 +329,27 @@ _mVUt __fi void* mVUsearchProgUncached(u32 startPC, uptr pState)
 			}
 		}
 
-		// If cleared and program not found, make a new program instance
+		/* If cleared and program not found, make a new program instance */
 		mVU->prog.cleared = 0;
 		mVU->prog.isSame  = 1;
 		mVU->prog.cur     = mVUcreateProg(mVU, vuRegs[mVU->index].start_pc/8);
+		{
 		void* entryPoint = mVUblockFetch(mVU,  startPC, pState);
 		quick->block      = mVU->prog.cur->block[startPC/8];
 		quick->prog       = mVU->prog.cur;
 		mvu_proglist_push_front(list, mVU->prog.cur);
 		return entryPoint;
+		}
 	}
 
-	// If list.quick, then we've already found and recompiled the program ;)
+	/* If list.quick, then we've already found and recompiled the program ;) */
 	mVU->prog.isSame = -1;
 	mVU->prog.cur = quick->prog;
-	// Because the VU's can now run in sections and not whole programs at once
-	// we need to set the current block so it gets the right program back
+	/* Because the VU's can now run in sections and not whole programs at once */
+	/* we need to set the current block so it gets the right program back */
 	quick->block = mVU->prog.cur->block[startPC / 8];
 
-	// Sanity check, in case for some reason the program compilation aborted half way through
+	/* Sanity check, in case for some reason the program compilation aborted half way through */
 	if (quick->block == NULL)
 	{
 		void* entryPoint = mVUblockFetch(mVU, startPC, pState);
@@ -352,7 +366,7 @@ _mVUt __fi void* mVUsearchProgUncached(u32 startPC, uptr pState)
  * quick-hit path's side effects exactly; any miss - program change,
  * state change, cleared quick - falls through to the full search and
  * refills. Entries die with the dispatch cache at reset. */
-_mVUt __fi void* mVUsearchProg(u32 startPC, uptr pState)
+static __fi void* mVUsearchProg(int vuIndex, u32 startPC, uptr pState)
 {
 	microVU* mVU = mVUx;
 	const u32 idx = vuRegs[mVU->index].start_pc / 8;
@@ -383,7 +397,7 @@ _mVUt __fi void* mVUsearchProg(u32 startPC, uptr pState)
 		void* entry;
 		microProgram* p;
 		memcpy(&queryState, (void*)pState, sizeof(microRegInfo));
-		entry = mVUsearchProgUncached<vuIndex>(startPC, pState);
+		entry = mVUsearchProgUncached(vuIndex, startPC, pState);
 		p = mVU->prog.quick[idx].prog;
 		if (p && vuRegs[mVU->index].start_pc / 8 == idx)
 		{
@@ -396,9 +410,9 @@ _mVUt __fi void* mVUsearchProg(u32 startPC, uptr pState)
 	}
 }
 
-//------------------------------------------------------------------
-// VU0 / VU1 recompiler providers
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* VU0 / VU1 recompiler providers */
+/* ------------------------------------------------------------------ */
 
 
 
@@ -522,7 +536,7 @@ const struct VUmicroCpu vucpu_rec_vu1 =
 
 /* Counter readout for the JIT hash dump, kept as a tiny C-shaped
  * accessor so JitHash.c does not need the microVU headers. */
-extern "C" void mvu_addsub_counters(u32* out4)
+void mvu_addsub_counters(u32* out4)
 {
 	out4[0] = microVU0.addsubRecElided;
 	out4[1] = microVU0.addsubRecTotal;

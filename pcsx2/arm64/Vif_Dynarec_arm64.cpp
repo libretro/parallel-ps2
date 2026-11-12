@@ -5,7 +5,7 @@
 // arm64 VIF unpack dynarec (C.19) -- block compiler + dispatch, transplanted
 // from isztldav/pcsx2 @ c89cb8a (pcsx2/arm64/Vif_Dynarec.cpp) into lrps2.
 // The block-cache logic (hash keys, dVifUnpack flow) is line-for-line the same
-// as lrps2's x86 newVif_Dynarec.cpp -- the two trees never diverged here --
+// as lrps2's x86 newVif_Dynarec.c -- the two trees never diverged here --
 // only the emitter is NEON and the code cache is a plain RWX mmap per VIF
 // index (lrps2's code-map reserves stay x86-only).
 

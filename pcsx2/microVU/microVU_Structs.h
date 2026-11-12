@@ -17,58 +17,56 @@
 
 #include "microVU_Types.h"
 
-#include <vector>
-#include <cstring>
-#include <cstdlib>
+#include <string.h>
+#include <stdlib.h>
 
-struct microBlockManager;
+typedef struct microBlockManager microBlockManager;
 
-struct microBlockLink
+typedef struct microBlockLink
 {
 	microBlock block;
-	microBlockLink* next;
-};
+	struct microBlockLink* next;
+} microBlockLink;
 
-struct microBlockLinkRef
+typedef struct microBlockLinkRef
 {
 	microBlock* pBlock;
 	u64 quick;
-};
+} microBlockLinkRef;
 
-struct microRange
+typedef struct microRange
 {
-	s32 start; // Start PC (The opcode the block starts at)
-	s32 end;   // End PC   (The opcode the block ends with)
-};
+	s32 start; /* Start PC (The opcode the block starts at) */
+	s32 end;   /* End PC   (The opcode the block ends with) */
+} microRange;
 
 /* POD flat-array lists used in place of std::deque. Both are accessed only at
  * compile / cache-invalidation time and hold a handful of entries, so a simple
  * dynamic array supporting prepend, mid-iteration erase and indexed access is
  * sufficient and avoids per-node heap allocation. Manipulated via the
  * mvu_*list_* free functions below. */
-struct microRangeList
+typedef struct microRangeList
 {
 	microRange* data;
 	u32         count;
 	u32         capacity;
-};
+} microRangeList;
 
-struct microProgram;
-struct microProgramList
+typedef struct microProgramList
 {
 	microProgram** data;
 	u32            count;
 	u32            capacity;
-};
+} microProgramList;
 
 #define mProgSize (0x4000 / 4)
 struct microProgram
 {
-	u32                data [mProgSize];     // Holds a copy of the VU microProgram
-	microBlockManager* block[mProgSize / 2]; // Array of Block Managers
-	microRangeList*    ranges;               // The ranges of the microProgram that have already been recompiled
-	u32 startPC; // Start PC of this program
-	int idx;     // Program index
+	u32                data [mProgSize];     /* Holds a copy of the VU microProgram */
+	microBlockManager* block[mProgSize / 2]; /* Array of Block Managers */
+	microRangeList*    ranges;               /* The ranges of the microProgram that have already been recompiled */
+	u32 startPC; /* Start PC of this program */
+	int idx;     /* Program index */
 };
 
 /* ---- microRangeList operations (flat POD array, prepend/erase/index) ---- */
@@ -91,9 +89,10 @@ static inline void mvu_rangelist_delete(microRangeList* l)
 
 static inline void mvu_rangelist_reserve(microRangeList* l, u32 need)
 {
+	u32 cap;
 	if (need <= l->capacity)
 		return;
-	u32 cap = l->capacity ? l->capacity * 2 : 4;
+	cap = l->capacity ? l->capacity * 2 : 4;
 	if (cap < need)
 		cap = need;
 	l->data     = (microRange*)realloc(l->data, cap * sizeof(microRange));
@@ -143,9 +142,10 @@ static inline void mvu_proglist_clear(microProgramList* l)
 
 static inline void mvu_proglist_reserve(microProgramList* l, u32 need)
 {
+	u32 cap;
 	if (need <= l->capacity)
 		return;
-	u32 cap = l->capacity ? l->capacity * 2 : 4;
+	cap = l->capacity ? l->capacity * 2 : 4;
 	if (cap < need)
 		cap = need;
 	l->data     = (microProgram**)realloc(l->data, cap * sizeof(microProgram*));
@@ -166,28 +166,28 @@ static inline void mvu_proglist_erase(microProgramList* l, u32 i)
 	l->count--;
 }
 
-struct microProgramQuick
+typedef struct microProgramQuick
 {
-	microBlockManager* block; // Quick reference to valid microBlockManager for current startPC
-	microProgram*      prog;  // The microProgram who is the owner of 'block'
-};
+	microBlockManager* block; /* Quick reference to valid microBlockManager for current startPC */
+	microProgram*      prog;  /* The microProgram who is the owner of 'block' */
+} microProgramQuick;
 
-struct microProgManager
+typedef struct microProgManager
 {
-	microIR<mProgSize> IRinfo;             // IR information
-	microProgramList*  prog [mProgSize/2]; // List of microPrograms indexed by startPC values
-	microProgramQuick  quick[mProgSize/2]; // Quick reference to valid microPrograms for current execution
-	microProgram*      cur;                // Pointer to currently running MicroProgram
-	int                total;              // Total Number of valid MicroPrograms
-	int                isSame;             // Current cached microProgram is Exact Same program as vuRegs[mVU->index].Micro (-1 = unknown, 0 = No, 1 = Yes)
-	int                cleared;            // Micro Program is Indeterminate so must be searched for (and if no matches are found then recompile a new one)
-	u32                curFrame;           // Frame Counter
-	u8*                codePtr;            // Pointer to program's recompilation code
-	u8*                codeStart;          // Start of program's rec-cache
-	u8*                codeEnd;            // Limit of program's rec-cache
-	microRegInfo       lpState;            // Pipeline state from where program left off (useful for continuing execution)
-};
+	microIR            IRinfo;             /* IR information */
+	microProgramList*  prog [mProgSize/2]; /* List of microPrograms indexed by startPC values */
+	microProgramQuick  quick[mProgSize/2]; /* Quick reference to valid microPrograms for current execution */
+	microProgram*      cur;                /* Pointer to currently running MicroProgram */
+	int                total;              /* Total Number of valid MicroPrograms */
+	int                isSame;             /* Current cached microProgram is Exact Same program as vuRegs[mVU->index].Micro (-1 = unknown, 0 = No, 1 = Yes) */
+	int                cleared;            /* Micro Program is Indeterminate so must be searched for (and if no matches are found then recompile a new one) */
+	u32                curFrame;           /* Frame Counter */
+	u8*                codePtr;            /* Pointer to program's recompilation code */
+	u8*                codeStart;          /* Start of program's rec-cache */
+	u8*                codeEnd;            /* Limit of program's rec-cache */
+	microRegInfo       lpState;            /* Pipeline state from where program left off (useful for continuing execution) */
+} microProgManager;
 
-static const uint mVUdispCacheSize = __pagesize * 2; // Dispatcher Cache Size (in bytes; dispatchers + emitted helpers incl. the exact-multiply tree stub)
-static const uint mVUcacheSafeZone =  3; // Safe-Zone for program recompilation (in megabytes)
-static const uint mVUcacheReserve = 64; // mVU0, mVU1 Reserve Cache Size (in megabytes)
+#define mVUdispCacheSize ((uint)(__pagesize * 2)) /* Dispatcher Cache Size (in bytes; dispatchers + emitted helpers incl. the exact-multiply tree stub) */
+#define mVUcacheSafeZone ((uint)(3)) /* Safe-Zone for program recompilation (in megabytes) */
+#define mVUcacheReserve ((uint)(64)) /* mVU0, mVU1 Reserve Cache Size (in megabytes) */

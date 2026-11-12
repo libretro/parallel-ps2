@@ -19,7 +19,7 @@
 
 /* The VIF unpackers (Vif_Unpack.c): UNPACK's data into VU memory, the
  * interpreted per-vector workers, and the hand-off to the recompiled
- * ones (x86/newVif_Dynarec.cpp, arm64/Vif_Dynarec_arm64.cpp). */
+ * ones (x86/newVif_Dynarec.c, arm64/Vif_Dynarec_arm64.cpp). */
 
 struct vifStruct;
 struct VIFregisters;
@@ -68,7 +68,7 @@ extern int  vif_unpack(int idx, const u8* data);
 /* The interpreted unpack loop, for the recompilers' fallback. */
 extern void _nVifUnpack(int idx, const u8* data, uint mode, bool isFill);
 
-/* The recompilers (x86/newVif_Dynarec.cpp, arm64/Vif_Dynarec_arm64.cpp). */
+/* The recompilers (x86/newVif_Dynarec.c, arm64/Vif_Dynarec_arm64.cpp). */
 extern void dVifReset(int idx);
 extern void dVifReserve(int idx);
 extern void dVifRelease(int idx);

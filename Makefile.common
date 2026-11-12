@@ -408,8 +408,7 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/arm64/Vif_UnpackNEON.cpp \
 	$(LRPS2_DIR)/arm64/Vif_Dynarec_arm64.cpp
 else
-# pcsx2/x86 (recompilers). The EE/IOP recompilers and the register
-# allocator are C; the microVU and VIF unpack recompilers are still C++.
+# pcsx2/x86 (recompilers), all C.
 SOURCES_C += \
 	$(LRPS2_DIR)/x86/CpuState.c \
 	$(LRPS2_DIR)/x86/BaseblockEx.c \
@@ -434,11 +433,10 @@ SOURCES_C += \
 	$(LRPS2_DIR)/x86/ix86-32/iR5900MultDiv.c \
 	$(LRPS2_DIR)/x86/ix86-32/iR5900Shift.c \
 	$(LRPS2_DIR)/x86/ix86-32/iR5900Templates.c \
-	$(LRPS2_DIR)/x86/ix86-32/recVTLB.c
-SOURCES_CXX += \
-	$(LRPS2_DIR)/x86/microVU.cpp \
-	$(LRPS2_DIR)/x86/newVif_Dynarec.cpp \
-	$(LRPS2_DIR)/x86/newVif_UnpackSSE.cpp
+	$(LRPS2_DIR)/x86/ix86-32/recVTLB.c \
+	$(LRPS2_DIR)/x86/microVU.c \
+	$(LRPS2_DIR)/x86/newVif_Dynarec.c \
+	$(LRPS2_DIR)/x86/newVif_UnpackSSE.c
 endif
 
 # ============================================================================

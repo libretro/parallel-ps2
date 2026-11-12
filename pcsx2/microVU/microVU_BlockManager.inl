@@ -13,8 +13,8 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Must be included after the backend-specific 'struct microVU' is defined,
-// since the add() and search() methods access mVU->compareStateF.
+/* Must be included after the backend-specific 'struct microVU' is defined, */
+/* since the add() and search() methods access mVU->compareStateF. */
 
 #pragma once
 

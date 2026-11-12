@@ -16,13 +16,13 @@
 
 #pragma once
 
-//------------------------------------------------------------------
-// Micro VU - Pass 2 Functions
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Micro VU - Pass 2 Functions */
+/* ------------------------------------------------------------------ */
 
-//------------------------------------------------------------------
-// Flag Allocators
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Flag Allocators */
+/* ------------------------------------------------------------------ */
 
 __fi static int getFlagReg(uint fInst)
 {
@@ -32,16 +32,18 @@ __fi static int getFlagReg(uint fInst)
 
 static __fi void setBitSFLAG(int reg, int regT, int bitTest, int bitSet)
 {
+	uint8_t* skip;
 	xe_test32_ri(regT, bitTest);
-	uint8_t* skip; xe_fwd_jcc8(Jcc_Zero, skip);
+	 xe_fwd_jcc8(Jcc_Zero, skip);
 	xe_or32_ri(reg, bitSet);
 	xe_fwd_set8(skip);
 }
 
 static __fi void setBitFSEQ(int reg, int bitX)
 {
+	uint8_t* skip;
 	xe_test32_ri(reg, bitX);
-	uint8_t* skip; xe_fwd_jcc8(Jcc_Zero, skip);
+	 xe_fwd_jcc8(Jcc_Zero, skip);
 	xe_or32_ri(reg, bitX);
 	xe_fwd_set8(skip);
 }
@@ -56,21 +58,21 @@ static __fi void mVUallocSFLAGb(int reg, int fInstance)
 	xe_mov32_rr(getFlagReg(fInstance), reg);
 }
 
-// Normalize Status Flag
+/* Normalize Status Flag */
 static __ri void mVUallocSFLAGc(int reg, int regT, int fInstance)
 {
 	xe_xor32_rr(reg, reg);
 	mVUallocSFLAGa(regT, fInstance);
-	setBitSFLAG(reg, regT, 0x0f00, 0x0001); // Z  Bit
-	setBitSFLAG(reg, regT, 0xf000, 0x0002); // S  Bit
-	setBitSFLAG(reg, regT, 0x000f, 0x0040); // ZS Bit
-	setBitSFLAG(reg, regT, 0x00f0, 0x0080); // SS Bit
-	xe_and32_ri(regT, 0xffff0000); // DS/DI/OS/US/D/I/O/U Bits
+	setBitSFLAG(reg, regT, 0x0f00, 0x0001); /* Z  Bit */
+	setBitSFLAG(reg, regT, 0xf000, 0x0002); /* S  Bit */
+	setBitSFLAG(reg, regT, 0x000f, 0x0040); /* ZS Bit */
+	setBitSFLAG(reg, regT, 0x00f0, 0x0080); /* SS Bit */
+	xe_and32_ri(regT, 0xffff0000); /* DS/DI/OS/US/D/I/O/U Bits */
 	xe_shr32_ri(regT, 14);
 	xe_or32_rr(reg, regT);
 }
 
-// Denormalizes Status Flag; destroys tmp1/tmp2
+/* Denormalizes Status Flag; destroys tmp1/tmp2 */
 static __ri void mVUallocSFLAGd(u32* memAddr, int reg, int tmp1, int tmp2)
 {
 	xe_mov32_rm(tmp2, memAddr);
@@ -95,26 +97,26 @@ static __fi void mVUallocMFLAGa(mV, int reg, int fInstance)
 
 static __fi void mVUallocMFLAGb(mV, int reg, int fInstance)
 {
-	//xAND(reg, 0xffff);
-	if (fInstance < 4) xe_mov32_mr(&mVU->macFlag[fInstance], reg);         // microVU
-	else               xe_mov32_mr(&vuRegs[mVU->index].VI[REG_MAC_FLAG].UL, reg); // macroVU
+	/* xAND(reg, 0xffff); */
+	if (fInstance < 4) xe_mov32_mr(&mVU->macFlag[fInstance], reg);         /* microVU */
+	else               xe_mov32_mr(&vuRegs[mVU->index].VI[REG_MAC_FLAG].UL, reg); /* macroVU */
 }
 
 static __fi void mVUallocCFLAGa(mV, int reg, int fInstance)
 {
-	if (fInstance < 4) xe_mov32_rm(reg, &mVU->clipFlag[fInstance]);         // microVU
-	else               xe_mov32_rm(reg, &vuRegs[mVU->index].VI[REG_CLIP_FLAG].UL); // macroVU
+	if (fInstance < 4) xe_mov32_rm(reg, &mVU->clipFlag[fInstance]);         /* microVU */
+	else               xe_mov32_rm(reg, &vuRegs[mVU->index].VI[REG_CLIP_FLAG].UL); /* macroVU */
 }
 
 static __fi void mVUallocCFLAGb(mV, int reg, int fInstance)
 {
-	if (fInstance < 4) xe_mov32_mr(&mVU->clipFlag[fInstance], reg);         // microVU
-	else               xe_mov32_mr(&vuRegs[mVU->index].VI[REG_CLIP_FLAG].UL, reg); // macroVU
+	if (fInstance < 4) xe_mov32_mr(&mVU->clipFlag[fInstance], reg);         /* microVU */
+	else               xe_mov32_mr(&vuRegs[mVU->index].VI[REG_CLIP_FLAG].UL, reg); /* macroVU */
 }
 
-//------------------------------------------------------------------
-// VI Reg Allocators
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* VI Reg Allocators */
+/* ------------------------------------------------------------------ */
 
 void mVUra_writeVIBackup(struct microRegAlloc* r, int reg)
 {
@@ -122,9 +124,9 @@ void mVUra_writeVIBackup(struct microRegAlloc* r, int reg)
 	xe_mov32_mr(&mVU->VIbackup, reg);
 }
 
-//------------------------------------------------------------------
-// P/Q Reg Allocators
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* P/Q Reg Allocators */
+/* ------------------------------------------------------------------ */
 
 #define writeQreg(reg, qInstance) \
 	if (qInstance) \

@@ -19,13 +19,17 @@
 #include "../Vif_Dma.h"
 #include "newVif.h"
 
-// --------------------------------------------------------------------------------------
-//  VifUnpackSSE
-// --------------------------------------------------------------------------------------
-// One state struct for both unpack generators; `kind` selects the four
-// behaviours that used to be virtual overrides (write-protect, input-mask,
-// unmasked-op, and the masked write itself). Everything else was virtual by
-// declaration but never overridden, so those are plain functions now.
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* -------------------------------------------------------------------------------------- */
+/*  VifUnpackSSE */
+/* -------------------------------------------------------------------------------------- */
+/* One state struct for both unpack generators; `kind` selects the four */
+/* behaviours that used to be virtual overrides (write-protect, input-mask, */
+/* unmasked-op, and the masked write itself). Everything else was virtual by */
+/* declaration but never overridden, so those are plain functions now. */
 
 enum VifUnpackKind
 {
@@ -75,3 +79,7 @@ void VifUnpackSSE_doMaskWrite(const struct VifUnpackSSE* p, int regX);
 void VifUnpackSSE_ModUnpack(struct VifUnpackSSE* p, int upknum, int PostOp);
 void VifUnpackSSE_ProcessMasks(struct VifUnpackSSE* p);
 void VifUnpackSSE_CompileRoutine(struct VifUnpackSSE* p);
+
+#ifdef __cplusplus
+}
+#endif

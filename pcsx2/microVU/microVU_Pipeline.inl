@@ -14,13 +14,13 @@
  */
 
 #pragma once
-#include <cstring>
+#include <string.h>
 
-//------------------------------------------------------------------
-// Program Range Checking and Setting up Ranges
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Program Range Checking and Setting up Ranges */
+/* ------------------------------------------------------------------ */
 
-// Used by mVUsetupRange
+/* Used by mVUsetupRange */
 static __fi void mVUcheckIsSame(mV)
 {
 	if (mVU->prog.isSame == -1)
@@ -32,7 +32,7 @@ static __fi void mVUcheckIsSame(mV)
 	}
 }
 
-// Sets up microProgram PC ranges based on whats been recompiled
+/* Sets up microProgram PC ranges based on whats been recompiled */
 void mVUsetupRange(microVU* mVU, s32 pc, bool isStartPC)
 {
 	microRangeList* ranges = mVUcurProg.ranges;
@@ -44,16 +44,17 @@ void mVUsetupRange(microVU* mVU, s32 pc, bool isStartPC)
 
 	if (isStartPC) /* Check if startPC is already within a block we've recompiled */
 	{
-		for (u32 i = 0; i < ranges->count; i++)
+		u32 i;
+		for (i = 0; i < ranges->count; i++)
 		{
 			if ((cur_pc >= ranges->data[i].start) && (cur_pc <= ranges->data[i].end))
 			{
 				if (ranges->data[i].start != ranges->data[i].end)
 				{
-					microRange mRange = {ranges->data[i].start, ranges->data[i].end};
+					microRange mRange = ranges->data[i];
 					mvu_rangelist_erase(ranges, i);
 					mvu_rangelist_push_front(ranges, mRange);
-					return; // new start PC is inside the range of another range
+					return; /* new start PC is inside the range of another range */
 				}
 			}
 		}
@@ -68,17 +69,22 @@ void mVUsetupRange(microVU* mVU, s32 pc, bool isStartPC)
 
 	if (isStartPC)
 	{
-		microRange mRange = {cur_pc, -1};
+		microRange mRange;
+		mRange.start = cur_pc;
+		mRange.end   = -1;
 		mvu_rangelist_push_front(ranges, mRange);
 	}
 	else
 	{
 		if (mVUrange.start <= cur_pc)
 		{
+			s32 rStart;
+			s32 rEnd;
+			u32 i;
 			mVUrange.end = cur_pc;
-			s32 rStart   = mVUrange.start;
-			s32 rEnd     = mVUrange.end;
-			for (u32 i = 1; i < ranges->count;)
+			rStart = mVUrange.start;
+			rEnd = mVUrange.end;
+			for (i = 1; i < ranges->count;)
 			{
 				/* Starts after this program but starts
 				 * before the end of current program */
@@ -95,8 +101,10 @@ void mVUsetupRange(microVU* mVU, s32 pc, bool isStartPC)
 		}
 		else
 		{
+			microRange mRange;
 			mVUrange.end = mVU->microMemSize;
-			microRange mRange = {0, cur_pc };
+			mRange.start = 0;
+			mRange.end   = cur_pc;
 			mvu_rangelist_push_front(ranges, mRange);
 		}
 
@@ -105,9 +113,9 @@ void mVUsetupRange(microVU* mVU, s32 pc, bool isStartPC)
 	}
 }
 
-//------------------------------------------------------------------
-// Cycles / Pipeline State
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Cycles / Pipeline State */
+/* ------------------------------------------------------------------ */
 static __fi u8 optimizeReg(u8 rState) { return (rState == 1) ? 0 : rState; }
 static __fi u8 calcCycles(u8 reg, u8 x) { return ((reg > x) ? (reg - x) : 0); }
 #define incP(mV) mVU->p ^= 1
@@ -120,14 +128,15 @@ static __fi u8 calcCycles(u8 reg, u8 x) { return ((reg > x) ? (reg - x) : 0); }
  * so essentially '1' will be the same as '0'... */
 void mVUoptimizePipeState(mV)
 {
-	for (int i = 0; i < 32; i++)
+	int i;
+	for (i = 0; i < 32; i++)
 	{
 		mVUregs.VF[i].x = optimizeReg(mVUregs.VF[i].x);
 		mVUregs.VF[i].y = optimizeReg(mVUregs.VF[i].y);
 		mVUregs.VF[i].z = optimizeReg(mVUregs.VF[i].z);
 		mVUregs.VF[i].w = optimizeReg(mVUregs.VF[i].w);
 	}
-	for (int i = 0; i < 16; i++)
+	for (i = 0; i < 16; i++)
 		mVUregs.VI[i] = optimizeReg(mVUregs.VI[i]);
 	if (mVUregs.q) { mVUregs.q = optimizeReg(mVUregs.q); if (!mVUregs.q) { incQ(mVU); } }
 	if (mVUregs.p) { mVUregs.p = optimizeReg(mVUregs.p); if (!mVUregs.p) { incP(mVU); } }
@@ -136,17 +145,18 @@ void mVUoptimizePipeState(mV)
 
 void mVUincCycles(mV, int x)
 {
+	int z;
 	mVUcycles += x;
-	// VF[0] is a constant value (0.0 0.0 0.0 1.0)
-	for (int z = 31; z > 0; z--)
+	/* VF[0] is a constant value (0.0 0.0 0.0 1.0) */
+	for (z = 31; z > 0; z--)
 	{
 		mVUregs.VF[z].x = calcCycles(mVUregs.VF[z].x, x);
 		mVUregs.VF[z].y = calcCycles(mVUregs.VF[z].y, x);
 		mVUregs.VF[z].z = calcCycles(mVUregs.VF[z].z, x);
 		mVUregs.VF[z].w = calcCycles(mVUregs.VF[z].w, x);
 	}
-	// VI[0] is a constant value (0)
-	for (int z = 15; z > 0; z--)
+	/* VI[0] is a constant value (0) */
+	for (z = 15; z > 0; z--)
 		mVUregs.VI[z] = calcCycles(mVUregs.VI[z], x);
 	if (mVUregs.q)
 	{
@@ -180,34 +190,35 @@ void mVUincCycles(mV, int x)
 }
 
 /* Helps check if upper/lower ops read/write to same regs... */
-static void cmpVFregs(microVFreg& VFreg1, microVFreg& VFreg2, bool& xVar)
+#define cmpVFregs(a0, a1, a2) cmpVFregs_(&(a0), &(a1), &(a2))
+static void cmpVFregs_(microVFreg* VFreg1, microVFreg* VFreg2, bool* xVar)
 {
-	if (VFreg1.reg == VFreg2.reg)
+	if (VFreg1->reg == VFreg2->reg)
 	{
-		if ((VFreg1.x && VFreg2.x) || (VFreg1.y && VFreg2.y)
-		 || (VFreg1.z && VFreg2.z) || (VFreg1.w && VFreg2.w))
-			xVar = 1;
+		if ((VFreg1->x && VFreg2->x) || (VFreg1->y && VFreg2->y)
+		 || (VFreg1->z && VFreg2->z) || (VFreg1->w && VFreg2->w))
+			*xVar = 1;
 	}
 }
 
 void mVUsetCycles(mV)
 {
 	mVUincCycles(mVU, mVUstall);
-	// If upper Op && lower Op write to same VF reg:
+	/* If upper Op && lower Op write to same VF reg: */
 	if ((mVUregsTemp.VFreg[0] == mVUregsTemp.VFreg[1]) && mVUregsTemp.VFreg[0])
 	{
 		if (mVUregsTemp.r || mVUregsTemp.VI)
 			mVUlow.noWriteVF = true;
 		else
-			mVUlow.isNOP = true; // If lower Op doesn't modify anything else, then make it a NOP
+			mVUlow.isNOP = true; /* If lower Op doesn't modify anything else, then make it a NOP */
 	}
-	// If lower op reads a VF reg that upper Op writes to:
+	/* If lower op reads a VF reg that upper Op writes to: */
 	if ((mVUlow.VF_read[0].reg || mVUlow.VF_read[1].reg) && mVUup.VF_write.reg)
 	{
 		cmpVFregs(mVUup.VF_write, mVUlow.VF_read[0], mVUinfo.swapOps);
 		cmpVFregs(mVUup.VF_write, mVUlow.VF_read[1], mVUinfo.swapOps);
 	}
-	// If above case is true, and upper op reads a VF reg that lower Op Writes to:
+	/* If above case is true, and upper op reads a VF reg that lower Op Writes to: */
 	if (mVUinfo.swapOps && ((mVUup.VF_read[0].reg || mVUup.VF_read[1].reg) && mVUlow.VF_write.reg))
 	{
 		cmpVFregs(mVUlow.VF_write, mVUup.VF_read[0], mVUinfo.backupVF);
@@ -231,21 +242,24 @@ void mVUsetCycles(mV)
 	mVUregs.xgkick                 = pcsx2_max_i(mVUregs.xgkick, mVUregsTemp.xgkick);
 }
 
-//------------------------------------------------------------------
-// Initializing
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Initializing */
+/* ------------------------------------------------------------------ */
 
-// This gets run at the start of every loop of mVU's first pass
+/* This gets run at the start of every loop of mVU's first pass */
 #define startLoop(mV) \
 	memset(&mVUinfo, 0, sizeof(mVUinfo)); \
 	memset(&mVUregsTemp, 0, sizeof(mVUregsTemp))
 
 /* Initialize VI Constants (vi15 propagates through blocks) */
 #define mVUinitConstValues() \
-	for (int i = 0; i < 16; i++) \
 	{ \
-		mVUconstReg[i].isValid  = 0; \
-		mVUconstReg[i].regValue = 0; \
+		int ci_; \
+		for (ci_ = 0; ci_ < 16; ci_++) \
+		{ \
+			mVUconstReg[ci_].isValid  = 0; \
+			mVUconstReg[ci_].regValue = 0; \
+		} \
 	} \
 	mVUconstReg[15].isValid  = mVUregs.vi15v; \
 	mVUconstReg[15].regValue = mVUregs.vi15v ? mVUregs.vi15 : 0

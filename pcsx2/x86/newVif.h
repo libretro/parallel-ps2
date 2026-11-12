@@ -19,8 +19,14 @@
 #include "../VirtualMemory.h"
 
 #include "../../common/emitter/x86emitter.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern void  mVUmergeRegs(int dest, int src,  int xyzw, int modXYZW);
 extern void  mVUsaveReg(int reg, struct e_mem ptr, int xyzw, int modXYZW);
+#ifdef __cplusplus
+}
+#endif
 
 #define VUFT VIFUnpackFuncTable
 #define _v0 0

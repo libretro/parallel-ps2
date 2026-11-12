@@ -912,7 +912,7 @@ static void InitializeCPUProviders(void)
 	/* C.30-1: microVU0 for VU0 micro programs (VCALLMS/VCALLMSR). */
 	vucpu_rec_vu0_reserve();
 	/* The MTVU worker thread is normally spawned by vucpu_rec_vu1_reserve() */
-	/* (x86/microVU.cpp), which doesn't exist in this build -- with vuThread */
+	/* (x86/microVU.c), which doesn't exist in this build -- with vuThread */
 	/* enabled the EE would push to vu1Thread's ring and wait on its WorkSema */
 	/* forever (boot hang / black screen). The worker runs VU1 through */
 	/* CpuVU1->Execute(), so it works with the VU interpreter provider too. */

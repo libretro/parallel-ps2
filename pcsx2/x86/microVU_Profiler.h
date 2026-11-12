@@ -1,11 +1,11 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: GPL-3.0+
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: GPL-3.0+ */
 
 #pragma once
 
-enum microOpcode
+typedef enum microOpcode
 {
-	// Upper Instructions
+	/* Upper Instructions */
 	opABS, opCLIP, opOPMULA, opOPMSUB, opNOP,
 	opADD,   opADDi,   opADDq,   opADDx,   opADDy,   opADDz,   opADDw,
 	opADDA,  opADDAi,  opADDAq,  opADDAx,  opADDAy,  opADDAz,  opADDAw,
@@ -21,7 +21,7 @@ enum microOpcode
 	opMINI,  opMINIi,            opMINIx,  opMINIy,   opMINIz, opMINIw,
 	opFTOI0, opFTOI4, opFTOI12, opFTOI15,
 	opITOF0, opITOF4, opITOF12, opITOF15,
-	// Lower Instructions
+	/* Lower Instructions */
 	opDIV, opSQRT, opRSQRT,
 	opIADD, opIADDI, opIADDIU,
 	opIAND, opIOR,
@@ -42,10 +42,10 @@ enum microOpcode
 	opESQRT, opERSQRT, opESIN, opEATAN,
 	opEEXP, opXITOP, opXTOP, opXGKICK,
 	opLastOpcode
-};
+} microOpcode;
 
 static const char microOpcodeName[][16] = {
-	// Upper Instructions
+	/* Upper Instructions */
 	"ABS", "CLIP", "OPMULA", "OPMSUB", "NOP",
 	"ADD",   "ADDi",   "ADDq",   "ADDx",   "ADDy",   "ADDz",   "ADDw",
 	"ADDA",  "ADDAi",  "ADDAq",  "ADDAx",  "ADDAy",  "ADDAz",  "ADDAw",
@@ -61,7 +61,7 @@ static const char microOpcodeName[][16] = {
 	"MINI",  "MINIi",            "MINIx",  "MINIy",  "MINIz",  "MINIw",
 	"FTOI0", "FTOI4", "FTOI12", "FTOI15",
 	"ITOF0", "ITOF4", "ITOF12", "ITOF15",
-	// Lower Instructions
+	/* Lower Instructions */
 	"DIV", "SQRT", "RSQRT",
 	"IADD", "IADDI", "IADDIU",
 	"IAND", "IOR",
@@ -97,10 +97,10 @@ static const char microOpcodeName[][16] = {
  * microOpcodeName above is still here and is used by the arm64 disassembly
  * logger regardless.
  */
-struct microProfiler
+typedef struct microProfiler
 {
 	__fi void Reset(int _index) {}
 	__fi void EmitOp(microOpcode op) {}
 	__fi void Print() {}
-};
+} microProfiler;
 

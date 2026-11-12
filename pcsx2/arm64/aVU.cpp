@@ -4,7 +4,7 @@
 
 // ARM64 microVU recompiler — recompiler shell (Phase 7, task 7.2c).
 //
-// This is the ARM64 counterpart to pcsx2/x86/microVU.cpp. It holds the
+// This is the ARM64 counterpart to pcsx2/x86/microVU.c. It holds the
 // arch-neutral recompiler housekeeping: the microVU0/1 globals and providers,
 // program/block-cache management (mVUinit/mVUreset/mVUclose/mVUclear + the
 // mVUcreateProg/mVUcacheProg/mVUcmpProg/mVUsearchProg cache search) and the
@@ -84,7 +84,7 @@ static void  mVUcleanUpVU1();
 extern void* mVUblockFetch(microVU& mVU, u32 startPC, uptr pState);
 static void* mVUentryGet(microVU& mVU, microBlockManager* block, u32 startPC, uptr pState);
 
-// Forward decls for the private cache helpers (mirrors microVU.cpp ordering).
+// Forward decls for the private cache helpers (mirrors microVU.c ordering).
 static void mVUdeleteProg(microVU& mVU, microProgram*& prog);
 static microProgram* mVUcreateProg(microVU& mVU, int startPC);
 static void mVUcacheProg(microVU& mVU, microProgram& prog);

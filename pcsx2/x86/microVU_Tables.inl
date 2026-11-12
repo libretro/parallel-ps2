@@ -15,9 +15,9 @@
 
 #pragma once
 
-//------------------------------------------------------------------
-// Declarations
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Declarations */
+/* ------------------------------------------------------------------ */
 mVUop(mVU_UPPER_FD_00);
 mVUop(mVU_UPPER_FD_01);
 mVUop(mVU_UPPER_FD_10);
@@ -28,11 +28,11 @@ mVUop(mVULowerOP_T3_01);
 mVUop(mVULowerOP_T3_10);
 mVUop(mVULowerOP_T3_11);
 mVUop(mVUunknown);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-//------------------------------------------------------------------
-// Opcode Tables
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Opcode Tables */
+/* ------------------------------------------------------------------ */
 static const Fnptr_mVUrecInst mVULOWER_OPCODE[128] = {
 	mVU_LQ     , mVU_SQ     , mVUunknown , mVUunknown,
 	mVU_ILW    , mVU_ISW    , mVUunknown , mVUunknown,
@@ -195,9 +195,9 @@ static const Fnptr_mVUrecInst mVU_UPPER_FD_11_TABLE [32] = {
 };
 
 
-//------------------------------------------------------------------
-// Table Functions
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Table Functions */
+/* ------------------------------------------------------------------ */
 
 mVUop(mVU_UPPER_FD_00)  { mVU_UPPER_FD_00_TABLE   [((mVU->code >> 6) & 0x1f)](mX); }
 mVUop(mVU_UPPER_FD_01)  { mVU_UPPER_FD_01_TABLE   [((mVU->code >> 6) & 0x1f)](mX); }
@@ -208,8 +208,8 @@ mVUop(mVULowerOP_T3_00) { mVULowerOP_T3_00_OPCODE [((mVU->code >> 6) & 0x1f)](mX
 mVUop(mVULowerOP_T3_01) { mVULowerOP_T3_01_OPCODE [((mVU->code >> 6) & 0x1f)](mX); }
 mVUop(mVULowerOP_T3_10) { mVULowerOP_T3_10_OPCODE [((mVU->code >> 6) & 0x1f)](mX); }
 mVUop(mVULowerOP_T3_11) { mVULowerOP_T3_11_OPCODE [((mVU->code >> 6) & 0x1f)](mX); }
-mVUop(mVUopU)           { mVU_UPPER_OPCODE        [ (mVU->code & 0x3f) ](mX); } // Gets Upper Opcode
-mVUop(mVUopL)           { mVULOWER_OPCODE         [ (mVU->code >>  25) ](mX); } // Gets Lower Opcode
+mVUop(mVUopU)           { mVU_UPPER_OPCODE        [ (mVU->code & 0x3f) ](mX); } /* Gets Upper Opcode */
+mVUop(mVUopL)           { mVULOWER_OPCODE         [ (mVU->code >>  25) ](mX); } /* Gets Lower Opcode */
 mVUop(mVUunknown)
 {
 	pass1

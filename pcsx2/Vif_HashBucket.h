@@ -20,21 +20,7 @@
 #include <memalign.h>
 #include <retro_inline.h>
 
-#ifdef __cplusplus
 #include "../common/Pcsx2Defs.h"
-#else
-/* C branch: fixed-width aliases from stdint (the u64 alias is why the
- * C89 gate runs with -Wno-long-long), and prototypes for the aligned
- * allocation trio, which lives in C++ translation units today. */
-#include <stddef.h>
-#include <stdint.h>
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-void* memalign_alloc(size_t align, size_t size);
-void memalign_free(void* pmem);
-#endif
 
 /* Grow an aligned buffer: the only aligned realloc in the tree, over
  * libretro-common's memalign. */

@@ -16,15 +16,15 @@
 #include "newVif_UnpackSSE.h"
 #include "common/emitter/c89ops.h"
 
-//alignas(__pagesize) static u8 nVifUpkExec[__pagesize*4];
+/* alignas(__pagesize) static u8 nVifUpkExec[__pagesize*4]; */
 static struct CodeReserve nVifUpkExec;
 static int nVifUpkAssigned = 0;
 
 extern void VifUnpackSSE_doMaskWrite_Dynarec(const struct VifUnpackSSE* p, int regX);
 
-// =====================================================================================================
-//  VifUnpackSSE_Base Section
-// =====================================================================================================
+/* ===================================================================================================== */
+/*  VifUnpackSSE_Base Section */
+/* ===================================================================================================== */
 void VifUnpackSSE_Init_State(struct VifUnpackSSE* p, int kind)
 {
 	memset(p, 0, sizeof(*p));
@@ -149,10 +149,10 @@ void VifUnpackSSE_xUPK_S_8(const struct VifUnpackSSE* p)
 	}
 }
 
-// The V2 + V3 unpacks have freaky behaviour, the manual claims "indeterminate".
-// After testing on the PS2, it's very much determinate in 99% of cases
-// and games like Lemmings, And1 Streetball rely on this data to be like this!
-// I have commented after each shuffle to show what data is going where - Ref
+/* The V2 + V3 unpacks have freaky behaviour, the manual claims "indeterminate". */
+/* After testing on the PS2, it's very much determinate in 99% of cases */
+/* and games like Lemmings, And1 Streetball rely on this data to be like this! */
+/* I have commented after each shuffle to show what data is going where - Ref */
 
 void VifUnpackSSE_xUPK_V2_32(const struct VifUnpackSSE* p)
 {
@@ -161,16 +161,16 @@ void VifUnpackSSE_xUPK_V2_32(const struct VifUnpackSSE* p)
 		xe_movups_xmemg(p->workReg, p->srcIndirect);
 		if (VifUnpackSSE_IsInputMasked(p))
 			return;
-		xe_pshufd_xxi(p->destReg, p->workReg, 0x44); //v1v0v1v0
+		xe_pshufd_xxi(p->destReg, p->workReg, 0x44); /* v1v0v1v0 */
 	}
 	else
 	{
 		if (VifUnpackSSE_IsInputMasked(p))
 			return;
-		xe_pshufd_xxi(p->destReg, p->workReg, 0xEE); //v3v2v3v2
+		xe_pshufd_xxi(p->destReg, p->workReg, 0xEE); /* v3v2v3v2 */
 	}
 	if (p->IsAligned)
-		xe_blendps_xxi(p->destReg, p->zeroReg, 0x8); //zero last word - tested on ps2
+		xe_blendps_xxi(p->destReg, p->zeroReg, 0x8); /* zero last word - tested on ps2 */
 }
 
 void VifUnpackSSE_xUPK_V2_16(const struct VifUnpackSSE* p)
@@ -182,14 +182,14 @@ void VifUnpackSSE_xUPK_V2_16(const struct VifUnpackSSE* p)
 		if (VifUnpackSSE_IsInputMasked(p))
 			return;
 
-		xe_pshufd_xxi(p->destReg, p->workReg, 0x44); //v1v0v1v0
+		xe_pshufd_xxi(p->destReg, p->workReg, 0x44); /* v1v0v1v0 */
 	}
 	else
 	{
 		if (VifUnpackSSE_IsInputMasked(p))
 			return;
 		
-		xe_pshufd_xxi(p->destReg, p->workReg, 0xEE); //v3v2v3v2
+		xe_pshufd_xxi(p->destReg, p->workReg, 0xEE); /* v3v2v3v2 */
 	}
 }
 
@@ -200,12 +200,12 @@ void VifUnpackSSE_xUPK_V2_8(const struct VifUnpackSSE* p)
 		VifUnpackSSE_xPMOVXX8(p, p->workReg);
 
 		if (!VifUnpackSSE_IsInputMasked(p))
-			xe_pshufd_xxi(p->destReg, p->workReg, 0x44); //v1v0v1v0
+			xe_pshufd_xxi(p->destReg, p->workReg, 0x44); /* v1v0v1v0 */
 	}
 	else
 	{
 		if (!VifUnpackSSE_IsInputMasked(p))
-			xe_pshufd_xxi(p->destReg, p->workReg, 0xEE); //v3v2v3v2
+			xe_pshufd_xxi(p->destReg, p->workReg, 0xEE); /* v3v2v3v2 */
 	}
 }
 
@@ -216,24 +216,25 @@ void VifUnpackSSE_xUPK_V3_32(const struct VifUnpackSSE* p)
 
 	xe_movups_xmemg(p->destReg, p->srcIndirect);
 	if (p->UnpkLoopIteration != p->IsAligned)
-		xe_blendps_xxi(p->destReg, p->zeroReg, 0x8); //zero last word - tested on ps2
+		xe_blendps_xxi(p->destReg, p->zeroReg, 0x8); /* zero last word - tested on ps2 */
 }
 
 void VifUnpackSSE_xUPK_V3_16(const struct VifUnpackSSE* p)
 {
+	int result;
 	if (VifUnpackSSE_IsInputMasked(p))
 		return;
 
 	VifUnpackSSE_xPMOVXX16(p, p->destReg);
 
-	//With V3-16, it takes the first vector from the next position as the W vector
-	//However - IF the end of this iteration of the unpack falls on a quadword boundary, W becomes 0
-	//p->IsAligned is the position through the current QW in the vif packet
-	//Iteration counts where we are in the packet.
-	int result = (((p->UnpkLoopIteration / 4) + 1 + (4 - p->IsAligned)) & 0x3);
+	/* With V3-16, it takes the first vector from the next position as the W vector */
+	/* However - IF the end of this iteration of the unpack falls on a quadword boundary, W becomes 0 */
+	/* p->IsAligned is the position through the current QW in the vif packet */
+	/* Iteration counts where we are in the packet. */
+	result = (((p->UnpkLoopIteration / 4) + 1 + (4 - p->IsAligned)) & 0x3);
 
 	if ((p->UnpkLoopIteration & 0x1) == 0 && result == 0)
-		xe_blendps_xxi(p->destReg, p->zeroReg, 0x8); //zero last word - tested on ps2
+		xe_blendps_xxi(p->destReg, p->zeroReg, 0x8); /* zero last word - tested on ps2 */
 }
 
 void VifUnpackSSE_xUPK_V3_8(const struct VifUnpackSSE* p)
@@ -243,7 +244,7 @@ void VifUnpackSSE_xUPK_V3_8(const struct VifUnpackSSE* p)
 
 	VifUnpackSSE_xPMOVXX8(p, p->destReg);
 	if (p->UnpkLoopIteration != p->IsAligned)
-		xe_blendps_xxi(p->destReg, p->zeroReg, 0x8); //zero last word - tested on ps2
+		xe_blendps_xxi(p->destReg, p->zeroReg, 0x8); /* zero last word - tested on ps2 */
 }
 
 void VifUnpackSSE_xUPK_V4_32(const struct VifUnpackSSE* p)
@@ -271,19 +272,19 @@ void VifUnpackSSE_xUPK_V4_5(const struct VifUnpackSSE* p)
 
 	xe_movss_xmemg(p->workReg, p->srcIndirect);
 	xe_pshufd_xxi(p->workReg, p->workReg, _v0);
-	xe_pslld_xi(p->workReg, 3);           // ABG|R5.000
-	xe_movaps_xx(p->destReg, p->workReg);     // x|x|x|R
-	xe_psrld_xi(p->workReg, 8);           // ABG
-	xe_pslld_xi(p->workReg, 3);           // AB|G5.000
-	mVUmergeRegs(p->destReg, p->workReg, 0x4, 0);// x|x|G|R
-	xe_psrld_xi(p->workReg, 8);           // AB
-	xe_pslld_xi(p->workReg, 3);           // A|B5.000
-	mVUmergeRegs(p->destReg, p->workReg, 0x2, 0);// x|B|G|R
-	xe_psrld_xi(p->workReg, 8);           // A
-	xe_pslld_xi(p->workReg, 7);           // A.0000000
-	mVUmergeRegs(p->destReg, p->workReg, 0x1, 0);// A|B|G|R
-	xe_pslld_xi(p->destReg, 24); // can optimize to
-	xe_psrld_xi(p->destReg, 24); // single AND...
+	xe_pslld_xi(p->workReg, 3);           /* ABG|R5.000 */
+	xe_movaps_xx(p->destReg, p->workReg);     /* x|x|x|R */
+	xe_psrld_xi(p->workReg, 8);           /* ABG */
+	xe_pslld_xi(p->workReg, 3);           /* AB|G5.000 */
+	mVUmergeRegs(p->destReg, p->workReg, 0x4, 0);/* x|x|G|R */
+	xe_psrld_xi(p->workReg, 8);           /* AB */
+	xe_pslld_xi(p->workReg, 3);           /* A|B5.000 */
+	mVUmergeRegs(p->destReg, p->workReg, 0x2, 0);/* x|B|G|R */
+	xe_psrld_xi(p->workReg, 8);           /* A */
+	xe_pslld_xi(p->workReg, 7);           /* A.0000000 */
+	mVUmergeRegs(p->destReg, p->workReg, 0x1, 0);/* A|B|G|R */
+	xe_pslld_xi(p->destReg, 24); /* can optimize to */
+	xe_psrld_xi(p->destReg, 24); /* single AND... */
 }
 
 void VifUnpackSSE_xUnpack(const struct VifUnpackSSE* p, int upknum)
@@ -314,9 +315,9 @@ void VifUnpackSSE_xUnpack(const struct VifUnpackSSE* p, int upknum)
 	}
 }
 
-// =====================================================================================================
-//  VifUnpackSSE_Simple
-// =====================================================================================================
+/* ===================================================================================================== */
+/*  VifUnpackSSE_Simple */
+/* ===================================================================================================== */
 
 static void VifUnpackSSE_doMaskWrite_Simple(const struct VifUnpackSSE* p, int regX)
 {
@@ -348,12 +349,13 @@ void VifUnpackSSE_doMaskWrite(const struct VifUnpackSSE* p, int regX)
 		VifUnpackSSE_doMaskWrite_Simple(p, regX);
 }
 
-// ecx = dest, edx = src
+/* ecx = dest, edx = src */
 static void nVifGen(int usn, int mask, int curCycle)
 {
 	struct VifUnpackSSE vpugen;
 	int usnpart      = usn * 2 * 16;
 	int maskpart     = mask * 16;
+	int i;
 
 	VifUnpackSSE_Init_State(&vpugen, VIFUNPACK_SIMPLE);
 	vpugen.usn       = !!usn;
@@ -361,7 +363,7 @@ static void nVifGen(int usn, int mask, int curCycle)
 	vpugen.curCycle  = curCycle;
 	vpugen.IsAligned = 1;
 
-	for (int i = 0; i < 16; ++i)
+	for (i = 0; i < 16; ++i)
 	{
 		nVifCall* ucall = &nVifUpk[((usnpart + maskpart + i) * 4) + curCycle];
 		*ucall = NULL;
@@ -377,6 +379,7 @@ static void nVifGen(int usn, int mask, int curCycle)
 
 void VifUnpackSSE_Init(void)
 {
+	int a, b, c;
 	if (nVifUpkAssigned)
 		return;
 
@@ -385,9 +388,9 @@ void VifUnpackSSE_Init(void)
 	code_reserve_assign(&nVifUpkExec, &GetVmMemory()->code, HOSTMEM_VIFUNPACKREC_OFFSET, _1mb);
 	x86Ptr = (u8*)(nVifUpkExec.baseptr);
 
-	for (int a = 0; a < 2; a++)
-		for (int b = 0; b < 2; b++)
-			for (int c = 0; c < 4; c++)
+	for (a = 0; a < 2; a++)
+		for (b = 0; b < 2; b++)
+			for (c = 0; c < 4; c++)
 				nVifGen(a, b, c);
 
 	code_reserve_forbid_modification(&nVifUpkExec);
