@@ -1,6 +1,6 @@
-/* The SMAP's receive path, on the real net.cpp and smap.cpp.
+/* The SMAP's receive path, on the real net.c and smap.c.
  *
- * The host adapter's recv runs on net.cpp's RX thread and returns
+ * The host adapter's recv runs on net.c's RX thread and returns
  * numbered frames of every length up to the Ethernet maximum, with an
  * empty poll now and then. This thread is the EE: it ticks smap_async,
  * which hands the SMAP what it has room for, and models the IOP driver

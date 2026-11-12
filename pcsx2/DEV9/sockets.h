@@ -13,71 +13,88 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef DEV9_SOCKETS_H
+#define DEV9_SOCKETS_H
+
+/* The sockets adapter: the PS2's packets carried on the host's own
+ * sockets, a session for each conversation (Sessions/), with the
+ * internal DHCP and DNS servers as its gateway. */
 
 #include "common/Pcsx2Defs.h"
-#include <vector>
-
 #include "net.h"
-
-#include "PacketReader/IP/IP_Packet.h"
-#include "PacketReader/EthernetFrame.h"
-#include "Sessions/BaseSession.h"
-#include "SimpleQueue.h"
-#include "SessionMap.h"
-
-class SocketAdapter : public NetAdapter
-{
-	//SimpleQueue for ARP packages
-	SimpleQueue<PacketReader::EthernetFrame*> vRecBuffer;
+#include "Sessions/Session.h"
 
 #ifdef _WIN32
-	bool wsa_init = false;
+#include <windows.h>
 #endif
-	bool initialized = false;
-	PacketReader::IP::IP_Address adapterIP;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* What a ping's reply is read into: the host's reply record, an IP
+ * header and a frame's worth of echoed data. */
+#define ICMP_PING_BUFFER 2048
+/* The PS2's IP header (options and all) and 8 bytes of what it carried,
+ * returned in an ICMP error. */
+#define ICMP_ORIGINAL_MAX (60 + 8)
+/* ARP replies waiting for the PS2. */
+#define ARP_PENDING 8
+
+typedef struct icmp_ping
+{
+	bool used;
+	net_session* session;
+#ifdef _WIN32
+	HANDLE file;
+	HANDLE event;
+#else
+	int sock;
+	s64 deadline; /* usec */
+	u16 id;
+#endif
+	u8 rest[4]; /* the PS2's identifier and sequence number */
+	int original_len;
+	u8 original[ICMP_ORIGINAL_MAX];
+	int buffer_len;
+	u8 buffer[ICMP_PING_BUFFER];
+} icmp_ping;
+
+typedef struct arp_reply
+{
+	u8 tha[6];
+	u8 tpa[4];
+	u8 spa[4];
+} arp_reply;
+
+struct sockets_adapter
+{
+	netif base;
+#ifdef _WIN32
+	bool wsa;
+#endif
+	bool initialized;
+	u8 adapter_ip[4];
 	/* A UDP socket connected to itself: a byte sent to it ends the
-	 * receive thread's poll (wake_recv). ~0 when there is none. */
-	uintptr_t wakeSocket = ~(uintptr_t)0;
+	 * receive thread's poll (wake_recv). NET_SOCK_BAD when none. */
+	net_sock wake;
 	/* The last poll ended on a session's socket and recv has found
 	 * nothing since: the next wait paces itself, rather than spin on a
-	 * socket its Recv leaves ready. Receive thread only. */
-	bool rxReadyUnread = false;
-
-	/* The sessions: the network thread's alone (net.cpp). */
-
-	SessionMap<Sessions::ConnectionKey, Sessions::BaseSession*> connections;
-	SessionMap<u16, Sessions::BaseSession*> fixedUDPPorts;
-
-public:
-	SocketAdapter();
-	virtual bool isInitialised();
-	//gets a packet.rv :true success
-	virtual bool recv(NetPacket* pkt);
-	//sends the packet and deletes it when done (if successful).rv :true success
-	virtual bool send(NetPacket* pkt);
-	virtual void wait_recv();
-	virtual void wake_recv();
-	virtual void reset();
-	virtual void reloadSettings();
-	virtual void close();
-	virtual ~SocketAdapter();
-	static std::vector<AdapterEntry> GetAdapters();
-	static AdapterOptions GetAdapterOptions();
-
-private:
-	bool SendFrame(NetPacket* pkt);
-	void OpenWakeSocket();
-	void CloseWakeSocket();
-	bool SendIP(PacketReader::IP::IP_Packet* ipPkt);
-	bool SendICMP(Sessions::ConnectionKey Key, PacketReader::IP::IP_Packet* ipPkt);
-	bool SendIGMP(Sessions::ConnectionKey Key, PacketReader::IP::IP_Packet* ipPkt);
-	bool SendTCP(Sessions::ConnectionKey Key, PacketReader::IP::IP_Packet* ipPkt);
-	bool SendUDP(Sessions::ConnectionKey Key, PacketReader::IP::IP_Packet* ipPkt);
-
-	int SendFromConnection(Sessions::ConnectionKey Key, PacketReader::IP::IP_Packet* ipPkt);
-
-	//Event must only be raised once per connection
-	void HandleConnectionClosed(Sessions::BaseSession* sender);
-	void HandleFixedPortClosed(Sessions::BaseSession* sender);
+	 * socket its recv leaves ready. */
+	bool ready_unread;
+	int arp_head;
+	int arp_count;
+	arp_reply arp[ARP_PENDING];
+	net_session sessions[NET_SESSIONS];
+	icmp_ping pings[NET_PINGS];
 };
+
+/* For the ICMP sessions: a free ping, or NULL; one given back. */
+icmp_ping* sockets_ping_alloc(sockets_adapter* a, net_session* s);
+void sockets_ping_free(icmp_ping* p);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

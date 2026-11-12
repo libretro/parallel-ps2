@@ -185,29 +185,16 @@ SOURCES_CXX += \
 # ============================================================================
 # The pcap backend is opt-in: it hard-links libpcap on POSIX, and the
 # Sockets api covers ethernet without any system dependency.
-SOURCES_CXX += \
-	$(LRPS2_DIR)/DEV9/net.cpp \
-	$(LRPS2_DIR)/DEV9/sockets.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/EthernetFrame.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/EthernetFrameEditor.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/ARP/ARP_Packet.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/ARP/ARP_PacketEditor.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/IP/IP_Options.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/IP/IP_Packet.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/IP/ICMP/ICMP_Packet.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/IP/TCP/TCP_Options.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/IP/TCP/TCP_Packet.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/IP/UDP/UDP_Packet.cpp \
-	$(LRPS2_DIR)/DEV9/Sessions/BaseSession.cpp \
-	$(LRPS2_DIR)/DEV9/Sessions/ICMP_Session/ICMP_Session.cpp \
-	$(LRPS2_DIR)/DEV9/Sessions/TCP_Session/TCP_Session.cpp \
-	$(LRPS2_DIR)/DEV9/Sessions/TCP_Session/TCP_Session_In.cpp \
-	$(LRPS2_DIR)/DEV9/Sessions/TCP_Session/TCP_Session_Out.cpp \
-	$(LRPS2_DIR)/DEV9/Sessions/UDP_Session/UDP_FixedPort.cpp \
-	$(LRPS2_DIR)/DEV9/Sessions/UDP_Session/UDP_Session.cpp
 
 SOURCES_C += \
 	$(LRPS2_DIR)/DEV9/DEV9.c \
+	$(LRPS2_DIR)/DEV9/net.c \
+	$(LRPS2_DIR)/DEV9/sockets.c \
+	$(LRPS2_DIR)/DEV9/PacketReader/netpkt.c \
+	$(LRPS2_DIR)/DEV9/Sessions/Session.c \
+	$(LRPS2_DIR)/DEV9/Sessions/ICMP_Session/ICMP_Session.c \
+	$(LRPS2_DIR)/DEV9/Sessions/TCP_Session/TCP_Session.c \
+	$(LRPS2_DIR)/DEV9/Sessions/UDP_Session/UDP_Session.c \
 	$(LRPS2_DIR)/DEV9/InternalServers/DHCP_Server.c \
 	$(LRPS2_DIR)/DEV9/AdapterUtils.c \
 	$(LRPS2_DIR)/DEV9/InternalServers/DNS_Server.c \
@@ -274,7 +261,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/SaveStateFreeze.c
 
 ifeq ($(HAVE_PCAP), 1)
-SOURCES_CXX += $(LRPS2_DIR)/DEV9/pcap_io.cpp
+SOURCES_C += $(LRPS2_DIR)/DEV9/pcap_io.c
 endif
 
 # ============================================================================

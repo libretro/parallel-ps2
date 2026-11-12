@@ -1,5 +1,5 @@
 #!/bin/sh
-# The SMAP's receive path on the real net.cpp and smap.c: frames from
+# The SMAP's receive path on the real net.c and smap.c: frames from
 # the host on the RX thread, delivered and read out on the EE. Plain and
 # TSan; MSYS2 MINGW64 builds and runs the plain one. The receive ring is
 # mirrored where the host allows it; on Linux a third lane builds
@@ -12,7 +12,6 @@ ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
 LC="$ROOT/libretro/libretro-common"
 P="$ROOT/pcsx2"
 CC=${CC:-cc}
-CXX=${CXX:-c++}
 SANFLAGS="${SANFLAGS:-}"
 
 case "$(uname -s 2>/dev/null)" in
@@ -20,12 +19,9 @@ case "$(uname -s 2>/dev/null)" in
   *)                    WINDOWS=0; EXE="";   LIBS="-lpthread" ;;
 esac
 
-CXX_SRC="$DIR/glue.cpp $P/DEV9/net.cpp \
-  $P/DEV9/PacketReader/EthernetFrame.cpp $P/DEV9/PacketReader/IP/IP_Packet.cpp \
-  $P/DEV9/PacketReader/IP/IP_Options.cpp $P/DEV9/PacketReader/IP/UDP/UDP_Packet.cpp \
-  $P/Pcsx2Config.c $P/EmuOptions.c $P/MemoryCardFile.c"
-C_SRC="$DIR/main.c $P/memcard_ecc.c $P/DEV9/smap.c \
+C_SRC="$DIR/main.c $DIR/glue.c $P/DEV9/net.c $P/DEV9/smap.c $P/DEV9/PacketReader/netpkt.c \
   $P/DEV9/AdapterUtils.c $P/DEV9/InternalServers/DHCP_Server.c $P/DEV9/InternalServers/DNS_Server.c $P/DEV9/PacketReader/IP/UDP/DNS/DNS_Packet.c \
+  $P/Pcsx2Config.c $P/EmuOptions.c $P/MemoryCardFile.c $P/memcard_ecc.c \
   $LC/rthreads/rthreads.c $LC/rthreads/retro_eventcount.c $LC/rthreads/retro_procbarrier.c $LC/queues/retro_spsc.c \
   $LC/string/stdstring.c $LC/string/rstrtod.c $LC/file/file_path.c $LC/file/file_path_io.c \
   $LC/compat/compat_strl.c $LC/compat/fopen_utf8.c $LC/encodings/encoding_utf.c \
@@ -44,7 +40,7 @@ build() { # output, extra flags, extra flags for retro_spsc.c
 		[ "$(basename "$src")" = retro_spsc.c ] && extra="$3"
 		"$CC" -std=gnu99 -w $DEFS $2 $extra $INC -c "$src" -o "$OBJ/$(basename "$src" .c).o"
 	done
-	"$CXX" -std=c++17 -w $DEFS $2 $INC -o "$DIR/$1$EXE" $CXX_SRC "$OBJ"/*.o $LIBS
+	"$CC" $2 -o "$DIR/$1$EXE" "$OBJ"/*.o $LIBS
 	rm -rf "$OBJ"
 }
 
@@ -64,19 +60,16 @@ fi
 # The sockets backend itself (sockrx.c): datagrams from the PS2 through
 # the real adapter and its sessions to an echo server on this host, and a
 # receive thread that sleeps while nothing comes.
-SOCK_CXX="$P/DEV9/sockets.cpp $P/DEV9/Sessions/BaseSession.cpp \
-  $P/DEV9/Sessions/ICMP_Session/ICMP_Session.cpp $P/DEV9/Sessions/TCP_Session/TCP_Session.cpp \
-  $P/DEV9/Sessions/TCP_Session/TCP_Session_In.cpp $P/DEV9/Sessions/TCP_Session/TCP_Session_Out.cpp \
-  $P/DEV9/Sessions/UDP_Session/UDP_FixedPort.cpp $P/DEV9/Sessions/UDP_Session/UDP_Session.cpp \
-  $P/DEV9/PacketReader/ARP/ARP_Packet.cpp $P/DEV9/PacketReader/IP/ICMP/ICMP_Packet.cpp \
-  $P/DEV9/PacketReader/IP/TCP/TCP_Options.cpp $P/DEV9/PacketReader/IP/TCP/TCP_Packet.cpp"
+SOCK_C="$P/DEV9/sockets.c $P/DEV9/Sessions/Session.c \
+  $P/DEV9/Sessions/ICMP_Session/ICMP_Session.c $P/DEV9/Sessions/TCP_Session/TCP_Session.c \
+  $P/DEV9/Sessions/UDP_Session/UDP_Session.c $LC/features/features_cpu.c"
 sock_build() { # output, extra flags
 	OBJ="$DIR/.obj_$1"
 	rm -rf "$OBJ" && mkdir -p "$OBJ"
-	for src in $(echo "$C_SRC" | sed "s#$DIR/main.c#$DIR/sockrx.c#") $LC/features/features_cpu.c; do
-		"$CC" -std=gnu99 -w $DEFS $2 $INC -c "$src" -o "$OBJ/$(basename "$src" .c).o"
+	for src in $(echo "$C_SRC" | sed "s#$DIR/main.c#$DIR/sockrx.c#") $SOCK_C; do
+		"$CC" -std=gnu99 -w $DEFS -DSMAPRX_REAL_SOCKETS $2 $INC -c "$src" -o "$OBJ/$(basename "$src" .c).o"
 	done
-	"$CXX" -std=c++17 -w $DEFS -DSMAPRX_REAL_SOCKETS $2 $INC -o "$DIR/$1$EXE" $CXX_SRC $SOCK_CXX "$OBJ"/*.o $LIBS
+	"$CC" $2 -o "$DIR/$1$EXE" "$OBJ"/*.o $LIBS
 	rm -rf "$OBJ"
 }
 sock_build sockrx_test "-O2 -g $SANFLAGS"

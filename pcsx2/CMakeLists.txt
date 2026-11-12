@@ -751,28 +751,16 @@ set(pcsx2DEV9Sources
 	DEV9/DEV9.c
 	DEV9/InternalServers/DHCP_Server.c
 	DEV9/InternalServers/DNS_Server.c
-	DEV9/PacketReader/ARP/ARP_Packet.cpp
-	DEV9/PacketReader/ARP/ARP_PacketEditor.cpp
-	DEV9/PacketReader/EthernetFrame.cpp
-	DEV9/PacketReader/EthernetFrameEditor.cpp
-	DEV9/PacketReader/IP/ICMP/ICMP_Packet.cpp
-	DEV9/PacketReader/IP/IP_Options.cpp
-	DEV9/PacketReader/IP/IP_Packet.cpp
-	DEV9/PacketReader/IP/TCP/TCP_Options.cpp
-	DEV9/PacketReader/IP/TCP/TCP_Packet.cpp
+	DEV9/PacketReader/netpkt.c
 	DEV9/PacketReader/IP/UDP/DNS/DNS_Packet.c
-	DEV9/PacketReader/IP/UDP/UDP_Packet.cpp
-	DEV9/Sessions/BaseSession.cpp
-	DEV9/Sessions/ICMP_Session/ICMP_Session.cpp
-	DEV9/Sessions/TCP_Session/TCP_Session.cpp
-	DEV9/Sessions/TCP_Session/TCP_Session_In.cpp
-	DEV9/Sessions/TCP_Session/TCP_Session_Out.cpp
-	DEV9/Sessions/UDP_Session/UDP_FixedPort.cpp
-	DEV9/Sessions/UDP_Session/UDP_Session.cpp
+	DEV9/Sessions/Session.c
+	DEV9/Sessions/ICMP_Session/ICMP_Session.c
+	DEV9/Sessions/TCP_Session/TCP_Session.c
+	DEV9/Sessions/UDP_Session/UDP_Session.c
 	DEV9/flash.c
-	DEV9/net.cpp
+	DEV9/net.c
 	DEV9/smap.c
-	DEV9/sockets.cpp
+	DEV9/sockets.c
 	DEV9/ATA/ATA_Info.c
 	DEV9/ATA/ATA_State.c
 	DEV9/ATA/ATA_Transfer.c
@@ -796,38 +784,16 @@ set(pcsx2DEV9Headers
 	DEV9/DEV9mmio.h
 	DEV9/InternalServers/DHCP_Server.h
 	DEV9/InternalServers/DNS_Server.h
-	DEV9/PacketReader/ARP/ARP_Packet.h
-	DEV9/PacketReader/ARP/ARP_PacketEditor.h
-	DEV9/PacketReader/EthernetFrame.h
-	DEV9/PacketReader/EthernetFrameEditor.h
-	DEV9/PacketReader/IP/ICMP/ICMP_Packet.h
-	DEV9/PacketReader/IP/IP_Address.h
-	DEV9/PacketReader/IP/IP_Options.h
-	DEV9/PacketReader/IP/IP_Packet.h
-	DEV9/PacketReader/IP/IP_Payload.h
-	DEV9/PacketReader/IP/TCP/TCP_Options.h
-	DEV9/PacketReader/IP/TCP/TCP_Packet.h
+	DEV9/PacketReader/netpkt.h
 	DEV9/PacketReader/IP/UDP/DNS/DNS_Packet.h
-	DEV9/PacketReader/IP/UDP/UDP_Packet.h
-	DEV9/PacketReader/MAC_Address.h
-	DEV9/PacketReader/NetLib.h
-	DEV9/PacketReader/Payload.h
-	DEV9/Sessions/BaseSession.h
-	DEV9/Sessions/ICMP_Session/ICMP_Session.h
-	DEV9/Sessions/TCP_Session/TCP_Session.h
-	DEV9/Sessions/UDP_Session/UDP_BaseSession.h
-	DEV9/Sessions/UDP_Session/UDP_FixedPort.h
-	DEV9/Sessions/UDP_Session/UDP_Session.h
-	DEV9/SimpleQueue.h
-	DEV9/SessionMap.h
+	DEV9/Sessions/Session.h
 	DEV9/net.h
 	DEV9/netio.h
 	DEV9/smap.h
 	DEV9/sockets.h
 )
 if(PCAP)
-	list(APPEND pcsx2DEV9Sources DEV9/pcap_io.cpp)
-	list(APPEND pcsx2DEV9Headers DEV9/pcap_io.h)
+	list(APPEND pcsx2DEV9Sources DEV9/pcap_io.c)
 	target_compile_definitions(PCSX2_FLAGS INTERFACE HAVE_PCAP)
 	target_link_libraries(PCSX2_FLAGS INTERFACE pcap)
 endif()

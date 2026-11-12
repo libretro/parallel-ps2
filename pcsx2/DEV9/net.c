@@ -14,34 +14,22 @@
  */
 
 #include <stddef.h>
+#include <string.h>
 #include <retro_atomic.h>
 #include <retro_spsc.h>
-#include "common/Pcsx2Defs.h"
-
-#if defined(__POSIX__)
-#include <pthread.h>
-#endif
-
 #include <retro_timers.h>
-#include "net.h"
-#include "DEV9.h"
-#ifdef _WIN32
-#endif
-#ifdef HAVE_PCAP
-#include "pcap_io.h"
-#endif
-#include "sockets.h"
-
-#include "PacketReader/EthernetFrame.h"
-#include "PacketReader/IP/IP_Packet.h"
-#include "PacketReader/IP/UDP/UDP_Packet.h"
-#include "PacketReader/IP/UDP/DNS/DNS_Packet.h"
 #include <rthreads/rthreads.h>
 #include <rthreads/retro_eventcount.h>
 
-NetAdapter* nif;
+#include "common/Pcsx2Defs.h"
+#include "net.h"
+#include "DEV9.h"
+#include "PacketReader/netpkt.h"
+#include "PacketReader/IP/UDP/DNS/DNS_Packet.h"
+
+static netif* nif;
 static sthread_t* rx_thread = NULL;
-void NetRxThread();
+static void NetRxThread(void);
 /* The receive thread raises its own priority at start: rthreads can only
  * raise the calling thread's, and this is the one place lrps2 wanted a
  * thread above normal. */
@@ -109,9 +97,9 @@ static void net_tx_drain(NetPacket* pkt)
 			break;
 		retro_spsc_read(&s_tx_ring, pkt, bytes);
 		if (size == NET_TX_RESET)
-			nif->reset();
+			nif->ops->reset(nif);
 		else
-			nif->send(pkt);
+			nif->ops->send(nif, pkt);
 	}
 }
 
@@ -141,18 +129,23 @@ static void net_tx_push(int size, const void* data, size_t len, const void* more
 	if (bytes > head + len + more_len)
 		retro_spsc_write(&s_tx_ring, pad, bytes - head - len - more_len);
 	retro_eventcount_notify(&s_rx_room_ec);
-	nif->wake_recv();
+	if (nif->ops->wake_recv)
+		nif->ops->wake_recv(nif);
 }
 
-void NetAdapter::wait_recv()
+/* The adapter's wait, or a millisecond's poll where it has none. */
+static void net_wait_recv(void)
 {
-	retro_sleep(1);
+	if (nif->ops->wait_recv)
+		nif->ops->wait_recv(nif);
+	else
+		retro_sleep(1);
 }
 
 /* The network thread: sends what the EE queued, receives from the host
  * and from the internal servers into the receive ring, and sleeps in the
  * adapter's wait when there is neither. */
-void NetRxThread()
+static void NetRxThread(void)
 {
 	NetPacket tmp;
 	const size_t largest = NET_RX_RECORD_BYTES(sizeof(tmp.buffer));
@@ -178,7 +171,7 @@ void NetRxThread()
 				full = true;
 				break;
 			}
-			if (!nif->recv(pkt) && !nif->InternalServerRecv(pkt))
+			if (!nif->ops->recv(nif, pkt) && !netif_internal_recv(nif, pkt))
 				break;
 			if (pkt->size <= 0 || pkt->size > (int)sizeof(pkt->buffer))
 				continue;
@@ -193,7 +186,7 @@ void NetRxThread()
 			/* The host has nothing: until the adapter may have, or the
 			 * EE sends (net_tx_push wakes the wait). */
 			if (!retro_spsc_read_avail(&s_tx_ring))
-				nif->wait_recv();
+				net_wait_recv();
 			continue;
 		}
 
@@ -209,13 +202,13 @@ void NetRxThread()
 	}
 }
 
-bool net_rx_deliver()
+bool net_rx_deliver(void)
 {
 	NetPacket tmp;
 	bool delivered = false;
 	bool taken = false;
 
-	if (nif == nullptr)
+	if (nif == NULL)
 		return false;
 
 	while (rx_fifo_can_rx())
@@ -232,7 +225,7 @@ bool net_rx_deliver()
 			if (contiguous >= bytes)
 			{
 				/* rx_process only reads the packet. */
-				delivered |= rx_process((NetPacket*)const_cast<void*>(span));
+				delivered |= rx_process((NetPacket*)(void*)span);
 				retro_spsc_read_end(&s_rx_ring, bytes);
 				continue;
 			}
@@ -251,13 +244,13 @@ bool net_rx_deliver()
 void tx_put(const void* head, int head_len, const void* tail, int tail_len)
 {
 	const int size = head_len + tail_len;
-	if (nif != nullptr && head_len >= 0 && tail_len >= 0 && size > 0 && size <= (int)sizeof(((NetPacket*)0)->buffer))
+	if (nif != NULL && head_len >= 0 && tail_len >= 0 && size > 0 && size <= (int)sizeof(((NetPacket*)0)->buffer))
 		net_tx_push(size, head, (size_t)head_len, tail, (size_t)tail_len);
 }
 
-void ad_reset()
+void ad_reset(void)
 {
-	if (nif != nullptr)
+	if (nif != NULL)
 		net_tx_push(NET_TX_RESET, NULL, 0, NULL, 0);
 }
 
@@ -273,7 +266,8 @@ static void net_thread_stop(void)
 {
 	retro_atomic_store_release_int(&RxRunning, 0);
 	retro_eventcount_notify(&s_rx_room_ec);
-	nif->wake_recv();
+	if (nif->ops->wake_recv)
+		nif->ops->wake_recv(nif);
 	log_cb(RETRO_LOG_INFO, "DEV9: Waiting for the network thread to terminate..\n");
 	sthread_join(rx_thread);
 	rx_thread = NULL;
@@ -282,371 +276,253 @@ static void net_thread_stop(void)
 	s_tx_dropped = 0;
 }
 
-NetAdapter* GetNetAdapter()
+static netif* GetNetAdapter(void)
 {
-	NetAdapter* na = nullptr;
-
 	switch (EmuConfig.DEV9.EthApi)
 	{
 #ifdef _WIN32
 		case EMU_NETAPI_TAP:
 			/* No TAP implementation is in the tree. */
 			log_cb(RETRO_LOG_ERROR, "DEV9: TAP backend not present in this core, use the Sockets api\n");
-			return 0;
+			return NULL;
 #endif
 		case EMU_NETAPI_PCAP_BRIDGED:
 		case EMU_NETAPI_PCAP_SWITCHED:
 #ifdef HAVE_PCAP
-			na = static_cast<NetAdapter*>(new PCAPAdapter());
-			break;
+			return net_pcap_new();
 #else
 			log_cb(RETRO_LOG_ERROR, "DEV9: PCAP backend not built into this core, use the Sockets api\n");
-			return 0;
+			return NULL;
 #endif
 		case EMU_NETAPI_SOCKETS:
-			na = static_cast<NetAdapter*>(new SocketAdapter());
-			break;
+			return net_sockets_new();
 		default:
-			return 0;
+			return NULL;
 	}
-
-	if (!na->isInitialised())
-	{
-		delete na;
-		return 0;
-	}
-	return na;
 }
 
-void InitNet()
+static void net_init_failed(netif* na, const char* what)
 {
-	NetAdapter* na = GetNetAdapter();
+	log_cb(RETRO_LOG_ERROR, "DEV9: %s\n", what);
+	if (na)
+		na->ops->destroy(na);
+	EmuConfig.DEV9.EthEnable = false;
+}
 
+void InitNet(void)
+{
+	netif* na = GetNetAdapter();
 	if (!na)
 	{
-		log_cb(RETRO_LOG_ERROR, "DEV9: Failed to GetNetAdapter()\n");
-		EmuConfig.DEV9.EthEnable = false;
+		net_init_failed(NULL, "Failed to GetNetAdapter()");
 		return;
 	}
-
 	if (!s_rx_ring_ok)
 		s_rx_ring_ok = retro_spsc_init_mirrored(&s_rx_ring, NET_RX_RING_BYTES);
 	if (!s_rx_ring_ok)
 	{
-		log_cb(RETRO_LOG_ERROR, "DEV9: Failed to allocate the receive ring\n");
-		delete na;
-		EmuConfig.DEV9.EthEnable = false;
+		net_init_failed(na, "Failed to allocate the receive ring");
 		return;
 	}
 	if (!s_tx_ring_ok)
 		s_tx_ring_ok = retro_spsc_init(&s_tx_ring, NET_TX_RING_BYTES);
 	if (!s_tx_ring_ok)
 	{
-		log_cb(RETRO_LOG_ERROR, "DEV9: Failed to allocate the transmit ring\n");
-		delete na;
-		EmuConfig.DEV9.EthEnable = false;
+		net_init_failed(na, "Failed to allocate the transmit ring");
 		return;
 	}
 	if (!s_rx_room_ec_ok)
 		s_rx_room_ec_ok = retro_eventcount_init(&s_rx_room_ec);
 	if (!s_rx_room_ec_ok)
 	{
-		log_cb(RETRO_LOG_ERROR, "DEV9: Failed to set up the receive thread's wait\n");
-		delete na;
-		EmuConfig.DEV9.EthEnable = false;
+		net_init_failed(na, "Failed to set up the receive thread's wait");
 		return;
 	}
-
 	retro_spsc_clear(&s_rx_ring);
 	retro_spsc_clear(&s_tx_ring);
 	nif = na;
 	net_thread_start();
 }
 
-void ReconfigureLiveNet(const Pcsx2Config* old)
+void ReconfigureLiveNet(const Pcsx2Config* old_config)
 {
-	const Pcsx2Config& old_config = *old;
-	//Eth
 	if (EmuConfig.DEV9.EthEnable)
 	{
-		if (old_config.DEV9.EthEnable)
+		if (old_config->DEV9.EthEnable)
 		{
-			//Reload Net if adapter changed
-			if (strcmp(EmuConfig.DEV9.EthDevice, old_config.DEV9.EthDevice) != 0 ||
-				EmuConfig.DEV9.EthApi != old_config.DEV9.EthApi)
+			/* Reload the net if the adapter changed */
+			if (strcmp(EmuConfig.DEV9.EthDevice, old_config->DEV9.EthDevice) != 0 ||
+				EmuConfig.DEV9.EthApi != old_config->DEV9.EthApi)
 			{
 				TermNet();
 				InitNet();
 				return;
 			}
-			else
-			{
-				/* The adapter belongs to the network thread while it
-				 * runs. */
-				net_thread_stop();
-				nif->reloadSettings();
-				net_thread_start();
-			}
+			/* The adapter belongs to the network thread while it runs. */
+			net_thread_stop();
+			nif->ops->reload(nif);
+			net_thread_start();
 		}
 		else
 			InitNet();
 	}
-	else if (old_config.DEV9.EthEnable)
+	else if (old_config->DEV9.EthEnable)
 		TermNet();
 }
 
-void TermNet()
+void TermNet(void)
 {
 	if (retro_atomic_load_acquire_int(&RxRunning))
 	{
 		/* The thread first: then the adapter is this thread's to close. */
 		net_thread_stop();
-		nif->close();
+		nif->ops->close(nif);
 		log_cb(RETRO_LOG_INFO, "DEV9: Done\n");
-
-		delete nif;
-		nif = nullptr;
+		nif->ops->destroy(nif);
+		nif = NULL;
 	}
 }
 
-using namespace PacketReader;
-using namespace PacketReader::IP;
-using namespace PacketReader::IP::UDP;
+const u8 net_internal_ip[4] = {192, 0, 2, 1};
+const u8 net_internal_mac[6] = {0x76, 0x6D, 0xF4, 0x63, 0x30, 0x31};
+const u8 net_broadcast_mac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+const u8 net_default_mac[6] = {0x00, 0x04, 0x1F, 0x82, 0x30, 0x31};
+static const u8 limited_broadcast[4] = {255, 255, 255, 255};
 
-const IP_Address NetAdapter::internalIP{{{192, 0, 2, 1}}};
-const MAC_Address NetAdapter::broadcastMAC{{{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}}};
-const MAC_Address NetAdapter::internalMAC{{{0x76, 0x6D, 0xF4, 0x63, 0x30, 0x31}}};
-
-IP_Address NetAdapter::DhcpPS2IP() const
+void netif_init(netif* n, const netif_ops* ops)
 {
-	IP_Address ip;
-	memcpy(ip.bytes, dhcpServer.ps2_ip, 4);
-	return ip;
+	memset(n, 0, sizeof(*n));
+	n->ops = ops;
+	n->dns = dns_server_new();
+	/* The EEPROM matches the default until the adapter sets one */
+	netif_set_mac(n, NULL);
 }
 
-IP_Address NetAdapter::DhcpBroadcastIP() const
+void netif_deinit(netif* n)
 {
-	IP_Address ip;
-	memcpy(ip.bytes, dhcpServer.broadcast, 4);
-	return ip;
+	dns_server_free(n->dns);
+	n->dns = NULL;
 }
 
-NetAdapter::NetAdapter()
+void netif_set_mac(netif* n, const u8* mac)
 {
-	memset(&dhcpServer, 0, sizeof(dhcpServer));
-	dnsServer = dns_server_new();
-	//Ensure eeprom matches our default
-	SetMACAddress(nullptr);
+	memcpy(n->ps2_mac, mac ? mac : net_default_mac, 6);
+	if (!dev9.eeprom)
+		return;
+	memcpy(dev9.eeprom, n->ps2_mac, 6);
+	/* The checksum: the MAC's three 16-bit words added up */
+	dev9.eeprom[3] = (u16)((dev9.eeprom[0] + dev9.eeprom[1] + dev9.eeprom[2]) & 0xffff);
 }
 
-bool NetAdapter::send(NetPacket* pkt)
+bool netif_verify(netif* n, NetPacket* pkt, int size)
 {
-	return InternalServerSend(pkt);
-}
-
-NetAdapter::~NetAdapter()
-{
-	dns_server_free(dnsServer);
-}
-
-void NetAdapter::InspectSend(NetPacket* pkt)
-{
-	if (EmuConfig.DEV9.EthLogDNS)
-	{
-		EthernetFrame frame(pkt);
-		if (frame.protocol == (u16)EtherType::IPv4)
-		{
-			PayloadPtr* payload = static_cast<PayloadPtr*>(frame.GetPayload());
-			IP_Packet ippkt(payload->data, payload->GetLength());
-
-			if (ippkt.protocol == (u16)IP_Type::UDP)
-			{
-				IP_PayloadPtr* ipPayload = static_cast<IP_PayloadPtr*>(ippkt.GetPayload());
-				UDP_Packet udppkt(ipPayload->data, ipPayload->GetLength());
-
-				if (udppkt.destinationPort == 53)
-				{
-					log_cb(RETRO_LOG_INFO, "DEV9: DNS: Packet Sent To %i.%i.%i.%i\n",
-						ippkt.destinationIP.bytes[0], ippkt.destinationIP.bytes[1], ippkt.destinationIP.bytes[2], ippkt.destinationIP.bytes[3]);
-					PayloadPtr* dns = static_cast<PayloadPtr*>(udppkt.GetPayload());
-					dns_log(dns->data, dns->GetLength());
-				}
-			}
-		}
-	}
-}
-void NetAdapter::InspectRecv(NetPacket* pkt)
-{
-	if (EmuConfig.DEV9.EthLogDNS)
-	{
-		EthernetFrame frame(pkt);
-		if (frame.protocol == (u16)EtherType::IPv4)
-		{
-			PayloadPtr* payload = static_cast<PayloadPtr*>(frame.GetPayload());
-			IP_Packet ippkt(payload->data, payload->GetLength());
-
-			if (ippkt.protocol == (u16)IP_Type::UDP)
-			{
-				IP_PayloadPtr* ipPayload = static_cast<IP_PayloadPtr*>(ippkt.GetPayload());
-				UDP_Packet udppkt(ipPayload->data, ipPayload->GetLength());
-
-				if (udppkt.sourcePort == 53)
-				{
-					log_cb(RETRO_LOG_INFO, "DEV9: DNS: Packet Sent From %i.%i.%i.%i\n",
-						ippkt.sourceIP.bytes[0], ippkt.sourceIP.bytes[1], ippkt.sourceIP.bytes[2], ippkt.sourceIP.bytes[3]);
-					PayloadPtr* dns = static_cast<PayloadPtr*>(udppkt.GetPayload());
-					dns_log(dns->data, dns->GetLength());
-				}
-			}
-		}
-	}
-}
-
-void NetAdapter::SetMACAddress(MAC_Address* mac)
-{
-	if (mac == nullptr)
-		ps2MAC = defaultMAC;
-	else
-		ps2MAC = *mac;
-
-	*(MAC_Address*)&dev9.eeprom[0] = ps2MAC;
-
-	//The checksum seems to be all the values of the mac added up in 16bit chunks
-	dev9.eeprom[3] = (dev9.eeprom[0] + dev9.eeprom[1] + dev9.eeprom[2]) & 0xffff;
-}
-
-bool NetAdapter::VerifyPkt(NetPacket* pkt, int read_size)
-{
-	if ((*(MAC_Address*)&pkt->buffer[0] != ps2MAC) && (*(MAC_Address*)&pkt->buffer[0] != broadcastMAC))
-	{
-		//ignore strange packets
+	const u8* f = (const u8*)pkt->buffer;
+	if (size < ETH_HEADER)
 		return false;
-	}
-
-	if (*(MAC_Address*)&pkt->buffer[6] == ps2MAC)
-	{
-		//avoid pcap looping packets
+	/* Strange packets, not for the PS2 */
+	if (memcmp(f, n->ps2_mac, 6) != 0 && memcmp(f, net_broadcast_mac, 6) != 0)
 		return false;
-	}
-	pkt->size = read_size;
+	/* pcap looping the PS2's own packets back */
+	if (memcmp(f + 6, n->ps2_mac, 6) == 0)
+		return false;
+	pkt->size = size;
 	return true;
 }
 
-void NetAdapter::InitInternalServer(const net_adapter* adapter, bool dhcpForceEnable, IP_Address ipOverride, IP_Address subnetOverride, IP_Address gatewayOvveride)
+/* The DNS packet a frame carries, to or from port 53. */
+static void inspect(const NetPacket* pkt, bool sent)
 {
-	if (adapter == nullptr)
+	net_eth eth;
+	net_ip ip;
+	net_udp udp;
+	const u8* addr;
+	if (!EmuConfig.DEV9.EthLogDNS)
+		return;
+	if (!net_eth_parse((const u8*)pkt->buffer, pkt->size, &eth) || eth.type != ETHERTYPE_IPV4 ||
+		!net_ip_parse(eth.data, eth.len, &ip) || ip.proto != IP_PROTO_UDP ||
+		!net_udp_parse(ip.data, ip.len, &udp) || (sent ? udp.dport : udp.sport) != DNS_PORT)
+		return;
+	addr = sent ? ip.dst : ip.src;
+	log_cb(RETRO_LOG_INFO, "DEV9: DNS: Packet Sent %s %u.%u.%u.%u\n", sent ? "To" : "From",
+		addr[0], addr[1], addr[2], addr[3]);
+	dns_log(udp.data, udp.len);
+}
+
+void netif_inspect_send(netif* n, const NetPacket* pkt)
+{
+	(void)n;
+	inspect(pkt, true);
+}
+
+void netif_inspect_recv(netif* n, const NetPacket* pkt)
+{
+	(void)n;
+	inspect(pkt, false);
+}
+
+void netif_init_servers(netif* n, const net_adapter* adapter, bool dhcp_force,
+	const u8* ip, const u8* subnet, const u8* gateway)
+{
+	if (adapter == NULL)
 		log_cb(RETRO_LOG_ERROR, "DEV9: InitInternalServer() got nullptr for adapter\n");
-
-	dhcpOn = EmuConfig.DEV9.InterceptDHCP || dhcpForceEnable;
-	if (dhcpOn)
-		dhcp_server_init(&dhcpServer, adapter, internalIP.bytes, ipOverride.bytes, subnetOverride.bytes, gatewayOvveride.bytes);
-
-	if (dnsServer)
-		dns_server_set_adapter(dnsServer, adapter);
+	n->dhcp_on = EmuConfig.DEV9.InterceptDHCP || dhcp_force;
+	if (n->dhcp_on)
+		dhcp_server_init(&n->dhcp, adapter, net_internal_ip, ip, subnet, gateway);
+	if (n->dns)
+		dns_server_set_adapter(n->dns, adapter);
 }
 
-void NetAdapter::ReloadInternalServer(const net_adapter* adapter, bool dhcpForceEnable, IP_Address ipOverride, IP_Address subnetOverride, IP_Address gatewayOveride)
+/* A UDP reply from the internal servers, its data already at
+ * NET_UDP_DATA: the headers in front of it. */
+static void internal_reply(netif* n, NetPacket* pkt, const u8 dst[4], u16 sport, u16 dport, int len)
 {
-	if (adapter == nullptr)
-		log_cb(RETRO_LOG_ERROR, "DEV9: ReloadInternalServer() got nullptr for adapter\n");
-
-	dhcpOn = EmuConfig.DEV9.InterceptDHCP || dhcpForceEnable;
-	if (dhcpOn)
-		dhcp_server_init(&dhcpServer, adapter, internalIP.bytes, ipOverride.bytes, subnetOverride.bytes, gatewayOveride.bytes);
-
-	if (dnsServer)
-		dns_server_set_adapter(dnsServer, adapter);
+	u8* f = (u8*)pkt->buffer;
+	net_put_udp(f, net_internal_ip, dst, sport, dport, len);
+	net_put_ip(f, net_internal_ip, dst, IP_PROTO_UDP, 64, 0, UDP_HEADER + len);
+	net_put_eth(f, n->ps2_mac, net_internal_mac, ETHERTYPE_IPV4);
+	pkt->size = NET_UDP_DATA + len;
 }
 
-bool NetAdapter::InternalServerRecv(NetPacket* pkt)
+bool netif_internal_recv(netif* n, NetPacket* pkt)
 {
-	u8 reply[DHCP_REPLY_MAX];
-	int len = dhcp_server_recv(&dhcpServer, reply, sizeof(reply));
-	if (len > 0)
-	{
-		PayloadData* data = new PayloadData(len);
-		memcpy(data->data.get(), reply, len);
-		UDP_Packet* udp = new UDP_Packet(data);
-		udp->sourcePort = DHCP_SERVER_PORT;
-		udp->destinationPort = DHCP_CLIENT_PORT;
-		IP_Packet* ippkt = new IP_Packet(udp);
-		ippkt->destinationIP = {{{255, 255, 255, 255}}};
-		ippkt->sourceIP = internalIP;
-		EthernetFrame frame(ippkt);
-		frame.sourceMAC = internalMAC;
-		frame.destinationMAC = ps2MAC;
-		frame.protocol = (u16)EtherType::IPv4;
-		frame.WritePacket(pkt);
-		return true;
-	}
-
+	u8* data = (u8*)pkt->buffer + NET_UDP_DATA;
+	const int cap = ETH_FRAME_MAX - NET_UDP_DATA;
 	u16 port;
-	len = dnsServer ? dns_server_recv(dnsServer, reply, sizeof(reply), &port) : 0;
+	int len = n->dhcp_on ? dhcp_server_recv(&n->dhcp, data, cap) : 0;
 	if (len > 0)
 	{
-		PayloadData* data = new PayloadData(len);
-		memcpy(data->data.get(), reply, len);
-		UDP_Packet* udp = new UDP_Packet(data);
-		udp->sourcePort = DNS_PORT;
-		udp->destinationPort = port;
-		IP_Packet* ippkt = new IP_Packet(udp);
-		ippkt->destinationIP = ps2IP;
-		ippkt->sourceIP = internalIP;
-		EthernetFrame frame(ippkt);
-		frame.sourceMAC = internalMAC;
-		frame.destinationMAC = ps2MAC;
-		frame.protocol = (u16)EtherType::IPv4;
-		frame.WritePacket(pkt);
-		InspectRecv(pkt);
+		internal_reply(n, pkt, limited_broadcast, DHCP_SERVER_PORT, DHCP_CLIENT_PORT, len);
 		return true;
 	}
-
-	return false;
-}
-
-bool NetAdapter::InternalServerSend(NetPacket* pkt)
-{
-	EthernetFrame frame(pkt);
-	if (frame.protocol == (u16)EtherType::IPv4)
+	len = n->dns ? dns_server_recv(n->dns, data, cap, &port) : 0;
+	if (len > 0)
 	{
-		PayloadPtr* payload = static_cast<PayloadPtr*>(frame.GetPayload());
-		IP_Packet ippkt(payload->data, payload->GetLength());
-
-		if (ippkt.protocol == (u16)IP_Type::UDP)
-		{
-			IP_PayloadPtr* ipPayload = static_cast<IP_PayloadPtr*>(ippkt.GetPayload());
-			UDP_Packet udppkt(ipPayload->data, ipPayload->GetLength());
-
-			if (udppkt.destinationPort == 67)
-			{
-				//Send DHCP
-				if (dhcpOn)
-				{
-					PayloadPtr* dhcp = static_cast<PayloadPtr*>(udppkt.GetPayload());
-					return dhcp_server_send(&dhcpServer, dhcp->data, dhcp->GetLength());
-				}
-			}
-		}
-
-		if (ippkt.destinationIP == internalIP)
-		{
-			if (ippkt.protocol == (u16)IP_Type::UDP)
-			{
-				ps2IP = ippkt.sourceIP;
-
-				IP_PayloadPtr* ipPayload = static_cast<IP_PayloadPtr*>(ippkt.GetPayload());
-				UDP_Packet udppkt(ipPayload->data, ipPayload->GetLength());
-
-				if (udppkt.destinationPort == 53)
-				{
-					//Send DNS
-					PayloadPtr* dns = static_cast<PayloadPtr*>(udppkt.GetPayload());
-					return dnsServer && dns_server_send(dnsServer, dns->data, dns->GetLength(), udppkt.sourcePort);
-				}
-			}
-			return true;
-		}
+		internal_reply(n, pkt, n->ps2_ip, DNS_PORT, port, len);
+		netif_inspect_recv(n, pkt);
+		return true;
 	}
 	return false;
 }
 
+bool netif_internal_send(netif* n, NetPacket* pkt)
+{
+	net_eth eth;
+	net_ip ip;
+	net_udp udp;
+	bool is_udp;
+	if (!net_eth_parse((const u8*)pkt->buffer, pkt->size, &eth) || eth.type != ETHERTYPE_IPV4 ||
+		!net_ip_parse(eth.data, eth.len, &ip))
+		return false;
+	is_udp = ip.proto == IP_PROTO_UDP && net_udp_parse(ip.data, ip.len, &udp);
+	if (is_udp && udp.dport == DHCP_SERVER_PORT && n->dhcp_on)
+		return dhcp_server_send(&n->dhcp, udp.data, udp.len);
+	if (memcmp(ip.dst, net_internal_ip, 4) != 0)
+		return false;
+	if (is_udp)
+	{
+		memcpy(n->ps2_ip, ip.src, 4);
+		if (udp.dport == DNS_PORT)
+			return n->dns && dns_server_send(n->dns, udp.data, udp.len, udp.sport);
+	}
+	return true;
+}

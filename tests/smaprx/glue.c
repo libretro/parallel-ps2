@@ -1,7 +1,8 @@
-/* The C++ the SMAP receive harness cannot avoid: the host adapter the
- * real net.cpp instantiates is a C++ class, and the SMAP's registers
- * are spelled in a C++ header. Everything here is a one-line forward;
- * the driver model and the checks are in main.c. */
+/* What the SMAP receive harness reaches inside the core: the SMAP's
+ * registers, and a host adapter for the real net.c to drive (the real
+ * sockets one where SMAPRX_REAL_SOCKETS is). Everything here is a
+ * one-line forward; the driver model and the checks are in main.c. */
+#include <stdlib.h>
 #include <string.h>
 #include <retro_atomic.h>
 #include <rthreads/rthreads.h>
@@ -9,7 +10,6 @@
 #include "DEV9/DEV9.h"
 #include "DEV9/smap.h"
 #include "DEV9/net.h"
-#include "DEV9/sockets.h"
 #include "Config.h"
 
 dev9Struct dev9;
@@ -21,8 +21,6 @@ static retro_atomic_int_t s_rxend_irqs;
  * belongs to the network thread, never the thread that sent. */
 static uintptr_t          s_tx_caller;
 static retro_atomic_int_t s_tx_frames, s_tx_resets, s_tx_on_caller, s_tx_out_of_order;
-
-extern "C" {
 
 /* main.c: the host's next frame, on the RX thread. Returns its length,
  * 0 when the host has nothing. */
@@ -102,17 +100,14 @@ void smaprx_dma_read(unsigned* words, int bytes)
 	smap_readDMA8Mem((u32*)words, bytes);
 }
 
-} /* extern "C" */
-
 #ifndef SMAPRX_REAL_SOCKETS
 /* The host adapter, standing in for the sockets backend. */
-SocketAdapter::SocketAdapter() { initialized = true; }
-SocketAdapter::~SocketAdapter() {}
-bool SocketAdapter::isInitialised() { return initialized; }
+
 /* Frames carry their index in their first byte. */
-bool SocketAdapter::send(NetPacket* pkt)
+static bool stub_send(netif* nif, NetPacket* pkt)
 {
 	const int n = retro_atomic_load_acquire_int(&s_tx_frames);
+	(void)nif;
 	if (sthread_get_current_thread_id() == s_tx_caller)
 		retro_atomic_inc_int(&s_tx_on_caller);
 	if ((u8)pkt->buffer[0] != (u8)n)
@@ -120,24 +115,38 @@ bool SocketAdapter::send(NetPacket* pkt)
 	retro_atomic_store_release_int(&s_tx_frames, n + 1);
 	return true;
 }
-void SocketAdapter::reset()
+static void stub_reset(netif* nif)
 {
+	(void)nif;
 	if (sthread_get_current_thread_id() == s_tx_caller)
 		retro_atomic_inc_int(&s_tx_on_caller);
 	retro_atomic_inc_int(&s_tx_resets);
 }
-void SocketAdapter::reloadSettings() {}
-void SocketAdapter::close() {}
-/* The stub's recv polls, as the base adapter's wait does. */
-void SocketAdapter::wait_recv() { NetAdapter::wait_recv(); }
-void SocketAdapter::wake_recv() {}
+static void stub_nothing(netif* n) { (void)n; }
+static void stub_destroy(netif* n)
+{
+	netif_deinit(n);
+	free(n);
+}
 
-bool SocketAdapter::recv(NetPacket* pkt)
+static bool stub_recv(netif* nif, NetPacket* pkt)
 {
 	const int n = smaprx_host_recv(pkt->buffer, (int)sizeof(pkt->buffer));
+	(void)nif;
 	if (n <= 0)
 		return false;
 	pkt->size = n;
 	return true;
+}
+/* The stub's recv polls, as an adapter without a wait does. */
+static const netif_ops stub_ops = {
+	stub_recv, NULL, NULL, stub_send, stub_reset, stub_nothing, stub_nothing, stub_destroy};
+
+netif* net_sockets_new(void)
+{
+	netif* n = (netif*)calloc(1, sizeof(*n));
+	if (n)
+		netif_init(n, &stub_ops);
+	return n;
 }
 #endif

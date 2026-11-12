@@ -1,5 +1,5 @@
-/* The sockets backend's receive thread, on the real net.cpp, smap.cpp,
- * sockets.cpp and sessions.
+/* The sockets backend's receive thread, on the real net.c, smap.c,
+ * sockets.c and sessions.
  *
  * This thread is the EE: it sends UDP datagrams from the PS2 through the
  * adapter to an echo server on the host's own address, then opens a TCP
