@@ -182,5 +182,47 @@ done < "$TMP/crossdata"
 [ "$datab" = 0 ] && echo "  ok ($(grep -c . "$TMP/crossdata") crossing the boundary)" || bad=1
 
 echo
+echo "== every C function a shared header declares has C linkage in C++ =="
+# The third check only sees calls the core's C++ units make today. A
+# header that declares a C unit's functions without extern "C" passes it
+# until the first C++ caller -- smap.h did, when smap.c became C and only
+# the smaprx harness called it. So every header a C unit includes is
+# included again from C++, each C function it names has its address
+# taken there, and a mangled reference in the probe is the bug.
+for f in $(find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP"); do
+	gcc -std=gnu89 -msse4.1 $INC -MM "$f" 2>/dev/null
+done | tr ' \\' '\n\n' | grep '\.h$' | grep -v libretro-common | sort -u > "$TMP/c_headers"
+hbad=0
+while read -r hdr; do
+	[ -n "$hdr" ] || continue
+	names=$(grep -oE '\b[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(' "$hdr" | tr -d ' \t(' | sort -u |
+	        comm -12 - "$TMP/def_c_text")
+	[ -n "$names" ] || continue
+	{
+		printf '#include "%s"\n' "$hdr"
+		for n in $names; do printf 'void* probe_%s(void) { return (void*)&%s; }\n' "$n" "$n"; done
+	} > "$TMP/hprobe.cpp"
+	# One probe for the header; where it does not build (a name the header
+	# only mentions, an overload) one per name, so the rest are still seen.
+	if g++ -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 $INC -w -c "$TMP/hprobe.cpp" -o "$TMP/hprobe.o" 2>/dev/null; then
+		nm "$TMP/hprobe.o" | awk '$1 == "U" { print $2 }' > "$TMP/hprobe.u"
+	else
+		: > "$TMP/hprobe.u"
+		for n in $names; do
+			printf '#include "%s"\nvoid* probe_%s(void) { return (void*)&%s; }\n' "$hdr" "$n" "$n" > "$TMP/hprobe.cpp"
+			g++ -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 $INC -w -c "$TMP/hprobe.cpp" -o "$TMP/hprobe.o" 2>/dev/null &&
+				nm "$TMP/hprobe.o" | awk '$1 == "U" { print $2 }' >> "$TMP/hprobe.u"
+		done
+	fi
+	for n in $names; do
+		if grep -q "^_Z${#n}${n}" "$TMP/hprobe.u"; then
+			echo "  FAIL: $(echo "$hdr" | sed "s|^$ROOT/||") declares C's $n with C++ linkage"
+			hbad=1
+		fi
+	done
+done < "$TMP/c_headers"
+[ "$hbad" = 0 ] && echo "  ok ($(grep -c . "$TMP/c_headers") headers)" || bad=1
+
+echo
 [ "$bad" = 0 ] || exit 1
 echo "PASS: the C and C++ halves agree on linkage"

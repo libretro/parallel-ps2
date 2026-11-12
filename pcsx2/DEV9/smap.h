@@ -18,6 +18,11 @@
 #include "common/Pcsx2Defs.h"
 #include "DEV9.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 u8 smap_read8(u32 addr);
 u16 smap_read16(u32 addr);
 u32 smap_read32(u32 addr);
@@ -29,3 +34,7 @@ void smap_write32(u32 addr, u32 value);
 void smap_readDMA8Mem(u32* pMem, int size);
 void smap_writeDMA8Mem(u32* pMem, int size);
 void smap_async(u32 cycles);
+
+#ifdef __cplusplus
+}
+#endif

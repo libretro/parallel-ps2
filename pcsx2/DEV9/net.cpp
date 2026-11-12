@@ -114,13 +114,14 @@ static void net_tx_drain(NetPacket* pkt)
 	}
 }
 
-/* EE thread: queue a record -- the size field, then len bytes, padded
- * to the record's length -- and wake the network thread. */
-static void net_tx_push(int size, const void* data, size_t len)
+/* EE thread: queue a record -- the size field, then the frame's one or
+ * two runs, padded to the record's length -- and wake the network
+ * thread. */
+static void net_tx_push(int size, const void* data, size_t len, const void* more, size_t more_len)
 {
 	static const char pad[8] = {0};
 	const size_t head  = offsetof(NetPacket, buffer);
-	const size_t bytes = NET_RX_RECORD_BYTES(len);
+	const size_t bytes = NET_RX_RECORD_BYTES(len + more_len);
 	char field[offsetof(NetPacket, buffer)];
 	if (!s_tx_ring_ok || !retro_atomic_load_acquire_int(&RxRunning))
 		return;
@@ -134,8 +135,10 @@ static void net_tx_push(int size, const void* data, size_t len)
 	retro_spsc_write(&s_tx_ring, field, head);
 	if (len)
 		retro_spsc_write(&s_tx_ring, data, len);
-	if (bytes > head + len)
-		retro_spsc_write(&s_tx_ring, pad, bytes - head - len);
+	if (more_len)
+		retro_spsc_write(&s_tx_ring, more, more_len);
+	if (bytes > head + len + more_len)
+		retro_spsc_write(&s_tx_ring, pad, bytes - head - len - more_len);
 	retro_eventcount_notify(&s_rx_room_ec);
 	nif->wake_recv();
 }
@@ -244,16 +247,17 @@ bool net_rx_deliver()
 	return delivered;
 }
 
-void tx_put(NetPacket* pkt)
+void tx_put(const void* head, int head_len, const void* tail, int tail_len)
 {
-	if (nif != nullptr && pkt->size > 0 && pkt->size <= (int)sizeof(pkt->buffer))
-		net_tx_push(pkt->size, pkt->buffer, (size_t)pkt->size);
+	const int size = head_len + tail_len;
+	if (nif != nullptr && head_len >= 0 && tail_len >= 0 && size > 0 && size <= (int)sizeof(((NetPacket*)0)->buffer))
+		net_tx_push(size, head, (size_t)head_len, tail, (size_t)tail_len);
 }
 
 void ad_reset()
 {
 	if (nif != nullptr)
-		net_tx_push(NET_TX_RESET, NULL, 0);
+		net_tx_push(NET_TX_RESET, NULL, 0, NULL, 0);
 }
 
 /* The control side: start and stop the network thread. While it is
@@ -358,8 +362,9 @@ void InitNet()
 	net_thread_start();
 }
 
-void ReconfigureLiveNet(const Pcsx2Config& old_config)
+void ReconfigureLiveNet(const Pcsx2Config* old)
 {
+	const Pcsx2Config& old_config = *old;
 	//Eth
 	if (EmuConfig.DEV9.EthEnable)
 	{

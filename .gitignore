@@ -115,6 +115,8 @@ build*/
 # Test binaries (tests/*/build.sh outputs)
 /tests/emuoptions/emuoptions_test*
 /tests/pad/pad_test*
+/tests/dev9eeprom/dev9eeprom_test*
+/tests/dev9eeprom/dev9eeprom_work/
 /tests/perfmetrics/perfmetrics_test*
 /tests/profiler/profiler_test*
 /tests/vuops/vuops_test*

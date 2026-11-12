@@ -57,13 +57,13 @@ void smaprx_open(void)
 /* Whether the adapter came up (InitNet turns Ethernet off when not). */
 int smaprx_net_up(void) { return EmuConfig.DEV9.EthEnable ? 1 : 0; }
 
-/* A frame from the PS2, as the SMAP's transmit path hands it on. */
+/* A frame from the PS2, as the SMAP's transmit path hands it on: in two
+ * runs, as a frame that wraps the TX FIFO comes, so every frame the
+ * suite checks has crossed the join. */
 void smaprx_tx(const unsigned char* frame, int len)
 {
-	NetPacket pkt;
-	memcpy(pkt.buffer, frame, len);
-	pkt.size = len;
-	tx_put(&pkt);
+	const int head = len / 2;
+	tx_put(frame, head, frame + head, len - head);
 }
 
 void smaprx_close(void) { TermNet(); }

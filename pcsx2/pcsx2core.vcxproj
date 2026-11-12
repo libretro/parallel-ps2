@@ -105,8 +105,8 @@
     <ClCompile Include="DEV9\ATA\ATA_State.c" />
     <ClCompile Include="DEV9\ATA\ATA_Transfer.c" />
     <ClCompile Include="DEV9\ATA\HddCreate.c" />
-    <ClCompile Include="DEV9\DEV9.cpp" />
-    <ClCompile Include="DEV9\flash.cpp" />
+    <ClCompile Include="DEV9\DEV9.c" />
+    <ClCompile Include="DEV9\flash.c" />
     <ClCompile Include="DEV9\InternalServers\DHCP_Server.cpp" />
     <ClCompile Include="DEV9\InternalServers\DNS_Logger.cpp" />
     <ClCompile Include="DEV9\InternalServers\DNS_Server.cpp" />
@@ -132,7 +132,7 @@
     <ClCompile Include="DEV9\Sessions\BaseSession.cpp" />
     <ClCompile Include="DEV9\Sessions\UDP_Session\UDP_FixedPort.cpp" />
     <ClCompile Include="DEV9\Sessions\UDP_Session\UDP_Session.cpp" />
-    <ClCompile Include="DEV9\smap.cpp" />
+    <ClCompile Include="DEV9\smap.c" />
     <ClCompile Include="DEV9\sockets.cpp" />
     <ClCompile Include="DEV9\net.cpp" />
     <ClCompile Include="Frontend\LayeredSettingsInterface.cpp" />
@@ -327,6 +327,7 @@
     <ClInclude Include="DEV9\InternalServers\DNS_Logger.h" />
     <ClInclude Include="DEV9\InternalServers\DNS_Server.h" />
     <ClInclude Include="DEV9\net.h" />
+    <ClInclude Include="DEV9\netio.h" />
     <ClInclude Include="DEV9\PacketReader\ARP\ARP_Packet.h" />
     <ClInclude Include="DEV9\PacketReader\ARP\ARP_PacketEditor.h" />
     <ClInclude Include="DEV9\PacketReader\EthernetFrameEditor.h" />

@@ -29,6 +29,7 @@
 #endif
 
 #include "Config.h"
+#include "netio.h"
 
 #include "PacketReader/MAC_Address.h"
 #include "PacketReader/IP/IP_Address.h"
@@ -41,18 +42,6 @@ struct ConfigDEV9;
 // first three recognized by Xlink as Sony PS2
 const PacketReader::MAC_Address defaultMAC = {{{0x00, 0x04, 0x1F, 0x82, 0x30, 0x31}}};
 
-struct NetPacket
-{
-	NetPacket() { size = 0; }
-	NetPacket(void* ptr, int sz)
-	{
-		size = sz;
-		memcpy(buffer, ptr, sz);
-	}
-
-	int size;
-	char buffer[2048 - sizeof(int)]; //1536 is realy needed, just pad up to 2048 bytes :)
-};
 
 struct AdapterEntry
 {
@@ -145,13 +134,3 @@ private:
 	bool InternalServerSend(NetPacket* pkt);
 };
 
-void tx_put(NetPacket* ptr);
-void ad_reset();
-
-/* EE thread: hand the SMAP every received packet it has room for.
- * Returns whether any was delivered. */
-bool net_rx_deliver();
-
-void InitNet();
-void ReconfigureLiveNet(const Pcsx2Config& old_config);
-void TermNet();

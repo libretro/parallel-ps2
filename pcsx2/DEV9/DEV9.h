@@ -20,30 +20,14 @@
 #include "DEV9irq.h"
 
 #include <stdio.h>
-#include <string>
 
-#include "net.h"
-#include "PacketReader/IP/IP_Address.h"
+#include "netio.h"
 #include "ATA/ATA.h"
 
-#ifdef _WIN32
-#include "common/RedtapeWindows.h"
-#include <windowsx.h>
-#include <winioctl.h>
-#else
-#define __inline inline
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-/* EE thread. Returns whether the packet went into the RX FIFO. */
-bool rx_process(NetPacket* pk);
-bool rx_fifo_can_rx();
-
-#define ETH_DEF "eth0"
-#ifdef _WIN32
-#define HDD_DEF L"DEV9hdd.raw"
-#else
-#define HDD_DEF "DEV9hdd.raw"
-#endif
 
 #define HDD_MIN_GB 40
 #define HDD_MAX_GB 120
@@ -58,7 +42,7 @@ typedef struct
 	u8 eeprom_address;
 	u8 eeprom_bit;
 	u8 eeprom_dir;
-	u16* eeprom; //[32];
+	u16* eeprom; /* [32]; */
 
 	u32 rxbdi;
 	u8 rxfifo[16 * 1024];
@@ -81,26 +65,25 @@ typedef struct
 	u16 mdma_mode;
 	u16 udma_mode;
 
-	//Non-Regs
+	/* Non-Regs */
 	int fifo_bytes_read;
 	int fifo_bytes_write;
 } dev9Struct;
 
-//EEPROM states
+/* EEPROM states */
 #define EEPROM_READY 0
-#define EEPROM_OPCD0 1 //waiting for first bit of opcode
-#define EEPROM_OPCD1 2 //waiting for second bit of opcode
-#define EEPROM_ADDR0 3 //waiting for address bits
+#define EEPROM_OPCD0 1 /* waiting for first bit of opcode */
+#define EEPROM_OPCD1 2 /* waiting for second bit of opcode */
+#define EEPROM_ADDR0 3 /* waiting for address bits */
 #define EEPROM_ADDR1 4
 #define EEPROM_ADDR2 5
 #define EEPROM_ADDR3 6
 #define EEPROM_ADDR4 7
 #define EEPROM_ADDR5 8
-#define EEPROM_TDATA 9 //ready to send/receive data
+#define EEPROM_TDATA 9 /* ready to send/receive data */
 
 extern dev9Struct dev9;
 
-#define dev9_rxfifo_write(x) (dev9.rxfifo[dev9.rxfifo_wr_ptr++] = x)
 
 #define dev9Rs8(mem) dev9.dev9R[(mem)&0xffff]
 #define dev9Rs16(mem) (*(s16*)&dev9.dev9R[(mem)&0xffff])
@@ -120,10 +103,10 @@ extern dev9Struct dev9;
  * * code included from the ps2smap iop driver, modified by linuzappz  *
  */
 
-// clang-format off
-#define SPD_INTR_ATA_FIFO_FULL		(1 << 15) //Or Error/underflow/overfolw(?)
+/* clang-format off */
+#define SPD_INTR_ATA_FIFO_FULL		(1 << 15) /* Or Error/underflow/overfolw(?) */
 #define SPD_INTR_ATA_FIFO_EMPTY		(1 << 14)
-#define SPD_INTR_ATA_FIFO_OVERFLOW	(SPD_INTR_ATA_FIFO_FULL | SPD_INTR_ATA_FIFO_EMPTY) //by HDD only?
+#define SPD_INTR_ATA_FIFO_OVERFLOW	(SPD_INTR_ATA_FIFO_FULL | SPD_INTR_ATA_FIFO_EMPTY) /* by HDD only? */
 
 #define SPD_REGBASE			0x10000000
 
@@ -142,7 +125,7 @@ extern dev9Struct dev9;
 #define		SPD_DMA_TO_SMAP		(1 << 0)
 #define		SPD_DMA_FASTEST		(1 << 1)
 #define		SPD_DMA_WIDE		(1 << 2)
-#define		SPD_DMA_PAUSE		(1 << 4) //Pause SPEED->IOP DMA, by keeping DREQ inactive
+#define		SPD_DMA_PAUSE		(1 << 4) /* Pause SPEED->IOP DMA, by keeping DREQ inactive */
 #define SPD_R_INTR_STAT			(SPD_REGBASE + 0x28)
 #define SPD_R_INTR_MASK			(SPD_REGBASE + 0x2a)
 
@@ -162,22 +145,22 @@ extern dev9Struct dev9;
 #define		SPD_XFR_WRITE		(1 << 0)
 #define		SPD_XFR_DMAEN		(1 << 1)
 #define SPD_R_DBUF_STAT			(SPD_REGBASE + 0x38)
-//Read
+/* Read */
 #define		SPD_DBUF_AVAIL_MAX	0x10
 #define		SPD_DBUF_AVAIL_MASK	0x1F
-#define		SPD_DBUF_STAT_1		(1 << 5) //HDD->SPEED: Buffer has free space,                        IOP->SPEED: Buffer is completely empty
-#define		SPD_DBUF_STAT_2		(1 << 6) //HDD->SPEED: Buffer is completely empty, no data written   IOP->SPEED: Buffer has data
+#define		SPD_DBUF_STAT_1		(1 << 5) /* HDD->SPEED: Buffer has free space,                        IOP->SPEED: Buffer is completely empty */
+#define		SPD_DBUF_STAT_2		(1 << 6) /* HDD->SPEED: Buffer is completely empty, no data written   IOP->SPEED: Buffer has data */
 #define		SPD_DBUF_STAT_FULL	(1 << 7)
-//HDD->SPEED: both SPD_DBUF_STAT_2 and SPD_DBUF_STAT_FULL set to 1 indicates overflow
-//Write
-#define		SPD_DBUF_RESET_FIFO	(1 << 1) //Set SPD_DBUF_STAT_1 & SPD_DBUF_STAT_2, SPD_DBUF_AVAIL set to 0
+/* HDD->SPEED: both SPD_DBUF_STAT_2 and SPD_DBUF_STAT_FULL set to 1 indicates overflow */
+/* Write */
+#define		SPD_DBUF_RESET_FIFO	(1 << 1) /* Set SPD_DBUF_STAT_1 & SPD_DBUF_STAT_2, SPD_DBUF_AVAIL set to 0 */
 
 #define SPD_R_IF_CTRL			(SPD_REGBASE + 0x64)
 #define		SPD_IF_UDMA			(1 << 0)
 #define		SPD_IF_READ			(1 << 1)
-#define		SPD_IF_ATA_DMAEN	(1 << 2) //Allow HDD<->SPEED DMA, auto cleared on trasfer end
-#define		SPD_IF_HDD_RESET	(1 << 6) //HDD Hard Reset, 0=act.low/1=inact.high.
-#define		SPD_IF_ATA_RESET	(1 << 7) //Reset ATA Interface
+#define		SPD_IF_ATA_DMAEN	(1 << 2) /* Allow HDD<->SPEED DMA, auto cleared on trasfer end */
+#define		SPD_IF_HDD_RESET	(1 << 6) /* HDD Hard Reset, 0=act.low/1=inact.high. */
+#define		SPD_IF_ATA_RESET	(1 << 7) /* Reset ATA Interface */
 
 #define SPD_R_PIO_MODE			(SPD_REGBASE + 0x70)
 #define SPD_R_MDMA_MODE			(SPD_REGBASE + 0x72)
@@ -568,7 +551,7 @@ typedef struct _smap_bd {
 /* The register map itself (ATA_R_*, as offsets into this window) and
  * the status/error bits live in ATA/ATA.h with the device. */
 #define ATA_DEV9_INT		(0x01)
-#define ATA_DEV9_INT_DMA	(0x02) //not sure rly
+#define ATA_DEV9_INT_DMA	(0x02) /* not sure rly */
 #define ATA_DEV9_HDD_END	(ATA_DEV9_HDD_BASE + 0x1c + 4)
 
 /*
@@ -597,7 +580,7 @@ typedef struct _smap_bd {
 #define SM_CMD_GETSTATUS 0x70
 #define SM_CMD_READID 0x90
 
-// clang-format on
+/* clang-format on */
 
 typedef struct
 {
@@ -619,7 +602,7 @@ static flash_info_t devices[] = {
 #define NUM_DEVICES	(sizeof(devices)/sizeof(flash_info_t))
 */
 
-// definitions added by Florin
+/* definitions added by Florin */
 
 #define FLASH_REGBASE 0x10004800
 
@@ -627,21 +610,25 @@ static flash_info_t devices[] = {
 #define FLASH_R_CMD (FLASH_REGBASE + 0x04)
 #define FLASH_R_ADDR (FLASH_REGBASE + 0x08)
 #define FLASH_R_CTRL (FLASH_REGBASE + 0x0C)
-#define FLASH_PP_READY (1 << 0)  // r/w	/BUSY
-#define FLASH_PP_WRITE (1 << 7)  // -/w	WRITE data
-#define FLASH_PP_CSEL (1 << 8)   // -/w	CS
-#define FLASH_PP_READ (1 << 11)  // -/w	READ data
-#define FLASH_PP_NOECC (1 << 12) // -/w	ECC disabled
-//#define FLASH_R_10		(FLASH_REGBASE + 0x10)
+#define FLASH_PP_READY (1 << 0)  /* r/w	/BUSY */
+#define FLASH_PP_WRITE (1 << 7)  /* -/w	WRITE data */
+#define FLASH_PP_CSEL (1 << 8)   /* -/w	CS */
+#define FLASH_PP_READ (1 << 11)  /* -/w	READ data */
+#define FLASH_PP_NOECC (1 << 12) /* -/w	ECC disabled */
+/* #define FLASH_R_10		(FLASH_REGBASE + 0x10) */
 #define FLASH_R_ID (FLASH_REGBASE + 0x14)
 
 #define FLASH_REGSIZE 0x20
 
-void FLASHinit();
-void FLASHsave();
+void FLASHinit(void);
+void FLASHsave(void);
 u32 FLASHread32(u32 addr, int size);
 void FLASHwrite32(u32 addr, u32 value, int size);
 
-#ifdef _WIN32
+#ifdef __cplusplus
+}
+#endif
+
+#ifdef _MSC_VER
 #pragma warning(error : 4013)
 #endif

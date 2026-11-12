@@ -748,7 +748,7 @@ set(pcsx2x86Headers
 # dependency.
 set(pcsx2DEV9Sources
 	DEV9/AdapterUtils.cpp
-	DEV9/DEV9.cpp
+	DEV9/DEV9.c
 	DEV9/InternalServers/DHCP_Server.cpp
 	DEV9/InternalServers/DNS_Logger.cpp
 	DEV9/InternalServers/DNS_Server.cpp
@@ -773,9 +773,9 @@ set(pcsx2DEV9Sources
 	DEV9/Sessions/TCP_Session/TCP_Session_Out.cpp
 	DEV9/Sessions/UDP_Session/UDP_FixedPort.cpp
 	DEV9/Sessions/UDP_Session/UDP_Session.cpp
-	DEV9/flash.cpp
+	DEV9/flash.c
 	DEV9/net.cpp
-	DEV9/smap.cpp
+	DEV9/smap.c
 	DEV9/sockets.cpp
 	DEV9/ATA/ATA_Info.c
 	DEV9/ATA/ATA_State.c
@@ -830,6 +830,7 @@ set(pcsx2DEV9Headers
 	DEV9/SimpleQueue.h
 	DEV9/SessionMap.h
 	DEV9/net.h
+	DEV9/netio.h
 	DEV9/smap.h
 	DEV9/sockets.h
 )

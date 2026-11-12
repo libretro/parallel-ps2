@@ -1,5 +1,5 @@
 #!/bin/sh
-# The SMAP's receive path on the real net.cpp and smap.cpp: frames from
+# The SMAP's receive path on the real net.cpp and smap.c: frames from
 # the host on the RX thread, delivered and read out on the EE. Plain and
 # TSan; MSYS2 MINGW64 builds and runs the plain one. The receive ring is
 # mirrored where the host allows it; on Linux a third lane builds
@@ -20,7 +20,7 @@ case "$(uname -s 2>/dev/null)" in
   *)                    WINDOWS=0; EXE="";   LIBS="-lpthread" ;;
 esac
 
-CXX_SRC="$DIR/glue.cpp $P/DEV9/net.cpp $P/DEV9/smap.cpp \
+CXX_SRC="$DIR/glue.cpp $P/DEV9/net.cpp \
   $P/DEV9/InternalServers/DHCP_Server.cpp $P/DEV9/InternalServers/DNS_Server.cpp \
   $P/DEV9/InternalServers/DNS_Logger.cpp $P/DEV9/AdapterUtils.cpp \
   $P/DEV9/PacketReader/EthernetFrame.cpp $P/DEV9/PacketReader/IP/IP_Packet.cpp \
@@ -28,7 +28,7 @@ CXX_SRC="$DIR/glue.cpp $P/DEV9/net.cpp $P/DEV9/smap.cpp \
   $P/DEV9/PacketReader/IP/UDP/DHCP/DHCP_Packet.cpp $P/DEV9/PacketReader/IP/UDP/DHCP/DHCP_Options.cpp \
   $P/DEV9/PacketReader/IP/UDP/DNS/DNS_Packet.cpp $P/DEV9/PacketReader/IP/UDP/DNS/DNS_Classes.cpp \
   $P/Pcsx2Config.c $P/EmuOptions.c $P/MemoryCardFile.c"
-C_SRC="$DIR/main.c $P/memcard_ecc.c \
+C_SRC="$DIR/main.c $P/memcard_ecc.c $P/DEV9/smap.c \
   $LC/rthreads/rthreads.c $LC/rthreads/retro_eventcount.c $LC/rthreads/retro_procbarrier.c $LC/queues/retro_spsc.c \
   $LC/string/stdstring.c $LC/string/rstrtod.c $LC/file/file_path.c $LC/file/file_path_io.c \
   $LC/compat/compat_strl.c $LC/compat/fopen_utf8.c $LC/encodings/encoding_utf.c \

@@ -13,7 +13,7 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// The code has been designed for 64Mb flash and uses as file support the second memory card
+/* The code has been designed for 64Mb flash and uses as file support the second memory card */
 #include <stdio.h>
 #include "common/Pcsx2Defs.h"
 #include "DEV9.h"
@@ -52,7 +52,7 @@ static void FlashFilePath(char* out, size_t out_size)
 	strlcat(out, ".flash", out_size);
 }
 
-void FLASHsave()
+void FLASHsave(void)
 {
 	char path[PCSX2_PATH_MAX];
 	if (!file_dirty)
@@ -72,10 +72,10 @@ static void xfromman_call20_calculateXors(unsigned char buffer[128], unsigned ch
 static void calculateECC(u8 page[PAGE_SIZE_ECC])
 {
 	memset(page + PAGE_SIZE, 0x00, ECC_SIZE);
-	xfromman_call20_calculateXors(page + 0 * (PAGE_SIZE >> 2), page + PAGE_SIZE + 0 * 3); //(ECC_SIZE>>2));
-	xfromman_call20_calculateXors(page + 1 * (PAGE_SIZE >> 2), page + PAGE_SIZE + 1 * 3); //(ECC_SIZE>>2));
-	xfromman_call20_calculateXors(page + 2 * (PAGE_SIZE >> 2), page + PAGE_SIZE + 2 * 3); //(ECC_SIZE>>2));
-	xfromman_call20_calculateXors(page + 3 * (PAGE_SIZE >> 2), page + PAGE_SIZE + 3 * 3); //(ECC_SIZE>>2));
+	xfromman_call20_calculateXors(page + 0 * (PAGE_SIZE >> 2), page + PAGE_SIZE + 0 * 3); /* (ECC_SIZE>>2)); */
+	xfromman_call20_calculateXors(page + 1 * (PAGE_SIZE >> 2), page + PAGE_SIZE + 1 * 3); /* (ECC_SIZE>>2)); */
+	xfromman_call20_calculateXors(page + 2 * (PAGE_SIZE >> 2), page + PAGE_SIZE + 2 * 3); /* (ECC_SIZE>>2)); */
+	xfromman_call20_calculateXors(page + 3 * (PAGE_SIZE >> 2), page + PAGE_SIZE + 3 * 3); /* (ECC_SIZE>>2)); */
 }
 
 static const char* getCmdName(u32 cmd)
@@ -107,7 +107,7 @@ static const char* getCmdName(u32 cmd)
 	}
 }
 
-void FLASHinit()
+void FLASHinit(void)
 {
 	id = FLASH_ID_64MBIT;
 	counter = 0;
@@ -183,7 +183,7 @@ u32 FLASHread32(u32 addr, int size)
 				address += PAGE_SIZE;
 				address %= CARD_SIZE;
 				memcpy(data, file + (address >> PAGE_SIZE_BITS) * PAGE_SIZE_ECC, PAGE_SIZE);
-				calculateECC(data); // calculate ECC; should be in the file already
+				calculateECC(data); /* calculate ECC; should be in the file already */
 				ctrl |= FLASH_PP_READY;
 			}
 
@@ -205,14 +205,14 @@ u32 FLASHread32(u32 addr, int size)
 			if (cmd == SM_CMD_READID)
 			{
 				log_cb(RETRO_LOG_DEBUG, "DEV9: *FLASH ID %dbit read 0x%08X\n", size * 8, id);
-				return id; //0x98=Toshiba/0xEC=Samsung maker code should be returned first
+				return id; /* 0x98=Toshiba/0xEC=Samsung maker code should be returned first */
 			}
 			else if (cmd == SM_CMD_GETSTATUS)
 			{
-				value = 0x80 | ((ctrl & 1) << 6); // 0:0=pass, 6:ready/busy, 7:1=not protected
+				value = 0x80 | ((ctrl & 1) << 6); /* 0:0=pass, 6:ready/busy, 7:1=not protected */
 				log_cb(RETRO_LOG_DEBUG, "DEV9: *FLASH STATUS %dbit read 0x%08X\n", size * 8, value);
 				return value;
-			} //else fall off
+			} /* else fall off */
 			return 0;
 
 		default:
@@ -231,7 +231,7 @@ void FLASHwrite32(u32 addr, u32 value, int size)
 			log_cb(RETRO_LOG_DEBUG, "DEV9: *FLASH DATA %dbit write 0x%08X %s\n", size * 8, value, (ctrl & FLASH_PP_WRITE) ? "WRITE_ENABLE" : "WRITE_DISABLE");
 			memcpy(&data[counter], &value, size);
 			counter += size;
-			counter %= PAGE_SIZE_ECC; //should not get past the last byte, but at the end
+			counter %= PAGE_SIZE_ECC; /* should not get past the last byte, but at the end */
 			break;
 
 		case FLASH_R_CMD:
@@ -248,13 +248,13 @@ void FLASHwrite32(u32 addr, u32 value, int size)
 				if ((value != SM_CMD_PROGRAMPAGE) && (value != SM_CMD_RESET))
 				{
 					log_cb(RETRO_LOG_DEBUG, "DEV9: *FLASH CMD %dbit write %s ILLEGAL after WRITEDATA cmd - IGNORED\n", size * 8, getCmdName(value));
-					ctrl &= ~FLASH_PP_READY; //go busy, reset is needed
+					ctrl &= ~FLASH_PP_READY; /* go busy, reset is needed */
 					break;
 				}
 			}
 			log_cb(RETRO_LOG_DEBUG, "DEV9: *FLASH CMD %dbit write %s\n", size * 8, getCmdName(value));
 			switch (value)
-			{ // A8 bit is encoded in READ cmd;)
+			{ /* A8 bit is encoded in READ cmd;) */
 				case SM_CMD_READ1:
 					counter = 0;
 					if (cmd != SM_CMD_GETSTATUS)
@@ -287,7 +287,7 @@ void FLASHwrite32(u32 addr, u32 value, int size)
 					address = counter;
 					addrbyte = 1;
 					break;
-				case SM_CMD_PROGRAMPAGE: //fall
+				case SM_CMD_PROGRAMPAGE: /* fall */
 				case SM_CMD_ERASECONFIRM:
 					ctrl &= ~FLASH_PP_READY;
 					calculateECC(data);
@@ -304,7 +304,7 @@ void FLASHwrite32(u32 addr, u32 value, int size)
 					break;
 				default:
 					ctrl &= ~FLASH_PP_READY;
-					return; //ignore any other command; go busy, reset is needed
+					return; /* ignore any other command; go busy, reset is needed */
 			}
 			cmd = value;
 			break;
@@ -315,15 +315,15 @@ void FLASHwrite32(u32 addr, u32 value, int size)
 			addrbyte++;
 			log_cb(RETRO_LOG_DEBUG, "DEV9: *FLASH ADDR = 0x%08X (addrbyte=%d)\n", address, addrbyte);
 			if (!(value & 0x100))
-			{ // address is complete
+			{ /* address is complete */
 				if ((cmd == SM_CMD_READ1) || (cmd == SM_CMD_READ2) || (cmd == SM_CMD_READ3))
 				{
 					ctrl &= ~FLASH_PP_READY;
 					memcpy(data, file + (address >> PAGE_SIZE_BITS) * PAGE_SIZE_ECC, PAGE_SIZE);
-					calculateECC(data); // calculate ECC; should be in the file already
+					calculateECC(data); /* calculate ECC; should be in the file already */
 					ctrl |= FLASH_PP_READY;
 				}
-				addrbyte = 0; // address reset
+				addrbyte = 0; /* address reset */
 				{
 					const u32 blocks = address / BLOCK_SIZE;
 					u32 pages = address - (blocks * BLOCK_SIZE);

@@ -187,10 +187,7 @@ SOURCES_CXX += \
 # Sockets api covers ethernet without any system dependency.
 SOURCES_CXX += \
 	$(LRPS2_DIR)/DEV9/AdapterUtils.cpp \
-	$(LRPS2_DIR)/DEV9/DEV9.cpp \
-	$(LRPS2_DIR)/DEV9/flash.cpp \
 	$(LRPS2_DIR)/DEV9/net.cpp \
-	$(LRPS2_DIR)/DEV9/smap.cpp \
 	$(LRPS2_DIR)/DEV9/sockets.cpp \
 	$(LRPS2_DIR)/DEV9/InternalServers/DHCP_Server.cpp \
 	$(LRPS2_DIR)/DEV9/InternalServers/DNS_Logger.cpp \
@@ -218,6 +215,9 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/DEV9/Sessions/UDP_Session/UDP_Session.cpp
 
 SOURCES_C += \
+	$(LRPS2_DIR)/DEV9/DEV9.c \
+	$(LRPS2_DIR)/DEV9/flash.c \
+	$(LRPS2_DIR)/DEV9/smap.c \
 	$(LRPS2_DIR)/DEV9/ATA/ATA_Info.c \
 	$(LRPS2_DIR)/DEV9/ATA/ATA_State.c \
 	$(LRPS2_DIR)/DEV9/ATA/ATA_Transfer.c \

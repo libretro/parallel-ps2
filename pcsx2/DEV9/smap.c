@@ -13,21 +13,14 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifdef _WIN32
-#include "common/RedtapeWindows.h"
-#include <winioctl.h>
-#endif
 #include <stdlib.h>
-#include "common/Pcsx2Defs.h"
 #include <string.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <stdarg.h>
+#include "common/Pcsx2Defs.h"
 
 #include "smap.h"
-#include "net.h"
+#include "netio.h"
 
-bool has_link = true;
+static const bool has_link = true;
 /*
 #define	SMAP_BASE			0xb0000000
 #define	SMAP_REG8(Offset)		(*(u8 volatile*)(SMAP_BASE+(Offset)))
@@ -54,18 +47,19 @@ void test()
 	printf ("EMAC3R 0x%08X raw read 0x%08X\n",EMAC3REG_READ(SMAP_EMAC3_STA_CTRL),SMAP_REG32(SMAP_EMAC3_STA_CTRL));
 }*/
 
-//this can return a false positive, but its not problem since it may say it cant recv while it can (no harm done, just delay on packets)
-bool rx_fifo_can_rx()
+/* this can return a false positive, but its not problem since it may say it cant recv while it can (no harm done, just delay on packets) */
+bool rx_fifo_can_rx(void)
 {
-	//check if RX is on & stuff like that here
+	int rd_ptr, space;
+	/* check if RX is on & stuff like that here */
 
-	//Check if there is space on RXBD
+	/* Check if there is space on RXBD */
 	if (dev9Ru8(SMAP_R_RXFIFO_FRAME_CNT) == 64)
 		return false;
 
-	//Check if there is space on fifo
-	int rd_ptr = dev9Ru32(SMAP_R_RXFIFO_RD_PTR);
-	int space = sizeof(dev9.rxfifo) -
+	/* Check if there is space on fifo */
+	rd_ptr = dev9Ru32(SMAP_R_RXFIFO_RD_PTR);
+	space = sizeof(dev9.rxfifo) -
 				((dev9.rxfifo_wr_ptr - rd_ptr) & 16383);
 
 
@@ -75,15 +69,15 @@ bool rx_fifo_can_rx()
 	if (space < 1514)
 		return false;
 
-	//we can recv a packet !
+	/* we can recv a packet ! */
 	return true;
 }
 
 bool rx_process(NetPacket* pk)
 {
 	smap_bd_t* pbd = ((smap_bd_t*)&dev9.dev9R[SMAP_BD_RX_BASE & 0xffff]) + dev9.rxbdi;
-
 	int bytes = (pk->size + 3) & (~3);
+	int pstart, first;
 
 	if (!(pbd->ctrl_stat & SMAP_BD_RX_EMPTY))
 	{
@@ -91,29 +85,30 @@ bool rx_process(NetPacket* pk)
 		return false;
 	}
 
-	int pstart = (dev9.rxfifo_wr_ptr) & 16383;
-	int i = 0;
-	while (i < bytes)
-	{
-		dev9_rxfifo_write(pk->buffer[i++]);
-		dev9.rxfifo_wr_ptr &= 16383;
-	}
+	/* Into the 16 KB FIFO as two runs at most, the second from its start. */
+	pstart = (dev9.rxfifo_wr_ptr) & 16383;
+	first = (int)sizeof(dev9.rxfifo) - pstart;
+	if (first > bytes)
+		first = bytes;
+	memcpy(dev9.rxfifo + pstart, pk->buffer, (size_t)first);
+	memcpy(dev9.rxfifo, pk->buffer + first, (size_t)(bytes - first));
+	dev9.rxfifo_wr_ptr = (u16)((pstart + bytes) & 16383);
 
-	//increase RXBD
+	/* increase RXBD */
 	dev9.rxbdi++;
 	dev9.rxbdi &= (SMAP_BD_SIZE / 8) - 1;
 
-	//Fill the BD with info !
+	/* Fill the BD with info ! */
 	pbd->length = pk->size;
 	pbd->pointer = 0x4000 + pstart;
 	pbd->ctrl_stat &= ~SMAP_BD_RX_EMPTY;
 
-	//increase frame count
+	/* increase frame count */
 	dev9Ru8(SMAP_R_RXFIFO_FRAME_CNT)++;
 	return true;
 }
 
-u32 wswap(u32 d)
+static u32 wswap(u32 d)
 {
 	return (d >> 16) | (d << 16);
 }
@@ -123,13 +118,12 @@ u32 wswap(u32 d)
  * this. */
 #define SMAP_FIFO_PTR(v) ((u32)(v) & 16380u)
 
-void tx_process()
+static void tx_process(void)
 {
-	//we loop based on count ? or just *use* it ?
+	/* we loop based on count ? or just *use* it ? */
 	u32 cnt = dev9Ru8(SMAP_R_TXFIFO_FRAME_CNT);
-	//spams// printf("tx_process : %u cnt frames !\n",cnt);
+	/* spams// printf("tx_process : %u cnt frames !\n",cnt); */
 
-	NetPacket pk;
 	u32 fc = 0;
 	for (fc = 0; fc < cnt; fc++)
 	{
@@ -142,7 +136,7 @@ void tx_process()
 		}
 		if (pbd->length & 3)
 		{
-			//spams// emu_printf("WARN : pbd->length not aligned %u\n",pbd->length);
+			/* spams// emu_printf("WARN : pbd->length not aligned %u\n",pbd->length); */
 		}
 
 		if (pbd->length > 1514)
@@ -154,14 +148,12 @@ void tx_process()
 			u32 base = (pbd->pointer - 0x1000) & 16383;
 			log_cb(RETRO_LOG_DEBUG, "DEV9: Sending Packet from base %x, size %d\n", base, pbd->length);
 
-			pk.size = pbd->length;
-
 			if (!(pbd->pointer >= 0x1000))
 			{
 				log_cb(RETRO_LOG_ERROR, "DEV9: SMAP: ERROR: odd , !pbd->pointer>0x1000 | 0x%X %u\n", pbd->pointer, pbd->length);
 			}
-			//increase fifo pointer(s)
-			//uh does that even exist on real h/w ?
+			/* increase fifo pointer(s) */
+			/* uh does that even exist on real h/w ? */
 			/*
 			if(dev9.txfifo_rd_ptr+pbd->length >= 16383)
 			{
@@ -195,57 +187,54 @@ void tx_process()
 			}
 			*/
 
+			/* Straight from the FIFO into the network's queue, in two runs
+			 * where the frame wraps the FIFO's end. */
 			if (base + pbd->length > 16384)
 			{
 				u32 was = 16384 - base;
-				memcpy(pk.buffer, dev9.txfifo + base, was);
-				memcpy(pk.buffer + was, dev9.txfifo, pbd->length - was);
-				log_cb(RETRO_LOG_DEBUG, "DEV9: Warped read, was=%u, sz=%u, sz-was=%u\n", was, pbd->length, pbd->length - was);
+				tx_put(dev9.txfifo + base, (int)was, dev9.txfifo, (int)(pbd->length - was));
 			}
 			else
-			{
-				memcpy(pk.buffer, dev9.txfifo + base, pbd->length);
-			}
-			tx_put(&pk);
+				tx_put(dev9.txfifo + base, pbd->length, NULL, 0);
 		}
 
 
 		pbd->ctrl_stat &= ~SMAP_BD_TX_READY;
 
-		//increase TXBD
+		/* increase TXBD */
 		dev9.txbdi++;
 		dev9.txbdi &= (SMAP_BD_SIZE / 8) - 1;
 
-		//decrease frame count -- this is not thread safe
+		/* decrease frame count -- this is not thread safe */
 		dev9Ru8(SMAP_R_TXFIFO_FRAME_CNT)--;
 	}
 
-	//spams// emu_printf("processed %u frames, %u count, cnt = %u\n",fc,dev9Ru8(SMAP_R_TXFIFO_FRAME_CNT),cnt);
-	//if some error/early exit signal TXDNV
+	/* spams// emu_printf("processed %u frames, %u count, cnt = %u\n",fc,dev9Ru8(SMAP_R_TXFIFO_FRAME_CNT),cnt); */
+	/* if some error/early exit signal TXDNV */
 	if (fc != cnt || cnt == 0)
 	{
 		log_cb(RETRO_LOG_ERROR, "DEV9: SMAP: WARN : (fc!=cnt || cnt==0) but packet send request was made oO..\n");
 		_DEV9irq(SMAP_INTR_TXDNV, 0);
 	}
-	//if we actualy send something send TXEND
+	/* if we actualy send something send TXEND */
 	if (fc != 0)
-		_DEV9irq(SMAP_INTR_TXEND, 100); //now ? or when the fifo is empty ? i guess now atm
+		_DEV9irq(SMAP_INTR_TXEND, 100); /* now ? or when the fifo is empty ? i guess now atm */
 }
 
 
-void emac3_write(u32 addr)
+static void emac3_write(u32 addr)
 {
 	u32 value = wswap(dev9Ru32(addr));
 	switch (addr)
 	{
 		case SMAP_R_EMAC3_MODE0_L:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP: SMAP_R_EMAC3_MODE0 write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP: SMAP_R_EMAC3_MODE0 write %x\n", value); */
 			value = (value & (~SMAP_E3_SOFT_RESET)) | SMAP_E3_TXMAC_IDLE | SMAP_E3_RXMAC_IDLE;
 			dev9Ru16(SMAP_R_EMAC3_STA_CTRL_H) |= SMAP_E3_PHY_OP_COMP;
 			break;
 		case SMAP_R_EMAC3_TxMODE0_L:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP: SMAP_R_EMAC3_TxMODE0_L write %x\n", value);
-			//Process TX  here ?
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP: SMAP_R_EMAC3_TxMODE0_L write %x\n", value); */
+			/* Process TX  here ? */
 			if (!(value & SMAP_E3_TX_GNP_0))
 				log_cb(RETRO_LOG_ERROR, "DEV9: SMAP_R_EMAC3_TxMODE0_L: SMAP_E3_TX_GNP_0 not set\n");
 
@@ -255,7 +244,7 @@ void emac3_write(u32 addr)
 				log_cb(RETRO_LOG_ERROR, "DEV9: SMAP_R_EMAC3_TxMODE0_L: extra bits set !\n");
 			break;
 		case SMAP_R_EMAC3_TxMODE1_L:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_EMAC3_TxMODE1_L 32bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_EMAC3_TxMODE1_L 32bit write %x\n", value); */
 			if (value == 0x380f0000)
 			{
 				log_cb(RETRO_LOG_INFO, "DEV9: Adapter Detection Hack - Resetting RX/TX\n");
@@ -264,13 +253,13 @@ void emac3_write(u32 addr)
 			}
 			break;
 		case SMAP_R_EMAC3_STA_CTRL_L:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP: SMAP_R_EMAC3_STA_CTRL write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP: SMAP_R_EMAC3_STA_CTRL write %x\n", value); */
 			{
 				if (value & (SMAP_E3_PHY_READ))
 				{
-					value |= SMAP_E3_PHY_OP_COMP;
 					int reg = value & (SMAP_E3_PHY_REG_ADDR_MSK);
 					u16 val = dev9.phyregs[reg];
+					value |= SMAP_E3_PHY_OP_COMP;
 					switch (reg)
 					{
 						case SMAP_DsPHYTER_BMSR:
@@ -282,14 +271,14 @@ void emac3_write(u32 addr)
 								val |= SMAP_PHY_STS_LINK | SMAP_PHY_STS_100M | SMAP_PHY_STS_FDX | SMAP_PHY_STS_ANCP;
 							break;
 					}
-					//log_cb(RETRO_LOG_DEBUG, "DEV9: phy_read %d: %x\n", reg, val);
+					/* log_cb(RETRO_LOG_DEBUG, "DEV9: phy_read %d: %x\n", reg, val); */
 					value = (value & 0xFFFF) | (val << 16);
 				}
 				if (value & (SMAP_E3_PHY_WRITE))
 				{
-					value |= SMAP_E3_PHY_OP_COMP;
 					int reg = value & (SMAP_E3_PHY_REG_ADDR_MSK);
 					u16 val = value >> 16;
+					value |= SMAP_E3_PHY_OP_COMP;
 					switch (reg)
 					{
 						case SMAP_DsPHYTER_BMCR:
@@ -297,7 +286,7 @@ void emac3_write(u32 addr)
 							val |= 0x1;
 							break;
 					}
-					//log_cb(RETRO_LOG_DEBUG, "DEV9: phy_write %d: %x\n", reg, val);
+					/* log_cb(RETRO_LOG_DEBUG, "DEV9: phy_write %d: %x\n", reg, val); */
 					dev9.phyregs[reg] = val;
 				}
 			}
@@ -513,7 +502,7 @@ u32 smap_read32(u32 addr)
 			memcpy(&rv, dev9.rxfifo + rd_ptr, sizeof(rv));
 			dev9Ru32(SMAP_R_RXFIFO_RD_PTR) = ((rd_ptr + 4) & 16383);
 
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_RXFIFO_DATA 32bit read %x\n", rv);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_RXFIFO_DATA 32bit read %x\n", rv); */
 			return rv;
 		}
 		default:
@@ -527,25 +516,25 @@ void smap_write8(u32 addr, u8 value)
 	switch (addr)
 	{
 		case SMAP_R_TXFIFO_FRAME_INC:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_TXFIFO_FRAME_INC 8bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_TXFIFO_FRAME_INC 8bit write %x\n", value); */
 			{
 				dev9Ru8(SMAP_R_TXFIFO_FRAME_CNT)++;
 			}
 			return;
 
 		case SMAP_R_RXFIFO_FRAME_DEC:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_RXFIFO_FRAME_DEC 8bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_RXFIFO_FRAME_DEC 8bit write %x\n", value); */
 			dev9Ru8(addr) = value;
 			dev9Ru8(SMAP_R_RXFIFO_FRAME_CNT)--;
 			return;
 
 		case SMAP_R_TXFIFO_CTRL:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_TXFIFO_CTRL 8bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_TXFIFO_CTRL 8bit write %x\n", value); */
 			if (value & SMAP_TXFIFO_RESET)
 			{
 				dev9.txbdi = 0;
 				dev9.txfifo_rd_ptr = 0;
-				dev9Ru8(SMAP_R_TXFIFO_FRAME_CNT) = 0; //this actualy needs to be atomic (lock mov ...)
+				dev9Ru8(SMAP_R_TXFIFO_FRAME_CNT) = 0; /* this actualy needs to be atomic (lock mov ...) */
 				dev9Ru32(SMAP_R_TXFIFO_WR_PTR) = 0;
 				dev9Ru32(SMAP_R_TXFIFO_SIZE) = 16384;
 			}
@@ -554,7 +543,7 @@ void smap_write8(u32 addr, u8 value)
 			return;
 
 		case SMAP_R_RXFIFO_CTRL:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_RXFIFO_CTRL 8bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_RXFIFO_CTRL 8bit write %x\n", value); */
 			if (value & SMAP_RXFIFO_RESET)
 			{
 				dev9.rxbdi = 0;
@@ -619,7 +608,7 @@ void smap_write16(u32 addr, u16 value)
 	}
 	else if (addr >= SMAP_BD_RX_BASE && addr < (SMAP_BD_RX_BASE + SMAP_BD_SIZE))
 	{
-		//int rx_index=(addr - SMAP_BD_RX_BASE)>>3;
+		/* int rx_index=(addr - SMAP_BD_RX_BASE)>>3; */
 		if (dev9.bd_swap)
 			value = (value >> 8) | (value << 8);
 		dev9Ru16(addr) = value;
@@ -654,7 +643,7 @@ void smap_write16(u32 addr, u16 value)
 	switch (addr)
 	{
 		case SMAP_R_INTR_CLR:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP: SMAP_R_INTR_CLR 16bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP: SMAP_R_INTR_CLR 16bit write %x\n", value); */
 			dev9.irqcause &= ~value;
 			return;
 
@@ -667,8 +656,8 @@ void smap_write16(u32 addr, u16 value)
 		/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP: \n" #name " 16 bit write %x", value);*/ \
 		dev9Ru16(addr) = value;                               \
 		return;
-	// clang-format off
-	//handle L writes
+	/* clang-format off */
+	/* handle L writes */
 	EMAC3_L_WRITE(SMAP_R_EMAC3_MODE0_L)
 	EMAC3_L_WRITE(SMAP_R_EMAC3_MODE1_L)
 	EMAC3_L_WRITE(SMAP_R_EMAC3_TxMODE0_L)
@@ -697,7 +686,7 @@ void smap_write16(u32 addr, u16 value)
 	EMAC3_L_WRITE(SMAP_R_EMAC3_RX_WATERMARK_L)
 	EMAC3_L_WRITE(SMAP_R_EMAC3_TX_OCTETS)
 	EMAC3_L_WRITE(SMAP_R_EMAC3_RX_OCTETS)
-	// clang-format on
+	/* clang-format on */
 
 #define EMAC3_H_WRITE(name)                                   \
 	case name:                                                \
@@ -705,8 +694,8 @@ void smap_write16(u32 addr, u16 value)
 		dev9Ru16(addr) = value;                               \
 		emac3_write(addr - 2);                                \
 		return;
-	// clang-format off
-	//handle H writes
+	/* clang-format off */
+	/* handle H writes */
 	EMAC3_H_WRITE(SMAP_R_EMAC3_MODE0_H)
 	EMAC3_H_WRITE(SMAP_R_EMAC3_MODE1_H)
 	EMAC3_H_WRITE(SMAP_R_EMAC3_TxMODE0_H)
@@ -735,7 +724,7 @@ void smap_write16(u32 addr, u16 value)
 	EMAC3_H_WRITE(SMAP_R_EMAC3_RX_WATERMARK_H)
 	EMAC3_H_WRITE(SMAP_R_EMAC3_TX_OCTETS + 2)
 	EMAC3_H_WRITE(SMAP_R_EMAC3_RX_OCTETS + 2)
-	// clang-format on
+	/* clang-format on */
 			/*
 	case SMAP_R_EMAC3_MODE0_L:
 		log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP: SMAP_R_EMAC3_MODE0 write %x\n", value);
@@ -783,7 +772,7 @@ void smap_write32(u32 addr, u32 value)
 	switch (addr)
 	{
 		case SMAP_R_TXFIFO_DATA:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_TXFIFO_DATA 32bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SMAP_R_TXFIFO_DATA 32bit write %x\n", value); */
 		{
 			const u32 wr_ptr = SMAP_FIFO_PTR(dev9Ru32(SMAP_R_TXFIFO_WR_PTR));
 
@@ -829,7 +818,7 @@ void smap_writeDMA8Mem(u32* pMem, int size)
 		while (size > 0)
 		{
 			int value = *pMem;
-			//	value=(value<<24)|(value>>24)|((value>>8)&0xFF00)|((value<<8)&0xFF0000);
+			/* 	value=(value<<24)|(value>>24)|((value>>8)&0xFF00)|((value<<8)&0xFF0000); */
 			pMem++;
 
 			memcpy(dev9.txfifo + dev9Ru32(SMAP_R_TXFIFO_WR_PTR), &value, sizeof(value));
@@ -848,8 +837,8 @@ void smap_async(u32 cycles)
 	 * emulates the SMAP, and raise RXEND here too. */
 	if (net_rx_deliver())
 	{
-		//Is this used to signal each individual packet, or just when there are packets in the RX fifo?
-		//I think it just signals when there are packets in the RX fifo
+		/* Is this used to signal each individual packet, or just when there are packets in the RX fifo? */
+		/* I think it just signals when there are packets in the RX fifo */
 		_DEV9irq(SMAP_INTR_RXEND, 0);
 	}
 }

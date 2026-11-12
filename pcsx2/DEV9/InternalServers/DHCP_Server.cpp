@@ -46,6 +46,7 @@
 #include "DEV9/PacketReader/IP/UDP/DHCP/DHCP_Packet.h"
 
 #include "DEV9/DEV9.h"
+#include "DEV9/net.h"
 #include "DEV9/AdapterUtils.h"
 
 using namespace PacketReader;

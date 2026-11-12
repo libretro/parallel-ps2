@@ -18,57 +18,35 @@
 #include <retro_miscellaneous.h>
 
 #ifdef _WIN32
-#include "common/RedtapeWindows.h"
-#include <winioctl.h>
+#include <windows.h>
 #else
 #include <sys/types.h>
 #include <sys/mman.h>
-#include <err.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <compat/strl.h>
 #include <errno.h>
 #include <stdarg.h>
 #include "DEV9.h"
 #include "Config.h"
 #include "smap.h"
 
-#ifdef _WIN32
+#ifdef _MSC_VER
 #pragma warning(disable : 4244)
 #endif
 
 dev9Struct dev9;
 
-//#define HDD_48BIT
+/* #define HDD_48BIT */
 
-#if defined(__i386__) && !defined(_WIN32)
-
-static __inline__ unsigned long long GetTickCount(void)
-{
-	unsigned long long int x;
-	__asm__ volatile("rdtsc"
-					 : "=A"(x));
-	return x;
-}
-
-#elif defined(__x86_64__) && !defined(_WIN32)
-
-static __inline__ unsigned long long GetTickCount(void)
-{
-	unsigned hi, lo;
-	__asm__ __volatile__("rdtsc"
-						 : "=a"(lo), "=d"(hi));
-	return ((unsigned long long)lo) | (((unsigned long long)hi) << 32);
-}
-
-#endif
-
-// clang-format off
+/* clang-format off */
 u8 eeprom[] = {
-	//0x6D, 0x76, 0x63, 0x61, 0x31, 0x30, 0x08, 0x01,
+	/* 0x6D, 0x76, 0x63, 0x61, 0x31, 0x30, 0x08, 0x01, */
 	0x76, 0x6D, 0x61, 0x63, 0x30, 0x31, 0x07, 0x02,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -78,104 +56,122 @@ u8 eeprom[] = {
 	0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
-// clang-format on
+/* clang-format on */
 
+/* eeprom.dat, in the working directory, mapped over the built-in EEPROM
+ * when it is there and holds all 64 bytes. */
+#define EEPROM_BYTES 64
 #ifdef _WIN32
-HANDLE hEeprom;
-HANDLE mapping;
+static HANDLE hEeprom = INVALID_HANDLE_VALUE;
+static HANDLE mapping;
 #else
-int hEeprom;
-int mapping;
+static int hEeprom = -1;
 #endif
 
-bool isRunning = false;
+static bool isRunning = false;
 
-std::string GetHDDPath()
+/* What a game reads of the EEPROM: the file's when it can be mapped
+ * whole, else the built-in one. A map that failed, or of a file shorter
+ * than the EEPROM, was taken as the EEPROM and faulted at the first read
+ * (mmap's failure is MAP_FAILED, not NULL; past a file's end is SIGBUS). */
+static void eeprom_map(void)
 {
-	//GHC uses UTF8 on all platforms
-	std::string hddPath(EmuConfig.DEV9.HddFile);
-
-	if (hddPath.empty())
-		EmuConfig.DEV9.HddEnable = false;
-
-	if (!path_is_absolute(hddPath.c_str()))
+#ifndef _WIN32
+	struct stat st;
+#endif
+	dev9.eeprom = (u16*)eeprom;
+#ifdef _WIN32
+	hEeprom = CreateFileW(L"eeprom.dat", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_WRITE_THROUGH, NULL);
+	if (hEeprom == INVALID_HANDLE_VALUE)
+		return;
+	if (GetFileSize(hEeprom, NULL) >= EEPROM_BYTES)
 	{
-		char joined[PATH_MAX_LENGTH];
-		fill_pathname_join(joined, EmuFolders.Settings, hddPath.c_str(), sizeof(joined));
-		hddPath = joined;
+		mapping = CreateFileMappingW(hEeprom, NULL, PAGE_READWRITE, 0, 0, NULL);
+		if (mapping)
+		{
+			void* view = MapViewOfFile(mapping, FILE_MAP_WRITE, 0, 0, EEPROM_BYTES);
+			if (view)
+			{
+				dev9.eeprom = (u16*)view;
+				return;
+			}
+			CloseHandle(mapping);
+			mapping = NULL;
+		}
 	}
-
-	return hddPath;
+	CloseHandle(hEeprom);
+	hEeprom = INVALID_HANDLE_VALUE;
+#else
+	hEeprom = open("eeprom.dat", O_RDWR, 0);
+	if (hEeprom < 0)
+		return;
+	if (fstat(hEeprom, &st) == 0 && S_ISREG(st.st_mode) && st.st_size >= EEPROM_BYTES)
+	{
+		void* view = mmap(NULL, EEPROM_BYTES, PROT_READ | PROT_WRITE, MAP_SHARED, hEeprom, 0);
+		if (view != MAP_FAILED)
+		{
+			dev9.eeprom = (u16*)view;
+			return;
+		}
+	}
+	close(hEeprom);
+	hEeprom = -1;
+#endif
 }
 
-s32 DEV9init()
+static void eeprom_unmap(void)
 {
+	if (dev9.eeprom && dev9.eeprom != (u16*)eeprom)
+	{
+#ifdef _WIN32
+		UnmapViewOfFile(dev9.eeprom);
+#else
+		munmap(dev9.eeprom, EEPROM_BYTES);
+#endif
+	}
+	dev9.eeprom = (u16*)eeprom;
+#ifdef _WIN32
+	if (mapping)
+		CloseHandle(mapping);
+	mapping = NULL;
+	if (hEeprom != INVALID_HANDLE_VALUE)
+		CloseHandle(hEeprom);
+	hEeprom = INVALID_HANDLE_VALUE;
+#else
+	if (hEeprom >= 0)
+		close(hEeprom);
+	hEeprom = -1;
+#endif
+}
+
+/* The HDD image's path, UTF-8, under the settings folder unless given
+ * absolute; static, as a path is too large for a frame. */
+static char s_hdd_path[PATH_MAX_LENGTH];
+
+static const char* GetHDDPath(void)
+{
+	const char* file = EmuConfig.DEV9.HddFile;
+	if (!file[0])
+		EmuConfig.DEV9.HddEnable = false;
+	if (path_is_absolute(file))
+		strlcpy(s_hdd_path, file, sizeof(s_hdd_path));
+	else
+		fill_pathname_join(s_hdd_path, EmuFolders.Settings, file, sizeof(s_hdd_path));
+	return s_hdd_path;
+}
+
+s32 DEV9init(void)
+{
+	int rxbi;
 	log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9init\n");
 
+	eeprom_unmap();
 	memset(&dev9, 0, sizeof(dev9));
 	dev9.ata = ata_new();
 	if (!dev9.ata)
 		return -1;
-	log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9init2\n");
-
-	log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9init3\n");
-
 	FLASHinit();
-
-#ifdef _WIN32
-	hEeprom = CreateFileW(
-		L"eeprom.dat",
-		GENERIC_READ | GENERIC_WRITE,
-		0,
-		NULL,
-		OPEN_EXISTING,
-		FILE_FLAG_WRITE_THROUGH,
-		NULL);
-
-	if (hEeprom == INVALID_HANDLE_VALUE)
-	{
-		dev9.eeprom = (u16*)eeprom;
-	}
-	else
-	{
-		mapping = CreateFileMapping(hEeprom, NULL, PAGE_READWRITE, 0, 0, NULL);
-		if (mapping == INVALID_HANDLE_VALUE)
-		{
-			CloseHandle(hEeprom);
-			dev9.eeprom = (u16*)eeprom;
-		}
-		else
-		{
-			dev9.eeprom = (u16*)MapViewOfFile(mapping, FILE_MAP_WRITE, 0, 0, 0);
-
-			if (dev9.eeprom == NULL)
-			{
-				CloseHandle(mapping);
-				CloseHandle(hEeprom);
-				dev9.eeprom = (u16*)eeprom;
-			}
-		}
-	}
-#else
-	hEeprom = open("eeprom.dat", O_RDWR, 0);
-
-	if (-1 == hEeprom)
-	{
-		dev9.eeprom = (u16*)eeprom;
-	}
-	else
-	{
-		dev9.eeprom = (u16*)mmap(NULL, 64, PROT_READ | PROT_WRITE, MAP_FILE | MAP_SHARED, hEeprom, 0);
-
-		if (dev9.eeprom == NULL)
-		{
-			close(hEeprom);
-			dev9.eeprom = (u16*)eeprom;
-		}
-	}
-#endif
-
-	int rxbi;
+	eeprom_map();
 
 	for (rxbi = 0; rxbi < (SMAP_BD_SIZE / 8); rxbi++)
 	{
@@ -191,28 +187,29 @@ s32 DEV9init()
 	return 0;
 }
 
-void DEV9shutdown()
+void DEV9shutdown(void)
 {
 	log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9shutdown\n");
 	FLASHsave();
 	ata_free(dev9.ata);
-	dev9.ata = nullptr;
+	dev9.ata = NULL;
+	eeprom_unmap();
 }
 
 /* ata_open, then the drive's identity: the configured file, or one beside
  * the image with the extension .hddid. */
-static int dev9_ata_open(const std::string& hddPath)
+static int dev9_ata_open(const char* hddPath)
 {
-	if (ata_open(dev9.ata, hddPath.c_str(), EmuConfig.DEV9.HddSizeSectors) != 0)
+	if (ata_open(dev9.ata, hddPath, EmuConfig.DEV9.HddSizeSectors) != 0)
 		return -1;
 	if (EmuConfig.DEV9.HddIdFile[0])
 		ata_load_hdd_id(dev9.ata, EmuConfig.DEV9.HddIdFile);
 	else
 	{
-		char* id = (char*)malloc(hddPath.size() + 8);
+		char* id = (char*)malloc(strlen(hddPath) + 8);
 		if (id)
 		{
-			strcpy(id, hddPath.c_str());
+			strcpy(id, hddPath);
 			path_remove_extension(id);
 			strcat(id, ".hddid");
 		}
@@ -222,12 +219,13 @@ static int dev9_ata_open(const std::string& hddPath)
 	return 0;
 }
 
-s32 DEV9open()
+s32 DEV9open(void)
 {
+	const char* hddPath;
 	log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9open\n");
 	log_cb(RETRO_LOG_DEBUG, "DEV9: open r+: %s\n", EmuConfig.DEV9.HddFile);
 
-	std::string hddPath(GetHDDPath());
+	hddPath = GetHDDPath();
 
 	if (EmuConfig.DEV9.HddEnable)
 	{
@@ -242,7 +240,7 @@ s32 DEV9open()
 	return 0;
 }
 
-void DEV9close()
+void DEV9close(void)
 {
 	log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9close\n");
 
@@ -253,16 +251,16 @@ void DEV9close()
 
 int DEV9irqHandler(void)
 {
-	//dev9Ru16(SPD_R_INTR_STAT)|= dev9.irqcause;
-	//log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9irqHandler %x, %x\n", dev9.irqcause, dev9.irqmask);
+	/* dev9Ru16(SPD_R_INTR_STAT)|= dev9.irqcause; */
+	/* log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9irqHandler %x, %x\n", dev9.irqcause, dev9.irqmask); */
 	if (dev9.irqcause & dev9.irqmask)
 		return 1;
 	return 0;
 }
 
-extern "C" void _DEV9irq(int cause, int cycles)
+void _DEV9irq(int cause, int cycles)
 {
-	//log_cb(RETRO_LOG_DEBUG, "DEV9: _DEV9irq %x, %x\n", cause, dev9.irqmask);
+	/* log_cb(RETRO_LOG_DEBUG, "DEV9: _DEV9irq %x, %x\n", cause, dev9.irqmask); */
 
 	dev9.irqcause |= cause;
 
@@ -272,39 +270,38 @@ extern "C" void _DEV9irq(int cause, int cycles)
 		dev9Irq(cycles);
 }
 
-//The ATA device is plain C and cannot poke dev9's members or read
-//dev9.if_ctrl directly, so the two accesses it needs come through
-//these C-linkage hooks.
-extern "C" void dev9_irq_cause_clear(int bits)
+/* What the ATA device needs of dev9, through ATA.h. */
+void dev9_irq_cause_clear(int bits)
 {
 	dev9.irqcause &= (u16)~bits;
 }
 
-extern "C" int dev9_ata_dma_enabled(void)
+int dev9_ata_dma_enabled(void)
 {
 	return (dev9.if_ctrl & SPD_IF_ATA_DMAEN) != 0;
 }
 
-//Fakes SPEED FIFO
-void HDDWriteFIFO()
+/* Fakes SPEED FIFO */
+static void HDDWriteFIFO(void)
 {
 	if (dev9.ata->dmaReady && (dev9.if_ctrl & SPD_IF_ATA_DMAEN))
 	{
 		const int unread = (dev9.fifo_bytes_write - dev9.fifo_bytes_read);
 		const int spaceSectors = (SPD_DBUF_AVAIL_MAX * 512 - unread) / 512;
+		int readSectors;
 		if (spaceSectors < 0)
 		{
 			log_cb(RETRO_LOG_ERROR, "DEV9: No Space on SPEED FIFO\n");
 			abort();
 		}
 
-		const int readSectors = dev9.ata->nsectorLeft < spaceSectors ? dev9.ata->nsectorLeft : spaceSectors;
+		readSectors = dev9.ata->nsectorLeft < spaceSectors ? dev9.ata->nsectorLeft : spaceSectors;
 		dev9.fifo_bytes_write += readSectors * 512;
 		dev9.ata->nsectorLeft -= readSectors;
 	}
-	//FIFOIntr();
+	/* FIFOIntr(); */
 }
-void HDDReadFIFO()
+static void HDDReadFIFO(void)
 {
 	if (dev9.ata->dmaReady && (dev9.if_ctrl & SPD_IF_ATA_DMAEN))
 	{
@@ -312,25 +309,27 @@ void HDDReadFIFO()
 		dev9.fifo_bytes_read += writeSectors * 512;
 		dev9.ata->nsectorLeft -= writeSectors;
 	}
-	//FIFOIntr();
+	/* FIFOIntr(); */
 }
+void IOPReadFIFO(int bytes);
 void IOPReadFIFO(int bytes)
 {
 	dev9.fifo_bytes_read += bytes;
 	if (dev9.fifo_bytes_read > dev9.fifo_bytes_write)
 		log_cb(RETRO_LOG_ERROR, "DEV9: UNDERFLOW BY IOP\n");
-	//FIFOIntr();
+	/* FIFOIntr(); */
 }
+void IOPWriteFIFO(int bytes);
 void IOPWriteFIFO(int bytes)
 {
 	dev9.fifo_bytes_write += bytes;
 	if (dev9.fifo_bytes_write - SPD_DBUF_AVAIL_MAX * 512 > dev9.fifo_bytes_read)
 		log_cb(RETRO_LOG_ERROR, "DEV9: OVERFLOW BY IOP\n");
-	//FIFOIntr();
+	/* FIFOIntr(); */
 }
-void FIFOIntr()
+static void FIFOIntr(void)
 {
-	//FIFO Buffer Full/Empty
+	/* FIFO Buffer Full/Empty */
 	const int unread = (dev9.fifo_bytes_write - dev9.fifo_bytes_read);
 
 	if (unread == 0)
@@ -340,17 +339,17 @@ void FIFOIntr()
 	}
 	if (unread == SPD_DBUF_AVAIL_MAX * 512)
 	{
-		//Log_Error("FIFO Full");
-		//INTR Full?
+		/* Log_Error("FIFO Full"); */
+		/* INTR Full? */
 	}
 }
 
 u8 DEV9read8(u32 addr)
 {
+	u8 hard;
 	if (!EmuConfig.DEV9.EthEnable && !EmuConfig.DEV9.HddEnable)
 		return 0;
 
-	u8 hard;
 	if (addr >= ATA_DEV9_HDD_BASE && addr < ATA_DEV9_HDD_END)
 	{
 		log_cb(RETRO_LOG_ERROR, "DEV9: ATA does not support 8bit reads %x\n", addr);
@@ -358,7 +357,7 @@ u8 DEV9read8(u32 addr)
 	}
 	if (addr >= SMAP_REGBASE && addr < FLASH_REGBASE)
 	{
-		//smap
+		/* smap */
 		return smap_read8(addr);
 	}
 	if ((addr >= FLASH_REGBASE) && (addr < (FLASH_REGBASE + FLASH_REGSIZE)))
@@ -378,7 +377,7 @@ u8 DEV9read8(u32 addr)
 
 			if (dev9.eeprom_state == EEPROM_TDATA)
 			{
-				if (dev9.eeprom_command == 2) //read
+				if (dev9.eeprom_command == 2) /* read */
 				{
 					if (dev9.eeprom_bit == 0xFF)
 						hard = 0;
@@ -396,12 +395,12 @@ u8 DEV9read8(u32 addr)
 			}
 			else
 				hard = 0;
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DATA 8bit read %x\n", hard);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DATA 8bit read %x\n", hard); */
 			return hard;
 
 		case DEV9_R_REV:
-			hard = 0x32; // expansion bay
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9_R_REV 8bit read %x\n", hard);
+			hard = 0x32; /* expansion bay */
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9_R_REV 8bit read %x\n", hard); */
 			return hard;
 
 		default:
@@ -413,17 +412,17 @@ u8 DEV9read8(u32 addr)
 
 u16 DEV9read16(u32 addr)
 {
+	u16 hard;
 	if (!EmuConfig.DEV9.EthEnable && !EmuConfig.DEV9.HddEnable)
 		return 0;
 
-	u16 hard;
 	if (addr >= ATA_DEV9_HDD_BASE && addr < ATA_DEV9_HDD_END)
 	{
 		return ata_read16(dev9.ata, addr - ATA_DEV9_HDD_BASE);
 	}
 	if (addr >= SMAP_REGBASE && addr < FLASH_REGBASE)
 	{
-		//smap
+		/* smap */
 		return smap_read16(addr);
 	}
 	if ((addr >= FLASH_REGBASE) && (addr < (FLASH_REGBASE + FLASH_REGSIZE)))
@@ -434,11 +433,11 @@ u16 DEV9read16(u32 addr)
 	switch (addr)
 	{
 		case SPD_R_INTR_STAT:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_INTR_STAT 16bit read %x\n", dev9.irqcause);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_INTR_STAT 16bit read %x\n", dev9.irqcause); */
 			return dev9.irqcause;
 
 		case SPD_R_INTR_MASK:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_INTR_MASK 16bit read %x\n", dev9.irqmask);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_INTR_MASK 16bit read %x\n", dev9.irqmask); */
 			return dev9.irqmask;
 
 		case SPD_R_PIO_DATA:
@@ -451,7 +450,7 @@ u16 DEV9read16(u32 addr)
 
 			if (dev9.eeprom_state == EEPROM_TDATA)
 			{
-				if (dev9.eeprom_command == 2) //read
+				if (dev9.eeprom_command == 2) /* read */
 				{
 					if (dev9.eeprom_bit == 0xFF)
 						hard = 0;
@@ -469,22 +468,22 @@ u16 DEV9read16(u32 addr)
 			}
 			else
 				hard = 0;
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DATA 16bit read %x\n", hard);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DATA 16bit read %x\n", hard); */
 			return hard;
 
 		case DEV9_R_REV:
-			//hard = 0x0030; // expansion bay
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9_R_REV 16bit read %x\n", dev9.irqmask);
+			/* hard = 0x0030; // expansion bay */
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: DEV9_R_REV 16bit read %x\n", dev9.irqmask); */
 			hard = 0x0032;
 			return hard;
 
 		case SPD_R_REV_1:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_REV_1 16bit read %x\n", 0);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_REV_1 16bit read %x\n", 0); */
 			return 0;
 
 		case SPD_R_REV_2:
 			hard = 0x0011;
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: STD_R_REV_2 16bit read %x\n", hard);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: STD_R_REV_2 16bit read %x\n", hard); */
 			return hard;
 
 		case SPD_R_REV_3:
@@ -494,11 +493,11 @@ u16 DEV9read16(u32 addr)
 			if (EmuConfig.DEV9.EthEnable)
 				hard |= SPD_CAPS_SMAP;
 			hard |= SPD_CAPS_FLASH;
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_REV_3 16bit read %x\n", hard);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_REV_3 16bit read %x\n", hard); */
 			return hard;
 
 		case SPD_R_0e:
-			hard = 0x0002; //Have HDD inserted
+			hard = 0x0002; /* Have HDD inserted */
 			log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_0e 16bit read %x\n", hard);
 			return hard;
 		case SPD_R_XFR_CTRL:
@@ -506,10 +505,11 @@ u16 DEV9read16(u32 addr)
 			return dev9.xfr_ctrl;
 		case SPD_R_DBUF_STAT:
 		{
+			u8 count;
 			hard = 0;
-			if (dev9.if_ctrl & SPD_IF_READ) //Semi async
+			if (dev9.if_ctrl & SPD_IF_READ) /* Semi async */
 			{
-				HDDWriteFIFO(); //Yes this is not a typo
+				HDDWriteFIFO(); /* Yes this is not a typo */
 			}
 			else
 			{
@@ -517,8 +517,8 @@ u16 DEV9read16(u32 addr)
 			}
 			FIFOIntr();
 
-			const u8 count = (u8)((dev9.fifo_bytes_write - dev9.fifo_bytes_read) / 512);
-			if (dev9.xfr_ctrl & SPD_XFR_WRITE) //or ifRead?
+			count = (u8)((dev9.fifo_bytes_write - dev9.fifo_bytes_read) / 512);
+			if (dev9.xfr_ctrl & SPD_XFR_WRITE) /* or ifRead? */
 			{
 				hard = (u8)(SPD_DBUF_AVAIL_MAX - count);
 				hard |= (count == 0) ? SPD_DBUF_STAT_1 : (u16)0;
@@ -529,8 +529,8 @@ u16 DEV9read16(u32 addr)
 				hard = count;
 				hard |= (count < SPD_DBUF_AVAIL_MAX) ? SPD_DBUF_STAT_1 : (u16)0;
 				hard |= (count == 0) ? SPD_DBUF_STAT_2 : (u16)0;
-				//If overflow (HDD->SPEED), set both SPD_DBUF_STAT_2 & SPD_DBUF_STAT_FULL
-				//and overflow INTR set
+				/* If overflow (HDD->SPEED), set both SPD_DBUF_STAT_2 & SPD_DBUF_STAT_FULL */
+				/* and overflow INTR set */
 			}
 
 			if (count == SPD_DBUF_AVAIL_MAX)
@@ -538,11 +538,11 @@ u16 DEV9read16(u32 addr)
 				hard |= SPD_DBUF_STAT_FULL;
 			}
 
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DBUF_STAT 16bit read %x\n", hard);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DBUF_STAT 16bit read %x\n", hard); */
 			return hard;
 		}
 		case SPD_R_IF_CTRL:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_IF_CTRL 16bit read %x\n", dev9.if_ctrl);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_IF_CTRL 16bit read %x\n", dev9.if_ctrl); */
 			return dev9.if_ctrl;
 		default:
 			hard = dev9Ru16(addr);
@@ -553,10 +553,10 @@ u16 DEV9read16(u32 addr)
 
 u32 DEV9read32(u32 addr)
 {
+	u32 hard;
 	if (!EmuConfig.DEV9.EthEnable && !EmuConfig.DEV9.HddEnable)
 		return 0;
 
-	u32 hard;
 	if (addr >= ATA_DEV9_HDD_BASE && addr < ATA_DEV9_HDD_END)
 	{
 		log_cb(RETRO_LOG_ERROR, "DEV9: ATA does not support 32bit reads %x\n", addr);
@@ -564,7 +564,7 @@ u32 DEV9read32(u32 addr)
 	}
 	if (addr >= SMAP_REGBASE && addr < FLASH_REGBASE)
 	{
-		//smap
+		/* smap */
 		return smap_read32(addr);
 	}
 	if ((addr >= FLASH_REGBASE) && (addr < (FLASH_REGBASE + FLASH_REGSIZE)))
@@ -591,7 +591,7 @@ void DEV9write8(u32 addr, u8 value)
 	}
 	if (addr >= SMAP_REGBASE && addr < FLASH_REGBASE)
 	{
-		//smap
+		/* smap */
 		smap_write8(addr, value);
 		return;
 	}
@@ -616,7 +616,7 @@ void DEV9write8(u32 addr, u8 value)
 			break;
 
 		case SPD_R_PIO_DIR:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DIR 8bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DIR 8bit write %x\n", value); */
 
 			if ((value & 0xc0) != 0xc0)
 				return;
@@ -630,7 +630,7 @@ void DEV9write8(u32 addr, u8 value)
 			return;
 
 		case SPD_R_PIO_DATA:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DATA 8bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DATA 8bit write %x\n", value); */
 
 			if ((value & 0xc0) != 0xc0)
 				return;
@@ -663,7 +663,7 @@ void DEV9write8(u32 addr, u8 value)
 					break;
 				case EEPROM_TDATA:
 				{
-					if (dev9.eeprom_command == 1) //write
+					if (dev9.eeprom_command == 1) /* write */
 					{
 						dev9.eeprom[dev9.eeprom_address] =
 							(dev9.eeprom[dev9.eeprom_address] & (63 ^ (1 << dev9.eeprom_bit))) |
@@ -701,7 +701,7 @@ void DEV9write16(u32 addr, u16 value)
 	}
 	if (addr >= SMAP_REGBASE && addr < FLASH_REGBASE)
 	{
-		//smap
+		/* smap */
 		smap_write16(addr, value);
 		return;
 	}
@@ -714,17 +714,17 @@ void DEV9write16(u32 addr, u16 value)
 	switch (addr)
 	{
 		case SPD_R_INTR_MASK:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_INTR_MASK 16bit write %x	, checking for masked/unmasked interrupts\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_INTR_MASK 16bit write %x	, checking for masked/unmasked interrupts\n", value); */
 			if ((dev9.irqmask != value) && ((dev9.irqmask | value) & dev9.irqcause))
 			{
-				//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_INTR_MASK16 firing unmasked interrupts\n");
+				/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_INTR_MASK16 firing unmasked interrupts\n"); */
 				dev9Irq(1);
 			}
 			dev9.irqmask = value;
 			break;
 
 		case SPD_R_PIO_DIR:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DIR 16bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DIR 16bit write %x\n", value); */
 
 			if ((value & 0xc0) != 0xc0)
 				return;
@@ -738,7 +738,7 @@ void DEV9write16(u32 addr, u16 value)
 			return;
 
 		case SPD_R_PIO_DATA:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DATA 16bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_DATA 16bit write %x\n", value); */
 
 			if ((value & 0xc0) != 0xc0)
 				return;
@@ -771,7 +771,7 @@ void DEV9write16(u32 addr, u16 value)
 					break;
 				case EEPROM_TDATA:
 				{
-					if (dev9.eeprom_command == 1) //write
+					if (dev9.eeprom_command == 1) /* write */
 					{
 						dev9.eeprom[dev9.eeprom_address] =
 							(dev9.eeprom[dev9.eeprom_address] & (63 ^ (1 << dev9.eeprom_bit))) |
@@ -792,23 +792,23 @@ void DEV9write16(u32 addr, u16 value)
 			return;
 
 		case SPD_R_DMA_CTRL:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_IF_CTRL 16bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_IF_CTRL 16bit write %x\n", value); */
 			dev9.dma_ctrl = value;
 
-			//if (value & SPD_DMA_TO_SMAP)
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL DMA For SMAP\n");
-			//else
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL DMA For ATA\n");
+			/* if (value & SPD_DMA_TO_SMAP) */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL DMA For SMAP\n"); */
+			/* else */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL DMA For ATA\n"); */
 
-			//if ((value & SPD_DMA_FASTEST) != 0)
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL Fastest DMA Mode\n");
-			//else
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL Slower DMA Mode\n");
+			/* if ((value & SPD_DMA_FASTEST) != 0) */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL Fastest DMA Mode\n"); */
+			/* else */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL Slower DMA Mode\n"); */
 
-			//if ((value & SPD_DMA_WIDE) != 0)
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL Wide(32bit) DMA Mode Set\n");
-			//else
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL 16bit DMA Mode\n");
+			/* if ((value & SPD_DMA_WIDE) != 0) */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL Wide(32bit) DMA Mode Set\n"); */
+			/* else */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DMA_CTRL 16bit DMA Mode\n"); */
 
 			if ((value & SPD_DMA_PAUSE) != 0)
 				log_cb(RETRO_LOG_ERROR, "DEV9: SPD_R_DMA_CTRL Pause DMA Not Implemented\n");
@@ -818,39 +818,39 @@ void DEV9write16(u32 addr, u16 value)
 
 			break;
 		case SPD_R_XFR_CTRL:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL 16bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL 16bit write %x\n", value); */
 			dev9.xfr_ctrl = value;
 
-			//if (value & SPD_XFR_WRITE)
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL Set Write\n");
-			//else
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL Set Read\n");
+			/* if (value & SPD_XFR_WRITE) */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL Set Write\n"); */
+			/* else */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL Set Read\n"); */
 
-			//if ((value & (1 << 1)) != 0)
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL Unknown Bit 1\n");
+			/* if ((value & (1 << 1)) != 0) */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL Unknown Bit 1\n"); */
 
-			//if ((value & (1 << 2)) != 0)
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL Unknown Bit 2\n");
+			/* if ((value & (1 << 2)) != 0) */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL Unknown Bit 2\n"); */
 
-			//if (value & SPD_XFR_DMAEN)
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL For DMA Enabled\n");
-			//else
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL For DMA Disabled\n");
+			/* if (value & SPD_XFR_DMAEN) */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL For DMA Enabled\n"); */
+			/* else */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL For DMA Disabled\n"); */
 
 			if ((value & 0b1111111101111000) != 0)
 				log_cb(RETRO_LOG_ERROR, "DEV9: SPD_R_XFR_CTRL Unknown value written %x\n", value);
 
 			break;
 		case SPD_R_DBUF_STAT:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DBUF_STAT 16bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DBUF_STAT 16bit write %x\n", value); */
 
 			if ((value & SPD_DBUF_RESET_FIFO) != 0)
 			{
-				//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DBUF_STAT Reset FIFO\n");
+				/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_DBUF_STAT Reset FIFO\n"); */
 				dev9.fifo_bytes_write = 0;
 				dev9.fifo_bytes_read = 0;
-				dev9.xfr_ctrl &= ~SPD_XFR_WRITE; //?
-				dev9.if_ctrl |= SPD_IF_READ; //?
+				dev9.xfr_ctrl &= ~SPD_XFR_WRITE; /* ? */
+				dev9.if_ctrl |= SPD_IF_READ; /* ? */
 
 				FIFOIntr();
 			}
@@ -860,24 +860,24 @@ void DEV9write16(u32 addr, u16 value)
 			break;
 
 		case SPD_R_IF_CTRL:
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_IF_CTRL 16bit write %x\n", value);
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_IF_CTRL 16bit write %x\n", value); */
 			dev9.if_ctrl = value;
 
-			//if (value & SPD_IF_UDMA)
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL UDMA Enabled\n");
-			//else
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL UDMA Disabled\n");
-			//if (value & SPD_IF_READ)
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL DMA Is ATA Read\n");
-			//else
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL DMA Is ATA Write\n");
+			/* if (value & SPD_IF_UDMA) */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL UDMA Enabled\n"); */
+			/* else */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL UDMA Disabled\n"); */
+			/* if (value & SPD_IF_READ) */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL DMA Is ATA Read\n"); */
+			/* else */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL DMA Is ATA Write\n"); */
 
 			if (value & SPD_IF_ATA_DMAEN)
 			{
-				//log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL ATA DMA Enabled\n");
-				if (value & SPD_IF_READ) //Semi async
+				/* log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL ATA DMA Enabled\n"); */
+				if (value & SPD_IF_READ) /* Semi async */
 				{
-					HDDWriteFIFO(); //Yes this is not a typo
+					HDDWriteFIFO(); /* Yes this is not a typo */
 				}
 				else
 				{
@@ -885,8 +885,8 @@ void DEV9write16(u32 addr, u16 value)
 				}
 				FIFOIntr();
 			}
-			//else
-			//	log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL ATA DMA Disabled\n");
+			/* else */
+			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL ATA DMA Disabled\n"); */
 
 			if (value & (1 << 3))
 				log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL Unknown Bit 3 Set\n");
@@ -896,47 +896,47 @@ void DEV9write16(u32 addr, u16 value)
 			if (value & (1 << 5))
 				log_cb(RETRO_LOG_ERROR, "DEV9: IF_CTRL Unknown Bit 5 Set\n");
 
-			if ((value & SPD_IF_HDD_RESET) == 0) //Maybe?
+			if ((value & SPD_IF_HDD_RESET) == 0) /* Maybe? */
 			{
-				//log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL HDD Hard Reset\n");
+				/* log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL HDD Hard Reset\n"); */
 				ata_hard_reset(dev9.ata);
 			}
 			if ((value & SPD_IF_ATA_RESET) != 0)
 			{
 				log_cb(RETRO_LOG_DEBUG, "DEV9: IF_CTRL ATA Reset\n");
-				//0x62        0x0020
+				/* 0x62        0x0020 */
 				dev9.if_ctrl = 0x001A;
-				//0x66        0x0001
+				/* 0x66        0x0001 */
 				dev9.pio_mode = 0x24;
 				dev9.mdma_mode = 0x45;
 				dev9.udma_mode = 0x83;
-				//0x76    0x4ABA (And consequently 0x78 = 0x4ABA.)
+				/* 0x76    0x4ABA (And consequently 0x78 = 0x4ABA.) */
 			}
 
 			if ((value & 0xFF00) > 0)
 				log_cb(RETRO_LOG_ERROR, "DEV9: IF_CTRL Unknown Bit(s) %x\n", (value & 0xFF00));
 
 			break;
-		case SPD_R_PIO_MODE: //ATA only? or includes EEPROM?
-			//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 16bit write %x\n", value);
+		case SPD_R_PIO_MODE: /* ATA only? or includes EEPROM? */
+			/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 16bit write %x\n", value); */
 			dev9.pio_mode = value;
 
 			switch (value)
 			{
 				case 0x92:
-					//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 0\n");
+					/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 0\n"); */
 					break;
 				case 0x72:
-					//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 1\n");
+					/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 1\n"); */
 					break;
 				case 0x32:
-					//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 2\n");
+					/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 2\n"); */
 					break;
 				case 0x24:
-					//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 3\n");
+					/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 3\n"); */
 					break;
 				case 0x23:
-					//log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 4\n");
+					/* log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_PIO_MODE 4\n"); */
 					break;
 
 				default:
@@ -944,7 +944,7 @@ void DEV9write16(u32 addr, u16 value)
 					break;
 			}
 			break;
-		case SPD_R_MDMA_MODE: //ATA only? or includes EEPROM?
+		case SPD_R_MDMA_MODE: /* ATA only? or includes EEPROM? */
 			log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_MDMA_MODE 16bit write %x\n", value);
 			dev9.mdma_mode = value;
 
@@ -965,7 +965,7 @@ void DEV9write16(u32 addr, u16 value)
 			}
 
 			break;
-		case SPD_R_UDMA_MODE: //ATA only?
+		case SPD_R_UDMA_MODE: /* ATA only? */
 			log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_UDMA_MODE 16bit write %x\n", value);
 			dev9.udma_mode = value;
 
@@ -1013,7 +1013,7 @@ void DEV9write32(u32 addr, u32 value)
 	}
 	if (addr >= SMAP_REGBASE && addr < FLASH_REGBASE)
 	{
-		//smap
+		/* smap */
 		smap_write32(addr, value);
 		return;
 	}
@@ -1058,7 +1058,7 @@ void DEV9readDMA8Mem(u32* pMem, int size)
 		}
 	}
 
-	//TODO, track if read was successful
+	/* TODO, track if read was successful */
 }
 
 void DEV9writeDMA8Mem(u32* pMem, int size)
@@ -1084,7 +1084,7 @@ void DEV9writeDMA8Mem(u32* pMem, int size)
 		}
 	}
 
-	//TODO, track if write was successful
+	/* TODO, track if write was successful */
 }
 
 void DEV9async(u32 cycles)
@@ -1093,29 +1093,28 @@ void DEV9async(u32 cycles)
 	ata_async(dev9.ata, cycles);
 }
 
-void DEV9CheckChanges(const Pcsx2Config* old)
+void DEV9CheckChanges(const Pcsx2Config* old_config)
 {
-	const Pcsx2Config& old_config = *old;
+	const char* hddPath;
 	if (!isRunning)
 		return;
 
-	//Eth
+	/* Eth */
 	ReconfigureLiveNet(old_config);
 
-	//Hdd
-	//Hdd Validate Path
-	std::string hddPath(GetHDDPath());
+	/* Hdd: the path, validated */
+	hddPath = GetHDDPath();
 
-	//Hdd Compare with old config
+	/* Hdd Compare with old config */
 	if (EmuConfig.DEV9.HddEnable)
 	{
-		if (old_config.DEV9.HddEnable)
+		if (old_config->DEV9.HddEnable)
 		{
-			//ATA::Open/Close dosn't set any regs
-			//So we can close/open to apply settings
-			if (strcmp(EmuConfig.DEV9.HddFile, old_config.DEV9.HddFile) != 0 ||
-				strcmp(EmuConfig.DEV9.HddIdFile, old_config.DEV9.HddIdFile) != 0 ||
-				EmuConfig.DEV9.HddSizeSectors != old_config.DEV9.HddSizeSectors)
+			/* ATA::Open/Close dosn't set any regs */
+			/* So we can close/open to apply settings */
+			if (strcmp(EmuConfig.DEV9.HddFile, old_config->DEV9.HddFile) != 0 ||
+				strcmp(EmuConfig.DEV9.HddIdFile, old_config->DEV9.HddIdFile) != 0 ||
+				EmuConfig.DEV9.HddSizeSectors != old_config->DEV9.HddSizeSectors)
 			{
 				ata_close(dev9.ata);
 				if (dev9_ata_open(hddPath) != 0)
@@ -1125,6 +1124,6 @@ void DEV9CheckChanges(const Pcsx2Config* old)
 		else if (dev9_ata_open(hddPath) != 0)
 			EmuConfig.DEV9.HddEnable = false;
 	}
-	else if (old_config.DEV9.HddEnable)
+	else if (old_config->DEV9.HddEnable)
 		ata_close(dev9.ata);
 }
