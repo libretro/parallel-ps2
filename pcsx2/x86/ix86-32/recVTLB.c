@@ -21,13 +21,14 @@
 #include "common/emitter/c89ops.h"
 #include "../../Config.h"
 
-// we need enough for a 32-bit jump forwards (5 bytes)
+/* we need enough for a 32-bit jump forwards (5 bytes) */
 static const u32 LOADSTORE_PADDING = 5;
 
 static u32 GetAllocatedGPRBitmask(void)
 {
 	u32 mask = 0;
-	for (u32 i = 0; i < iREGCNT_GPR; i++)
+	u32 i;
+	for (i = 0; i < iREGCNT_GPR; i++)
 	{
 		if (x86regs[i].inuse)
 			mask |= (1u << i);
@@ -38,7 +39,8 @@ static u32 GetAllocatedGPRBitmask(void)
 static u32 GetAllocatedXMMBitmask(void)
 {
 	u32 mask = 0;
-	for (u32 i = 0; i < iREGCNT_XMM; i++)
+	u32 i;
+	for (i = 0; i < iREGCNT_XMM; i++)
 	{
 		if (xmmregs[i].inuse)
 			mask |= (1u << i);
@@ -60,12 +62,12 @@ static u32 GetAllocatedXMMBitmask(void)
 			if (sz == 128)
 			{
 #if PCSX2_MINGW_R128_BY_PTR
-				// MinGW GCC silently drops __vectorcall and passes r128
-				// (16-byte aggregate) by-value via the MS x64 ABI's hidden
-				// pointer in rdx. To match that, spill the value to a 16-byte
-				// aligned scratch slot at [rsp] (within the dispatcher's
-				// shadow space on Win64, which we own at this call boundary)
-				// and pass that pointer in arg2reg.
+				/* MinGW GCC silently drops __vectorcall and passes r128 */
+				/* (16-byte aggregate) by-value via the MS x64 ABI's hidden */
+				/* pointer in rdx. To match that, spill the value to a 16-byte */
+				/* aligned scratch slot at [rsp] (within the dispatcher's */
+				/* shadow space on Win64, which we own at this call boundary) */
+				/* and pass that pointer in arg2reg. */
 				{ struct e_mem xm; E_MEM(xm, XE_SP, E_NOREG, 0, 0); xe_movaps_memxg(xm, value_reg); }
 				_freeX86reg(XE_ARG2);
 				xe_mov64_rr(XE_ARG2, XE_SP);
@@ -76,7 +78,7 @@ static u32 GetAllocatedXMMBitmask(void)
 			}
 			else if (xmm)
 			{
-				// 32bit xmms are passed in GPRs
+				/* 32bit xmms are passed in GPRs */
 				_freeX86reg(XE_ARG2);
 				xe_movd_rx(XE_ARG2, value_reg);
 			}
@@ -93,7 +95,7 @@ static u32 GetAllocatedXMMBitmask(void)
 		xe_add64_rr(XE_ARG1, XE_AX);
 	}
 
-	// ------------------------------------------------------------------------
+	/* ------------------------------------------------------------------------ */
 	static void DynGen_DirectRead(u32 bits, int sign)
 	{
 		switch (bits)
@@ -131,7 +133,7 @@ static u32 GetAllocatedXMMBitmask(void)
 		}
 	}
 
-	// ------------------------------------------------------------------------
+	/* ------------------------------------------------------------------------ */
 	static void DynGen_DirectWrite(u32 bits)
 	{
 		switch (bits)
@@ -154,7 +156,7 @@ static u32 GetAllocatedXMMBitmask(void)
 
 			case 128:
 #if PCSX2_MINGW_R128_BY_PTR
-				// Value was spilled to [rsp] by PrepRegs (see comment there).
+				/* Value was spilled to [rsp] by PrepRegs (see comment there). */
 				{ struct e_mem xm; E_MEM(xm, XE_SP, E_NOREG, 0, 0); xe_movaps_xmemg(0, xm); }
 				{ struct e_mem xm; E_MEM(xm, XE_ARG1, E_NOREG, 0, 0); xe_movaps_memxg(xm, 0); }
 #else
@@ -164,47 +166,48 @@ static u32 GetAllocatedXMMBitmask(void)
 		}
 	}
 
-// ------------------------------------------------------------------------
-// allocate one page for our naked indirect dispatcher function.
-// this *must* be a full page, since we'll give it execution permission later.
-// If it were smaller than a page we'd end up allowing execution rights on some
-// other vars additionally (bad!).
-//
-alignas(__pagesize) static u8 m_IndirectDispatchers[__pagesize];
+/* ------------------------------------------------------------------------ */
+/* allocate one page for our naked indirect dispatcher function. */
+/* this *must* be a full page, since we'll give it execution permission later. */
+/* If it were smaller than a page we'd end up allowing execution rights on some */
+/* other vars additionally (bad!). */
 
-// ------------------------------------------------------------------------
-// mode        - 0 for read, 1 for write!
-// operandsize - 0 thru 4 represents 8, 16, 32, 64, and 128 bits.
-//
+PCSX2_ALIGN(__pagesize) static u8 m_IndirectDispatchers[__pagesize];
+
+/* ------------------------------------------------------------------------ */
+/* mode        - 0 for read, 1 for write! */
+/* operandsize - 0 thru 4 represents 8, 16, 32, 64, and 128 bits. */
+
 static u8* GetIndirectDispatcherPtr(int mode, int operandsize, int sign)
 {
-	// Each dispatcher is aligned to 64 bytes.  The actual dispatchers are only like
-	// 20-some bytes each, but 64 byte alignment on functions that are called
-	// more frequently than a hot sex hotline at 1:15am is probably a good thing.
+	/* Each dispatcher is aligned to 64 bytes.  The actual dispatchers are only like */
+	/* 20-some bytes each, but 64 byte alignment on functions that are called */
+	/* more frequently than a hot sex hotline at 1:15am is probably a good thing. */
 
-	// 7*64? 5 widths with two sign extension modes for 8 and 16 bit reads
+	/* 7*64? 5 widths with two sign extension modes for 8 and 16 bit reads */
 
-	// Gregory: a 32 bytes alignment is likely enough and more cache friendly
+	/* Gregory: a 32 bytes alignment is likely enough and more cache friendly */
 	const int A = 32;
 	return &m_IndirectDispatchers[(mode * (8 * A)) + (sign * 5 * A) + (operandsize * A)];
 }
 
-// ------------------------------------------------------------------------
-// Generates a JS instruction that targets the appropriate templated instance of
-// the vtlb Indirect Dispatcher.
-//
+/* ------------------------------------------------------------------------ */
+/* Generates a JS instruction that targets the appropriate templated instance of */
+/* the vtlb Indirect Dispatcher. */
 
 /* Which direct-path generator the caller wants; replaces the lambda the
  * old template took, so this is a plain function again. */
-enum DynGenDirect
+typedef enum DynGenDirect
 {
 	DYNGEN_DIRECT_READ = 0,
 	DYNGEN_DIRECT_WRITE = 1
-};
+} DynGenDirect;
 
 static void DynGen_HandlerTest(int direct_kind, u32 direct_bits, int direct_sign, int mode, int bits, int sign)
 {
 	int szidx = 0;
+	uint8_t* to_handler;
+	uint8_t* done;
 	switch (bits)
 	{
 		case   8: szidx = 0; break;
@@ -215,24 +218,25 @@ static void DynGen_HandlerTest(int direct_kind, u32 direct_bits, int direct_sign
 		default:
 			  break;
 	}
-	uint8_t* to_handler; xe_fwd_jcc8(Jcc_Signed, to_handler);
+	 xe_fwd_jcc8(Jcc_Signed, to_handler);
 	if (direct_kind == DYNGEN_DIRECT_WRITE)
 		DynGen_DirectWrite(direct_bits);
 	else
 		DynGen_DirectRead(direct_bits, direct_sign);
-	uint8_t* done; xe_fwd_jcc8(Jcc_Unconditional, done);
+	 xe_fwd_jcc8(Jcc_Unconditional, done);
 	xe_fwd_set8(to_handler);
 	xe_fastcall0(GetIndirectDispatcherPtr(mode, szidx, sign));
 	xe_fwd_set8(done);
 }
 
-// ------------------------------------------------------------------------
-// Generates the various instances of the indirect dispatchers
-// In: arg1reg: vtlb entry, arg2reg: data ptr (if mode >= 64), rbx: function return ptr
-// Out: eax: result (if mode < 64)
+/* ------------------------------------------------------------------------ */
+/* Generates the various instances of the indirect dispatchers */
+/* In: arg1reg: vtlb entry, arg2reg: data ptr (if mode >= 64), rbx: function return ptr */
+/* Out: eax: result (if mode < 64) */
 static void DynGen_IndirectTlbDispatcher(int mode, int bits, int sign)
 {
-	// fixup stack
+	sptr table;
+	/* fixup stack */
 #ifdef _WIN32
 	xe_sub64_ri(XE_SP, 32 + 8);
 #else
@@ -244,9 +248,9 @@ static void DynGen_IndirectTlbDispatcher(int mode, int bits, int sign)
 		xe_sub32_ri(XE_ARG1, 0x80000000);
 	xe_sub32_rr(XE_ARG1, XE_AX);
 
-	// jump to the indirect handler, which is a C++ function.
-	// [ecx is address, edx is data]
-	sptr table = (sptr)vtlbdata.RWFT[bits][mode];
+	/* jump to the indirect handler, which is a C++ function. */
+	/* [ecx is address, edx is data] */
+	table = (sptr)vtlbdata.RWFT[bits][mode];
 	if (table == (s32)table)
 	{
 		{ struct e_mem xm; E_MEM(xm, E_NOREG, XE_AX, XE_WORDSIZE, (intptr_t)table); xe_call_memg(xm); }
@@ -289,12 +293,13 @@ static void DynGen_IndirectTlbDispatcher(int mode, int bits, int sign)
 	xe_ret();
 }
 
-// One-time initialization procedure.  Multiple subsequent calls during the lifespan of the
-// process will be ignored.
-//
+/* One-time initialization procedure.  Multiple subsequent calls during the lifespan of the */
+/* process will be ignored. */
+
 void vtlb_DynGenDispatchers(void)
 {
 	PageProtectionMode mode;
+	int dmode;
 	static int hasBeenCalled = 0;
 	if (hasBeenCalled)
 		return;
@@ -303,21 +308,23 @@ void vtlb_DynGenDispatchers(void)
 	mode.m_read   = 1;
 	mode.m_write  = 1;
 	mode.m_exec   = 0;
-	// In case init gets called multiple times:
+	/* In case init gets called multiple times: */
 	mprotect(m_IndirectDispatchers, __pagesize, host_prot(mode));
 
-	// clear the buffer to 0xcc (easier debugging).
+	/* clear the buffer to 0xcc (easier debugging). */
 	memset(m_IndirectDispatchers, 0xcc, __pagesize);
 
-	for (int mode = 0; mode < 2; ++mode)
+	for (dmode = 0; dmode < 2; ++dmode)
 	{
-		for (int bits = 0; bits < 5; ++bits)
+		int bits;
+		for (bits = 0; bits < 5; ++bits)
 		{
-			for (int sign = 0; sign < (!mode && bits < 3 ? 2 : 1); sign++)
+			int sign;
+			for (sign = 0; sign < (!dmode && bits < 3 ? 2 : 1); sign++)
 			{
-				x86Ptr = (u8*)(GetIndirectDispatcherPtr(mode, bits, !!sign));
+				x86Ptr = (u8*)(GetIndirectDispatcherPtr(dmode, bits, !!sign));
 
-				DynGen_IndirectTlbDispatcher(mode, bits, !!sign);
+				DynGen_IndirectTlbDispatcher(dmode, bits, !!sign);
 			}
 		}
 	}
@@ -327,15 +334,18 @@ void vtlb_DynGenDispatchers(void)
 	mprotect(m_IndirectDispatchers, __pagesize, host_prot(mode));
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//                            Dynarec Load Implementations
-// ------------------------------------------------------------------------
-// Recompiled input registers:
-//   ecx - source address to read from
-//   Returns read value in eax.
+/*                            Dynarec Load Implementations */
+/* ------------------------------------------------------------------------ */
+/* Recompiled input registers: */
+/*   ecx - source address to read from */
+/*   Returns read value in eax. */
 int vtlb_DynGenReadNonQuad(u32 bits, int sign, int xmm, int addr_reg, vtlb_ReadRegAllocCallback dest_reg_alloc)
 {
 	int x86_dest_reg;
+	const u8* codeStart;
+	int x86addr;
+	u32 padding;
+	u32 i;
 	if (!CHECK_FASTMEM || vtlb_IsFaultingPC(pc))
 	{
 		iFlushCall(FLUSH_FULLVTLB);
@@ -350,8 +360,8 @@ int vtlb_DynGenReadNonQuad(u32 bits, int sign, int xmm, int addr_reg, vtlb_ReadR
 		}
 		else
 		{
-			// we shouldn't be loading any FPRs which aren't 32bit..
-			// we use MOVD here despite it being floating-point data, because we're going int->float reinterpret.
+			/* we shouldn't be loading any FPRs which aren't 32bit.. */
+			/* we use MOVD here despite it being floating-point data, because we're going int->float reinterpret. */
 			x86_dest_reg = dest_reg_alloc ? dest_reg_alloc() : (_freeXMMreg(0), 0);
 			xe_movdzx_xr(x86_dest_reg, XE_AX);
 		}
@@ -359,13 +369,13 @@ int vtlb_DynGenReadNonQuad(u32 bits, int sign, int xmm, int addr_reg, vtlb_ReadR
 		return x86_dest_reg;
 	}
 
-	const u8* codeStart;
-	const int x86addr = addr_reg;
+	x86addr = addr_reg;
 	if (!xmm)
 	{
+		int x86reg;
 		x86_dest_reg = dest_reg_alloc ? dest_reg_alloc() : (_freeX86reg(XE_AX), XE_AX);
 		codeStart = x86Ptr;
-		const int x86reg = x86_dest_reg;
+		x86reg = x86_dest_reg;
 		switch (bits)
 		{
 		case 8:
@@ -386,14 +396,15 @@ int vtlb_DynGenReadNonQuad(u32 bits, int sign, int xmm, int addr_reg, vtlb_ReadR
 	}
 	else
 	{
+		int xmmreg;
 		x86_dest_reg = dest_reg_alloc ? dest_reg_alloc() : (_freeXMMreg(0), 0);
 		codeStart = x86Ptr;
-		const int xmmreg = x86_dest_reg;
+		xmmreg = x86_dest_reg;
 		{ struct e_mem xm; E_MEM(xm, 5, x86addr, 1, 0); xe_movss_xmemg(xmmreg, xm); }
 	}
 
-	const u32 padding = LOADSTORE_PADDING - MIN_U32((u32)(x86Ptr - codeStart), 5);
-	for (u32 i = 0; i < padding; i++)
+	padding = LOADSTORE_PADDING - MIN_U32((u32)(x86Ptr - codeStart), 5);
+	for (i = 0; i < padding; i++)
 		xe_nop();
 
 	vtlb_AddLoadStoreInfo((uptr)codeStart, (u32)(x86Ptr - codeStart),
@@ -404,14 +415,14 @@ int vtlb_DynGenReadNonQuad(u32 bits, int sign, int xmm, int addr_reg, vtlb_ReadR
 	return x86_dest_reg;
 }
 
-// ------------------------------------------------------------------------
-// Recompiled input registers:
-//   ecx - source address to read from
-//   Returns read value in eax.
-//
-// TLB lookup is performed in const, with the assumption that the COP0/TLB will clear the
-// recompiler if the TLB is changed.
-//
+/* ------------------------------------------------------------------------ */
+/* Recompiled input registers: */
+/*   ecx - source address to read from */
+/*   Returns read value in eax. */
+
+/* TLB lookup is performed in const, with the assumption that the COP0/TLB will clear the */
+/* recompiler if the TLB is changed. */
+
 int vtlb_DynGenReadNonQuad_Const(u32 bits, int sign, int xmm, u32 addr_const, vtlb_ReadRegAllocCallback dest_reg_alloc)
 {
 	int x86_dest_reg;
@@ -449,7 +460,7 @@ int vtlb_DynGenReadNonQuad_Const(u32 bits, int sign, int xmm, u32 addr_const, vt
 	}
 	else
 	{
-		// has to: translate, find function, call function
+		/* has to: translate, find function, call function */
 		u32 paddr = vtlb_virt_paddr(vmv, addr_const);
 
 		int szidx = 0;
@@ -461,7 +472,7 @@ int vtlb_DynGenReadNonQuad_Const(u32 bits, int sign, int xmm, u32 addr_const, vt
 			case 64: szidx = 3; break;
 		}
 
-		// Shortcut for the INTC_STAT register, which many games like to spin on heavily.
+		/* Shortcut for the INTC_STAT register, which many games like to spin on heavily. */
 		if ((bits == 32) && !EmuConfig.Speedhacks.IntcStat && (paddr == INTC_STAT))
 		{
 			x86_dest_reg = dest_reg_alloc ? dest_reg_alloc() : (_freeX86reg(XE_AX), XE_AX);
@@ -487,7 +498,7 @@ int vtlb_DynGenReadNonQuad_Const(u32 bits, int sign, int xmm, u32 addr_const, vt
 				x86_dest_reg = dest_reg_alloc ? dest_reg_alloc() : (_freeX86reg(XE_AX), XE_AX);
 				switch (bits)
 				{
-					// save REX prefix by using 32bit dest for zext
+					/* save REX prefix by using 32bit dest for zext */
 				case 8:
 					if (sign) xe_movsx64_rr8(x86_dest_reg, XE_AX); else xe_movzx32_rr8(x86_dest_reg, XE_AX);
 					break;
@@ -535,13 +546,15 @@ int vtlb_DynGenReadQuad(u32 bits, int addr_reg, vtlb_ReadRegAllocCallback dest_r
 	else
 	{
 		const u8* codeStart = x86Ptr;
+		u32 padding;
+		u32 i;
 
 		reg = dest_reg_alloc ? dest_reg_alloc() : (_freeXMMreg(0), 0); /* Handler returns in xmm0 */
 
 		{ struct e_mem xm; E_MEM(xm, 5, XE_ARG1, 1, 0); xe_movaps_xmemg(reg, xm); }
 
-		const u32 padding = LOADSTORE_PADDING - MIN_U32((u32)(x86Ptr - codeStart), 5);
-		for (u32 i = 0; i < padding; i++)
+		padding = LOADSTORE_PADDING - MIN_U32((u32)(x86Ptr - codeStart), 5);
+		for (i = 0; i < padding; i++)
 			xe_nop();
 
 		vtlb_AddLoadStoreInfo((uptr)codeStart, (u32)(x86Ptr - codeStart),
@@ -552,10 +565,9 @@ int vtlb_DynGenReadQuad(u32 bits, int addr_reg, vtlb_ReadRegAllocCallback dest_r
 	return reg;
 }
 
-
-// ------------------------------------------------------------------------
-// TLB lookup is performed in const, with the assumption that the COP0/TLB will clear the
-// recompiler if the TLB is changed.
+/* ------------------------------------------------------------------------ */
+/* TLB lookup is performed in const, with the assumption that the COP0/TLB will clear the */
+/* recompiler if the TLB is changed. */
 int vtlb_DynGenReadQuad_Const(u32 bits, u32 addr_const, vtlb_ReadRegAllocCallback dest_reg_alloc)
 {
 	int reg  = dest_reg_alloc ? dest_reg_alloc() : (_freeXMMreg(0), 0);
@@ -568,7 +580,7 @@ int vtlb_DynGenReadQuad_Const(u32 bits, u32 addr_const, vtlb_ReadRegAllocCallbac
 	}
 	else
 	{
-		// has to: translate, find function, call function
+		/* has to: translate, find function, call function */
 		u32 paddr = vtlb_virt_paddr(vmv, addr_const);
 
 		const int szidx = 4;
@@ -581,8 +593,7 @@ int vtlb_DynGenReadQuad_Const(u32 bits, u32 addr_const, vtlb_ReadRegAllocCallbac
 	return reg;
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//                            Dynarec Store Implementations
+/*                            Dynarec Store Implementations */
 
 void vtlb_DynGenWrite(u32 sz, int xmm, int addr_reg, int value_reg)
 {
@@ -598,6 +609,8 @@ void vtlb_DynGenWrite(u32 sz, int xmm, int addr_reg, int value_reg)
 		const u8* codeStart = x86Ptr;
 
 		const int vaddr_reg = addr_reg;
+		u32 padding;
+		u32 i;
 		if (!xmm)
 		{
 			switch (sz)
@@ -633,8 +646,8 @@ void vtlb_DynGenWrite(u32 sz, int xmm, int addr_reg, int value_reg)
 			}
 		}
 
-		const u32 padding = LOADSTORE_PADDING - MIN_U32((u32)(x86Ptr - codeStart), 5);
-		for (u32 i = 0; i < padding; i++)
+		padding = LOADSTORE_PADDING - MIN_U32((u32)(x86Ptr - codeStart), 5);
+		for (i = 0; i < padding; i++)
 			xe_nop();
 
 		vtlb_AddLoadStoreInfo((uptr)codeStart, (u32)(x86Ptr - codeStart),
@@ -644,11 +657,10 @@ void vtlb_DynGenWrite(u32 sz, int xmm, int addr_reg, int value_reg)
 	}
 }
 
-
-// ------------------------------------------------------------------------
-// Generates code for a store instruction, where the address is a known constant.
-// TLB lookup is performed in const, with the assumption that the COP0/TLB will clear the
-// recompiler if the TLB is changed.
+/* ------------------------------------------------------------------------ */
+/* Generates code for a store instruction, where the address is a known constant. */
+/* TLB lookup is performed in const, with the assumption that the COP0/TLB will clear the */
+/* recompiler if the TLB is changed. */
 void vtlb_DynGenWrite_Const(u32 bits, int xmm, u32 addr_const, int value_reg)
 {
 	const vtlb_virt_t vmv = vtlbdata.vmap[addr_const >> VTLB_PAGE_BITS];
@@ -696,7 +708,7 @@ void vtlb_DynGenWrite_Const(u32 bits, int xmm, u32 addr_const, int value_reg)
 	}
 	else
 	{
-		// has to: translate, find function, call function
+		/* has to: translate, find function, call function */
 		u32 paddr = vtlb_virt_paddr(vmv, addr_const);
 
 		int szidx = 0;
@@ -725,8 +737,8 @@ void vtlb_DynGenWrite_Const(u32 bits, int xmm, u32 addr_const, int value_reg)
 		if (bits == 128)
 		{
 #if PCSX2_MINGW_R128_BY_PTR
-			// MinGW: spill to [rsp] and pass pointer in arg2reg. See
-			// DynGen_PrepRegs for rationale.
+			/* MinGW: spill to [rsp] and pass pointer in arg2reg. See */
+			/* DynGen_PrepRegs for rationale. */
 			{ struct e_mem xm; E_MEM(xm, XE_SP, E_NOREG, 0, 0); xe_movaps_memxg(xm, value_reg); }
 			_freeX86reg(XE_ARG2);
 			xe_mov64_rr(XE_ARG2, XE_SP);
@@ -751,19 +763,18 @@ void vtlb_DynGenWrite_Const(u32 bits, int xmm, u32 addr_const, int value_reg)
 	}
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//							Extra Implementations
+/* 							Extra Implementations */
 
-//   ecx - virtual address
-//   Returns physical address in eax.
-//   Clobbers edx
+/*   ecx - virtual address */
+/*   Returns physical address in eax. */
+/*   Clobbers edx */
 void vtlb_DynV2P(void)
 {
 	xe_mov32_rr(XE_AX, XE_CX);
-	xe_and32_ri(XE_CX, VTLB_PAGE_MASK); // vaddr & VTLB_PAGE_MASK
+	xe_and32_ri(XE_CX, VTLB_PAGE_MASK); /* vaddr & VTLB_PAGE_MASK */
 
 	xe_shr32_ri(XE_AX, VTLB_PAGE_BITS);
-	{ struct e_mem xm; xe_complexaddr_si(xm, XE_DX, vtlbdata.ppmap, XE_AX, 4); xe_mov32_rmem(XE_AX, xm); } // vtlbdata.ppmap[vaddr >> VTLB_PAGE_BITS];
+	{ struct e_mem xm; xe_complexaddr_si(xm, XE_DX, vtlbdata.ppmap, XE_AX, 4); xe_mov32_rmem(XE_AX, xm); } /* vtlbdata.ppmap[vaddr >> VTLB_PAGE_BITS]; */
 
 	xe_or32_rr(XE_AX, XE_CX);
 }
@@ -773,7 +784,7 @@ void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, 
 	static const u32 GPR_SIZE = 8;
 	static const u32 XMM_SIZE = 16;
 
-	// on win32, we need to reserve an additional 32 bytes shadow space when calling out to C
+	/* on win32, we need to reserve an additional 32 bytes shadow space when calling out to C */
 #ifdef _WIN32
 	static const u32 SHADOW_SIZE = 32;
 #else
@@ -781,7 +792,7 @@ void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, 
 #endif
 	u8* thunk = recBeginThunk();
 
-	// save regs
+	/* save regs */
 	u32 num_gprs = 0;
 	u32 num_fprs = 0;
 
@@ -789,26 +800,30 @@ void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, 
 	const u32 arg1id = (u32)(XE_ARG1);
 	const u32 arg2id = (u32)(XE_ARG2);
 	const u32 arg3id = (u32)(XE_ARG3);
+	u32 i;
+	u32 stack_size;
 
-	for (u32 i = 0; i < iREGCNT_GPR; i++)
+	for (i = 0; i < iREGCNT_GPR; i++)
 	{
 		if ((gpr_bitmask & (1u << i)) && (i == rbxid || i == arg1id || i == arg2id || XE_IS_CALLER_SAVED(i)) && (!is_load || is_xmm || data_register != i))
 			num_gprs++;
 	}
-	for (u32 i = 0; i < iREGCNT_XMM; i++)
+	for (i = 0; i < iREGCNT_XMM; i++)
 	{
 		if (fpr_bitmask & (1u << i) && XE_XMM_CALLER_SAVED(i) && (!is_load || !is_xmm || data_register != i))
 			num_fprs++;
 	}
 
-	const u32 stack_size = (((num_gprs + 1) & ~1u) * GPR_SIZE) + (num_fprs * XMM_SIZE) + SHADOW_SIZE;
+	stack_size = (((num_gprs + 1) & ~1u) * GPR_SIZE) + (num_fprs * XMM_SIZE) + SHADOW_SIZE;
 
 	if (stack_size > 0)
 	{
+		u32 stack_offset;
+		u32 i;
 		xe_sub64_ri(XE_SP, stack_size);
 
-		u32 stack_offset = SHADOW_SIZE;
-		for (u32 i = 0; i < iREGCNT_XMM; i++)
+		stack_offset = SHADOW_SIZE;
+		for (i = 0; i < iREGCNT_XMM; i++)
 		{
 			if (fpr_bitmask & (1u << i) && XE_XMM_CALLER_SAVED(i) && (!is_load || !is_xmm || data_register != i))
 			{
@@ -817,7 +832,7 @@ void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, 
 			}
 		}
 
-		for (u32 i = 0; i < iREGCNT_GPR; i++)
+		for (i = 0; i < iREGCNT_GPR; i++)
 		{
 			if ((gpr_bitmask & (1u << i)) && (i == arg1id || i == arg2id || i == arg3id || XE_IS_CALLER_SAVED(i)) && (!is_load || is_xmm || data_register != i))
 			{
@@ -880,11 +895,12 @@ void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, 
 		DynGen_HandlerTest(DYNGEN_DIRECT_WRITE, size_in_bits, 0, 1, size_in_bits, 0);
 	}
 
-	// restore regs
+	/* restore regs */
 	if (stack_size > 0)
 	{
 		u32 stack_offset = SHADOW_SIZE;
-		for (u32 i = 0; i < iREGCNT_XMM; i++)
+		u32 i;
+		for (i = 0; i < iREGCNT_XMM; i++)
 		{
 			if (fpr_bitmask & (1u << i) && XE_XMM_CALLER_SAVED(i) && (!is_load || !is_xmm || data_register != i))
 			{
@@ -893,7 +909,7 @@ void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, 
 			}
 		}
 
-		for (u32 i = 0; i < iREGCNT_GPR; i++)
+		for (i = 0; i < iREGCNT_GPR; i++)
 		{
 			if ((gpr_bitmask & (1u << i)) && (i == arg1id || i == arg2id || i == arg3id || XE_IS_CALLER_SAVED(i)) && (!is_load || is_xmm || data_register != i))
 			{
@@ -909,11 +925,11 @@ void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, 
 
 	recEndThunk();
 
-	// backpatch to a jump to the slowmem handler
+	/* backpatch to a jump to the slowmem handler */
 	x86Ptr = (u8*)((u8*)code_address);
 	xe_jmp_to(thunk);
 
-	// fill the rest of it with nops, if any
-	for (u32 i = (u32)((uptr)x86Ptr - code_address); i < code_size; i++)
+	/* fill the rest of it with nops, if any */
+	for (i = (u32)((uptr)x86Ptr - code_address); i < code_size; i++)
 		xe_nop();
 }

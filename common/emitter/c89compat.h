@@ -16,7 +16,14 @@
 #include "common/emitter/x86types.h"
 #include "common/emitter/c89ops.h"
 
-inline JccComparisonType xInvertCond(JccComparisonType src)
+/* Static in C: a gnu89 plain inline is an external definition, so every
+ * C translation unit including this would define the symbol again. */
+#ifdef __cplusplus
+inline
+#else
+static __inline
+#endif
+JccComparisonType xInvertCond(JccComparisonType src)
 {
 	return (src == Jcc_Unconditional) ? Jcc_Unconditional : (JccComparisonType)((int)src ^ 1);
 }

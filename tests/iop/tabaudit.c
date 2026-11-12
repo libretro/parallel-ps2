@@ -15,14 +15,14 @@
  *  is exactly as wrong as a mismatched pair.
  *
  *  The recompiler has its own copies of the same three tables in
- *  x86/iR3000Atables.cpp, named with an r prefix and pointing at the
+ *  x86/iR3000Atables.c, named with an r prefix and pointing at the
  *  emitters, and they are checked against the same reference. A
  *  recompiler that dispatches an encoding to the wrong emitter is the
  *  same catastrophe as the interpreter doing it, and equally invisible to
  *  a test that calls the implementations directly. The prefix is the only
  *  difference, so one reference serves both.
  *
- *  Usage: tests/iop/tabaudit <R3000AOpcodeTables.c> [iR3000Atables.cpp]
+ *  Usage: tests/iop/tabaudit <R3000AOpcodeTables.c> [iR3000Atables.c]
  */
 
 #include <stdio.h>

@@ -24,14 +24,14 @@
 
 static void recWritebackHILO(int info, int writed, int upper)
 {
-	// writeback low 32 bits, sign extended to 64 bits
+	/* writeback low 32 bits, sign extended to 64 bits */
 	int eax_sign_extended = 0;
 
-	// case 1: LO is already in an XMM - use the xmm
-	// case 2: LO is used as an XMM later in the block - use or allocate the XMM
-	// case 3: LO is used as a GPR later in the block - use XMM if upper, otherwise use GPR, so it can be renamed
-	// case 4: LO is already in a GPR - write to the GPR, or write to memory if upper
-	// case 4: LO is not used - writeback to memory
+	/* case 1: LO is already in an XMM - use the xmm */
+	/* case 2: LO is used as an XMM later in the block - use or allocate the XMM */
+	/* case 3: LO is used as a GPR later in the block - use XMM if upper, otherwise use GPR, so it can be renamed */
+	/* case 4: LO is already in a GPR - write to the GPR, or write to memory if upper */
+	/* case 4: LO is not used - writeback to memory */
 
 	{
 		const int loused = !!(EEINST_USEDTEST(XMMGPR_LO));
@@ -39,7 +39,7 @@ static void recWritebackHILO(int info, int writed, int upper)
 		const int xmmlo = lousedxmm ? _allocGPRtoXMMreg(XMMGPR_LO, MODE_READ | MODE_WRITE) : _checkXMMreg(XMMTYPE_GPRREG, XMMGPR_LO, MODE_WRITE);
 		if (xmmlo >= 0)
 		{
-			// we use CDQE over MOVSX because it's shorter.
+			/* we use CDQE over MOVSX because it's shorter. */
 			xe_cdqe();
 			xe_pinsrq(xmmlo, XE_AX, (u8)(upper));
 		}
@@ -82,12 +82,11 @@ static void recWritebackHILO(int info, int writed, int upper)
 		}
 	}
 
-
-	// writeback lo to Rd if present
+	/* writeback lo to Rd if present */
 	if (writed && _Rd_)
 	{
-		// TODO: This can be made optimal by keeping it in an xmm.
-		// But currently the templates aren't hooked up for that - we'd need a "allow xmm" flag.
+		/* TODO: This can be made optimal by keeping it in an xmm. */
+		/* But currently the templates aren't hooked up for that - we'd need a "allow xmm" flag. */
 		if (info & PROCESS_EE_D)
 		{
 			if (eax_sign_extended)
@@ -104,12 +103,11 @@ static void recWritebackHILO(int info, int writed, int upper)
 	}
 }
 
-
 static void recWritebackConstHILO(u64 res, int writed, int upper)
 {
-	// It's not often that MULT/DIV are entirely constant. So while the MOV64s here are not optimal
-	// by any means, it's not something that's going to be hit often enough to worry about a cache.
-	// Except for apparently when it's getting set to all-zeros, but that'll be fine with immediates.
+	/* It's not often that MULT/DIV are entirely constant. So while the MOV64s here are not optimal */
+	/* by any means, it's not something that's going to be hit often enough to worry about a cache. */
+	/* Except for apparently when it's getting set to all-zeros, but that'll be fine with immediates. */
 	const s64 loval = (s64)((s32)((u32)(res)));
 	const s64 hival = (s64)((s32)((u32)(res >> 32)));
 
@@ -151,12 +149,13 @@ static void recWritebackConstHILO(u64 res, int writed, int upper)
 		}
 	}
 
-	// writeback lo to Rd if present
+	/* writeback lo to Rd if present */
 	if (writed && _Rd_)
 	{
+		int regd;
 		_eeOnWriteReg(_Rd_, 0);
 
-		const int regd = _checkX86reg(X86TYPE_GPR, _Rd_, MODE_WRITE);
+		regd = _checkX86reg(X86TYPE_GPR, _Rd_, MODE_WRITE);
 		if (regd >= 0)
 			xe_imm64op_mov_rr(regd, XE_AX, loval);
 		else
@@ -164,7 +163,7 @@ static void recWritebackConstHILO(u64 res, int writed, int upper)
 	}
 }
 
-//// MULT
+/* // MULT */
 static void recMULT_const(void)
 {
 	s64 res = (s64)g_cpuConstRegs[_Rs_].SL[0] * (s64)g_cpuConstRegs[_Rt_].SL[0];
@@ -174,7 +173,7 @@ static void recMULT_const(void)
 
 static void recMULTsuper(int info, int sign, int upper, int process)
 {
-	// TODO(Stenzek): Use MULX where available.
+	/* TODO(Stenzek): Use MULX where available. */
 	if (process & PROCESS_CONSTS)
 	{
 		xe_mov32_ri(XE_AX, g_cpuConstRegs[_Rs_].UL[0]);
@@ -193,7 +192,7 @@ static void recMULTsuper(int info, int sign, int upper, int process)
 	}
 	else
 	{
-		// S is more likely to be in a register than T (so put T in eax).
+		/* S is more likely to be in a register than T (so put T in eax). */
 		if (info & PROCESS_EE_T)
 			xe_mov32_rr(XE_AX, EEREC_T);
 		else
@@ -223,10 +222,10 @@ static void recMULT_constt(int info)
 	recMULTsuper(info, 1, 0, PROCESS_CONSTT);
 }
 
-// lo/hi allocation are taken care of in recWritebackHILO().
+/* lo/hi allocation are taken care of in recWritebackHILO(). */
 EERECOMPILE_CODERC0(MULT, XMMINFO_READS | XMMINFO_READT | (_Rd_ ? XMMINFO_WRITED : 0));
 
-//// MULTU
+/* // MULTU */
 static void recMULTU_const(void)
 {
 	const u64 res = (u64)g_cpuConstRegs[_Rs_].UL[0] * (u64)g_cpuConstRegs[_Rt_].UL[0];
@@ -249,10 +248,9 @@ static void recMULTU_constt(int info)
 	recMULTsuper(info, 0, 0, PROCESS_CONSTT);
 }
 
-// don't specify XMMINFO_WRITELO or XMMINFO_WRITEHI, that is taken care of
+/* don't specify XMMINFO_WRITELO or XMMINFO_WRITEHI, that is taken care of */
 EERECOMPILE_CODERC0(MULTU, XMMINFO_READS | XMMINFO_READT | (_Rd_ ? XMMINFO_WRITED : 0));
 
-////////////////////////////////////////////////////
 static void recMULT1_const(void)
 {
 	s64 res = (s64)g_cpuConstRegs[_Rs_].SL[0] * (s64)g_cpuConstRegs[_Rt_].SL[0];
@@ -277,7 +275,6 @@ static void recMULT1_constt(int info)
 
 EERECOMPILE_CODERC0(MULT1, XMMINFO_READS | XMMINFO_READT | (_Rd_ ? XMMINFO_WRITED : 0));
 
-////////////////////////////////////////////////////
 static void recMULTU1_const(void)
 {
 	u64 res = (u64)g_cpuConstRegs[_Rs_].UL[0] * (u64)g_cpuConstRegs[_Rt_].UL[0];
@@ -302,7 +299,7 @@ static void recMULTU1_constt(int info)
 
 EERECOMPILE_CODERC0(MULTU1, XMMINFO_READS | XMMINFO_READT | (_Rd_ ? XMMINFO_WRITED : 0));
 
-//// DIV
+/* // DIV */
 
 static void recDIVconst(int upper)
 {
@@ -330,6 +327,9 @@ static void recDIV_const(void)
 static void recDIVsuper(int info, int sign, int upper, int process)
 {
 	const int divisor = (info & PROCESS_EE_T) ? EEREC_T : XE_CX;
+	u8* end1;
+	uint8_t* cont3;
+	uint8_t* end2;
 	if (!(info & PROCESS_EE_T))
 	{
 		if (process & PROCESS_CONSTT)
@@ -343,15 +343,16 @@ static void recDIVsuper(int info, int sign, int upper, int process)
 	else
 		_eeMoveGPRtoR64(XE_AX, _Rs_, 1);
 
-	u8* end1;
-	if (sign) //test for overflow (x86 will just throw an exception)
+	if (sign) /* test for overflow (x86 will just throw an exception) */
 	{
+		uint8_t* cont1;
+		uint8_t* cont2;
 		xe_cmp32_ri(XE_AX, 0x80000000);
-		uint8_t* cont1; xe_fwd_jcc8(Jcc_NotEqual, cont1);
+		 xe_fwd_jcc8(Jcc_NotEqual, cont1);
 		xe_cmp32_ri(divisor, 0xffffffff);
-		uint8_t* cont2; xe_fwd_jcc8(Jcc_NotEqual, cont2);
-		//overflow case:
-		xe_xor32_rr(XE_DX, XE_DX); //EAX remains 0x80000000
+		 xe_fwd_jcc8(Jcc_NotEqual, cont2);
+		/* overflow case: */
+		xe_xor32_rr(XE_DX, XE_DX); /* EAX remains 0x80000000 */
 		xe_fwd_jcc8(Jcc_Unconditional, end1);
 
 		xe_fwd_set8(cont1);
@@ -359,18 +360,18 @@ static void recDIVsuper(int info, int sign, int upper, int process)
 	}
 
 	xe_cmp32_ri(divisor, 0);
-	uint8_t* cont3; xe_fwd_jcc8(Jcc_NotEqual, cont3);
-	//divide by zero
+	 xe_fwd_jcc8(Jcc_NotEqual, cont3);
+	/* divide by zero */
 	xe_mov32_rr(XE_DX, XE_AX);
-	if (sign) //set EAX to (EAX < 0)?1:-1
+	if (sign) /* set EAX to (EAX < 0)?1:-1 */
 	{
-		xe_sar32_ri(XE_AX, 31); //(EAX < 0)?-1:0
-		xe_shl32_ri(XE_AX, 1); //(EAX < 0)?-2:0
-		xe_not32_r(XE_AX); //(EAX < 0)?1:-1
+		xe_sar32_ri(XE_AX, 31); /* (EAX < 0)?-1:0 */
+		xe_shl32_ri(XE_AX, 1); /* (EAX < 0)?-2:0 */
+		xe_not32_r(XE_AX); /* (EAX < 0)?1:-1 */
 	}
 	else
 		xe_mov32_ri(XE_AX, 0xffffffff);
-	uint8_t* end2; xe_fwd_jcc8(Jcc_Unconditional, end2);
+	 xe_fwd_jcc8(Jcc_Unconditional, end2);
 
 	xe_fwd_set8(cont3);
 	if (sign)
@@ -388,7 +389,7 @@ static void recDIVsuper(int info, int sign, int upper, int process)
 		xe_fwd_set8(end1);
 	xe_fwd_set8(end2);
 
-	// need to execute regardless of bad divide
+	/* need to execute regardless of bad divide */
 	recWritebackHILO(info, 0, upper);
 }
 
@@ -407,10 +408,10 @@ static void recDIV_constt(int info)
 	recDIVsuper(info, 1, 0, PROCESS_CONSTT);
 }
 
-// We handle S reading in the routine itself, since it needs to go into eax.
+/* We handle S reading in the routine itself, since it needs to go into eax. */
 EERECOMPILE_CODERC0(DIV, /*XMMINFO_READS |*/ XMMINFO_READT);
 
-//// DIVU
+/* // DIVU */
 static void recDIVUconst(int upper)
 {
 	u32 quot, rem;
@@ -472,7 +473,7 @@ static void recDIV1_constt(int info)
 
 EERECOMPILE_CODERC0(DIV1, /*XMMINFO_READS |*/ XMMINFO_READT);
 
-static void recDIVU1_const()
+static void recDIVU1_const(void)
 {
 	recDIVUconst(1);
 }
@@ -494,11 +495,11 @@ static void recDIVU1_constt(int info)
 
 EERECOMPILE_CODERC0(DIVU1, /*XMMINFO_READS |*/ XMMINFO_READT);
 
-// TODO(Stenzek): All of these :(
+/* TODO(Stenzek): All of these :( */
 
 static void writeBackMAddToHiLoRd(int hiloID)
 {
-	// eax -> LO, edx -> HI
+	/* eax -> LO, edx -> HI */
 	xe_cdqe();
 	if (_Rd_)
 	{

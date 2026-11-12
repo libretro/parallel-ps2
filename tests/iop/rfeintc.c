@@ -12,7 +12,7 @@
  *  For the x86 rpsxRFE body and the arm64 RFE case (rs field 0x10 of
  *  COP0), this checks that each calls iopTestIntc.
  *
- *  Usage: tests/iop/rfeintc <iR3000Atables.cpp> <recR3000A_arm64.cpp>
+ *  Usage: tests/iop/rfeintc <iR3000Atables.c> <recR3000A_arm64.cpp>
  */
 
 #include <stdio.h>
@@ -84,10 +84,10 @@ int main(int argc, char** argv)
 
 	if (argc != 3)
 	{
-		fprintf(stderr, "usage: %s <iR3000Atables.cpp> <recR3000A_arm64.cpp>\n", argv[0]);
+		fprintf(stderr, "usage: %s <iR3000Atables.c> <recR3000A_arm64.cpp>\n", argv[0]);
 		return 2;
 	}
-	bad += report("x86 rpsxRFE", region_has(argv[1], "static void rpsxRFE()", "\n}\n", "iopTestIntc"));
+	bad += report("x86 rpsxRFE", region_has(argv[1], "static void rpsxRFE(void)", "\n}\n", "iopTestIntc"));
 	bad += report("arm64 RFE", region_has(argv[2], "if (rs_field == 0x10)", "return true;", "iopTestIntc"));
 	if (bad)
 	{

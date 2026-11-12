@@ -294,17 +294,17 @@ typedef struct R5900cpu
 	/* the virtual cpu provider.  Allocating additional heap memory from this method is */
 	/* NOT recommended.  Heap allocations should be performed by Reset only.  This */
 	/* maximizes the likeliness of reservations claiming addresses they prefer. */
-	void (*Reserve)();
+	void (*Reserve)(void);
 
 	/* Deallocates ram allocated by Allocate, Reserve, and/or by runtime code execution. */
 
-	void (*Shutdown)();
+	void (*Shutdown)(void);
 
 	/* Initializes / Resets code execution states. Typically implementation is only */
 	/* needed for recompilers, as interpreters have no internal execution states and */
 	/* rely on the CPU/VM states almost entirely. */
 
-	void (*Reset)();
+	void (*Reset)(void);
 
 	/* Executes code until a break is signaled.  Execution can be paused or suspended */
 	/* via thread-style signals that are handled by CheckExecutionState callbacks. */
@@ -313,16 +313,16 @@ typedef struct R5900cpu
 	/* either C++ exceptions or setjmp/longjmp). */
 
 
-	void (*Execute)();
+	void (*Execute)(void);
 
 	/* Immediately exits execution of recompiled code if we are in a state to do so, or */
 	/* queues an exit as soon as it is safe. Safe in this case refers to whether we are */
 	/* currently executing events or not. */
-	void (*ExitExecution)();
+	void (*ExitExecution)(void);
 
 	/* Cancels the currently-executing instruction, returning to the main loop. */
 	/* Currently only works for the interpreter. */
-	void (*CancelInstruction)();
+	void (*CancelInstruction)(void);
 
 	/* Manual recompiled code cache clear; typically useful to recompilers only.  Size is */
 	/* in MIPS words (32 bits).  Dev note: this callback is nearly obsolete, and might be */

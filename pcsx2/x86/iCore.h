@@ -18,16 +18,20 @@
 #include "../../common/emitter/x86emitter.h"
 #include "../VUmicro.h"
 
-// Namespace Note : iCore32 contains all of the Register Allocation logic, in addition to a handful
-// of utility functions for emitting frequent code.
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-////////////////////////////////////////////////////////////////////////////////
-// Shared Register allocation flags (apply to X86, XMM, MMX, etc).
+/* Namespace Note : iCore32 contains all of the Register Allocation logic, in addition to a handful */
+/* of utility functions for emitting frequent code. */
+
+/* ////////////////////////////////////////////////////////////////////////////// */
+/* Shared Register allocation flags (apply to X86, XMM, MMX, etc). */
 
 #define MODE_READ        1
 #define MODE_WRITE       2
-#define MODE_CALLEESAVED  0x20 // can't flush reg to mem
-#define MODE_COP2 0x40 // don't allow using reserved VU registers
+#define MODE_CALLEESAVED  0x20 /* can't flush reg to mem */
+#define MODE_COP2 0x40 /* don't allow using reserved VU registers */
 
 #define PROCESS_EE_XMM 0x02
 
@@ -58,7 +62,7 @@
 #define PROCESS_CONSTT 2
 
 /* XMM caching helpers */
-enum xmminfo : u16 
+enum xmminfo
 {
 	XMMINFO_READLO = 0x001,
 	XMMINFO_READHI = 0x002,
@@ -78,10 +82,10 @@ enum xmminfo : u16
 	XMMINFO_NORENAME = 0x8000 /* disables renaming of Rs to Rt in Rt = Rs op IMM */
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//   X86 (32-bit) Register Allocation Tools
+/* ////////////////////////////////////////////////////////////////////////////// */
+/*   X86 (32-bit) Register Allocation Tools */
 
-enum x86type : u8 
+enum x86type
 {
 	X86TYPE_TEMP = 0,
 	X86TYPE_GPR = 1,
@@ -92,7 +96,7 @@ enum x86type : u8
 	X86TYPE_PSX_PCWRITEBACK = 6
 };
 
-struct _x86regs
+typedef struct _x86regs
 {
 	u8 inuse;
 	s8 reg;
@@ -101,7 +105,7 @@ struct _x86regs
 	u8 type; /* X86TYPE_ */
 	u16 counter;
 	u32 extra; /* extra info assoc with the reg */
-};
+} _x86regs;
 
 extern _x86regs x86regs[iREGCNT_GPR], s_saveX86regs[iREGCNT_GPR];
 
@@ -111,20 +115,20 @@ int _allocX86reg(int type, int reg, int mode);
 int _checkX86reg(int type, int reg, int mode);
 int _hasX86reg(int type, int reg, int required_mode);
 void _addNeededX86reg(int type, int reg);
-void _clearNeededX86regs();
+void _clearNeededX86regs(void);
 void _freeX86reg(int x86reg);
 void _freeX86regWithoutWriteback(int x86reg);
-void _freeX86regs();
-void _flushX86regs();
-void _flushConstRegs();
+void _freeX86regs(void);
+void _flushX86regs(void);
+void _flushConstRegs(void);
 void _flushConstReg(int reg);
 void _writebackX86Reg(int x86reg);
 
 void mVUFreeCOP2GPR(int hostreg);
 int mVUIsReservedCOP2(int hostreg);
 
-////////////////////////////////////////////////////////////////////////////////
-//   XMM (128-bit) Register Allocation Tools
+/* ////////////////////////////////////////////////////////////////////////////// */
+/*   XMM (128-bit) Register Allocation Tools */
 
 #define XMMTYPE_TEMP   0 /* has to be 0 */
 #define XMMTYPE_GPRREG X86TYPE_GPR
@@ -151,7 +155,7 @@ static __fi GPR_reg* _eeGetGPRPtr(int reg)
 
 #define XMMFPU_ACC 32
 
-enum : int
+enum
 {
 	DELETE_REG_FREE = 0,
 	DELETE_REG_FLUSH = 1,
@@ -159,7 +163,7 @@ enum : int
 	DELETE_REG_FREE_NO_WRITEBACK = 3
 };
 
-struct _xmmregs
+typedef struct _xmmregs
 {
 	u8 inuse;
 	s8 reg;
@@ -167,9 +171,9 @@ struct _xmmregs
 	u8 mode;
 	u8 needed;
 	u16 counter;
-};
+} _xmmregs;
 
-void _initXMMregs();
+void _initXMMregs(void);
 int _getFreeXMMreg(u32 maxreg);
 int _allocTempXMMreg(XMMSSEType type);
 int _allocFPtoXMMreg(int fpreg, int mode);
@@ -179,11 +183,11 @@ void _reallocateXMMreg(int xmmreg, int newtype, int newreg, int newmode, int wri
 int _checkXMMreg(int type, int reg, int mode);
 int _hasXMMreg(int type, int reg, int required_mode);
 void _addNeededFPtoXMMreg(int fpreg);
-void _addNeededFPACCtoXMMreg();
+void _addNeededFPACCtoXMMreg(void);
 void _addNeededGPRtoX86reg(int gprreg);
 void _addNeededPSXtoX86reg(int gprreg);
 void _addNeededGPRtoXMMreg(int gprreg);
-void _clearNeededXMMregs();
+void _clearNeededXMMregs(void);
 void _deleteGPRtoX86reg(int reg, int flush);
 void _deletePSXtoX86reg(int reg, int flush);
 void _deleteGPRtoXMMreg(int reg, int flush);
@@ -193,9 +197,9 @@ void _freeXMMregWithoutWriteback(int xmmreg);
 void _writebackXMMreg(int xmmreg);
 int _allocVFtoXMMreg(int vfreg, int mode);
 void mVUFreeCOP2XMMreg(int hostreg);
-void _flushCOP2regs();
+void _flushCOP2regs(void);
 void _flushXMMreg(int xmmreg);
-void _flushXMMregs();
+void _flushXMMregs(void);
 
 /*********************
 ** Instruction Info **
@@ -227,7 +231,7 @@ void _flushXMMregs();
 #define EEINST_COP2_FINISH_VU0 0x4000
 #define EEINST_COP2_FLUSH_VU0_REGISTERS 0x8000
 
-struct EEINST
+typedef struct EEINST
 {
 	u16 info; /* extra info, if 1 inst is COP1, 2 inst is COP2. Also uses EEINST_XMM */
 	u8 regs[34]; /* includes HI/LO (HI=32, LO=33) */
@@ -238,7 +242,7 @@ struct EEINST
 	/* uses XMMTYPE_ flags; if type == XMMTYPE_TEMP, not used */
 	u8 writeType[3], writeReg[3]; /* reg written in this inst, 0 if no reg */
 	u8 readType[4], readReg[4];
-};
+} EEINST;
 
 extern EEINST* g_pCurInstInfo; /* info for the cur instruction */
 extern void _recClearInst(EEINST* pinst);
@@ -270,13 +274,13 @@ static __fi int EEINST_VFUSEDTEST(u32 reg)
 	return (g_pCurInstInfo->vfregs[reg] & (EEINST_USED | EEINST_LASTUSE)) == EEINST_USED;
 }
 
-/// Returns true if the specified VI register is used later in the block.
+/* / Returns true if the specified VI register is used later in the block. */
 static __fi int EEINST_VIUSEDTEST(u32 reg)
 {
 	return (g_pCurInstInfo->viregs[reg] & (EEINST_USED | EEINST_LASTUSE)) == EEINST_USED;
 }
 
-/// Returns true if the register can be renamed into another.
+/* / Returns true if the register can be renamed into another. */
 static __fi int EEINST_RENAMETEST(u32 reg)
 {
 	return (reg == 0 || !EEINST_USEDTEST(reg));
@@ -285,8 +289,8 @@ static __fi int EEINST_RENAMETEST(u32 reg)
 static __fi int FPUINST_ISLIVE(u32 reg)   { return !!(g_pCurInstInfo->fpuregs[reg] & EEINST_LIVE); }
 static __fi int FPUINST_LASTUSE(u32 reg)  { return !!(g_pCurInstInfo->fpuregs[reg] & EEINST_LASTUSE); }
 
-/// Returns true if the register is used later in the block, and this isn't the last instruction to use it.
-/// In other words, the register is worth keeping in a host register/caching it.
+/* / Returns true if the register is used later in the block, and this isn't the last instruction to use it. */
+/* / In other words, the register is worth keeping in a host register/caching it. */
 static __fi int FPUINST_USEDTEST(u32 reg)
 {
 	return (g_pCurInstInfo->fpuregs[reg] & (EEINST_USED | EEINST_LASTUSE)) == EEINST_USED;
@@ -321,3 +325,6 @@ int _allocIfUsedFPUtoXMM(int fpureg, int mode);
 
 /* No freeing, used when callee won't destroy XMM regs */
 #define FLUSH_NODESTROY (FLUSH_CONSTANT_REGS | FLUSH_FLUSH_XMM | FLUSH_ALL_X86)
+#ifdef __cplusplus
+}
+#endif

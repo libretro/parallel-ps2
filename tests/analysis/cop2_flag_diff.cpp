@@ -60,7 +60,7 @@ static struct { u32 code; } cpuRegs;
 #define _Rd_     ((cpuRegs.code >> 11) & 0x1f)
 #define _Funct_  (cpuRegs.code & 0x3f)
 
-/* ---- verbatim: cop2flags (x86 ix86-32/iR5900-32.cpp) ---- */
+/* ---- verbatim: cop2flags (x86 ix86-32/iR5900-32.c) ---- */
 int cop2flags(u32 code)
 {
 	if (code >> 26 != 022)
@@ -122,7 +122,7 @@ int cop2flags(u32 code)
 	return 3;
 }
 
-/* ---- verbatim: the x86 flag-hack pass (x86/iR5900Analysis.cpp) ---- */
+/* ---- verbatim: the x86 flag-hack pass (x86/iR5900Analysis.c) ---- */
 void COP2FlagHackPass_Run(u32 start, u32 end, EEINST* inst_cache)
 {
 	int status_denormalized = 0;

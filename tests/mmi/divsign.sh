@@ -23,9 +23,9 @@ ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
 status=0
 
 for f in \
-	"$ROOT/pcsx2/x86/iMMI.cpp" \
-	"$ROOT/pcsx2/x86/ix86-32/iR5900MultDiv.cpp" \
-	"$ROOT/pcsx2/x86/iR3000Atables.cpp"
+	"$ROOT/pcsx2/x86/iMMI.c" \
+	"$ROOT/pcsx2/x86/ix86-32/iR5900MultDiv.c" \
+	"$ROOT/pcsx2/x86/iR3000Atables.c"
 do
 	[ -f "$f" ] || continue
 

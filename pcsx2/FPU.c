@@ -127,9 +127,9 @@ static bool checkDivideByZero(u32* xReg, u32 yDivisorReg, u32 zDividendReg, u32 
 		 * result goes straight to the guest register.
 		 *
 		 * The x86 soft-float recompiler already had this right: SetMaxValue
-		 * in x86/iFPUd.cpp ORs s_const.pos[0], which is 0x7fffffff. The
+		 * in x86/iFPUd.c ORs s_const.pos[0], which is 0x7fffffff. The
 		 * native-float paths deliberately use the smaller constant instead
-		 * -- g_maxvals in x86/iFPU.cpp, and the arm64 EmitDivS -- because
+		 * -- g_maxvals in x86/iFPU.c, and the arm64 EmitDivS -- because
 		 * there the value stays a host float and 0x7fffffff would read as a
 		 * NaN. Those are not the same bug and should not be "fixed".
 		 *
@@ -285,7 +285,7 @@ void intCFC1(void) {
 	 * thirty-two after reset, that was 1 of 32.
 	 *
 	 * The FCR31 read drops the always-zero bits and sets the always-one
-	 * ones, which recCFC1 in x86/iFPU.cpp has always done and this had not,
+	 * ones, which recCFC1 in x86/iFPU.c has always done and this had not,
 	 * so the two engines disagreed on any value written by CTC1. The mask
 	 * is confirmed by the capture: writing 0xffffffff and reading back
 	 * gives 0x0183c079, which is exactly (0xffffffff & 0x0083c078) |

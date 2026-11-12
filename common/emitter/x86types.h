@@ -15,30 +15,38 @@
 
 #pragma once
 
-#include <cstring>
+#include <string.h>
 
 #include "../Pcsx2Defs.h"
 
-static const uint iREGCNT_XMM = 16;
-static const uint iREGCNT_GPR = 16;
+#define iREGCNT_XMM 16
+#define iREGCNT_GPR 16
 
-enum XMMSSEType
+typedef enum XMMSSEType
 {
-XMMT_INT = 0, // integer (sse2 only)
-XMMT_FPS = 1  // floating point
-};
+	XMMT_INT = 0, /* integer (sse2 only) */
+	XMMT_FPS = 1  /* floating point */
+} XMMSSEType;
 
-// One strong definition each, in iCore.cpp; every other TU sees only these
-// externs. Every recompiler emits through the same cursor, so it has to be
-// one TLS slot per thread across the whole module. An `inline thread_local`
-// here is a COMDAT the linker must fold across every TU that includes this
-// header, and MSVC does not do that dependably: unfolded, the EE recompiler
-// sets its own copy while a COP2 macro op emits through the microVU TU's,
-// and the rip-relative distance is then measured from a stale cursor --
-// which is the FATAL_APP_EXIT in the emitter that survived every placement
-// fix. A strong definition cannot be duplicated.
-extern thread_local u8* x86Ptr PCSX2_TLS_INITIAL_EXEC;
-extern thread_local XMMSSEType g_xmmtypes[iREGCNT_XMM] PCSX2_TLS_INITIAL_EXEC;
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* One strong definition each, in iCore.c; every other TU sees only these */
+/* externs. Every recompiler emits through the same cursor, so it has to be */
+/* one TLS slot per thread across the whole module. An `inline thread_local` */
+/* here is a COMDAT the linker must fold across every TU that includes this */
+/* header, and MSVC does not do that dependably: unfolded, the EE recompiler */
+/* sets its own copy while a COP2 macro op emits through the microVU TU's, */
+/* and the rip-relative distance is then measured from a stale cursor -- */
+/* which is the FATAL_APP_EXIT in the emitter that survived every placement */
+/* fix. A strong definition cannot be duplicated. */
+extern PCSX2_THREAD_LOCAL u8* x86Ptr PCSX2_TLS_INITIAL_EXEC;
+extern PCSX2_THREAD_LOCAL XMMSSEType g_xmmtypes[iREGCNT_XMM] PCSX2_TLS_INITIAL_EXEC;
+
+#ifdef __cplusplus
+}
+#endif
 
 /* x86Ptr is the emitter cursor; read and assign it directly. The old
  * x86Ptr/x86Ptr = (u8*)()/x86Ptr wrappers existed against a
@@ -72,11 +80,11 @@ extern thread_local XMMSSEType g_xmmtypes[iREGCNT_XMM] PCSX2_TLS_INITIAL_EXEC;
 	x86Ptr += sizeof(u64); \
 }
 
-// Local-cursor variants of the above. These write through a caller-supplied
-// u8* cursor (typically a local cached from x86Ptr) and advance it, instead of
-// touching the thread_local x86Ptr on every byte. Used by emit paths that cache
-// the cursor across several writes and store it back once. Behaviourally
-// identical to the global versions for the same cursor value.
+/* Local-cursor variants of the above. These write through a caller-supplied */
+/* u8* cursor (typically a local cached from x86Ptr) and advance it, instead of */
+/* touching the thread_local x86Ptr on every byte. Used by emit paths that cache */
+/* the cursor across several writes and store it back once. Behaviourally */
+/* identical to the global versions for the same cursor value. */
 #define xWrite8p(p, val) \
 { \
 	*(u8*)(p) = (val); \
@@ -107,26 +115,26 @@ extern thread_local XMMSSEType g_xmmtypes[iREGCNT_XMM] PCSX2_TLS_INITIAL_EXEC;
 /* Emitter core: the cursor, the SIMD-type tag, and the Jcc enum. No
  * namespace -- the reference emitter's object world is what needed one, and
  * that lives under tests/emitter/reference now. */
-// Win32 requires 32 bytes of shadow stack in the caller's frame.
+/* Win32 requires 32 bytes of shadow stack in the caller's frame. */
 #ifdef _WIN32
-static constexpr int SHADOW_STACK_SIZE = 32;
+#define SHADOW_STACK_SIZE 32
 #else
-static constexpr int SHADOW_STACK_SIZE = 0;
+#define SHADOW_STACK_SIZE 0
 #endif
 
-// ModRM 'mod' field enumeration.   Provided mostly for reference:
-enum ModRm_ModField
+/* ModRM 'mod' field enumeration.   Provided mostly for reference: */
+typedef enum ModRm_ModField
 {
-	Mod_NoDisp = 0, // effective address operation with no displacement, in the form of [reg] (or uses special Disp32-only encoding in the case of [ebp] form)
-	Mod_Disp8, // effective address operation with 8 bit displacement, in the form of [reg+disp8]
-	Mod_Disp32, // effective address operation with 32 bit displacement, in the form of [reg+disp32],
-	Mod_Direct // direct reg/reg operation
-};
+	Mod_NoDisp = 0, /* effective address operation with no displacement, in the form of [reg] (or uses special Disp32-only encoding in the case of [ebp] form) */
+	Mod_Disp8, /* effective address operation with 8 bit displacement, in the form of [reg+disp8] */
+	Mod_Disp32, /* effective address operation with 32 bit displacement, in the form of [reg+disp32], */
+	Mod_Direct /* direct reg/reg operation */
+} ModRm_ModField;
 
-// ----------------------------------------------------------------------------
-// JccComparisonType - enumerated possibilities for inspired code branching!
-//
-enum JccComparisonType
+/* ---------------------------------------------------------------------------- */
+/* JccComparisonType - enumerated possibilities for inspired code branching! */
+
+typedef enum JccComparisonType
 {
 	Jcc_Unknown = -2,
 	Jcc_Unconditional = -1,
@@ -150,18 +158,18 @@ enum JccComparisonType
 	Jcc_GreaterOrEqual = 0xd,
 	Jcc_LessOrEqual = 0xe,
 	Jcc_Greater = 0xf
-};
+} JccComparisonType;
 
-// Not supported yet:
-//E3 cb 	JECXZ rel8 	Jump short if ECX register is 0.
+/* Not supported yet: */
+/* E3 cb 	JECXZ rel8 	Jump short if ECX register is 0. */
 
-// ----------------------------------------------------------------------------
-// SSE2_ComparisonType - enumerated possibilities for SIMD data comparison!
-//
-// Operator selectors for the group-1/2/3 instruction families. These
-// are API -- recompilers name the values -- so they live here with
-// the other operand enums rather than in the reference-only headers.
-enum G1Type
+/* ---------------------------------------------------------------------------- */
+/* SSE2_ComparisonType - enumerated possibilities for SIMD data comparison! */
+
+/* Operator selectors for the group-1/2/3 instruction families. These */
+/* are API -- recompilers name the values -- so they live here with */
+/* the other operand enums rather than in the reference-only headers. */
+typedef enum G1Type
 {
 	G1Type_ADD = 0,
 	G1Type_OR,
@@ -171,9 +179,9 @@ enum G1Type
 	G1Type_SUB,
 	G1Type_XOR,
 	G1Type_CMP
-};
+} G1Type;
 
-enum G2Type
+typedef enum G2Type
 {
 	G2Type_ROL = 0,
 	G2Type_ROR,
@@ -183,19 +191,19 @@ enum G2Type
 	G2Type_SHR,
 	G2Type_Unused,
 	G2Type_SAR
-};
+} G2Type;
 
-enum G3Type
+typedef enum G3Type
 {
 	G3Type_NOT = 2,
 	G3Type_NEG = 3,
 	G3Type_MUL = 4,
-	G3Type_iMUL = 5, // partial implementation, iMul has additional forms in ix86.cpp
+	G3Type_iMUL = 5, /* partial implementation, iMul has additional forms in ix86.cpp */
 	G3Type_DIV = 6,
 	G3Type_iDIV = 7
-};
+} G3Type;
 
-enum SSE2_ComparisonType
+typedef enum SSE2_ComparisonType
 {
 	SSE2_Equal = 0,
 	SSE2_Less,
@@ -205,13 +213,14 @@ enum SSE2_ComparisonType
 	SSE2_NotLess,
 	SSE2_NotLessOrEqual,
 	SSE2_Ordered
+} SSE2_ComparisonType;
+
+enum
+{
+	ModRm_UseSib = 4, /* same index value as ESP (used in RM field) */
+	ModRm_UseDisp32 = 5, /* same index value as EBP (used in Mod field) */
+	Sib_EIZ = 4, /* same index value as ESP (used in Index field) */
+	Sib_UseDisp32 = 5 /* same index value as EBP (used in Base field) */
 };
 
-static const int ModRm_UseSib = 4; // same index value as ESP (used in RM field)
-static const int ModRm_UseDisp32 = 5; // same index value as EBP (used in Mod field)
-static const int Sib_EIZ = 4; // same index value as ESP (used in Index field)
-static const int Sib_UseDisp32 = 5; // same index value as EBP (used in Base field)
-
-
-JccComparisonType xInvertCond(JccComparisonType src); // defined inline in instructions.h
 

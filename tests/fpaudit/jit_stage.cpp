@@ -33,7 +33,7 @@ typedef uint64_t u64;
 #include "emitter/c89ops.h"
 
 /* x86types.h declares the thread-local cursor; the core defines it in
- * iCore.cpp, which this harness does not link, so define it here. */
+ * iCore.c, which this harness does not link, so define it here. */
 thread_local u8* x86Ptr PCSX2_TLS_INITIAL_EXEC = NULL;
 
 alignas(16) static u32 glob_signbit[4] = {0x80000000u,0x80000000u,0x80000000u,0x80000000u};

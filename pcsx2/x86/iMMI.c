@@ -13,7 +13,6 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
 /*********************************************************
 *   cached MMI opcodes                                   *
 *                                                        *
@@ -33,11 +32,13 @@ void recPLZCW()
 {
 	int x86regs = -1;
 	int xmmregs = -1;
+	uint8_t* label_notSigned;
+	uint8_t* label_Zeroed;
 
 	if (!_Rd_)
 		return;
 
-	// TODO(Stenzek): Don't flush to memory at the end here. Careful of Rs == Rd.
+	/* TODO(Stenzek): Don't flush to memory at the end here. Careful of Rs == Rd. */
 
 	if (GPR_IS_CONST1(_Rs_))
 	{
@@ -45,7 +46,7 @@ void recPLZCW()
 		_deleteEEreg(_Rd_, 0);
 		GPR_SET_CONST(_Rd_);
 
-		// Return the leading sign bits, excluding the original bit
+		/* Return the leading sign bits, excluding the original bit */
 		g_cpuConstRegs[_Rd_].UL[0] = count_leading_sign_bits(g_cpuConstRegs[_Rs_].SL[0]) - 1;
 		g_cpuConstRegs[_Rd_].UL[1] = count_leading_sign_bits(g_cpuConstRegs[_Rs_].SL[1]) - 1;
 
@@ -69,31 +70,31 @@ void recPLZCW()
 
 	_deleteEEreg(_Rd_, DELETE_REG_FREE_NO_WRITEBACK);
 
-	// Count the number of leading bits (MSB) that match the sign bit, excluding the sign
-	// bit itself.
+	/* Count the number of leading bits (MSB) that match the sign bit, excluding the sign */
+	/* bit itself. */
 
-	// Strategy: If the sign bit is set, then negate the value.  And that way the same
-	// bitcompare can be used for either bit status.  but be warned!  BSR returns undefined
-	// results if the EAX is zero, so we need to have special checks for zeros before
-	// using it.
+	/* Strategy: If the sign bit is set, then negate the value.  And that way the same */
+	/* bitcompare can be used for either bit status.  but be warned!  BSR returns undefined */
+	/* results if the EAX is zero, so we need to have special checks for zeros before */
+	/* using it. */
 
-	// --- first word ---
+	/* --- first word --- */
 
 	xe_mov32_ri(XE_CX, 31);
-	xe_test32_rr(XE_AX, XE_AX); // TEST sets the sign flag accordingly.
-	uint8_t* label_notSigned; xe_fwd_jcc8(Jcc_Unsigned /* JNS: 0x9 */, label_notSigned);
+	xe_test32_rr(XE_AX, XE_AX); /* TEST sets the sign flag accordingly. */
+	 xe_fwd_jcc8(Jcc_Unsigned /* JNS: 0x9 */, label_notSigned);
 	xe_not32_r(XE_AX);
 	xe_fwd_set8(label_notSigned);
 
 	xe_bsr32_rr(XE_AX, XE_AX);
-	uint8_t* label_Zeroed; xe_fwd_jcc8(Jcc_Zero, label_Zeroed); // If BSR sets the ZF, eax is "trash"
+	 xe_fwd_jcc8(Jcc_Zero, label_Zeroed); /* If BSR sets the ZF, eax is "trash" */
 	xe_sub32_rr(XE_CX, XE_AX);
-	xe_dec32_r(XE_CX); // PS2 doesn't count the first bit
+	xe_dec32_r(XE_CX); /* PS2 doesn't count the first bit */
 
 	xe_fwd_set8(label_Zeroed);
 	xe_mov32_mr(&cpuRegs.GPR.r[_Rd_].UL[0], XE_CX);
 
-	// second word
+	/* second word */
 
 	if (xmmregs >= 0)
 	{
@@ -110,15 +111,15 @@ void recPLZCW()
 	}
 
 	xe_mov32_ri(XE_CX, 31);
-	xe_test32_rr(XE_AX, XE_AX); // TEST sets the sign flag accordingly.
+	xe_test32_rr(XE_AX, XE_AX); /* TEST sets the sign flag accordingly. */
 	xe_fwd_jcc8(Jcc_Unsigned /* JNS: 0x9 */, label_notSigned);
 	xe_not32_r(XE_AX);
 	xe_fwd_set8(label_notSigned);
 
 	xe_bsr32_rr(XE_AX, XE_AX);
-	xe_fwd_jcc8(Jcc_Zero, label_Zeroed); // If BSR sets the ZF, eax is "trash"
+	xe_fwd_jcc8(Jcc_Zero, label_Zeroed); /* If BSR sets the ZF, eax is "trash" */
 	xe_sub32_rr(XE_CX, XE_AX);
-	xe_dec32_r(XE_CX); // PS2 doesn't count the first bit
+	xe_dec32_r(XE_CX); /* PS2 doesn't count the first bit */
 
 	xe_fwd_set8(label_Zeroed);
 	xe_mov32_mr(&cpuRegs.GPR.r[_Rd_].UL[1], XE_CX);
@@ -128,16 +129,17 @@ void recPLZCW()
 
 void recPMFHL()
 {
+	int info;
+	int t0reg;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_WRITED | XMMINFO_READLO | XMMINFO_READHI);
+	info = eeRecompileCodeXMM(XMMINFO_WRITED | XMMINFO_READLO | XMMINFO_READHI);
 
-	int t0reg;
 
 	switch (_Sa_)
 	{
-		case 0x00: // LW
+		case 0x00: /* LW */
 
 			t0reg = _allocTempXMMreg(XMMT_INT);
 			xe_pshufd_xxi(t0reg, EEREC_HI, 0x88);
@@ -147,7 +149,7 @@ void recPMFHL()
 			_freeXMMreg(t0reg);
 			break;
 
-		case 0x01: // UW
+		case 0x01: /* UW */
 			t0reg = _allocTempXMMreg(XMMT_INT);
 			xe_pshufd_xxi(t0reg, EEREC_HI, 0xdd);
 			xe_pshufd_xxi(EEREC_D, EEREC_LO, 0xdd);
@@ -155,17 +157,17 @@ void recPMFHL()
 			_freeXMMreg(t0reg);
 			break;
 
-		case 0x02: // SLW
+		case 0x02: /* SLW */
 		{
-			// Saturating 64-to-32 narrow, twice: each lane forms a signed
-			// 64-bit value from HI:LO and clamps it into a sign-extended
-			// s32. Transcribed from MMI.c (PMFHL).
-			//
-			// Note the upper bound is tested with >=, not >, so a value of
-			// exactly 0x7fffffff takes the saturating branch rather than the
-			// pass-through one. It reaches the same answer either way, but
-			// only because the clamp constant equals the input; writing it
-			// as > would be wrong for no visible reason on most inputs.
+			/* Saturating 64-to-32 narrow, twice: each lane forms a signed */
+			/* 64-bit value from HI:LO and clamps it into a sign-extended */
+			/* s32. Transcribed from MMI.c (PMFHL). */
+
+			/* Note the upper bound is tested with >=, not >, so a value of */
+			/* exactly 0x7fffffff takes the saturating branch rather than the */
+			/* pass-through one. It reaches the same answer either way, but */
+			/* only because the clamp constant equals the input; writing it */
+			/* as > would be wrong for no visible reason on most inputs. */
 			int lane;
 
 			_deleteEEreg(_Rd_, 0);
@@ -175,25 +177,29 @@ void recPMFHL()
 			for (lane = 0; lane < 2; lane++)
 			{
 				const int w = lane * 2;
+				uint8_t* sat_hi;
+				uint8_t* sat_lo;
+				uint8_t* done;
+				uint8_t* done2;
 
-				xe_mov32_rm(XE_AX, &cpuRegs.LO.UL[w]); // zero-extends into rax
+				xe_mov32_rm(XE_AX, &cpuRegs.LO.UL[w]); /* zero-extends into rax */
 				xe_mov32_rm(XE_DX, &cpuRegs.HI.UL[w]);
 				xe_shl64_ri(XE_DX, 32);
-				xe_or64_rr(XE_AX, XE_DX);                       // rax = HI:LO, signed
+				xe_or64_rr(XE_AX, XE_DX);                       /* rax = HI:LO, signed */
 
 				xe_mov64_ri(XE_CX, 0x000000007fffffffLL);
 				xe_cmp64_rr(XE_AX, XE_CX);
-				uint8_t* sat_hi; xe_fwd_jcc8(Jcc_GreaterOrEqual, sat_hi);
+				 xe_fwd_jcc8(Jcc_GreaterOrEqual, sat_hi);
 				xe_mov64_ri(XE_CX, -0x80000000LL);
 				xe_cmp64_rr(XE_AX, XE_CX);
-				uint8_t* sat_lo; xe_fwd_jcc8(Jcc_LessOrEqual, sat_lo);
+				 xe_fwd_jcc8(Jcc_LessOrEqual, sat_lo);
 
 				xe_movsxd_rm(XE_AX, &cpuRegs.LO.UL[w]);
-				uint8_t* done; xe_fwd_jmp8(done);
+				 xe_fwd_jmp8(done);
 
 				xe_fwd_set8(sat_hi);
 				xe_mov64_ri(XE_AX, 0x000000007fffffffLL);
-				uint8_t* done2; xe_fwd_jmp8(done2);
+				 xe_fwd_jmp8(done2);
 
 				xe_fwd_set8(sat_lo);
 				xe_mov64_ri(XE_AX, (s64)0xffffffff80000000ULL);
@@ -205,7 +211,7 @@ void recPMFHL()
 			break;
 		}
 
-		case 0x03: // LH
+		case 0x03: /* LH */
 			t0reg = _allocTempXMMreg(XMMT_INT);
 			xe_pshuflw_xxi(t0reg, EEREC_HI, 0x88);
 			xe_pshuflw_xxi(EEREC_D, EEREC_LO, 0x88);
@@ -217,7 +223,7 @@ void recPMFHL()
 			_freeXMMreg(t0reg);
 			break;
 
-		case 0x04: // SH
+		case 0x04: /* SH */
 			if (EEREC_D == EEREC_HI)
 			{
 				xe_packssdw_xx(EEREC_D, EEREC_LO);
@@ -228,7 +234,7 @@ void recPMFHL()
 				xe_movdqa_xx(EEREC_D, EEREC_LO);
 				xe_packssdw_xx(EEREC_D, EEREC_HI);
 
-				// shuffle so a1a0b1b0->a1b1a0b0
+				/* shuffle so a1a0b1b0->a1b1a0b0 */
 				xe_pshufd_xxi(EEREC_D, EEREC_D, 0xd8);
 			}
 			break;
@@ -241,10 +247,11 @@ void recPMFHL()
 
 void recPMTHL()
 {
+	int info;
 	if (_Sa_ != 0)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READLO | XMMINFO_READHI | XMMINFO_WRITELO | XMMINFO_WRITEHI);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READLO | XMMINFO_READHI | XMMINFO_WRITELO | XMMINFO_WRITEHI);
 
 	xe_blendps_xxi(EEREC_LO, EEREC_S, 0x5);
 	xe_shufps_xxi(EEREC_HI, EEREC_S, 0xdd);
@@ -253,13 +260,13 @@ void recPMTHL()
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSRLH()
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	if ((_Sa_ & 0xf) == 0)
 	{
 		xe_movdqa_xx(EEREC_D, EEREC_T);
@@ -272,13 +279,13 @@ void recPSRLH()
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSRLW()
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	if (_Sa_ == 0)
 	{
 		xe_movdqa_xx(EEREC_D, EEREC_T);
@@ -291,13 +298,13 @@ void recPSRLW()
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSRAH()
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	if ((_Sa_ & 0xf) == 0)
 	{
 		xe_movdqa_xx(EEREC_D, EEREC_T);
@@ -310,13 +317,13 @@ void recPSRAH()
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSRAW()
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	if (_Sa_ == 0)
 	{
 		xe_movdqa_xx(EEREC_D, EEREC_T);
@@ -329,13 +336,13 @@ void recPSRAW()
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSLLH()
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	if ((_Sa_ & 0xf) == 0)
 	{
 		xe_movdqa_xx(EEREC_D, EEREC_T);
@@ -348,13 +355,13 @@ void recPSLLH()
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSLLW()
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	if (_Sa_ == 0)
 	{
 		xe_movdqa_xx(EEREC_D, EEREC_T);
@@ -367,19 +374,18 @@ void recPSLLW()
 	_clearNeededXMMregs();
 }
 
-
 /*********************************************************
 *   MMI0 opcodes                                         *
 *                                                        *
 *********************************************************/
 
-////////////////////////////////////////////////////
 void recPMAXW()
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_S == EEREC_T)
 		xe_movdqa_xx(EEREC_D, EEREC_S);
 	else if (EEREC_D == EEREC_S)
@@ -394,13 +400,13 @@ void recPMAXW()
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPPACW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(((_Rs_ != 0) ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(((_Rs_ != 0) ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
 
 	if (_Rs_ == 0)
 	{
@@ -423,7 +429,7 @@ void recPPACW(void)
 			xe_pshufd_xxi(EEREC_D, EEREC_S, 0x88);
 			xe_punpcklqdq_xx(t0reg, EEREC_D);
 
-			// swap mmx regs.. don't ask
+			/* swap mmx regs.. don't ask */
 			xmmregs[t0reg] = xmmregs[EEREC_D];
 			xmmregs[EEREC_D].inuse = 0;
 		}
@@ -434,10 +440,11 @@ void recPPACW(void)
 
 void recPPACH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		xe_pshuflw_xxi(EEREC_D, EEREC_T, 0x88);
@@ -462,13 +469,13 @@ void recPPACH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPPACB(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		const int t0reg = _allocTempXMMreg(XMMT_INT);
@@ -498,18 +505,20 @@ void recPPACB(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPEXT5(void)
 {
+	int info;
+	int t0reg;
+	int t1reg;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
-	int t0reg = _allocTempXMMreg(XMMT_INT);
-	int t1reg = _allocTempXMMreg(XMMT_INT);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	t0reg = _allocTempXMMreg(XMMT_INT);
+	t1reg = _allocTempXMMreg(XMMT_INT);
 
-	xe_movdqa_xx(t0reg, EEREC_T); // for bit 5..9
-	xe_movdqa_xx(t1reg, EEREC_T); // for bit 15
+	xe_movdqa_xx(t0reg, EEREC_T); /* for bit 5..9 */
+	xe_movdqa_xx(t1reg, EEREC_T); /* for bit 15 */
 
 	xe_pslld_xi(t0reg, 22);
 	xe_psrlw_xi(t1reg, 15);
@@ -517,8 +526,8 @@ void recPEXT5(void)
 	xe_pslld_xi(t1reg, 20);
 	xe_por_xx(t0reg, t1reg);
 
-	xe_movdqa_xx(t1reg, EEREC_T); // for bit 10..14
-	xe_movdqa_xx(EEREC_D, EEREC_T); // for bit 0..4
+	xe_movdqa_xx(t1reg, EEREC_T); /* for bit 10..14 */
+	xe_movdqa_xx(EEREC_D, EEREC_T); /* for bit 0..4 */
 
 	xe_pslld_xi(EEREC_D, 27);
 	xe_pslld_xi(t1reg, 17);
@@ -535,18 +544,20 @@ void recPEXT5(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPPAC5(void)
 {
+	int info;
+	int t0reg;
+	int t1reg;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
-	int t0reg = _allocTempXMMreg(XMMT_INT);
-	int t1reg = _allocTempXMMreg(XMMT_INT);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	t0reg = _allocTempXMMreg(XMMT_INT);
+	t1reg = _allocTempXMMreg(XMMT_INT);
 
-	xe_movdqa_xx(t0reg, EEREC_T); // for bit 10..14
-	xe_movdqa_xx(t1reg, EEREC_T); // for bit 15
+	xe_movdqa_xx(t0reg, EEREC_T); /* for bit 10..14 */
+	xe_movdqa_xx(t1reg, EEREC_T); /* for bit 15 */
 
 	xe_pslld_xi(t0reg, 8);
 	xe_psrld_xi(t1reg, 31);
@@ -554,8 +565,8 @@ void recPPAC5(void)
 	xe_pslld_xi(t1reg, 15);
 	xe_por_xx(t0reg, t1reg);
 
-	xe_movdqa_xx(t1reg, EEREC_T); // for bit 5..9
-	xe_movdqa_xx(EEREC_D, EEREC_T); // for bit 0..4
+	xe_movdqa_xx(t1reg, EEREC_T); /* for bit 5..9 */
+	xe_movdqa_xx(EEREC_D, EEREC_T); /* for bit 0..4 */
 
 	xe_pslld_xi(EEREC_D, 24);
 	xe_psrld_xi(t1reg, 11);
@@ -574,13 +585,13 @@ void recPPAC5(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPMAXH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_pmaxsw_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -593,13 +604,13 @@ void recPMAXH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPCGTB(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D != EEREC_T)
 	{
 		xe_movdqa_xx(EEREC_D, EEREC_S);
@@ -616,13 +627,13 @@ void recPCGTB(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPCGTH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D != EEREC_T)
 	{
 		xe_movdqa_xx(EEREC_D, EEREC_S);
@@ -639,14 +650,14 @@ void recPCGTH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPCGTW(void)
 {
-	//TODO:optimize RS | RT== 0
+	int info;
+	/* TODO:optimize RS | RT== 0 */
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D != EEREC_T)
 	{
 		xe_movdqa_xx(EEREC_D, EEREC_S);
@@ -663,13 +674,13 @@ void recPCGTW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPADDSB(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_paddsb_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -682,13 +693,13 @@ void recPADDSB(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPADDSH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_paddsw_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -701,28 +712,31 @@ void recPADDSH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
-//NOTE: check kh2 movies if changing this
+/* NOTE: check kh2 movies if changing this */
 void recPADDSW(void)
 {
+	int info;
+	int t0reg;
+	int t1reg;
+	int t2reg;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
-	int t0reg = _allocTempXMMreg(XMMT_INT);
-	int t1reg = _allocTempXMMreg(XMMT_INT);
-	int t2reg = _allocTempXMMreg(XMMT_INT);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	t0reg = _allocTempXMMreg(XMMT_INT);
+	t1reg = _allocTempXMMreg(XMMT_INT);
+	t2reg = _allocTempXMMreg(XMMT_INT);
 
-	// The idea is:
-	//  s = x + y; (wrap-arounded)
-	//  if Sign(x) == Sign(y) && Sign(s) != Sign(x) && Sign(x) == 0 then positive overflow (clamp with 0x7fffffff)
-	//  if Sign(x) == Sign(y) && Sign(s) != Sign(x) && Sign(x) == 1 then negative overflow (clamp with 0x80000000)
+	/* The idea is: */
+	/*  s = x + y; (wrap-arounded) */
+	/*  if Sign(x) == Sign(y) && Sign(s) != Sign(x) && Sign(x) == 0 then positive overflow (clamp with 0x7fffffff) */
+	/*  if Sign(x) == Sign(y) && Sign(s) != Sign(x) && Sign(x) == 1 then negative overflow (clamp with 0x80000000) */
 
-	// get sign bit
+	/* get sign bit */
 	xe_movdqa_xx(t0reg, EEREC_S);
 	xe_movdqa_xx(t1reg, EEREC_T);
 
-	// normal addition
+	/* normal addition */
 	if (EEREC_D == EEREC_S)
 		xe_paddd_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -733,18 +747,18 @@ void recPADDSW(void)
 		xe_paddd_xx(EEREC_D, EEREC_T);
 	}
 
-	xe_pxor_xx(t0reg, t1reg); // Sign(Rs) != Sign(Rt)
-	xe_pxor_xx(t1reg, EEREC_D); // Sign(Rs) != Sign(Rd)
-	xe_pandn_xx(t0reg, t1reg); // (Sign(Rs) == Sign(Rt)) & (Sign(Rs) != Sign(Rd))
+	xe_pxor_xx(t0reg, t1reg); /* Sign(Rs) != Sign(Rt) */
+	xe_pxor_xx(t1reg, EEREC_D); /* Sign(Rs) != Sign(Rd) */
+	xe_pandn_xx(t0reg, t1reg); /* (Sign(Rs) == Sign(Rt)) & (Sign(Rs) != Sign(Rd)) */
 	xe_psrad_xi(t0reg, 31);
 
 	xe_pcmpeqd_xx(t1reg, t1reg);
-	xe_pxor_xx(t0reg, t1reg); // could've been avoided if Intel wasn't too prudish for a PORN instruction
-	xe_pslld_xi(t1reg, 31); // 0x80000000
+	xe_pxor_xx(t0reg, t1reg); /* could've been avoided if Intel wasn't too prudish for a PORN instruction */
+	xe_pslld_xi(t1reg, 31); /* 0x80000000 */
 
 	xe_movdqa_xx(t2reg, EEREC_D);
 	xe_psrad_xi(t2reg, 31);
-	xe_pxor_xx(t1reg, t2reg); // t2reg = (Rd < 0) ? 0x7fffffff : 0x80000000
+	xe_pxor_xx(t1reg, t2reg); /* t2reg = (Rd < 0) ? 0x7fffffff : 0x80000000 */
 
 	xe_pand_xx(EEREC_D, t0reg);
 	xe_pandn_xx(t0reg, t1reg);
@@ -756,13 +770,13 @@ void recPADDSW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSUBSB(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_psubsb_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -781,13 +795,13 @@ void recPSUBSB(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSUBSH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_psubsw_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -806,30 +820,33 @@ void recPSUBSH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
-//NOTE: check kh2 movies if changing this
+/* NOTE: check kh2 movies if changing this */
 void recPSUBSW(void)
 {
+	int info;
+	int t0reg;
+	int t1reg;
+	int t2reg;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
-	int t0reg = _allocTempXMMreg(XMMT_INT);
-	int t1reg = _allocTempXMMreg(XMMT_INT);
-	int t2reg = _allocTempXMMreg(XMMT_INT);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	t0reg = _allocTempXMMreg(XMMT_INT);
+	t1reg = _allocTempXMMreg(XMMT_INT);
+	t2reg = _allocTempXMMreg(XMMT_INT);
 
-	// The idea is:
-	//  s = x - y; (wrap-arounded)
-	//  if Sign(x) != Sign(y) && Sign(s) != Sign(x) && Sign(x) == 0 then positive overflow (clamp with 0x7fffffff)
-	//  if Sign(x) != Sign(y) && Sign(s) != Sign(x) && Sign(x) == 1 then negative overflow (clamp with 0x80000000)
+	/* The idea is: */
+	/*  s = x - y; (wrap-arounded) */
+	/*  if Sign(x) != Sign(y) && Sign(s) != Sign(x) && Sign(x) == 0 then positive overflow (clamp with 0x7fffffff) */
+	/*  if Sign(x) != Sign(y) && Sign(s) != Sign(x) && Sign(x) == 1 then negative overflow (clamp with 0x80000000) */
 
-	// get sign bit
+	/* get sign bit */
 	xe_movdqa_xx(t0reg, EEREC_S);
 	xe_movdqa_xx(t1reg, EEREC_T);
 	xe_psrld_xi(t0reg, 31);
 	xe_psrld_xi(t1reg, 31);
 
-	// normal subtraction
+	/* normal subtraction */
 	if (EEREC_D == EEREC_S)
 		xe_psubd_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -844,18 +861,18 @@ void recPSUBSW(void)
 		xe_psubd_xx(EEREC_D, EEREC_T);
 	}
 
-	// overflow check
-	// t2reg = 0xffffffff if NOT overflow, else 0
+	/* overflow check */
+	/* t2reg = 0xffffffff if NOT overflow, else 0 */
 	xe_movdqa_xx(t2reg, EEREC_D);
 	xe_psrld_xi(t2reg, 31);
-	xe_pcmpeqd_xx(t1reg, t0reg); // Sign(Rs) == Sign(Rt)
-	xe_pcmpeqd_xx(t2reg, t0reg); // Sign(Rs) == Sign(Rd)
-	xe_por_xx(t2reg, t1reg); // (Sign(Rs) == Sign(Rt)) | (Sign(Rs) == Sign(Rd))
+	xe_pcmpeqd_xx(t1reg, t0reg); /* Sign(Rs) == Sign(Rt) */
+	xe_pcmpeqd_xx(t2reg, t0reg); /* Sign(Rs) == Sign(Rd) */
+	xe_por_xx(t2reg, t1reg); /* (Sign(Rs) == Sign(Rt)) | (Sign(Rs) == Sign(Rd)) */
 	xe_pcmpeqd_xx(t1reg, t1reg);
-	xe_psrld_xi(t1reg, 1); // 0x7fffffff
-	xe_paddd_xx(t1reg, t0reg); // t1reg = (Rs < 0) ? 0x80000000 : 0x7fffffff
+	xe_psrld_xi(t1reg, 1); /* 0x7fffffff */
+	xe_paddd_xx(t1reg, t0reg); /* t1reg = (Rs < 0) ? 0x80000000 : 0x7fffffff */
 
-	// saturation
+	/* saturation */
 	xe_pand_xx(EEREC_D, t2reg);
 	xe_pandn_xx(t2reg, t1reg);
 	xe_por_xx(EEREC_D, t2reg);
@@ -866,13 +883,13 @@ void recPSUBSW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPADDB(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_paddb_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -885,13 +902,13 @@ void recPADDB(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPADDH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | (_Rt_ != 0 ? XMMINFO_READT : 0) | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | (_Rt_ != 0 ? XMMINFO_READT : 0) | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		if (_Rt_ == 0)
@@ -918,13 +935,13 @@ void recPADDH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPADDW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | (_Rt_ != 0 ? XMMINFO_READT : 0) | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | (_Rt_ != 0 ? XMMINFO_READT : 0) | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		if (_Rt_ == 0)
@@ -951,13 +968,13 @@ void recPADDW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSUBB(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_psubb_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -976,13 +993,13 @@ void recPSUBB(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSUBH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_psubw_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -1001,13 +1018,13 @@ void recPSUBH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSUBW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_psubd_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -1026,13 +1043,13 @@ void recPSUBW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPEXTLW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		xe_punpckldq_xx(EEREC_D, EEREC_T);
@@ -1061,10 +1078,11 @@ void recPEXTLW(void)
 
 void recPEXTLB(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		xe_punpcklbw_xx(EEREC_D, EEREC_T);
@@ -1093,10 +1111,11 @@ void recPEXTLB(void)
 
 void recPEXTLH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		xe_punpcklwd_xx(EEREC_D, EEREC_T);
@@ -1123,55 +1142,54 @@ void recPEXTLH(void)
 	_clearNeededXMMregs();
 }
 
-
 /*********************************************************
 *   MMI1 opcodes                                         *
 *                                                        *
 *********************************************************/
 
-////////////////////////////////////////////////////
-
-void recPABSW(void) //needs clamping
+void recPABSW(void) /* needs clamping */
 {
+	int info;
+	int t0reg;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
-	int t0reg = _allocTempXMMreg(XMMT_INT);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	t0reg = _allocTempXMMreg(XMMT_INT);
 	xe_pcmpeqd_xx(t0reg, t0reg);
 	xe_pslld_xi(t0reg, 31);
-	xe_pcmpeqd_xx(t0reg, EEREC_T); //0xffffffff if equal to 0x80000000
-	xe_pabsd_xx(EEREC_D, EEREC_T); //0x80000000 -> 0x80000000
-	xe_pxor_xx(EEREC_D, t0reg); //0x80000000 -> 0x7fffffff
+	xe_pcmpeqd_xx(t0reg, EEREC_T); /* 0xffffffff if equal to 0x80000000 */
+	xe_pabsd_xx(EEREC_D, EEREC_T); /* 0x80000000 -> 0x80000000 */
+	xe_pxor_xx(EEREC_D, t0reg); /* 0x80000000 -> 0x7fffffff */
 	_freeXMMreg(t0reg);
 	_clearNeededXMMregs();
 }
 
-
-////////////////////////////////////////////////////
 void recPABSH(void)
 {
+	int info;
+	int t0reg;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
-	int t0reg = _allocTempXMMreg(XMMT_INT);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	t0reg = _allocTempXMMreg(XMMT_INT);
 	xe_pcmpeqw_xx(t0reg, t0reg);
 	xe_psllw_xi(t0reg, 15);
-	xe_pcmpeqw_xx(t0reg, EEREC_T); //0xffff if equal to 0x8000
-	xe_pabsw_xx(EEREC_D, EEREC_T); //0x8000 -> 0x8000
-	xe_pxor_xx(EEREC_D, t0reg); //0x8000 -> 0x7fff
+	xe_pcmpeqw_xx(t0reg, EEREC_T); /* 0xffff if equal to 0x8000 */
+	xe_pabsw_xx(EEREC_D, EEREC_T); /* 0x8000 -> 0x8000 */
+	xe_pxor_xx(EEREC_D, t0reg); /* 0x8000 -> 0x7fff */
 	_freeXMMreg(t0reg);
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPMINW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_S == EEREC_T)
 		xe_movdqa_xx(EEREC_D, EEREC_S);
 	else if (EEREC_D == EEREC_S)
@@ -1186,19 +1204,19 @@ void recPMINW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPADSBH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	const int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 
 	if (EEREC_S == EEREC_T)
 	{
 		xe_movdqa_xx(EEREC_D, EEREC_S);
 		xe_paddw_xx(EEREC_D, EEREC_D);
-		// reset lower bits to 0s
+		/* reset lower bits to 0s */
 		xe_psrldq_xi(EEREC_D, 8);
 		xe_pslldq_xi(EEREC_D, 8);
 	}
@@ -1220,7 +1238,7 @@ void recPADSBH(void)
 			xe_paddw_xx(t0reg, EEREC_S);
 		}
 
-		// t0reg - adds, EEREC_D - subs
+		/* t0reg - adds, EEREC_D - subs */
 		xe_psrldq_xi(t0reg, 8);
 		xe_movlhps_xx(EEREC_D, t0reg);
 		_freeXMMreg(t0reg);
@@ -1229,13 +1247,13 @@ void recPADSBH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPADDUW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ ? XMMINFO_READS : 0) | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ ? XMMINFO_READS : 0) | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
 
 	if (_Rt_ == 0)
 	{
@@ -1256,11 +1274,11 @@ void recPADDUW(void)
 		int t1reg = _allocTempXMMreg(XMMT_INT);
 
 		xe_pcmpeqb_xx(t0reg, t0reg);
-		xe_pslld_xi(t0reg, 31); // 0x80000000
+		xe_pslld_xi(t0reg, 31); /* 0x80000000 */
 		xe_movdqa_xx(t1reg, t0reg);
-		xe_pxor_xx(t0reg, EEREC_S); // invert MSB of Rs (for unsigned comparison)
+		xe_pxor_xx(t0reg, EEREC_S); /* invert MSB of Rs (for unsigned comparison) */
 
-		// normal 32-bit addition
+		/* normal 32-bit addition */
 		if (EEREC_D == EEREC_S)
 			xe_paddd_xx(EEREC_D, EEREC_T);
 		else if (EEREC_D == EEREC_T)
@@ -1271,12 +1289,12 @@ void recPADDUW(void)
 			xe_paddd_xx(EEREC_D, EEREC_T);
 		}
 
-		// unsigned 32-bit comparison
-		xe_pxor_xx(t1reg, EEREC_D); // invert MSB of Rd (for unsigned comparison)
+		/* unsigned 32-bit comparison */
+		xe_pxor_xx(t1reg, EEREC_D); /* invert MSB of Rd (for unsigned comparison) */
 		xe_pcmpgtd_xx(t0reg, t1reg);
 
-		// saturate
-		xe_por_xx(EEREC_D, t0reg); // clear word with 0xFFFFFFFF if (Rd < Rs)
+		/* saturate */
+		xe_por_xx(EEREC_D, t0reg); /* clear word with 0xFFFFFFFF if (Rd < Rs) */
 
 		_freeXMMreg(t0reg);
 		_freeXMMreg(t1reg);
@@ -1284,13 +1302,13 @@ void recPADDUW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSUBUB(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_psubusb_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -1309,13 +1327,13 @@ void recPSUBUB(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSUBUH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_psubusw_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -1334,21 +1352,23 @@ void recPSUBUH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSUBUW(void)
 {
+	int info;
+	int t0reg;
+	int t1reg;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
-	int t0reg = _allocTempXMMreg(XMMT_INT);
-	int t1reg = _allocTempXMMreg(XMMT_INT);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	t0reg = _allocTempXMMreg(XMMT_INT);
+	t1reg = _allocTempXMMreg(XMMT_INT);
 
 	xe_pcmpeqb_xx(t0reg, t0reg);
-	xe_pslld_xi(t0reg, 31); // 0x80000000
+	xe_pslld_xi(t0reg, 31); /* 0x80000000 */
 
-	// normal 32-bit subtraction
-	// and invert MSB of Rs and Rt (for unsigned comparison)
+	/* normal 32-bit subtraction */
+	/* and invert MSB of Rs and Rt (for unsigned comparison) */
 	if (EEREC_D == EEREC_S)
 	{
 		xe_movdqa_xx(t1reg, t0reg);
@@ -1373,24 +1393,24 @@ void recPSUBUW(void)
 		xe_pxor_xx(t1reg, EEREC_T);
 	}
 
-	// unsigned 32-bit comparison
+	/* unsigned 32-bit comparison */
 	xe_pcmpgtd_xx(t0reg, t1reg);
 
-	// saturate
-	xe_pand_xx(EEREC_D, t0reg); // clear word with zero if (Rs <= Rt)
+	/* saturate */
+	xe_pand_xx(EEREC_D, t0reg); /* clear word with zero if (Rs <= Rt) */
 
 	_freeXMMreg(t0reg);
 	_freeXMMreg(t1reg);
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPEXTUH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		xe_punpckhwd_xx(EEREC_D, EEREC_T);
@@ -1417,10 +1437,11 @@ void recPEXTUH(void)
 	_clearNeededXMMregs();
 }
 
-alignas(16) static u32 tempqw[8];
+PCSX2_ALIGN(16) static u32 tempqw[8];
 
 void recQFSRV(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
@@ -1428,7 +1449,7 @@ void recQFSRV(void)
 	{
 		_flushEEreg(_Rs_, 0);
 		_flushEEreg(_Rt_, 0);
-		int info = eeRecompileCodeXMM(XMMINFO_WRITED);
+		info = eeRecompileCodeXMM(XMMINFO_WRITED);
 
 		xe_mov32_rm(XE_AX, &cpuRegs.sa);
 		xe_lea64_m(XE_CX, &cpuRegs.GPR.r[_Rt_]);
@@ -1436,7 +1457,7 @@ void recQFSRV(void)
 		return;
 	}
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 
 	xe_mov32_rm(XE_AX, &cpuRegs.sa);
 	xe_lea64_m(XE_CX, tempqw);
@@ -1447,13 +1468,13 @@ void recQFSRV(void)
 	_clearNeededXMMregs();
 }
 
-
 void recPEXTUB(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
 
 	if (_Rs_ == 0)
 	{
@@ -1481,13 +1502,13 @@ void recPEXTUB(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPEXTUW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | XMMINFO_READT | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		xe_punpckhdq_xx(EEREC_D, EEREC_T);
@@ -1514,13 +1535,13 @@ void recPEXTUW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPMINH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_pminsw_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -1533,13 +1554,13 @@ void recPMINH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPCEQB(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_pcmpeqb_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -1552,13 +1573,13 @@ void recPCEQB(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPCEQH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_pcmpeqw_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -1571,13 +1592,13 @@ void recPCEQH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPCEQW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_pcmpeqd_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -1590,13 +1611,13 @@ void recPCEQW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPADDUB(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
 	if (_Rt_)
 	{
 		if (EEREC_D == EEREC_S)
@@ -1614,13 +1635,13 @@ void recPADDUB(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPADDUH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 		xe_paddusw_xx(EEREC_D, EEREC_T);
 	else if (EEREC_D == EEREC_T)
@@ -1638,12 +1659,11 @@ void recPADDUH(void)
 *                                                        *
 *********************************************************/
 
-////////////////////////////////////////////////////
 void recPMADDW(void)
 {
 	int info = eeRecompileCodeXMM((((_Rs_) && (_Rt_)) ? XMMINFO_READS : 0) | (((_Rs_) && (_Rt_)) ? XMMINFO_READT : 0) | (_Rd_ ? XMMINFO_WRITED : 0) | XMMINFO_WRITELO | XMMINFO_WRITEHI | XMMINFO_READLO | XMMINFO_READHI);
 	xe_shufps_xxi(EEREC_LO, EEREC_HI, 0x88);
-	xe_pshufd_xxi(EEREC_LO, EEREC_LO, 0xd8); // LO = {LO[0], HI[0], LO[2], HI[2]}
+	xe_pshufd_xxi(EEREC_LO, EEREC_LO, 0xd8); /* LO = {LO[0], HI[0], LO[2], HI[2]} */
 	if (_Rd_)
 	{
 		if (!_Rs_ || !_Rt_)
@@ -1669,13 +1689,13 @@ void recPMADDW(void)
 		}
 	}
 
-	// add from LO/HI
+	/* add from LO/HI */
 	if (_Rd_)
 		xe_paddq_xx(EEREC_D, EEREC_LO);
 	else
 		xe_paddq_xx(EEREC_HI, EEREC_LO);
 
-	// interleave & sign extend
+	/* interleave & sign extend */
 	if (_Rd_)
 	{
 		xe_pshufd_xxi(EEREC_LO, EEREC_D, 0x88);
@@ -1691,13 +1711,13 @@ void recPMADDW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSLLVW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ ? XMMINFO_READS : 0) | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ ? XMMINFO_READS : 0) | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		if (_Rt_ == 0)
@@ -1719,24 +1739,24 @@ void recPSLLVW(void)
 		int t0reg = _allocTempXMMreg(XMMT_INT);
 		int t1reg = _allocTempXMMreg(XMMT_INT);
 
-		// shamt is 5-bit
+		/* shamt is 5-bit */
 		xe_movdqa_xx(t0reg, EEREC_S);
 		xe_psllq_xi(t0reg, 27 + 32);
 		xe_psrlq_xi(t0reg, 27 + 32);
 
-		// EEREC_D[0] <- Rt[0], t1reg[0] <- Rt[2]
+		/* EEREC_D[0] <- Rt[0], t1reg[0] <- Rt[2] */
 		xe_movhlps_xx(t1reg, EEREC_T);
 		if (EEREC_D != EEREC_T)
 			xe_movdqa_xx(EEREC_D, EEREC_T);
 
-		// shift (left) Rt[0]
+		/* shift (left) Rt[0] */
 		xe_pslld_xx(EEREC_D, t0reg);
 
-		// shift (left) Rt[2]
+		/* shift (left) Rt[2] */
 		xe_movhlps_xx(t0reg, t0reg);
 		xe_pslld_xx(t1reg, t0reg);
 
-		// merge & sign extend
+		/* merge & sign extend */
 		xe_punpckldq_xx(EEREC_D, t1reg);
 		xe_pmovsxdq_xx(EEREC_D, EEREC_D);
 
@@ -1746,13 +1766,13 @@ void recPSLLVW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPSRLVW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ ? XMMINFO_READS : 0) | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ ? XMMINFO_READS : 0) | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		if (_Rt_ == 0)
@@ -1774,24 +1794,24 @@ void recPSRLVW(void)
 		int t0reg = _allocTempXMMreg(XMMT_INT);
 		int t1reg = _allocTempXMMreg(XMMT_INT);
 
-		// shamt is 5-bit
+		/* shamt is 5-bit */
 		xe_movdqa_xx(t0reg, EEREC_S);
 		xe_psllq_xi(t0reg, 27 + 32);
 		xe_psrlq_xi(t0reg, 27 + 32);
 
-		// EEREC_D[0] <- Rt[0], t1reg[0] <- Rt[2]
+		/* EEREC_D[0] <- Rt[0], t1reg[0] <- Rt[2] */
 		xe_movhlps_xx(t1reg, EEREC_T);
 		if (EEREC_D != EEREC_T)
 			xe_movdqa_xx(EEREC_D, EEREC_T);
 
-		// shift (right logical) Rt[0]
+		/* shift (right logical) Rt[0] */
 		xe_psrld_xx(EEREC_D, t0reg);
 
-		// shift (right logical) Rt[2]
+		/* shift (right logical) Rt[2] */
 		xe_movhlps_xx(t0reg, t0reg);
 		xe_psrld_xx(t1reg, t0reg);
 
-		// merge & sign extend
+		/* merge & sign extend */
 		xe_punpckldq_xx(EEREC_D, t1reg);
 		xe_pmovsxdq_xx(EEREC_D, EEREC_D);
 
@@ -1801,12 +1821,11 @@ void recPSRLVW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPMSUBW(void)
 {
 	int info = eeRecompileCodeXMM((((_Rs_) && (_Rt_)) ? XMMINFO_READS : 0) | (((_Rs_) && (_Rt_)) ? XMMINFO_READT : 0) | (_Rd_ ? XMMINFO_WRITED : 0) | XMMINFO_WRITELO | XMMINFO_WRITEHI | XMMINFO_READLO | XMMINFO_READHI);
 	xe_shufps_xxi(EEREC_LO, EEREC_HI, 0x88);
-	xe_pshufd_xxi(EEREC_LO, EEREC_LO, 0xd8); // LO = {LO[0], HI[0], LO[2], HI[2]}
+	xe_pshufd_xxi(EEREC_LO, EEREC_LO, 0xd8); /* LO = {LO[0], HI[0], LO[2], HI[2]} */
 	if (_Rd_)
 	{
 		if (!_Rs_ || !_Rt_)
@@ -1832,7 +1851,7 @@ void recPMSUBW(void)
 		}
 	}
 
-	// sub from LO/HI
+	/* sub from LO/HI */
 	if (_Rd_)
 	{
 		xe_psubq_xx(EEREC_LO, EEREC_D);
@@ -1844,7 +1863,7 @@ void recPMSUBW(void)
 		xe_movdqa_xx(EEREC_HI, EEREC_LO);
 	}
 
-	// interleave & sign extend
+	/* interleave & sign extend */
 	if (_Rd_)
 	{
 		xe_pshufd_xxi(EEREC_LO, EEREC_D, 0x88);
@@ -1860,7 +1879,6 @@ void recPMSUBW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPMULTW(void)
 {
 	int info = eeRecompileCodeXMM((((_Rs_) && (_Rt_)) ? XMMINFO_READS : 0) | (((_Rs_) && (_Rt_)) ? XMMINFO_READT : 0) | (_Rd_ ? XMMINFO_WRITED : 0) | XMMINFO_WRITELO | XMMINFO_WRITEHI);
@@ -1891,7 +1909,7 @@ void recPMULTW(void)
 			xe_pmuldq_xx(EEREC_HI, EEREC_T);
 		}
 
-		// interleave & sign extend
+		/* interleave & sign extend */
 		if (_Rd_)
 		{
 			xe_pshufd_xxi(EEREC_LO, EEREC_D, 0x88);
@@ -1907,16 +1925,15 @@ void recPMULTW(void)
 	}
 	_clearNeededXMMregs();
 }
-////////////////////////////////////////////////////
-// PDIVW divides the signed words 0 and 2 of Rs by those of Rt, putting the
-// quotients in LO.SD[0..1] and the remainders in HI.SD[0..1], sign-extended.
-// Rd is not written.
-//
-// The three cases are exactly the ones scalar DIV already handles (see
-// recDIVsuper in iR5900MultDiv.cpp), because _PDIVW is the same algorithm run
-// twice: INT_MIN / -1 is defined to give INT_MIN remainder 0 rather than
-// trapping, and division by zero gives quotient (dividend < 0) ? 1 : -1 with
-// the dividend as remainder.
+/* PDIVW divides the signed words 0 and 2 of Rs by those of Rt, putting the */
+/* quotients in LO.SD[0..1] and the remainders in HI.SD[0..1], sign-extended. */
+/* Rd is not written. */
+
+/* The three cases are exactly the ones scalar DIV already handles (see */
+/* recDIVsuper in iR5900MultDiv.c), because _PDIVW is the same algorithm run */
+/* twice: INT_MIN / -1 is defined to give INT_MIN remainder 0 rather than */
+/* trapping, and division by zero gives quotient (dividend < 0) ? 1 : -1 with */
+/* the dividend as remainder. */
 static void recPDIVW_half(int hilo, int word)
 {
 	u8* end1 = NULL;
@@ -1928,8 +1945,8 @@ static void recPDIVW_half(int hilo, int word)
 	xe_mov32_rm(XE_CX, &cpuRegs.GPR.r[_Rt_].UL[word]);
 	xe_mov32_rm(XE_AX, &cpuRegs.GPR.r[_Rs_].UL[word]);
 
-	// INT_MIN / -1: quotient stays 0x80000000, remainder 0. x86 would raise
-	// #DE here, so the case has to be branched around rather than divided.
+	/* INT_MIN / -1: quotient stays 0x80000000, remainder 0. x86 would raise */
+	/* #DE here, so the case has to be branched around rather than divided. */
 	xe_cmp32_ri(XE_AX, 0x80000000);
 	xe_fwd_jcc8(Jcc_NotEqual, cont1);
 	xe_cmp32_ri(XE_CX, 0xffffffff);
@@ -1942,9 +1959,9 @@ static void recPDIVW_half(int hilo, int word)
 
 	xe_cmp32_ri(XE_CX, 0);
 	xe_fwd_jcc8(Jcc_NotEqual, cont3);
-	// Divide by zero: remainder is the dividend, quotient is its sign
-	// mapped to 1 / -1. SAR+SHL+NOT turns (x<0) into 1 and (x>=0) into -1
-	// without a branch.
+	/* Divide by zero: remainder is the dividend, quotient is its sign */
+	/* mapped to 1 / -1. SAR+SHL+NOT turns (x<0) into 1 and (x>=0) into -1 */
+	/* without a branch. */
 	xe_mov32_rr(XE_DX, XE_AX);
 	xe_sar32_ri(XE_AX, 31);
 	xe_shl32_ri(XE_AX, 1);
@@ -1958,7 +1975,7 @@ static void recPDIVW_half(int hilo, int word)
 	xe_fwd_set8(end1);
 	xe_fwd_set8(end2);
 
-	// LO/HI hold 64-bit lanes; both results are sign-extended into them.
+	/* LO/HI hold 64-bit lanes; both results are sign-extended into them. */
 	xe_movsxd_rr(XE_AX, XE_AX);
 	xe_mov64_mr(&cpuRegs.LO.UD[hilo], XE_AX);
 	xe_movsxd_rr(XE_DX, XE_DX);
@@ -1967,8 +1984,8 @@ static void recPDIVW_half(int hilo, int word)
 
 void recPDIVW(void)
 {
-	// Flush everything the sequence reads or clobbers: it works out of
-	// memory and needs eax, ecx and edx. Same preamble recMADD uses.
+	/* Flush everything the sequence reads or clobbers: it works out of */
+	/* memory and needs eax, ecx and edx. Same preamble recMADD uses. */
 	_deleteEEreg(XMMGPR_LO, 1);
 	_deleteEEreg(XMMGPR_HI, 1);
 	_deleteGPRtoX86reg(_Rs_, DELETE_REG_FLUSH);
@@ -1976,11 +1993,11 @@ void recPDIVW(void)
 	_deleteGPRtoXMMreg(_Rs_, DELETE_REG_FLUSH);
 	_deleteGPRtoXMMreg(_Rt_, DELETE_REG_FLUSH);
 
-	// Const-propagated registers do not live in cpuRegs.GPR.r[] until they
-	// are flushed there, and none of the deletes above does that -- recMADD
-	// checks GPR_IS_CONST1 after the very same sequence for exactly this
-	// reason. Materialise them instead, which also covers the four-word case
-	// below where the manual check would only cover the low half.
+	/* Const-propagated registers do not live in cpuRegs.GPR.r[] until they */
+	/* are flushed there, and none of the deletes above does that -- recMADD */
+	/* checks GPR_IS_CONST1 after the very same sequence for exactly this */
+	/* reason. Materialise them instead, which also covers the four-word case */
+	/* below where the manual check would only cover the low half. */
 	_flushConstReg(_Rs_);
 	_flushConstReg(_Rt_);
 
@@ -1988,14 +2005,13 @@ void recPDIVW(void)
 	recPDIVW_half(1, 2);
 }
 
-////////////////////////////////////////////////////
-// PDIVBW divides all four words of Rs by a single divisor: halfword 0 of Rt,
-// sign-extended to 32 bits. Unlike PDIVW the results are 32-bit lanes of
-// LO/HI, so nothing is sign-extended on the way out.
-//
-// Both interpreter tests fall out of the sign-extended divisor in ECX:
-// Rt.US[0] == 0xffff is ECX == -1, and Rt.US[0] == 0 is ECX == 0. IDIV does
-// not clobber ECX, so the divisor is loaded once for all four lanes.
+/* PDIVBW divides all four words of Rs by a single divisor: halfword 0 of Rt, */
+/* sign-extended to 32 bits. Unlike PDIVW the results are 32-bit lanes of */
+/* LO/HI, so nothing is sign-extended on the way out. */
+
+/* Both interpreter tests fall out of the sign-extended divisor in ECX: */
+/* Rt.US[0] == 0xffff is ECX == -1, and Rt.US[0] == 0 is ECX == 0. IDIV does */
+/* not clobber ECX, so the divisor is loaded once for all four lanes. */
 static void recPDIVBW_lane(int n)
 {
 	u8* end1;
@@ -2046,11 +2062,11 @@ void recPDIVBW(void)
 	_deleteGPRtoXMMreg(_Rs_, DELETE_REG_FLUSH);
 	_deleteGPRtoXMMreg(_Rt_, DELETE_REG_FLUSH);
 
-	// Const-propagated registers do not live in cpuRegs.GPR.r[] until they
-	// are flushed there, and none of the deletes above does that -- recMADD
-	// checks GPR_IS_CONST1 after the very same sequence for exactly this
-	// reason. Materialise them instead, which also covers the four-word case
-	// below where the manual check would only cover the low half.
+	/* Const-propagated registers do not live in cpuRegs.GPR.r[] until they */
+	/* are flushed there, and none of the deletes above does that -- recMADD */
+	/* checks GPR_IS_CONST1 after the very same sequence for exactly this */
+	/* reason. Materialise them instead, which also covers the four-word case */
+	/* below where the manual check would only cover the low half. */
 	_flushConstReg(_Rs_);
 	_flushConstReg(_Rt_);
 
@@ -2059,10 +2075,8 @@ void recPDIVBW(void)
 		recPDIVBW_lane(n);
 }
 
-////////////////////////////////////////////////////
-
-//upper word of each doubleword in LO and HI is undocumented/undefined
-//contains the upper multiplication result (before the addition with the lower multiplication result)
+/* upper word of each doubleword in LO and HI is undocumented/undefined */
+/* contains the upper multiplication result (before the addition with the lower multiplication result) */
 void recPHMADH(void)
 {
 	int info = eeRecompileCodeXMM((_Rd_ ? XMMINFO_WRITED : 0) | XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITELO | XMMINFO_WRITEHI);
@@ -2117,20 +2131,20 @@ void recPMSUBH(void)
 	if (!_Rd_)
 	{
 		xe_pxor_xx(t0reg, t0reg);
-		xe_pshufd_xxi(t1reg, EEREC_S, 0xd8); //S0, S1, S4, S5, S2, S3, S6, S7
-		xe_punpcklwd_xx(t1reg, t0reg); //S0, 0, S1, 0, S4, 0, S5, 0
-		xe_pshufd_xxi(t0reg, EEREC_T, 0xd8); //T0, T1, T4, T5, T2, T3, T6, T7
-		xe_punpcklwd_xx(t0reg, t0reg); //T0, T0, T1, T1, T4, T4, T5, T5
-		xe_pmaddwd_xx(t0reg, t1reg); //S0*T0+0*T0, S1*T1+0*T1, S4*T4+0*T4, S5*T5+0*T5
+		xe_pshufd_xxi(t1reg, EEREC_S, 0xd8); /* S0, S1, S4, S5, S2, S3, S6, S7 */
+		xe_punpcklwd_xx(t1reg, t0reg); /* S0, 0, S1, 0, S4, 0, S5, 0 */
+		xe_pshufd_xxi(t0reg, EEREC_T, 0xd8); /* T0, T1, T4, T5, T2, T3, T6, T7 */
+		xe_punpcklwd_xx(t0reg, t0reg); /* T0, T0, T1, T1, T4, T4, T5, T5 */
+		xe_pmaddwd_xx(t0reg, t1reg); /* S0*T0+0*T0, S1*T1+0*T1, S4*T4+0*T4, S5*T5+0*T5 */
 
 		xe_psubd_xx(EEREC_LO, t0reg);
 
 		xe_pxor_xx(t0reg, t0reg);
-		xe_pshufd_xxi(t1reg, EEREC_S, 0xd8); //S0, S1, S4, S5, S2, S3, S6, S7
-		xe_punpckhwd_xx(t1reg, t0reg); //S2, 0, S3, 0, S6, 0, S7, 0
-		xe_pshufd_xxi(t0reg, EEREC_T, 0xd8); //T0, T1, T4, T5, T2, T3, T6, T7
-		xe_punpckhwd_xx(t0reg, t0reg); //T2, T2, T3, T3, T6, T6, T7, T7
-		xe_pmaddwd_xx(t0reg, t1reg); //S2*T2+0*T2, S3*T3+0*T3, S6*T6+0*T6, S7*T7+0*T7
+		xe_pshufd_xxi(t1reg, EEREC_S, 0xd8); /* S0, S1, S4, S5, S2, S3, S6, S7 */
+		xe_punpckhwd_xx(t1reg, t0reg); /* S2, 0, S3, 0, S6, 0, S7, 0 */
+		xe_pshufd_xxi(t0reg, EEREC_T, 0xd8); /* T0, T1, T4, T5, T2, T3, T6, T7 */
+		xe_punpckhwd_xx(t0reg, t0reg); /* T2, T2, T3, T3, T6, T6, T7, T7 */
+		xe_pmaddwd_xx(t0reg, t1reg); /* S2*T2+0*T2, S3*T3+0*T3, S6*T6+0*T6, S7*T7+0*T7 */
 
 		xe_psubd_xx(EEREC_HI, t0reg);
 	}
@@ -2143,21 +2157,21 @@ void recPMSUBH(void)
 		xe_pmulhw_xx(t1reg, EEREC_T);
 		xe_movdqa_xx(EEREC_D, t0reg);
 
-		// 0-3
+		/* 0-3 */
 		xe_punpcklwd_xx(t0reg, t1reg);
-		// 4-7
+		/* 4-7 */
 		xe_punpckhwd_xx(EEREC_D, t1reg);
 		xe_movdqa_xx(t1reg, t0reg);
 
-		// 0,1,4,5, L->H
+		/* 0,1,4,5, L->H */
 		xe_punpcklqdq_xx(t0reg, EEREC_D);
-		// 2,3,6,7, L->H
+		/* 2,3,6,7, L->H */
 		xe_punpckhqdq_xx(t1reg, EEREC_D);
 
 		xe_psubd_xx(EEREC_LO, t0reg);
 		xe_psubd_xx(EEREC_HI, t1reg);
 
-		// 0,2,4,6, L->H
+		/* 0,2,4,6, L->H */
 		xe_pshufd_xxi(EEREC_D, EEREC_LO, 0x88);
 		xe_pshufd_xxi(t0reg, EEREC_HI, 0x88);
 		xe_punpckldq_xx(EEREC_D, t0reg);
@@ -2169,9 +2183,8 @@ void recPMSUBH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
-//upper word of each doubleword in LO and HI is undocumented/undefined
-//it contains the NOT of the upper multiplication result (before the substraction of the lower multiplication result)
+/* upper word of each doubleword in LO and HI is undocumented/undefined */
+/* it contains the NOT of the upper multiplication result (before the substraction of the lower multiplication result) */
 void recPHMSBH(void)
 {
 	int info = eeRecompileCodeXMM((_Rd_ ? XMMINFO_WRITED : 0) | XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITELO | XMMINFO_WRITEHI);
@@ -2205,37 +2218,37 @@ void recPHMSBH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPEXEH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	xe_pshuflw_xxi(EEREC_D, EEREC_T, 0xc6);
 	xe_pshufhw_xxi(EEREC_D, EEREC_D, 0xc6);
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPREVH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	xe_pshuflw_xxi(EEREC_D, EEREC_T, 0x1B);
 	xe_pshufhw_xxi(EEREC_D, EEREC_D, 0x1B);
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPINTH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_READT | XMMINFO_WRITED);
 	if (EEREC_D == EEREC_S)
 	{
 		int t0reg = _allocTempXMMreg(XMMT_INT);
@@ -2255,20 +2268,22 @@ void recPINTH(void)
 
 void recPEXEW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	xe_pshufd_xxi(EEREC_D, EEREC_T, 0xc6);
 	_clearNeededXMMregs();
 }
 
 void recPROT3W(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	xe_pshufd_xxi(EEREC_D, EEREC_T, 0xc9);
 	_clearNeededXMMregs();
 }
@@ -2285,14 +2300,14 @@ void recPMULTH(void)
 	xe_pmulhw_xx(EEREC_HI, EEREC_T);
 	xe_movdqa_xx(t0reg, EEREC_LO);
 
-	// 0-3
+	/* 0-3 */
 	xe_punpcklwd_xx(EEREC_LO, EEREC_HI);
-	// 4-7
+	/* 4-7 */
 	xe_punpckhwd_xx(t0reg, EEREC_HI);
 
 	if (_Rd_)
 	{
-		// 0,2,4,6, L->H
+		/* 0,2,4,6, L->H */
 		xe_pshufd_xxi(EEREC_D, EEREC_LO, 0x88);
 		xe_pshufd_xxi(EEREC_HI, t0reg, 0x88);
 		xe_punpcklqdq_xx(EEREC_D, EEREC_HI);
@@ -2300,9 +2315,9 @@ void recPMULTH(void)
 
 	xe_movdqa_xx(EEREC_HI, EEREC_LO);
 
-	// 0,1,4,5, L->H
+	/* 0,1,4,5, L->H */
 	xe_punpcklqdq_xx(EEREC_LO, t0reg);
-	// 2,3,6,7, L->H
+	/* 2,3,6,7, L->H */
 	xe_punpckhqdq_xx(EEREC_HI, t0reg);
 
 	_freeXMMreg(t0reg);
@@ -2311,32 +2326,33 @@ void recPMULTH(void)
 
 void recPMFHI(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_WRITED | XMMINFO_READHI);
+	info = eeRecompileCodeXMM(XMMINFO_WRITED | XMMINFO_READHI);
 	xe_movdqa_xx(EEREC_D, EEREC_HI);
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPMFLO(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_WRITED | XMMINFO_READLO);
+	info = eeRecompileCodeXMM(XMMINFO_WRITED | XMMINFO_READLO);
 	xe_movdqa_xx(EEREC_D, EEREC_LO);
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPAND(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_WRITED | XMMINFO_READS | XMMINFO_READT);
+	info = eeRecompileCodeXMM(XMMINFO_WRITED | XMMINFO_READS | XMMINFO_READT);
 	if (EEREC_D == EEREC_T)
 	{
 		xe_pand_xx(EEREC_D, EEREC_S);
@@ -2353,13 +2369,13 @@ void recPAND(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPXOR(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_WRITED | XMMINFO_READS | XMMINFO_READT);
+	info = eeRecompileCodeXMM(XMMINFO_WRITED | XMMINFO_READS | XMMINFO_READT);
 	if (EEREC_D == EEREC_T)
 	{
 		xe_pxor_xx(EEREC_D, EEREC_S);
@@ -2376,13 +2392,13 @@ void recPXOR(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPCPYLD(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_WRITED | ((_Rs_ == 0) ? 0 : XMMINFO_READS) | XMMINFO_READT);
+	info = eeRecompileCodeXMM(XMMINFO_WRITED | ((_Rs_ == 0) ? 0 : XMMINFO_READS) | XMMINFO_READT);
 	if (_Rs_ == 0)
 	{
 		xe_movqzx_xx(EEREC_D, EEREC_T);
@@ -2416,20 +2432,20 @@ void recPMADDH(void)
 	if (!_Rd_)
 	{
 		xe_pxor_xx(t0reg, t0reg);
-		xe_pshufd_xxi(t1reg, EEREC_S, 0xd8); //S0, S1, S4, S5, S2, S3, S6, S7
-		xe_punpcklwd_xx(t1reg, t0reg); //S0, 0, S1, 0, S4, 0, S5, 0
-		xe_pshufd_xxi(t0reg, EEREC_T, 0xd8); //T0, T1, T4, T5, T2, T3, T6, T7
-		xe_punpcklwd_xx(t0reg, t0reg); //T0, T0, T1, T1, T4, T4, T5, T5
-		xe_pmaddwd_xx(t0reg, t1reg); //S0*T0+0*T0, S1*T1+0*T1, S4*T4+0*T4, S5*T5+0*T5
+		xe_pshufd_xxi(t1reg, EEREC_S, 0xd8); /* S0, S1, S4, S5, S2, S3, S6, S7 */
+		xe_punpcklwd_xx(t1reg, t0reg); /* S0, 0, S1, 0, S4, 0, S5, 0 */
+		xe_pshufd_xxi(t0reg, EEREC_T, 0xd8); /* T0, T1, T4, T5, T2, T3, T6, T7 */
+		xe_punpcklwd_xx(t0reg, t0reg); /* T0, T0, T1, T1, T4, T4, T5, T5 */
+		xe_pmaddwd_xx(t0reg, t1reg); /* S0*T0+0*T0, S1*T1+0*T1, S4*T4+0*T4, S5*T5+0*T5 */
 
 		xe_paddd_xx(EEREC_LO, t0reg);
 
 		xe_pxor_xx(t0reg, t0reg);
-		xe_pshufd_xxi(t1reg, EEREC_S, 0xd8); //S0, S1, S4, S5, S2, S3, S6, S7
-		xe_punpckhwd_xx(t1reg, t0reg); //S2, 0, S3, 0, S6, 0, S7, 0
-		xe_pshufd_xxi(t0reg, EEREC_T, 0xd8); //T0, T1, T4, T5, T2, T3, T6, T7
-		xe_punpckhwd_xx(t0reg, t0reg); //T2, T2, T3, T3, T6, T6, T7, T7
-		xe_pmaddwd_xx(t0reg, t1reg); //S2*T2+0*T2, S3*T3+0*T3, S6*T6+0*T6, S7*T7+0*T7
+		xe_pshufd_xxi(t1reg, EEREC_S, 0xd8); /* S0, S1, S4, S5, S2, S3, S6, S7 */
+		xe_punpckhwd_xx(t1reg, t0reg); /* S2, 0, S3, 0, S6, 0, S7, 0 */
+		xe_pshufd_xxi(t0reg, EEREC_T, 0xd8); /* T0, T1, T4, T5, T2, T3, T6, T7 */
+		xe_punpckhwd_xx(t0reg, t0reg); /* T2, T2, T3, T3, T6, T6, T7, T7 */
+		xe_pmaddwd_xx(t0reg, t1reg); /* S2*T2+0*T2, S3*T3+0*T3, S6*T6+0*T6, S7*T7+0*T7 */
 
 		xe_paddd_xx(EEREC_HI, t0reg);
 	}
@@ -2442,21 +2458,21 @@ void recPMADDH(void)
 		xe_pmulhw_xx(t1reg, EEREC_T);
 		xe_movdqa_xx(EEREC_D, t0reg);
 
-		// 0-3
+		/* 0-3 */
 		xe_punpcklwd_xx(t0reg, t1reg);
-		// 4-7
+		/* 4-7 */
 		xe_punpckhwd_xx(EEREC_D, t1reg);
 		xe_movdqa_xx(t1reg, t0reg);
 
-		// 0,1,4,5, L->H
+		/* 0,1,4,5, L->H */
 		xe_punpcklqdq_xx(t0reg, EEREC_D);
-		// 2,3,6,7, L->H
+		/* 2,3,6,7, L->H */
 		xe_punpckhqdq_xx(t1reg, EEREC_D);
 
 		xe_paddd_xx(EEREC_LO, t0reg);
 		xe_paddd_xx(EEREC_HI, t1reg);
 
-		// 0,2,4,6, L->H
+		/* 0,2,4,6, L->H */
 		xe_pshufd_xxi(EEREC_D, EEREC_LO, 0x88);
 		xe_pshufd_xxi(t0reg, EEREC_HI, 0x88);
 		xe_punpckldq_xx(EEREC_D, t0reg);
@@ -2473,15 +2489,15 @@ void recPMADDH(void)
 *                                                        *
 *********************************************************/
 
-////////////////////////////////////////////////////
-//REC_FUNC( PSRAVW, _Rd_ );
+/* REC_FUNC( PSRAVW, _Rd_ ); */
 
 void recPSRAVW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ ? XMMINFO_READS : 0) | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ ? XMMINFO_READS : 0) | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
 	if (_Rs_ == 0)
 	{
 		if (_Rt_ == 0)
@@ -2503,24 +2519,24 @@ void recPSRAVW(void)
 		int t0reg = _allocTempXMMreg(XMMT_INT);
 		int t1reg = _allocTempXMMreg(XMMT_INT);
 
-		// shamt is 5-bit
+		/* shamt is 5-bit */
 		xe_movdqa_xx(t0reg, EEREC_S);
 		xe_psllq_xi(t0reg, 27 + 32);
 		xe_psrlq_xi(t0reg, 27 + 32);
 
-		// EEREC_D[0] <- Rt[0], t1reg[0] <- Rt[2]
+		/* EEREC_D[0] <- Rt[0], t1reg[0] <- Rt[2] */
 		xe_movhlps_xx(t1reg, EEREC_T);
 		if (EEREC_D != EEREC_T)
 			xe_movdqa_xx(EEREC_D, EEREC_T);
 
-		// shift (right arithmetic) Rt[0]
+		/* shift (right arithmetic) Rt[0] */
 		xe_psrad_xx(EEREC_D, t0reg);
 
-		// shift (right arithmetic) Rt[2]
+		/* shift (right arithmetic) Rt[2] */
 		xe_movhlps_xx(t0reg, t0reg);
 		xe_psrad_xx(t1reg, t0reg);
 
-		// merge & sign extend
+		/* merge & sign extend */
 		xe_punpckldq_xx(EEREC_D, t1reg);
 		if (CPU_HAS_SSE41)
 		{
@@ -2529,7 +2545,7 @@ void recPSRAVW(void)
 		else
 		{
 			xe_movdqa_xx(t0reg, EEREC_D);
-			xe_psrad_xi(t0reg, 31); // get the signs
+			xe_psrad_xi(t0reg, 31); /* get the signs */
 			xe_punpckldq_xx(EEREC_D, t0reg);
 		}
 
@@ -2540,18 +2556,18 @@ void recPSRAVW(void)
 	_clearNeededXMMregs();
 }
 
-
-////////////////////////////////////////////////////
-alignas(16) static const u32 s_tempPINTEH[4] = {0x0000ffff, 0x0000ffff, 0x0000ffff, 0x0000ffff};
+PCSX2_ALIGN(16) static const u32 s_tempPINTEH[4] = {0x0000ffff, 0x0000ffff, 0x0000ffff, 0x0000ffff};
 
 void recPINTEH(void)
 {
+	int info;
+	int t0reg;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ ? XMMINFO_READS : 0) | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ ? XMMINFO_READS : 0) | (_Rt_ ? XMMINFO_READT : 0) | XMMINFO_WRITED);
 
-	int t0reg = -1;
+	t0reg = -1;
 
 	if (_Rs_ == 0)
 	{
@@ -2603,7 +2619,6 @@ void recPINTEH(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPMULTUW(void)
 {
 	int info = eeRecompileCodeXMM((((_Rs_) && (_Rt_)) ? XMMINFO_READS : 0) | (((_Rs_) && (_Rt_)) ? XMMINFO_READT : 0) | (_Rd_ ? XMMINFO_WRITED : 0) | XMMINFO_WRITELO | XMMINFO_WRITEHI);
@@ -2635,7 +2650,7 @@ void recPMULTUW(void)
 			xe_pmuludq_xx(EEREC_HI, EEREC_T);
 		}
 
-		// interleave & sign extend
+		/* interleave & sign extend */
 		if (CPU_HAS_SSE41)
 		{
 			xe_pshufd_xxi(EEREC_LO, EEREC_HI, 0x88);
@@ -2649,7 +2664,7 @@ void recPMULTUW(void)
 			xe_pshufd_xxi(t0reg, EEREC_HI, 0xd8);
 			xe_movdqa_xx(EEREC_LO, t0reg);
 			xe_movdqa_xx(EEREC_HI, t0reg);
-			xe_psrad_xi(t0reg, 31); // get the signs
+			xe_psrad_xi(t0reg, 31); /* get the signs */
 
 			xe_punpckldq_xx(EEREC_LO, t0reg);
 			xe_punpckhdq_xx(EEREC_HI, t0reg);
@@ -2659,12 +2674,11 @@ void recPMULTUW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPMADDUW(void)
 {
 	int info = eeRecompileCodeXMM((((_Rs_) && (_Rt_)) ? XMMINFO_READS : 0) | (((_Rs_) && (_Rt_)) ? XMMINFO_READT : 0) | (_Rd_ ? XMMINFO_WRITED : 0) | XMMINFO_WRITELO | XMMINFO_WRITEHI | XMMINFO_READLO | XMMINFO_READHI);
 	xe_shufps_xxi(EEREC_LO, EEREC_HI, 0x88);
-	xe_pshufd_xxi(EEREC_LO, EEREC_LO, 0xd8); // LO = {LO[0], HI[0], LO[2], HI[2]}
+	xe_pshufd_xxi(EEREC_LO, EEREC_LO, 0xd8); /* LO = {LO[0], HI[0], LO[2], HI[2]} */
 	if (_Rd_)
 	{
 		if (!_Rs_ || !_Rt_)
@@ -2690,7 +2704,7 @@ void recPMADDUW(void)
 		}
 	}
 
-	// add from LO/HI
+	/* add from LO/HI */
 	if (_Rd_)
 	{
 		xe_paddq_xx(EEREC_D, EEREC_LO);
@@ -2699,7 +2713,7 @@ void recPMADDUW(void)
 	else
 		xe_paddq_xx(EEREC_HI, EEREC_LO);
 
-	// interleave & sign extend
+	/* interleave & sign extend */
 	if (CPU_HAS_SSE41)
 	{
 		xe_pshufd_xxi(EEREC_LO, EEREC_HI, 0x88);
@@ -2713,7 +2727,7 @@ void recPMADDUW(void)
 		xe_pshufd_xxi(t0reg, EEREC_HI, 0xd8);
 		xe_movdqa_xx(EEREC_LO, t0reg);
 		xe_movdqa_xx(EEREC_HI, t0reg);
-		xe_psrad_xi(t0reg, 31); // get the signs
+		xe_psrad_xi(t0reg, 31); /* get the signs */
 
 		xe_punpckldq_xx(EEREC_LO, t0reg);
 		xe_punpckhdq_xx(EEREC_HI, t0reg);
@@ -2722,11 +2736,10 @@ void recPMADDUW(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
-// PDIVUW: unsigned divide of words 0 and 2. No INT_MIN/-1 case exists --
-// with EDX zeroed a 32-bit unsigned divide can only fault on a zero divisor
-// -- so only that one branch is needed. The interpreter casts each result to
-// s32 before storing into the 64-bit LO/HI lane, so both sign-extend.
+/* PDIVUW: unsigned divide of words 0 and 2. No INT_MIN/-1 case exists -- */
+/* with EDX zeroed a 32-bit unsigned divide can only fault on a zero divisor */
+/* -- so only that one branch is needed. The interpreter casts each result to */
+/* s32 before storing into the 64-bit LO/HI lane, so both sign-extend. */
 static void recPDIVUW_half(int hilo, int word)
 {
 	u8* cont;
@@ -2737,7 +2750,7 @@ static void recPDIVUW_half(int hilo, int word)
 
 	xe_cmp32_ri(XE_CX, 0);
 	xe_fwd_jcc8(Jcc_NotEqual, cont);
-	// Divide by zero: quotient -1, remainder the dividend.
+	/* Divide by zero: quotient -1, remainder the dividend. */
 	xe_mov32_rr(XE_DX, XE_AX);
 	xe_mov32_ri(XE_AX, 0xffffffff);
 	xe_fwd_jcc8(Jcc_Unconditional, end);
@@ -2763,11 +2776,11 @@ void recPDIVUW(void)
 	_deleteGPRtoXMMreg(_Rs_, DELETE_REG_FLUSH);
 	_deleteGPRtoXMMreg(_Rt_, DELETE_REG_FLUSH);
 
-	// Const-propagated registers do not live in cpuRegs.GPR.r[] until they
-	// are flushed there, and none of the deletes above does that -- recMADD
-	// checks GPR_IS_CONST1 after the very same sequence for exactly this
-	// reason. Materialise them instead, which also covers the four-word case
-	// below where the manual check would only cover the low half.
+	/* Const-propagated registers do not live in cpuRegs.GPR.r[] until they */
+	/* are flushed there, and none of the deletes above does that -- recMADD */
+	/* checks GPR_IS_CONST1 after the very same sequence for exactly this */
+	/* reason. Materialise them instead, which also covers the four-word case */
+	/* below where the manual check would only cover the low half. */
 	_flushConstReg(_Rs_);
 	_flushConstReg(_Rt_);
 
@@ -2775,36 +2788,36 @@ void recPDIVUW(void)
 	recPDIVUW_half(1, 2);
 }
 
-////////////////////////////////////////////////////
 void recPEXCW(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	xe_pshufd_xxi(EEREC_D, EEREC_T, 0xd8);
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPEXCH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	xe_pshuflw_xxi(EEREC_D, EEREC_T, 0xd8);
 	xe_pshufhw_xxi(EEREC_D, EEREC_D, 0xd8);
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPNOR(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | (_Rt_ != 0 ? XMMINFO_READT : 0) | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | (_Rt_ != 0 ? XMMINFO_READT : 0) | XMMINFO_WRITED);
 
 	if (_Rs_ == 0)
 	{
@@ -2866,7 +2879,6 @@ void recPNOR(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPMTHI(void)
 {
 	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_WRITEHI);
@@ -2874,7 +2886,6 @@ void recPMTHI(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPMTLO(void)
 {
 	int info = eeRecompileCodeXMM(XMMINFO_READS | XMMINFO_WRITELO);
@@ -2882,13 +2893,13 @@ void recPMTLO(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPCPYUD(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READS | ((_Rt_ == 0) ? 0 : XMMINFO_READT) | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READS | ((_Rt_ == 0) ? 0 : XMMINFO_READT) | XMMINFO_WRITED);
 
 	if (_Rt_ == 0)
 	{
@@ -2909,7 +2920,7 @@ void recPCPYUD(void)
 			xe_punpckhqdq_xx(EEREC_D, EEREC_T);
 		else if (EEREC_D == EEREC_T)
 		{
-			//TODO
+			/* TODO */
 			xe_punpckhqdq_xx(EEREC_D, EEREC_S);
 			xe_pshufd_xxi(EEREC_D, EEREC_D, 0x4e);
 		}
@@ -2929,13 +2940,13 @@ void recPCPYUD(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPOR(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | (_Rt_ != 0 ? XMMINFO_READT : 0) | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM((_Rs_ != 0 ? XMMINFO_READS : 0) | (_Rt_ != 0 ? XMMINFO_READT : 0) | XMMINFO_WRITED);
 
 	if (_Rs_ == 0)
 	{
@@ -2972,16 +2983,15 @@ void recPOR(void)
 	_clearNeededXMMregs();
 }
 
-////////////////////////////////////////////////////
 void recPCPYH(void)
 {
+	int info;
 	if (!_Rd_)
 		return;
 
-	int info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
+	info = eeRecompileCodeXMM(XMMINFO_READT | XMMINFO_WRITED);
 	xe_pshuflw_xxi(EEREC_D, EEREC_T, 0);
 	xe_pshufhw_xxi(EEREC_D, EEREC_D, 0);
 	_clearNeededXMMregs();
 }
-
 

@@ -63,7 +63,7 @@ extern EEINST* g_pCurInstInfo;
 int cop2flags(u32 code);
 
 // --------------------------------------------------------------------------------------
-//  COP2 macro-mode analysis passes (faithful port of pcsx2/x86/iR5900Analysis.cpp)
+//  COP2 macro-mode analysis passes (faithful port of pcsx2/x86/iR5900Analysis.c)
 // --------------------------------------------------------------------------------------
 // These passes emit NO code — they are pure analysis over the per-block EEINST
 // inst-cache, setting the EEINST_COP2_* bits that the macro-mode emit (M2/M3) reads.

@@ -117,6 +117,15 @@
 	#define PCSX2_TLS_INITIAL_EXEC __attribute__((tls_model("initial-exec")))
 #endif
 
+/* Thread-local storage one C and C++ alike can share: plain TLS, no
+ * C++ thread_local, whose wrapper functions a C definition does not
+ * provide. */
+#if defined(_MSC_VER)
+	#define PCSX2_THREAD_LOCAL __declspec(thread)
+#else
+	#define PCSX2_THREAD_LOCAL __thread
+#endif
+
 #ifdef _MSC_VER
 
 #ifndef __noinline

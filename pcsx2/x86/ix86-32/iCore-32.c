@@ -25,14 +25,14 @@
 
 #include "common/emitter/x86emitter.h"
 #include "common/emitter/c89ops.h"
-// yay sloppy crap needed until we can remove dependency on this hippopotamic
-// landmass of shared code. (air)
+/* yay sloppy crap needed until we can remove dependency on this hippopotamic */
+/* landmass of shared code. (air) */
 extern u32 g_psxConstRegs[32];
 
-// X86 caching
+/* X86 caching */
 static uint g_x86checknext;
 
-// use special x86 register allocation for ia32
+/* use special x86 register allocation for ia32 */
 
 void _initX86regs(void)
 {
@@ -45,8 +45,9 @@ static int _getFreeX86reg(int mode)
 {
 	int tempi = -1;
 	u32 bestcount = 0x10000;
+	uint i;
 
-	for (uint i = 0; i < iREGCNT_GPR; i++)
+	for (i = 0; i < iREGCNT_GPR; i++)
 	{
 		const int reg = (g_x86checknext + i) % iREGCNT_GPR;
 		if (x86regs[reg].inuse || !_isAllocatableX86reg(reg))
@@ -65,7 +66,7 @@ static int _getFreeX86reg(int mode)
 		}
 	}
 
-	for (uint i = 0; i < iREGCNT_GPR; i++)
+	for (i = 0; i < iREGCNT_GPR; i++)
 	{
 		if (!_isAllocatableX86reg(i))
 			continue;
@@ -120,7 +121,9 @@ void _flushConstRegs(void)
 {
 	int zero_reg_count = 0;
 	int minusone_reg_count = 0;
-	for (u32 i = 0; i < 32; i++)
+	u32 i;
+	int rax_is_zero;
+	for (i = 0; i < 32; i++)
 	{
 		if (!GPR_IS_CONST1(i) || g_cpuFlushedConstReg & (1u << i))
 			continue;
@@ -131,12 +134,13 @@ void _flushConstRegs(void)
 			minusone_reg_count++;
 	}
 
-	// if we have more than one of zero/minus-one, precompute
-	int rax_is_zero = 0;
+	/* if we have more than one of zero/minus-one, precompute */
+	rax_is_zero = 0;
 	if (zero_reg_count > 1)
 	{
+		u32 i;
 		xe_xor32_rr(XE_AX, XE_AX);
-		for (u32 i = 0; i < 32; i++)
+		for (i = 0; i < 32; i++)
 		{
 			if (!GPR_IS_CONST1(i) || g_cpuFlushedConstReg & (1u << i))
 				continue;
@@ -151,12 +155,13 @@ void _flushConstRegs(void)
 	}
 	if (minusone_reg_count > 1)
 	{
+		u32 i;
 		if (!rax_is_zero)
 			xe_mov64_ri(XE_AX, -1);
 		else
 			xe_not64_r(XE_AX);
 
-		for (u32 i = 0; i < 32; i++)
+		for (i = 0; i < 32; i++)
 		{
 			if (!GPR_IS_CONST1(i) || g_cpuFlushedConstReg & (1u << i))
 				continue;
@@ -169,8 +174,8 @@ void _flushConstRegs(void)
 		}
 	}
 
-	// and whatever's left over..
-	for (u32 i = 0; i < 32; i++)
+	/* and whatever's left over.. */
+	for (i = 0; i < 32; i++)
 	{
 		if (!GPR_IS_CONST1(i) || g_cpuFlushedConstReg & (1u << i))
 			continue;
@@ -183,9 +188,12 @@ void _flushConstRegs(void)
 int _allocX86reg(int type, int reg, int mode)
 {
 	int hostXMMreg = (type == X86TYPE_GPR) ? _checkXMMreg(XMMTYPE_GPRREG, reg, 0) : -1;
+	int regnum;
+	int new_reg;
 	if (type != X86TYPE_TEMP)
 	{
-		for (int i = 0; i < (int)(iREGCNT_GPR); i++)
+		int i;
+		for (i = 0; i < (int)(iREGCNT_GPR); i++)
 		{
 			if (!x86regs[i].inuse || x86regs[i].type != type || x86regs[i].reg != reg)
 				continue;
@@ -199,7 +207,7 @@ int _allocX86reg(int type, int reg, int mode)
 
 					if (hostXMMreg >= 0)
 					{
-						// ensure upper bits get written
+						/* ensure upper bits get written */
 						_freeXMMreg(hostXMMreg);
 					}
 				}
@@ -216,7 +224,7 @@ int _allocX86reg(int type, int reg, int mode)
 			}
 			else if (type == X86TYPE_VIREG)
 			{
-				// keep VI temporaries separate
+				/* keep VI temporaries separate */
 				if (reg < 0)
 					continue;
 			}
@@ -228,8 +236,8 @@ int _allocX86reg(int type, int reg, int mode)
 		}
 	}
 
-	const int regnum = _getFreeX86reg(mode);
-	const int new_reg = regnum;
+	regnum = _getFreeX86reg(mode);
+	new_reg = regnum;
 	x86regs[regnum].type = type;
 	x86regs[regnum].reg = reg;
 	x86regs[regnum].mode = mode & ~MODE_CALLEESAVED;
@@ -245,16 +253,16 @@ int _allocX86reg(int type, int reg, int mode)
 			{
 				if (reg == 0)
 				{
-					xe_xor32_rr(new_reg, new_reg); // 32-bit is smaller and zexts anyway
+					xe_xor32_rr(new_reg, new_reg); /* 32-bit is smaller and zexts anyway */
 				}
 				else
 				{
 					if (hostXMMreg >= 0)
 					{
-						// is in a XMM. we don't need to free the XMM since we're not writing, and it's still valid
-						xe_movq_rx(new_reg, hostXMMreg); // actually MOVQ
+						/* is in a XMM. we don't need to free the XMM since we're not writing, and it's still valid */
+						xe_movq_rx(new_reg, hostXMMreg); /* actually MOVQ */
 
-						// if the XMM was dirty, just get rid of it, we don't want to try to sync the values up...
+						/* if the XMM was dirty, just get rid of it, we don't want to try to sync the values up... */
 						if (xmmregs[hostXMMreg].mode & MODE_WRITE)
 						{
 							_freeXMMreg(hostXMMreg);
@@ -264,11 +272,11 @@ int _allocX86reg(int type, int reg, int mode)
 					{
 						xe_mov64_ri(new_reg, g_cpuConstRegs[reg].SD[0]);
 						g_cpuFlushedConstReg |= (1u << reg);
-						x86regs[regnum].mode |= MODE_WRITE; // reg is dirty
+						x86regs[regnum].mode |= MODE_WRITE; /* reg is dirty */
 					}
 					else
 					{
-						// not loaded
+						/* not loaded */
 						xe_mov64_rm(new_reg, &_eeGetGPRPtr(reg)->UD[0]);
 					}
 				}
@@ -292,7 +300,7 @@ int _allocX86reg(int type, int reg, int mode)
 					{
 						xe_mov32_ri(new_reg32, g_psxConstRegs[reg]);
 						g_psxFlushedConstReg |= (1u << reg);
-						x86regs[regnum].mode |= MODE_WRITE; // reg is dirty
+						x86regs[regnum].mode |= MODE_WRITE; /* reg is dirty */
 					}
 					else
 					{
@@ -320,7 +328,7 @@ int _allocX86reg(int type, int reg, int mode)
 			g_cpuHasConstReg &= ~(1 << (reg));
 		if (hostXMMreg >= 0)
 		{
-			// writing, so kill the xmm allocation. gotta ensure the upper bits gets stored first.
+			/* writing, so kill the xmm allocation. gotta ensure the upper bits gets stored first. */
 			_freeXMMreg(hostXMMreg);
 		}
 	}
@@ -369,14 +377,15 @@ void _writebackX86Reg(int x86reg)
 
 int _checkX86reg(int type, int reg, int mode)
 {
-	for (uint i = 0; i < iREGCNT_GPR; i++)
+	uint i;
+	for (i = 0; i < iREGCNT_GPR; i++)
 	{
 		if (x86regs[i].inuse && x86regs[i].reg == reg && x86regs[i].type == type)
 		{
-			// ensure constants get deleted once we alloc as write
+			/* ensure constants get deleted once we alloc as write */
 			if (mode & MODE_WRITE)
 			{
-				// go through the alloc path instead, because we might need to invalidate an xmm.
+				/* go through the alloc path instead, because we might need to invalidate an xmm. */
 				if (type == X86TYPE_GPR)
 					return _allocX86reg(X86TYPE_GPR, reg, mode);
 				else if (type == X86TYPE_PSX)
@@ -397,7 +406,8 @@ int _checkX86reg(int type, int reg, int mode)
 
 void _addNeededX86reg(int type, int reg)
 {
-	for (uint i = 0; i < iREGCNT_GPR; i++)
+	uint i;
+	for (i = 0; i < iREGCNT_GPR; i++)
 	{
 		if (!x86regs[i].inuse || x86regs[i].reg != reg || x86regs[i].type != type)
 			continue;
@@ -409,7 +419,8 @@ void _addNeededX86reg(int type, int reg)
 
 void _clearNeededX86regs(void)
 {
-	for (uint i = 0; i < iREGCNT_GPR; i++)
+	uint i;
+	for (i = 0; i < iREGCNT_GPR; i++)
 	{
 		if (x86regs[i].needed)
 		{
@@ -419,7 +430,6 @@ void _clearNeededX86regs(void)
 		x86regs[i].needed = 0;
 	}
 }
-
 
 void _freeX86reg(int x86reg)
 {
@@ -442,7 +452,8 @@ void _freeX86regWithoutWriteback(int x86reg)
 
 void _flushX86regs(void)
 {
-	for (u32 i = 0; i < iREGCNT_GPR; ++i)
+	u32 i;
+	for (i = 0; i < iREGCNT_GPR; ++i)
 	{
 		if (x86regs[i].inuse && x86regs[i].mode & MODE_WRITE)
 		{

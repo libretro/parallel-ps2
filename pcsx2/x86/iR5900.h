@@ -34,28 +34,32 @@
 #include "iCOP0.h"
 #include "iFPU.h"
 
-// Register containing a pointer to our fastmem (4GB) area
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Register containing a pointer to our fastmem (4GB) area */
 #define RFASTMEMBASE XE_BP /* rbp: fastmem base */
 
-extern u32 pc;             // recompiler pc
-extern int g_branch;       // set for branch
-extern u32 target;         // branch target
-extern int s_nBlockInterlocked; // Current block has VU0 interlocking
+extern u32 pc;             /* recompiler pc */
+extern int g_branch;       /* set for branch */
+extern u32 target;         /* branch target */
+extern int s_nBlockInterlocked; /* Current block has VU0 interlocking */
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//
+/* //////////////////////////////////////////////////////////////////////////////////////// */
+
 
 
 extern int g_recompilingDelaySlot;
 
-// Used for generating backpatch thunks for fastmem.
+/* Used for generating backpatch thunks for fastmem. */
 u8* recBeginThunk(void);
 u8* recEndThunk(void);
 
-// used when processing branches
+/* used when processing branches */
 int TrySwapDelaySlot(u32 rs, u32 rt, u32 rd, int allow_loadstore);
-void SaveBranchState();
-void LoadBranchState();
+void SaveBranchState(void);
+void LoadBranchState(void);
 
 void recompileNextInstruction(int delayslot, int swapped_delay_slot);
 void SetBranchReg(u32 reg);
@@ -68,8 +72,8 @@ u32 scaleblockcycles_clear(void);
 
 		extern void recDoBranchImm(u32 branchTo, uint8_t* jmpSkip, int isLikely, int swappedDelaySlot);
 
-////////////////////////////////////////////////////////////////////
-// Constant Propagation - From here to the end of the header!
+/* ////////////////////////////////////////////////////////////////// */
+/* Constant Propagation - From here to the end of the header! */
 
 #define GPR_IS_CONST1(reg) ((reg) < 32 && (g_cpuHasConstReg & (1 << (reg))))
 #define GPR_IS_CONST2(reg1, reg2) ((g_cpuHasConstReg & (1 << (reg1))) && (g_cpuHasConstReg & (1 << (reg2))))
@@ -89,20 +93,20 @@ u32 scaleblockcycles_clear(void);
 			g_cpuHasConstReg &= ~(1 << (reg)); \
 	}
 
-alignas(16) extern GPR_reg64 g_cpuConstRegs[32];
+extern GPR_reg64 g_cpuConstRegs[32];
 extern u32 g_cpuHasConstReg, g_cpuFlushedConstReg;
 
-// finds where the GPR is stored and moves lower 32 bits to EAX
+/* finds where the GPR is stored and moves lower 32 bits to EAX */
 void _eeMoveGPRtoR32(int to, int fromgpr, int allow_preload);
 void _eeMoveGPRtoR64(int to, int fromgpr, int allow_preload);
-void _eeMoveGPRtoM(uptr to, int fromgpr); // 32-bit only
+void _eeMoveGPRtoM(uptr to, int fromgpr); /* 32-bit only */
 
 void _eeFlushAllDirty(void);
 void _eeOnWriteReg(int reg, int signext);
 
-// totally deletes from const, xmm, and mmx entries
-// if flush is 1, also flushes to memory
-// if 0, only flushes if not an xmm reg (used when overwriting lower 64bits of reg)
+/* totally deletes from const, xmm, and mmx entries */
+/* if flush is 1, also flushes to memory */
+/* if 0, only flushes if not an xmm reg (used when overwriting lower 64bits of reg) */
 void _deleteEEreg(int reg, int flush);
 void _deleteEEreg128(int reg);
 
@@ -110,11 +114,11 @@ void _flushEEreg(int reg, int clear);
 
 int _eeTryRenameReg(int to, int from, int fromx86, int other, int xmminfo);
 
-//////////////////////////////////////
-// Templates for code recompilation //
-//////////////////////////////////////
+/* //////////////////////////////////// */
+/* Templates for code recompilation // */
+/* //////////////////////////////////// */
 
-typedef void (*R5900FNPTR)();
+typedef void (*R5900FNPTR)(void);
 typedef void (*R5900FNPTR_INFO)(int info);
 
 #define EERECOMPILE_CODE0(fn, xmminfo) \
@@ -140,15 +144,15 @@ typedef void (*R5900FNPTR_INFO)(int info);
 		codename(rec##fn##_const, rec##fn##_, (xmminfo)); \
 	}
 
-//
-// MMX/XMM caching helpers
-//
 
-// rd = rs op rt
+/* MMX/XMM caching helpers */
+
+
+/* rd = rs op rt */
 void eeRecompileCodeRC0(R5900FNPTR constcode, R5900FNPTR_INFO constscode, R5900FNPTR_INFO consttcode, R5900FNPTR_INFO noconstcode, int xmminfo);
-// rt = rs op imm16
+/* rt = rs op imm16 */
 void eeRecompileCodeRC1(R5900FNPTR constcode, R5900FNPTR_INFO noconstcode, int xmminfo);
-// rd = rt op sa
+/* rd = rt op sa */
 void eeRecompileCodeRC2(R5900FNPTR constcode, R5900FNPTR_INFO noconstcode, int xmminfo);
 
 #define FPURECOMPILE_CONSTCODE(fn, xmminfo) \
@@ -214,6 +218,9 @@ void eeRecompileCodeRC2(R5900FNPTR constcode, R5900FNPTR_INFO noconstcode, int x
 			int##fn, xmminfo); \
 	}
 
-// rd = rs op rt (all regs need to be in xmm)
+/* rd = rs op rt (all regs need to be in xmm) */
 int eeRecompileCodeXMM(int xmminfo);
 void eeFPURecompileCode(R5900FNPTR_INFO xmmcode, R5900FNPTR fpucode, int xmminfo);
+#ifdef __cplusplus
+}
+#endif

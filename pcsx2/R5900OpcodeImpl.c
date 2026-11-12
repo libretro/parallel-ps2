@@ -941,7 +941,7 @@ void intMFSA(void) {
 
 void intMTSA(void) {
 	/* SA is four bits, a byte count for QFSRV. recMTSA in
-	 * x86/iR5900Misc.cpp has always masked it -- its comment says so --
+	 * x86/iR5900Misc.c has always masked it -- its comment says so --
 	 * and this had not, so the two engines disagreed for any value above
 	 * 15 and QFSRV then shifted by sa * 8 with a count it cannot take.
 	 * ps2autotests tests/cpu/ee_simd/funnel.expected settles it: MTSA of

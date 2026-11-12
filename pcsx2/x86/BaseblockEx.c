@@ -13,7 +13,6 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
 #include "BaseblockEx.h"
 
 /* The old class ran its constructor once, at static-init time. The call

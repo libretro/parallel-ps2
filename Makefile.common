@@ -389,17 +389,18 @@ SOURCES_CXX += \
 
 # pcsx2 CPU recompilers. x86_64 uses the x86 dynarec; aarch64 uses the native
 # arm64 EE/IOP/VU recompilers + NEON VIF unpack transplanted from ARMSX2 (the
-# x86 sources have no arm64 backend). CpuState.cpp only defines the EE/IOP/FPU
+# x86 sources have no arm64 backend). CpuState.c only defines the EE/IOP/FPU
 # register state the interpreter needs too, so it is built on both. Mirrors the
 # `if(NOT _M_X86)` source swap in pcsx2/CMakeLists.txt.
 ifeq ($(IS_ARM64), 1)
-# JitHash.cpp is portable: on non-x86 it compiles to the exported
+# JitHash.c is portable: on non-x86 it compiles to the exported
 # pcsx2_jithash_dump stub that libretro/main.cpp calls unconditionally from
 # retro_deinit. Dropping it here is an aarch64 link error -- cmake's
 # pcsx2/CMakeLists.txt already keeps it in the arm64 list for this reason.
+SOURCES_C += \
+	$(LRPS2_DIR)/x86/CpuState.c \
+	$(LRPS2_DIR)/x86/JitHash.c
 SOURCES_CXX += \
-	$(LRPS2_DIR)/x86/CpuState.cpp \
-	$(LRPS2_DIR)/x86/JitHash.cpp \
 	$(LRPS2_DIR)/arm64/recR3000A_arm64.cpp \
 	$(LRPS2_DIR)/arm64/recR5900_arm64.cpp \
 	$(LRPS2_DIR)/arm64/aVU.cpp \
@@ -407,35 +408,37 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/arm64/Vif_UnpackNEON.cpp \
 	$(LRPS2_DIR)/arm64/Vif_Dynarec_arm64.cpp
 else
-# pcsx2/x86 (recompilers)
+# pcsx2/x86 (recompilers). The EE/IOP recompilers and the register
+# allocator are C; the microVU and VIF unpack recompilers are still C++.
+SOURCES_C += \
+	$(LRPS2_DIR)/x86/CpuState.c \
+	$(LRPS2_DIR)/x86/BaseblockEx.c \
+	$(LRPS2_DIR)/x86/iCOP0.c \
+	$(LRPS2_DIR)/x86/iCore.c \
+	$(LRPS2_DIR)/x86/iFPU.c \
+	$(LRPS2_DIR)/x86/iFPUd.c \
+	$(LRPS2_DIR)/x86/iMMI.c \
+	$(LRPS2_DIR)/x86/JitHash.c \
+	$(LRPS2_DIR)/x86/iR3000A.c \
+	$(LRPS2_DIR)/x86/iR3000Atables.c \
+	$(LRPS2_DIR)/x86/iR5900Analysis.c \
+	$(LRPS2_DIR)/x86/iR5900Misc.c \
+	$(LRPS2_DIR)/x86/ix86-32/iCore-32.c \
+	$(LRPS2_DIR)/x86/ix86-32/iR5900-32.c \
+	$(LRPS2_DIR)/x86/ix86-32/iR5900Arit.c \
+	$(LRPS2_DIR)/x86/ix86-32/iR5900AritImm.c \
+	$(LRPS2_DIR)/x86/ix86-32/iR5900Branch.c \
+	$(LRPS2_DIR)/x86/ix86-32/iR5900Jump.c \
+	$(LRPS2_DIR)/x86/ix86-32/iR5900LoadStore.c \
+	$(LRPS2_DIR)/x86/ix86-32/iR5900Move.c \
+	$(LRPS2_DIR)/x86/ix86-32/iR5900MultDiv.c \
+	$(LRPS2_DIR)/x86/ix86-32/iR5900Shift.c \
+	$(LRPS2_DIR)/x86/ix86-32/iR5900Templates.c \
+	$(LRPS2_DIR)/x86/ix86-32/recVTLB.c
 SOURCES_CXX += \
-	$(LRPS2_DIR)/x86/CpuState.cpp \
-	$(LRPS2_DIR)/x86/BaseblockEx.cpp \
-	$(LRPS2_DIR)/x86/iCOP0.cpp \
-	$(LRPS2_DIR)/x86/iCore.cpp \
-	$(LRPS2_DIR)/x86/iFPU.cpp \
-	$(LRPS2_DIR)/x86/iFPUd.cpp \
-	$(LRPS2_DIR)/x86/iMMI.cpp \
-	$(LRPS2_DIR)/x86/JitHash.cpp \
-	$(LRPS2_DIR)/x86/iR3000A.cpp \
-	$(LRPS2_DIR)/x86/iR3000Atables.cpp \
-	$(LRPS2_DIR)/x86/iR5900Analysis.cpp \
-	$(LRPS2_DIR)/x86/iR5900Misc.cpp \
 	$(LRPS2_DIR)/x86/microVU.cpp \
 	$(LRPS2_DIR)/x86/newVif_Dynarec.cpp \
-	$(LRPS2_DIR)/x86/newVif_UnpackSSE.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/iCore-32.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/iR5900-32.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/iR5900Arit.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/iR5900AritImm.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/iR5900Branch.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/iR5900Jump.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/iR5900LoadStore.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/iR5900Move.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/iR5900MultDiv.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/iR5900Shift.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/iR5900Templates.cpp \
-	$(LRPS2_DIR)/x86/ix86-32/recVTLB.cpp
+	$(LRPS2_DIR)/x86/newVif_UnpackSSE.cpp
 endif
 
 # ============================================================================

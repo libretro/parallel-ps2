@@ -79,7 +79,7 @@ void psxBGEZAL(void)   /* Branch if Rs >= 0 and link */
 	 * deliberate, not the JALR bug in a different place: MIPS leaves r31 as
 	 * the source of a linking branch undefined, and all four engines agree
 	 * here -- both recompilers set the link before reading rs too, the EE
-	 * one in iR5900Branch.cpp and the IOP one in iR3000Atables.cpp.
+	 * one in iR5900Branch.c and the IOP one in iR3000Atables.c.
 	 * Reordering it to match JALR would break that agreement rather than
 	 * fix anything, and the engines are switchable at run time. */
 	_SetLink(31);
@@ -164,7 +164,7 @@ void psxJALR(void)
 	 * ps2autotests tests/cpu/iop/branchdelay.expected covers exactly that
 	 * as "jalr: rs/rd match" and the console branches to the target.
 	 *
-	 * rpsxJALR in x86/iR3000Atables.cpp has always had this right: it moves
+	 * rpsxJALR in x86/iR3000Atables.c has always had this right: it moves
 	 * Rs into its writeback register before assigning Rd, and separately
 	 * refuses to swap the delay slot when the two match. JALR in
 	 * Interpreter.c does the same for the EE, taking a temp copy first.

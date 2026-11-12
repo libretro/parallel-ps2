@@ -196,7 +196,7 @@ extern "C" {
  * have happened (hsyncs, vsyncs, IOP exceptions, etc). R3000A.c */
 extern bool iopEventAction;
 
-/* Branching status used when throwing exceptions. x86/CpuState.cpp */
+/* Branching status used when throwing exceptions. x86/CpuState.c */
 extern int iopIsDelaySlot;
 
 /* --------------------------------------------------------------------------

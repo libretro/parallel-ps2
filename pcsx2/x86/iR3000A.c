@@ -13,9 +13,9 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// recompiler reworked to add dynamic linking Jan06
-// and added reg caching, const propagation, block analysis Jun06
-// zerofrog(@gmail.com)
+/* recompiler reworked to add dynamic linking Jan06 */
+/* and added reg caching, const propagation, block analysis Jun06 */
+/* zerofrog(@gmail.com) */
 
 #include "iR3000A.h"
 #include <memalign.h>
@@ -53,14 +53,14 @@ static __fi u32 HWADDR(u32 mem) { return psxhwLUT[mem >> 16] + mem; }
 static struct CodeReserve recMem;
 static int recMemAssigned = 0;
 
-static BASEBLOCK* recRAM = NULL; // and the ptr to the blocks here
-static BASEBLOCK* recROM = NULL; // and here
-static BASEBLOCK* recROM1 = NULL; // also here
-static BASEBLOCK* recROM2 = NULL; // also here
+static BASEBLOCK* recRAM = NULL; /* and the ptr to the blocks here */
+static BASEBLOCK* recROM = NULL; /* and here */
+static BASEBLOCK* recROM1 = NULL; /* also here */
+static BASEBLOCK* recROM2 = NULL; /* also here */
 static struct BaseBlocks recBlocks;
 static u8* recPtr = NULL;
-u32 psxpc; // recompiler psxpc
-static int psxbranch; // set for branch
+u32 psxpc; /* recompiler psxpc */
+static int psxbranch; /* set for branch */
 u32 g_iopCyclePenalty;
 
 static EEINST* s_pInstCache = NULL;
@@ -69,7 +69,7 @@ static u32 s_nInstCacheSize = 0;
 static BASEBLOCK* s_pCurBlock = NULL;
 static BASEBLOCKEX* s_pCurBlockEx = NULL;
 
-static u32 s_nEndBlock = 0; // what psxpc the current block ends
+static u32 s_nEndBlock = 0; /* what psxpc the current block ends */
 static u32 s_branchTo;
 static int s_nBlockFF;
 
@@ -77,14 +77,14 @@ static u32 s_saveConstRegs[32];
 static u32 s_saveHasConstReg = 0, s_saveFlushedConstReg = 0;
 static EEINST* s_psaveInstInfo = NULL;
 
-u32 s_psxBlockCycles = 0; // cycles of current block recompiling
+u32 s_psxBlockCycles = 0; /* cycles of current block recompiling */
 static u32 s_savenBlockCycles = 0;
 static int s_recompilingDelaySlot = 0;
 
 static void iPsxBranchTest(u32 newpc, u32 cpuBranch);
-void psxRecompileNextInstruction(int delayslot);
+void psxRecompileNextInstruction(int delayslot, int swapped_delayslot);
 
-extern void (*rpsxBSC[64])();
+extern void (*rpsxBSC[64])(void);
 void rpsxpropBSC(EEINST* prev, EEINST* pinst);
 
 static void iopClearRecLUT(BASEBLOCK* base, int count);
@@ -96,14 +96,14 @@ static void iopClearRecLUT(BASEBLOCK* base, int count);
 			psxRecClearMem(mem) : \
             4)
 
-// =====================================================================================================
-//  Dynamically Compiled Dispatchers - R3000A style
-// =====================================================================================================
+/* ===================================================================================================== */
+/*  Dynamically Compiled Dispatchers - R3000A style */
+/* ===================================================================================================== */
 
 static void iopRecRecompile(const u32 startpc);
 
-// Recompiled code buffer for EE recompiler dispatchers!
-alignas(__pagesize) static u8 iopRecDispatchers[__pagesize];
+/* Recompiled code buffer for EE recompiler dispatchers! */
+PCSX2_ALIGN(__pagesize) static u8 iopRecDispatchers[__pagesize];
 
 static const void* iopDispatcherEvent = NULL;
 static const void* iopDispatcherReg = NULL;
@@ -116,8 +116,8 @@ static void recEventTest(void)
 	_cpuEventTest_Shared();
 }
 
-// The address for all cleared blocks.  It recompiles the current pc and then
-// dispatches to the recompiled block address.
+/* The address for all cleared blocks.  It recompiles the current pc and then */
+/* dispatches to the recompiled block address. */
 static const void* _DynGen_JITCompile(void)
 {
 	u8* retval = x86Ptr;
@@ -133,7 +133,7 @@ static const void* _DynGen_JITCompile(void)
 	return retval;
 }
 
-// called when jumping to variable pc address
+/* called when jumping to variable pc address */
 static const void* _DynGen_DispatcherReg(void)
 {
 	u8* retval = x86Ptr;
@@ -147,24 +147,24 @@ static const void* _DynGen_DispatcherReg(void)
 	return retval;
 }
 
-// --------------------------------------------------------------------------------------
-//  EnterRecompiledCode  - dynamic compilation stub!
-// --------------------------------------------------------------------------------------
+/* -------------------------------------------------------------------------------------- */
+/*  EnterRecompiledCode  - dynamic compilation stub! */
+/* -------------------------------------------------------------------------------------- */
 static const void* _DynGen_EnterRecompiledCode(void)
 {
-	// Optimization: The IOP never uses stack-based parameter invocation, so we can avoid
-	// allocating any room on the stack for it (which is important since the IOP's entry
-	// code gets invoked quite a lot).
+	/* Optimization: The IOP never uses stack-based parameter invocation, so we can avoid */
+	/* allocating any room on the stack for it (which is important since the IOP's entry */
+	/* code gets invoked quite a lot). */
 
 	u8* retval = x86Ptr;
 
-	{ // Properly scope the frame prologue/epilogue
+	{ /* Properly scope the frame prologue/epilogue */
 		int m_offset;
 		SCOPED_STACK_FRAME_BEGIN(m_offset);
 
 		xe_jmp_to(iopDispatcherReg);
 
-		// Save an exit point
+		/* Save an exit point */
 		iopExitRecompiledCode = x86Ptr;
 		SCOPED_STACK_FRAME_END(m_offset);
 	}
@@ -180,16 +180,16 @@ static void _DynGen_Dispatchers(void)
 	mode.m_read  = 1;
 	mode.m_write = 1;
 	mode.m_exec  = 0;
-	// In case init gets called multiple times:
+	/* In case init gets called multiple times: */
 	mprotect(iopRecDispatchers, __pagesize, host_prot(mode));
 
-	// clear the buffer to 0xcc (easier debugging).
+	/* clear the buffer to 0xcc (easier debugging). */
 	memset(iopRecDispatchers, 0xcc, __pagesize);
 
 	x86Ptr = (u8*)(iopRecDispatchers);
 
-	// Place the EventTest and DispatcherReg stuff at the top, because they get called the
-	// most and stand to benefit from strong alignment and direct referencing.
+	/* Place the EventTest and DispatcherReg stuff at the top, because they get called the */
+	/* most and stand to benefit from strong alignment and direct referencing. */
 	iopDispatcherEvent = x86Ptr;
 	xe_fastcall0(recEventTest);
 	iopDispatcherReg = _DynGen_DispatcherReg();
@@ -207,8 +207,6 @@ static void _DynGen_Dispatchers(void)
 	BaseBlocks_SetJITCompile(&recBlocks, iopJITCompile);
 }
 
-////////////////////////////////////////////////////
-
 void _psxFlushConstReg(int reg)
 {
 	if (PSX_IS_CONST1(reg) && !(g_psxFlushedConstReg & (1 << reg)))
@@ -218,15 +216,15 @@ void _psxFlushConstReg(int reg)
 	}
 }
 
-void _psxFlushConstRegs()
+void _psxFlushConstRegs(void)
 {
-	// TODO: Combine flushes
+	/* TODO: Combine flushes */
 
 	int i;
 
-	// flush constants
+	/* flush constants */
 
-	// ignore r0
+	/* ignore r0 */
 	for (i = 1; i < 32; ++i)
 	{
 		if (g_psxHasConstReg & (1 << i))
@@ -294,8 +292,9 @@ void _psxMoveGPRtoM(uptr to, int fromgpr)
 
 void _psxFlushCall(int flushtype)
 {
-	// Free registers that are not saved across function calls (x86-32 ABI):
-	for (u32 i = 0; i < iREGCNT_GPR; i++)
+	u32 i;
+	/* Free registers that are not saved across function calls (x86-32 ABI): */
+	for (i = 0; i < iREGCNT_GPR; i++)
 	{
 		if (!x86regs[i].inuse)
 			continue;
@@ -317,14 +316,15 @@ void _psxFlushCall(int flushtype)
 	if ((flushtype & FLUSH_PC) /*&& !g_cpuFlushedPC*/)
 	{
 		xe_mov32_mi(&psxRegs.pc, psxpc);
-		//g_cpuFlushedPC = true;
+		/* g_cpuFlushedPC = true; */
 	}
 }
 
-void _psxFlushAllDirty()
+void _psxFlushAllDirty(void)
 {
-	// TODO: Combine flushes
-	for (u32 i = 0; i < 32; ++i)
+	u32 i;
+	/* TODO: Combine flushes */
+	for (i = 0; i < 32; ++i)
 	{
 		if (PSX_IS_CONST1(i))
 			_psxFlushConstReg(i);
@@ -333,7 +333,7 @@ void _psxFlushAllDirty()
 	_flushX86regs();
 }
 
-void psxSaveBranchState()
+void psxSaveBranchState(void)
 {
 	s_savenBlockCycles = s_psxBlockCycles;
 	memcpy(s_saveConstRegs, g_psxConstRegs, sizeof(g_psxConstRegs));
@@ -341,11 +341,11 @@ void psxSaveBranchState()
 	s_saveFlushedConstReg = g_psxFlushedConstReg;
 	s_psaveInstInfo = g_pCurInstInfo;
 
-	// save all regs
+	/* save all regs */
 	memcpy(s_saveX86regs, x86regs, sizeof(x86regs));
 }
 
-void psxLoadBranchState()
+void psxLoadBranchState(void)
 {
 	s_psxBlockCycles = s_savenBlockCycles;
 
@@ -354,13 +354,11 @@ void psxLoadBranchState()
 	g_psxFlushedConstReg = s_saveFlushedConstReg;
 	g_pCurInstInfo = s_psaveInstInfo;
 
-	// restore all regs
+	/* restore all regs */
 	memcpy(x86regs, s_saveX86regs, sizeof(x86regs));
 }
 
-////////////////////
-// Code Templates //
-////////////////////
+/* Code Templates // */
 
 void _psxOnWriteReg(int reg)
 {
@@ -369,85 +367,89 @@ void _psxOnWriteReg(int reg)
 
 int psxTrySwapDelaySlot(u32 rs, u32 rt, u32 rd)
 {
+	u32 opcode_encoded;
+	u32 opcode_rs;
+	u32 opcode_rt;
+	u32 opcode_rd;
 #if 1
 	if (s_recompilingDelaySlot)
 		return 0;
 
-	const u32 opcode_encoded = iopMemRead32(psxpc);
+	opcode_encoded = iopMemRead32(psxpc);
 	if (opcode_encoded == 0)
 	{
 		psxRecompileNextInstruction(1, 1);
 		return 1;
 	}
 
-	const u32 opcode_rs = ((opcode_encoded >> 21) & 0x1F);
-	const u32 opcode_rt = ((opcode_encoded >> 16) & 0x1F);
-	const u32 opcode_rd = ((opcode_encoded >> 11) & 0x1F);
+	opcode_rs = ((opcode_encoded >> 21) & 0x1F);
+	opcode_rt = ((opcode_encoded >> 16) & 0x1F);
+	opcode_rd = ((opcode_encoded >> 11) & 0x1F);
 
 	switch (opcode_encoded >> 26)
 	{
-		case 8: // ADDI
-		case 9: // ADDIU
-		case 10: // SLTI
-		case 11: // SLTIU
-		case 12: // ANDIU
-		case 13: // ORI
-		case 14: // XORI
-		case 15: // LUI
-		case 32: // LB
-		case 33: // LH
-		case 34: // LWL
-		case 35: // LW
-		case 36: // LBU
-		case 37: // LHU
-		case 38: // LWR
-		case 39: // LWU
-		case 40: // SB
-		case 41: // SH
-		case 42: // SWL
-		case 43: // SW
-		case 46: // SWR
+		case 8: /* ADDI */
+		case 9: /* ADDIU */
+		case 10: /* SLTI */
+		case 11: /* SLTIU */
+		case 12: /* ANDIU */
+		case 13: /* ORI */
+		case 14: /* XORI */
+		case 15: /* LUI */
+		case 32: /* LB */
+		case 33: /* LH */
+		case 34: /* LWL */
+		case 35: /* LW */
+		case 36: /* LBU */
+		case 37: /* LHU */
+		case 38: /* LWR */
+		case 39: /* LWU */
+		case 40: /* SB */
+		case 41: /* SH */
+		case 42: /* SWL */
+		case 43: /* SW */
+		case 46: /* SWR */
 		{
 			if ((rs != 0 && rs == opcode_rt) || (rt != 0 && rt == opcode_rt) || (rd != 0 && (rd == opcode_rs || rd == opcode_rt)))
 				goto is_unsafe;
 		}
 		break;
 
-		case 50: // LWC2
-		case 58: // SWC2
+		case 50: /* LWC2 */
+		case 58: /* SWC2 */
 			break;
 
-		case 0: // SPECIAL
+		case 0: /* SPECIAL */
 		{
 			switch (opcode_encoded & 0x3F)
 			{
-				case 0: // SLL
-				case 2: // SRL
-				case 3: // SRA
-				case 4: // SLLV
-				case 6: // SRLV
-				case 7: // SRAV
-				case 32: // ADD
-				case 33: // ADDU
-				case 34: // SUB
-				case 35: // SUBU
-				case 36: // AND
-				case 37: // OR
-				case 38: // XOR
-				case 39: // NOR
-				case 42: // SLT
-				case 43: // SLTU
+				case 0: /* SLL */
+				case 2: /* SRL */
+				case 3: /* SRA */
+				case 4: /* SLLV */
+				case 6: /* SRLV */
+				case 7: /* SRAV */
+				case 32: /* ADD */
+				case 33: /* ADDU */
+				case 34: /* SUB */
+				case 35: /* SUBU */
+				case 36: /* AND */
+				case 37: /* OR */
+				case 38: /* XOR */
+				case 39: /* NOR */
+				case 42: /* SLT */
+				case 43: /* SLTU */
 				{
 					if ((rs != 0 && rs == opcode_rd) || (rt != 0 && rt == opcode_rd) || (rd != 0 && (rd == opcode_rs || rd == opcode_rt)))
 						goto is_unsafe;
 				}
 				break;
 
-				case 15: // SYNC
-				case 24: // MULT
-				case 25: // MULTU
-				case 26: // DIV
-				case 27: // DIVU
+				case 15: /* SYNC */
+				case 24: /* MULT */
+				case 25: /* MULTU */
+				case 26: /* DIV */
+				case 27: /* DIVU */
 					break;
 
 				default:
@@ -456,28 +458,28 @@ int psxTrySwapDelaySlot(u32 rs, u32 rt, u32 rd)
 		}
 		break;
 
-		case 16: // COP0
-		case 17: // COP1
-		case 18: // COP2
-		case 19: // COP3
+		case 16: /* COP0 */
+		case 17: /* COP1 */
+		case 18: /* COP2 */
+		case 19: /* COP3 */
 		{
 			switch ((opcode_encoded >> 21) & 0x1F)
 			{
-				case 0: // MFC0
-				case 2: // CFC0
+				case 0: /* MFC0 */
+				case 2: /* CFC0 */
 				{
 					if ((rs != 0 && rs == opcode_rt) || (rt != 0 && rt == opcode_rt) || (rd != 0 && rd == opcode_rt))
 						goto is_unsafe;
 				}
 				break;
 
-				case 4: // MTC0
-				case 6: // CTC0
+				case 4: /* MTC0 */
+				case 6: /* CTC0 */
 					break;
 
 				default:
 				{
-					// swap when it's GTE
+					/* swap when it's GTE */
 					if ((opcode_encoded >> 26) != 18)
 						goto is_unsafe;
 				}
@@ -501,27 +503,36 @@ is_unsafe:
 
 int psxTryRenameReg(int to, int from, int fromx86, int other, int xmminfo)
 {
-	// can't rename when in form Rd = Rs op Rt and Rd == Rs or Rd == Rt
+	/* can't rename when in form Rd = Rs op Rt and Rd == Rs or Rd == Rt */
 	if ((xmminfo & XMMINFO_NORENAME) || fromx86 < 0 || to == from || to == other || !EEINST_RENAMETEST(from))
 		return -1;
 
-	// flush back when it's been modified
+	/* flush back when it's been modified */
 	if (x86regs[fromx86].mode & MODE_WRITE)
 		_writebackX86Reg(fromx86);
 
-	// remove all references to renamed-to register
+	/* remove all references to renamed-to register */
 	_deletePSXtoX86reg(to, DELETE_REG_FREE_NO_WRITEBACK);
 	PSX_DEL_CONST(to);
 
-	// and do the actual rename, new register has been modified.
+	/* and do the actual rename, new register has been modified. */
 	x86regs[fromx86].reg = to;
 	x86regs[fromx86].mode |= MODE_READ | MODE_WRITE;
 	return fromx86;
 }
 
-// rd = rs op rt
+/* rd = rs op rt */
 void psxRecompileCodeConst0(R3000AFNPTR constcode, R3000AFNPTR_INFO constscode, R3000AFNPTR_INFO consttcode, R3000AFNPTR_INFO noconstcode, int xmminfo)
 {
+	int s_is_const;
+	int t_is_const;
+	int d_is_const;
+	int s_is_used;
+	int t_is_used;
+	u32 info;
+	int regs;
+	int regt;
+	int regd;
 	if (!_Rd_)
 		return;
 
@@ -533,13 +544,13 @@ void psxRecompileCodeConst0(R3000AFNPTR constcode, R3000AFNPTR_INFO constscode, 
 		return;
 	}
 
-	// we have to put these up here, because the register allocator below will wipe out const flags
-	// for the destination register when/if it switches it to write mode.
-	const int s_is_const = !!(PSX_IS_CONST1(_Rs_));
-	const int t_is_const = !!(PSX_IS_CONST1(_Rt_));
-	const int d_is_const = !!(PSX_IS_CONST1(_Rd_));
-	const int s_is_used = !!(EEINST_USEDTEST(_Rs_));
-	const int t_is_used = !!(EEINST_USEDTEST(_Rt_));
+	/* we have to put these up here, because the register allocator below will wipe out const flags */
+	/* for the destination register when/if it switches it to write mode. */
+	s_is_const = !!(PSX_IS_CONST1(_Rs_));
+	t_is_const = !!(PSX_IS_CONST1(_Rt_));
+	d_is_const = !!(PSX_IS_CONST1(_Rd_));
+	s_is_used = !!(EEINST_USEDTEST(_Rs_));
+	t_is_used = !!(EEINST_USEDTEST(_Rt_));
 
 	if (!s_is_const)
 		_addNeededGPRtoX86reg(_Rs_);
@@ -548,24 +559,24 @@ void psxRecompileCodeConst0(R3000AFNPTR constcode, R3000AFNPTR_INFO constscode, 
 	if (!d_is_const)
 		_addNeededGPRtoX86reg(_Rd_);
 
-	u32 info = 0;
-	int regs = _checkX86reg(X86TYPE_PSX, _Rs_, MODE_READ);
+	info = 0;
+	regs = _checkX86reg(X86TYPE_PSX, _Rs_, MODE_READ);
 	if (regs < 0 && ((!s_is_const && s_is_used) || _Rs_ == _Rd_))
 		regs = _allocX86reg(X86TYPE_PSX, _Rs_, MODE_READ);
 	if (regs >= 0)
 		info |= PROCESS_EE_SET_S(regs);
 
-	int regt = _checkX86reg(X86TYPE_PSX, _Rt_, MODE_READ);
+	regt = _checkX86reg(X86TYPE_PSX, _Rt_, MODE_READ);
 	if (regt < 0 && ((!t_is_const && t_is_used) || _Rt_ == _Rd_))
 		regt = _allocX86reg(X86TYPE_PSX, _Rt_, MODE_READ);
 	if (regt >= 0)
 		info |= PROCESS_EE_SET_T(regt);
 
-	// If S is no longer live, swap D for S. Saves the move.
-	int regd = psxTryRenameReg(_Rd_, _Rs_, regs, _Rt_, xmminfo);
+	/* If S is no longer live, swap D for S. Saves the move. */
+	regd = psxTryRenameReg(_Rd_, _Rs_, regs, _Rt_, xmminfo);
 	if (regd < 0)
 	{
-		// TODO: If not live, write direct to memory.
+		/* TODO: If not live, write direct to memory. */
 		regd = _allocX86reg(X86TYPE_PSX, _Rd_, MODE_WRITE);
 	}
 	if (regd >= 0)
@@ -573,7 +584,7 @@ void psxRecompileCodeConst0(R3000AFNPTR constcode, R3000AFNPTR_INFO constscode, 
 
 	if (s_is_const && regs < 0)
 	{
-		// This *must* go inside the if, because of when _Rs_ =  _Rd_
+		/* This *must* go inside the if, because of when _Rs_ =  _Rd_ */
 		PSX_DEL_CONST(_Rd_);
 		constscode(info /*| PROCESS_CONSTS*/);
 		return;
@@ -594,11 +605,12 @@ static void psxRecompileIrxImport(void)
 {
 	u32 import_table = irxImportTableAddr(psxpc - 4);
 	u16 index = psxRegs.code & 0xffff;
+	u32 name0;
+	u32 name1;
+	irxHLE hle;
 	if (!import_table)
 		return;
 
-	u32 name0, name1;
-	irxHLE hle;
 	irxImportName(import_table, &name0, &name1);
 	hle = irxImportHLE(name0, name1, index);
 
@@ -617,12 +629,16 @@ static void psxRecompileIrxImport(void)
 	}
 }
 
-// rt = rs op imm16
+/* rt = rs op imm16 */
 void psxRecompileCodeConst1(R3000AFNPTR constcode, R3000AFNPTR_INFO noconstcode, int xmminfo)
 {
+	u32 info;
+	int s_is_used;
+	int regs;
+	int regt;
 	if (!_Rt_)
 	{
-		// check for iop module import table magic
+		/* check for iop module import table magic */
 		if (psxRegs.code >> 16 == 0x2400)
 			psxRecompileIrxImport();
 		return;
@@ -639,14 +655,14 @@ void psxRecompileCodeConst1(R3000AFNPTR constcode, R3000AFNPTR_INFO noconstcode,
 	_addNeededPSXtoX86reg(_Rs_);
 	_addNeededPSXtoX86reg(_Rt_);
 
-	u32 info = 0;
+	info = 0;
 
-	const int s_is_used = !!(EEINST_USEDTEST(_Rs_));
-	const int regs = s_is_used ? _allocX86reg(X86TYPE_PSX, _Rs_, MODE_READ) : _checkX86reg(X86TYPE_PSX, _Rs_, MODE_READ);
+	s_is_used = !!(EEINST_USEDTEST(_Rs_));
+	regs = s_is_used ? _allocX86reg(X86TYPE_PSX, _Rs_, MODE_READ) : _checkX86reg(X86TYPE_PSX, _Rs_, MODE_READ);
 	if (regs >= 0)
 		info |= PROCESS_EE_SET_S(regs);
 
-	int regt = psxTryRenameReg(_Rt_, _Rs_, regs, 0, xmminfo);
+	regt = psxTryRenameReg(_Rt_, _Rs_, regs, 0, xmminfo);
 	if (regt < 0)
 	{
 		regt = _allocX86reg(X86TYPE_PSX, _Rt_, MODE_WRITE);
@@ -658,9 +674,13 @@ void psxRecompileCodeConst1(R3000AFNPTR constcode, R3000AFNPTR_INFO noconstcode,
 	noconstcode(info);
 }
 
-// rd = rt op sa
+/* rd = rt op sa */
 void psxRecompileCodeConst2(R3000AFNPTR constcode, R3000AFNPTR_INFO noconstcode, int xmminfo)
 {
+	u32 info;
+	int s_is_used;
+	int regt;
+	int regd;
 	if (!_Rd_)
 		return;
 
@@ -675,13 +695,13 @@ void psxRecompileCodeConst2(R3000AFNPTR constcode, R3000AFNPTR_INFO noconstcode,
 	_addNeededPSXtoX86reg(_Rt_);
 	_addNeededPSXtoX86reg(_Rd_);
 
-	u32 info = 0;
-	const int s_is_used = !!(EEINST_USEDTEST(_Rt_));
-	const int regt = s_is_used ? _allocX86reg(X86TYPE_PSX, _Rt_, MODE_READ) : _checkX86reg(X86TYPE_PSX, _Rt_, MODE_READ);
+	info = 0;
+	s_is_used = !!(EEINST_USEDTEST(_Rt_));
+	regt = s_is_used ? _allocX86reg(X86TYPE_PSX, _Rt_, MODE_READ) : _checkX86reg(X86TYPE_PSX, _Rt_, MODE_READ);
 	if (regt >= 0)
 		info |= PROCESS_EE_SET_T(regt);
 
-	int regd = psxTryRenameReg(_Rd_, _Rt_, regt, 0, xmminfo);
+	regd = psxTryRenameReg(_Rd_, _Rt_, regt, 0, xmminfo);
 	if (regd < 0)
 	{
 		regd = _allocX86reg(X86TYPE_PSX, _Rd_, MODE_WRITE);
@@ -693,9 +713,16 @@ void psxRecompileCodeConst2(R3000AFNPTR constcode, R3000AFNPTR_INFO noconstcode,
 	noconstcode(info);
 }
 
-// rd = rt MULT rs  (SPECIAL)
+/* rd = rt MULT rs  (SPECIAL) */
 void psxRecompileCodeConst3(R3000AFNPTR constcode, R3000AFNPTR_INFO constscode, R3000AFNPTR_INFO consttcode, R3000AFNPTR_INFO noconstcode, int LOHI)
 {
+	int s_is_const;
+	int t_is_const;
+	int s_is_used;
+	int t_is_used;
+	u32 info;
+	int regs;
+	int regt;
 	if (PSX_IS_CONST2(_Rs_, _Rt_))
 	{
 		if (LOHI)
@@ -708,12 +735,12 @@ void psxRecompileCodeConst3(R3000AFNPTR constcode, R3000AFNPTR_INFO constscode, 
 		return;
 	}
 
-	// we have to put these up here, because the register allocator below will wipe out const flags
-	// for the destination register when/if it switches it to write mode.
-	const int s_is_const = !!(PSX_IS_CONST1(_Rs_));
-	const int t_is_const = !!(PSX_IS_CONST1(_Rt_));
-	const int s_is_used = !!(EEINST_USEDTEST(_Rs_));
-	const int t_is_used = !!(EEINST_USEDTEST(_Rt_));
+	/* we have to put these up here, because the register allocator below will wipe out const flags */
+	/* for the destination register when/if it switches it to write mode. */
+	s_is_const = !!(PSX_IS_CONST1(_Rs_));
+	t_is_const = !!(PSX_IS_CONST1(_Rt_));
+	s_is_used = !!(EEINST_USEDTEST(_Rs_));
+	t_is_used = !!(EEINST_USEDTEST(_Rt_));
 
 	if (!s_is_const)
 		_addNeededGPRtoX86reg(_Rs_);
@@ -725,15 +752,15 @@ void psxRecompileCodeConst3(R3000AFNPTR constcode, R3000AFNPTR_INFO constscode, 
 		_addNeededPSXtoX86reg(PSX_HI);
 	}
 
-	u32 info = 0;
-	int regs = _checkX86reg(X86TYPE_PSX, _Rs_, MODE_READ);
+	info = 0;
+	regs = _checkX86reg(X86TYPE_PSX, _Rs_, MODE_READ);
 	if (regs < 0 && !s_is_const && s_is_used)
 		regs = _allocX86reg(X86TYPE_PSX, _Rs_, MODE_READ);
 	if (regs >= 0)
 		info |= PROCESS_EE_SET_S(regs);
 
-	// need at least one in a register
-	int regt = _checkX86reg(X86TYPE_PSX, _Rt_, MODE_READ);
+	/* need at least one in a register */
+	regt = _checkX86reg(X86TYPE_PSX, _Rt_, MODE_READ);
 	if (regs < 0 || (regt < 0 && !t_is_const && t_is_used))
 		regt = _allocX86reg(X86TYPE_PSX, _Rt_, MODE_READ);
 	if (regt >= 0)
@@ -741,16 +768,18 @@ void psxRecompileCodeConst3(R3000AFNPTR constcode, R3000AFNPTR_INFO constscode, 
 
 	if (LOHI)
 	{
-		// going to destroy lo/hi, so invalidate if we're writing it back to state
+		/* going to destroy lo/hi, so invalidate if we're writing it back to state */
 		const int lo_is_used = !!(EEINST_USEDTEST(PSX_LO));
 		const int reglo = lo_is_used ? _allocX86reg(X86TYPE_PSX, PSX_LO, MODE_WRITE) : -1;
+		int hi_is_live;
+		int reghi;
 		if (reglo >= 0)
 			info |= PROCESS_EE_SET_LO(reglo) | PROCESS_EE_LO;
 		else
 			_deletePSXtoX86reg(PSX_LO, DELETE_REG_FREE_NO_WRITEBACK);
 
-		const int hi_is_live = !!(EEINST_USEDTEST(PSX_HI));
-		const int reghi = hi_is_live ? _allocX86reg(X86TYPE_PSX, PSX_HI, MODE_WRITE) : -1;
+		hi_is_live = !!(EEINST_USEDTEST(PSX_HI));
+		reghi = hi_is_live ? _allocX86reg(X86TYPE_PSX, PSX_HI, MODE_WRITE) : -1;
 		if (reghi >= 0)
 			info |= PROCESS_EE_SET_HI(reghi) | PROCESS_EE_HI;
 		else
@@ -759,7 +788,7 @@ void psxRecompileCodeConst3(R3000AFNPTR constcode, R3000AFNPTR_INFO constscode, 
 
 	if (s_is_const && regs < 0)
 	{
-		// This *must* go inside the if, because of when _Rs_ =  _Rd_
+		/* This *must* go inside the if, because of when _Rs_ =  _Rd_ */
 		constscode(info /*| PROCESS_CONSTS*/);
 		return;
 	}
@@ -776,7 +805,7 @@ void psxRecompileCodeConst3(R3000AFNPTR constcode, R3000AFNPTR_INFO constscode, 
 static u8* m_recBlockAlloc = NULL;
 
 static const uint m_recBlockAllocSize =
-	(((Ps2MemSize::IopRam + Ps2MemSize::Rom + Ps2MemSize::Rom1 + Ps2MemSize::Rom2) / 4) * sizeof(BASEBLOCK));
+	(((PS2MEM_IOP_RAM + PS2MEM_ROM + PS2MEM_ROM1 + PS2MEM_ROM2) / 4) * sizeof(BASEBLOCK));
 
 static void recReserve(void)
 {
@@ -791,24 +820,24 @@ static void recReserve(void)
 
 static void recAlloc(void)
 {
-	// Goal: Allocate BASEBLOCKs for every possible branch target in IOP memory.
-	// Any 4-byte aligned address makes a valid branch target as per MIPS design (all instructions are
-	// always 4 bytes long).
+	u8* curpos;
+	/* Goal: Allocate BASEBLOCKs for every possible branch target in IOP memory. */
+	/* Any 4-byte aligned address makes a valid branch target as per MIPS design (all instructions are */
+	/* always 4 bytes long). */
 
-	// We're on 64-bit, if these memory allocations fail, we're in real trouble.
+	/* We're on 64-bit, if these memory allocations fail, we're in real trouble. */
 	if (!m_recBlockAlloc)
 		m_recBlockAlloc = (u8*)memalign_alloc(4096, m_recBlockAllocSize);
 
-	u8* curpos = m_recBlockAlloc;
+	curpos = m_recBlockAlloc;
 	recRAM = (BASEBLOCK*)curpos;
-	curpos += (Ps2MemSize::IopRam / 4) * sizeof(BASEBLOCK);
+	curpos += (PS2MEM_IOP_RAM / 4) * sizeof(BASEBLOCK);
 	recROM = (BASEBLOCK*)curpos;
-	curpos += (Ps2MemSize::Rom / 4) * sizeof(BASEBLOCK);
+	curpos += (PS2MEM_ROM / 4) * sizeof(BASEBLOCK);
 	recROM1 = (BASEBLOCK*)curpos;
-	curpos += (Ps2MemSize::Rom1 / 4) * sizeof(BASEBLOCK);
+	curpos += (PS2MEM_ROM1 / 4) * sizeof(BASEBLOCK);
 	recROM2 = (BASEBLOCK*)curpos;
-	curpos += (Ps2MemSize::Rom2 / 4) * sizeof(BASEBLOCK);
-
+	curpos += (PS2MEM_ROM2 / 4) * sizeof(BASEBLOCK);
 
 	if (!s_pInstCache)
 	{
@@ -821,45 +850,46 @@ static void recAlloc(void)
 
 void recResetIOP(void)
 {
+	int i;
 	recAlloc();
 	/* code reserves have no reset state */
 
 	iopClearRecLUT((BASEBLOCK*)m_recBlockAlloc,
-		(((Ps2MemSize::IopRam + Ps2MemSize::Rom + Ps2MemSize::Rom1 + Ps2MemSize::Rom2) / 4)));
+		(((PS2MEM_IOP_RAM + PS2MEM_ROM + PS2MEM_ROM1 + PS2MEM_ROM2) / 4)));
 
-	for (int i = 0; i < 0x10000; i++)
+	for (i = 0; i < 0x10000; i++)
 		recLUT_SetPage(psxRecLUT, 0, 0, 0, i, 0);
 
-	// IOP knows 64k pages, hence for the 0x10000's
+	/* IOP knows 64k pages, hence for the 0x10000's */
 
-	// The bottom 2 bits of PC are always zero, so we <<14 to "compress"
-	// the pc indexer into it's lower common denominator.
+	/* The bottom 2 bits of PC are always zero, so we <<14 to "compress" */
+	/* the pc indexer into it's lower common denominator. */
 
-	// We're only mapping 20 pages here in 4 places.
-	// 0x80 comes from : (Ps2MemSize::IopRam / 0x10000) * 4
+	/* We're only mapping 20 pages here in 4 places. */
+	/* 0x80 comes from : (PS2MEM_IOP_RAM / 0x10000) * 4 */
 
-	for (int i = 0; i < 0x80; i++)
+	for (i = 0; i < 0x80; i++)
 	{
 		recLUT_SetPage(psxRecLUT, psxhwLUT, recRAM, 0x0000, i, i & 0x1f);
 		recLUT_SetPage(psxRecLUT, psxhwLUT, recRAM, 0x8000, i, i & 0x1f);
 		recLUT_SetPage(psxRecLUT, psxhwLUT, recRAM, 0xa000, i, i & 0x1f);
 	}
 
-	for (int i = 0x1fc0; i < 0x2000; i++)
+	for (i = 0x1fc0; i < 0x2000; i++)
 	{
 		recLUT_SetPage(psxRecLUT, psxhwLUT, recROM, 0x0000, i, i - 0x1fc0);
 		recLUT_SetPage(psxRecLUT, psxhwLUT, recROM, 0x8000, i, i - 0x1fc0);
 		recLUT_SetPage(psxRecLUT, psxhwLUT, recROM, 0xa000, i, i - 0x1fc0);
 	}
 
-	for (int i = 0x1e00; i < 0x1e40; i++)
+	for (i = 0x1e00; i < 0x1e40; i++)
 	{
 		recLUT_SetPage(psxRecLUT, psxhwLUT, recROM1, 0x0000, i, i - 0x1e00);
 		recLUT_SetPage(psxRecLUT, psxhwLUT, recROM1, 0x8000, i, i - 0x1e00);
 		recLUT_SetPage(psxRecLUT, psxhwLUT, recROM1, 0xa000, i, i - 0x1e00);
 	}
 
-	for (int i = 0x1e40; i < 0x1e48; i++)
+	for (i = 0x1e40; i < 0x1e48; i++)
 	{
 		recLUT_SetPage(psxRecLUT, psxhwLUT, recROM2, 0x0000, i, i - 0x1e40);
 		recLUT_SetPage(psxRecLUT, psxhwLUT, recROM2, 0x8000, i, i - 0x1e40);
@@ -892,7 +922,8 @@ static void recShutdown(void)
 
 static void iopClearRecLUT(BASEBLOCK* base, int count)
 {
-	for (int i = 0; i < count; i++)
+	int i;
+	for (i = 0; i < count; i++)
 		base[i].m_pFnptr = ((uptr)iopJITCompile);
 }
 
@@ -901,40 +932,46 @@ static __noinline s32 recExecuteBlock(s32 eeCycles)
 	psxRegs.iopBreak = 0;
 	psxRegs.iopCycleEE = eeCycles;
 
-	// [TODO] recExecuteBlock could be replaced by a direct call to the iopEnterRecompiledCode()
-	//   (by assigning its address to the psxRec structure).  But for that to happen, we need
-	//   to move iopBreak/iopCycleEE update code to emitted assembly code. >_<  --air
+	/* [TODO] recExecuteBlock could be replaced by a direct call to the iopEnterRecompiledCode() */
+	/*   (by assigning its address to the psxRec structure).  But for that to happen, we need */
+	/*   to move iopBreak/iopCycleEE update code to emitted assembly code. >_<  --air */
 
-	// Likely Disasm, as borrowed from MSVC:
+	/* Likely Disasm, as borrowed from MSVC: */
 
-	// Entry:
-	// 	mov         eax,dword ptr [esp+4]
-	// 	mov         dword ptr [iopBreak (0E88DCCh)],0
-	// 	mov         dword ptr [iopCycleEE (832A84h)],eax
+	/* Entry: */
+	/* 	mov         eax,dword ptr [esp+4] */
+	/* 	mov         dword ptr [iopBreak (0E88DCCh)],0 */
+	/* 	mov         dword ptr [iopCycleEE (832A84h)],eax */
 
-	// Exit:
-	// 	mov         ecx,dword ptr [iopBreak (0E88DCCh)]
-	// 	mov         edx,dword ptr [iopCycleEE (832A84h)]
-	// 	lea         eax,[edx+ecx]
+	/* Exit: */
+	/* 	mov         ecx,dword ptr [iopBreak (0E88DCCh)] */
+	/* 	mov         edx,dword ptr [iopCycleEE (832A84h)] */
+	/* 	lea         eax,[edx+ecx] */
 
-	((void(*)())iopEnterRecompiledCode)();
+	((void(*)(void))iopEnterRecompiledCode)();
 
 	return psxRegs.iopBreak + psxRegs.iopCycleEE;
 }
 
-// Returns the offset to the next instruction after any cleared memory
+/* Returns the offset to the next instruction after any cleared memory */
 static __fi u32 psxRecClearMem(u32 pc)
 {
 	BASEBLOCK* pblock = PSX_GETBLOCK(pc);
+	BASEBLOCKEX* pexblock;
+	u32 lowerextent;
+	u32 upperextent;
+	int blockidx;
+	int toRemoveFirst;
 	if (pblock->m_pFnptr == (uptr)iopJITCompile)
 		return 4;
 
 	pc = HWADDR(pc);
 
-	u32 lowerextent = pc, upperextent = pc + 4;
-	int blockidx = BaseBlocks_Index(&recBlocks, pc);
+	lowerextent = pc;
+	upperextent = pc + 4;
+	blockidx = BaseBlocks_Index(&recBlocks, pc);
 
-	while (BASEBLOCKEX* pexblock = BaseBlocks_At(&recBlocks, blockidx - 1))
+	while ((pexblock = BaseBlocks_At(&recBlocks, blockidx - 1)) != NULL)
 	{
 		if (pexblock->startpc + pexblock->size * 4 <= lowerextent)
 			break;
@@ -943,9 +980,9 @@ static __fi u32 psxRecClearMem(u32 pc)
 		blockidx--;
 	}
 
-	int toRemoveFirst = blockidx;
+	toRemoveFirst = blockidx;
 
-	while (BASEBLOCKEX* pexblock = BaseBlocks_At(&recBlocks, blockidx))
+	while ((pexblock = BaseBlocks_At(&recBlocks, blockidx)) != NULL)
 	{
 		if (pexblock->startpc >= upperextent)
 			break;
@@ -1023,7 +1060,7 @@ void psxSetBranchImm(u32 imm)
 {
 	psxbranch = 1;
 
-	// end the current block
+	/* end the current block */
 	xe_mov32_mi(&psxRegs.pc, imm);
 	_psxFlushCall(FLUSH_EVERYTHING);
 	iPsxBranchTest(imm, imm <= psxpc);
@@ -1031,7 +1068,7 @@ void psxSetBranchImm(u32 imm)
 	{ s32* xslot; xe_jcc32_slot(Jcc_Unconditional, 0, xslot); BaseBlocks_Link(&recBlocks, HWADDR(imm), xslot); }
 }
 
-static __fi u32 psxScaleBlockCycles()
+static __fi u32 psxScaleBlockCycles(void)
 {
 	return s_psxBlockCycles;
 }
@@ -1066,17 +1103,18 @@ static void iPsxBranchTest(u32 newpc, u32 cpuBranch)
 	}
 	else
 	{
+		uint8_t* nointerruptpending;
 		xe_mov32_rm(XE_AX, &psxRegs.cycle);
 		xe_add32_ri(XE_AX, blockCycles);
-		xe_mov32_mr(&psxRegs.cycle, XE_AX); // update cycles
+		xe_mov32_mr(&psxRegs.cycle, XE_AX); /* update cycles */
 
-		// jump if iopCycleEE <= 0  (iop's timeslice timed out, so time to return control to the EE)
+		/* jump if iopCycleEE <= 0  (iop's timeslice timed out, so time to return control to the EE) */
 		xe_sub32_mi(&psxRegs.iopCycleEE, blockCycles * 8);
 		xe_jcc_to(Jcc_LessOrEqual, iopExitRecompiledCode);
 
-		// check if an event is pending
+		/* check if an event is pending */
 		xe_sub32_rm(XE_AX, &psxRegs.iopNextEventCycle);
-		uint8_t* nointerruptpending; xe_fwd_jcc8(Jcc_Signed, nointerruptpending);
+		 xe_fwd_jcc8(Jcc_Signed, nointerruptpending);
 
 		xe_fastcall0(iopEventTest);
 
@@ -1092,47 +1130,48 @@ static void iPsxBranchTest(u32 newpc, u32 cpuBranch)
 
 void rpsxSYSCALL(void)
 {
+	uint8_t* j8Ptr;
 	xe_mov32_mi(&psxRegs.code, psxRegs.code);
 	xe_mov32_mi(&psxRegs.pc, psxpc - 4);
 	_psxFlushCall(FLUSH_NODESTROY);
 
-	//xMOV( ecx, 0x20 );			// exception code
-	//xMOV( edx, psxbranch==1 );	// branch delay slot?
+	/* xMOV( ecx, 0x20 );			// exception code */
+	/* xMOV( edx, psxbranch==1 );	// branch delay slot? */
 	xe_fastcall2_ii(psxException, 0x20, psxbranch == 1);
 
 	xe_cmp32_mi(&psxRegs.pc, psxpc - 4);
-	uint8_t* j8Ptr; xe_fwd_jcc8(Jcc_Equal, j8Ptr);
+	 xe_fwd_jcc8(Jcc_Equal, j8Ptr);
 
 	xe_add32_mi(&psxRegs.cycle, psxScaleBlockCycles());
 	xe_sub32_mi(&psxRegs.iopCycleEE, psxScaleBlockCycles() * 8);
 	xe_jmp_to(iopDispatcherReg);
 
-	// jump target for skipping blockCycle updates
+	/* jump target for skipping blockCycle updates */
 	xe_fwd_set8(j8Ptr);
 
-	//if (!psxbranch) psxbranch = 2;
+	/* if (!psxbranch) psxbranch = 2; */
 }
 
 void rpsxBREAK(void)
 {
+	uint8_t* j8Ptr;
 	xe_mov32_mi(&psxRegs.code, psxRegs.code);
 	xe_mov32_mi(&psxRegs.pc, psxpc - 4);
 	_psxFlushCall(FLUSH_NODESTROY);
 
-	//xMOV( ecx, 0x24 );			// exception code
-	//xMOV( edx, psxbranch==1 );	// branch delay slot?
+	/* xMOV( ecx, 0x24 );			// exception code */
+	/* xMOV( edx, psxbranch==1 );	// branch delay slot? */
 	xe_fastcall2_ii(psxException, 0x24, psxbranch == 1);
 
 	xe_cmp32_mi(&psxRegs.pc, psxpc - 4);
-	uint8_t* j8Ptr; xe_fwd_jcc8(Jcc_Equal, j8Ptr);
+	 xe_fwd_jcc8(Jcc_Equal, j8Ptr);
 	xe_add32_mi(&psxRegs.cycle, psxScaleBlockCycles());
 	xe_sub32_mi(&psxRegs.iopCycleEE, psxScaleBlockCycles() * 8);
 	xe_jmp_to(iopDispatcherReg);
 	xe_fwd_set8(j8Ptr);
 
-	//if (!psxbranch) psxbranch = 2;
+	/* if (!psxbranch) psxbranch = 2; */
 }
-
 
 void psxRecompileNextInstruction(int delayslot, int swapped_delayslot)
 {
@@ -1165,17 +1204,17 @@ static void iopRecRecompile(const u32 startpc)
 	u32 i;
 	u32 willbranch3 = 0;
 
-	// Inject IRX hack
+	/* Inject IRX hack */
 	if (startpc == 0x1630 && strlen(EmuConfig.CurrentIRX) > 3)
 	{
 		if (iopMemRead32(0x20018) == 0x1F)
 		{
-			// FIXME do I need to increase the module count (0x1F -> 0x20)
+			/* FIXME do I need to increase the module count (0x1F -> 0x20) */
 			iopMemWrite32(0x20094, 0xbffc0000);
 		}
 	}
 
-	// if recPtr reached the mem limit reset whole mem
+	/* if recPtr reached the mem limit reset whole mem */
 	if (recPtr >= ((recMem.baseptr + recMem.size) - _64kb))
 	{
 		recResetIOP();
@@ -1196,7 +1235,7 @@ static void iopRecRecompile(const u32 startpc)
 	s_pCurBlock->m_pFnptr = ((uptr)x86Ptr);
 	s_psxBlockCycles = 0;
 
-	// reset recomp state variables
+	/* reset recomp state variables */
 	psxpc = startpc;
 	g_psxHasConstReg = g_psxFlushedConstReg = 1;
 
@@ -1209,7 +1248,7 @@ static void iopRecRecompile(const u32 startpc)
 		xe_jcc_to(Jcc_NotZero, iopDispatcherReg);
 	}
 
-	// go until the next branch
+	/* go until the next branch */
 	i = startpc;
 	s_nEndBlock = 0xffffffff;
 	s_branchTo = -1;
@@ -1220,26 +1259,25 @@ static void iopRecRecompile(const u32 startpc)
 
 		if (i != startpc && pblock->m_pFnptr != (uptr)iopJITCompile)
 		{
-			// branch = 3
+			/* branch = 3 */
 			willbranch3 = 1;
 			s_nEndBlock = i;
 			break;
 		}
 
-
 		psxRegs.code = iopMemRead32(i);
 
 		switch (psxRegs.code >> 26)
 		{
-			case 0: // special
+			case 0: /* special */
 				if (_Funct_ == 8 || _Funct_ == 9)
-				{ // JR, JALR
+				{ /* JR, JALR */
 					s_nEndBlock = i + 8;
 					goto StartRecomp;
 				}
 				break;
 
-			case 1: // regimm
+			case 1: /* regimm */
 				if (_Rt_ == 0 || _Rt_ == 1 || _Rt_ == 16 || _Rt_ == 17)
 				{
 					s_branchTo = _Imm_ * 4 + i + 4;
@@ -1251,13 +1289,13 @@ static void iopRecRecompile(const u32 startpc)
 				}
 				break;
 
-			case 2: // J
-			case 3: // JAL
+			case 2: /* J */
+			case 3: /* JAL */
 				s_branchTo = (_InstrucTarget_ << 2) | ((i + 4) & 0xf0000000);
 				s_nEndBlock = i + 8;
 				goto StartRecomp;
 
-			// branches
+			/* branches */
 			case 4:
 			case 5:
 			case 6:
@@ -1285,7 +1323,7 @@ StartRecomp:
 			{
 				switch (iopMemRead32(i))
 				{
-					case 0: // nop
+					case 0: /* nop */
 						break;
 					default:
 						s_nBlockFF = 0;
@@ -1294,7 +1332,7 @@ StartRecomp:
 		}
 	}
 
-	// rec info //
+	/* rec info // */
 	{
 		EEINST* pcur;
 

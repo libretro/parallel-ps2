@@ -521,7 +521,7 @@ const struct VUmicroCpu vucpu_rec_vu1 =
 };
 
 /* Counter readout for the JIT hash dump, kept as a tiny C-shaped
- * accessor so JitHash.cpp does not need the microVU headers. */
+ * accessor so JitHash.c does not need the microVU headers. */
 extern "C" void mvu_addsub_counters(u32* out4)
 {
 	out4[0] = microVU0.addsubRecElided;

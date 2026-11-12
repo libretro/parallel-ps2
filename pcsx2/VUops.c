@@ -2483,7 +2483,7 @@ static __ri void _vuMFP(VURegs* VU)
  * Outside this file: the ps2f_add and ps2f_mul the VU interpreter runs for
  * every FMAC lane cannot take embedded rounding, since {rz-sae} suppresses
  * the very exceptions whose flags VU_MAC_UPDATE_SOFT reads back out of
- * PS2F_UF and PS2F_OF. FPU_ADD_SUB in iFPU.cpp is far hotter, being emitted
+ * PS2F_UF and PS2F_OF. FPU_ADD_SUB in iFPU.c is far hotter, being emitted
  * per EE FPU op, but it emulates the EE FPU having no guard bits by
  * truncating the smaller operand before the add -- operand preparation, not
  * result rounding. AVX2 has no per-instruction rounding control at all.

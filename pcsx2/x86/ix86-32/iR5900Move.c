@@ -27,13 +27,13 @@
 * Format:  OP rt, immediate                              *
 *********************************************************/
 
-//// LUI
+/* // LUI */
 void recLUI(void)
 {
 	if (!_Rt_)
 		return;
 
-	// need to flush the upper 64 bits for xmm
+	/* need to flush the upper 64 bits for xmm */
 	GPR_DEL_CONST(_Rt_);
 	_deleteGPRtoX86reg(_Rt_, DELETE_REG_FREE_NO_WRITEBACK);
 	_deleteGPRtoXMMreg(_Rt_, DELETE_REG_FLUSH_AND_FREE);
@@ -42,18 +42,20 @@ void recLUI(void)
 	g_cpuConstRegs[_Rt_].UD[0] = (s32)(cpuRegs.code << 16);
 }
 
-////////////////////////////////////////////////////
 static void recMFHILO(int hi, int upper)
 {
+	int reg;
+	int xmmd;
+	int xmmhilo;
 	if (!_Rd_)
 		return;
 
-	// kill any constants on rd, lower 64 bits get written regardless of upper
+	/* kill any constants on rd, lower 64 bits get written regardless of upper */
 	_eeOnWriteReg(_Rd_, 0);
 
-	const int reg = hi ? XMMGPR_HI : XMMGPR_LO;
-	const int xmmd = EEINST_XMMUSEDTEST(_Rd_) ? _allocGPRtoXMMreg(_Rd_, MODE_READ | MODE_WRITE) : _checkXMMreg(XMMTYPE_GPRREG, _Rd_, MODE_READ | MODE_WRITE);
-	const int xmmhilo = EEINST_XMMUSEDTEST(reg) ? _allocGPRtoXMMreg(reg, MODE_READ) : _checkXMMreg(XMMTYPE_GPRREG, reg, MODE_READ);
+	reg = hi ? XMMGPR_HI : XMMGPR_LO;
+	xmmd = EEINST_XMMUSEDTEST(_Rd_) ? _allocGPRtoXMMreg(_Rd_, MODE_READ | MODE_WRITE) : _checkXMMreg(XMMTYPE_GPRREG, _Rd_, MODE_READ | MODE_WRITE);
+	xmmhilo = EEINST_XMMUSEDTEST(reg) ? _allocGPRtoXMMreg(reg, MODE_READ) : _checkXMMreg(XMMTYPE_GPRREG, reg, MODE_READ);
 	if (xmmd >= 0)
 	{
 		if (xmmhilo >= 0)
@@ -74,12 +76,13 @@ static void recMFHILO(int hi, int upper)
 	}
 	else
 	{
-		// try rename {hi,lo} -> rd
+		/* try rename {hi,lo} -> rd */
 		const int gprreg = upper ? -1 : _checkX86reg(X86TYPE_GPR, reg, MODE_READ);
+		int gprd;
 		if (gprreg >= 0 && _eeTryRenameReg(_Rd_, reg, gprreg, -1, 0) >= 0)
 			return;
 
-		const int gprd = _allocIfUsedGPRtoX86(_Rd_, MODE_WRITE);
+		gprd = _allocIfUsedGPRtoX86(_Rd_, MODE_WRITE);
 		if (gprd >= 0 && xmmhilo >= 0)
 		{
 			if (upper)
@@ -116,10 +119,12 @@ static void recMFHILO(int hi, int upper)
 static void recMTHILO(int hi, int upper)
 {
 	const int reg = hi ? XMMGPR_HI : XMMGPR_LO;
+	int xmms;
+	int xmmhilo;
 	_eeOnWriteReg(reg, 0);
 
-	const int xmms = EEINST_XMMUSEDTEST(_Rs_) ? _allocGPRtoXMMreg(_Rs_, MODE_READ) : _checkXMMreg(XMMTYPE_GPRREG, _Rs_, MODE_READ);
-	const int xmmhilo = EEINST_XMMUSEDTEST(reg) ? _allocGPRtoXMMreg(reg, MODE_READ | MODE_WRITE) : _checkXMMreg(XMMTYPE_GPRREG, reg, MODE_READ | MODE_WRITE);
+	xmms = EEINST_XMMUSEDTEST(_Rs_) ? _allocGPRtoXMMreg(_Rs_, MODE_READ) : _checkXMMreg(XMMTYPE_GPRREG, _Rs_, MODE_READ);
+	xmmhilo = EEINST_XMMUSEDTEST(reg) ? _allocGPRtoXMMreg(reg, MODE_READ | MODE_WRITE) : _checkXMMreg(XMMTYPE_GPRREG, reg, MODE_READ | MODE_WRITE);
 	if (xmms >= 0)
 	{
 		if (xmmhilo >= 0)
@@ -133,7 +138,7 @@ static void recMTHILO(int hi, int upper)
 		{
 			const int gprhilo = upper ? -1 : _allocIfUsedGPRtoX86(reg, MODE_WRITE);
 			if (gprhilo >= 0)
-				xe_movq_rx(gprhilo, xmms); // movq: 66 REX.W 0f 7e
+				xe_movq_rx(gprhilo, xmms); /* movq: 66 REX.W 0f 7e */
 			else
 				xe_movq_mx(hi ? &cpuRegs.HI.UD[(u8)(upper)] : &cpuRegs.LO.UD[(u8)(upper)], xmms);
 		}
@@ -150,7 +155,7 @@ static void recMTHILO(int hi, int upper)
 			}
 			else if (GPR_IS_CONST1(_Rs_))
 			{
-				// force it into a register, since we need to load the constant anyway
+				/* force it into a register, since we need to load the constant anyway */
 				gprs = _allocX86reg(X86TYPE_GPR, _Rs_, MODE_READ);
 				xe_pinsrq(xmmhilo, gprs, (u8)(upper));
 			}
@@ -161,25 +166,25 @@ static void recMTHILO(int hi, int upper)
 		}
 		else
 		{
-			// try rename rs -> {hi,lo}
+			int gprreg;
+			/* try rename rs -> {hi,lo} */
 			if (gprs >= 0 && !upper && _eeTryRenameReg(reg, _Rs_, gprs, -1, 0) >= 0)
 				return;
 
-			const int gprreg = upper ? -1 : _allocIfUsedGPRtoX86(reg, MODE_WRITE);
+			gprreg = upper ? -1 : _allocIfUsedGPRtoX86(reg, MODE_WRITE);
 			if (gprreg >= 0)
 			{
 				_eeMoveGPRtoR64(gprreg, _Rs_, 1);
 			}
 			else
 			{
-				// force into a register, since we need to load it to write anyway
+				/* force into a register, since we need to load it to write anyway */
 				gprs = _allocX86reg(X86TYPE_GPR, _Rs_, MODE_READ);
 				xe_mov64_mr(hi ? &cpuRegs.HI.UD[(u8)(upper)] : &cpuRegs.LO.UD[(u8)(upper)], gprs);
 			}
 		}
 	}
 }
-
 
 void recMFHI(void)
 {
@@ -221,8 +226,8 @@ void recMTLO1(void)
 	recMTHILO(0, 1);
 }
 
-//// MOVZ
-// if (rt == 0) then rd <- rs
+/* // MOVZ */
+/* if (rt == 0) then rd <- rs */
 static void recMOVZtemp_const(void)
 {
 	g_cpuConstRegs[_Rd_].UD[0] = g_cpuConstRegs[_Rs_].UD[0];
@@ -230,7 +235,7 @@ static void recMOVZtemp_const(void)
 
 static void recMOVZtemp_consts(int info)
 {
-	// we need the constant anyway, so just force it into a register
+	/* we need the constant anyway, so just force it into a register */
 	const int regs = (info & PROCESS_EE_S) ? EEREC_S : _allocX86reg(X86TYPE_GPR, _Rs_, MODE_READ);
 	if (info & PROCESS_EE_T)
 		xe_test64_rr(EEREC_T, EEREC_T);
@@ -261,7 +266,7 @@ static void recMOVZtemp_(int info)
 		xe_cmovcc64_rm(Jcc_Equal, EEREC_D, &cpuRegs.GPR.r[_Rs_].UD[0]);
 }
 
-// Specify READD here, because we might not write to it, and want to preserve the value.
+/* Specify READD here, because we might not write to it, and want to preserve the value. */
 static EERECOMPILE_CODERC0(MOVZtemp, XMMINFO_READS | XMMINFO_READT | XMMINFO_READD | XMMINFO_WRITED | XMMINFO_NORENAME);
 
 void recMOVZ(void)
@@ -275,7 +280,7 @@ void recMOVZ(void)
 	recMOVZtemp();
 }
 
-//// MOVN
+/* // MOVN */
 static void recMOVNtemp_const(void)
 {
 	g_cpuConstRegs[_Rd_].UD[0] = g_cpuConstRegs[_Rs_].UD[0];
@@ -283,7 +288,7 @@ static void recMOVNtemp_const(void)
 
 static void recMOVNtemp_consts(int info)
 {
-	// we need the constant anyway, so just force it into a register
+	/* we need the constant anyway, so just force it into a register */
 	const int regs = (info & PROCESS_EE_S) ? EEREC_S : _allocX86reg(X86TYPE_GPR, _Rs_, MODE_READ);
 	if (info & PROCESS_EE_T)
 		xe_test64_rr(EEREC_T, EEREC_T);
@@ -326,5 +331,4 @@ void recMOVN(void)
 
 	recMOVNtemp();
 }
-
 

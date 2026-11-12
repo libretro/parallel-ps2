@@ -21,32 +21,36 @@
 #include <string.h>
 #include <stdlib.h>
 
-// Every potential jump point in the PS2's addressable memory has a BASEBLOCK
-// associated with it. So that means a BASEBLOCK for every 4 bytes of PS2
-// addressable memory.  Yay!
-struct BASEBLOCK
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Every potential jump point in the PS2's addressable memory has a BASEBLOCK */
+/* associated with it. So that means a BASEBLOCK for every 4 bytes of PS2 */
+/* addressable memory.  Yay! */
+typedef struct BASEBLOCK
 {
 	uptr m_pFnptr;
-};
+} BASEBLOCK;
 
-// extra block info (only valid for start of fn)
-struct BASEBLOCKEX
+/* extra block info (only valid for start of fn) */
+typedef struct BASEBLOCKEX
 {
 	uptr fnptr;
 	u32 startpc;
-	u32 size;    // The size in dwords (equivalent to the number of instructions)
-	u32 x86size; // The size in byte of the translated x86 instructions
-};
+	u32 size;    /* The size in dwords (equivalent to the number of instructions) */
+	u32 x86size; /* The size in byte of the translated x86 instructions */
+} BASEBLOCKEX;
 
 /* Growable, startpc-ordered array of BASEBLOCKEX. C89 shape: plain struct,
  * malloc/realloc-backed (the old new[]/delete[] copied only the live prefix
  * anyway, which is exactly what realloc does). */
-struct BaseBlockArray
+typedef struct BaseBlockArray
 {
 	s32 _Reserved;
 	s32 _Size;
 	BASEBLOCKEX* blocks;
-};
+} BaseBlockArray;
 
 static __fi void BaseBlockArray_reserve(struct BaseBlockArray* a, u32 size)
 {
@@ -128,14 +132,14 @@ static __fi void BaseBlockArray_erase(struct BaseBlockArray* a, s32 first, s32 l
  * "walk all jump sites for a given PC", and clear, all the callers need.
  * Entries live in a single growable POD pool and are chained by index (not
  * pointer) so a realloc of the pool never invalidates the chains. */
-struct BlockLinkEntry
+typedef struct BlockLinkEntry
 {
 	u32  pc;
 	uptr jumpptr;
 	s32  next; /* pool index of next entry in this bucket, or -1 */
-};
+} BlockLinkEntry;
 
-struct BlockLinkMap
+typedef struct BlockLinkMap
 {
 	struct BlockLinkEntry* m_entries;
 	s32    m_count;
@@ -143,7 +147,7 @@ struct BlockLinkMap
 	s32*   m_buckets;
 	u32    m_bucket_count; /* power of two */
 	u32    m_bucket_mask;
-};
+} BlockLinkMap;
 
 /* startpc is 4-byte aligned; drop the low 2 bits before masking so
  * adjacent block PCs spread across buckets. */
@@ -212,12 +216,12 @@ static __fi void BlockLinkMap_clear(struct BlockLinkMap* m)
 	memset(m->m_buckets, 0xFF, m->m_bucket_count * sizeof(s32));
 }
 
-struct BaseBlocks
+typedef struct BaseBlocks
 {
 	struct BlockLinkMap links;
 	uptr recompiler;
 	struct BaseBlockArray blocks;
-};
+} BaseBlocks;
 
 void BaseBlocks_init(struct BaseBlocks* b);
 BASEBLOCKEX* BaseBlocks_New(struct BaseBlocks* b, u32 startpc, uptr fnptr);
@@ -278,7 +282,7 @@ static __fi void BaseBlocks_Reset(struct BaseBlocks* b)
 static inline void recLUT_SetPage(uptr reclut[0x10000], u32 hwlut[0x10000],
                                   BASEBLOCK* mapbase, uint pagebase, uint pageidx, uint mappage)
 {
-	// this value is in 64k pages!
+	/* this value is in 64k pages! */
 	uint page = pagebase + pageidx;
 
 	/* Integer arithmetic on uptr, not pointer arithmetic: mapbase may be
@@ -290,3 +294,6 @@ static inline void recLUT_SetPage(uptr reclut[0x10000], u32 hwlut[0x10000],
 	if (hwlut)
 		hwlut[page] = 0u - (pagebase << 16);
 }
+#ifdef __cplusplus
+}
+#endif

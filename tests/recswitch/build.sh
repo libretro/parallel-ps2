@@ -7,7 +7,7 @@
 #             undefined and compiles its instruction group to interpreter
 #             calls without a warning.
 #
-# The negative check runs the tool on a copy of iFPU.cpp without its
+# The negative check runs the tool on a copy of iFPU.c without its
 # Config.h include, which must fail.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -22,9 +22,9 @@ SOURCES=$(find "$ROOT/pcsx2" -type f \( -name '*.c' -o -name '*.cpp' -o -name '*
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-grep -v '#include "../Config.h"' "$ROOT/pcsx2/x86/iFPU.cpp" > "$TMP/iFPU.cpp"
-if "$DIR/recswitch" "$ROOT/pcsx2/Config.h" "$TMP/iFPU.cpp" > "$TMP/out" 2>&1; then
-	echo "negative: iFPU.cpp without Config.h passed"
+grep -v '#include "../Config.h"' "$ROOT/pcsx2/x86/iFPU.c" > "$TMP/iFPU.c"
+if "$DIR/recswitch" "$ROOT/pcsx2/Config.h" "$TMP/iFPU.c" > "$TMP/out" 2>&1; then
+	echo "negative: iFPU.c without Config.h passed"
 	exit 1
 fi
-echo "negative: iFPU.cpp without Config.h is caught"
+echo "negative: iFPU.c without Config.h is caught"

@@ -27,22 +27,39 @@ static int RETURN_READ_IN_RAX(void)
 	return 0; /* rax */
 }
 
+/* Destination allocators handed to the vtlb read generators, so the
+ * register is claimed after the vtlb flush rather than before it.  They
+ * read rt from the instruction currently being recompiled. */
+static int alloc_rt_xmm(void)
+{
+	return _allocGPRtoXMMreg(_Rt_, MODE_WRITE);
+}
+
+static int alloc_rt_gpr(void)
+{
+	return _allocX86reg(X86TYPE_GPR, _Rt_, MODE_WRITE);
+}
+
+#ifdef FPU_RECOMPILE
+static int alloc_rt_fpr(void)
+{
+	return _allocFPtoXMMreg(_Rt_, MODE_WRITE);
+}
+#endif
+
 /*********************************************************
 * Load and store for GPR                                 *
 * Format:  OP rt, offset(base)                           *
 *********************************************************/
 
-
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 static void recLoadQuad(u32 bits, int sign)
 {
-	// This mess is so we allocate *after* the vtlb flush, not before.
+	/* This mess is so we allocate *after* the vtlb flush, not before. */
 	vtlb_ReadRegAllocCallback alloc_cb = NULL;
-	if (_Rt_)
-		alloc_cb = []() { return _allocGPRtoXMMreg(_Rt_, MODE_WRITE); };
-
 	int xmmreg;
+	if (_Rt_)
+		alloc_cb = alloc_rt_xmm;
+
 	if (GPR_IS_CONST1(_Rs_))
 	{
 		const u32 srcadr = (g_cpuConstRegs[_Rs_].UL[0] + _Imm_) & ~0x0f;
@@ -50,34 +67,32 @@ static void recLoadQuad(u32 bits, int sign)
 	}
 	else
 	{
-		// Load ECX with the source memory address that we're reading from.
+		/* Load ECX with the source memory address that we're reading from. */
 		_freeX86reg(XE_ARG1);
 		_eeMoveGPRtoR64(XE_ARG1, _Rs_, 1);
 		if (_Imm_ != 0)
 			xe_add32_ri(XE_ARG1, _Imm_);
 
-		// force 16 byte alignment on 128 bit reads
+		/* force 16 byte alignment on 128 bit reads */
 		xe_and32_ri(XE_ARG1, ~0x0F);
 
 		xmmreg = vtlb_DynGenReadQuad(bits, XE_ARG1, _Rt_ ? alloc_cb : NULL);
 	}
 
-	// if there was a constant, it should have been invalidated.
+	/* if there was a constant, it should have been invalidated. */
 	if (!_Rt_)
 		_freeXMMreg(xmmreg);
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 static void recLoad(u32 bits, int sign)
 {
-	// This mess is so we allocate *after* the vtlb flush, not before.
-	// TODO(Stenzek): If not live, save directly to state, and delete constant.
+	/* This mess is so we allocate *after* the vtlb flush, not before. */
+	/* TODO(Stenzek): If not live, save directly to state, and delete constant. */
 	vtlb_ReadRegAllocCallback alloc_cb = NULL;
-	if (_Rt_)
-		alloc_cb = []() { return _allocX86reg(X86TYPE_GPR, _Rt_, MODE_WRITE); };
-
 	int x86reg;
+	if (_Rt_)
+		alloc_cb = alloc_rt_gpr;
+
 	if (GPR_IS_CONST1(_Rs_))
 	{
 		const u32 srcadr = g_cpuConstRegs[_Rs_].UL[0] + _Imm_;
@@ -85,7 +100,7 @@ static void recLoad(u32 bits, int sign)
 	}
 	else
 	{
-		// Load arg1 with the source memory address that we're reading from.
+		/* Load arg1 with the source memory address that we're reading from. */
 		_freeX86reg(XE_ARG1);
 		_eeMoveGPRtoR32(XE_ARG1, _Rs_, 1);
 		if (_Imm_ != 0)
@@ -94,19 +109,16 @@ static void recLoad(u32 bits, int sign)
 		x86reg = vtlb_DynGenReadNonQuad(bits, sign, 0, XE_ARG1, alloc_cb);
 	}
 
-	// if there was a constant, it should have been invalidated.
+	/* if there was a constant, it should have been invalidated. */
 	if (!_Rt_)
 		_freeX86reg(x86reg);
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-//
-
 static void recStore(u32 bits)
 {
-	// Performance note: Const prop for the store address is good, always.
-	// Constprop for the value being stored is not really worthwhile (better to use register
-	// allocation -- simpler code and just as fast)
+	/* Performance note: Const prop for the store address is good, always. */
+	/* Constprop for the value being stored is not really worthwhile (better to use register */
+	/* allocation -- simpler code and just as fast) */
 
 	int regt;
 	int xmm = 0;
@@ -118,8 +130,8 @@ static void recStore(u32 bits)
 		xmm  = 1;
 	}
 
-	// Load ECX with the destination address, or issue a direct optimized write
-	// if the address is a constant propagation.
+	/* Load ECX with the destination address, or issue a direct optimized write */
+	/* if the address is a constant propagation. */
 
 	if (GPR_IS_CONST1(_Rs_))
 	{
@@ -133,7 +145,7 @@ static void recStore(u32 bits)
 	{
 		if (_Rs_ != 0)
 		{
-			// TODO(Stenzek): Preload Rs when it's live. Turn into LEA.
+			/* TODO(Stenzek): Preload Rs when it's live. Turn into LEA. */
 			_eeMoveGPRtoR32(XE_ARG1, _Rs_, 1);
 			if (_Imm_ != 0)
 				xe_add32_ri(XE_ARG1, _Imm_);
@@ -146,14 +158,11 @@ static void recStore(u32 bits)
 		if (bits == 128)
 			xe_and32_ri(XE_ARG1, ~0x0F);
 
-		// TODO(Stenzek): Use Rs directly if imm=0. But beware of upper bits.
+		/* TODO(Stenzek): Use Rs directly if imm=0. But beware of upper bits. */
 		vtlb_DynGenWrite(bits, xmm, XE_ARG1, regt);
 	}
 }
 
-
-//////////////////////////////////////////////////////////////////////////////////////////
-//
 void recLB(void)
 {
 	recLoad(8, 1);
@@ -208,29 +217,29 @@ void recSQ(void)
 	recStore(128);
 }
 
-////////////////////////////////////////////////////
-
 void recLWL(void)
 {
+	int temp;
+	int treg;
 #ifdef REC_LOADS
 	_freeX86reg(XE_AX);
 	_freeX86reg(XE_CX);
 	_freeX86reg(XE_DX);
 	_freeX86reg(XE_ARG1);
 
-	// avoid flushing and immediately reading back
+	/* avoid flushing and immediately reading back */
 	if (_Rt_)
 		_addNeededX86reg(X86TYPE_GPR, _Rt_);
 	if (_Rs_)
 		_addNeededX86reg(X86TYPE_GPR, _Rs_);
 
-	const int temp = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
+	temp = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
 
 	_eeMoveGPRtoR32(XE_ARG1, _Rs_, 1);
 	if (_Imm_ != 0)
 		xe_add32_ri(XE_ARG1, _Imm_);
 
-	// calleeSavedReg1 = bit offset in word
+	/* calleeSavedReg1 = bit offset in word */
 	xe_mov32_rr(temp, XE_ARG1);
 	xe_and32_ri(temp, 3);
 	xe_shl32_ri(temp, 3);
@@ -244,16 +253,16 @@ void recLWL(void)
 		return;
 	}
 
-	// mask off bytes loaded
+	/* mask off bytes loaded */
 	xe_mov32_rr(XE_CX, temp);
 	_freeX86reg(temp);
 
-	const int treg = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ | MODE_WRITE);
+	treg = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ | MODE_WRITE);
 	xe_mov32_ri(XE_DX, 0xffffff);
 	xe_shr32_rcl(XE_DX);
 	xe_and32_rr(XE_DX, treg);
 
-	// OR in bytes loaded
+	/* OR in bytes loaded */
 	xe_neg32_r(XE_CX);
 	xe_add32_ri(XE_CX, 24);
 	xe_shl32_rcl(XE_AX);
@@ -268,28 +277,31 @@ void recLWL(void)
 #endif
 }
 
-////////////////////////////////////////////////////
 void recLWR()
 {
+	int temp;
+	int treg;
+	uint8_t* nomask;
+	uint8_t* end;
 #ifdef REC_LOADS
 	_freeX86reg(XE_AX);
 	_freeX86reg(XE_CX);
 	_freeX86reg(XE_DX);
 	_freeX86reg(XE_ARG1);
 
-	// avoid flushing and immediately reading back
+	/* avoid flushing and immediately reading back */
 	if (_Rt_)
 		_addNeededX86reg(X86TYPE_GPR, _Rt_);
 	if (_Rs_)
 		_addNeededX86reg(X86TYPE_GPR, _Rs_);
 
-	const int temp = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
+	temp = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
 
 	_eeMoveGPRtoR32(XE_ARG1, _Rs_, 1);
 	if (_Imm_ != 0)
 		xe_add32_ri(XE_ARG1, _Imm_);
 
-	// edi = bit offset in word
+	/* edi = bit offset in word */
 	xe_mov32_rr(temp, XE_ARG1);
 
 	xe_and32_ri(XE_ARG1, ~3);
@@ -301,26 +313,26 @@ void recLWR()
 		return;
 	}
 
-	const int treg = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ | MODE_WRITE);
+	treg = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ | MODE_WRITE);
 	xe_and32_ri(temp, 3);
 
-	uint8_t* nomask; xe_fwd_jcc8(Jcc_Equal, nomask);
+	 xe_fwd_jcc8(Jcc_Equal, nomask);
 	xe_shl32_ri(temp, 3);
-	// mask off bytes loaded
+	/* mask off bytes loaded */
 	xe_mov32_ri(XE_CX, 24);
 	xe_sub32_rr(XE_CX, temp);
 	xe_mov32_ri(XE_DX, 0xffffff00);
 	xe_shl32_rcl(XE_DX);
 	xe_and32_rr(treg, XE_DX);
 
-	// OR in bytes loaded
+	/* OR in bytes loaded */
 	xe_mov32_rr(XE_CX, temp);
 	xe_shr32_rcl(XE_AX);
 	xe_or32_rr(treg, XE_AX);
 
-	uint8_t* end; xe_fwd_jcc8(Jcc_Unconditional, end);
+	 xe_fwd_jcc8(Jcc_Unconditional, end);
 	xe_fwd_set8(nomask);
-	// NOTE: This might look wrong, but it's correct - see interpreter.
+	/* NOTE: This might look wrong, but it's correct - see interpreter. */
 	xe_movsxd_rr(treg, XE_AX);
 	xe_fwd_set8(end);
 	_freeX86reg(temp);
@@ -333,21 +345,22 @@ void recLWR()
 #endif
 }
 
-////////////////////////////////////////////////////
-
 void recSWL()
 {
+	int temp;
+	uint8_t* skip;
+	uint8_t* end;
 #ifdef REC_STORES
-	// avoid flushing and immediately reading back
+	/* avoid flushing and immediately reading back */
 	_addNeededX86reg(X86TYPE_GPR, _Rs_);
 
-	// preload Rt, since we can't do so inside the branch
+	/* preload Rt, since we can't do so inside the branch */
 	if (!GPR_IS_CONST1(_Rt_))
 		_allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ);
 	else
 		_addNeededX86reg(X86TYPE_GPR, _Rt_);
 
-	const int temp = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
+	temp = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
 	_freeX86reg(XE_AX);
 	_freeX86reg(XE_CX);
 	_freeX86reg(XE_ARG1);
@@ -357,23 +370,23 @@ void recSWL()
 	if (_Imm_ != 0)
 		xe_add32_ri(XE_ARG1, _Imm_);
 
-	// edi = bit offset in word
+	/* edi = bit offset in word */
 	xe_mov32_rr(temp, XE_ARG1);
 	xe_and32_ri(XE_ARG1, ~3);
 	xe_and32_ri(temp, 3);
 	xe_cmp32_ri(temp, 3);
 
-	// If we're not using fastmem, we need to flush early. Because the first read
-	// (which would flush) happens inside a branch.
+	/* If we're not using fastmem, we need to flush early. Because the first read */
+	/* (which would flush) happens inside a branch. */
 	if (!CHECK_FASTMEM || vtlb_IsFaultingPC(pc))
 		iFlushCall(FLUSH_FULLVTLB);
 
-	uint8_t* skip; xe_fwd_jcc8(Jcc_Equal, skip);
+	 xe_fwd_jcc8(Jcc_Equal, skip);
 	xe_shl32_ri(temp, 3);
 
 	vtlb_DynGenReadNonQuad(32, 0, 0, XE_ARG1, RETURN_READ_IN_RAX);
 
-	// mask read -> arg2
+	/* mask read -> arg2 */
 	xe_mov32_rr(XE_CX, temp);
 	xe_mov32_ri(XE_ARG2, 0xffffff00);
 	xe_shl32_rcl(XE_ARG2);
@@ -381,7 +394,7 @@ void recSWL()
 
 	if (_Rt_)
 	{
-		// mask write and OR -> edx
+		/* mask write and OR -> edx */
 		xe_neg32_r(XE_CX);
 		xe_add32_ri(XE_CX, 24);
 		_eeMoveGPRtoR32(0 /* eax */, _Rt_, 0);
@@ -394,7 +407,7 @@ void recSWL()
 		xe_add32_ri(XE_ARG1, _Imm_);
 	xe_and32_ri(XE_ARG1, ~3);
 
-	uint8_t* end; xe_fwd_jcc8(Jcc_Unconditional, end);
+	 xe_fwd_jcc8(Jcc_Unconditional, end);
 	xe_fwd_set8(skip);
 	_eeMoveGPRtoR32(XE_ARG2, _Rt_, 0);
 	xe_fwd_set8(end);
@@ -409,20 +422,22 @@ void recSWL()
 #endif
 }
 
-////////////////////////////////////////////////////
 void recSWR()
 {
+	int temp;
+	uint8_t* skip;
+	uint8_t* end;
 #ifdef REC_STORES
-	// avoid flushing and immediately reading back
+	/* avoid flushing and immediately reading back */
 	_addNeededX86reg(X86TYPE_GPR, _Rs_);
 
-	// preload Rt, since we can't do so inside the branch
+	/* preload Rt, since we can't do so inside the branch */
 	if (!GPR_IS_CONST1(_Rt_))
 		_allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ);
 	else
 		_addNeededX86reg(X86TYPE_GPR, _Rt_);
 
-	const int temp = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
+	temp = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
 	_freeX86reg(XE_CX);
 	_freeX86reg(XE_ARG1);
 	_freeX86reg(XE_ARG2);
@@ -431,22 +446,22 @@ void recSWR()
 	if (_Imm_ != 0)
 		xe_add32_ri(XE_ARG1, _Imm_);
 
-	// edi = bit offset in word
+	/* edi = bit offset in word */
 	xe_mov32_rr(temp, XE_ARG1);
 	xe_and32_ri(XE_ARG1, ~3);
 	xe_and32_ri(temp, 3);
 
-	// If we're not using fastmem, we need to flush early. Because the first read
-	// (which would flush) happens inside a branch.
+	/* If we're not using fastmem, we need to flush early. Because the first read */
+	/* (which would flush) happens inside a branch. */
 	if (!CHECK_FASTMEM || vtlb_IsFaultingPC(pc))
 		iFlushCall(FLUSH_FULLVTLB);
 
-	uint8_t* skip; xe_fwd_jcc8(Jcc_Equal, skip);
+	 xe_fwd_jcc8(Jcc_Equal, skip);
 	xe_shl32_ri(temp, 3);
 
 	vtlb_DynGenReadNonQuad(32, 0, 0, XE_ARG1, RETURN_READ_IN_RAX);
 
-	// mask read -> edx
+	/* mask read -> edx */
 	xe_mov32_ri(XE_CX, 24);
 	xe_sub32_rr(XE_CX, temp);
 	xe_mov32_ri(XE_ARG2, 0xffffff);
@@ -455,7 +470,7 @@ void recSWR()
 
 	if (_Rt_)
 	{
-		// mask write and OR -> edx
+		/* mask write and OR -> edx */
 		xe_mov32_rr(XE_CX, temp);
 		_eeMoveGPRtoR32(0 /* eax */, _Rt_, 0);
 		xe_shl32_rcl(XE_AX);
@@ -467,7 +482,7 @@ void recSWR()
 		xe_add32_ri(XE_ARG1, _Imm_);
 	xe_and32_ri(XE_ARG1, ~3);
 
-	uint8_t* end; xe_fwd_jcc8(Jcc_Unconditional, end);
+	 xe_fwd_jcc8(Jcc_Unconditional, end);
 	xe_fwd_set8(skip);
 	_eeMoveGPRtoR32(XE_ARG2, _Rt_, 0);
 	xe_fwd_set8(end);
@@ -482,12 +497,10 @@ void recSWR()
 #endif
 }
 
-////////////////////////////////////////////////////
-
-/// Masks rt with (0xffffffffffffffff maskshift maskamt), merges with (value shift amt), leaves result in value
+/* / Masks rt with (0xffffffffffffffff maskshift maskamt), merges with (value shift amt), leaves result in value */
 static void ldlrhelper_const(int maskamt, int maskg2, int amt, int g2op, int value, int rt)
 {
-	// Would xor rcx, rcx; not rcx be better here?
+	/* Would xor rcx, rcx; not rcx be better here? */
 	xe_mov64_ri(XE_CX, -1);
 
 	xe_g2op64_ri(maskg2, XE_CX, maskamt);
@@ -497,10 +510,10 @@ static void ldlrhelper_const(int maskamt, int maskg2, int amt, int g2op, int val
 	xe_or64_rr(rt, value);
 }
 
-/// Masks rt with (0xffffffffffffffff maskshift maskamt), merges with (value shift amt), leaves result in value
+/* / Masks rt with (0xffffffffffffffff maskshift maskamt), merges with (value shift amt), leaves result in value */
 static void ldlrhelper(int maskamt, int maskg2, int amt, int g2op, int value, int rt)
 {
-	// Would xor rcx, rcx; not rcx be better here?
+	/* Would xor rcx, rcx; not rcx be better here? */
 	const int maskamt64 = maskamt;
 	xe_mov32_rr(XE_CX, maskamt);
 	xe_mov64_ri(maskamt64, -1);
@@ -514,17 +527,19 @@ static void ldlrhelper(int maskamt, int maskg2, int amt, int g2op, int value, in
 
 void recLDL()
 {
+	int temp1;
+	int treg;
 	if (!_Rt_)
 		return;
 
 #ifdef REC_LOADS
-	// avoid flushing and immediately reading back
+	/* avoid flushing and immediately reading back */
 	if (_Rt_)
 		_addNeededX86reg(X86TYPE_GPR, _Rt_);
 	if (_Rs_)
 		_addNeededX86reg(X86TYPE_GPR, _Rs_);
 
-	const int temp1 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
+	temp1 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
 	_freeX86reg(XE_AX);
 	_freeX86reg(XE_CX);
 	_freeX86reg(XE_DX);
@@ -534,7 +549,7 @@ void recLDL()
 	{
 		u32 srcadr = g_cpuConstRegs[_Rs_].UL[0] + _Imm_;
 
-		// If _Rs_ is equal to _Rt_ we need to put the shift in to eax since it won't take the CONST path.
+		/* If _Rs_ is equal to _Rt_ we need to put the shift in to eax since it won't take the CONST path. */
 		if (_Rs_ == _Rt_)
 			xe_mov32_ri(temp1, srcadr);
 
@@ -544,7 +559,7 @@ void recLDL()
 	}
 	else
 	{
-		// Load ECX with the source memory address that we're reading from.
+		/* Load ECX with the source memory address that we're reading from. */
 		_freeX86reg(XE_ARG1);
 		_eeMoveGPRtoR32(XE_ARG1, _Rs_, 1);
 		if (_Imm_ != 0)
@@ -556,7 +571,7 @@ void recLDL()
 		vtlb_DynGenReadNonQuad(64, 0, 0, XE_ARG1, RETURN_READ_IN_RAX);
 	}
 
-	const int treg = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ | MODE_WRITE);
+	treg = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ | MODE_WRITE);
 
 	if (GPR_IS_CONST1(_Rs_))
 	{
@@ -573,11 +588,12 @@ void recLDL()
 	}
 	else
 	{
+		uint8_t* skip;
 		xe_and32_ri(temp1, 0x7);
 		xe_cmp32_ri(temp1, 7);
-		xe_cmovcc64_rr(Jcc_Equal, treg, XE_AX); // swap register with memory when not shifting
-		uint8_t* skip; xe_fwd_jcc8(Jcc_Equal, skip);
-		// Calculate the shift from top bit to lowest.
+		xe_cmovcc64_rr(Jcc_Equal, treg, XE_AX); /* swap register with memory when not shifting */
+		 xe_fwd_jcc8(Jcc_Equal, skip);
+		/* Calculate the shift from top bit to lowest. */
 		xe_add32_ri(temp1, 1);
 		xe_mov32_ri(XE_DX, 64);
 		xe_shl32_ri(temp1, 3);
@@ -596,20 +612,21 @@ void recLDL()
 #endif
 }
 
-////////////////////////////////////////////////////
 void recLDR()
 {
+	int temp1;
+	int treg;
 	if (!_Rt_)
 		return;
 
 #ifdef REC_LOADS
-	// avoid flushing and immediately reading back
+	/* avoid flushing and immediately reading back */
 	if (_Rt_)
 		_addNeededX86reg(X86TYPE_GPR, _Rt_);
 	if (_Rs_)
 		_addNeededX86reg(X86TYPE_GPR, _Rs_);
 
-	const int temp1 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
+	temp1 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
 	_freeX86reg(XE_AX);
 	_freeX86reg(XE_CX);
 	_freeX86reg(XE_DX);
@@ -619,7 +636,7 @@ void recLDR()
 	{
 		u32 srcadr = g_cpuConstRegs[_Rs_].UL[0] + _Imm_;
 
-		// If _Rs_ is equal to _Rt_ we need to put the shift in to eax since it won't take the CONST path.
+		/* If _Rs_ is equal to _Rt_ we need to put the shift in to eax since it won't take the CONST path. */
 		if (_Rs_ == _Rt_)
 			xe_mov32_ri(temp1, srcadr);
 
@@ -629,7 +646,7 @@ void recLDR()
 	}
 	else
 	{
-		// Load ECX with the source memory address that we're reading from.
+		/* Load ECX with the source memory address that we're reading from. */
 		_freeX86reg(XE_ARG1);
 		_eeMoveGPRtoR32(XE_ARG1, _Rs_, 1);
 		if (_Imm_ != 0)
@@ -641,7 +658,7 @@ void recLDR()
 		vtlb_DynGenReadNonQuad(64, 0, 0, XE_ARG1, RETURN_READ_IN_RAX);
 	}
 
-	const int treg = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ | MODE_WRITE);
+	treg = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ | MODE_WRITE);
 
 	if (GPR_IS_CONST1(_Rs_))
 	{
@@ -658,10 +675,11 @@ void recLDR()
 	}
 	else
 	{
+		uint8_t* skip;
 		xe_and32_ri(temp1, 0x7);
-		xe_cmovcc64_rr(Jcc_Equal, treg, XE_AX); // swap register with memory when not shifting
-		uint8_t* skip; xe_fwd_jcc8(Jcc_Equal, skip);
-		// Calculate the shift from top bit to lowest.
+		xe_cmovcc64_rr(Jcc_Equal, treg, XE_AX); /* swap register with memory when not shifting */
+		 xe_fwd_jcc8(Jcc_Equal, skip);
+		/* Calculate the shift from top bit to lowest. */
 		xe_mov32_ri(XE_DX, 64);
 		xe_shl32_ri(temp1, 3);
 		xe_sub32_rr(XE_DX, temp1);
@@ -679,9 +697,7 @@ void recLDR()
 #endif
 }
 
-////////////////////////////////////////////////////
-
-/// Masks value with (0xffffffffffffffff maskshift maskamt), merges with (rt shift amt), saves to dummyValue
+/* / Masks value with (0xffffffffffffffff maskshift maskamt), merges with (rt shift amt), saves to dummyValue */
 static void sdlrhelper_const(int maskamt, int maskg2, int amt, int g2op, int value, int rt)
 {
 	xe_mov64_ri(XE_CX, -1);
@@ -692,17 +708,17 @@ static void sdlrhelper_const(int maskamt, int maskg2, int amt, int g2op, int val
 	xe_or64_rr(rt, XE_CX);
 }
 
-/// Masks value with (0xffffffffffffffff maskshift maskamt), merges with (rt shift amt), saves to dummyValue
+/* / Masks value with (0xffffffffffffffff maskshift maskamt), merges with (rt shift amt), saves to dummyValue */
 static void sdlrhelper(int maskamt, int maskg2, int amt, int g2op, int value, int rt)
 {
-	// Generate mask 128-(shiftx8)
+	/* Generate mask 128-(shiftx8) */
 	const int maskamt64 = maskamt;
 	xe_mov32_rr(XE_CX, maskamt);
 	xe_mov64_ri(maskamt64, -1);
 	xe_g2op64_rcl(maskg2, maskamt64);
 	xe_and64_rr(maskamt64, value);
 
-	// Shift over reg value
+	/* Shift over reg value */
 	xe_mov32_rr(XE_CX, amt);
 	xe_g2op64_rcl(g2op, rt);
 	xe_or64_rr(rt, maskamt64);
@@ -711,7 +727,7 @@ static void sdlrhelper(int maskamt, int maskg2, int amt, int g2op, int value, in
 void recSDL(void)
 {
 #ifdef REC_STORES
-	// avoid flushing and immediately reading back
+	/* avoid flushing and immediately reading back */
 	if (_Rt_)
 		_addNeededX86reg(X86TYPE_GPR, _Rt_);
 
@@ -737,10 +753,13 @@ void recSDL(void)
 	}
 	else
 	{
+		int temp1;
+		int temp2;
+		uint8_t* skip;
 		if (_Rs_)
 			_addNeededX86reg(X86TYPE_GPR, _Rs_);
 
-		// Load ECX with the source memory address that we're reading from.
+		/* Load ECX with the source memory address that we're reading from. */
 		_freeX86reg(XE_ARG1);
 		_eeMoveGPRtoR32(XE_ARG1, _Rs_, 1);
 		if (_Imm_ != 0)
@@ -749,8 +768,8 @@ void recSDL(void)
 		_freeX86reg(XE_CX);
 		_freeX86reg(XE_DX);
 		_freeX86reg(XE_ARG2);
-		const int temp1 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
-		const int temp2 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
+		temp1 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
+		temp2 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
 		_eeMoveGPRtoR64(XE_ARG2, _Rt_, 1);
 
 		xe_mov32_rr(temp1, XE_ARG1);
@@ -759,16 +778,16 @@ void recSDL(void)
 		xe_and32_ri(temp1, 0x7);
 		xe_cmp32_ri(temp1, 7);
 
-		// If we're not using fastmem, we need to flush early. Because the first read
-		// (which would flush) happens inside a branch.
+		/* If we're not using fastmem, we need to flush early. Because the first read */
+		/* (which would flush) happens inside a branch. */
 		if (!CHECK_FASTMEM || vtlb_IsFaultingPC(pc))
 			iFlushCall(FLUSH_FULLVTLB);
 
-		uint8_t* skip; xe_fwd_jcc8(Jcc_Equal, skip);
+		 xe_fwd_jcc8(Jcc_Equal, skip);
 		xe_add32_ri(temp1, 1);
 		vtlb_DynGenReadNonQuad(64, 0, 0, XE_ARG1, RETURN_READ_IN_RAX);
 
-		//Calculate the shift from top bit to lowest
+		/* Calculate the shift from top bit to lowest */
 		xe_mov32_ri(XE_DX, 64);
 		xe_shl32_ri(temp1, 3);
 		xe_sub32_rr(XE_DX, temp1);
@@ -793,11 +812,10 @@ void recSDL(void)
 #endif
 }
 
-////////////////////////////////////////////////////
 void recSDR(void)
 {
 #ifdef REC_STORES
-	// avoid flushing and immediately reading back
+	/* avoid flushing and immediately reading back */
 	if (_Rt_)
 		_addNeededX86reg(X86TYPE_GPR, _Rt_);
 
@@ -824,10 +842,13 @@ void recSDR(void)
 	}
 	else
 	{
+		int temp1;
+		int temp2;
+		uint8_t* skip;
 		if (_Rs_)
 			_addNeededX86reg(X86TYPE_GPR, _Rs_);
 
-		// Load ECX with the source memory address that we're reading from.
+		/* Load ECX with the source memory address that we're reading from. */
 		_eeMoveGPRtoR32(XE_ARG1, _Rs_, 1);
 		if (_Imm_ != 0)
 			xe_add32_ri(XE_ARG1, _Imm_);
@@ -835,8 +856,8 @@ void recSDR(void)
 		_freeX86reg(XE_CX);
 		_freeX86reg(XE_DX);
 		_freeX86reg(XE_ARG2);
-		const int temp1 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
-		const int temp2 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
+		temp1 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
+		temp2 = _allocX86reg(X86TYPE_TEMP, 0, MODE_CALLEESAVED);
 		_eeMoveGPRtoR64(XE_ARG2, _Rt_, 1);
 
 		xe_mov32_rr(temp1, XE_ARG1);
@@ -844,12 +865,12 @@ void recSDR(void)
 		xe_and32_ri(XE_ARG1, ~0x07);
 		xe_and32_ri(temp1, 0x7);
 
-		// If we're not using fastmem, we need to flush early. Because the first read
-		// (which would flush) happens inside a branch.
+		/* If we're not using fastmem, we need to flush early. Because the first read */
+		/* (which would flush) happens inside a branch. */
 		if (!CHECK_FASTMEM || vtlb_IsFaultingPC(pc))
 			iFlushCall(FLUSH_FULLVTLB);
 
-		uint8_t* skip; xe_fwd_jcc8(Jcc_Equal, skip);
+		 xe_fwd_jcc8(Jcc_Equal, skip);
 		vtlb_DynGenReadNonQuad(64, 0, 0, XE_ARG1, RETURN_READ_IN_RAX);
 
 		xe_mov32_ri(XE_DX, 64);
@@ -877,13 +898,10 @@ void recSDR(void)
 #endif
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
 /*********************************************************
 * Load and store for COP1                                *
 * Format:  OP rt, offset(base)                           *
 *********************************************************/
-
-////////////////////////////////////////////////////
 
 void recLWC1(void)
 {
@@ -891,7 +909,7 @@ void recLWC1(void)
 	recCall(intLWC1);
 #else
 
-	const vtlb_ReadRegAllocCallback alloc_cb = []() { return _allocFPtoXMMreg(_Rt_, MODE_WRITE); };
+	const vtlb_ReadRegAllocCallback alloc_cb = alloc_rt_fpr;
 	if (GPR_IS_CONST1(_Rs_))
 	{
 		const u32 addr = g_cpuConstRegs[_Rs_].UL[0] + _Imm_;
@@ -908,8 +926,6 @@ void recLWC1(void)
 	}
 #endif
 }
-
-//////////////////////////////////////////////////////
 
 void recSWC1(void)
 {
@@ -933,5 +949,4 @@ void recSWC1(void)
 	}
 #endif
 }
-
 

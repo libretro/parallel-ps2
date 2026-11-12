@@ -516,7 +516,7 @@ static void eeExecuteLoop(void)
 					eeloadHook();
 					if (g_SkipBiosHack)
 					{
-						/* See comments on this code in iR5900-32.cpp's recRecompile() */
+						/* See comments on this code in iR5900-32.c's recRecompile() */
 						u32 typeAexecjump = memRead32(EELOAD_START + 0x470);
 						u32 typeBexecjump = memRead32(EELOAD_START + 0x5B0);
 						u32 typeCexecjump = memRead32(EELOAD_START + 0x618);

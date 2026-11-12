@@ -677,30 +677,30 @@ set(pcsx2WindowsSources
 
 # x86 sources
 set(pcsx2x86Sources
-	x86/CpuState.cpp
-	x86/BaseblockEx.cpp
-	x86/iCOP0.cpp
-	x86/iCore.cpp
-	x86/iFPU.cpp
-	x86/iFPUd.cpp
-	x86/iMMI.cpp
-	x86/JitHash.cpp
-	x86/iR3000A.cpp
-	x86/iR3000Atables.cpp
-	x86/iR5900Analysis.cpp
-	x86/iR5900Misc.cpp
-	x86/ix86-32/iCore-32.cpp
-	x86/ix86-32/iR5900-32.cpp
-	x86/ix86-32/iR5900Arit.cpp
-	x86/ix86-32/iR5900AritImm.cpp
-	x86/ix86-32/iR5900Branch.cpp
-	x86/ix86-32/iR5900Jump.cpp
-	x86/ix86-32/iR5900LoadStore.cpp
-	x86/ix86-32/iR5900Move.cpp
-	x86/ix86-32/iR5900MultDiv.cpp
-	x86/ix86-32/iR5900Shift.cpp
-	x86/ix86-32/iR5900Templates.cpp
-	x86/ix86-32/recVTLB.cpp
+	x86/CpuState.c
+	x86/BaseblockEx.c
+	x86/iCOP0.c
+	x86/iCore.c
+	x86/iFPU.c
+	x86/iFPUd.c
+	x86/iMMI.c
+	x86/JitHash.c
+	x86/iR3000A.c
+	x86/iR3000Atables.c
+	x86/iR5900Analysis.c
+	x86/iR5900Misc.c
+	x86/ix86-32/iCore-32.c
+	x86/ix86-32/iR5900-32.c
+	x86/ix86-32/iR5900Arit.c
+	x86/ix86-32/iR5900AritImm.c
+	x86/ix86-32/iR5900Branch.c
+	x86/ix86-32/iR5900Jump.c
+	x86/ix86-32/iR5900LoadStore.c
+	x86/ix86-32/iR5900Move.c
+	x86/ix86-32/iR5900MultDiv.c
+	x86/ix86-32/iR5900Shift.c
+	x86/ix86-32/iR5900Templates.c
+	x86/ix86-32/recVTLB.c
 	x86/newVif_Dynarec.cpp
 	x86/newVif_UnpackSSE.cpp
 	)
@@ -859,16 +859,16 @@ set(pcsx2ZipToolsHeaders)
 # x86 GS SW rasterizer codegen. Emptied here so the lists below expand to
 # nothing on aarch64 while x86_64 is unaffected.
 if(NOT _M_X86)
-	# CpuState.cpp lives under x86/ but only defines the EE/IOP/FPU register
+	# CpuState.c lives under x86/ but only defines the EE/IOP/FPU register
 	# state (cpuRegs/psxRegs/fpuRegs) that the interpreter needs too, so keep it.
 	# Everything else here is the x86 recompiler; arm64 provides its own
 	# recompilers (recR3000A/recR5900/recVU1) plus the NEON VIF unpack dynarec
 	# transplanted from ARMSX2 (C.19: AsmHelpers + Vif_UnpackNEON +
 	# Vif_Dynarec_arm64, replacing the former RecStubs.cpp reference routing).
-	# JitHash.cpp is portable: on non-x86 it compiles to the exported
+	# JitHash.c is portable: on non-x86 it compiles to the exported
 	# pcsx2_jithash_dump stub that libretro/main.cpp calls unconditionally
 	# from retro_deinit. Dropping it from this list is an aarch64 link error.
-	set(pcsx2x86Sources x86/CpuState.cpp x86/JitHash.cpp arm64/recR3000A_arm64.cpp arm64/recR5900_arm64.cpp arm64/aVU.cpp
+	set(pcsx2x86Sources x86/CpuState.c x86/JitHash.c arm64/recR3000A_arm64.cpp arm64/recR5900_arm64.cpp arm64/aVU.cpp
 		arm64/AsmHelpers.cpp arm64/Vif_UnpackNEON.cpp arm64/Vif_Dynarec_arm64.cpp)
 	set(pcsx2x86Headers)
 	# VIXL is the AArch64 code emitter, the foundation for the arm64 recompiler

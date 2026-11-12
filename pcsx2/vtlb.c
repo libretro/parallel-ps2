@@ -306,7 +306,7 @@ __inline int CheckCache(u32 addr)
 /* -------------------------------------------------------------------------------------- */
 /* Interpreter Implementations of VTLB Memory Operations. */
 /* -------------------------------------------------------------------------------------- */
-/* See recVTLB.cpp for the dynarec versions. */
+/* See recVTLB.c for the dynarec versions. */
 
 /* One concrete function per width. These were a single
  * template<typename DataType> whose body switched on sizeof(DataType) * 8 --

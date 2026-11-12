@@ -317,7 +317,7 @@
     <ClCompile Include="Elfheader.c">
       <Filter>System\ISO</Filter>
     </ClCompile>
-    <ClCompile Include="x86\BaseblockEx.cpp">
+    <ClCompile Include="x86\BaseblockEx.c">
       <Filter>System\Ps2</Filter>
     </ClCompile>
     <ClCompile Include="ps2\BiosTools.c">
@@ -338,7 +338,7 @@
     <ClCompile Include="Memory.c">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\recVTLB.cpp">
+    <ClCompile Include="x86\ix86-32\recVTLB.c">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
     </ClCompile>
     <ClCompile Include="vtlb.c">
@@ -422,49 +422,49 @@
     <ClCompile Include="R5900OpcodeTables.c">
       <Filter>System\Ps2\EmotionEngine\EE</Filter>
     </ClCompile>
-    <ClCompile Include="x86\iCOP0.cpp">
+    <ClCompile Include="x86\iCOP0.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec</Filter>
     </ClCompile>
-    <ClCompile Include="x86\iFPU.cpp">
+    <ClCompile Include="x86\iFPU.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec</Filter>
     </ClCompile>
-    <ClCompile Include="x86\iFPUd.cpp">
+    <ClCompile Include="x86\iFPUd.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec</Filter>
     </ClCompile>
-    <ClCompile Include="x86\iMMI.cpp">
+    <ClCompile Include="x86\iMMI.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec</Filter>
     </ClCompile>
-    <ClCompile Include="x86\iR5900Misc.cpp">
+    <ClCompile Include="x86\iR5900Misc.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\iR5900-32.cpp">
+    <ClCompile Include="x86\ix86-32\iR5900-32.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\iR5900Arit.cpp">
+    <ClCompile Include="x86\ix86-32\iR5900Arit.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\iR5900AritImm.cpp">
+    <ClCompile Include="x86\ix86-32\iR5900AritImm.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\iR5900Branch.cpp">
+    <ClCompile Include="x86\ix86-32\iR5900Branch.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\iR5900Jump.cpp">
+    <ClCompile Include="x86\ix86-32\iR5900Jump.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\iR5900LoadStore.cpp">
+    <ClCompile Include="x86\ix86-32\iR5900LoadStore.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\iR5900Move.cpp">
+    <ClCompile Include="x86\ix86-32\iR5900Move.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\iR5900MultDiv.cpp">
+    <ClCompile Include="x86\ix86-32\iR5900MultDiv.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\iR5900Shift.cpp">
+    <ClCompile Include="x86\ix86-32\iR5900Shift.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\iR5900Templates.cpp">
+    <ClCompile Include="x86\ix86-32\iR5900Templates.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
     <ClCompile Include="COP0.c">
@@ -515,10 +515,10 @@
     <ClCompile Include="Sio.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="x86\iR3000A.cpp">
+    <ClCompile Include="x86\iR3000A.c">
       <Filter>System\Ps2\Iop\Dynarec</Filter>
     </ClCompile>
-    <ClCompile Include="x86\iR3000Atables.cpp">
+    <ClCompile Include="x86\iR3000Atables.c">
       <Filter>System\Ps2\Iop\Dynarec</Filter>
     </ClCompile>
     <ClCompile Include="IopHw.c">
@@ -596,10 +596,10 @@
     <ClCompile Include="MTGS.c">
       <Filter>System\Ps2\GS\GIF</Filter>
     </ClCompile>
-    <ClCompile Include="x86\ix86-32\iCore-32.cpp">
+    <ClCompile Include="x86\ix86-32\iCore-32.c">
       <Filter>System\Ps2\iCore</Filter>
     </ClCompile>
-    <ClCompile Include="x86\iCore.cpp">
+    <ClCompile Include="x86\iCore.c">
       <Filter>System\Ps2\iCore</Filter>
     </ClCompile>
     <ClCompile Include="CDVD\IsoFS\iso9660.c">
@@ -899,7 +899,7 @@
     <ClCompile Include="GS\Renderers\HW\GSTextureReplacementLoaders.cpp">
       <Filter>System\Ps2\GS\Renderers\Hardware</Filter>
     </ClCompile>
-    <ClCompile Include="x86\iR5900Analysis.cpp">
+    <ClCompile Include="x86\iR5900Analysis.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\DX12\GSTexture12.cpp">

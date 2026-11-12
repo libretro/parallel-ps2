@@ -119,23 +119,26 @@ extern void TAKES_R128 vtlb_memWrite128(u32 mem, r128 value);
 }
 #endif
 
-/* The recompiler entry points are C++: the dynarec declarations carry default
- * arguments and an alias template. */
 #ifdef __cplusplus
+extern "C" {
+#endif
 
-/* "Safe" variants of vtlb, designed for external tools. */
-using vtlb_ReadRegAllocCallback = int(*)(void);
-extern int vtlb_DynGenReadNonQuad(u32 bits, int sign, int xmm, int addr_reg, vtlb_ReadRegAllocCallback dest_reg_alloc = nullptr);
-extern int vtlb_DynGenReadNonQuad_Const(u32 bits, int sign, int xmm, u32 addr_const, vtlb_ReadRegAllocCallback dest_reg_alloc = nullptr);
-extern int vtlb_DynGenReadQuad(u32 bits, int addr_reg, vtlb_ReadRegAllocCallback dest_reg_alloc = nullptr);
-extern int vtlb_DynGenReadQuad_Const(u32 bits, u32 addr_const, vtlb_ReadRegAllocCallback dest_reg_alloc = nullptr);
+/* The recompilers' memory accesses. dest_reg_alloc, where not NULL, picks
+ * the register the value is read into. */
+typedef int (*vtlb_ReadRegAllocCallback)(void);
+extern int vtlb_DynGenReadNonQuad(u32 bits, int sign, int xmm, int addr_reg, vtlb_ReadRegAllocCallback dest_reg_alloc);
+extern int vtlb_DynGenReadNonQuad_Const(u32 bits, int sign, int xmm, u32 addr_const, vtlb_ReadRegAllocCallback dest_reg_alloc);
+extern int vtlb_DynGenReadQuad(u32 bits, int addr_reg, vtlb_ReadRegAllocCallback dest_reg_alloc);
+extern int vtlb_DynGenReadQuad_Const(u32 bits, u32 addr_const, vtlb_ReadRegAllocCallback dest_reg_alloc);
 
 extern void vtlb_DynGenWrite(u32 sz, int xmm, int addr_reg, int value_reg);
 extern void vtlb_DynGenWrite_Const(u32 bits, int xmm, u32 addr_const, int value_reg);
 
 extern void vtlb_DynGenDispatchers(void);
 
-#endif /* __cplusplus */
+#ifdef __cplusplus
+}
+#endif
 
 /* vtlb constants and lookup machinery. C89-shaped: the wrapper classes
  * that used to live in namespace vtlb_private are plain integer typedefs

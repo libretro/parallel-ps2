@@ -21,10 +21,10 @@
 #include "iR5900.h"
 #include "common/emitter/c89ops.h"
 #include "iFPU.h"
-alignas(16) const u32 g_minvals[4] = {0xff7fffff, 0xff7fffff, 0xff7fffff, 0xff7fffff};
-alignas(16) const u32 g_maxvals[4] = {0x7f7fffff, 0x7f7fffff, 0x7f7fffff, 0x7f7fffff};
+PCSX2_ALIGN(16) const u32 g_minvals[4] = {0xff7fffff, 0xff7fffff, 0xff7fffff, 0xff7fffff};
+PCSX2_ALIGN(16) const u32 g_maxvals[4] = {0x7f7fffff, 0x7f7fffff, 0x7f7fffff, 0x7f7fffff};
 
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
 /* Forward declarations of the full-mode (DOUBLE) FPU emitters; the
  * namespace is gone, the prefix carries the distinction. */
@@ -50,14 +50,14 @@ void DOUBLE_recSUBA_S_xmm(int info);
 void DOUBLE_recSQRT_S_xmm(int info);
 void DOUBLE_recRSQRT_S_xmm(int info);
 
-//------------------------------------------------------------------
-// Helper Macros
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Helper Macros */
+/* ------------------------------------------------------------------ */
 #define _Ft_ _Rt_
 #define _Fs_ _Rd_
 #define _Fd_ _Sa_
 
-// FCR31 Flags
+/* FCR31 Flags */
 #define FPUflagC  0x00800000
 #define FPUflagI  0x00020000
 #define FPUflagD  0x00010000
@@ -68,11 +68,11 @@ void DOUBLE_recRSQRT_S_xmm(int info);
 #define FPUflagSO 0x00000010
 #define FPUflagSU 0x00000008
 
-// Add/Sub opcodes produce the same results as the ps2
+/* Add/Sub opcodes produce the same results as the ps2 */
 #define FPU_CORRECT_ADD_SUB 1
 
-alignas(16) static const u32 s_neg[4] = {0x80000000, 0xffffffff, 0xffffffff, 0xffffffff};
-alignas(16) static const u32 s_pos[4] = {0x7fffffff, 0xffffffff, 0xffffffff, 0xffffffff};
+PCSX2_ALIGN(16) static const u32 s_neg[4] = {0x80000000, 0xffffffff, 0xffffffff, 0xffffffff};
+PCSX2_ALIGN(16) static const u32 s_pos[4] = {0x7fffffff, 0xffffffff, 0xffffffff, 0xffffffff};
 
 #define REC_FPUBRANCH(f) \
 	void f(); \
@@ -90,28 +90,29 @@ alignas(16) static const u32 s_pos[4] = {0x7fffffff, 0xffffffff, 0xffffffff, 0xf
 		iFlushCall(FLUSH_INTERPRETER); \
 		xe_fastcall0(int##f); \
 	}
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-//------------------------------------------------------------------
-// *FPU Opcodes!*
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* *FPU Opcodes!* */
+/* ------------------------------------------------------------------ */
 
-// Those opcode are marked as special ! But I don't understand why we can't run them in the interpreter
+/* Those opcode are marked as special ! But I don't understand why we can't run them in the interpreter */
 
-//------------------------------------------------------------------
-// CFC1 / CTC1
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* CFC1 / CTC1 */
+/* ------------------------------------------------------------------ */
 void recCFC1(void)
 {
+	int regt;
 	if (!_Rt_)
 		return;
 
-	const int regt = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_WRITE);
+	regt = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_WRITE);
 	if (_Fs_ >= 16)
 	{
 		xe_mov32_rm(regt, &fpuRegs.fprc[31]);
-		xe_and32_ri(regt, 0x0083c078); //remove always-zero bits
-		xe_or32_ri(regt, 0x01000001); //set always-one bits
+		xe_and32_ri(regt, 0x0083c078); /* remove always-zero bits */
+		xe_or32_ri(regt, 0x01000001); /* set always-one bits */
 		xe_movsxd_rr(regt, regt);
 	}
 	else
@@ -150,23 +151,25 @@ void recCTC1(void)
 		}
 	}
 }
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// MFC1
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* MFC1 */
+/* ------------------------------------------------------------------ */
 
 void recMFC1(void)
 {
+	int xmmregt;
+	int regs;
+	int regt;
 	if (!_Rt_)
 		return;
 
-	const int xmmregt = _allocIfUsedGPRtoXMM(_Rt_, MODE_READ | MODE_WRITE);
-	const int regs = _allocIfUsedFPUtoXMM(_Fs_, MODE_READ);
+	xmmregt = _allocIfUsedGPRtoXMM(_Rt_, MODE_READ | MODE_WRITE);
+	regs = _allocIfUsedFPUtoXMM(_Fs_, MODE_READ);
 	if (regs >= 0 && xmmregt >= 0)
 	{
-		// both in xmm, sign extend and insert lower bits
+		/* both in xmm, sign extend and insert lower bits */
 		const int temp = _allocTempXMMreg(XMMT_FPS);
 		xe_movaps_xx(temp, regs);
 		xe_psrad_xi(temp, 31);
@@ -176,28 +179,27 @@ void recMFC1(void)
 		return;
 	}
 
-	// storing to a gpr..
-	const int regt = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_WRITE);
+	/* storing to a gpr.. */
+	regt = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_WRITE);
 
 	if (regs >= 0)
 	{
-		// xmm -> gpr
+		/* xmm -> gpr */
 		xe_movd_rx(regt, regs);
 		xe_movsxd_rr(regt, regt);
 	}
 	else
 	{
-		// mem -> gpr
+		/* mem -> gpr */
 		xe_movsxd_rm(regt, &fpuRegs.fpr[_Fs_].UL);
 	}
 }
 
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// MTC1
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* MTC1 */
+/* ------------------------------------------------------------------ */
 void recMTC1(void)
 {
 	if (GPR_IS_CONST1(_Rt_))
@@ -205,14 +207,14 @@ void recMTC1(void)
 		const int xmmreg = _allocIfUsedFPUtoXMM(_Fs_, MODE_WRITE);
 		if (xmmreg >= 0)
 		{
-			// common case: mtc1 zero, fnn
+			/* common case: mtc1 zero, fnn */
 			if (g_cpuConstRegs[_Rt_].UL[0] == 0)
 			{
 				xe_pxor_xx(xmmreg, xmmreg);
 			}
 			else
 			{
-				// may as well flush the constant register, since we're needing it in a gpr anyway
+				/* may as well flush the constant register, since we're needing it in a gpr anyway */
 				const int x86reg = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ);
 				xe_movdzx_xr(xmmreg, x86reg);
 			}
@@ -229,7 +231,7 @@ void recMTC1(void)
 		{
 			if (g_pCurInstInfo->regs[_Rt_] & EEINST_LASTUSE)
 			{
-				// transfer the reg directly
+				/* transfer the reg directly */
 				_deleteFPtoXMMreg(_Fs_, DELETE_REG_FREE_NO_WRITEBACK);
 				_reallocateXMMreg(xmmgpr, XMMTYPE_FPREG, _Fs_, MODE_WRITE, 1);
 			}
@@ -244,7 +246,7 @@ void recMTC1(void)
 		}
 		else
 		{
-			// may as well cache it..
+			/* may as well cache it.. */
 			const int regt = _allocX86reg(X86TYPE_GPR, _Rt_, MODE_READ);
 			const int mmreg2 = _allocIfUsedFPUtoXMM(_Fs_, MODE_WRITE);
 
@@ -259,10 +261,9 @@ void recMTC1(void)
 		}
 	}
 }
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-#ifndef FPU_RECOMPILE // If FPU_RECOMPILE is not defined, then use the interpreter opcodes. (CFC1, CTC1, MFC1, and MTC1 are special because they work specifically with the EE rec so they're defined above)
+#ifndef FPU_RECOMPILE /* If FPU_RECOMPILE is not defined, then use the interpreter opcodes. (CFC1, CTC1, MFC1, and MTC1 are special because they work specifically with the EE rec so they're defined above) */
 
 REC_FPUFUNC(ABS_S);
 REC_FPUFUNC(ADD_S);
@@ -293,11 +294,11 @@ REC_FPUFUNC(SUBA_S);
 REC_FPUFUNC(SQRT_S);
 REC_FPUFUNC(RSQRT_S);
 
-#else // FPU_RECOMPILE
+#else /* FPU_RECOMPILE */
 
-//------------------------------------------------------------------
-// Clamp Functions (Converts NaN's and Infinities to Normal Numbers)
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Clamp Functions (Converts NaN's and Infinities to Normal Numbers) */
+/* ------------------------------------------------------------------ */
 
 static int fpuCopyToTempForClamp(int fpureg, int xmmreg)
 {
@@ -323,7 +324,7 @@ static void fpuFreeIfTemp(int xmmreg)
 		_freeXMMreg(xmmreg);
 }
 
-static __fi void fpuFloat3(int regd) // +NaN -> +fMax, -NaN -> -fMax, +Inf -> +fMax, -Inf -> -fMax
+static __fi void fpuFloat3(int regd) /* +NaN -> +fMax, -NaN -> -fMax, +Inf -> +fMax, -Inf -> -fMax */
 {
 	/* SSE4 codepath */
 #if _M_SSE >= 0x401
@@ -341,16 +342,16 @@ static __fi void fpuFloat3(int regd) // +NaN -> +fMax, -NaN -> -fMax, +Inf -> +f
 #endif
 }
 
-static __fi void fpuFloat(int regd) // +/-NaN -> +fMax, +Inf -> +fMax, -Inf -> -fMax
+static __fi void fpuFloat(int regd) /* +/-NaN -> +fMax, +Inf -> +fMax, -Inf -> -fMax */
 {
 	if (CHECK_FPU_OVERFLOW)
 	{
-		xe_minss_xm(regd, &g_maxvals[0]); // MIN() must be before MAX()! So that NaN's become +Maximum
+		xe_minss_xm(regd, &g_maxvals[0]); /* MIN() must be before MAX()! So that NaN's become +Maximum */
 		xe_maxss_xm(regd, &g_minvals[0]);
 	}
 }
 
-static __fi void fpuFloat2(int regd) // +NaN -> +fMax, -NaN -> -fMax, +Inf -> +fMax, -Inf -> -fMax
+static __fi void fpuFloat2(int regd) /* +NaN -> +fMax, -NaN -> -fMax, +Inf -> +fMax, -Inf -> -fMax */
 {
 	if (CHECK_FPU_OVERFLOW)
 	{
@@ -358,12 +359,11 @@ static __fi void fpuFloat2(int regd) // +NaN -> +fMax, -NaN -> -fMax, +Inf -> +f
 	}
 }
 
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// ABS XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* ABS XMM */
+/* ------------------------------------------------------------------ */
 void recABS_S_xmm(int info)
 {
 	if (info & PROCESS_EE_S)
@@ -372,7 +372,7 @@ void recABS_S_xmm(int info)
 		xe_movss_xm(EEREC_D, &fpuRegs.fpr[_Fs_]);
 
 	xe_andps_xm(EEREC_D, &s_pos[0]);
-	//xAND(ptr32[&fpuRegs.fprc[31]], ~(FPUflagO|FPUflagU)); // Clear O and U flags
+	/* xAND(ptr32[&fpuRegs.fprc[31]], ~(FPUflagO|FPUflagU)); // Clear O and U flags */
 
 	/* Hardware ABS is a pure sign-bit operation; this clamp exists
 	 * only to keep exp-255 patterns out of downstream HOST adds,
@@ -387,34 +387,33 @@ void recABS_S_xmm(int info)
 }
 
 FPURECOMPILE_CONSTCODE(ABS_S, XMMINFO_WRITED | XMMINFO_READS);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// FPU_ADD_SUB (Used to mimic PS2's FPU add/sub behavior)
-//------------------------------------------------------------------
-// Compliant IEEE FPU uses, in computations, uses additional "guard" bits to the right of the mantissa
-// but EE-FPU doesn't. Substraction (and addition of positive and negative) may shift the mantissa left,
-// causing those bits to appear in the result; this function masks out the bits of the mantissa that will
-// get shifted right to the guard bits to ensure that the guard bits are empty.
-// The difference of the exponents = the amount that the smaller operand will be shifted right by.
-// Modification - the PS2 uses a single guard bit? (Coded by Nneeve)
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* FPU_ADD_SUB (Used to mimic PS2's FPU add/sub behavior) */
+/* ------------------------------------------------------------------ */
+/* Compliant IEEE FPU uses, in computations, uses additional "guard" bits to the right of the mantissa */
+/* but EE-FPU doesn't. Substraction (and addition of positive and negative) may shift the mantissa left, */
+/* causing those bits to appear in the result; this function masks out the bits of the mantissa that will */
+/* get shifted right to the guard bits to ensure that the guard bits are empty. */
+/* The difference of the exponents = the amount that the smaller operand will be shifted right by. */
+/* Modification - the PS2 uses a single guard bit? (Coded by Nneeve) */
+/* ------------------------------------------------------------------ */
 static void FPU_ADD_SUB(int regd, int regt, int issub)
 {
 	u8 *j8Ptr0, *j8Ptr1, *j8Ptr2, *j8Ptr3;
 	u8 *j8Ptr4, *j8Ptr5, *j8Ptr6, *j8Ptr7;
-	const int xmmtemp = _allocTempXMMreg(XMMT_FPS); //temporary for anding with regd/regt
-	xe_movd_rx(XE_CX, regd); // ecx receives regd
-	xe_movd_rx(XE_AX, regt); // eax receives regt
+	const int xmmtemp = _allocTempXMMreg(XMMT_FPS); /* temporary for anding with regd/regt */
+	xe_movd_rx(XE_CX, regd); /* ecx receives regd */
+	xe_movd_rx(XE_AX, regt); /* eax receives regt */
 
-	//mask the exponents
+	/* mask the exponents */
 	xe_shr32_ri(XE_CX, 23);
 	xe_shr32_ri(XE_AX, 23);
 	xe_and32_ri(XE_CX, 0xff);
 	xe_and32_ri(XE_AX, 0xff);
 
-	xe_sub32_rr(XE_CX, XE_AX); //tempecx = exponent difference
+	xe_sub32_rr(XE_CX, XE_AX); /* tempecx = exponent difference */
 	xe_cmp32_ri(XE_CX, 25);
 	xe_fwd_jcc8(Jcc_GreaterOrEqual, j8Ptr0);
 	xe_cmp32_ri(XE_CX, 0);
@@ -423,11 +422,11 @@ static void FPU_ADD_SUB(int regd, int regt, int issub)
 	xe_cmp32_ri(XE_CX, -25);
 	xe_fwd_jcc8(Jcc_LessOrEqual, j8Ptr3);
 
-	//diff = -24 .. -1 , expd < expt
+	/* diff = -24 .. -1 , expd < expt */
 	xe_neg32_r(XE_CX);
 	xe_dec32_r(XE_CX);
 	xe_mov32_ri(XE_AX, 0xffffffff);
-	xe_shl32_rcl(XE_AX); //temp2 = 0xffffffff << tempecx
+	xe_shl32_rcl(XE_AX); /* temp2 = 0xffffffff << tempecx */
 	xe_movdzx_xr(xmmtemp, XE_AX);
 	xe_andps_xx(regd, xmmtemp);
 	if (issub)
@@ -437,7 +436,7 @@ static void FPU_ADD_SUB(int regd, int regt, int issub)
 	xe_fwd_jcc8(Jcc_Unconditional, j8Ptr4);
 
 	xe_fwd_set8(j8Ptr0);
-	//diff = 25 .. 255 , expt < expd
+	/* diff = 25 .. 255 , expt < expd */
 	xe_movaps_xx(xmmtemp, regt);
 	xe_andps_xm(xmmtemp, s_neg);
 	if (issub)
@@ -447,10 +446,10 @@ static void FPU_ADD_SUB(int regd, int regt, int issub)
 	xe_fwd_jcc8(Jcc_Unconditional, j8Ptr5);
 
 	xe_fwd_set8(j8Ptr1);
-	//diff = 1 .. 24, expt < expd
+	/* diff = 1 .. 24, expt < expd */
 	xe_dec32_r(XE_CX);
 	xe_mov32_ri(XE_AX, 0xffffffff);
-	xe_shl32_rcl(XE_AX); //temp2 = 0xffffffff << tempecx
+	xe_shl32_rcl(XE_AX); /* temp2 = 0xffffffff << tempecx */
 	xe_movdzx_xr(xmmtemp, XE_AX);
 	xe_andps_xx(xmmtemp, regt);
 	if (issub)
@@ -460,7 +459,7 @@ static void FPU_ADD_SUB(int regd, int regt, int issub)
 	xe_fwd_jcc8(Jcc_Unconditional, j8Ptr6);
 
 	xe_fwd_set8(j8Ptr3);
-	//diff = -255 .. -25, expd < expt
+	/* diff = -255 .. -25, expd < expt */
 	xe_andps_xm(regd, s_neg);
 	if (issub)
 		xe_subss_xx(regd, regt);
@@ -469,7 +468,7 @@ static void FPU_ADD_SUB(int regd, int regt, int issub)
 	xe_fwd_jcc8(Jcc_Unconditional, j8Ptr7);
 
 	xe_fwd_set8(j8Ptr2);
-	//diff == 0
+	/* diff == 0 */
 	if (issub)
 		xe_subss_xx(regd, regt);
 	else
@@ -499,34 +498,35 @@ static void FPU_SUB(int regd, int regt)
 }
 #endif
 
-//------------------------------------------------------------------
-// Note: PS2's multiplication uses some variant of booth multiplication with wallace trees:
-// It cuts off some bits, resulting in inaccurate and non-commutative results.
-// The PS2's result mantissa is either equal to x86's rounding to zero result mantissa
-// or SMALLER (by 0x1). (this means that x86's other rounding modes are only less similar to PS2's mul)
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Note: PS2's multiplication uses some variant of booth multiplication with wallace trees: */
+/* It cuts off some bits, resulting in inaccurate and non-commutative results. */
+/* The PS2's result mantissa is either equal to x86's rounding to zero result mantissa */
+/* or SMALLER (by 0x1). (this means that x86's other rounding modes are only less similar to PS2's mul) */
+/* ------------------------------------------------------------------ */
 static void FPU_MUL(int regd, int regt, int reverseOperands)
 {
 	u8 *endMul = NULL;
 
 	if (CHECK_FPUMULHACK)
 	{
-		// 	if ((s == 0x3e800000) && (t == 0x40490fdb))
-		// 		return 0x3f490fda; // needed for Tales of Destiny Remake (only in a very specific room late-game)
-		// 	else
-		// 		return 0;
+		/* 	if ((s == 0x3e800000) && (t == 0x40490fdb)) */
+		/* 		return 0x3f490fda; // needed for Tales of Destiny Remake (only in a very specific room late-game) */
+		/* 	else */
+		/* 		return 0; */
 
-		alignas(16) static const u32 result[4] = { 0x3f490fda };
+		PCSX2_ALIGN(16) static const u32 result[4] = { 0x3f490fda };
+		uint8_t* noHack;
 
 		xe_movd_rx(XE_CX, reverseOperands ? regt : regd);
 		xe_movd_rx(XE_DX, reverseOperands ? regd : regt);
 
-		// if (((s ^ 0x3e800000) | (t ^ 0x40490fdb)) != 0) { hack; }
+		/* if (((s ^ 0x3e800000) | (t ^ 0x40490fdb)) != 0) { hack; } */
 		xe_xor32_ri(XE_CX, 0x3e800000);
 		xe_xor32_ri(XE_DX, 0x40490fdb);
 		xe_or32_rr(XE_DX, XE_CX);
 
-		uint8_t* noHack; xe_fwd_jcc8(Jcc_NotZero, noHack);
+		 xe_fwd_jcc8(Jcc_NotZero, noHack);
 			xe_movaps_xm(regd, result);
 			xe_fwd_jcc8(Jcc_Unconditional, endMul);
 		xe_fwd_set8(noHack);
@@ -539,11 +539,11 @@ static void FPU_MUL(int regd, int regt, int reverseOperands)
 }
 
 static void FPU_MUL_WRAP(int regd, int regt) { FPU_MUL(regd, regt, 0); }
-static void FPU_MUL_WRAP_REV(int regd, int regt) { FPU_MUL(regd, regt, 1); } //reversed operands
+static void FPU_MUL_WRAP_REV(int regd, int regt) { FPU_MUL(regd, regt, 1); } /* reversed operands */
 
-//------------------------------------------------------------------
-// CommutativeOp XMM (used for ADD, MUL, MAX, and MIN opcodes)
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* CommutativeOp XMM (used for ADD, MUL, MAX, and MIN opcodes) */
+/* ------------------------------------------------------------------ */
 /* The commutative ops used to be two function-pointer tables indexed by `op`.
  * Two of the four entries -- MAXSS and MINSS -- are emitter macros with no
  * address to take, and the indirect call bought nothing: `op` is a small
@@ -586,7 +586,6 @@ static __fi void recComOpRev(int op, int regd, int regt)
 		default:         xe_minss_xx(regd, regt);      break;
 	}
 }
-
 
 static int recCommutativeOp(int info, int regd, int op)
 {
@@ -674,12 +673,11 @@ static int recCommutativeOp(int info, int regd, int op)
 	_freeXMMreg(t0reg);
 	return regd;
 }
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// ADD XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* ADD XMM */
+/* ------------------------------------------------------------------ */
 void recADD_S_xmm(int info)
 {
 	fpuFloat(recCommutativeOp(info, EEREC_D, 0));
@@ -693,15 +691,15 @@ void recADDA_S_xmm(int info)
 }
 
 FPURECOMPILE_CONSTCODE_EXACT_DBL(ADDA_S, XMMINFO_WRITEACC | XMMINFO_READS | XMMINFO_READT);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-//------------------------------------------------------------------
-// BC1x XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* BC1x XMM */
+/* ------------------------------------------------------------------ */
 
-// COP1 branch conditionals are based on the following equation:
-// (fpuRegs.fprc[31] & 0x00800000)
-// BC2F checks if the statement is false, BC2T checks if the statement is true.
+/* COP1 branch conditionals are based on the following equation: */
+/* (fpuRegs.fprc[31] & 0x00800000) */
+/* BC2F checks if the statement is false, BC2T checks if the statement is true. */
 #define _setupBranchTest() \
 	_eeFlushAllDirty(); \
 	xe_mov32_rm(XE_AX, &fpuRegs.fprc[31]); \
@@ -736,21 +734,20 @@ void recBC1TL(void)
 	_setupBranchTest();
 	{ uint8_t* bslot_; xe_fwd_jcc32(Jcc_Zero, bslot_); recDoBranchImm(branchTo, bslot_, 1, 0); }
 }
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* C.x.S XMM */
+/* ------------------------------------------------------------------ */
+/* Integer ordering emissions: the FPU's MAX/MIN and compares are total */
+/* orders on the raw sign-magnitude bits (fp_max and fpuCompareFull in */
+/* the interpreter). Folding the non-sign bits of negatives maps that */
+/* order onto two's-complement, so one signed compare decides it: no */
+/* operand clamps, no host FP, and exponent-255 values order correctly, */
+/* which the clamped comiss/maxss sequences got wrong. */
+/* ------------------------------------------------------------------ */
 
-//------------------------------------------------------------------
-// C.x.S XMM
-//------------------------------------------------------------------
-// Integer ordering emissions: the FPU's MAX/MIN and compares are total
-// orders on the raw sign-magnitude bits (fp_max and fpuCompareFull in
-// the interpreter). Folding the non-sign bits of negatives maps that
-// order onto two's-complement, so one signed compare decides it: no
-// operand clamps, no host FP, and exponent-255 values order correctly,
-// which the clamped comiss/maxss sequences got wrong.
-//------------------------------------------------------------------
-
-// gpr := sign-fold(gpr): negatives get their non-sign bits inverted.
+/* gpr := sign-fold(gpr): negatives get their non-sign bits inverted. */
 static void fpuEmitSignFold(int gpr, int scratch)
 {
 	xe_mov32_rr(scratch, gpr);
@@ -759,7 +756,7 @@ static void fpuEmitSignFold(int gpr, int scratch)
 	xe_xor32_rr(gpr, scratch);
 }
 
-// gpr := 0 when the exponent field is zero (fpuCompareFull's flush).
+/* gpr := 0 when the exponent field is zero (fpuCompareFull's flush). */
 static void fpuEmitDenormFlush(int gpr, int scratch)
 {
 	uint8_t* keep;
@@ -810,7 +807,7 @@ static void recCcond_int(int info, int cond)
 	xe_fwd_set8(j8Ptr1);
 }
 
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 void recC_EQ_xmm(int info)
 {
 	recCcond_int(info, Jcc_Equal);
@@ -836,13 +833,12 @@ void recC_LT_xmm(int info)
 }
 
 FPURECOMPILE_CONSTCODE_EXACT_SS(C_LT, XMMINFO_READS | XMMINFO_READT);
-//REC_FPUFUNC(C_LT);
-//------------------------------------------------------------------
+/* REC_FPUFUNC(C_LT); */
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// CVT.x XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* CVT.x XMM */
+/* ------------------------------------------------------------------ */
 /* MXCSR window for the accurate convert: hardware CVT.S.W rounds to
  * nearest, but the EE JIT's global MXCSR is chop, leaving the
  * recompiled convert one ulp low on integers wider than 24 bits of
@@ -850,8 +846,8 @@ FPURECOMPILE_CONSTCODE_EXACT_SS(C_LT, XMMINFO_READS | XMMINFO_READT);
  * Under either option, flip rounding to nearest for the convert
  * only. The nearest-mode value is computed at emission time from
  * the configured FPCR with the RC field cleared. */
-alignas(16) static u32 s_cvt_mxcsr_saved;
-alignas(16) static u32 s_cvt_mxcsr_nearest;
+PCSX2_ALIGN(16) static u32 s_cvt_mxcsr_saved;
+PCSX2_ALIGN(16) static u32 s_cvt_mxcsr_nearest;
 
 static __fi int cvt_accurate(void) { return CHECK_FPU_SOFT_REC || CHECK_FPU_ACC_ARITH; }
 
@@ -927,44 +923,43 @@ void recCVT_W(void)
 	/* Write the result */
 	xe_mov32_mr(&fpuRegs.fpr[_Fd_], XE_AX);
 }
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// DIV XMM
-//------------------------------------------------------------------
-static void recDIVhelper1(int regd, int regt) // Sets flags
+/* ------------------------------------------------------------------ */
+/* DIV XMM */
+/* ------------------------------------------------------------------ */
+static void recDIVhelper1(int regd, int regt) /* Sets flags */
 {
 	u8 *pjmp1, *pjmp2;
 	uint8_t *ajmp32, *bjmp32;
 	const int t1reg = _allocTempXMMreg(XMMT_FPS);
 
-	xe_and32_mi(&fpuRegs.fprc[31], ~(FPUflagI | FPUflagD)); // Clear I and D flags
+	xe_and32_mi(&fpuRegs.fprc[31], ~(FPUflagI | FPUflagD)); /* Clear I and D flags */
 
 	/*--- Check for divide by zero ---*/
 	xe_xorps_xx(t1reg, t1reg);
 	xe_cmpeqss_xx(t1reg, regt);
 	xe_movmskps_rx(XE_AX, t1reg);
-	xe_and32_ri(XE_AX, 1); //Check sign (if regt == zero, sign will be set)
-	xe_fwd_jcc32(Jcc_Zero, ajmp32); //Skip if not set
+	xe_and32_ri(XE_AX, 1); /* Check sign (if regt == zero, sign will be set) */
+	xe_fwd_jcc32(Jcc_Zero, ajmp32); /* Skip if not set */
 
 	/*--- Check for 0/0 ---*/
 	xe_xorps_xx(t1reg, t1reg);
 	xe_cmpeqss_xx(t1reg, regd);
 	xe_movmskps_rx(XE_AX, t1reg);
-	xe_and32_ri(XE_AX, 1); //Check sign (if regd == zero, sign will be set)
-	xe_fwd_jcc8(Jcc_Zero, pjmp1); //Skip if not set
-	xe_or32_mi(&fpuRegs.fprc[31], FPUflagI | FPUflagSI); // Set I and SI flags ( 0/0 )
+	xe_and32_ri(XE_AX, 1); /* Check sign (if regd == zero, sign will be set) */
+	xe_fwd_jcc8(Jcc_Zero, pjmp1); /* Skip if not set */
+	xe_or32_mi(&fpuRegs.fprc[31], FPUflagI | FPUflagSI); /* Set I and SI flags ( 0/0 ) */
 	xe_fwd_jcc8(Jcc_Unconditional, pjmp2);
-	xe_fwd_set8(pjmp1); //x/0 but not 0/0
-	xe_or32_mi(&fpuRegs.fprc[31], FPUflagD | FPUflagSD); // Set D and SD flags ( x/0 )
+	xe_fwd_set8(pjmp1); /* x/0 but not 0/0 */
+	xe_or32_mi(&fpuRegs.fprc[31], FPUflagD | FPUflagSD); /* Set D and SD flags ( x/0 ) */
 	xe_fwd_set8(pjmp2);
 
 	/*--- Make regd +/- Maximum ---*/
-	xe_xorps_xx(regd, regt); // Make regd Positive or Negative
-	xe_andps_xm(regd, &s_neg[0]); // Get the sign bit
-	xe_orps_xm(regd, &g_maxvals[0]); // regd = +/- Maximum
-	//xe_movss_xm(regd, &g_maxvals[0]);
+	xe_xorps_xx(regd, regt); /* Make regd Positive or Negative */
+	xe_andps_xm(regd, &s_neg[0]); /* Get the sign bit */
+	xe_orps_xm(regd, &g_maxvals[0]); /* regd = +/- Maximum */
+	/* xe_movss_xm(regd, &g_maxvals[0]); */
 	xe_fwd_jcc32(Jcc_Unconditional, bjmp32);
 
 	xe_fwd_set32(ajmp32);
@@ -991,7 +986,7 @@ void recDIV_S_xmm(int info)
 		case PROCESS_EE_S:
 			xe_movss_xx(EEREC_D, EEREC_S);
 			xe_movss_xm(t0reg, &fpuRegs.fpr[_Ft_]);
-			// Sets D/I flags on FPU instructions
+			/* Sets D/I flags on FPU instructions */
 			recDIVhelper1(EEREC_D, t0reg);
 			break;
 		case PROCESS_EE_T:
@@ -999,13 +994,13 @@ void recDIV_S_xmm(int info)
 			{
 				xe_movss_xx(t0reg, EEREC_T);
 				xe_movss_xm(EEREC_D, &fpuRegs.fpr[_Fs_]);
-				// Sets D/I flags on FPU instructions
+				/* Sets D/I flags on FPU instructions */
 				recDIVhelper1(EEREC_D, t0reg);
 			}
 			else
 			{
 				xe_movss_xm(EEREC_D, &fpuRegs.fpr[_Fs_]);
-				// Sets D/I flags on FPU instructions
+				/* Sets D/I flags on FPU instructions */
 				recDIVhelper1(EEREC_D, EEREC_T);
 			}
 			break;
@@ -1014,20 +1009,20 @@ void recDIV_S_xmm(int info)
 			{
 				xe_movss_xx(t0reg, EEREC_T);
 				xe_movss_xx(EEREC_D, EEREC_S);
-				// Sets D/I flags on FPU instructions
+				/* Sets D/I flags on FPU instructions */
 				recDIVhelper1(EEREC_D, t0reg);
 			}
 			else
 			{
 				xe_movss_xx(EEREC_D, EEREC_S);
-				// Sets D/I flags on FPU instructions
+				/* Sets D/I flags on FPU instructions */
 				recDIVhelper1(EEREC_D, EEREC_T);
 			}
 			break;
 		default:
 			xe_movss_xm(t0reg, &fpuRegs.fpr[_Ft_]);
 			xe_movss_xm(EEREC_D, &fpuRegs.fpr[_Fs_]);
-			// Sets D/I flags on FPU instructions
+			/* Sets D/I flags on FPU instructions */
 			recDIVhelper1(EEREC_D, t0reg);
 			break;
 	}
@@ -1038,13 +1033,11 @@ void recDIV_S_xmm(int info)
 }
 
 FPURECOMPILE_CONSTCODE_SOFT(DIV_S, XMMINFO_WRITED | XMMINFO_READS | XMMINFO_READT);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-
-//------------------------------------------------------------------
-// MADD XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* MADD XMM */
+/* ------------------------------------------------------------------ */
 void recMADDtemp(int info, int regd)
 {
 	const int t0reg = _allocTempXMMreg(XMMT_FPS);
@@ -1248,14 +1241,11 @@ void recMADDA_S_xmm(int info)
 }
 
 FPURECOMPILE_CONSTCODE_SOFT_DBL(MADDA_S, XMMINFO_WRITEACC | XMMINFO_READACC | XMMINFO_READS | XMMINFO_READT);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-
-
-//------------------------------------------------------------------
-// MAX / MIN XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* MAX / MIN XMM */
+/* ------------------------------------------------------------------ */
 void recMAX_S_xmm(int info)
 {
 	recMaxMin_int(info, 0);
@@ -1269,12 +1259,11 @@ void recMIN_S_xmm(int info)
 }
 
 FPURECOMPILE_CONSTCODE_EXACT_SS(MIN_S, XMMINFO_WRITED | XMMINFO_READS | XMMINFO_READT);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// MOV XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* MOV XMM */
+/* ------------------------------------------------------------------ */
 void recMOV_S_xmm(int info)
 {
 	if (info & PROCESS_EE_S)
@@ -1284,12 +1273,11 @@ void recMOV_S_xmm(int info)
 }
 
 FPURECOMPILE_CONSTCODE(MOV_S, XMMINFO_WRITED | XMMINFO_READS);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// MSUB XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* MSUB XMM */
+/* ------------------------------------------------------------------ */
 void recMSUBtemp(int info, int regd)
 {
 	int t0reg = _allocTempXMMreg(XMMT_FPS);
@@ -1461,12 +1449,11 @@ void recMSUBA_S_xmm(int info)
 }
 
 FPURECOMPILE_CONSTCODE_SOFT_DBL(MSUBA_S, XMMINFO_WRITEACC | XMMINFO_READACC | XMMINFO_READS | XMMINFO_READT);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// MUL XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* MUL XMM */
+/* ------------------------------------------------------------------ */
 void recMUL_S_xmm(int info)
 {
 	fpuFloat(recCommutativeOp(info, EEREC_D, 1));
@@ -1480,12 +1467,11 @@ void recMULA_S_xmm(int info)
 }
 
 FPURECOMPILE_CONSTCODE_SOFT_DBL(MULA_S, XMMINFO_WRITEACC | XMMINFO_READS | XMMINFO_READT);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// NEG XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* NEG XMM */
+/* ------------------------------------------------------------------ */
 void recNEG_S_xmm(int info)
 {
 	if (info & PROCESS_EE_S)
@@ -1495,8 +1481,8 @@ void recNEG_S_xmm(int info)
 
 	xe_xorps_xm(EEREC_D, &s_neg[0]);
 
-	// Always preserve sign. Using float clamping here would result in
-	// +inf to become +fMax instead of -fMax, which is definitely wrong.
+	/* Always preserve sign. Using float clamping here would result in */
+	/* +inf to become +fMax instead of -fMax, which is definitely wrong. */
 	/* Same reasoning as ABS: hardware NEG is a pure sign-bit flip and
 	 * the clamp only guards downstream host adds; under either
 	 * accuracy option every consumer handles raw operands. */
@@ -1505,12 +1491,11 @@ void recNEG_S_xmm(int info)
 }
 
 FPURECOMPILE_CONSTCODE(NEG_S, XMMINFO_WRITED | XMMINFO_READS);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// SUB XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* SUB XMM */
+/* ------------------------------------------------------------------ */
 static void recSUBhelper(int regd, int regt)
 {
 	if (CHECK_FPU_EXTRA_OVERFLOW /*&& !CHECK_FPUCLAMPHACK*/) { fpuFloat2(regd); fpuFloat2(regt); }
@@ -1521,7 +1506,7 @@ static void recSUBop(int info, int regd)
 {
 	int t0reg = _allocTempXMMreg(XMMT_FPS);
 
-	//xAND(ptr32[&fpuRegs.fprc[31]], ~(FPUflagO|FPUflagU)); // Clear O and U flags
+	/* xAND(ptr32[&fpuRegs.fprc[31]], ~(FPUflagO|FPUflagU)); // Clear O and U flags */
 
 	switch (info & (PROCESS_EE_S | PROCESS_EE_T))
 	{
@@ -1575,27 +1560,25 @@ void recSUB_S_xmm(int info)
 
 FPURECOMPILE_CONSTCODE_EXACT_DBL(SUB_S, XMMINFO_WRITED | XMMINFO_READS | XMMINFO_READT);
 
-
 void recSUBA_S_xmm(int info)
 {
 	recSUBop(info, EEREC_ACC);
 }
 
 FPURECOMPILE_CONSTCODE_EXACT_DBL(SUBA_S, XMMINFO_WRITEACC | XMMINFO_READS | XMMINFO_READT);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// SQRT XMM
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* SQRT XMM */
+/* ------------------------------------------------------------------ */
 void recSQRT_S_xmm(int info)
 {
 	int roundmodeFlag = 0;
-	alignas(16) static FPControlRegister roundmode_nearest;
+	PCSX2_ALIGN(16) static FPControlRegister roundmode_nearest;
 
 	if (fpcr_round_mode(EmuConfig.Cpu.FPUFPCR) != FPROUND_NEAREST)
 	{
-		// Set roundmode to nearest if it isn't already
+		/* Set roundmode to nearest if it isn't already */
 		roundmode_nearest = EmuConfig.Cpu.FPUFPCR;
 		roundmode_nearest = fpcr_set_round_mode(roundmode_nearest, FPROUND_NEAREST);
 		xe_ldmxcsr_m(&roundmode_nearest.bitmask);
@@ -1607,23 +1590,24 @@ void recSQRT_S_xmm(int info)
 	else
 		xe_movss_xm(EEREC_D, &fpuRegs.fpr[_Ft_]);
 
-	// Sets D/I flags on FPU instructions
+	/* Sets D/I flags on FPU instructions */
 	{
-		xe_and32_mi(&fpuRegs.fprc[31], ~(FPUflagI | FPUflagD)); // Clear I and D flags
+		uint8_t* pjmp;
+		xe_and32_mi(&fpuRegs.fprc[31], ~(FPUflagI | FPUflagD)); /* Clear I and D flags */
 
 		/*--- Check for negative SQRT ---*/
 		xe_movmskps_rx(XE_AX, EEREC_D);
-		xe_and32_ri(XE_AX, 1); //Check sign
-		uint8_t* pjmp; xe_fwd_jcc8(Jcc_Zero, pjmp); //Skip if none are
-			xe_or32_mi(&fpuRegs.fprc[31], FPUflagI | FPUflagSI); // Set I and SI flags
-			xe_andps_xm(EEREC_D, &s_pos[0]); // Make EEREC_D Positive
+		xe_and32_ri(XE_AX, 1); /* Check sign */
+		 xe_fwd_jcc8(Jcc_Zero, pjmp); /* Skip if none are */
+			xe_or32_mi(&fpuRegs.fprc[31], FPUflagI | FPUflagSI); /* Set I and SI flags */
+			xe_andps_xm(EEREC_D, &s_pos[0]); /* Make EEREC_D Positive */
 		xe_fwd_set8(pjmp);
 	}
 
-	if (CHECK_FPU_OVERFLOW) // Only need to do positive clamp, since EEREC_D is positive
+	if (CHECK_FPU_OVERFLOW) /* Only need to do positive clamp, since EEREC_D is positive */
 		xe_minss_xm(EEREC_D, &g_maxvals[0]);
 	xe_sqrtss_xx(EEREC_D, EEREC_D);
-	if (CHECK_FPU_EXTRA_OVERFLOW) // Shouldn't need to clamp again since SQRT of a number will always be smaller than the original number, doing it just incase :/
+	if (CHECK_FPU_EXTRA_OVERFLOW) /* Shouldn't need to clamp again since SQRT of a number will always be smaller than the original number, doing it just incase :/ */
 		fpuFloat(EEREC_D);
 
 	if (roundmodeFlag)
@@ -1631,56 +1615,55 @@ void recSQRT_S_xmm(int info)
 }
 
 FPURECOMPILE_CONSTCODE_SOFT(SQRT_S, XMMINFO_WRITED | XMMINFO_READT);
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
 
-
-//------------------------------------------------------------------
-// RSQRT XMM
-//------------------------------------------------------------------
-static void recRSQRThelper1(int regd, int t0reg) // Preforms the RSQRT function when regd <- Fs and t0reg <- Ft (Sets correct flags)
+/* ------------------------------------------------------------------ */
+/* RSQRT XMM */
+/* ------------------------------------------------------------------ */
+static void recRSQRThelper1(int regd, int t0reg) /* Preforms the RSQRT function when regd <- Fs and t0reg <- Ft (Sets correct flags) */
 {
 	u8 *pjmp1, *pjmp2;
 	uint8_t* pjmp32;
 	u8 *qjmp1, *qjmp2;
 	int t1reg = _allocTempXMMreg(XMMT_FPS);
 
-	xe_and32_mi(&fpuRegs.fprc[31], ~(FPUflagI | FPUflagD)); // Clear I and D flags
+	xe_and32_mi(&fpuRegs.fprc[31], ~(FPUflagI | FPUflagD)); /* Clear I and D flags */
 
 	/*--- (first) Check for negative SQRT ---*/
 	xe_movmskps_rx(XE_AX, t0reg);
-	xe_and32_ri(XE_AX, 1); //Check sign
-	xe_fwd_jcc8(Jcc_Zero, pjmp2); //Skip if not set
-		xe_or32_mi(&fpuRegs.fprc[31], FPUflagI | FPUflagSI); // Set I and SI flags
-		xe_andps_xm(t0reg, &s_pos[0]); // Make t0reg Positive
+	xe_and32_ri(XE_AX, 1); /* Check sign */
+	xe_fwd_jcc8(Jcc_Zero, pjmp2); /* Skip if not set */
+		xe_or32_mi(&fpuRegs.fprc[31], FPUflagI | FPUflagSI); /* Set I and SI flags */
+		xe_andps_xm(t0reg, &s_pos[0]); /* Make t0reg Positive */
 	xe_fwd_set8(pjmp2);
 
 	/*--- Check for zero ---*/
 	xe_xorps_xx(t1reg, t1reg);
 	xe_cmpeqss_xx(t1reg, t0reg);
 	xe_movmskps_rx(XE_AX, t1reg);
-	xe_and32_ri(XE_AX, 1); //Check sign (if t0reg == zero, sign will be set)
-	xe_fwd_jcc8(Jcc_Zero, pjmp1); //Skip if not set
+	xe_and32_ri(XE_AX, 1); /* Check sign (if t0reg == zero, sign will be set) */
+	xe_fwd_jcc8(Jcc_Zero, pjmp1); /* Skip if not set */
 		/*--- Check for 0/0 ---*/
 		xe_xorps_xx(t1reg, t1reg);
 		xe_cmpeqss_xx(t1reg, regd);
 		xe_movmskps_rx(XE_AX, t1reg);
-		xe_and32_ri(XE_AX, 1); //Check sign (if regd == zero, sign will be set)
-		xe_fwd_jcc8(Jcc_Zero, qjmp1); //Skip if not set
-			xe_or32_mi(&fpuRegs.fprc[31], FPUflagI | FPUflagSI); // Set I and SI flags ( 0/0 )
+		xe_and32_ri(XE_AX, 1); /* Check sign (if regd == zero, sign will be set) */
+		xe_fwd_jcc8(Jcc_Zero, qjmp1); /* Skip if not set */
+			xe_or32_mi(&fpuRegs.fprc[31], FPUflagI | FPUflagSI); /* Set I and SI flags ( 0/0 ) */
 			xe_fwd_jcc8(Jcc_Unconditional, qjmp2);
-		xe_fwd_set8(qjmp1); //x/0 but not 0/0
-			xe_or32_mi(&fpuRegs.fprc[31], FPUflagD | FPUflagSD); // Set D and SD flags ( x/0 )
+		xe_fwd_set8(qjmp1); /* x/0 but not 0/0 */
+			xe_or32_mi(&fpuRegs.fprc[31], FPUflagD | FPUflagSD); /* Set D and SD flags ( x/0 ) */
 		xe_fwd_set8(qjmp2);
 
 		/*--- Make regd +/- Maximum ---*/
-		xe_andps_xm(regd, &s_neg[0]); // Get the sign bit
-		xe_orps_xm(regd, &g_maxvals[0]); // regd = +/- Maximum
+		xe_andps_xm(regd, &s_neg[0]); /* Get the sign bit */
+		xe_orps_xm(regd, &g_maxvals[0]); /* regd = +/- Maximum */
 		xe_fwd_jcc32(Jcc_Unconditional, pjmp32);
 	xe_fwd_set8(pjmp1);
 
 	if (CHECK_FPU_EXTRA_OVERFLOW)
 	{
-		xe_minss_xm(t0reg, &g_maxvals[0]); // Only need to do positive clamp, since t0reg is positive
+		xe_minss_xm(t0reg, &g_maxvals[0]); /* Only need to do positive clamp, since t0reg is positive */
 		fpuFloat2(regd);
 	}
 
@@ -1695,7 +1678,7 @@ static void recRSQRThelper1(int regd, int t0reg) // Preforms the RSQRT function 
 
 void recRSQRT_S_xmm(int info)
 {
-	// RSQRT doesn't change the round mode, because RSQRTSS ignores the rounding mode in MXCSR.
+	/* RSQRT doesn't change the round mode, because RSQRTSS ignores the rounding mode in MXCSR. */
 	const int t0reg = _allocTempXMMreg(XMMT_FPS);
 
 	switch (info & (PROCESS_EE_S | PROCESS_EE_T))
@@ -1717,12 +1700,12 @@ void recRSQRT_S_xmm(int info)
 			xe_movss_xm(EEREC_D, &fpuRegs.fpr[_Fs_]);
 			break;
 	}
-	// Sets D/I flags on FPU instructions
+	/* Sets D/I flags on FPU instructions */
 	recRSQRThelper1(EEREC_D, t0reg);
 	_freeXMMreg(t0reg);
 }
 
 FPURECOMPILE_CONSTCODE_SOFT(RSQRT_S, XMMINFO_WRITED | XMMINFO_READS | XMMINFO_READT);
 
-#endif // FPU_RECOMPILE
+#endif /* FPU_RECOMPILE */
 

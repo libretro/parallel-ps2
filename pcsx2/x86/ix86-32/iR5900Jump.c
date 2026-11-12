@@ -23,10 +23,9 @@
 * Format:  OP target                                     *
 *********************************************************/
 
-////////////////////////////////////////////////////
 void recJ(void)
 {
-	// SET_FPUSTATE;
+	/* SET_FPUSTATE; */
 	u32 newpc = (_InstrucTarget_ << 2) + (pc & 0xf0000000);
 	recompileNextInstruction(1, 0);
 	if (EmuConfig.Gamefixes.GoemonTlbHack)
@@ -35,7 +34,6 @@ void recJ(void)
 		SetBranchImm(newpc);
 }
 
-////////////////////////////////////////////////////
 void recJAL(void)
 {
 	u32 newpc = (_InstrucTarget_ << 2) + (pc & 0xf0000000);
@@ -56,35 +54,33 @@ void recJAL(void)
 * Format:  OP rs, rd                                     *
 *********************************************************/
 
-////////////////////////////////////////////////////
 void recJR(void)
 {
 	SetBranchReg(_Rs_);
 }
 
-////////////////////////////////////////////////////
 void recJALR(void)
 {
 	const u32 newpc = pc + 4;
 	const int swap = (EmuConfig.Gamefixes.GoemonTlbHack || _Rd_ == _Rs_) ? 0 : TrySwapDelaySlot(_Rs_, 0, _Rd_, 1);
 
-	// uncomment when there are NO instructions that need to call interpreter
-	//	int mmreg;
-	//	if (GPR_IS_CONST1(_Rs_))
-	//		xMOV(ptr32[&cpuRegs.pc], g_cpuConstRegs[_Rs_].UL[0]);
-	//	else
-	//	{
-	//		int mmreg;
-	//
-	//		if ((mmreg = _checkXMMreg(XMMTYPE_GPRREG, _Rs_, MODE_READ)) >= 0)
-	//		{
-	//			xMOVSS(ptr[&cpuRegs.pc], xRegisterSSE(mmreg));
-	//		}
-	//		else {
-	//			xMOV(eax, ptr[(void*)((int)&cpuRegs.GPR.r[_Rs_].UL[0])]);
-	//			xe_mov32_mr(&cpuRegs.pc, XE_AX);
-	//		}
-	//	}
+	/* uncomment when there are NO instructions that need to call interpreter */
+	/* 	int mmreg; */
+	/* 	if (GPR_IS_CONST1(_Rs_)) */
+	/* 		xMOV(ptr32[&cpuRegs.pc], g_cpuConstRegs[_Rs_].UL[0]); */
+	/* 	else */
+	/* 	{ */
+	/* 		int mmreg; */
+
+	/* 		if ((mmreg = _checkXMMreg(XMMTYPE_GPRREG, _Rs_, MODE_READ)) >= 0) */
+	/* 		{ */
+	/* 			xMOVSS(ptr[&cpuRegs.pc], xRegisterSSE(mmreg)); */
+	/* 		} */
+	/* 		else { */
+	/* 			xMOV(eax, ptr[(void*)((int)&cpuRegs.GPR.r[_Rs_].UL[0])]); */
+	/* 			xe_mov32_mr(&cpuRegs.pc, XE_AX); */
+	/* 		} */
+	/* 	} */
 
 	int wbreg = -1;
 	if (!swap)
@@ -111,7 +107,7 @@ void recJALR(void)
 	{
 		recompileNextInstruction(1, 0);
 
-		// the next instruction may have flushed the register.. so reload it if so.
+		/* the next instruction may have flushed the register.. so reload it if so. */
 		if (x86regs[wbreg].inuse && x86regs[wbreg].type == X86TYPE_PCWRITEBACK)
 		{
 			xe_mov32_mr(&cpuRegs.pc, wbreg);
@@ -138,5 +134,4 @@ void recJALR(void)
 
 	SetBranchReg(0xffffffff);
 }
-
 

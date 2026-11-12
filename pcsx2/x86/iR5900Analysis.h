@@ -18,9 +18,16 @@
 #include "iR5900.h"
 #include "iCore.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 	/* Block-analysis passes, C89 shape: free functions, stack state.
 	 * Both scan [start, end) with inst_cache aligned to start. */
 	void COP2FlagHackPass_Run(u32 start, u32 end, EEINST* inst_cache);
 	void COP2MicroFinishPass_Run(u32 start, u32 end, EEINST* inst_cache);
 
 void recBackpropBSC(u32 code, EEINST* prev, EEINST* pinst);
+#ifdef __cplusplus
+}
+#endif

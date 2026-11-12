@@ -22,7 +22,7 @@
  *  carries both an interpret and a recompile pointer, and OP_ENTRY
  *  fills them from one name token, as int##name and rec##name. A slot cannot hold the interpreter for one op and the
  *  emitter for another. The IOP needed its own audit precisely because it
- *  does keep two tables, in R3000AOpcodeTables.c and iR3000Atables.cpp,
+ *  does keep two tables, in R3000AOpcodeTables.c and iR3000Atables.c,
  *  which can disagree.
  *
  *  The arm64 EE recompiler is a third dispatch path and is not covered by

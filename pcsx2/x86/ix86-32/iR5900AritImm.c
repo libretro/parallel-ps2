@@ -22,7 +22,6 @@
 * Format:  OP rt, rs, immediate                          *
 *********************************************************/
 
-
 static void recMoveStoT(int info)
 {
 	if (info & PROCESS_EE_S)
@@ -39,10 +38,10 @@ static void recMoveStoT64(int info)
 		xe_mov64_rm(EEREC_T, &cpuRegs.GPR.r[_Rs_].UD[0]);
 }
 
-//// ADDI
+/* // ADDI */
 static void recADDI_const(void)
 {
-	g_cpuConstRegs[_Rt_].SD[0] = s64(s32(g_cpuConstRegs[_Rs_].UL[0] + u32(s32(_Imm_))));
+	g_cpuConstRegs[_Rt_].SD[0] = (s64)((s32)(g_cpuConstRegs[_Rs_].UL[0] + (u32)((s32)(_Imm_))));
 }
 
 static void recADDI_(int info)
@@ -54,16 +53,14 @@ static void recADDI_(int info)
 
 EERECOMPILE_CODEX(eeRecompileCodeRC1, ADDI, XMMINFO_WRITET | XMMINFO_READS);
 
-////////////////////////////////////////////////////
 void recADDIU()
 {
 	recADDI();
 }
 
-////////////////////////////////////////////////////
-static void recDADDI_const()
+static void recDADDI_const(void)
 {
-	g_cpuConstRegs[_Rt_].UD[0] = g_cpuConstRegs[_Rs_].UD[0] + u64(s64(_Imm_));
+	g_cpuConstRegs[_Rt_].UD[0] = g_cpuConstRegs[_Rs_].UD[0] + (u64)((s64)(_Imm_));
 }
 
 static void recDADDI_(int info)
@@ -74,21 +71,21 @@ static void recDADDI_(int info)
 
 EERECOMPILE_CODEX(eeRecompileCodeRC1, DADDI, XMMINFO_WRITET | XMMINFO_READS | XMMINFO_64BITOP);
 
-//// DADDIU
+/* // DADDIU */
 void recDADDIU()
 {
 	recDADDI();
 }
 
-//// SLTIU
-static void recSLTIU_const()
+/* // SLTIU */
+static void recSLTIU_const(void)
 {
 	g_cpuConstRegs[_Rt_].UD[0] = g_cpuConstRegs[_Rs_].UD[0] < (u64)(_Imm_);
 }
 
 static void recSLTIU_(int info)
 {
-	// TODO(Stenzek): this can be made to suck less by turning Rs into a temp and reallocating Rt.
+	/* TODO(Stenzek): this can be made to suck less by turning Rs into a temp and reallocating Rt. */
 	const int dreg = (_Rt_ == _Rs_) ? _allocX86reg(X86TYPE_TEMP, 0, 0) : EEREC_T;
 	xe_xor32_rr(dreg, dreg);
 
@@ -108,8 +105,8 @@ static void recSLTIU_(int info)
 
 EERECOMPILE_CODEX(eeRecompileCodeRC1, SLTIU, XMMINFO_WRITET | XMMINFO_READS | XMMINFO_64BITOP | XMMINFO_NORENAME);
 
-//// SLTI
-static void recSLTI_const()
+/* // SLTI */
+static void recSLTI_const(void)
 {
 	g_cpuConstRegs[_Rt_].UD[0] = g_cpuConstRegs[_Rs_].SD[0] < (s64)(_Imm_);
 }
@@ -135,21 +132,18 @@ static void recSLTI_(int info)
 
 EERECOMPILE_CODEX(eeRecompileCodeRC1, SLTI, XMMINFO_WRITET | XMMINFO_READS | XMMINFO_64BITOP | XMMINFO_NORENAME);
 
-//// ANDI
-static void recANDI_const()
+/* // ANDI */
+static void recANDI_const(void)
 {
-	g_cpuConstRegs[_Rt_].UD[0] = g_cpuConstRegs[_Rs_].UD[0] & (u64)_ImmU_; // Zero-extended Immediate
+	g_cpuConstRegs[_Rt_].UD[0] = g_cpuConstRegs[_Rs_].UD[0] & (u64)_ImmU_; /* Zero-extended Immediate */
 }
 
-namespace
-{
-enum LogicalOp
+typedef enum LogicalOp
 {
 	LOGICALOP_AND,
 	LOGICALOP_OR,
 	LOGICALOP_XOR
-};
-} // namespace
+} LogicalOp;
 
 static void recLogicalOpI(int info, enum LogicalOp op)
 {
@@ -179,10 +173,9 @@ static void recANDI_(int info)
 
 EERECOMPILE_CODEX(eeRecompileCodeRC1, ANDI, XMMINFO_WRITET | XMMINFO_READS | XMMINFO_64BITOP);
 
-////////////////////////////////////////////////////
-static void recORI_const()
+static void recORI_const(void)
 {
-	g_cpuConstRegs[_Rt_].UD[0] = g_cpuConstRegs[_Rs_].UD[0] | (u64)_ImmU_; // Zero-extended Immediate
+	g_cpuConstRegs[_Rt_].UD[0] = g_cpuConstRegs[_Rs_].UD[0] | (u64)_ImmU_; /* Zero-extended Immediate */
 }
 
 static void recORI_(int info)
@@ -192,10 +185,9 @@ static void recORI_(int info)
 
 EERECOMPILE_CODEX(eeRecompileCodeRC1, ORI, XMMINFO_WRITET | XMMINFO_READS | XMMINFO_64BITOP);
 
-////////////////////////////////////////////////////
-static void recXORI_const()
+static void recXORI_const(void)
 {
-	g_cpuConstRegs[_Rt_].UD[0] = g_cpuConstRegs[_Rs_].UD[0] ^ (u64)_ImmU_; // Zero-extended Immediate
+	g_cpuConstRegs[_Rt_].UD[0] = g_cpuConstRegs[_Rs_].UD[0] ^ (u64)_ImmU_; /* Zero-extended Immediate */
 }
 
 static void recXORI_(int info)
@@ -204,5 +196,4 @@ static void recXORI_(int info)
 }
 
 EERECOMPILE_CODEX(eeRecompileCodeRC1, XORI, XMMINFO_WRITET | XMMINFO_READS | XMMINFO_64BITOP);
-
 

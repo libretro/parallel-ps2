@@ -14,7 +14,7 @@
  *
  * Build and run, from tests/recswitch:
  *   cc -O2 -std=c89 -pedantic -Wall recswitch.c -o recswitch
- *   ./recswitch ../../pcsx2/Config.h ../../pcsx2/x86/iFPU.cpp
+ *   ./recswitch ../../pcsx2/Config.h ../../pcsx2/x86/iFPU.c
  */
 #include <ctype.h>
 #include <stdio.h>

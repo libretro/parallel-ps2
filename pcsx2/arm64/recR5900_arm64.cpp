@@ -2315,7 +2315,7 @@ namespace
 
 } // pause the anonymous namespace: cop2flags has a global declaration
 
-// C.66: verbatim copy of x86 ix86-32/iR5900-32.cpp cop2flags() -- that TU is not
+// C.66: verbatim copy of x86 ix86-32/iR5900-32.c cop2flags() -- that TU is not
 // in the arm64 build. Returns a bitmask of the flags a COP2 macro op WRITES:
 // 1 = status, 2 = MAC, 4 = clip; 0 for non-flag ops, branches and transfers.
 // (Declared in arm64/aR5900Analysis.h.)
