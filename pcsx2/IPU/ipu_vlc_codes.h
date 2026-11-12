@@ -15,37 +15,37 @@
  *  Each pair (short window / long window) is the split the decoder's
  *  lookups use, not a property of the standard: the short table covers
  *  the codes resolvable in the narrow bit window and the long table the
- *  rest.  ipu_vlc.h expands these rows back into the indexed arrays the
- *  decode paths read, at compile time.
+ *  rest.  ipu_tables.c expands these rows back into the indexed arrays the
+ *  decode paths read, at the IPU's reset.
  */
 
 #pragma once
 
-#include <cstdint>
+#include "../../common/Pcsx2Types.h"
 
-struct VLCcode
+typedef struct VLCcode
 {
-	uint16_t bits;   /* code value, right-aligned; prefix truncated to
-	                       * the lookup window when the code is longer */
-	uint8_t  len;    /* code length in bits */
-	int16_t  value;  /* decoded value (modes, delta, cbp, mba, size) */
-};
+	u16 bits;   /* code value, right-aligned; prefix truncated to
+	             * the lookup window when the code is longer */
+	u8  len;    /* code length in bits */
+	s16 value;  /* decoded value (modes, delta, cbp, mba, size) */
+} VLCcode;
 
 /* MB_I: 3 codes, window 2 bits */
-static constexpr VLCcode VLC_MB_I[] =
+static const VLCcode VLC_MB_I[] =
 {
 	{0x001, 1,  1},{0x000, 2, 17},{0x001, 2, 17},
 };
 
 /* MB_P: 8 codes, window 6 bits */
-static constexpr VLCcode VLC_MB_P[] =
+static const VLCcode VLC_MB_P[] =
 {
 	{0x001, 1, 10},{0x001, 2,  2},{0x001, 3,  8},{0x001, 5, 18},{0x002, 5, 26},
 	{0x003, 5,  1},{0x000, 6, 17},{0x001, 6, 17},
 };
 
 /* MB_B: 11 codes, window 6 bits */
-static constexpr VLCcode VLC_MB_B[] =
+static const VLCcode VLC_MB_B[] =
 {
 	{0x002, 2, 12},{0x003, 2, 14},{0x002, 3,  4},{0x003, 3,  6},{0x002, 4,  8},
 	{0x003, 4, 10},{0x002, 5, 30},{0x003, 5,  1},{0x001, 6, 17},{0x002, 6, 22},
@@ -53,13 +53,13 @@ static constexpr VLCcode VLC_MB_B[] =
 };
 
 /* MV_4: 4 codes, window 4 bits */
-static constexpr VLCcode VLC_MV_4[] =
+static const VLCcode VLC_MV_4[] =
 {
 	{0x001, 2,  0},{0x001, 3,  1},{0x001, 4,  2},{0x000, 6,  3},
 };
 
 /* MV_10: 24 codes, window 10 bits */
-static constexpr VLCcode VLC_MV_10[] =
+static const VLCcode VLC_MV_10[] =
 {
 	{0x003, 7,  6},{0x004, 7,  5},{0x005, 7,  4},{0x009, 9,  9},{0x00a, 9,  8},
 	{0x00b, 9,  7},{0x000,10,  0},{0x001,10,  0},{0x002,10,  0},{0x003,10,  0},
@@ -69,13 +69,13 @@ static constexpr VLCcode VLC_MV_10[] =
 };
 
 /* DMV_2: 3 codes, window 2 bits */
-static constexpr VLCcode VLC_DMV_2[] =
+static const VLCcode VLC_DMV_2[] =
 {
 	{0x000, 1,  0},{0x002, 2,  1},{0x003, 2, -1},
 };
 
 /* CBP_7: 29 codes, window 7 bits */
-static constexpr VLCcode VLC_CBP_7[] =
+static const VLCcode VLC_CBP_7[] =
 {
 	{0x007, 3, 60},{0x00a, 4, 32},{0x00b, 4, 16},{0x00c, 4,  8},{0x00d, 4,  4},
 	{0x008, 5, 62},{0x009, 5,  2},{0x00a, 5, 61},{0x00b, 5,  1},{0x00c, 5, 56},
@@ -86,7 +86,7 @@ static constexpr VLCcode VLC_CBP_7[] =
 };
 
 /* CBP_9: 35 codes, window 9 bits */
-static constexpr VLCcode VLC_CBP_9[] =
+static const VLCcode VLC_CBP_9[] =
 {
 	{0x004, 8, 58},{0x005, 8, 54},{0x006, 8, 46},{0x007, 8, 30},{0x008, 8, 57},
 	{0x009, 8, 53},{0x00a, 8, 45},{0x00b, 8, 29},{0x00c, 8, 38},{0x00d, 8, 26},
@@ -99,14 +99,14 @@ static constexpr VLCcode VLC_CBP_9[] =
 };
 
 /* MBA5: 7 codes, window 5 bits */
-static constexpr VLCcode VLC_MBA5[] =
+static const VLCcode VLC_MBA5[] =
 {
 	{0x001, 1,  0},{0x002, 3,  2},{0x003, 3,  1},{0x002, 4,  4},{0x003, 4,  3},
 	{0x002, 5,  6},{0x003, 5,  5},
 };
 
 /* MBA11: 26 codes, window 11 bits */
-static constexpr VLCcode VLC_MBA11[] =
+static const VLCcode VLC_MBA11[] =
 {
 	{0x006, 7,  8},{0x007, 7,  7},{0x006, 8, 14},{0x007, 8, 13},{0x008, 8, 12},
 	{0x009, 8, 11},{0x00a, 8, 10},{0x00b, 8,  9},{0x012,10, 20},{0x013,10, 19},
@@ -117,28 +117,28 @@ static constexpr VLCcode VLC_MBA11[] =
 };
 
 /* DC_LUM0: 7 codes, window 5 bits */
-static constexpr VLCcode VLC_DC_LUM0[] =
+static const VLCcode VLC_DC_LUM0[] =
 {
 	{0x000, 2,  1},{0x001, 2,  2},{0x004, 3,  0},{0x005, 3,  3},{0x006, 3,  4},
 	{0x00e, 4,  5},{0x01e, 5,  6},
 };
 
 /* DC_LUM1: 5 codes, window 9 bits */
-static constexpr VLCcode VLC_DC_LUM1[] =
+static const VLCcode VLC_DC_LUM1[] =
 {
 	{0x03e, 6,  7},{0x07e, 7,  8},{0x0fe, 8,  9},{0x1fe, 9, 10},{0x1ff, 9, 11},
 	
 };
 
 /* DC_CHROM0: 6 codes, window 5 bits */
-static constexpr VLCcode VLC_DC_CHROM0[] =
+static const VLCcode VLC_DC_CHROM0[] =
 {
 	{0x000, 2,  0},{0x001, 2,  1},{0x002, 2,  2},{0x006, 3,  3},{0x00e, 4,  4},
 	{0x01e, 5,  5},
 };
 
 /* DC_CHROM1: 6 codes, window 10 bits */
-static constexpr VLCcode VLC_DC_CHROM1[] =
+static const VLCcode VLC_DC_CHROM1[] =
 {
 	{0x03e, 6,  6},{0x07e, 7,  7},{0x0fe, 8,  8},{0x1fe, 9,  9},{0x3fe,10, 10},
 	{0x3ff,10, 11},

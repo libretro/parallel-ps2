@@ -325,19 +325,17 @@ SOURCES_C += \
 # pcsx2/Frontend
 SOURCES_CXX += \
 
-# pcsx2/IPU. The registers and the leaf kernels build as C; the decoder,
-# compiled once per ISA, stays C++.
+# pcsx2/IPU, all C; the decoder is compiled once per ISA (Makefile).
 SOURCES_C += \
 	$(LRPS2_DIR)/IPU/IPU.c \
+	$(LRPS2_DIR)/IPU/IPU_MultiISA.c \
 	$(LRPS2_DIR)/IPU/IPUdither.c \
 	$(LRPS2_DIR)/IPU/ipu_csc.c \
 	$(LRPS2_DIR)/IPU/ipu_idct.c \
+	$(LRPS2_DIR)/IPU/ipu_tables.c \
 	$(LRPS2_DIR)/IPU/IPU_Fifo.c \
 	$(LRPS2_DIR)/IPU/IPUdma.c \
 	$(LRPS2_DIR)/IPU/yuv2rgb.c
-
-SOURCES_CXX += \
-	$(LRPS2_DIR)/IPU/IPU_MultiISA.cpp
 
 # pcsx2/PAD
 SOURCES_C += $(LRPS2_DIR)/PAD/PAD.c

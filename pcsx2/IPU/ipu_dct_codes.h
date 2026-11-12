@@ -13,25 +13,25 @@
  *  DCT_CODES_INTRA Table B-15, the intra-macroblock table selected by
  *                  IPU_CTRL.IVF
  *
- *  ipu_dct_lut.h expands these into the decoder's flat lookup at
- *  compile time.  Expressed this way the tables carry no layout from
+ *  ipu_tables.c expands these into the decoder's flat lookup at the
+ *  IPU's reset.  Expressed this way the tables carry no layout from
  *  any particular decoder implementation - they are the standard's own
  *  code assignments, which is what the hardware implements.
  */
 
 #pragma once
 
-#include <cstdint>
+#include "../../common/Pcsx2Types.h"
 
-struct DCTcode
+typedef struct DCTcode
 {
-	uint16_t bits;  /* code value, right-aligned */
-	uint8_t  len;   /* code length in bits */
-	uint8_t  run;   /* zero-run, 64 = EOB, 65 = escape */
-	uint8_t  level;
-};
+	u16 bits;  /* code value, right-aligned */
+	u8  len;   /* code length in bits */
+	u8  run;   /* zero-run, 64 = EOB, 65 = escape */
+	u8  level;
+} DCTcode;
 
-static constexpr DCTcode DCT_CODES_NEXT[] =
+static const DCTcode DCT_CODES_NEXT[] =
 {
 	{0x0002, 2,64, 0},{0x0003, 2, 0, 1},{0x0003, 3, 1, 1},{0x0004, 4, 0, 2},{0x0005, 4, 2, 1},
 	{0x0005, 5, 0, 3},{0x0006, 5, 4, 1},{0x0007, 5, 3, 1},{0x0001, 6,65, 0},{0x0004, 6, 7, 1},
@@ -58,7 +58,7 @@ static constexpr DCTcode DCT_CODES_NEXT[] =
 	{0x001d,16,29, 1},{0x001e,16,28, 1},{0x001f,16,27, 1},
 };
 
-static constexpr DCTcode DCT_CODES_FIRST[] =
+static const DCTcode DCT_CODES_FIRST[] =
 {
 	{0x0001, 1, 0, 1},{0x0003, 3, 1, 1},{0x0004, 4, 0, 2},{0x0005, 4, 2, 1},{0x0005, 5, 0, 3},
 	{0x0006, 5, 4, 1},{0x0007, 5, 3, 1},{0x0001, 6,65, 0},{0x0004, 6, 7, 1},{0x0005, 6, 6, 1},
@@ -85,7 +85,7 @@ static constexpr DCTcode DCT_CODES_FIRST[] =
 	{0x001e,16,28, 1},{0x001f,16,27, 1},
 };
 
-static constexpr DCTcode DCT_CODES_INTRA[] =
+static const DCTcode DCT_CODES_INTRA[] =
 {
 	{0x0002, 2, 0, 1},{0x0002, 3, 1, 1},{0x0006, 3, 0, 2},{0x0006, 4,64, 0},{0x0007, 4, 0, 3},
 	{0x0005, 5, 2, 1},{0x0006, 5, 1, 2},{0x0007, 5, 3, 1},{0x001c, 5, 0, 4},{0x001d, 5, 0, 5},

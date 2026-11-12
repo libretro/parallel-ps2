@@ -170,6 +170,8 @@
     <ClCompile Include="IPU\IPU.c" />
     <ClCompile Include="IPU\ipu_csc.c" />
     <ClCompile Include="IPU\ipu_idct.c" />
+    <ClCompile Include="IPU\IPU_MultiISA.c" />
+    <ClCompile Include="IPU\ipu_tables.c" />
     <ClCompile Include="IPU\yuv2rgb.c" />
     <ClCompile Include="Mdec.c" />
     <ClCompile Include="Patch.c" />

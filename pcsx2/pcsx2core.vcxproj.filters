@@ -581,7 +581,10 @@
     <ClCompile Include="IPU\ipu_idct.c">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
-    <ClCompile Include="IPU\IPU_MultiISA.cpp">
+    <ClCompile Include="IPU\ipu_tables.c">
+      <Filter>System\Ps2\IPU</Filter>
+    </ClCompile>
+    <ClCompile Include="IPU\IPU_MultiISA.c">
       <Filter>System\Ps2\IPU</Filter>
     </ClCompile>
     <ClCompile Include="IPU\yuv2rgb.c">

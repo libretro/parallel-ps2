@@ -15,5 +15,5 @@ esac
 CFLAGS="-std=gnu89 -O1 -g -Wall -Wno-unused-function -Werror=declaration-after-statement $INC -D__LIBRETRO__ -msse4.1"
 SCRATCH=$(mktemp -d)
 trap 'rm -rf "$SCRATCH"' EXIT
-"$CC" $CFLAGS $SANFLAGS -o "$SCRATCH/ipureg$EXE" "$DIR/main.c" "$ROOT/pcsx2/IPU/IPU.c" "$ROOT/pcsx2/IPU/IPU_Fifo.c"
+"$CC" $CFLAGS $SANFLAGS -o "$SCRATCH/ipureg$EXE" "$DIR/main.c" "$ROOT/pcsx2/IPU/IPU.c" "$ROOT/pcsx2/IPU/IPU_Fifo.c" "$ROOT/pcsx2/IPU/ipu_tables.c"
 "$SCRATCH/ipureg$EXE"

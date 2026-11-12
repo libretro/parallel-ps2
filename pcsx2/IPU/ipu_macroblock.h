@@ -21,15 +21,15 @@
 #include "../../common/Pcsx2Types.h"
 
 typedef struct macroblock_8{
-	u8 Y[16][16];		//0
-	u8 Cb[8][8];		//1
-	u8 Cr[8][8];		//2
+	u8 Y[16][16];		/* 0 */
+	u8 Cb[8][8];		/* 1 */
+	u8 Cr[8][8];		/* 2 */
 } macroblock_8;
 
 typedef struct macroblock_16{
-	s16 Y[16][16];			//0
-	s16 Cb[8][8];			//1
-	s16 Cr[8][8];			//2
+	s16 Y[16][16];			/* 0 */
+	s16 Cb[8][8];			/* 1 */
+	s16 Cr[8][8];			/* 2 */
 } macroblock_16;
 
 typedef struct macroblock_rgb32{

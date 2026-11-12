@@ -66,3 +66,13 @@ else
 	echo
 	echo "skipping aarch64 lane (no cross toolchain or qemu)"
 fi
+
+# The decoder's own harnesses: the bit window, the inverse DCT, and real
+# MPEG-2 slices through the slice decoder with its tables. They were
+# reachable only by name, and the slice one had stopped building when the
+# FIFO became C with nothing noticing; run here, CI runs them.
+for h in bitstream_build idct_build slice_build; do
+	echo
+	echo "##### $h"
+	sh "$DIR/$h.sh" "$1"
+done

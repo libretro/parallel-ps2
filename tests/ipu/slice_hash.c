@@ -24,9 +24,10 @@
  *   ./slice_build.sh --print    print hashes to re-pin
  */
 
-#include <cstdio>
-#include <cstring>
-#include <cstdlib>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdint.h>
 
 /* ------------------------------------------------------------------ */
 /* Everything the decoder TU expects to find at link time.             */
@@ -39,37 +40,37 @@
 /* ipuRegs and ipu0ch are references into eeHw, so defining that array is
  * what makes the register and channel state the decoder reads exist. */
 PCSX2_ALIGN(__pagealignsize) u8 eeHw[PS2MEM_HARDWARE];
-alignas(16) cpuRegisters cpuRegs;
+PCSX2_ALIGN(16) cpuRegisters cpuRegs;
 
-alignas(16) decoder_t decoder;
-alignas(16) tIPU_BP g_BP;
-alignas(16) tIPU_cmd ipu_cmd;
+PCSX2_ALIGN(16) decoder_t decoder;
+PCSX2_ALIGN(16) tIPU_BP g_BP;
+PCSX2_ALIGN(16) tIPU_cmd ipu_cmd;
 IPUStatus IPUCoreStatus;
-alignas(16) IPU_Fifo ipu_fifo;
+PCSX2_ALIGN(16) IPU_Fifo ipu_fifo;
 int coded_block_pattern;
 
 /* From IPU.c, which the harness does not link: the MPEG-2 non-linear
  * quantiser scale table. */
-alignas(16) const int non_linear_quantizer_scale[32] =
+PCSX2_ALIGN(16) const int non_linear_quantizer_scale[32] =
 {
 	0,  1,  2,  3,  4,  5,	6,	7,
 	8, 10, 12, 14, 16, 18,  20,  22,
 	24, 28, 32, 36, 40, 44,  48,  52,
 	56, 64, 72, 80, 88, 96, 104, 112
 };
-alignas(16) u8 g_ipu_indx4[16 * 16 / 2];
+PCSX2_ALIGN(16) u8 g_ipu_indx4[16 * 16 / 2];
 rgb16_t g_ipu_vqclut[16];
 u16 g_ipu_thresh[2];
 
-void CPU_INT(EE_EventType, int) {}
-void hwIntcIrq(int) {}
+void CPU_INT(EE_EventType n, int cycles) { (void)n; (void)cycles; }
+void hwIntcIrq(int n) { (void)n; }
 
 /* The IDEC and CSC paths reach EE memory. They are not on the route this
  * drives, and at -O1 and above the optimiser drops them, but the harness
  * should link without depending on that -- not least so it can be built at
  * -O0, where a sanitizer reports most clearly. */
-RETURNS_R128 vtlb_memRead128(u32) { return r128_zero(); }
-void TAKES_R128 vtlb_memWrite128(u32, r128) {}
+RETURNS_R128 vtlb_memRead128(u32 mem) { (void)mem; return r128_zero(); }
+void TAKES_R128 vtlb_memWrite128(u32 mem, r128 value) { (void)mem; (void)value; }
 
 /* ---- the input FIFO is where the slice bits come from ---- */
 
@@ -83,7 +84,7 @@ static size_t g_src_qwc;   /* next quadword to hand over */
 static int g_starve;
 static unsigned g_starve_tick;
 
-int IPU_Fifo_Input::read(void *value)
+static int fifo_in_read(void *value)
 {
 	u8 *dst = (u8 *)value;
 	size_t off = g_src_qwc * 16;
@@ -107,30 +108,29 @@ int IPU_Fifo_Input::read(void *value)
 	return 1;
 }
 
-/* The bit pointer reaches the FIFO through this, as IPU_Fifo.cpp provides
+/* The bit pointer reaches the FIFO through this, as IPU_Fifo.c provides
  * it in the emulator. */
-extern "C" int ipu_fifo_in_read(void *value)
+int ipu_fifo_in_read(void *value)
 {
-	return ipu_fifo.in.read(value);
+	return fifo_in_read(value);
 }
 
 /* ---- the output FIFO is not what this checks; mb8 is ---- */
 
-int IPU_Fifo_Output::write(const u32 *, u32 size)
+int ipu_fifo_out_write(const u32 *value, uint size)
 {
-	return size;
+	(void)value;
+	return (int)size;
 }
 
 /* Negative testing: build with -DIPU_MUTANT against a copy of the decoder
  * carrying a deliberate defect, to show this harness rejects it. Nothing
  * in the tree defines it. */
 #ifdef IPU_MUTANT
-#include "IPU/mutant_dec.cpp"
+#include "IPU/mutant_dec.c"
 #else
-#include "IPU/IPU_MultiISA.cpp"
+#include "IPU/IPU_MultiISA.c"
 #endif
-
-using namespace CURRENT_ISA;
 
 #include "stream_fixtures.h"
 
@@ -391,9 +391,11 @@ int main(int argc, char **argv)
 	const double tight_mean = 1.0,  loose_mean = 12.0;
 	const long   tight_peak = 8,    loose_peak = 110;
 
-	/* Before anything is decoded, as in a process that has just loaded
-	 * the state. */
-	const int resumed_ok = resume_from_state();
+	/* The tables, as the IPU's reset fills them; then, before anything is
+	 * decoded, as in a process that has just loaded the state. */
+	int resumed_ok;
+	ipu_tables_init();
+	resumed_ok = resume_from_state();
 
 	printf("tier: ");
 #if defined(__AVX2__)
@@ -653,6 +655,20 @@ int main(int argc, char **argv)
 	printf("  resume from a state: %s\n", resumed_ok ? "ok" : "FAILED");
 	if (!resumed_ok)
 		failures++;
+
+	/* Every decode table as ipu_tables_init expands it from the code
+	 * lists, the P and B picture ones too, which the intra slices above
+	 * never reach: pinned from the tables the C++ built at compile time,
+	 * which the expansion reproduced byte for byte. */
+	{
+		const uint64_t want_t = 0xdccd49f42c930ad5ull;
+		uint64_t ht = hash_init();
+		hash_bytes(&ht, &ipu_tables, sizeof(ipu_tables));
+		printf("  tables %016llx%s\n", (unsigned long long)ht,
+		       ht == want_t ? "  ok" : "  UNEXPECTED");
+		if (ht != want_t)
+			failures++;
+	}
 
 	printf("  slice %016llx%s\n", (unsigned long long)h,
 	       want_h == 0 ? "  (unpinned)" :

@@ -15,9 +15,9 @@
 
 #pragma once
 
+#include <stddef.h>
 #include "IPU.h"
-#include "ipu_vlc.h"
-#include "../GS/MultiISA.h"
+#include "ipu_tables.h"
 
 
 
@@ -28,9 +28,9 @@
  * and these three sitting at multiples of 16 inside it. Add a field
  * ahead of one of them and this stops the build rather than faulting in
  * the middle of an FMV. */
-static_assert(offsetof(decoder_t, mb8)   % 16 == 0, "mb8 must stay 16-byte aligned within decoder_t");
-static_assert(offsetof(decoder_t, rgb32) % 16 == 0, "rgb32 must stay 16-byte aligned within decoder_t");
-static_assert(offsetof(decoder_t, rgb16) % 16 == 0, "rgb16 must stay 16-byte aligned within decoder_t");
+PCSX2_STATIC_ASSERT(offsetof(decoder_t, mb8)   % 16 == 0, "mb8 must stay 16-byte aligned within decoder_t");
+PCSX2_STATIC_ASSERT(offsetof(decoder_t, rgb32) % 16 == 0, "rgb32 must stay 16-byte aligned within decoder_t");
+PCSX2_STATIC_ASSERT(offsetof(decoder_t, rgb16) % 16 == 0, "rgb16 must stay 16-byte aligned within decoder_t");
 
 
 /* One build: the SSE2 form this is written in measures the same at every
@@ -40,17 +40,37 @@ extern "C"
 #endif
 void ipu_dither(const macroblock_rgb32 *rgb32, macroblock_rgb16 *rgb16, const int dte);
 
-MULTI_ISA_DEF(
-	void IPUWorker();
-)
+/* The decoder is built once per x86 instruction set tier (sse4, avx,
+ * avx2) with MULTI_ISA_UNSHARED_COMPILATION naming the tier, and once
+ * natively otherwise; each build's worker carries the tier's name, and
+ * ipu_select_worker (IPU.h) picks one for the CPU. */
+#define IPU_ISA_CAT2(a, b) a##_##b
+#define IPU_ISA_CAT(a, b) IPU_ISA_CAT2(a, b)
+#ifdef MULTI_ISA_UNSHARED_COMPILATION
+#define IPU_ISA_NAME(fn) IPU_ISA_CAT(fn, MULTI_ISA_UNSHARED_COMPILATION)
+#else
+#define IPU_ISA_NAME(fn) IPU_ISA_CAT(fn, isa_native)
+#endif
 
-/* The IPU's shared state (decoder, g_ipu_*, coded_block_pattern) is
- * declared in IPU.h. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-struct mpeg2_scan_pack
+void IPUWorker_isa_sse4(void);
+void IPUWorker_isa_avx(void);
+void IPUWorker_isa_avx2(void);
+void IPUWorker_isa_native(void);
+
+/* The zig-zag and alternate scans, each index with its low and high
+ * three bits swapped, as the IDCT's transposed blocks want them. */
+typedef struct mpeg2_scan_pack
 {
 	u8 norm[64];
 	u8 alt[64];
-};
+} mpeg2_scan_pack;
 
-alignas(16) extern const mpeg2_scan_pack mpeg2_scan;
+PCSX2_ALIGN(16) extern const mpeg2_scan_pack mpeg2_scan;
+
+#ifdef __cplusplus
+}
+#endif

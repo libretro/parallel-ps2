@@ -556,12 +556,13 @@ set(pcsx2IPUSources
 	IPU/IPUdither.c
 	IPU/ipu_csc.c
 	IPU/ipu_idct.c
+	IPU/ipu_tables.c
 	IPU/IPUdma.c
 	IPU/yuv2rgb.c
 )
 
 set(pcsx2IPUSourcesUnshared
-	IPU/IPU_MultiISA.cpp
+	IPU/IPU_MultiISA.c
 )
 
 # IPU headers
@@ -573,6 +574,7 @@ set(pcsx2IPUHeaders
 	IPU/IPUdma.h
 	IPU/ipu_dct_codes.h
 	IPU/ipu_dct_lut.h
+	IPU/ipu_tables.h
 	IPU/ipu_modes.h
 	IPU/ipu_vlc.h
 	IPU/ipu_vlc_codes.h

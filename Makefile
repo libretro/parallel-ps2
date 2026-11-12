@@ -656,8 +656,12 @@ MULTI_ISA_UNSHARED_SRC := \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRasterizer.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRendererSW.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.all.cpp \
-	$(LRPS2_DIR)/IPU/IPU_MultiISA.cpp
+	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.all.cpp
+
+# The C ones, which name their per-ISA functions after the tier rather
+# than taking a namespace.
+MULTI_ISA_UNSHARED_SRC_C := \
+	$(LRPS2_DIR)/IPU/IPU_MultiISA.c
 
 ifeq ($(IS_X86),1)
 ifeq ($(ENABLE_MULTI_ISA),1)
@@ -668,6 +672,7 @@ ifeq ($(ENABLE_MULTI_ISA),1)
    # Pull the unshared files out of the normal (single-compile) source list;
    # they are built per-tier below instead.
    SOURCES_CXX := $(filter-out $(MULTI_ISA_UNSHARED_SRC),$(SOURCES_CXX))
+   SOURCES_C   := $(filter-out $(MULTI_ISA_UNSHARED_SRC_C),$(SOURCES_C))
 
    # First tier in MULTI_ISA_TIERS is the "is-first" one (drives
    # MULTI_ISA_IS_FIRST / MULTI_ISA_COMPILE_ONCE so compile-once globals are
@@ -695,6 +700,13 @@ $(1:.cpp=.$(2).o): $(1)
 MULTI_ISA_OBJECTS += $(1:.cpp=.$(2).o)
 endef
 
+define MULTI_ISA_template_c
+$(1:.c=.$(2).o): MULTI_ISA_OBJ_FLAGS := $(MULTI_ISA_FLAGS_$(2)) -DMULTI_ISA_UNSHARED_COMPILATION=isa_$(2) -DMULTI_ISA_IS_FIRST=$(if $(filter $(2),$(MULTI_ISA_FIRST_TIER)),1,0)
+$(1:.c=.$(2).o): $(1)
+	$$(CC) -c $$(OBJOUT)$$@ $$< $$(CFLAGS) $$(MULTI_ISA_OBJ_FLAGS)
+MULTI_ISA_OBJECTS += $(1:.c=.$(2).o)
+endef
+
 ifeq ($(IS_X86),1)
 ifeq ($(ENABLE_MULTI_ISA),1)
    # ODR / link-order safety (the requirement that protects SSE4-or-earlier
@@ -717,7 +729,9 @@ ifeq ($(ENABLE_MULTI_ISA),1)
    # GS-sse4 / GS-avx / GS-avx2 as separate archives linked oldest-first.
    $(foreach tier,$(MULTI_ISA_TIERS),\
      $(foreach src,$(MULTI_ISA_UNSHARED_SRC),\
-       $(eval $(call MULTI_ISA_template,$(src),$(tier)))))
+       $(eval $(call MULTI_ISA_template,$(src),$(tier))))\
+     $(foreach src,$(MULTI_ISA_UNSHARED_SRC_C),\
+       $(eval $(call MULTI_ISA_template_c,$(src),$(tier)))))
 endif
 endif
 

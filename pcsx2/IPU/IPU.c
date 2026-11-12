@@ -22,6 +22,7 @@
 #include "IPU.h"
 #include "IPUdma.h"
 #include "ipu_modes.h"
+#include "ipu_tables.h"
 
 PCSX2_ALIGN(16) tIPU_cmd ipu_cmd;
 PCSX2_ALIGN(16) tIPU_BP g_BP;
@@ -94,6 +95,8 @@ void IPUProcessInterrupt(void)
 
 void ipuReset(void)
 {
+	/* the decode tables, before the decoder can run */
+	ipu_tables_init();
 	IPUWorker = ipu_select_worker();
 	memset(&ipuRegs, 0, sizeof(ipuRegs));
 	memset(&g_BP, 0, sizeof(g_BP));
