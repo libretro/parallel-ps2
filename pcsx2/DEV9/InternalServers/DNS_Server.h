@@ -13,113 +13,38 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef DEV9_DNS_SERVER_H
+#define DEV9_DNS_SERVER_H
+
+/* The internal DNS server: the PS2's A queries to 192.0.2.1:53 answered
+ * from the host's resolver, a thread per name. Queries in flight sit in a
+ * fixed set of slots; the network thread fills a free one and takes a
+ * finished one back, the last of its lookups to finish writes its reply.
+ * No locks, and nothing allocated per query. */
 
 #include "common/Pcsx2Defs.h"
-#include <retro_atomic.h>
-#include <unordered_map>
+#include "DEV9/AdapterUtils.h"
 
-#ifdef _WIN32
-#include <minwinbase.h>
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-#include "DEV9/SimpleQueue.h"
+typedef struct dns_server dns_server;
 
-#include "DEV9/PacketReader/IP/IP_Packet.h"
-#include "DEV9/PacketReader/IP/UDP/UDP_Packet.h"
-#include "DEV9/PacketReader/IP/UDP/DNS/DNS_Packet.h"
+dns_server* dns_server_new(void);
+/* Waits for lookups still in flight, which write into the server. */
+void dns_server_free(dns_server* server);
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <iphlpapi.h>
-#elif defined(__POSIX__)
-#include <sys/types.h>
-#include <compat/ifaddrs.h>
+/* 127.0.0.1 in an answer becomes the adapter's address. */
+void dns_server_set_adapter(dns_server* server, const net_adapter* adapter);
+
+/* A query the PS2 sent from src_port; whether it was taken. */
+bool dns_server_send(dns_server* server, const u8* payload, int len, u16 src_port);
+/* A finished reply into out and the port it goes to: its length, or 0. */
+int dns_server_recv(dns_server* server, u8* out, int cap, u16* dst_port);
+
+#ifdef __cplusplus
+}
 #endif
 
-namespace InternalServers
-{
-	class DNS_Server
-	{
-	private:
-		class DNS_State
-		{
-		public:
-			retro_atomic_int_t counter;
-
-			std::vector<std::string> questions;
-			PacketReader::IP::UDP::DNS::DNS_Packet* dns;
-			u16 clientPort;
-
-		private:
-			std::unordered_map<std::string, PacketReader::IP::IP_Address> answers;
-
-		public:
-			DNS_State(int count, std::vector<std::string> dnsQuestions, PacketReader::IP::UDP::DNS::DNS_Packet* dnsPacket, u16 port);
-
-			int AddAnswer(const std::string& answer, PacketReader::IP::IP_Address address);
-			int AddNoAnswer(const std::string& answer);
-
-			std::unordered_map<std::string, PacketReader::IP::IP_Address> GetAnswers();
-		};
-
-#ifdef _WIN32
-		bool wsa_init = false;
 #endif
-
-
-		PacketReader::IP::IP_Address localhostIP{{{127, 0, 0, 1}}};
-		std::unordered_map<std::string, PacketReader::IP::IP_Address> hosts;
-		retro_atomic_int_t outstandingQueries = RETRO_ATOMIC_INT_INITIALIZER(0);
-		SimpleQueue<PacketReader::IP::UDP::UDP_Packet*> dnsQueue;
-
-	public:
-		DNS_Server();
-
-#ifdef _WIN32
-		void Init(PIP_ADAPTER_ADDRESSES adapter);
-#elif defined(__POSIX__)
-		void Init(ifaddrs* adapter);
-#endif
-
-		//Recv
-		PacketReader::IP::UDP::UDP_Packet* Recv();
-		//Expects a UDP_payload
-		bool Send(PacketReader::IP::UDP::UDP_Packet* payload);
-
-		//This might block for a large amount of time
-		//if destruction takes place during DNS request
-		//and the OS configured DNS server is unreachable
-		~DNS_Server();
-
-	private:
-		void LoadHostList();
-		bool CheckHostList(std::string url, DNS_State* state);
-		void GetHost(std::string url, DNS_State* state);
-		void FinaliseDNS(DNS_State* state);
-
-#ifdef _WIN32
-		struct GetAddrInfoExCallbackData
-		{
-			OVERLAPPED overlapped{0};
-			void* result = nullptr;
-			HANDLE cancelHandle = nullptr;
-			DNS_State* state;
-			DNS_Server* session;
-			std::string url;
-		};
-
-		static void __stdcall GetAddrInfoExCallback(DWORD dwError, DWORD dwBytes, OVERLAPPED* lpOverlapped);
-#elif defined(__POSIX__)
-		void GetAddrInfoThread(std::string url, DNS_State* state);
-		/* The heap context a detached resolver thread takes and frees. */
-		struct GetHostCtx
-		{
-			DNS_Server* self;
-			std::string url;
-			DNS_State* state;
-		};
-		static void GetHostThreadEntry(void* arg);
-#endif
-	};
-} // namespace InternalServers

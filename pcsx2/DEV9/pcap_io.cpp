@@ -95,18 +95,16 @@ PCAPAdapter::PCAPAdapter()
 		return;
 	}
 
-	AdapterUtils::Adapter adapter;
-	AdapterUtils::AdapterBuffer buffer;
-	std::optional<MAC_Address> adMAC = std::nullopt;
-	const bool foundAdapter = AdapterUtils::GetAdapter(EmuConfig.DEV9.EthDevice, &adapter, &buffer);
-	if (foundAdapter)
-		adMAC = AdapterUtils::GetAdapterMAC(&adapter);
+	void* list;
+	const net_adapter* adapter = net_adapter_get(&list, EmuConfig.DEV9.EthDevice);
+	bool haveMAC = false;
+	if (adapter)
+		haveMAC = net_adapter_mac(adapter, hostMAC.bytes);
 	else
 		log_cb(RETRO_LOG_ERROR, "DEV9: Failed to get adapter information\n");
 
-	if (adMAC.has_value())
+	if (haveMAC)
 	{
-		hostMAC = adMAC.value();
 		MAC_Address newMAC = ps2MAC;
 
 		//Lets take the hosts last 2 bytes to make it unique on Xlink
@@ -122,6 +120,7 @@ PCAPAdapter::PCAPAdapter()
 		log_cb(RETRO_LOG_ERROR, "DEV9: Failed to get MAC address for adapter\n");
 		pcap_close(hpcap);
 		hpcap = nullptr;
+		net_adapter_free(list);
 		return;
 	}
 
@@ -130,13 +129,12 @@ PCAPAdapter::PCAPAdapter()
 		pcap_close(hpcap);
 		hpcap = nullptr;
 		log_cb(RETRO_LOG_ERROR, "DEV9: Can't open Device '%s'\n", EmuConfig.DEV9.EthDevice);
+		net_adapter_free(list);
 		return;
 	}
 
-	if (foundAdapter)
-		InitInternalServer(&adapter);
-	else
-		InitInternalServer(nullptr);
+	InitInternalServer(adapter);
+	net_adapter_free(list);
 }
 AdapterOptions PCAPAdapter::GetAdapterOptions()
 {
@@ -197,12 +195,10 @@ bool PCAPAdapter::send(NetPacket* pkt)
 
 void PCAPAdapter::reloadSettings()
 {
-	AdapterUtils::Adapter adapter;
-	AdapterUtils::AdapterBuffer buffer;
-	if (AdapterUtils::GetAdapter(EmuConfig.DEV9.EthDevice, &adapter, &buffer))
-		ReloadInternalServer(&adapter);
-	else
-		ReloadInternalServer(nullptr);
+	void* list;
+	const net_adapter* adapter = net_adapter_get(&list, EmuConfig.DEV9.EthDevice);
+	ReloadInternalServer(adapter);
+	net_adapter_free(list);
 }
 
 PCAPAdapter::~PCAPAdapter()
@@ -246,11 +242,14 @@ std::vector<AdapterEntry> PCAPAdapter::GetAdapters()
 
 		entry.guid = std::string(&d->name[strlen(PCAPPREFIX)]);
 
-		IP_ADAPTER_ADDRESSES adapterInfo;
-		std::unique_ptr<IP_ADAPTER_ADDRESSES[]> buffer;
+		void* list;
+		const net_adapter* adapterInfo = net_adapter_get(&list, entry.guid.c_str());
 
-		if (AdapterUtils::GetAdapter(entry.guid, &adapterInfo, &buffer))
-			entry.name = WideStringToUTF8String(std::wstring(adapterInfo.FriendlyName));
+		if (adapterInfo)
+		{
+			entry.name = WideStringToUTF8String(std::wstring(adapterInfo->FriendlyName));
+			net_adapter_free(list);
+		}
 		else
 		{
 			//have to use description

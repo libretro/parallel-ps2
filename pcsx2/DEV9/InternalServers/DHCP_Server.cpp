@@ -18,29 +18,6 @@
 
 #include "common/Pcsx2Defs.h"
 
-#ifdef __POSIX__
-#include <string>
-#include <vector>
-#include <fstream>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-
-#if defined(__APPLE__)
-#include <TargetConditionals.h>
-#endif
-
-/* <net/route.h> again: present on macOS and the BSDs, absent from the iOS and
- * tvOS SDKs. Nothing in this file reads a routing message, so the whole block
- * simply does not apply there. */
-#if defined(__FreeBSD__) || (defined(__APPLE__) && TARGET_OS_OSX)
-#include <sys/param.h>
-#include <sys/sysctl.h>
-#include <sys/socket.h>
-#include <net/if.h>
-#include <net/route.h>
-#endif
-#endif
-
 #include "DHCP_Server.h"
 #include "DEV9/PacketReader/IP/UDP/UDP_Packet.h"
 #include "DEV9/PacketReader/IP/UDP/DHCP/DHCP_Packet.h"
@@ -60,11 +37,7 @@ namespace InternalServers
 	{
 	}
 
-#ifdef _WIN32
-	void DHCP_Server::Init(PIP_ADAPTER_ADDRESSES adapter, IP_Address ipOverride, IP_Address subnetOverride, IP_Address gatewayOverride)
-#elif defined(__POSIX__)
-	void DHCP_Server::Init(ifaddrs* adapter, IP_Address ipOverride, IP_Address subnetOverride, IP_Address gatewayOverride)
-#endif
+	void DHCP_Server::Init(const net_adapter* adapter, IP_Address ipOverride, IP_Address subnetOverride, IP_Address gatewayOverride)
 	{
 		netmask = {};
 		gateway = {};
@@ -80,14 +53,14 @@ namespace InternalServers
 		if (subnetOverride.integer != 0)
 			netmask = subnetOverride;
 		else if (EmuConfig.DEV9.AutoMask)
-			AutoNetmask(adapter);
+			net_adapter_netmask(adapter, netmask.bytes);
 		else
 			netmask = *(IP_Address*)EmuConfig.DEV9.Mask;
 
 		if (gatewayOverride.integer != 0)
 			gateway = gatewayOverride;
 		else if (EmuConfig.DEV9.AutoGateway)
-			AutoGateway(adapter);
+			net_adapter_gateways(adapter, gateway.bytes, 1);
 		else
 			gateway = *(IP_Address*)EmuConfig.DEV9.Gateway;
 
@@ -119,66 +92,22 @@ namespace InternalServers
 		AutoBroadcast(ps2IP, netmask);
 	}
 
-#ifdef _WIN32
-	void DHCP_Server::AutoNetmask(PIP_ADAPTER_ADDRESSES adapter)
+	void DHCP_Server::AutoDNS(const net_adapter* adapter, bool autoDNS1, bool autoDNS2)
 	{
-		if (adapter != nullptr)
-		{
-			PIP_ADAPTER_UNICAST_ADDRESS address = adapter->FirstUnicastAddress;
-			while (address != nullptr && address->Address.lpSockaddr->sa_family != AF_INET)
-				address = address->Next;
-
-			if (address != nullptr)
-			{
-				ULONG mask;
-				if (ConvertLengthToIpv4Mask(address->OnLinkPrefixLength, &mask) == NO_ERROR)
-					netmask.integer = mask;
-			}
-		}
-	}
-#elif defined(__POSIX__)
-	void DHCP_Server::AutoNetmask(ifaddrs* adapter)
-	{
-		if (adapter != nullptr)
-		{
-			if (adapter->ifa_netmask != nullptr && adapter->ifa_netmask->sa_family == AF_INET)
-			{
-				sockaddr_in* sockaddr = (sockaddr_in*)adapter->ifa_netmask;
-				netmask = *(IP_Address*)&sockaddr->sin_addr;
-			}
-		}
-	}
-#endif
-
-#ifdef _WIN32
-	void DHCP_Server::AutoGateway(PIP_ADAPTER_ADDRESSES adapter)
-#elif defined(__POSIX__)
-	void DHCP_Server::AutoGateway(ifaddrs* adapter)
-#endif
-	{
-		std::vector<IP_Address> gateways = AdapterUtils::GetGateways(adapter);
-
-		if (gateways.size() > 0)
-			gateway = gateways[0];
-	}
-
-#ifdef _WIN32
-	void DHCP_Server::AutoDNS(PIP_ADAPTER_ADDRESSES adapter, bool autoDNS1, bool autoDNS2)
-#elif defined(__POSIX__)
-	void DHCP_Server::AutoDNS(ifaddrs* adapter, bool autoDNS1, bool autoDNS2)
-#endif
-	{
-		std::vector<IP_Address> dnsIPs = AdapterUtils::GetDNS(adapter);
+		u8 found[8];
+		const int count = net_adapter_dns(adapter, found, 2);
+		IP_Address dnsIPs[2] = {};
+		memcpy(dnsIPs, found, 4 * count);
 
 		if (autoDNS1)
 		{
 			//Auto DNS1
 			//If Adapter has DNS, add 1st entry
-			if (dnsIPs.size() >= 1)
+			if (count >= 1)
 				dns1 = dnsIPs[0];
 
 			//Auto DNS1 & AutoDNS2
-			if (autoDNS2 && dnsIPs.size() >= 2)
+			if (autoDNS2 && count >= 2)
 				dns2 = dnsIPs[1];
 		}
 		else if (autoDNS2)
@@ -188,8 +117,8 @@ namespace InternalServers
 			//Use adapter's DNS2 if it has one
 			//otherwise use adapter's DNS1
 
-			if (!dnsIPs.empty())
-				dns2 = dnsIPs[std::min<size_t>(1, dnsIPs.size() - 1)];
+			if (count > 0)
+				dns2 = dnsIPs[count - 1];
 		}
 		if (dns1.integer == 0 && dns2.integer != 0)
 		{

@@ -35,6 +35,7 @@
 #include "PacketReader/EthernetFrame.h"
 #include "PacketReader/IP/IP_Packet.h"
 #include "PacketReader/IP/UDP/UDP_Packet.h"
+#include "PacketReader/IP/UDP/DNS/DNS_Packet.h"
 #include <rthreads/rthreads.h>
 #include <rthreads/retro_eventcount.h>
 
@@ -418,6 +419,7 @@ const MAC_Address NetAdapter::internalMAC{{{0x76, 0x6D, 0xF4, 0x63, 0x30, 0x31}}
 
 NetAdapter::NetAdapter()
 {
+	dnsServer = dns_server_new();
 	//Ensure eeprom matches our default
 	SetMACAddress(nullptr);
 }
@@ -429,6 +431,7 @@ bool NetAdapter::send(NetPacket* pkt)
 
 NetAdapter::~NetAdapter()
 {
+	dns_server_free(dnsServer);
 }
 
 void NetAdapter::InspectSend(NetPacket* pkt)
@@ -450,7 +453,8 @@ void NetAdapter::InspectSend(NetPacket* pkt)
 				{
 					log_cb(RETRO_LOG_INFO, "DEV9: DNS: Packet Sent To %i.%i.%i.%i\n",
 						ippkt.destinationIP.bytes[0], ippkt.destinationIP.bytes[1], ippkt.destinationIP.bytes[2], ippkt.destinationIP.bytes[3]);
-					dnsLogger.InspectSend(&udppkt);
+					PayloadPtr* dns = static_cast<PayloadPtr*>(udppkt.GetPayload());
+					dns_log(dns->data, dns->GetLength());
 				}
 			}
 		}
@@ -475,7 +479,8 @@ void NetAdapter::InspectRecv(NetPacket* pkt)
 				{
 					log_cb(RETRO_LOG_INFO, "DEV9: DNS: Packet Sent From %i.%i.%i.%i\n",
 						ippkt.sourceIP.bytes[0], ippkt.sourceIP.bytes[1], ippkt.sourceIP.bytes[2], ippkt.sourceIP.bytes[3]);
-					dnsLogger.InspectRecv(&udppkt);
+					PayloadPtr* dns = static_cast<PayloadPtr*>(udppkt.GetPayload());
+					dns_log(dns->data, dns->GetLength());
 				}
 			}
 		}
@@ -512,11 +517,7 @@ bool NetAdapter::VerifyPkt(NetPacket* pkt, int read_size)
 	return true;
 }
 
-#ifdef _WIN32
-void NetAdapter::InitInternalServer(PIP_ADAPTER_ADDRESSES adapter, bool dhcpForceEnable, IP_Address ipOverride, IP_Address subnetOverride, IP_Address gatewayOvveride)
-#elif defined(__POSIX__)
-void NetAdapter::InitInternalServer(ifaddrs* adapter, bool dhcpForceEnable, IP_Address ipOverride, IP_Address subnetOverride, IP_Address gatewayOvveride)
-#endif
+void NetAdapter::InitInternalServer(const net_adapter* adapter, bool dhcpForceEnable, IP_Address ipOverride, IP_Address subnetOverride, IP_Address gatewayOvveride)
 {
 	if (adapter == nullptr)
 		log_cb(RETRO_LOG_ERROR, "DEV9: InitInternalServer() got nullptr for adapter\n");
@@ -525,14 +526,11 @@ void NetAdapter::InitInternalServer(ifaddrs* adapter, bool dhcpForceEnable, IP_A
 	if (dhcpOn)
 		dhcpServer.Init(adapter, ipOverride, subnetOverride, gatewayOvveride);
 
-	dnsServer.Init(adapter);
+	if (dnsServer)
+		dns_server_set_adapter(dnsServer, adapter);
 }
 
-#ifdef _WIN32
-void NetAdapter::ReloadInternalServer(PIP_ADAPTER_ADDRESSES adapter, bool dhcpForceEnable, IP_Address ipOverride, IP_Address subnetOverride, IP_Address gatewayOveride)
-#elif defined(__POSIX__)
-void NetAdapter::ReloadInternalServer(ifaddrs* adapter, bool dhcpForceEnable, IP_Address ipOverride, IP_Address subnetOverride, IP_Address gatewayOveride)
-#endif
+void NetAdapter::ReloadInternalServer(const net_adapter* adapter, bool dhcpForceEnable, IP_Address ipOverride, IP_Address subnetOverride, IP_Address gatewayOveride)
 {
 	if (adapter == nullptr)
 		log_cb(RETRO_LOG_ERROR, "DEV9: ReloadInternalServer() got nullptr for adapter\n");
@@ -541,7 +539,8 @@ void NetAdapter::ReloadInternalServer(ifaddrs* adapter, bool dhcpForceEnable, IP
 	if (dhcpOn)
 		dhcpServer.Init(adapter, ipOverride, subnetOverride, gatewayOveride);
 
-	dnsServer.Init(adapter);
+	if (dnsServer)
+		dns_server_set_adapter(dnsServer, adapter);
 }
 
 bool NetAdapter::InternalServerRecv(NetPacket* pkt)
@@ -561,10 +560,17 @@ bool NetAdapter::InternalServerRecv(NetPacket* pkt)
 		return true;
 	}
 
-	ippay = dnsServer.Recv();
-	if (ippay != nullptr)
+	u8 reply[DNS_MAX_UDP];
+	u16 port;
+	const int len = dnsServer ? dns_server_recv(dnsServer, reply, sizeof(reply), &port) : 0;
+	if (len > 0)
 	{
-		IP_Packet* ippkt = new IP_Packet(ippay);
+		PayloadData* data = new PayloadData(len);
+		memcpy(data->data.get(), reply, len);
+		UDP_Packet* udp = new UDP_Packet(data);
+		udp->sourcePort = DNS_PORT;
+		udp->destinationPort = port;
+		IP_Packet* ippkt = new IP_Packet(udp);
 		ippkt->destinationIP = ps2IP;
 		ippkt->sourceIP = internalIP;
 		EthernetFrame frame(ippkt);
@@ -612,7 +618,8 @@ bool NetAdapter::InternalServerSend(NetPacket* pkt)
 				if (udppkt.destinationPort == 53)
 				{
 					//Send DNS
-					return dnsServer.Send(&udppkt);
+					PayloadPtr* dns = static_cast<PayloadPtr*>(udppkt.GetPayload());
+					return dnsServer && dns_server_send(dnsServer, dns->data, dns->GetLength(), udppkt.sourcePort);
 				}
 			}
 			return true;

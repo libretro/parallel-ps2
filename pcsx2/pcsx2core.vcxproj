@@ -93,7 +93,7 @@
     <!-- Generate Recording GUI Image Headers -->
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="DEV9\AdapterUtils.cpp" />
+    <ClCompile Include="DEV9\AdapterUtils.c" />
     <ClCompile Include="DEV9\ATA\Commands\ATA_Command.c" />
     <ClCompile Include="DEV9\ATA\Commands\ATA_CmdDMA.c" />
     <ClCompile Include="DEV9\ATA\Commands\ATA_CmdExecuteDeviceDiag.c" />
@@ -108,8 +108,7 @@
     <ClCompile Include="DEV9\DEV9.c" />
     <ClCompile Include="DEV9\flash.c" />
     <ClCompile Include="DEV9\InternalServers\DHCP_Server.cpp" />
-    <ClCompile Include="DEV9\InternalServers\DNS_Logger.cpp" />
-    <ClCompile Include="DEV9\InternalServers\DNS_Server.cpp" />
+    <ClCompile Include="DEV9\InternalServers\DNS_Server.c" />
     <ClCompile Include="DEV9\PacketReader\ARP\ARP_Packet.cpp" />
     <ClCompile Include="DEV9\PacketReader\ARP\ARP_PacketEditor.cpp" />
     <ClCompile Include="DEV9\PacketReader\EthernetFrameEditor.cpp" />
@@ -119,8 +118,7 @@
     <ClCompile Include="DEV9\PacketReader\IP\TCP\TCP_Packet.cpp" />
     <ClCompile Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Options.cpp" />
     <ClCompile Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Packet.cpp" />
-    <ClCompile Include="DEV9\PacketReader\IP\UDP\DNS\DNS_Classes.cpp" />
-    <ClCompile Include="DEV9\PacketReader\IP\UDP\DNS\DNS_Packet.cpp" />
+    <ClCompile Include="DEV9\PacketReader\IP\UDP\DNS\DNS_Packet.c" />
     <ClCompile Include="DEV9\PacketReader\IP\UDP\UDP_Packet.cpp" />
     <ClCompile Include="DEV9\PacketReader\IP\IP_Options.cpp" />
     <ClCompile Include="DEV9\PacketReader\IP\IP_Packet.cpp" />
@@ -324,7 +322,6 @@
     <ClInclude Include="DEV9\ATA\HddCreate.h" />
     <ClInclude Include="DEV9\DEV9.h" />
     <ClInclude Include="DEV9\InternalServers\DHCP_Server.h" />
-    <ClInclude Include="DEV9\InternalServers\DNS_Logger.h" />
     <ClInclude Include="DEV9\InternalServers\DNS_Server.h" />
     <ClInclude Include="DEV9\net.h" />
     <ClInclude Include="DEV9\netio.h" />
@@ -338,8 +335,6 @@
     <ClInclude Include="DEV9\PacketReader\IP\TCP\TCP_Packet.h" />
     <ClInclude Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Options.h" />
     <ClInclude Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Packet.h" />
-    <ClInclude Include="DEV9\PacketReader\IP\UDP\DNS\DNS_Classes.h" />
-    <ClInclude Include="DEV9\PacketReader\IP\UDP\DNS\DNS_Enums.h" />
     <ClInclude Include="DEV9\PacketReader\IP\UDP\DNS\DNS_Packet.h" />
     <ClInclude Include="DEV9\PacketReader\IP\UDP\UDP_Packet.h" />
     <ClInclude Include="DEV9\PacketReader\IP\IP_Address.h" />

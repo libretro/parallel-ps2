@@ -19,22 +19,13 @@
 #include <cstring>
 
 
-#ifdef _WIN32
-#include "common/RedtapeWindows.h"
-#include <winsock2.h>
-#include <iphlpapi.h>
-#elif defined(__POSIX__)
-#include <sys/types.h>
-#include <compat/ifaddrs.h>
-#endif
-
 #include "Config.h"
 #include "netio.h"
 
 #include "PacketReader/MAC_Address.h"
 #include "PacketReader/IP/IP_Address.h"
+#include "AdapterUtils.h"
 #include "InternalServers/DHCP_Server.h"
-#include "InternalServers/DNS_Logger.h"
 #include "InternalServers/DNS_Server.h"
 
 struct ConfigDEV9;
@@ -87,8 +78,7 @@ private:
 
 protected:
 	InternalServers::DHCP_Server dhcpServer;
-	InternalServers::DNS_Logger dnsLogger;
-	InternalServers::DNS_Server dnsServer;
+	dns_server* dnsServer;
 
 public:
 	NetAdapter();
@@ -117,13 +107,8 @@ protected:
 	void InspectRecv(NetPacket* pkt);
 	void InspectSend(NetPacket* pkt);
 
-#ifdef _WIN32
-	void InitInternalServer(PIP_ADAPTER_ADDRESSES adapter, bool dhcpForceEnable = false, PacketReader::IP::IP_Address ipOverride = {}, PacketReader::IP::IP_Address subnetOverride = {}, PacketReader::IP::IP_Address gatewayOveride = {});
-	void ReloadInternalServer(PIP_ADAPTER_ADDRESSES adapter, bool dhcpForceEnable = false, PacketReader::IP::IP_Address ipOverride = {}, PacketReader::IP::IP_Address subnetOverride = {}, PacketReader::IP::IP_Address gatewayOveride = {});
-#elif defined(__POSIX__)
-	void InitInternalServer(ifaddrs* adapter, bool dhcpForceEnable = false, PacketReader::IP::IP_Address ipOverride = {}, PacketReader::IP::IP_Address subnetOverride = {}, PacketReader::IP::IP_Address gatewayOveride = {});
-	void ReloadInternalServer(ifaddrs* adapter, bool dhcpForceEnable = false, PacketReader::IP::IP_Address ipOverride = {}, PacketReader::IP::IP_Address subnetOverride = {}, PacketReader::IP::IP_Address gatewayOveride = {});
-#endif
+	void InitInternalServer(const net_adapter* adapter, bool dhcpForceEnable = false, PacketReader::IP::IP_Address ipOverride = {}, PacketReader::IP::IP_Address subnetOverride = {}, PacketReader::IP::IP_Address gatewayOveride = {});
+	void ReloadInternalServer(const net_adapter* adapter, bool dhcpForceEnable = false, PacketReader::IP::IP_Address ipOverride = {}, PacketReader::IP::IP_Address subnetOverride = {}, PacketReader::IP::IP_Address gatewayOveride = {});
 
 public:
 	/* The internal DHCP and DNS servers' replies, polled by the network

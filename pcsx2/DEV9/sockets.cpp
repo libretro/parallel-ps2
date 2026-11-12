@@ -197,36 +197,33 @@ AdapterOptions SocketAdapter::GetAdapterOptions()
 
 SocketAdapter::SocketAdapter()
 {
-	bool foundAdapter;
-
-	AdapterUtils::Adapter adapter;
-	AdapterUtils::AdapterBuffer buffer;
+	void* list;
+	const net_adapter* adapter;
+	u8 hostMACBytes[6];
 
 	if (strcmp(EmuConfig.DEV9.EthDevice, "Auto") != 0)
 	{
-		foundAdapter = AdapterUtils::GetAdapter(EmuConfig.DEV9.EthDevice, &adapter, &buffer);
+		adapter = net_adapter_get(&list, EmuConfig.DEV9.EthDevice);
 
-		if (!foundAdapter)
+		if (!adapter)
 		{
 			log_cb(RETRO_LOG_ERROR, "DEV9: Socket: Failed to Get Adapter\n");
 			return;
 		}
 
-		std::optional<IP_Address> adIP = AdapterUtils::GetAdapterIP(&adapter);
-		if (adIP.has_value())
-			adapterIP = adIP.value();
-		else
+		if (!net_adapter_ip(adapter, adapterIP.bytes))
 		{
 			log_cb(RETRO_LOG_ERROR, "DEV9: Socket: Failed To Get Adapter IP\n");
+			net_adapter_free(list);
 			return;
 		}
 	}
 	else
 	{
-		foundAdapter = AdapterUtils::GetAdapterAuto(&adapter, &buffer);
+		adapter = net_adapter_get_auto(&list);
 		adapterIP = {};
 
-		if (!foundAdapter)
+		if (!adapter)
 		{
 			log_cb(RETRO_LOG_ERROR, "DEV9: Socket: Auto Selection Failed, Check You Connection or Manually Specify Adapter\n");
 			return;
@@ -240,13 +237,13 @@ SocketAdapter::SocketAdapter()
 	const IP_Address subnet{{{255, 255, 255, 0}}};
 	const IP_Address gateway = internalIP;
 
-	InitInternalServer(&adapter, true, ps2IP, subnet, gateway);
+	InitInternalServer(adapter, true, ps2IP, subnet, gateway);
 
-	std::optional<MAC_Address> adMAC = AdapterUtils::GetAdapterMAC(&adapter);
-	if (adMAC.has_value())
+	if (net_adapter_mac(adapter, hostMACBytes))
 	{
-		MAC_Address hostMAC = adMAC.value();
+		MAC_Address hostMAC;
 		MAC_Address newMAC = ps2MAC;
+		memcpy(hostMAC.bytes, hostMACBytes, 6);
 
 		//Lets take the hosts last 2 bytes to make it unique on Xlink
 		newMAC.bytes[5] = hostMAC.bytes[4];
@@ -256,6 +253,7 @@ SocketAdapter::SocketAdapter()
 	}
 	else
 		log_cb(RETRO_LOG_ERROR, "DEV9: Socket: Failed to get MAC address for adapter\n");
+	net_adapter_free(list);
 
 #ifdef _WIN32
 	/* Use the MAKEWORD(lowbyte, highbyte) macro declared in Windef.h */
@@ -538,24 +536,20 @@ void SocketAdapter::reset()
 
 void SocketAdapter::reloadSettings()
 {
-	bool foundAdapter = false;
-
-	AdapterUtils::Adapter adapter;
-	AdapterUtils::AdapterBuffer buffer;
+	void* list;
+	const net_adapter* adapter;
 
 	if (strcmp(EmuConfig.DEV9.EthDevice, "Auto") != 0)
-		foundAdapter = AdapterUtils::GetAdapter(EmuConfig.DEV9.EthDevice, &adapter, &buffer);
+		adapter = net_adapter_get(&list, EmuConfig.DEV9.EthDevice);
 	else
-		foundAdapter = AdapterUtils::GetAdapterAuto(&adapter, &buffer);
+		adapter = net_adapter_get_auto(&list);
 
 	const IP_Address ps2IP = {{{internalIP.bytes[0], internalIP.bytes[1], internalIP.bytes[2], 100}}};
 	const IP_Address subnet{{{255, 255, 255, 0}}};
 	const IP_Address gateway = internalIP;
 
-	if (foundAdapter)
-		ReloadInternalServer(&adapter, true, ps2IP, subnet, gateway);
-	else
-		ReloadInternalServer(nullptr, true, ps2IP, subnet, gateway);
+	ReloadInternalServer(adapter, true, ps2IP, subnet, gateway);
+	net_adapter_free(list);
 }
 
 bool SocketAdapter::SendIP(IP_Packet* ipPkt)
