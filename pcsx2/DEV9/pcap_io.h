@@ -14,6 +14,7 @@
  */
 
 #pragma once
+#include <vector>
 #include "pcap.h"
 #include "net.h"
 #include "PacketReader/MAC_Address.h"

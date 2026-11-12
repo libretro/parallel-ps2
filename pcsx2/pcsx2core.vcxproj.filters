@@ -716,7 +716,7 @@
     <ClCompile Include="DEV9\flash.c">
       <Filter>System\Ps2\DEV9</Filter>
     </ClCompile>
-    <ClCompile Include="DEV9\InternalServers\DHCP_Server.cpp">
+    <ClCompile Include="DEV9\InternalServers\DHCP_Server.c">
       <Filter>System\Ps2\DEV9\InternalServers</Filter>
     </ClCompile>
     <ClCompile Include="DEV9\InternalServers\DNS_Server.c">
@@ -736,12 +736,6 @@
     </ClCompile>
     <ClCompile Include="DEV9\PacketReader\IP\TCP\TCP_Packet.cpp">
       <Filter>System\Ps2\DEV9\PacketReader\IP\TCP</Filter>
-    </ClCompile>
-    <ClCompile Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Options.cpp">
-      <Filter>System\Ps2\DEV9\PacketReader\IP\UDP\DHCP</Filter>
-    </ClCompile>
-    <ClCompile Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Packet.cpp">
-      <Filter>System\Ps2\DEV9\PacketReader\IP\UDP\DHCP</Filter>
     </ClCompile>
     <ClCompile Include="DEV9\PacketReader\IP\UDP\DNS\DNS_Packet.c">
       <Filter>System\Ps2\DEV9\PacketReader\IP\UDP\DNS</Filter>
@@ -1275,12 +1269,6 @@
     </ClInclude>
     <ClInclude Include="DEV9\PacketReader\IP\TCP\TCP_Packet.h">
       <Filter>System\Ps2\DEV9\PacketReader\IP\TCP</Filter>
-    </ClInclude>
-    <ClInclude Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Options.h">
-      <Filter>System\Ps2\DEV9\PacketReader\IP\UDP\DHCP</Filter>
-    </ClInclude>
-    <ClInclude Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Packet.h">
-      <Filter>System\Ps2\DEV9\PacketReader\IP\UDP\DHCP</Filter>
     </ClInclude>
     <ClInclude Include="DEV9\PacketReader\IP\UDP\DNS\DNS_Packet.h">
       <Filter>System\Ps2\DEV9\PacketReader\IP\UDP\DNS</Filter>

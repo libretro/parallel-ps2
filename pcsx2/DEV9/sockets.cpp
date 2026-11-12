@@ -486,7 +486,7 @@ bool SocketAdapter::SendFrame(NetPacket* pkt)
 			{
 				if (arpPkt.op == 1) //ARP request
 				{
-					if (*(IP_Address*)arpPkt.targetProtocolAddress.get() != dhcpServer.ps2IP)
+					if (*(IP_Address*)arpPkt.targetProtocolAddress.get() != DhcpPS2IP())
 					//it's trying to resolve the virtual gateway's mac addr
 					{
 						ARP_Packet* arpRet = new ARP_Packet(6, 4);
@@ -602,7 +602,7 @@ bool SocketAdapter::SendICMP(ConnectionKey Key, IP_Packet* ipPkt)
 
 	s->AddConnectionClosedHandler([&](BaseSession* session) { HandleConnectionClosed(session); });
 	s->destIP = ipPkt->destinationIP;
-	s->sourceIP = dhcpServer.ps2IP;
+	s->sourceIP = DhcpPS2IP();
 	connections.Add(Key, s);
 	return s->Send(ipPkt->GetPayload(), ipPkt);
 }
@@ -633,7 +633,7 @@ bool SocketAdapter::SendTCP(ConnectionKey Key, IP_Packet* ipPkt)
 
 		s->AddConnectionClosedHandler([&](BaseSession* session) { HandleConnectionClosed(session); });
 		s->destIP = ipPkt->destinationIP;
-		s->sourceIP = dhcpServer.ps2IP;
+		s->sourceIP = DhcpPS2IP();
 		connections.Add(Key, s);
 		return s->Send(ipPkt->GetPayload());
 	}
@@ -657,7 +657,7 @@ bool SocketAdapter::SendUDP(ConnectionKey Key, IP_Packet* ipPkt)
 		UDP_Session* s = nullptr;
 
 		if (abs(udp.sourcePort - udp.destinationPort) <= 10 || //Used for games that assume the destination/source port
-			ipPkt->destinationIP == dhcpServer.broadcastIP || //Broadcast packets
+			ipPkt->destinationIP == DhcpBroadcastIP() || //Broadcast packets
 			ipPkt->destinationIP == IP_Address{{{255, 255, 255, 255}}} || //Limited Broadcast packets
 			(ipPkt->destinationIP.bytes[0] & 0xF0) == 0xE0) //Multicast address start with 0b1110
 		{
@@ -681,7 +681,7 @@ bool SocketAdapter::SendUDP(ConnectionKey Key, IP_Packet* ipPkt)
 				fPort->AddConnectionClosedHandler([&](BaseSession* session) { HandleFixedPortClosed(session); });
 
 				fPort->destIP = {};
-				fPort->sourceIP = dhcpServer.ps2IP;
+				fPort->sourceIP = DhcpPS2IP();
 
 				connections.Add(fKey, fPort);
 				fixedUDPPorts.Add(udp.sourcePort, fPort);
@@ -689,7 +689,7 @@ bool SocketAdapter::SendUDP(ConnectionKey Key, IP_Packet* ipPkt)
 
 			log_cb(RETRO_LOG_INFO, "DEV9: Socket: Creating New UDP Connection from FixedPort %d to %d\n", udp.sourcePort, udp.destinationPort);
 			s = fPort->NewClientSession(Key,
-				ipPkt->destinationIP == dhcpServer.broadcastIP || ipPkt->destinationIP == IP_Address{{{255, 255, 255, 255}}},
+				ipPkt->destinationIP == DhcpBroadcastIP() || ipPkt->destinationIP == IP_Address{{{255, 255, 255, 255}}},
 				(ipPkt->destinationIP.bytes[0] & 0xF0) == 0xE0);
 		}
 		else
@@ -700,7 +700,7 @@ bool SocketAdapter::SendUDP(ConnectionKey Key, IP_Packet* ipPkt)
 
 		s->AddConnectionClosedHandler([&](BaseSession* session) { HandleConnectionClosed(session); });
 		s->destIP = ipPkt->destinationIP;
-		s->sourceIP = dhcpServer.ps2IP;
+		s->sourceIP = DhcpPS2IP();
 		connections.Add(Key, s);
 		return s->Send(ipPkt->GetPayload());
 	}

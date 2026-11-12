@@ -117,6 +117,7 @@ build*/
 /tests/pad/pad_test*
 /tests/dev9eeprom/dev9eeprom_test*
 /tests/dev9dns/dev9dns_test*
+/tests/dev9dhcp/dev9dhcp_test*
 /tests/dev9eeprom/dev9eeprom_work/
 /tests/perfmetrics/perfmetrics_test*
 /tests/profiler/profiler_test*

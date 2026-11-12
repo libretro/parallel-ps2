@@ -749,7 +749,7 @@ set(pcsx2x86Headers
 set(pcsx2DEV9Sources
 	DEV9/AdapterUtils.c
 	DEV9/DEV9.c
-	DEV9/InternalServers/DHCP_Server.cpp
+	DEV9/InternalServers/DHCP_Server.c
 	DEV9/InternalServers/DNS_Server.c
 	DEV9/PacketReader/ARP/ARP_Packet.cpp
 	DEV9/PacketReader/ARP/ARP_PacketEditor.cpp
@@ -760,8 +760,6 @@ set(pcsx2DEV9Sources
 	DEV9/PacketReader/IP/IP_Packet.cpp
 	DEV9/PacketReader/IP/TCP/TCP_Options.cpp
 	DEV9/PacketReader/IP/TCP/TCP_Packet.cpp
-	DEV9/PacketReader/IP/UDP/DHCP/DHCP_Options.cpp
-	DEV9/PacketReader/IP/UDP/DHCP/DHCP_Packet.cpp
 	DEV9/PacketReader/IP/UDP/DNS/DNS_Packet.c
 	DEV9/PacketReader/IP/UDP/UDP_Packet.cpp
 	DEV9/Sessions/BaseSession.cpp
@@ -809,8 +807,6 @@ set(pcsx2DEV9Headers
 	DEV9/PacketReader/IP/IP_Payload.h
 	DEV9/PacketReader/IP/TCP/TCP_Options.h
 	DEV9/PacketReader/IP/TCP/TCP_Packet.h
-	DEV9/PacketReader/IP/UDP/DHCP/DHCP_Options.h
-	DEV9/PacketReader/IP/UDP/DHCP/DHCP_Packet.h
 	DEV9/PacketReader/IP/UDP/DNS/DNS_Packet.h
 	DEV9/PacketReader/IP/UDP/UDP_Packet.h
 	DEV9/PacketReader/MAC_Address.h

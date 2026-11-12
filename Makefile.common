@@ -188,7 +188,6 @@ SOURCES_CXX += \
 SOURCES_CXX += \
 	$(LRPS2_DIR)/DEV9/net.cpp \
 	$(LRPS2_DIR)/DEV9/sockets.cpp \
-	$(LRPS2_DIR)/DEV9/InternalServers/DHCP_Server.cpp \
 	$(LRPS2_DIR)/DEV9/PacketReader/EthernetFrame.cpp \
 	$(LRPS2_DIR)/DEV9/PacketReader/EthernetFrameEditor.cpp \
 	$(LRPS2_DIR)/DEV9/PacketReader/ARP/ARP_Packet.cpp \
@@ -199,8 +198,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/DEV9/PacketReader/IP/TCP/TCP_Options.cpp \
 	$(LRPS2_DIR)/DEV9/PacketReader/IP/TCP/TCP_Packet.cpp \
 	$(LRPS2_DIR)/DEV9/PacketReader/IP/UDP/UDP_Packet.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/IP/UDP/DHCP/DHCP_Options.cpp \
-	$(LRPS2_DIR)/DEV9/PacketReader/IP/UDP/DHCP/DHCP_Packet.cpp \
 	$(LRPS2_DIR)/DEV9/Sessions/BaseSession.cpp \
 	$(LRPS2_DIR)/DEV9/Sessions/ICMP_Session/ICMP_Session.cpp \
 	$(LRPS2_DIR)/DEV9/Sessions/TCP_Session/TCP_Session.cpp \
@@ -211,6 +208,7 @@ SOURCES_CXX += \
 
 SOURCES_C += \
 	$(LRPS2_DIR)/DEV9/DEV9.c \
+	$(LRPS2_DIR)/DEV9/InternalServers/DHCP_Server.c \
 	$(LRPS2_DIR)/DEV9/AdapterUtils.c \
 	$(LRPS2_DIR)/DEV9/InternalServers/DNS_Server.c \
 	$(LRPS2_DIR)/DEV9/PacketReader/IP/UDP/DNS/DNS_Packet.c \

@@ -107,7 +107,7 @@
     <ClCompile Include="DEV9\ATA\HddCreate.c" />
     <ClCompile Include="DEV9\DEV9.c" />
     <ClCompile Include="DEV9\flash.c" />
-    <ClCompile Include="DEV9\InternalServers\DHCP_Server.cpp" />
+    <ClCompile Include="DEV9\InternalServers\DHCP_Server.c" />
     <ClCompile Include="DEV9\InternalServers\DNS_Server.c" />
     <ClCompile Include="DEV9\PacketReader\ARP\ARP_Packet.cpp" />
     <ClCompile Include="DEV9\PacketReader\ARP\ARP_PacketEditor.cpp" />
@@ -116,8 +116,6 @@
     <ClCompile Include="DEV9\PacketReader\IP\ICMP\ICMP_Packet.cpp" />
     <ClCompile Include="DEV9\PacketReader\IP\TCP\TCP_Options.cpp" />
     <ClCompile Include="DEV9\PacketReader\IP\TCP\TCP_Packet.cpp" />
-    <ClCompile Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Options.cpp" />
-    <ClCompile Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Packet.cpp" />
     <ClCompile Include="DEV9\PacketReader\IP\UDP\DNS\DNS_Packet.c" />
     <ClCompile Include="DEV9\PacketReader\IP\UDP\UDP_Packet.cpp" />
     <ClCompile Include="DEV9\PacketReader\IP\IP_Options.cpp" />
@@ -333,8 +331,6 @@
     <ClInclude Include="DEV9\PacketReader\IP\ICMP\ICMP_Packet.h" />
     <ClInclude Include="DEV9\PacketReader\IP\TCP\TCP_Options.h" />
     <ClInclude Include="DEV9\PacketReader\IP\TCP\TCP_Packet.h" />
-    <ClInclude Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Options.h" />
-    <ClInclude Include="DEV9\PacketReader\IP\UDP\DHCP\DHCP_Packet.h" />
     <ClInclude Include="DEV9\PacketReader\IP\UDP\DNS\DNS_Packet.h" />
     <ClInclude Include="DEV9\PacketReader\IP\UDP\UDP_Packet.h" />
     <ClInclude Include="DEV9\PacketReader\IP\IP_Address.h" />

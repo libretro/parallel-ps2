@@ -417,8 +417,23 @@ const IP_Address NetAdapter::internalIP{{{192, 0, 2, 1}}};
 const MAC_Address NetAdapter::broadcastMAC{{{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}}};
 const MAC_Address NetAdapter::internalMAC{{{0x76, 0x6D, 0xF4, 0x63, 0x30, 0x31}}};
 
+IP_Address NetAdapter::DhcpPS2IP() const
+{
+	IP_Address ip;
+	memcpy(ip.bytes, dhcpServer.ps2_ip, 4);
+	return ip;
+}
+
+IP_Address NetAdapter::DhcpBroadcastIP() const
+{
+	IP_Address ip;
+	memcpy(ip.bytes, dhcpServer.broadcast, 4);
+	return ip;
+}
+
 NetAdapter::NetAdapter()
 {
+	memset(&dhcpServer, 0, sizeof(dhcpServer));
 	dnsServer = dns_server_new();
 	//Ensure eeprom matches our default
 	SetMACAddress(nullptr);
@@ -524,7 +539,7 @@ void NetAdapter::InitInternalServer(const net_adapter* adapter, bool dhcpForceEn
 
 	dhcpOn = EmuConfig.DEV9.InterceptDHCP || dhcpForceEnable;
 	if (dhcpOn)
-		dhcpServer.Init(adapter, ipOverride, subnetOverride, gatewayOvveride);
+		dhcp_server_init(&dhcpServer, adapter, internalIP.bytes, ipOverride.bytes, subnetOverride.bytes, gatewayOvveride.bytes);
 
 	if (dnsServer)
 		dns_server_set_adapter(dnsServer, adapter);
@@ -537,7 +552,7 @@ void NetAdapter::ReloadInternalServer(const net_adapter* adapter, bool dhcpForce
 
 	dhcpOn = EmuConfig.DEV9.InterceptDHCP || dhcpForceEnable;
 	if (dhcpOn)
-		dhcpServer.Init(adapter, ipOverride, subnetOverride, gatewayOveride);
+		dhcp_server_init(&dhcpServer, adapter, internalIP.bytes, ipOverride.bytes, subnetOverride.bytes, gatewayOveride.bytes);
 
 	if (dnsServer)
 		dns_server_set_adapter(dnsServer, adapter);
@@ -545,11 +560,16 @@ void NetAdapter::ReloadInternalServer(const net_adapter* adapter, bool dhcpForce
 
 bool NetAdapter::InternalServerRecv(NetPacket* pkt)
 {
-	IP_Payload* ippay;
-	ippay = dhcpServer.Recv();
-	if (ippay != nullptr)
+	u8 reply[DHCP_REPLY_MAX];
+	int len = dhcp_server_recv(&dhcpServer, reply, sizeof(reply));
+	if (len > 0)
 	{
-		IP_Packet* ippkt = new IP_Packet(ippay);
+		PayloadData* data = new PayloadData(len);
+		memcpy(data->data.get(), reply, len);
+		UDP_Packet* udp = new UDP_Packet(data);
+		udp->sourcePort = DHCP_SERVER_PORT;
+		udp->destinationPort = DHCP_CLIENT_PORT;
+		IP_Packet* ippkt = new IP_Packet(udp);
 		ippkt->destinationIP = {{{255, 255, 255, 255}}};
 		ippkt->sourceIP = internalIP;
 		EthernetFrame frame(ippkt);
@@ -560,9 +580,8 @@ bool NetAdapter::InternalServerRecv(NetPacket* pkt)
 		return true;
 	}
 
-	u8 reply[DNS_MAX_UDP];
 	u16 port;
-	const int len = dnsServer ? dns_server_recv(dnsServer, reply, sizeof(reply), &port) : 0;
+	len = dnsServer ? dns_server_recv(dnsServer, reply, sizeof(reply), &port) : 0;
 	if (len > 0)
 	{
 		PayloadData* data = new PayloadData(len);
@@ -602,7 +621,10 @@ bool NetAdapter::InternalServerSend(NetPacket* pkt)
 			{
 				//Send DHCP
 				if (dhcpOn)
-					return dhcpServer.Send(&udppkt);
+				{
+					PayloadPtr* dhcp = static_cast<PayloadPtr*>(udppkt.GetPayload());
+					return dhcp_server_send(&dhcpServer, dhcp->data, dhcp->GetLength());
+				}
 			}
 		}
 

@@ -77,7 +77,10 @@ private:
 	bool dhcpOn = false;
 
 protected:
-	InternalServers::DHCP_Server dhcpServer;
+	dhcp_server dhcpServer;
+	/* The DHCP server's, as the stack spells an address. */
+	PacketReader::IP::IP_Address DhcpPS2IP() const;
+	PacketReader::IP::IP_Address DhcpBroadcastIP() const;
 	dns_server* dnsServer;
 
 public:

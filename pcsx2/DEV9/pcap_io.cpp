@@ -31,6 +31,7 @@
 #include "PacketReader/EthernetFrame.h"
 #include "PacketReader/EthernetFrameEditor.h"
 #include "PacketReader/ARP/ARP_PacketEditor.h"
+#include "PacketReader/IP/IP_Packet.h"
 #ifndef PCAP_NETMASK_UNKNOWN
 #define PCAP_NETMASK_UNKNOWN 0xffffffff
 #endif

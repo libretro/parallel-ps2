@@ -13,47 +13,63 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef DEV9_DHCP_SERVER_H
+#define DEV9_DHCP_SERVER_H
+
+/* The internal DHCP server: answers the PS2's DISCOVER and REQUEST with
+ * the address, mask, gateway and DNS servers the settings (or the host
+ * adapter) give. Requests are answered as they come, on the network
+ * thread, into a small fixed queue it reads back; nothing is allocated. */
 
 #include "common/Pcsx2Defs.h"
-
-
-#include "DEV9/SimpleQueue.h"
-#include "DEV9/PacketReader/IP/IP_Address.h"
-#include "DEV9/PacketReader/IP/UDP/UDP_Packet.h"
 #include "DEV9/AdapterUtils.h"
 
-namespace InternalServers
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define DHCP_SERVER_PORT 67
+#define DHCP_CLIENT_PORT 68
+/* The fixed header, the magic cookie included. */
+#define DHCP_HEADER_SIZE 240
+/* The longest reply: an Ethernet MTU less the IP and UDP headers. */
+#define DHCP_REPLY_MAX (1500 - 20 - 8)
+#define DHCP_REPLIES 4
+
+typedef struct dhcp_reply
 {
-	class DHCP_Server
-	{
-	public:
-		PacketReader::IP::IP_Address ps2IP;
-		PacketReader::IP::IP_Address gateway;
-		PacketReader::IP::IP_Address broadcastIP;
+	u16 len;
+	u8 data[DHCP_REPLY_MAX];
+} dhcp_reply;
 
-	private:
+typedef struct dhcp_server
+{
+	/* What is handed out, all 4 bytes in network order. */
+	u8 ps2_ip[4];
+	u8 netmask[4];
+	u8 gateway[4];
+	u8 broadcast[4];
+	u8 dns1[4];
+	u8 dns2[4];
+	u8 server_ip[4];
+	/* Replies waiting for the network thread. */
+	int head;
+	int count;
+	dhcp_reply replies[DHCP_REPLIES];
+} dhcp_server;
 
-		PacketReader::IP::IP_Address dns1{};
-		PacketReader::IP::IP_Address dns2{};
-		PacketReader::IP::IP_Address netmask{};
+/* From the settings and the adapter (which may be NULL); an override
+ * that is not all zero wins over both. */
+void dhcp_server_init(dhcp_server* server, const net_adapter* adapter, const u8 server_ip[4],
+	const u8 ip_override[4], const u8 subnet_override[4], const u8 gateway_override[4]);
 
-		SimpleQueue<PacketReader::IP::UDP::UDP_Packet*> recvBuff;
+/* A request the PS2 sent to port 67; whether it was taken. */
+bool dhcp_server_send(dhcp_server* server, const u8* payload, int len);
+/* The oldest reply waiting, for port 68: its length, or 0. */
+int dhcp_server_recv(dhcp_server* server, u8* out, int cap);
 
-		u16 maxMs = 576;
+#ifdef __cplusplus
+}
+#endif
 
-	public:
-		DHCP_Server();
-
-		void Init(const net_adapter* adapter, PacketReader::IP::IP_Address ipOverride = {}, PacketReader::IP::IP_Address subnetOverride = {}, PacketReader::IP::IP_Address gatewayOvveride = {});
-
-		PacketReader::IP::UDP::UDP_Packet* Recv();
-		bool Send(PacketReader::IP::UDP::UDP_Packet* payload);
-
-		~DHCP_Server();
-
-	private:
-		void AutoDNS(const net_adapter* adapter, bool autoDNS1, bool autoDNS2);
-		void AutoBroadcast(PacketReader::IP::IP_Address parPS2IP, PacketReader::IP::IP_Address parNetmask);
-	};
-} // namespace InternalServers
+#endif
