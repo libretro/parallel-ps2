@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: GPL-3.0+
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: GPL-3.0+ */
 
 /* I2C registers */
 #define R511_I2C_CTL 0x40

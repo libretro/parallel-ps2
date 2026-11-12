@@ -1,5 +1,7 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: GPL-3.0+
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: GPL-3.0+ */
+
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -9,13 +11,13 @@ typedef enum {
 	JO_RGBX,
 	JO_RGB24,
 	JO_BGR24,
-	JO_YUYV,
+	JO_YUYV
 } jo_mpeg_format_t;
 
 typedef enum {
 	JO_NONE,
 	JO_FLIP_X,
-	JO_FLIP_Y,
+	JO_FLIP_Y
 } jo_mpeg_flip_t;
 
 /* work holds JO_MPEG_WORK_FLOATS floats: the macroblock scratch, which the

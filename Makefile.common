@@ -341,7 +341,7 @@ SOURCES_C += \
 SOURCES_C += $(LRPS2_DIR)/PAD/PAD.c
 
 # pcsx2/USB (OHCI host-controller core, HID, Python 2 and EyeToy device
-# models)
+# models), all C
 SOURCES_C += \
 	$(LRPS2_DIR)/USB/libretro-usb/bus.c \
 	$(LRPS2_DIR)/USB/libretro-usb/core.c \
@@ -367,13 +367,13 @@ SOURCES_C += \
 	$(LRPS2_DIR)/FireWire/fatimg.c \
 	$(LRPS2_DIR)/FireWire/p1io.c \
 	$(LRPS2_DIR)/FireWire/py1desc.c
-SOURCES_CXX += \
-	$(LRPS2_DIR)/USB/usb-eyetoy/cam-frame.cpp \
-	$(LRPS2_DIR)/USB/usb-eyetoy/cam-jpeg.cpp \
-	$(LRPS2_DIR)/USB/usb-eyetoy/eyetoy-frontend.cpp \
-	$(LRPS2_DIR)/USB/usb-eyetoy/eyetoy-host.cpp \
-	$(LRPS2_DIR)/USB/usb-eyetoy/jo_mpeg.cpp \
-	$(LRPS2_DIR)/USB/usb-eyetoy/usb-eyetoy-webcam.cpp
+SOURCES_C += \
+	$(LRPS2_DIR)/USB/usb-eyetoy/cam-frame.c \
+	$(LRPS2_DIR)/USB/usb-eyetoy/cam-jpeg.c \
+	$(LRPS2_DIR)/USB/usb-eyetoy/eyetoy-frontend.c \
+	$(LRPS2_DIR)/USB/usb-eyetoy/eyetoy-host.c \
+	$(LRPS2_DIR)/USB/usb-eyetoy/jo_mpeg.c \
+	$(LRPS2_DIR)/USB/usb-eyetoy/usb-eyetoy-webcam.c
 
 # pcsx2/ps2
 SOURCES_C += \

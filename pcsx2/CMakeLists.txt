@@ -856,12 +856,12 @@ set(pcsx2USBSources
 	FireWire/fatimg.c
 	FireWire/p1io.c
 	FireWire/py1desc.c
-	USB/usb-eyetoy/cam-frame.cpp
-	USB/usb-eyetoy/cam-jpeg.cpp
-	USB/usb-eyetoy/eyetoy-frontend.cpp
-	USB/usb-eyetoy/eyetoy-host.cpp
-	USB/usb-eyetoy/jo_mpeg.cpp
-	USB/usb-eyetoy/usb-eyetoy-webcam.cpp
+	USB/usb-eyetoy/cam-frame.c
+	USB/usb-eyetoy/cam-jpeg.c
+	USB/usb-eyetoy/eyetoy-frontend.c
+	USB/usb-eyetoy/eyetoy-host.c
+	USB/usb-eyetoy/jo_mpeg.c
+	USB/usb-eyetoy/usb-eyetoy-webcam.c
 )
 set(pcsx2USBHeaders
 	USB/USB.h

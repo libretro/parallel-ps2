@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: GPL-3.0+
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team */
+/* SPDX-License-Identifier: GPL-3.0+ */
 
 #pragma once
 
@@ -8,8 +8,6 @@
 #include "USB/usb-eyetoy/videodev.h"
 
 
-namespace usb_eyetoy
-{
 	static const u8 eyetoy_dev_descriptor[] = {
 		0x12,          /* bLength */
 		0x01,          /* bDescriptorType */
@@ -28,354 +26,354 @@ namespace usb_eyetoy
 	};
 
 	static const u8 eyetoy_config_descriptor[] = {
-		0x09,        // bLength
-		0x02,        // bDescriptorType (Configuration)
-		0xB4, 0x00,  // wTotalLength 180
-		0x03,        // bNumInterfaces 3
-		0x01,        // bConfigurationValue
-		0x00,        // iConfiguration (String Index)
-		0x80,        // bmAttributes
-		0xFA,        // bMaxPower 500mA
+		0x09,        /* bLength */
+		0x02,        /* bDescriptorType (Configuration) */
+		0xB4, 0x00,  /* wTotalLength 180 */
+		0x03,        /* bNumInterfaces 3 */
+		0x01,        /* bConfigurationValue */
+		0x00,        /* iConfiguration (String Index) */
+		0x80,        /* bmAttributes */
+		0xFA,        /* bMaxPower 500mA */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x00,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x00,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x00, 0x00,  // wMaxPacketSize 0
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x00, 0x00,  /* wMaxPacketSize 0 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x01,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x01,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x80, 0x01,  // wMaxPacketSize 384
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x80, 0x01,  /* wMaxPacketSize 384 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x02,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x02,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x00, 0x02,  // wMaxPacketSize 512
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x00, 0x02,  /* wMaxPacketSize 512 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x03,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x03,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x00, 0x03,  // wMaxPacketSize 768
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x00, 0x03,  /* wMaxPacketSize 768 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x04,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x04,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x80, 0x03,  // wMaxPacketSize 896
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x80, 0x03,  /* wMaxPacketSize 896 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x01,        // bInterfaceNumber 1
-		0x00,        // bAlternateSetting
-		0x00,        // bNumEndpoints 0
-		0x01,        // bInterfaceClass (Audio)
-		0x01,        // bInterfaceSubClass (Audio Control)
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x01,        /* bInterfaceNumber 1 */
+		0x00,        /* bAlternateSetting */
+		0x00,        /* bNumEndpoints 0 */
+		0x01,        /* bInterfaceClass (Audio) */
+		0x01,        /* bInterfaceSubClass (Audio Control) */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x09,        // bLength
-		0x24,        // bDescriptorType (See Next Line)
-		0x01,        // bDescriptorSubtype (CS_INTERFACE -> HEADER)
-		0x00, 0x01,  // bcdADC 1.00
-		0x1E, 0x00,  // wTotalLength 30
-		0x01,        // binCollection 0x01
-		0x02,        // baInterfaceNr 2
+		0x09,        /* bLength */
+		0x24,        /* bDescriptorType (See Next Line) */
+		0x01,        /* bDescriptorSubtype (CS_INTERFACE -> HEADER) */
+		0x00, 0x01,  /* bcdADC 1.00 */
+		0x1E, 0x00,  /* wTotalLength 30 */
+		0x01,        /* binCollection 0x01 */
+		0x02,        /* baInterfaceNr 2 */
 
-		0x0C,        // bLength
-		0x24,        // bDescriptorType (See Next Line)
-		0x02,        // bDescriptorSubtype (CS_INTERFACE -> INPUT_TERMINAL)
-		0x01,        // bTerminalID
-		0x01, 0x02,  // wTerminalType (Microphone)
-		0x00,        // bAssocTerminal
-		0x01,        // bNrChannels 1
-		0x00, 0x00,  // wChannelConfig
-		0x00,        // iChannelNames
-		0x00,        // iTerminal
+		0x0C,        /* bLength */
+		0x24,        /* bDescriptorType (See Next Line) */
+		0x02,        /* bDescriptorSubtype (CS_INTERFACE -> INPUT_TERMINAL) */
+		0x01,        /* bTerminalID */
+		0x01, 0x02,  /* wTerminalType (Microphone) */
+		0x00,        /* bAssocTerminal */
+		0x01,        /* bNrChannels 1 */
+		0x00, 0x00,  /* wChannelConfig */
+		0x00,        /* iChannelNames */
+		0x00,        /* iTerminal */
 
-		0x09,        // bLength
-		0x24,        // bDescriptorType (See Next Line)
-		0x03,        // bDescriptorSubtype (CS_INTERFACE -> OUTPUT_TERMINAL)
-		0x02,        // bTerminalID
-		0x01, 0x01,  // wTerminalType (USB Streaming)
-		0x00,        // bAssocTerminal
-		0x01,        // bSourceID
-		0x00,        // iTerminal
+		0x09,        /* bLength */
+		0x24,        /* bDescriptorType (See Next Line) */
+		0x03,        /* bDescriptorSubtype (CS_INTERFACE -> OUTPUT_TERMINAL) */
+		0x02,        /* bTerminalID */
+		0x01, 0x01,  /* wTerminalType (USB Streaming) */
+		0x00,        /* bAssocTerminal */
+		0x01,        /* bSourceID */
+		0x00,        /* iTerminal */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x02,        // bInterfaceNumber 2
-		0x00,        // bAlternateSetting
-		0x00,        // bNumEndpoints 0
-		0x01,        // bInterfaceClass (Audio)
-		0x02,        // bInterfaceSubClass (Audio Streaming)
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x02,        /* bInterfaceNumber 2 */
+		0x00,        /* bAlternateSetting */
+		0x00,        /* bNumEndpoints 0 */
+		0x01,        /* bInterfaceClass (Audio) */
+		0x02,        /* bInterfaceSubClass (Audio Streaming) */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x02,        // bInterfaceNumber 2
-		0x01,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0x01,        // bInterfaceClass (Audio)
-		0x02,        // bInterfaceSubClass (Audio Streaming)
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x02,        /* bInterfaceNumber 2 */
+		0x01,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0x01,        /* bInterfaceClass (Audio) */
+		0x02,        /* bInterfaceSubClass (Audio Streaming) */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x24,        // bDescriptorType (See Next Line)
-		0x01,        // bDescriptorSubtype (CS_INTERFACE -> AS_GENERAL)
-		0x02,        // bTerminalLink
-		0x01,        // bDelay 1
-		0x01, 0x00,  // wFormatTag (PCM)
+		0x07,        /* bLength */
+		0x24,        /* bDescriptorType (See Next Line) */
+		0x01,        /* bDescriptorSubtype (CS_INTERFACE -> AS_GENERAL) */
+		0x02,        /* bTerminalLink */
+		0x01,        /* bDelay 1 */
+		0x01, 0x00,  /* wFormatTag (PCM) */
 
-		0x0B,        // bLength
-		0x24,        // bDescriptorType (See Next Line)
-		0x02,        // bDescriptorSubtype (CS_INTERFACE -> FORMAT_TYPE)
-		0x01,        // bFormatType 1
-		0x01,        // bNrChannels (Mono)
-		0x02,        // bSubFrameSize 2
-		0x10,        // bBitResolution 16
-		0x01,        // bSamFreqType 1
-		0x80, 0x3E, 0x00,  // tSamFreq[1] 16000 Hz
+		0x0B,        /* bLength */
+		0x24,        /* bDescriptorType (See Next Line) */
+		0x02,        /* bDescriptorSubtype (CS_INTERFACE -> FORMAT_TYPE) */
+		0x01,        /* bFormatType 1 */
+		0x01,        /* bNrChannels (Mono) */
+		0x02,        /* bSubFrameSize 2 */
+		0x10,        /* bBitResolution 16 */
+		0x01,        /* bSamFreqType 1 */
+		0x80, 0x3E, 0x00,  /* tSamFreq[1] 16000 Hz */
 
-		0x09,        // bLength
-		0x05,        // bDescriptorType (See Next Line)
-		0x82,        // bEndpointAddress (IN/D2H)
-		0x05,        // bmAttributes (Isochronous, Async, Data EP)
-		0x28, 0x00,  // wMaxPacketSize 40
-		0x01,        // bInterval 1 (unit depends on device speed)
-		0x00,        // bRefresh
-		0x00,        // bSyncAddress
+		0x09,        /* bLength */
+		0x05,        /* bDescriptorType (See Next Line) */
+		0x82,        /* bEndpointAddress (IN/D2H) */
+		0x05,        /* bmAttributes (Isochronous, Async, Data EP) */
+		0x28, 0x00,  /* wMaxPacketSize 40 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
+		0x00,        /* bRefresh */
+		0x00,        /* bSyncAddress */
 
-		0x07,        // bLength
-		0x25,        // bDescriptorType (See Next Line)
-		0x01,        // bDescriptorSubtype (CS_ENDPOINT -> EP_GENERAL)
-		0x00,        // bmAttributes (None)
-		0x00,        // bLockDelayUnits
-		0x00, 0x00,  // wLockDelay 0
+		0x07,        /* bLength */
+		0x25,        /* bDescriptorType (See Next Line) */
+		0x01,        /* bDescriptorSubtype (CS_ENDPOINT -> EP_GENERAL) */
+		0x00,        /* bmAttributes (None) */
+		0x00,        /* bLockDelayUnits */
+		0x00, 0x00,  /* wLockDelay 0 */
 	};
 
 	static const u8 ov511p_dev_descriptor[] = {
-		0x12,        // bLength
-		0x01,        // bDescriptorType (Device)
-		0x00, 0x01,  // bcdUSB 1.00
-		0x00,        // bDeviceClass (Use class information in the Interface Descriptors)
-		0x00,        // bDeviceSubClass
-		0x00,        // bDeviceProtocol
-		0x08,        // bMaxPacketSize0 8
-		0xA9, 0x05,  // idVendor 0x05A9
-		0x11, 0xA5,  // idProduct 0xA511
-		0x00, 0x01,  // bcdDevice 2.00
-		0x00,        // iManufacturer (String Index)
-		0x00,        // iProduct (String Index)
-		0x00,        // iSerialNumber (String Index)
-		0x01,        // bNumConfigurations 1
+		0x12,        /* bLength */
+		0x01,        /* bDescriptorType (Device) */
+		0x00, 0x01,  /* bcdUSB 1.00 */
+		0x00,        /* bDeviceClass (Use class information in the Interface Descriptors) */
+		0x00,        /* bDeviceSubClass */
+		0x00,        /* bDeviceProtocol */
+		0x08,        /* bMaxPacketSize0 8 */
+		0xA9, 0x05,  /* idVendor 0x05A9 */
+		0x11, 0xA5,  /* idProduct 0xA511 */
+		0x00, 0x01,  /* bcdDevice 2.00 */
+		0x00,        /* iManufacturer (String Index) */
+		0x00,        /* iProduct (String Index) */
+		0x00,        /* iSerialNumber (String Index) */
+		0x01,        /* bNumConfigurations 1 */
 	};
 
 	static const u8 ov511p_config_descriptor[] = {
-		0x09,        // bLength
-		0x02,        // bDescriptorType (Configuration)
-		0x89, 0x00,  // wTotalLength 137
-		0x01,        // bNumInterfaces 1
-		0x01,        // bConfigurationValue
-		0x00,        // iConfiguration (String Index)
-		0x80,        // bmAttributes
-		0xFA,        // bMaxPower 500mA
+		0x09,        /* bLength */
+		0x02,        /* bDescriptorType (Configuration) */
+		0x89, 0x00,  /* wTotalLength 137 */
+		0x01,        /* bNumInterfaces 1 */
+		0x01,        /* bConfigurationValue */
+		0x00,        /* iConfiguration (String Index) */
+		0x80,        /* bmAttributes */
+		0xFA,        /* bMaxPower 500mA */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x00,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x00,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x00, 0x00,  // wMaxPacketSize 0
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x00, 0x00,  /* wMaxPacketSize 0 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x01,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x01,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x21, 0x00,  // wMaxPacketSize 33
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x21, 0x00,  /* wMaxPacketSize 33 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x02,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x02,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x81, 0x00,  // wMaxPacketSize 129
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x81, 0x00,  /* wMaxPacketSize 129 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x03,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x03,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x01, 0x01,  // wMaxPacketSize 257
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x01, 0x01,  /* wMaxPacketSize 257 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x04,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x04,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x81, 0x01,  // wMaxPacketSize 385
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x81, 0x01,  /* wMaxPacketSize 385 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x05,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x05,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x01, 0x02,  // wMaxPacketSize 513
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x01, 0x02,  /* wMaxPacketSize 513 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x06,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x06,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0x01, 0x03,  // wMaxPacketSize 769
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0x01, 0x03,  /* wMaxPacketSize 769 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 
-		0x09,        // bLength
-		0x04,        // bDescriptorType (Interface)
-		0x00,        // bInterfaceNumber 0
-		0x07,        // bAlternateSetting
-		0x01,        // bNumEndpoints 1
-		0xFF,        // bInterfaceClass
-		0x00,        // bInterfaceSubClass
-		0x00,        // bInterfaceProtocol
-		0x00,        // iInterface (String Index)
+		0x09,        /* bLength */
+		0x04,        /* bDescriptorType (Interface) */
+		0x00,        /* bInterfaceNumber 0 */
+		0x07,        /* bAlternateSetting */
+		0x01,        /* bNumEndpoints 1 */
+		0xFF,        /* bInterfaceClass */
+		0x00,        /* bInterfaceSubClass */
+		0x00,        /* bInterfaceProtocol */
+		0x00,        /* iInterface (String Index) */
 
-		0x07,        // bLength
-		0x05,        // bDescriptorType (Endpoint)
-		0x81,        // bEndpointAddress (IN/D2H)
-		0x01,        // bmAttributes (Isochronous, No Sync, Data EP)
-		0xC1, 0x03,  // wMaxPacketSize 961
-		0x01,        // bInterval 1 (unit depends on device speed)
+		0x07,        /* bLength */
+		0x05,        /* bDescriptorType (Endpoint) */
+		0x81,        /* bEndpointAddress (IN/D2H) */
+		0x01,        /* bmAttributes (Isochronous, No Sync, Data EP) */
+		0xC1, 0x03,  /* wMaxPacketSize 961 */
+		0x01,        /* bInterval 1 (unit depends on device speed) */
 	};
 
 	static const u8 ov519_defaults[] = {
@@ -454,4 +452,3 @@ namespace usb_eyetoy
 		0x75, 0x75, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	};
 
-} // namespace usb_eyetoy

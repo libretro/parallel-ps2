@@ -147,6 +147,16 @@ static void eyetoy_write_reg(USBDevice* dev, int reg, u8 value)
 	control(dev, VendorDeviceOutRequest | 0x1, 0, reg, data, 1);
 }
 
+/* A sensor register, read over the OV519's I2C bridge as a game reads it:
+ * the address, then the control register to 3 and then 5. */
+static u8 eyetoy_read_i2c(USBDevice* dev, int reg)
+{
+	eyetoy_write_reg(dev, 0x43, (u8)reg); /* R51x_I2C_SADDR_2 */
+	eyetoy_write_reg(dev, 0x47, 0x03);    /* R518_I2C_CTL */
+	eyetoy_write_reg(dev, 0x47, 0x05);
+	return eyetoy_read_reg(dev, 0x45);    /* R51x_I2C_DATA */
+}
+
 /* Where the altsetting array sits in a port's slot: the kind, then the
  * fields USBFreezeDevice writes in order. Mirrors libretro/USB.c. */
 static size_t slot_altsetting_offset(void)
@@ -309,7 +319,7 @@ int main()
 	static const int REG = 0x10; /* OV519_R10_H_SIZE: harmless, logged, kept */
 	s_iop_ram = (u8*)calloc(1, USB_IOP_RAM_SIZE);
 
-	usb_eyetoy::FrontendLoad(stub_environ);
+	eyetoy_frontend_load(stub_environ);
 	USBSetPortDevice(0, USB_DEV_KEYBOARD, 0);
 	USBSetCamera(USB_CAMERA_EYETOY);
 	check(USBopen(), "USBopen with a keyboard and an EyeToy");
@@ -399,6 +409,32 @@ int main()
 	USBStateRead(other, size);
 	check(USBGetPortDevice(1) == cam && eyetoy_read_reg(cam, REG) == def, "an empty slot replugs the device, so it starts afresh");
 
+	/* The OV519 keeps 255 registers, and a game's request names one by a
+	 * byte: 0xFF is past them, and writing it wrote the sensor's first
+	 * register behind them. */
+	{
+		const u8 gain = eyetoy_read_i2c(cam, 0);
+		eyetoy_write_reg(cam, 0xFF, (u8)(gain ^ 0x5A));
+		check(eyetoy_read_reg(cam, 0xFF) == 0 && eyetoy_read_i2c(cam, 0) == gain,
+			"register 0xFF is past the register file: read 0, written nowhere");
+	}
+
+	/* A frame's first packet sized by the game below the header: the room
+	 * after the header was counted below zero, and the whole frame went
+	 * into the 896-byte packet buffer on the stack and past the game's. */
+	usb_desc_set_config(cam, 1);
+	{
+		u8 buf[64];
+		size_t i;
+		int got;
+		bool intact = true;
+		memset(buf, 0xEE, sizeof(buf));
+		got = transfer(cam, USB_TOKEN_IN, 1, buf, 8);
+		for (i = 8; i < sizeof(buf); i++)
+			intact &= buf[i] == 0xEE;
+		check(got >= 0 && got <= 8 && intact, "an EyeToy packet smaller than the frame header stays inside it");
+	}
+
 	USBclose();
 
 	/* Every device model's descriptors go through the parser: the mouse's
@@ -413,7 +449,7 @@ int main()
 			"the mouse's configuration: one interface, one endpoint");
 	}
 	USBclose();
-	usb_eyetoy::FrontendUnload();
+	eyetoy_frontend_unload();
 	python2_checks();
 	ppool_checks();
 	free(state);

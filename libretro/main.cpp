@@ -2760,7 +2760,7 @@ bool retro_load_game(const struct retro_game_info* game)
 
 	check_variables(true);
 	if (s_option_camera != USB_CAMERA_NONE)
-		usb_eyetoy::FrontendLoad(environ_cb);
+		eyetoy_frontend_load(environ_cb);
 
 	if (s_python2_content && !libretro_load_python2(game->path))
 	{
@@ -3099,7 +3099,7 @@ void retro_unload_game(void)
 	}
 
 	vm_shutdown();
-	usb_eyetoy::FrontendUnload();
+	eyetoy_frontend_unload();
 	/* Shutdown() flipped state to Stopping; if cpu_thread is sleeping
 	 * in its 'case Paused' wait (post cpu_thread_pause above), it
 	 * needs a notify to observe the new state and run through to its
@@ -3213,7 +3213,7 @@ void retro_run(void)
 		update_av_info();
 
 	pad_input_update();
-	usb_eyetoy::FrontendRun();
+	eyetoy_frontend_run();
 
 	/* No renderer, or a GS that lost its device and could make no other:
 	 * the EE stays parked and the frame is the last. */
