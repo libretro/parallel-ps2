@@ -38,6 +38,14 @@ enum Round_Mode
 	Round_Truncate = 11
 };
 
+#ifndef GS_INT2_DEFINED
+#define GS_INT2_DEFINED
+typedef struct gs_int2
+{
+	int x, y;
+} gs_int2;
+#endif
+
 template <class T>
 class GSVector2T
 {
@@ -56,6 +64,11 @@ public:
 	}
 
 	constexpr GSVector2T(T x, T y): x(x), y(y)
+	{
+	}
+
+	/* from the C pair the GS's C tables hold */
+	constexpr GSVector2T(const gs_int2& v): x(static_cast<T>(v.x)), y(static_cast<T>(v.y))
 	{
 	}
 

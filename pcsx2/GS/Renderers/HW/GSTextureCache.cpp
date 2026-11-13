@@ -932,7 +932,7 @@ void GSTextureCache::DirtyRectByPage(u32 sbp, u32 spsm, u32 sbw, Target* t, GSVe
 			{
 				for (int bx = blocks.x; bx < blocks.z; bx += s_info.bs.x)
 				{
-					const u32 rel = (s_info.info.bn(bx, by, sbp, sbw) - t->m_TEX0.TBP0) & (GS_MAX_BLOCKS - 1);
+					const u32 rel = (gs_swizzle_bn(&s_info.info, bx, by, sbp, sbw) - t->m_TEX0.TBP0) & (GS_MAX_BLOCKS - 1);
 					if (t->m_TEX0.TBP0 + rel > t->UnwrappedEndBlock())
 						continue;
 
@@ -942,7 +942,7 @@ void GSTextureCache::DirtyRectByPage(u32 sbp, u32 spsm, u32 sbw, Target* t, GSVe
 					{
 						for (int x = 0; x < t_info.pgs.x; x += t_info.bs.x)
 						{
-							if ((t_info.info.bn(x, y, 0, 1) & 31) == (rel & 31))
+							if ((gs_swizzle_bn(&t_info.info, x, y, 0, 1) & 31) == (rel & 31))
 							{
 								px = x;
 								py = y;
@@ -1103,7 +1103,7 @@ void GSTextureCache::DirtyRectByPage(u32 sbp, u32 spsm, u32 sbw, Target* t, GSVe
 				{
 					for (b2a_offset.y = target_rect.y; b2a_offset.y < target_rect.w; b2a_offset.y += src_info->bs.y)
 					{
-						const u32 a_candidate_bp = src_info->info.bn(b2a_offset.x, b2a_offset.y, target_bp, src_pg_width);
+						const u32 a_candidate_bp = gs_swizzle_bn(&src_info->info, b2a_offset.x, b2a_offset.y, target_bp, src_pg_width);
 						if (sbp == a_candidate_bp)
 						{
 							offset_found = true;
@@ -1130,9 +1130,9 @@ void GSTextureCache::DirtyRectByPage(u32 sbp, u32 spsm, u32 sbw, Target* t, GSVe
 
 					if (block_offset > 0 && !req_depth_offset)
 					{
-						sbp = dst_info->info.bn(b2a_offset.x + x_offset, b2a_offset.y, target_bp, t->m_TEX0.TBW);
+						sbp = gs_swizzle_bn(&dst_info->info, b2a_offset.x + x_offset, b2a_offset.y, target_bp, t->m_TEX0.TBW);
 						// Adjust the target BP to be pointing to the position without the offset.
-						target_bp = dst_info->info.bn(b2a_offset.x, b2a_offset.y, target_bp, t->m_TEX0.TBW);
+						target_bp = gs_swizzle_bn(&dst_info->info, b2a_offset.x, b2a_offset.y, target_bp, t->m_TEX0.TBW);
 					}
 				}
 			}
@@ -1659,8 +1659,8 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 				if (!overlaps || (found_t && dst->m_TEX0.TBP0 >= bp && (GSState::s_n - dst->m_last_draw) < (GSState::s_n - t->m_last_draw)))
 					continue;
 
-				const bool width_match = (pcsx2_max_i(64U, bw * 64U) >> GSLocalMemory::m_psm[psm].info.pageShiftX()) ==
-										 (pcsx2_max_i(64U, t->m_TEX0.TBW * 64U) >> GSLocalMemory::m_psm[t->m_TEX0.PSM].info.pageShiftX());
+				const bool width_match = (pcsx2_max_i(64U, bw * 64U) >> GSLocalMemory::m_psm[psm].info.page_shift_x) ==
+										 (pcsx2_max_i(64U, t->m_TEX0.TBW * 64U) >> GSLocalMemory::m_psm[t->m_TEX0.PSM].info.page_shift_x);
 
 				if (bp == t->m_TEX0.TBP0 && !t->m_dirty.empty() && GSUtil::GetChannelMask(psm) == GSUtil::GetChannelMask(t->m_TEX0.PSM) && GSRendererHW::GetInstance()->DrawTransferCount() > 0)
 				{
@@ -2061,7 +2061,7 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 					{
 						for (x = 0; x < pgs.x; x += bs.x)
 						{
-							if ((info.info.bn(x, y, 0, 1) & (GS_BLOCKS_PER_PAGE - 1)) == boff)
+							if ((gs_swizzle_bn(&info.info, x, y, 0, 1) & (GS_BLOCKS_PER_PAGE - 1)) == boff)
 							{
 								ox = x;
 								oy = y;
@@ -2071,7 +2071,7 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 					}
 					for (y = r.y & ~(bs.y - 1); clear && y < r.w; y += bs.y)
 						for (x = r.x & ~(bs.x - 1); x < r.z; x += bs.x)
-							if (info.info.bn(x, y, 0, 1) & boff)
+							if (gs_swizzle_bn(&info.info, x, y, 0, 1) & boff)
 							{
 								clear = false;
 								break;
@@ -4167,8 +4167,8 @@ void GSTextureCache::InvalidateLocalMemReads(const GSOffset& off, const GSVector
 	const u32 bp = off.bp();
 	const u32 psm = off.psm();
 	[[maybe_unused]] const u32 bw = off.bw();
-	const u32 read_start = GSLocalMemory::m_psm[psm].info.bn(r.x, r.y, bp, bw);
-	const u32 read_end = GSLocalMemory::m_psm[psm].info.bn(r.z - 1, r.w - 1, bp, bw);
+	const u32 read_start = gs_swizzle_bn(&GSLocalMemory::m_psm[psm].info, r.x, r.y, bp, bw);
+	const u32 read_end = gs_swizzle_bn(&GSLocalMemory::m_psm[psm].info, r.z - 1, r.w - 1, bp, bw);
 
 	// Could be reading Z24/32 back as CT32 (Gundam Battle Assault 3)
 	if (GSLocalMemory::m_psm[psm].bpp >= 16)
@@ -4778,7 +4778,7 @@ namespace
 	/* The word and first nibble of pixel (x, y) of a buffer. */
 	__fi void MoveElementAt(const MoveElementLayout& l, u32 psm, u32 bp, u32 bw, int x, int y, u32& word, u32& nibble)
 	{
-		const u32 addr = GSLocalMemory::m_psm[psm].info.pa(x, y, bp, bw);
+		const u32 addr = gs_swizzle_pa(&GSLocalMemory::m_psm[psm].info, x, y, bp, bw);
 		word = (addr >> l.addr_shift) & 0xFFFFFu;
 		nibble = (l.fixed >= 0) ? static_cast<u32>(l.fixed) : (addr & ((1u << l.addr_shift) - 1u)) * l.nibbles;
 	}
@@ -4796,7 +4796,7 @@ namespace
 				const u32 psm = layout ? PSMZ32 : PSMCT32;
 				for (int y = 0; y < 32; y++)
 					for (int x = 0; x < 64; x++)
-						s_inverse[layout][GSLocalMemory::m_psm[psm].info.pa(x, y, 0, 1) & 2047u] = static_cast<u16>(x | (y << 6));
+						s_inverse[layout][gs_swizzle_pa(&GSLocalMemory::m_psm[psm].info, x, y, 0, 1) & 2047u] = static_cast<u16>(x | (y << 6));
 			}
 			s_built = true;
 		}
@@ -6318,7 +6318,7 @@ GSTextureCache::Source* GSTextureCache::CreateMergedSource(GIFRegTEX0 TEX0, GIFR
 	const int scaled_height = static_cast<int>(static_cast<float>(tex_height) * scale);
 
 	// Compute new end block based on size.
-	const u32 end_block = GSLocalMemory::m_psm[TEX0.PSM].info.bn(tex_width - 1, tex_height - 1, TEX0.TBP0, TEX0.TBW);
+	const u32 end_block = gs_swizzle_bn(&GSLocalMemory::m_psm[TEX0.PSM].info, tex_width - 1, tex_height - 1, TEX0.TBP0, TEX0.TBW);
 
 	const GSLocalMemory::psm_t& psm = GSLocalMemory::m_psm[TEX0.PSM];
 	const int page_width = psm.pgs.x;
@@ -7088,7 +7088,7 @@ GSTexture* GSTextureCache::LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVec
 				{
 					for (int x = 0; x < info.pgs.x; x += info.bs.x)
 					{
-						if ((info.info.bn(x, y, 0, 1) & 31) == (rel & 31))
+						if ((gs_swizzle_bn(&info.info, x, y, 0, 1) & 31) == (rel & 31))
 						{
 							px = x;
 							py = y;
@@ -7105,7 +7105,7 @@ GSTexture* GSTextureCache::LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVec
 				{
 					for (int x = px; x < px + size.x; x += info.bs.x)
 					{
-						const u32 blk = info.info.bn(x, y, 0, 1) & 31;
+						const u32 blk = gs_swizzle_bn(&info.info, x, y, 0, 1) & 31;
 						if (blk < (rel & 31) || blk >= (rel & 31) + nblocks)
 						{
 							consecutive = false;
@@ -8947,13 +8947,13 @@ GSTextureCache::SurfaceOffset GSTextureCache::ComputeSurfaceOffset(const uint32_
 	{
 		const SurfaceOffsetKeyElem& t_sok = sok.elems[1];
 		const GSLocalMemory::psm_t& t_psm_s = GSLocalMemory::m_psm[t_sok.psm];
-		const u32 so_bp = t_psm_s.info.bn(so.b2a_offset.x, so.b2a_offset.y, t_sok.bp, t_sok.bw);
-		const u32 so_bp_end = t_psm_s.info.bn(so.b2a_offset.z - 1, so.b2a_offset.w - 1, t_sok.bp, t_sok.bw);
+		const u32 so_bp = gs_swizzle_bn(&t_psm_s.info, so.b2a_offset.x, so.b2a_offset.y, t_sok.bp, t_sok.bw);
+		const u32 so_bp_end = gs_swizzle_bn(&t_psm_s.info, so.b2a_offset.z - 1, so.b2a_offset.w - 1, t_sok.bp, t_sok.bw);
 		for (const auto& dr : t->m_dirty)
 		{
 			const GSLocalMemory::psm_t& dr_psm_s = GSLocalMemory::m_psm[dr.psm];
-			const u32 dr_bp = dr_psm_s.info.bn(dr.r.x, dr.r.y, t_sok.bp, dr.bw);
-			const u32 dr_bp_end = dr_psm_s.info.bn(dr.r.z - 1, dr.r.w - 1, t_sok.bp, dr.bw);
+			const u32 dr_bp = gs_swizzle_bn(&dr_psm_s.info, dr.r.x, dr.r.y, t_sok.bp, dr.bw);
+			const u32 dr_bp_end = gs_swizzle_bn(&dr_psm_s.info, dr.r.z - 1, dr.r.w - 1, t_sok.bp, dr.bw);
 			const bool overlap = GSTextureCache::CheckOverlap(dr_bp, dr_bp_end, so_bp, so_bp_end);
 			if (overlap)
 			{
@@ -8977,8 +8977,8 @@ GSTextureCache::SurfaceOffset GSTextureCache::ComputeSurfaceOffset(const Surface
 		return {false}; // Invalid A rectangle.
 	if (b_rect.width() <= 0 || b_rect.height() <= 0 || b_rect.x < 0 || b_rect.y < 0)
 		return {false}; // Invalid B rectangle.
-	const u32 a_bp_end = a_psm_s.info.bn(a_rect.z - 1, a_rect.w - 1, a_el.bp, a_el.bw);
-	const u32 b_bp_end = b_psm_s.info.bn(b_rect.z - 1, b_rect.w - 1, b_el.bp, b_el.bw);
+	const u32 a_bp_end = gs_swizzle_bn(&a_psm_s.info, a_rect.z - 1, a_rect.w - 1, a_el.bp, a_el.bw);
+	const u32 b_bp_end = gs_swizzle_bn(&b_psm_s.info, b_rect.z - 1, b_rect.w - 1, b_el.bp, b_el.bw);
 	const bool overlap = GSTextureCache::CheckOverlap(a_el.bp, a_bp_end, b_el.bp, b_bp_end);
 	if (!overlap)
 		return {false}; // A and B do not overlap.
@@ -9012,7 +9012,7 @@ GSTextureCache::SurfaceOffset GSTextureCache::ComputeSurfaceOffset(const Surface
 		{
 			for (b2a_offset.x = b_rect.x; b2a_offset.x < b_rect.z; b2a_offset.x += dx)
 			{
-				const u32 a_candidate_bp = b_psm_s.info.bn(b2a_offset.x, b2a_offset.y, b_el.bp, b_el.bw);
+				const u32 a_candidate_bp = gs_swizzle_bn(&b_psm_s.info, b2a_offset.x, b2a_offset.y, b_el.bp, b_el.bw);
 				if (a_el.bp == a_candidate_bp)
 				{
 					so.is_valid = true; // Sweep search HIT: <x,y> offset found.
@@ -9048,7 +9048,7 @@ GSTextureCache::SurfaceOffset GSTextureCache::ComputeSurfaceOffset(const Surface
 			{
 				for (b2a_offset.z = b2a_offset.x; b2a_offset.z <= b_rect.z; b2a_offset.z += dx)
 				{
-					const u32 a_candidate_bp_end = b_psm_s.info.bn(b2a_offset.z - 1, b2a_offset.w - 1, b_el.bp, b_el.bw);
+					const u32 a_candidate_bp_end = gs_swizzle_bn(&b_psm_s.info, b2a_offset.z - 1, b2a_offset.w - 1, b_el.bp, b_el.bw);
 					if (a_bp_end == a_candidate_bp_end)
 					{
 						// Align b2a_offset outside.

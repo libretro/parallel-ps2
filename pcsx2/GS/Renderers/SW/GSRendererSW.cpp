@@ -1006,9 +1006,9 @@ const gs_hr_layout_t* GSRendererSW::HiresLayout(u32 psm)
 	l->elem_bytes = p.bpp / 8;
 	l->page_elems = GS_PAGE_SIZE / l->elem_bytes;
 	for (i = 0; i < l->ph; i++)
-		l->swrow[i] = static_cast<int>(p.info.pa(0, i, 0, 1));
+		l->swrow[i] = static_cast<int>(gs_swizzle_pa(&p.info, 0, i, 0, 1));
 	for (i = 0; i < l->pw; i++)
-		l->swcol[i] = static_cast<int>(p.info.pa(i, 0, 0, 1) - p.info.pa(0, 0, 0, 1));
+		l->swcol[i] = static_cast<int>(gs_swizzle_pa(&p.info, i, 0, 0, 1) - gs_swizzle_pa(&p.info, 0, 0, 0, 1));
 	gs_hr_layout_init(l);
 
 	m_hr_layout[key] = l;

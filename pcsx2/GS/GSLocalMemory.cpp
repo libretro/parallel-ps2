@@ -72,9 +72,10 @@ GSLocalMemory::GSLocalMemory()
 
 	MULTI_ISA_SELECT(GSLocalMemoryPopulateFunctions)(*this);
 
-	for (psm_t& psm : GSLocalMemory::m_psm)
+	for (int i = 0; i < 64; i++)
 	{
-		psm.info = GSLocalMemory::swizzle32;
+		psm_t& psm = m_psm[i];
+		static_cast<gs_psm_attr&>(psm) = gs_psm[i];
 		psm.rp = &GSLocalMemory::ReadPixel32;
 		psm.rpa = &GSLocalMemory::ReadPixel32;
 		psm.wp = &GSLocalMemory::WritePixel32;
@@ -82,24 +83,7 @@ GSLocalMemory::GSLocalMemory()
 		psm.rt = &GSLocalMemory::ReadTexel32;
 		psm.rta = &GSLocalMemory::ReadTexel32;
 		psm.wfa = &GSLocalMemory::WritePixel32;
-		psm.bpp = psm.trbpp = 32;
-		psm.pal = 0;
-		psm.bs = GSVector2i(8, 8);
-		psm.pgs = GSVector2i(64, 32);
-		psm.msk = 0xff;
-		psm.depth = 0;
-		psm.fmsk = 0xffffffff;
 	}
-
-	m_psm[PSGPU24].info = GSLocalMemory::swizzle16;
-	m_psm[PSMCT16].info = GSLocalMemory::swizzle16;
-	m_psm[PSMCT16S].info = GSLocalMemory::swizzle16S;
-	m_psm[PSMT8].info = GSLocalMemory::swizzle8;
-	m_psm[PSMT4].info = GSLocalMemory::swizzle4;
-	m_psm[PSMZ32].info = GSLocalMemory::swizzle32Z;
-	m_psm[PSMZ24].info = GSLocalMemory::swizzle32Z;
-	m_psm[PSMZ16].info = GSLocalMemory::swizzle16Z;
-	m_psm[PSMZ16S].info = GSLocalMemory::swizzle16SZ;
 
 	m_psm[PSMCT24].rp = &GSLocalMemory::ReadPixel24;
 	m_psm[PSMCT16].rp = &GSLocalMemory::ReadPixel16;
@@ -186,65 +170,6 @@ GSLocalMemory::GSLocalMemory()
 	m_psm[PSMZ24].wfa = &GSLocalMemory::WritePixel24;
 	m_psm[PSMZ16].wfa = &GSLocalMemory::WriteFrame16;
 	m_psm[PSMZ16S].wfa = &GSLocalMemory::WriteFrame16;
-
-	m_psm[PSGPU24].bpp = 16;
-	m_psm[PSMCT16].bpp = m_psm[PSMCT16S].bpp = 16;
-	m_psm[PSMT8].bpp = 8;
-	m_psm[PSMT4].bpp = 4;
-	m_psm[PSMZ16].bpp = m_psm[PSMZ16S].bpp = 16;
-
-	m_psm[PSMCT24].trbpp = 24;
-	m_psm[PSGPU24].trbpp = 16;
-	m_psm[PSMCT16].trbpp = m_psm[PSMCT16S].trbpp = 16;
-	m_psm[PSMT8].trbpp = m_psm[PSMT8H].trbpp = 8;
-	m_psm[PSMT4].trbpp = m_psm[PSMT4HL].trbpp = m_psm[PSMT4HH].trbpp = 4;
-	m_psm[PSMZ24].trbpp = 24;
-	m_psm[PSMZ16].trbpp = m_psm[PSMZ16S].trbpp = 16;
-
-	m_psm[PSMT8].pal = m_psm[PSMT8H].pal = 256;
-	m_psm[PSMT4].pal = m_psm[PSMT4HL].pal = m_psm[PSMT4HH].pal = 16;
-
-	for (psm_t& psm : m_psm)
-		psm.fmt = 3;
-	m_psm[PSMCT32].fmt = m_psm[PSMZ32].fmt = 0;
-	m_psm[PSMCT24].fmt = m_psm[PSMZ24].fmt = 1;
-	m_psm[PSMCT16].fmt = m_psm[PSMZ16].fmt = 2;
-	m_psm[PSMCT16S].fmt = m_psm[PSMZ16S].fmt = 2;
-
-
-	m_psm[PSGPU24].bs = GSVector2i(16, 8);
-	m_psm[PSMCT16].bs = m_psm[PSMCT16S].bs = GSVector2i(16, 8);
-	m_psm[PSMT8].bs = GSVector2i(16, 16);
-	m_psm[PSMT4].bs = GSVector2i(32, 16);
-	m_psm[PSMZ16].bs = m_psm[PSMZ16S].bs = GSVector2i(16, 8);
-
-	m_psm[PSGPU24].pgs = GSVector2i(64, 64);
-	m_psm[PSMCT16].pgs = m_psm[PSMCT16S].pgs = GSVector2i(64, 64);
-	m_psm[PSMT8].pgs = GSVector2i(128, 64);
-	m_psm[PSMT4].pgs = GSVector2i(128, 128);
-	m_psm[PSMZ16].pgs = m_psm[PSMZ16S].pgs = GSVector2i(64, 64);
-
-	m_psm[PSMCT24].msk = 0x3f;
-	m_psm[PSMZ24].msk = 0x3f;
-	m_psm[PSMT8H].msk = 0xc0;
-	m_psm[PSMT4HL].msk = 0x40;
-	m_psm[PSMT4HH].msk = 0x80;
-
-	m_psm[PSMZ32].depth  = 1;
-	m_psm[PSMZ24].depth  = 1;
-	m_psm[PSMZ16].depth  = 1;
-	m_psm[PSMZ16S].depth = 1;
-
-	m_psm[PSMCT24].fmsk = 0x00FFFFFF;
-	m_psm[PSGPU24].fmsk = 0x00FFFFFF;
-	m_psm[PSMCT16].fmsk = 0x80F8F8F8;
-	m_psm[PSMCT16S].fmsk = 0x80F8F8F8;
-	m_psm[PSMT8H].fmsk = 0xFF000000;
-	m_psm[PSMT4HL].fmsk = 0x0F000000;
-	m_psm[PSMT4HH].fmsk = 0xF0000000;
-	m_psm[PSMZ24].fmsk = 0x00FFFFFF;
-	m_psm[PSMZ16].fmsk = 0x80F8F8F8;
-	m_psm[PSMZ16S].fmsk = 0x80F8F8F8;
 }
 
 GSLocalMemory::~GSLocalMemory()
@@ -295,14 +220,14 @@ GSPixelOffset4* GSLocalMemory::GetPixelOffset4(const GIFRegFRAME& FRAME, const G
 
 	for (int i = 0; i < 2048; i++)
 	{
-		off->row[i].x = (int)m_psm[fpsm].info.pa(0, i, fbp, bw) << fs;
-		off->row[i].y = (int)m_psm[zpsm].info.pa(0, i, zbp, bw) << zs;
+		off->row[i].x = (int)gs_swizzle_pa(&m_psm[fpsm].info, 0, i, fbp, bw) << fs;
+		off->row[i].y = (int)gs_swizzle_pa(&m_psm[zpsm].info, 0, i, zbp, bw) << zs;
 	}
 
 	for (int i = 0; i < 512; i++)
 	{
-		off->col[i].x = (m_psm[fpsm].info.pa(i * 4, 0, 0, 32) - m_psm[fpsm].info.pa(0, 0, 0, 32)) << fs;
-		off->col[i].y = (m_psm[zpsm].info.pa(i * 4, 0, 0, 32) - m_psm[zpsm].info.pa(0, 0, 0, 32)) << zs;
+		off->col[i].x = (gs_swizzle_pa(&m_psm[fpsm].info, i * 4, 0, 0, 32) - gs_swizzle_pa(&m_psm[fpsm].info, 0, 0, 0, 32)) << fs;
+		off->col[i].y = (gs_swizzle_pa(&m_psm[zpsm].info, i * 4, 0, 0, 32) - gs_swizzle_pa(&m_psm[zpsm].info, 0, 0, 0, 32)) << zs;
 	}
 
 	int inserted;
@@ -398,40 +323,17 @@ bool GSLocalMemory::IsPageAligned(u32 psm, const GSVector4i& rc)
 
 u32 GSLocalMemory::GetStartBlockAddress(u32 bp, u32 bw, u32 psm, GSVector4i rect)
 {
-	u32 result = m_psm[psm].info.bn(rect.x, rect.y, bp, bw); // Valid only for color formats
-
-	// If rect is page aligned, we can assume it's the start of the page. Z formats don't place block 0
-	// in the top-left, so we have to round them down.
-	const GSVector2i page_size = GSLocalMemory::m_psm[psm].pgs;
-	if ((rect.x & (page_size.x - 1)) == 0 && (rect.y & (page_size.y - 1)) == 0)
-	{
-		constexpr u32 page_mask = (1 << 5) - 1;
-		result &= ~page_mask;
-	}
-
-	return result;
+	return gs_psm_start_block(bp, bw, psm, rect.x, rect.y);
 }
 
 u32 GSLocalMemory::GetEndBlockAddress(u32 bp, u32 bw, u32 psm, GSVector4i rect)
 {
-	u32 result = m_psm[psm].info.bn(rect.z - 1, rect.w - 1, bp, bw); // Valid only for color formats
-
-	// If rect is page aligned, we can assume it's the start of the next block-1 as the max block position.
-	// Using real end point for Z formats causes problems because it's a lower value.
-	const GSVector2i page_size = GSLocalMemory::m_psm[psm].pgs;
-	if ((rect.z & (page_size.x - 1)) == 0 && (rect.w & (page_size.y - 1)) == 0)
-	{
-		constexpr u32 page_mask = (1 << 5) - 1;
-		result = (((result + page_mask) & ~page_mask)) - 1;
-	}
-
-	return result;
+	return gs_psm_end_block(bp, bw, psm, rect.z, rect.w);
 }
 
 u32 GSLocalMemory::GetUnwrappedEndBlockAddress(u32 bp, u32 bw, u32 psm, GSVector4i rect)
 {
-	const u32 result = GetEndBlockAddress(bp, bw, psm, rect);
-	return (result < bp) ? (result + GS_MAX_BLOCKS) : result;
+	return gs_psm_end_block_unwrapped(bp, bw, psm, rect.z, rect.w);
 }
 
 GSVector4i GSLocalMemory::GetRectForPageOffset(u32 base_bp, u32 offset_bp, u32 bw, u32 psm)
@@ -446,27 +348,9 @@ GSVector4i GSLocalMemory::GetRectForPageOffset(u32 base_bp, u32 offset_bp, u32 b
 bool GSLocalMemory::HasOverlap(const u32 src_bp, const u32 src_bw, const u32 src_psm, const GSVector4i src_rect
 							, const u32 dst_bp, const u32 dst_bw, const u32 dst_psm, const GSVector4i dst_rect)
 {
-	u32 src_start_bp = GSLocalMemory::GetStartBlockAddress(src_bp, src_bw, src_psm, src_rect) & ~(GS_BLOCKS_PER_PAGE - 1);
-	u32 dst_start_bp = GSLocalMemory::GetStartBlockAddress(dst_bp, dst_bw, dst_psm, dst_rect) & ~(GS_BLOCKS_PER_PAGE - 1);
-
-	u32 src_end_bp = ((GSLocalMemory::GetUnwrappedEndBlockAddress(src_bp, src_bw, src_psm, src_rect) + 1) + (GS_BLOCKS_PER_PAGE - 1)) & ~(GS_BLOCKS_PER_PAGE - 1);
-	u32 dst_end_bp = ((GSLocalMemory::GetUnwrappedEndBlockAddress(dst_bp, dst_bw, dst_psm, dst_rect) + 1) + (GS_BLOCKS_PER_PAGE - 1)) & ~(GS_BLOCKS_PER_PAGE - 1);
-
-	if (dst_end_bp > GS_MAX_BLOCKS && src_end_bp < dst_start_bp)
-	{
-		src_start_bp += GS_MAX_BLOCKS;
-		src_end_bp += GS_MAX_BLOCKS;
-	}
-	else if (src_end_bp > GS_MAX_BLOCKS && dst_end_bp < src_start_bp)
-	{
-		dst_start_bp += GS_MAX_BLOCKS;
-		dst_end_bp += GS_MAX_BLOCKS;
-	}
-
-	if (src_start_bp < dst_end_bp && dst_start_bp < src_end_bp)
-		return true;
-
-	return false;
+	const int s[4] = {src_rect.x, src_rect.y, src_rect.z, src_rect.w};
+	const int d[4] = {dst_rect.x, dst_rect.y, dst_rect.z, dst_rect.w};
+	return gs_psm_has_overlap(src_bp, src_bw, src_psm, s, dst_bp, dst_bw, dst_psm, d) != 0;
 }
 
 ///////////////////

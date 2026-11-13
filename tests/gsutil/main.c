@@ -11,6 +11,7 @@
 #include "GS/GSUtil.h"
 #include "GS/GSTables.h"
 #include "GS/GSOffset.h"
+#include "GS/GSPsm.h"
 #include <encodings/xxh3.h>
 #define XXH_STATIC_LINKING_ONLY 1
 #define XXH_INLINE_ALL 1
@@ -180,6 +181,61 @@ static void check_offsets(void)
 	}
 }
 
+/* Each mode's attributes, and the block ranges of random rectangles and
+ * whether pairs of them share a page, hashed: the sums are what
+ * GSLocalMemory's constructor and its block helpers gave */
+static void check_psm(void)
+{
+	const GSBlockSwizzleTable* tables[5] = {&gs_block_table32, &gs_block_table16,
+		&gs_block_table16S, &gs_block_table8, &gs_block_table4};
+	u32 n = 0, h = 0, i, j;
+	int k;
+
+	for (i = 0; i < 64; i++)
+	{
+		const gs_psm_attr* p = &gs_psm[i];
+		u32 w = 9;
+		s_out[n++] = p->bpp; s_out[n++] = p->trbpp; s_out[n++] = p->pal; s_out[n++] = p->fmt;
+		s_out[n++] = p->bs.x; s_out[n++] = p->bs.y; s_out[n++] = p->pgs.x; s_out[n++] = p->pgs.y;
+		s_out[n++] = p->msk; s_out[n++] = p->depth; s_out[n++] = p->fmsk;
+		s_out[n++] = p->info.page_shift_x | p->info.page_shift_y << 8 | p->info.block_address_xor << 16;
+		for (j = 0; j < 5; j++)
+			if (p->info.block_swizzle == tables[j])
+				w = j;
+		s_out[n++] = w;
+	}
+	CHECK(xxh3_64(s_out, n * 4, 0) == 0x5e6bfac109054401ULL);
+
+	s_rng = 7;
+	n = 0;
+	for (k = 0; k < 40000; k++)
+	{
+		u32 psm = next_rand() % 64, bp = next_rand() & 0x3fff, bw = 1 + next_rand() % 32;
+		int r[4], r2[4];
+		u32 psm2, bp2, bw2;
+		r[0] = (int)(next_rand() % 2048);
+		r[1] = (int)(next_rand() % 2048);
+		r[2] = r[0] + 1 + (int)(next_rand() % ((k & 3) ? 64 : 1024));
+		r[3] = r[1] + 1 + (int)(next_rand() % ((k & 3) ? 64 : 1024));
+		if (k & 1)
+		{
+			r[0] &= ~63; r[1] &= ~31; r[2] = (r[2] + 63) & ~63; r[3] = (r[3] + 31) & ~31;
+		}
+		psm2 = next_rand() % 64; bp2 = next_rand() & 0x3fff; bw2 = 1 + next_rand() % 32;
+		r2[0] = (int)(next_rand() % 512);
+		r2[1] = (int)(next_rand() % 512);
+		r2[2] = 513 + (int)(next_rand() % 512);
+		r2[3] = 513 + (int)(next_rand() % 512);
+		s_out[n++] = gs_psm_start_block(bp, bw, psm, r[0], r[1]);
+		s_out[n++] = gs_psm_end_block(bp, bw, psm, r[2], r[3]);
+		s_out[n++] = gs_psm_end_block_unwrapped(bp, bw, psm, r[2], r[3]);
+		s_out[n++] = (u32)gs_psm_has_overlap(bp, bw, psm, r, bp2, bw2, psm2, r2);
+		if (n > OUT_LEN - 8) { h ^= (u32)xxh3_64(s_out, n * 4, h); n = 0; }
+	}
+	h ^= (u32)xxh3_64(s_out, n * 4, h);
+	CHECK(h == 0xe0d6ac4fU);
+}
+
 int main(void)
 {
 	static u8 buf[1 << 16];
@@ -189,6 +245,7 @@ int main(void)
 	gs_util_init();
 	check_tables();
 	check_offsets();
+	check_psm();
 
 	/* Primitive classes. */
 	CHECK(gs_util_get_prim_class(GS_POINTLIST) == GS_POINT_CLASS);

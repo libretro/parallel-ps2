@@ -190,6 +190,7 @@
     <ClCompile Include="GS\Renderers\SW\GSSetupPrimCodeGenerator.all.cpp" />
     <ClCompile Include="GS\GSState.cpp" />
     <ClCompile Include="GS\GSOffset.c" />
+    <ClCompile Include="GS\GSPsm.c" />
     <ClCompile Include="GS\GSTables.c" />
     <ClCompile Include="GS\Renderers\Common\GSTexture.cpp" />
     <ClCompile Include="GS\Renderers\DX11\GSTexture11.cpp" />
@@ -376,6 +377,7 @@
     <ClInclude Include="GS\Renderers\SW\GSSetupPrimCodeGenerator.all.h" />
     <ClInclude Include="GS\GSState.h" />
     <ClInclude Include="GS\GSOffset.h" />
+    <ClInclude Include="GS\GSPsm.h" />
     <ClInclude Include="GS\GSTables.h" />
     <ClInclude Include="GS\Renderers\Common\GSTexture.h" />
     <ClInclude Include="GS\Renderers\DX11\GSTexture11.h" />

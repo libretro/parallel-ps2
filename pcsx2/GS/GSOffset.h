@@ -207,6 +207,19 @@ static GS_OFS_INLINE u32 gs_offset_pa(const gs_offset* o, int x, int y)
 	return gs_pa_value(&h, x);
 }
 
+/* The block number and pixel address of (x, y) in a buffer of the swizzle */
+static GS_OFS_INLINE u32 gs_swizzle_bn(const gs_swizzle_info* s, int x, int y, u32 bp, u32 bw)
+{
+	gs_offset o = gs_offset_make(s, bp, bw, 0);
+	return gs_offset_bn(&o, x, y);
+}
+
+static GS_OFS_INLINE u32 gs_swizzle_pa(const gs_swizzle_info* s, int x, int y, u32 bp, u32 bw)
+{
+	gs_offset o = gs_offset_make(s, bp, bw, 0);
+	return gs_offset_pa(&o, x, y);
+}
+
 /* Whether the rectangle's edges are on mask + 1 boundaries, with room */
 static GS_OFS_INLINE int gs_rect_is_aligned(int l, int t, int r, int b, int mask_x, int mask_y)
 {

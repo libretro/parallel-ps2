@@ -17,6 +17,7 @@
 
 #include "GSTables.h"
 #include "GSOffset.h"
+#include "GSPsm.h"
 #include "GSVector.h"
 #include "GSClut.h"
 #include "MultiISA.h"
@@ -246,14 +247,12 @@ public:
 
 inline u32 GSSwizzleInfo::bn(int x, int y, u32 bp, u32 bw) const
 {
-	gs_offset o = gs_offset_make(this, bp, bw, 0);
-	return gs_offset_bn(&o, x, y);
+	return gs_swizzle_bn(this, x, y, bp, bw);
 }
 
 inline u32 GSSwizzleInfo::pa(int x, int y, u32 bp, u32 bw) const
 {
-	gs_offset o = gs_offset_make(this, bp, bw, 0);
-	return gs_offset_pa(&o, x, y);
+	return gs_swizzle_pa(this, x, y, bp, bw);
 }
 
 class GSLocalMemory;
@@ -287,9 +286,9 @@ public:
 		PSM_FMT_16
 	};
 
-	struct alignas(128) psm_t
+	/* A mode's attributes (GSPsm.h's gs_psm), and its readers and writers */
+	struct alignas(128) psm_t : gs_psm_attr
 	{
-		GSSwizzleInfo info;
 		readPixel rp;
 		readPixelAddr rpa;
 		writePixel wp;
@@ -301,10 +300,6 @@ public:
 		readImage ri;
 		readTexture rtx, rtxP;
 		readTextureBlock rtxb, rtxbP;
-		u16 bpp, trbpp, pal, fmt;
-		GSVector2i bs, pgs;
-		u8 msk, depth;
-		u32 fmsk;
 	};
 
 	static psm_t m_psm[64];

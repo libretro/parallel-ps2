@@ -2269,7 +2269,7 @@ void GSRendererHW::HandleManualDeswizzle()
 	GSVertex* v = &m_vertex.buff[0];
 
 	// Check for page quadrant and compare it to the quadrant from the verts, if it doesn't match then we need to do correction.
-	const GSVector2i page_quadrant = GSLocalMemory::m_psm[m_cached_ctx.FRAME.PSM].pgs / 2;
+	const GSVector2i page_quadrant = GSVector2i(GSLocalMemory::m_psm[m_cached_ctx.FRAME.PSM].pgs) / 2;
 
 	if (PRIM->FST)
 	{

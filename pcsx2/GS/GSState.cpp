@@ -3184,13 +3184,13 @@ __forceinline void GSState::CheckCLUTValidity(u32 prim)
 		const bool frame_needed = !(ctx.TEST.ATE && ctx.TEST.ATST == 0 && ctx.TEST.AFAIL == 2) && ((ctx.FRAME.FBMSK & fpsm.fmsk) != fpsm.fmsk);
 		if (frame_needed && GSLocalMemory::m_psm[m_mem.m_clut.GetCLUTCPSM()].bpp == fpsm.bpp)
 		{
-			const u32 startbp = fpsm.info.bn(temp_draw_rect.x, temp_draw_rect.y, ctx.FRAME.Block(), ctx.FRAME.FBW);
+			const u32 startbp = gs_swizzle_bn(&fpsm.info, temp_draw_rect.x, temp_draw_rect.y, ctx.FRAME.Block(), ctx.FRAME.FBW);
 
 			// If it's a point, then we only have one coord, so the address for start and end will be the same, which is bad for the following check.
 			u32 endbp = startbp;
 			// otherwise calculate the end.
 			if (prim != GS_POINTLIST || (m_index.tail > 1))
-				endbp = fpsm.info.bn(temp_draw_rect.z - 1, temp_draw_rect.w - 1, ctx.FRAME.Block(), ctx.FRAME.FBW);
+				endbp = gs_swizzle_bn(&fpsm.info, temp_draw_rect.z - 1, temp_draw_rect.w - 1, ctx.FRAME.Block(), ctx.FRAME.FBW);
 
 			m_mem.m_clut.InvalidateRange(startbp, endbp, true);
 		}
