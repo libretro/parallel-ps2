@@ -27,6 +27,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include <retro_inline.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -71,7 +73,7 @@ int   gs_flat_map_erase(gs_flat_map_t *map, const void *key, size_t hash);
 
 /* The value under key, or NULL. key_size is the map's, given again by
  * the caller so that it is a constant here and memcmp inlines. */
-static void *gs_flat_map_find(const gs_flat_map_t *map, const void *key, size_t key_size, size_t hash)
+static INLINE void *gs_flat_map_find(const gs_flat_map_t *map, const void *key, size_t key_size, size_t hash)
 {
    size_t i;
 

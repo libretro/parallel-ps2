@@ -48,6 +48,12 @@ static constexpr u32 INDEX_BUFFER_SIZE = 16 * 1024 * 1024;
 static constexpr u32 VERTEX_UNIFORM_BUFFER_SIZE = 8 * 1024 * 1024;
 static constexpr u32 FRAGMENT_UNIFORM_BUFFER_SIZE = 8 * 1024 * 1024;
 static constexpr u32 TEXTURE_UPLOAD_BUFFER_SIZE = 128 * 1024 * 1024;
+/* Draw programs the cache holds before it starts over: more than a game
+ * makes in a session; 640 KiB of programs and 512 KiB of slots */
+static constexpr u32 PROGRAM_CACHE_SIZE = 8192;
+
+static_assert(sizeof(GSDeviceOGL::ProgramSelector) == 16, "the program cache's size above counts 16-byte keys");
+static_assert(sizeof(GSVertexPT1) == GS_GL_VERTEX_PT1_SIZE && sizeof(GSVertex) == GS_GL_VERTEX_SIZE, "vertex layouts");
 
 namespace ReplaceGL
 {
@@ -178,7 +184,7 @@ GSDeviceOGL::GSDeviceOGL()
 {
 	m_ops          = &s_opengl_device_ops;
 	m_present_size = GSVector2i(0, 0);
-	gs_flat_map_init(&m_programs, sizeof(ProgramSelector), sizeof(GLProgram*));
+	gs_gl_program_cache_init(&m_programs, sizeof(ProgramSelector), 0);
 	gs_str_init(&m_src_vs);
 	gs_str_init(&m_src_ps);
 	gs_str_init(&m_convert.vs);
@@ -186,8 +192,7 @@ GSDeviceOGL::GSDeviceOGL()
 
 GSDeviceOGL::~GSDeviceOGL()
 {
-	/* (DestroyResources deleted the programs; the slots go here) */
-	gs_flat_map_free(&m_programs);
+	gs_gl_program_cache_free(&m_programs);
 	gs_str_free(&m_src_vs);
 	gs_str_free(&m_src_ps);
 	gs_str_free(&m_convert.vs);
@@ -497,8 +502,8 @@ bool GSDeviceOGL::Create()
 	// Vertex buffer state
 	// ****************************************************************
 	{
-		glGenVertexArrays(1, &m_vao);
-		IASetVAO(m_vao);
+		static_assert(EXPAND_BUFFER_SIZE == GS_GL_EXPAND_QUADS * 6 * sizeof(u16), "expansion indices");
+		gs_gl_vertex_input_begin(&m_vi);
 
 		const bool streams = gs_gl_stream_buffer_create(&m_vertex_stream_buffer, GL_ARRAY_BUFFER, VERTEX_BUFFER_SIZE)
 			& gs_gl_stream_buffer_create(&m_index_stream_buffer, GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE)
@@ -511,50 +516,13 @@ bool GSDeviceOGL::Create()
 			return false;
 		}
 
-		gs_gl_stream_buffer_bind(&m_vertex_stream_buffer);
-		gs_gl_stream_buffer_bind(&m_index_stream_buffer);
+		if (!gs_gl_vertex_input_finish(&m_vi, &m_vertex_stream_buffer, &m_index_stream_buffer,
+				m_features.vs_expand, GLAD_GL_ARB_shader_draw_parameters))
+			return false;
 
 		// Force UBOs to be uploaded on first use.
 		memset(&m_vs_cb_cache, 0xFF, sizeof(m_vs_cb_cache));
 		memset(&m_ps_cb_cache, 0xFF, sizeof(m_ps_cb_cache));
-
-		for (u32 i = 0; i < 8; i++)
-			glEnableVertexAttribArray(i);
-
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(GSVertexPT1), (const GLvoid*)(0));
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(GSVertexPT1), (const GLvoid*)(16));
-		glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(GSVertex), (const GLvoid*)(8));
-		glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(GSVertex), (const GLvoid*)(12));
-		glVertexAttribIPointer(4, 2, GL_UNSIGNED_SHORT, sizeof(GSVertex), (const GLvoid*)(16));
-		glVertexAttribIPointer(5, 1, GL_UNSIGNED_INT, sizeof(GSVertex), (const GLvoid*)(20));
-		glVertexAttribIPointer(6, 2, GL_UNSIGNED_SHORT, sizeof(GSVertex), (const GLvoid*)(24));
-		glVertexAttribPointer(7, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GSVertex), (const GLvoid*)(28));
-
-		if (m_features.vs_expand)
-		{
-			glGenVertexArrays(1, &m_expand_vao);
-			glBindVertexArray(m_expand_vao);
-			IASetVAO(m_expand_vao);
-
-			// Still need the vertex buffer bound, because uploads happen to GL_ARRAY_BUFFER.
-			gs_gl_stream_buffer_bind(&m_vertex_stream_buffer);
-
-			u8* expand_data = static_cast<u8*>(malloc(EXPAND_BUFFER_SIZE));
-			if (!expand_data)
-				return false;
-			GenerateExpansionIndexBuffer(expand_data);
-			glGenBuffers(1, &m_expand_ibo);
-			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_expand_ibo);
-			glBufferData(GL_ELEMENT_ARRAY_BUFFER, EXPAND_BUFFER_SIZE, expand_data, GL_STATIC_DRAW);
-			free(expand_data);
-
-			// We can bind it once when using gl_BaseVertexARB.
-			if (GLAD_GL_ARB_shader_draw_parameters)
-			{
-				glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, m_vertex_stream_buffer.buffer_id,
-					0, VERTEX_BUFFER_SIZE);
-			}
-		}
 	}
 
 	// ****************************************************************
@@ -832,6 +800,15 @@ bool GSDeviceOGL::CreateTextureFX()
 			log_cb(RETRO_LOG_WARN, "OpenGL: no parallel shader compile; new draw states stay on the dynamic programs\n");
 	}
 
+	/* The draw programs' pool and slots, so that none is allocated as a
+	 * game draws */
+	gs_gl_program_cache_free(&m_programs);
+	if (!gs_gl_program_cache_init(&m_programs, sizeof(ProgramSelector), PROGRAM_CACHE_SIZE))
+	{
+		log_cb(RETRO_LOG_ERROR, "OpenGL: failed to allocate the program cache\n");
+		return false;
+	}
+
 	GLProgram::ResetLastProgram();
 	return true;
 }
@@ -853,10 +830,7 @@ void GSDeviceOGL::DestroyResources()
 		glDeleteSamplers(1, &m_palette_ss);
 
 	m_last_program = nullptr;
-	for (size_t slot = 0; slot < GS_FLAT_MAP_SLOTS(&m_programs); slot++)
-		if (GS_FLAT_MAP_USED(&m_programs, slot))
-			delete *static_cast<GLProgram**>(GS_FLAT_MAP_VALUE(&m_programs, slot));
-	gs_flat_map_clear(&m_programs);
+	gs_gl_program_cache_free(&m_programs);
 
 	for (GSDepthStencilOGL* ds : m_om_dss)
 		delete ds;
@@ -889,17 +863,11 @@ void GSDeviceOGL::DestroyResources()
 	gs_gl_stream_buffer_destroy(&m_fragment_uniform_stream_buffer);
 	gs_gl_stream_buffer_destroy(&m_vertex_uniform_stream_buffer);
 
-	glBindVertexArray(0);
-	if (m_expand_ibo != 0)
-		glDeleteVertexArrays(1, &m_expand_ibo);
-	if (m_vao != 0)
-		glDeleteVertexArrays(1, &m_vao);
+	gs_gl_vertex_input_destroy(&m_vi);
 
 	gs_gl_stream_buffer_destroy(&m_index_stream_buffer);
 	gs_gl_stream_buffer_destroy(&m_vertex_stream_buffer);
 	gs_gl_stream_buffer_destroy(&m_texture_upload_buffer);
-	if (m_expand_ibo)
-		glDeleteBuffers(1, &m_expand_ibo);
 
 	if (m_fbo != 0)
 		glDeleteFramebuffers(1, &m_fbo);
@@ -956,7 +924,7 @@ void GSDeviceOGL::ResetAPIState()
 
 void GSDeviceOGL::RestoreAPIState()
 {
-	glBindVertexArray(m_vao);
+	glBindVertexArray(m_vi.vao);
 
 	if(g_gl_state.fbo)
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_gl_state.fbo);
@@ -1775,7 +1743,7 @@ void GSDeviceOGL::DrawStretchRect(const GSVector4& sRect, const GSVector4& dRect
 		{GSVector4(right , bottom, 0.0f, 0.0f) , GSVector2(sRect.z , sRect.w)} ,
 	};
 
-	IASetVAO(m_vao);
+	IASetVAO(m_vi.vao);
 	IASetVertexBuffer(vertices, 4);
 	IASetPrimitiveTopology(GL_TRIANGLE_STRIP);
 	DrawPrimitive();
@@ -1784,7 +1752,7 @@ void GSDeviceOGL::DrawStretchRect(const GSVector4& sRect, const GSVector4& dRect
 void GSDeviceOGL::DrawMultiStretchRects(
 	const MultiStretchRect* rects, u32 num_rects, GSTexture* dTex, ShaderConvert shader)
 {
-	IASetVAO(m_vao);
+	IASetVAO(m_vi.vao);
 	IASetPrimitiveTopology(GL_TRIANGLE_STRIP);
 	OMSetDepthStencilState(HasDepthOutput(shader) ? m_convert.dss_write : m_convert.dss);
 	OMSetBlendState(false);
@@ -1961,7 +1929,7 @@ void GSDeviceOGL::SetupDATE(GSTexture* rt, GSTexture* ds, const GSVertexPT1* ver
 
 	// ia
 
-	IASetVAO(m_vao);
+	IASetVAO(m_vi.vao);
 	IASetVertexBuffer(vertices, 4);
 	IASetPrimitiveTopology(GL_TRIANGLE_STRIP);
 
@@ -2211,41 +2179,34 @@ void GSDeviceOGL::WriteDynamicKey()
 
 void GSDeviceOGL::SetupPipeline(const ProgramSelector& psel)
 {
-	GLProgram* prog;
+	gs_gl_program* prog;
 	if (m_last_program && m_last_program_selector == psel)
 	{
-		m_last_program->Bind();
+		gs_gl_program_bind(m_last_program);
 		return;
 	}
 
 	const size_t hash = gs_key_hash(&psel, sizeof(psel));
-	GLProgram** found = static_cast<GLProgram**>(gs_flat_map_find(&m_programs, &psel, sizeof(psel), hash));
-	if (!found)
+	prog = gs_gl_program_cache_find(&m_programs, &psel, sizeof(psel), hash);
+	if (!prog)
 	{
-		int inserted;
-
-		prog = new GLProgram();
+		prog = gs_gl_program_cache_add(&m_programs, &psel, hash);
 		if (!m_dynamic_ready || m_test_programs == 1)
 		{
 			/* (without the dynamic programs: built here, as before them) */
 			if (GetVSSource(&m_src_vs, psel.vs) && GetPSSource(&m_src_ps, psel.ps))
-				GetProgram(prog, &m_src_vs, &m_src_ps);
+				GetProgram(GLProgram::Of(prog), &m_src_vs, &m_src_ps);
 			m_programs_built_here++;
 		}
 		/* Compiled and linked by the driver's threads while a dynamic
 		 * program draws; without them it stays drawn with one. */
 		else if (m_parallel_compile && m_test_programs != 2 && GetVSSource(&m_src_vs, psel.vs) && GetPSSource(&m_src_ps, psel.ps))
-			prog->StartCompile(GS_STR(&m_src_vs), GS_STR_LEN(&m_src_vs), GS_STR(&m_src_ps), GS_STR_LEN(&m_src_ps));
-		found = static_cast<GLProgram**>(gs_flat_map_insert(&m_programs, &psel, hash, &inserted));
-		if (!found)
-			abort(); /* out of memory, as the map's emplace was without exceptions */
-		*found = prog;
+			gs_gl_program_start_compile(prog, GS_STR(&m_src_vs), GS_STR_LEN(&m_src_vs), GS_STR(&m_src_ps), GS_STR_LEN(&m_src_ps));
 	}
-	prog = *found;
-	if (prog->IsPending() && prog->Poll() > 0)
+	if (prog->pending && gs_gl_program_poll(prog) > 0)
 		m_programs_async++;
 
-	if (!prog->IsValid() || prog->IsPending())
+	if (!prog->program_id || prog->pending)
 	{
 		u32 key[8];
 		const u32 expand = m_features.vs_expand ? static_cast<u32>(psel.vs.expand) : 0u;
@@ -2264,7 +2225,7 @@ void GSDeviceOGL::SetupPipeline(const ProgramSelector& psel)
 
 	m_last_program_selector = psel;
 	m_last_program          = prog;
-	m_last_program->Bind();
+	gs_gl_program_bind(prog);
 }
 
 void GSDeviceOGL::SetupSampler(PSSamplerSelector ssel)
@@ -2431,13 +2392,13 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 
 	if (config.vs.UseExpandIndexBuffer())
 	{
-		IASetVAO(m_expand_vao);
+		IASetVAO(m_vi.expand_vao);
 		m_index.start = 0;
 		m_index.count = config.nindices;
 	}
 	else
 	{
-		IASetVAO(m_vao);
+		IASetVAO(m_vi.vao);
 		IASetIndexBuffer(config.indices, config.nindices);
 	}
 

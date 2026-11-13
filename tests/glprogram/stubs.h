@@ -11,6 +11,7 @@ extern "C" {
  * GL calls that was */
 extern u32 g_trace;
 extern u32 g_calls;
+extern u32 g_program_deletes; /* glDeleteProgram calls */
 extern int g_echo; /* print what is logged */
 void stubs_reset(void);
 void tr(u32 v);

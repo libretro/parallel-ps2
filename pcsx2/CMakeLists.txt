@@ -460,8 +460,10 @@ if(USE_OPENGL)
 		GS/Renderers/OpenGL/GSTextureOGL.cpp
 		GS/Renderers/OpenGL/GLContext.c
 		GS/Renderers/OpenGL/GLProgram.c
+		GS/Renderers/OpenGL/GLProgramCache.c
 		GS/Renderers/OpenGL/GLShaderCache.cpp
 		GS/Renderers/OpenGL/GLStreamBuffer.c
+		GS/Renderers/OpenGL/GLVertexInput.c
 	)
 	list(APPEND pcsx2GSHeaders
 		GS/Renderers/OpenGL/GLState.h
@@ -469,8 +471,10 @@ if(USE_OPENGL)
 		GS/Renderers/OpenGL/GSTextureOGL.h
 		GS/Renderers/OpenGL/GLContext.h
 		GS/Renderers/OpenGL/GLProgram.h
+		GS/Renderers/OpenGL/GLProgramCache.h
 		GS/Renderers/OpenGL/GLShaderCache.h
 		GS/Renderers/OpenGL/GLStreamBuffer.h
+		GS/Renderers/OpenGL/GLVertexInput.h
 	)
 	target_link_libraries(PCSX2_FLAGS INTERFACE glad)
 endif()

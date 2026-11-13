@@ -17,6 +17,8 @@
 
 #include "GLContext.h"
 #include "GLStreamBuffer.h"
+#include "GLVertexInput.h"
+#include "GLProgramCache.h"
 #include "GLProgram.h"
 #include "GLShaderCache.h"
 #include "GS/Renderers/Common/GSString.h"
@@ -172,9 +174,7 @@ private:
 	
 	gs_gl_stream_buffer m_vertex_stream_buffer = {};
 	gs_gl_stream_buffer m_index_stream_buffer = {};
-	GLuint m_expand_ibo = 0;
-	GLuint m_vao = 0;
-	GLuint m_expand_vao = 0;
+	gs_gl_vertex_input m_vi = {};
 	GLenum m_draw_topology = 0;
 
 	gs_gl_stream_buffer m_vertex_uniform_stream_buffer = {};
@@ -215,16 +215,15 @@ private:
 
 	GLuint m_ps_ss[1 << 8];
 	GSDepthStencilOGL* m_om_dss[1 << 5] = {};
-	/* The programs by selector, compared bit for bit, in a GSFlatMap
-	 * from the selector to the GLProgram*, which the device owns: a
-	 * lookup reads one slot. The program is allocated on its own so the
-	 * pointer the last draw keeps stays put when the map grows. */
-	gs_flat_map_t m_programs;
+	/* The draw programs by selector, compared bit for bit: a pool made
+	 * with the device, so a lookup reads one slot and a new selector's
+	 * program is never allocated as the game draws. */
+	gs_gl_program_cache m_programs;
 	/* The draws of one frame come in runs that share a program; remember
 	 * the last selector so the map is not walked for every draw, as the
 	 * D3D12 and Vulkan pipelines do (d9c02aae9). */
 	ProgramSelector m_last_program_selector;
-	GLProgram* m_last_program = nullptr;
+	gs_gl_program* m_last_program = nullptr;
 	GLShaderCache m_shader_cache;
 
 	/* No program is compiled on the draw path. The dynamic programs (by

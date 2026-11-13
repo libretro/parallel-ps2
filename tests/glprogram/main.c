@@ -9,6 +9,8 @@
 #include <string.h>
 
 #include "GS/Renderers/OpenGL/GLProgram.h"
+#include "GS/Renderers/OpenGL/GLProgramCache.h"
+#include "GS/Renderers/Common/GSKeyHash.h"
 #include "stubs.h"
 
 static gs_gl_program s_progs[4];
@@ -79,6 +81,96 @@ static void overflow(void)
 	check(p.uniforms[GS_GL_PROGRAM_MAX_UNIFORMS] == -1, "and the spare is still none");
 }
 
+#define CACHE_SIZE 64
+
+/* A key the size of the device's program selector (16 bytes) */
+typedef struct cache_key
+{
+	u32 v[4];
+} cache_key;
+
+static cache_key key_of(u32 n)
+{
+	cache_key k;
+	k.v[0] = n * 2654435761u;
+	k.v[1] = n;
+	k.v[2] = ~n;
+	k.v[3] = 0x5A5A5A5Au;
+	return k;
+}
+
+static void program_cache(void)
+{
+	gs_gl_program_cache c;
+	gs_gl_program* first[CACHE_SIZE];
+	const unsigned char* slots;
+	size_t mask;
+	u32 i, deletes;
+
+	stubs_reset();
+	check(gs_gl_program_cache_init(&c, sizeof(cache_key), CACHE_SIZE), "cache made");
+	slots = c.map.slots;
+	mask  = c.map.mask;
+	for (i = 0; i < CACHE_SIZE; i++)
+	{
+		const cache_key k = key_of(i);
+		const size_t h    = gs_key_hash(&k, sizeof(k));
+		gs_gl_program* p;
+		check(gs_gl_program_cache_find(&c, &k, sizeof(k), h) == NULL, "a new key is not found");
+		p = gs_gl_program_cache_add(&c, &k, h);
+		check(p == &c.pool[i], "programs are taken from the pool in turn");
+		check(p->program_id == 0 && p->uniform_count == 0, "a taken program is empty");
+		/* half of them compiled and linked, as the device does */
+		if (i & 1)
+		{
+			if (gs_gl_program_compile(p, "v", 1, "f", 1))
+				gs_gl_program_link(p);
+		}
+		first[i] = p;
+	}
+	check(c.map.slots == slots && c.map.mask == mask, "the slots never grew while the pool filled");
+	for (i = 0; i < CACHE_SIZE; i++)
+	{
+		const cache_key k = key_of(i);
+		check(gs_gl_program_cache_find(&c, &k, sizeof(k), gs_key_hash(&k, sizeof(k))) == first[i],
+			"every program is found where it was added");
+	}
+
+	/* One past the pool: all deleted, and the cache starts over */
+	deletes = g_program_deletes;
+	{
+		u32 live = 0;
+		for (i = 0; i < CACHE_SIZE; i++)
+			live += c.pool[i].program_id != 0;
+		{
+			const cache_key k = key_of(CACHE_SIZE);
+			gs_gl_program* p = gs_gl_program_cache_add(&c, &k, gs_key_hash(&k, sizeof(k)));
+			check(p == &c.pool[0] && c.used == 1 && c.restarts == 1, "a full cache starts over");
+			check(g_program_deletes - deletes == live, "every live program was deleted");
+			check(gs_gl_program_cache_find(&c, &k, sizeof(k), gs_key_hash(&k, sizeof(k))) == p, "the new key is found");
+		}
+	}
+	for (i = 0; i < CACHE_SIZE; i++)
+	{
+		const cache_key k = key_of(i);
+		check(gs_gl_program_cache_find(&c, &k, sizeof(k), gs_key_hash(&k, sizeof(k))) == NULL,
+			"no key from before the restart is found");
+		check(c.pool[i].program_id == 0, "the pool is empty again");
+	}
+	check(c.map.slots == slots && c.map.mask == mask, "the slots are kept over the restart");
+
+	gs_gl_program_cache_free(&c);
+	check(c.pool == NULL && c.capacity == 0, "freed");
+
+	/* Without a pool nothing is added */
+	check(!gs_gl_program_cache_init(&c, sizeof(cache_key), 0), "no pool of none");
+	{
+		const cache_key k = key_of(1);
+		check(gs_gl_program_cache_add(&c, &k, gs_key_hash(&k, sizeof(k))) == NULL, "and it adds nothing");
+	}
+	gs_gl_program_cache_free(&c);
+}
+
 int main(int argc, char** argv)
 {
 	u32 trace;
@@ -93,6 +185,7 @@ int main(int argc, char** argv)
 	check(trace == EXPECTED_TRACE, "the GL calls and logs match the C++ class");
 
 	overflow();
+	program_cache();
 
 	if (s_failed)
 		return 1;

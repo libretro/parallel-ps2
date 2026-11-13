@@ -502,8 +502,10 @@ ifeq ($(HAVE_OPENGL), 1)
 SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLContext.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLProgram.c \
+	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLProgramCache.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLState.c \
-	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLStreamBuffer.c
+	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLStreamBuffer.c \
+	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLVertexInput.c
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLShaderCache.cpp \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GSDeviceOGL.cpp \

@@ -14,6 +14,7 @@
 
 u32 g_trace = 2166136261u;
 u32 g_calls = 0;
+u32 g_program_deletes = 0;
 int g_echo  = 0;
 static u32 s_rng = 12345u;
 static GLuint s_next_id = 0;
@@ -202,6 +203,7 @@ static void APIENTRY s_DeleteProgram(GLuint id)
 {
 	call(12);
 	tr(id);
+	g_program_deletes++;
 }
 
 static void APIENTRY s_GetProgramBinary(GLuint prog, GLsizei size, GLsizei* length, GLenum* format, void* data)

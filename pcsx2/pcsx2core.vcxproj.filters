@@ -809,10 +809,16 @@
     <ClCompile Include="GS\Renderers\OpenGL\GLProgram.c">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
+    <ClCompile Include="GS\Renderers\OpenGL\GLProgramCache.c">
+      <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
+    </ClCompile>
     <ClCompile Include="GS\Renderers\OpenGL\GLShaderCache.cpp">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\OpenGL\GLStreamBuffer.c">
+      <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\OpenGL\GLVertexInput.c">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
     <ClCompile Include="GS\GSClut.c">
@@ -1339,10 +1345,16 @@
     <ClInclude Include="GS\Renderers\OpenGL\GLProgram.h">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClInclude>
+    <ClInclude Include="GS\Renderers\OpenGL\GLProgramCache.h">
+      <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
+    </ClInclude>
     <ClInclude Include="GS\Renderers\OpenGL\GLShaderCache.h">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClInclude>
     <ClInclude Include="GS\Renderers\OpenGL\GLStreamBuffer.h">
+      <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
+    </ClInclude>
+    <ClInclude Include="GS\Renderers\OpenGL\GLVertexInput.h">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClInclude>
     <ClInclude Include="GS\GSDrawingContext.h">

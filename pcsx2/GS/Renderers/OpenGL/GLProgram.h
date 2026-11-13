@@ -100,6 +100,8 @@ void gs_gl_program_uniform4fv(const gs_gl_program* p, int index, const float* v)
 #ifdef __cplusplus
 }
 
+#include <type_traits>
+
 /* The program as the device holds it: moved, never copied, destroyed with
  * it. */
 class GLProgram
@@ -124,6 +126,8 @@ public:
 	}
 
 	static void ResetLastProgram() { gs_gl_program_reset_last(); }
+	/* The wrapper of a C program (it is its only member) */
+	static GLProgram* Of(gs_gl_program* p) { return reinterpret_cast<GLProgram*>(p); }
 
 	bool Compile(const char* vs, size_t vs_length, const char* fs, size_t fs_length) { return gs_gl_program_compile(&m_p, vs, vs_length, fs, fs_length) != 0; }
 	bool CreateFromBinary(const void* data, u32 data_length, u32 data_format) { return gs_gl_program_create_from_binary(&m_p, data, data_length, data_format) != 0; }
@@ -155,6 +159,7 @@ public:
 private:
 	gs_gl_program m_p;
 };
+static_assert(sizeof(GLProgram) == sizeof(gs_gl_program) && std::is_standard_layout<GLProgram>::value, "GLProgram is a gs_gl_program");
 #endif
 
 #endif
