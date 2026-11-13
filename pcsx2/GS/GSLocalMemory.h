@@ -73,17 +73,15 @@ class GSSwizzleInfo
 public:
 	GSSwizzleInfo() = default;
 
-	/// @param blockSize Size of block in pixels
-	template <int PageWidth, int PageHeight, int BlocksWide, int BlocksHigh, int PixelRowMask>
-	constexpr GSSwizzleInfo(GSSwizzleTableList<PageHeight, PageWidth, BlocksHigh, BlocksWide, PixelRowMask> list, u32 blockXor)
-		: m_blockSwizzle(&list.block)
-		, m_pixelSwizzleCol(list.col.value)
-		, m_pixelSwizzleRow(list.row.rows)
-		, m_pageMask{PageWidth - 1, PageHeight - 1}
-		, m_blockMask{(PageWidth / BlocksWide) - 1, (PageHeight / BlocksHigh) - 1}
-		, m_pixelRowMask(PixelRowMask)
-		, m_pageShiftX(ilog2(PageWidth)), m_pageShiftY(ilog2(PageHeight))
-		, m_blockShiftX(ilog2(PageWidth / BlocksWide)), m_blockShiftY(ilog2(PageHeight / BlocksHigh))
+	constexpr GSSwizzleInfo(const gs_swizzle_tables& t, u32 blockXor)
+		: m_blockSwizzle(t.block)
+		, m_pixelSwizzleCol(t.col)
+		, m_pixelSwizzleRow(t.row)
+		, m_pageMask{t.page_w - 1, t.page_h - 1}
+		, m_blockMask{(t.page_w / t.blocks_wide) - 1, (t.page_h / t.blocks_high) - 1}
+		, m_pixelRowMask(t.row_mask)
+		, m_pageShiftX(ilog2(t.page_w)), m_pageShiftY(ilog2(t.page_h))
+		, m_blockShiftX(ilog2(t.page_w / t.blocks_wide)), m_blockShiftY(ilog2(t.page_h / t.blocks_high))
 		, m_blockAddressXor(blockXor)
 		, m_pixelAddressXor(blockXor << (m_blockShiftX + m_blockShiftY))
 	{

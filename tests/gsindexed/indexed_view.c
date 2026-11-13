@@ -50,7 +50,7 @@
 
 typedef unsigned int u32;
 
-/* ---- GS swizzle tables (GSTables.cpp) ---------------------------------- */
+/* ---- GS swizzle tables (GSTables.c) ------------------------------------ */
 
 static const unsigned char block_table[4][8] = {
    { 0, 1, 4, 5, 16, 17, 20, 21 },

@@ -416,7 +416,7 @@ __ri static bool TestAlpha(T& test, T& fm, T& zm, const T& ga, const GSScanlineG
 	return true;
 }
 
-static const int s_offsets[] = {0, 2, 8, 10, 16, 18, 24, 26}; // columnTable16[0]
+static const int s_offsets[] = {0, 2, 8, 10, 16, 18, 24, 26}; // gs_column_table16[0]
 
 template <class T>
 __ri static void WritePixel(const T& src, int addr, int i, u32 psm, const GSScanlineGlobalData& global)

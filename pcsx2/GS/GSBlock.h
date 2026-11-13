@@ -125,7 +125,7 @@ public:
 		const u8* RESTRICT s0 = &src[srcpitch * 0];
 		const u8* RESTRICT s1 = &src[srcpitch * 1];
 
-		// for(int j = 0; j < 16; j++) {((u16*)s0)[j] = columnTable16[0][j]; ((u16*)s1)[j] = columnTable16[1][j];}
+		// for(int j = 0; j < 16; j++) {((u16*)s0)[j] = gs_column_table16[0][j]; ((u16*)s1)[j] = gs_column_table16[1][j];}
 
 #if _M_SSE >= 0x501
 		GSVector8i v0, v1;

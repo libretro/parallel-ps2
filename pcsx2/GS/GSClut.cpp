@@ -477,7 +477,7 @@ void GSClut::WriteCLUT_T32_I8_CSM1(const u32* RESTRICT src, u16* RESTRICT clut, 
 	{
 		const int off = i << 4; // WriteCLUT_T32_I4_CSM1 loads 16 at a time
 		// Source column
-		const int s = clutTableT32I8[off & 0x70] | (off & 0x80);
+		const int s = gs_clut_table_t32i8[off & 0x70] | (off & 0x80);
 
 		WriteCLUT_T32_I4_CSM1(&src[s], &clut[off]);
 	}
@@ -555,7 +555,7 @@ __forceinline void GSClut::WriteCLUT_T16_I4_CSM1(const u16* RESTRICT src, u16* R
 
 	for (int i = 0; i < 16; i++)
 	{
-		clut[i] = src[clutTableT16I4[i]];
+		clut[i] = src[gs_clut_table_t16i4[i]];
 	}
 }
 

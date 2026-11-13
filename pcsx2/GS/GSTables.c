@@ -13,26 +13,9 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// clang-format off
-
-#include "../../common/Pcsx2Defs.h"
-
-#include <stddef.h>
-
 #include "GSTables.h"
 
-template <int Width, int Height>
-static constexpr GSSizedBlockSwizzleTable<Height, Width> makeSwizzleTable(const u8 (&arr)[Height][Width]) {
-	GSSizedBlockSwizzleTable<Height, Width> table = {};
-	for (int y = 0; y < 8; y++) {
-		for (int x = 0; x < 8; x++) {
-			table.value[y][x] = arr[y % Height][x % Width];
-		}
-	}
-	return table;
-}
-
-static constexpr u8 _blockTable32[4][8] =
+static const u8 gs_block_raw32[4][8] =
 {
 	{  0,  1,  4,  5, 16, 17, 20, 21},
 	{  2,  3,  6,  7, 18, 19, 22, 23},
@@ -40,7 +23,7 @@ static constexpr u8 _blockTable32[4][8] =
 	{ 10, 11, 14, 15, 26, 27, 30, 31}
 };
 
-static constexpr u8 _blockTable16[8][4] =
+static const u8 gs_block_raw16[8][4] =
 {
 	{  0,  2,  8, 10 },
 	{  1,  3,  9, 11 },
@@ -52,7 +35,7 @@ static constexpr u8 _blockTable16[8][4] =
 	{ 21, 23, 29, 31 }
 };
 
-static constexpr u8 _blockTable16S[8][4] =
+static const u8 gs_block_raw16S[8][4] =
 {
 	{  0,  2, 16, 18 },
 	{  1,  3, 17, 19 },
@@ -64,7 +47,7 @@ static constexpr u8 _blockTable16S[8][4] =
 	{ 13, 15, 29, 31 }
 };
 
-static constexpr u8 _blockTable8[4][8] =
+static const u8 gs_block_raw8[4][8] =
 {
 	{  0,  1,  4,  5, 16, 17, 20, 21},
 	{  2,  3,  6,  7, 18, 19, 22, 23},
@@ -72,7 +55,7 @@ static constexpr u8 _blockTable8[4][8] =
 	{ 10, 11, 14, 15, 26, 27, 30, 31}
 };
 
-static constexpr u8 _blockTable4[8][4] =
+static const u8 gs_block_raw4[8][4] =
 {
 	{  0,  2,  8, 10 },
 	{  1,  3,  9, 11 },
@@ -84,13 +67,7 @@ static constexpr u8 _blockTable4[8][4] =
 	{ 21, 23, 29, 31 }
 };
 
-constexpr GSSizedBlockSwizzleTable<4, 8> blockTable32   = makeSwizzleTable(_blockTable32);
-constexpr GSSizedBlockSwizzleTable<8, 4> blockTable16   = makeSwizzleTable(_blockTable16);
-constexpr GSSizedBlockSwizzleTable<8, 4> blockTable16S  = makeSwizzleTable(_blockTable16S);
-constexpr GSSizedBlockSwizzleTable<4, 8> blockTable8    = makeSwizzleTable(_blockTable8);
-constexpr GSSizedBlockSwizzleTable<8, 4> blockTable4    = makeSwizzleTable(_blockTable4);
-
-constexpr u8 columnTable32[8][8] =
+const u8 gs_column_table32[8][8] =
 {
 	{  0,  1,  4,  5,  8,  9, 12, 13 },
 	{  2,  3,  6,  7, 10, 11, 14, 15 },
@@ -102,7 +79,7 @@ constexpr u8 columnTable32[8][8] =
 	{ 50, 51, 54, 55, 58, 59, 62, 63 },
 };
 
-constexpr u8 columnTable16[8][16] =
+const u8 gs_column_table16[8][16] =
 {
 	{   0,   2,   8,  10,  16,  18,  24,  26,
 	    1,   3,   9,  11,  17,  19,  25,  27 },
@@ -122,9 +99,9 @@ constexpr u8 columnTable16[8][16] =
 	  101, 103, 109, 111, 117, 119, 125, 127 },
 };
 
-constexpr u8 columnTable8[16][16] =
+const u8 gs_column_table8[16][16] =
 {
-	{   0,   4,  16,  20,  32,  36,  48,  52,	// column 0
+	{   0,   4,  16,  20,  32,  36,  48,  52, /* column 0 */
 	    2,   6,  18,  22,  34,  38,  50,  54 },
 	{   8,  12,  24,  28,  40,  44,  56,  60,
 	   10,  14,  26,  30,  42,  46,  58,  62 },
@@ -132,7 +109,7 @@ constexpr u8 columnTable8[16][16] =
 	   35,  39,  51,  55,   3,   7,  19,  23 },
 	{  41,  45,  57,  61,   9,  13,  25,  29,
 	   43,  47,  59,  63,  11,  15,  27,  31 },
-	{  96, 100, 112, 116,  64,  68,  80,  84, 	// column 1
+	{  96, 100, 112, 116,  64,  68,  80,  84, /* column 1 */
 	   98, 102, 114, 118,  66,  70,  82,  86 },
 	{ 104, 108, 120, 124,  72,  76,  88,  92,
 	  106, 110, 122, 126,  74,  78,  90,  94 },
@@ -140,7 +117,7 @@ constexpr u8 columnTable8[16][16] =
 	   67,  71,  83,  87,  99, 103, 115, 119 },
 	{  73,  77,  89,  93, 105, 109, 121, 125,
 	   75,  79,  91,  95, 107, 111, 123, 127 },
-	{ 128, 132, 144, 148, 160, 164, 176, 180,	// column 2
+	{ 128, 132, 144, 148, 160, 164, 176, 180, /* column 2 */
 	  130, 134, 146, 150, 162, 166, 178, 182 },
 	{ 136, 140, 152, 156, 168, 172, 184, 188,
 	  138, 142, 154, 158, 170, 174, 186, 190 },
@@ -148,7 +125,7 @@ constexpr u8 columnTable8[16][16] =
 	  163, 167, 179, 183, 131, 135, 147, 151 },
 	{ 169, 173, 185, 189, 137, 141, 153, 157,
 	  171, 175, 187, 191, 139, 143, 155, 159 },
-	{ 224, 228, 240, 244, 192, 196, 208, 212,	// column 3
+	{ 224, 228, 240, 244, 192, 196, 208, 212, /* column 3 */
 	  226, 230, 242, 246, 194, 198, 210, 214 },
 	{ 232, 236, 248, 252, 200, 204, 216, 220,
 	  234, 238, 250, 254, 202, 206, 218, 222 },
@@ -158,9 +135,9 @@ constexpr u8 columnTable8[16][16] =
 	  203, 207, 219, 223, 235, 239, 251, 255 },
 };
 
-constexpr u16 columnTable4[16][32] =
+const u16 gs_column_table4[16][32] =
 {
-	{   0,   8,  32,  40,  64,  72,  96, 104,	// column 0
+	{   0,   8,  32,  40,  64,  72,  96, 104, /* column 0 */
 	    2,  10,  34,  42,  66,  74,  98, 106,
 	    4,  12,  36,  44,  68,  76, 100, 108,
 	    6,  14,  38,  46,  70,  78, 102, 110 },
@@ -176,7 +153,7 @@ constexpr u16 columnTable4[16][32] =
 	   83,  91, 115, 123,  19,  27,  51,  59,
 	   85,  93, 117, 125,  21,  29,  53,  61,
 	   87,  95, 119, 127,  23,  31,  55,  63 },
-	{ 192, 200, 224, 232, 128, 136, 160, 168,	// column 1
+	{ 192, 200, 224, 232, 128, 136, 160, 168, /* column 1 */
 	  194, 202, 226, 234, 130, 138, 162, 170,
 	  196, 204, 228, 236, 132, 140, 164, 172,
 	  198, 206, 230, 238, 134, 142, 166, 174 },
@@ -192,7 +169,7 @@ constexpr u16 columnTable4[16][32] =
 	  147, 155, 179, 187, 211, 219, 243, 251,
 	  149, 157, 181, 189, 213, 221, 245, 253,
 	  151, 159, 183, 191, 215, 223, 247, 255 },
-	{ 256, 264, 288, 296, 320, 328, 352, 360,	// column 2
+	{ 256, 264, 288, 296, 320, 328, 352, 360, /* column 2 */
 	  258, 266, 290, 298, 322, 330, 354, 362,
 	  260, 268, 292, 300, 324, 332, 356, 364,
 	  262, 270, 294, 302, 326, 334, 358, 366 },
@@ -208,7 +185,7 @@ constexpr u16 columnTable4[16][32] =
 	  339, 347, 371, 379, 275, 283, 307, 315,
 	  341, 349, 373, 381, 277, 285, 309, 317,
 	  343, 351, 375, 383, 279, 287, 311, 319 },
-	{ 448, 456, 480, 488, 384, 392, 416, 424,	// column 3
+	{ 448, 456, 480, 488, 384, 392, 416, 424, /* column 3 */
 	  450, 458, 482, 490, 386, 394, 418, 426,
 	  452, 460, 484, 492, 388, 396, 420, 428,
 	  454, 462, 486, 494, 390, 398, 422, 430 },
@@ -226,7 +203,7 @@ constexpr u16 columnTable4[16][32] =
 	  407, 415, 439, 447, 471, 479, 503, 511 },
 };
 
-constexpr u8 clutTableT32I8[128] =
+const u8 gs_clut_table_t32i8[128] =
 {
 	0, 1, 4, 5, 8, 9, 12, 13, 2, 3, 6, 7, 10, 11, 14, 15,
 	64, 65, 68, 69, 72, 73, 76, 77, 66, 67, 70, 71, 74, 75, 78, 79,
@@ -238,13 +215,13 @@ constexpr u8 clutTableT32I8[128] =
 	112, 113, 116, 117, 120, 121, 124, 125, 114, 115, 118, 119, 122, 123, 126, 127
 };
 
-constexpr u8 clutTableT32I4[16] =
+const u8 gs_clut_table_t32i4[16] =
 {
 	0, 1, 4, 5, 8, 9, 12, 13,
 	2, 3, 6, 7, 10, 11, 14, 15
 };
 
-constexpr u8 clutTableT16I8[32] =
+const u8 gs_clut_table_t16i8[32] =
 {
 	0, 2, 8, 10, 16, 18, 24, 26,
 	4, 6, 12, 14, 20, 22, 28, 30,
@@ -252,71 +229,109 @@ constexpr u8 clutTableT16I8[32] =
 	5, 7, 13, 15, 21, 23, 29, 31
 };
 
-constexpr u8 clutTableT16I4[16] =
+const u8 gs_clut_table_t16i4[16] =
 {
 	0, 2, 8, 10, 16, 18, 24, 26,
 	4, 6, 12, 14, 20, 22, 28, 30
 };
+PCSX2_ALIGN(64) GSBlockSwizzleTable gs_block_table32;
+PCSX2_ALIGN(64) GSBlockSwizzleTable gs_block_table16;
+PCSX2_ALIGN(64) GSBlockSwizzleTable gs_block_table16S;
+PCSX2_ALIGN(64) GSBlockSwizzleTable gs_block_table8;
+PCSX2_ALIGN(64) GSBlockSwizzleTable gs_block_table4;
 
-template <int BlocksHigh, int BlocksWide, int ColHeight, int ColWidth, typename Col>
-constexpr int pxOffset(const u8 (&blockTable)[BlocksHigh][BlocksWide], Col (&colTable)[ColHeight][ColWidth], int x, int y)
+PCSX2_ALIGN(128) int gs_pixel_col_offset32[32];
+PCSX2_ALIGN(128) int gs_pixel_col_offset16[64];
+PCSX2_ALIGN(128) int gs_pixel_col_offset16S[64];
+PCSX2_ALIGN(128) int gs_pixel_col_offset8[64];
+PCSX2_ALIGN(128) int gs_pixel_col_offset4[128];
+
+PCSX2_ALIGN(128) GSPixelRowOffsetTable gs_pixel_row_offset32;
+PCSX2_ALIGN(128) GSPixelRowOffsetTable gs_pixel_row_offset16;
+PCSX2_ALIGN(128) GSPixelRowOffsetTable gs_pixel_row_offset16S;
+PCSX2_ALIGN(128) GSPixelRowOffsetTable gs_pixel_row_offset8[2];
+PCSX2_ALIGN(128) GSPixelRowOffsetTable gs_pixel_row_offset4[2];
+
+#define GS_ROWS_1(a)    {a, a, a, a, a, a, a, a}
+#define GS_ROWS_2(a, b) {a, a, b, b, b, b, a, a}
+const GSPixelRowOffsetTable* const gs_pixel_row_list32[8]  = GS_ROWS_1(&gs_pixel_row_offset32);
+const GSPixelRowOffsetTable* const gs_pixel_row_list16[8]  = GS_ROWS_1(&gs_pixel_row_offset16);
+const GSPixelRowOffsetTable* const gs_pixel_row_list16S[8] = GS_ROWS_1(&gs_pixel_row_offset16S);
+const GSPixelRowOffsetTable* const gs_pixel_row_list8[8]   =
+	GS_ROWS_2(&gs_pixel_row_offset8[0], &gs_pixel_row_offset8[1]);
+const GSPixelRowOffsetTable* const gs_pixel_row_list4[8]   =
+	GS_ROWS_2(&gs_pixel_row_offset4[0], &gs_pixel_row_offset4[1]);
+
+/* One swizzle's hardware tables: blocks in a page, pixels in a block */
+typedef struct gs_swizzle_src
 {
-	int blockSize = ColHeight * ColWidth;
-	int pageSize = blockSize * BlocksHigh * BlocksWide;
-	int pageWidth = BlocksWide * ColWidth;
-	int pageX = x / pageWidth;
-	int subpageX = x % pageWidth;
-	int blockID = blockTable[y / ColHeight][subpageX / ColWidth];
-	int sublockOffset = colTable[y % ColHeight][subpageX % ColWidth];
-	return pageX * pageSize + blockID * blockSize + sublockOffset;
+	const u8*  block;    /* bh x bw */
+	const u8*  col8;     /* ch x cw, or */
+	const u16* col16;    /* the same, for PSMT4 */
+	int bh, bw, ch, cw;
+} gs_swizzle_src;
+
+/* Where pixel (x, y) of a row of pages sits, from the page's start */
+static int gs_px_offset(const gs_swizzle_src* s, int x, int y)
+{
+	int block_size = s->ch * s->cw;
+	int page_size  = block_size * s->bh * s->bw;
+	int page_w     = s->bw * s->cw;
+	int sub_x      = x % page_w;
+	int i          = (y % s->ch) * s->cw + sub_x % s->cw;
+	int block_id   = s->block[(y / s->ch) * s->bw + sub_x / s->cw];
+	int in_block   = s->col8 ? s->col8[i] : s->col16[i];
+	return (x / page_w) * page_size + block_id * block_size + in_block;
 }
 
-template <int BlocksHigh, int BlocksWide, int ColHeight, int ColWidth, typename Col>
-constexpr GSPixelColOffsetTable<BlocksHigh * ColHeight> makeColOffsetTable(const u8 (&blockTable)[BlocksHigh][BlocksWide], Col (&colTable)[ColHeight][ColWidth])
+static void gs_make_block(GSBlockSwizzleTable* t, const gs_swizzle_src* s)
 {
-	constexpr int size = BlocksHigh * ColHeight;
-	GSPixelColOffsetTable<size> table = {};
-	for (int y = 0; y < size; y++)
-	{
-		table.value[y] = pxOffset(blockTable, colTable, 0, y);
-	}
-	return table;
+	int x, y;
+	for (y = 0; y < 8; y++)
+		for (x = 0; x < 8; x++)
+			t->value[y][x] = s->block[(y % s->bh) * s->bw + x % s->bw];
 }
 
-template <int BlocksHigh, int BlocksWide, int ColHeight, int ColWidth, typename Col>
-constexpr GSSizedPixelRowOffsetTable<BlocksWide * ColWidth> makeRowOffsetTable(const u8 (&blockTable)[BlocksHigh][BlocksWide], Col (&colTable)[ColHeight][ColWidth], int y)
+static void gs_make_col(int* t, const gs_swizzle_src* s)
 {
-	int base = pxOffset(blockTable, colTable, 0, y);
-	GSSizedPixelRowOffsetTable<BlocksWide * ColWidth> table = {};
-	for (size_t x = 0; x < C89_ARRAY_SIZE(table.value); x++)
-	{
-		table.value[x] = pxOffset(blockTable, colTable, x % 2048, y) - base;
-	}
-	return table;
+	int y;
+	for (y = 0; y < s->bh * s->ch; y++)
+		t[y] = gs_px_offset(s, 0, y);
 }
 
-constexpr GSPixelColOffsetTable< 32> pixelColOffset32   = makeColOffsetTable(_blockTable32,   columnTable32);
-constexpr GSPixelColOffsetTable< 64> pixelColOffset16   = makeColOffsetTable(_blockTable16,   columnTable16);
-constexpr GSPixelColOffsetTable< 64> pixelColOffset16S  = makeColOffsetTable(_blockTable16S,  columnTable16);
-constexpr GSPixelColOffsetTable< 64> pixelColOffset8    = makeColOffsetTable(_blockTable8,    columnTable8);
-constexpr GSPixelColOffsetTable<128> pixelColOffset4    = makeColOffsetTable(_blockTable4,    columnTable4);
-// These can't be constexpr due to a GCC bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=99901
-CONSTINIT const GSSizedPixelRowOffsetTable< 64> GSTables::_pixelRowOffset32   = makeRowOffsetTable(_blockTable32,   columnTable32, 0);
-CONSTINIT const GSSizedPixelRowOffsetTable< 64> GSTables::_pixelRowOffset16   = makeRowOffsetTable(_blockTable16,   columnTable16, 0);
-CONSTINIT const GSSizedPixelRowOffsetTable< 64> GSTables::_pixelRowOffset16S  = makeRowOffsetTable(_blockTable16S,  columnTable16, 0);
-CONSTINIT const GSSizedPixelRowOffsetTable<128> GSTables::_pixelRowOffset8[2] =
+static void gs_make_row(GSPixelRowOffsetTable* t, const gs_swizzle_src* s, int y)
 {
-	makeRowOffsetTable(_blockTable8, columnTable8, 0),
-	makeRowOffsetTable(_blockTable8, columnTable8, 2),
-};
-CONSTINIT const GSSizedPixelRowOffsetTable<128> GSTables::_pixelRowOffset4[2] =
-{
-	makeRowOffsetTable(_blockTable4, columnTable4, 0),
-	makeRowOffsetTable(_blockTable4, columnTable4, 2),
-};
+	int x;
+	int base = gs_px_offset(s, 0, y);
+	for (x = 0; x < 4096; x++)
+		t->value[x] = gs_px_offset(s, x % 2048, y) - base;
+}
 
-constexpr GSPixelRowOffsetTableList< 64, 0> GSTables::pixelRowOffset32;
-constexpr GSPixelRowOffsetTableList< 64, 0> GSTables::pixelRowOffset16;
-constexpr GSPixelRowOffsetTableList< 64, 0> GSTables::pixelRowOffset16S;
-constexpr GSPixelRowOffsetTableList<128, 7> GSTables::pixelRowOffset8;
-constexpr GSPixelRowOffsetTableList<128, 7> GSTables::pixelRowOffset4;
+void gs_tables_init(void)
+{
+	static const gs_swizzle_src s32  = {gs_block_raw32[0],  gs_column_table32[0], NULL, 4, 8,  8,  8};
+	static const gs_swizzle_src s16  = {gs_block_raw16[0],  gs_column_table16[0], NULL, 8, 4,  8, 16};
+	static const gs_swizzle_src s16S = {gs_block_raw16S[0], gs_column_table16[0], NULL, 8, 4,  8, 16};
+	static const gs_swizzle_src s8   = {gs_block_raw8[0],   gs_column_table8[0],  NULL, 4, 8, 16, 16};
+	static const gs_swizzle_src s4   = {gs_block_raw4[0],   NULL, gs_column_table4[0],  8, 4, 16, 32};
+
+	gs_make_block(&gs_block_table32,  &s32);
+	gs_make_block(&gs_block_table16,  &s16);
+	gs_make_block(&gs_block_table16S, &s16S);
+	gs_make_block(&gs_block_table8,   &s8);
+	gs_make_block(&gs_block_table4,   &s4);
+
+	gs_make_col(gs_pixel_col_offset32,  &s32);
+	gs_make_col(gs_pixel_col_offset16,  &s16);
+	gs_make_col(gs_pixel_col_offset16S, &s16S);
+	gs_make_col(gs_pixel_col_offset8,   &s8);
+	gs_make_col(gs_pixel_col_offset4,   &s4);
+
+	gs_make_row(&gs_pixel_row_offset32,   &s32,  0);
+	gs_make_row(&gs_pixel_row_offset16,   &s16,  0);
+	gs_make_row(&gs_pixel_row_offset16S,  &s16S, 0);
+	gs_make_row(&gs_pixel_row_offset8[0], &s8,   0);
+	gs_make_row(&gs_pixel_row_offset8[1], &s8,   2);
+	gs_make_row(&gs_pixel_row_offset4[0], &s4,   0);
+	gs_make_row(&gs_pixel_row_offset4[1], &s4,   2);
+}

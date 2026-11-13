@@ -350,7 +350,7 @@ set(pcsx2GSSources
 	GS/GSLocalMemory.cpp
 	GS/GSRingHeap.cpp
 	GS/GSState.cpp
-	GS/GSTables.cpp
+	GS/GSTables.c
 	GS/GSUtil.c
 	GS/GSVector.cpp
 	GS/Renderers/Common/GSDevice.cpp

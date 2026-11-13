@@ -1,5 +1,6 @@
 /* The GS's pixel-format tables (GS/GSUtil.c) against the relationships
- * the GS relies on, and the texture cache's hash - libretro-common's XXH3
+ * the GS relies on, its swizzle tables (GS/GSTables.c) against the ones
+ * the C++ templates built at compile time, and the texture cache's hash - libretro-common's XXH3
  * - against the xxHash it replaced, one-shot and streamed in GS blocks
  * the way the cache streams them: the same texture keeps its key. */
 #include <stdio.h>
@@ -7,6 +8,7 @@
 #include <string.h>
 
 #include "GS/GSUtil.h"
+#include "GS/GSTables.h"
 #include <encodings/xxh3.h>
 #define XXH_STATIC_LINKING_ONLY 1
 #define XXH_INLINE_ALL 1
@@ -29,6 +31,50 @@ static void check_hash(const u8* buf, size_t len)
 	CHECK(xxh3_digest(&st) == want);
 }
 
+/* XXH3 of each table as GSTables.cpp's constexpr templates built it */
+static void check_tables(void)
+{
+#define TABLE(t, size, sum) do { \
+	CHECK(sizeof(t) == (size)); \
+	CHECK(xxh3_64(&(t), sizeof(t), 0) == (sum)); \
+} while (0)
+	TABLE(gs_block_table32,         64, 0x70225d52284824e2ULL);
+	TABLE(gs_block_table16,         64, 0x4224a8ef5c78dbf3ULL);
+	TABLE(gs_block_table16S,        64, 0xc2a3083f883c586cULL);
+	TABLE(gs_block_table8,          64, 0x70225d52284824e2ULL);
+	TABLE(gs_block_table4,          64, 0x4224a8ef5c78dbf3ULL);
+	TABLE(gs_pixel_col_offset32,   128, 0x5720bb321a4fd6bcULL);
+	TABLE(gs_pixel_col_offset16,   256, 0x1e92bff8fecdea71ULL);
+	TABLE(gs_pixel_col_offset16S,  256, 0x4c3f54d26d5b2bddULL);
+	TABLE(gs_pixel_col_offset8,    256, 0x5c9ba151ba8304c1ULL);
+	TABLE(gs_pixel_col_offset4,    512, 0xd8180dec19436216ULL);
+	TABLE(gs_pixel_row_offset32,   16384, 0x7e81141ca6badc82ULL);
+	TABLE(gs_pixel_row_offset16,   16384, 0x07281a61c09964b4ULL);
+	TABLE(gs_pixel_row_offset16S,  16384, 0x7c6886fb8e006a1fULL);
+	TABLE(gs_pixel_row_offset8[0], 16384, 0xc08a47d02d89d370ULL);
+	TABLE(gs_pixel_row_offset8[1], 16384, 0xec30581c4ddbb781ULL);
+	TABLE(gs_pixel_row_offset4[0], 16384, 0xb7841a73a109201eULL);
+	TABLE(gs_pixel_row_offset4[1], 16384, 0xe9286578e07818daULL);
+	TABLE(gs_column_table32,        64, 0x84b72c3af69721eaULL);
+	TABLE(gs_column_table16,       128, 0xa55630e1352bd88cULL);
+	TABLE(gs_column_table8,        256, 0x2cf149bff1645635ULL);
+	TABLE(gs_column_table4,       1024, 0x77d5c89fe163f319ULL);
+	TABLE(gs_clut_table_t32i8,     128, 0xb0f48ca80efd3c0aULL);
+	TABLE(gs_clut_table_t32i4,      16, 0x09b4011b229729c6ULL);
+	TABLE(gs_clut_table_t16i8,      32, 0x5672f4b553bcb63aULL);
+	TABLE(gs_clut_table_t16i4,      16, 0x5bfccf1957bc1963ULL);
+#undef TABLE
+	/* PSMT8 and PSMT4 rows go a a b b b b a a; the rest one table */
+	CHECK(gs_pixel_row_list8[0] == &gs_pixel_row_offset8[0] && gs_pixel_row_list8[1] == &gs_pixel_row_offset8[0]);
+	CHECK(gs_pixel_row_list8[2] == &gs_pixel_row_offset8[1] && gs_pixel_row_list8[5] == &gs_pixel_row_offset8[1]);
+	CHECK(gs_pixel_row_list8[6] == &gs_pixel_row_offset8[0] && gs_pixel_row_list8[7] == &gs_pixel_row_offset8[0]);
+	CHECK(gs_pixel_row_list4[3] == &gs_pixel_row_offset4[1] && gs_pixel_row_list4[7] == &gs_pixel_row_offset4[0]);
+	CHECK(gs_pixel_row_list32[7] == &gs_pixel_row_offset32 && gs_pixel_row_list16S[4] == &gs_pixel_row_offset16S);
+	/* The alignment the vector loads assume */
+	CHECK(((size_t)&gs_block_table16 & 63) == 0);
+	CHECK(((size_t)gs_pixel_col_offset4 & 127) == 0 && ((size_t)&gs_pixel_row_offset8[1] & 127) == 0);
+}
+
 int main(void)
 {
 	static u8 buf[1 << 16];
@@ -36,6 +82,7 @@ int main(void)
 	u32 psm;
 
 	gs_util_init();
+	check_tables();
 
 	/* Primitive classes. */
 	CHECK(gs_util_get_prim_class(GS_POINTLIST) == GS_POINT_CLASS);

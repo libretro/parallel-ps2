@@ -14,6 +14,7 @@
  */
 
 #include "GSUtil.h"
+#include "GSTables.h"
 
 #include <string.h>
 
@@ -27,6 +28,8 @@ u32 gs_util_swizzle_bits[64][2];
 void gs_util_init(void)
 {
 	int i;
+
+	gs_tables_init();
 
 	gs_util_prim_class[GS_POINTLIST]     = GS_POINT_CLASS;
 	gs_util_prim_class[GS_LINELIST]      = GS_LINE_CLASS;

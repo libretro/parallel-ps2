@@ -770,7 +770,7 @@
     <ClCompile Include="GS\GSState.cpp">
       <Filter>System\Ps2\GS</Filter>
     </ClCompile>
-    <ClCompile Include="GS\GSTables.cpp">
+    <ClCompile Include="GS\GSTables.c">
       <Filter>System\Ps2\GS</Filter>
     </ClCompile>
     <ClCompile Include="GS\GSUtil.c">
