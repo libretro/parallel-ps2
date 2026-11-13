@@ -13,15 +13,17 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_DIRTY_RECT_H
+#define GS_DIRTY_RECT_H
 
 #include <stdlib.h>
 #include <string.h>
 
-#include "../../GSLocalMemory.h"
-#include "GSArray.h"
+#include "../../GSRegs.h"
+#include "../../GSPsm.h"
+#include "../../gs_vector.h"
 
-union RGBAMask
+typedef union RGBAMask
 {
 	u32 _u32;
 	struct
@@ -31,19 +33,61 @@ union RGBAMask
 		u32 b : 1;
 		u32 a : 1;
 	} c;
-};
+} RGBAMask;
 
-class GSDirtyRect
+/* A rectangle of a target that local memory has newer data for, in the
+ * format and width it was written with, and the channels written. The
+ * rectangle is the same 16 bytes either way; C++ takes it as GSVector4i. */
+typedef struct gs_dirty_rect
 {
-public:
+#ifdef __cplusplus
 	GSVector4i r;
+#else
+	gs_vec4i r;
+#endif
 	u32 psm;
 	u32 bw;
 	RGBAMask rgba;
+} gs_dirty_rect;
 
-	GSDirtyRect();
-	GSDirtyRect(GSVector4i& r, u32 psm, u32 bw, RGBAMask rgba);
-	GSVector4i GetDirtyRect(GIFRegTEX0 TEX0, bool align) const;
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The rectangle in tex_psm's pixels, aligned out to its blocks if asked */
+gs_vec4i gs_dirty_rect_get(const gs_dirty_rect* d, u32 tex_psm, int align);
+/* The block-aligned union of n of them, within w x h */
+gs_vec4i gs_dirty_total_rect(const gs_dirty_rect* d, size_t n, u32 tex_psm, int w, int h);
+/* The channels any of n of them wrote */
+u32 gs_dirty_channels(const gs_dirty_rect* d, size_t n);
+/* One, aligned out to tex_psm's blocks if asked, within clamp */
+gs_vec4i gs_dirty_rect_clamped(const gs_dirty_rect* d, u32 tex_psm, gs_vec4i clamp, int align);
+
+#ifdef __cplusplus
+}
+
+#include "GSArray.h"
+
+struct GSDirtyRect : gs_dirty_rect
+{
+	GSDirtyRect()
+	{
+		r = GSVector4i(gs_v4i_zero());
+		psm = PSMCT32;
+		bw = 1;
+		rgba._u32 = 0;
+	}
+	GSDirtyRect(const GSVector4i& r_, u32 psm_, u32 bw_, RGBAMask rgba_)
+	{
+		r = r_;
+		psm = psm_;
+		bw = bw_;
+		rgba = rgba_;
+	}
+	GSVector4i GetDirtyRect(GIFRegTEX0 TEX0, bool align) const
+	{
+		return GSVector4i(gs_dirty_rect_get(this, TEX0.PSM, align));
+	}
 };
 
 /* The rectangles of a target that local memory has newer data for, in
@@ -103,7 +147,17 @@ public:
 		other.m_list.count = 0;
 	}
 
-	GSVector4i GetTotalRect(GIFRegTEX0 TEX0, const GSVector2i& size) const;
-	u32 GetDirtyChannels();
-	GSVector4i GetDirtyRect(size_t index, GIFRegTEX0 TEX0, const GSVector4i& clamp, bool align) const;
+	GSVector4i GetTotalRect(GIFRegTEX0 TEX0, const GSVector2i& size) const
+	{
+		return GSVector4i(gs_dirty_total_rect(begin(), m_list.count, TEX0.PSM, size.x, size.y));
+	}
+	u32 GetDirtyChannels() const { return gs_dirty_channels(begin(), m_list.count); }
+	GSVector4i GetDirtyRect(size_t index, GIFRegTEX0 TEX0, const GSVector4i& clamp, bool align) const
+	{
+		return GSVector4i(gs_dirty_rect_clamped(&(*this)[index], TEX0.PSM, clamp, align));
+	}
 };
+
+#endif
+
+#endif

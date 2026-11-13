@@ -13,6 +13,7 @@
 #include "GS/GSOffset.h"
 #include "GS/GSPsm.h"
 #include "GS/GSDrawingContext.h"
+#include "GS/Renderers/Common/GSDirtyRect.h"
 #include <encodings/xxh3.h>
 #define XXH_STATIC_LINKING_ONLY 1
 #define XXH_INLINE_ALL 1
@@ -320,6 +321,72 @@ static void check_context(void)
 	CHECK(h == 0x417e5a7cU);
 }
 
+/* The texture cache's dirty rectangles: each in another format's pixels,
+ * their union and channels, and one clamped, for random lists, hashed:
+ * the sum is what the C++ GSDirtyRect and GSDirtyRectList gave */
+static void put_rect(u32* n, gs_vec4i v)
+{
+	union gs_v4i_view w;
+	int i;
+	w.v = v;
+	for (i = 0; i < 4; i++)
+		s_out[(*n)++] = w.u32[i];
+}
+
+static void check_dirty(void)
+{
+	static const u32 psms[15] = {PSMCT32, PSMCT24, PSMCT16, PSMCT16S, PSMT8, PSMT4, PSMT8H,
+		PSMT4HL, PSMT4HH, PSMZ32, PSMZ24, PSMZ16, PSMZ16S, PSGPU24, 5};
+	gs_dirty_rect list[6];
+	u32 n = 0, h = 0, j;
+	int k;
+
+	s_rng = 11;
+	for (k = 0; k < 20000; k++)
+	{
+		u32 cnt = next_rand() % 6, tex_psm;
+		int sw, sh;
+		union gs_v4i_view tot;
+		for (j = 0; j < cnt; j++)
+		{
+			int l = (int)(next_rand() % 2048);
+			int t = (int)(next_rand() % 2048);
+			int w = (int)(next_rand() % 600);
+			int hh = (int)(next_rand() % 600);
+			list[j].r = gs_v4i_set4(l, t, l + w, t + hh);
+			list[j].psm = psms[next_rand() % 15];
+			list[j].bw = next_rand() % 33;
+			list[j].rgba._u32 = next_rand() & 15;
+		}
+		tex_psm = psms[next_rand() % 15];
+		sw = (int)(next_rand() % 2100);
+		sh = (int)(next_rand() % 2100);
+		tot.v = gs_dirty_total_rect(list, cnt, tex_psm, sw, sh);
+		put_rect(&n, tot.v);
+		s_out[n++] = gs_dirty_channels(list, cnt);
+		for (j = 0; j < cnt; j++)
+		{
+			int c0 = (int)(next_rand() % 1024);
+			int c1 = (int)(next_rand() % 1024);
+			int c2 = c0 + (int)(next_rand() % 1500);
+			int c3 = c1 + (int)(next_rand() % 1500);
+			int al = (int)(next_rand() & 1);
+			union gs_v4i_view a, b;
+			int i;
+			a.v = gs_dirty_rect_clamped(&list[j], tex_psm, gs_v4i_set4(c0, c1, c2, c3), al);
+			b.v = gs_dirty_rect_get(&list[j], tex_psm, !al);
+			for (i = 0; i < 4; i++)
+			{
+				s_out[n++] = a.u32[i];
+				s_out[n++] = b.u32[i];
+			}
+		}
+		if (n > OUT_LEN - 128) { h ^= (u32)xxh3_64(s_out, n * 4, h); n = 0; }
+	}
+	h ^= (u32)xxh3_64(s_out, n * 4, h);
+	CHECK(h == 0xc9bf6558U);
+}
+
 int main(void)
 {
 	static u8 buf[1 << 16];
@@ -331,6 +398,7 @@ int main(void)
 	check_offsets();
 	check_psm();
 	check_context();
+	check_dirty();
 
 	/* Primitive classes. */
 	CHECK(gs_util_get_prim_class(GS_POINTLIST) == GS_POINT_CLASS);

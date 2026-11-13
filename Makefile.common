@@ -102,6 +102,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSStableMap.c \
 	$(LRPS2_DIR)/GS/GSPage2Tile.c \
 	$(LRPS2_DIR)/GS/GSDrawingContext.c \
+	$(LRPS2_DIR)/GS/Renderers/Common/GSDirtyRect.c \
 	$(LRPS2_DIR)/GS/GSOffset.c \
 	$(LRPS2_DIR)/GS/GSPsm.c \
 	$(LRPS2_DIR)/GS/GSTables.c \
@@ -457,7 +458,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/GSVector.cpp \
 	\
 	$(LRPS2_DIR)/GS/Renderers/Common/GSDevice.cpp \
-	$(LRPS2_DIR)/GS/Renderers/Common/GSDirtyRect.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSRenderer.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSTexture.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSVertexTrace.cpp \

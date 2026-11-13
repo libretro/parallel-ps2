@@ -356,7 +356,7 @@ set(pcsx2GSSources
 	GS/GSUtil.c
 	GS/GSVector.cpp
 	GS/Renderers/Common/GSDevice.cpp
-	GS/Renderers/Common/GSDirtyRect.cpp
+	GS/Renderers/Common/GSDirtyRect.c
 	GS/Renderers/Common/GSCodeReserve.c
 	GS/Renderers/Common/GSRenderer.cpp
 	GS/Renderers/Common/GSTexture.cpp
