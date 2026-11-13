@@ -46,9 +46,14 @@ for CXX in g++ clang++; do
 	echo
 	echo "=== $CXX ==="
 
-	for u in GS/GSLocalMemory GS/GSTables GS/GSBlock GS/GSLocalMemoryMultiISA; do
+	for u in GS/GSLocalMemory GS/GSBlock GS/GSLocalMemoryMultiISA; do
 		$CXX -O1 -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 -w \
 		     $INC -c "$ROOT/pcsx2/$u.cpp" -o "$TMP/$(basename "$u").o"
+	done
+	# (the tables, offsets, formats and maps are C)
+	for u in GS/GSTables GS/GSOffset GS/GSPsm GS/GSLocalMemoryMaps; do
+		$CC -O1 -DNDEBUG -DPCSX2_CORE -msse4.1 -w \
+		     $INC -c "$ROOT/pcsx2/$u.c" -o "$TMP/$(basename "$u").o"
 	done
 	$CXX -O1 -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 -w \
 	     $INC -c "$DIR/stubs.cpp" -o "$TMP/stubs.o"
@@ -57,8 +62,8 @@ for CXX in g++ clang++; do
 
 	$CC -O1 -w -I"$LRC/include" -c "$LRC/memmap/memalign.c"       -o "$TMP/memalign.o"
 	$CC -O1 -w -I"$LRC/include" -c "$LRC/features/features_cpu.c" -o "$TMP/cpu.o"
-	$CC -O1 -w -I"$ROOT/pcsx2" -c "$ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c" -o "$TMP/flatmap.o"
-	$CC -O1 -w -I"$ROOT/pcsx2" -c "$ROOT/pcsx2/GS/GSPage2Tile.c" -o "$TMP/page2tile.o"
+	$CC -O1 -w $INC -c "$ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c" -o "$TMP/flatmap.o"
+	$CC -O1 -w $INC -c "$ROOT/pcsx2/GS/GSPage2Tile.c" -o "$TMP/page2tile.o"
 
 	$CXX -O1 "$TMP"/*.o -o "$TMP/gs_swizzle_oracle"
 	"$TMP/gs_swizzle_oracle"

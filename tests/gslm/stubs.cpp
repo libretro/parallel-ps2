@@ -58,3 +58,16 @@ void GSFreeWrappedMemory(void* ptr, size_t size, size_t repeat)
 #include "GS/GSClut.h"
 GSClut::GSClut(GSLocalMemory* mem) : m_mem(mem) {}
 GSClut::~GSClut() {}
+
+/* The tables and the format table are filled as the GS starts
+ * (gs_util_init); there is no GS here, so they are filled before main. */
+#include "GS/GSTables.h"
+#include "GS/GSPsm.h"
+static const struct gslm_tables
+{
+	gslm_tables()
+	{
+		gs_tables_init();
+		gs_psm_init();
+	}
+} s_gslm_tables;

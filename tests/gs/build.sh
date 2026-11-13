@@ -50,9 +50,13 @@ g++ -O2 -std=c++17 -msse4.1 -o "$DIR/gs_restore_norm" "$DIR/gs_restore_norm.cpp"
 "$DIR/gs_restore_norm"
 
 # Texture sizing from the vertex trace keeps the texel at the inclusive max
-# UV. Links the real GSDrawingContext.cpp.
+# UV. Links the real GSDrawingContext.c.
+gcc -O2 -msse4.1 -c "$ROOT/pcsx2/GS/GSDrawingContext.c" -o "$DIR/gs_texsize_dc.o" \
+    -I"$ROOT" -I"$ROOT/common" -I"$ROOT/common/include" -I"$ROOT/pcsx2" \
+    -I"$ROOT/3rdparty" -I"$ROOT/3rdparty/include" \
+    -I"$ROOT/libretro/libretro-common/include"
 g++ -O2 -std=c++17 -msse4.1 -o "$DIR/gs_texsize" "$DIR/gs_texsize.cpp" \
-    "$ROOT/pcsx2/GS/GSDrawingContext.cpp" "$ROOT/pcsx2/GS/GSVector.cpp" \
+    "$DIR/gs_texsize_dc.o" "$ROOT/pcsx2/GS/GSVector.cpp" \
     -I"$ROOT" -I"$ROOT/common" -I"$ROOT/common/include" -I"$ROOT/pcsx2" \
     -I"$ROOT/3rdparty" -I"$ROOT/3rdparty/include" \
     -I"$ROOT/libretro/libretro-common/include"

@@ -1,6 +1,6 @@
 /*  GL link audit for the unix Makefile build.
  *
- *  The core never calls into a GL library itself: GLContext.cpp hands
+ *  The core never calls into a GL library itself: GLContext.c hands
  *  glad the frontend's get_proc_address through gladLoadGLLoader(), or
  *  gladLoadGLES2Loader() for an ES context, and every gl* call goes
  *  through the pointers that fills in. Linking
@@ -9,11 +9,11 @@
  *  core then refuses to load on a system without that library, even when
  *  it would run on Vulkan or the software renderer.
  *
- *  This checks that GLContext.cpp loads GL through gladLoadGLLoader, and
+ *  This checks that GLContext.c loads GL through gladLoadGLLoader, and
  *  that the unix platform block of the Makefile puts no -lGL or -lGLESv2
  *  on the link line.
  *
- *  Usage: tests/hwctx/linkaudit <Makefile> <pcsx2/GS/Renderers/OpenGL/GLContext.cpp>
+ *  Usage: tests/hwctx/linkaudit <Makefile> <pcsx2/GS/Renderers/OpenGL/GLContext.c>
  */
 
 #include <stdio.h>
@@ -81,7 +81,7 @@ int main(int argc, char** argv)
 
 	if (argc != 3)
 	{
-		fprintf(stderr, "usage: %s <Makefile> <GLContext.cpp>\n", argv[0]);
+		fprintf(stderr, "usage: %s <Makefile> <GLContext.c>\n", argv[0]);
 		return 2;
 	}
 	mk = read_file(argv[1]);
@@ -96,7 +96,7 @@ int main(int argc, char** argv)
 
 	if (!strstr(ctx, "gladLoadGLLoader("))
 	{
-		printf("  GLContext.cpp does not load GL through gladLoadGLLoader -- has the loader changed?\n");
+		printf("  GLContext.c does not load GL through gladLoadGLLoader -- has the loader changed?\n");
 		bad++;
 	}
 
