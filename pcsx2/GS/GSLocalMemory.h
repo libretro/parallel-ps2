@@ -22,33 +22,7 @@
 #include "GSClut.h"
 #include "MultiISA.h"
 #include "Renderers/Common/GSFlatMap.h"
-
-/* Which tiles of a texture live in each GS page, for the repeating-texture
- * invalidation in both texture caches. It was an array of GS_MAX_PAGES
- * std::vectors - up to five hundred and twelve separate allocations per
- * map, each holding a handful of entries, scattered across the heap and
- * walked one page at a time on a hot path. The entries are one block now,
- * pages back to back, and `first` says where each page's run starts: page
- * p is entries[first[p]] up to entries[first[p + 1]]. One allocation, and
- * a page's entries are contiguous with the next page's. */
-struct GSPage2TileMap
-{
-	const GSVector2i* entries;
-	u32 first[GS_MAX_PAGES + 1];
-
-	__fi const GSVector2i* begin(u32 page) const { return entries + first[page]; }
-	__fi const GSVector2i* end(u32 page)   const { return entries + first[page + 1]; }
-};
-
-struct GSPixelOffset4
-{
-	// 16 bit offsets (m_vm16[...])
-
-	GSVector2i row[2048]; // f yn | z yn (n = 0 1 2 ...)
-	GSVector2i col[512]; // f xn | z xn (n = 0 4 8 ...)
-	u64 hash; // FBP, ZBP, FBW and both PSMs whole
-	u32 fbp, zbp, fpsm, zpsm, bw;
-};
+#include "GSLocalMemoryMaps.h"
 
 class GSOffset;
 
@@ -358,8 +332,11 @@ public:
 	{
 		return GSOffset(m_psm[psm].info, bp, bw, psm);
 	}
-	GSPixelOffset4* GetPixelOffset4(const GIFRegFRAME& FRAME, const GIFRegZBUF& ZBUF);
-	GSPage2TileMap* GetPage2TileMap(const GIFRegTEX0& TEX0);
+	GSPixelOffset4* GetPixelOffset4(const GIFRegFRAME& FRAME, const GIFRegZBUF& ZBUF)
+	{
+		return gs_pixel_offset4_get(&m_po4map, &FRAME, &ZBUF);
+	}
+	GSPage2TileMap* GetPage2TileMap(const GIFRegTEX0& TEX0) { return gs_page2tile_map_get(&m_p2tmap, &TEX0); }
 	static bool HasOverlap(u32 src_bp, u32 src_bw, u32 src_psm, GSVector4i src_rect, u32 dst_bp, u32 dst_bw, u32 dst_psm, GSVector4i dst_rect);
 	static u32 IsPageAlignedMasked(u32 psm, const GSVector4i& rc);
 	static bool IsPageAligned(u32 psm, const GSVector4i& rc);

@@ -18,8 +18,6 @@
 
 #include "GS.h"
 #include "GSLocalMemory.h"
-#include "GSPage2Tile.h"
-#include "Renderers/Common/GSKeyHash.h"
 #include "GSExtra.h"
 
 template <typename Fn>
@@ -177,134 +175,8 @@ GSLocalMemory::~GSLocalMemory()
 	if (m_vm8)
 		GSFreeWrappedMemory(m_vm8, m_vmsize, 4);
 
-	for (size_t i = 0; i < GS_FLAT_MAP_SLOTS(&m_po4map); i++)
-		if (GS_FLAT_MAP_USED(&m_po4map, i))
-			memalign_free(*static_cast<GSPixelOffset4**>(GS_FLAT_MAP_VALUE(&m_po4map, i)));
-	gs_flat_map_free(&m_po4map);
-
-	for (size_t i = 0; i < GS_FLAT_MAP_SLOTS(&m_p2tmap); i++)
-		if (GS_FLAT_MAP_USED(&m_p2tmap, i))
-			memalign_free(*static_cast<GSPage2TileMap**>(GS_FLAT_MAP_VALUE(&m_p2tmap, i)));
-	gs_flat_map_free(&m_p2tmap);
-}
-
-GSPixelOffset4* GSLocalMemory::GetPixelOffset4(const GIFRegFRAME& FRAME, const GIFRegZBUF& ZBUF)
-{
-	u32 fbp = FRAME.Block();
-	u32 zbp = ZBUF.Block();
-	u32 fpsm = FRAME.PSM;
-	u32 zpsm = ZBUF.PSM;
-	u32 bw = FRAME.FBW;
-
-	/* Every field whole: FRAME and ZBUF take any of the six-bit formats,
-	 * not only the ones a render target is meant to have. */
-	const u64 hash = (u64)FRAME.FBP | ((u64)ZBUF.ZBP << 9) | ((u64)bw << 18)
-		| ((u64)fpsm << 24) | ((u64)zpsm << 30);
-
-	const size_t key_hash = gs_key_hash(&hash, sizeof(hash));
-	GSPixelOffset4** const found = static_cast<GSPixelOffset4**>(gs_flat_map_find(&m_po4map, &hash, sizeof(hash), key_hash));
-	if (found)
-		return *found;
-
-	GSPixelOffset4* off = (GSPixelOffset4*)memalign_alloc(VECTOR_ALIGNMENT, sizeof(GSPixelOffset4));
-
-	off->hash = hash;
-	off->fbp = fbp;
-	off->zbp = zbp;
-	off->fpsm = fpsm;
-	off->zpsm = zpsm;
-	off->bw = bw;
-
-	int fs = m_psm[fpsm].bpp >> 5;
-	int zs = m_psm[zpsm].bpp >> 5;
-
-	for (int i = 0; i < 2048; i++)
-	{
-		off->row[i].x = (int)gs_swizzle_pa(&m_psm[fpsm].info, 0, i, fbp, bw) << fs;
-		off->row[i].y = (int)gs_swizzle_pa(&m_psm[zpsm].info, 0, i, zbp, bw) << zs;
-	}
-
-	for (int i = 0; i < 512; i++)
-	{
-		off->col[i].x = (gs_swizzle_pa(&m_psm[fpsm].info, i * 4, 0, 0, 32) - gs_swizzle_pa(&m_psm[fpsm].info, 0, 0, 0, 32)) << fs;
-		off->col[i].y = (gs_swizzle_pa(&m_psm[zpsm].info, i * 4, 0, 0, 32) - gs_swizzle_pa(&m_psm[zpsm].info, 0, 0, 0, 32)) << zs;
-	}
-
-	int inserted;
-	GSPixelOffset4** const slot = static_cast<GSPixelOffset4**>(gs_flat_map_insert(&m_po4map, &hash, key_hash, &inserted));
-	if (slot)
-		*slot = off;
-	else
-		abort(); /* out of memory, as the map's operator[] did without exceptions */
-
-	return off;
-}
-
-GSPage2TileMap* GSLocalMemory::GetPage2TileMap(const GIFRegTEX0& TEX0)
-{
-	const u64 hash = TEX0.U64 & 0x3ffffffffull; // TBP0 TBW PSM TW TH
-	const size_t key_hash = gs_key_hash(&hash, sizeof(hash));
-	GSPage2TileMap** const found = static_cast<GSPage2TileMap**>(gs_flat_map_find(&m_p2tmap, &hash, sizeof(hash), key_hash));
-	if (found)
-		return *found;
-
-	GSVector2i bs = m_psm[TEX0.PSM].bs;
-
-	int tw = pcsx2_max_i(1 << TEX0.TW, bs.x);
-	int th = pcsx2_max_i(1 << TEX0.TH, bs.y);
-
-	// Limit the size to the maximum size of the GS memory, there's no point in mapping more than this.
-	if (static_cast<u32>(tw * th) > VM_SIZE)
-	{
-		tw = 2048;
-		th = 2048;
-	}
-
-	GSOffset off = GetOffset(TEX0.TBP0, TEX0.TBW, TEX0.PSM);
-	GSOffset::BNHelper bn = off.bnMulti(0, 0);
-
-	/* A key a block: its page, and y:x, 7 bits each (max 128x128 tiles
-	 * for the worst case, 1024x1024 32bpp 8x8 blocks), then sorted and
-	 * merged into each page's rows (GSPage2Tile.c). */
-	const size_t blocks = static_cast<size_t>(th >> off.blockShiftY()) * static_cast<size_t>(tw >> off.blockShiftX());
-	unsigned* const keys = static_cast<unsigned*>(malloc(2 * blocks * sizeof(unsigned) + 1));
-	if (!keys)
-		abort();
-	size_t n = 0;
-
-	for (; bn.blkY() < (th >> off.blockShiftY()); bn.nextBlockY())
-	{
-		for (; bn.blkX() < (tw >> off.blockShiftX()); bn.nextBlockX())
-		{
-			u32 page = (bn.value() >> 5) % GS_MAX_PAGES;
-
-			keys[n++] = GS_PAGE2TILE_KEY(page, (bn.blkY() << 7) + bn.blkX());
-		}
-	}
-
-	// combine the lower 5 bits of the address into a 9:5 pointer:mask form, so the "valid bits" can be tested against an u32 array
-	// (sorted by x, the mask flipped: it is used to erase a lot of bits in a loop, [x] &= ~y)
-	const size_t total = gs_page2tile_sort(keys, keys + blocks, n);
-
-	/* The header and the entries in one allocation, so a page's run and
-	 * the next page's are neighbours in memory. */
-	const size_t entries_bytes = total * sizeof(GSVector2i);
-	u8* block = static_cast<u8*>(memalign_alloc(16, sizeof(GSPage2TileMap) + entries_bytes));
-	GSPage2TileMap* p2t = reinterpret_cast<GSPage2TileMap*>(block);
-	GSVector2i* entries = reinterpret_cast<GSVector2i*>(block + sizeof(GSPage2TileMap));
-	p2t->entries = entries;
-	static_assert(sizeof(GSVector2i) == 2 * sizeof(int), "entries are int pairs");
-	gs_page2tile_fill(keys, n, GS_MAX_PAGES, reinterpret_cast<int*>(entries), p2t->first);
-	free(keys);
-
-	int inserted;
-	GSPage2TileMap** const slot = static_cast<GSPage2TileMap**>(gs_flat_map_insert(&m_p2tmap, &hash, key_hash, &inserted));
-	if (slot)
-		*slot = p2t;
-	else
-		abort(); /* out of memory, as the map's operator[] did without exceptions */
-
-	return p2t;
+	gs_local_memory_map_free(&m_po4map);
+	gs_local_memory_map_free(&m_p2tmap);
 }
 
 u32 GSLocalMemory::IsPageAlignedMasked(u32 psm, const GSVector4i& rc)

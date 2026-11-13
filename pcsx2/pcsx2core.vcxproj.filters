@@ -806,6 +806,9 @@
     <ClCompile Include="GS\GSClut.c">
       <Filter>System\Ps2\GS</Filter>
     </ClCompile>
+    <ClCompile Include="GS\GSLocalMemoryMaps.c">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
     <ClCompile Include="GS\GSDrawingContext.c">
       <Filter>System\Ps2\GS\Renderers\Software</Filter>
     </ClCompile>
@@ -1265,6 +1268,9 @@
       <Filter>System\Ps2\GS</Filter>
     </ClInclude>
     <ClInclude Include="GS\GSPsm.h">
+      <Filter>System\Ps2\GS</Filter>
+    </ClInclude>
+    <ClInclude Include="GS\GSLocalMemoryMaps.h">
       <Filter>System\Ps2\GS</Filter>
     </ClInclude>
     <ClInclude Include="GS\GSOffset.h">

@@ -8,25 +8,17 @@
 
 #include "data_structures.h"
 
-/* INLINE is a generic enough name that other headers claim it too --
- * libretro-common's retro_inline.h defines it as plain "inline", and
- * rthreads.h drags that in wherever Granite's thread_prims.hpp is used.
- * Neither definer guards, so without the #undef the winner depends on
- * include order, and the two are not equivalent: these helpers want
- * internal linkage in every translation unit that pulls the header in.
- * Undefine first so the answer is the same everywhere. */
-#ifdef INLINE
-#undef INLINE
-#endif
-
+/* Its own name: INLINE is libretro-common's (retro_inline.h, "inline"),
+ * and redefining it here broke whatever read it after this header, such
+ * as xxh3.h. These helpers want internal linkage in C++. */
 #ifdef __cplusplus
-#define INLINE static inline
+#define PGS_INLINE static inline
 namespace ParallelGS {
 #else
-#define INLINE
+#define PGS_INLINE
 #endif
 
-INLINE uint get_bits_per_pixel(uint format)
+PGS_INLINE uint get_bits_per_pixel(uint format)
 {
 	uint bpp = 0;
 
@@ -65,7 +57,7 @@ INLINE uint get_bits_per_pixel(uint format)
 	return bpp;
 }
 
-INLINE uint get_stride_per_pixel(uint format)
+PGS_INLINE uint get_stride_per_pixel(uint format)
 {
 	uint bpp = 0;
 
@@ -101,7 +93,7 @@ INLINE uint get_stride_per_pixel(uint format)
 	return bpp;
 }
 
-INLINE LocalDataStructure get_data_structure(uint format)
+PGS_INLINE LocalDataStructure get_data_structure(uint format)
 {
 	LocalDataStructure data_structure;
 
@@ -170,7 +162,7 @@ INLINE LocalDataStructure get_data_structure(uint format)
 	return data_structure;
 }
 
-INLINE bool is_palette_format(uint format)
+PGS_INLINE bool is_palette_format(uint format)
 {
 	bool is_palette = false;
 
@@ -213,7 +205,7 @@ static inline uint64_t swizzle_block_iterate_mask(
 	return block_mask;
 }
 
-INLINE uint64_t swizzle_block_mask_PS2(uint base_block, uint base_block_x, uint base_block_y,
+PGS_INLINE uint64_t swizzle_block_mask_PS2(uint base_block, uint base_block_x, uint base_block_y,
                                        uint num_block_x, uint num_block_y,
                                        uint storage_format)
 {
@@ -306,7 +298,7 @@ INLINE uint64_t swizzle_block_mask_PS2(uint base_block, uint base_block_x, uint 
 	return block_mask;
 }
 
-INLINE uint swizzle_compat_key(uint storage_format)
+PGS_INLINE uint swizzle_compat_key(uint storage_format)
 {
 	switch (storage_format)
 	{
@@ -337,7 +329,7 @@ INLINE uint swizzle_compat_key(uint storage_format)
 }
 #endif
 
-INLINE uint swizzle_PS2(uint x, uint y, uint base_pointer, uint page_stride, uint storage_format, uint vram_mask)
+PGS_INLINE uint swizzle_PS2(uint x, uint y, uint base_pointer, uint page_stride, uint storage_format, uint vram_mask)
 {
 	LocalDataStructure data_structure = get_data_structure(storage_format);
 

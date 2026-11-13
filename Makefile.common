@@ -103,6 +103,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/GSPage2Tile.c \
 	$(LRPS2_DIR)/GS/GSClut.c \
 	$(LRPS2_DIR)/GS/GSDrawingContext.c \
+	$(LRPS2_DIR)/GS/GSLocalMemoryMaps.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSDirtyRect.c \
 	$(LRPS2_DIR)/GS/GSOffset.c \
 	$(LRPS2_DIR)/GS/GSPsm.c \

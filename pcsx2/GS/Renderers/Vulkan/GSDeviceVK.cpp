@@ -32,7 +32,7 @@
 #include <file/file_path.h>
 #include <retro_miscellaneous.h>
 #include <streams/file_stream.h>
-#include <xxhash.h>
+#include <encodings/xxh3.h>
 #ifdef HAVE_THREADS
 #include <retro_atomic.h>
 #include <retro_spsc.h>
@@ -4535,7 +4535,7 @@ void GSDeviceVK::PipelineCacheOpen()
 	}
 	else if (ci.initialDataSize)
 	{
-		m_pipeline_cache_disk_hash = XXH3_64bits(data, (size_t)len);
+		m_pipeline_cache_disk_hash = xxh3_64(data, (size_t)len, 0);
 		m_pipeline_cache_on_disk   = true;
 	}
 	free(data);
@@ -4559,7 +4559,7 @@ void GSDeviceVK::PipelineCacheClose()
 		/* Compared by content: a file of the same length is not the
 		 * file, and a truncated one is what a later run would hand the
 		 * driver. */
-		const u64 hash = XXH3_64bits(data, size);
+		const u64 hash = xxh3_64(data, size, 0);
 		if (!m_pipeline_cache_on_disk || hash != m_pipeline_cache_disk_hash)
 		{
 			CachePath(path, sizeof(path), GSConfig.UseDebugDevice ? "vulkan_pipelines_debug.bin" : "vulkan_pipelines.bin");
@@ -4681,7 +4681,7 @@ void GSDeviceVK::PipelineListLoad()
 		|| (int64_t)(sizeof(h) + (u64)h.count * sizeof(PipelineSelector) + sizeof(hash)) != len)
 		goto refuse;
 	memcpy(&hash, (const u8*)data + len - sizeof(hash), sizeof(hash));
-	if (XXH3_64bits(data, (size_t)len - sizeof(hash)) != hash)
+	if (xxh3_64(data, (size_t)len - sizeof(hash), 0) != hash)
 		goto refuse;
 	if (!PipelineListRoom(h.count))
 		goto refuse;
@@ -4742,7 +4742,7 @@ void GSDeviceVK::PipelineListSave()
 	memcpy(buf, &h, sizeof(h));
 	if (m_plist_count)
 		memcpy(buf + sizeof(h), m_plist, (size_t)m_plist_count * sizeof(PipelineSelector));
-	hash = XXH3_64bits(buf, size - sizeof(hash));
+	hash = xxh3_64(buf, size - sizeof(hash), 0);
 	memcpy(buf + size - sizeof(hash), &hash, sizeof(hash));
 	if (filestream_write_file_atomic(path, buf, (int64_t)size))
 		m_plist_dirty = false;

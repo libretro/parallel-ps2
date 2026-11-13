@@ -348,6 +348,7 @@ set(pcsx2GSSources
 	GS/GSClutGPU.cpp
 	GS/GSClut.c
 	GS/GSDrawingContext.c
+	GS/GSLocalMemoryMaps.c
 	GS/GSLocalMemory.cpp
 	GS/GSRingHeap.c
 	GS/GSState.cpp
@@ -404,6 +405,7 @@ set(pcsx2GSHeaders
 	GS/GSLocalMemory.h
 	GS/GSRingHeap.h
 	GS/GSState.h
+	GS/GSLocalMemoryMaps.h
 	GS/GSOffset.h
 	GS/GSPsm.h
 	GS/GSTables.h
