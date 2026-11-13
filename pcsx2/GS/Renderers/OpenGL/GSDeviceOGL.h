@@ -75,9 +75,9 @@ public:
 
 	void SetupDepth()
 	{
-		if (GLState::depth != m_depth_enable)
+		if (g_gl_state.depth != m_depth_enable)
 		{
-			GLState::depth = m_depth_enable;
+			g_gl_state.depth = m_depth_enable;
 			if (m_depth_enable)
 				glEnable(GL_DEPTH_TEST);
 			else
@@ -86,14 +86,14 @@ public:
 
 		if (m_depth_enable)
 		{
-			if (GLState::depth_func != m_depth_func)
+			if (g_gl_state.depth_func != m_depth_func)
 			{
-				GLState::depth_func = m_depth_func;
+				g_gl_state.depth_func = m_depth_func;
 				glDepthFunc(m_depth_func);
 			}
-			if (GLState::depth_mask != m_depth_mask)
+			if (g_gl_state.depth_mask != m_depth_mask)
 			{
-				GLState::depth_mask = m_depth_mask;
+				g_gl_state.depth_mask = m_depth_mask;
 				glDepthMask((GLboolean)m_depth_mask);
 			}
 		}
@@ -101,9 +101,9 @@ public:
 
 	void SetupStencil()
 	{
-		if (GLState::stencil != m_stencil_enable)
+		if (g_gl_state.stencil != m_stencil_enable)
 		{
-			GLState::stencil = m_stencil_enable;
+			g_gl_state.stencil = m_stencil_enable;
 			if (m_stencil_enable)
 				glEnable(GL_STENCIL_TEST);
 			else
@@ -113,14 +113,14 @@ public:
 		if (m_stencil_enable)
 		{
 			// Note: here the mask control which bitplane is considered by the operation
-			if (GLState::stencil_func != m_stencil_func)
+			if (g_gl_state.stencil_func != m_stencil_func)
 			{
-				GLState::stencil_func = m_stencil_func;
+				g_gl_state.stencil_func = m_stencil_func;
 				glStencilFunc(m_stencil_func, 1, 1);
 			}
-			if (GLState::stencil_pass != m_stencil_spass_dpass_op)
+			if (g_gl_state.stencil_pass != m_stencil_spass_dpass_op)
 			{
-				GLState::stencil_pass = m_stencil_spass_dpass_op;
+				g_gl_state.stencil_pass = m_stencil_spass_dpass_op;
 				glStencilOp(GL_KEEP, GL_KEEP, m_stencil_spass_dpass_op);
 			}
 		}
@@ -155,9 +155,9 @@ public:
 private:
 	static constexpr u8 NUM_TIMESTAMP_QUERIES = 5;
 
-	GLContext* m_gl_context = nullptr;
 
 	bool m_is_gles = false;
+	bool m_gl_loaded = false; /* the frontend's GL entry points */
 	bool m_colclip_float = false;
 	bool m_disable_download_pbo = false;
 	/* llvmpipe: a texture one scene still in flight samples and a later

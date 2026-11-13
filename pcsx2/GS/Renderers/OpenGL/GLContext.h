@@ -1,5 +1,5 @@
 /*  PCSX2 - PS2 Emulator for PCs
- *  Copyright (C) 2002-2021  PCSX2 Dev Team
+ *  Copyright (C) 2002-2021 PCSX2 Dev Team
  *
  *  PCSX2 is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU Lesser General Public License as published by the Free Software Found-
@@ -13,22 +13,19 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_GL_CONTEXT_H
+#define GS_GL_CONTEXT_H
 
-#include "common/Pcsx2Defs.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
+/* Loads the frontend's GL or GLES entry points, as the context type it
+ * accepted says; *gles says which. Returns 0 when they cannot be. */
+int gs_gl_context_load(int* gles);
 
-class GLContext
-{
-	public:
-		GLContext();
-		~GLContext();
+#ifdef __cplusplus
+}
+#endif
 
-		/* Whether the frontend's context is OpenGL ES: GSDeviceOGL then
-		 * takes the ES road for its feature checks and shader headers. */
-		__fi bool IsGLES() const { return m_gles; }
-		/* A context on the frontend's GL, loaded, or NULL; the caller deletes it. */
-	static GLContext* Create();
-	protected:
-		bool m_gles = false;
-};
+#endif

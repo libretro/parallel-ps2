@@ -800,7 +800,7 @@
     <ClCompile Include="GS\Renderers\OpenGL\GSTextureOGL.cpp">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
-    <ClCompile Include="GS\Renderers\OpenGL\GLState.cpp">
+    <ClCompile Include="GS\Renderers\OpenGL\GLState.c">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
     <ClCompile Include="GS\GSClut.c">

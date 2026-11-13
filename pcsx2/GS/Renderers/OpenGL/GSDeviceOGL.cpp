@@ -431,13 +431,14 @@ bool GSDeviceOGL::Create()
 	// GL is a pain and needs the window super early to create the context.
 	AcquireWindow();
 
-	m_gl_context = GLContext::Create();
-	if (!m_gl_context)
+	int gles = 0;
+	if (!gs_gl_context_load(&gles))
 	{
 		log_cb(RETRO_LOG_ERROR, "Failed to create any GL context\n");
 		return false;
 	}
-	m_is_gles = m_gl_context->IsGLES();
+	m_gl_loaded = true;
+	m_is_gles = gles != 0;
 
 	bool buggy_pbo = false;
 	if (!CheckFeatures(buggy_pbo))
@@ -454,7 +455,7 @@ bool GSDeviceOGL::Create()
 	}
 
 	// because of fbo bindings below...
-	GLState::Clear();
+	gs_gl_state_clear();
 
 	// ****************************************************************
 	// Debug helper
@@ -777,11 +778,10 @@ void GSDeviceOGL::Destroy()
 {
 	DestroyBase();
 
-	if (m_gl_context)
+	if (m_gl_loaded)
 	{
 		DestroyResources();
-		delete m_gl_context;
-		m_gl_context = nullptr;
+		m_gl_loaded = false;
 	}
 }
 
@@ -949,9 +949,9 @@ void GSDeviceOGL::EndPresent()
 
 void GSDeviceOGL::ResetAPIState()
 {
-	if (GLState::point_size && !m_is_gles)
+	if (g_gl_state.point_size && !m_is_gles)
 		glDisable(GL_PROGRAM_POINT_SIZE);
-	if (GLState::line_width != 1.0f)
+	if (g_gl_state.line_width != 1.0f)
 		glLineWidth(1.0f);
 
 	// clear out DSB
@@ -964,21 +964,21 @@ void GSDeviceOGL::RestoreAPIState()
 {
 	glBindVertexArray(m_vao);
 
-	if(GLState::fbo)
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, GLState::fbo);
+	if(g_gl_state.fbo)
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_gl_state.fbo);
 	else
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, GL_DEFAULT_FRAMEBUFFER);
 
-	glViewportIndexedf(0, 0, 0, static_cast<float>(GLState::viewport.x), static_cast<float>(GLState::viewport.y));
-	glScissorIndexed(0, GLState::scissor.x, GLState::scissor.y, GLState::scissor.width(), GLState::scissor.height());
+	glViewportIndexedf(0, 0, 0, static_cast<float>(g_gl_state.viewport.x), static_cast<float>(g_gl_state.viewport.y));
+	glScissorIndexed(0, g_gl_state.scissor.x, g_gl_state.scissor.y, g_gl_state.scissor.width(), g_gl_state.scissor.height());
 
-	glBlendEquationSeparate(GLState::eq_RGB, GL_FUNC_ADD);
-	glBlendFuncSeparate(GLState::f_sRGB, GLState::f_dRGB, GL_ONE, GL_ZERO);
+	glBlendEquationSeparate(g_gl_state.eq_RGB, GL_FUNC_ADD);
+	glBlendFuncSeparate(g_gl_state.f_sRGB, g_gl_state.f_dRGB, GL_ONE, GL_ZERO);
 
-	const float bf = static_cast<float>(GLState::bf) / 128.0f;
+	const float bf = static_cast<float>(g_gl_state.bf) / 128.0f;
 	glBlendColor(bf, bf, bf, bf);
 
-	if (GLState::blend)
+	if (g_gl_state.blend)
 	{
 		glEnable(GL_BLEND);
 	}
@@ -987,14 +987,14 @@ void GSDeviceOGL::RestoreAPIState()
 		glDisable(GL_BLEND);
 	}
 
-	const OMColorMaskSelector msel{ GLState::wrgba };
+	const OMColorMaskSelector msel{ g_gl_state.wrgba };
 	glColorMask(msel.wr, msel.wg, msel.wb, msel.wa);
 
-	GLState::depth ? glEnable(GL_DEPTH_TEST) : glDisable(GL_DEPTH_TEST);
-	glDepthFunc(GLState::depth_func);
-	glDepthMask(GLState::depth_mask);
+	g_gl_state.depth ? glEnable(GL_DEPTH_TEST) : glDisable(GL_DEPTH_TEST);
+	glDepthFunc(g_gl_state.depth_func);
+	glDepthMask(g_gl_state.depth_mask);
 
-	if (GLState::stencil)
+	if (g_gl_state.stencil)
 	{
 		glEnable(GL_STENCIL_TEST);
 	}
@@ -1003,18 +1003,18 @@ void GSDeviceOGL::RestoreAPIState()
 		glDisable(GL_STENCIL_TEST);
 	}
 
-	glStencilFunc(GLState::stencil_func, 1, 1);
-	glStencilOp(GL_KEEP, GL_KEEP, GLState::stencil_pass);
+	glStencilFunc(g_gl_state.stencil_func, 1, 1);
+	glStencilOp(GL_KEEP, GL_KEEP, g_gl_state.stencil_pass);
 
-	glBindSampler(0, GLState::ps_ss);
+	glBindSampler(0, g_gl_state.ps_ss);
 
-	for (GLuint i = 0; i < sizeof(GLState::tex_unit) / sizeof(GLState::tex_unit[0]); i++)
-		glBindTextureUnit(i, GLState::tex_unit[i]);
+	for (GLuint i = 0; i < sizeof(g_gl_state.tex_unit) / sizeof(g_gl_state.tex_unit[0]); i++)
+		glBindTextureUnit(i, g_gl_state.tex_unit[i]);
 
-	if (GLState::point_size && !m_is_gles)
+	if (g_gl_state.point_size && !m_is_gles)
 		glEnable(GL_PROGRAM_POINT_SIZE);
-	if (GLState::line_width != 1.0f)
-		glLineWidth(GLState::line_width);
+	if (g_gl_state.line_width != 1.0f)
+		glLineWidth(g_gl_state.line_width);
 
 	// Force UBOs to be reuploaded, we don't know what else was bound there.
 	memset(&m_vs_cb_cache, 0xFF, sizeof(m_vs_cb_cache));
@@ -1059,13 +1059,13 @@ void GSDeviceOGL::CommitClear(GSTexture* t, bool use_write_fbo)
 		OMSetFBO(m_fbo);
 		if (T->GetType() == GSTexture::Type::DepthStencil)
 		{
-			if (GLState::rt && GLState::rt->GetSize() != T->GetSize())
+			if (g_gl_state.rt && g_gl_state.rt->GetSize() != T->GetSize())
 				OMAttachRt(nullptr);
 			OMAttachDs(T);
 		}
 		else
 		{
-			if (GLState::ds && GLState::ds->GetSize() != T->GetSize())
+			if (g_gl_state.ds && g_gl_state.ds->GetSize() != T->GetSize())
 				OMAttachDs(nullptr);
 			OMAttachRt(T);
 		}
@@ -1093,7 +1093,7 @@ void GSDeviceOGL::CommitClear(GSTexture* t, bool use_write_fbo)
 		if (T->GetType() == GSTexture::Type::DepthStencil)
 		{
 			const float d = T->GetClearDepth();
-			if (GLState::depth_mask)
+			if (g_gl_state.depth_mask)
 			{
 				glClearBufferfv(GL_DEPTH, 0, &d);
 			}
@@ -1106,7 +1106,7 @@ void GSDeviceOGL::CommitClear(GSTexture* t, bool use_write_fbo)
 		}
 		else
 		{
-			const u32 old_color_mask = GLState::wrgba;
+			const u32 old_color_mask = g_gl_state.wrgba;
 			OMSetColorMaskState();
 
 			const GSVector4 c_unorm = T->GetUNormClearColor();
@@ -1136,7 +1136,7 @@ void GSDeviceOGL::CommitClear(GSTexture* t, bool use_write_fbo)
 			(t->GetType() == GSTexture::Type::RenderTarget) ? GL_COLOR_ATTACHMENT0 :
 															  (m_features.framebuffer_fetch ? GL_DEPTH_ATTACHMENT : GL_DEPTH_STENCIL_ATTACHMENT),
 			GL_TEXTURE_2D, 0, 0);
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, GLState::fbo);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_gl_state.fbo);
 	}
 }
 
@@ -1512,8 +1512,8 @@ void GSDeviceOGL::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r
 		glBlitFramebuffer(r.x, r.y, r.x + w, r.y + h, destX, destY, destX + w, destY + h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 		glEnable(GL_SCISSOR_TEST);
 
-		if(GLState::fbo)
-			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, GLState::fbo);
+		if(g_gl_state.fbo)
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_gl_state.fbo);
 		else
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, GL_DEFAULT_FRAMEBUFFER);
 
@@ -1951,7 +1951,7 @@ void GSDeviceOGL::DoInterlace(GSTexture* sTex, const GSVector4& sRect, GSTexture
 void GSDeviceOGL::SetupDATE(GSTexture* rt, GSTexture* ds, const GSVertexPT1* vertices, SetDATM datm)
 {
 	// sfex3 (after the capcom logo), vf4 (first menu fading in), ffxii shadows, rumble roses shadows, persona4 shadows
-	OMSetRenderTargets(nullptr, ds, &GLState::scissor);
+	OMSetRenderTargets(nullptr, ds, &g_gl_state.scissor);
 
 	{
 		const GLint clear_color = 0;
@@ -1979,7 +1979,7 @@ void GSDeviceOGL::SetupDATE(GSTexture* rt, GSTexture* ds, const GSVertexPT1* ver
 
 	DrawPrimitive();
 
-	if (GLState::blend)
+	if (g_gl_state.blend)
 	{
 		glEnable(GL_BLEND);
 	}
@@ -1987,10 +1987,10 @@ void GSDeviceOGL::SetupDATE(GSTexture* rt, GSTexture* ds, const GSVertexPT1* ver
 
 void GSDeviceOGL::IASetVAO(GLuint vao)
 {
-	if (GLState::vao == vao)
+	if (g_gl_state.vao == vao)
 		return;
 
-	GLState::vao = vao;
+	g_gl_state.vao = vao;
 	glBindVertexArray(vao);
 }
 
@@ -2022,18 +2022,18 @@ void GSDeviceOGL::IASetPrimitiveTopology(GLenum topology)
 void GSDeviceOGL::PSSetShaderResource(int i, GSTexture* sr)
 {
 	const GLuint id = sr ?  static_cast<GSTextureOGL*>(sr)->GetID() : 0;
-	if (GLState::tex_unit[i] != id)
+	if (g_gl_state.tex_unit[i] != id)
 	{
-		GLState::tex_unit[i] = id;
+		g_gl_state.tex_unit[i] = id;
 		glBindTextureUnit(i, id);
 	}
 }
 
 void GSDeviceOGL::PSSetSamplerState(GLuint ss)
 {
-	if (GLState::ps_ss != ss)
+	if (g_gl_state.ps_ss != ss)
 	{
-		GLState::ps_ss = ss;
+		g_gl_state.ps_ss = ss;
 		glBindSampler(0, ss);
 	}
 }
@@ -2050,10 +2050,10 @@ void GSDeviceOGL::ClearSamplerCache()
 
 void GSDeviceOGL::OMAttachRt(GSTexture* rt)
 {
-	if (GLState::rt == rt)
+	if (g_gl_state.rt == rt)
 		return;
 
-	GLState::rt = static_cast<GSTextureOGL*>(rt);
+	g_gl_state.rt = static_cast<GSTextureOGL*>(rt);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER,
 			GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 			rt ? static_cast<GSTextureOGL*>(rt)->GetID() : 0, 0);
@@ -2061,10 +2061,10 @@ void GSDeviceOGL::OMAttachRt(GSTexture* rt)
 
 void GSDeviceOGL::OMAttachDs(GSTexture* ds)
 {
-	if (GLState::ds == ds)
+	if (g_gl_state.ds == ds)
 		return;
 
-	GLState::ds = static_cast<GSTextureOGL*>(ds);
+	g_gl_state.ds = static_cast<GSTextureOGL*>(ds);
 
 	const GLenum target = m_features.framebuffer_fetch ? GL_DEPTH_ATTACHMENT : GL_DEPTH_STENCIL_ATTACHMENT;
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, target, GL_TEXTURE_2D, ds ? static_cast<GSTextureOGL*>(ds)->GetID() : 0, 0);
@@ -2072,9 +2072,9 @@ void GSDeviceOGL::OMAttachDs(GSTexture* ds)
 
 void GSDeviceOGL::OMSetFBO(GLuint fbo)
 {
-	if (GLState::fbo != fbo)
+	if (g_gl_state.fbo != fbo)
 	{
-		GLState::fbo = fbo;
+		g_gl_state.fbo = fbo;
 		if(fbo)
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
 		else
@@ -2090,9 +2090,9 @@ void GSDeviceOGL::OMSetDepthStencilState(GSDepthStencilOGL* dss)
 
 void GSDeviceOGL::OMSetColorMaskState(OMColorMaskSelector sel)
 {
-	if (sel.wrgba != GLState::wrgba)
+	if (sel.wrgba != g_gl_state.wrgba)
 	{
-		GLState::wrgba = sel.wrgba;
+		g_gl_state.wrgba = sel.wrgba;
 
 		glColorMaski(0, sel.wr, sel.wg, sel.wb, sel.wa);
 	}
@@ -2100,13 +2100,13 @@ void GSDeviceOGL::OMSetColorMaskState(OMColorMaskSelector sel)
 
 void GSDeviceOGL::OMUnbindTexture(GSTextureOGL* tex)
 {
-	if (GLState::rt != tex && GLState::ds != tex)
+	if (g_gl_state.rt != tex && g_gl_state.ds != tex)
 		return;
 
 	OMSetFBO(m_fbo);
-	if (GLState::rt == tex)
+	if (g_gl_state.rt == tex)
 		OMAttachRt();
-	if (GLState::ds == tex)
+	if (g_gl_state.ds == tex)
 		OMAttachDs();
 }
 
@@ -2115,40 +2115,40 @@ void GSDeviceOGL::OMSetBlendState(bool enable, GLenum src_factor, GLenum dst_fac
 {
 	if (enable)
 	{
-		if (!GLState::blend)
+		if (!g_gl_state.blend)
 		{
-			GLState::blend = true;
+			g_gl_state.blend = true;
 			glEnable(GL_BLEND);
 		}
 
-		if (is_constant && GLState::bf != constant)
+		if (is_constant && g_gl_state.bf != constant)
 		{
-			GLState::bf = constant;
+			g_gl_state.bf = constant;
 			const float bf = static_cast<float>(constant) / 128.0f;
 			glBlendColor(bf, bf, bf, bf);
 		}
 
-		if (GLState::eq_RGB != op)
+		if (g_gl_state.eq_RGB != op)
 		{
-			GLState::eq_RGB = op;
+			g_gl_state.eq_RGB = op;
 			glBlendEquationSeparate(op, GL_FUNC_ADD);
 		}
 
-		if (GLState::f_sRGB != src_factor || GLState::f_dRGB != dst_factor ||
-			GLState::f_sA != src_factor_alpha || GLState::f_dA != dst_factor_alpha)
+		if (g_gl_state.f_sRGB != src_factor || g_gl_state.f_dRGB != dst_factor ||
+			g_gl_state.f_sA != src_factor_alpha || g_gl_state.f_dA != dst_factor_alpha)
 		{
-			GLState::f_sRGB = src_factor;
-			GLState::f_dRGB = dst_factor;
-			GLState::f_sA   = src_factor_alpha;
-			GLState::f_dA   = dst_factor_alpha;
+			g_gl_state.f_sRGB = src_factor;
+			g_gl_state.f_dRGB = dst_factor;
+			g_gl_state.f_sA   = src_factor_alpha;
+			g_gl_state.f_dA   = dst_factor_alpha;
 			glBlendFuncSeparate(src_factor, dst_factor, src_factor_alpha, dst_factor_alpha);
 		}
 	}
 	else
 	{
-		if (GLState::blend)
+		if (g_gl_state.blend)
 		{
-			GLState::blend = false;
+			g_gl_state.blend = false;
 			glDisable(GL_BLEND);
 		}
 	}
@@ -2184,18 +2184,18 @@ void GSDeviceOGL::OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVecto
 
 void GSDeviceOGL::SetViewport(const GSVector2i& viewport)
 {
-	if (GLState::viewport != viewport)
+	if (g_gl_state.viewport != viewport)
 	{
-		GLState::viewport = viewport;
+		g_gl_state.viewport = viewport;
 		glViewport(0, 0, viewport.x, viewport.y);
 	}
 }
 
 void GSDeviceOGL::SetScissor(const GSVector4i& scissor)
 {
-	if (!GLState::scissor.eq(scissor))
+	if (!g_gl_state.scissor.eq(scissor))
 	{
-		GLState::scissor = scissor;
+		g_gl_state.scissor = scissor;
 		glScissor(scissor.x, scissor.y, scissor.width(), scissor.height());
 	}
 }
@@ -2324,10 +2324,10 @@ GLenum GSDeviceOGL::GLBlendFactor(u8 factor) const
 
 void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 {
-	if (!GLState::scissor.eq(config.scissor))
+	if (!g_gl_state.scissor.eq(config.scissor))
 	{
 		glScissor(config.scissor.x, config.scissor.y, config.scissor.width(), config.scissor.height());
-		GLState::scissor = config.scissor;
+		g_gl_state.scissor = config.scissor;
 	}
 
 	if (config.tex)
@@ -2488,7 +2488,7 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 
 	// additional non-pipeline config stuff
 	const bool point_size_enabled = config.vs.point_size;
-	if (GLState::point_size != point_size_enabled)
+	if (g_gl_state.point_size != point_size_enabled)
 	{
 		// ES always takes the size from the vertex shader.
 		if (!m_is_gles)
@@ -2498,14 +2498,14 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 			else
 				glDisable(GL_PROGRAM_POINT_SIZE);
 		}
-		GLState::point_size = point_size_enabled;
+		g_gl_state.point_size = point_size_enabled;
 	}
 	if (config.topology == GSHWDrawConfig::Topology::Line)
 	{
 		const float line_width = config.line_expand ? config.cb_ps.ScaleFactor.z : 1.0f;
-		if (GLState::line_width != line_width)
+		if (g_gl_state.line_width != line_width)
 		{
-			GLState::line_width = line_width;
+			g_gl_state.line_width = line_width;
 			glLineWidth(line_width);
 		}
 	}
@@ -2550,12 +2550,12 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 	// avoid changing framebuffer just to switch from rt+depth to rt and vice versa
 	GSTexture* draw_rt = hdr_rt ? hdr_rt : config.rt;
 	GSTexture* draw_ds = config.ds;
-	if (!draw_rt && GLState::rt && GLState::ds == draw_ds && config.tex != GLState::rt &&
-		GLState::rt->GetSize() == draw_ds->GetSize())
-		draw_rt = GLState::rt;
-	else if (!draw_ds && GLState::ds && GLState::rt == draw_rt && config.tex != GLState::ds &&
-			 GLState::ds->GetSize() == draw_rt->GetSize())
-		draw_ds = GLState::ds;
+	if (!draw_rt && g_gl_state.rt && g_gl_state.ds == draw_ds && config.tex != g_gl_state.rt &&
+		g_gl_state.rt->GetSize() == draw_ds->GetSize())
+		draw_rt = g_gl_state.rt;
+	else if (!draw_ds && g_gl_state.ds && g_gl_state.rt == draw_rt && config.tex != g_gl_state.ds &&
+			 g_gl_state.ds->GetSize() == draw_rt->GetSize())
+		draw_ds = g_gl_state.ds;
 
 	OMSetRenderTargets(draw_rt, draw_ds, &config.scissor);
 	OMSetColorMaskState(config.colormask);

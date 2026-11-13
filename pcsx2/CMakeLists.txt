@@ -455,10 +455,10 @@ set(pcsx2GSHeaders
 
 if(USE_OPENGL)
 	list(APPEND pcsx2GSSources
-		GS/Renderers/OpenGL/GLState.cpp
+		GS/Renderers/OpenGL/GLState.c
 		GS/Renderers/OpenGL/GSDeviceOGL.cpp
 		GS/Renderers/OpenGL/GSTextureOGL.cpp
-		GS/Renderers/OpenGL/GLContext.cpp
+		GS/Renderers/OpenGL/GLContext.c
 		GS/Renderers/OpenGL/GLProgram.cpp
 		GS/Renderers/OpenGL/GLShaderCache.cpp
 		GS/Renderers/OpenGL/GLStreamBuffer.cpp

@@ -164,7 +164,8 @@
     <ClCompile Include="Dmac.c" />
     <ClCompile Include="DmacChannel.c" />
     <ClCompile Include="sif2.c" />
-    <ClCompile Include="GS\Renderers\OpenGL\GLState.cpp" />
+    <ClCompile Include="GS\Renderers\OpenGL\GLContext.c" />
+    <ClCompile Include="GS\Renderers\OpenGL\GLState.c" />
     <ClCompile Include="GS\GS.cpp" />
     <ClCompile Include="GS\GSBlock.cpp" />
     <ClCompile Include="GS\GSClutGPU.cpp" />

@@ -13,47 +13,76 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_GL_STATE_H
+#define GS_GL_STATE_H
 
-#include "GS/GSVector.h"
-
+#include "common/Pcsx2Defs.h"
 #include "glad.h"
 
+#ifdef __cplusplus
+#include "GS/GSVector.h"
 class GSTextureOGL;
+#endif
 
-namespace GLState
+/* What the GL device last bound or set, so it binds and sets only what
+ * changes. The viewport and scissor are the same ints either way; C++
+ * takes them as GSVector2i and GSVector4i. */
+typedef struct gs_gl_state
 {
-	extern GLuint vao; // vertex array object
-	extern GLuint fbo; // frame buffer object
-	extern GSVector2i viewport;
-	extern GSVector4i scissor;
+	GLuint vao; /* vertex array object */
+	GLuint fbo; /* frame buffer object */
+#ifdef __cplusplus
+	GSVector2i viewport;
+	GSVector4i scissor;
+#else
+	int viewport[2];
+	PCSX2_ALIGN(16) int scissor[4];
+#endif
 
-	extern bool point_size;
-	extern float line_width;
+	u8 point_size;
+	float line_width;
 
-	extern bool blend;
-	extern u16 eq_RGB;
-	extern u16 f_sRGB;
-	extern u16 f_dRGB;
-	extern u16 f_sA;
-	extern u16 f_dA;
-	extern u8 bf;
-	extern u8 wrgba;
+	u8 blend;
+	u16 eq_RGB;
+	u16 f_sRGB;
+	u16 f_dRGB;
+	u16 f_sA;
+	u16 f_dA;
+	u8 bf;
+	u8 wrgba;
 
-	extern bool depth;
-	extern GLenum depth_func;
-	extern bool depth_mask;
+	u8 depth;
+	GLenum depth_func;
+	u8 depth_mask;
 
-	extern bool stencil;
-	extern GLenum stencil_func;
-	extern GLenum stencil_pass;
+	u8 stencil;
+	GLenum stencil_func;
+	GLenum stencil_pass;
 
-	extern GLuint ps_ss; // sampler
+	GLuint ps_ss; /* sampler */
 
-	extern GSTextureOGL* rt; // render target
-	extern GSTextureOGL* ds; // Depth-Stencil
-	extern GLuint tex_unit[8]; // shader input texture
-	extern GLuint64 tex_handle[8]; // shader input texture
+#ifdef __cplusplus
+	GSTextureOGL* rt; /* render target */
+	GSTextureOGL* ds; /* depth stencil */
+#else
+	void* rt;
+	void* ds;
+#endif
+	GLuint tex_unit[8];     /* shader input textures */
+	GLuint64 tex_handle[8];
+} gs_gl_state;
 
-	extern void Clear();
-} // namespace GLState
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern gs_gl_state g_gl_state;
+
+/* Back to what a new context has */
+void gs_gl_state_clear(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

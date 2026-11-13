@@ -1,5 +1,5 @@
 /*  PCSX2 - PS2 Emulator for PCs
- *  Copyright (C) 2002-2021  PCSX2 Dev Team
+ *  Copyright (C) 2002-2021 PCSX2 Dev Team
  *
  *  PCSX2 is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU Lesser General Public License as published by the Free Software Found-
@@ -13,44 +13,29 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "GLContext.h"
-#include "common/Pcsx2Defs.h"
-#include "glad.h"
-
-#include <stdlib.h>
-#include <string.h>
-#ifdef __APPLE__
-#include <stdlib.h>
-#else
-#include <malloc.h>
-#endif
-
 #include <libretro.h>
 
-GLContext::GLContext() { }
-GLContext::~GLContext() = default;
+#include "common/Pcsx2Defs.h"
+#include "GLContext.h"
+#include "glad.h"
 
-static void *gl_retro_proc_addr(const char *name)
+static void* gl_retro_proc_addr(const char* name)
 {
-	return (void*)(hw_render.get_proc_address(name));
+	return (void*)hw_render.get_proc_address(name);
 }
 
-GLContext* GLContext::Create()
+int gs_gl_context_load(int* gles)
 {
-	GLContext* context = new GLContext();
-
 	/* The profile is the context type the frontend accepted, and it picks
 	 * the loader: the desktop one would read an ES context's version as a
 	 * desktop GL one and leave every ES-only entry point null. */
-	context->m_gles = (hw_render.context_type == RETRO_HW_CONTEXT_OPENGLES3 ||
-		hw_render.context_type == RETRO_HW_CONTEXT_OPENGLES_VERSION);
+	*gles = hw_render.context_type == RETRO_HW_CONTEXT_OPENGLES3
+		|| hw_render.context_type == RETRO_HW_CONTEXT_OPENGLES_VERSION;
 
-	if (!(context->m_gles ? gladLoadGLES2Loader(gl_retro_proc_addr) : gladLoadGLLoader(gl_retro_proc_addr)))
+	if (!(*gles ? gladLoadGLES2Loader(gl_retro_proc_addr) : gladLoadGLLoader(gl_retro_proc_addr)))
 	{
-		log_cb(RETRO_LOG_ERROR, "Failed to load %s functions for GLAD\n", context->m_gles ? "OpenGL ES" : "GL");
-		delete context;
-		return nullptr;
+		log_cb(RETRO_LOG_ERROR, "Failed to load %s functions for GLAD\n", *gles ? "OpenGL ES" : "GL");
+		return 0;
 	}
-
-	return context;
+	return 1;
 }

@@ -184,7 +184,7 @@ GSTextureOGL::~GSTextureOGL()
 	GSDeviceOGL::GetInstance()->OMUnbindTexture(this);
 
 	// But they are unbound.
-	for (GLuint& tex : GLState::tex_unit)
+	for (GLuint& tex : g_gl_state.tex_unit)
 	{
 		if (m_texture_id == tex)
 			tex = 0;
