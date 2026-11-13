@@ -28,17 +28,6 @@
  *		sudonim(1@gmail.com)
  */
 
-//  PCSX2's New C++ Emitter
-// --------------------------------------------------------------------------------------
-// To use it just include the x86Emitter namespace into your file/class/function off choice.
-//
-// This header file is intended for use by public code.  It includes the appropriate
-// inlines and macro definitions for efficient codegen.  (code internal to the emitter
-// should usually use ix86_internal.h instead, and manually include the
-// ix86_inlines.inl file when it is known that inlining of ModSib functions are
-// wanted).
-//
-
 #pragma once
 
 #include "x86types.h"

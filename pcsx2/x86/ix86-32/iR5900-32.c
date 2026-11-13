@@ -55,7 +55,7 @@ int s_nBlockInterlocked = 0;/* Block is VU0 interlocked */
 u32 pc; /* recompiler pc */
 int g_branch; /* set for branch */
 
-PCSX2_ALIGN(16) GPR_reg64 g_cpuConstRegs[32] = {};
+PCSX2_ALIGN(16) GPR_reg64 g_cpuConstRegs[32];
 u32 g_cpuHasConstReg = 0, g_cpuFlushedConstReg = 0;
 int g_cpuFlushedPC, g_cpuFlushedCode, g_recompilingDelaySlot, g_maySignalException;
 
