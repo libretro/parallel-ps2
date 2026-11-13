@@ -16,6 +16,7 @@
 #include "common/Align.h"
 #include "common/Pcsx2Defs.h"
 #include <cfloat>
+#include <utility>
 
 #include "GS.h"
 #include "GSDevice11.h"

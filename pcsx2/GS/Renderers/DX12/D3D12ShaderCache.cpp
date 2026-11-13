@@ -24,15 +24,10 @@
 
 #include "HostFS.h"
 
-/* xxhash may already be set up by a header included above (HashCombine.h /
- * GSKeyHash.h, both behind an XXH_versionNumber guard). Guard our own setup so
- * we do not redefine these macros (MSVC C4005 / -Wmacro-redefinition). */
-#ifndef XXH_STATIC_LINKING_ONLY
+/* XXH3-128 for the on-disk cache keys (libretro-common has only XXH3-64,
+ * and the keys must stay as caches have them) */
 #define XXH_STATIC_LINKING_ONLY 1
-#endif
-#ifndef XXH_INLINE_ALL
 #define XXH_INLINE_ALL 1
-#endif
 #include <xxhash.h>
 
 #include <d3dcompiler.h>

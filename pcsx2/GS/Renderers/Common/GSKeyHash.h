@@ -5,8 +5,8 @@
  * key of a size known where this inlines, up to 128 bytes, is hashed in
  * place.
  *
- * These were HashCombine over the key's fields, which is one seeded XXH3
- * call per field, chained: seven of them for a pipeline selector, about
+ * Hashing a key field by field (the HashCombine this replaced) is one
+ * seeded XXH3 call per field, chained: seven of them for a pipeline selector, about
  * 16 ns, where one pass over its 32 bytes is under 2 ns. A pipeline
  * lookup went from about 30 ns to about 11.
  *

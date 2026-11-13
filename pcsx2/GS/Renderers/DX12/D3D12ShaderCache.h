@@ -16,7 +16,7 @@
 #pragma once
 
 #include "common/Pcsx2Defs.h"
-#include "common/HashCombine.h"
+#include "GS/Renderers/Common/GSKeyHash.h"
 #include "common/RedtapeWindows.h"
 #include "common/RedtapeWilCom.h"
 
@@ -154,10 +154,9 @@ class D3D12ShaderCache
 		{
 			std::size_t operator()(const CacheIndexKey& e) const noexcept
 			{
-				std::size_t h = 0;
-				HashCombine(h, e.entry_point_low, e.entry_point_high, e.macro_hash_low, e.macro_hash_high,
-						e.source_hash_low, e.source_hash_high, e.source_length, e.type);
-				return h;
+				/* (no padding: field equality is byte equality) */
+				static_assert(sizeof(CacheIndexKey) == 6 * sizeof(u64) + sizeof(u32) + sizeof(e.type), "key bytes");
+				return gs_key_hash(&e, sizeof(e));
 			}
 		};
 

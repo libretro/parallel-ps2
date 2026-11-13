@@ -17,7 +17,7 @@
 #include "common/Pcsx2Defs.h"
 #include "GS/Renderers/DX11/D3D.h"
 #include "HostFS.h"
-#include "common/HashCombine.h"
+#include "GS/Renderers/Common/GSKeyHash.h"
 #include "common/RedtapeWindows.h"
 #include "common/RedtapeWilCom.h"
 
@@ -75,10 +75,9 @@ class D3D11ShaderCache
 		{
 			std::size_t operator()(const CacheIndexKey& e) const noexcept
 			{
-				std::size_t h = 0;
-				HashCombine(h, e.entry_point_low, e.entry_point_high, e.macro_hash_low, e.macro_hash_high,
-						e.source_hash_low, e.source_hash_high, e.source_length, e.shader_type);
-				return h;
+				/* (no padding: field equality is byte equality) */
+				static_assert(sizeof(CacheIndexKey) == 6 * sizeof(u64) + sizeof(u32) + sizeof(e.shader_type), "key bytes");
+				return gs_key_hash(&e, sizeof(e));
 			}
 		};
 

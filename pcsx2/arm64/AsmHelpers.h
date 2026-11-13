@@ -6,7 +6,7 @@
 
 #include "common/Pcsx2Defs.h"
 #include "arm64/ArmCompat.h"
-#include "common/HashCombine.h"
+#include "GS/Renderers/Common/GSKeyHash.h"
 
 #include "aarch64/constants-aarch64.h"
 #include "aarch64/macro-assembler-aarch64.h"
@@ -143,9 +143,7 @@ private:
 	{
 		std::size_t operator()(const u128& v) const
 		{
-			std::size_t s = 0;
-			HashCombine(s, v.lo, v.hi);
-			return s;
+			return gs_key_hash(&v, sizeof(v));
 		}
 	};
 
