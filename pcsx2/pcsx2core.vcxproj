@@ -167,7 +167,7 @@
     <ClCompile Include="GS\Renderers\OpenGL\GLContext.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLProgram.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLShaderCache.cpp" />
-    <ClCompile Include="GS\Renderers\OpenGL\GLStreamBuffer.cpp" />
+    <ClCompile Include="GS\Renderers\OpenGL\GLStreamBuffer.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLState.c" />
     <ClCompile Include="GS\GS.cpp" />
     <ClCompile Include="GS\GSBlock.cpp" />

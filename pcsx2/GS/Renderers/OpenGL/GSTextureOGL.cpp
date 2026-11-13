@@ -210,7 +210,7 @@ bool GSTextureOGL::Update(const GSVector4i& r, const void* data, int pitch, int 
 
 	// Don't use PBOs for huge texture uploads, let the driver sort it out.
 	// Otherwise we'll just be syncing, or worse, crashing because the PBO routine above isn't great.
-	GLStreamBuffer* const sb = GSDeviceOGL::GetInstance()->GetTextureUploadBuffer();
+	gs_gl_stream_buffer* const sb = GSDeviceOGL::GetInstance()->GetTextureUploadBuffer();
 	if (IsCompressedFormat())
 	{
 		const u32 row_length = CalcUploadRowLengthFromPitch(pitch);
@@ -219,7 +219,7 @@ bool GSTextureOGL::Update(const GSVector4i& r, const void* data, int pitch, int 
 		glCompressedTextureSubImage2D(m_texture_id, layer, r.x, r.y, r.width(), r.height(), m_int_format, upload_size, data);
 		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 	}
-	else if (!sb || map_size > sb->GetChunkSize())
+	else if (!sb || map_size > gs_gl_stream_buffer_chunk_size(sb))
 	{
 		glPixelStorei(GL_UNPACK_ROW_LENGTH, pitch >> m_int_shift);
 		glTextureSubImage2D(m_texture_id, layer, r.x, r.y, r.width(), r.height(), m_int_format, m_int_type, data);
@@ -227,10 +227,10 @@ bool GSTextureOGL::Update(const GSVector4i& r, const void* data, int pitch, int 
 	}
 	else
 	{
-		const auto map = sb->Map(TEXTURE_UPLOAD_ALIGNMENT, map_size);
+		const gs_gl_stream_map map = gs_gl_stream_buffer_map(sb, TEXTURE_UPLOAD_ALIGNMENT, map_size);
 		GSStrideMemCpy(map.pointer, preferred_pitch, data, pitch, r.width() << m_int_shift, r.height());
-		sb->Unmap(map_size);
-		sb->Bind();
+		gs_gl_stream_buffer_unmap(sb, map_size);
+		gs_gl_stream_buffer_bind(sb);
 
 		const u32 row_length = CalcUploadRowLengthFromPitch(preferred_pitch);
 		glPixelStorei(GL_UNPACK_ROW_LENGTH, row_length);
@@ -240,7 +240,7 @@ bool GSTextureOGL::Update(const GSVector4i& r, const void* data, int pitch, int 
 
 		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
-		sb->Unbind();
+		gs_gl_stream_buffer_unbind(sb);
 	}
 
 	m_needs_mipmaps_generated = true;
@@ -263,11 +263,11 @@ bool GSTextureOGL::Map(GSMap& m, const GSVector4i* _r, int layer)
 	if (m_type == Type::Texture || m_type == Type::RenderTarget)
 	{
 		const u32 upload_size = CalcUploadSize(r.height(), pitch);
-		GLStreamBuffer* sb = GSDeviceOGL::GetInstance()->GetTextureUploadBuffer();
-		if (!sb || upload_size > sb->GetChunkSize())
+		gs_gl_stream_buffer* sb = GSDeviceOGL::GetInstance()->GetTextureUploadBuffer();
+		if (!sb || upload_size > gs_gl_stream_buffer_chunk_size(sb))
 			return false;
 
-		const auto map = sb->Map(TEXTURE_UPLOAD_ALIGNMENT, upload_size);
+		const gs_gl_stream_map map = gs_gl_stream_buffer_map(sb, TEXTURE_UPLOAD_ALIGNMENT, upload_size);
 		m.bits = static_cast<u8*>(map.pointer);
 
 		// Save the area for the unmap
@@ -292,9 +292,9 @@ void GSTextureOGL::Unmap()
 
 		const u32 pitch = pcsx2_align_up_pow2_u32(m_r_w << m_int_shift, TEXTURE_UPLOAD_PITCH_ALIGNMENT);
 		const u32 upload_size = pitch * m_r_h;
-		GLStreamBuffer* sb    = GSDeviceOGL::GetInstance()->GetTextureUploadBuffer();
-		sb->Unmap(upload_size);
-		sb->Bind();
+		gs_gl_stream_buffer* sb = GSDeviceOGL::GetInstance()->GetTextureUploadBuffer();
+		gs_gl_stream_buffer_unmap(sb, upload_size);
+		gs_gl_stream_buffer_bind(sb);
 
 		const u32 row_length = CalcUploadRowLengthFromPitch(pitch);
 		glPixelStorei(GL_UNPACK_ROW_LENGTH, row_length);
@@ -304,7 +304,7 @@ void GSTextureOGL::Unmap()
 
 		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
-		sb->Unbind();
+		gs_gl_stream_buffer_unbind(sb);
 
 		m_needs_mipmaps_generated = true;
 	}

@@ -500,19 +500,19 @@ bool GSDeviceOGL::Create()
 		glGenVertexArrays(1, &m_vao);
 		IASetVAO(m_vao);
 
-		m_vertex_stream_buffer = GLStreamBuffer::Create(GL_ARRAY_BUFFER, VERTEX_BUFFER_SIZE);
-		m_index_stream_buffer = GLStreamBuffer::Create(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE);
-		m_vertex_uniform_stream_buffer = GLStreamBuffer::Create(GL_UNIFORM_BUFFER, VERTEX_UNIFORM_BUFFER_SIZE);
-		m_fragment_uniform_stream_buffer = GLStreamBuffer::Create(GL_UNIFORM_BUFFER, FRAGMENT_UNIFORM_BUFFER_SIZE);
+		const bool streams = gs_gl_stream_buffer_create(&m_vertex_stream_buffer, GL_ARRAY_BUFFER, VERTEX_BUFFER_SIZE)
+			& gs_gl_stream_buffer_create(&m_index_stream_buffer, GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE)
+			& gs_gl_stream_buffer_create(&m_vertex_uniform_stream_buffer, GL_UNIFORM_BUFFER, VERTEX_UNIFORM_BUFFER_SIZE)
+			& gs_gl_stream_buffer_create(&m_fragment_uniform_stream_buffer, GL_UNIFORM_BUFFER, FRAGMENT_UNIFORM_BUFFER_SIZE);
 		glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &m_uniform_buffer_alignment);
-		if (!m_vertex_stream_buffer || !m_index_stream_buffer || !m_vertex_uniform_stream_buffer || !m_fragment_uniform_stream_buffer)
+		if (!streams)
 		{
 			log_cb(RETRO_LOG_ERROR, "GS: Failed to create vertex/index/uniform streaming buffers\n");
 			return false;
 		}
 
-		m_vertex_stream_buffer->Bind();
-		m_index_stream_buffer->Bind();
+		gs_gl_stream_buffer_bind(&m_vertex_stream_buffer);
+		gs_gl_stream_buffer_bind(&m_index_stream_buffer);
 
 		// Force UBOs to be uploaded on first use.
 		memset(&m_vs_cb_cache, 0xFF, sizeof(m_vs_cb_cache));
@@ -537,7 +537,7 @@ bool GSDeviceOGL::Create()
 			IASetVAO(m_expand_vao);
 
 			// Still need the vertex buffer bound, because uploads happen to GL_ARRAY_BUFFER.
-			m_vertex_stream_buffer->Bind();
+			gs_gl_stream_buffer_bind(&m_vertex_stream_buffer);
 
 			u8* expand_data = static_cast<u8*>(malloc(EXPAND_BUFFER_SIZE));
 			if (!expand_data)
@@ -551,7 +551,7 @@ bool GSDeviceOGL::Create()
 			// We can bind it once when using gl_BaseVertexARB.
 			if (GLAD_GL_ARB_shader_draw_parameters)
 			{
-				glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, m_vertex_stream_buffer->GetGLBufferId(),
+				glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, m_vertex_stream_buffer.buffer_id,
 					0, VERTEX_BUFFER_SIZE);
 			}
 		}
@@ -760,12 +760,11 @@ bool GSDeviceOGL::Create()
 	// ****************************************************************
 	if (!buggy_pbo)
 	{
-		m_texture_upload_buffer = GLStreamBuffer::Create(GL_PIXEL_UNPACK_BUFFER, TEXTURE_UPLOAD_BUFFER_SIZE);
-		if (m_texture_upload_buffer)
+		if (gs_gl_stream_buffer_create(&m_texture_upload_buffer, GL_PIXEL_UNPACK_BUFFER, TEXTURE_UPLOAD_BUFFER_SIZE))
 		{
 			// Don't keep it bound, we'll re-bind when we need it.
 			// Otherwise non-PBO texture uploads break. Yay for global state.
-			m_texture_upload_buffer->Unbind();
+			gs_gl_stream_buffer_unbind(&m_texture_upload_buffer);
 		}
 		else
 			log_cb(RETRO_LOG_ERROR, "Failed to create texture upload buffer. Using slow path.\n");
@@ -887,10 +886,8 @@ void GSDeviceOGL::DestroyResources()
 	for (GLProgram& prog : m_merge_obj.ps)
 		prog.Destroy();
 
-	delete m_fragment_uniform_stream_buffer;
-	m_fragment_uniform_stream_buffer = nullptr;
-	delete m_vertex_uniform_stream_buffer;
-	m_vertex_uniform_stream_buffer = nullptr;
+	gs_gl_stream_buffer_destroy(&m_fragment_uniform_stream_buffer);
+	gs_gl_stream_buffer_destroy(&m_vertex_uniform_stream_buffer);
 
 	glBindVertexArray(0);
 	if (m_expand_ibo != 0)
@@ -898,12 +895,9 @@ void GSDeviceOGL::DestroyResources()
 	if (m_vao != 0)
 		glDeleteVertexArrays(1, &m_vao);
 
-	delete m_index_stream_buffer;
-	m_index_stream_buffer = nullptr;
-	delete m_vertex_stream_buffer;
-	m_vertex_stream_buffer = nullptr;
-	delete m_texture_upload_buffer;
-	m_texture_upload_buffer = nullptr;
+	gs_gl_stream_buffer_destroy(&m_index_stream_buffer);
+	gs_gl_stream_buffer_destroy(&m_vertex_stream_buffer);
+	gs_gl_stream_buffer_destroy(&m_texture_upload_buffer);
 	if (m_expand_ibo)
 		glDeleteBuffers(1, &m_expand_ibo);
 
@@ -1832,8 +1826,8 @@ void GSDeviceOGL::DoMultiStretchRects(const MultiStretchRect* rects, u32 num_rec
 {
 	const u32 vertex_reserve_size = num_rects * 4 * sizeof(GSVertexPT1);
 	const u32 index_reserve_size = num_rects * 6 * sizeof(u16);
-	auto vertex_map = m_vertex_stream_buffer->Map(sizeof(GSVertexPT1), vertex_reserve_size);
-	auto index_map = m_index_stream_buffer->Map(sizeof(u16), index_reserve_size);
+	const gs_gl_stream_map vertex_map = gs_gl_stream_buffer_map(&m_vertex_stream_buffer, sizeof(GSVertexPT1), vertex_reserve_size);
+	const gs_gl_stream_map index_map = gs_gl_stream_buffer_map(&m_index_stream_buffer, sizeof(u16), index_reserve_size);
 	m_vertex.start = vertex_map.index_aligned;
 	m_index.start = index_map.index_aligned;
 
@@ -1869,8 +1863,8 @@ void GSDeviceOGL::DoMultiStretchRects(const MultiStretchRect* rects, u32 num_rec
 
 	m_vertex.count = vcount;
 	m_index.count = icount;
-	m_vertex_stream_buffer->Unmap(vcount * sizeof(GSVertexPT1));
-	m_index_stream_buffer->Unmap(icount * sizeof(u16));
+	gs_gl_stream_buffer_unmap(&m_vertex_stream_buffer, vcount * sizeof(GSVertexPT1));
+	gs_gl_stream_buffer_unmap(&m_index_stream_buffer, icount * sizeof(u16));
 
 	PSSetShaderResource(0, rects[0].src);
 	PSSetSamplerState(rects[0].linear ? m_convert.ln : m_convert.pt);
@@ -1997,21 +1991,21 @@ void GSDeviceOGL::IASetVAO(GLuint vao)
 void GSDeviceOGL::IASetVertexBuffer(const void* vertices, size_t count)
 {
 	const u32 size = static_cast<u32>(count) * sizeof(GSVertexPT1);
-	auto res       = m_vertex_stream_buffer->Map(sizeof(GSVertexPT1), size);
+	const gs_gl_stream_map res = gs_gl_stream_buffer_map(&m_vertex_stream_buffer, sizeof(GSVertexPT1), size);
 	memcpy(res.pointer, vertices, size);
 	m_vertex.start = res.index_aligned;
 	m_vertex.count = count;
-	m_vertex_stream_buffer->Unmap(size);
+	gs_gl_stream_buffer_unmap(&m_vertex_stream_buffer, size);
 }
 
 void GSDeviceOGL::IASetIndexBuffer(const void* index, size_t count)
 {
 	const u32 size = static_cast<u32>(count) * sizeof(u16);
-	auto res = m_index_stream_buffer->Map(sizeof(u16), size);
+	const gs_gl_stream_map res = gs_gl_stream_buffer_map(&m_index_stream_buffer, sizeof(u16), size);
 	m_index.start = res.index_aligned;
 	m_index.count = count;
 	memcpy(res.pointer, index, size);
-	m_index_stream_buffer->Unmap(size);
+	gs_gl_stream_buffer_unmap(&m_index_stream_buffer, size);
 }
 
 void GSDeviceOGL::IASetPrimitiveTopology(GLenum topology)
@@ -2200,19 +2194,19 @@ void GSDeviceOGL::SetScissor(const GSVector4i& scissor)
 	}
 }
 
-__fi static void WriteToStreamBuffer(GLStreamBuffer* sb, u32 index, u32 align, const void* data, u32 size)
+__fi static void WriteToStreamBuffer(gs_gl_stream_buffer* sb, u32 index, u32 align, const void* data, u32 size)
 {
-	const auto res = sb->Map(align, size);
+	const gs_gl_stream_map res = gs_gl_stream_buffer_map(sb, align, size);
 	memcpy(res.pointer, data, size);
-	sb->Unmap(size);
+	gs_gl_stream_buffer_unmap(sb, size);
 
-	glBindBufferRange(GL_UNIFORM_BUFFER, index, sb->GetGLBufferId(), res.buffer_offset, size);
+	glBindBufferRange(GL_UNIFORM_BUFFER, index, sb->buffer_id, res.buffer_offset, size);
 }
 
 /* The dynamic programs' key, at binding 2 (cb_key). */
 void GSDeviceOGL::WriteDynamicKey()
 {
-	WriteToStreamBuffer(m_fragment_uniform_stream_buffer, 2, m_uniform_buffer_alignment, m_dynamic_key, sizeof(m_dynamic_key));
+	WriteToStreamBuffer(&m_fragment_uniform_stream_buffer, 2, m_uniform_buffer_alignment, m_dynamic_key, sizeof(m_dynamic_key));
 }
 
 void GSDeviceOGL::SetupPipeline(const ProgramSelector& psel)
@@ -2430,7 +2424,7 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 	if (config.vs.expand != GSHWDrawConfig::VSExpand::None && !GLAD_GL_ARB_shader_draw_parameters)
 	{
 		// Need to offset the buffer.
-		glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, m_vertex_stream_buffer->GetGLBufferId(),
+		glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, m_vertex_stream_buffer.buffer_id,
 			m_vertex.start * sizeof(GSVertex), config.nverts * sizeof(GSVertex));
 		m_vertex.start = 0;
 	}
@@ -2469,12 +2463,12 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 
 	if (m_vs_cb_cache.Update(config.cb_vs))
 	{
-		WriteToStreamBuffer(m_vertex_uniform_stream_buffer, g_vs_cb_index,
+		WriteToStreamBuffer(&m_vertex_uniform_stream_buffer, g_vs_cb_index,
 			m_uniform_buffer_alignment, &config.cb_vs, sizeof(config.cb_vs));
 	}
 	if (m_ps_cb_cache.Update(config.cb_ps))
 	{
-		WriteToStreamBuffer(m_fragment_uniform_stream_buffer, g_ps_cb_index,
+		WriteToStreamBuffer(&m_fragment_uniform_stream_buffer, g_ps_cb_index,
 			m_uniform_buffer_alignment, &config.cb_ps, sizeof(config.cb_ps));
 	}
 
@@ -2595,7 +2589,7 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 		if (config.cb_ps.FogColor_AREF.a != config.alpha_second_pass.ps_aref)
 		{
 			config.cb_ps.FogColor_AREF.a = config.alpha_second_pass.ps_aref;
-			WriteToStreamBuffer(m_fragment_uniform_stream_buffer, g_ps_cb_index,
+			WriteToStreamBuffer(&m_fragment_uniform_stream_buffer, g_ps_cb_index,
 				m_uniform_buffer_alignment, &config.cb_ps, sizeof(config.cb_ps));
 		}
 

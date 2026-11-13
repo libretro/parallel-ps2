@@ -812,7 +812,7 @@
     <ClCompile Include="GS\Renderers\OpenGL\GLShaderCache.cpp">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
-    <ClCompile Include="GS\Renderers\OpenGL\GLStreamBuffer.cpp">
+    <ClCompile Include="GS\Renderers\OpenGL\GLStreamBuffer.c">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
     <ClCompile Include="GS\GSClut.c">

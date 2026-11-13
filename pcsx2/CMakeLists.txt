@@ -461,7 +461,7 @@ if(USE_OPENGL)
 		GS/Renderers/OpenGL/GLContext.c
 		GS/Renderers/OpenGL/GLProgram.c
 		GS/Renderers/OpenGL/GLShaderCache.cpp
-		GS/Renderers/OpenGL/GLStreamBuffer.cpp
+		GS/Renderers/OpenGL/GLStreamBuffer.c
 	)
 	list(APPEND pcsx2GSHeaders
 		GS/Renderers/OpenGL/GLState.h

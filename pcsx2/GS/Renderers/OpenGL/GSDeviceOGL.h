@@ -168,17 +168,17 @@ private:
 	GLuint m_fbo_read = 0; // frame buffer container only for reading
 	GLuint m_fbo_write = 0;	// frame buffer container only for writing
 	
-	GLStreamBuffer* m_texture_upload_buffer = nullptr;
+	gs_gl_stream_buffer m_texture_upload_buffer = {};
 	
-	GLStreamBuffer* m_vertex_stream_buffer = nullptr;
-	GLStreamBuffer* m_index_stream_buffer = nullptr;
+	gs_gl_stream_buffer m_vertex_stream_buffer = {};
+	gs_gl_stream_buffer m_index_stream_buffer = {};
 	GLuint m_expand_ibo = 0;
 	GLuint m_vao = 0;
 	GLuint m_expand_vao = 0;
 	GLenum m_draw_topology = 0;
 
-	GLStreamBuffer* m_vertex_uniform_stream_buffer = nullptr;
-	GLStreamBuffer* m_fragment_uniform_stream_buffer = nullptr;
+	gs_gl_stream_buffer m_vertex_uniform_stream_buffer = {};
+	gs_gl_stream_buffer m_fragment_uniform_stream_buffer = {};
 	GLint m_uniform_buffer_alignment = 0;
 
 	struct
@@ -294,7 +294,8 @@ public:
 	GLenum GLBlendFactor(u8 factor) const;
 	__fi u32 GetFBORead() const { return m_fbo_read; }
 	__fi u32 GetFBOWrite() const { return m_fbo_write; }
-	__fi GLStreamBuffer* GetTextureUploadBuffer() const { return m_texture_upload_buffer; }
+	/* The PBO uploads go through, or NULL when there is none */
+	__fi gs_gl_stream_buffer* GetTextureUploadBuffer() { return m_texture_upload_buffer.buffer_id ? &m_texture_upload_buffer : nullptr; }
 	void CommitClear(GSTexture* t, bool use_write_fbo);
 
 	RenderAPI GetRenderAPI() const;
