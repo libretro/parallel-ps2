@@ -1325,7 +1325,8 @@ void GSDeviceSW::Destroy()
 
 GSTexture* GSDeviceSW::CreateSurface(GSTexture::Type type, int width, int height, int /*levels*/, GSTexture::Format format)
 {
-	return new GSTextureSW(type, width, height, format);
+	static_assert(VECTOR_ALIGNMENT == GS_TEXTURE_SW_ALIGN, "SW texture rows");
+	return static_cast<GSTexture*>(gs_texture_sw_create(static_cast<unsigned>(type), width, height, static_cast<unsigned>(format)));
 }
 
 GSDownloadTexture* GSDeviceSW::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
@@ -1339,7 +1340,7 @@ void GSDeviceSW::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, 
 	if (!dTex)
 		return;
 
-	GSTextureSW* dst = static_cast<GSTextureSW*>(dTex);
+	GSTextureSW* dst = GSTextureSWOf(dTex);
 	const int dst_w  = dst->GetWidth();
 	const int dst_h  = dst->GetHeight();
 	const int dst_p  = dst->GetPitch();
@@ -1366,7 +1367,7 @@ void GSDeviceSW::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, 
 	/* Circuit 1: copy with no blend (background already filled). */
 	if (sTex[1] && PMODE.SLBG == 0)
 	{
-		GSTextureSW* src = static_cast<GSTextureSW*>(sTex[1]);
+		GSTextureSW* src = GSTextureSWOf(sTex[1]);
 		const int dx0 = static_cast<int>(dRect[1].x);
 		const int dy0 = static_cast<int>(dRect[1].y);
 		const int dx1 = static_cast<int>(dRect[1].z);
@@ -1382,7 +1383,7 @@ void GSDeviceSW::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, 
 	/* Circuit 0: alpha-blended composite over whatever is in dTex. */
 	if (sTex[0])
 	{
-		GSTextureSW* src = static_cast<GSTextureSW*>(sTex[0]);
+		GSTextureSW* src = GSTextureSWOf(sTex[0]);
 		const int dx0 = static_cast<int>(dRect[0].x);
 		const int dy0 = static_cast<int>(dRect[0].y);
 		const int dx1 = static_cast<int>(dRect[0].z);
@@ -1404,8 +1405,8 @@ void GSDeviceSW::DoInterlace(GSTexture* sTex, const GSVector4& /*sRect*/, GSText
 {
 	if (!sTex || !dTex)
 		return;
-	GSTextureSW* src = static_cast<GSTextureSW*>(sTex);
-	GSTextureSW* dst = static_cast<GSTextureSW*>(dTex);
+	GSTextureSW* src = GSTextureSWOf(sTex);
+	GSTextureSW* dst = GSTextureSWOf(dTex);
 	if (!src->GetPointer() || !dst->GetPointer())
 		return;
 
@@ -1535,8 +1536,8 @@ void GSDeviceSW::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r,
 	if (!sTex || !dTex)
 		return;
 
-	GSTextureSW* src = static_cast<GSTextureSW*>(sTex);
-	GSTextureSW* dst = static_cast<GSTextureSW*>(dTex);
+	GSTextureSW* src = GSTextureSWOf(sTex);
+	GSTextureSW* dst = GSTextureSWOf(dTex);
 	if (!src->GetPointer() || !dst->GetPointer())
 		return;
 
@@ -1577,8 +1578,8 @@ void GSDeviceSW::StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	if (!sTex || !dTex)
 		return;
 
-	GSTextureSW* src = static_cast<GSTextureSW*>(sTex);
-	GSTextureSW* dst = static_cast<GSTextureSW*>(dTex);
+	GSTextureSW* src = GSTextureSWOf(sTex);
+	GSTextureSW* dst = GSTextureSWOf(dTex);
 	if (!src->GetPointer() || !dst->GetPointer())
 		return;
 
@@ -1618,7 +1619,7 @@ void GSDeviceSW::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	if (!sTex)
 		return;
 
-	GSTextureSW* src = static_cast<GSTextureSW*>(sTex);
+	GSTextureSW* src = GSTextureSWOf(sTex);
 	if (!src->GetPointer())
 		return;
 
@@ -1639,7 +1640,7 @@ void GSDeviceSW::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	if (dTex)
 	{
 		/* GSTextureSW->GSTextureSW path: no format conversion. */
-		GSTextureSW* dst = static_cast<GSTextureSW*>(dTex);
+		GSTextureSW* dst = GSTextureSWOf(dTex);
 		if (!dst->GetPointer())
 			return;
 		NearestCopyPS2(

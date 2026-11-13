@@ -100,6 +100,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSObjectPool.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSFlatMap.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSStableMap.c \
+	$(LRPS2_DIR)/GS/Renderers/Common/GSTextureBase.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSTextureFormat.c \
 	$(LRPS2_DIR)/GS/GSPage2Tile.c \
 	$(LRPS2_DIR)/GS/GSClut.c \
@@ -477,8 +478,9 @@ SOURCES_CXX += \
 # Mirrors the `list(REMOVE_ITEM ... NOT _M_X86)` in pcsx2/CMakeLists.txt.
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDeviceSW.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSTextureCacheSW.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSTextureSW.cpp
+	$(LRPS2_DIR)/GS/Renderers/SW/GSTextureCacheSW.cpp
+SOURCES_C += \
+	$(LRPS2_DIR)/GS/Renderers/SW/GSTextureSW.c
 
 # The rasterizer, the renderer and the scanline dispatcher are portable: they
 # are written against GSVector4/4i, which have NEON implementations. Only the

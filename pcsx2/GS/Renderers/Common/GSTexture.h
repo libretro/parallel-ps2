@@ -21,6 +21,9 @@
 #include <string.h>
 #include "common/Pcsx2Defs.h"
 #include "GSTextureFormat.h"
+#include "GSTextureBase.h"
+
+#include <type_traits>
 
 static inline void GSStrideMemCpy(void* dst, size_t dst_stride, const void* src, size_t src_stride,
 	size_t copy_size, size_t count)
@@ -31,69 +34,28 @@ static inline void GSStrideMemCpy(void* dst, size_t dst_stride, const void* src,
 
 #include "../../GSVector.h"
 
-class GSTexture
+/* The common part is C (GSTextureBase.h); the class adds its methods
+ * and no data, so a texture made in C is one. */
+class GSTexture : public gs_texture
 {
 public:
-	struct GSMap
+	using GSMap  = gs_texture_map;
+	using Type   = GSTextureType;
+	using Format = GSTextureFormatKind;
+	using State  = GSTextureState;
+
+	GSTexture()
 	{
-		u8* bits;
-		int pitch;
-	};
-
-	enum class Type : u8
-	{
-		Invalid = 0,
-		RenderTarget = 1,
-		DepthStencil,
-		Texture,
-		RWTexture
-	};
-
-	enum class Format : u8
-	{
-		Invalid = 0,  ///< Used for initialization
-		Color,        ///< Standard (RGBA8) color texture
-		ColorClip,     ///< Color texture with more bits for colclip emulation (RGBA16Unorm)
-		DepthStencil, ///< Depth stencil texture
-		UNorm8,       ///< A8UNorm texture for paletted textures and the OSD font
-		UInt16,       ///< UInt16 texture for reading back 16-bit depth
-		UInt32,       ///< UInt32 texture for reading back 24 and 32-bit depth
-		PrimID,       ///< Prim ID tracking texture for date emulation
-		BC1,          ///< BC1, aka DXT1 compressed texture for replacements
-		BC2,          ///< BC2, aka DXT2/3 compressed texture for replacements
-		BC3,          ///< BC3, aka DXT4/5 compressed texture for replacements
-		BC7           ///< BC7, aka BPTC compressed texture for replacements
-	};
-
-	enum class State : u8
-	{
-		Dirty,
-		Cleared,
-		Invalidated
-	};
-
-	union ClearValue
-	{
-		u32 color;
-		float depth;
-	};
-
-protected:
-	GSVector2i m_size{};
-	int m_mipmap_levels = 0;
-	Type m_type = Type::Invalid;
-	Format m_format = Format::Invalid;
-	State m_state = State::Dirty;
-
-	// frame number (arbitrary base) the texture was recycled on
-	// different purpose than texture cache ages, do not attempt to merge
-	u32 m_last_frame_used = 0;
-
-	bool m_needs_mipmaps_generated = true;
-	ClearValue m_clear_value = {};
-
-public:
-	GSTexture() = default;
+		m_ops                     = nullptr;
+		m_size                    = GSVector2i(0, 0);
+		m_mipmap_levels           = 0;
+		m_type                    = Type::Invalid;
+		m_format                  = Format::Invalid;
+		m_state                   = State::Dirty;
+		m_needs_mipmaps_generated = true;
+		m_last_frame_used         = 0;
+		m_clear_value.color       = 0;
+	}
 
 	/* Not public, and not virtual either. The backends' virtual
 	 * functions became the m_ops table in the C conversion and the
@@ -108,13 +70,6 @@ public:
 protected:
 	~GSTexture() {}
 public:
-
-	/* What each backend's texture does differently, as a table of plain
-	 * functions with the texture as the first argument; this is what the
-	 * virtual functions were. Each backend fills one in its own .cpp and
-	 * sets m_ops in its constructor, as its device does (gs_device_ops).
-	 * A NULL generate_mipmap means the backend has none, as before. */
-	const struct gs_texture_ops* m_ops = nullptr;
 
 	void Free();
 	bool Update(const GSVector4i& r, const void* data, int pitch, int layer = 0);
@@ -194,6 +149,8 @@ public:
 	static bool IsCompressedFormat(Format format) { return gs_texture_is_compressed(static_cast<unsigned>(format)) != 0; }
 };
 
+static_assert(sizeof(GSTexture) == sizeof(gs_texture) && std::is_standard_layout<GSTexture>::value,
+	"GSTexture adds nothing to gs_texture: a texture made in C is one");
 static_assert(static_cast<unsigned>(GSTexture::Format::BC7) == GS_TEX_BC7 && static_cast<unsigned>(GSTexture::Format::PrimID) == GS_TEX_PRIMID
 	&& static_cast<unsigned>(GSTexture::Format::ColorClip) == GS_TEX_COLOR_CLIP, "GSTexture::Format is gs_texture_format");
 
@@ -276,17 +233,10 @@ protected:
 
 /* --- the tables the two above answer through ----------------------------
  * GS_TEXTURE_OPS_DEFINE(GSTexture11, d3d11) writes s_d3d11_texture_ops
- * out of GSTexture11's member functions, and the download one likewise;
+ * (gs_texture_ops, GSTextureBase.h) out of GSTexture11's member
+ * functions, and the download one likewise;
  * the thunks are members of a struct the class befriends, so a function
  * that was protected stays protected. */
-struct gs_texture_ops
-{
-	void (*free)(GSTexture* t);
-	bool (*update)(GSTexture* t, const GSVector4i* r, const void* data, int pitch, int layer);
-	bool (*map)(GSTexture* t, GSTexture::GSMap* m, const GSVector4i* r, int layer);
-	void (*unmap)(GSTexture* t);
-	void (*generate_mipmap)(GSTexture* t);
-};
 
 struct gs_download_texture_ops
 {
@@ -301,10 +251,11 @@ __forceinline_odr void GSTexture::Free() { m_ops->free(this); }
 /* What "delete t" was meant to be: dispatches to the backend's free,
  * which deletes the real type and so runs the real destructor. */
 __forceinline_odr void gs_texture_free(GSTexture* t) { if (t) t->Free(); }
+/* (a GSVector4i is the rectangle's four ints) */
 __forceinline_odr bool GSTexture::Update(const GSVector4i& r, const void* data, int pitch, int layer)
-{ return m_ops->update(this, &r, data, pitch, layer); }
+{ return m_ops->update(this, reinterpret_cast<const gs_texture_rect*>(&r), data, pitch, layer) != 0; }
 __forceinline_odr bool GSTexture::Map(GSMap& m, const GSVector4i* r, int layer)
-{ return m_ops->map(this, &m, r, layer); }
+{ return m_ops->map(this, &m, reinterpret_cast<const gs_texture_rect*>(r), layer) != 0; }
 __forceinline_odr void GSTexture::Unmap() { m_ops->unmap(this); }
 __forceinline_odr void GSTexture::GenerateMipmap() { if (m_ops->generate_mipmap) m_ops->generate_mipmap(this); }
 __forceinline_odr void GSTexture::GenerateMipmapsIfNeeded()
@@ -340,10 +291,13 @@ __forceinline_odr bool GSDownloadTexture::ReadTexels(const GSVector4i& rc, void*
 
 #define GS_TEXTURE_OPS_DEFINE(klass, tag) \
 struct klass##_ops_access { \
-	static void tag##_tex_free(GSTexture* t) { delete static_cast<klass*>(t); } \
-	static bool tag##_tex_update(GSTexture* t, const GSVector4i* r, const void* data, int pitch, int layer) { return static_cast<klass*>(t)->Update(*r, data, pitch, layer); } \
-	static bool tag##_tex_map(GSTexture* t, GSTexture::GSMap* m, const GSVector4i* r, int layer) { return static_cast<klass*>(t)->Map(*m, r, layer); } \
-	static void tag##_tex_unmap(GSTexture* t) { static_cast<klass*>(t)->Unmap(); } \
+	static klass* tag##_tex_of(gs_texture* t) { return static_cast<klass*>(static_cast<GSTexture*>(t)); } \
+	static void tag##_tex_free(gs_texture* t) { delete tag##_tex_of(t); } \
+	static int tag##_tex_update(gs_texture* t, const gs_texture_rect* r, const void* data, int pitch, int layer) \
+	{ const GSVector4i rr(r->left, r->top, r->right, r->bottom); return tag##_tex_of(t)->Update(rr, data, pitch, layer); } \
+	static int tag##_tex_map(gs_texture* t, gs_texture_map* m, const gs_texture_rect* r, int layer) \
+	{ if (!r) return tag##_tex_of(t)->Map(*m, nullptr, layer); const GSVector4i rr(r->left, r->top, r->right, r->bottom); return tag##_tex_of(t)->Map(*m, &rr, layer); } \
+	static void tag##_tex_unmap(gs_texture* t) { tag##_tex_of(t)->Unmap(); } \
 }; \
 static const struct gs_texture_ops s_##tag##_texture_ops = { \
 	klass##_ops_access::tag##_tex_free, klass##_ops_access::tag##_tex_update, \
@@ -351,11 +305,14 @@ static const struct gs_texture_ops s_##tag##_texture_ops = { \
 
 #define GS_TEXTURE_OPS_DEFINE_MIPMAP(klass, tag) \
 struct klass##_ops_access { \
-	static void tag##_tex_free(GSTexture* t) { delete static_cast<klass*>(t); } \
-	static bool tag##_tex_update(GSTexture* t, const GSVector4i* r, const void* data, int pitch, int layer) { return static_cast<klass*>(t)->Update(*r, data, pitch, layer); } \
-	static bool tag##_tex_map(GSTexture* t, GSTexture::GSMap* m, const GSVector4i* r, int layer) { return static_cast<klass*>(t)->Map(*m, r, layer); } \
-	static void tag##_tex_unmap(GSTexture* t) { static_cast<klass*>(t)->Unmap(); } \
-	static void tag##_tex_generate_mipmap(GSTexture* t) { static_cast<klass*>(t)->GenerateMipmap(); } \
+	static klass* tag##_tex_of(gs_texture* t) { return static_cast<klass*>(static_cast<GSTexture*>(t)); } \
+	static void tag##_tex_free(gs_texture* t) { delete tag##_tex_of(t); } \
+	static int tag##_tex_update(gs_texture* t, const gs_texture_rect* r, const void* data, int pitch, int layer) \
+	{ const GSVector4i rr(r->left, r->top, r->right, r->bottom); return tag##_tex_of(t)->Update(rr, data, pitch, layer); } \
+	static int tag##_tex_map(gs_texture* t, gs_texture_map* m, const gs_texture_rect* r, int layer) \
+	{ if (!r) return tag##_tex_of(t)->Map(*m, nullptr, layer); const GSVector4i rr(r->left, r->top, r->right, r->bottom); return tag##_tex_of(t)->Map(*m, &rr, layer); } \
+	static void tag##_tex_unmap(gs_texture* t) { tag##_tex_of(t)->Unmap(); } \
+	static void tag##_tex_generate_mipmap(gs_texture* t) { tag##_tex_of(t)->GenerateMipmap(); } \
 }; \
 static const struct gs_texture_ops s_##tag##_texture_ops = { \
 	klass##_ops_access::tag##_tex_free, klass##_ops_access::tag##_tex_update, \

@@ -367,6 +367,7 @@ set(pcsx2GSSources
 	GS/Renderers/HW/GSObjectPool.c
 	GS/Renderers/Common/GSFlatMap.c
 	GS/Renderers/Common/GSStableMap.c
+	GS/Renderers/Common/GSTextureBase.c
 	GS/Renderers/Common/GSTextureFormat.c
 	GS/GSPage2Tile.c
 	GS/Renderers/HW/GSHashTable.c
@@ -388,7 +389,7 @@ set(pcsx2GSSources
 	GS/Renderers/SW/GSHiresMem.c
 	GS/Renderers/SW/GSHiresMem.h
 	GS/Renderers/SW/GSTextureCacheSW.cpp
-	GS/Renderers/SW/GSTextureSW.cpp
+	GS/Renderers/SW/GSTextureSW.c
 	)
 
 # GS headers
@@ -430,6 +431,7 @@ set(pcsx2GSHeaders
 	GS/Renderers/Common/GSFunctionMap.h
 	GS/Renderers/Common/GSRenderer.h
 	GS/Renderers/Common/GSTexture.h
+	GS/Renderers/Common/GSTextureBase.h
 	GS/Renderers/Common/GSTextureFormat.h
 	GS/Renderers/Common/GSVertex.h
 	GS/Renderers/Common/gs_vertex.h

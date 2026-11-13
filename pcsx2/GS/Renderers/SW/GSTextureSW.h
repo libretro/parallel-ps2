@@ -13,40 +13,52 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_TEXTURE_SW_H
+#define GS_TEXTURE_SW_H
 
-#include "GS/Renderers/Common/GSTexture.h"
+#include "GS/Renderers/Common/GSTextureBase.h"
 
-/* GSTextureSW
- *
- * A GSTexture backed by a CPU-side pixel buffer. Used by GSDeviceSW
- * (the no-HW-context fallback for the SW renderer) and by no other
- * code path. Storage is plain aligned-allocated bytes; Update is a
- * memcpy; Map returns the buffer directly.
- *
- * Only Color (RGBA8) format is meaningfully supported - the SW
- * renderer's m_output buffer and all final composite/present output
- * is XRGB8888. Other formats are accepted at construction (to satisfy
- * the GSDevice interface) but the storage is treated as opaque bytes
- * and shouldn't be sampled from outside the SW device. */
-class GSTextureSW final : public GSTexture
+/* A texture in CPU memory: GSDeviceSW's (the software renderer's device
+ * where there is no GPU context), and no other's. Rows are padded to
+ * GS_TEXTURE_SW_ALIGN bytes so SIMD can address whole rows; Update is a
+ * copy and Map hands the rows over. Only Color (RGBA8) is drawn with:
+ * UNorm8 takes a byte a texel, every other format four, as storage the
+ * device does not read. */
+#define GS_TEXTURE_SW_ALIGN 32
+
+typedef struct gs_texture_sw
 {
-	/* The table this texture answers through is in its own .cpp
-	 * (gs_texture_ops, Common/GSTexture.h). */
-	friend struct GSTextureSW_ops_access;
-private:
-	u8* m_data = nullptr;
-	int m_pitch = 0;
-	bool m_mapped = false;
+	gs_texture base;
+	u8* data;
+	int pitch;
+	int mapped;
+} gs_texture_sw;
 
-public:
-	GSTextureSW(Type type, int width, int height, Format format);
-	~GSTextureSW();
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-	bool Update(const GSVector4i& r, const void* data, int pitch, int layer = 0);
-	bool Map(GSMap& m, const GSVector4i* r = NULL, int layer = 0);
-	void Unmap();
+/* A texture of type and format (gs_texture_type, gs_texture_format),
+ * cleared to zero; NULL only if it could not be allocated at all (its
+ * texels may be missing: it then refuses Update and Map). */
+gs_texture* gs_texture_sw_create(unsigned type, int width, int height, unsigned format);
 
-	__fi u8* GetPointer() const { return m_data; }
-	__fi int GetPitch() const { return m_pitch; }
+#ifdef __cplusplus
+}
+
+/* The device's view of a texture it made */
+struct GSTextureSW : gs_texture_sw
+{
+	u8* GetPointer() const { return data; }
+	int GetPitch() const { return pitch; }
+	int GetWidth() const { return base.m_size.x; }
+	int GetHeight() const { return base.m_size.y; }
 };
+
+static inline GSTextureSW* GSTextureSWOf(gs_texture* t)
+{
+	return reinterpret_cast<GSTextureSW*>(t);
+}
+#endif
+
+#endif

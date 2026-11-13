@@ -201,7 +201,9 @@
     <ClCompile Include="GS\GSOffset.c" />
     <ClCompile Include="GS\GSPsm.c" />
     <ClCompile Include="GS\GSTables.c" />
+    <ClCompile Include="GS\Renderers\Common\GSTextureBase.c" />
     <ClCompile Include="GS\Renderers\Common\GSTextureFormat.c" />
+    <ClCompile Include="GS\Renderers\SW\GSTextureSW.c" />
     <ClCompile Include="GS\Renderers\DX11\GSTexture11.cpp" />
     <ClCompile Include="GS\Renderers\OpenGL\GSTextureOGL.cpp" />
     <ClCompile Include="GS\Renderers\HW\GSTextureCache.cpp" />
@@ -397,6 +399,7 @@
     <ClInclude Include="GS\GSPsm.h" />
     <ClInclude Include="GS\GSTables.h" />
     <ClInclude Include="GS\Renderers\Common\GSTexture.h" />
+    <ClInclude Include="GS\Renderers\Common\GSTextureBase.h" />
     <ClInclude Include="GS\Renderers\Common\GSTextureFormat.h" />
     <ClInclude Include="GS\Renderers\DX11\GSTexture11.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GSTextureOGL.h" />
