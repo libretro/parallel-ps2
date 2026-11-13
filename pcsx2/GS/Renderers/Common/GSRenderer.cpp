@@ -27,9 +27,6 @@
 #define PROFILE_SCOPE(z) do {} while (0)
 #endif
 
-extern retro_video_refresh_t video_cb;
-extern retro_environment_t environ_cb;
-
 GSRenderer* g_gs_renderer = NULL;
 
 void GSState::PurgePool()

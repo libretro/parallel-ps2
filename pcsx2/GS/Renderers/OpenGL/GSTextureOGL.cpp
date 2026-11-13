@@ -25,8 +25,6 @@
 
 #define GL_DEFAULT_FRAMEBUFFER hw_render.get_current_framebuffer()
 
-extern retro_hw_render_callback hw_render;
-
 // Looking across a range of GPUs, the optimal copy alignment for Vulkan drivers seems
 // to be between 1 (AMD/NV) and 64 (Intel). So, we'll go with 64 here.
 static constexpr u32 TEXTURE_UPLOAD_ALIGNMENT = 64;

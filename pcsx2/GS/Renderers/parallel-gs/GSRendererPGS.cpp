@@ -92,8 +92,6 @@ static void pgs_give_back(ImageHandle& image, uint32_t sync_slots)
 		spare_vsync_images.erase(spare_vsync_images.begin());
 	spare_vsync_images.push_back(std::move(image));
 }
-extern retro_environment_t environ_cb;
-extern retro_video_refresh_t video_cb;
 
 struct LibretroLog final : Util::LoggingInterface
 {
@@ -833,8 +831,6 @@ int GSRendererPGS::Defrost(freezeData* data)
 	iface.clobber_register_state();
 	return 0;
 }
-
-extern s8 setting_hint_widescreen;
 
 void GSRendererPGS::VSync(u32 field, bool registers_written)
 {

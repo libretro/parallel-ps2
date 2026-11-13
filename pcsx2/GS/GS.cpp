@@ -53,9 +53,6 @@ GSRendererPGS* g_pgs_renderer = nullptr;
 #include <libretro.h>
 #include <retro_atomic.h>
 
-extern retro_hw_render_callback hw_render;
-extern retro_environment_t environ_cb;
-
 int m_disp_fb_sprite_blits = 0;
 
 EmuGSOptions GSConfig;

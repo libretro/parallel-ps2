@@ -55,8 +55,6 @@
 #include <time.h>
 #endif
 
-extern retro_video_refresh_t video_cb;
-
 #define VK_NO_PROTOTYPES
 #include <libretro_vulkan.h>
 

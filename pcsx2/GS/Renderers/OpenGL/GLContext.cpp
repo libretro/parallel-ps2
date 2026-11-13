@@ -26,7 +26,6 @@
 #endif
 
 #include <libretro.h>
-extern retro_hw_render_callback hw_render;
 
 GLContext::GLContext() { }
 GLContext::~GLContext() = default;

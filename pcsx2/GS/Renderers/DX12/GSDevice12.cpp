@@ -48,8 +48,6 @@ extern char interlace_fx_shader_raw[];
 }
 
 retro_hw_render_interface_d3d12 *d3d12;
-extern retro_environment_t environ_cb;
-extern retro_video_refresh_t video_cb;
 
 /* --- libretro_d3d12.h version 2 ------------------------------------------
  *

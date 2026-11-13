@@ -40,9 +40,6 @@
 
 #define GL_DEFAULT_FRAMEBUFFER hw_render.get_current_framebuffer()
 
-extern retro_video_refresh_t video_cb;
-extern retro_hw_render_callback hw_render;
-
 static constexpr u32 g_vs_cb_index        = 1;
 static constexpr u32 g_ps_cb_index        = 0;
 

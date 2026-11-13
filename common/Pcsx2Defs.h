@@ -587,9 +587,11 @@ static constexpr s64 _4gb = _1gb * 4;
 #pragma warning(disable: 4267) /* warning C4267: 'initializing': conversion from 'size_t' to 'uint', possible loss of data */
 #endif
 
-/* The frontend's logger and environment. One symbol each, C linkage, so
- * the C translation units name them as the C++ ones do (MSVC decorates a
- * C++ variable's name); main.c defines them and installs a stderr
+/* What libretro/main.c owns and the core reads: the frontend's logger,
+ * environment, video callback and hardware context, and the widescreen
+ * hint option. Declared here only, with C linkage: main.c is C, and MSVC
+ * decorates a C++ variable's name, so a C++ unit declaring one of these
+ * itself looks for a symbol nothing defines. main.c installs a stderr
  * fallback logger when the frontend offers no log interface. Callers put
  * the newline in the format. */
 #include <libretro.h>
@@ -598,6 +600,9 @@ extern "C" {
 #endif
 extern retro_log_printf_t log_cb;
 extern retro_environment_t environ_cb;
+extern retro_video_refresh_t video_cb;
+extern struct retro_hw_render_callback hw_render;
+extern s8 setting_hint_widescreen;
 #ifdef __cplusplus
 }
 #endif

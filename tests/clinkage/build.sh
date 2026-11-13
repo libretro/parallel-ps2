@@ -22,6 +22,12 @@
 #     below never saw the call. They are cross-built here when
 #     aarch64-linux-gnu-g++ is installed.
 #
+#   - a C++ unit declares a C unit's VARIABLE itself, or reads it through
+#     a header with no extern "C". main.c's video_cb, hw_render,
+#     setting_hint_widescreen and gs_vr_*, when the front end became C:
+#     the GS backends each had their own extern, and only MSVC's link
+#     failed, for the reason the next entry gives.
+#
 #   - a C unit references a VARIABLE whose declaration has C++ language
 #     linkage. This one is invisible here however hard you look at the
 #     symbols: the ELF ABI does not decorate data symbols, so `psxRegs`
@@ -61,7 +67,9 @@ trap 'rm -rf "$TMP"' EXIT
 
 obj() { echo "$1" | sed "s|^$ROOT/||" | tr '/' '_' | sed 's/\.[a-z]*$/.o/'; }
 
-for f in $(find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP" | sort); do
+# The front end's units are C too, and own the frontend callbacks and the
+# options the core reads.
+for f in $( (find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP"; find "$ROOT/libretro" -maxdepth 1 -name '*.c') | sort); do
 	gcc -O2 -DNDEBUG -std=gnu89 -msse4.1 -fno-strict-aliasing $INC \
 	    -c "$f" -o "$TMP/c/$(obj "$f")" 2>/dev/null ||
 		{ echo "FAIL: $f does not compile as C"; exit 1; }
@@ -180,6 +188,63 @@ while read -r sym; do
 	datab=1
 done < "$TMP/crossdata"
 [ "$datab" = 0 ] && echo "  ok ($(grep -c . "$TMP/crossdata") crossing the boundary)" || bad=1
+
+echo
+echo "== every variable a C unit defines reaches C++ with C linkage =="
+# The reverse of the check above, and as invisible on ELF: a C++ unit that
+# declares main.c's video_cb itself refers to ?video_cb@@3P6AXPEBXII_K@ZEA
+# on MSVC, which nothing defines. Read from the source, because the GS
+# backends that do most of this are not built here. A C unit's variable
+# is declared once, in a header, inside extern "C" -- so a .cpp with its
+# own extern for one fails outright, and each header declaration is
+# redeclared extern "C" in a probe as above. pcsx2/arm64 is left out: on
+# aarch64 its C++ units define those names themselves.
+nm "$TMP"/c/*.o | awk '$2 ~ /^[DBGRSC]$/ { print $3 }' | sort -u > "$TMP/def_c_vars"
+rdbad=0
+grep -rnE '^[[:space:]]*extern[[:space:]]+[^"(;]*;' --include=*.cpp "$ROOT/pcsx2" "$ROOT/libretro" "$ROOT/common" 2>/dev/null |
+	grep -v '/libretro-common/' > "$TMP/cxx_externs" || true
+while IFS= read -r line; do
+	name=$(echo "$line" | cut -d: -f3- | sed -E 's#/\*.*##; s/[[:space:]]*(\[[^]]*\])*[[:space:]]*;.*$//; s/.*[^A-Za-z0-9_]([A-Za-z_][A-Za-z0-9_]*)$/\1/')
+	grep -qxF "$name" "$TMP/def_c_vars" || continue
+	echo "  FAIL: $(echo "$line" | cut -d: -f1-2 | sed "s|^$ROOT/||") declares C's $name itself;"
+	echo "        include the header that declares it extern \"C\""
+	rdbad=1
+done < "$TMP/cxx_externs"
+grep -rnE '^[[:space:]]*(PCSX2_ALIGN\([^)]*\)[[:space:]]*|alignas\([^)]*\)[[:space:]]*)?extern[[:space:]]+[^"(;]*;' \
+	--include=*.h "$ROOT/pcsx2" "$ROOT/common" "$ROOT/libretro" 2>/dev/null |
+	grep -vE '/libretro-common/|/3rdparty/|/parallel-gs/|/pcsx2/arm64/' > "$TMP/h_externs" || true
+# One probe per header with all its declarations; one per declaration
+# only where that fails, to name the culprit.
+: > "$TMP/h_vars"
+while IFS= read -r line; do
+	hdr=$(echo "$line" | cut -d: -f1)
+	decl=$(echo "$line" | cut -d: -f3- |
+	       sed -E 's/^[[:space:]]*//; s/^(PCSX2_ALIGN\([^)]*\)|alignas\([^)]*\))[[:space:]]*//; s#[[:space:]]*/\*.*##')
+	name=$(echo "$decl" | sed -E 's/[[:space:]]*(\[[^]]*\])*[[:space:]]*;.*$//; s/.*[^A-Za-z0-9_]([A-Za-z_][A-Za-z0-9_]*)$/\1/')
+	grep -qxF "$name" "$TMP/def_c_vars" || continue
+	printf '%s\t%s\t%s\n' "$hdr" "$name" "$decl" >> "$TMP/h_vars"
+done < "$TMP/h_externs"
+nvar=$(grep -c . "$TMP/h_vars" || true)
+for hdr in $(cut -f1 "$TMP/h_vars" | sort -u); do
+	# A header that does not build alone from C++ is the cheaders suite's
+	# business, not a linkage finding.
+	printf '#include "%s"\n' "$hdr" > "$TMP/vprobe.cpp"
+	g++ -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 $INC -fsyntax-only "$TMP/vprobe.cpp" 2>/dev/null || continue
+	{
+		printf '#include "%s"\nextern "C" {\n' "$hdr"
+		awk -F '\t' -v h="$hdr" '$1 == h { print $3 }' "$TMP/h_vars"
+		printf '}\n'
+	} > "$TMP/vprobe.cpp"
+	g++ -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 $INC -fsyntax-only "$TMP/vprobe.cpp" 2>/dev/null && continue
+	awk -F '\t' -v h="$hdr" '$1 == h { print $2 "\t" $3 }' "$TMP/h_vars" |
+	while IFS="$(printf '\t')" read -r name decl; do
+		printf '#include "%s"\nextern "C" {\n%s\n}\n' "$hdr" "$decl" > "$TMP/vprobe.cpp"
+		g++ -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 $INC -fsyntax-only "$TMP/vprobe.cpp" 2>/dev/null && continue
+		echo "  FAIL: $(echo "$hdr" | sed "s|^$ROOT/||") declares C's $name with C++ linkage"
+	done
+done > "$TMP/h_varfail"
+[ -s "$TMP/h_varfail" ] && { cat "$TMP/h_varfail"; rdbad=1; }
+[ "$rdbad" = 0 ] && echo "  ok ($nvar header declarations)" || bad=1
 
 echo
 echo "== every C function a shared header declares has C linkage in C++ =="

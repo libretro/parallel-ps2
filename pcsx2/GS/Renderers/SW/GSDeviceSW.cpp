@@ -27,9 +27,6 @@
 #include "GS/Renderers/SW/GSDeviceSW.h"
 #include "GS/Renderers/Common/GSScratch.h"
 
-extern retro_environment_t    environ_cb;
-extern retro_video_refresh_t  video_cb;
-
 namespace
 {
 	/* ====================================================================

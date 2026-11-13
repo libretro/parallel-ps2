@@ -32,7 +32,13 @@ enum GSVRMode
 	GSVR_STEREOSCOPIC = 1,
 };
 
-/* Defined in libretro/main.c. */
+/* Defined in libretro/main.c, which is C. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern int   gs_vr_mode;   /* GSVRMode */
 extern float gs_vr_depth;  /* depth strength, 1 the default */
 extern float gs_vr_aspect; /* the picture's display aspect ratio */
+#ifdef __cplusplus
+}
+#endif

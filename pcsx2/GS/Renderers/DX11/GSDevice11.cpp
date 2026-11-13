@@ -44,9 +44,6 @@ extern char interlace_fx_shader_raw[];
 
 }
 
-extern retro_environment_t environ_cb;
-extern struct retro_hw_render_callback hw_render;
-
 /* --- libretro_d3d11.h version 2 ------------------------------------------
  *
  * Under version 1 a frontend that presents from another thread cannot
@@ -911,7 +908,6 @@ void GSDevice11::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 		const unsigned index = s_d3d11_v2->get_sync_index(s_d3d11_v2->handle);
 		const bool     blank = (!sRect.right && !sRect.bottom);
 		ID3D11RenderTargetView* nullView = nullptr;
-		extern retro_video_refresh_t video_cb;
 
 		if (index < GS_D3D11_MAX_SYNC_INDICES)
 		{
@@ -976,7 +972,6 @@ void GSDevice11::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	 * into it meanwhile. Taking it again reports the frontend's turn, and
 	 * the state goes back as after any other. */
 	gs_d3d11_context_end();
-	extern retro_video_refresh_t video_cb;
 	video_cb(RETRO_HW_FRAME_BUFFER_VALID, sTex->GetWidth(), sTex->GetHeight(), 0);
 	gs_d3d11_context_begin();
 }
