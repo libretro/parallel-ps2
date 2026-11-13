@@ -647,7 +647,6 @@ endif
 MULTI_ISA_UNSHARED_SRC := \
 	$(LRPS2_DIR)/GS/GSBlock.cpp \
 	$(LRPS2_DIR)/GS/GSLocalMemoryMultiISA.cpp \
-	$(LRPS2_DIR)/GS/GSXXH.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSVertexTraceFMM.cpp \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSRendererHWMultiISA.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanline.cpp \

@@ -50,6 +50,7 @@ target_sources(pcsx2_libretro PRIVATE
    ${CMAKE_SOURCE_DIR}/libretro/libretro-common/encodings/encoding_huffman.c
    ${CMAKE_SOURCE_DIR}/libretro/libretro-common/encodings/encoding_deflate.c
    ${CMAKE_SOURCE_DIR}/libretro/libretro-common/encodings/encoding_crc32.c
+   ${CMAKE_SOURCE_DIR}/libretro/libretro-common/encodings/encoding_xxh3.c
    ${CMAKE_SOURCE_DIR}/libretro/libretro-common/encodings/encoding_rlz4.c
    ${CMAKE_SOURCE_DIR}/libretro/libretro-common/formats/png/rpng.c
    ${CMAKE_SOURCE_DIR}/libretro/libretro-common/streams/trans_stream.c

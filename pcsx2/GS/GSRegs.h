@@ -15,7 +15,7 @@
 
 #pragma once
 
-// clang-format off
+/* clang-format off */
 
 #define VM_SIZE 4194304u
 #define HALF_VM_SIZE (VM_SIZE / 2u)
@@ -28,7 +28,10 @@
 #define GS_MAX_BLOCKS (VM_SIZE / GS_BLOCK_SIZE)
 #define GS_MAX_COLUMNS (VM_SIZE / GS_COLUMN_SIZE)
 
+#include "common/Pcsx2Defs.h"
+#ifdef __cplusplus
 #include "GSVector.h"
+#endif
 
 #pragma pack(push, 1)
 
@@ -43,6 +46,7 @@ enum GS_PRIM
 	GS_SPRITE        = 6,
 	GS_INVALID       = 7,
 };
+typedef enum GS_PRIM GS_PRIM;
 
 enum GS_PRIM_CLASS
 {
@@ -52,6 +56,7 @@ enum GS_PRIM_CLASS
 	GS_SPRITE_CLASS   = 3,
 	GS_INVALID_CLASS  = 7,
 };
+typedef enum GS_PRIM_CLASS GS_PRIM_CLASS;
 
 enum GIF_REG
 {
@@ -72,12 +77,14 @@ enum GIF_REG
 	GIF_REG_A_D     = 0x0e,
 	GIF_REG_NOP     = 0x0f,
 };
+typedef enum GIF_REG GIF_REG;
 
 enum GIF_REG_COMPLEX
 {
 	GIF_REG_STQRGBAXYZF2 = 0x00,
 	GIF_REG_STQRGBAXYZ2 = 0x01,
 };
+typedef enum GIF_REG_COMPLEX GIF_REG_COMPLEX;
 
 enum GIF_A_D_REG
 {
@@ -137,6 +144,7 @@ enum GIF_A_D_REG
 	GIF_A_D_REG_FINISH     = 0x61,
 	GIF_A_D_REG_LABEL      = 0x62,
 };
+typedef enum GIF_A_D_REG GIF_A_D_REG;
 
 enum GIF_FLG
 {
@@ -145,24 +153,26 @@ enum GIF_FLG
 	GIF_FLG_IMAGE   = 2,
 	GIF_FLG_IMAGE2  = 3,
 };
+typedef enum GIF_FLG GIF_FLG;
 
 enum GS_PSM
 {
-	PSMCT32  =  0, // 0000-0000
-	PSMCT24  =  1, // 0000-0001
-	PSMCT16  =  2, // 0000-0010
-	PSMCT16S = 10, // 0000-1010
-	PSGPU24  = 18, // 0001-0010
-	PSMT8    = 19, // 0001-0011
-	PSMT4    = 20, // 0001-0100
-	PSMT8H   = 27, // 0001-1011
-	PSMT4HL  = 36, // 0010-0100
-	PSMT4HH  = 44, // 0010-1100
-	PSMZ32   = 48, // 0011-0000
-	PSMZ24   = 49, // 0011-0001
-	PSMZ16   = 50, // 0011-0010
-	PSMZ16S  = 58, // 0011-1010
+	PSMCT32  =  0, /* 0000-0000 */
+	PSMCT24  =  1, /* 0000-0001 */
+	PSMCT16  =  2, /* 0000-0010 */
+	PSMCT16S = 10, /* 0000-1010 */
+	PSGPU24  = 18, /* 0001-0010 */
+	PSMT8    = 19, /* 0001-0011 */
+	PSMT4    = 20, /* 0001-0100 */
+	PSMT8H   = 27, /* 0001-1011 */
+	PSMT4HL  = 36, /* 0010-0100 */
+	PSMT4HH  = 44, /* 0010-1100 */
+	PSMZ32   = 48, /* 0011-0000 */
+	PSMZ24   = 49, /* 0011-0001 */
+	PSMZ16   = 50, /* 0011-0010 */
+	PSMZ16S  = 58, /* 0011-1010 */
 };
+typedef enum GS_PSM GS_PSM;
 
 enum GS_TFX
 {
@@ -172,6 +182,7 @@ enum GS_TFX
 	TFX_HIGHLIGHT2 = 3,
 	TFX_NONE       = 4,
 };
+typedef enum GS_TFX GS_TFX;
 
 enum GS_CLAMP
 {
@@ -180,6 +191,7 @@ enum GS_CLAMP
 	CLAMP_REGION_CLAMP  = 2,
 	CLAMP_REGION_REPEAT = 3,
 };
+typedef enum GS_CLAMP GS_CLAMP;
 
 enum GS_ZTST
 {
@@ -188,6 +200,7 @@ enum GS_ZTST
 	ZTST_GEQUAL  = 2,
 	ZTST_GREATER = 3,
 };
+typedef enum GS_ZTST GS_ZTST;
 
 enum GS_ATST
 {
@@ -200,6 +213,7 @@ enum GS_ATST
 	ATST_GREATER  = 6,
 	ATST_NOTEQUAL = 7,
 };
+typedef enum GS_ATST GS_ATST;
 
 enum GS_AFAIL
 {
@@ -208,8 +222,9 @@ enum GS_AFAIL
 	AFAIL_ZB_ONLY  = 2,
 	AFAIL_RGB_ONLY = 3,
 };
+typedef enum GS_AFAIL GS_AFAIL;
 
-enum GS_MIN_FILTER : uint8_t
+enum GS_MIN_FILTER
 {
 	Nearest                = 0,
 	Linear                 = 1,
@@ -218,25 +233,38 @@ enum GS_MIN_FILTER : uint8_t
 	Linear_Mipmap_Nearest  = 4,
 	Linear_Mipmap_Linear   = 5,
 };
+typedef enum GS_MIN_FILTER GS_MIN_FILTER;
 
+/* Each register is a union, named by a typedef as well so C can spell it
+ * without the keyword; C++ adds the GSVector4i conversions. */
 #define REG32(name) \
+	typedef union name name; \
 	union name      \
 	{               \
 		u32 U32; \
 		struct {    \
 
+#ifdef __cplusplus
+#define REG64_OPS(name) \
+		void operator = (const GSVector4i& v) {GSVector4i::storel(this, v);} \
+		bool operator == (const union name& r) const {return ((GSVector4i)r).eq(*this);} \
+		bool operator != (const union name& r) const {return !((GSVector4i)r).eq(*this);} \
+		operator GSVector4i() const {return GSVector4i::loadl(this);}
+#else
+#define REG64_OPS(name)
+#endif
+
 #define REG64(name)    \
+	typedef union name name; \
 	union name         \
 	{                  \
 		u64 U64;    \
 		u32 U32[2]; \
-		void operator = (const GSVector4i& v) {GSVector4i::storel(this, v);} \
-		bool operator == (const union name& r) const {return ((GSVector4i)r).eq(*this);} \
-		bool operator != (const union name& r) const {return !((GSVector4i)r).eq(*this);} \
-		operator GSVector4i() const {return GSVector4i::loadl(this);} \
+		REG64_OPS(name) \
 		struct {
 
 #define REG128(name)   \
+	typedef union name name; \
 	union name         \
 	{                  \
 		u64 U64[2]; \
@@ -251,17 +279,20 @@ enum GS_MIN_FILTER : uint8_t
 #define REG_END2 };
 
 #define REG32_SET(name) \
+typedef union name name; \
 union name          \
 {                   \
 	u32 u32;
 
 #define REG64_SET(name) \
+	typedef union name name; \
 	union name          \
 	{                   \
 		u64 U64;     \
 		u32 U32[2];
 
 #define REG128_SET(name) \
+	typedef union name name; \
 	union name           \
 	{                    \
 		u64 U64[2];   \
@@ -317,7 +348,7 @@ REG64_(GSReg, CSR)
 	u32 wID     : 8;
 REG_END
 
-REG64_(GSReg, DISPFB) // (-1/2)
+REG64_(GSReg, DISPFB) /* (-1/2) */
 	u32 FBP   :  9;
 	u32 FBW   :  6;
 	u32 PSM   :  5;
@@ -326,10 +357,12 @@ REG64_(GSReg, DISPFB) // (-1/2)
 	u32 DBY   : 11;
 	u32 _PAD2 : 10;
 REG_END2
+#ifdef __cplusplus
 	u32 Block() const { return FBP << 5; }
+#endif
 REG_END2
 
-REG64_(GSReg, DISPLAY) // (-1/2)
+REG64_(GSReg, DISPLAY) /* (-1/2) */
 	u32 DX    : 12;
 	u32 DY    : 11;
 	u32 MAGH  :  4;
@@ -423,7 +456,7 @@ REG64_(GSReg, SMODE1)
 	u32 XPCK   :  1;
 	u32 PCK2   :  2;
 	u32 SPML   :  4;
-	u32 GCONT  :  1; // YCrCb
+	u32 GCONT  :  1; /* YCrCb */
 	u32 PHS    :  1;
 	u32 PVS    :  1;
 	u32 PEHS   :  1;
@@ -462,26 +495,26 @@ REG_END
 
 REG64_(GSReg, SRFSH)
 	u32 _DUMMY;
-	// TODO
+	/* TODO */
 REG_END
 
 REG64_(GSReg, SYNCH1)
 	u32 _DUMMY;
-	// TODO
+	/* TODO */
 REG_END
 
 REG64_(GSReg, SYNCH2)
 	u32 _DUMMY;
-	// TODO
+	/* TODO */
 REG_END
 
 REG64_(GSReg, SYNCV)
-	u32 VFP  : 10; // Vertical Front Porchinterval (?s)
-	u32 VFPE : 10; // Vertical Front Porchinterval End (?s)
-	u32 VBP  : 12; // Vertical Back Porchinterval (?s)
-	u32 VBPE : 10; // Vertical Back Porchinterval End (?s)
-	u32 VDP  : 11; // Vertical Differential Phase
-	u32 VS   : 11; // Vertical Synchronization Timing
+	u32 VFP  : 10; /* Vertical Front Porchinterval (?s) */
+	u32 VFPE : 10; /* Vertical Front Porchinterval End (?s) */
+	u32 VBP  : 12; /* Vertical Back Porchinterval (?s) */
+	u32 VBPE : 10; /* Vertical Back Porchinterval End (?s) */
+	u32 VDP  : 11; /* Vertical Differential Phase */
+	u32 VS   : 11; /* Vertical Synchronization Timing */
 REG_END
 
 REG64_SET(GSReg)
@@ -500,8 +533,8 @@ REG64_SET(GSReg)
 	GSRegSMODE2   SMODE2;
 REG_SET_END
 
-//
-// GIFTag
+
+/* GIFTag */
 
 REG128(GIFTag)
 	u32 NLOOP : 15;
@@ -510,12 +543,12 @@ REG128(GIFTag)
 	u32 _PAD2 : 14;
 	u32 PRE   :  1;
 	u32 PRIM  : 11;
-	u32 FLG   :  2; // enum GIF_FLG
+	u32 FLG   :  2; /* enum GIF_FLG */
 	u32 NREG  :  4;
 	u64 REGS;
 REG_END
 
-// GIFReg
+/* GIFReg */
 
 REG64_(GIFReg, ALPHA)
 	u32 A     :  2;
@@ -526,18 +559,20 @@ REG64_(GIFReg, ALPHA)
 	u8 FIX;
 	u8 _PAD2[3];
 REG_END2
-	// opaque => output will be Cs/As/zero
+#ifdef __cplusplus
+	/* opaque => output will be Cs/As/zero */
 	__forceinline bool IsOpaque() const { return ((A == B || (C == 2 && FIX == 0)) && D == 0) || (A == 0 && B == D && C == 2 && FIX == 0x80); }
 	__forceinline bool IsOpaque(int amin, int amax) const { return ((A == B || amax == 0) && D == 0) || (A == 0 && B == D && amin == 0x80 && amax == 0x80); }
 	__forceinline bool IsCd() const { return (A == B) && (D == 1); }
 
-	// output will be Cd, Cs is discarded
+	/* output will be Cd, Cs is discarded */
 	__forceinline bool IsCdOutput() const { return (C == 2 && D != 1 && FIX == 0x00); }
 	__forceinline bool IsCdInBlend() const { return (A == 1 || B == 1 || D == 1); }
 	__forceinline bool IsUsingCs() const { return (A == 0 || B == 0 || D == 0); }
 	__forceinline bool IsUsingAs() const { return (A != B && C == 0); }
 
 	__forceinline bool IsBlack() const { return ((C == 2 && FIX == 0) || (A == 2 && A == B)) && D == 2; }
+#endif
 REG_END2
 
 REG64_(GIFReg, BITBLTBUF)
@@ -657,7 +692,9 @@ REG64_(GIFReg, FRAME)
 	u32 _PAD3 : 2;
 	u32 FBMSK;
 REG_END2
+#ifdef __cplusplus
 	u32 Block() const { return FBP << 5; }
+#endif
 REG_END2
 
 REG64_(GIFReg, HWREG)
@@ -781,10 +818,12 @@ REG64_(GIFReg, TEST)
 	u32 _PAD1 : 13;
 	u32 _PAD2 : 32;
 REG_END2
-	__forceinline bool DoFirstPass() const { return !ATE || ATST != ATST_NEVER; } // not all pixels fail automatically
-	__forceinline bool DoSecondPass() const { return ATE && ATST != ATST_ALWAYS && AFAIL != AFAIL_KEEP; } // pixels may fail, write fb/z
-	__forceinline bool NoSecondPass() const { return ATE && ATST != ATST_ALWAYS && AFAIL == AFAIL_KEEP; } // pixels may fail, no output
-	__forceinline u32 GetAFAIL(u32 fpsm) const { return (AFAIL == AFAIL_RGB_ONLY && (fpsm & 0xF) != 0) ? static_cast<u32>(AFAIL_FB_ONLY) : AFAIL; } // FB Only when not 32bit Framebuffer
+#ifdef __cplusplus
+	__forceinline bool DoFirstPass() const { return !ATE || ATST != ATST_NEVER; } /* not all pixels fail automatically */
+	__forceinline bool DoSecondPass() const { return ATE && ATST != ATST_ALWAYS && AFAIL != AFAIL_KEEP; } /* pixels may fail, write fb/z */
+	__forceinline bool NoSecondPass() const { return ATE && ATST != ATST_ALWAYS && AFAIL == AFAIL_KEEP; } /* pixels may fail, no output */
+	__forceinline u32 GetAFAIL(u32 fpsm) const { return (AFAIL == AFAIL_RGB_ONLY && (fpsm & 0xF) != 0) ? static_cast<u32>(AFAIL_FB_ONLY) : AFAIL; } /* FB Only when not 32bit Framebuffer */
+#endif
 REG_END2
 
 REG64_(GIFReg, TEX0)
@@ -815,9 +854,10 @@ union
 	};
 };
 REG_END2
+#ifdef __cplusplus
 	__forceinline bool IsRepeating() const
 	{
-		// This is actually "does the texture span more than one page".
+		/* This is actually "does the texture span more than one page". */
 		if (TBW < 2)
 		{
 			if (PSM == PSMT8)
@@ -826,7 +866,7 @@ REG_END2
 				return TW > 7 || TH > 7;
 		}
 
-		// The recast of TBW seems useless but it avoid tons of warning from GCC...
+		/* The recast of TBW seems useless but it avoid tons of warning from GCC... */
 		return ((u32)TBW << 6u) < (1u << TW);
 	}
 
@@ -838,6 +878,7 @@ REG_END2
 		ret.PSM = psm;
 		return ret;
 	}
+#endif
 REG_END2
 
 REG64_(GIFReg, TEX1)
@@ -850,11 +891,13 @@ REG64_(GIFReg, TEX1)
 	u32 _PAD2 :  9;
 	u32 L     :  2;
 	u32 _PAD3 : 11;
-	s32  K    : 12; // 1:7:4
+	s32  K    : 12; /* 1:7:4 */
 	u32 _PAD4 : 20;
 REG_END2
+#ifdef __cplusplus
 	bool IsMinLinear() const { return (MMIN == 1) || (MMIN & 4); }
 	bool IsMagLinear() const { return MMAG; }
+#endif
 REG_END2
 
 REG64_(GIFReg, TEX2)
@@ -917,21 +960,21 @@ REG64_(GIFReg, TRXREG)
 	u32 _PAD2 : 20;
 REG_END
 
-// GSState::GIFPackedRegHandlerUV and GSState::GIFRegHandlerUV will make sure that the _PAD1/2 bits are set to zero
+/* GSState::GIFPackedRegHandlerUV and GSState::GIFRegHandlerUV will make sure that the _PAD1/2 bits are set to zero */
 
 REG64_(GIFReg, UV)
 	u16 U;
-	// u32 _PAD1 : 2;
+	/* u32 _PAD1 : 2; */
 	u16 V;
-	// u32 _PAD2 : 2;
+	/* u32 _PAD2 : 2; */
 	u32 _PAD3;
 REG_END
 
-// GSState::GIFRegHandlerXYOFFSET will make sure that the _PAD1/2 bits are set to zero
+/* GSState::GIFRegHandlerXYOFFSET will make sure that the _PAD1/2 bits are set to zero */
 
 REG64_(GIFReg, XYOFFSET)
-	u32 OFX; // : 16; u32 _PAD1 : 16;
-	u32 OFY; // : 16; u32 _PAD2 : 16;
+	u32 OFX; /* : 16; u32 _PAD1 : 16; */
+	u32 OFY; /* : 16; u32 _PAD2 : 16; */
 REG_END
 
 REG64_(GIFReg, XYZ)
@@ -950,14 +993,16 @@ REG_END
 REG64_(GIFReg, ZBUF)
 	u32 ZBP   :  9;
 	u32 _PAD1 : 15;
-	// u32 PSM   :  4;
-	// u32 _PAD2 :  4;
+	/* u32 PSM   :  4; */
+	/* u32 _PAD2 :  4; */
 	u32 PSM   :  6;
 	u32 _PAD2 :  2;
 	u32 ZMSK  :  1;
 	u32 _PAD3 : 31;
 REG_END2
+#ifdef __cplusplus
 	u32 Block() const { return ZBP << 5; }
+#endif
 REG_END2
 
 REG64_SET(GIFReg)
@@ -1003,7 +1048,7 @@ REG64_SET(GIFReg)
 	GIFRegZBUF       ZBUF;
 REG_SET_END
 
-// GIFPacked
+/* GIFPacked */
 
 REG128_(GIFPacked, PRIM)
 	u32 PRIM  : 11;
@@ -1052,7 +1097,9 @@ REG128_(GIFPacked, XYZF2)
 	u32 ADC   :  1;
 	u32 _PAD7 : 16;
 REG_END2
+#ifdef __cplusplus
 u32 Skip() const { return U32[3] & 0x8000; }
+#endif
 REG_END2
 
 REG128_(GIFPacked, XYZ2)
@@ -1065,7 +1112,9 @@ REG128_(GIFPacked, XYZ2)
 	u32 ADC   :  1;
 	u32 _PAD4 : 16;
 REG_END2
+#ifdef __cplusplus
 	u32 Skip() const { return U32[3] & 0x8000; }
+#endif
 REG_END2
 
 REG128_(GIFPacked, FOG)
@@ -1079,7 +1128,7 @@ REG_END
 
 REG128_(GIFPacked, A_D)
 	u64 DATA;
-	u8 ADDR : 8; // enum GIF_A_D_REG
+	u8 ADDR : 8; /* enum GIF_A_D_REG */
 	u8 _PAD1[3 + 4];
 REG_END
 
@@ -1103,6 +1152,7 @@ REG128_SET(GIFPackedReg)
 	GIFPackedNOP    NOP;
 REG_SET_END
 
+#ifdef __cplusplus
 struct alignas(32) GIFPath
 {
 	GIFTag tag;
@@ -1124,7 +1174,7 @@ struct alignas(32) GIFPath
 	{
 		const GIFTag* RESTRICT src = (const GIFTag*)mem;
 
-		// the compiler has a hard time not reloading every time a field of src is accessed
+		/* the compiler has a hard time not reloading every time a field of src is accessed */
 
 		u32 a = src->U32[0];
 		u32 b = src->U32[1];
@@ -1137,9 +1187,9 @@ struct alignas(32) GIFPath
 		if (nloop == 0)
 			return;
 
-		GSVector4i v = GSVector4i::loadl(&src->REGS); // REGS not stored to tag.REGS, only into this->regs, restored before saving the state though
+		GSVector4i v = GSVector4i::loadl(&src->REGS); /* REGS not stored to tag.REGS, only into this->regs, restored before saving the state though */
 
-		nreg = (b & 0xf0000000) ? (b >> 28) : 16; // src->NREG
+		nreg = (b & 0xf0000000) ? (b >> 28) : 16; /* src->NREG */
 		regs = v.upl8(v >> 4) & GSVector4i::x0f(nreg);
 		reg = 0;
 
@@ -1156,16 +1206,16 @@ struct alignas(32) GIFPath
 				switch (nreg)
 				{
 					case 3:
-						// many games, TODO: formats mixed with NOPs (xeno2: 040f010f02, 04010f020f, mgs3: 04010f0f02, 0401020f0f, 04010f020f)
+						/* many games, TODO: formats mixed with NOPs (xeno2: 040f010f02, 04010f020f, mgs3: 04010f0f02, 0401020f0f, 04010f020f) */
 						if (regs.U32[0] == 0x00040102)
 							type = TYPE_STQRGBAXYZF2;
-						// GoW (has other crazy formats, like ...030503050103)
+						/* GoW (has other crazy formats, like ...030503050103) */
 						if (regs.U32[0] == 0x00050102)
 							type = TYPE_STQRGBAXYZ2;
-						// TODO: common types with UV instead
+						/* TODO: common types with UV instead */
 						break;
 					case 9:
-						// ffx
+						/* ffx */
 						if (regs.U32[0] == 0x02040102 && regs.U32[1] == 0x01020401 && regs.U32[2] == 0x00000004)
 						{
 							type = TYPE_STQRGBAXYZF2;
@@ -1174,7 +1224,7 @@ struct alignas(32) GIFPath
 						}
 						break;
 					case 12:
-						// dq8 (not many, mostly 040102)
+						/* dq8 (not many, mostly 040102) */
 						if (regs.U32[0] == 0x02040102 && regs.U32[1] == 0x01020401 && regs.U32[2] == 0x04010204)
 						{
 							type = TYPE_STQRGBAXYZF2;
@@ -1229,6 +1279,9 @@ struct alignas(32) GIFPath
 	}
 };
 
+#endif /* __cplusplus: GIFPath */
+
+typedef struct GSPrivRegSet GSPrivRegSet;
 struct GSPrivRegSet
 {
 	union

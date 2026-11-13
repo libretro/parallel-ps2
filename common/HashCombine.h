@@ -20,7 +20,7 @@
 #include <utility>
 
 // Use XXH3 for combining, matching the hash already used for the GS shader
-// caches (see GSXXH.h). The previous implementation was the boost hash_combine
+// caches. The previous implementation was the boost hash_combine
 // mixer over std::hash<T>; for the integral keys every call site passes,
 // std::hash<integer> is the identity function, so structured/sequential keys
 // (pipeline and PSSelector bitfields, etc.) went into a weak mixer with poor

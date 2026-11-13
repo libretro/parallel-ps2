@@ -27,7 +27,7 @@
 
 #include "../../GSState.h"
 #include "../../GSUtil.h"
-#include "../../GSXXH.h"
+#include <encodings/xxh3.h>
 
 GSTextureCache* g_texture_cache = nullptr;
 
@@ -9188,8 +9188,8 @@ void GSTextureCache::Palette::InitializeTexture()
 u64 GSTextureCache::PaletteKeyHash::operator()(const PaletteKey& key) const
 {
 	return key.pal == 16 ?
-			   GSXXH3_64bits(key.clut, sizeof(key.clut[0]) * 16) :
-			   GSXXH3_64bits(key.clut, sizeof(key.clut[0]) * 256);
+			   xxh3_64(key.clut, sizeof(key.clut[0]) * 16, 0) :
+			   xxh3_64(key.clut, sizeof(key.clut[0]) * 256, 0);
 };
 
 // GSTextureCache::PaletteKeyEqual
@@ -9402,26 +9402,27 @@ GSTextureCache::SourceRegion GSTextureCache::SourceRegion::Create(GIFRegTEX0 TEX
 	return region;
 }
 
-using BlockHashState = XXH3_state_t;
+/* libretro-common's XXH3, which picks this CPU's vector path itself. */
+using BlockHashState = xxh3_state_t;
 
 __fi static void BlockHashReset(BlockHashState& st)
 {
-	XXH3_64bits_reset(&st);
+	xxh3_reset(&st, 0);
 }
 
 __fi static void BlockHashAccumulate(BlockHashState& st, const u8* bp)
 {
-	GSXXH3_64bits_update(&st, bp, GS_BLOCK_SIZE);
+	xxh3_update(&st, bp, GS_BLOCK_SIZE);
 }
 
 __fi static void BlockHashAccumulate(BlockHashState& st, const u8* bp, u32 size)
 {
-	GSXXH3_64bits_update(&st, bp, size);
+	xxh3_update(&st, bp, size);
 }
 
 __fi static GSTextureCache::HashType FinishBlockHash(BlockHashState& st)
 {
-	return GSXXH3_64bits_digest(&st);
+	return xxh3_digest(&st);
 }
 
 static void HashTextureLevel(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, GSTextureCache::SourceRegion region, BlockHashState& hash_st, u8* temp)

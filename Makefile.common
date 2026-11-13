@@ -101,6 +101,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSFlatMap.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSStableMap.c \
 	$(LRPS2_DIR)/GS/GSPage2Tile.c \
+	$(LRPS2_DIR)/GS/GSUtil.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSHiresMem.c \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSHashTable.c \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSSpriteSnap.c \
@@ -452,10 +453,7 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/GSRingHeap.cpp \
 	$(LRPS2_DIR)/GS/GSState.cpp \
 	$(LRPS2_DIR)/GS/GSTables.cpp \
-	$(LRPS2_DIR)/GS/GSUtil.cpp \
 	$(LRPS2_DIR)/GS/GSVector.cpp \
-	$(LRPS2_DIR)/GS/GSXXH.cpp \
-	$(LRPS2_DIR)/GS/MultiISA.cpp \
 	\
 	$(LRPS2_DIR)/GS/Renderers/Common/GSDevice.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSDirtyRect.cpp \
@@ -641,7 +639,8 @@ SOURCES_C += \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_rzstd.c \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_huffman.c \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_deflate.c \
-	$(LIBRETRO_COMM_DIR)/encodings/encoding_crc32.c
+	$(LIBRETRO_COMM_DIR)/encodings/encoding_crc32.c \
+	$(LIBRETRO_COMM_DIR)/encodings/encoding_xxh3.c
 
 # Which of rchd's hunk codecs are compiled in.  Stated here rather than
 # left to rchd.c's fallback: that fallback turns on DEFLATE and LZMA

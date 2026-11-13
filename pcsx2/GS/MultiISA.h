@@ -82,9 +82,3 @@ class GSState;
 typedef GSState GSRenderer;
 MULTI_ISA_DEF(GSRenderer* makeGSRendererSW(int threads);)
 
-namespace MultiISAFunctions
-{
-	extern u64 (&GSXXH3_64_Long)(const void* data, size_t len);
-	extern u32 (&GSXXH3_64_Update)(void* state, const void* data, size_t len);
-	extern u64 (&GSXXH3_64_Digest)(void* state);
-}

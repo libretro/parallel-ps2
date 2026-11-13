@@ -25,7 +25,7 @@
 #include "HostFS.h"
 
 /* xxhash may already be set up by a header included above (HashCombine.h /
- * GSXXH.h, both behind an XXH_versionNumber guard). Guard our own setup so
+ * GSKeyHash.h, both behind an XXH_versionNumber guard). Guard our own setup so
  * we do not redefine these macros (MSVC C4005 / -Wmacro-redefinition). */
 #ifndef XXH_STATIC_LINKING_ONLY
 #define XXH_STATIC_LINKING_ONLY 1

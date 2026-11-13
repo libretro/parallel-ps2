@@ -195,12 +195,10 @@
     <ClCompile Include="GS\Renderers\OpenGL\GSTextureOGL.cpp" />
     <ClCompile Include="GS\Renderers\HW\GSTextureCache.cpp" />
     <ClCompile Include="GS\Renderers\SW\GSTextureCacheSW.cpp" />
-    <ClCompile Include="GS\GSUtil.cpp" />
+    <ClCompile Include="GS\GSUtil.c" />
     <ClCompile Include="GS\GSVector.cpp" />
     <ClCompile Include="GS\Renderers\Common\GSVertexTrace.cpp" />
     <ClCompile Include="GS\Renderers\Common\GSVertexTraceFMM.cpp" />
-    <ClCompile Include="GS\GSXXH.cpp" />
-    <ClCompile Include="GS\MultiISA.cpp" />
     <ClCompile Include="USB\shared\ringbuffer.cpp" />
     <ClCompile Include="VirtualMemory.c" />
     <ClCompile Include="VMManager.c" />
@@ -393,7 +391,6 @@
     <ClInclude Include="GS\Renderers\HW\GSVertexHW.h" />
     <ClInclude Include="GS\Renderers\SW\GSVertexSW.h" />
     <ClInclude Include="GS\Renderers\Common\GSVertexTrace.h" />
-    <ClInclude Include="GS\GSXXH.h" />
     <ClInclude Include="GS\MultiISA.h" />
     <ClInclude Include="IPU\IPUdma.h" />
     <ClInclude Include="IPU\IPU_hw.h" />
