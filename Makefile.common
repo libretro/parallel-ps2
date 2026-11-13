@@ -100,6 +100,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSObjectPool.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSFlatMap.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSStableMap.c \
+	$(LRPS2_DIR)/GS/Renderers/Common/GSTextureFormat.c \
 	$(LRPS2_DIR)/GS/GSPage2Tile.c \
 	$(LRPS2_DIR)/GS/GSClut.c \
 	$(LRPS2_DIR)/GS/GSDrawingContext.c \
@@ -461,7 +462,6 @@ SOURCES_CXX += \
 	\
 	$(LRPS2_DIR)/GS/Renderers/Common/GSDevice.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSRenderer.cpp \
-	$(LRPS2_DIR)/GS/Renderers/Common/GSTexture.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSVertexTrace.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSVertexTraceFMM.cpp \
 	\
@@ -506,6 +506,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLShaderCache.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLState.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLStreamBuffer.c \
+	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLTextureFormat.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLVertexInput.c
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GSDeviceOGL.cpp \

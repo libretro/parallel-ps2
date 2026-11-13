@@ -818,6 +818,9 @@
     <ClCompile Include="GS\Renderers\OpenGL\GLStreamBuffer.c">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
+    <ClCompile Include="GS\Renderers\OpenGL\GLTextureFormat.c">
+      <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
+    </ClCompile>
     <ClCompile Include="GS\Renderers\OpenGL\GLVertexInput.c">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
@@ -878,7 +881,7 @@
     <ClCompile Include="GS\Renderers\Common\GSDevice.cpp">
       <Filter>System\Ps2\GS\Renderers\Common</Filter>
     </ClCompile>
-    <ClCompile Include="GS\Renderers\Common\GSTexture.cpp">
+    <ClCompile Include="GS\Renderers\Common\GSTextureFormat.c">
       <Filter>System\Ps2\GS\Renderers\Common</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\Common\GSVertexTrace.cpp">
@@ -1354,6 +1357,9 @@
     <ClInclude Include="GS\Renderers\OpenGL\GLStreamBuffer.h">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClInclude>
+    <ClInclude Include="GS\Renderers\OpenGL\GLTextureFormat.h">
+      <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
+    </ClInclude>
     <ClInclude Include="GS\Renderers\OpenGL\GLVertexInput.h">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClInclude>
@@ -1421,6 +1427,9 @@
       <Filter>System\Ps2\GS\Renderers\Common</Filter>
     </ClInclude>
     <ClInclude Include="GS\Renderers\Common\GSTexture.h">
+      <Filter>System\Ps2\GS\Renderers\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="GS\Renderers\Common\GSTextureFormat.h">
       <Filter>System\Ps2\GS\Renderers\Common</Filter>
     </ClInclude>
     <ClInclude Include="GS\Renderers\Common\GSVertexTrace.h">

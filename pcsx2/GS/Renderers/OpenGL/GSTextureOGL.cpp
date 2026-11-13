@@ -18,6 +18,7 @@
 #include "GSDeviceOGL.h"
 #include "GSTextureOGL.h"
 #include "GLState.h"
+#include "GLTextureFormat.h"
 #include "GS/GSExtra.h"
 #include "common/Align.h"
 
@@ -47,120 +48,12 @@ GSTextureOGL::GSTextureOGL(Type type, int width, int height, int levels, Format 
 	m_type = type;
 	m_texture_id = 0;
 	m_mipmap_levels = 1;
-	int gl_fmt = 0;
-
-	// Bunch of constant parameter
-	switch (m_format)
-	{
-		// 1 Channel integer
-		case Format::PrimID:
-			gl_fmt = GL_R32F;
-			m_int_format = GL_RED;
-			m_int_type = GL_INT;
-			m_int_shift = 2;
-			break;
-		case Format::UInt32:
-			gl_fmt = GL_R32UI;
-			m_int_format = GL_RED_INTEGER;
-			m_int_type = GL_UNSIGNED_INT;
-			m_int_shift = 2;
-			break;
-		case Format::UInt16:
-			gl_fmt = GL_R16UI;
-			m_int_format = GL_RED_INTEGER;
-			m_int_type = GL_UNSIGNED_SHORT;
-			m_int_shift = 1;
-			break;
-
-		// 1 Channel normalized
-		case Format::UNorm8:
-			gl_fmt = GL_R8;
-			m_int_format = GL_RED;
-			m_int_type = GL_UNSIGNED_BYTE;
-			m_int_shift = 0;
-			break;
-
-		// 4 channel normalized
-		case Format::Color:
-			gl_fmt = GL_RGBA8;
-			m_int_format = GL_RGBA;
-			m_int_type = GL_UNSIGNED_BYTE;
-			m_int_shift = 2;
-			break;
-
-		// 4 channel float
-		case Format::ColorClip:
-			if (GSDeviceOGL::GetInstance()->IsColClipFloat())
-			{
-				// 24 bits of mantissa hold every 16-bit integer, and its sums, exactly.
-				gl_fmt = GL_RGBA32F;
-				m_int_format = GL_RGBA;
-				m_int_type = GL_FLOAT;
-				m_int_shift = 4;
-			}
-			else
-			{
-				gl_fmt = GL_RGBA16;
-				m_int_format = GL_RGBA;
-				m_int_type = GL_UNSIGNED_SHORT;
-				m_int_shift = 3;
-			}
-			break;
-
-		// Depth buffer
-		case Format::DepthStencil:
-		{
-			if (!g_gs_device->Features().framebuffer_fetch)
-			{
-				gl_fmt = GL_DEPTH32F_STENCIL8;
-				m_int_format = GL_DEPTH_STENCIL;
-				m_int_type = GL_FLOAT_32_UNSIGNED_INT_24_8_REV;
-				m_int_shift = 3; // 4 bytes for depth + 4 bytes for stencil by texels
-			}
-			else
-			{
-				gl_fmt = GL_DEPTH_COMPONENT32F;
-				m_int_format = GL_DEPTH_COMPONENT;
-				m_int_type = GL_FLOAT;
-				m_int_shift = 2;
-			}
-		}
-		break;
-
-		case Format::BC1:
-			gl_fmt = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
-			m_int_format = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
-			m_int_type = GL_UNSIGNED_BYTE;
-			m_int_shift = 1;
-			break;
-
-		case Format::BC2:
-			gl_fmt = GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
-			m_int_format = GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
-			m_int_type = GL_UNSIGNED_BYTE;
-			m_int_shift = 1;
-			break;
-
-		case Format::BC3:
-			gl_fmt = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
-			m_int_format = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
-			m_int_type = GL_UNSIGNED_BYTE;
-			m_int_shift = 1;
-			break;
-
-		case Format::BC7:
-			gl_fmt = GL_COMPRESSED_RGBA_BPTC_UNORM_ARB;
-			m_int_format = GL_COMPRESSED_RGBA_BPTC_UNORM_ARB;
-			m_int_type = GL_UNSIGNED_BYTE;
-			m_int_shift = 1;
-			break;
-
-		case Format::Invalid:
-			m_int_format = 0;
-			m_int_type = 0;
-			m_int_shift = 0;
-			break;
-	}
+	const gs_gl_texture_format gl = gs_gl_texture_format_of(static_cast<unsigned>(m_format),
+		GSDeviceOGL::GetInstance()->IsColClipFloat(), g_gs_device->Features().framebuffer_fetch);
+	const GLenum gl_fmt = gl.internal_format;
+	m_int_format = gl.format;
+	m_int_type   = gl.type;
+	m_int_shift  = gl.shift;
 
 	// Only 32 bits input texture will be supported for mipmap
 	if (m_type == Type::Texture)

@@ -20,23 +20,12 @@
  * the image's. One memcpy when the three agree. */
 #include <string.h>
 #include "common/Pcsx2Defs.h"
+#include "GSTextureFormat.h"
+
 static inline void GSStrideMemCpy(void* dst, size_t dst_stride, const void* src, size_t src_stride,
 	size_t copy_size, size_t count)
 {
-	if (src_stride == dst_stride && src_stride == copy_size)
-	{
-		memcpy(dst, src, src_stride * count);
-		return;
-	}
-
-	const u8* src_ptr = static_cast<const u8*>(src);
-	u8* dst_ptr = static_cast<u8*>(dst);
-	for (size_t i = 0; i < count; i++)
-	{
-		memcpy(dst_ptr, src_ptr, copy_size);
-		src_ptr += src_stride;
-		dst_ptr += dst_stride;
-	}
+	gs_stride_memcpy(dst, dst_stride, src, src_stride, copy_size, count);
 }
 
 
@@ -104,7 +93,7 @@ protected:
 	ClearValue m_clear_value = {};
 
 public:
-	GSTexture();
+	GSTexture() = default;
 
 	/* Not public, and not virtual either. The backends' virtual
 	 * functions became the m_ops table in the C conversion and the
@@ -145,16 +134,17 @@ public:
 	__fi Format GetFormat() const { return m_format; }
 	__fi bool IsCompressedFormat() const { return IsCompressedFormat(m_format); }
 
-	static u32 GetCompressedBytesPerBlock(Format format);
-	static u32 GetCompressedBlockSize(Format format);
-	static u32 CalcUploadPitch(Format format, u32 width);
-	static u32 CalcUploadRowLengthFromPitch(Format format, u32 pitch);
-	static u32 CalcUploadSize(Format format, u32 height, u32 pitch);
+	/* The format math is C (GSTextureFormat.c) */
+	static u32 GetCompressedBytesPerBlock(Format format) { return gs_texture_block_bytes(static_cast<unsigned>(format)); }
+	static u32 GetCompressedBlockSize(Format format) { return gs_texture_block_size(static_cast<unsigned>(format)); }
+	static u32 CalcUploadPitch(Format format, u32 width) { return gs_texture_upload_pitch(static_cast<unsigned>(format), width); }
+	static u32 CalcUploadRowLengthFromPitch(Format format, u32 pitch) { return gs_texture_row_length(static_cast<unsigned>(format), pitch); }
+	static u32 CalcUploadSize(Format format, u32 height, u32 pitch) { return gs_texture_upload_size(static_cast<unsigned>(format), height, pitch); }
 
-	u32 GetCompressedBlockSize() const;
-	u32 CalcUploadPitch(u32 width) const;
-	u32 CalcUploadRowLengthFromPitch(u32 pitch) const;
-	u32 CalcUploadSize(u32 height, u32 pitch) const;
+	u32 GetCompressedBlockSize() const { return GetCompressedBlockSize(m_format); }
+	u32 CalcUploadPitch(u32 width) const { return CalcUploadPitch(m_format, width); }
+	u32 CalcUploadRowLengthFromPitch(u32 pitch) const { return CalcUploadRowLengthFromPitch(m_format, pitch); }
+	u32 CalcUploadSize(u32 height, u32 pitch) const { return CalcUploadSize(m_format, height, pitch); }
 
 	__fi bool IsRenderTargetOrDepthStencil() const
 	{
@@ -201,14 +191,18 @@ public:
 	u32 GetMemUsage() const { return m_size.x * m_size.y * (m_format == Format::UNorm8 ? 1 : 4); }
 
 	// Helper routines for formats/types
-	static bool IsCompressedFormat(Format format) { return (format >= Format::BC1 && format <= Format::BC7); }
+	static bool IsCompressedFormat(Format format) { return gs_texture_is_compressed(static_cast<unsigned>(format)) != 0; }
 };
+
+static_assert(static_cast<unsigned>(GSTexture::Format::BC7) == GS_TEX_BC7 && static_cast<unsigned>(GSTexture::Format::PrimID) == GS_TEX_PRIMID
+	&& static_cast<unsigned>(GSTexture::Format::ColorClip) == GS_TEX_COLOR_CLIP, "GSTexture::Format is gs_texture_format");
 
 class GSDownloadTexture
 {
 public:
-	GSDownloadTexture(u32 width, u32 height, GSTexture::Format format);
-	~GSDownloadTexture();
+	GSDownloadTexture(u32 width, u32 height, GSTexture::Format format)
+		: m_width(width), m_height(height), m_format(format) {}
+	~GSDownloadTexture() = default;
 
 	/* As GSTexture above: a table, not a vtable (gs_download_texture_ops). */
 	const struct gs_download_texture_ops* m_ops = nullptr;
@@ -225,10 +219,18 @@ public:
 	__fi u32 GetMapPitch() const { return m_current_pitch; }
 
 	/// Calculates the pitch of a transfer.
-	u32 GetTransferPitch(u32 width, u32 pitch_align) const;
+	u32 GetTransferPitch(u32 width, u32 pitch_align) const
+	{ return gs_texture_transfer_pitch(static_cast<unsigned>(m_format), width, pitch_align); }
 
 	/// Calculates the size of the data you should transfer.
-	void GetTransferSize(const GSVector4i& rc, u32* copy_offset, u32* copy_size, u32* copy_rows) const;
+	void GetTransferSize(const GSVector4i& rc, u32* copy_offset, u32* copy_size, u32* copy_rows) const
+	{
+		const gs_texture_transfer t = gs_texture_transfer_of(static_cast<unsigned>(m_format), m_current_pitch,
+			static_cast<u32>(rc.x), static_cast<u32>(rc.y), static_cast<u32>(rc.width()), static_cast<u32>(rc.height()));
+		*copy_offset = t.offset;
+		*copy_size   = t.size;
+		*copy_rows   = t.rows;
+	}
 
 	/// Queues a copy from the specified texture to this buffer.
 	/// Does not complete immediately, you should flush before accessing the buffer.
@@ -258,7 +260,8 @@ public:
 	bool ReadTexels(const GSVector4i& rc, void* out_ptr, u32 out_stride);
 
 	/// Returns what the size of the specified texture would be, in bytes.
-	static u32 GetBufferSize(u32 width, u32 height, GSTexture::Format format, u32 pitch_align = 1);
+	static u32 GetBufferSize(u32 width, u32 height, GSTexture::Format format, u32 pitch_align = 1)
+	{ return gs_texture_buffer_size(static_cast<unsigned>(format), width, height, pitch_align); }
 
 protected:
 	u32 m_width;
@@ -304,6 +307,13 @@ __forceinline_odr bool GSTexture::Map(GSMap& m, const GSVector4i* r, int layer)
 { return m_ops->map(this, &m, r, layer); }
 __forceinline_odr void GSTexture::Unmap() { m_ops->unmap(this); }
 __forceinline_odr void GSTexture::GenerateMipmap() { if (m_ops->generate_mipmap) m_ops->generate_mipmap(this); }
+__forceinline_odr void GSTexture::GenerateMipmapsIfNeeded()
+{
+	if (!m_needs_mipmaps_generated || m_mipmap_levels <= 1 || IsCompressedFormat())
+		return;
+	m_needs_mipmaps_generated = false;
+	GenerateMipmap();
+}
 
 /* A download texture, like a texture, is freed by its backend: the base
  * has no virtual destructor, so a plain delete would run the wrong one. */
@@ -316,6 +326,17 @@ __forceinline_odr void GSDownloadTexture::CopyFromTexture(const GSVector4i& drc,
 __forceinline_odr bool GSDownloadTexture::Map(const GSVector4i& read_rc) { return m_ops->map(this, &read_rc); }
 __forceinline_odr void GSDownloadTexture::Unmap() { m_ops->unmap(this); }
 __forceinline_odr void GSDownloadTexture::Flush() { m_ops->flush(this); }
+__forceinline_odr bool GSDownloadTexture::ReadTexels(const GSVector4i& rc, void* out_ptr, u32 out_stride)
+{
+	u32 offset, size, rows;
+	if (m_needs_flush)
+		Flush();
+	if (!Map(rc))
+		return false;
+	GetTransferSize(rc, &offset, &size, &rows);
+	gs_stride_memcpy(out_ptr, out_stride, m_map_pointer + offset, m_current_pitch, size, rows);
+	return true;
+}
 
 #define GS_TEXTURE_OPS_DEFINE(klass, tag) \
 struct klass##_ops_access { \

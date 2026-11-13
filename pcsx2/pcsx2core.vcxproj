@@ -169,6 +169,7 @@
     <ClCompile Include="GS\Renderers\OpenGL\GLProgramCache.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLShaderCache.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLStreamBuffer.c" />
+    <ClCompile Include="GS\Renderers\OpenGL\GLTextureFormat.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLVertexInput.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLState.c" />
     <ClCompile Include="GS\GS.cpp" />
@@ -200,7 +201,7 @@
     <ClCompile Include="GS\GSOffset.c" />
     <ClCompile Include="GS\GSPsm.c" />
     <ClCompile Include="GS\GSTables.c" />
-    <ClCompile Include="GS\Renderers\Common\GSTexture.cpp" />
+    <ClCompile Include="GS\Renderers\Common\GSTextureFormat.c" />
     <ClCompile Include="GS\Renderers\DX11\GSTexture11.cpp" />
     <ClCompile Include="GS\Renderers\OpenGL\GSTextureOGL.cpp" />
     <ClCompile Include="GS\Renderers\HW\GSTextureCache.cpp" />
@@ -360,6 +361,7 @@
     <ClInclude Include="GS\Renderers\OpenGL\GLShaderCache.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GLState.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GLStreamBuffer.h" />
+    <ClInclude Include="GS\Renderers\OpenGL\GLTextureFormat.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GLVertexInput.h" />
     <ClInclude Include="GS\GS.h" />
     <ClInclude Include="GS\GSExtra.h" />
@@ -395,6 +397,7 @@
     <ClInclude Include="GS\GSPsm.h" />
     <ClInclude Include="GS\GSTables.h" />
     <ClInclude Include="GS\Renderers\Common\GSTexture.h" />
+    <ClInclude Include="GS\Renderers\Common\GSTextureFormat.h" />
     <ClInclude Include="GS\Renderers\DX11\GSTexture11.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GSTextureOGL.h" />
     <ClInclude Include="GS\Renderers\HW\GSAlphaRange.h" />

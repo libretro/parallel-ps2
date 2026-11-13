@@ -361,13 +361,13 @@ set(pcsx2GSSources
 	GS/Renderers/Common/GSDirtyRect.c
 	GS/Renderers/Common/GSCodeReserve.c
 	GS/Renderers/Common/GSRenderer.cpp
-	GS/Renderers/Common/GSTexture.cpp
 	GS/Renderers/Common/GSVertexTrace.cpp
 	GS/Renderers/HW/GSHwHack.cpp
 	GS/Renderers/HW/GSRendererHW.cpp
 	GS/Renderers/HW/GSObjectPool.c
 	GS/Renderers/Common/GSFlatMap.c
 	GS/Renderers/Common/GSStableMap.c
+	GS/Renderers/Common/GSTextureFormat.c
 	GS/GSPage2Tile.c
 	GS/Renderers/HW/GSHashTable.c
 	GS/Renderers/HW/GSAlphaRange.h
@@ -430,6 +430,7 @@ set(pcsx2GSHeaders
 	GS/Renderers/Common/GSFunctionMap.h
 	GS/Renderers/Common/GSRenderer.h
 	GS/Renderers/Common/GSTexture.h
+	GS/Renderers/Common/GSTextureFormat.h
 	GS/Renderers/Common/GSVertex.h
 	GS/Renderers/Common/gs_vertex.h
 	GS/Renderers/Common/GSVertexTrace.h
@@ -463,6 +464,7 @@ if(USE_OPENGL)
 		GS/Renderers/OpenGL/GLProgramCache.c
 		GS/Renderers/OpenGL/GLShaderCache.c
 		GS/Renderers/OpenGL/GLStreamBuffer.c
+		GS/Renderers/OpenGL/GLTextureFormat.c
 		GS/Renderers/OpenGL/GLVertexInput.c
 	)
 	list(APPEND pcsx2GSHeaders
@@ -474,6 +476,7 @@ if(USE_OPENGL)
 		GS/Renderers/OpenGL/GLProgramCache.h
 		GS/Renderers/OpenGL/GLShaderCache.h
 		GS/Renderers/OpenGL/GLStreamBuffer.h
+		GS/Renderers/OpenGL/GLTextureFormat.h
 		GS/Renderers/OpenGL/GLVertexInput.h
 	)
 	target_link_libraries(PCSX2_FLAGS INTERFACE glad)
