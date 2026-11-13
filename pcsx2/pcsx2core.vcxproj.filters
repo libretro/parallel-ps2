@@ -803,7 +803,7 @@
     <ClCompile Include="GS\Renderers\OpenGL\GLState.cpp">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
-    <ClCompile Include="GS\GSDrawingContext.cpp">
+    <ClCompile Include="GS\GSDrawingContext.c">
       <Filter>System\Ps2\GS\Renderers\Software</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\SW\GSDrawScanline.cpp">

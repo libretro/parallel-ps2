@@ -12,6 +12,7 @@
 #include "GS/GSTables.h"
 #include "GS/GSOffset.h"
 #include "GS/GSPsm.h"
+#include "GS/GSDrawingContext.h"
 #include <encodings/xxh3.h>
 #define XXH_STATIC_LINKING_ONLY 1
 #define XXH_INLINE_ALL 1
@@ -236,6 +237,89 @@ static void check_psm(void)
 	CHECK(h == 0xe0d6ac4fU);
 }
 
+/* A drawing context's texture size fix-up and scissor, for random
+ * registers and coordinates (NaN, infinities and huge ones among them),
+ * hashed: the sum is what the C++ GSDrawingContext gave */
+static u32 ctx_rand(void)
+{
+	return next_rand();
+}
+
+static u64 ctx_rand64(void)
+{
+	u64 hi = ctx_rand();
+	u64 lo = ctx_rand();
+	return hi << 32 | lo;
+}
+
+static float ctx_float(void)
+{
+	u32 k = ctx_rand() % 16;
+	if (k == 0)
+	{
+		u32 b = ctx_rand() << 8;
+		float f;
+		b |= ctx_rand() & 0xff;
+		memcpy(&f, &b, 4);
+		return f;
+	}
+	if (k < 4)
+	{
+		float i = (float)((int)(ctx_rand() % 4096) - 1024);
+		return i + (float)(ctx_rand() % 16) / 16.0f;
+	}
+	{
+		float i = (float)(ctx_rand() % 1100);
+		return i + (float)(ctx_rand() % 256) / 256.0f - 0.5f;
+	}
+}
+
+static void check_context(void)
+{
+	GIFRegTEX0 tex0;
+	GIFRegCLAMP clamp;
+	GIFRegSCISSOR scissor;
+	GIFRegXYOFFSET xyoffset;
+	u32 n = 0, h = 0;
+	int k, i;
+
+	memset(&xyoffset, 0, sizeof(xyoffset));
+	s_rng = 3;
+	for (k = 0; k < 200000; k++)
+	{
+		float st[4];
+		int linear, mip;
+		int in[4], cull[4], xyof[4];
+		GIFRegTEX0 r;
+		tex0.U64 = ctx_rand64();
+		tex0.TW = ctx_rand() % 16;
+		tex0.TH = ctx_rand() % 16;
+		clamp.U64 = ctx_rand64();
+		st[0] = ctx_float();
+		st[1] = ctx_float();
+		st[2] = ctx_float();
+		st[3] = ctx_float();
+		linear = ctx_rand() & 1;
+		mip = (ctx_rand() % 8) == 0;
+		r = gs_ctx_size_fixed_tex0(&tex0, &clamp, st, linear, mip);
+		s_out[n++] = (u32)r.U64;
+		s_out[n++] = (u32)(r.U64 >> 32);
+		scissor.U64 = ctx_rand64();
+		xyoffset.OFX = ctx_rand();
+		xyoffset.OFY = ctx_rand();
+		gs_ctx_scissor(&scissor, &xyoffset, in, cull, xyof);
+		for (i = 0; i < 4; i++)
+		{
+			s_out[n++] = (u32)in[i];
+			s_out[n++] = (u32)cull[i];
+			s_out[n++] = (u32)xyof[i];
+		}
+		if (n > OUT_LEN - 32) { h ^= (u32)xxh3_64(s_out, n * 4, h); n = 0; }
+	}
+	h ^= (u32)xxh3_64(s_out, n * 4, h);
+	CHECK(h == 0x417e5a7cU);
+}
+
 int main(void)
 {
 	static u8 buf[1 << 16];
@@ -246,6 +330,7 @@ int main(void)
 	check_tables();
 	check_offsets();
 	check_psm();
+	check_context();
 
 	/* Primitive classes. */
 	CHECK(gs_util_get_prim_class(GS_POINTLIST) == GS_POINT_CLASS);
