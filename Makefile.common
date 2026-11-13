@@ -101,6 +101,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSFlatMap.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSStableMap.c \
 	$(LRPS2_DIR)/GS/GSPage2Tile.c \
+	$(LRPS2_DIR)/GS/GSOffset.c \
 	$(LRPS2_DIR)/GS/GSTables.c \
 	$(LRPS2_DIR)/GS/GSUtil.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSHiresMem.c \

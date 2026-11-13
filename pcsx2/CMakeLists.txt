@@ -350,6 +350,7 @@ set(pcsx2GSSources
 	GS/GSLocalMemory.cpp
 	GS/GSRingHeap.cpp
 	GS/GSState.cpp
+	GS/GSOffset.c
 	GS/GSTables.c
 	GS/GSUtil.c
 	GS/GSVector.cpp
@@ -401,6 +402,7 @@ set(pcsx2GSHeaders
 	GS/GSLocalMemory.h
 	GS/GSRingHeap.h
 	GS/GSState.h
+	GS/GSOffset.h
 	GS/GSTables.h
 	GS/GSUtil.h
 	GS/GSVR.h

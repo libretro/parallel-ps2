@@ -1,6 +1,7 @@
 /* The GS's pixel-format tables (GS/GSUtil.c) against the relationships
  * the GS relies on, its swizzle tables (GS/GSTables.c) against the ones
- * the C++ templates built at compile time, and the texture cache's hash - libretro-common's XXH3
+ * the C++ templates built at compile time, the addressing on them
+ * (GS/GSOffset.c) against the C++ GSOffset it came from, and the texture cache's hash - libretro-common's XXH3
  * - against the xxHash it replaced, one-shot and streamed in GS blocks
  * the way the cache streams them: the same texture keeps its key. */
 #include <stdio.h>
@@ -9,6 +10,7 @@
 
 #include "GS/GSUtil.h"
 #include "GS/GSTables.h"
+#include "GS/GSOffset.h"
 #include <encodings/xxh3.h>
 #define XXH_STATIC_LINKING_ONLY 1
 #define XXH_INLINE_ALL 1
@@ -75,6 +77,109 @@ static void check_tables(void)
 	CHECK(((size_t)gs_pixel_col_offset4 & 127) == 0 && ((size_t)&gs_pixel_row_offset8[1] & 127) == 0);
 }
 
+/* Block numbers, pixel addresses and the pages and blocks of rectangles,
+ * for each swizzle at random bp, bw and places, hashed: the sums are what
+ * the C++ GSOffset gave for the same draws */
+static u32 s_rng = 1;
+static u32 next_rand(void)
+{
+	s_rng = s_rng * 1103515245u + 12345u;
+	return s_rng >> 8;
+}
+
+#define OUT_LEN (1 << 16)
+static u32 s_out[OUT_LEN];
+
+static void check_offsets(void)
+{
+	static const gs_swizzle_info* const info[8] = {&gs_swizzle32, &gs_swizzle32Z,
+		&gs_swizzle16, &gs_swizzle16S, &gs_swizzle16Z, &gs_swizzle16SZ, &gs_swizzle8, &gs_swizzle4};
+	static const u32 want[8][2] = {
+		{0xed562ad4U, 0x12e3a432U},
+		{0xb6b77a6eU, 0x910de15eU},
+		{0xcac616f5U, 0x3d6ae983U},
+		{0x928de963U, 0xc63f4d67U},
+		{0x10748befU, 0xe39e5d67U},
+		{0x443088dbU, 0xdaab5f6bU},
+		{0x24cfe28fU, 0xc31976e7U},
+		{0xfb6c9cadU, 0x84d935b4U}
+	};
+	int i, k;
+	for (i = 0; i < 8; i++)
+	{
+		u32 hb = 0, hl = 0, n = 0;
+		for (k = 0; k < 20000; k++)
+		{
+			u32 bp = next_rand() & 0x3fff, bw = next_rand() % 33;
+			int x = (int)(next_rand() % 4096), y = (int)(next_rand() % 4096);
+			gs_offset off = gs_offset_make(info[i], bp, bw, 0);
+			gs_offset fresh;
+			gs_bn_helper bn;
+			gs_pa_helper pa;
+			gs_bn_init(&bn, &off, x, y);
+			gs_pa_init(&pa, &off, x & 2047, y); /* its row reads past x + 63 */
+			s_out[n++] = gs_offset_bn(&off, x, y);
+			s_out[n++] = gs_offset_bn_nowrap(&off, x, y);
+			s_out[n++] = gs_offset_pa(&off, x, y);
+			s_out[n++] = gs_pa_value(&pa, (int)(next_rand() % 64));
+			gs_bn_next_x(&bn); gs_bn_next_x(&bn); gs_bn_next_y(&bn); gs_bn_next_x(&bn);
+			s_out[n++] = gs_bn_value(&bn);
+			fresh = gs_offset_make(info[i], bp, bw, 0);
+			s_out[n++] = gs_offset_bn(&fresh, x, y);
+			s_out[n++] = gs_offset_pa(&fresh, x, y);
+			s_out[n++] = gs_offset_bw(&off);
+			if (n > OUT_LEN - 16) { hb ^= (u32)xxh3_64(s_out, n * 4, hb); n = 0; }
+		}
+		hb ^= (u32)xxh3_64(s_out, n * 4, hb);
+		n = 0;
+		for (k = 0; k < 3000; k++)
+		{
+			u32 bp = next_rand() & 0x3fff, bw = 1 + (next_rand() % 32);
+			int l = (int)(next_rand() % 2048), t = (int)(next_rand() % 2048);
+			int r = l + 1 + (int)(next_rand() % ((k & 7) ? 300 : 2048));
+			int b = t + 1 + (int)(next_rand() % ((k & 7) ? 300 : 2048));
+			gs_offset off = gs_offset_make(info[i], bp, bw, 0);
+			gs_page_looper lp;
+			gs_page_rows rows;
+			gs_bn_helper bn;
+			u32 start, end, pos;
+			u32 touched[GS_MAX_PAGES / 32];
+			int br, bb;
+			s_out[n++] = 0xffffffffu;
+			gs_offset_page_looper(&lp, &off, l, t, r, b);
+			gs_page_rows_init(&rows, &lp);
+			memset(touched, 0, sizeof(touched));
+			while (gs_page_rows_next(&rows, &start, &end))
+				for (pos = start; pos < end; pos++)
+				{
+					u32 page = pos % GS_MAX_PAGES;
+					if (lp.slow && (touched[page / 32] & (1u << (page % 32))))
+						continue;
+					touched[page / 32] |= 1u << (page % 32);
+					if (n < OUT_LEN - 2)
+						s_out[n++] = page;
+				}
+			/* the blocks of a smaller rectangle at the same corner */
+			br = (l + (r - l) % 200 + 1 + off.swz.block_mask_x) >> off.swz.block_shift_x;
+			bb = (t + (b - t) % 200 + 1 + off.swz.block_mask_y) >> off.swz.block_shift_y;
+			for (gs_bn_init(&bn, &off, l, t); bn.blk_y < bb; gs_bn_next_y(&bn))
+				for (; bn.blk_x < br; gs_bn_next_x(&bn))
+					if (n < OUT_LEN - 2)
+						s_out[n++] = gs_bn_value(&bn);
+			s_out[n++] = (u32)gs_rect_is_aligned(l, t, r, b, off.swz.block_mask_x, off.swz.block_mask_y)
+				| (u32)gs_rect_is_aligned(l, t, r, b, off.swz.page_mask_x, off.swz.page_mask_y) << 1;
+			if (n > OUT_LEN - 4096) { hl ^= (u32)xxh3_64(s_out, n * 4, hl); n = 0; }
+		}
+		hl ^= (u32)xxh3_64(s_out, n * 4, hl);
+		if (hb != want[i][0] || hl != want[i][1])
+		{
+			printf("  FAIL swizzle %d: 0x%08x 0x%08x, want 0x%08x 0x%08x\n", i,
+				(unsigned)hb, (unsigned)hl, (unsigned)want[i][0], (unsigned)want[i][1]);
+			fails++;
+		}
+	}
+}
+
 int main(void)
 {
 	static u8 buf[1 << 16];
@@ -83,6 +188,7 @@ int main(void)
 
 	gs_util_init();
 	check_tables();
+	check_offsets();
 
 	/* Primitive classes. */
 	CHECK(gs_util_get_prim_class(GS_POINTLIST) == GS_POINT_CLASS);

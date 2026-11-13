@@ -240,6 +240,12 @@ PCSX2_ALIGN(64) GSBlockSwizzleTable gs_block_table16S;
 PCSX2_ALIGN(64) GSBlockSwizzleTable gs_block_table8;
 PCSX2_ALIGN(64) GSBlockSwizzleTable gs_block_table4;
 
+u64 gs_block_below32[33];
+u64 gs_block_below16[33];
+u64 gs_block_below16S[33];
+u64 gs_block_below8[33];
+u64 gs_block_below4[33];
+
 PCSX2_ALIGN(128) int gs_pixel_col_offset32[32];
 PCSX2_ALIGN(128) int gs_pixel_col_offset16[64];
 PCSX2_ALIGN(128) int gs_pixel_col_offset16S[64];
@@ -292,6 +298,18 @@ static void gs_make_block(GSBlockSwizzleTable* t, const gs_swizzle_src* s)
 			t->value[y][x] = s->block[(y % s->bh) * s->bw + x % s->bw];
 }
 
+static void gs_make_below(u64* below, const GSBlockSwizzleTable* t)
+{
+	int n, i;
+	for (n = 0; n <= 32; n++)
+	{
+		below[n] = 0;
+		for (i = 0; i < 64; i++)
+			if (t->value[i >> 3][i & 7] < n)
+				below[n] |= (u64)1 << i;
+	}
+}
+
 static void gs_make_col(int* t, const gs_swizzle_src* s)
 {
 	int y;
@@ -320,6 +338,12 @@ void gs_tables_init(void)
 	gs_make_block(&gs_block_table16S, &s16S);
 	gs_make_block(&gs_block_table8,   &s8);
 	gs_make_block(&gs_block_table4,   &s4);
+
+	gs_make_below(gs_block_below32,  &gs_block_table32);
+	gs_make_below(gs_block_below16,  &gs_block_table16);
+	gs_make_below(gs_block_below16S, &gs_block_table16S);
+	gs_make_below(gs_block_below8,   &gs_block_table8);
+	gs_make_below(gs_block_below4,   &gs_block_table4);
 
 	gs_make_col(gs_pixel_col_offset32,  &s32);
 	gs_make_col(gs_pixel_col_offset16,  &s16);

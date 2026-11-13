@@ -38,21 +38,6 @@ typedef struct PCSX2_ALIGN(128) GSPixelRowOffsetTable
 	int value[4096];
 } GSPixelRowOffsetTable;
 
-/* One swizzle: its tables and the page and block shape they describe. The
- * column table has page_h entries; rows are taken with y & row_mask, and
- * PSMT8 and PSMT4 alternate two row tables in an a a b b b b a a pattern. */
-typedef struct gs_swizzle_tables
-{
-	const GSBlockSwizzleTable* block;
-	const int* col;
-	const GSPixelRowOffsetTable* const* row;
-	int page_w;
-	int page_h;
-	int blocks_wide;
-	int blocks_high;
-	int row_mask;
-} gs_swizzle_tables;
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -62,6 +47,15 @@ extern GSBlockSwizzleTable gs_block_table16;
 extern GSBlockSwizzleTable gs_block_table16S;
 extern GSBlockSwizzleTable gs_block_table8;
 extern GSBlockSwizzleTable gs_block_table4;
+
+/* For each table and each n, the 8x8 cells (bit y * 8 + x) whose block
+ * is below n: which blocks of a page fall short of a bp that is not
+ * page aligned */
+extern u64 gs_block_below32[33];
+extern u64 gs_block_below16[33];
+extern u64 gs_block_below16S[33];
+extern u64 gs_block_below8[33];
+extern u64 gs_block_below4[33];
 
 extern const u8  gs_column_table32[8][8];
 extern const u8  gs_column_table16[8][16];
@@ -97,18 +91,6 @@ void gs_tables_init(void);
 
 #ifdef __cplusplus
 }
-
-/* The same lists as constants, for constexpr GSSwizzleInfo: only the
- * tables' addresses are taken here, never their contents */
-#define GS_SWIZZLE_TABLES(bits, pw, ph, bwide, bhigh, mask) \
-	{&gs_block_table##bits, gs_pixel_col_offset##bits, gs_pixel_row_list##bits, \
-		pw, ph, bwide, bhigh, mask}
-constexpr gs_swizzle_tables swizzleTables32  = GS_SWIZZLE_TABLES(32,   64,  32, 8, 4, 0);
-constexpr gs_swizzle_tables swizzleTables16  = GS_SWIZZLE_TABLES(16,   64,  64, 4, 8, 0);
-constexpr gs_swizzle_tables swizzleTables16S = GS_SWIZZLE_TABLES(16S,  64,  64, 4, 8, 0);
-constexpr gs_swizzle_tables swizzleTables8   = GS_SWIZZLE_TABLES(8,   128,  64, 8, 4, 7);
-constexpr gs_swizzle_tables swizzleTables4   = GS_SWIZZLE_TABLES(4,   128, 128, 4, 8, 7);
-#undef GS_SWIZZLE_TABLES
 #endif
 
 #endif
