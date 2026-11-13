@@ -340,48 +340,40 @@ typedef struct UsbHIDState
 	s32 roll[2];
 } UsbHIDState;
 
-/* RETROK_* -> QKeyCode. Replaces the upstream host-string lookup through
- * InputManager::ConvertHostKeyboardStringToCode. Only the standard
- * boot-protocol keys a PS2 USB keyboard title actually reads are mapped. */
+/* RETROK_* -> HID usage, the boot-protocol keys a PS2 USB keyboard title
+ * actually reads. */
 static const struct
 {
-	unsigned first;
-	QKeyCode second;
-} s_retrok_to_qcode[] = {
-	{RETROK_a, Q_KEY_CODE_A}, {RETROK_b, Q_KEY_CODE_B}, {RETROK_c, Q_KEY_CODE_C},
-	{RETROK_d, Q_KEY_CODE_D}, {RETROK_e, Q_KEY_CODE_E}, {RETROK_f, Q_KEY_CODE_F},
-	{RETROK_g, Q_KEY_CODE_G}, {RETROK_h, Q_KEY_CODE_H}, {RETROK_i, Q_KEY_CODE_I},
-	{RETROK_j, Q_KEY_CODE_J}, {RETROK_k, Q_KEY_CODE_K}, {RETROK_l, Q_KEY_CODE_L},
-	{RETROK_m, Q_KEY_CODE_M}, {RETROK_n, Q_KEY_CODE_N}, {RETROK_o, Q_KEY_CODE_O},
-	{RETROK_p, Q_KEY_CODE_P}, {RETROK_q, Q_KEY_CODE_Q}, {RETROK_r, Q_KEY_CODE_R},
-	{RETROK_s, Q_KEY_CODE_S}, {RETROK_t, Q_KEY_CODE_T}, {RETROK_u, Q_KEY_CODE_U},
-	{RETROK_v, Q_KEY_CODE_V}, {RETROK_w, Q_KEY_CODE_W}, {RETROK_x, Q_KEY_CODE_X},
-	{RETROK_y, Q_KEY_CODE_Y}, {RETROK_z, Q_KEY_CODE_Z},
-	{RETROK_0, Q_KEY_CODE_0}, {RETROK_1, Q_KEY_CODE_1}, {RETROK_2, Q_KEY_CODE_2},
-	{RETROK_3, Q_KEY_CODE_3}, {RETROK_4, Q_KEY_CODE_4}, {RETROK_5, Q_KEY_CODE_5},
-	{RETROK_6, Q_KEY_CODE_6}, {RETROK_7, Q_KEY_CODE_7}, {RETROK_8, Q_KEY_CODE_8},
-	{RETROK_9, Q_KEY_CODE_9},
-	{RETROK_RETURN, Q_KEY_CODE_RET}, {RETROK_ESCAPE, Q_KEY_CODE_ESC},
-	{RETROK_BACKSPACE, Q_KEY_CODE_BACKSPACE}, {RETROK_TAB, Q_KEY_CODE_TAB},
-	{RETROK_SPACE, Q_KEY_CODE_SPC}, {RETROK_MINUS, Q_KEY_CODE_MINUS},
-	{RETROK_EQUALS, Q_KEY_CODE_EQUAL}, {RETROK_LEFTBRACKET, Q_KEY_CODE_BRACKET_LEFT},
-	{RETROK_RIGHTBRACKET, Q_KEY_CODE_BRACKET_RIGHT}, {RETROK_BACKSLASH, Q_KEY_CODE_BACKSLASH},
-	{RETROK_SEMICOLON, Q_KEY_CODE_SEMICOLON}, {RETROK_QUOTE, Q_KEY_CODE_APOSTROPHE},
-	{RETROK_BACKQUOTE, Q_KEY_CODE_GRAVE_ACCENT}, {RETROK_COMMA, Q_KEY_CODE_COMMA},
-	{RETROK_PERIOD, Q_KEY_CODE_DOT}, {RETROK_SLASH, Q_KEY_CODE_SLASH},
-	{RETROK_CAPSLOCK, Q_KEY_CODE_CAPS_LOCK},
-	{RETROK_F1, Q_KEY_CODE_F1}, {RETROK_F2, Q_KEY_CODE_F2}, {RETROK_F3, Q_KEY_CODE_F3},
-	{RETROK_F4, Q_KEY_CODE_F4}, {RETROK_F5, Q_KEY_CODE_F5}, {RETROK_F6, Q_KEY_CODE_F6},
-	{RETROK_F7, Q_KEY_CODE_F7}, {RETROK_F8, Q_KEY_CODE_F8}, {RETROK_F9, Q_KEY_CODE_F9},
-	{RETROK_F10, Q_KEY_CODE_F10}, {RETROK_F11, Q_KEY_CODE_F11}, {RETROK_F12, Q_KEY_CODE_F12},
-	{RETROK_RIGHT, Q_KEY_CODE_RIGHT}, {RETROK_LEFT, Q_KEY_CODE_LEFT},
-	{RETROK_DOWN, Q_KEY_CODE_DOWN}, {RETROK_UP, Q_KEY_CODE_UP},
-	{RETROK_INSERT, Q_KEY_CODE_INSERT}, {RETROK_HOME, Q_KEY_CODE_HOME},
-	{RETROK_END, Q_KEY_CODE_END}, {RETROK_PAGEUP, Q_KEY_CODE_PGUP},
-	{RETROK_PAGEDOWN, Q_KEY_CODE_PGDN}, {RETROK_DELETE, Q_KEY_CODE_DELETE},
-	{RETROK_LCTRL, Q_KEY_CODE_CTRL}, {RETROK_RCTRL, Q_KEY_CODE_CTRL_R},
-	{RETROK_LSHIFT, Q_KEY_CODE_SHIFT}, {RETROK_RSHIFT, Q_KEY_CODE_SHIFT_R},
-	{RETROK_LALT, Q_KEY_CODE_ALT}, {RETROK_RALT, Q_KEY_CODE_ALT_R},
+	unsigned retrok;
+	u8 usage;
+} s_retrok_to_hid[] = {
+	{RETROK_a, 0x04}, {RETROK_b, 0x05}, {RETROK_c, 0x06},
+	{RETROK_d, 0x07}, {RETROK_e, 0x08}, {RETROK_f, 0x09},
+	{RETROK_g, 0x0a}, {RETROK_h, 0x0b}, {RETROK_i, 0x0c},
+	{RETROK_j, 0x0d}, {RETROK_k, 0x0e}, {RETROK_l, 0x0f},
+	{RETROK_m, 0x10}, {RETROK_n, 0x11}, {RETROK_o, 0x12},
+	{RETROK_p, 0x13}, {RETROK_q, 0x14}, {RETROK_r, 0x15},
+	{RETROK_s, 0x16}, {RETROK_t, 0x17}, {RETROK_u, 0x18},
+	{RETROK_v, 0x19}, {RETROK_w, 0x1a}, {RETROK_x, 0x1b},
+	{RETROK_y, 0x1c}, {RETROK_z, 0x1d}, {RETROK_0, 0x27},
+	{RETROK_1, 0x1e}, {RETROK_2, 0x1f}, {RETROK_3, 0x20},
+	{RETROK_4, 0x21}, {RETROK_5, 0x22}, {RETROK_6, 0x23},
+	{RETROK_7, 0x24}, {RETROK_8, 0x25}, {RETROK_9, 0x26},
+	{RETROK_RETURN, 0x28}, {RETROK_ESCAPE, 0x29}, {RETROK_BACKSPACE, 0x2a},
+	{RETROK_TAB, 0x2b}, {RETROK_SPACE, 0x2c}, {RETROK_MINUS, 0x2d},
+	{RETROK_EQUALS, 0x2e}, {RETROK_LEFTBRACKET, 0x2f}, {RETROK_RIGHTBRACKET, 0x30},
+	{RETROK_BACKSLASH, 0x31}, {RETROK_SEMICOLON, 0x33}, {RETROK_QUOTE, 0x34},
+	{RETROK_BACKQUOTE, 0x35}, {RETROK_COMMA, 0x36}, {RETROK_PERIOD, 0x37},
+	{RETROK_SLASH, 0x38}, {RETROK_CAPSLOCK, 0x39}, {RETROK_F1, 0x3a},
+	{RETROK_F2, 0x3b}, {RETROK_F3, 0x3c}, {RETROK_F4, 0x3d},
+	{RETROK_F5, 0x3e}, {RETROK_F6, 0x3f}, {RETROK_F7, 0x40},
+	{RETROK_F8, 0x41}, {RETROK_F9, 0x42}, {RETROK_F10, 0x43},
+	{RETROK_F11, 0x44}, {RETROK_F12, 0x45}, {RETROK_RIGHT, 0x4f},
+	{RETROK_LEFT, 0x50}, {RETROK_DOWN, 0x51}, {RETROK_UP, 0x52},
+	{RETROK_INSERT, 0x49}, {RETROK_HOME, 0x4a}, {RETROK_END, 0x4d},
+	{RETROK_PAGEUP, 0x4b}, {RETROK_PAGEDOWN, 0x4e}, {RETROK_DELETE, 0x4c},
+	{RETROK_LCTRL, 0xe0}, {RETROK_RCTRL, 0xe4}, {RETROK_LSHIFT, 0xe1},
+	{RETROK_RSHIFT, 0xe5}, {RETROK_LALT, 0xe2}, {RETROK_RALT, 0xe6},
 };
 
 static void usb_hid_changed(HIDState* hs)
@@ -584,15 +576,6 @@ static void hid_queue_mouse_axis(UsbHIDState* s, int axis, s32 delta)
 		s->hid.u.ptr.eh_sync(&s->hid);
 	}
 }
-static void hid_queue_key(UsbHIDState* s, KeyValue keycode, bool pressed)
-{
-	InputEvent evt;
-	evt.type = INPUT_EVENT_KIND_KEY;
-	evt.u.key.key = keycode;
-	evt.u.key.down = pressed;
-	s->hid.u.kbd.eh_entry(&s->hid, &evt);
-}
-
 USBDevice* usb_hid_create_kbd(u32 port)
 {
 	UsbHIDState* s = (UsbHIDState*)calloc(1, sizeof(UsbHIDState));
@@ -695,18 +678,14 @@ void usb_hid_update(USBDevice* dev, retro_input_state_t input_cb, unsigned port)
 	if (s->hid.kind == HID_KEYBOARD)
 	{
 		size_t i;
-		for (i = 0; i < sizeof(s_retrok_to_qcode) / sizeof(s_retrok_to_qcode[0]); i++)
+		for (i = 0; i < sizeof(s_retrok_to_hid) / sizeof(s_retrok_to_hid[0]); i++)
 		{
-			const unsigned rk = s_retrok_to_qcode[i].first;
+			const unsigned rk = s_retrok_to_hid[i].retrok;
 			const bool down = input_cb(port, RETRO_DEVICE_KEYBOARD, 0, rk) != 0;
-			KeyValue kv;
 			if (down == s->key_down[rk])
 				continue;
 			s->key_down[rk] = down;
-
-			kv.type = KEY_VALUE_KIND_QCODE;
-			kv.u.qcode = s_retrok_to_qcode[i].second;
-			hid_queue_key(s, kv, down);
+			hid_keyboard_key(&s->hid, s_retrok_to_hid[i].usage, down);
 		}
 	}
 	else if (s->hid.kind == HID_MOUSE)
@@ -773,4 +752,6 @@ void usb_hid_freeze(USBDevice* dev, UsbState* st)
 	USB_STATE_DO(st, s->hid.n);
 	USB_STATE_DO(st, s->hid.protocol);
 	USB_STATE_DO(st, s->hid.idle);
+	if (st->reading && s->hid.kind == HID_KEYBOARD)
+		hid_keyboard_loaded(&s->hid);
 }

@@ -332,7 +332,6 @@ SOURCES_C += \
 	$(LRPS2_DIR)/USB/libretro-usb/core.c \
 	$(LRPS2_DIR)/USB/libretro-usb/desc.c \
 	$(LRPS2_DIR)/USB/libretro-usb/hid.c \
-	$(LRPS2_DIR)/USB/libretro-usb/input-keymap-qcode-to-qnum.c \
 	$(LRPS2_DIR)/USB/libretro-usb/usb-hid.c \
 	$(LRPS2_DIR)/USB/libretro-usb/usb-ohci.c \
 	$(LRPS2_DIR)/USB/usb-python2/p2io.c \

@@ -27,7 +27,6 @@
 */
 
 #include "hid.h"
-#include "input-keymap.h"
 
 #include <assert.h>
 #include <retro_inline.h>
@@ -38,268 +37,6 @@
 #define HID_USAGE_ERROR_ROLLOVER 0x01
 #define HID_USAGE_POSTFAIL 0x02
 #define HID_USAGE_ERROR_UNDEFINED 0x03
-
-/* Indices are QEMU keycodes, values are from HID Usage Table.  Indices
-* above 0x80 are for keys that come after 0xe0 or 0xe1+0x1d or 0xe1+0x9d.  */
-static const uint8_t hid_usage_keys[0x100] = {
-	0x00,
-	0x29,
-	0x1e,
-	0x1f,
-	0x20,
-	0x21,
-	0x22,
-	0x23,
-	0x24,
-	0x25,
-	0x26,
-	0x27,
-	0x2d,
-	0x2e,
-	0x2a,
-	0x2b,
-	0x14,
-	0x1a,
-	0x08,
-	0x15,
-	0x17,
-	0x1c,
-	0x18,
-	0x0c,
-	0x12,
-	0x13,
-	0x2f,
-	0x30,
-	0x28,
-	0xe0,
-	0x04,
-	0x16,
-	0x07,
-	0x09,
-	0x0a,
-	0x0b,
-	0x0d,
-	0x0e,
-	0x0f,
-	0x33,
-	0x34,
-	0x35,
-	0xe1,
-	0x31,
-	0x1d,
-	0x1b,
-	0x06,
-	0x19,
-	0x05,
-	0x11,
-	0x10,
-	0x36,
-	0x37,
-	0x38,
-	0xe5,
-	0x55,
-	0xe2,
-	0x2c,
-	0x39,
-	0x3a,
-	0x3b,
-	0x3c,
-	0x3d,
-	0x3e,
-	0x3f,
-	0x40,
-	0x41,
-	0x42,
-	0x43,
-	0x53,
-	0x47,
-	0x5f,
-	0x60,
-	0x61,
-	0x56,
-	0x5c,
-	0x5d,
-	0x5e,
-	0x57,
-	0x59,
-	0x5a,
-	0x5b,
-	0x62,
-	0x63,
-	0x46,
-	0x00,
-	0x64,
-	0x44,
-	0x45,
-	0x68,
-	0x69,
-	0x6a,
-	0x6b,
-	0x6c,
-	0x6d,
-	0x6e,
-	0xe8,
-	0xe9,
-	0x71,
-	0x72,
-	0x73,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x85,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0xe3,
-	0xe7,
-	0x65,
-
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x58,
-	0xe4,
-	0x00,
-	0x00,
-	0x7f,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x81,
-	0x00,
-	0x80,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x54,
-	0x00,
-	0x46,
-	0xe6,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x48,
-	0x48,
-	0x4a,
-	0x52,
-	0x4b,
-	0x00,
-	0x50,
-	0x00,
-	0x4f,
-	0x00,
-	0x4d,
-	0x51,
-	0x4e,
-	0x49,
-	0x4c,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0xe3,
-	0xe7,
-	0x65,
-	0x66,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-};
 
 bool hid_has_events(HIDState* hs)
 {
@@ -447,149 +184,65 @@ static void hid_pointer_sync(HIDState* hs)
 	}
 }
 
-static void hid_keyboard_event(HIDState* hs, InputEvent* evt)
+void hid_keyboard_key(HIDState* hs, uint8_t usage, bool down)
 {
-	int scancodes[3];
-	InputKeyEvent* key = &evt->u.key;
-	const int count = qemu_input_key_value_to_scancode(&key->key,
-											 key->down,
-											 scancodes);
-	int i;
-	if (hs->n + count > QUEUE_LENGTH)
-	{
-		/*trace_hid_kbd_queue_full(); */
+	if (hs->n >= QUEUE_LENGTH)
 		return;
-	}
-	for (i = 0; i < count; i++)
-	{
-		const int slot = (hs->head + hs->n) & QUEUE_MASK;
-		hs->n++;
-		hs->u.kbd.keycodes[slot] = scancodes[i];
-	}
+	hs->u.kbd.keycodes[(hs->head + hs->n++) & QUEUE_MASK] =
+		HID_KEY_EVENT | usage | (down ? 0 : HID_KEY_UP);
 	hs->event(hs);
+}
+
+void hid_keyboard_loaded(HIDState* hs)
+{
+	uint32_t i;
+	if (hs->n > QUEUE_LENGTH)
+		hs->n = 0;
+	for (i = 0; i < hs->n; i++)
+		if (!(hs->u.kbd.keycodes[(hs->head + i) & QUEUE_MASK] & HID_KEY_EVENT))
+		{
+			hs->n = 0;
+			break;
+		}
+	hs->u.kbd.modifiers &= 0xff;
 }
 
 static void hid_keyboard_process_keycode(HIDState* hs)
 {
-	uint8_t hid_code, index, key;
-	int i, keycode, slot;
+	uint32_t e;
+	uint8_t usage;
+	int i;
 
 	if (hs->n == 0)
-	{
 		return;
-	}
-	slot = hs->head & QUEUE_MASK;
+	e = hs->u.kbd.keycodes[hs->head & QUEUE_MASK];
 	QUEUE_INCR(hs->head);
 	hs->n--;
-	keycode = hs->u.kbd.keycodes[slot];
+	usage = (uint8_t)e;
 
-	if (!hs->n)
+	/* Ctrl, Shift, Alt and GUI, left then right, are the modifier byte */
+	if (usage >= 0xe0 && usage <= 0xe7)
 	{
-		/*trace_hid_kbd_queue_empty(); */
-	}
-
-	key = keycode & 0x7f;
-	index = key | ((hs->u.kbd.modifiers & (1 << 8)) >> 1);
-	hid_code = hid_usage_keys[index];
-	hs->u.kbd.modifiers &= ~(1 << 8);
-
-	switch (hid_code)
-	{
-		case 0x00:
-			return;
-
-		case 0xe0:
-			assert(key == 0x1d);
-			if (hs->u.kbd.modifiers & (1 << 9))
-			{
-				/* The hid_codes for the 0xe1/0x1d scancode sequence are 0xe9/0xe0.
-				* Here we're processing the second hid_code.  By dropping bit 9
-				* and setting bit 8, the scancode after 0x1d will access the
-				* second half of the table.
-				*/
-				hs->u.kbd.modifiers ^= (1 << 8) | (1 << 9);
-				return;
-			}
-			/* fall through to process Ctrl_L */
-			/*case 0xe1 ... 0xe7: */
-			/* fall through */
-		case 0xe1:
-		case 0xe2:
-		case 0xe3:
-		case 0xe4:
-		case 0xe5:
-		case 0xe6:
-		case 0xe7:
-			/* Ctrl_L/Ctrl_R, Shift_L/Shift_R, Alt_L/Alt_R, Win_L/Win_R.
-			* Handle releases here, or fall through to process presses.
-			*/
-			if (keycode & (1 << 7))
-			{
-				hs->u.kbd.modifiers &= ~(1 << (hid_code & 0x0f));
-				return;
-			}
-			/* fall through */
-		case 0xe8:
-		case 0xe9:
-			/* USB modifiers are just 1 byte long.  Bits 8 and 9 of
-			* hs->u.kbd.modifiers implement a state machine that detects the
-			* 0xe0 and 0xe1/0x1d sequences.  These bits do not follow the
-			* usual rules where bit 7 marks released keys; they are cleared
-			* elsewhere in the function as the state machine dictates.
-			*/
-			hs->u.kbd.modifiers |= 1 << (hid_code & 0x0f);
-			return;
-
-		case 0xea:
-		case 0xeb:
-		case 0xec:
-		case 0xed:
-		case 0xee:
-		case 0xef:
-#ifdef _DEBUG
-			abort();
-#endif
-		default:
-			break;
-	}
-
-	if (keycode & (1 << 7))
-	{
-		for (i = hs->u.kbd.keys - 1; i >= 0; i--)
-		{
-			if (hs->u.kbd.key[i] == hid_code)
-			{
-				hs->u.kbd.key[i] = hs->u.kbd.key[--hs->u.kbd.keys];
-				hs->u.kbd.key[hs->u.kbd.keys] = 0x00;
-				break;
-			}
-		}
-		if (i < 0)
-		{
-			return;
-		}
-	}
-	else
-	{
-		for (i = hs->u.kbd.keys - 1; i >= 0; i--)
-		{
-			if (hs->u.kbd.key[i] == hid_code)
-			{
-				break;
-			}
-		}
-		if (i < 0)
-		{
-			if (hs->u.kbd.keys < (int32_t)sizeof(hs->u.kbd.key))
-			{
-				hs->u.kbd.key[hs->u.kbd.keys++] = hid_code;
-			}
-		}
+		if (e & HID_KEY_UP)
+			hs->u.kbd.modifiers &= ~(1 << (usage & 7));
 		else
+			hs->u.kbd.modifiers |= 1 << (usage & 7);
+		return;
+	}
+
+	for (i = hs->u.kbd.keys - 1; i >= 0; i--)
+		if (hs->u.kbd.key[i] == usage)
+			break;
+	if (e & HID_KEY_UP)
+	{
+		if (i >= 0)
 		{
-			return;
+			hs->u.kbd.key[i] = hs->u.kbd.key[--hs->u.kbd.keys];
+			hs->u.kbd.key[hs->u.kbd.keys] = 0x00;
 		}
 	}
+	else if (i < 0 && hs->u.kbd.keys < (int32_t)sizeof(hs->u.kbd.key))
+		hs->u.kbd.key[hs->u.kbd.keys++] = usage;
 }
 
 static INLINE int int_clamp(int val, int vmin, int vmax)
@@ -794,11 +447,7 @@ void hid_init(HIDState* hs, int kind, HIDEventFunc event)
 	hs->kind = kind;
 	hs->event = event;
 
-	if (hs->kind == HID_KEYBOARD)
-	{
-		hs->u.kbd.eh_entry = hid_keyboard_event;
-	}
-	else if (hs->kind == HID_MOUSE || hs->kind == HID_TABLET)
+	if (hs->kind == HID_MOUSE || hs->kind == HID_TABLET)
 	{
 		hs->u.ptr.eh_entry = hid_pointer_event;
 		hs->u.ptr.eh_sync = hid_pointer_sync;

@@ -799,7 +799,6 @@ set(pcsx2USBSources
 	USB/libretro-usb/core.c
 	USB/libretro-usb/desc.c
 	USB/libretro-usb/hid.c
-	USB/libretro-usb/input-keymap-qcode-to-qnum.c
 	USB/libretro-usb/usb-hid.c
 	USB/libretro-usb/usb-ohci.c
 	USB/libretro-usb/ohci_dma.c
@@ -823,7 +822,6 @@ set(pcsx2USBHeaders
 	USB/libretro-usb/USBinternal.h
 	USB/libretro-usb/desc.h
 	USB/libretro-usb/hid.h
-	USB/libretro-usb/input-keymap.h
 	USB/libretro-usb/qusb.h
 	USB/libretro-usb/queue.h
 	USB/libretro-usb/usb-hid.h
