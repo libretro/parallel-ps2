@@ -185,6 +185,7 @@ GSDeviceOGL::GSDeviceOGL()
 	m_ops          = &s_opengl_device_ops;
 	m_present_size = GSVector2i(0, 0);
 	gs_gl_program_cache_init(&m_programs, sizeof(ProgramSelector), 0);
+	gs_gl_shader_cache_init(&m_shader_cache);
 	gs_str_init(&m_src_vs);
 	gs_str_init(&m_src_ps);
 	gs_str_init(&m_convert.vs);
@@ -193,6 +194,7 @@ GSDeviceOGL::GSDeviceOGL()
 GSDeviceOGL::~GSDeviceOGL()
 {
 	gs_gl_program_cache_free(&m_programs);
+	gs_gl_shader_cache_free(&m_shader_cache);
 	gs_str_free(&m_src_vs);
 	gs_str_free(&m_src_ps);
 	gs_str_free(&m_convert.vs);
@@ -200,7 +202,7 @@ GSDeviceOGL::~GSDeviceOGL()
 
 bool GSDeviceOGL::GetProgram(GLProgram* prog, const gs_str_t* vs, const gs_str_t* ps)
 {
-	return m_shader_cache.GetProgram(prog, GS_STR(vs), GS_STR_LEN(vs), GS_STR(ps), GS_STR_LEN(ps));
+	return gs_gl_shader_cache_get_program(&m_shader_cache, prog->C(), GS_STR(vs), GS_STR_LEN(vs), GS_STR(ps), GS_STR_LEN(ps)) != 0;
 }
 
 GSTexture* GSDeviceOGL::CreateSurface(GSTexture::Type type, int width, int height, int levels, GSTexture::Format format)
@@ -451,7 +453,7 @@ bool GSDeviceOGL::Create()
 
 	if (!GSConfig.DisableShaderCache)
 	{
-		if (!m_shader_cache.Open(m_is_gles))
+		if (!gs_gl_shader_cache_open(&m_shader_cache, m_is_gles, EmuFolders.Cache))
 			log_cb(RETRO_LOG_WARN, "Shader cache failed to open.\n");
 	}
 	else
@@ -824,7 +826,7 @@ void GSDeviceOGL::DestroyResources()
 			for (u32 k = 0; k < 3; k++)
 				m_dynamic[i][j][k].Destroy();
 	m_dynamic_ready = false;
-	m_shader_cache.Close();
+	gs_gl_shader_cache_close(&m_shader_cache);
 
 	if (m_palette_ss != 0)
 		glDeleteSamplers(1, &m_palette_ss);

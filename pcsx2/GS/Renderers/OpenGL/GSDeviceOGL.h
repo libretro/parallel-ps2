@@ -224,7 +224,7 @@ private:
 	 * D3D12 and Vulkan pipelines do (d9c02aae9). */
 	ProgramSelector m_last_program_selector;
 	gs_gl_program* m_last_program = nullptr;
-	GLShaderCache m_shader_cache;
+	gs_gl_shader_cache m_shader_cache;
 
 	/* No program is compiled on the draw path. The dynamic programs (by
 	 * flat colour, vertex expansion and alpha test class: they read the

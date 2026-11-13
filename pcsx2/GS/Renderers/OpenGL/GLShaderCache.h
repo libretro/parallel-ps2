@@ -13,73 +13,53 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
-#include "common/Pcsx2Defs.h"
-#include "HostFS.h"
+#ifndef GS_GL_SHADER_CACHE_H
+#define GS_GL_SHADER_CACHE_H
 
+#include <streams/file_stream.h>
+
+#include "common/Pcsx2Defs.h"
 #include "GLProgram.h"
 #include "GS/Renderers/Common/GSFlatMap.h"
-#include "GS/Renderers/Common/GSKeyHash.h"
 #include "GS/Renderers/Common/GSArray.h"
 
-class GLShaderCache
+/* Linked programs kept on disk as driver binaries, by their sources' XXH3
+ * hashes: gl_programs.idx (the version, then an entry per program) and
+ * gl_programs.bin (the binaries). Zeroed after gs_gl_shader_cache_init,
+ * it compiles every program and keeps none. */
+typedef struct gs_gl_shader_cache
 {
-	public:
-		GLShaderCache();
-		~GLShaderCache();
+	RFILE* index_file;
+	RFILE* blob_file;
+	char* names;          /* the index file's path, then the blob file's */
+	gs_flat_map_t index;  /* gs_gl_shader_key -> gs_gl_shader_entry */
+	gs_array_t blob;      /* of u8: a program's binary, read or retrieved */
+	int binary_supported;
+} gs_gl_shader_cache;
 
-		bool Open(bool is_gles);
-		void Close();
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-		/* The program of the two sources (each with its length), from the
-		 * cache on disk or compiled and added to it; into *out_program. */
-		bool GetProgram(GLProgram* out_program, const char* vertex_shader, size_t vertex_length,
-			const char* fragment_shader, size_t fragment_length);
+void gs_gl_shader_cache_init(gs_gl_shader_cache* c);
 
-	private:
-		/* The key of a program in the index: the two sources' hashes and
-		 * lengths, laid out without padding so the bytes are the key. */
-		struct CacheIndexKey
-		{
-			u64 vertex_source_hash_low;
-			u64 vertex_source_hash_high;
-			u64 fragment_source_hash_low;
-			u64 fragment_source_hash_high;
-			u32 vertex_source_length;
-			u32 fragment_source_length;
-		};
+/* Opens or makes the cache files in cache_dir, where the driver has
+ * program binaries. Zero only if they could be neither read nor made;
+ * the cache then compiles every program, as it does without binaries. */
+int gs_gl_shader_cache_open(gs_gl_shader_cache* c, int is_gles, const char* cache_dir);
 
-		struct CacheIndexData
-		{
-			u32 file_offset;
-			u32 blob_size;
-			u32 blob_format;
-		};
+/* Closes the files and forgets the index; open again to use them */
+void gs_gl_shader_cache_close(gs_gl_shader_cache* c);
+void gs_gl_shader_cache_free(gs_gl_shader_cache* c);
 
-		static CacheIndexKey GetCacheKey(const char* vertex_shader, size_t vertex_length,
-			const char* fragment_shader, size_t fragment_length);
+/* The program of the two sources (each with its length) into out, from
+ * the cache or compiled, linked and added to it. Zero if it would not
+ * compile or link. */
+int gs_gl_shader_cache_get_program(gs_gl_shader_cache* c, gs_gl_program* out,
+	const char* vertex_shader, size_t vertex_length, const char* fragment_shader, size_t fragment_length);
 
-		static void GetIndexFileName(char* path, size_t size);
-		static void GetBlobFileName(char* path, size_t size);
+#ifdef __cplusplus
+}
+#endif
 
-		bool CreateNew(const char* index_filename, const char* blob_filename);
-		bool ReadExisting(const char* index_filename, const char* blob_filename);
-		bool Recreate();
-
-		bool WriteToBlobFile(const CacheIndexKey& key, const void* prog_data, u32 prog_size, u32 prog_format);
-		const CacheIndexData* Find(const CacheIndexKey& key) const;
-		void Add(const CacheIndexKey& key, const CacheIndexData& data);
-		bool LoadProgram(GLProgram* prog, const CacheIndexData& data);
-
-		static bool CompileProgram(GLProgram* prog, const char* vertex_shader, size_t vertex_length,
-				const char* fragment_shader, size_t fragment_length, bool set_retrievable);
-		bool CompileAndAddProgram(GLProgram* prog, const CacheIndexKey& key, const char* vertex_shader, size_t vertex_length,
-				const char* fragment_shader, size_t fragment_length);
-
-		RFILE* m_index_file = nullptr;
-		RFILE* m_blob_file = nullptr;
-
-		gs_flat_map_t m_index; /* CacheIndexKey -> CacheIndexData */
-		gs_array_t m_blob;     /* of u8: a program's binary, read or retrieved, kept at the largest */
-		bool m_program_binary_supported = false;
-};
+#endif

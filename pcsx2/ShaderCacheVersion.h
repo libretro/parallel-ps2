@@ -13,6 +13,7 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/// Version number for GS and other shaders. Increment whenever any of the contents of the
-/// shaders change, to invalidate the cache.
-static constexpr u32 SHADER_CACHE_VERSION = 58;
+/* Version number for GS and other shaders. Increment whenever any of the
+ * contents of the shaders change, to invalidate the cache. (A define: the
+ * C shader caches read it too.) */
+#define SHADER_CACHE_VERSION 58u

@@ -78,10 +78,15 @@ void stubs_reset(void)
 static void RETRO_CALLCONV test_log(enum retro_log_level level, const char* fmt, ...)
 {
 	char buf[512];
+	size_t n;
 	va_list ap;
 	va_start(ap, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, ap);
 	va_end(ap);
+	/* (paths read alike on every host) */
+	for (n = 0; buf[n]; n++)
+		if (buf[n] == '\\')
+			buf[n] = '/';
 	tr(0x106u);
 	tr((u32)level);
 	tr_str(buf);

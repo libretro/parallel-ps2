@@ -461,7 +461,7 @@ if(USE_OPENGL)
 		GS/Renderers/OpenGL/GLContext.c
 		GS/Renderers/OpenGL/GLProgram.c
 		GS/Renderers/OpenGL/GLProgramCache.c
-		GS/Renderers/OpenGL/GLShaderCache.cpp
+		GS/Renderers/OpenGL/GLShaderCache.c
 		GS/Renderers/OpenGL/GLStreamBuffer.c
 		GS/Renderers/OpenGL/GLVertexInput.c
 	)

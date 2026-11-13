@@ -128,6 +128,8 @@ public:
 	static void ResetLastProgram() { gs_gl_program_reset_last(); }
 	/* The wrapper of a C program (it is its only member) */
 	static GLProgram* Of(gs_gl_program* p) { return reinterpret_cast<GLProgram*>(p); }
+	/* The C program it wraps */
+	gs_gl_program* C() { return &m_p; }
 
 	bool Compile(const char* vs, size_t vs_length, const char* fs, size_t fs_length) { return gs_gl_program_compile(&m_p, vs, vs_length, fs, fs_length) != 0; }
 	bool CreateFromBinary(const void* data, u32 data_length, u32 data_format) { return gs_gl_program_create_from_binary(&m_p, data, data_length, data_format) != 0; }
