@@ -348,7 +348,7 @@ set(pcsx2GSSources
 	GS/GSClut.cpp
 	GS/GSDrawingContext.c
 	GS/GSLocalMemory.cpp
-	GS/GSRingHeap.cpp
+	GS/GSRingHeap.c
 	GS/GSState.cpp
 	GS/GSOffset.c
 	GS/GSPsm.c

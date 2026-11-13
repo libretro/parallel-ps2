@@ -105,6 +105,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSDirtyRect.c \
 	$(LRPS2_DIR)/GS/GSOffset.c \
 	$(LRPS2_DIR)/GS/GSPsm.c \
+	$(LRPS2_DIR)/GS/GSRingHeap.c \
 	$(LRPS2_DIR)/GS/GSTables.c \
 	$(LRPS2_DIR)/GS/GSUtil.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSHiresMem.c \
@@ -453,7 +454,6 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/GSClut.cpp \
 	$(LRPS2_DIR)/GS/GSLocalMemory.cpp \
 	$(LRPS2_DIR)/GS/GSLocalMemoryMultiISA.cpp \
-	$(LRPS2_DIR)/GS/GSRingHeap.cpp \
 	$(LRPS2_DIR)/GS/GSState.cpp \
 	$(LRPS2_DIR)/GS/GSVector.cpp \
 	\

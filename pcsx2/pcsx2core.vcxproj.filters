@@ -785,7 +785,7 @@
     <ClCompile Include="GS\GSVector.cpp">
       <Filter>System\Ps2\GS</Filter>
     </ClCompile>
-    <ClCompile Include="GS\GSRingHeap.cpp">
+    <ClCompile Include="GS\GSRingHeap.c">
       <Filter>System\Ps2\GS</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\DX11\GSDevice11.cpp">
