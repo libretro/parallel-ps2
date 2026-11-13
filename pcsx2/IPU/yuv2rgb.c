@@ -13,8 +13,8 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// IPU-correct yuv conversions by Pseudonym
-// SSE2 Implementation by Pseudonym
+/* IPU-correct yuv conversions by Pseudonym */
+/* SSE2 Implementation by Pseudonym */
 
 #include "../../common/VectorIntrin.h"
 
@@ -30,31 +30,31 @@
 #define MULHI16(a, b) vshrq_n_s16(vqdmulhq_s16((a), (b)), 1)
 #endif
 
-// The IPU's colour space conversion conforms to ITU-R Recommendation BT.601 if anyone wants to make a
-// faster or "more accurate" implementation, but this is the precise documented integer method used by
-// the hardware and is fast enough with SSE2.
+/* The IPU's colour space conversion conforms to ITU-R Recommendation BT.601 if anyone wants to make a */
+/* faster or "more accurate" implementation, but this is the precise documented integer method used by */
+/* the hardware and is fast enough with SSE2. */
 
 #define IPU_Y_BIAS    16
 #define IPU_C_BIAS    128
-#define IPU_Y_COEFF   0x95	//  1.1640625
-#define IPU_GCR_COEFF (-0x68)	// -0.8125
-#define IPU_GCB_COEFF (-0x32)	// -0.390625
-#define IPU_RCR_COEFF 0xcc	//  1.59375
-#define IPU_BCB_COEFF 0x102	//  2.015625
+#define IPU_Y_COEFF   0x95	/* 1.1640625 */
+#define IPU_GCR_COEFF (-0x68)	/* -0.8125 */
+#define IPU_GCB_COEFF (-0x32)	/* -0.390625 */
+#define IPU_RCR_COEFF 0xcc	/* 1.59375 */
+#define IPU_BCB_COEFF 0x102	/* 2.015625 */
 
 void yuv2rgb(const macroblock_8 *mb8_in, macroblock_rgb32 *rgb32_out)
 {
 	int n;
 	int m;
 #if _M_SSE >= 0x200 /* SSE2 codepath */
-	// An AVX2 version is only slightly faster than an SSE2 version (+2-3fps)
-	// (or I'm a poor optimiser), though it might be worth attempting again
-	// once we've ported to 64 bits (the extra registers should help).
+	/* An AVX2 version is only slightly faster than an SSE2 version (+2-3fps) */
+	/* (or I'm a poor optimiser), though it might be worth attempting again */
+	/* once we've ported to 64 bits (the extra registers should help). */
 	const __m128i c_bias = _mm_set1_epi8((s8)(IPU_C_BIAS));
 	const __m128i y_bias = _mm_set1_epi8(IPU_Y_BIAS);
 	const __m128i y_mask = _mm_set1_epi16((s16)(0xFF00));
-	// Specifying round off instead of round down as everywhere else
-	// implies that this is right
+	/* Specifying round off instead of round down as everywhere else */
+	/* implies that this is right */
 	const __m128i round_1bit = _mm_set1_epi16(0x0001);
 
 	const __m128i y_coefficient = _mm_set1_epi16((s16)(IPU_Y_COEFF << 2));
@@ -145,8 +145,8 @@ void yuv2rgb(const macroblock_8 *mb8_in, macroblock_rgb32 *rgb32_out)
 	const int8x16_t c_bias = vdupq_n_s8((s8)(IPU_C_BIAS));
 	const uint8x16_t y_bias = vdupq_n_u8(IPU_Y_BIAS);
 	const int16x8_t y_mask = vdupq_n_s16((s16)(0xFF00));
-	// Specifying round off instead of round down as everywhere else
-	// implies that this is right
+	/* Specifying round off instead of round down as everywhere else */
+	/* implies that this is right */
 	const int16x8_t round_1bit = vdupq_n_s16(0x0001);
 
 	const int16x8_t y_coefficient = vdupq_n_s16((s16)(IPU_Y_COEFF << 2));
@@ -168,12 +168,12 @@ void yuv2rgb(const macroblock_8 *mb8_in, macroblock_rgb32 *rgb32_out)
 
 	for (n = 0; n < 8; ++n)
 	{
-		// could skip the loadl_epi64 but most SSE instructions require 128-bit
-		// alignment so two versions would be needed.
+		/* could skip the loadl_epi64 but most SSE instructions require 128-bit */
+		/* alignment so two versions would be needed. */
 		cb = vcombine_s8(vld1_s8((const s8 *)(&mb8_in->Cb[n][0])), vdup_n_s8(0));
 		cr = vcombine_s8(vld1_s8((const s8 *)(&mb8_in->Cr[n][0])), vdup_n_s8(0));
 
-		// (Cb - 128) << 8, (Cr - 128) << 8
+		/* (Cb - 128) << 8, (Cr - 128) << 8 */
 		cb = veorq_s8(cb, c_bias);
 		cr = veorq_s8(cr, c_bias);
 		cb = vzip1q_s8(vdupq_n_s8(0), cb);
@@ -187,13 +187,11 @@ void yuv2rgb(const macroblock_8 *mb8_in, macroblock_rgb32 *rgb32_out)
 		{
 			y = vld1q_u8(&mb8_in->Y[n * 2 + m][0]);
 			y = vqsubq_u8(y, y_bias);
-			// Y << 8 for pixels 0, 2, 4, 6, 8, 10, 12, 14
+			/* Y << 8 for pixels 0, 2, 4, 6, 8, 10, 12, 14 */
 			y_even = vshlq_n_s16(vreinterpretq_s16_u8(y), 8);
-			// Y << 8 for pixels 1, 3, 5, 7 ,9, 11, 13, 15
+			/* Y << 8 for pixels 1, 3, 5, 7 ,9, 11, 13, 15 */
 			y_odd = vandq_s16(vreinterpretq_s16_u8(y), y_mask);
 
-			// y_even = _mm_mulhi_epu16(y_even, y_coefficient);
-			// y_odd = _mm_mulhi_epu16(y_odd, y_coefficient);
 
 			a3210 = vget_low_u16(vreinterpretq_u16_s16(y_even));
 			b3210 = vget_low_u16(vreinterpretq_u16_s16(y_coefficient));
@@ -265,7 +263,7 @@ void yuv2rgb(const macroblock_8 *mb8_in, macroblock_rgb32 *rgb32_out)
 			rgb32->c[y][x].r = pcsx2_max_i(0, pcsx2_min_i(255, (lum + rcr + 1) >> 1));
 			rgb32->c[y][x].g = pcsx2_max_i(0, pcsx2_min_i(255, (lum + gcr + gcb + 1) >> 1));
 			rgb32->c[y][x].b = pcsx2_max_i(0, pcsx2_min_i(255, (lum + bcb + 1) >> 1));
-			rgb32->c[y][x].a = 0x80; // the norm to save doing this on the alpha pass
+			rgb32->c[y][x].a = 0x80; /* the norm to save doing this on the alpha pass */
 		}
 #endif
 }

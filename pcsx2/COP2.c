@@ -19,7 +19,7 @@
 
 #define CP2COND (((vuRegs[0].VI[REG_VPU_STAT].US[0] >> 8) & 1))
 
-//Run the FINISH either side of the VCALL's as we have no control over it past here.
+/* Run the FINISH either side of the VCALL's as we have no control over it past here. */
 void VCALLMS(void)
 {
 	_vu0FinishMicro();

@@ -813,7 +813,7 @@ void DEV9write16(u32 addr, u16 value)
 			if ((value & SPD_DMA_PAUSE) != 0)
 				log_cb(RETRO_LOG_ERROR, "DEV9: SPD_R_DMA_CTRL Pause DMA Not Implemented\n");
 
-			if ((value & 0b1111111111101000) != 0)
+			if ((value & 0xFFE8) != 0)
 				log_cb(RETRO_LOG_ERROR, "DEV9: SPD_R_DMA_CTRL Unknown value written %x\n", value);
 
 			break;
@@ -837,7 +837,7 @@ void DEV9write16(u32 addr, u16 value)
 			/* else */
 			/* 	log_cb(RETRO_LOG_DEBUG, "DEV9: SPD_R_XFR_CTRL For DMA Disabled\n"); */
 
-			if ((value & 0b1111111101111000) != 0)
+			if ((value & 0xFF78) != 0)
 				log_cb(RETRO_LOG_ERROR, "DEV9: SPD_R_XFR_CTRL Unknown value written %x\n", value);
 
 			break;

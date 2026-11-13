@@ -49,8 +49,9 @@
 # macro in glibc's <assert.h> and in no MinGW header, so a C unit calling
 # it builds on Linux and calls an undefined function on Windows.
 #
-# MSVC is still the one lane with no real front end behind it; anything
-# else it rejects reaches CI unchecked.
+# MSVC is still the one lane with no real front end behind it. The last
+# pass covers the extensions gcc and clang accept in C89 and MSVC C does
+# not; anything else it rejects reaches CI unchecked.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
@@ -202,6 +203,38 @@ if command -v "$MINGW" >/dev/null 2>&1; then
 	done
 else
 	echo "skipping the <windows.h> pass (no $MINGW)"
+fi
+
+echo
+# gcc and clang take these in a C89 unit as extensions; MSVC's C front end
+# stops on them: an empty initializer, a [[...]] attribute, a binary
+# literal, a statement expression, a case range, a variable-length array.
+# The front end's units are in the list as well as the core's. A //
+# comment builds on MSVC but breaks the C89 rule, so it is reported here
+# too. Only the tree's own files count; 3rdparty and libretro-common are
+# left out. MSVC C takes `inline`, strict C89 does not, so the pass maps
+# it to __inline__.
+if command -v clang >/dev/null 2>&1; then
+	echo "=== every C unit, front end included: no extension MSVC C rejects ==="
+	FE_UNITS=$(find "$ROOT/libretro" -maxdepth 1 -name '*.c' | sort)
+	FEAT="-DENABLE_VULKAN -DHAVE_PARALLEL_GS -DENABLE_OPENGL -DHAVE_OPENGL -DHAVE_HW -I$ROOT/3rdparty/vulkan-headers/include -I$ROOT/libretro"
+	C23=-Wc23-extensions   # -Wc2x-extensions before clang 18
+	clang $C23 -Werror=unknown-warning-option -fsyntax-only -xc /dev/null 2>/dev/null || C23=-Wc2x-extensions
+	MSVC_EXT="-Wno-everything $C23 -Wvla-extension -Wgnu-binary-literal -Wgnu-statement-expression -Wgnu-case-range -Wcomment"
+	ext_bad=0
+	for f in $UNITS $FE_UNITS; do
+		out=$(clang -std=c89 -D_GNU_SOURCE -Dinline=__inline__ -DNDEBUG -msse4.1 $INC $FEAT \
+		      $MSVC_EXT -fsyntax-only "$f" 2>&1) || { echo "  FAIL: $f"; echo "$out" | sed 's/^/        /'; ext_bad=1; continue; }
+		hits=$(echo "$out" | grep -E '(warning|error):' | grep -vE '/3rdparty/|/libretro-common/|^/usr/' || true)
+		if [ -n "$hits" ]; then
+			echo "  FAIL: $(echo "$f" | sed "s|^$ROOT/||")"
+			echo "$hits" | sed 's/^/        /'
+			ext_bad=1
+		fi
+	done
+	[ "$ext_bad" = 0 ] && echo "  ok" || fail=1
+else
+	echo "skipping the MSVC C extension pass (no clang)"
 fi
 
 echo
