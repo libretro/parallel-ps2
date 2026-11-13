@@ -167,11 +167,12 @@
     <ClCompile Include="GS\Renderers\OpenGL\GLState.cpp" />
     <ClCompile Include="GS\GS.cpp" />
     <ClCompile Include="GS\GSBlock.cpp" />
-    <ClCompile Include="GS\GSClut.cpp" />
+    <ClCompile Include="GS\GSClutGPU.cpp" />
     <ClCompile Include="GS\Renderers\Common\GSDevice.cpp" />
     <ClCompile Include="GS\Renderers\DX11\GSDevice11.cpp" />
     <ClCompile Include="GS\Renderers\OpenGL\GSDeviceOGL.cpp" />
     <ClCompile Include="GS\Renderers\Common\GSDirtyRect.c" />
+    <ClCompile Include="GS\GSClut.c" />
     <ClCompile Include="GS\GSDrawingContext.c" />
     <ClCompile Include="GS\Renderers\SW\GSDrawScanline.cpp" />
     <ClCompile Include="GS\Renderers\SW\GSDrawScanlineCodeGenerator.cpp" />

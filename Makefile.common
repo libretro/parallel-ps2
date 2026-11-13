@@ -101,6 +101,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSFlatMap.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSStableMap.c \
 	$(LRPS2_DIR)/GS/GSPage2Tile.c \
+	$(LRPS2_DIR)/GS/GSClut.c \
 	$(LRPS2_DIR)/GS/GSDrawingContext.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSDirtyRect.c \
 	$(LRPS2_DIR)/GS/GSOffset.c \
@@ -451,7 +452,7 @@ endif
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/GS.cpp \
 	$(LRPS2_DIR)/GS/GSBlock.cpp \
-	$(LRPS2_DIR)/GS/GSClut.cpp \
+	$(LRPS2_DIR)/GS/GSClutGPU.cpp \
 	$(LRPS2_DIR)/GS/GSLocalMemory.cpp \
 	$(LRPS2_DIR)/GS/GSLocalMemoryMultiISA.cpp \
 	$(LRPS2_DIR)/GS/GSState.cpp \

@@ -345,7 +345,8 @@ endif()
 
 set(pcsx2GSSources
 	GS/GS.cpp
-	GS/GSClut.cpp
+	GS/GSClutGPU.cpp
+	GS/GSClut.c
 	GS/GSDrawingContext.c
 	GS/GSLocalMemory.cpp
 	GS/GSRingHeap.c

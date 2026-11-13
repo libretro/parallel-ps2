@@ -14,6 +14,7 @@
 #include "GS/GSPsm.h"
 #include "GS/GSDrawingContext.h"
 #include "GS/Renderers/Common/GSDirtyRect.h"
+#include "GS/GSClut.h"
 #include <encodings/xxh3.h>
 #define XXH_STATIC_LINKING_ONLY 1
 #define XXH_INLINE_ALL 1
@@ -387,6 +388,100 @@ static void check_dirty(void)
 	CHECK(h == 0xc9bf6558U);
 }
 
+/* The CLUT: palettes loaded from random local memory in every mode and
+ * read out, its CLD bookkeeping and invalidation, hashed: the sum is what
+ * the C++ GSClut gave for the same calls */
+static u64 clut_rand64(void)
+{
+	u64 hi = next_rand();
+	u64 lo = next_rand();
+	return hi << 32 | lo;
+}
+
+static void check_clut(void)
+{
+	static const u32 psms[9] = {PSMT8, PSMT4, PSMT8H, PSMT4HL, PSMT4HH, PSMCT32, PSMCT16, 11, 12};
+	static const u32 cpsms[6] = {PSMCT32, PSMCT24, PSMCT16, PSMCT16S, 3, 9};
+	const size_t vm_size = 4 * 1024 * 1024;
+	gs_clut c;
+	u8* vm;
+	u32 n = 0, h = 0, i;
+	int k;
+
+	s_rng = 5;
+	/* local memory is mapped wrapped: past the end reads the start */
+	vm = (u8*)malloc(4 * vm_size);
+	CHECK(vm != NULL);
+	if (!vm)
+		return;
+	for (i = 0; i < vm_size / 4; i++)
+	{
+		u32 a = next_rand();
+		u32 b = next_rand();
+		((u32*)vm)[i] = a ^ (b << 16);
+	}
+	for (i = 1; i < 4; i++)
+		memcpy(vm + i * vm_size, vm, vm_size);
+
+	gs_clut_init(&c);
+	gs_clut_reset(&c);
+	for (k = 0; k < 60000; k++)
+	{
+		GIFRegTEX0 TEX0;
+		GIFRegTEXCLUT TEXCLUT;
+		GIFRegTEXA TEXA;
+		u32 op;
+		TEX0.U64 = clut_rand64();
+		TEXCLUT.U64 = clut_rand64();
+		TEXA.U64 = clut_rand64();
+		TEX0.PSM = psms[next_rand() % 9];
+		TEX0.CPSM = cpsms[next_rand() % 6];
+		TEX0.CSM = (next_rand() % 4) == 0;
+		TEX0.CLD = next_rand() % 8;
+		TEXCLUT.CBW = next_rand() % 8;
+		TEXCLUT.COU = next_rand() % 64;
+		TEXCLUT.COV = next_rand() % 1024;
+		op = next_rand() % 8;
+		if (op == 0)
+		{
+			u32 st = next_rand() & 0x3fff;
+			u32 e = st + (next_rand() % 64);
+			s_out[n++] = (u32)gs_clut_invalidate_range(&c, st, e & 0x3fff, (int)(next_rand() & 1));
+		}
+		else if (op == 1)
+			s_out[n++] = (u32)gs_clut_can_load(&c, &TEX0, (int)(next_rand() & 1));
+		else if (op == 2)
+		{
+			c.write.next_tex0 = clut_rand64();
+			s_out[n++] = c.write.dirty;
+			if (c.write.dirty & 2)
+				c.write.dirty = 1;
+		}
+		else if (op == 3)
+			s_out[n++] = (u32)gs_clut_write_test(&c, &TEX0, &TEXCLUT);
+		else if (op < 6)
+			gs_clut_write(&c, vm, &TEX0, &TEXCLUT);
+		else
+		{
+			int a, b;
+			gs_clut_read32(&c, &TEX0, &TEXA);
+			for (i = 0; i < 256; i++)
+				s_out[n++] = c.buff32[i];
+			gs_clut_alpha_minmax(&c, &a, &b);
+			s_out[n++] = (u32)a;
+			s_out[n++] = (u32)b;
+		}
+		s_out[n++] = (u32)c.write.TEX0.CBP | (u32)c.write.TEX0.CPSM << 16;
+		if (n > OUT_LEN - 600) { h ^= (u32)xxh3_64(s_out, n * 4, h); n = 0; }
+		if (k % 20000 == 19999)
+			gs_clut_reset(&c);
+	}
+	h ^= (u32)xxh3_64(s_out, n * 4, h);
+	CHECK(h == 0x2dd8493cU);
+	gs_clut_deinit(&c);
+	free(vm);
+}
+
 int main(void)
 {
 	static u8 buf[1 << 16];
@@ -399,6 +494,7 @@ int main(void)
 	check_psm();
 	check_context();
 	check_dirty();
+	check_clut();
 
 	/* Primitive classes. */
 	CHECK(gs_util_get_prim_class(GS_POINTLIST) == GS_POINT_CLASS);

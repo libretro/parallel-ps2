@@ -13,11 +13,61 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_CLUT_H
+#define GS_CLUT_H
 
 #include "GSRegs.h"
-#include "GSVector.h"
-#include "GSTables.h"
+
+/* The GS's colour lookup table: palettes loaded from local memory into
+ * the CLUT buffer (as the hardware keeps it, 16-bit halves), and read
+ * out as 32-bit colours for a draw. */
+typedef struct gs_clut
+{
+	u32 cbp[2];   /* CBP0/1 the CLD modes compare and keep */
+	u16* clut;    /* the CLUT buffer: 512 halves and their high halves */
+	u32* buff32;  /* the palette as read out */
+	struct
+	{
+		GIFRegTEX0 TEX0;
+		GIFRegTEXCLUT TEXCLUT;
+		u8 dirty;  /* 1: memory under the next palette changed; 2: by a draw */
+		u64 next_tex0;
+	} write;
+	struct
+	{
+		GIFRegTEX0 TEX0;
+		GIFRegTEXA TEXA;
+		int dirty;
+		int adirty; /* the alpha range is stale */
+		int amin, amax;
+	} read;
+} gs_clut;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void gs_clut_init(gs_clut* c);
+void gs_clut_deinit(gs_clut* c);
+void gs_clut_reset(gs_clut* c);
+
+/* Marks the CLUT stale when blocks start..end overlap the next palette;
+ * returns whether it is */
+int gs_clut_invalidate_range(gs_clut* c, u32 start_block, u32 end_block, int is_draw);
+/* Whether TEX0's CLD loads the CLUT, keeping CBP0/1 if asked */
+int gs_clut_can_load(gs_clut* c, const GIFRegTEX0* TEX0, int update_cbp);
+/* Whether TEX0 and TEXCLUT load a different palette */
+int gs_clut_write_test(gs_clut* c, const GIFRegTEX0* TEX0, const GIFRegTEXCLUT* TEXCLUT);
+/* Loads the palette from local memory vm */
+void gs_clut_write(gs_clut* c, const u8* vm, const GIFRegTEX0* TEX0, const GIFRegTEXCLUT* TEXCLUT);
+/* Reads the palette out as 32-bit colours; returns whether it read */
+int gs_clut_read32(gs_clut* c, const GIFRegTEX0* TEX0, const GIFRegTEXA* TEXA);
+/* The palette's alpha range, after gs_clut_read32 */
+void gs_clut_alpha_minmax(gs_clut* c, int* amin, int* amax);
+
+#ifdef __cplusplus
+}
+
 #include "GSAlignedClass.h"
 
 class GSLocalMemory;
@@ -25,84 +75,12 @@ class GSTexture;
 
 class alignas(32) GSClut final : public GSAlignedClass<32>
 {
-	static constexpr u32 CLUT_ALLOC_SIZE = 4096 * 2;
-
-	static const GSVector4i m_bm;
-	static const GSVector4i m_gm;
-	static const GSVector4i m_rm;
-
+	gs_clut m_c;
 	GSLocalMemory* m_mem;
-
-	u32 m_CBP[2] = {};
-	u16* m_clut = nullptr;
-	u32* m_buff32 = nullptr;
-	u64* m_buff64 = nullptr;
-
-	struct alignas(32) WriteState
-	{
-		GIFRegTEX0 TEX0;
-		GIFRegTEXCLUT TEXCLUT;
-		u8 dirty;
-		u64 next_tex0;
-		bool IsDirty(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-	} m_write = {};
-
-	struct alignas(32) ReadState
-	{
-		GIFRegTEX0 TEX0;
-		GIFRegTEXA TEXA;
-		bool dirty;
-		bool adirty;
-		int amin, amax;
-		bool IsDirty(const GIFRegTEX0& TEX0);
-		bool IsDirty(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA);
-	} m_read = {};
 
 	GSTexture* m_gpu_clut4 = nullptr;
 	GSTexture* m_gpu_clut8 = nullptr;
 	GSTexture* m_current_gpu_clut = nullptr;
-
-	typedef void (GSClut::*writeCLUT)(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-
-	writeCLUT m_wc[2][16][64];
-
-	void WriteCLUT32_I8_CSM1(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-	void WriteCLUT32_I4_CSM1(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-	void WriteCLUT16_I8_CSM1(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-	void WriteCLUT16_I4_CSM1(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-	void WriteCLUT16S_I8_CSM1(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-	void WriteCLUT16S_I4_CSM1(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-
-	template <int n>
-	void WriteCLUT32_CSM2(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-	template <int n>
-	void WriteCLUT16_CSM2(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-	template <int n>
-	void WriteCLUT16S_CSM2(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-
-	void WriteCLUT_NULL(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-
-	static void WriteCLUT_T32_I8_CSM1(const u32* RESTRICT src, u16* RESTRICT clut, u16 offset);
-	static void WriteCLUT_T32_I4_CSM1(const u32* RESTRICT src, u16* RESTRICT clut);
-	static void WriteCLUT_T16_I8_CSM1(const u16* RESTRICT src, u16* RESTRICT clut);
-	static void WriteCLUT_T16_I4_CSM1(const u16* RESTRICT src, u16* RESTRICT clut);
-	static void ReadCLUT_T32_I8(const u16* RESTRICT clut, u32* RESTRICT dst, int offset);
-	static void ReadCLUT_T32_I4(const u16* RESTRICT clut, u32* RESTRICT dst);
-	//static void ReadCLUT_T32_I4(const u16* RESTRICT clut, u32* RESTRICT dst32, u64* RESTRICT dst64);
-	//static void ReadCLUT_T16_I8(const u16* RESTRICT clut, u32* RESTRICT dst);
-	//static void ReadCLUT_T16_I4(const u16* RESTRICT clut, u32* RESTRICT dst);
-	//static void ReadCLUT_T16_I4(const u16* RESTRICT clut, u32* RESTRICT dst32, u64* RESTRICT dst64);
-public:
-	static void ExpandCLUT64_T32_I8(const u32* RESTRICT src, u64* RESTRICT dst);
-
-private:
-	static void ExpandCLUT64_T32(const GSVector4i& hi, const GSVector4i& lo0, const GSVector4i& lo1, const GSVector4i& lo2, const GSVector4i& lo3, GSVector4i* dst);
-	static void ExpandCLUT64_T32(const GSVector4i& hi, const GSVector4i& lo, GSVector4i* dst);
-	//static void ExpandCLUT64_T16_I8(const u32* RESTRICT src, u64* RESTRICT dst);
-	static void ExpandCLUT64_T16(const GSVector4i& hi, const GSVector4i& lo0, const GSVector4i& lo1, const GSVector4i& lo2, const GSVector4i& lo3, GSVector4i* dst);
-	static void ExpandCLUT64_T16(const GSVector4i& hi, const GSVector4i& lo, GSVector4i* dst);
-
-	static void Expand16(const u16* RESTRICT src, u32* RESTRICT dst, int w, const GIFRegTEXA& TEXA);
 
 public:
 	GSClut(GSLocalMemory* mem);
@@ -110,22 +88,37 @@ public:
 
 	__fi GSTexture* GetGPUTexture() const { return m_current_gpu_clut; }
 
-	void Reset();
-	bool InvalidateRange(u32 start_block, u32 end_block, bool is_draw = false);
-	u8 IsInvalid();
-	void ClearDrawInvalidity();
-	u32 GetCLUTCBP();
-	u32 GetCLUTCPSM();
-	bool CanLoadCLUT(const GIFRegTEX0& TEX0, const bool update_CBP = false);
-	void SetNextCLUTTEX0(u64 CBP);
-	bool WriteTest(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
+	void Reset() { gs_clut_reset(&m_c); }
+	bool InvalidateRange(u32 start_block, u32 end_block, bool is_draw = false)
+	{
+		return gs_clut_invalidate_range(&m_c, start_block, end_block, is_draw) != 0;
+	}
+	u8 IsInvalid() { return m_c.write.dirty; }
+	void ClearDrawInvalidity()
+	{
+		if (m_c.write.dirty & 2)
+			m_c.write.dirty = 1;
+	}
+	u32 GetCLUTCBP() { return m_c.write.TEX0.CBP; }
+	u32 GetCLUTCPSM() { return m_c.write.TEX0.CPSM; }
+	bool CanLoadCLUT(const GIFRegTEX0& TEX0, const bool update_CBP = false)
+	{
+		return gs_clut_can_load(&m_c, &TEX0, update_CBP) != 0;
+	}
+	void SetNextCLUTTEX0(u64 TEX0) { m_c.write.next_tex0 = TEX0; }
+	bool WriteTest(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT)
+	{
+		return gs_clut_write_test(&m_c, &TEX0, &TEXCLUT) != 0;
+	}
 	void Write(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-	//void Read(const GIFRegTEX0& TEX0);
 	void Read32(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA);
-	void GetAlphaMinMax32(int& amin, int& amax);
+	void GetAlphaMinMax32(int& amin, int& amax) { gs_clut_alpha_minmax(&m_c, &amin, &amax); }
 
-	u32 operator[](size_t i) const { return m_buff32[i]; }
+	u32 operator[](size_t i) const { return m_c.buff32[i]; }
 
-	operator const u32*() const { return m_buff32; }
-	operator const u64*() const { return m_buff64; }
+	operator const u32*() const { return m_c.buff32; }
 };
+
+#endif
+
+#endif
