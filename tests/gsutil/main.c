@@ -89,6 +89,10 @@ int main(void)
 	check_hash(buf + 3, 4096);
 	check_hash(buf, sizeof(buf));
 	check_hash(buf + 5, sizeof(buf) - 5);
+	/* The cache's CLUT keys as it writes them: lengths known at compile
+	 * time, which xxh3.h hashes in place up to 128 octets. */
+	CHECK(xxh3_64(buf + 2, sizeof(u32) * 16, 0) == XXH3_64bits(buf + 2, 64));
+	CHECK(xxh3_64(buf + 2, sizeof(u32) * 256, 0) == XXH3_64bits(buf + 2, 1024));
 
 	if (fails)
 	{
