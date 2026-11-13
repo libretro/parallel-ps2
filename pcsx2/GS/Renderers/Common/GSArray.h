@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <retro_inline.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -32,7 +34,7 @@ typedef struct gs_array
 #define GS_ARRAY_FIRST 16
 
 /* An empty array of elements of elem bytes. Allocates nothing. */
-static void gs_array_init(gs_array_t *a, size_t elem)
+static INLINE void gs_array_init(gs_array_t *a, size_t elem)
 {
    a->items    = NULL;
    a->count    = 0;
@@ -41,7 +43,7 @@ static void gs_array_init(gs_array_t *a, size_t elem)
 }
 
 /* Frees the allocation. The array is empty and can be used again. */
-static void gs_array_free(gs_array_t *a)
+static INLINE void gs_array_free(gs_array_t *a)
 {
    free(a->items);
    a->items    = NULL;
@@ -52,7 +54,7 @@ static void gs_array_free(gs_array_t *a)
 /* Room for at least entries elements, made now: pushes up to that many
  * never allocate. Zero if the allocation could not grow (the array is as
  * it was). */
-static int gs_array_reserve(gs_array_t *a, size_t entries)
+static INLINE int gs_array_reserve(gs_array_t *a, size_t entries)
 {
    size_t         capacity;
    unsigned char *grown;
@@ -72,7 +74,7 @@ static int gs_array_reserve(gs_array_t *a, size_t entries)
 
 /* A new last element, its bytes as they come, or NULL if the array could
  * not grow. */
-static void *gs_array_push(gs_array_t *a)
+static INLINE void *gs_array_push(gs_array_t *a)
 {
    if (a->count == a->capacity && !gs_array_reserve(a, a->count + 1))
       return NULL;
@@ -80,14 +82,14 @@ static void *gs_array_push(gs_array_t *a)
 }
 
 /* Takes element i out; those after it move down one. */
-static void gs_array_erase(gs_array_t *a, size_t i)
+static INLINE void gs_array_erase(gs_array_t *a, size_t i)
 {
    memmove(a->items + i * a->elem, a->items + (i + 1) * a->elem, (a->count - i - 1) * a->elem);
    a->count--;
 }
 
 /* Takes the first n elements out; the rest move to the front. */
-static void gs_array_erase_front(gs_array_t *a, size_t n)
+static INLINE void gs_array_erase_front(gs_array_t *a, size_t n)
 {
    memmove(a->items, a->items + n * a->elem, (a->count - n) * a->elem);
    a->count -= n;

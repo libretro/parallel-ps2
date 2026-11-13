@@ -459,7 +459,7 @@ if(USE_OPENGL)
 		GS/Renderers/OpenGL/GSDeviceOGL.cpp
 		GS/Renderers/OpenGL/GSTextureOGL.cpp
 		GS/Renderers/OpenGL/GLContext.c
-		GS/Renderers/OpenGL/GLProgram.cpp
+		GS/Renderers/OpenGL/GLProgram.c
 		GS/Renderers/OpenGL/GLShaderCache.cpp
 		GS/Renderers/OpenGL/GLStreamBuffer.cpp
 	)

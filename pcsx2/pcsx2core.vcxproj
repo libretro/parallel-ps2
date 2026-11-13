@@ -165,6 +165,9 @@
     <ClCompile Include="DmacChannel.c" />
     <ClCompile Include="sif2.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLContext.c" />
+    <ClCompile Include="GS\Renderers\OpenGL\GLProgram.c" />
+    <ClCompile Include="GS\Renderers\OpenGL\GLShaderCache.cpp" />
+    <ClCompile Include="GS\Renderers\OpenGL\GLStreamBuffer.cpp" />
     <ClCompile Include="GS\Renderers\OpenGL\GLState.c" />
     <ClCompile Include="GS\GS.cpp" />
     <ClCompile Include="GS\GSBlock.cpp" />
@@ -349,7 +352,11 @@
     <ClInclude Include="SPU2\regs.h" />
     <ClInclude Include="SPU2\Mixer.h" />
     <ClInclude Include="SPU2\spu2.h" />
+    <ClInclude Include="GS\Renderers\OpenGL\GLContext.h" />
+    <ClInclude Include="GS\Renderers\OpenGL\GLProgram.h" />
+    <ClInclude Include="GS\Renderers\OpenGL\GLShaderCache.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GLState.h" />
+    <ClInclude Include="GS\Renderers\OpenGL\GLStreamBuffer.h" />
     <ClInclude Include="GS\GS.h" />
     <ClInclude Include="GS\GSExtra.h" />
     <ClInclude Include="GS\GSOptionEnums.h" />

@@ -133,7 +133,7 @@ jobs:
         run: |
           WINE=$(command -v wine || command -v wine64)
           export WINE
-          for t in biosver dev9dhcp dev9dns dev9eeprom dev9net disklist emuoptions glstate gsutil pad perfmetrics profiler ringheap settings usbhid vuops; do
+          for t in biosver dev9dhcp dev9dns dev9eeprom dev9net disklist emuoptions glprogram glstate gsutil pad perfmetrics profiler ringheap settings usbhid vuops; do
             echo "== $t"
             sh "tests/$t/build.sh"
           done
@@ -158,7 +158,7 @@ jobs:
           CC: aarch64-linux-gnu-gcc
           CXX: aarch64-linux-gnu-g++
         run: |
-          for t in dev9dhcp dev9dns dev9eeprom dev9net disklist emuoptions glstate gsutil pad perfmetrics ringheap settings usbhid; do
+          for t in dev9dhcp dev9dns dev9eeprom dev9net disklist emuoptions glprogram glstate gsutil pad perfmetrics ringheap settings usbhid; do
             echo "== $t"
             sh "tests/$t/build.sh"
           done
