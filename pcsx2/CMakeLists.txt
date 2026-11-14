@@ -317,7 +317,7 @@ set(pcsx2PADHeaders
 set(pcsx2GSSourcesUnshared
 	GS/GSBlock.cpp
 	GS/GSLocalMemoryMultiISA.cpp
-	GS/Renderers/Common/GSVertexTraceFMM.cpp
+	GS/Renderers/Common/GSVertexTraceFMM.c
 	GS/Renderers/HW/GSRendererHWMultiISA.cpp
 	GS/Renderers/SW/GSDrawScanline.cpp
 	GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp
@@ -361,7 +361,7 @@ set(pcsx2GSSources
 	GS/Renderers/Common/GSDirtyRect.c
 	GS/Renderers/Common/GSCodeReserve.c
 	GS/Renderers/Common/GSRenderer.cpp
-	GS/Renderers/Common/GSVertexTrace.cpp
+	GS/Renderers/Common/GSVertexTrace.c
 	GS/Renderers/HW/GSHwHack.cpp
 	GS/Renderers/HW/GSRendererHW.cpp
 	GS/Renderers/HW/GSObjectPool.c
@@ -436,6 +436,7 @@ set(pcsx2GSHeaders
 	GS/Renderers/Common/GSVertex.h
 	GS/Renderers/Common/gs_vertex.h
 	GS/Renderers/Common/GSVertexTrace.h
+	GS/Renderers/Common/GSVertexTraceVec.h
 	GS/Renderers/Common/vr_glsl_body.h
 	GS/Renderers/HW/GSHwHack.h
 	GS/Renderers/HW/GSRendererHW.h

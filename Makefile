@@ -647,7 +647,6 @@ endif
 MULTI_ISA_UNSHARED_SRC := \
 	$(LRPS2_DIR)/GS/GSBlock.cpp \
 	$(LRPS2_DIR)/GS/GSLocalMemoryMultiISA.cpp \
-	$(LRPS2_DIR)/GS/Renderers/Common/GSVertexTraceFMM.cpp \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSRendererHWMultiISA.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanline.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp \
@@ -660,6 +659,7 @@ MULTI_ISA_UNSHARED_SRC := \
 # The C ones, which name their per-ISA functions after the tier rather
 # than taking a namespace.
 MULTI_ISA_UNSHARED_SRC_C := \
+	$(LRPS2_DIR)/GS/Renderers/Common/GSVertexTraceFMM.c \
 	$(LRPS2_DIR)/IPU/IPU_MultiISA.c
 
 ifeq ($(IS_X86),1)
@@ -779,6 +779,7 @@ DEPS    += $(MULTI_ISA_OBJECTS:.o=.d)
 # fused behind the code's back (the avx2 tier's -mfma, aarch64).
 ifeq (,$(findstring msvc,$(platform)))
    $(filter $(LRPS2_DIR)/GS/Renderers/SW/%.o $(LRPS2_DIR)/GS/Renderers/Common/GSVertexTrace%.o,$(OBJECTS)): CXXFLAGS += -ffp-contract=off
+   $(filter $(LRPS2_DIR)/GS/Renderers/Common/GSVertexTrace%.o,$(OBJECTS)): CFLAGS += -ffp-contract=off
 endif
 
 # VIXL (SOURCES_CC) is third-party; silence its warnings for those objects only

@@ -98,6 +98,19 @@ int GSState::GetSaveStateSize()
 	return size;
 }
 
+/* The trace of a draw, from the registers it was drawn with. */
+void GSVertexTrace::Update(const void* vertex, const u16* index, int v_count, int i_count, GS_PRIM_CLASS primclass)
+{
+	struct gs_vt_regs regs;
+	regs.prim      = m_state->PRIM;
+	regs.xyoffset  = &m_state->m_context->XYOFFSET;
+	regs.tex0      = &m_state->m_context->TEX0;
+	regs.tex1      = &m_state->m_context->TEX1;
+	regs.test      = &m_state->m_context->TEST;
+	regs.filtering = GSConfig.TextureFiltering;
+	gs_vertex_trace_update(this, vertex, index, v_count, i_count, primclass, &regs);
+}
+
 GSState::GSState()
 	: m_vt(this, IsFirstProvokingVertex())
 {
