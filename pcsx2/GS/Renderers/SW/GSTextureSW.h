@@ -43,6 +43,19 @@ extern "C" {
  * texels may be missing: it then refuses Update and Map). */
 gs_texture* gs_texture_sw_create(unsigned type, int width, int height, unsigned format);
 
+/* A download texture in CPU memory, rows padded as the textures'. The SW
+ * renderer's output is already in CPU memory, so nothing reads back
+ * through it: a copy into it leaves it as it is (zeroed), and a map hands
+ * its rows over. */
+typedef struct gs_download_texture_sw
+{
+	gs_download_texture base;
+	u8* buffer;
+	u32 buffer_size;
+} gs_download_texture_sw;
+
+gs_download_texture* gs_download_texture_sw_create(u32 width, u32 height, unsigned format);
+
 #ifdef __cplusplus
 }
 

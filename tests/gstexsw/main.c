@@ -2,7 +2,8 @@
  * part it is made of (GSTextureBase.h): textures of every type and format
  * updated, mapped and freed through the ops table answer, pad and hold
  * their texels as the C++ class did (the hash below was taken from it);
- * then the common part as a texture starts, and the edges of Update. */
+ * then the common part as a texture starts, the edges of Update, and the
+ * CPU read-back texture. */
 
 #include <stdio.h>
 #include <string.h>
@@ -91,6 +92,28 @@ int main(int argc, char** argv)
 		gs_texture* t = gs_texture_sw_create(GS_TEXTYPE_TEXTURE, 3, 0, GS_TEX_UNORM8);
 		check(t != NULL && ((gs_texture_sw*)t)->pitch == 32, "a texture of no rows still has storage");
 		t->m_ops->free(t);
+	}
+
+	{
+		gs_download_texture* d = gs_download_texture_sw_create(33, 5, GS_TEX_COLOR);
+		gs_download_texture_sw* sw = (gs_download_texture_sw*)d;
+		gs_texture_rect rc;
+		size_t i;
+		int zero = 1;
+		rc.left = rc.top = 0;
+		rc.right = 33;
+		rc.bottom = 5;
+		check(d != NULL && d->m_width == 33 && d->m_height == 5 && d->m_format == GS_TEX_COLOR, "a download texture");
+		check(d->m_current_pitch == 160 && sw->buffer_size == 800, "rows padded as the textures'");
+		for (i = 0; i < sw->buffer_size; i++)
+			zero &= sw->buffer[i] == 0;
+		check(zero && d->m_map_pointer == NULL && !d->m_needs_flush, "zeroed, unmapped, nothing to flush");
+		d->m_ops->copy_from_texture(d, &rc, NULL, &rc, 0, 1);
+		d->m_ops->flush(d);
+		check(d->m_ops->map(d, &rc) && d->m_map_pointer == sw->buffer, "mapped: its rows");
+		d->m_ops->unmap(d);
+		check(d->m_map_pointer == NULL, "unmapped");
+		d->m_ops->free(d);
 	}
 
 	if (s_failed)

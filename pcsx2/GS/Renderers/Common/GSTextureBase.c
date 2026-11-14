@@ -28,3 +28,14 @@ void gs_texture_base_init(gs_texture* t, unsigned type, unsigned format, int wid
 	t->m_last_frame_used         = 0;
 	t->m_clear_value.color       = 0;
 }
+
+void gs_download_texture_base_init(gs_download_texture* t, u32 width, u32 height, unsigned format)
+{
+	t->m_ops           = NULL;
+	t->m_width         = width;
+	t->m_height        = height;
+	t->m_map_pointer   = NULL;
+	t->m_current_pitch = 0;
+	t->m_format        = (u8)format;
+	t->m_needs_flush   = 0;
+}

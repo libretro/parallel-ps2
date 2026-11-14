@@ -460,7 +460,7 @@ if(USE_OPENGL)
 	list(APPEND pcsx2GSSources
 		GS/Renderers/OpenGL/GLState.c
 		GS/Renderers/OpenGL/GSDeviceOGL.cpp
-		GS/Renderers/OpenGL/GSTextureOGL.cpp
+		GS/Renderers/OpenGL/GSTextureOGL.c
 		GS/Renderers/OpenGL/GLContext.c
 		GS/Renderers/OpenGL/GLProgram.c
 		GS/Renderers/OpenGL/GLProgramCache.c
@@ -474,6 +474,7 @@ if(USE_OPENGL)
 		GS/Renderers/OpenGL/GSDeviceOGL.h
 		GS/Renderers/OpenGL/GSTextureOGL.h
 		GS/Renderers/OpenGL/GLContext.h
+		GS/Renderers/OpenGL/GLDevice.h
 		GS/Renderers/OpenGL/GLProgram.h
 		GS/Renderers/OpenGL/GLProgramCache.h
 		GS/Renderers/OpenGL/GLShaderCache.h

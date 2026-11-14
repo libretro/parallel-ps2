@@ -154,15 +154,22 @@ static_assert(sizeof(GSTexture) == sizeof(gs_texture) && std::is_standard_layout
 static_assert(static_cast<unsigned>(GSTexture::Format::BC7) == GS_TEX_BC7 && static_cast<unsigned>(GSTexture::Format::PrimID) == GS_TEX_PRIMID
 	&& static_cast<unsigned>(GSTexture::Format::ColorClip) == GS_TEX_COLOR_CLIP, "GSTexture::Format is gs_texture_format");
 
-class GSDownloadTexture
+/* The common part is C (gs_download_texture, GSTextureBase.h), as with
+ * GSTexture: the class adds methods, no data. */
+class GSDownloadTexture : public gs_download_texture
 {
 public:
 	GSDownloadTexture(u32 width, u32 height, GSTexture::Format format)
-		: m_width(width), m_height(height), m_format(format) {}
+	{
+		m_ops           = nullptr;
+		m_width         = width;
+		m_height        = height;
+		m_map_pointer   = nullptr;
+		m_current_pitch = 0;
+		m_format        = format;
+		m_needs_flush   = false;
+	}
 	~GSDownloadTexture() = default;
-
-	/* As GSTexture above: a table, not a vtable (gs_download_texture_ops). */
-	const struct gs_download_texture_ops* m_ops = nullptr;
 
 	void Free();
 
@@ -220,16 +227,10 @@ public:
 	static u32 GetBufferSize(u32 width, u32 height, GSTexture::Format format, u32 pitch_align = 1)
 	{ return gs_texture_buffer_size(static_cast<unsigned>(format), width, height, pitch_align); }
 
-protected:
-	u32 m_width;
-	u32 m_height;
-	GSTexture::Format m_format;
-
-	const u8* m_map_pointer = nullptr;
-	u32 m_current_pitch = 0;
-
-	bool m_needs_flush = false;
 };
+
+static_assert(sizeof(GSDownloadTexture) == sizeof(gs_download_texture) && std::is_standard_layout<GSDownloadTexture>::value,
+	"GSDownloadTexture adds nothing to gs_download_texture");
 
 /* --- the tables the two above answer through ----------------------------
  * GS_TEXTURE_OPS_DEFINE(GSTexture11, d3d11) writes s_d3d11_texture_ops
@@ -238,14 +239,6 @@ protected:
  * the thunks are members of a struct the class befriends, so a function
  * that was protected stays protected. */
 
-struct gs_download_texture_ops
-{
-	void (*free)(GSDownloadTexture* t);
-	void (*copy_from_texture)(GSDownloadTexture* t, const GSVector4i* drc, GSTexture* stex, const GSVector4i* src, u32 src_level, bool use_transfer_pitch);
-	bool (*map)(GSDownloadTexture* t, const GSVector4i* read_rc);
-	void (*unmap)(GSDownloadTexture* t);
-	void (*flush)(GSDownloadTexture* t);
-};
 
 __forceinline_odr void GSTexture::Free() { m_ops->free(this); }
 /* What "delete t" was meant to be: dispatches to the backend's free,
@@ -273,8 +266,12 @@ __forceinline_odr void gs_download_texture_free(GSDownloadTexture* t);
 __forceinline_odr void GSDownloadTexture::Free() { m_ops->free(this); }
 __forceinline_odr void gs_download_texture_free(GSDownloadTexture* t) { if (t) t->Free(); }
 __forceinline_odr void GSDownloadTexture::CopyFromTexture(const GSVector4i& drc, GSTexture* stex, const GSVector4i& src, u32 src_level, bool use_transfer_pitch)
-{ m_ops->copy_from_texture(this, &drc, stex, &src, src_level, use_transfer_pitch); }
-__forceinline_odr bool GSDownloadTexture::Map(const GSVector4i& read_rc) { return m_ops->map(this, &read_rc); }
+{
+	m_ops->copy_from_texture(this, reinterpret_cast<const gs_texture_rect*>(&drc), stex,
+		reinterpret_cast<const gs_texture_rect*>(&src), src_level, use_transfer_pitch);
+}
+__forceinline_odr bool GSDownloadTexture::Map(const GSVector4i& read_rc)
+{ return m_ops->map(this, reinterpret_cast<const gs_texture_rect*>(&read_rc)) != 0; }
 __forceinline_odr void GSDownloadTexture::Unmap() { m_ops->unmap(this); }
 __forceinline_odr void GSDownloadTexture::Flush() { m_ops->flush(this); }
 __forceinline_odr bool GSDownloadTexture::ReadTexels(const GSVector4i& rc, void* out_ptr, u32 out_stride)
@@ -321,11 +318,14 @@ static const struct gs_texture_ops s_##tag##_texture_ops = { \
 
 #define GS_DOWNLOAD_TEXTURE_OPS_DEFINE(klass, tag) \
 struct klass##_ops_access { \
-	static void tag##_dl_free(GSDownloadTexture* t) { delete static_cast<klass*>(t); } \
-	static void tag##_dl_copy_from_texture(GSDownloadTexture* t, const GSVector4i* drc, GSTexture* stex, const GSVector4i* src, u32 src_level, bool use_transfer_pitch) { static_cast<klass*>(t)->CopyFromTexture(*drc, stex, *src, src_level, use_transfer_pitch); } \
-	static bool tag##_dl_map(GSDownloadTexture* t, const GSVector4i* read_rc) { return static_cast<klass*>(t)->Map(*read_rc); } \
-	static void tag##_dl_unmap(GSDownloadTexture* t) { static_cast<klass*>(t)->Unmap(); } \
-	static void tag##_dl_flush(GSDownloadTexture* t) { static_cast<klass*>(t)->Flush(); } \
+	static klass* tag##_dl_of(gs_download_texture* t) { return static_cast<klass*>(static_cast<GSDownloadTexture*>(t)); } \
+	static void tag##_dl_free(gs_download_texture* t) { delete tag##_dl_of(t); } \
+	static void tag##_dl_copy_from_texture(gs_download_texture* t, const gs_texture_rect* drc, gs_texture* stex, const gs_texture_rect* src, u32 src_level, int use_transfer_pitch) \
+	{ tag##_dl_of(t)->CopyFromTexture(GSVector4i(drc->left, drc->top, drc->right, drc->bottom), static_cast<GSTexture*>(stex), \
+		GSVector4i(src->left, src->top, src->right, src->bottom), src_level, use_transfer_pitch != 0); } \
+	static int tag##_dl_map(gs_download_texture* t, const gs_texture_rect* r) { return tag##_dl_of(t)->Map(GSVector4i(r->left, r->top, r->right, r->bottom)); } \
+	static void tag##_dl_unmap(gs_download_texture* t) { tag##_dl_of(t)->Unmap(); } \
+	static void tag##_dl_flush(gs_download_texture* t) { tag##_dl_of(t)->Flush(); } \
 }; \
 static const struct gs_download_texture_ops s_##tag##_download_texture_ops = { \
 	klass##_ops_access::tag##_dl_free, klass##_ops_access::tag##_dl_copy_from_texture, \

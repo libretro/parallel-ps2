@@ -509,10 +509,10 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLState.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLStreamBuffer.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLTextureFormat.c \
-	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLVertexInput.c
+	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLVertexInput.c \
+	$(LRPS2_DIR)/GS/Renderers/OpenGL/GSTextureOGL.c
 SOURCES_CXX += \
-	$(LRPS2_DIR)/GS/Renderers/OpenGL/GSDeviceOGL.cpp \
-	$(LRPS2_DIR)/GS/Renderers/OpenGL/GSTextureOGL.cpp
+	$(LRPS2_DIR)/GS/Renderers/OpenGL/GSDeviceOGL.cpp
 endif
 
 # pcsx2/GS/Renderers/Vulkan + parallel-gs

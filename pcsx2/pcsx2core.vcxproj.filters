@@ -797,7 +797,7 @@
     <ClCompile Include="GS\Renderers\OpenGL\GSDeviceOGL.cpp">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
-    <ClCompile Include="GS\Renderers\OpenGL\GSTextureOGL.cpp">
+    <ClCompile Include="GS\Renderers\OpenGL\GSTextureOGL.c">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\OpenGL\GLState.c">
@@ -1346,6 +1346,9 @@
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClInclude>
     <ClInclude Include="GS\Renderers\OpenGL\GLContext.h">
+      <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
+    </ClInclude>
+    <ClInclude Include="GS\Renderers\OpenGL\GLDevice.h">
       <Filter>System\Ps2\GS\Renderers\OpenGL</Filter>
     </ClInclude>
     <ClInclude Include="GS\Renderers\OpenGL\GLProgram.h">

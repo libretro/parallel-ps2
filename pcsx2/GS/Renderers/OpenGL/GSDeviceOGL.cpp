@@ -26,6 +26,7 @@
 #include "GS/GSState.h"
 #include "GS/GSUtil.h"
 #include "GSDeviceOGL.h"
+#include "GLDevice.h"
 #include "GLState.h"
 #include "Host.h"
 #include "ShaderCacheVersion.h"
@@ -207,7 +208,7 @@ bool GSDeviceOGL::GetProgram(GLProgram* prog, const gs_str_t* vs, const gs_str_t
 
 GSTexture* GSDeviceOGL::CreateSurface(GSTexture::Type type, int width, int height, int levels, GSTexture::Format format)
 {
-	return new GSTextureOGL(type, width, height, levels, format);
+	return static_cast<GSTexture*>(gs_texture_gl_create(static_cast<unsigned>(type), width, height, levels, static_cast<unsigned>(format)));
 }
 
 RenderAPI GSDeviceOGL::GetRenderAPI() const
@@ -1106,7 +1107,7 @@ void GSDeviceOGL::CommitClear(GSTexture* t, bool use_write_fbo)
 
 GSDownloadTexture* GSDeviceOGL::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
 {
-	return GSDownloadTextureOGL::Create(width, height, format);
+	return static_cast<GSDownloadTexture*>(gs_download_texture_gl_create(width, height, static_cast<unsigned>(format)));
 }
 
 GLuint GSDeviceOGL::CreateSampler(PSSamplerSelector sel)
@@ -2060,6 +2061,25 @@ void GSDeviceOGL::OMSetColorMaskState(OMColorMaskSelector sel)
 
 		glColorMaski(0, sel.wr, sel.wg, sel.wb, sel.wa);
 	}
+}
+
+/* What the C textures ask of the device (GLDevice.h) */
+extern "C" {
+void gs_gl_device_commit_clear(gs_texture* t, int use_write_fbo)
+{
+	GSDeviceOGL::GetInstance()->CommitClear(static_cast<GSTexture*>(t), use_write_fbo != 0);
+}
+void gs_gl_device_unbind_texture(gs_texture* t)
+{
+	GSDeviceOGL::GetInstance()->OMUnbindTexture(static_cast<GSTextureOGL*>(static_cast<GSTexture*>(t)));
+}
+gs_gl_stream_buffer* gs_gl_device_upload_buffer(void) { return GSDeviceOGL::GetInstance()->GetTextureUploadBuffer(); }
+int gs_gl_device_colclip_float(void) { return GSDeviceOGL::GetInstance()->IsColClipFloat(); }
+int gs_gl_device_framebuffer_fetch(void) { return g_gs_device->Features().framebuffer_fetch; }
+int gs_gl_device_download_pbo_disabled(void) { return GSDeviceOGL::GetInstance()->IsDownloadPBODisabled(); }
+void gs_gl_device_finish_before_cpu_read(void) { GSDeviceOGL::GetInstance()->FinishBeforeCpuRead(); }
+GLuint gs_gl_device_fbo_read(void) { return GSDeviceOGL::GetInstance()->GetFBORead(); }
+GLuint gs_gl_device_default_framebuffer(void) { return GL_DEFAULT_FRAMEBUFFER; }
 }
 
 void GSDeviceOGL::OMUnbindTexture(GSTextureOGL* tex)

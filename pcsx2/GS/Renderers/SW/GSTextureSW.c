@@ -101,3 +101,52 @@ gs_texture* gs_texture_sw_create(unsigned type, int width, int height, unsigned 
 		memset(t->data, 0, bytes);
 	return &t->base;
 }
+
+static void gs_download_texture_sw_free(gs_download_texture* base)
+{
+	gs_download_texture_sw* t = (gs_download_texture_sw*)base;
+	memalign_free(t->buffer);
+	free(t);
+}
+
+static void gs_download_texture_sw_copy(gs_download_texture* t, const gs_texture_rect* drc, gs_texture* stex,
+	const gs_texture_rect* src, u32 src_level, int use_transfer_pitch)
+{
+	(void)t; (void)drc; (void)stex; (void)src; (void)src_level; (void)use_transfer_pitch;
+}
+
+static int gs_download_texture_sw_map(gs_download_texture* base, const gs_texture_rect* read_rc)
+{
+	(void)read_rc;
+	base->m_map_pointer = ((gs_download_texture_sw*)base)->buffer;
+	return base->m_map_pointer != NULL;
+}
+
+static void gs_download_texture_sw_unmap(gs_download_texture* base)
+{
+	base->m_map_pointer = NULL;
+}
+
+static void gs_download_texture_sw_flush(gs_download_texture* base)
+{
+	(void)base; /* no GPU work */
+}
+
+static const gs_download_texture_ops s_sw_download_ops = {gs_download_texture_sw_free, gs_download_texture_sw_copy,
+	gs_download_texture_sw_map, gs_download_texture_sw_unmap, gs_download_texture_sw_flush};
+
+gs_download_texture* gs_download_texture_sw_create(u32 width, u32 height, unsigned format)
+{
+	gs_download_texture_sw* t = (gs_download_texture_sw*)malloc(sizeof(*t));
+	const u32 bpp             = format == GS_TEX_UNORM8 ? 1 : 4;
+	if (!t)
+		return NULL;
+	gs_download_texture_base_init(&t->base, width, height, format);
+	t->base.m_ops           = &s_sw_download_ops;
+	t->base.m_current_pitch = (width * bpp + (GS_TEXTURE_SW_ALIGN - 1)) & ~(u32)(GS_TEXTURE_SW_ALIGN - 1);
+	t->buffer_size          = t->base.m_current_pitch * height;
+	t->buffer = (u8*)memalign_alloc(GS_TEXTURE_SW_ALIGN, t->buffer_size ? t->buffer_size : GS_TEXTURE_SW_ALIGN);
+	if (t->buffer && t->buffer_size)
+		memset(t->buffer, 0, t->buffer_size);
+	return &t->base;
+}

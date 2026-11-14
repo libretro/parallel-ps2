@@ -205,7 +205,7 @@
     <ClCompile Include="GS\Renderers\Common\GSTextureFormat.c" />
     <ClCompile Include="GS\Renderers\SW\GSTextureSW.c" />
     <ClCompile Include="GS\Renderers\DX11\GSTexture11.cpp" />
-    <ClCompile Include="GS\Renderers\OpenGL\GSTextureOGL.cpp" />
+    <ClCompile Include="GS\Renderers\OpenGL\GSTextureOGL.c" />
     <ClCompile Include="GS\Renderers\HW\GSTextureCache.cpp" />
     <ClCompile Include="GS\Renderers\SW\GSTextureCacheSW.cpp" />
     <ClCompile Include="GS\GSUtil.c" />
@@ -358,6 +358,7 @@
     <ClInclude Include="SPU2\Mixer.h" />
     <ClInclude Include="SPU2\spu2.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GLContext.h" />
+    <ClInclude Include="GS\Renderers\OpenGL\GLDevice.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GLProgram.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GLProgramCache.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GLShaderCache.h" />

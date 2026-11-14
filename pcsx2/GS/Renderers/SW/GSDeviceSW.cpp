@@ -1130,96 +1130,7 @@ namespace
 	}
 } // anonymous namespace
 
-/* CPU-backed GSDownloadTexture. The SW renderer doesn't actually
- * invoke the download path in the present flow (its m_output is
- * already in CPU memory), but GSDevice::CreateDownloadTexture is a
- * pure virtual so we need *something* that satisfies the interface
- * for any code path that asks. */
-/* Defined after the class, whose thunks it names. */
-extern const struct gs_download_texture_ops s_sw_download_texture_ops;
-
-/* Declared here, at file scope, because the class below is in an
- * anonymous namespace and befriends it. An unqualified friend
- * declaration of a name that has not been seen yet declares that name
- * in the nearest enclosing namespace - the anonymous one - and the real
- * struct further down is then a second, different type of the same
- * name. gcc lets the ambiguity pass; MSVC does not, and says so:
- * "'GSDownloadTextureSW_ops_access': ambiguous symbol". */
-struct GSDownloadTextureSW_ops_access;
-
-namespace
-{
-	class GSDownloadTextureSW final : public GSDownloadTexture
-	{
-		/* Its table is below; see gs_download_texture_ops. */
-		friend struct ::GSDownloadTextureSW_ops_access;
-	private:
-		u8* m_buffer = nullptr;
-		u32 m_buffer_size = 0;
-
-	public:
-		GSDownloadTextureSW(u32 width, u32 height, GSTexture::Format format)
-			: GSDownloadTexture(width, height, format)
-		{
-			m_ops = &s_sw_download_texture_ops;
-			const u32 bpp = (format == GSTexture::Format::UNorm8) ? 1 : 4;
-			m_current_pitch = pcsx2_align_up_pow2_u32(width * bpp, VECTOR_ALIGNMENT);
-			m_buffer_size = m_current_pitch * height;
-			m_buffer = (u8*)memalign_alloc(VECTOR_ALIGNMENT, m_buffer_size ? m_buffer_size : VECTOR_ALIGNMENT);
-			if (m_buffer && m_buffer_size)
-				memset(m_buffer, 0, m_buffer_size);
-		}
-
-		~GSDownloadTextureSW()
-		{
-			memalign_free(m_buffer);
-			m_buffer = NULL;
-		}
-
-		void CopyFromTexture(const GSVector4i& /*drc*/, GSTexture* /*stex*/, const GSVector4i& /*src*/,
-			u32 /*src_level*/, bool /*use_transfer_pitch*/)
-		{
-			/* SW renderer's GSRendererSW already has its pixels in
-			 * m_output (CPU); the present path does not go through
-			 * CopyFromTexture. If something else hits this in a SW-
-			 * only build, leaving the buffer zero-filled is a
-			 * defensible failure mode. */
-		}
-
-		bool Map(const GSVector4i& /*read_rc*/)
-		{
-			m_map_pointer = m_buffer;
-			return m_map_pointer != nullptr;
-		}
-
-		void Unmap()
-		{
-			m_map_pointer = nullptr;
-		}
-
-		void Flush()
-		{
-			/* No GPU work to flush. */
-		}
-	};
-} // namespace
-
-struct GSDownloadTextureSW_ops_access
-{
-	static void sw_dl_free(GSDownloadTexture* t) { delete static_cast<GSDownloadTextureSW*>(t); }
-	static void sw_dl_copy_from_texture(GSDownloadTexture* t, const GSVector4i* drc, GSTexture* stex, const GSVector4i* src, u32 src_level, bool use_transfer_pitch) { static_cast<GSDownloadTextureSW*>(t)->CopyFromTexture(*drc, stex, *src, src_level, use_transfer_pitch); }
-	static bool sw_dl_map(GSDownloadTexture* t, const GSVector4i* read_rc) { return static_cast<GSDownloadTextureSW*>(t)->Map(*read_rc); }
-	static void sw_dl_unmap(GSDownloadTexture* t) { static_cast<GSDownloadTextureSW*>(t)->Unmap(); }
-	static void sw_dl_flush(GSDownloadTexture* t) { static_cast<GSDownloadTextureSW*>(t)->Flush(); }
-};
-
-const struct gs_download_texture_ops s_sw_download_texture_ops = {
-	GSDownloadTextureSW_ops_access::sw_dl_free,
-	GSDownloadTextureSW_ops_access::sw_dl_copy_from_texture,
-	GSDownloadTextureSW_ops_access::sw_dl_map,
-	GSDownloadTextureSW_ops_access::sw_dl_unmap,
-	GSDownloadTextureSW_ops_access::sw_dl_flush
-};
+/* (the CPU-backed download texture is C, GSTextureSW.c) */
 
 /* The software device's table (gs_device_ops, Common/GSDevice.h). Written
  * out rather than made with GS_DEVICE_OPS_DEFINE: it has no version of
@@ -1331,7 +1242,7 @@ GSTexture* GSDeviceSW::CreateSurface(GSTexture::Type type, int width, int height
 
 GSDownloadTexture* GSDeviceSW::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
 {
-	return new GSDownloadTextureSW(width, height, format);
+	return static_cast<GSDownloadTexture*>(gs_download_texture_sw_create(width, height, static_cast<unsigned>(format)));
 }
 
 void GSDeviceSW::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect,

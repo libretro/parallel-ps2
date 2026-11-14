@@ -140,6 +140,39 @@ typedef struct gs_texture
 	} m_clear_value;
 } gs_texture;
 
+/* A texture's copy in CPU-readable memory, read back into: the common
+ * part, first in every backend's (C++: GSDownloadTexture derives from it) */
+struct gs_download_texture;
+
+typedef struct gs_download_texture_ops
+{
+	void (*free)(struct gs_download_texture* t);
+	/* Queues a copy of src (level src_level) of stex into drc; flush
+	 * before reading. use_transfer_pitch packs the rows to the copy's
+	 * width (one copy before the read). */
+	void (*copy_from_texture)(struct gs_download_texture* t, const gs_texture_rect* drc, gs_texture* stex,
+		const gs_texture_rect* src, u32 src_level, int use_transfer_pitch);
+	int (*map)(struct gs_download_texture* t, const gs_texture_rect* read_rc);
+	void (*unmap)(struct gs_download_texture* t);
+	void (*flush)(struct gs_download_texture* t);
+} gs_download_texture_ops;
+
+typedef struct gs_download_texture
+{
+	const gs_download_texture_ops* m_ops;
+	u32 m_width;
+	u32 m_height;
+	const u8* m_map_pointer;
+	u32 m_current_pitch;
+#ifdef __cplusplus
+	GSTextureFormatKind m_format;
+	bool m_needs_flush;
+#else
+	u8 m_format; /* gs_texture_format */
+	u8 m_needs_flush;
+#endif
+} gs_download_texture;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -147,6 +180,8 @@ extern "C" {
 /* The common part as a new texture of a backend starts: no ops yet,
  * Dirty, mipmaps to generate */
 void gs_texture_base_init(gs_texture* t, unsigned type, unsigned format, int width, int height);
+/* The common part as a new download texture starts: no ops yet, unmapped */
+void gs_download_texture_base_init(gs_download_texture* t, u32 width, u32 height, unsigned format);
 
 #ifdef __cplusplus
 }
