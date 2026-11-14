@@ -255,6 +255,16 @@ if(USE_VULKAN)
 	list(APPEND PCSX2_DEFS ENABLE_VULKAN)
 endif()
 
+# The renderers build their pipelines and shaders on worker threads only
+# under HAVE_THREADS; without it every one is compiled on the render
+# thread. The make build defines it unless NEED_THREADING=0, and this
+# build -- the one the buildbot ships for Windows, macOS and Android --
+# has to as well. Keep in step with Makefile.common.
+option(NEED_THREADING "Build the renderers' pipeline and shader worker threads" ON)
+if(NEED_THREADING)
+	list(APPEND PCSX2_DEFS WANT_THREADING HAVE_THREADS)
+endif()
+
 # -Wno-attributes: "always_inline function might not be inlinable" <= real spam (thousand of warnings!!!)
 # -Wno-missing-field-initializers: standard allow to init only the begin of struct/array in static init. Just a silly warning.
 # Note: future GCC (aka GCC 5.1.1) has less false positive so warning could maybe put back

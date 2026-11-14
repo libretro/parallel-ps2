@@ -200,6 +200,35 @@ jobs:
       - name: Build pcap_io with HAVE_PCAP=1
         run: make HAVE_PCAP=1 pcsx2/DEV9/pcap_io.o && nm pcsx2/DEV9/pcap_io.o | grep -q " T net_pcap_new"
 
+  # The buildbot ships the CMake build for Windows, macOS and Android, and
+  # every job above builds with make. CMake once left out defines the
+  # make build has (HAVE_THREADS among them), and the shipped cores built
+  # every Vulkan pipeline on the render thread with nothing failing. This
+  # runs the Vulkan negotiation suite on the CMake core.
+  cmake:
+    name: CMake core on lavapipe
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install the build and lavapipe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build python3 liblzma-dev zlib1g-dev libgl-dev libegl1 mesa-vulkan-drivers libvulkan1 glslc
+
+      - name: Build the core with CMake
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Run the Vulkan negotiation suite on it
+        env:
+          LRPS2_CORE: ${{ github.workspace }}/build/bin/pcsx2_libretro.so
+        run: sh tests/vknegotiate/build.sh
+
   # The hardware-test suites compare against the PS2 test images and check
   # far less without them. A green tick above should not be read as those
   # having run, so this says which did what.

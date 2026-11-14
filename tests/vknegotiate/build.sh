@@ -59,6 +59,37 @@ fi
 rm -rf "$SCRATCH"
 echo "  paraLLEl-GS device: no extension the core has no use for"
 
+# The utility pipelines are the warm-up thread's, not the render
+# thread's. A build without HAVE_THREADS compiles all of them on the
+# render thread while the device is made -- which is what every CMake
+# build shipped once the warm-up thread came in (issue #195's log).
+SCRATCH=$(mktemp -d)
+LOG="$SCRATCH/log"
+if ! VN_VERBOSE=1 timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 >"$LOG" 2>&1; then
+	cat "$LOG"
+	rm -rf "$SCRATCH"
+	echo "  FAIL: Vulkan negotiation, verbose run"
+	exit 1
+fi
+UTIL=$(grep "Vulkan utility pipelines:" "$LOG" | head -n 1)
+case "$UTIL" in
+	*": 0 built on the render thread creating the device, 0 at first use, "*" on the warm-up thread"*)
+		;;
+	*)
+		echo "  $UTIL"
+		rm -rf "$SCRATCH"
+		echo "  FAIL: utility pipelines built on the render thread (no HAVE_THREADS?)"
+		exit 1 ;;
+esac
+case "$UTIL" in
+	*", 0 on the warm-up thread"*)
+		rm -rf "$SCRATCH"
+		echo "  FAIL: the warm-up thread built no utility pipelines"
+		exit 1 ;;
+esac
+rm -rf "$SCRATCH"
+echo "  utility pipelines: all on the warm-up thread"
+
 # A pipeline cache with junk after its header, left by a run before, and
 # the SPIR-V cache a build that compiled its shaders at run time kept: the
 # next run goes on with whatever the driver makes of the one, and takes
