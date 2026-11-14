@@ -98,6 +98,7 @@ public:
 	__fi VkBuffer GetBuffer() const { return m_sb.buffer; }
 	__fi u8* GetCurrentHostPointer() const { return m_sb.host_pointer + m_sb.current_offset; }
 	__fi u32 GetCurrentSize() const { return m_sb.size; }
+	__fi gs_vk_stream_buffer* C() { return &m_sb; }
 	__fi u32 GetCurrentOffset() const { return m_sb.current_offset; }
 
 	bool Create(VkBufferUsageFlags usage, u32 size) { return gs_vk_stream_buffer_create(&m_sb, usage, size) != 0; }

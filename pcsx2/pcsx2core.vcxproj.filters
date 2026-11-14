@@ -905,7 +905,7 @@
     <ClCompile Include="PerformanceMetrics.c">
       <Filter>System</Filter>
     </ClCompile>
-    <ClCompile Include="GS\Renderers\Vulkan\GSTextureVK.cpp">
+    <ClCompile Include="GS\Renderers\Vulkan\GSTextureVK.c">
       <Filter>System\Ps2\GS\Renderers\Vulkan</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\Vulkan\GSDeviceVK.cpp">

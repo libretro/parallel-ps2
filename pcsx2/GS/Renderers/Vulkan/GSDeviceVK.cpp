@@ -980,6 +980,62 @@ void gs_vk_device_release_buffer(VkBuffer buffer, const gs_vk_alloc_t* alloc, in
 u64 gs_vk_device_current_fence(void) { return GSDeviceVK::GetInstance()->GetCurrentFenceCounter(); }
 u64 gs_vk_device_completed_fence(void) { return GSDeviceVK::GetInstance()->GetCompletedFenceCounter(); }
 void gs_vk_device_wait_fence(u64 counter) { GSDeviceVK::GetInstance()->WaitForFenceCounter(counter); }
+
+/* What the C textures ask of it (GSTextureVK.h) */
+VkDevice gs_vk_device_handle(void) { return vk_init_info.device; }
+VkFormat gs_vk_device_native_format(unsigned format)
+{
+	return GSDeviceVK::GetInstance()->LookupNativeFormat(static_cast<GSTexture::Format>(format));
+}
+int gs_vk_device_create_image(const VkImageCreateInfo* ici, VkImage* image, gs_vk_alloc_t* alloc)
+{
+	return GSDeviceVK::GetInstance()->CreateImageInHeap(ici, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image, alloc);
+}
+void gs_vk_device_image_counts(u64* made, u64* destroyed)
+{
+	*made      = GSDeviceVK::GetInstance()->GetImagesMade();
+	*destroyed = GSDeviceVK::GetInstance()->GetImagesDestroyed();
+}
+void gs_vk_device_count_image_destroyed(void) { GSDeviceVK::GetInstance()->CountImageDestroyed(); }
+void gs_vk_device_unbind_texture(gs_texture_vk* t) { GSDeviceVK::GetInstance()->UnbindTexture(GSTextureVK::Of(t)); }
+void gs_vk_device_defer_framebuffer(VkFramebuffer fb) { GSDeviceVK::GetInstance()->DeferFramebufferDestruction(fb); }
+void gs_vk_device_defer_image_view(VkImageView view) { GSDeviceVK::GetInstance()->DeferImageViewDestruction(view); }
+void gs_vk_device_defer_image(VkImage image, const gs_vk_alloc_t* alloc, u64 bytes)
+{
+	GSDeviceVK* const dev = GSDeviceVK::GetInstance();
+	dev->DeferImageDestruction(image, *alloc);
+	dev->RelieveMemPressure(dev->DeferredDestructionPressure(bytes));
+}
+VkCommandBuffer gs_vk_device_command_buffer(void) { return GSDeviceVK::GetInstance()->GetCurrentCommandBuffer(); }
+VkCommandBuffer gs_vk_device_init_command_buffer(void) { return GSDeviceVK::GetInstance()->GetCurrentInitCommandBuffer(); }
+void gs_vk_device_end_render_pass(void) { GSDeviceVK::GetInstance()->EndRenderPass(); }
+void gs_vk_device_execute(int wait) { GSDeviceVK::GetInstance()->ExecuteCommandBuffer(wait != 0); }
+VkBuffer gs_vk_device_staging_buffer(u32 size, void** mapped, gs_vk_alloc_t* alloc)
+{
+	return GSDeviceVK::GetInstance()->AcquireStagingBuffer(size, mapped, alloc);
+}
+struct gs_vk_stream_buffer* gs_vk_device_upload_buffer(void)
+{
+	return GSDeviceVK::GetInstance()->GetTextureUploadBuffer().C();
+}
+u32 gs_vk_device_copy_offset_alignment(void) { return GSDeviceVK::GetInstance()->GetBufferCopyOffsetAlignment(); }
+u32 gs_vk_device_copy_pitch_alignment(void) { return GSDeviceVK::GetInstance()->GetBufferCopyRowPitchAlignment(); }
+int gs_vk_device_stencil_buffer(void) { return g_gs_device->Features().stencil_buffer; }
+VkRenderPass gs_vk_device_load_store_pass(VkFormat color, VkFormat depth, int feedback_loop)
+{
+	return GSDeviceVK::GetInstance()->GetRenderPass(color, depth, VK_ATTACHMENT_LOAD_OP_LOAD,
+		VK_ATTACHMENT_STORE_OP_STORE, VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE,
+		VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE, feedback_loop != 0);
+}
+int gs_vk_device_create_readback_buffer(u32 size, VkBuffer* buffer, gs_vk_alloc_t* alloc, void** mapped)
+{
+	const VkBufferCreateInfo bci = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0u, size,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_SHARING_MODE_EXCLUSIVE, 0u, nullptr};
+	/* Host visible to be read back, cached where the driver has such a
+	 * type (VMA's GPU_TO_CPU). */
+	return GSDeviceVK::GetInstance()->CreateBufferInHeap(&bci, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+		VK_MEMORY_PROPERTY_HOST_CACHED_BIT, buffer, alloc, mapped);
+}
 }
 
 bool GSDeviceVK::CreateBufferInHeap(const VkBufferCreateInfo* bci,
@@ -2381,7 +2437,7 @@ GSTexture* GSDeviceVK::CreateSurface(GSTexture::Type type, int width, int height
 
 GSDownloadTexture* GSDeviceVK::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
 {
-	return GSDownloadTextureVK::Create(width, height, format);
+	return static_cast<GSDownloadTexture*>(gs_download_texture_vk_create(width, height, static_cast<unsigned>(format)));
 }
 
 void GSDeviceVK::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r, u32 destX, u32 destY)
@@ -2457,8 +2513,8 @@ void GSDeviceVK::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r,
 
 	EndRenderPass();
 
-	sTexVK->m_use_fence_counter = GetCurrentFenceCounter();
-	dTexVK->m_use_fence_counter = GetCurrentFenceCounter();
+	sTexVK->SetUseFenceCounter(GetCurrentFenceCounter());
+	dTexVK->SetUseFenceCounter(GetCurrentFenceCounter());
 	sTexVK->TransitionToLayout(
 		(dTexVK == sTexVK) ? GSTextureVK::Layout::TransferSelf : GSTextureVK::Layout::TransferSrc);
 	dTexVK->TransitionToLayout(
@@ -3925,7 +3981,7 @@ void GSDeviceVK::DestroyResources()
 	if (m_null_texture)
 	{
 		m_null_texture->Destroy(false);
-		delete m_null_texture;
+		m_null_texture->Free();
 		m_null_texture = nullptr;
 	}
 }
@@ -5419,7 +5475,7 @@ void GSDeviceVK::PSSetShaderResource(int i, GSTexture* sr, bool check_state)
 			vkTex->CommitClear();
 			vkTex->TransitionToLayout(GSTextureVK::Layout::ShaderReadOnly);
 		}
-		vkTex->m_use_fence_counter = GetCurrentFenceCounter();
+		vkTex->SetUseFenceCounter(GetCurrentFenceCounter());
 	}
 	else
 		vkTex = m_null_texture;
@@ -5449,7 +5505,7 @@ void GSDeviceVK::SetUtilityTexture(GSTexture* tex, VkSampler sampler)
 	{
 		vkTex->CommitClear();
 		vkTex->TransitionToLayout(GSTextureVK::Layout::ShaderReadOnly);
-		vkTex->m_use_fence_counter = GetCurrentFenceCounter();
+		vkTex->SetUseFenceCounter(GetCurrentFenceCounter());
 	}
 	else
 		vkTex = m_null_texture;

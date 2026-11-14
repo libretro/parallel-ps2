@@ -13,147 +13,205 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_TEXTURE_VK_H
+#define GS_TEXTURE_VK_H
 
-#include "GS/GS.h"
-#include "GSVulkanHeap.h"
-#include "GS/Renderers/Vulkan/GSDeviceVK.h"
-#include "GS/Renderers/Common/GSTexture.h"
+#include "common/Pcsx2Defs.h"
+#include "GS/Renderers/Common/GSTextureBase.h"
 #include "GS/Renderers/Common/GSArray.h"
+#include "GS/Renderers/Vulkan/GSVulkanHeap.h"
 #include "GS/Renderers/Vulkan/VKLoader.h"
-#include <limits.h>
 
+#ifdef __cplusplus
+#include "GS/Renderers/Common/GSTexture.h"
+#endif
+
+/* A texture's layout, which barriers move it between (GSTextureVK::Layout) */
+enum gs_vk_layout
+{
+	GS_VK_LAYOUT_UNDEFINED = 0,
+	GS_VK_LAYOUT_PREINITIALIZED,
+	GS_VK_LAYOUT_COLOR_ATTACHMENT,
+	GS_VK_LAYOUT_DEPTH_STENCIL_ATTACHMENT,
+	GS_VK_LAYOUT_SHADER_READ_ONLY,
+	GS_VK_LAYOUT_CLEAR_DST,
+	GS_VK_LAYOUT_TRANSFER_SRC,
+	GS_VK_LAYOUT_TRANSFER_DST,
+	GS_VK_LAYOUT_TRANSFER_SELF,
+	GS_VK_LAYOUT_PRESENT_SRC,
+	GS_VK_LAYOUT_FEEDBACK_LOOP,
+	GS_VK_LAYOUT_READ_WRITE_IMAGE,
+	GS_VK_LAYOUT_COMPUTE_READ_WRITE_IMAGE,
+	GS_VK_LAYOUT_GENERAL,
+	GS_VK_LAYOUT_COUNT
+};
+
+/* A framebuffer of a texture with another (a colour target's with its
+ * depth, or the reverse) or with none: on both textures' lists, and
+ * destroyed with whichever goes first. */
+typedef struct gs_vk_linked_fb
+{
+	struct gs_texture_vk* other;
+	VkFramebuffer fb;
+	int feedback_loop;
+} gs_vk_linked_fb;
+
+typedef struct gs_texture_vk
+{
+	gs_texture base;
+	VkImage image;
+	gs_vk_alloc_t alloc; /* none: the image is not ours */
+	VkImageView view;
+	VkFormat vk_format;
+	u32 layout;          /* gs_vk_layout */
+	gs_texture_rect map_area;
+	int map_level;
+	gs_array_t framebuffers; /* of gs_vk_linked_fb */
+	/* the fence counter of the command buffer that last used it */
+	u64 use_fence_counter;
+} gs_texture_vk;
+
+typedef struct gs_download_texture_vk
+{
+	gs_download_texture base;
+	gs_vk_alloc_t alloc;
+	VkBuffer buffer;
+	u64 copy_fence_counter;
+	u32 buffer_size;
+	int needs_cache_invalidate;
+} gs_download_texture_vk;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* A new texture (type, format: gs_texture_type, gs_texture_format), or
+ * NULL; freed through its ops. */
+gs_texture_vk* gs_texture_vk_create(unsigned type, unsigned format, int width, int height, int levels);
+gs_download_texture* gs_download_texture_vk_create(u32 width, u32 height, unsigned format);
+
+/* The image, view and framebuffers released, now or when the GPU is
+ * past them (@defer); the texture stays, empty. */
+void gs_texture_vk_destroy(gs_texture_vk* t, int defer);
+
+VkImageLayout gs_texture_vk_image_layout(u32 layout);
+void gs_texture_vk_transition(gs_texture_vk* t, VkCommandBuffer cmdbuf, u32 new_layout);
+void gs_texture_vk_transition_levels(gs_texture_vk* t, VkCommandBuffer cmdbuf, int start_level, int num_levels,
+	u32 old_layout, u32 new_layout);
+/* A pending clear recorded: in @cmdbuf, or (NULL) in the device's after
+ * ending its render pass, and then only if one is pending. */
+void gs_texture_vk_commit_clear(gs_texture_vk* t, VkCommandBuffer cmdbuf);
+/* The framebuffer of the texture with @depth (or none), made the first
+ * time it is asked for. */
+VkFramebuffer gs_texture_vk_framebuffer(gs_texture_vk* t, gs_texture_vk* depth, int feedback_loop);
+
+/* What the textures ask of the device (GSDeviceVK.cpp) */
+VkDevice gs_vk_device_handle(void);
+VkFormat gs_vk_device_native_format(unsigned format);
+int gs_vk_device_create_image(const VkImageCreateInfo* ici, VkImage* image, gs_vk_alloc_t* alloc);
+void gs_vk_device_image_counts(u64* made, u64* destroyed);
+void gs_vk_device_count_image_destroyed(void);
+void gs_vk_device_unbind_texture(gs_texture_vk* t);
+void gs_vk_device_defer_framebuffer(VkFramebuffer fb);
+void gs_vk_device_defer_image_view(VkImageView view);
+/* the image destroyed when the GPU is past it; and if too much now
+ * waits, the GPU taken to where it can be freed */
+void gs_vk_device_defer_image(VkImage image, const gs_vk_alloc_t* alloc, u64 bytes);
+VkCommandBuffer gs_vk_device_command_buffer(void);
+VkCommandBuffer gs_vk_device_init_command_buffer(void);
+void gs_vk_device_end_render_pass(void);
+void gs_vk_device_execute(int wait);
+VkBuffer gs_vk_device_staging_buffer(u32 size, void** mapped, gs_vk_alloc_t* alloc);
+struct gs_vk_stream_buffer* gs_vk_device_upload_buffer(void);
+u32 gs_vk_device_copy_offset_alignment(void);
+u32 gs_vk_device_copy_pitch_alignment(void);
+int gs_vk_device_stencil_buffer(void);
+VkRenderPass gs_vk_device_load_store_pass(VkFormat color, VkFormat depth, int feedback_loop);
+int gs_vk_device_create_readback_buffer(u32 size, VkBuffer* buffer, gs_vk_alloc_t* alloc, void** mapped);
+
+#ifdef __cplusplus
+}
+
+/* A gs_texture_vk as the device's C++ sees it: GSTexture and the C
+ * functions, no state of its own. */
 class GSTextureVK final : public GSTexture
 {
-	/* The table this texture answers through is in its own .cpp
-	 * (gs_texture_ops, Common/GSTexture.h). */
-	friend struct GSTextureVK_ops_access;
 public:
 	enum class Layout : u32
 	{
-		Undefined,
-		Preinitialized,
-		ColorAttachment,
-		DepthStencilAttachment,
-		ShaderReadOnly,
-		ClearDst,
-		TransferSrc,
-		TransferDst,
-		TransferSelf,
-		PresentSrc,
-		FeedbackLoop,
-		ReadWriteImage,
-		ComputeReadWriteImage,
-		General,
-		Count
+		Undefined = GS_VK_LAYOUT_UNDEFINED,
+		Preinitialized = GS_VK_LAYOUT_PREINITIALIZED,
+		ColorAttachment = GS_VK_LAYOUT_COLOR_ATTACHMENT,
+		DepthStencilAttachment = GS_VK_LAYOUT_DEPTH_STENCIL_ATTACHMENT,
+		ShaderReadOnly = GS_VK_LAYOUT_SHADER_READ_ONLY,
+		ClearDst = GS_VK_LAYOUT_CLEAR_DST,
+		TransferSrc = GS_VK_LAYOUT_TRANSFER_SRC,
+		TransferDst = GS_VK_LAYOUT_TRANSFER_DST,
+		TransferSelf = GS_VK_LAYOUT_TRANSFER_SELF,
+		PresentSrc = GS_VK_LAYOUT_PRESENT_SRC,
+		FeedbackLoop = GS_VK_LAYOUT_FEEDBACK_LOOP,
+		ReadWriteImage = GS_VK_LAYOUT_READ_WRITE_IMAGE,
+		ComputeReadWriteImage = GS_VK_LAYOUT_COMPUTE_READ_WRITE_IMAGE,
+		General = GS_VK_LAYOUT_GENERAL,
+		Count = GS_VK_LAYOUT_COUNT
 	};
 
-	~GSTextureVK();
+	GSTextureVK() = delete;
 
-	/* A new texture, or NULL; the device frees it through its ops. */
-	static GSTextureVK* Create(Type type, Format format, int width, int height, int levels);
-	static GSTextureVK* Adopt(
-		VkImage image, Type type, Format format, int width, int height, int levels, VkFormat vk_format);
-
-	void Destroy(bool defer);
-
-	__fi VkImage GetImage() const { return m_image; }
-	__fi VkImageView GetView() const { return m_view; }
-	__fi Layout GetLayout() const { return m_layout; }
-	__fi VkFormat GetVkFormat() const { return m_vk_format; }
-
-	VkImageLayout GetVkLayout() const;
-
-	bool Update(const GSVector4i& r, const void* data, int pitch, int layer = 0);
-	bool Map(GSMap& m, const GSVector4i* r = NULL, int layer = 0);
-	void Unmap();
-	void GenerateMipmap();
-
-	void TransitionToLayout(Layout layout);
-	void CommitClear();
-	void CommitClear(VkCommandBuffer cmdbuf);
-
-	// Used when the render pass is changing the image layout, or to force it to
-	// VK_IMAGE_LAYOUT_UNDEFINED, if the existing contents of the image is
-	// irrelevant and will not be loaded.
-	void OverrideImageLayout(Layout new_layout);
-
-	void TransitionToLayout(VkCommandBuffer command_buffer, Layout new_layout);
-	void TransitionSubresourcesToLayout(VkCommandBuffer command_buffer, int start_level, int num_levels,
-			Layout old_layout, Layout new_layout);
-
-
-	/// Framebuffers are lazily allocated.
-	VkFramebuffer GetFramebuffer(bool feedback_loop);
-
-	VkFramebuffer GetLinkedFramebuffer(GSTextureVK* depth_texture, bool feedback_loop);
-
-#if 0
-	// Call when the texture is bound to the pipeline, or read from in a copy.
-	__fi void SetUsedThisCommandBuffer()
+	__fi gs_texture_vk* C() { return reinterpret_cast<gs_texture_vk*>(static_cast<gs_texture*>(this)); }
+	__fi const gs_texture_vk* C() const
 	{
-		m_use_fence_counter = g_vulkan_context->GetCurrentFenceCounter();
+		return reinterpret_cast<const gs_texture_vk*>(static_cast<const gs_texture*>(this));
 	}
-#endif
-	// Contains the fence counter when the texture was last used.
-	// When this matches the current fence counter, the texture was used this command buffer.
-	u64 m_use_fence_counter = 0;
-
-private:
-	GSTextureVK(Type type, Format format, int width, int height, int levels, VkImage image, const gs_vk_alloc_t& alloc,
-		VkImageView view, VkFormat vk_format);
-
-	VkCommandBuffer GetCommandBufferForUpdate();
-	void CopyTextureDataForUpload(void* dst, const void* src, u32 pitch, u32 upload_pitch, u32 height) const;
-	VkBuffer AllocateUploadStagingBuffer(const void* data, u32 pitch, u32 upload_pitch, u32 height) const;
-	void UpdateFromBuffer(VkCommandBuffer cmdbuf, int level, int layer, u32 x, u32 y, u32 width, u32 height,
-			u32 buffer_height, u32 row_length, VkBuffer buffer, u32 buffer_offset);
-
-	VkImage m_image = VK_NULL_HANDLE;
-	gs_vk_alloc_t m_alloc = {};
-	VkImageView m_view = VK_NULL_HANDLE;
-	VkFormat m_vk_format = VK_FORMAT_UNDEFINED;
-	Layout m_layout = Layout::Undefined;
-
-
-	GSVector4i m_map_area = GSVector4i::zero();
-	int m_map_level = INT_MAX;
-
-	/* A framebuffer of this texture with another (a colour target's with
-	 * its depth, or the reverse), or with none; each one is on both
-	 * textures' lists, and goes when either is destroyed. */
-	struct LinkedFramebuffer
+	static __fi GSTextureVK* Of(gs_texture_vk* t)
 	{
-		GSTextureVK* other;
-		VkFramebuffer fb;
-		bool feedback_loop;
-	};
-	gs_array_t m_framebuffers; /* of LinkedFramebuffer */
+		return t ? static_cast<GSTextureVK*>(static_cast<GSTexture*>(&t->base)) : nullptr;
+	}
+
+	static __fi GSTextureVK* Create(Type type, Format format, int width, int height, int levels)
+	{
+		return Of(gs_texture_vk_create(static_cast<unsigned>(type), static_cast<unsigned>(format), width, height, levels));
+	}
+
+	__fi void Destroy(bool defer) { gs_texture_vk_destroy(C(), defer); }
+
+	__fi VkImage GetImage() const { return C()->image; }
+	__fi VkImageView GetView() const { return C()->view; }
+	__fi Layout GetLayout() const { return static_cast<Layout>(C()->layout); }
+	__fi VkFormat GetVkFormat() const { return C()->vk_format; }
+	__fi VkImageLayout GetVkLayout() const { return gs_texture_vk_image_layout(C()->layout); }
+	__fi u64 GetUseFenceCounter() const { return C()->use_fence_counter; }
+	__fi void SetUseFenceCounter(u64 counter) { C()->use_fence_counter = counter; }
+
+	__fi void TransitionToLayout(Layout layout)
+	{
+		gs_texture_vk_transition(C(), gs_vk_device_command_buffer(), static_cast<u32>(layout));
+	}
+	__fi void TransitionToLayout(VkCommandBuffer cmdbuf, Layout layout)
+	{
+		gs_texture_vk_transition(C(), cmdbuf, static_cast<u32>(layout));
+	}
+	__fi void TransitionSubresourcesToLayout(VkCommandBuffer cmdbuf, int start_level, int num_levels,
+		Layout old_layout, Layout new_layout)
+	{
+		gs_texture_vk_transition_levels(C(), cmdbuf, start_level, num_levels, static_cast<u32>(old_layout),
+			static_cast<u32>(new_layout));
+	}
+	__fi void CommitClear() { gs_texture_vk_commit_clear(C(), VK_NULL_HANDLE); }
+	__fi void CommitClear(VkCommandBuffer cmdbuf) { gs_texture_vk_commit_clear(C(), cmdbuf); }
+
+	/* For a render pass that changes the layout itself, or Undefined
+	 * where the contents will not be loaded. */
+	__fi void OverrideImageLayout(Layout layout) { C()->layout = static_cast<u32>(layout); }
+
+	__fi VkFramebuffer GetFramebuffer(bool feedback_loop) { return gs_texture_vk_framebuffer(C(), nullptr, feedback_loop); }
+	__fi VkFramebuffer GetLinkedFramebuffer(GSTextureVK* depth, bool feedback_loop)
+	{
+		return gs_texture_vk_framebuffer(C(), depth ? depth->C() : nullptr, feedback_loop);
+	}
 };
 
-class GSDownloadTextureVK final : public GSDownloadTexture
-{
-	friend struct GSDownloadTextureVK_ops_access;
-public:
-	~GSDownloadTextureVK();
+static_assert(sizeof(GSTextureVK) == sizeof(GSTexture), "GSTextureVK adds nothing to GSTexture");
+#endif
 
-	static GSDownloadTextureVK* Create(u32 width, u32 height, GSTexture::Format format);
-
-	void CopyFromTexture(const GSVector4i& drc, GSTexture* stex, const GSVector4i& src, u32 src_level, bool use_transfer_pitch);
-
-	bool Map(const GSVector4i& read_rc);
-	void Unmap();
-
-	void Flush();
-
-private:
-	GSDownloadTextureVK(u32 width, u32 height, GSTexture::Format format);
-
-	gs_vk_alloc_t m_alloc = {};
-	VkBuffer m_buffer = VK_NULL_HANDLE;
-
-	u64 m_copy_fence_counter = 0;
-	u32 m_buffer_size = 0;
-
-	bool m_needs_cache_invalidate = false;
-};
+#endif

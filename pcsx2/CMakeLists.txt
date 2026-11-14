@@ -489,7 +489,7 @@ endif()
 if(USE_VULKAN)
 	list(APPEND pcsx2GSSources
 		GS/Renderers/Vulkan/GSDeviceVK.cpp
-		GS/Renderers/Vulkan/GSTextureVK.cpp
+		GS/Renderers/Vulkan/GSTextureVK.c
 		GS/Renderers/Vulkan/VKLoader.c
 		GS/Renderers/Vulkan/VKStreamBuffer.c
 		GS/Renderers/Vulkan/VKBuilders.c
