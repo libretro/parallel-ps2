@@ -2488,7 +2488,7 @@ public:
 	}
 
 	Device *device;
-	const VolkDeviceTable &table;
+	const VulkanDeviceTable &table;
 
 	VkImage image = VK_NULL_HANDLE;
 	VkDeviceMemory memory = VK_NULL_HANDLE;
@@ -4144,7 +4144,7 @@ void Device::set_name(const CommandBuffer &cmd, const char *name)
 }
 
 
-const VolkDeviceTable &Device::get_device_table() const
+const VulkanDeviceTable &Device::get_device_table() const
 {
 	return *table;
 }

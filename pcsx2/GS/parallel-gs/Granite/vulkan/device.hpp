@@ -175,7 +175,7 @@ public:
 	void set_context(const Context &context);
 
 	void init_frame_contexts(unsigned count);
-	const VolkDeviceTable &get_device_table() const;
+	const VulkanDeviceTable &get_device_table() const;
 
 	size_t get_pipeline_cache_size();
 	bool get_pipeline_cache_data(uint8_t *data, size_t size);
@@ -400,7 +400,7 @@ private:
 	VkInstance instance = VK_NULL_HANDLE;
 	VkPhysicalDevice gpu = VK_NULL_HANDLE;
 	VkDevice device = VK_NULL_HANDLE;
-	const VolkDeviceTable *table = nullptr;
+	const VulkanDeviceTable *table = nullptr;
 	const Context *ctx = nullptr;
 	QueueInfo queue_info;
 	unsigned num_thread_indices = 1;
@@ -472,7 +472,7 @@ private:
 
 		Device &device;
 		unsigned frame_index;
-		const VolkDeviceTable &table;
+		const VulkanDeviceTable &table;
 		Managers &managers;
 
 		std::vector<CommandPool> cmd_pools[QUEUE_INDEX_COUNT];

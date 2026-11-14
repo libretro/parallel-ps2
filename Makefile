@@ -843,7 +843,7 @@ endif
 
 # Unreferenced code and data stay out of the core. Every function and data
 # item gets its own section and the linker keeps only what the exports
-# (link.T, libretro.osx.def) reach: vendored Granite, volk, Vulkan helpers
+# (link.T, libretro.osx.def) reach: vendored Granite, Vulkan helpers
 # and emulator code the libretro build never calls, about 1.1 MB of text
 # on x86-64 Linux. GNU ld, gold, lld and mold take --gc-sections; Apple's
 # ld64 strips dead atoms with -dead_strip. Not MinGW: GNU ld's PE script

@@ -209,7 +209,7 @@ bool Context::init_loader(PFN_vkGetInstanceProcAddr addr, bool force_reload)
 	}
 
 	instance_proc_addr = addr;
-	volkInitializeCustom(addr);
+	granite_vk_init(addr);
 	loader_init_once = true;
 	return true;
 }
@@ -346,7 +346,7 @@ VkApplicationInfo Context::get_promoted_application_info() const
 
 	VK_ASSERT(!inherit_info || inherit_info->pApplicationInfo);
 	uint32_t supported_instance_version =
-			inherit_info ? inherit_info->pApplicationInfo->apiVersion : volkGetInstanceVersion();
+			inherit_info ? inherit_info->pApplicationInfo->apiVersion : granite_vk_instance_version();
 
 	// Granite min-req is 1.1.
 	app_info.apiVersion = std::max(VK_API_VERSION_1_1, app_info.apiVersion);
@@ -364,7 +364,7 @@ bool Context::create_instance(const char * const *instance_ext, uint32_t instanc
 	auto app_info = get_promoted_application_info();
 	auto *inherit_info = instance_factory ? instance_factory->get_existing_create_info() : nullptr;
 	uint32_t supported_instance_version =
-			inherit_info ? inherit_info->pApplicationInfo->apiVersion : volkGetInstanceVersion();
+			inherit_info ? inherit_info->pApplicationInfo->apiVersion : granite_vk_instance_version();
 
 	if (supported_instance_version < app_info.apiVersion)
 	{
@@ -583,7 +583,7 @@ bool Context::create_instance(const char * const *instance_ext, uint32_t instanc
 		ext.num_instance_extensions = uint32_t(enabled_instance_extensions.size());
 	}
 
-	volkLoadInstance(instance);
+	granite_vk_load_instance(instance);
 
 #if defined(VULKAN_DEBUG)
 	if (ext.supports_debug_utils)
@@ -1706,7 +1706,7 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	}
 
 
-	volkLoadDeviceTable(&device_table, device);
+	granite_vk_load_device_table(&device_table, device);
 
 #define PROMOTE_CALL(n, e) if (!device_table.vk##n) device_table.vk##n = device_table.vk##n##e
 	PROMOTE_CALL(CreateRenderPass2, KHR);

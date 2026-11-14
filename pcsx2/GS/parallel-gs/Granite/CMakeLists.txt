@@ -1,6 +1,6 @@
 # Granite as the libretro core carries it: the Vulkan backend
-# (granite-vulkan), the utilities it uses (granite-util) and the volk
-# loader. Nothing else is vendored, so nothing else is configurable.
+# (granite-vulkan, with its own Vulkan loader) and the utilities it uses
+# (granite-util). Nothing else is vendored, so nothing else is configurable.
 cmake_minimum_required(VERSION 3.6)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 99)
@@ -28,6 +28,5 @@ function(add_granite_internal_lib NAME)
     target_compile_options(${NAME} PRIVATE ${GRANITE_CXX_FLAGS})
 endfunction()
 
-add_subdirectory(third_party)
 add_subdirectory(util)
 add_subdirectory(vulkan)

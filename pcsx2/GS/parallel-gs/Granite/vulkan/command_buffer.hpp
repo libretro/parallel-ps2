@@ -729,7 +729,7 @@ private:
 	CommandBuffer(Device *device, VkCommandBuffer cmd, VkPipelineCache cache, Type type, bool secondary);
 
 	Device *device;
-	const VolkDeviceTable &table;
+	const VulkanDeviceTable &table;
 	VkCommandBuffer cmd;
 	Type type;
 

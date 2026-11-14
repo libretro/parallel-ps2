@@ -174,7 +174,8 @@ VkInstance pgs_create_instance(PFN_vkGetInstanceProcAddr get_instance_proc_addr,
 	Util::set_thread_logging_interface(&logging_iface);
 	vulkan_ctx_free();
 
-	// Always force the reload, since the other backends may clobber the volk pointers.
+	/* Reloaded every time: each instance may come with its own
+	 * vkGetInstanceProcAddr. */
 	if (!Context::init_loader(get_instance_proc_addr, true))
 		return VK_NULL_HANDLE;
 

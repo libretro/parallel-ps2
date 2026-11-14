@@ -46,7 +46,7 @@ public:
 
 private:
 	Device *device;
-	const VolkDeviceTable *table;
+	const VulkanDeviceTable *table;
 	VkCommandPool pool = VK_NULL_HANDLE;
 	std::vector<VkCommandBuffer> buffers;
 #ifdef VULKAN_DEBUG

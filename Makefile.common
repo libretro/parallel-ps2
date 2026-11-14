@@ -41,7 +41,6 @@ ifeq ($(HAVE_VULKAN), 1)
 		-I$(GRANITE_DIR)/util \
 		-I$(GRANITE_DIR)/vulkan \
 		-I$(GRANITE_DIR)/application/global \
-		-I$(GRANITE_DIR)/third_party/volk \
 		-I$(PGS_DIR)/gs
 endif
 
@@ -612,8 +611,8 @@ SOURCES_CXX += \
 	$(GRANITE_DIR)/vulkan/shader.cpp \
 	$(GRANITE_DIR)/vulkan/texture/texture_format.cpp
 
-# Granite volk (C, single TU)
-SOURCES_C += $(GRANITE_DIR)/third_party/volk/volk.c
+# Granite's Vulkan loader (C)
+SOURCES_C += $(GRANITE_DIR)/vulkan/vulkan_loader.c
 endif
 
 # ============================================================================

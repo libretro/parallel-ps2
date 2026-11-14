@@ -3,11 +3,11 @@
 #
 # The build gives every function and data item its own section and links
 # with --gc-sections (-dead_strip on Apple), so vendored code the libretro
-# core never calls is not shipped. The witnesses are volk's own loader
-# entry points: the frontend hands the core vkGetInstanceProcAddr, nothing
-# in the core calls these, and volk is third-party code we do not edit, so
-# only the linker can keep them out. A core linked without the dead-code
-# pass carries every one of them.
+# core never calls is not shipped. The witnesses are libretro-common
+# functions in units the core builds that nothing in the core calls: the
+# copy is a plain sync we do not edit, so only the linker can keep them
+# out. A core linked without the dead-code pass carries every one of
+# them.
 #
 # Runs on the built core: pcsx2_libretro.so/.dylib at the top of the tree,
 # or LRPS2_CORE. Skips without a core, without nm, when the core is
@@ -53,8 +53,8 @@ if ! grep -q 'retro_run$' "$SYMS"; then
 fi
 
 fail=0
-for sym in volkInitialize volkFinalize volkLoadInstanceOnly \
-           volkGetLoadedInstance volkGetLoadedDevice; do
+for sym in encoding_crc32_ogg filestream_scanf filestream_vscanf \
+           filestream_copy_step fill_pathname_abbreviate_special; do
 	# Mach-O prefixes C symbols with an underscore.
 	if grep -Eq "[[:space:]]_?$sym\$" "$SYMS"; then
 		echo "  FAIL: $sym is linked in, and nothing calls it"

@@ -65,7 +65,7 @@ libretro-prepare-windows-x64:
     - msvc2019
   variables:
     GIT_SUBMODULE_STRATEGY: normal
-  # paraLLEl-GS, Granite and volk are vendored in the tree, so only 3rdparty
+  # paraLLEl-GS and Granite are vendored in the tree, so only 3rdparty
   # is still a submodule.  The heroics that used to live here - initialising
   # parallel-gs, then Granite, then volk and Khronos headers one at a time -
   # existed to avoid checking out

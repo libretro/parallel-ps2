@@ -39,7 +39,7 @@ public:
 
 private:
 	Device *device = nullptr;
-	const VolkDeviceTable *table = nullptr;
+	const VulkanDeviceTable *table = nullptr;
 	std::vector<VkSemaphore> semaphores;
 };
 }

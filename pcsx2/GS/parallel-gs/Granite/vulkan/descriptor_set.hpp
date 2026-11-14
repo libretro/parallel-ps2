@@ -192,7 +192,7 @@ public:
 
 private:
 	Device *device;
-	const VolkDeviceTable &table;
+	const VulkanDeviceTable &table;
 	VkDescriptorSetLayout set_layout_pool = VK_NULL_HANDLE;
 	VkDescriptorSetLayout set_layout_push = VK_NULL_HANDLE;
 

@@ -275,7 +275,7 @@ private:
 	Util::ObjectPool<MiniHeap> object_pool;
 	std::vector<std::unique_ptr<Allocator>> allocators;
 	Device *device = nullptr;
-	const VolkDeviceTable *table = nullptr;
+	const VulkanDeviceTable *table = nullptr;
 	VkPhysicalDeviceMemoryProperties mem_props;
 	VkDeviceSize atom_alignment = 1;
 	struct Allocation
