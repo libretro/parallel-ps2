@@ -13,251 +13,257 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_D3D12_DESCRIPTOR_HEAP_MANAGER_H
+#define GS_D3D12_DESCRIPTOR_HEAP_MANAGER_H
 
 #include "common/Pcsx2Defs.h"
-#include "GS/Renderers/Common/GSKeyHash.h"
-#include "common/RedtapeWindows.h"
-#include "common/RedtapeWilCom.h"
+#include "GS/Renderers/Common/GSFlatMap.h"
 
-#include <bitset>
-#include <cstring>
+/* A descriptor's addresses: D3D12's own handle types in C++, the same
+ * layout in C, which does not include d3d12.h */
+#ifdef __cplusplus
 #include <d3d12.h>
-#include <unordered_map>
-#include <vector>
-
-// This class provides an abstraction for D3D12 descriptor heaps.
-struct D3D12DescriptorHandle final
+typedef D3D12_CPU_DESCRIPTOR_HANDLE gs_d3d12_cpu_handle;
+typedef D3D12_GPU_DESCRIPTOR_HANDLE gs_d3d12_gpu_handle;
+#else
+typedef struct gs_d3d12_cpu_handle
 {
-enum : u32
-       {
-	       INVALID_INDEX = 0xFFFFFFFF
-       };
+	size_t ptr;
+} gs_d3d12_cpu_handle;
+typedef struct gs_d3d12_gpu_handle
+{
+	u64 ptr;
+} gs_d3d12_gpu_handle;
+#endif
 
-       D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle{};
-       D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle{};
-       u32 index = INVALID_INDEX;
+#define GS_D3D12_DESCRIPTOR_INVALID 0xFFFFFFFFu
+/* (the values of D3D12_DESCRIPTOR_HEAP_TYPE) */
+#define GS_D3D12_DESCRIPTOR_HEAP_SAMPLER 1
+/* D3D12_MAX_SHADER_VISIBLE_SAMPLER_HEAP_SIZE */
+#define GS_D3D12_MAX_SHADER_VISIBLE_SAMPLERS 2048
+#define GS_D3D12_SAMPLER_GROUP_MAX 4
 
-       __fi operator bool() const { return index != INVALID_INDEX; }
+typedef struct gs_d3d12_descriptor_handle
+{
+	gs_d3d12_cpu_handle cpu_handle;
+	gs_d3d12_gpu_handle gpu_handle;
+	u32 index; /* GS_D3D12_DESCRIPTOR_INVALID for none */
+} gs_d3d12_descriptor_handle;
 
-       __fi operator D3D12_CPU_DESCRIPTOR_HANDLE() const { return cpu_handle; }
-       __fi operator D3D12_GPU_DESCRIPTOR_HANDLE() const { return gpu_handle; }
+/* A heap whose descriptors are taken and given back one at a time, the
+ * lowest free first */
+typedef struct gs_d3d12_descriptor_heap_manager
+{
+	void* heap; /* ID3D12DescriptorHeap* */
+	u32 num_descriptors;
+	u32 increment;
+	int shader_visible;
+	gs_d3d12_cpu_handle base_cpu;
+	gs_d3d12_gpu_handle base_gpu;
+	u32* free_bits; /* a set bit is a free descriptor */
+	u32 free_words;
+} gs_d3d12_descriptor_heap_manager;
 
-       __fi bool operator==(const D3D12DescriptorHandle& rhs) const { return (index == rhs.index); }
-       __fi bool operator!=(const D3D12DescriptorHandle& rhs) const { return (index != rhs.index); }
-       __fi bool operator<(const D3D12DescriptorHandle& rhs) const { return (index < rhs.index); }
-       __fi bool operator<=(const D3D12DescriptorHandle& rhs) const { return (index <= rhs.index); }
-       __fi bool operator>(const D3D12DescriptorHandle& rhs) const { return (index > rhs.index); }
-       __fi bool operator>=(const D3D12DescriptorHandle& rhs) const { return (index >= rhs.index); }
+/* A shader-visible heap handed out in runs from the start, all of it
+ * back at once */
+typedef struct gs_d3d12_descriptor_allocator
+{
+	void* heap; /* ID3D12DescriptorHeap* */
+	u32 increment;
+	u32 num_descriptors;
+	u32 current_offset;
+	gs_d3d12_cpu_handle base_cpu;
+	gs_d3d12_gpu_handle base_gpu;
+} gs_d3d12_descriptor_allocator;
 
-       __fi void Clear()
-       {
-	       cpu_handle = {};
-	       gpu_handle = {};
-	       index = INVALID_INDEX;
-       }
+/* Sampler groups copied into a shader-visible heap once each: the same
+ * group of descriptors (by index) gives the same copy until a reset */
+typedef struct gs_d3d12_sampler_allocator
+{
+	gs_d3d12_descriptor_allocator alloc;
+	void* device; /* ID3D12Device* */
+	u32 num_samplers;
+	gs_flat_map_t groups; /* u32[GS_D3D12_SAMPLER_GROUP_MAX] -> handle */
+} gs_d3d12_sampler_allocator;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void gs_d3d12_descriptor_handle_clear(gs_d3d12_descriptor_handle* h);
+
+void gs_d3d12_descriptor_heap_manager_init(gs_d3d12_descriptor_heap_manager* m);
+int gs_d3d12_descriptor_heap_manager_create(gs_d3d12_descriptor_heap_manager* m, void* device, u32 type,
+	u32 num_descriptors, int shader_visible);
+void gs_d3d12_descriptor_heap_manager_destroy(gs_d3d12_descriptor_heap_manager* m);
+int gs_d3d12_descriptor_heap_manager_allocate(gs_d3d12_descriptor_heap_manager* m, gs_d3d12_descriptor_handle* handle);
+void gs_d3d12_descriptor_heap_manager_free_index(gs_d3d12_descriptor_heap_manager* m, u32 index);
+void gs_d3d12_descriptor_heap_manager_free(gs_d3d12_descriptor_heap_manager* m, gs_d3d12_descriptor_handle* handle);
+
+void gs_d3d12_descriptor_allocator_init(gs_d3d12_descriptor_allocator* a);
+int gs_d3d12_descriptor_allocator_create(gs_d3d12_descriptor_allocator* a, void* device, u32 type, u32 num_descriptors);
+void gs_d3d12_descriptor_allocator_destroy(gs_d3d12_descriptor_allocator* a);
+int gs_d3d12_descriptor_allocator_allocate(gs_d3d12_descriptor_allocator* a, u32 num_handles,
+	gs_d3d12_descriptor_handle* out_base_handle);
+void gs_d3d12_descriptor_allocator_reset(gs_d3d12_descriptor_allocator* a);
+
+void gs_d3d12_sampler_allocator_init(gs_d3d12_sampler_allocator* s, u32 num_samplers);
+int gs_d3d12_sampler_allocator_create(gs_d3d12_sampler_allocator* s, void* device, u32 num_descriptors);
+void gs_d3d12_sampler_allocator_destroy(gs_d3d12_sampler_allocator* s);
+/* The shader-visible copy of one sampler, or of num_samplers */
+int gs_d3d12_sampler_allocator_lookup_single(gs_d3d12_sampler_allocator* s, gs_d3d12_descriptor_handle* gpu_handle,
+	const gs_d3d12_descriptor_handle* cpu_handle);
+int gs_d3d12_sampler_allocator_lookup_group(gs_d3d12_sampler_allocator* s, gs_d3d12_descriptor_handle* gpu_handle,
+	const gs_d3d12_descriptor_handle* cpu_handles);
+/* Forgets the copies; the heap is not reused until a reset */
+void gs_d3d12_sampler_allocator_invalidate(gs_d3d12_sampler_allocator* s);
+void gs_d3d12_sampler_allocator_reset(gs_d3d12_sampler_allocator* s);
+/* More than half the heap's worth of groups */
+int gs_d3d12_sampler_allocator_should_reset(const gs_d3d12_sampler_allocator* s);
+
+/* What they ask of the device (GSDevice12.cpp) */
+int gs_d3d12_device_create_descriptor_heap(void* device, u32 type, u32 num_descriptors, int shader_visible,
+	void** heap, gs_d3d12_cpu_handle* base_cpu, gs_d3d12_gpu_handle* base_gpu, u32* increment);
+void gs_d3d12_device_release_descriptor_heap(void* heap);
+void gs_d3d12_device_copy_sampler(void* device, gs_d3d12_cpu_handle dst, gs_d3d12_cpu_handle src);
+void gs_d3d12_device_copy_sampler_group(void* device, gs_d3d12_cpu_handle dst, const gs_d3d12_descriptor_handle* src,
+	u32 count);
+
+#ifdef __cplusplus
+}
+
+/* The C handle, with the C++ device's ways of comparing and passing it */
+struct D3D12DescriptorHandle final : gs_d3d12_descriptor_handle
+{
+	enum : u32
+	{
+		INVALID_INDEX = GS_D3D12_DESCRIPTOR_INVALID
+	};
+
+	D3D12DescriptorHandle() { Clear(); }
+
+	__fi operator bool() const { return index != INVALID_INDEX; }
+
+	__fi operator D3D12_CPU_DESCRIPTOR_HANDLE() const { return cpu_handle; }
+	__fi operator D3D12_GPU_DESCRIPTOR_HANDLE() const { return gpu_handle; }
+
+	__fi bool operator==(const D3D12DescriptorHandle& rhs) const { return (index == rhs.index); }
+	__fi bool operator!=(const D3D12DescriptorHandle& rhs) const { return (index != rhs.index); }
+	__fi bool operator<(const D3D12DescriptorHandle& rhs) const { return (index < rhs.index); }
+	__fi bool operator<=(const D3D12DescriptorHandle& rhs) const { return (index <= rhs.index); }
+	__fi bool operator>(const D3D12DescriptorHandle& rhs) const { return (index > rhs.index); }
+	__fi bool operator>=(const D3D12DescriptorHandle& rhs) const { return (index >= rhs.index); }
+
+	__fi void Clear() { gs_d3d12_descriptor_handle_clear(this); }
 };
+static_assert(sizeof(D3D12DescriptorHandle) == sizeof(gs_d3d12_descriptor_handle), "a view, no fields");
 
 class D3D12DescriptorHeapManager final
 {
-	public:
-		D3D12DescriptorHeapManager();
-		~D3D12DescriptorHeapManager();
+public:
+	D3D12DescriptorHeapManager() { gs_d3d12_descriptor_heap_manager_init(&m_m); }
+	D3D12DescriptorHeapManager(const D3D12DescriptorHeapManager&) = delete;
+	D3D12DescriptorHeapManager& operator=(const D3D12DescriptorHeapManager&) = delete;
+	~D3D12DescriptorHeapManager() { Destroy(); }
 
-		ID3D12DescriptorHeap* GetDescriptorHeap() const { return m_descriptor_heap.get(); }
-		u32 GetDescriptorIncrementSize() const { return m_descriptor_increment_size; }
+	ID3D12DescriptorHeap* GetDescriptorHeap() const { return static_cast<ID3D12DescriptorHeap*>(m_m.heap); }
+	u32 GetDescriptorIncrementSize() const { return m_m.increment; }
 
-		bool Create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type, u32 num_descriptors, bool shader_visible);
-		void Destroy();
+	bool Create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type, u32 num_descriptors, bool shader_visible)
+	{
+		return gs_d3d12_descriptor_heap_manager_create(&m_m, device, static_cast<u32>(type), num_descriptors,
+				   shader_visible) != 0;
+	}
+	void Destroy() { gs_d3d12_descriptor_heap_manager_destroy(&m_m); }
 
-		bool Allocate(D3D12DescriptorHandle* handle);
-		void Free(D3D12DescriptorHandle* handle);
-		void Free(u32 index);
+	bool Allocate(D3D12DescriptorHandle* handle) { return gs_d3d12_descriptor_heap_manager_allocate(&m_m, handle) != 0; }
+	void Free(D3D12DescriptorHandle* handle) { gs_d3d12_descriptor_heap_manager_free(&m_m, handle); }
+	void Free(u32 index) { gs_d3d12_descriptor_heap_manager_free_index(&m_m, index); }
 
-	private:
-		wil::com_ptr_nothrow<ID3D12DescriptorHeap> m_descriptor_heap;
-		u32 m_num_descriptors = 0;
-		u32 m_descriptor_increment_size = 0;
-		bool m_shader_visible = false;
-
-		D3D12_CPU_DESCRIPTOR_HANDLE m_heap_base_cpu = {};
-		D3D12_GPU_DESCRIPTOR_HANDLE m_heap_base_gpu = {};
-
-		static constexpr u32 BITSET_SIZE = 1024;
-		using BitSetType = std::bitset<BITSET_SIZE>;
-		std::vector<BitSetType> m_free_slots = {};
+private:
+	gs_d3d12_descriptor_heap_manager m_m;
 };
 
 class D3D12DescriptorAllocator
 {
-	public:
-		D3D12DescriptorAllocator();
-		~D3D12DescriptorAllocator();
+public:
+	D3D12DescriptorAllocator() { gs_d3d12_descriptor_allocator_init(&m_a); }
+	D3D12DescriptorAllocator(const D3D12DescriptorAllocator&) = delete;
+	D3D12DescriptorAllocator& operator=(const D3D12DescriptorAllocator&) = delete;
+	/* (taking another's heap, its own released: a command list's
+	 * resources reset with = {}) */
+	D3D12DescriptorAllocator& operator=(D3D12DescriptorAllocator&& rhs)
+	{
+		Destroy();
+		m_a = rhs.m_a;
+		gs_d3d12_descriptor_allocator_init(&rhs.m_a);
+		return *this;
+	}
+	~D3D12DescriptorAllocator() { Destroy(); }
 
-		__fi ID3D12DescriptorHeap* GetDescriptorHeap() const { return m_descriptor_heap.get(); }
-		__fi u32 GetDescriptorIncrementSize() const { return m_descriptor_increment_size; }
+	__fi ID3D12DescriptorHeap* GetDescriptorHeap() const { return static_cast<ID3D12DescriptorHeap*>(m_a.heap); }
+	__fi u32 GetDescriptorIncrementSize() const { return m_a.increment; }
 
-		bool Create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type, u32 num_descriptors);
-		void Destroy();
+	bool Create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type, u32 num_descriptors)
+	{
+		return gs_d3d12_descriptor_allocator_create(&m_a, device, static_cast<u32>(type), num_descriptors) != 0;
+	}
+	void Destroy() { gs_d3d12_descriptor_allocator_destroy(&m_a); }
 
-		bool Allocate(u32 num_handles, D3D12DescriptorHandle* out_base_handle);
-		void Reset();
+	bool Allocate(u32 num_handles, D3D12DescriptorHandle* out_base_handle)
+	{
+		return gs_d3d12_descriptor_allocator_allocate(&m_a, num_handles, out_base_handle) != 0;
+	}
+	void Reset() { gs_d3d12_descriptor_allocator_reset(&m_a); }
 
-	private:
-		wil::com_ptr_nothrow<ID3D12DescriptorHeap> m_descriptor_heap;
-		u32 m_descriptor_increment_size = 0;
-		u32 m_num_descriptors = 0;
-		u32 m_current_offset = 0;
-
-		D3D12_CPU_DESCRIPTOR_HANDLE m_heap_base_cpu = {};
-		D3D12_GPU_DESCRIPTOR_HANDLE m_heap_base_gpu = {};
+private:
+	gs_d3d12_descriptor_allocator m_a;
 };
 
 template <u32 NumSamplers>
-class D3D12GroupedSamplerAllocator : private D3D12DescriptorAllocator
+class D3D12GroupedSamplerAllocator
 {
-	struct Key
+	static_assert(NumSamplers >= 1 && NumSamplers <= GS_D3D12_SAMPLER_GROUP_MAX, "the C key's size");
+
+public:
+	D3D12GroupedSamplerAllocator() { gs_d3d12_sampler_allocator_init(&m_s, NumSamplers); }
+	D3D12GroupedSamplerAllocator(const D3D12GroupedSamplerAllocator&) = delete;
+	D3D12GroupedSamplerAllocator& operator=(const D3D12GroupedSamplerAllocator&) = delete;
+	D3D12GroupedSamplerAllocator& operator=(D3D12GroupedSamplerAllocator&& rhs)
 	{
-		u32 idx[NumSamplers];
+		Destroy();
+		m_s = rhs.m_s;
+		gs_d3d12_sampler_allocator_init(&rhs.m_s, NumSamplers);
+		return *this;
+	}
+	~D3D12GroupedSamplerAllocator() { Destroy(); }
 
-		__fi bool operator==(const Key& rhs) const
-		{
-			return (std::memcmp(idx, rhs.idx, sizeof(idx)) == 0);
-		}
-		__fi bool operator!=(const Key& rhs) const
-		{
-			return (std::memcmp(idx, rhs.idx, sizeof(idx)) != 0);
-		}
-	};
+	__fi ID3D12DescriptorHeap* GetDescriptorHeap() const { return static_cast<ID3D12DescriptorHeap*>(m_s.alloc.heap); }
+	__fi u32 GetDescriptorIncrementSize() const { return m_s.alloc.increment; }
 
-	struct KeyHash
+	bool Create(ID3D12Device* device, u32 num_descriptors)
 	{
-		__fi std::size_t operator()(const Key& key) const
-		{
-			return gs_key_hash(key.idx, sizeof(key.idx));
-		}
-	};
+		return gs_d3d12_sampler_allocator_create(&m_s, device, num_descriptors) != 0;
+	}
+	void Destroy() { gs_d3d12_sampler_allocator_destroy(&m_s); }
 
+	bool LookupSingle(D3D12DescriptorHandle* gpu_handle, const D3D12DescriptorHandle& cpu_handle)
+	{
+		return gs_d3d12_sampler_allocator_lookup_single(&m_s, gpu_handle, &cpu_handle) != 0;
+	}
+	/* (cpu_handles: NumSamplers of them) */
+	bool LookupGroup(D3D12DescriptorHandle* gpu_handle, const D3D12DescriptorHandle* cpu_handles)
+	{
+		return gs_d3d12_sampler_allocator_lookup_group(&m_s, gpu_handle, cpu_handles) != 0;
+	}
 
-	public:
-	D3D12GroupedSamplerAllocator();
-	~D3D12GroupedSamplerAllocator();
+	void InvalidateCache() { gs_d3d12_sampler_allocator_invalidate(&m_s); }
+	void Reset() { gs_d3d12_sampler_allocator_reset(&m_s); }
+	bool ShouldReset() const { return gs_d3d12_sampler_allocator_should_reset(&m_s) != 0; }
 
-	using D3D12DescriptorAllocator::GetDescriptorHeap;
-	using D3D12DescriptorAllocator::GetDescriptorIncrementSize;
-
-	bool Create(ID3D12Device* device, u32 num_descriptors);
-	void Destroy();
-
-	bool LookupSingle(D3D12DescriptorHandle* gpu_handle, const D3D12DescriptorHandle& cpu_handle);
-	bool LookupGroup(D3D12DescriptorHandle* gpu_handle, const D3D12DescriptorHandle* cpu_handles);
-
-	// Clears cache but doesn't reset allocator.
-	void InvalidateCache();
-
-	void Reset();
-	bool ShouldReset() const;
-
-	private:
-	wil::com_ptr_nothrow<ID3D12Device> m_device;
-	std::unordered_map<Key, D3D12DescriptorHandle, KeyHash> m_groups;
+private:
+	gs_d3d12_sampler_allocator m_s;
 };
+#endif
 
-template <u32 NumSamplers>
-D3D12GroupedSamplerAllocator<NumSamplers>::D3D12GroupedSamplerAllocator() = default;
-
-template <u32 NumSamplers>
-D3D12GroupedSamplerAllocator<NumSamplers>::~D3D12GroupedSamplerAllocator() = default;
-
-	template <u32 NumSamplers>
-bool D3D12GroupedSamplerAllocator<NumSamplers>::Create(ID3D12Device* device, u32 num_descriptors)
-{
-	if (!D3D12DescriptorAllocator::Create(device, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, num_descriptors))
-		return false;
-
-	m_device = device;
-	return true;
-}
-
-template <u32 NumSamplers>
-void D3D12GroupedSamplerAllocator<NumSamplers>::Destroy()
-{
-	D3D12DescriptorAllocator::Destroy();
-	m_device.reset();
-}
-
-template <u32 NumSamplers>
-void D3D12GroupedSamplerAllocator<NumSamplers>::Reset()
-{
-	m_groups.clear();
-	D3D12DescriptorAllocator::Reset();
-}
-
-template <u32 NumSamplers>
-void D3D12GroupedSamplerAllocator<NumSamplers>::InvalidateCache()
-{
-	m_groups.clear();
-}
-
-template <u32 NumSamplers>
-bool D3D12GroupedSamplerAllocator<NumSamplers>::LookupSingle(D3D12DescriptorHandle* gpu_handle, const D3D12DescriptorHandle& cpu_handle)
-{
-	Key key;
-	key.idx[0] = cpu_handle.index;
-	for (u32 i = 1; i < NumSamplers; i++)
-		key.idx[i] = 0;
-
-	auto it = m_groups.find(key);
-	if (it != m_groups.end())
-	{
-		*gpu_handle = it->second;
-		return true;
-	}
-
-	if (!Allocate(1, gpu_handle))
-		return false;
-
-	m_device->CopyDescriptorsSimple(1, *gpu_handle, cpu_handle, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
-	m_groups.emplace(key, *gpu_handle);
-	return true;
-}
-
-template <u32 NumSamplers>
-bool D3D12GroupedSamplerAllocator<NumSamplers>::LookupGroup(D3D12DescriptorHandle* gpu_handle, const D3D12DescriptorHandle* cpu_handles)
-{
-	Key key;
-	for (u32 i = 0; i < NumSamplers; i++)
-		key.idx[i] = cpu_handles[i].index;
-
-	auto it = m_groups.find(key);
-	if (it != m_groups.end())
-	{
-		*gpu_handle = it->second;
-		return true;
-	}
-
-	if (!Allocate(NumSamplers, gpu_handle))
-		return false;
-
-	D3D12_CPU_DESCRIPTOR_HANDLE dst_handle = *gpu_handle;
-	UINT dst_size = NumSamplers;
-	D3D12_CPU_DESCRIPTOR_HANDLE src_handles[NumSamplers];
-	UINT src_sizes[NumSamplers];
-	for (u32 i = 0; i < NumSamplers; i++)
-	{
-		src_handles[i] = cpu_handles[i];
-		src_sizes[i] = 1;
-	}
-	m_device->CopyDescriptors(1, &dst_handle, &dst_size, NumSamplers, src_handles, src_sizes, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
-
-	m_groups.emplace(key, *gpu_handle);
-	return true;
-}
-
-template <u32 NumSamplers>
-bool D3D12GroupedSamplerAllocator<NumSamplers>::ShouldReset() const
-{
-	// We only reset the sampler heap if more than half of the descriptors are used.
-	// This saves descriptor copying when there isn't a large number of sampler configs per frame.
-	return m_groups.size() >= (D3D12_MAX_SHADER_VISIBLE_SAMPLER_HEAP_SIZE / 2);
-}
+#endif

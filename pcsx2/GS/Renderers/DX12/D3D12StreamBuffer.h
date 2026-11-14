@@ -13,55 +13,102 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_D3D12_STREAM_BUFFER_H
+#define GS_D3D12_STREAM_BUFFER_H
 
 #include "common/Pcsx2Defs.h"
-#include "common/RedtapeWindows.h"
-#include "common/RedtapeWilCom.h"
-
-#include <d3d12.h>
-#include <deque>
-#include <utility>
-
 #include "GSD3D12Heap.h"
 
+/* An upload buffer written ahead of the GPU in a ring: the writer
+ * reserves room, writes and commits it. Each fence the offset moved
+ * under leaves its counter and the offset the GPU will have read to once
+ * it completes, oldest first; room past the GPU's position is reused
+ * only once its fence has completed. */
+#ifndef GS_D3D12_STREAM_FENCES
+#define GS_D3D12_STREAM_FENCES 16 /* (a test sizes it past what it puts in flight) */
+#endif
+
+typedef struct gs_d3d12_stream_fence
+{
+	u64 counter;
+	u32 offset;
+} gs_d3d12_stream_fence;
+
+typedef struct gs_d3d12_stream_buffer
+{
+	u32 size;
+	u32 current_offset;
+	u32 current_space;
+	u32 current_gpu_position;
+	void* buffer; /* ID3D12Resource* */
+	gs_d3d12_alloc_t alloc;
+	u64 gpu_pointer;
+	u8* host_pointer;
+	/* the ring of fences; when it fills, the newest moves along, which
+	 * frees later and never early */
+	gs_d3d12_stream_fence fences[GS_D3D12_STREAM_FENCES];
+	u32 fence_head;
+	u32 fence_count;
+} gs_d3d12_stream_buffer;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* No buffer */
+void gs_d3d12_stream_buffer_init(gs_d3d12_stream_buffer* sb);
+/* A buffer of size bytes, replacing any it had (deferred). Zero, and the
+ * old one kept, if it could not be made. */
+int gs_d3d12_stream_buffer_create(gs_d3d12_stream_buffer* sb, u32 size);
+/* Releases it, after the GPU is done with it when defer */
+void gs_d3d12_stream_buffer_destroy(gs_d3d12_stream_buffer* sb, int defer);
+/* Room for num_bytes at alignment at the current offset, waiting on a
+ * completed-to-be fence if that frees it. Zero if only executing the
+ * command list being recorded would: the caller must. */
+int gs_d3d12_stream_buffer_reserve(gs_d3d12_stream_buffer* sb, u32 num_bytes, u32 alignment);
+/* Hands over final_num_bytes written at the current offset */
+void gs_d3d12_stream_buffer_commit(gs_d3d12_stream_buffer* sb, u32 final_num_bytes);
+
+/* What the stream buffers ask of the device (GSDevice12.cpp). The upload
+ * buffer is made, mapped and its GPU address taken, or nothing is left
+ * behind; release unmaps it and gives it back, after the command list
+ * when defer. */
+int gs_d3d12_device_create_upload_buffer(u32 size, void** resource, gs_d3d12_alloc_t* alloc, u8** host_pointer,
+	u64* gpu_pointer);
+void gs_d3d12_device_release_upload_buffer(void* resource, const gs_d3d12_alloc_t* alloc, u32 size, int defer);
+u64 gs_d3d12_device_current_fence(void);
+u64 gs_d3d12_device_completed_fence(void);
+void gs_d3d12_device_wait_fence(u64 counter);
+
+#ifdef __cplusplus
+}
+
+#include <d3d12.h>
+
+/* The device's stream buffers: the C one */
 class D3D12StreamBuffer
 {
-	public:
-		D3D12StreamBuffer();
-		~D3D12StreamBuffer();
+public:
+	D3D12StreamBuffer() { gs_d3d12_stream_buffer_init(&m_sb); }
+	D3D12StreamBuffer(const D3D12StreamBuffer&) = delete;
+	D3D12StreamBuffer& operator=(const D3D12StreamBuffer&) = delete;
+	~D3D12StreamBuffer() { Destroy(); }
 
-		bool Create(u32 size);
+	__fi ID3D12Resource* GetBuffer() const { return static_cast<ID3D12Resource*>(m_sb.buffer); }
+	__fi D3D12_GPU_VIRTUAL_ADDRESS GetGPUPointer() const { return m_sb.gpu_pointer; }
+	__fi void* GetCurrentHostPointer() const { return m_sb.host_pointer + m_sb.current_offset; }
+	__fi D3D12_GPU_VIRTUAL_ADDRESS GetCurrentGPUPointer() const { return m_sb.gpu_pointer + m_sb.current_offset; }
+	__fi u32 GetSize() const { return m_sb.size; }
+	__fi u32 GetCurrentOffset() const { return m_sb.current_offset; }
 
-		__fi ID3D12Resource* GetBuffer() const { return m_buffer.get(); }
-		__fi D3D12_GPU_VIRTUAL_ADDRESS GetGPUPointer() const { return m_gpu_pointer; }
-		__fi void* GetCurrentHostPointer() const { return m_host_pointer + m_current_offset; }
-		__fi D3D12_GPU_VIRTUAL_ADDRESS GetCurrentGPUPointer() const { return m_gpu_pointer + m_current_offset; }
-		__fi u32 GetSize() const { return m_size; }
-		__fi u32 GetCurrentOffset() const { return m_current_offset; }
+	bool Create(u32 size) { return gs_d3d12_stream_buffer_create(&m_sb, size) != 0; }
+	bool ReserveMemory(u32 num_bytes, u32 alignment) { return gs_d3d12_stream_buffer_reserve(&m_sb, num_bytes, alignment) != 0; }
+	void CommitMemory(u32 final_num_bytes) { gs_d3d12_stream_buffer_commit(&m_sb, final_num_bytes); }
+	void Destroy(bool defer = true) { gs_d3d12_stream_buffer_destroy(&m_sb, defer); }
 
-		bool ReserveMemory(u32 num_bytes, u32 alignment);
-		void CommitMemory(u32 final_num_bytes);
-
-		void Destroy(bool defer = true);
-
-	private:
-		void UpdateCurrentFencePosition();
-		void UpdateGPUPosition();
-
-		// Waits for as many fences as needed to allocate num_bytes bytes from the buffer.
-		bool WaitForClearSpace(u32 num_bytes);
-
-		u32 m_size = 0;
-		u32 m_current_offset = 0;
-		u32 m_current_space = 0;
-		u32 m_current_gpu_position = 0;
-
-		wil::com_ptr_nothrow<ID3D12Resource> m_buffer;
-		gs_d3d12_alloc_t m_alloc = {};
-		D3D12_GPU_VIRTUAL_ADDRESS m_gpu_pointer = {};
-		u8* m_host_pointer = nullptr;
-
-		// List of fences and the corresponding positions in the buffer
-		std::deque<std::pair<u64, u32>> m_tracked_fences;
+private:
+	gs_d3d12_stream_buffer m_sb;
 };
+#endif
+
+#endif

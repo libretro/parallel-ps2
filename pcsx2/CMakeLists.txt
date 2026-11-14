@@ -540,9 +540,9 @@ target_compile_options(PCSX2_FLAGS INTERFACE "-DHAVE_D3D12")
 		GS/Renderers/DX12/GSDevice12.cpp
 		GS/Renderers/DX12/GSTexture12.cpp
 		GS/Renderers/DX12/D3D12Builders.cpp
-		GS/Renderers/DX12/D3D12DescriptorHeapManager.cpp
+		GS/Renderers/DX12/D3D12DescriptorHeapManager.c
 		GS/Renderers/DX12/D3D12ShaderCache.cpp
-		GS/Renderers/DX12/D3D12StreamBuffer.cpp
+		GS/Renderers/DX12/D3D12StreamBuffer.c
 		GS/Renderers/DX12/GSD3D12Heap.c
 		GS/Renderers/DX12/GSD3D12Warm.c
 	)

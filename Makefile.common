@@ -539,11 +539,12 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/DX11/GSTexture11.cpp \
 	\
 	$(LRPS2_DIR)/GS/Renderers/DX12/D3D12Builders.cpp \
-	$(LRPS2_DIR)/GS/Renderers/DX12/D3D12DescriptorHeapManager.cpp \
 	$(LRPS2_DIR)/GS/Renderers/DX12/D3D12ShaderCache.cpp \
-	$(LRPS2_DIR)/GS/Renderers/DX12/D3D12StreamBuffer.cpp \
 	$(LRPS2_DIR)/GS/Renderers/DX12/GSDevice12.cpp \
 	$(LRPS2_DIR)/GS/Renderers/DX12/GSTexture12.cpp
+SOURCES_C += \
+	$(LRPS2_DIR)/GS/Renderers/DX12/D3D12DescriptorHeapManager.c \
+	$(LRPS2_DIR)/GS/Renderers/DX12/D3D12StreamBuffer.c
 endif
 
 # ============================================================================

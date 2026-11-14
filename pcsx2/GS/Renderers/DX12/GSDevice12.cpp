@@ -92,6 +92,105 @@ extern "C" void gs_d3d12_negotiate_hw_interface(retro_environment_t cb)
 	cb(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE, &s_d3d12_negotiation);
 }
 
+/* --- what the C stream buffers and descriptor heaps ask of the device --- */
+
+extern "C" int gs_d3d12_device_create_upload_buffer(u32 size, void** resource, gs_d3d12_alloc_t* alloc,
+	u8** host_pointer, u64* gpu_pointer)
+{
+	GSDevice12* const dev = GSDevice12::GetInstance();
+	const D3D12_RESOURCE_DESC resource_desc = {
+		D3D12_RESOURCE_DIMENSION_BUFFER, 0, size, 1, 1, 1, DXGI_FORMAT_UNKNOWN, {1, 0}, D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+		D3D12_RESOURCE_FLAG_NONE};
+	static const D3D12_RANGE read_range = {};
+	ID3D12Resource* buffer = nullptr;
+	void* mapped           = nullptr;
+
+	if (!dev->CreatePlacedResource(&resource_desc, D3D12_HEAP_TYPE_UPLOAD,
+			D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, &buffer, alloc))
+		return 0;
+	if (FAILED(buffer->Map(0, &read_range, &mapped)))
+	{
+		/* Named in an aliasing barrier on this frame's init list: it and
+		 * its span go back once that list has run. */
+		dev->DeferResourceDestruction(alloc, buffer);
+		buffer->Release();
+		return 0;
+	}
+	*resource     = buffer;
+	*host_pointer = static_cast<u8*>(mapped);
+	*gpu_pointer  = buffer->GetGPUVirtualAddress();
+	return 1;
+}
+
+extern "C" void gs_d3d12_device_release_upload_buffer(void* resource, const gs_d3d12_alloc_t* alloc, u32 size, int defer)
+{
+	GSDevice12* const dev        = GSDevice12::GetInstance();
+	ID3D12Resource* const buffer = static_cast<ID3D12Resource*>(resource);
+	const D3D12_RANGE written_range = {0, size};
+
+	buffer->Unmap(0, &written_range);
+	if (defer)
+	{
+		/* Deferred: the span goes back with the command list. */
+		dev->DeferResourceDestruction(alloc, buffer);
+		buffer->Release();
+	}
+	else
+	{
+		buffer->Release();
+		gs_d3d12_heap_free(dev->GetHeap(), alloc);
+	}
+}
+
+extern "C" u64 gs_d3d12_device_current_fence(void) { return GSDevice12::GetInstance()->GetCurrentFenceValue(); }
+extern "C" u64 gs_d3d12_device_completed_fence(void) { return GSDevice12::GetInstance()->GetCompletedFenceValue(); }
+extern "C" void gs_d3d12_device_wait_fence(u64 counter) { GSDevice12::GetInstance()->WaitForFence(counter); }
+
+extern "C" int gs_d3d12_device_create_descriptor_heap(void* device, u32 type, u32 num_descriptors, int shader_visible,
+	void** heap, gs_d3d12_cpu_handle* base_cpu, gs_d3d12_gpu_handle* base_gpu, u32* increment)
+{
+	ID3D12Device* const d = static_cast<ID3D12Device*>(device);
+	const D3D12_DESCRIPTOR_HEAP_DESC desc = {static_cast<D3D12_DESCRIPTOR_HEAP_TYPE>(type),
+		static_cast<UINT>(num_descriptors),
+		shader_visible ? D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE : D3D12_DESCRIPTOR_HEAP_FLAG_NONE};
+	ID3D12DescriptorHeap* h = nullptr;
+
+	if (FAILED(d->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&h))))
+		return 0;
+	*heap     = h;
+	*base_cpu = h->GetCPUDescriptorHandleForHeapStart();
+	if (shader_visible)
+		*base_gpu = h->GetGPUDescriptorHandleForHeapStart();
+	*increment = d->GetDescriptorHandleIncrementSize(desc.Type);
+	return 1;
+}
+
+extern "C" void gs_d3d12_device_release_descriptor_heap(void* heap)
+{
+	static_cast<ID3D12DescriptorHeap*>(heap)->Release();
+}
+
+extern "C" void gs_d3d12_device_copy_sampler(void* device, gs_d3d12_cpu_handle dst, gs_d3d12_cpu_handle src)
+{
+	static_cast<ID3D12Device*>(device)->CopyDescriptorsSimple(1, dst, src, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+}
+
+extern "C" void gs_d3d12_device_copy_sampler_group(void* device, gs_d3d12_cpu_handle dst,
+	const gs_d3d12_descriptor_handle* src, u32 count)
+{
+	D3D12_CPU_DESCRIPTOR_HANDLE src_handles[GS_D3D12_SAMPLER_GROUP_MAX];
+	UINT src_sizes[GS_D3D12_SAMPLER_GROUP_MAX];
+	UINT dst_size = count;
+	u32 i;
+	for (i = 0; i < count; i++)
+	{
+		src_handles[i] = src[i].cpu_handle;
+		src_sizes[i]   = 1;
+	}
+	static_cast<ID3D12Device*>(device)->CopyDescriptors(1, &dst, &dst_size, count, src_handles, src_sizes,
+		D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+}
+
 static void gs_d3d12_free_present_textures(void)
 {
 	unsigned i;
