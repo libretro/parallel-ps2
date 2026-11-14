@@ -90,6 +90,13 @@ class IntrusiveHashMapHolder
 public:
 	enum { InitialSize = 16, InitialLoadCount = 3 };
 
+	/* The first table, made now rather than at the first insert. */
+	void reserve()
+	{
+		if (values.empty())
+			grow();
+	}
+
 	T *find(Hash hash) const
 	{
 		if (values.empty())
@@ -323,6 +330,15 @@ public:
 	IntrusiveHashMap() = default;
 	IntrusiveHashMap(const IntrusiveHashMap &) = delete;
 	void operator=(const IntrusiveHashMap &) = delete;
+
+	/* The first table and the first block of its pool, so an owner made
+	 * at load time inserts its first entries during play without
+	 * allocating. */
+	void reserve()
+	{
+		hashmap.reserve();
+		pool.reserve();
+	}
 
 	void clear()
 	{

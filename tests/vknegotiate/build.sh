@@ -686,11 +686,11 @@ Vulkan depth_states 18
 Vulkan mip_tw8 20
 Vulkan dest_alpha 25
 Vulkan aa1_line 14
-paraLLEl-GS stream_ct32 423
-paraLLEl-GS depth_states 220
-paraLLEl-GS mip_tw8 257
-paraLLEl-GS dest_alpha 239
-paraLLEl-GS aa1_line 218
+paraLLEl-GS stream_ct32 210
+paraLLEl-GS depth_states 79
+paraLLEl-GS mip_tw8 104
+paraLLEl-GS dest_alpha 86
+paraLLEl-GS aa1_line 77
 Software_(HW) stream_ct32 98
 Software_(HW) depth_states 151
 Software_(HW) mip_tw8 77

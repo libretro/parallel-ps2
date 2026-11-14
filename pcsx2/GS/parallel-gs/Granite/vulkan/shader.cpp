@@ -817,6 +817,8 @@ Program::Program(Device *device_, Shader *vertex, Shader *fragment, const Immuta
 	set_shader(ShaderStage::Vertex, vertex);
 	set_shader(ShaderStage::Fragment, fragment);
 	device->bake_program(*this, sampler_bank);
+	/* A pipeline built ahead is staged here during play. */
+	staged.reserve();
 }
 
 Program::Program(Device *device_, Shader *compute_shader, const ImmutableSamplerBank *sampler_bank)
@@ -824,6 +826,8 @@ Program::Program(Device *device_, Shader *compute_shader, const ImmutableSampler
 {
 	set_shader(ShaderStage::Compute, compute_shader);
 	device->bake_program(*this, sampler_bank);
+	/* A pipeline built ahead is staged here during play. */
+	staged.reserve();
 }
 
 Pipeline Program::get_pipeline(Hash hash) const

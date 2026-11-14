@@ -41,19 +41,8 @@ public:
 	T *allocate(P &&... p)
 	{
 #ifndef OBJECT_POOL_DEBUG
-		if (vacants.empty())
-		{
-			unsigned num_objects = 64u << memory.size();
-			T *ptr = static_cast<T *>(memalign_alloc(std::max<size_t>(64, alignof(T)),
-			                                         num_objects * sizeof(T)));
-			if (!ptr)
-				return nullptr;
-
-			for (unsigned i = 0; i < num_objects; i++)
-				vacants.push_back(&ptr[i]);
-
-			memory.emplace_back(ptr);
-		}
+		if (vacants.empty() && !add_block())
+			return nullptr;
 
 		T *ptr = vacants.back();
 		vacants.pop_back();
@@ -61,6 +50,20 @@ public:
 		return ptr;
 #else
 		return new T(std::forward<P>(p)...);
+#endif
+	}
+
+	/* The first block, made now rather than at the first allocate():
+	 * an owner made at load time takes its first objects during play
+	 * without allocating. */
+	void reserve()
+	{
+#ifndef OBJECT_POOL_DEBUG
+		if (memory.empty())
+		{
+			memory.reserve(4);
+			add_block();
+		}
 #endif
 	}
 
@@ -84,6 +87,24 @@ public:
 
 protected:
 #ifndef OBJECT_POOL_DEBUG
+	/* A block twice the last; the free list takes all of it in one
+	 * allocation, not one per doubling. */
+	bool add_block()
+	{
+		unsigned num_objects = 64u << memory.size();
+		T *ptr = static_cast<T *>(memalign_alloc(std::max<size_t>(64, alignof(T)),
+		                                         num_objects * sizeof(T)));
+		if (!ptr)
+			return false;
+
+		vacants.reserve(vacants.size() + num_objects);
+		for (unsigned i = 0; i < num_objects; i++)
+			vacants.push_back(&ptr[i]);
+
+		memory.emplace_back(ptr);
+		return true;
+	}
+
 	std::vector<T *> vacants;
 
 	struct MallocDeleter
