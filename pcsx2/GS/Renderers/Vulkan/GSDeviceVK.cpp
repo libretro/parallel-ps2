@@ -670,7 +670,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			eds_feature.pNext = nullptr;
 			m_optional_extensions.vk_ext_extended_dynamic_state = (eds_feature.extendedDynamicState == VK_TRUE);
 			if (m_optional_extensions.vk_ext_extended_dynamic_state)
-				Vulkan::AddPointerToChain(&device_info, &eds_feature);
+				gs_vk_add_to_chain(&device_info, &eds_feature);
 		}
 
 		/* Pipelines linked from libraries, only with all of what it needs
@@ -695,8 +695,8 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 				VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT};
 			VkPhysicalDeviceFeatures2 features2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
 			VkPhysicalDeviceProperties2 properties2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-			Vulkan::AddPointerToChain(&features2, &gpl);
-			Vulkan::AddPointerToChain(&properties2, &gpl_props);
+			gs_vk_add_to_chain(&features2, &gpl);
+			gs_vk_add_to_chain(&properties2, &gpl_props);
 			vkGetPhysicalDeviceProperties2(vk_init_info.gpu, &properties2);
 			vkGetPhysicalDeviceFeatures2(vk_init_info.gpu, &features2);
 			m_optional_extensions.vk_ext_graphics_pipeline_library = gpl.graphicsPipelineLibrary
@@ -705,23 +705,23 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		if (m_optional_extensions.vk_ext_graphics_pipeline_library)
 		{
 			gpl_feature.graphicsPipelineLibrary = VK_TRUE;
-			Vulkan::AddPointerToChain(&device_info, &gpl_feature);
+			gs_vk_add_to_chain(&device_info, &gpl_feature);
 		}
 
 		if (m_optional_extensions.vk_ext_provoking_vertex)
 		{
 			provoking_vertex_feature.provokingVertexLast = VK_TRUE;
-			Vulkan::AddPointerToChain(&device_info, &provoking_vertex_feature);
+			gs_vk_add_to_chain(&device_info, &provoking_vertex_feature);
 		}
 		if (m_optional_extensions.vk_ext_line_rasterization)
 		{
 			line_rasterization_feature.bresenhamLines = VK_TRUE;
-			Vulkan::AddPointerToChain(&device_info, &line_rasterization_feature);
+			gs_vk_add_to_chain(&device_info, &line_rasterization_feature);
 		}
 		if (m_optional_extensions.vk_ext_rasterization_order_attachment_access)
 		{
 			rasterization_order_access_feature.rasterizationOrderColorAttachmentAccess = VK_TRUE;
-			Vulkan::AddPointerToChain(&device_info, &rasterization_order_access_feature);
+			gs_vk_add_to_chain(&device_info, &rasterization_order_access_feature);
 		}
 
 		VkResult res = vkCreateDevice(vk_init_info.gpu, &device_info, nullptr, &vk_init_info.device);
@@ -774,11 +774,11 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 
 		// add in optional feature structs
 		if (m_optional_extensions.vk_ext_provoking_vertex)
-			Vulkan::AddPointerToChain(&features2, &provoking_vertex_features);
+			gs_vk_add_to_chain(&features2, &provoking_vertex_features);
 		if (m_optional_extensions.vk_ext_line_rasterization)
-			Vulkan::AddPointerToChain(&features2, &line_rasterization_feature);
+			gs_vk_add_to_chain(&features2, &line_rasterization_feature);
 		if (m_optional_extensions.vk_ext_rasterization_order_attachment_access)
-			Vulkan::AddPointerToChain(&features2, &rasterization_order_access_feature);
+			gs_vk_add_to_chain(&features2, &rasterization_order_access_feature);
 
 		// query
 		vkGetPhysicalDeviceFeatures2(vk_init_info.gpu, &features2);
@@ -793,12 +793,12 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		if (m_optional_extensions.vk_khr_driver_properties)
 		{
 			m_device_driver_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
-			Vulkan::AddPointerToChain(&properties2, &m_device_driver_properties);
+			gs_vk_add_to_chain(&properties2, &m_device_driver_properties);
 		}
 
 		VkPhysicalDevicePushDescriptorPropertiesKHR push_descriptor_properties = {
 			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR};
-		Vulkan::AddPointerToChain(&properties2, &push_descriptor_properties);
+		gs_vk_add_to_chain(&properties2, &push_descriptor_properties);
 
 		// query
 		vkGetPhysicalDeviceProperties2(vk_init_info.gpu, &properties2);
@@ -3306,21 +3306,21 @@ void GSDeviceVK::ClearSamplerCache()
 	m_tfx_sampler     = m_point_sampler;
 }
 
-static void AddUtilityVertexAttributes(Vulkan::GraphicsPipelineBuilder& gpb)
+static void AddUtilityVertexAttributes(struct gs_vk_gp_builder* gpb)
 {
-	gpb.AddVertexBuffer(0, sizeof(GSVertexPT1));
-	gpb.AddVertexAttribute(0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0);
-	gpb.AddVertexAttribute(1, 0, VK_FORMAT_R32G32_SFLOAT, 16);
-	gpb.SetPrimitiveTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
+	gs_vk_gp_add_vertex_buffer(gpb, 0, sizeof(GSVertexPT1));
+	gs_vk_gp_add_vertex_attribute(gpb, 0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0);
+	gs_vk_gp_add_vertex_attribute(gpb, 1, 0, VK_FORMAT_R32G32_SFLOAT, 16);
+	gs_vk_gp_set_topology(gpb, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
 }
 
-static void SetPipelineProvokingVertex(const GSDevice::FeatureSupport& features, Vulkan::GraphicsPipelineBuilder& gpb)
+static void SetPipelineProvokingVertex(const GSDevice::FeatureSupport& features, struct gs_vk_gp_builder* gpb)
 {
-	// We enable provoking vertex here anyway, in case it doesn't support multiple modes in the same pass.
-	// Normally we wouldn't enable it on the present/swap chain, but apparently the rule is it applies to the last
-	// pipeline bound before the render pass begun, and in this case, we can't bind null.
+	/* On even where one mode per pass is all the device supports: it holds
+	 * for the last pipeline bound before the render pass began, and a
+	 * null pipeline cannot be bound. */
 	if (features.provoking_vertex_last)
-		gpb.SetProvokingVertex(VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT);
+		gs_vk_gp_set_provoking_vertex(gpb, VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT);
 }
 
 bool GSDeviceVK::CreateNullTexture()
@@ -3382,51 +3382,53 @@ bool GSDeviceVK::CreateBuffers()
 bool GSDeviceVK::CreatePipelineLayouts()
 {
 	VkDevice dev = vk_init_info.device;
-	Vulkan::DescriptorSetLayoutBuilder dslb;
-	Vulkan::PipelineLayoutBuilder plb;
+	struct gs_vk_dsl_builder dslb;
+	struct gs_vk_pl_builder plb;
+	gs_vk_dsl_init(&dslb);
+	gs_vk_pl_init(&plb);
 
 	//////////////////////////////////////////////////////////////////////////
 	// Convert Pipeline Layout
 	//////////////////////////////////////////////////////////////////////////
 
-	dslb.AddBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, NUM_CONVERT_SAMPLERS, VK_SHADER_STAGE_FRAGMENT_BIT);
-	if ((m_utility_ds_layout = dslb.Create(dev)) == VK_NULL_HANDLE)
+	gs_vk_dsl_add_binding(&dslb, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, NUM_CONVERT_SAMPLERS, VK_SHADER_STAGE_FRAGMENT_BIT);
+	if ((m_utility_ds_layout = gs_vk_dsl_create(&dslb, dev)) == VK_NULL_HANDLE)
 		return false;
 
-	plb.AddPushConstants(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, CONVERT_PUSH_CONSTANTS_SIZE);
-	plb.AddDescriptorSet(m_utility_ds_layout);
-	if ((m_utility_pipeline_layout = plb.Create(dev)) == VK_NULL_HANDLE)
+	gs_vk_pl_add_push_constants(&plb, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, CONVERT_PUSH_CONSTANTS_SIZE);
+	gs_vk_pl_add_set(&plb, m_utility_ds_layout);
+	if ((m_utility_pipeline_layout = gs_vk_pl_create(&plb, dev)) == VK_NULL_HANDLE)
 		return false;
 
 	//////////////////////////////////////////////////////////////////////////
 	// Draw/TFX Pipeline Layout
 	//////////////////////////////////////////////////////////////////////////
-	dslb.AddBinding(
+	gs_vk_dsl_add_binding(&dslb,
 		0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT);
-	dslb.AddBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+	gs_vk_dsl_add_binding(&dslb, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 	if (m_features.vs_expand)
-		dslb.AddBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
-	if ((m_tfx_ubo_ds_layout = dslb.Create(dev)) == VK_NULL_HANDLE)
+		gs_vk_dsl_add_binding(&dslb, 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+	if ((m_tfx_ubo_ds_layout = gs_vk_dsl_create(&dslb, dev)) == VK_NULL_HANDLE)
 		return false;
-	dslb.AddBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
-	dslb.AddBinding(1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
-	if ((m_tfx_sampler_ds_layout = dslb.Create(dev)) == VK_NULL_HANDLE)
+	gs_vk_dsl_add_binding(&dslb, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+	gs_vk_dsl_add_binding(&dslb, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+	if ((m_tfx_sampler_ds_layout = gs_vk_dsl_create(&dslb, dev)) == VK_NULL_HANDLE)
 		return false;
-	dslb.AddBinding(0,
+	gs_vk_dsl_add_binding(&dslb, 0,
 		m_features.texture_barrier
 		? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT 
 		: VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
 		1, VK_SHADER_STAGE_FRAGMENT_BIT);
-	dslb.AddBinding(1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
-	if ((m_tfx_rt_texture_ds_layout = dslb.Create(dev)) == VK_NULL_HANDLE)
+	gs_vk_dsl_add_binding(&dslb, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+	if ((m_tfx_rt_texture_ds_layout = gs_vk_dsl_create(&dslb, dev)) == VK_NULL_HANDLE)
 		return false;
 
-	plb.AddDescriptorSet(m_tfx_ubo_ds_layout);
-	plb.AddDescriptorSet(m_tfx_sampler_ds_layout);
-	plb.AddDescriptorSet(m_tfx_rt_texture_ds_layout);
+	gs_vk_pl_add_set(&plb, m_tfx_ubo_ds_layout);
+	gs_vk_pl_add_set(&plb, m_tfx_sampler_ds_layout);
+	gs_vk_pl_add_set(&plb, m_tfx_rt_texture_ds_layout);
 	/* the dynamic siblings' key */
-	plb.AddPushConstants(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(m_tfx_key));
-	if ((m_tfx_pipeline_layout = plb.Create(dev)) == VK_NULL_HANDLE)
+	gs_vk_pl_add_push_constants(&plb, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(m_tfx_key));
+	if ((m_tfx_pipeline_layout = gs_vk_pl_create(&plb, dev)) == VK_NULL_HANDLE)
 		return false;
 	return true;
 }
@@ -3651,7 +3653,7 @@ void GSDeviceVK::DestroyModules(Modules* mods)
 
 VkPipeline GSDeviceVK::BuildUtilityPipeline(u32 id, Modules* mods, VkPipelineCache cache) const
 {
-	Vulkan::GraphicsPipelineBuilder gpb;
+	struct gs_vk_gp_builder gpb;
 	VkShaderModule vs, fs;
 	if (m_test_util_fail)
 		return VK_NULL_HANDLE;
@@ -3659,16 +3661,18 @@ VkPipeline GSDeviceVK::BuildUtilityPipeline(u32 id, Modules* mods, VkPipelineCac
 	fs = UtilityModule(mods, id, false);
 	if (vs == VK_NULL_HANDLE || fs == VK_NULL_HANDLE)
 		return VK_NULL_HANDLE;
-	SetPipelineProvokingVertex(m_features, gpb);
-	AddUtilityVertexAttributes(gpb);
-	gpb.SetPipelineLayout(m_utility_pipeline_layout);
-	gpb.SetDynamicViewportAndScissorState();
-	gpb.AddDynamicState(VK_DYNAMIC_STATE_BLEND_CONSTANTS);
-	gpb.AddDynamicState(VK_DYNAMIC_STATE_LINE_WIDTH);
-	gpb.SetNoCullRasterizationState();
-	gpb.SetRenderPass(m_util_rp[id], 0);
-	gpb.SetVertexShader(vs);
-	gpb.SetFragmentShader(fs);
+	gs_vk_gp_init(&gpb);
+	SetPipelineProvokingVertex(m_features, &gpb);
+	AddUtilityVertexAttributes(&gpb);
+	gs_vk_gp_set_layout(&gpb, m_utility_pipeline_layout);
+	gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_VIEWPORT);
+	gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_SCISSOR);
+	gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_BLEND_CONSTANTS);
+	gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_LINE_WIDTH);
+	gs_vk_gp_set_rasterization(&gpb, VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+	gs_vk_gp_set_render_pass(&gpb, m_util_rp[id], 0);
+	gs_vk_gp_set_shader(&gpb, VK_SHADER_STAGE_VERTEX_BIT, vs, NULL);
+	gs_vk_gp_set_shader(&gpb, VK_SHADER_STAGE_FRAGMENT_BIT, fs, NULL);
 
 	/* (the builder starts with no depth test, no stencil and no blending,
 	 * all colours written) */
@@ -3680,25 +3684,26 @@ VkPipeline GSDeviceVK::BuildUtilityPipeline(u32 id, Modules* mods, VkPipelineCac
 		{
 			const VkStencilOpState sos = {
 				VK_STENCIL_OP_KEEP, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 1u, 1u, 1u};
-			gpb.SetStencilState(true, sos, sos);
+			gs_vk_gp_set_stencil(&gpb, true, &sos, &sos);
 		}
 		else
 		{
 			const bool depth = HasDepthOutput(i);
-			gpb.SetDepthState(depth, depth, VK_COMPARE_OP_ALWAYS);
+			gs_vk_gp_set_depth(&gpb, depth, depth, VK_COMPARE_OP_ALWAYS);
 		}
-		gpb.SetColorWriteMask(0, ShaderConvertWriteMask(i));
+		gs_vk_gp_set_write_mask(&gpb, 0, ShaderConvertWriteMask(i));
 	}
 	else if (id < UP_HDR_SETUP)
-		gpb.SetColorWriteMask(0, static_cast<VkColorComponentFlags>((id - UP_COPY) & 15u));
+		gs_vk_gp_set_write_mask(&gpb, 0, static_cast<VkColorComponentFlags>((id - UP_COPY) & 15u));
 	else if (id >= UP_DATE && id < UP_INTERLACE)
-		gpb.SetBlendAttachment(0, false, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD,
+		gs_vk_gp_set_blend_attachment(&gpb, 0, false, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD,
 			VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD, VK_COLOR_COMPONENT_R_BIT);
 	else if (id >= UP_MERGE)
-		gpb.SetBlendAttachment(0, true, VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-			VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD);
+		gs_vk_gp_set_blend_attachment(&gpb, 0, true, VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+			VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD,
+			VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT);
 
-	return gpb.Create(vk_init_info.device, cache);
+	return gs_vk_gp_create(&gpb, vk_init_info.device, cache);
 }
 
 /* The render pass of each utility pipeline: looked up here, by the thread
@@ -3966,39 +3971,41 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 		VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, // Triangle
 	};
 
-	Vulkan::GraphicsPipelineBuilder gpb;
-	SetPipelineProvokingVertex(m_features, gpb);
+	struct gs_vk_gp_builder gpb;
+	gs_vk_gp_init(&gpb);
+	SetPipelineProvokingVertex(m_features, &gpb);
 
 	// Common state
-	gpb.SetPipelineLayout(m_tfx_pipeline_layout);
+	gs_vk_gp_set_layout(&gpb, m_tfx_pipeline_layout);
 	if (IsDATEModePrimIDInit(p.ps.date))
 	{
 		// DATE image prepass
-		gpb.SetRenderPass(m_date_image_setup_render_passes[p.ds][0], 0);
+		gs_vk_gp_set_render_pass(&gpb, m_date_image_setup_render_passes[p.ds][0], 0);
 	}
 	else
 	{
-		gpb.SetRenderPass(
+		gs_vk_gp_set_render_pass(&gpb,
 			GetTFXRenderPass(p.rt, p.ds, p.ps.colclip_hw, library ? false : p.dss.date,
 				p.IsRTFeedbackLoop(), library ? false : p.IsTestingAndSamplingDepth(),
 				p.rt ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 				p.ds ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_DONT_CARE),
 			0);
 	}
-	gpb.SetPrimitiveTopology(topology_lookup[p.topology]);
-	gpb.SetRasterizationState(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+	gs_vk_gp_set_topology(&gpb, topology_lookup[p.topology]);
+	gs_vk_gp_set_rasterization(&gpb, VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
 	if (p.topology == static_cast<u8>(GSHWDrawConfig::Topology::Line) && GetOptionalExtensions().vk_ext_line_rasterization)
-		gpb.SetLineRasterizationMode(VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT);
-	gpb.SetDynamicViewportAndScissorState();
-	gpb.AddDynamicState(VK_DYNAMIC_STATE_BLEND_CONSTANTS);
-	gpb.AddDynamicState(VK_DYNAMIC_STATE_LINE_WIDTH);
+		gs_vk_gp_set_line_rasterization(&gpb, VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT);
+	gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_VIEWPORT);
+	gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_SCISSOR);
+	gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_BLEND_CONSTANTS);
+	gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_LINE_WIDTH);
 	if (m_optional_extensions.vk_ext_extended_dynamic_state)
 	{
-		gpb.AddDynamicState(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE_EXT);
-		gpb.AddDynamicState(VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE_EXT);
-		gpb.AddDynamicState(VK_DYNAMIC_STATE_DEPTH_COMPARE_OP_EXT);
-		gpb.AddDynamicState(VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE_EXT);
-		gpb.AddDynamicState(VK_DYNAMIC_STATE_STENCIL_OP_EXT);
+		gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE_EXT);
+		gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE_EXT);
+		gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_DEPTH_COMPARE_OP_EXT);
+		gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE_EXT);
+		gs_vk_gp_add_dynamic_state(&gpb, VK_DYNAMIC_STATE_STENCIL_OP_EXT);
 	}
 
 	// Shaders: the modules of the selector's interface, its fields as
@@ -4023,27 +4030,27 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 	const VkSpecializationInfo vs_si = {VKSC_VS_COUNT, vkspv_tfx_vs_spec_map, sizeof(vs_spec), vs_spec};
 	const VkSpecializationInfo ps_si = {VKSC_PS_COUNT, vkspv_tfx_fs_spec_map, sizeof(ps_spec), ps_spec};
 	if (with_vs)
-		gpb.SetVertexShader(vs, &vs_si);
+		gs_vk_gp_set_shader(&gpb, VK_SHADER_STAGE_VERTEX_BIT, vs, &vs_si);
 	if (with_fs)
-		gpb.SetFragmentShader(fs, dynamic ? nullptr : &ps_si);
+		gs_vk_gp_set_shader(&gpb, VK_SHADER_STAGE_FRAGMENT_BIT, fs, dynamic ? NULL : &ps_si);
 
 	// IA
 	if (p.vs.expand == GSHWDrawConfig::VSExpand::None)
 	{
-		gpb.AddVertexBuffer(0, sizeof(GSVertex));
-		gpb.AddVertexAttribute(0, 0, VK_FORMAT_R32G32_SFLOAT, 0); // ST
-		gpb.AddVertexAttribute(1, 0, VK_FORMAT_R8G8B8A8_UINT, 8); // RGBA
-		gpb.AddVertexAttribute(2, 0, VK_FORMAT_R32_SFLOAT, 12); // Q
-		gpb.AddVertexAttribute(3, 0, VK_FORMAT_R16G16_UINT, 16); // XY
-		gpb.AddVertexAttribute(4, 0, VK_FORMAT_R32_UINT, 20); // Z
-		gpb.AddVertexAttribute(5, 0, VK_FORMAT_R16G16_UINT, 24); // UV
-		gpb.AddVertexAttribute(6, 0, VK_FORMAT_R8G8B8A8_UNORM, 28); // FOG
+		gs_vk_gp_add_vertex_buffer(&gpb, 0, sizeof(GSVertex));
+		gs_vk_gp_add_vertex_attribute(&gpb, 0, 0, VK_FORMAT_R32G32_SFLOAT, 0); // ST
+		gs_vk_gp_add_vertex_attribute(&gpb, 1, 0, VK_FORMAT_R8G8B8A8_UINT, 8); // RGBA
+		gs_vk_gp_add_vertex_attribute(&gpb, 2, 0, VK_FORMAT_R32_SFLOAT, 12); // Q
+		gs_vk_gp_add_vertex_attribute(&gpb, 3, 0, VK_FORMAT_R16G16_UINT, 16); // XY
+		gs_vk_gp_add_vertex_attribute(&gpb, 4, 0, VK_FORMAT_R32_UINT, 20); // Z
+		gs_vk_gp_add_vertex_attribute(&gpb, 5, 0, VK_FORMAT_R16G16_UINT, 24); // UV
+		gs_vk_gp_add_vertex_attribute(&gpb, 6, 0, VK_FORMAT_R8G8B8A8_UNORM, 28); // FOG
 	}
 
 	// DepthStencil
 	static const VkCompareOp ztst[] = {
 		VK_COMPARE_OP_NEVER, VK_COMPARE_OP_ALWAYS, VK_COMPARE_OP_GREATER_OR_EQUAL, VK_COMPARE_OP_GREATER};
-	gpb.SetDepthState((p.dss.ztst != ZTST_ALWAYS || p.dss.zwe), p.dss.zwe, ztst[p.dss.ztst]);
+	gs_vk_gp_set_depth(&gpb, (p.dss.ztst != ZTST_ALWAYS || p.dss.zwe), p.dss.zwe, ztst[p.dss.ztst]);
 	if (m_optional_extensions.vk_ext_extended_dynamic_state)
 	{
 		/* The masks and the reference stay in the pipeline; the enables,
@@ -4051,19 +4058,19 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 		 * (ApplyDepthStencilState). */
 		const VkStencilOpState sos = {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP,
 			VK_COMPARE_OP_EQUAL, 1u, 1u, 1u};
-		gpb.SetStencilState(false, sos, sos);
+		gs_vk_gp_set_stencil(&gpb, false, &sos, &sos);
 	}
 	else if (p.dss.date)
 	{
 		const VkStencilOpState sos{VK_STENCIL_OP_KEEP, p.dss.date_one ? VK_STENCIL_OP_ZERO : VK_STENCIL_OP_KEEP,
 			VK_STENCIL_OP_KEEP, VK_COMPARE_OP_EQUAL, 1u, 1u, 1u};
-		gpb.SetStencilState(true, sos, sos);
+		gs_vk_gp_set_stencil(&gpb, true, &sos, &sos);
 	}
 
 	// Blending: the word's
 	{
 		const u32 w = TFXBlendWord(p);
-		gpb.SetBlendAttachment(0, (w & 1u) != 0, vk_blend_factors[(w >> 1) & 15u], vk_blend_factors[(w >> 5) & 15u],
+		gs_vk_gp_set_blend_attachment(&gpb, 0, (w & 1u) != 0, vk_blend_factors[(w >> 1) & 15u], vk_blend_factors[(w >> 5) & 15u],
 			vk_blend_ops[(w >> 9) & 3u], vk_blend_factors[(w >> 11) & 15u], vk_blend_factors[(w >> 15) & 15u],
 			VK_BLEND_OP_ADD, (w >> 19) & 15u);
 	}
@@ -4072,12 +4079,12 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 	// between turning it on and off for different draws, and adding the required barrier between non-rast-order
 	// and rast-order draws.
 	if (m_features.framebuffer_fetch && p.IsRTFeedbackLoop())
-		gpb.AddBlendFlags(VK_PIPELINE_COLOR_BLEND_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_BIT_EXT);
+		gs_vk_gp_add_blend_flags(&gpb, VK_PIPELINE_COLOR_BLEND_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_BIT_EXT);
 
 	/* (a library: the parts asked for, the rest left out) */
 	if (library)
-		gpb.SetLibrary(library);
-	return gpb.Create(vk_init_info.device, cache);
+		gs_vk_gp_set_library(&gpb, library);
+	return gs_vk_gp_create(&gpb, vk_init_info.device, cache);
 }
 
 /* The key of the pipeline a draw's selector needs: what BuildTFXPipeline
@@ -4369,10 +4376,11 @@ VkPipeline GSDeviceVK::GetTFXSibling(const PipelineSelector& key, bool build)
 		libs[2] = (libs[0] != VK_NULL_HANDLE && libs[1] != VK_NULL_HANDLE) ? GetTFXLibrary(sk, TFX_LIB_FO) : VK_NULL_HANDLE;
 		if (libs[2] != VK_NULL_HANDLE)
 		{
-			Vulkan::GraphicsPipelineBuilder gpb;
-			gpb.SetPipelineLayout(m_tfx_pipeline_layout);
-			gpb.SetLinkedLibraries(libs, 3);
-			sibling = gpb.Create(vk_init_info.device, m_pipeline_cache);
+			struct gs_vk_gp_builder gpb;
+			gs_vk_gp_init(&gpb);
+			gs_vk_gp_set_layout(&gpb, m_tfx_pipeline_layout);
+			gs_vk_gp_set_linked_libraries(&gpb, libs, 3);
+			sibling = gs_vk_gp_create(&gpb, vk_init_info.device, m_pipeline_cache);
 		}
 		if (sibling != VK_NULL_HANDLE)
 			m_siblings_linked++;
@@ -5269,20 +5277,21 @@ void GSDeviceVK::InitializeState()
 
 bool GSDeviceVK::CreatePersistentDescriptorSets()
 {
-	Vulkan::DescriptorSetUpdateBuilder dsub;
+	struct gs_vk_ds_update dsub;
+	gs_vk_dsu_init(&dsub);
 
 	// Allocate UBO descriptor sets for TFX.
 	m_tfx_ubo_descriptor_set = AllocatePersistentDescriptorSet(m_tfx_ubo_ds_layout);
 	if (m_tfx_ubo_descriptor_set == VK_NULL_HANDLE)
 		return false;
-	dsub.AddBufferDescriptorWrite(m_tfx_ubo_descriptor_set, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+	gs_vk_dsu_add_buffer(&dsub, m_tfx_ubo_descriptor_set, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 		m_vertex_uniform_stream_buffer.GetBuffer(), 0, sizeof(GSHWDrawConfig::VSConstantBuffer));
-	dsub.AddBufferDescriptorWrite(m_tfx_ubo_descriptor_set, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+	gs_vk_dsu_add_buffer(&dsub, m_tfx_ubo_descriptor_set, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 		m_fragment_uniform_stream_buffer.GetBuffer(), 0, sizeof(GSHWDrawConfig::PSConstantBuffer));
 	if (m_features.vs_expand)
-		dsub.AddBufferDescriptorWrite(m_tfx_ubo_descriptor_set, 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		gs_vk_dsu_add_buffer(&dsub, m_tfx_ubo_descriptor_set, 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 			m_vertex_stream_buffer.GetBuffer(), 0, VERTEX_BUFFER_SIZE);
-	dsub.Update(vk_init_info.device);
+	gs_vk_dsu_update(&dsub, vk_init_info.device);
 	return true;
 }
 
@@ -5648,7 +5657,8 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 		flags |= DIRTY_FLAG_TFX_UBO;
 	}
 
-	Vulkan::DescriptorSetUpdateBuilder dsub;
+	struct gs_vk_ds_update dsub;
+	gs_vk_dsu_init(&dsub);
 
 	VkDescriptorSet dsets[NUM_TFX_DESCRIPTOR_SETS];
 	u32 num_dsets = 0;
@@ -5673,10 +5683,11 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 			if (m_tfx_texture_descriptor_set == VK_NULL_HANDLE)
 				return RetryTFXState(already_execed, "allocate TFX texture descriptors");
 
-			dsub.AddCombinedImageSamplerDescriptorWrite(
-				m_tfx_texture_descriptor_set, 0, m_tfx_textures[0]->GetView(), m_tfx_sampler, m_tfx_textures[0]->GetVkLayout());
-			dsub.AddImageDescriptorWrite(m_tfx_texture_descriptor_set, 1, m_tfx_textures[1]->GetView(), m_tfx_textures[1]->GetVkLayout());
-			dsub.Update(vk_init_info.device);
+			gs_vk_dsu_add_image(&dsub, m_tfx_texture_descriptor_set, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				m_tfx_textures[0]->GetView(), m_tfx_sampler, m_tfx_textures[0]->GetVkLayout());
+			gs_vk_dsu_add_image(&dsub, m_tfx_texture_descriptor_set, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+				m_tfx_textures[1]->GetView(), VK_NULL_HANDLE, m_tfx_textures[1]->GetVkLayout());
+			gs_vk_dsu_update(&dsub, vk_init_info.device);
 			CacheDescriptorSet(&key, m_tfx_texture_descriptor_set);
 		}
 
@@ -5706,17 +5717,19 @@ bool GSDeviceVK::ApplyTFXState(bool already_execed)
 
 			if (m_features.texture_barrier)
 			{
-				dsub.AddInputAttachmentDescriptorWrite(
-					m_tfx_rt_descriptor_set, 0, m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetView(), VK_IMAGE_LAYOUT_GENERAL);
+				gs_vk_dsu_add_image(&dsub, m_tfx_rt_descriptor_set, 0, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+					m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetView(), VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL);
 			}
 			else
 			{
-				dsub.AddImageDescriptorWrite(m_tfx_rt_descriptor_set, 0, m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetView(),
+				gs_vk_dsu_add_image(&dsub, m_tfx_rt_descriptor_set, 0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+					m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetView(), VK_NULL_HANDLE,
 					m_tfx_textures[NUM_TFX_DRAW_TEXTURES]->GetVkLayout());
 			}
-			dsub.AddImageDescriptorWrite(m_tfx_rt_descriptor_set, 1, m_tfx_textures[NUM_TFX_DRAW_TEXTURES + 1]->GetView(),
+			gs_vk_dsu_add_image(&dsub, m_tfx_rt_descriptor_set, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+				m_tfx_textures[NUM_TFX_DRAW_TEXTURES + 1]->GetView(), VK_NULL_HANDLE,
 				m_tfx_textures[NUM_TFX_DRAW_TEXTURES + 1]->GetVkLayout());
-			dsub.Update(vk_init_info.device);
+			gs_vk_dsu_update(&dsub, vk_init_info.device);
 			CacheDescriptorSet(&key, m_tfx_rt_descriptor_set);
 		}
 
@@ -5819,10 +5832,11 @@ bool GSDeviceVK::ApplyUtilityState(bool already_execed)
 			return ApplyUtilityState(true);
 		}
 
-		Vulkan::DescriptorSetUpdateBuilder dsub;
-		dsub.AddCombinedImageSamplerDescriptorWrite(m_utility_descriptor_set, 0, m_utility_texture->GetView(),
-			m_utility_sampler, m_utility_texture->GetVkLayout());
-		dsub.Update(dev);
+		struct gs_vk_ds_update dsub;
+		gs_vk_dsu_init(&dsub);
+		gs_vk_dsu_add_image(&dsub, m_utility_descriptor_set, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			m_utility_texture->GetView(), m_utility_sampler, m_utility_texture->GetVkLayout());
+		gs_vk_dsu_update(&dsub, dev);
 		rebind = true;
 	}
 

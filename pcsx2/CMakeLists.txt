@@ -491,7 +491,7 @@ if(USE_VULKAN)
 		GS/Renderers/Vulkan/GSTextureVK.cpp
 		GS/Renderers/Vulkan/VKLoader.c
 		GS/Renderers/Vulkan/VKStreamBuffer.c
-		GS/Renderers/Vulkan/VKBuilders.cpp
+		GS/Renderers/Vulkan/VKBuilders.c
 		GS/Renderers/Vulkan/GSVulkanHeap.c
 		GS/Renderers/Vulkan/VKSpirvPatch.c
 	)

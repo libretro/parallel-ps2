@@ -744,14 +744,13 @@ VkFramebuffer GSTextureVK::GetLinkedFramebuffer(GSTextureVK* depth_texture, bool
 	if (!rp)
 		return VK_NULL_HANDLE;
 
-	Vulkan::FramebufferBuilder fbb;
-	fbb.AddAttachment(m_view);
+	struct gs_vk_fb_builder fbb;
+	gs_vk_fb_init(&fbb, rp, m_size.x, m_size.y);
+	gs_vk_fb_add_attachment(&fbb, m_view);
 	if (depth_texture)
-		fbb.AddAttachment(depth_texture->m_view);
-	fbb.SetSize(m_size.x, m_size.y, 1);
-	fbb.SetRenderPass(rp);
+		gs_vk_fb_add_attachment(&fbb, depth_texture->m_view);
 
-	VkFramebuffer fb = fbb.Create(vk_init_info.device);
+	VkFramebuffer fb = gs_vk_fb_create(&fbb, vk_init_info.device);
 	if (!fb)
 		return VK_NULL_HANDLE;
 
