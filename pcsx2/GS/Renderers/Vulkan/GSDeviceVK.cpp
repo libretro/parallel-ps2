@@ -954,7 +954,35 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 	/* The same for a buffer. Replaces vmaCreateBuffer; mapped comes back
 	 * non-NULL when the memory is host visible, because the heap maps a
 	 * block once and keeps it mapped. */
-	bool GSDeviceVK::CreateBufferInHeap(const VkBufferCreateInfo* bci,
+	/* What the C stream buffers ask of the device (VKStreamBuffer.h) */
+extern "C" {
+gs_vk_heap_t* gs_vk_device_heap(void) { return GSDeviceVK::GetInstance()->GetHeap(); }
+int gs_vk_device_create_host_buffer(VkBufferUsageFlags usage, u32 size, VkBuffer* buffer, gs_vk_alloc_t* alloc, void** mapped)
+{
+	const VkBufferCreateInfo bci = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0,
+		static_cast<VkDeviceSize>(size), usage, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr};
+	/* Host visible, and device local too where the driver offers both -
+	 * what VMA's CPU_TO_GPU usage meant. */
+	return GSDeviceVK::GetInstance()->CreateBufferInHeap(&bci,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, alloc, mapped);
+}
+void gs_vk_device_release_buffer(VkBuffer buffer, const gs_vk_alloc_t* alloc, int defer)
+{
+	if (defer)
+		GSDeviceVK::GetInstance()->DeferBufferDestruction(buffer, *alloc);
+	else
+	{
+		vkDestroyBuffer(vk_init_info.device, buffer, nullptr);
+		gs_vk_heap_free(GSDeviceVK::GetInstance()->GetHeap(), alloc);
+	}
+}
+u64 gs_vk_device_current_fence(void) { return GSDeviceVK::GetInstance()->GetCurrentFenceCounter(); }
+u64 gs_vk_device_completed_fence(void) { return GSDeviceVK::GetInstance()->GetCompletedFenceCounter(); }
+void gs_vk_device_wait_fence(u64 counter) { GSDeviceVK::GetInstance()->WaitForFenceCounter(counter); }
+}
+
+bool GSDeviceVK::CreateBufferInHeap(const VkBufferCreateInfo* bci,
 		VkMemoryPropertyFlags required, VkMemoryPropertyFlags preferred,
 		VkBuffer* buffer, gs_vk_alloc_t* alloc, void** mapped)
 	{
