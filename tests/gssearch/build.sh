@@ -14,16 +14,21 @@ TMP=${TMPDIR:-/tmp}/gssearch.$$
 mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT
 
-for u in GS/GSLocalMemory GS/GSTables GS/GSBlock GS/GSLocalMemoryMultiISA; do
+for u in GS/GSLocalMemory GS/GSBlock GS/GSLocalMemoryMultiISA; do
 	${CXX:-c++} -O1 -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 -w $SANFLAGS \
 	     $INC -c "$ROOT/pcsx2/$u.cpp" -o "$TMP/$(basename "$u").o"
 done
+# (the tables, offsets, formats and maps are C)
+for u in GS/GSTables GS/GSOffset GS/GSPsm GS/GSLocalMemoryMaps; do
+	${CC:-cc} -O1 -DNDEBUG -DPCSX2_CORE -msse4.1 -w $SANFLAGS \
+	     $INC -c "$ROOT/pcsx2/$u.c" -o "$TMP/$(basename "$u").o"
+done
 ${CXX:-c++} -O1 -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 -w $SANFLAGS \
      $INC -c "$DIR/glue.cpp" -o "$TMP/glue.o"
-${CC:-cc} -O1 -std=c89 -pedantic -Wall $SANFLAGS -I"$ROOT/pcsx2" -c "$DIR/main.c" -o "$TMP/main.o"
+${CC:-cc} -O1 -std=c89 -pedantic -Wall $SANFLAGS -I"$ROOT/pcsx2" -I"$LRC/include" -c "$DIR/main.c" -o "$TMP/main.o"
 ${CC:-cc} -O1 -w -I"$LRC/include" -c "$LRC/memmap/memalign.c"       -o "$TMP/memalign.o"
 ${CC:-cc} -O1 -w -I"$LRC/include" -c "$LRC/features/features_cpu.c" -o "$TMP/cpu.o"
-${CC:-cc} -O1 -std=c89 -pedantic -Wall -Wno-long-long $SANFLAGS -I"$ROOT/pcsx2" -c "$ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c" -o "$TMP/flatmap.o"
-${CC:-cc} -O1 -std=c89 -pedantic -Wall -Wno-long-long $SANFLAGS -I"$ROOT/pcsx2" -c "$ROOT/pcsx2/GS/GSPage2Tile.c" -o "$TMP/page2tile.o"
+${CC:-cc} -O1 -std=c89 -pedantic -Wall -Wno-long-long $SANFLAGS -I"$ROOT/pcsx2" -I"$LRC/include" -c "$ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c" -o "$TMP/flatmap.o"
+${CC:-cc} -O1 -std=c89 -pedantic -Wall -Wno-long-long $SANFLAGS -I"$ROOT/pcsx2" -I"$LRC/include" -c "$ROOT/pcsx2/GS/GSPage2Tile.c" -o "$TMP/page2tile.o"
 ${CXX:-c++} -O1 $SANFLAGS "$TMP"/*.o -o "$TMP/gssearch"
 "$TMP/gssearch"
