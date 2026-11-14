@@ -89,7 +89,7 @@ jobs:
       - name: Install the build and lavapipe
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3 liblzma-dev zlib1g-dev libgl-dev libegl1 mesa-vulkan-drivers libvulkan1 glslc
+          sudo apt-get install -y build-essential python3 liblzma-dev zlib1g-dev libgl-dev libegl1 mesa-vulkan-drivers libvulkan1 vulkan-validationlayers glslc
 
       - name: Build the core with the ownership check
         run: CXXFLAGS=-DGRANITE_OWNERSHIP_CHECK make -j"$(nproc)"
@@ -105,6 +105,8 @@ jobs:
       # there -- which is how a frame came to allocate a descriptor set a
       # draw with nothing failing.
       - name: Run the Vulkan negotiation suite on it
+        env:
+          VN_REQUIRE_VALIDATION: 1
         run: sh tests/vknegotiate/build.sh
 
   # The suites that link a converted C unit, built with mingw-w64 and run
@@ -217,7 +219,7 @@ jobs:
       - name: Install the build and lavapipe
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build python3 liblzma-dev zlib1g-dev libgl-dev libegl1 mesa-vulkan-drivers libvulkan1 glslc
+          sudo apt-get install -y build-essential cmake ninja-build python3 liblzma-dev zlib1g-dev libgl-dev libegl1 mesa-vulkan-drivers libvulkan1 vulkan-validationlayers glslc
 
       - name: Build the core with CMake
         run: |
@@ -227,6 +229,7 @@ jobs:
       - name: Run the Vulkan negotiation suite on it
         env:
           LRPS2_CORE: ${{ github.workspace }}/build/bin/pcsx2_libretro.so
+          VN_REQUIRE_VALIDATION: 1
         run: sh tests/vknegotiate/build.sh
 
   # The hardware-test suites compare against the PS2 test images and check

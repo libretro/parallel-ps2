@@ -253,6 +253,11 @@ void gs_vk_gp_set_write_mask(struct gs_vk_gp_builder* b, u32 attachment, VkColor
 	b->blend_attachments[attachment].colorWriteMask = write_mask;
 }
 
+void gs_vk_gp_set_no_color(struct gs_vk_gp_builder* b)
+{
+	b->blend.attachmentCount = 0;
+}
+
 void gs_vk_gp_add_blend_flags(struct gs_vk_gp_builder* b, VkPipelineColorBlendStateCreateFlags flags)
 {
 	b->blend.flags |= flags;

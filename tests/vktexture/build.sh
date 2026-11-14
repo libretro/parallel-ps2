@@ -1,7 +1,9 @@
 #!/bin/sh
 # The Vulkan textures (GS/Renderers/Vulkan/GSTextureVK.c) against a
 # device and Vulkan that hash every command, object and buffer read
-# (fake.h): the scenario gives what the C++ GSTextureVK gave (ORACLE).
+# (fake.h): the scenario gives ORACLE, what the C++ GSTextureVK gave
+# with the barriers of a GENERAL layout and a colour feedback loop
+# widened (issue #195).
 # Plain, sanitized where the host runs that, under wine, and on AArch64.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -18,7 +20,7 @@ case "$("$CC" -dumpmachine 2>/dev/null)" in
   x86_64*linux*) ISA="-msse4.1"; SAN="-fsanitize=address,undefined -fno-sanitize-recover=all" ;;
   *) ISA="-msse4.1" ;;
 esac
-ORACLE=6293baab19dd56f3
+ORACLE=22f8dd5d44fb8e17
 TMP=${TMPDIR:-/tmp}/vktexture.$$
 mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT

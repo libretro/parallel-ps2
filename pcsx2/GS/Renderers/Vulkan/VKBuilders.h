@@ -108,6 +108,8 @@ void gs_vk_gp_set_blend_attachment(struct gs_vk_gp_builder* b, u32 attachment, i
 	VkBlendFactor dst, VkBlendOp op, VkBlendFactor alpha_src, VkBlendFactor alpha_dst, VkBlendOp alpha_op,
 	VkColorComponentFlags write_mask);
 void gs_vk_gp_set_write_mask(struct gs_vk_gp_builder* b, u32 attachment, VkColorComponentFlags write_mask);
+/* For a subpass with no colour attachment: no blend attachments. */
+void gs_vk_gp_set_no_color(struct gs_vk_gp_builder* b);
 void gs_vk_gp_add_blend_flags(struct gs_vk_gp_builder* b, VkPipelineColorBlendStateCreateFlags flags);
 void gs_vk_gp_add_dynamic_state(struct gs_vk_gp_builder* b, VkDynamicState state);
 /* A graphics pipeline library of these parts (VK_EXT_graphics_pipeline_

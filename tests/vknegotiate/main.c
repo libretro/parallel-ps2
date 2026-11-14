@@ -1212,13 +1212,35 @@ static bool vn_environment(unsigned cmd, void* data)
 	}
 }
 
-static VkInstance vn_instance_wrapper(void *opaque, const VkInstanceCreateInfo *ci)
+/* As a frontend does: the instance with VK_KHR_surface, which the
+ * VK_KHR_swapchain added to the device (VN_EXTRA_EXT) needs. */
+static VkInstance vn_create_instance(const VkInstanceCreateInfo *ci)
 {
+	VkInstanceCreateInfo info = *ci;
+	const char *exts[64];
 	VkInstance instance = VK_NULL_HANDLE;
-	(void)opaque;
-	if (pvkCreateInstance(ci, NULL, &instance) != VK_SUCCESS)
+	uint32_t i;
+	int have = 0;
+	if (info.enabledExtensionCount >= 63)
+		return VK_NULL_HANDLE;
+	for (i = 0; i < info.enabledExtensionCount; i++)
+	{
+		exts[i] = info.ppEnabledExtensionNames[i];
+		if (!strcmp(exts[i], "VK_KHR_surface"))
+			have = 1;
+	}
+	if (!have)
+		exts[info.enabledExtensionCount++] = "VK_KHR_surface";
+	info.ppEnabledExtensionNames = exts;
+	if (pvkCreateInstance(&info, NULL, &instance) != VK_SUCCESS)
 		return VK_NULL_HANDLE;
 	return instance;
+}
+
+static VkInstance vn_instance_wrapper(void *opaque, const VkInstanceCreateInfo *ci)
+{
+	(void)opaque;
+	return vn_create_instance(ci);
 }
 
 /* Device extensions the core must never turn on. Granite's debug and
@@ -1799,7 +1821,8 @@ int main(int argc, char** argv)
 		memset(&ici, 0, sizeof(ici));
 		ici.sType            = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		ici.pApplicationInfo = app;
-		if (pvkCreateInstance(&ici, NULL, &instance) != VK_SUCCESS)
+		instance = vn_create_instance(&ici);
+		if (instance == VK_NULL_HANDLE)
 			VN_FAIL("vkCreateInstance failed");
 	}
 	VN_INST(vkDestroyInstance);

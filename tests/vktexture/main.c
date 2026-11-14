@@ -134,7 +134,7 @@ int main(int argc, char** argv)
 	printf("vktexture: %016llx\n", fk_hash);
 	if (want && want != fk_hash)
 	{
-		printf("FAIL: the C++ GSTextureVK gave %016llx\n", want);
+		printf("FAIL: expected %016llx\n", want);
 		return 1;
 	}
 	return 0;

@@ -1939,6 +1939,21 @@ bool GSDeviceVK::CreateBufferInHeap(const VkBufferCreateInfo* bci,
 		fill_callback(cpu_mapped);
 		gs_vk_heap_flush(&m_heap, &cpu_alloc);
 		vkCmdCopyBuffer(GetCurrentInitCommandBuffer(), cpu_buffer, *gpu_buffer, 1, &buf_copy);
+		/* The copy is in the init command buffer, submitted with the
+		 * frame's draws: without this they may index the buffer before it
+		 * lands, garbage indices reading past the vertices (issue #195). */
+		{
+			VkBufferMemoryBarrier bmb = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+			bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+			bmb.dstAccessMask       = VK_ACCESS_INDEX_READ_BIT;
+			bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			bmb.buffer              = *gpu_buffer;
+			bmb.offset              = 0;
+			bmb.size                = VK_WHOLE_SIZE;
+			vkCmdPipelineBarrier(GetCurrentInitCommandBuffer(), VK_PIPELINE_STAGE_TRANSFER_BIT,
+				VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, nullptr, 1, &bmb, 0, nullptr);
+		}
 		DeferBufferDestruction(cpu_buffer, cpu_alloc);
 		return true;
 	}
@@ -2515,6 +2530,15 @@ void GSDeviceVK::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r,
 
 	sTexVK->SetUseFenceCounter(GetCurrentFenceCounter());
 	dTexVK->SetUseFenceCounter(GetCurrentFenceCounter());
+	/* A copy into what a copy wrote with no transition between: the
+	 * second waits for the first, or they land in either order. */
+	if (dTexVK->GetLayout() == ((dTexVK == sTexVK) ? GSTextureVK::Layout::TransferSelf : GSTextureVK::Layout::TransferDst))
+	{
+		const VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+			VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT};
+		vkCmdPipelineBarrier(GetCurrentCommandBuffer(), VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+	}
 	sTexVK->TransitionToLayout(
 		(dTexVK == sTexVK) ? GSTextureVK::Layout::TransferSelf : GSTextureVK::Layout::TransferSrc);
 	dTexVK->TransitionToLayout(
@@ -3748,6 +3772,9 @@ VkPipeline GSDeviceVK::BuildUtilityPipeline(u32 id, Modules* mods, VkPipelineCac
 			gs_vk_gp_set_depth(&gpb, depth, depth, VK_COMPARE_OP_ALWAYS);
 		}
 		gs_vk_gp_set_write_mask(&gpb, 0, ShaderConvertWriteMask(i));
+		/* (as its render pass: depth or stencil only) */
+		if (id < UP_COPY && (IsDATMConvertShader(i) || HasDepthOutput(i)))
+			gs_vk_gp_set_no_color(&gpb);
 	}
 	else if (id < UP_HDR_SETUP)
 		gs_vk_gp_set_write_mask(&gpb, 0, static_cast<VkColorComponentFlags>((id - UP_COPY) & 15u));
@@ -4130,6 +4157,10 @@ VkPipeline GSDeviceVK::BuildTFXPipeline(const PipelineSelector& p, Modules* mods
 			vk_blend_ops[(w >> 9) & 3u], vk_blend_factors[(w >> 11) & 15u], vk_blend_factors[(w >> 15) & 15u],
 			VK_BLEND_OP_ADD, (w >> 19) & 15u);
 	}
+
+	/* (a depth-only pass has no attachment for the blend to describe) */
+	if (!p.rt && !IsDATEModePrimIDInit(p.ps.date))
+		gs_vk_gp_set_no_color(&gpb);
 
 	// Tests have shown that it's faster to just enable rast order on the entire pass, rather than alternating
 	// between turning it on and off for different draws, and adding the required barrier between non-rast-order

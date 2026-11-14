@@ -556,8 +556,9 @@ static void gs_vk_layout_access(u32 layout, int color, int dst, VkAccessFlags* a
 			*stages = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
 			break;
 		case GS_VK_LAYOUT_FEEDBACK_LOOP:
+			/* (a colour target in the loop is also sampled as a texture) */
 			*access = color ? (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-				| VK_ACCESS_INPUT_ATTACHMENT_READ_BIT)
+				| VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_READ_BIT)
 				: (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
 				| VK_ACCESS_SHADER_READ_BIT);
 			*stages = color ? (VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT)
@@ -574,8 +575,10 @@ static void gs_vk_layout_access(u32 layout, int color, int dst, VkAccessFlags* a
 			break;
 		case GS_VK_LAYOUT_GENERAL:
 		default:
-			*access = 0;
-			*stages = dst ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+			/* Anything may use it: whatever came before is made visible to
+			 * whatever comes after (a cleared null texture, sampled). */
+			*access = dst ? (VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT) : VK_ACCESS_MEMORY_WRITE_BIT;
+			*stages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 			break;
 	}
 }

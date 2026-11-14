@@ -1020,3 +1020,43 @@ if [ -z "$gpu_sub" ] || [ -z "$cpu_sub" ] || [ "$gpu_sub" -ge "$cpu_sub" ]; then
 fi
 echo "  4-bit read of a target: the CPU conversion's picture, $gpu_sub submissions against $cpu_sub"
 rm -rf "$SHIM"
+
+# The Vulkan renderer under the Khronos validation layer with
+# synchronization validation: no error. Issue #195's device losses on
+# AMD: the expand index buffer copied in the init command buffer and
+# indexed by the frame's draws with no barrier between, a GENERAL
+# transition (the cleared null texture) making nothing visible, copies
+# into a copy's destination landing in either order, and blend state
+# for depth-only passes. Skipped without the layer, unless
+# VN_REQUIRE_VALIDATION is set (CI installs it).
+VLAYER=""
+for d in ${VK_ADD_LAYER_PATH:-} /usr/share/vulkan/explicit_layer.d /usr/local/share/vulkan/explicit_layer.d /etc/vulkan/explicit_layer.d; do
+	[ -f "$d/VkLayer_khronos_validation.json" ] && VLAYER=1
+done
+if [ -z "$VLAYER" ]; then
+	if [ -n "${VN_REQUIRE_VALIDATION:-}" ]; then
+		echo "  FAIL: no Khronos validation layer"
+		exit 1
+	fi
+	echo "  skip: no Khronos validation layer"
+else
+	VAL=$(mktemp -d)
+	${CC:-cc} -std=c89 -pedantic -Wall -Wno-long-long -O2 \
+		-I "$ROOT/libretro/libretro-common/include" \
+		-o "$VAL/swdraw" "$ROOT/tests/swdraw/main.c" $LIBS
+	for c in stream_ct32 step_sprites many_copies column_passes step_depth depth_narrowed; do
+		"$VAL/swdraw" --bios "$VAL/$c.bin" $c
+		VK_LOADER_LAYERS_ENABLE='*validation*' \
+		VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT \
+		VN_FRAMES=20 VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/$c.bin" VN_RENDERER=Vulkan \
+			timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/$c.log" 2>&1 || true
+		if ! grep -q "vknegotiate v2: ok" "$VAL/$c.log" || grep -q "Validation Error" "$VAL/$c.log"; then
+			grep "Validation Error" "$VAL/$c.log" | sort | uniq -c | head -n 5
+			rm -rf "$VAL"
+			echo "  FAIL: validation errors drawing $c"
+			exit 1
+		fi
+	done
+	rm -rf "$VAL"
+	echo "  validation layer, synchronization included: no error"
+fi
