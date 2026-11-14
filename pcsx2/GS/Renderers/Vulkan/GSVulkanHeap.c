@@ -25,6 +25,14 @@ static unsigned gs_vk_types(const gs_vk_heap_t *heap, uint32_t type_bits,
    unsigned count = 0;
    unsigned i;
 
+   /* AMD's device-coherent types are only allocated from with the
+    * deviceCoherentMemory feature (VK_AMD_device_coherent_memory), which
+    * the device is made without. */
+   for (i = 0; i < heap->props.memoryTypeCount && i < VK_MAX_MEMORY_TYPES; i++)
+      if (heap->props.memoryTypes[i].propertyFlags
+            & (VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD | VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD))
+         type_bits &= ~(1u << i);
+
    if (preferred)
       for (i = 0; i < heap->props.memoryTypeCount && i < VK_MAX_MEMORY_TYPES; i++)
          if ((type_bits & (1u << i))

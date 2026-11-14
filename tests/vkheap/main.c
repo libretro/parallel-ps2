@@ -595,6 +595,66 @@ int main(void)
       refuse_type = -1;
    }
 
+   /* AMD's types, each also offered device-coherent and uncached: those
+    * need a feature the device is made without, so with the ordinary
+    * types refused nothing comes from them - the request fails instead. */
+   {
+      const VkMemoryPropertyFlags dl = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      const VkMemoryPropertyFlags hvc = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+         | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+      const VkMemoryPropertyFlags amd = VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD
+         | VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD;
+      VkPhysicalDeviceMemoryProperties o;
+      gs_vk_heap_t h;
+      gs_vk_alloc_t x;
+      unsigned t;
+      int a, before;
+
+      memset(&o, 0, sizeof(o));
+      o.memoryHeapCount = 2;
+      o.memoryHeaps[0].size = 1024u * 1024u * 1024u;
+      o.memoryHeaps[1].size = 1024u * 1024u * 1024u;
+      o.memoryTypeCount = 8;
+      o.memoryTypes[0].propertyFlags = dl;
+      o.memoryTypes[1].propertyFlags = hvc;
+      o.memoryTypes[2].propertyFlags = dl | hvc;
+      o.memoryTypes[3].propertyFlags = hvc | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+      for (t = 0; t < 4; t++)
+      {
+         o.memoryTypes[t + 4].propertyFlags = o.memoryTypes[t].propertyFlags | amd;
+         o.memoryTypes[t].heapIndex = o.memoryTypes[t + 4].heapIndex = (t & 1) ? 1 : 0;
+      }
+
+      memset(&h, 0, sizeof(h));
+      CHECK(gs_vk_heap_init(&h, (VkDevice)1, &o, &fns, 1024 * 1024, 256, 0) != 0, "amd: init");
+      req(&r, 4096, 256, 0xffu);
+      CHECK(gs_vk_heap_alloc(&h, &r, hvc, VK_MEMORY_PROPERTY_HOST_CACHED_BIT, 1, &x) != 0
+            && x.type == 3, "amd: a read-back buffer in the ordinary cached type");
+      gs_vk_heap_free(&h, &x);
+
+      refuse_type  = 0;
+      refuse_after = 0;
+      refuse_taken = 0;
+      CHECK(gs_vk_heap_alloc(&h, &r, dl, 0, 0, &x) != 0 && x.type == 2,
+            "amd: out of the first device-local type, the next ordinary one");
+      gs_vk_heap_free(&h, &x);
+      gs_vk_heap_shutdown(&h);
+
+      /* The only ordinary device-local type refused. */
+      o.memoryTypes[2].propertyFlags = hvc;
+      memset(&h, 0, sizeof(h));
+      CHECK(gs_vk_heap_init(&h, (VkDevice)1, &o, &fns, 1024 * 1024, 256, 0) != 0, "amd: init, one device-local type");
+      before = allocations;
+      CHECK(gs_vk_heap_alloc(&h, &r, dl, 0, 0, &x) == 0,
+            "amd: a device-coherent type taken when the ordinary one ran out");
+      CHECK(gs_vk_heap_reserve(&h, ~0u, dl, 0, 2) == 0,
+            "amd: a reserve went on to a device-coherent type");
+      for (a = before + 1; a <= allocations && a < TYPE_OF_MAX; a++)
+         CHECK(type_of[a] < 4, "amd: memory allocated from a device-coherent type");
+      gs_vk_heap_shutdown(&h);
+      refuse_type = -1;
+   }
+
    /* A free of an allocation whose block was trimmed, after the slot
     * has a new block: the new block is left alone, so nothing in it is
     * handed out twice. */
