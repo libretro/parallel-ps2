@@ -729,7 +729,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 			return false;
 
 		// With the device created, we can fill the remaining entry points.
-		if (!Vulkan::LoadVulkanDeviceFunctions(vk_init_info.device))
+		if (!gs_vk_load_device_functions(vk_init_info.device))
 			return false;
 
 		if (eds_core)
@@ -2099,7 +2099,7 @@ void GSDeviceVK::Destroy()
 	if (vk_init_info.device == VK_NULL_HANDLE)
 	{
 		if (m_vulkan_library_held)
-			Vulkan::UnloadVulkanLibrary();
+			vk_unload_library();
 		m_vulkan_library_held = false;
 		return;
 	}
@@ -2140,7 +2140,7 @@ void GSDeviceVK::Destroy()
 	}
 
 	if (m_vulkan_library_held)
-		Vulkan::UnloadVulkanLibrary();
+		vk_unload_library();
 	m_vulkan_library_held = false;
 }
 
@@ -2181,7 +2181,7 @@ void GSDeviceVK::RestoreAPIState()
 
 bool GSDeviceVK::CreateDeviceAndSwapChain()
 {
-	if (!Vulkan::LoadVulkanLibrary())
+	if (!vk_load_library())
 	{
 		log_cb(RETRO_LOG_ERROR, "Failed to load Vulkan library. Does your GPU and/or driver support Vulkan?\n");
 		return false;
@@ -2213,7 +2213,7 @@ bool GSDeviceVK::CreateDeviceAndSwapChain()
 		vk_init_info.vkGetInstanceProcAddr != vkGetInstanceProcAddr_libretro)
 		vkGetInstanceProcAddr_org = vk_init_info.vkGetInstanceProcAddr;
 
-	if (!Vulkan::LoadVulkanInstanceFunctions(vk_init_info.instance))
+	if (!gs_vk_load_instance_functions(vk_init_info.instance))
 	{
 		log_cb(RETRO_LOG_ERROR, "Failed to load Vulkan instance functions\n");
 		return false;

@@ -19,8 +19,8 @@
 extern "C" {
 #endif
 
-// We abuse the preprocessor here to only need to specify function names once.
-// Function names are prefixed so to not conflict with system symbols at runtime.
+/* We abuse the preprocessor here to only need to specify function names once. */
+/* Function names are prefixed so to not conflict with system symbols at runtime. */
 #define VULKAN_MODULE_ENTRY_POINT(name, required) extern PFN_##name pcsx2_##name;
 #define VULKAN_INSTANCE_ENTRY_POINT(name, required) extern PFN_##name pcsx2_##name;
 #define VULKAN_DEVICE_ENTRY_POINT(name, required) extern PFN_##name pcsx2_##name;
@@ -50,7 +50,7 @@ extern "C" {
 #define vkEnumerateDeviceLayerProperties pcsx2_vkEnumerateDeviceLayerProperties
 #define vkGetPhysicalDeviceSparseImageFormatProperties pcsx2_vkGetPhysicalDeviceSparseImageFormatProperties
 
-// VK_EXT_debug_utils
+/* VK_EXT_debug_utils */
 #define vkCmdBeginDebugUtilsLabelEXT pcsx2_vkCmdBeginDebugUtilsLabelEXT
 #define vkCmdEndDebugUtilsLabelEXT pcsx2_vkCmdEndDebugUtilsLabelEXT
 #define vkCmdInsertDebugUtilsLabelEXT pcsx2_vkCmdInsertDebugUtilsLabelEXT
@@ -66,7 +66,7 @@ extern "C" {
 #define vkGetPhysicalDeviceDisplayPropertiesKHR pcsx2_vkGetPhysicalDeviceDisplayPropertiesKHR
 #define vkGetPhysicalDeviceDisplayPlanePropertiesKHR pcsx2_vkGetPhysicalDeviceDisplayPlanePropertiesKHR
 
-// Vulkan 1.1 functions.
+/* Vulkan 1.1 functions. */
 #define vkGetPhysicalDeviceFeatures2 pcsx2_vkGetPhysicalDeviceFeatures2
 #define vkGetPhysicalDeviceProperties2 pcsx2_vkGetPhysicalDeviceProperties2
 #define vkGetPhysicalDeviceMemoryProperties2 pcsx2_vkGetPhysicalDeviceMemoryProperties2
@@ -192,7 +192,7 @@ extern "C" {
 #define vkCmdEndRenderPass pcsx2_vkCmdEndRenderPass
 #define vkCmdExecuteCommands pcsx2_vkCmdExecuteCommands
 
-// Vulkan 1.1 functions.
+/* Vulkan 1.1 functions. */
 #define vkGetBufferMemoryRequirements2 pcsx2_vkGetBufferMemoryRequirements2
 #define vkGetImageMemoryRequirements2 pcsx2_vkGetImageMemoryRequirements2
 #define vkBindBufferMemory2 pcsx2_vkBindBufferMemory2

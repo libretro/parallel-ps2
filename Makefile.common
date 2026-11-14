@@ -520,13 +520,13 @@ ifeq ($(HAVE_VULKAN), 1)
 SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/Vulkan/GSVulkanHeap.c \
 	$(LRPS2_DIR)/GS/Renderers/Vulkan/VKSpirvPatch.c \
+	$(LRPS2_DIR)/GS/Renderers/Vulkan/VKLoader.c \
 	$(LRPS2_DIR)/GS/Renderers/Vulkan/VKStreamBuffer.c
 
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/Vulkan/GSDeviceVK.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Vulkan/GSTextureVK.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Vulkan/VKBuilders.cpp \
-	$(LRPS2_DIR)/GS/Renderers/Vulkan/VKLoader.cpp \
 	\
 	$(LRPS2_DIR)/GS/Renderers/parallel-gs/GSRendererPGS.cpp
 endif

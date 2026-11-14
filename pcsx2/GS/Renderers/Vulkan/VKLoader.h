@@ -22,11 +22,23 @@
 
 #include "VKEntryPoints.h"
 
-namespace Vulkan
-{
-	bool LoadVulkanLibrary();
-	bool LoadVulkanInstanceFunctions(VkInstance instance);
-	bool LoadVulkanDeviceFunctions(VkDevice device);
-	void UnloadVulkanLibrary();
-	void ResetVulkanLibraryFunctionPointers();
-} // namespace Vulkan
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The Vulkan library, counted: each load that returns 1 takes one
+ * reference, each unload gives one back, and the last closes it and
+ * clears every entry point. An unload with nothing loaded does nothing.
+ * (GSLibretroHooks.h declares the same pair for the frontend glue.) */
+int vk_load_library(void);
+void vk_unload_library(void);
+
+/* The instance's and the device's entry points; 0 when a required one
+ * is missing (each logged), the optional ones left NULL. */
+int gs_vk_load_instance_functions(VkInstance instance);
+int gs_vk_load_device_functions(VkDevice device);
+void gs_vk_reset_function_pointers(void);
+
+#ifdef __cplusplus
+}
+#endif

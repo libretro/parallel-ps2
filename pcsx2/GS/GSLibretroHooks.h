@@ -35,7 +35,7 @@ void gs_d3d11_negotiate_hw_interface(retro_environment_t cb);
 extern "C" {
 #endif
 
-/* The Vulkan loader (Vulkan::LoadVulkanLibrary and its pair). */
+/* The Vulkan loader (VKLoader.c). */
 int vk_load_library(void);
 void vk_unload_library(void);
 

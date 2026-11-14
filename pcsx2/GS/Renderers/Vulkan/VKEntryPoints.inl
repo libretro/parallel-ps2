@@ -13,17 +13,17 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Expands the VULKAN_ENTRY_POINT macro for each function when this file is included.
-// Parameters: Function name, is required
-// VULKAN_MODULE_ENTRY_POINT is for functions in vulkan-1.dll
-// VULKAN_INSTANCE_ENTRY_POINT is for instance-specific functions.
-// VULKAN_DEVICE_ENTRY_POINT is for device-specific functions.
+/* Expands the VULKAN_ENTRY_POINT macro for each function when this file is included. */
+/* Parameters: Function name, is required */
+/* VULKAN_MODULE_ENTRY_POINT is for functions in vulkan-1.dll */
+/* VULKAN_INSTANCE_ENTRY_POINT is for instance-specific functions. */
+/* VULKAN_DEVICE_ENTRY_POINT is for device-specific functions. */
 
 #ifdef VULKAN_MODULE_ENTRY_POINT
 
 VULKAN_MODULE_ENTRY_POINT(vkGetInstanceProcAddr, true)
 
-#endif // VULKAN_MODULE_ENTRY_POINT
+#endif /* VULKAN_MODULE_ENTRY_POINT */
 
 #ifdef VULKAN_INSTANCE_ENTRY_POINT
 
@@ -40,7 +40,7 @@ VULKAN_INSTANCE_ENTRY_POINT(vkEnumerateDeviceExtensionProperties, true)
 VULKAN_INSTANCE_ENTRY_POINT(vkEnumerateDeviceLayerProperties, true)
 VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceSparseImageFormatProperties, true)
 
-// VK_EXT_debug_utils
+/* VK_EXT_debug_utils */
 VULKAN_INSTANCE_ENTRY_POINT(vkCmdBeginDebugUtilsLabelEXT, false)
 VULKAN_INSTANCE_ENTRY_POINT(vkCmdEndDebugUtilsLabelEXT, false)
 VULKAN_INSTANCE_ENTRY_POINT(vkCmdInsertDebugUtilsLabelEXT, false)
@@ -56,12 +56,12 @@ VULKAN_INSTANCE_ENTRY_POINT(vkSubmitDebugUtilsMessageEXT, false)
 VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceDisplayPropertiesKHR, false)
 VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceDisplayPlanePropertiesKHR, false)
 
-// Vulkan 1.1 functions.
+/* Vulkan 1.1 functions. */
 VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceFeatures2, true)
 VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceProperties2, true)
 VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceMemoryProperties2, true)
 
-#endif // VULKAN_INSTANCE_ENTRY_POINT
+#endif /* VULKAN_INSTANCE_ENTRY_POINT */
 
 #ifdef VULKAN_DEVICE_ENTRY_POINT
 
@@ -185,21 +185,21 @@ VULKAN_DEVICE_ENTRY_POINT(vkCmdNextSubpass, true)
 VULKAN_DEVICE_ENTRY_POINT(vkCmdEndRenderPass, true)
 VULKAN_DEVICE_ENTRY_POINT(vkCmdExecuteCommands, true)
 
-// Vulkan 1.1 functions.
+/* Vulkan 1.1 functions. */
 VULKAN_DEVICE_ENTRY_POINT(vkGetBufferMemoryRequirements2, true)
 VULKAN_DEVICE_ENTRY_POINT(vkGetImageMemoryRequirements2, true)
 VULKAN_DEVICE_ENTRY_POINT(vkBindBufferMemory2, true)
 VULKAN_DEVICE_ENTRY_POINT(vkBindImageMemory2, true)
 
-// VK_KHR_push_descriptor
+/* VK_KHR_push_descriptor */
 VULKAN_DEVICE_ENTRY_POINT(vkCmdPushDescriptorSetKHR, false)
 
-// VK_EXT_extended_dynamic_state (core in Vulkan 1.3 without the suffix,
-// resolved under those names when the extension is not there)
+/* VK_EXT_extended_dynamic_state (core in Vulkan 1.3 without the suffix, */
+/* resolved under those names when the extension is not there) */
 VULKAN_DEVICE_ENTRY_POINT(vkCmdSetDepthTestEnableEXT, false)
 VULKAN_DEVICE_ENTRY_POINT(vkCmdSetDepthWriteEnableEXT, false)
 VULKAN_DEVICE_ENTRY_POINT(vkCmdSetDepthCompareOpEXT, false)
 VULKAN_DEVICE_ENTRY_POINT(vkCmdSetStencilTestEnableEXT, false)
 VULKAN_DEVICE_ENTRY_POINT(vkCmdSetStencilOpEXT, false)
 
-#endif // VULKAN_DEVICE_ENTRY_POINT
+#endif /* VULKAN_DEVICE_ENTRY_POINT */
