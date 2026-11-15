@@ -13,24 +13,32 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
-#include <memalign.h>
+/*
+ * A doubly linked list in one array, in C: elements of a fixed size, each
+ * followed by its next and prev indexes, chained through index 0, which
+ * is the head and also "past the end". A position is a u16 index that
+ * stays valid until that element is erased (the array grows by copying,
+ * in order), which is what lets a caller keep it to erase or move by.
+ *
+ * The texture caches keep one per GS page and erase by the index they
+ * kept; the device keeps its texture pool in two.
+ *
+ * An empty list owns nothing: the array is made at the first insertion,
+ * since of GS_MAX_PAGES lists a frame touches a handful.
+ *
+ * Insert, erase and move are static in the header, as the flat map's
+ * find is. Not thread safe.
+ */
 
-#include <limits.h>
+#ifndef GS_FAST_LIST_H
+#define GS_FAST_LIST_H
 
-template <class T>
-struct Element
-{
-	T data;
-	u16 next_index;
-	u16 prev_index;
-};
+#include <stddef.h>
+#include <string.h>
 
-template <class T>
-class FastListIterator;
+#include <retro_inline.h>
 
-template <class T>
-class FastListReverseIterator;
+#include "common/Pcsx2Defs.h"
 
 /* Build with -DFASTLIST_CHECKS=1 to have a stale index say so, with the
  * list and the index, instead of being ignored. The guards themselves are
@@ -40,400 +48,278 @@ class FastListReverseIterator;
 #endif
 #if FASTLIST_CHECKS
 #include <stdio.h>
-#define FASTLIST_REPORT(op, index) \
-	fprintf(stderr, "FastList %p: %s(%u) with capacity %u, %u held - stale index\n", \
-		(const void*)this, (op), (unsigned)(index), (unsigned)m_capacity, \
-		(unsigned)m_free_indexes_stack_top)
+#define GS_FAST_LIST_REPORT(l, op, index) \
+	fprintf(stderr, "FastList %p: %s(%u) with capacity %u, %u held - stale index\n", (const void*)(l), (op), \
+		(unsigned)(index), (unsigned)(l)->capacity, (unsigned)(l)->count)
 #else
-#define FASTLIST_REPORT(op, index) ((void)0)
+#define GS_FAST_LIST_REPORT(l, op, index) ((void)0)
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct gs_fast_list
+{
+	/* capacity elements of stride bytes: the data, then at link the next
+	 * and prev indexes; then the free indexes, capacity - 1 of them */
+	unsigned char* buf;
+	u16 capacity;
+	u16 count; /* elements held, and the top of the free stack */
+	u16 elem_size;
+	u16 stride;
+	u16 link;
+} gs_fast_list;
+
+#define GS_FAST_LIST_ELEM(l, i) ((l)->buf + (size_t)(i) * (l)->stride)
+#define GS_FAST_LIST_NEXT(l, i) (((u16*)(GS_FAST_LIST_ELEM(l, i) + (l)->link))[0])
+#define GS_FAST_LIST_PREV(l, i) (((u16*)(GS_FAST_LIST_ELEM(l, i) + (l)->link))[1])
+#define GS_FAST_LIST_FREE(l)    ((u16*)((l)->buf + (size_t)(l)->capacity * (l)->stride))
+
+/* An empty list of elements of this size. Allocates nothing. */
+void gs_fast_list_init(gs_fast_list* l, size_t elem_size);
+/* Empty again, owning nothing */
+void gs_fast_list_clear(gs_fast_list* l);
+/* (the first insertion's array, or twice the room: zero if it cannot be
+ * had, the list as it was) */
+int gs_fast_list_grow(gs_fast_list* l);
+
+/* The data at an index, and the indexes either side of it (0: none) */
+static INLINE void* gs_fast_list_data(const gs_fast_list* l, u16 index)
+{
+	return GS_FAST_LIST_ELEM(l, index);
+}
+static INLINE u16 gs_fast_list_next(const gs_fast_list* l, u16 index)
+{
+	return GS_FAST_LIST_NEXT(l, index);
+}
+static INLINE u16 gs_fast_list_prev(const gs_fast_list* l, u16 index)
+{
+	return GS_FAST_LIST_PREV(l, index);
+}
+/* (index 0 is the head and past the end, so a list with no array answers
+ * 0 to both without one to read) */
+static INLINE u16 gs_fast_list_first(const gs_fast_list* l)
+{
+	return l->buf ? GS_FAST_LIST_NEXT(l, 0) : 0;
+}
+static INLINE u16 gs_fast_list_last(const gs_fast_list* l)
+{
+	return l->buf ? GS_FAST_LIST_PREV(l, 0) : 0;
+}
+
+static INLINE void gs_fast_list_link_front(gs_fast_list* l, u16 index)
+{
+	const u16 head = GS_FAST_LIST_NEXT(l, 0);
+	GS_FAST_LIST_PREV(l, index) = 0;
+	GS_FAST_LIST_NEXT(l, index) = head;
+	GS_FAST_LIST_PREV(l, head)  = index;
+	GS_FAST_LIST_NEXT(l, 0)     = index;
+}
+
+static INLINE void gs_fast_list_unlink(gs_fast_list* l, u16 index)
+{
+	const u16 next = GS_FAST_LIST_NEXT(l, index);
+	const u16 prev = GS_FAST_LIST_PREV(l, index);
+	GS_FAST_LIST_NEXT(l, prev) = next;
+	GS_FAST_LIST_PREV(l, next) = prev;
+}
+
+/* @data copied in at the front; its index, or 0 when there is no room
+ * (out of memory, or 65534 held) and the list is as it was */
+static INLINE u16 gs_fast_list_insert_front(gs_fast_list* l, const void* data)
+{
+	u16 index;
+	if ((!l->buf || l->count == l->capacity - 1) && !gs_fast_list_grow(l))
+		return 0;
+	index = GS_FAST_LIST_FREE(l)[l->count++];
+	memcpy(GS_FAST_LIST_ELEM(l, index), data, l->elem_size);
+	gs_fast_list_link_front(l, index);
+	return index;
+}
+
+/* An index kept from an insertion, erased. One that is not an index - 0,
+ * past the array, or into a list holding nothing (one emptied since it
+ * was kept: a texture cache purge) - is ignored: the free stack's top
+ * would otherwise wrap below zero and the push land far past the array. */
+static INLINE void gs_fast_list_erase(gs_fast_list* l, u16 index)
+{
+	if (!l->buf || index == 0 || index >= l->capacity || l->count == 0)
+	{
+		GS_FAST_LIST_REPORT(l, "EraseIndex", index);
+		return;
+	}
+	gs_fast_list_unlink(l, index);
+	GS_FAST_LIST_FREE(l)[--l->count] = index;
+}
+
+/* An index kept from an insertion, made the first. A stale one is ignored,
+ * as by erase. */
+static INLINE void gs_fast_list_move_front(gs_fast_list* l, u16 index)
+{
+	if (!l->buf || index == 0 || index >= l->capacity)
+	{
+		GS_FAST_LIST_REPORT(l, "MoveFront", index);
+		return;
+	}
+	if (GS_FAST_LIST_NEXT(l, 0) != index)
+	{
+		gs_fast_list_unlink(l, index);
+		gs_fast_list_link_front(l, index);
+	}
+}
+
+#ifdef __cplusplus
+}
+
+#include <type_traits>
+
+template <class T>
+class FastListIterator;
+
+template <class T>
+class FastListReverseIterator;
+
+/* The C list, with the C++ caches' names. T is copied in as bytes. */
 template <class T>
 class FastList
 {
 	friend class FastListIterator<T>;
 	friend class FastListReverseIterator<T>;
-private:
-	// The index of the first element of the list is m_buffer[0].next_index
-	//     The first Element<T> of the list has prev_index equal to 0
-	// The index of the last element of the list is m_buffer[0].prev_index
-	//     The last Element<T> of the list has next_index equal to 0
-	// All the other Element<T> of the list are chained by next_index and prev_index
-	// m_buffer has dynamic size m_capacity
-	// Due to m_buffer reallocation, the pointers to Element<T> stored into the array
-	//     are invalidated every time Grow() is executed. But FastListIterator<T> is
-	//     index based, not pointer based, and the elements are copied in order on Grow(),
-	//     so there is no iterator invalidation (which is an index invalidation) until
-	//     the relevant iterator (or the index alone) are erased from the list.
-	// m_buffer[0] is always present as auxiliary Element<T> of the list
-	Element<T>* m_buffer;
-	u16 m_capacity;
-	u16 m_free_indexes_stack_top;
-	// m_free_indexes_stack has dynamic size (m_capacity - 1)
-	// m_buffer indexes that are free to be used are stacked here
-	u16* m_free_indexes_stack;
+
+	static_assert(std::is_trivially_copyable<T>::value, "elements are copied as bytes");
+
+	gs_fast_list m_l;
 
 public:
-	__forceinline FastList()
-	{
-		m_buffer = nullptr;
-		clear();
-	}
+	__forceinline FastList() { gs_fast_list_init(&m_l, sizeof(T)); }
+	__forceinline ~FastList() { gs_fast_list_clear(&m_l); }
+	FastList(const FastList&) = delete;
+	FastList& operator=(const FastList&) = delete;
 
-	__forceinline ~FastList()
-	{
-		memalign_free(m_buffer);
-	}
+	void clear() { gs_fast_list_clear(&m_l); }
 
-	void clear()
-	{
-		// An empty list owns nothing. It used to allocate its four-element
-		// buffer here, which is a 64-byte-aligned allocation per list
-		// whether or not anything is ever put in it -- and the texture
-		// cache keeps one list per GS page, GS_MAX_PAGES of them, of which
-		// a frame touches a handful. Allocate on the first insertion
-		// instead; everything that reads an empty list is answered below
-		// without touching the buffer.
-		memalign_free(m_buffer);
-		m_buffer = nullptr;
-		m_free_indexes_stack = nullptr;
-		m_capacity = 0;
-		m_free_indexes_stack_top = 0;
-	}
+	/* (0 when there is no room: an index erase and move ignore) */
+	__forceinline u16 InsertFront(const T& data) { return gs_fast_list_insert_front(&m_l, &data); }
+	__forceinline void push_front(const T& data) { gs_fast_list_insert_front(&m_l, &data); }
 
-private:
-	// The first insertion into an empty list: the allocation clear() used
-	// to do, with the same initial capacity.
-	void Allocate()
-	{
-		// Initialize m_capacity to 4 so we avoid to Grow() on initial insertions
-		// The code doesn't break if this value is changed with anything from 1 to USHRT_MAX
-		m_capacity = 4;
+	__forceinline const T& back() const { return Data(gs_fast_list_last(&m_l)); }
+	__forceinline void pop_back() { gs_fast_list_erase(&m_l, gs_fast_list_last(&m_l)); }
 
-		// Initialize m_buffer and m_free_indexes_stack as a contiguous block of memory starting at m_buffer
-		// This should increase cache locality and reduce memory fragmentation
-		m_buffer = (Element<T>*)memalign_alloc(64, m_capacity * sizeof(Element<T>) + (m_capacity - 1) * sizeof(u16));
-		m_free_indexes_stack = (u16*)&m_buffer[m_capacity];
+	__forceinline u16 size() const { return m_l.count; }
+	__forceinline bool empty() const { return m_l.count == 0; }
 
-		// Initialize m_buffer[0], data field is unused but initialized using default T constructor
-		m_buffer[0] = {T(), 0, 0};
+	__forceinline void EraseIndex(const u16 index) { gs_fast_list_erase(&m_l, index); }
+	__forceinline void MoveFront(const u16 index) { gs_fast_list_move_front(&m_l, index); }
 
-		// m_free_indexes_stack top index is 0, bottom index is m_capacity - 2
-		m_free_indexes_stack_top = 0;
-
-		// m_buffer index 0 is reserved for auxiliary element
-		for (u16 i = 0; i < m_capacity - 1; i++)
-			m_free_indexes_stack[i] = i + 1;
-	}
-
-public:
-
-	// Insert the element in front of the list and return its position in m_buffer
-	__forceinline u16 InsertFront(const T& data)
-	{
-		if (!m_buffer)
-			Allocate();
-		else if (Full())
-			Grow();
-
-		// Pop a free index from the stack
-		const u16 free_index = m_free_indexes_stack[m_free_indexes_stack_top++];
-		m_buffer[free_index].data = data;
-		ListInsertFront(free_index);
-		return free_index;
-	}
-
-	__forceinline void push_front(const T& data)
-	{
-		InsertFront(data);
-	}
-
-	__forceinline const T& back() const
-	{
-		return m_buffer[LastIndex()].data;
-	}
-
-	__forceinline void pop_back()
-	{
-		EraseIndex(LastIndex());
-	}
-
-	__forceinline u16 size() const
-	{
-		return m_free_indexes_stack_top;
-	}
-
-	__forceinline bool empty() const
-	{
-		return size() == 0;
-	}
-
-	__forceinline void EraseIndex(const u16 index)
-	{
-		/* An index into a list that holds nothing is not an index, and
-		 * the line below writes through it twice over. It happens: a
-		 * Source keeps one m_erase_it per page and hands them back
-		 * later, and anything that emptied the list in between - a
-		 * texture cache purge, which a resolution change does - leaves
-		 * every one of them stale.
-		 *
-		 * The second write is the one that corrupts the heap. The top of
-		 * the free-index stack is a u16 at zero when the list is empty,
-		 * and the pre-decrement takes it to 65535: the store lands 128 KB
-		 * past the buffer, in whatever the allocator has there. Nothing
-		 * fails at that moment. The next free of a block whose header it
-		 * landed on reports heap corruption, in a call stack with no
-		 * connection to this one.
-		 *
-		 * FASTLIST_CHECKS says where a stale index came from. */
-		if (!m_buffer || index == 0 || index >= m_capacity
-		 || m_free_indexes_stack_top == 0)
-		{
-			FASTLIST_REPORT("EraseIndex", index);
-			return;
-		}
-		ListRemove(index);
-		m_free_indexes_stack[--m_free_indexes_stack_top] = index;
-	}
-
-	__forceinline void MoveFront(const u16 index)
-	{
-		/* As EraseIndex: a stale index here walks the chain through
-		 * m_buffer[index].prev_index and writes through both. */
-		if (!m_buffer || index == 0 || index >= m_capacity)
-		{
-			FASTLIST_REPORT("MoveFront", index);
-			return;
-		}
-		if (FirstIndex() != index)
-		{
-			ListRemove(index);
-			ListInsertFront(index);
-		}
-	}
-
-	__forceinline const FastListIterator<T> begin() const
-	{
-		return FastListIterator<T>(this, FirstIndex());
-	}
-
-	__forceinline const FastListIterator<T> end() const
-	{
-		return FastListIterator<T>(this, 0);
-	}
+	__forceinline const FastListIterator<T> begin() const { return FastListIterator<T>(this, gs_fast_list_first(&m_l)); }
+	__forceinline const FastListIterator<T> end() const { return FastListIterator<T>(this, 0); }
 
 	__forceinline FastListIterator<T> erase(FastListIterator<T> i)
 	{
-		EraseIndex(i.Index());
-		return ++i;
+		/* (the next index read before the element goes back on the stack) */
+		const u16 index = i.Index();
+		++i;
+		EraseIndex(index);
+		return i;
 	}
 
-	__forceinline const FastListReverseIterator<T> rbegin() const {
-		return FastListReverseIterator<T>(this, LastIndex());
+	__forceinline const FastListReverseIterator<T> rbegin() const
+	{
+		return FastListReverseIterator<T>(this, gs_fast_list_last(&m_l));
 	}
-
-	__forceinline const FastListReverseIterator<T> rend() const {
-		return FastListReverseIterator<T>(this, 0);
-	}
+	__forceinline const FastListReverseIterator<T> rend() const { return FastListReverseIterator<T>(this, 0); }
 
 private:
-	// Accessed by FastListIterator<T> using class friendship
 	__forceinline const T& Data(const u16 index) const
 	{
-		return m_buffer[index].data;
+		return *static_cast<const T*>(gs_fast_list_data(&m_l, index));
 	}
-
-	// Accessed by FastListIterator<T> using class friendship
-	__forceinline u16 NextIndex(const u16 index) const
-	{
-		return m_buffer[index].next_index;
-	}
-
-	// Accessed by FastListIterator<T> using class friendship
-	__forceinline u16 PrevIndex(const u16 index) const
-	{
-		return m_buffer[index].prev_index;
-	}
-
-	/* Index 0 is the auxiliary element and also "past the end", so an
-	 * unallocated list answers 0 to both without a buffer to read. */
-	__forceinline u16 FirstIndex() const
-	{
-		return m_buffer ? m_buffer[0].next_index : 0;
-	}
-
-	__forceinline u16 LastIndex() const
-	{
-		return m_buffer ? m_buffer[0].prev_index : 0;
-	}
-
-	__forceinline bool Full() const
-	{
-		// The minus one is due to the presence of the auxiliary element
-		return size() == m_capacity - 1;
-	}
-
-	__forceinline void ListInsertFront(const u16 index)
-	{
-		// Update prev / next indexes to add m_buffer[index] to the chain
-		Element<T>& head = m_buffer[0];
-		m_buffer[index].prev_index = 0;
-		m_buffer[index].next_index = head.next_index;
-		m_buffer[head.next_index].prev_index = index;
-		head.next_index = index;
-	}
-
-	__forceinline void ListRemove(const u16 index)
-	{
-		// Update prev / next indexes to remove m_buffer[index] from the chain
-		const Element<T>& to_remove = m_buffer[index];
-		m_buffer[to_remove.prev_index].next_index = to_remove.next_index;
-		m_buffer[to_remove.next_index].prev_index = to_remove.prev_index;
-	}
-
-	void Grow()
-	{
-		const u16 new_capacity = m_capacity <= (USHRT_MAX / 2) ? (m_capacity * 2) : USHRT_MAX;
-
-		Element<T>* new_buffer = (Element<T>*)memalign_alloc(64, new_capacity * sizeof(Element<T>) + (new_capacity - 1) * sizeof(u16));
-		u16* new_free_indexes_stack = (u16*)&new_buffer[new_capacity];
-
-		memcpy(new_buffer, m_buffer, m_capacity * sizeof(Element<T>));
-		memcpy(new_free_indexes_stack, m_free_indexes_stack, (m_capacity - 1) * sizeof(u16));
-
-		memalign_free(m_buffer);
-
-		m_buffer = new_buffer;
-		m_free_indexes_stack = new_free_indexes_stack;
-
-		// Initialize the additional space in the stack
-		for (u16 i = m_capacity - 1; i < new_capacity - 1; i++)
-			m_free_indexes_stack[i] = i + 1;
-
-		m_capacity = new_capacity;
-	}
+	__forceinline u16 NextIndex(const u16 index) const { return gs_fast_list_next(&m_l, index); }
+	__forceinline u16 PrevIndex(const u16 index) const { return gs_fast_list_prev(&m_l, index); }
 };
 
-
+/* (const iterators, by index: an erase elsewhere in the list leaves them
+ * valid, as does growth) */
 template <class T>
-// This iterator is const_iterator
 class FastListIterator
 {
-private:
 	const FastList<T>* m_fastlist;
 	u16 m_index;
 
 public:
 	__forceinline FastListIterator(const FastList<T>* fastlist, const u16 index)
+		: m_fastlist(fastlist)
+		, m_index(index)
 	{
-		m_fastlist = fastlist;
-		m_index = index;
 	}
-
-	__forceinline bool operator!=(const FastListIterator<T>& other) const
-	{
-		return (m_index != other.m_index);
-	}
-
-	__forceinline bool operator==(const FastListIterator<T>& other) const
-	{
-		return (m_index == other.m_index);
-	}
-
-	// Prefix increment
+	__forceinline bool operator!=(const FastListIterator<T>& other) const { return m_index != other.m_index; }
+	__forceinline bool operator==(const FastListIterator<T>& other) const { return m_index == other.m_index; }
 	__forceinline const FastListIterator<T>& operator++()
 	{
 		m_index = m_fastlist->NextIndex(m_index);
 		return *this;
 	}
-
-	// Postfix increment
 	__forceinline const FastListIterator<T> operator++(int)
 	{
 		FastListIterator<T> copy(*this);
 		++(*this);
 		return copy;
 	}
-
-	// Prefix decrement
 	__forceinline const FastListIterator<T>& operator--()
 	{
 		m_index = m_fastlist->PrevIndex(m_index);
 		return *this;
 	}
-
-	// Postfix decrement
 	__forceinline const FastListIterator<T> operator--(int)
 	{
 		FastListIterator<T> copy(*this);
 		--(*this);
 		return copy;
 	}
-
-	__forceinline const T& operator*() const
-	{
-		return m_fastlist->Data(m_index);
-	}
-
-	__forceinline u16 Index() const
-	{
-		return m_index;
-	}
+	__forceinline const T& operator*() const { return m_fastlist->Data(m_index); }
+	__forceinline u16 Index() const { return m_index; }
 };
 
 template <class T>
-// This iterator is const_iterator
 class FastListReverseIterator
 {
-private:
 	const FastList<T>* m_fastlist;
 	u16 m_index;
 
 public:
-	__forceinline FastListReverseIterator(const FastList<T>* fastlist, const u16 index) {
-		m_fastlist = fastlist;
-		m_index = index;
+	__forceinline FastListReverseIterator(const FastList<T>* fastlist, const u16 index)
+		: m_fastlist(fastlist)
+		, m_index(index)
+	{
 	}
-
-	__forceinline bool operator!=(const FastListReverseIterator<T>& other) const {
-		return (m_index != other.m_index);
-	}
-
-	__forceinline bool operator==(const FastListReverseIterator<T>& other) const {
-		return (m_index == other.m_index);
-	}
-
-	// Prefix increment
-	__forceinline const FastListReverseIterator<T>& operator++() {
+	__forceinline bool operator!=(const FastListReverseIterator<T>& other) const { return m_index != other.m_index; }
+	__forceinline bool operator==(const FastListReverseIterator<T>& other) const { return m_index == other.m_index; }
+	__forceinline const FastListReverseIterator<T>& operator++()
+	{
 		m_index = m_fastlist->PrevIndex(m_index);
 		return *this;
 	}
-
-	// Postfix increment
-	__forceinline const FastListReverseIterator<T> operator++(int) {
+	__forceinline const FastListReverseIterator<T> operator++(int)
+	{
 		FastListReverseIterator<T> copy(*this);
 		++(*this);
 		return copy;
 	}
-
-	// Prefix decrement
-	__forceinline const FastListReverseIterator<T>& operator--() {
+	__forceinline const FastListReverseIterator<T>& operator--()
+	{
 		m_index = m_fastlist->NextIndex(m_index);
 		return *this;
 	}
-
-	// Postfix decrement
-	__forceinline const FastListReverseIterator<T> operator--(int) {
+	__forceinline const FastListReverseIterator<T> operator--(int)
+	{
 		FastListReverseIterator<T> copy(*this);
 		--(*this);
 		return copy;
 	}
-
-	__forceinline const T& operator*() const {
-		return m_fastlist->Data(m_index);
-	}
-
-	__forceinline u16 Index() const {
-		return m_index;
-	}
+	__forceinline const T& operator*() const { return m_fastlist->Data(m_index); }
+	__forceinline u16 Index() const { return m_index; }
 };
+#endif
+
+#endif

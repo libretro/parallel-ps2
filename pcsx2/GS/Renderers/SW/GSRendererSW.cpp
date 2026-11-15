@@ -941,7 +941,7 @@ bool GSRendererSW::CheckSourcePages(SharedData* sd)
 	{
 		for (size_t i = 0; sd->m_tex[i].t != NULL; i++)
 		{
-			GSOffset::PageLooper pages = sd->m_tex[i].t->m_offset.pageLooperForRect(sd->m_tex[i].r);
+			GSOffset::PageLooper pages = GSOffset(sd->m_tex[i].t->m_offset).pageLooperForRect(sd->m_tex[i].r);
 
 			bool ret = false;
 			pages.loopPagesWithBreak([this, &ret](u32 pages)
@@ -2022,7 +2022,8 @@ void GSRendererSW::SharedData::UpdateSource()
 {
 	for (size_t i = 0; m_tex[i].t; i++)
 	{
-		if (m_tex[i].t->Update(m_tex[i].r))
+		const GSVector4i& r = m_tex[i].r;
+		if (gs_sw_texture_update(m_tex[i].t, r.left, r.top, r.right, r.bottom))
 			global.tex[i] = m_tex[i].t->m_buff;
 		else
 			global.sel.tfx = TFX_NONE;

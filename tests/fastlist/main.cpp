@@ -1,14 +1,17 @@
-/* FastList now allocates on the first insertion rather than in clear().
- * Everything it does must be unchanged, including on a list that has
- * never held anything. */
+/* FastList (GS/Renderers/Common/GSFastList.h), the C list's C++ view:
+ * a list that has never held anything, insertion, erasure and moves,
+ * indexes kept across a purge, the most it holds; and scenario.h's run,
+ * whose hash the C++ template it replaced gave (on the command line). */
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 #include <algorithm>
 #include "common/Pcsx2Defs.h"
 #include "GS/Renderers/Common/GSFastList.h"
+#include "scenario.h"
 static int fails;
 #define CHECK(c, m) do { if (!(c)) { printf("  FAIL: %s\n", m); fails++; } } while (0)
-int main()
+int main(int argc, char** argv)
 {
 	{	/* never touched */
 		FastList<int> l;
@@ -90,6 +93,30 @@ int main()
 		CHECK(l2.size() == 0, "erase from an allocated empty list: ignored");
 		l2.push_front(7);
 		CHECK(l2.size() == 1 && *l2.begin() == 7, "and it still works after");
+	}
+	{	/* The most it holds: index 0 is the head, so 65534. The array
+		 * cannot grow past 65535, and the insertion after that read its
+		 * free index from past the end of the stack. */
+		static FastList<u32> l;
+		u32 i;
+		u16 at;
+		for (i = 0; i < 65534; i++)
+			if (!l.InsertFront(i))
+				break;
+		CHECK(i == 65534 && l.size() == 65534, "full: 65534 held");
+		at = l.InsertFront(65534);
+		CHECK(at == 0 && l.size() == 65534, "one more: refused, index 0, nothing changed");
+		CHECK(*l.begin() == 65533 && l.back() == 0, "full: the ends as they were");
+		l.pop_back();
+		at = l.InsertFront(70000);
+		CHECK(at != 0 && *l.begin() == 70000 && l.size() == 65534, "room again after an erase");
+	}
+	scenario();
+	printf("fastlist scenario: %016llx\n", sc_hash);
+	if (argc > 1 && strtoull(argv[1], NULL, 16) != sc_hash)
+	{
+		printf("  FAIL: the C++ template gave %s\n", argv[1]);
+		fails++;
 	}
 	printf(fails ? "fastlist: FAILED (%d)\n" : "fastlist: ok\n", fails);
 	return fails != 0;

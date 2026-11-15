@@ -212,11 +212,13 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 			const GSVector4i r = hw.GetTextureMinMax(TEX0, context->CLAMP, gd.sel.ltf, true).coverage;
 
 			if (!hw.m_sw_texture[0])
-				hw.m_sw_texture[0] = new GSTextureCacheSW::Texture(0, TEX0, env.TEXA);
+				hw.m_sw_texture[0] = gs_sw_texture_new(0, &TEX0, &env.TEXA);
 			else
-				hw.m_sw_texture[0]->Reset(0, TEX0, env.TEXA);
+				gs_sw_texture_reset(hw.m_sw_texture[0], 0, &TEX0, &env.TEXA);
+			if (!hw.m_sw_texture[0])
+				return false;
 
-			hw.m_sw_texture[0]->Update(r);
+			gs_sw_texture_update(hw.m_sw_texture[0], r.left, r.top, r.right, r.bottom);
 			gd.tex[0] = hw.m_sw_texture[0]->m_buff;
 
 			gd.sel.tw = hw.m_sw_texture[0]->m_tw - 3;
@@ -294,12 +296,15 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 					vt.m_max.t *= 0.5f;
 
 					if (!hw.m_sw_texture[i])
-						hw.m_sw_texture[i] = new GSTextureCacheSW::Texture(gd.sel.tw + 3, MIP_TEX0, env.TEXA);
+						hw.m_sw_texture[i] = gs_sw_texture_new(gd.sel.tw + 3, &MIP_TEX0, &env.TEXA);
 					else
-						hw.m_sw_texture[i]->Reset(gd.sel.tw + 3, MIP_TEX0, env.TEXA);
+						gs_sw_texture_reset(hw.m_sw_texture[i], gd.sel.tw + 3, &MIP_TEX0, &env.TEXA);
+
+					if (!hw.m_sw_texture[i])
+						return false;
 
 					GSVector4i r = hw.GetTextureMinMax(MIP_TEX0, MIP_CLAMP, gd.sel.ltf, true).coverage;
-					hw.m_sw_texture[i]->Update(r);
+					gs_sw_texture_update(hw.m_sw_texture[i], r.left, r.top, r.right, r.bottom);
 					gd.tex[i] = hw.m_sw_texture[i]->m_buff;
 				}
 

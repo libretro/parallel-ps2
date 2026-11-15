@@ -149,7 +149,7 @@ GSRendererHW::~GSRendererHW()
 	m_sw_vertex_capacity = 0;
 	for (size_t i = 0; i < C89_ARRAY_SIZE(m_sw_texture); i++)
 	{
-		delete m_sw_texture[i];
+		gs_sw_texture_free(m_sw_texture[i]);
 		m_sw_texture[i] = nullptr;
 	}
 	delete m_sw_rasterizer;

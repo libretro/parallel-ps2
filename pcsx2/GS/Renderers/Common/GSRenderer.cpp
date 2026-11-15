@@ -16,6 +16,7 @@
 #include <math.h>
 
 #include "GSRenderer.h"
+#include "../SW/GSTextureCacheSW.h"
 #include "../../GSVR.h"
 
 #include "../../../Host.h"
@@ -28,6 +29,18 @@
 #endif
 
 GSRenderer* g_gs_renderer = NULL;
+
+/* What the software textures (SW/GSTextureCacheSW.c) read local memory
+ * through */
+extern "C" void gs_sw_texture_read_block(u32 psm, u32 bp, u8* dst, int dstpitch, const GIFRegTEXA* TEXA)
+{
+	GSLocalMemory::m_psm[psm].rtxbP(g_gs_renderer->m_mem, bp, dst, dstpitch, *TEXA);
+}
+
+extern "C" GSPage2TileMap* gs_sw_texture_page2tile(const GIFRegTEX0* TEX0)
+{
+	return g_gs_renderer->m_mem.GetPage2TileMap(*TEX0);
+}
 
 void GSState::PurgePool()
 {

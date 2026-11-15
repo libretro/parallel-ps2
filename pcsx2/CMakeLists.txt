@@ -365,6 +365,7 @@ set(pcsx2GSSources
 	GS/Renderers/HW/GSHwHack.cpp
 	GS/Renderers/HW/GSRendererHW.cpp
 	GS/Renderers/HW/GSObjectPool.c
+	GS/Renderers/Common/GSFastList.c
 	GS/Renderers/Common/GSFlatMap.c
 	GS/Renderers/Common/GSStableMap.c
 	GS/Renderers/Common/GSTextureBase.c
@@ -388,7 +389,7 @@ set(pcsx2GSSources
 	GS/Renderers/SW/GSDeviceSW.cpp
 	GS/Renderers/SW/GSHiresMem.c
 	GS/Renderers/SW/GSHiresMem.h
-	GS/Renderers/SW/GSTextureCacheSW.cpp
+	GS/Renderers/SW/GSTextureCacheSW.c
 	GS/Renderers/SW/GSTextureSW.c
 	)
 

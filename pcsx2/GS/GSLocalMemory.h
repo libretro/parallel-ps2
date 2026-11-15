@@ -47,6 +47,7 @@ class GSOffset : public gs_offset
 {
 public:
 	GSOffset() = default;
+	GSOffset(const gs_offset& o) : gs_offset(o) {}
 	GSOffset(const gs_swizzle_info& s, u32 bp, u32 bw, u32 psm)
 		: gs_offset(gs_offset_make(&s, bp, bw, psm))
 	{
@@ -141,6 +142,8 @@ public:
 	class PageLooper : public gs_page_looper
 	{
 	public:
+		PageLooper() = default;
+		PageLooper(const gs_page_looper& l) : gs_page_looper(l) {}
 		/// Loop over pages, fn can return `false` to break the loop
 		/// Fn: bool(*)(u32)
 		template <typename Fn>

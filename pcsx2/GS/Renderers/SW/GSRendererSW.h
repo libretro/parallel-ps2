@@ -16,6 +16,7 @@
 #pragma once
 
 #include <retro_atomic.h>
+#include "../Common/GSRenderer.h"
 #include "GSTextureCacheSW.h"
 #include "GSRasterizer.h"
 #include "../../GSRingHeap.h"
