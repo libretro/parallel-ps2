@@ -124,7 +124,7 @@
     <ClCompile Include="GameDatabase.c" />
     <ClCompile Include="GameDatabaseFixes.c" />
     <ClCompile Include="Gif_Unit.c" />
-    <ClCompile Include="GS\Renderers\DX11\D3D.cpp" />
+    <ClCompile Include="GS\Renderers\DX11\D3D.c" />
     <ClCompile Include="GS\Renderers\DX12\GSDevice12.cpp" />
     <ClCompile Include="GS\Renderers\DX12\GSTexture12.c" />
     <ClCompile Include="GS\Renderers\HW\GSTextureReplacementLoaders.cpp" />
@@ -204,7 +204,7 @@
     <ClCompile Include="GS\Renderers\Common\GSTextureBase.c" />
     <ClCompile Include="GS\Renderers\Common\GSTextureFormat.c" />
     <ClCompile Include="GS\Renderers\SW\GSTextureSW.c" />
-    <ClCompile Include="GS\Renderers\DX11\GSTexture11.cpp" />
+    <ClCompile Include="GS\Renderers\DX11\GSTexture11.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GSTextureOGL.c" />
     <ClCompile Include="GS\Renderers\HW\GSTextureCache.cpp" />
     <ClCompile Include="GS\Renderers\SW\GSTextureCacheSW.cpp" />

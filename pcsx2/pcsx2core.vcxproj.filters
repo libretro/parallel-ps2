@@ -791,7 +791,7 @@
     <ClCompile Include="GS\Renderers\DX11\GSDevice11.cpp">
       <Filter>System\Ps2\GS\Renderers\Direct3D11</Filter>
     </ClCompile>
-    <ClCompile Include="GS\Renderers\DX11\GSTexture11.cpp">
+    <ClCompile Include="GS\Renderers\DX11\GSTexture11.c">
       <Filter>System\Ps2\GS\Renderers\Direct3D11</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\OpenGL\GSDeviceOGL.cpp">
@@ -896,7 +896,7 @@
     <ClCompile Include="GS\Renderers\Common\GSCodeReserve.c">
       <Filter>System\Ps2\GS\Renderers\Common</Filter>
     </ClCompile>
-    <ClCompile Include="GS\Renderers\DX11\D3D.cpp">
+    <ClCompile Include="GS\Renderers\DX11\D3D.c">
       <Filter>System\Ps2\GS\Renderers\Direct3D11</Filter>
     </ClCompile>
     <ClCompile Include="MemoryCardFile.c">

@@ -13,63 +13,86 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_TEXTURE_11_H
+#define GS_TEXTURE_11_H
 
-#include "GS/GS.h"
-#include "GS/Renderers/Common/GSTexture.h"
+#include "common/Pcsx2Defs.h"
+#include "GS/Renderers/Common/GSTextureBase.h"
+
+#ifdef __cplusplus
 #include "common/RedtapeWindows.h"
-#include <wrl/client.h>
+#include "GS/Renderers/Common/GSTexture.h"
+#else
+#include <windows.h>
+#endif
 #include <d3d11.h>
-#include <memory>
 
+typedef struct gs_texture_d3d11
+{
+	gs_texture base;
+	ID3D11Texture2D* texture;
+	/* each made the first time it is asked for */
+	ID3D11ShaderResourceView* srv;
+	ID3D11RenderTargetView* rtv;
+	ID3D11DepthStencilView* dsv;
+	ID3D11UnorderedAccessView* uav;
+	D3D11_TEXTURE2D_DESC desc;
+} gs_texture_d3d11;
+
+typedef struct gs_download_texture_d3d11
+{
+	gs_download_texture base;
+	ID3D11Texture2D* texture; /* a staging copy, mapped to be read */
+} gs_download_texture_d3d11;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+DXGI_FORMAT gs_texture_d3d11_dxgi_format(unsigned format);
+/* A new texture (type, format: gs_texture_type, gs_texture_format) of
+ * the size given, which the caller has clamped to what the device takes,
+ * or NULL; freed through its ops. */
+gs_texture_d3d11* gs_texture_d3d11_create(unsigned type, unsigned format, int width, int height, int levels);
+gs_download_texture* gs_download_texture_d3d11_create(u32 width, u32 height, unsigned format);
+
+ID3D11ShaderResourceView* gs_texture_d3d11_srv(gs_texture_d3d11* t);
+ID3D11RenderTargetView* gs_texture_d3d11_rtv(gs_texture_d3d11* t);
+ID3D11DepthStencilView* gs_texture_d3d11_dsv(gs_texture_d3d11* t);
+ID3D11UnorderedAccessView* gs_texture_d3d11_uav(gs_texture_d3d11* t);
+
+/* What the textures ask of the device (GSDevice11.cpp) */
+ID3D11Device* gs_d3d11_device_device(void);
+ID3D11DeviceContext* gs_d3d11_device_context(void);
+/* a pending clear of the target done, or its contents discarded */
+void gs_d3d11_device_commit_clear(gs_texture_d3d11* t);
+
+#ifdef __cplusplus
+}
+
+/* A gs_texture_d3d11 as the device's C++ sees it: GSTexture and the C
+ * functions, no state of its own. */
 class GSTexture11 final : public GSTexture
 {
-	/* The table this texture answers through is in its own .cpp
-	 * (gs_texture_ops, Common/GSTexture.h). */
-	friend struct GSTexture11_ops_access;
-	Microsoft::WRL::ComPtr<ID3D11Texture2D> m_texture;
-	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_srv;
-	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> m_rtv;
-	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> m_dsv;
-	Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> m_uav;
-	D3D11_TEXTURE2D_DESC m_desc;
-
 public:
-	explicit GSTexture11(Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, const D3D11_TEXTURE2D_DESC& desc,
-		GSTexture::Type type, GSTexture::Format format);
+	GSTexture11() = delete;
 
-	static DXGI_FORMAT GetDXGIFormat(Format format);
+	__fi gs_texture_d3d11* C() { return reinterpret_cast<gs_texture_d3d11*>(static_cast<gs_texture*>(this)); }
+	static __fi GSTexture11* Of(gs_texture_d3d11* t)
+	{
+		return t ? static_cast<GSTexture11*>(static_cast<GSTexture*>(&t->base)) : nullptr;
+	}
 
-	bool Update(const GSVector4i& r, const void* data, int pitch, int layer = 0);
-	bool Map(GSMap& m, const GSVector4i* r = NULL, int layer = 0);
-	void Unmap();
-	void GenerateMipmap();
+	static __fi DXGI_FORMAT GetDXGIFormat(Format format) { return gs_texture_d3d11_dxgi_format(static_cast<unsigned>(format)); }
 
-	operator ID3D11Texture2D*();
-	operator ID3D11ShaderResourceView*();
-	operator ID3D11RenderTargetView*();
-	operator ID3D11DepthStencilView*();
-	operator ID3D11UnorderedAccessView*();
+	__fi operator ID3D11Texture2D*() { return C()->texture; }
+	__fi operator ID3D11ShaderResourceView*() { return gs_texture_d3d11_srv(C()); }
+	__fi operator ID3D11RenderTargetView*() { return gs_texture_d3d11_rtv(C()); }
+	__fi operator ID3D11DepthStencilView*() { return gs_texture_d3d11_dsv(C()); }
+	__fi operator ID3D11UnorderedAccessView*() { return gs_texture_d3d11_uav(C()); }
 };
 
-class GSDownloadTexture11 final : public GSDownloadTexture
-{
-	friend struct GSDownloadTexture11_ops_access;
-public:
-	~GSDownloadTexture11();
+static_assert(sizeof(GSTexture11) == sizeof(GSTexture), "GSTexture11 adds nothing to GSTexture");
+#endif
 
-	static std::unique_ptr<GSDownloadTexture11> Create(u32 width, u32 height, GSTexture::Format format);
-
-	void CopyFromTexture(
-		const GSVector4i& drc, GSTexture* stex, const GSVector4i& src, u32 src_level, bool use_transfer_pitch);
-
-	bool Map(const GSVector4i& rc);
-	void Unmap();
-
-	void Flush();
-
-private:
-	GSDownloadTexture11(Microsoft::WRL::ComPtr<ID3D11Texture2D> tex, u32 width, u32 height, GSTexture::Format format);
-
-	Microsoft::WRL::ComPtr<ID3D11Texture2D> m_texture;
-};
+#endif

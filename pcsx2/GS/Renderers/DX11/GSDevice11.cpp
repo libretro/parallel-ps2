@@ -682,6 +682,15 @@ void GSDevice11::DrawIndexedPrimitive(int offset, int count)
 	m_ctx->DrawIndexed(count, m_index.start + offset, m_vertex.start);
 }
 
+/* --- what the C textures ask of the device --- */
+
+extern "C" ID3D11Device* gs_d3d11_device_device(void) { return GSDevice11::GetInstance()->GetD3DDevice(); }
+extern "C" ID3D11DeviceContext* gs_d3d11_device_context(void) { return GSDevice11::GetInstance()->GetD3DContext(); }
+extern "C" void gs_d3d11_device_commit_clear(gs_texture_d3d11* t)
+{
+	GSDevice11::GetInstance()->CommitClear(GSTexture11::Of(t));
+}
+
 void GSDevice11::CommitClear(GSTexture* t)
 {
 	GSTexture11* T = static_cast<GSTexture11*>(t);
@@ -716,51 +725,17 @@ void GSDevice11::CommitClear(GSTexture* t)
 
 GSTexture* GSDevice11::CreateSurface(GSTexture::Type type, int width, int height, int levels, GSTexture::Format format)
 {
-	D3D11_TEXTURE2D_DESC desc = {};
-
-	// Texture limit for D3D10/11 min 1, max 8192 D3D10, max 16384 D3D11.
-	desc.Width = pcsx2_clamp_i(width, 1, m_d3d_texsize);
-	desc.Height = pcsx2_clamp_i(height, 1, m_d3d_texsize);
-	desc.Format = GSTexture11::GetDXGIFormat(format);
-	desc.MipLevels = levels;
-	desc.ArraySize = 1;
-	desc.SampleDesc.Count = 1;
-	desc.SampleDesc.Quality = 0;
-	desc.Usage = D3D11_USAGE_DEFAULT;
-
-	switch (type)
-	{
-		case GSTexture::Type::RenderTarget:
-			desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-			break;
-		case GSTexture::Type::DepthStencil:
-			desc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
-			break;
-		case GSTexture::Type::Texture:
-			desc.BindFlags = (levels > 1 && !GSTexture::IsCompressedFormat(format)) ? (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE) : D3D11_BIND_SHADER_RESOURCE;
-			desc.MiscFlags = (levels > 1 && !GSTexture::IsCompressedFormat(format)) ? D3D11_RESOURCE_MISC_GENERATE_MIPS : 0;
-			break;
-		case GSTexture::Type::RWTexture:
-			desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
-			break;
-		default:
-			break;
-	}
-
-	Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-	HRESULT hr = m_dev->CreateTexture2D(&desc, nullptr, texture.ReleaseAndGetAddressOf());
-	if (FAILED(hr))
-	{
+	/* (D3D10's limit is 8192, D3D11's 16384) */
+	GSTexture11* tex = GSTexture11::Of(gs_texture_d3d11_create(static_cast<unsigned>(type), static_cast<unsigned>(format),
+		pcsx2_clamp_i(width, 1, m_d3d_texsize), pcsx2_clamp_i(height, 1, m_d3d_texsize), levels));
+	if (!tex)
 		log_cb(RETRO_LOG_ERROR, "DX11: Failed to allocate %dx%d surface\n", width, height);
-		return nullptr;
-	}
-
-	return new GSTexture11(std::move(texture), desc, type, format);
+	return tex;
 }
 
 GSDownloadTexture* GSDevice11::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
 {
-	return GSDownloadTexture11::Create(width, height, format).release();
+	return static_cast<GSDownloadTexture*>(gs_download_texture_d3d11_create(width, height, static_cast<unsigned>(format)));
 }
 
 void GSDevice11::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r, u32 destX, u32 destY)

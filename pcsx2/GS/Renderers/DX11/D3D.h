@@ -13,44 +13,99 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_D3D_H
+#define GS_D3D_H
 
+#include "common/Pcsx2Defs.h"
+
+#ifdef __cplusplus
 #include "common/RedtapeWindows.h"
 #include <wrl/client.h>
-
-#include "pcsx2/Config.h"
+#else
+#include <windows.h>
+#endif
 
 #include <d3d11_1.h>
+#include <d3dcommon.h>
 #include <dxgi1_5.h>
-#include <string>
-#include <string_view>
-#include <vector>
 
+/* gs_d3d_vendor_id's answers */
+enum gs_d3d_vendor
+{
+	GS_D3D_VENDOR_UNKNOWN = 0,
+	GS_D3D_VENDOR_NVIDIA,
+	GS_D3D_VENDOR_AMD,
+	GS_D3D_VENDOR_INTEL
+};
+
+/* gs_d3d_compile_shader's kinds */
+enum gs_d3d_shader_type
+{
+	GS_D3D_SHADER_VERTEX = 0,
+	GS_D3D_SHADER_PIXEL,
+	GS_D3D_SHADER_COMPUTE
+};
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The shaders' HLSL (convert.fx and the rest, built into D3D.c) */
+extern char convert_fx_shader_raw[];
+extern char interlace_fx_shader_raw[];
+extern char merge_fx_shader_raw[];
+extern char tfx_fx_shader_raw[];
+
+/* A DXGI factory, or NULL */
+IDXGIFactory5* gs_d3d_create_factory(int debug);
+/* Who made the adapter (gs_d3d_vendor) */
+unsigned gs_d3d_vendor_id(IDXGIAdapter1* adapter);
+/* HLSL compiled for the feature level's shader model, or NULL with the
+ * errors logged; warnings are logged too. */
+ID3DBlob* gs_d3d_compile_shader(unsigned type, D3D_FEATURE_LEVEL feature_level, int debug, const void* code,
+	size_t code_len, const D3D_SHADER_MACRO* macros, const char* entry_point);
+
+#ifdef __cplusplus
+}
+
+#include <string_view>
+
+/* The C++ renderers' names for them */
 namespace D3D
 {
-	// create a dxgi factory
-	Microsoft::WRL::ComPtr<IDXGIFactory5> CreateFactory(bool debug);
-
-	// this is sort of a legacy thing that doesn't have much to do with d3d (just the easiest way)
-	// checks to see if the adapter at 0 is NV and thus we should prefer OpenGL
 	enum class VendorID
 	{
-		Unknown,
-		Nvidia,
-		AMD,
-		Intel
+		Unknown = GS_D3D_VENDOR_UNKNOWN,
+		Nvidia  = GS_D3D_VENDOR_NVIDIA,
+		AMD     = GS_D3D_VENDOR_AMD,
+		Intel   = GS_D3D_VENDOR_INTEL
 	};
 
-	VendorID GetVendorID(IDXGIAdapter1* adapter);
-
-	/* D3DCompiler wrapper */
 	enum class ShaderType
 	{
-		Vertex,
-		Pixel,
-		Compute
+		Vertex  = GS_D3D_SHADER_VERTEX,
+		Pixel   = GS_D3D_SHADER_PIXEL,
+		Compute = GS_D3D_SHADER_COMPUTE
 	};
 
-	Microsoft::WRL::ComPtr<ID3DBlob> CompileShader(ShaderType type, D3D_FEATURE_LEVEL feature_level, bool debug, const std::string_view& code,
-		const D3D_SHADER_MACRO* macros = nullptr, const char* entry_point = "main");
-}; // namespace D3D
+	static inline Microsoft::WRL::ComPtr<IDXGIFactory5> CreateFactory(bool debug)
+	{
+		Microsoft::WRL::ComPtr<IDXGIFactory5> f;
+		f.Attach(gs_d3d_create_factory(debug));
+		return f;
+	}
+
+	static inline VendorID GetVendorID(IDXGIAdapter1* adapter) { return static_cast<VendorID>(gs_d3d_vendor_id(adapter)); }
+
+	static inline Microsoft::WRL::ComPtr<ID3DBlob> CompileShader(ShaderType type, D3D_FEATURE_LEVEL feature_level,
+		bool debug, const std::string_view& code, const D3D_SHADER_MACRO* macros = nullptr, const char* entry_point = "main")
+	{
+		Microsoft::WRL::ComPtr<ID3DBlob> blob;
+		blob.Attach(gs_d3d_compile_shader(static_cast<unsigned>(type), feature_level, debug, code.data(), code.size(),
+			macros, entry_point));
+		return blob;
+	}
+} /* namespace D3D */
+#endif
+
+#endif
