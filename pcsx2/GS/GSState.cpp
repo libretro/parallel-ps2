@@ -2202,9 +2202,11 @@ void GSState::MoveBase()
 	}
 	else
 	{
+		const gs_lm_write_pixel_addr_fn wpa = gs_lm_pixel[m_env.BITBLTBUF.DPSM].wpa;
+		const gs_lm_read_pixel_addr_fn rpa  = gs_lm_pixel[m_env.BITBLTBUF.SPSM].rpa;
 		copy(dpo, spo, [&](u32 doff, u32 soff)
 		{
-			(m_mem.*dpsm.wpa)(doff, (m_mem.*spsm.rpa)(soff));
+			wpa(&m_mem, doff, rpa(&m_mem, soff));
 		});
 	}
 

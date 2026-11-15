@@ -9,7 +9,7 @@
 #include <cstddef>
 #include <cstdlib>
 
-void* GSAllocateWrappedMemory(size_t size, size_t repeat)
+extern "C" void* GSAllocateWrappedMemory(size_t size, size_t repeat)
 {
 	int fd = (int)syscall(SYS_memfd_create, "gslm", 0);
 	unsigned char *base;
@@ -45,7 +45,7 @@ void* GSAllocateWrappedMemory(size_t size, size_t repeat)
 	return base;
 }
 
-void GSFreeWrappedMemory(void* ptr, size_t size, size_t repeat)
+extern "C" void GSFreeWrappedMemory(void* ptr, size_t size, size_t repeat)
 {
 	munmap(ptr, size * repeat);
 }

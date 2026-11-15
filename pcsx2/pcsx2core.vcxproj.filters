@@ -761,7 +761,7 @@
     <ClCompile Include="GS\GSClutGPU.cpp">
       <Filter>System\Ps2\GS</Filter>
     </ClCompile>
-    <ClCompile Include="GS\GSLocalMemory.cpp">
+    <ClCompile Include="GS\GSLocalMemory.c">
       <Filter>System\Ps2\GS</Filter>
     </ClCompile>
     <ClCompile Include="GS\GSLocalMemoryMultiISA.cpp">

@@ -88,21 +88,45 @@ class CURRENT_ISA::GSLocalMemoryFunctions
 public:
 	static void ReadImageX(const GSLocalMemory& mem, int& tx, int& ty, u8* dst, int len, GIFRegBITBLTBUF& BITBLTBUF, GIFRegTRXPOS& TRXPOS, GIFRegTRXREG& TRXREG);
 
-	static void PopulateFunctions(GSLocalMemory& mem);
+	static void PopulateFunctions();
 };
 
 MULTI_ISA_UNSHARED_IMPL;
 
-void CURRENT_ISA::GSLocalMemoryPopulateFunctions(GSLocalMemory& mem)
+#if MULTI_ISA_COMPILE_ONCE
+/* The format table's transfers, and the reader of images whose format the
+ * table has none for: this CPU's, put in by the local memory's C side
+ * (GSLocalMemory.c) */
+GSLocalMemory::psm_t GSLocalMemory::m_psm[64];
+GSLocalMemory::readImage GSLocalMemory::m_readImageX;
+
+extern "C" void gs_local_memory_populate_transfers(void)
 {
-	GSLocalMemoryFunctions::PopulateFunctions(mem);
+	for (int i = 0; i < 64; i++)
+		static_cast<gs_psm_attr&>(GSLocalMemory::m_psm[i]) = gs_psm[i];
+	MULTI_ISA_SELECT(GSLocalMemoryPopulateFunctions)();
 }
 
-void GSLocalMemoryFunctions::PopulateFunctions(GSLocalMemory& mem)
+/* (only a GSLocalMemory reaches here: the C side reads blocks for one) */
+extern "C" void gs_local_memory_read_texture_blocks(gs_local_memory* mem, const gs_offset* off, const int r[4], u8* dst,
+	int dstpitch, const GIFRegTEXA* TEXA)
 {
-	mem.m_readImageX = ReadImageX;
+	const GSOffset o(*off);
+	GSLocalMemory::m_psm[off->psm].rtx(*static_cast<GSLocalMemory*>(mem), o, GSVector4i(r[0], r[1], r[2], r[3]), dst,
+		dstpitch, *TEXA);
+}
+#endif
 
-	for (GSLocalMemory::psm_t& psm : mem.m_psm)
+void CURRENT_ISA::GSLocalMemoryPopulateFunctions()
+{
+	GSLocalMemoryFunctions::PopulateFunctions();
+}
+
+void GSLocalMemoryFunctions::PopulateFunctions()
+{
+	GSLocalMemory::m_readImageX = ReadImageX;
+
+	for (GSLocalMemory::psm_t& psm : GSLocalMemory::m_psm)
 	{
 		psm.wi = WriteImage<PSMCT32, 8, 8, 32>;
 		psm.ri = ReadImageX; // TODO
@@ -112,78 +136,78 @@ void GSLocalMemoryFunctions::PopulateFunctions(GSLocalMemory& mem)
 		psm.rtxbP = ReadTextureBlock32;
 	}
 
-	mem.m_psm[PSMCT24].wi = WriteImage24; // TODO
-	mem.m_psm[PSMCT16].wi = WriteImage<PSMCT16, 16, 8, 16>;
-	mem.m_psm[PSMCT16S].wi = WriteImage<PSMCT16S, 16, 8, 16>;
-	mem.m_psm[PSMT8].wi = WriteImage<PSMT8, 16, 16, 8>;
-	mem.m_psm[PSMT4].wi = WriteImage<PSMT4, 32, 16, 4>;
-	mem.m_psm[PSMT8H].wi = WriteImage8H; // TODO
-	mem.m_psm[PSMT4HL].wi = WriteImage4HL; // TODO
-	mem.m_psm[PSMT4HH].wi = WriteImage4HH; // TODO
-	mem.m_psm[PSMZ32].wi = WriteImage<PSMZ32, 8, 8, 32>;
-	mem.m_psm[PSMZ24].wi = WriteImage24Z; // TODO
-	mem.m_psm[PSMZ16].wi = WriteImage<PSMZ16, 16, 8, 16>;
-	mem.m_psm[PSMZ16S].wi = WriteImage<PSMZ16S, 16, 8, 16>;
+	GSLocalMemory::m_psm[PSMCT24].wi = WriteImage24; // TODO
+	GSLocalMemory::m_psm[PSMCT16].wi = WriteImage<PSMCT16, 16, 8, 16>;
+	GSLocalMemory::m_psm[PSMCT16S].wi = WriteImage<PSMCT16S, 16, 8, 16>;
+	GSLocalMemory::m_psm[PSMT8].wi = WriteImage<PSMT8, 16, 16, 8>;
+	GSLocalMemory::m_psm[PSMT4].wi = WriteImage<PSMT4, 32, 16, 4>;
+	GSLocalMemory::m_psm[PSMT8H].wi = WriteImage8H; // TODO
+	GSLocalMemory::m_psm[PSMT4HL].wi = WriteImage4HL; // TODO
+	GSLocalMemory::m_psm[PSMT4HH].wi = WriteImage4HH; // TODO
+	GSLocalMemory::m_psm[PSMZ32].wi = WriteImage<PSMZ32, 8, 8, 32>;
+	GSLocalMemory::m_psm[PSMZ24].wi = WriteImage24Z; // TODO
+	GSLocalMemory::m_psm[PSMZ16].wi = WriteImage<PSMZ16, 16, 8, 16>;
+	GSLocalMemory::m_psm[PSMZ16S].wi = WriteImage<PSMZ16S, 16, 8, 16>;
 
-	mem.m_psm[PSMCT24].rtx = ReadTexture24;
-	mem.m_psm[PSGPU24].rtx = ReadTextureGPU24;
-	mem.m_psm[PSMCT16].rtx = ReadTexture16;
-	mem.m_psm[PSMCT16S].rtx = ReadTexture16;
-	mem.m_psm[PSMT8].rtx = ReadTexture8;
-	mem.m_psm[PSMT4].rtx = ReadTexture4;
-	mem.m_psm[PSMT8H].rtx = ReadTexture8H;
-	mem.m_psm[PSMT4HL].rtx = ReadTexture4HL;
-	mem.m_psm[PSMT4HH].rtx = ReadTexture4HH;
-	mem.m_psm[PSMZ32].rtx = ReadTexture32;
-	mem.m_psm[PSMZ24].rtx = ReadTexture24;
-	mem.m_psm[PSMZ16].rtx = ReadTexture16;
-	mem.m_psm[PSMZ16S].rtx = ReadTexture16;
+	GSLocalMemory::m_psm[PSMCT24].rtx = ReadTexture24;
+	GSLocalMemory::m_psm[PSGPU24].rtx = ReadTextureGPU24;
+	GSLocalMemory::m_psm[PSMCT16].rtx = ReadTexture16;
+	GSLocalMemory::m_psm[PSMCT16S].rtx = ReadTexture16;
+	GSLocalMemory::m_psm[PSMT8].rtx = ReadTexture8;
+	GSLocalMemory::m_psm[PSMT4].rtx = ReadTexture4;
+	GSLocalMemory::m_psm[PSMT8H].rtx = ReadTexture8H;
+	GSLocalMemory::m_psm[PSMT4HL].rtx = ReadTexture4HL;
+	GSLocalMemory::m_psm[PSMT4HH].rtx = ReadTexture4HH;
+	GSLocalMemory::m_psm[PSMZ32].rtx = ReadTexture32;
+	GSLocalMemory::m_psm[PSMZ24].rtx = ReadTexture24;
+	GSLocalMemory::m_psm[PSMZ16].rtx = ReadTexture16;
+	GSLocalMemory::m_psm[PSMZ16S].rtx = ReadTexture16;
 
-	mem.m_psm[PSMCT24].rtxP = ReadTexture24;
-	mem.m_psm[PSMCT16].rtxP = ReadTexture16;
-	mem.m_psm[PSMCT16S].rtxP = ReadTexture16;
-	mem.m_psm[PSMT8].rtxP = ReadTexture8P;
-	mem.m_psm[PSMT4].rtxP = ReadTexture4P;
-	mem.m_psm[PSMT8H].rtxP = ReadTexture8HP;
-	mem.m_psm[PSMT4HL].rtxP = ReadTexture4HLP;
-	mem.m_psm[PSMT4HH].rtxP = ReadTexture4HHP;
-	mem.m_psm[PSMZ32].rtxP = ReadTexture32;
-	mem.m_psm[PSMZ24].rtxP = ReadTexture24;
-	mem.m_psm[PSMZ16].rtxP = ReadTexture16;
-	mem.m_psm[PSMZ16S].rtxP = ReadTexture16;
+	GSLocalMemory::m_psm[PSMCT24].rtxP = ReadTexture24;
+	GSLocalMemory::m_psm[PSMCT16].rtxP = ReadTexture16;
+	GSLocalMemory::m_psm[PSMCT16S].rtxP = ReadTexture16;
+	GSLocalMemory::m_psm[PSMT8].rtxP = ReadTexture8P;
+	GSLocalMemory::m_psm[PSMT4].rtxP = ReadTexture4P;
+	GSLocalMemory::m_psm[PSMT8H].rtxP = ReadTexture8HP;
+	GSLocalMemory::m_psm[PSMT4HL].rtxP = ReadTexture4HLP;
+	GSLocalMemory::m_psm[PSMT4HH].rtxP = ReadTexture4HHP;
+	GSLocalMemory::m_psm[PSMZ32].rtxP = ReadTexture32;
+	GSLocalMemory::m_psm[PSMZ24].rtxP = ReadTexture24;
+	GSLocalMemory::m_psm[PSMZ16].rtxP = ReadTexture16;
+	GSLocalMemory::m_psm[PSMZ16S].rtxP = ReadTexture16;
 
-	mem.m_psm[PSMCT24].rtxb = ReadTextureBlock24;
-	mem.m_psm[PSMCT16].rtxb = ReadTextureBlock16;
-	mem.m_psm[PSMCT16S].rtxb = ReadTextureBlock16;
-	mem.m_psm[PSMT8].rtxb = ReadTextureBlock8;
-	mem.m_psm[PSMT4].rtxb = ReadTextureBlock4;
-	mem.m_psm[PSMT8H].rtxb = ReadTextureBlock8H;
-	mem.m_psm[PSMT4HL].rtxb = ReadTextureBlock4HL;
-	mem.m_psm[PSMT4HH].rtxb = ReadTextureBlock4HH;
-	mem.m_psm[PSMZ32].rtxb = ReadTextureBlock32;
-	mem.m_psm[PSMZ24].rtxb = ReadTextureBlock24;
-	mem.m_psm[PSMZ16].rtxb = ReadTextureBlock16;
-	mem.m_psm[PSMZ16S].rtxb = ReadTextureBlock16;
+	GSLocalMemory::m_psm[PSMCT24].rtxb = ReadTextureBlock24;
+	GSLocalMemory::m_psm[PSMCT16].rtxb = ReadTextureBlock16;
+	GSLocalMemory::m_psm[PSMCT16S].rtxb = ReadTextureBlock16;
+	GSLocalMemory::m_psm[PSMT8].rtxb = ReadTextureBlock8;
+	GSLocalMemory::m_psm[PSMT4].rtxb = ReadTextureBlock4;
+	GSLocalMemory::m_psm[PSMT8H].rtxb = ReadTextureBlock8H;
+	GSLocalMemory::m_psm[PSMT4HL].rtxb = ReadTextureBlock4HL;
+	GSLocalMemory::m_psm[PSMT4HH].rtxb = ReadTextureBlock4HH;
+	GSLocalMemory::m_psm[PSMZ32].rtxb = ReadTextureBlock32;
+	GSLocalMemory::m_psm[PSMZ24].rtxb = ReadTextureBlock24;
+	GSLocalMemory::m_psm[PSMZ16].rtxb = ReadTextureBlock16;
+	GSLocalMemory::m_psm[PSMZ16S].rtxb = ReadTextureBlock16;
 
-	mem.m_psm[PSMCT24].rtxbP = ReadTextureBlock24;
-	mem.m_psm[PSMCT16].rtxbP = ReadTextureBlock16;
-	mem.m_psm[PSMCT16S].rtxbP = ReadTextureBlock16;
-	mem.m_psm[PSMT8].rtxbP = ReadTextureBlock8P;
-	mem.m_psm[PSMT4].rtxbP = ReadTextureBlock4P;
-	mem.m_psm[PSMT8H].rtxbP = ReadTextureBlock8HP;
-	mem.m_psm[PSMT4HL].rtxbP = ReadTextureBlock4HLP;
-	mem.m_psm[PSMT4HH].rtxbP = ReadTextureBlock4HHP;
-	mem.m_psm[PSMZ32].rtxbP = ReadTextureBlock32;
-	mem.m_psm[PSMZ24].rtxbP = ReadTextureBlock24;
-	mem.m_psm[PSMZ16].rtxbP = ReadTextureBlock16;
-	mem.m_psm[PSMZ16S].rtxbP = ReadTextureBlock16;
+	GSLocalMemory::m_psm[PSMCT24].rtxbP = ReadTextureBlock24;
+	GSLocalMemory::m_psm[PSMCT16].rtxbP = ReadTextureBlock16;
+	GSLocalMemory::m_psm[PSMCT16S].rtxbP = ReadTextureBlock16;
+	GSLocalMemory::m_psm[PSMT8].rtxbP = ReadTextureBlock8P;
+	GSLocalMemory::m_psm[PSMT4].rtxbP = ReadTextureBlock4P;
+	GSLocalMemory::m_psm[PSMT8H].rtxbP = ReadTextureBlock8HP;
+	GSLocalMemory::m_psm[PSMT4HL].rtxbP = ReadTextureBlock4HLP;
+	GSLocalMemory::m_psm[PSMT4HH].rtxbP = ReadTextureBlock4HHP;
+	GSLocalMemory::m_psm[PSMZ32].rtxbP = ReadTextureBlock32;
+	GSLocalMemory::m_psm[PSMZ24].rtxbP = ReadTextureBlock24;
+	GSLocalMemory::m_psm[PSMZ16].rtxbP = ReadTextureBlock16;
+	GSLocalMemory::m_psm[PSMZ16S].rtxbP = ReadTextureBlock16;
 
 	if (CPU_HAS_AVX2)
 	{
-		mem.m_psm[PSMT8].rtx   = ReadTexture8HSW;
-		mem.m_psm[PSMT8H].rtx  = ReadTexture8HHSW;
-		mem.m_psm[PSMT8].rtxb  = ReadTextureBlock8HSW;
-		mem.m_psm[PSMT8H].rtxb = ReadTextureBlock8HHSW;
+		GSLocalMemory::m_psm[PSMT8].rtx   = ReadTexture8HSW;
+		GSLocalMemory::m_psm[PSMT8H].rtx  = ReadTexture8HHSW;
+		GSLocalMemory::m_psm[PSMT8].rtxb  = ReadTextureBlock8HSW;
+		GSLocalMemory::m_psm[PSMT8H].rtxb = ReadTextureBlock8HHSW;
 	}
 }
 

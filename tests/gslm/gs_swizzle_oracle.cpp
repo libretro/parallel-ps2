@@ -209,7 +209,7 @@ int main(void)
 				 * anything. */
 				for (y = 0; y < h; y++)
 					for (x = 0; x < w; x++)
-						(mem.*p.wp)(x, y, 0xf, 0, 4);
+						gs_lm_pixel[psm].wp(&mem, x, y, 0xf, 0, 4);
 
 				for (x = 0; x < full; x++)
 					src[x] = 0x00;
@@ -229,7 +229,7 @@ int main(void)
 						{
 							if (seen < wrote)
 								continue;
-							if ((mem.*p.rp)(x, y, 0, 4) != 0xf)
+							if (gs_lm_pixel[psm].rp(&mem, x, y, 0, 4) != 0xf)
 							{
 								overran = 1;
 								break;
@@ -295,7 +295,7 @@ int main(void)
 				{
 					for (x = 0; x < w; x++)
 					{
-						const u32 v = (mem.*p.rp)(x, y, 0, 4);
+						const u32 v = gs_lm_pixel[psm].rp(&mem, x, y, 0, 4);
 
 						if (v > 15)
 							bad++;
@@ -344,7 +344,7 @@ int main(void)
 			const int w = 32, h = 16;
 			int tx = 0, ty = 0, n, len, bad = 0;
 
-			if (!p.wi || !p.rp || p.trbpp < 8)
+			if (!p.wi || p.trbpp < 8)
 			{
 				printf("    %-9s %s\n", FORMATS[k].name,
 				       p.trbpp < 8 ? "sub-byte pixels, not compared here"
@@ -370,7 +370,7 @@ int main(void)
 				for (b = 0; b < bytes; b++)
 					want |= (u32)q[b] << (b * 8);
 
-				got = (mem.*p.rp)(n % w, n / w, bp, bw);
+				got = gs_lm_pixel[psm].rp(&mem, n % w, n / w, bp, bw);
 
 				if (got != want)
 				{
@@ -432,7 +432,7 @@ int main(void)
 			const u32 bp = 0, bw = 4;
 			int w, h, x, y, bad = 0;
 
-			if (!rtx || !p.rp || (!paletted && !p.rt))
+			if (!rtx)
 			{
 				printf("    %-9s no reader pair\n", FORMATS[k].name);
 				continue;
@@ -451,7 +451,7 @@ int main(void)
 			 * position inside it still shows up. */
 			for (y = 0; y < h; y++)
 				for (x = 0; x < w; x++)
-					(mem.*p.wp)(x, y, (u32)(x * 31 + y * 17 + 1), bp, bw);
+					gs_lm_pixel[psm].wp(&mem, x, y, (u32)(x * 31 + y * 17 + 1), bp, bw);
 
 			memset(dst, 0, (size_t)(w * h * bytes));
 			{
@@ -470,12 +470,12 @@ int main(void)
 					if (paletted)
 					{
 						got  = dst[y * w + x];
-						want = (mem.*p.rp)(x, y, bp, bw);
+						want = gs_lm_pixel[psm].rp(&mem, x, y, bp, bw);
 					}
 					else
 					{
 						memcpy(&got, &dst[(y * w + x) * 4], 4);
-						want = (mem.*p.rt)(x, y, tex0, texa);
+						want = gs_lm_pixel[psm].rt(&mem, x, y, &tex0, &texa);
 					}
 
 					if (got != want)

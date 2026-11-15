@@ -113,8 +113,7 @@ static constexpr int MAXIMUM_TEXTURE_MIPMAP_LEVELS = 7;
 // The maximum number of duplicate frames we can skip presenting for.
 static constexpr u32 MAX_SKIPPED_DUPLICATE_FRAMES = 3;
 
-extern void* GSAllocateWrappedMemory(size_t size, size_t repeat);
-extern void GSFreeWrappedMemory(void* ptr, size_t size, size_t repeat);
+/* GSAllocateWrappedMemory, GSFreeWrappedMemory: GSLocalMemory.h */
 
 /// We want all allocations and pitches to be aligned to 32-bit, regardless of whether we're
 /// SSE4 or AVX2, because of multi-ISA.

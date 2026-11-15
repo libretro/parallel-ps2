@@ -10,8 +10,8 @@
 #include "GS/GSTables.h"
 #include "GS/GSPsm.h"
 
-void* GSAllocateWrappedMemory(size_t size, size_t repeat) { return calloc(size, repeat); }
-void GSFreeWrappedMemory(void* ptr, size_t, size_t) { free(ptr); }
+extern "C" void* GSAllocateWrappedMemory(size_t size, size_t repeat) { return calloc(size, repeat); }
+extern "C" void GSFreeWrappedMemory(void* ptr, size_t, size_t) { free(ptr); }
 GSClut::GSClut(GSLocalMemory* mem) : m_mem(mem) {}
 GSClut::~GSClut() {}
 

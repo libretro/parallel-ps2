@@ -188,7 +188,7 @@
     <ClCompile Include="GS\Renderers\SW\GSDrawScanlineCodeGenerator.all.cpp" />
     <ClCompile Include="GS\Renderers\Common\GSCodeReserve.c" />
     <ClCompile Include="GS\Renderers\HW\GSHwHack.cpp" />
-    <ClCompile Include="GS\GSLocalMemory.cpp" />
+    <ClCompile Include="GS\GSLocalMemory.c" />
     <ClCompile Include="GS\GSLocalMemoryMultiISA.cpp" />
     <ClCompile Include="GS\GSRingHeap.c" />
     <ClCompile Include="GS\Renderers\SW\GSRasterizer.cpp" />

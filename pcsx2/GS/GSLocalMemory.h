@@ -15,14 +15,210 @@
 
 #pragma once
 
+#include <stddef.h>
+
+#include <retro_inline.h>
+
 #include "GSTables.h"
 #include "GSOffset.h"
 #include "GSPsm.h"
+#include "GSRegs.h"
+#include "Renderers/Common/GSFlatMap.h"
+#include "GSLocalMemoryMaps.h"
+
+/*
+ * The GS's 4MB of local memory, in C: the memory (mapped four times over,
+ * so a run off the end lands back at the start, as on the console), the
+ * maps made of it, and the palette paletted texels are read through. Its
+ * pixels and texels are read and written one at a time here, by address
+ * (from the swizzle, GSOffset.h) or by place; gs_lm_pixel has each
+ * format's readers and writers. The C++ GSLocalMemory below derives from
+ * it and keeps the transfers that move a rectangle at a time with SIMD.
+ */
+
+#define GS_LOCAL_MEMORY_SIZE (1024 * 1024 * 4)
+
+typedef struct gs_local_memory
+{
+	u8* m_vm8;
+	/* u64 key -> GSPixelOffset4* / GSPage2TileMap*, in GSFlatMaps: made
+	 * once each, kept until the local memory goes */
+	gs_flat_map_t m_po4map;
+	gs_flat_map_t m_p2tmap;
+	/* the palette as read out (GSClut.h's buff32): 8- and 4-bit texels */
+	const u32* m_clut32;
+} gs_local_memory;
+
+/* A format's readers and writers, of one pixel or texel: by place (x, y in
+ * a buffer at bp, bw) or by the address its swizzle gives */
+typedef u32 (*gs_lm_read_pixel_fn)(const gs_local_memory* mem, int x, int y, u32 bp, u32 bw);
+typedef u32 (*gs_lm_read_pixel_addr_fn)(const gs_local_memory* mem, u32 addr);
+typedef void (*gs_lm_write_pixel_fn)(gs_local_memory* mem, int x, int y, u32 c, u32 bp, u32 bw);
+typedef void (*gs_lm_write_pixel_addr_fn)(gs_local_memory* mem, u32 addr, u32 c);
+typedef u32 (*gs_lm_read_texel_fn)(const gs_local_memory* mem, int x, int y, const GIFRegTEX0* TEX0,
+	const GIFRegTEXA* TEXA);
+typedef u32 (*gs_lm_read_texel_addr_fn)(const gs_local_memory* mem, u32 addr, const GIFRegTEXA* TEXA);
+
+typedef struct gs_lm_pixel_fns
+{
+	gs_lm_read_pixel_fn rp;        /* a pixel as stored */
+	gs_lm_read_pixel_addr_fn rpa;  /* the same, by address */
+	gs_lm_write_pixel_fn wp;
+	gs_lm_write_pixel_addr_fn wpa;
+	gs_lm_read_texel_fn rt;        /* a texel as sampled: 32-bit colour */
+	gs_lm_read_texel_addr_fn rta;
+	gs_lm_write_pixel_addr_fn wfa; /* a 32-bit colour written as a frame */
+} gs_lm_pixel_fns;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Each of the 64 formats' (the formats the GS has none of read and write
+ * as 32 bits) */
+extern const gs_lm_pixel_fns gs_lm_pixel[64];
+
+/* The memory, zeroed, and the maps empty; zero if it cannot be had */
+int gs_local_memory_init(gs_local_memory* mem);
+void gs_local_memory_deinit(gs_local_memory* mem);
+
+/* A rectangle (left, top, right, bottom) of the buffer off names read as
+ * 32-bit texels into dst: whole blocks by the transfers, the edges texel
+ * by texel */
+void gs_local_memory_read_texture(gs_local_memory* mem, const gs_offset* off, const int r[4], u8* dst, int dstpitch,
+	const GIFRegTEXA* TEXA);
+
+/* Whether each edge of r falls on a page of psm: a byte mask of the four,
+ * four bits each, as SIMD compares give (0xffff: all) */
+u32 gs_lm_page_aligned_mask(u32 psm, const int r[4]);
+/* The rectangle (left, top, right, bottom) of the page offset_bp is in,
+ * counted in pages from base_bp in a buffer bw wide */
+void gs_lm_rect_for_page_offset(u32 base_bp, u32 offset_bp, u32 bw, u32 psm, int out[4]);
+
+/* The 4MB mapped repeat times in a row (GS.cpp) */
+void* GSAllocateWrappedMemory(size_t size, size_t repeat);
+void GSFreeWrappedMemory(void* ptr, size_t size, size_t repeat);
+
+/* What the C side asks of the C++ transfers (GSLocalMemoryMultiISA.cpp):
+ * this CPU's readers and writers of rectangles put in the format table,
+ * and a rectangle of whole blocks read */
+void gs_local_memory_populate_transfers(void);
+void gs_local_memory_read_texture_blocks(gs_local_memory* mem, const gs_offset* off, const int r[4], u8* dst,
+	int dstpitch, const GIFRegTEXA* TEXA);
+
+#ifdef __cplusplus
+}
+#endif
+
+/* ---- one pixel, by address ---- */
+
+#define GS_LM_VM32(mem) ((u32*)(mem)->m_vm8)
+#define GS_LM_VM16(mem) ((u16*)(mem)->m_vm8)
+
+static INLINE u32 gs_lm_read_pixel32(const gs_local_memory* mem, u32 addr) { return GS_LM_VM32(mem)[addr]; }
+static INLINE u32 gs_lm_read_pixel24(const gs_local_memory* mem, u32 addr) { return GS_LM_VM32(mem)[addr] & 0x00ffffff; }
+static INLINE u32 gs_lm_read_pixel16(const gs_local_memory* mem, u32 addr) { return (u32)GS_LM_VM16(mem)[addr]; }
+static INLINE u32 gs_lm_read_pixel8(const gs_local_memory* mem, u32 addr) { return (u32)mem->m_vm8[addr]; }
+static INLINE u32 gs_lm_read_pixel4(const gs_local_memory* mem, u32 addr)
+{
+	return (mem->m_vm8[addr >> 1] >> ((addr & 1) << 2)) & 0x0f;
+}
+static INLINE u32 gs_lm_read_pixel8h(const gs_local_memory* mem, u32 addr) { return GS_LM_VM32(mem)[addr] >> 24; }
+static INLINE u32 gs_lm_read_pixel4hl(const gs_local_memory* mem, u32 addr) { return (GS_LM_VM32(mem)[addr] >> 24) & 0x0f; }
+static INLINE u32 gs_lm_read_pixel4hh(const gs_local_memory* mem, u32 addr) { return (GS_LM_VM32(mem)[addr] >> 28) & 0x0f; }
+
+static INLINE u32 gs_lm_read_frame24(const gs_local_memory* mem, u32 addr)
+{
+	return 0x80000000 | (GS_LM_VM32(mem)[addr] & 0xffffff);
+}
+static INLINE u32 gs_lm_read_frame16(const gs_local_memory* mem, u32 addr)
+{
+	const u32 c = (u32)GS_LM_VM16(mem)[addr];
+	return ((c & 0x8000) << 16) | ((c & 0x7c00) << 9) | ((c & 0x03e0) << 6) | ((c & 0x001f) << 3);
+}
+
+static INLINE void gs_lm_write_pixel32(gs_local_memory* mem, u32 addr, u32 c) { GS_LM_VM32(mem)[addr] = c; }
+static INLINE void gs_lm_write24_at(u32* p, u32 c) { *p = (*p & 0xff000000) | (c & 0x00ffffff); }
+static INLINE void gs_lm_write_pixel24(gs_local_memory* mem, u32 addr, u32 c) { gs_lm_write24_at(GS_LM_VM32(mem) + addr, c); }
+static INLINE void gs_lm_write_pixel16(gs_local_memory* mem, u32 addr, u32 c) { GS_LM_VM16(mem)[addr] = (u16)c; }
+static INLINE void gs_lm_write_pixel8(gs_local_memory* mem, u32 addr, u32 c) { mem->m_vm8[addr] = (u8)c; }
+static INLINE void gs_lm_write_pixel4(gs_local_memory* mem, u32 addr, u32 c)
+{
+	const int shift = (addr & 1) << 2;
+	addr >>= 1;
+	mem->m_vm8[addr] = (u8)((mem->m_vm8[addr] & (0xf0 >> shift)) | ((c & 0x0f) << shift));
+}
+static INLINE void gs_lm_write8h_at(u32* p, u32 c) { *p = (*p & 0x00ffffff) | (c << 24); }
+static INLINE void gs_lm_write4hl_at(u32* p, u32 c) { *p = (*p & 0xf0ffffff) | ((c & 0x0f) << 24); }
+static INLINE void gs_lm_write4hh_at(u32* p, u32 c) { *p = (*p & 0x0fffffff) | ((c & 0x0f) << 28); }
+static INLINE void gs_lm_write_pixel8h(gs_local_memory* mem, u32 addr, u32 c) { gs_lm_write8h_at(GS_LM_VM32(mem) + addr, c); }
+static INLINE void gs_lm_write_pixel4hl(gs_local_memory* mem, u32 addr, u32 c) { gs_lm_write4hl_at(GS_LM_VM32(mem) + addr, c); }
+static INLINE void gs_lm_write_pixel4hh(gs_local_memory* mem, u32 addr, u32 c) { gs_lm_write4hh_at(GS_LM_VM32(mem) + addr, c); }
+static INLINE void gs_lm_write_frame16(gs_local_memory* mem, u32 addr, u32 c)
+{
+	const u32 rb = c & 0x00f800f8;
+	const u32 ga = c & 0x8000f800;
+	gs_lm_write_pixel16(mem, addr, (ga >> 16) | (rb >> 9) | (ga >> 6) | (rb >> 3));
+}
+
+/* ---- one texel, by address: as the GS samples it, 32-bit colour ---- */
+
+static INLINE u32 gs_lm_expand24(u32 c, const GIFRegTEXA* TEXA)
+{
+	return (((!TEXA->AEM || (c & 0xffffff)) ? TEXA->TA0 : 0) << 24) | (c & 0xffffff);
+}
+static INLINE u32 gs_lm_expand16(u16 c, const GIFRegTEXA* TEXA)
+{
+	return (((c & 0x8000) ? TEXA->TA1 : (!TEXA->AEM || c) ? TEXA->TA0 : 0) << 24)
+		| ((c & 0x7c00) << 9)
+		| ((c & 0x03e0) << 6)
+		| ((c & 0x001f) << 3);
+}
+
+static INLINE u32 gs_lm_read_texel32(const gs_local_memory* mem, u32 addr, const GIFRegTEXA* TEXA)
+{
+	(void)TEXA;
+	return GS_LM_VM32(mem)[addr];
+}
+static INLINE u32 gs_lm_read_texel24(const gs_local_memory* mem, u32 addr, const GIFRegTEXA* TEXA)
+{
+	return gs_lm_expand24(GS_LM_VM32(mem)[addr], TEXA);
+}
+static INLINE u32 gs_lm_read_texel16(const gs_local_memory* mem, u32 addr, const GIFRegTEXA* TEXA)
+{
+	return gs_lm_expand16(GS_LM_VM16(mem)[addr], TEXA);
+}
+static INLINE u32 gs_lm_read_texel8(const gs_local_memory* mem, u32 addr, const GIFRegTEXA* TEXA)
+{
+	(void)TEXA;
+	return mem->m_clut32[gs_lm_read_pixel8(mem, addr)];
+}
+static INLINE u32 gs_lm_read_texel4(const gs_local_memory* mem, u32 addr, const GIFRegTEXA* TEXA)
+{
+	(void)TEXA;
+	return mem->m_clut32[gs_lm_read_pixel4(mem, addr)];
+}
+static INLINE u32 gs_lm_read_texel8h(const gs_local_memory* mem, u32 addr, const GIFRegTEXA* TEXA)
+{
+	(void)TEXA;
+	return mem->m_clut32[gs_lm_read_pixel8h(mem, addr)];
+}
+static INLINE u32 gs_lm_read_texel4hl(const gs_local_memory* mem, u32 addr, const GIFRegTEXA* TEXA)
+{
+	(void)TEXA;
+	return mem->m_clut32[gs_lm_read_pixel4hl(mem, addr)];
+}
+static INLINE u32 gs_lm_read_texel4hh(const gs_local_memory* mem, u32 addr, const GIFRegTEXA* TEXA)
+{
+	(void)TEXA;
+	return mem->m_clut32[gs_lm_read_pixel4hh(mem, addr)];
+}
+
+#ifdef __cplusplus
+
 #include "GSVector.h"
 #include "GSClut.h"
 #include "MultiISA.h"
-#include "Renderers/Common/GSFlatMap.h"
-#include "GSLocalMemoryMaps.h"
 
 class GSOffset;
 
@@ -234,23 +430,16 @@ inline u32 GSSwizzleInfo::pa(int x, int y, u32 bp, u32 bw) const
 
 class GSLocalMemory;
 MULTI_ISA_DEF(class GSLocalMemoryFunctions;)
-MULTI_ISA_DEF(void GSLocalMemoryPopulateFunctions(GSLocalMemory& mem);)
+MULTI_ISA_DEF(void GSLocalMemoryPopulateFunctions();)
 
-class GSLocalMemory final : public GSAlignedClass<32>
+/* The C local memory (above), with the C++ renderers' names, the palette
+ * it reads paletted texels through, and the SIMD transfers per format */
+class GSLocalMemory final : public gs_local_memory, public GSAlignedClass<32>
 {
 	MULTI_ISA_FRIEND(GSLocalMemoryFunctions)
 
 public:
 	typedef u32 (*pixelAddress)(int x, int y, u32 bp, u32 bw);
-	typedef void (GSLocalMemory::*writePixel)(int x, int y, u32 c, u32 bp, u32 bw);
-	typedef void (GSLocalMemory::*writeFrame)(int x, int y, u32 c, u32 bp, u32 bw);
-	typedef u32 (GSLocalMemory::*readPixel)(int x, int y, u32 bp, u32 bw) const;
-	typedef u32 (GSLocalMemory::*readTexel)(int x, int y, const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA) const;
-	typedef void (GSLocalMemory::*writePixelAddr)(u32 addr, u32 c);
-	typedef void (GSLocalMemory::*writeFrameAddr)(u32 addr, u32 c);
-	typedef u32(GSLocalMemory::*PixelAddr)(int x, int y, u32 bp, u32 bw) const;
-	typedef u32 (GSLocalMemory::*readPixelAddr)(u32 addr) const;
-	typedef u32 (GSLocalMemory::*readTexelAddr)(u32 addr, const GIFRegTEXA& TEXA) const;
 	typedef void (*writeImage)(GSLocalMemory& mem, int& tx, int& ty, const u8* src, int len, GIFRegBITBLTBUF& BITBLTBUF, GIFRegTRXPOS& TRXPOS, GIFRegTRXREG& TRXREG);
 	typedef void (*readImage)(const GSLocalMemory& mem, int& tx, int& ty, u8* dst, int len, GIFRegBITBLTBUF& BITBLTBUF, GIFRegTRXPOS& TRXPOS, GIFRegTRXREG& TRXREG);
 	typedef void (*readTexture)(GSLocalMemory& mem, const GSOffset& off, const GSVector4i& r, u8* dst, int dstpitch, const GIFRegTEXA& TEXA);
@@ -263,16 +452,10 @@ public:
 		PSM_FMT_16
 	};
 
-	/* A mode's attributes (GSPsm.h's gs_psm), and its readers and writers */
+	/* A mode's attributes (GSPsm.h's gs_psm), and its transfers of
+	 * rectangles (one pixel at a time: gs_lm_pixel) */
 	struct alignas(128) psm_t : gs_psm_attr
 	{
-		readPixel rp;
-		readPixelAddr rpa;
-		writePixel wp;
-		writePixelAddr wpa;
-		readTexel rt;
-		readTexelAddr rta;
-		writeFrameAddr wfa;
 		writeImage wi;
 		readImage ri;
 		readTexture rtx, rtxP;
@@ -282,9 +465,7 @@ public:
 	static psm_t m_psm[64];
 	static readImage m_readImageX;
 
-	static constexpr int m_vmsize = 1024 * 1024 * 4;
-
-	u8* m_vm8;
+	static constexpr int m_vmsize = GS_LOCAL_MEMORY_SIZE;
 
 	GSClut m_clut;
 
@@ -299,18 +480,8 @@ public:
 	static constexpr GSSwizzleInfo swizzle4{gs_swizzle4};
 
 protected:
-	__forceinline static u32 Expand24To32(u32 c, const GIFRegTEXA& TEXA)
-	{
-		return (((!TEXA.AEM || (c & 0xffffff)) ? TEXA.TA0 : 0) << 24) | (c & 0xffffff);
-	}
-
-	__forceinline static u32 Expand16To32(u16 c, const GIFRegTEXA& TEXA)
-	{
-		return (((c & 0x8000) ? TEXA.TA1 : (!TEXA.AEM || c) ? TEXA.TA0 : 0) << 24)
-			| ((c & 0x7c00) << 9)
-			| ((c & 0x03e0) << 6)
-			| ((c & 0x001f) << 3);
-	}
+	__forceinline static u32 Expand24To32(u32 c, const GIFRegTEXA& TEXA) { return gs_lm_expand24(c, &TEXA); }
+	__forceinline static u32 Expand16To32(u16 c, const GIFRegTEXA& TEXA) { return gs_lm_expand16(c, &TEXA); }
 
 	// TODO
 
@@ -318,14 +489,16 @@ protected:
 
 	//
 
-	/* u64 key -> GSPixelOffset4* / GSPage2TileMap*, in GSFlatMaps: made
-	 * once each, kept until the local memory goes. */
-	gs_flat_map_t m_po4map;
-	gs_flat_map_t m_p2tmap;
-
 public:
-	GSLocalMemory();
-	~GSLocalMemory();
+	GSLocalMemory()
+		: m_clut(this)
+	{
+		gs_local_memory_init(this);
+		m_clut32 = m_clut;
+	}
+	~GSLocalMemory() { gs_local_memory_deinit(this); }
+	GSLocalMemory(const GSLocalMemory&) = delete;
+	GSLocalMemory& operator=(const GSLocalMemory&) = delete;
 
 	__forceinline u8* vm8() const { return m_vm8; }
 	__forceinline u16* vm16() const { return reinterpret_cast<u16*>(m_vm8); }
@@ -340,13 +513,36 @@ public:
 		return gs_pixel_offset4_get(&m_po4map, &FRAME, &ZBUF);
 	}
 	GSPage2TileMap* GetPage2TileMap(const GIFRegTEX0& TEX0) { return gs_page2tile_map_get(&m_p2tmap, &TEX0); }
-	static bool HasOverlap(u32 src_bp, u32 src_bw, u32 src_psm, GSVector4i src_rect, u32 dst_bp, u32 dst_bw, u32 dst_psm, GSVector4i dst_rect);
-	static u32 IsPageAlignedMasked(u32 psm, const GSVector4i& rc);
-	static bool IsPageAligned(u32 psm, const GSVector4i& rc);
-	static u32 GetStartBlockAddress(u32 bp, u32 bw, u32 psm, GSVector4i rect);
-	static u32 GetEndBlockAddress(u32 bp, u32 bw, u32 psm, GSVector4i rect);
-	static u32 GetUnwrappedEndBlockAddress(u32 bp, u32 bw, u32 psm, GSVector4i rect);
-	static GSVector4i GetRectForPageOffset(u32 base_bp, u32 offset_bp, u32 bw, u32 psm);
+	static bool HasOverlap(u32 src_bp, u32 src_bw, u32 src_psm, GSVector4i src_rect, u32 dst_bp, u32 dst_bw, u32 dst_psm, GSVector4i dst_rect)
+	{
+		const int s[4] = {src_rect.x, src_rect.y, src_rect.z, src_rect.w};
+		const int d[4] = {dst_rect.x, dst_rect.y, dst_rect.z, dst_rect.w};
+		return gs_psm_has_overlap(src_bp, src_bw, src_psm, s, dst_bp, dst_bw, dst_psm, d) != 0;
+	}
+	static u32 IsPageAlignedMasked(u32 psm, const GSVector4i& rc)
+	{
+		const int r[4] = {rc.x, rc.y, rc.z, rc.w};
+		return gs_lm_page_aligned_mask(psm, r);
+	}
+	static bool IsPageAligned(u32 psm, const GSVector4i& rc) { return IsPageAlignedMasked(psm, rc) == 0xffff; }
+	static u32 GetStartBlockAddress(u32 bp, u32 bw, u32 psm, GSVector4i rect)
+	{
+		return gs_psm_start_block(bp, bw, psm, rect.x, rect.y);
+	}
+	static u32 GetEndBlockAddress(u32 bp, u32 bw, u32 psm, GSVector4i rect)
+	{
+		return gs_psm_end_block(bp, bw, psm, rect.z, rect.w);
+	}
+	static u32 GetUnwrappedEndBlockAddress(u32 bp, u32 bw, u32 psm, GSVector4i rect)
+	{
+		return gs_psm_end_block_unwrapped(bp, bw, psm, rect.z, rect.w);
+	}
+	static GSVector4i GetRectForPageOffset(u32 base_bp, u32 offset_bp, u32 bw, u32 psm)
+	{
+		int r[4];
+		gs_lm_rect_for_page_offset(base_bp, offset_bp, bw, psm, r);
+		return GSVector4i(r[0], r[1], r[2], r[3]);
+	}
 
 	// address
 
@@ -479,54 +675,52 @@ public:
 
 	__forceinline u32 ReadPixel32(u32 addr) const
 	{
-		return vm32()[addr];
+		return gs_lm_read_pixel32(this, addr);
 	}
 
 	__forceinline u32 ReadPixel24(u32 addr) const
 	{
-		return vm32()[addr] & 0x00ffffff;
+		return gs_lm_read_pixel24(this, addr);
 	}
 
 	__forceinline u32 ReadPixel16(u32 addr) const
 	{
-		return (u32)vm16()[addr];
+		return gs_lm_read_pixel16(this, addr);
 	}
 
 	__forceinline u32 ReadPixel8(u32 addr) const
 	{
-		return (u32)m_vm8[addr];
+		return gs_lm_read_pixel8(this, addr);
 	}
 
 	__forceinline u32 ReadPixel4(u32 addr) const
 	{
-		return (m_vm8[addr >> 1] >> ((addr & 1) << 2)) & 0x0f;
+		return gs_lm_read_pixel4(this, addr);
 	}
 
 	__forceinline u32 ReadPixel8H(u32 addr) const
 	{
-		return vm32()[addr] >> 24;
+		return gs_lm_read_pixel8h(this, addr);
 	}
 
 	__forceinline u32 ReadPixel4HL(u32 addr) const
 	{
-		return (vm32()[addr] >> 24) & 0x0f;
+		return gs_lm_read_pixel4hl(this, addr);
 	}
 
 	__forceinline u32 ReadPixel4HH(u32 addr) const
 	{
-		return (vm32()[addr] >> 28) & 0x0f;
+		return gs_lm_read_pixel4hh(this, addr);
 	}
 
 	__forceinline u32 ReadFrame24(u32 addr) const
 	{
-		return 0x80000000 | (vm32()[addr] & 0xffffff);
+		return gs_lm_read_frame24(this, addr);
 	}
 
 	__forceinline u32 ReadFrame16(u32 addr) const
 	{
-		u32 c = (u32)vm16()[addr];
-
-		return ((c & 0x8000) << 16) | ((c & 0x7c00) << 9) | ((c & 0x03e0) << 6) | ((c & 0x001f) << 3);
+		return gs_lm_read_frame16(this, addr);
 	}
 
 	__forceinline u32 ReadPixel32(int x, int y, u32 bp, u32 bw) const
@@ -626,73 +820,67 @@ public:
 
 	__forceinline void WritePixel32(u32 addr, u32 c)
 	{
-		vm32()[addr] = c;
+		gs_lm_write_pixel32(this, addr, c);
 	}
 
 	__forceinline static void WritePixel24(u32* addr, u32 c)
 	{
-		*addr = (*addr & 0xff000000) | (c & 0x00ffffff);
+		gs_lm_write24_at(addr, c);
 	}
 
 	__forceinline void WritePixel24(u32 addr, u32 c)
 	{
-		WritePixel24(vm32() + addr, c);
+		gs_lm_write_pixel24(this, addr, c);
 	}
 
 	__forceinline void WritePixel16(u32 addr, u32 c)
 	{
-		vm16()[addr] = (u16)c;
+		gs_lm_write_pixel16(this, addr, c);
 	}
 
 	__forceinline void WritePixel8(u32 addr, u32 c)
 	{
-		m_vm8[addr] = (u8)c;
+		gs_lm_write_pixel8(this, addr, c);
 	}
 
 	__forceinline void WritePixel4(u32 addr, u32 c)
 	{
-		int shift = (addr & 1) << 2;
-		addr >>= 1;
-
-		m_vm8[addr] = (u8)((m_vm8[addr] & (0xf0 >> shift)) | ((c & 0x0f) << shift));
+		gs_lm_write_pixel4(this, addr, c);
 	}
 
 	__forceinline static void WritePixel8H(u32* addr, u32 c)
 	{
-		*addr = (*addr & 0x00ffffff) | (c << 24);
+		gs_lm_write8h_at(addr, c);
 	}
 
 	__forceinline void WritePixel8H(u32 addr, u32 c)
 	{
-		WritePixel8H(vm32() + addr, c);
+		gs_lm_write_pixel8h(this, addr, c);
 	}
 
 	__forceinline static void WritePixel4HL(u32* addr, u32 c)
 	{
-		*addr = (*addr & 0xf0ffffff) | ((c & 0x0f) << 24);
+		gs_lm_write4hl_at(addr, c);
 	}
 
 	__forceinline void WritePixel4HL(u32 addr, u32 c)
 	{
-		WritePixel4HL(vm32() + addr, c);
+		gs_lm_write_pixel4hl(this, addr, c);
 	}
 
 	__forceinline static void WritePixel4HH(u32* addr, u32 c)
 	{
-		*addr = (*addr & 0x0fffffff) | ((c & 0x0f) << 28);
+		gs_lm_write4hh_at(addr, c);
 	}
 
 	__forceinline void WritePixel4HH(u32 addr, u32 c)
 	{
-		WritePixel4HH(vm32() + addr, c);
+		gs_lm_write_pixel4hh(this, addr, c);
 	}
 
 	__forceinline void WriteFrame16(u32 addr, u32 c)
 	{
-		u32 rb = c & 0x00f800f8;
-		u32 ga = c & 0x8000f800;
-
-		WritePixel16(addr, (ga >> 16) | (rb >> 9) | (ga >> 6) | (rb >> 3));
+		gs_lm_write_frame16(this, addr, c);
 	}
 
 	__forceinline void WritePixel32(int x, int y, u32 c, u32 bp, u32 bw)
@@ -818,42 +1006,42 @@ public:
 
 	__forceinline u32 ReadTexel32(u32 addr, const GIFRegTEXA& TEXA) const
 	{
-		return vm32()[addr];
+		return gs_lm_read_texel32(this, addr, &TEXA);
 	}
 
 	__forceinline u32 ReadTexel24(u32 addr, const GIFRegTEXA& TEXA) const
 	{
-		return Expand24To32(vm32()[addr], TEXA);
+		return gs_lm_read_texel24(this, addr, &TEXA);
 	}
 
 	__forceinline u32 ReadTexel16(u32 addr, const GIFRegTEXA& TEXA) const
 	{
-		return Expand16To32(vm16()[addr], TEXA);
+		return gs_lm_read_texel16(this, addr, &TEXA);
 	}
 
 	__forceinline u32 ReadTexel8(u32 addr, const GIFRegTEXA& TEXA) const
 	{
-		return m_clut[ReadPixel8(addr)];
+		return gs_lm_read_texel8(this, addr, &TEXA);
 	}
 
 	__forceinline u32 ReadTexel4(u32 addr, const GIFRegTEXA& TEXA) const
 	{
-		return m_clut[ReadPixel4(addr)];
+		return gs_lm_read_texel4(this, addr, &TEXA);
 	}
 
 	__forceinline u32 ReadTexel8H(u32 addr, const GIFRegTEXA& TEXA) const
 	{
-		return m_clut[ReadPixel8H(addr)];
+		return gs_lm_read_texel8h(this, addr, &TEXA);
 	}
 
 	__forceinline u32 ReadTexel4HL(u32 addr, const GIFRegTEXA& TEXA) const
 	{
-		return m_clut[ReadPixel4HL(addr)];
+		return gs_lm_read_texel4hl(this, addr, &TEXA);
 	}
 
 	__forceinline u32 ReadTexel4HH(u32 addr, const GIFRegTEXA& TEXA) const
 	{
-		return m_clut[ReadPixel4HH(addr)];
+		return gs_lm_read_texel4hh(this, addr, &TEXA);
 	}
 
 	__forceinline u32 ReadTexel32(int x, int y, const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA) const
@@ -926,7 +1114,11 @@ public:
 		m_readImageX(*this, tx, ty, dst, len, BITBLTBUF, TRXPOS, TRXREG);
 	}
 
-	void ReadTexture(const GSOffset& off, const GSVector4i& r, u8* dst, int dstpitch, const GIFRegTEXA& TEXA);
+	void ReadTexture(const GSOffset& off, const GSVector4i& r, u8* dst, int dstpitch, const GIFRegTEXA& TEXA)
+	{
+		const int rc[4] = {r.left, r.top, r.right, r.bottom};
+		gs_local_memory_read_texture(this, &off, rc, dst, dstpitch, &TEXA);
+	}
 };
 
 inline GSOffset GSOffset::fromKnownPSM(u32 bp, u32 bw, GS_PSM psm)
@@ -953,3 +1145,4 @@ inline GSOffset GSOffset::fromKnownPSM(u32 bp, u32 bw, GS_PSM psm)
 	}
 	return GSOffset(GSLocalMemory::swizzle32, bp, bw, psm);
 }
+#endif
