@@ -284,7 +284,8 @@ bool GSDevice11::Create()
 
 	m_feature_level = m_dev->GetFeatureLevel();
 
-	if (!m_shader_cache.Open(m_feature_level, GSConfig.UseDebugDevice))
+	if (!m_shader_cache.Open(m_feature_level, GSConfig.UseDebugDevice,
+			GSConfig.DisableShaderCache ? nullptr : EmuFolders.Cache))
 		log_cb(RETRO_LOG_WARN, "Shader cache failed to open.\n");
 
 	// Set maximum texture size limit based on supported feature level.

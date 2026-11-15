@@ -22,6 +22,7 @@
 #include "D3DDynamicPS.h"
 #include <array>
 #include <unordered_map>
+#include <vector>
 #include <wrl/client.h>
 #include <dxgi1_5.h>
 #include <d3d11_1.h>
