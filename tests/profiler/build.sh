@@ -40,3 +40,27 @@ rm -rf "$OBJ" && mkdir -p "$OBJ"
 "$CXX" $SANFLAGS $LDSTATIC -o "$DIR/profiler_test$EXE" "$OBJ"/*.o $LIBS
 rm -rf "$OBJ"
 $RUN "$DIR/profiler_test$EXE"
+
+# The profiler's C units, compiled for the host and for aarch64: an x86
+# host accepts x86-only builtins (MTGS.c used __builtin_ia32_rdtsc).
+# Skips a compiler that is missing or has no C library headers.
+UNITS=$(grep -rl ENABLE_PCSX2_PROFILER "$ROOT/pcsx2" --include='*.c')
+A64=${A64:-aarch64-linux-gnu-gcc}
+A64_CLANG=${A64_CLANG:-clang --target=aarch64-linux-gnu}
+A64INC="$INC -I $ROOT/3rdparty/include"
+fail=0
+for cc in "$CC" "$A64" "$A64_CLANG"; do
+	if ! printf '#include <string.h>\n' | $cc -fsyntax-only -xc - 2>/dev/null; then
+		echo "profiler: skip ($cc unavailable)"
+		continue
+	fi
+	for f in $UNITS; do
+		$cc -std=gnu89 -fsyntax-only -Werror=implicit-function-declaration \
+			-DENABLE_PCSX2_PROFILER -D__LIBRETRO__ $A64INC "$f" || {
+			echo "profiler: FAIL: $cc: ${f#$ROOT/}"
+			fail=1
+		}
+	done
+done
+[ "$fail" = 0 ] || exit 1
+echo "profiler: C units ok"

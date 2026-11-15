@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "Common.h"
+#include "Profiler.h"
 
 #include <rthreads/rthreads.h>
 #include <rthreads/retro_eventcount.h>
@@ -261,7 +262,7 @@ void mtgs_post_vsync_start(void)
 	{
 		static u64 last_wall, last_idle, last_wait;
 		static unsigned long frames;
-		const u64 now = __builtin_ia32_rdtsc();
+		const u64 now = pcsx2_profile_now_ticks();
 		if ((++frames % 60) == 0)
 		{
 			const double wall = (double)(now - last_wall);
@@ -427,9 +428,9 @@ bool mtgs_main_loop(bool flush_all)
 			 * that only a wedge reaches it: a second with nothing at all
 			 * in the ring, not an EE busy recompiling or a slow build. */
 #ifdef ENABLE_PCSX2_PROFILER
-			const u64  t0  = __builtin_ia32_rdtsc();
+			const u64  t0  = pcsx2_profile_now_ticks();
 			const bool got = work_eventcount_wait_timed(&s_sem_event, MTGS_WEDGE_MS);
-			g_gs_idle_ticks += __builtin_ia32_rdtsc() - t0;
+			g_gs_idle_ticks += pcsx2_profile_now_ticks() - t0;
 			if (!got)
 				return false;
 #else
@@ -651,12 +652,12 @@ void mtgs_wait_gs(bool isMTVU)
 		return;
 
 #ifdef ENABLE_PCSX2_PROFILER
-	t_wait0 = __builtin_ia32_rdtsc();
+	t_wait0 = pcsx2_profile_now_ticks();
 #endif
 	work_eventcount_notify(&s_sem_event);
 	mtgs_wait_p1_progress();
 #ifdef ENABLE_PCSX2_PROFILER
-	g_ee_wait_ticks += __builtin_ia32_rdtsc() - t_wait0;
+	g_ee_wait_ticks += pcsx2_profile_now_ticks() - t_wait0;
 #endif
 }
 
