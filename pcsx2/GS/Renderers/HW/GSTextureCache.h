@@ -19,6 +19,7 @@
 #include <stddef.h>
 
 #include "../Common/GSRenderer.h"
+#include "GS/GSAlphaRange.h"
 #include "GSObjectPool.h"
 #include "../Common/GSFastList.h"
 #include "../Common/GSDirtyRect.h"

@@ -51,7 +51,7 @@ for CXX in g++ clang++; do
 		     $INC -c "$ROOT/pcsx2/$u.cpp" -o "$TMP/$(basename "$u").o"
 	done
 	# (the tables, offsets, formats and maps are C)
-	for u in GS/GSLocalMemory GS/GSTables GS/GSOffset GS/GSPsm GS/GSLocalMemoryMaps; do
+	for u in GS/GSLocalMemory GS/GSAlphaRange GS/GSTables GS/GSOffset GS/GSPsm GS/GSLocalMemoryMaps; do
 		$CC -O1 -DNDEBUG -DPCSX2_CORE -msse4.1 -w \
 		     $INC -c "$ROOT/pcsx2/$u.c" -o "$TMP/$(basename "$u").o"
 	done

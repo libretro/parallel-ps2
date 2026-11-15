@@ -207,6 +207,8 @@ GS_V4I_BIN(gs_v4i_eq32,  _mm_cmpeq_epi32,
            vreinterpretq_s32_u32(vceqq_s32(a, b)))
 GS_V4I_BIN(gs_v4i_gt32,  _mm_cmpgt_epi32,
            vreinterpretq_s32_u32(vcgtq_s32(a, b)))
+GS_V4I_BIN(gs_v4i_eq16,  _mm_cmpeq_epi16,
+           vreinterpretq_s32_u16(vceqq_s16(vreinterpretq_s16_s32(a), vreinterpretq_s16_s32(b))))
 
 static GS_VEC_INLINE gs_vec4i gs_v4i_add16(gs_vec4i a, gs_vec4i b)
 {

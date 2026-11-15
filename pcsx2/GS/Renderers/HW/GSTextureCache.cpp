@@ -18,7 +18,7 @@
 #include "common/MathUtils.h"
 
 #include "GSTextureCache.h"
-#include "GSAlphaRange.h"
+#include "GS/GSAlphaRange.h"
 #include "GSSurfaceSearch.h"
 #include "../Common/GSScratch.h"
 #include "GSTargetBudget.h"

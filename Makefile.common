@@ -105,9 +105,11 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSVertexTrace.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSVertexTraceFMM.c \
 	$(LRPS2_DIR)/GS/GSPage2Tile.c \
+	$(LRPS2_DIR)/GS/GSAlphaRange.c \
 	$(LRPS2_DIR)/GS/GSClut.c \
 	$(LRPS2_DIR)/GS/GSDrawingContext.c \
 	$(LRPS2_DIR)/GS/GSLocalMemory.c \
+	$(LRPS2_DIR)/GS/GSWrappedMemory.c \
 	$(LRPS2_DIR)/GS/GSLocalMemoryMaps.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSDirtyRect.c \
 	$(LRPS2_DIR)/GS/GSOffset.c \

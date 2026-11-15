@@ -25,6 +25,7 @@
 #include "GSRegs.h"
 #include "Renderers/Common/GSFlatMap.h"
 #include "GSLocalMemoryMaps.h"
+#include "GSWrappedMemory.h"
 
 /*
  * The GS's 4MB of local memory, in C: the memory (mapped four times over,
@@ -94,10 +95,6 @@ u32 gs_lm_page_aligned_mask(u32 psm, const int r[4]);
 /* The rectangle (left, top, right, bottom) of the page offset_bp is in,
  * counted in pages from base_bp in a buffer bw wide */
 void gs_lm_rect_for_page_offset(u32 base_bp, u32 offset_bp, u32 bw, u32 psm, int out[4]);
-
-/* The 4MB mapped repeat times in a row (GS.cpp) */
-void* GSAllocateWrappedMemory(size_t size, size_t repeat);
-void GSFreeWrappedMemory(void* ptr, size_t size, size_t repeat);
 
 /* What the C side asks of the C++ transfers (GSLocalMemoryMultiISA.cpp):
  * this CPU's readers and writers of rectangles put in the format table,

@@ -3,7 +3,7 @@
  * Target::Update and PreloadTexture want the alpha range of the texels
  * they expand into a mapped texture. Expanding a second time into a
  * scratch buffer just to scan it was the old way; gs_local_alpha_minmax
- * (GS/Renderers/HW/GSAlphaRange.h) takes the range from local memory
+ * (GS/GSAlphaRange.c) takes the range from local memory
  * instead, since min and max do not care where the swizzle put a texel.
  *
  * Held here against the truth: ReadTexture expands the same rect, and
@@ -21,7 +21,7 @@
 #include <vector>
 
 #include "GS/GSLocalMemory.h"
-#include "GS/Renderers/HW/GSAlphaRange.h"
+#include "GS/GSAlphaRange.h"
 
 static const struct { u32 psm; const char* name; } FORMATS[] = {
 	{ PSMCT32,  "PSMCT32"  },

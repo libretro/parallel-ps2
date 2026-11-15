@@ -764,6 +764,12 @@
     <ClCompile Include="GS\GSLocalMemory.c">
       <Filter>System\Ps2\GS</Filter>
     </ClCompile>
+    <ClCompile Include="GS\GSWrappedMemory.c">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\GSAlphaRange.c">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
     <ClCompile Include="GS\GSLocalMemoryMultiISA.cpp">
       <Filter>System\Ps2\GS</Filter>
     </ClCompile>
@@ -1417,8 +1423,11 @@
     <ClInclude Include="GS\Renderers\HW\GSRendererHW.h">
       <Filter>System\Ps2\GS\Renderers\Hardware</Filter>
     </ClInclude>
-    <ClInclude Include="GS\Renderers\HW\GSAlphaRange.h">
-      <Filter>System\Ps2\GS\Renderers\Hardware</Filter>
+    <ClInclude Include="GS\GSAlphaRange.h">
+      <Filter>System\Ps2\GS</Filter>
+    </ClInclude>
+    <ClInclude Include="GS\GSWrappedMemory.h">
+      <Filter>System\Ps2\GS</Filter>
     </ClInclude>
     <ClInclude Include="GS\Renderers\HW\GSTextureCache.h">
       <Filter>System\Ps2\GS\Renderers\Hardware</Filter>

@@ -346,10 +346,12 @@ endif()
 set(pcsx2GSSources
 	GS/GS.cpp
 	GS/GSClutGPU.cpp
+	GS/GSAlphaRange.c
 	GS/GSClut.c
 	GS/GSDrawingContext.c
 	GS/GSLocalMemoryMaps.c
 	GS/GSLocalMemory.c
+	GS/GSWrappedMemory.c
 	GS/GSRingHeap.c
 	GS/GSState.cpp
 	GS/GSOffset.c
@@ -372,7 +374,6 @@ set(pcsx2GSSources
 	GS/Renderers/Common/GSTextureFormat.c
 	GS/GSPage2Tile.c
 	GS/Renderers/HW/GSHashTable.c
-	GS/Renderers/HW/GSAlphaRange.h
 	GS/Renderers/HW/GSHashTable.h
 	GS/Renderers/HW/GSSpriteSnap.c
 	GS/Renderers/HW/GSSpriteSnap.h
@@ -404,6 +405,7 @@ set(pcsx2GSHeaders
 	GS/GSOptionEnums.h
 	GS/GSRegs.h
 	GS/GS.h
+	GS/GSAlphaRange.h
 	GS/GSLocalMemory.h
 	GS/GSRingHeap.h
 	GS/GSState.h
