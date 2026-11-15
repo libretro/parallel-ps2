@@ -191,6 +191,68 @@ extern "C" void gs_d3d12_device_copy_sampler_group(void* device, gs_d3d12_cpu_ha
 		D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 }
 
+/* --- what makes the builders' objects --- */
+
+wil::com_ptr_nothrow<ID3D12RootSignature> D3D12::RootSignatureBuilder::Create(bool clear /*= true*/)
+{
+	wil::com_ptr_nothrow<ID3D12RootSignature> rs = GSDevice12::GetInstance()->CreateRootSignature(&m_b.desc);
+	if (!rs)
+		return {};
+	if (clear)
+		Clear();
+	return rs;
+}
+
+wil::com_ptr_nothrow<ID3D12PipelineState> D3D12::GraphicsPipelineBuilder::Create(ID3D12Device* device, bool clear /*= true*/)
+{
+	wil::com_ptr_nothrow<ID3D12PipelineState> ps;
+	const HRESULT hr = device->CreateGraphicsPipelineState(&m_b.desc, IID_PPV_ARGS(ps.put()));
+	if (FAILED(hr))
+	{
+		log_cb(RETRO_LOG_ERROR, "CreateGraphicsPipelineState() failed: %08X\n", hr);
+		return {};
+	}
+	if (clear)
+		Clear();
+	return ps;
+}
+
+wil::com_ptr_nothrow<ID3D12PipelineState> D3D12::GraphicsPipelineBuilder::Create(ID3D12Device* device,
+	D3D12ShaderCache& cache, bool clear /*= true*/)
+{
+	wil::com_ptr_nothrow<ID3D12PipelineState> pso = cache.GetPipelineState(device, m_b.desc);
+	if (!pso)
+		return {};
+	if (clear)
+		Clear();
+	return pso;
+}
+
+wil::com_ptr_nothrow<ID3D12PipelineState> D3D12::ComputePipelineBuilder::Create(ID3D12Device* device, bool clear /*= true*/)
+{
+	wil::com_ptr_nothrow<ID3D12PipelineState> ps;
+	const HRESULT hr = device->CreateComputePipelineState(&m_b.desc, IID_PPV_ARGS(ps.put()));
+	if (FAILED(hr))
+	{
+		log_cb(RETRO_LOG_ERROR, "CreateComputePipelineState() failed: %08X\n", hr);
+		return {};
+	}
+	if (clear)
+		Clear();
+	return ps;
+}
+
+wil::com_ptr_nothrow<ID3D12PipelineState> D3D12::ComputePipelineBuilder::Create(ID3D12Device* device,
+	D3D12ShaderCache& cache, bool clear /*= true*/)
+{
+	wil::com_ptr_nothrow<ID3D12PipelineState> pso = cache.GetPipelineState(device, m_b.desc);
+	if (!pso)
+		return {};
+	if (clear)
+		Clear();
+	return pso;
+}
+
 static void gs_d3d12_free_present_textures(void)
 {
 	unsigned i;
