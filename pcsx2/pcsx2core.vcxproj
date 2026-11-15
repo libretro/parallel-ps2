@@ -126,7 +126,7 @@
     <ClCompile Include="Gif_Unit.c" />
     <ClCompile Include="GS\Renderers\DX11\D3D.cpp" />
     <ClCompile Include="GS\Renderers\DX12\GSDevice12.cpp" />
-    <ClCompile Include="GS\Renderers\DX12\GSTexture12.cpp" />
+    <ClCompile Include="GS\Renderers\DX12\GSTexture12.c" />
     <ClCompile Include="GS\Renderers\HW\GSTextureReplacementLoaders.cpp" />
     <ClCompile Include="GS\Renderers\HW\GSTextureReplacements.cpp" />
     <ClCompile Include="GS\Renderers\Vulkan\GSDeviceVK.cpp" />

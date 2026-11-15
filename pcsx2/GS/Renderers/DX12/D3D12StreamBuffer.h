@@ -100,6 +100,7 @@ public:
 	__fi D3D12_GPU_VIRTUAL_ADDRESS GetCurrentGPUPointer() const { return m_sb.gpu_pointer + m_sb.current_offset; }
 	__fi u32 GetSize() const { return m_sb.size; }
 	__fi u32 GetCurrentOffset() const { return m_sb.current_offset; }
+	__fi gs_d3d12_stream_buffer* C() { return &m_sb; }
 
 	bool Create(u32 size) { return gs_d3d12_stream_buffer_create(&m_sb, size) != 0; }
 	bool ReserveMemory(u32 num_bytes, u32 alignment) { return gs_d3d12_stream_buffer_reserve(&m_sb, num_bytes, alignment) != 0; }

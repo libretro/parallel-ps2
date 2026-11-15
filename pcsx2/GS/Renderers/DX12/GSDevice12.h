@@ -680,7 +680,7 @@ private:
 	RootSignature m_current_root_signature = RootSignature::Undefined;
 	const ID3D12PipelineState* m_current_pipeline = nullptr;
 
-	std::unique_ptr<GSTexture12> m_null_texture;
+	GSTexture12* m_null_texture = nullptr;
 
 	// current pipeline selector - we save this in the struct to avoid re-zeroing it every draw
 	PipelineSelector m_pipeline_selector = {};

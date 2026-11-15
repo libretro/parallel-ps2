@@ -932,7 +932,7 @@
     <ClCompile Include="x86\iR5900Analysis.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec</Filter>
     </ClCompile>
-    <ClCompile Include="GS\Renderers\DX12\GSTexture12.cpp">
+    <ClCompile Include="GS\Renderers\DX12\GSTexture12.c">
       <Filter>System\Ps2\GS\Renderers\Direct3D12</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\DX12\GSDevice12.cpp">

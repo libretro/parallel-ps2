@@ -191,6 +191,73 @@ extern "C" void gs_d3d12_device_copy_sampler_group(void* device, gs_d3d12_cpu_ha
 		D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 }
 
+/* --- what the C textures ask of the device --- */
+
+extern "C" ID3D12Device* gs_d3d12_device_device(void) { return GSDevice12::GetInstance()->GetDevice(); }
+
+extern "C" int gs_d3d12_device_create_placed_resource(const D3D12_RESOURCE_DESC* desc, D3D12_HEAP_TYPE heap_type,
+	D3D12_RESOURCE_STATES state, const D3D12_CLEAR_VALUE* clear_value, ID3D12Resource** resource,
+	gs_d3d12_alloc_t* alloc)
+{
+	return GSDevice12::GetInstance()->CreatePlacedResource(desc, heap_type, state, clear_value, resource, alloc);
+}
+
+extern "C" void gs_d3d12_device_defer_resource(const gs_d3d12_alloc_t* alloc, ID3D12Resource* resource)
+{
+	GSDevice12::GetInstance()->DeferResourceDestruction(alloc, resource);
+}
+
+static D3D12DescriptorHeapManager& gs_d3d12_heap_of(u32 kind)
+{
+	GSDevice12* const dev = GSDevice12::GetInstance();
+	return (kind == GS_D3D12_HEAP_RTV) ? dev->GetRTVHeapManager()
+		: (kind == GS_D3D12_HEAP_DSV) ? dev->GetDSVHeapManager() : dev->GetDescriptorHeapManager();
+}
+
+extern "C" gs_d3d12_descriptor_heap_manager* gs_d3d12_device_descriptor_heap(u32 kind)
+{
+	return gs_d3d12_heap_of(kind).C();
+}
+
+extern "C" void gs_d3d12_device_defer_descriptor(u32 kind, gs_d3d12_descriptor_handle* handle)
+{
+	GSDevice12::GetInstance()->DeferDescriptorDestruction(gs_d3d12_heap_of(kind),
+		static_cast<D3D12DescriptorHandle*>(handle));
+}
+
+extern "C" void gs_d3d12_device_unbind_texture(gs_texture_d3d12* t)
+{
+	GSDevice12::GetInstance()->UnbindTexture(GSTexture12::Of(t));
+}
+
+extern "C" ID3D12GraphicsCommandList* gs_d3d12_device_command_list(void)
+{
+	return GSDevice12::GetInstance()->GetCommandList();
+}
+
+extern "C" ID3D12GraphicsCommandList* gs_d3d12_device_init_command_list(void)
+{
+	return GSDevice12::GetInstance()->GetInitCommandList();
+}
+
+extern "C" void gs_d3d12_device_end_render_pass(void) { GSDevice12::GetInstance()->EndRenderPass(); }
+extern "C" void gs_d3d12_device_execute(int wait) { GSDevice12::GetInstance()->ExecuteCommandList(wait != 0); }
+extern "C" void gs_d3d12_device_execute_for_readback(void) { GSDevice12::GetInstance()->ExecuteCommandListForReadback(); }
+
+extern "C" gs_d3d12_stream_buffer* gs_d3d12_device_texture_stream_buffer(void)
+{
+	return GSDevice12::GetInstance()->GetTextureStreamBuffer().C();
+}
+
+extern "C" void gs_d3d12_device_report_recurring(const char* what, HRESULT hr) { GSDevice12::ReportRecurring(what, hr); }
+
+extern "C" void gs_d3d12_device_render_mipmap(gs_texture_d3d12* t, u32 dst_level, u32 dst_width, u32 dst_height,
+	u32 src_level, u32 src_width, u32 src_height)
+{
+	GSDevice12::GetInstance()->RenderTextureMipmap(GSTexture12::Of(t), dst_level, dst_width, dst_height, src_level,
+		src_width, src_height);
+}
+
 /* --- what makes the builders' objects --- */
 
 wil::com_ptr_nothrow<ID3D12RootSignature> D3D12::RootSignatureBuilder::Create(bool clear /*= true*/)
@@ -1303,8 +1370,8 @@ GSTexture* GSDevice12::CreateSurface(GSTexture::Type type, int width, int height
 
 	const DXGI_FORMAT uav_format = (type == GSTexture::Type::RWTexture) ? dxgi_format : DXGI_FORMAT_UNKNOWN;
 
-	std::unique_ptr<GSTexture12> tex(GSTexture12::Create(type, format, clamped_width, clamped_height, levels,
-		dxgi_format, srv_format, rtv_format, dsv_format, uav_format));
+	GSTexture12* tex = GSTexture12::Create(type, format, clamped_width, clamped_height, levels,
+		dxgi_format, srv_format, rtv_format, dsv_format, uav_format);
 	if (!tex)
 	{
 		// We're probably out of vram, try flushing the command buffer to release pending textures.
@@ -1314,12 +1381,12 @@ GSTexture* GSDevice12::CreateSurface(GSTexture::Type type, int width, int height
 				uav_format);
 	}
 
-	return tex.release();
+	return tex;
 }
 
 GSDownloadTexture* GSDevice12::CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format)
 {
-	return GSDownloadTexture12::Create(width, height, format).release();
+	return static_cast<GSDownloadTexture*>(gs_download_texture_d3d12_create(width, height, static_cast<unsigned>(format)));
 }
 
 void GSDevice12::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r, u32 destX, u32 destY)
@@ -2548,7 +2615,8 @@ void GSDevice12::DestroyResources()
 	if (m_null_texture)
 	{
 		m_null_texture->Destroy(false);
-		m_null_texture.reset();
+		m_null_texture->Free();
+		m_null_texture = nullptr;
 	}
 
 	m_shader_cache.Close();

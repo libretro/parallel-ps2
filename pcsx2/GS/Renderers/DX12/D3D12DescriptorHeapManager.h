@@ -167,6 +167,7 @@ public:
 	~D3D12DescriptorHeapManager() { Destroy(); }
 
 	ID3D12DescriptorHeap* GetDescriptorHeap() const { return static_cast<ID3D12DescriptorHeap*>(m_m.heap); }
+	__fi gs_d3d12_descriptor_heap_manager* C() { return &m_m; }
 	u32 GetDescriptorIncrementSize() const { return m_m.increment; }
 
 	bool Create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type, u32 num_descriptors, bool shader_visible)

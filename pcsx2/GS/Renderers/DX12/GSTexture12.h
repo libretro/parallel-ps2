@@ -13,129 +13,166 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_TEXTURE_12_H
+#define GS_TEXTURE_12_H
 
-#include "GS/GS.h"
-#include "GS/Renderers/Common/GSTexture.h"
-#include "common/RedtapeWindows.h"
-#include "GSDevice12.h"
+#include "common/Pcsx2Defs.h"
+#include "GS/Renderers/Common/GSTextureBase.h"
+#include "GSD3D12Heap.h"
 #include "D3D12DescriptorHeapManager.h"
 
+#ifdef __cplusplus
+#include "common/RedtapeWindows.h"
+#include "GS/Renderers/Common/GSTexture.h"
+#else
+#include <windows.h>
+#endif
 #include <d3d12.h>
-#include "common/RedtapeWilCom.h"
 
-#include <limits>
+/* Which descriptor heap a descriptor is in */
+enum gs_d3d12_heap_kind
+{
+	GS_D3D12_HEAP_SRV = 0, /* the shader-visible one: SRVs and UAVs */
+	GS_D3D12_HEAP_RTV,
+	GS_D3D12_HEAP_DSV
+};
 
-#include "GSD3D12Heap.h"
+typedef struct gs_texture_d3d12
+{
+	gs_texture base;
+	ID3D12Resource* resource;
+	gs_d3d12_alloc_t alloc;
+	gs_d3d12_descriptor_handle srv_descriptor;
+	gs_d3d12_descriptor_handle write_descriptor;
+	gs_d3d12_descriptor_handle uav_descriptor;
+	u32 write_heap; /* GS_D3D12_HEAP_RTV or _DSV, or none (_SRV) */
+	DXGI_FORMAT dxgi_format;
+	D3D12_RESOURCE_STATES resource_state;
+	/* the fence value of the command list that last used it */
+	u64 use_fence_counter;
+	int map_level;
+	gs_texture_rect map_area;
+} gs_texture_d3d12;
 
+typedef struct gs_download_texture_d3d12
+{
+	gs_download_texture base;
+	gs_d3d12_alloc_t alloc;
+	ID3D12Resource* buffer;
+	u64 copy_fence_value;
+	u32 buffer_size;
+} gs_download_texture_d3d12;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* A new texture (type, format: gs_texture_type, gs_texture_format) with
+ * the views asked for (DXGI_FORMAT_UNKNOWN: none), or NULL; freed
+ * through its ops. */
+gs_texture_d3d12* gs_texture_d3d12_create(unsigned type, unsigned format, int width, int height, int levels,
+	DXGI_FORMAT dxgi_format, DXGI_FORMAT srv_format, DXGI_FORMAT rtv_format, DXGI_FORMAT dsv_format,
+	DXGI_FORMAT uav_format);
+gs_download_texture* gs_download_texture_d3d12_create(u32 width, u32 height, unsigned format);
+
+/* The resource and descriptors released, the descriptors now or when the
+ * command list is past them (@defer), the resource's memory always then;
+ * the texture stays, empty. */
+void gs_texture_d3d12_destroy(gs_texture_d3d12* t, int defer);
+
+void gs_texture_d3d12_transition(gs_texture_d3d12* t, ID3D12GraphicsCommandList* cmdlist, D3D12_RESOURCE_STATES state);
+void gs_texture_d3d12_transition_level(const gs_texture_d3d12* t, ID3D12GraphicsCommandList* cmdlist, int level,
+	D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
+/* A pending clear recorded: in @cmdlist, or (NULL) in the device's after
+ * ending its render pass, and then only if one is pending. */
+void gs_texture_d3d12_commit_clear(gs_texture_d3d12* t, ID3D12GraphicsCommandList* cmdlist);
+
+/* What the textures ask of the device (GSDevice12.cpp) */
+ID3D12Device* gs_d3d12_device_device(void);
+int gs_d3d12_device_create_placed_resource(const D3D12_RESOURCE_DESC* desc, D3D12_HEAP_TYPE heap_type,
+	D3D12_RESOURCE_STATES state, const D3D12_CLEAR_VALUE* clear_value, ID3D12Resource** resource,
+	gs_d3d12_alloc_t* alloc);
+/* (takes a reference: the caller's own stays the caller's) */
+void gs_d3d12_device_defer_resource(const gs_d3d12_alloc_t* alloc, ID3D12Resource* resource);
+gs_d3d12_descriptor_heap_manager* gs_d3d12_device_descriptor_heap(u32 kind);
+void gs_d3d12_device_defer_descriptor(u32 kind, gs_d3d12_descriptor_handle* handle);
+void gs_d3d12_device_unbind_texture(gs_texture_d3d12* t);
+ID3D12GraphicsCommandList* gs_d3d12_device_command_list(void);
+ID3D12GraphicsCommandList* gs_d3d12_device_init_command_list(void);
+void gs_d3d12_device_end_render_pass(void);
+void gs_d3d12_device_execute(int wait);
+void gs_d3d12_device_execute_for_readback(void);
+struct gs_d3d12_stream_buffer* gs_d3d12_device_texture_stream_buffer(void);
+void gs_d3d12_device_report_recurring(const char* what, HRESULT hr);
+void gs_d3d12_device_render_mipmap(gs_texture_d3d12* t, u32 dst_level, u32 dst_width, u32 dst_height, u32 src_level,
+	u32 src_width, u32 src_height);
+
+#ifdef __cplusplus
+}
+
+/* A gs_texture_d3d12 as the device's C++ sees it: GSTexture and the C
+ * functions, no state of its own. */
 class GSTexture12 final : public GSTexture
 {
-	/* The table this texture answers through is in its own .cpp
-	 * (gs_texture_ops, Common/GSTexture.h). */
-	friend struct GSTexture12_ops_access;
 public:
-	~GSTexture12();
+	GSTexture12() = delete;
 
-	static std::unique_ptr<GSTexture12> Create(Type type, Format format, int width, int height, int levels,
-		DXGI_FORMAT dxgi_format, DXGI_FORMAT srv_format, DXGI_FORMAT rtv_format, DXGI_FORMAT dsv_format,
-		DXGI_FORMAT uav_format);
-	static std::unique_ptr<GSTexture12> Adopt(wil::com_ptr_nothrow<ID3D12Resource> resource, Type type, Format format,
-		int width, int height, int levels, DXGI_FORMAT dxgi_format, DXGI_FORMAT srv_format, DXGI_FORMAT rtv_format,
-		DXGI_FORMAT dsv_format, DXGI_FORMAT uav_format, D3D12_RESOURCE_STATES resource_state);
-
-	__fi const D3D12DescriptorHandle& GetSRVDescriptor() const { return m_srv_descriptor; }
-	__fi const D3D12DescriptorHandle& GetWriteDescriptor() const { return m_write_descriptor; }
-	__fi const D3D12DescriptorHandle& GetUAVDescriptor() const { return m_uav_descriptor; }
-	__fi D3D12_RESOURCE_STATES GetResourceState() const { return m_resource_state; }
-	__fi DXGI_FORMAT GetDXGIFormat() const { return m_dxgi_format; }
-	__fi ID3D12Resource* GetResource() const { return m_resource.get(); }
-
-	bool Update(const GSVector4i& r, const void* data, int pitch, int layer = 0);
-	bool Map(GSMap& m, const GSVector4i* r = NULL, int layer = 0);
-	void Unmap();
-	void GenerateMipmap();
-
-	void TransitionToState(D3D12_RESOURCE_STATES state);
-	void CommitClear();
-	void CommitClear(ID3D12GraphicsCommandList* cmdlist);
-
-	void Destroy(bool defer = true);
-
-	void TransitionToState(ID3D12GraphicsCommandList* cmdlist, D3D12_RESOURCE_STATES state);
-	void TransitionSubresourceToState(ID3D12GraphicsCommandList* cmdlist, int level, D3D12_RESOURCE_STATES before_state,
-		D3D12_RESOURCE_STATES after_state) const;
-
-	// Call when the texture is bound to the pipeline, or read from in a copy.
-	__fi void SetUseFenceCounter(u64 val)
+	__fi gs_texture_d3d12* C() { return reinterpret_cast<gs_texture_d3d12*>(static_cast<gs_texture*>(this)); }
+	__fi const gs_texture_d3d12* C() const
 	{
-		m_use_fence_counter = val;
+		return reinterpret_cast<const gs_texture_d3d12*>(static_cast<const gs_texture*>(this));
+	}
+	static __fi GSTexture12* Of(gs_texture_d3d12* t)
+	{
+		return t ? static_cast<GSTexture12*>(static_cast<GSTexture*>(&t->base)) : nullptr;
 	}
 
-private:
-	enum class WriteDescriptorType : u8
+	static __fi GSTexture12* Create(Type type, Format format, int width, int height, int levels, DXGI_FORMAT dxgi_format,
+		DXGI_FORMAT srv_format, DXGI_FORMAT rtv_format, DXGI_FORMAT dsv_format, DXGI_FORMAT uav_format)
 	{
-		None,
-		RTV,
-		DSV
-	};
+		return Of(gs_texture_d3d12_create(static_cast<unsigned>(type), static_cast<unsigned>(format), width, height,
+			levels, dxgi_format, srv_format, rtv_format, dsv_format, uav_format));
+	}
 
-	GSTexture12(Type type, Format format, int width, int height, int levels, DXGI_FORMAT dxgi_format,
-		wil::com_ptr_nothrow<ID3D12Resource> resource, const gs_d3d12_alloc_t& alloc,
-		const D3D12DescriptorHandle& srv_descriptor, const D3D12DescriptorHandle& write_descriptor,
-		const D3D12DescriptorHandle& uav_descriptor, WriteDescriptorType wdtype, D3D12_RESOURCE_STATES resource_state);
+	__fi const D3D12DescriptorHandle& GetSRVDescriptor() const
+	{
+		return *static_cast<const D3D12DescriptorHandle*>(&C()->srv_descriptor);
+	}
+	__fi const D3D12DescriptorHandle& GetWriteDescriptor() const
+	{
+		return *static_cast<const D3D12DescriptorHandle*>(&C()->write_descriptor);
+	}
+	__fi const D3D12DescriptorHandle& GetUAVDescriptor() const
+	{
+		return *static_cast<const D3D12DescriptorHandle*>(&C()->uav_descriptor);
+	}
+	__fi D3D12_RESOURCE_STATES GetResourceState() const { return C()->resource_state; }
+	__fi DXGI_FORMAT GetDXGIFormat() const { return C()->dxgi_format; }
+	__fi ID3D12Resource* GetResource() const { return C()->resource; }
 
-	static bool CreateSRVDescriptor(
-		ID3D12Resource* resource, u32 levels, DXGI_FORMAT format, D3D12DescriptorHandle* dh);
-	static bool CreateRTVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, D3D12DescriptorHandle* dh);
-	static bool CreateDSVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, D3D12DescriptorHandle* dh);
-	static bool CreateUAVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, D3D12DescriptorHandle* dh);
-	static void FreeDescriptors(D3D12DescriptorHandle* srv, D3D12DescriptorHandle* write,
-		WriteDescriptorType write_type, D3D12DescriptorHandle* uav);
+	__fi void TransitionToState(D3D12_RESOURCE_STATES state)
+	{
+		gs_texture_d3d12_transition(C(), gs_d3d12_device_command_list(), state);
+	}
+	__fi void TransitionToState(ID3D12GraphicsCommandList* cmdlist, D3D12_RESOURCE_STATES state)
+	{
+		gs_texture_d3d12_transition(C(), cmdlist, state);
+	}
+	__fi void TransitionSubresourceToState(ID3D12GraphicsCommandList* cmdlist, int level,
+		D3D12_RESOURCE_STATES before_state, D3D12_RESOURCE_STATES after_state) const
+	{
+		gs_texture_d3d12_transition_level(C(), cmdlist, level, before_state, after_state);
+	}
+	__fi void CommitClear() { gs_texture_d3d12_commit_clear(C(), nullptr); }
+	__fi void CommitClear(ID3D12GraphicsCommandList* cmdlist) { gs_texture_d3d12_commit_clear(C(), cmdlist); }
 
-	ID3D12GraphicsCommandList* GetCommandBufferForUpdate();
-	ID3D12Resource* AllocateUploadStagingBuffer(const void* data, u32 pitch, u32 upload_pitch, u32 row_bytes, u32 height) const;
-	void CopyTextureDataForUpload(void* dst, const void* src, u32 pitch, u32 upload_pitch, u32 row_bytes, u32 height) const;
+	__fi void Destroy(bool defer = true) { gs_texture_d3d12_destroy(C(), defer); }
 
-	wil::com_ptr_nothrow<ID3D12Resource> m_resource;
-	gs_d3d12_alloc_t m_alloc = {};
-
-	D3D12DescriptorHandle m_srv_descriptor = {};
-	D3D12DescriptorHandle m_write_descriptor = {};
-	D3D12DescriptorHandle m_uav_descriptor = {};
-	WriteDescriptorType m_write_descriptor_type = WriteDescriptorType::None;
-
-	DXGI_FORMAT m_dxgi_format = DXGI_FORMAT_UNKNOWN;
-	D3D12_RESOURCE_STATES m_resource_state = D3D12_RESOURCE_STATE_COMMON;
-
-	// Contains the fence counter when the texture was last used.
-	// When this matches the current fence counter, the texture was used this command buffer.
-	u64 m_use_fence_counter = 0;
-
-	int m_map_level = INT_MAX;
-	GSVector4i m_map_area = GSVector4i::zero();
+	/* Call when the texture is bound to the pipeline, or read from in a copy. */
+	__fi void SetUseFenceCounter(u64 val) { C()->use_fence_counter = val; }
 };
 
-class GSDownloadTexture12 final : public GSDownloadTexture
-{
-	friend struct GSDownloadTexture12_ops_access;
-public:
-	~GSDownloadTexture12();
+static_assert(sizeof(GSTexture12) == sizeof(GSTexture), "GSTexture12 adds nothing to GSTexture");
+#endif
 
-	static std::unique_ptr<GSDownloadTexture12> Create(u32 width, u32 height, GSTexture::Format format);
-
-	void CopyFromTexture(const GSVector4i& drc, GSTexture* stex, const GSVector4i& src, u32 src_level, bool use_transfer_pitch);
-
-	bool Map(const GSVector4i& read_rc);
-	void Unmap();
-
-	void Flush();
-
-private:
-	GSDownloadTexture12(u32 width, u32 height, GSTexture::Format format);
-
-	gs_d3d12_alloc_t m_alloc = {};
-	wil::com_ptr_nothrow<ID3D12Resource> m_buffer;
-
-	u64 m_copy_fence_value = 0;
-	u32 m_buffer_size = 0;
-};
+#endif
