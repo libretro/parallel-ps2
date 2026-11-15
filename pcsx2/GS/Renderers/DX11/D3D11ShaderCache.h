@@ -19,7 +19,7 @@
 #include "HostFS.h"
 #include "GS/Renderers/Common/GSKeyHash.h"
 #include "common/RedtapeWindows.h"
-#include "common/RedtapeWilCom.h"
+#include <wrl/client.h>
 
 #include <d3d11.h>
 #include <string_view>
@@ -38,10 +38,10 @@ class D3D11ShaderCache
 		bool Open(D3D_FEATURE_LEVEL feature_level, bool debug);
 		void Close();
 
-		wil::com_ptr_nothrow<ID3DBlob> GetShaderBlob(D3D::ShaderType type, const std::string_view& shader_code,
+		Microsoft::WRL::ComPtr<ID3DBlob> GetShaderBlob(D3D::ShaderType type, const std::string_view& shader_code,
 				const D3D_SHADER_MACRO* macros = nullptr, const char* entry_point = "main");
 
-		wil::com_ptr_nothrow<ID3D11VertexShader> GetVertexShader(ID3D11Device* device, const std::string_view& shader_code,
+		Microsoft::WRL::ComPtr<ID3D11VertexShader> GetVertexShader(ID3D11Device* device, const std::string_view& shader_code,
 				const D3D_SHADER_MACRO* macros = nullptr, const char* entry_point = "main");
 
 		bool GetVertexShaderAndInputLayout(ID3D11Device* device,
@@ -49,10 +49,10 @@ class D3D11ShaderCache
 				const D3D11_INPUT_ELEMENT_DESC* layout, size_t layout_size,
 				const std::string_view& shader_code, const D3D_SHADER_MACRO* macros = nullptr, const char* entry_point = "main");
 
-		wil::com_ptr_nothrow<ID3D11PixelShader> GetPixelShader(ID3D11Device* device, const std::string_view& shader_code,
+		Microsoft::WRL::ComPtr<ID3D11PixelShader> GetPixelShader(ID3D11Device* device, const std::string_view& shader_code,
 				const D3D_SHADER_MACRO* macros = nullptr, const char* entry_point = "main");
 
-		wil::com_ptr_nothrow<ID3D11ComputeShader> GetComputeShader(ID3D11Device* device, const std::string_view& shader_code,
+		Microsoft::WRL::ComPtr<ID3D11ComputeShader> GetComputeShader(ID3D11Device* device, const std::string_view& shader_code,
 				const D3D_SHADER_MACRO* macros = nullptr, const char* entry_point = "main");
 
 	private:
@@ -96,7 +96,7 @@ class D3D11ShaderCache
 		bool CreateNew(const std::string& index_filename, const std::string& blob_filename);
 		bool ReadExisting(const std::string& index_filename, const std::string& blob_filename);
 
-		wil::com_ptr_nothrow<ID3DBlob> CompileAndAddShaderBlob(const CacheIndexKey& key, const std::string_view& shader_code,
+		Microsoft::WRL::ComPtr<ID3DBlob> CompileAndAddShaderBlob(const CacheIndexKey& key, const std::string_view& shader_code,
 				const D3D_SHADER_MACRO* macros, const char* entry_point);
 
 		RFILE* m_index_file = nullptr;

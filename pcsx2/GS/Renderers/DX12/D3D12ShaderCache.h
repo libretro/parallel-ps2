@@ -18,7 +18,7 @@
 #include "common/Pcsx2Defs.h"
 #include "GS/Renderers/Common/GSKeyHash.h"
 #include "common/RedtapeWindows.h"
-#include "common/RedtapeWilCom.h"
+#include <wrl/client.h>
 
 #include <d3d12.h>
 #include <string>
@@ -32,7 +32,7 @@ class D3D12ShaderCache
 {
 	public:
 		template <typename T>
-			using ComPtr = wil::com_ptr_nothrow<T>;
+			using ComPtr = Microsoft::WRL::ComPtr<T>;
 
 		enum class EntryType
 		{

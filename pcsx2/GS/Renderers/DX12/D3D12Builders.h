@@ -95,7 +95,7 @@ void gs_d3d12_cp_set_shader(gs_d3d12_cp_builder* b, const void* data, u32 data_s
 #ifdef __cplusplus
 }
 
-#include "common/RedtapeWilCom.h"
+#include <wrl/client.h>
 
 class D3D12ShaderCache;
 
@@ -117,7 +117,7 @@ namespace D3D12
 
 		void Clear() { gs_d3d12_rs_clear(&m_b); }
 
-		wil::com_ptr_nothrow<ID3D12RootSignature> Create(bool clear = true);
+		Microsoft::WRL::ComPtr<ID3D12RootSignature> Create(bool clear = true);
 
 		void SetInputAssemblerFlag() { gs_d3d12_rs_set_input_assembler_flag(&m_b); }
 
@@ -160,8 +160,8 @@ namespace D3D12
 
 		void Clear() { gs_d3d12_gp_clear(&m_b); }
 
-		wil::com_ptr_nothrow<ID3D12PipelineState> Create(ID3D12Device* device, bool clear = true);
-		wil::com_ptr_nothrow<ID3D12PipelineState> Create(ID3D12Device* device, D3D12ShaderCache& cache, bool clear = true);
+		Microsoft::WRL::ComPtr<ID3D12PipelineState> Create(ID3D12Device* device, bool clear = true);
+		Microsoft::WRL::ComPtr<ID3D12PipelineState> Create(ID3D12Device* device, D3D12ShaderCache& cache, bool clear = true);
 
 		void SetRootSignature(ID3D12RootSignature* rs) { gs_d3d12_gp_set_root_signature(&m_b, rs); }
 
@@ -241,8 +241,8 @@ namespace D3D12
 
 		void Clear() { gs_d3d12_cp_clear(&m_b); }
 
-		wil::com_ptr_nothrow<ID3D12PipelineState> Create(ID3D12Device* device, bool clear = true);
-		wil::com_ptr_nothrow<ID3D12PipelineState> Create(ID3D12Device* device, D3D12ShaderCache& cache, bool clear = true);
+		Microsoft::WRL::ComPtr<ID3D12PipelineState> Create(ID3D12Device* device, bool clear = true);
+		Microsoft::WRL::ComPtr<ID3D12PipelineState> Create(ID3D12Device* device, D3D12ShaderCache& cache, bool clear = true);
 
 		void SetRootSignature(ID3D12RootSignature* rs) { gs_d3d12_cp_set_root_signature(&m_b, rs); }
 		void SetShader(const void* data, u32 data_size) { gs_d3d12_cp_set_shader(&m_b, data, data_size); }

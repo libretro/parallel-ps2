@@ -286,7 +286,7 @@ D3D11ShaderCache::CacheIndexKey D3D11ShaderCache::GetCacheKey(D3D::ShaderType ty
 	return key;
 }
 
-wil::com_ptr_nothrow<ID3DBlob> D3D11ShaderCache::GetShaderBlob(D3D::ShaderType type, const std::string_view& shader_code,
+Microsoft::WRL::ComPtr<ID3DBlob> D3D11ShaderCache::GetShaderBlob(D3D::ShaderType type, const std::string_view& shader_code,
 	const D3D_SHADER_MACRO* macros /* = nullptr */, const char* entry_point /* = "main" */)
 {
 	const auto key = GetCacheKey(type, shader_code, macros, entry_point);
@@ -294,8 +294,8 @@ wil::com_ptr_nothrow<ID3DBlob> D3D11ShaderCache::GetShaderBlob(D3D::ShaderType t
 	if (iter == m_index.end())
 		return CompileAndAddShaderBlob(key, shader_code, macros, entry_point);
 
-	wil::com_ptr_nothrow<ID3DBlob> blob;
-	HRESULT hr = D3DCreateBlob(iter->second.blob_size, blob.put());
+	Microsoft::WRL::ComPtr<ID3DBlob> blob;
+	HRESULT hr = D3DCreateBlob(iter->second.blob_size, blob.ReleaseAndGetAddressOf());
 	if (FAILED(hr) || filestream_seek(m_blob_file, iter->second.file_offset, RETRO_VFS_SEEK_POSITION_START) != 0 ||
 		filestream_read(m_blob_file, blob->GetBufferPointer(), iter->second.blob_size) != (int64_t)iter->second.blob_size)
 	{
@@ -306,15 +306,15 @@ wil::com_ptr_nothrow<ID3DBlob> D3D11ShaderCache::GetShaderBlob(D3D::ShaderType t
 	return blob;
 }
 
-wil::com_ptr_nothrow<ID3D11VertexShader> D3D11ShaderCache::GetVertexShader(ID3D11Device* device,
+Microsoft::WRL::ComPtr<ID3D11VertexShader> D3D11ShaderCache::GetVertexShader(ID3D11Device* device,
 	const std::string_view& shader_code, const D3D_SHADER_MACRO* macros /* = nullptr */, const char* entry_point /* = "main" */)
 {
-	wil::com_ptr_nothrow<ID3DBlob> blob = GetShaderBlob(D3D::ShaderType::Vertex, shader_code, macros, entry_point);
+	Microsoft::WRL::ComPtr<ID3DBlob> blob = GetShaderBlob(D3D::ShaderType::Vertex, shader_code, macros, entry_point);
 	if (!blob)
 		return {};
 
-	wil::com_ptr_nothrow<ID3D11VertexShader> shader;
-	const HRESULT hr = device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, shader.put());
+	Microsoft::WRL::ComPtr<ID3D11VertexShader> shader;
+	const HRESULT hr = device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, shader.ReleaseAndGetAddressOf());
 	if (FAILED(hr))
 	{
 		log_cb(RETRO_LOG_ERROR, "Failed to create vertex shader: 0x%08X\n", hr);
@@ -330,12 +330,12 @@ bool D3D11ShaderCache::GetVertexShaderAndInputLayout(ID3D11Device* device,
 	const D3D_SHADER_MACRO* macros /* = nullptr */, const char* entry_point /* = "main" */)
 {
 	HRESULT hr;
-	wil::com_ptr_nothrow<ID3DBlob> blob = GetShaderBlob(D3D::ShaderType::Vertex, shader_code, macros, entry_point);
+	Microsoft::WRL::ComPtr<ID3DBlob> blob = GetShaderBlob(D3D::ShaderType::Vertex, shader_code, macros, entry_point);
 	if (!blob)
 		return false;
 
-	wil::com_ptr_nothrow<ID3D11VertexShader> actual_vs;
-	hr = device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, actual_vs.put());
+	Microsoft::WRL::ComPtr<ID3D11VertexShader> actual_vs;
+	hr = device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, actual_vs.ReleaseAndGetAddressOf());
 	if (FAILED(hr))
 		return false;
 
@@ -346,19 +346,19 @@ bool D3D11ShaderCache::GetVertexShaderAndInputLayout(ID3D11Device* device,
 		return false;
 	}
 
-	*vs = actual_vs.detach();
+	*vs = actual_vs.Detach();
 	return true;
 }
 
-wil::com_ptr_nothrow<ID3D11PixelShader> D3D11ShaderCache::GetPixelShader(ID3D11Device* device,
+Microsoft::WRL::ComPtr<ID3D11PixelShader> D3D11ShaderCache::GetPixelShader(ID3D11Device* device,
 	const std::string_view& shader_code, const D3D_SHADER_MACRO* macros /* = nullptr */, const char* entry_point /* = "main" */)
 {
-	wil::com_ptr_nothrow<ID3DBlob> blob = GetShaderBlob(D3D::ShaderType::Pixel, shader_code, macros, entry_point);
+	Microsoft::WRL::ComPtr<ID3DBlob> blob = GetShaderBlob(D3D::ShaderType::Pixel, shader_code, macros, entry_point);
 	if (!blob)
 		return {};
 
-	wil::com_ptr_nothrow<ID3D11PixelShader> shader;
-	const HRESULT hr = device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, shader.put());
+	Microsoft::WRL::ComPtr<ID3D11PixelShader> shader;
+	const HRESULT hr = device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, shader.ReleaseAndGetAddressOf());
 	if (FAILED(hr))
 	{
 		log_cb(RETRO_LOG_ERROR, "Failed to create pixel shader: 0x%08X\n", hr);
@@ -368,15 +368,15 @@ wil::com_ptr_nothrow<ID3D11PixelShader> D3D11ShaderCache::GetPixelShader(ID3D11D
 	return shader;
 }
 
-wil::com_ptr_nothrow<ID3D11ComputeShader> D3D11ShaderCache::GetComputeShader(ID3D11Device* device,
+Microsoft::WRL::ComPtr<ID3D11ComputeShader> D3D11ShaderCache::GetComputeShader(ID3D11Device* device,
 	const std::string_view& shader_code, const D3D_SHADER_MACRO* macros /* = nullptr */, const char* entry_point /* = "main" */)
 {
-	wil::com_ptr_nothrow<ID3DBlob> blob = GetShaderBlob(D3D::ShaderType::Compute, shader_code, macros, entry_point);
+	Microsoft::WRL::ComPtr<ID3DBlob> blob = GetShaderBlob(D3D::ShaderType::Compute, shader_code, macros, entry_point);
 	if (!blob)
 		return {};
 
-	wil::com_ptr_nothrow<ID3D11ComputeShader> shader;
-	const HRESULT hr = device->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, shader.put());
+	Microsoft::WRL::ComPtr<ID3D11ComputeShader> shader;
+	const HRESULT hr = device->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, shader.ReleaseAndGetAddressOf());
 	if (FAILED(hr))
 	{
 		log_cb(RETRO_LOG_ERROR, "Failed to create compute shader: 0x%08X\n", hr);
@@ -386,10 +386,10 @@ wil::com_ptr_nothrow<ID3D11ComputeShader> D3D11ShaderCache::GetComputeShader(ID3
 	return shader;
 }
 
-wil::com_ptr_nothrow<ID3DBlob> D3D11ShaderCache::CompileAndAddShaderBlob(const CacheIndexKey& key,
+Microsoft::WRL::ComPtr<ID3DBlob> D3D11ShaderCache::CompileAndAddShaderBlob(const CacheIndexKey& key,
 	const std::string_view& shader_code, const D3D_SHADER_MACRO* macros, const char* entry_point)
 {
-	wil::com_ptr_nothrow<ID3DBlob> blob = D3D::CompileShader(key.shader_type, m_feature_level, m_debug, shader_code, macros, entry_point);
+	Microsoft::WRL::ComPtr<ID3DBlob> blob = D3D::CompileShader(key.shader_type, m_feature_level, m_debug, shader_code, macros, entry_point);
 	if (!blob)
 		return {};
 

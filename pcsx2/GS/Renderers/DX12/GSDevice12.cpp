@@ -260,9 +260,9 @@ extern "C" void gs_d3d12_device_render_mipmap(gs_texture_d3d12* t, u32 dst_level
 
 /* --- what makes the builders' objects --- */
 
-wil::com_ptr_nothrow<ID3D12RootSignature> D3D12::RootSignatureBuilder::Create(bool clear /*= true*/)
+Microsoft::WRL::ComPtr<ID3D12RootSignature> D3D12::RootSignatureBuilder::Create(bool clear /*= true*/)
 {
-	wil::com_ptr_nothrow<ID3D12RootSignature> rs = GSDevice12::GetInstance()->CreateRootSignature(&m_b.desc);
+	Microsoft::WRL::ComPtr<ID3D12RootSignature> rs = GSDevice12::GetInstance()->CreateRootSignature(&m_b.desc);
 	if (!rs)
 		return {};
 	if (clear)
@@ -270,10 +270,10 @@ wil::com_ptr_nothrow<ID3D12RootSignature> D3D12::RootSignatureBuilder::Create(bo
 	return rs;
 }
 
-wil::com_ptr_nothrow<ID3D12PipelineState> D3D12::GraphicsPipelineBuilder::Create(ID3D12Device* device, bool clear /*= true*/)
+Microsoft::WRL::ComPtr<ID3D12PipelineState> D3D12::GraphicsPipelineBuilder::Create(ID3D12Device* device, bool clear /*= true*/)
 {
-	wil::com_ptr_nothrow<ID3D12PipelineState> ps;
-	const HRESULT hr = device->CreateGraphicsPipelineState(&m_b.desc, IID_PPV_ARGS(ps.put()));
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> ps;
+	const HRESULT hr = device->CreateGraphicsPipelineState(&m_b.desc, IID_PPV_ARGS(ps.ReleaseAndGetAddressOf()));
 	if (FAILED(hr))
 	{
 		log_cb(RETRO_LOG_ERROR, "CreateGraphicsPipelineState() failed: %08X\n", hr);
@@ -284,10 +284,10 @@ wil::com_ptr_nothrow<ID3D12PipelineState> D3D12::GraphicsPipelineBuilder::Create
 	return ps;
 }
 
-wil::com_ptr_nothrow<ID3D12PipelineState> D3D12::GraphicsPipelineBuilder::Create(ID3D12Device* device,
+Microsoft::WRL::ComPtr<ID3D12PipelineState> D3D12::GraphicsPipelineBuilder::Create(ID3D12Device* device,
 	D3D12ShaderCache& cache, bool clear /*= true*/)
 {
-	wil::com_ptr_nothrow<ID3D12PipelineState> pso = cache.GetPipelineState(device, m_b.desc);
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> pso = cache.GetPipelineState(device, m_b.desc);
 	if (!pso)
 		return {};
 	if (clear)
@@ -295,10 +295,10 @@ wil::com_ptr_nothrow<ID3D12PipelineState> D3D12::GraphicsPipelineBuilder::Create
 	return pso;
 }
 
-wil::com_ptr_nothrow<ID3D12PipelineState> D3D12::ComputePipelineBuilder::Create(ID3D12Device* device, bool clear /*= true*/)
+Microsoft::WRL::ComPtr<ID3D12PipelineState> D3D12::ComputePipelineBuilder::Create(ID3D12Device* device, bool clear /*= true*/)
 {
-	wil::com_ptr_nothrow<ID3D12PipelineState> ps;
-	const HRESULT hr = device->CreateComputePipelineState(&m_b.desc, IID_PPV_ARGS(ps.put()));
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> ps;
+	const HRESULT hr = device->CreateComputePipelineState(&m_b.desc, IID_PPV_ARGS(ps.ReleaseAndGetAddressOf()));
 	if (FAILED(hr))
 	{
 		log_cb(RETRO_LOG_ERROR, "CreateComputePipelineState() failed: %08X\n", hr);
@@ -309,10 +309,10 @@ wil::com_ptr_nothrow<ID3D12PipelineState> D3D12::ComputePipelineBuilder::Create(
 	return ps;
 }
 
-wil::com_ptr_nothrow<ID3D12PipelineState> D3D12::ComputePipelineBuilder::Create(ID3D12Device* device,
+Microsoft::WRL::ComPtr<ID3D12PipelineState> D3D12::ComputePipelineBuilder::Create(ID3D12Device* device,
 	D3D12ShaderCache& cache, bool clear /*= true*/)
 {
-	wil::com_ptr_nothrow<ID3D12PipelineState> pso = cache.GetPipelineState(device, m_b.desc);
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> pso = cache.GetPipelineState(device, m_b.desc);
 	if (!pso)
 		return {};
 	if (clear)
@@ -377,8 +377,8 @@ GSDevice12::ComPtr<ID3DBlob> GSDevice12::SerializeRootSignature(const D3D12_ROOT
 {
 	ComPtr<ID3DBlob> blob;
 	ComPtr<ID3DBlob> error_blob;
-	const HRESULT hr = s_d3d12_serialize_root_signature(desc, D3D_ROOT_SIGNATURE_VERSION_1, blob.put(),
-		error_blob.put());
+	const HRESULT hr = s_d3d12_serialize_root_signature(desc, D3D_ROOT_SIGNATURE_VERSION_1, blob.ReleaseAndGetAddressOf(),
+		error_blob.ReleaseAndGetAddressOf());
 	if (FAILED(hr))
 	{
 		log_cb(RETRO_LOG_ERROR, "D3D12SerializeRootSignature() failed: %08X\n", hr);
@@ -399,7 +399,7 @@ GSDevice12::ComPtr<ID3D12RootSignature> GSDevice12::CreateRootSignature(const D3
 
 	ComPtr<ID3D12RootSignature> rs;
 	const HRESULT hr =
-		m_device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(rs.put()));
+		m_device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(rs.ReleaseAndGetAddressOf()));
 	if (FAILED(hr))
 	{
 		log_cb(RETRO_LOG_ERROR, "CreateRootSignature() failed: %08X\n", hr);
@@ -509,7 +509,7 @@ bool GSDevice12::CreateHeap()
 		(unsigned long long)(ceiling >> 20),
 		m_heaps_hold_anything ? "anything (tier 2)" : "one kind of thing (tier 1)");
 
-	if (!gs_d3d12_heap_init(&m_heap, m_device.get(), &fns, block, ceiling))
+	if (!gs_d3d12_heap_init(&m_heap, m_device.Get(), &fns, block, ceiling))
 	{
 		log_cb(RETRO_LOG_ERROR, "Failed to create the D3D12 heap\n");
 		return false;
@@ -614,7 +614,7 @@ bool GSDevice12::CreatePlacedResource(const D3D12_RESOURCE_DESC* desc, D3D12_HEA
 
 bool GSDevice12::CreateFence()
 {
-	HRESULT hr = m_device->CreateFence(m_completed_fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence));
+	HRESULT hr = m_device->CreateFence(m_completed_fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_fence.ReleaseAndGetAddressOf()));
 	if (FAILED(hr))
 		return false;
 
@@ -632,10 +632,10 @@ bool GSDevice12::CreateDescriptorHeaps()
 	static constexpr size_t MAX_DSVS = 16384;
 	static constexpr size_t MAX_CPU_SAMPLERS = 1024;
 
-	if (!m_descriptor_heap_manager.Create(m_device.get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, MAX_SRVS, false) ||
-		!m_rtv_heap_manager.Create(m_device.get(), D3D12_DESCRIPTOR_HEAP_TYPE_RTV, MAX_RTVS, false) ||
-		!m_dsv_heap_manager.Create(m_device.get(), D3D12_DESCRIPTOR_HEAP_TYPE_DSV, MAX_DSVS, false) ||
-		!m_sampler_heap_manager.Create(m_device.get(), D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, MAX_CPU_SAMPLERS, false))
+	if (!m_descriptor_heap_manager.Create(m_device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, MAX_SRVS, false) ||
+		!m_rtv_heap_manager.Create(m_device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_RTV, MAX_RTVS, false) ||
+		!m_dsv_heap_manager.Create(m_device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_DSV, MAX_DSVS, false) ||
+		!m_sampler_heap_manager.Create(m_device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, MAX_CPU_SAMPLERS, false))
 		return false;
 
 	// Allocate null SRV descriptor for unbound textures.
@@ -662,13 +662,13 @@ bool GSDevice12::CreateCommandLists()
 		for (u32 i = 0; i < 2; i++)
 		{
 			hr = m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
-				IID_PPV_ARGS(res.command_allocators[i].put()));
+				IID_PPV_ARGS(res.command_allocators[i].ReleaseAndGetAddressOf()));
 			if (FAILED(hr))
 				return false;
 
 			hr = m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-				res.command_allocators[i].get(), nullptr,
-				IID_PPV_ARGS(res.command_lists[i].put()));
+				res.command_allocators[i].Get(), nullptr,
+				IID_PPV_ARGS(res.command_lists[i].ReleaseAndGetAddressOf()));
 			if (FAILED(hr))
 			{
 				log_cb(RETRO_LOG_ERROR, "Failed to create command list: %08X\n", hr);
@@ -681,13 +681,13 @@ bool GSDevice12::CreateCommandLists()
 				return false;
 		}
 
-		if (!res.descriptor_allocator.Create(m_device.get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, MAX_GPU_SRVS))
+		if (!res.descriptor_allocator.Create(m_device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, MAX_GPU_SRVS))
 		{
 			log_cb(RETRO_LOG_ERROR, "Failed to create per frame descriptor allocator\n");
 			return false;
 		}
 
-		if (!res.sampler_allocator.Create(m_device.get(), MAX_GPU_SAMPLERS))
+		if (!res.sampler_allocator.Create(m_device.Get(), MAX_GPU_SAMPLERS))
 		{
 			log_cb(RETRO_LOG_ERROR, "Failed to create per frame sampler allocator\n");
 			return false;
@@ -713,7 +713,7 @@ void GSDevice12::MoveToNextCommandList()
 
 	// Begin command list.
 	res.command_allocators[1]->Reset();
-	res.command_lists[1]->Reset(res.command_allocators[1].get(), nullptr);
+	res.command_lists[1]->Reset(res.command_allocators[1].Get(), nullptr);
 	res.descriptor_allocator.Reset();
 	if (res.sampler_allocator.ShouldReset())
 		res.sampler_allocator.Reset();
@@ -729,11 +729,11 @@ ID3D12GraphicsCommandList4* GSDevice12::GetInitCommandList()
 	if (!res.init_command_list_used)
 	{
 		HRESULT hr = res.command_allocators[0]->Reset();
-		res.command_lists[0]->Reset(res.command_allocators[0].get(), nullptr);
+		res.command_lists[0]->Reset(res.command_allocators[0].Get(), nullptr);
 		res.init_command_list_used = true;
 	}
 
-	return res.command_lists[0].get();
+	return res.command_lists[0].Get();
 }
 
 /* Report a recurring device error without turning a wedged GPU into a
@@ -821,7 +821,7 @@ bool GSDevice12::ContextExecuteCommandList(bool wait_for_completion)
 		 * next command list, which resets an allocator and a list that
 		 * are in a known state.  The frame is lost either way; this
 		 * way the next one has somewhere to go. */
-		m_command_queue->Signal(m_fence.get(), res.ready_fence_value);
+		m_command_queue->Signal(m_fence.Get(), res.ready_fence_value);
 
 		/* And the lists themselves are replaced. Moving on was not
 		 * enough: a list that has failed to close - or, when it was the
@@ -839,10 +839,10 @@ bool GSDevice12::ContextExecuteCommandList(bool wait_for_completion)
 		 * comes, as always. */
 		for (u32 i = 0; i < 2; i++)
 		{
-			res.command_lists[i].reset();
+			res.command_lists[i].Reset();
 			hr = m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-				res.command_allocators[i].get(), nullptr,
-				IID_PPV_ARGS(res.command_lists[i].put()));
+				res.command_allocators[i].Get(), nullptr,
+				IID_PPV_ARGS(res.command_lists[i].ReleaseAndGetAddressOf()));
 			if (SUCCEEDED(hr))
 				hr = res.command_lists[i]->Close();
 			if (FAILED(hr))
@@ -858,17 +858,17 @@ bool GSDevice12::ContextExecuteCommandList(bool wait_for_completion)
 
 	if (res.init_command_list_used)
 	{
-		const std::array<ID3D12CommandList*, 2> execute_lists{res.command_lists[0].get(), res.command_lists[1].get()};
+		const std::array<ID3D12CommandList*, 2> execute_lists{res.command_lists[0].Get(), res.command_lists[1].Get()};
 		m_command_queue->ExecuteCommandLists(static_cast<UINT>(execute_lists.size()), execute_lists.data());
 	}
 	else
 	{
-		const std::array<ID3D12CommandList*, 1> execute_lists{res.command_lists[1].get()};
+		const std::array<ID3D12CommandList*, 1> execute_lists{res.command_lists[1].Get()};
 		m_command_queue->ExecuteCommandLists(static_cast<UINT>(execute_lists.size()), execute_lists.data());
 	}
 
 	// Update fence when GPU has completed.
-	hr = m_command_queue->Signal(m_fence.get(), res.ready_fence_value);
+	hr = m_command_queue->Signal(m_fence.Get(), res.ready_fence_value);
 
 	MoveToNextCommandList();
 	if (wait_for_completion)
@@ -992,7 +992,7 @@ bool GSDevice12::AllocatePreinitializedGPUBuffer(u32 size, ID3D12Resource** gpu_
 	HRESULT hr;
 
 	if (!CreatePlacedResource(&rd, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ,
-			nullptr, cpu_buffer.put(), &cpu_alloc))
+			nullptr, cpu_buffer.ReleaseAndGetAddressOf(), &cpu_alloc))
 		return false;
 
 	static constexpr const D3D12_RANGE read_range = {};
@@ -1001,7 +1001,7 @@ bool GSDevice12::AllocatePreinitializedGPUBuffer(u32 size, ID3D12Resource** gpu_
 	hr = cpu_buffer->Map(0, &read_range, &mapped);
 	if (FAILED(hr))
 	{
-		DeferResourceDestruction(&cpu_alloc, cpu_buffer.get());
+		DeferResourceDestruction(&cpu_alloc, cpu_buffer.Get());
 		return false;
 	}
 	fill_callback(mapped);
@@ -1010,11 +1010,11 @@ bool GSDevice12::AllocatePreinitializedGPUBuffer(u32 size, ID3D12Resource** gpu_
 	if (!CreatePlacedResource(&rd, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON,
 			nullptr, gpu_buffer, gpu_alloc))
 	{
-		DeferResourceDestruction(&cpu_alloc, cpu_buffer.get());
+		DeferResourceDestruction(&cpu_alloc, cpu_buffer.Get());
 		return false;
 	}
 
-	GetInitCommandList()->CopyBufferRegion(*gpu_buffer, 0, cpu_buffer.get(), 0, size);
+	GetInitCommandList()->CopyBufferRegion(*gpu_buffer, 0, cpu_buffer.Get(), 0, size);
 
 	D3D12_RESOURCE_BARRIER rb = {D3D12_RESOURCE_BARRIER_TYPE_TRANSITION, D3D12_RESOURCE_BARRIER_FLAG_NONE};
 	rb.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
@@ -1023,7 +1023,7 @@ bool GSDevice12::AllocatePreinitializedGPUBuffer(u32 size, ID3D12Resource** gpu_
 	rb.Transition.StateAfter = D3D12_RESOURCE_STATE_INDEX_BUFFER;
 	GetInitCommandList()->ResourceBarrier(1, &rb);
 
-	DeferResourceDestruction(&cpu_alloc, cpu_buffer.get());
+	DeferResourceDestruction(&cpu_alloc, cpu_buffer.Get());
 	return true;
 }
 
@@ -1151,8 +1151,8 @@ bool GSDevice12::Create()
 	 * first validation error is an unhandled exception inside
 	 * D3D12SDKLayers and the process is gone before anything is logged,
 	 * which is the whole of what a report has to go on. */
-	if (FAILED(m_device->QueryInterface(IID_PPV_ARGS(m_info_queue.put()))))
-		m_info_queue.reset();
+	if (FAILED(m_device->QueryInterface(IID_PPV_ARGS(m_info_queue.ReleaseAndGetAddressOf()))))
+		m_info_queue.Reset();
 	else
 	{
 		m_info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, FALSE);
@@ -1164,7 +1164,7 @@ bool GSDevice12::Create()
 
 	const LUID luid(m_device->GetAdapterLuid());
 
-	if (FAILED(m_dxgi_factory->EnumAdapterByLuid(luid, IID_PPV_ARGS(m_adapter.put()))))
+	if (FAILED(m_dxgi_factory->EnumAdapterByLuid(luid, IID_PPV_ARGS(m_adapter.ReleaseAndGetAddressOf()))))
 	{
 		log_cb(RETRO_LOG_ERROR, "Failed to get lookup adapter by device LUID\n");
 		Destroy();
@@ -1544,7 +1544,7 @@ void GSDevice12::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 				ExecuteCommandList(false);
 
 				d3d12->set_texture_fenced(d3d12->handle, texture->GetResource(),
-					texture->GetResource()->GetDesc().Format, m_fence.get(), value);
+					texture->GetResource()->GetDesc().Format, m_fence.Get(), value);
 				video_cb(RETRO_HW_FRAME_BUFFER_VALID, texture->GetWidth(), texture->GetHeight(), 0);
 				return;
 			}
@@ -2161,7 +2161,7 @@ bool GSDevice12::GetSampler(D3D12DescriptorHandle* cpu_handle, GSHWDrawConfig::S
 	if (!GetSamplerHeapManager().Allocate(cpu_handle))
 		return false;
 
-	m_device.get()->CreateSampler(&sd, *cpu_handle);
+	m_device.Get()->CreateSampler(&sd, *cpu_handle);
 	m_samplers.emplace(ss.key, *cpu_handle);
 	return true;
 }
@@ -2187,7 +2187,7 @@ bool GSDevice12::GetTextureGroupDescriptors(D3D12DescriptorHandle* gpu_handle, c
 
 	if (count == 1)
 	{
-		m_device.get()->CopyDescriptorsSimple(1, *gpu_handle, cpu_handles[0], D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		m_device.Get()->CopyDescriptorsSimple(1, *gpu_handle, cpu_handles[0], D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		return true;
 	}
 
@@ -2199,7 +2199,7 @@ bool GSDevice12::GetTextureGroupDescriptors(D3D12DescriptorHandle* gpu_handle, c
 		src_handles[i] = cpu_handles[i];
 		src_sizes[i] = 1;
 	}
-	m_device.get()->CopyDescriptors(1, &dst_handle, &count, count, src_handles, src_sizes, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	m_device.Get()->CopyDescriptors(1, &dst_handle, &count, count, src_handles, src_sizes, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	return true;
 }
 
@@ -2502,9 +2502,9 @@ GSDevice12::ComPtr<ID3D12PipelineState> GSDevice12::CreateUtilityPipeline(u32 sl
 	ComPtr<ID3DBlob> ps(GetUtilityPixelShader(source, strlen(source), entry));
 	D3D12::GraphicsPipelineBuilder gpb;
 
-	if (!vs || !ps || !UtilityPipelineDesc(gpb, slot, m_utility_root_signature.get(), vs.get(), ps.get()))
+	if (!vs || !ps || !UtilityPipelineDesc(gpb, slot, m_utility_root_signature.Get(), vs.Get(), ps.Get()))
 		return {};
-	return gpb.Create(m_device.get(), m_shader_cache, false);
+	return gpb.Create(m_device.Get(), m_shader_cache, false);
 }
 
 /* A utility pipeline at its first use: the warm-up thread's, else built
@@ -2518,7 +2518,7 @@ ID3D12PipelineState* GSDevice12::MissingUtilityPipeline(u32 slot)
 	{
 		CollectWarmedTFXPipelines(nullptr, nullptr);
 		if (m_utility[slot])
-			return m_utility[slot].get();
+			return m_utility[slot].Get();
 	}
 	if (m_utility_failed)
 		return nullptr;
@@ -2530,7 +2530,7 @@ ID3D12PipelineState* GSDevice12::MissingUtilityPipeline(u32 slot)
 		s_utility_build_failed = true;
 		m_device_lost          = true;
 	}
-	return m_utility[slot].get();
+	return m_utility[slot].Get();
 }
 
 /* Whatever the runtime has queued since last time. The text is the
@@ -2578,15 +2578,15 @@ void GSDevice12::DestroyResources()
 
 	for (auto& it : m_tfx_pipelines)
 		if (it.second)
-			DeferObjectDestruction(it.second.get());
+			DeferObjectDestruction(it.second.Get());
 	m_tfx_pipelines.clear();
 	m_last_tfx_pipeline = nullptr;
 	m_tfx_pixel_shaders.clear();
 	m_tfx_vertex_shaders.clear();
 	for (i = 0; i < C89_ARRAY_SIZE(m_tfx_vs); i++)
-		m_tfx_vs[i].reset();
+		m_tfx_vs[i].Reset();
 	for (i = 0; i < D3D_DYNAMIC_PS_COUNT; i++)
-		m_tfx_ps_dynamic[i].reset();
+		m_tfx_ps_dynamic[i].Reset();
 	m_present = {};
 	m_utility = {};
 	m_utility_failed = false;
@@ -2600,7 +2600,7 @@ void GSDevice12::DestroyResources()
 	DeferDescriptorDestruction(GetSamplerHeapManager(), &m_point_sampler_cpu);
 	InvalidateSamplerGroups();
 
-	m_expand_index_buffer.reset();
+	m_expand_index_buffer.Reset();
 	gs_d3d12_heap_free(&m_heap, &m_expand_index_buffer_alloc);
 	m_expand_index_buffer_alloc = gs_d3d12_alloc_t();
 	m_texture_stream_buffer.Destroy(false);
@@ -2609,8 +2609,8 @@ void GSDevice12::DestroyResources()
 	m_index_stream_buffer.Destroy(false);
 	m_vertex_stream_buffer.Destroy(false);
 
-	m_utility_root_signature.reset();
-	m_tfx_root_signature.reset();
+	m_utility_root_signature.Reset();
+	m_tfx_root_signature.Reset();
 
 	if (m_null_texture)
 	{
@@ -2637,9 +2637,9 @@ void GSDevice12::DestroyResources()
 	}
 
 	gs_d3d12_heap_shutdown(&m_heap);
-	m_command_queue.reset();
-	m_debug_interface.reset();
-	m_device.reset();
+	m_command_queue.Reset();
+	m_debug_interface.Reset();
+	m_device.Reset();
 }
 
 /* The macros a draw shader is compiled with, from its selector: the same
@@ -2728,7 +2728,7 @@ bool GSDevice12::BuildTFXShadersAhead()
 		{
 			log_cb(RETRO_LOG_WARN, "GS: the D3D12 dynamic pixel shaders could not be built\n");
 			for (i = 0; i < D3D_DYNAMIC_PS_COUNT; i++)
-				m_tfx_ps_dynamic[i].reset();
+				m_tfx_ps_dynamic[i].Reset();
 			break;
 		}
 		m_tfx_built_ahead++;
@@ -2740,32 +2740,32 @@ const ID3DBlob* GSDevice12::GetTFXVertexShader(GSHWDrawConfig::VSSelector sel)
 {
 	const u32 key = TFXVertexShaderKey(sel);
 	if (key < C89_ARRAY_SIZE(m_tfx_vs) && m_tfx_vs[key])
-		return m_tfx_vs[key].get();
+		return m_tfx_vs[key].Get();
 
 	auto it = m_tfx_vertex_shaders.find(key);
 	if (it != m_tfx_vertex_shaders.end())
-		return it->second.get();
+		return it->second.Get();
 
 	ShaderMacro sm(m_shader_cache.GetFeatureLevel());
 	const char* entry_point = TFXVertexShaderMacros(sm, sel);
 	ComPtr<ID3DBlob> vs(m_shader_cache.GetVertexShader(tfx_fx_shader_raw, strlen(tfx_fx_shader_raw), sm.GetPtr(), entry_point));
 	m_tfx_shaders_here++;
 	it = m_tfx_vertex_shaders.emplace(key, std::move(vs)).first;
-	return it->second.get();
+	return it->second.Get();
 }
 
 const ID3DBlob* GSDevice12::GetTFXPixelShader(const GSHWDrawConfig::PSSelector& sel)
 {
 	auto it = m_tfx_pixel_shaders.find(sel);
 	if (it != m_tfx_pixel_shaders.end())
-		return it->second.get();
+		return it->second.Get();
 
 	ShaderMacro sm(m_shader_cache.GetFeatureLevel());
 	TFXPixelShaderMacros(sm, sel);
 	ComPtr<ID3DBlob> ps(m_shader_cache.GetPixelShader(tfx_fx_shader_raw, strlen(tfx_fx_shader_raw), sm.GetPtr(), "ps_main"));
 	m_tfx_shaders_here++;
 	it = m_tfx_pixel_shaders.emplace(sel, std::move(ps)).first;
-	return it->second.get();
+	return it->second.Get();
 }
 
 /* Everything of a draw pipeline but its shaders' building: the drawing
@@ -2784,7 +2784,7 @@ void GSDevice12::FillTFXPipeline(D3D12::GraphicsPipelineBuilder& gpb, const Pipe
 	TFXEffectivePS(p, &pbs);
 
 	// Common state
-	gpb.SetRootSignature(m_tfx_root_signature.get());
+	gpb.SetRootSignature(m_tfx_root_signature.Get());
 	gpb.SetPrimitiveTopologyType(topology_lookup[p.topology]);
 	gpb.SetRasterizationState(D3D12_FILL_MODE_SOLID, D3D12_CULL_MODE_NONE, false);
 	if (p.rt)
@@ -2879,7 +2879,7 @@ GSDevice12::ComPtr<ID3D12PipelineState> GSDevice12::CreateTFXPipeline(const Pipe
 
 	D3D12::GraphicsPipelineBuilder gpb;
 	FillTFXPipeline(gpb, p, vs, ps);
-	ComPtr<ID3D12PipelineState> pipeline(gpb.Create(m_device.get(), m_shader_cache));
+	ComPtr<ID3D12PipelineState> pipeline(gpb.Create(m_device.Get(), m_shader_cache));
 	return pipeline;
 }
 
@@ -2895,8 +2895,8 @@ GSDevice12::ComPtr<ID3D12PipelineState> GSDevice12::CreateTFXSibling(const Pipel
 
 	if (!vs)
 		return pso;
-	FillTFXPipeline(gpb, sib, vs, m_tfx_ps_dynamic[D3DDynamicIndex(sib.ps)].get());
-	if ((pso = gpb.Create(m_device.get())))
+	FillTFXPipeline(gpb, sib, vs, m_tfx_ps_dynamic[D3DDynamicIndex(sib.ps)].Get());
+	if ((pso = gpb.Create(m_device.Get())))
 	{
 		m_tfx_pipelines_here++;
 		m_tfx_siblings_here++;
@@ -2937,14 +2937,14 @@ const ID3D12PipelineState* GSDevice12::MissedTFXPipeline(const PipelineSelector&
 		if (it == m_tfx_pipelines.end() || !it->second)
 			it = AddMissingTFXPipeline(p);
 		m_last_tfx_pipeline_selector = p;
-		m_last_tfx_pipeline          = it->second.get();
+		m_last_tfx_pipeline          = it->second.Get();
 		return m_last_tfx_pipeline;
 	}
 
 	if (CollectWarmedTFXPipelines(&p, &it) && it->second && !m_test_dynamic)
 	{
 		m_last_tfx_pipeline_selector = p;
-		m_last_tfx_pipeline          = it->second.get();
+		m_last_tfx_pipeline          = it->second.Get();
 		return m_last_tfx_pipeline;
 	}
 	if (!m_test_dynamic && m_tfx_pipelines.find(p) == m_tfx_pipelines.end())
@@ -2974,7 +2974,7 @@ const ID3D12PipelineState* GSDevice12::MissedTFXPipeline(const PipelineSelector&
 	m_last_tfx_pipeline = nullptr;
 	m_tfx_sibling_draws++;
 	*dynamic = true;
-	return it->second.get();
+	return it->second.Get();
 }
 
 const ID3D12PipelineState* GSDevice12::GetTFXPipeline(const PipelineSelector& p, bool* dynamic)
@@ -2988,7 +2988,7 @@ const ID3D12PipelineState* GSDevice12::GetTFXPipeline(const PipelineSelector& p,
 		return MissedTFXPipeline(p, dynamic);
 
 	m_last_tfx_pipeline_selector = p;
-	m_last_tfx_pipeline          = it->second.get();
+	m_last_tfx_pipeline          = it->second.Get();
 	return m_last_tfx_pipeline;
 }
 
@@ -3068,7 +3068,7 @@ bool GSDevice12::CollectWarmedTFXPipelines(const PipelineSelector* want, TFXPipe
 			/* a utility pipeline first used before the thread built it
 			 * keeps the one built then */
 			if (!m_utility[r.utility])
-				*m_utility[r.utility].put() = r.pso;
+				*m_utility[r.utility].ReleaseAndGetAddressOf() = r.pso;
 			else
 				r.pso->Release();
 			r.pso = nullptr;
@@ -3079,7 +3079,7 @@ bool GSDevice12::CollectWarmedTFXPipelines(const PipelineSelector* want, TFXPipe
 			m_tfx_pipelines.emplace(r.p, ComPtr<ID3D12PipelineState>()));
 		/* (a queued one waits null; one built here meanwhile keeps its own) */
 		if (!ins.first->second)
-			*ins.first->second.put() = r.pso;
+			*ins.first->second.ReleaseAndGetAddressOf() = r.pso;
 		else
 			r.pso->Release();
 		if (want && r.p == *want)
@@ -3190,7 +3190,7 @@ GSDevice12::ComPtr<ID3DBlob> GSDevice12::WarmShader(GSDevice12* self, D3D12Shade
 		std::string_view(source, len), sm.GetPtr(), entry);
 	if (blob)
 	{
-		*built = blob.get();
+		*built = blob.Get();
 		(*built)->AddRef();
 	}
 	return blob;
@@ -3209,18 +3209,18 @@ GSDevice12::ComPtr<ID3D12PipelineState> GSDevice12::WarmPipeline(GSDevice12* sel
 	{
 		desc.CachedPSO.pCachedBlob           = cached->GetBufferPointer();
 		desc.CachedPSO.CachedBlobSizeInBytes = cached->GetBufferSize();
-		if (FAILED(self->m_device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(pso.put()))))
-			pso.reset();
+		if (FAILED(self->m_device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(pso.ReleaseAndGetAddressOf()))))
+			pso.Reset();
 		desc.CachedPSO.pCachedBlob           = nullptr;
 		desc.CachedPSO.CachedBlobSizeInBytes = 0;
 	}
 	if (!pso)
 	{
 		ComPtr<ID3DBlob> blob;
-		if (FAILED(self->m_device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(pso.put()))))
+		if (FAILED(self->m_device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(pso.ReleaseAndGetAddressOf()))))
 			return {};
-		if (SUCCEEDED(pso->GetCachedBlob(blob.put())))
-			*built = blob.detach();
+		if (SUCCEEDED(pso->GetCachedBlob(blob.ReleaseAndGetAddressOf())))
+			*built = blob.Detach();
 	}
 	return pso;
 }
@@ -3238,14 +3238,14 @@ int GSDevice12::BuildWarmedUtilityPipeline(GSDevice12* self, u32 slot, TFXWarmRe
 
 	vs = WarmShader(self, D3D12ShaderCache::EntryType::VertexShader, convert_fx_shader_raw, sm, "vs_main", &r->vs_key, &r->vs_blob);
 	ps = WarmShader(self, D3D12ShaderCache::EntryType::PixelShader, source, sm, entry, &r->ps_key, &r->ps_blob);
-	if (vs && ps && UtilityPipelineDesc(gpb, slot, self->m_utility_root_signature.get(), vs.get(), ps.get()))
+	if (vs && ps && UtilityPipelineDesc(gpb, slot, self->m_utility_root_signature.Get(), vs.Get(), ps.Get()))
 	{
 		desc = gpb.GetDesc();
 		pso  = WarmPipeline(self, desc, &r->pso_key, &r->pso_blob);
 	}
 	if (!pso)
 		return 0;
-	r->pso = pso.detach();
+	r->pso = pso.Detach();
 	return 1;
 }
 
@@ -3297,11 +3297,11 @@ int GSDevice12::BuildWarmedTFXPipeline(void* ud, const void* job, void* result)
 		}
 		if (vs && ps)
 		{
-			self->FillTFXPipeline(gpb, *p, vs.get(), ps.get());
+			self->FillTFXPipeline(gpb, *p, vs.Get(), ps.Get());
 			desc = gpb.GetDesc();
 			if ((pso = WarmPipeline(self, desc, &r->pso_key, &r->pso_blob)))
 			{
-				r->pso = pso.detach();
+				r->pso = pso.Detach();
 				built  = 1;
 			}
 		}
@@ -3502,7 +3502,7 @@ void GSDevice12::SetUtilityRootSignature()
 
 	m_current_root_signature = RootSignature::Utility;
 	m_dirty_flags |= DIRTY_FLAG_TEXTURES_DESCRIPTOR_TABLE | DIRTY_FLAG_SAMPLERS_DESCRIPTOR_TABLE | DIRTY_FLAG_PIPELINE;
-	GetCommandList()->SetGraphicsRootSignature(m_utility_root_signature.get());
+	GetCommandList()->SetGraphicsRootSignature(m_utility_root_signature.Get());
 }
 
 void GSDevice12::SetUtilityTexture(GSTexture* dtex, const D3D12DescriptorHandle& sampler)
@@ -3593,11 +3593,11 @@ void GSDevice12::RenderTextureMipmap(GSTexture12* texture,
 	// Setup views. This will be a partial view for the SRV.
 	D3D12_RENDER_TARGET_VIEW_DESC rtv_desc = {texture->GetDXGIFormat(), D3D12_RTV_DIMENSION_TEXTURE2D};
 	rtv_desc.Texture2D = {dst_level, 0u};
-	m_device.get()->CreateRenderTargetView(texture->GetResource(), &rtv_desc, rtv_handle);
+	m_device.Get()->CreateRenderTargetView(texture->GetResource(), &rtv_desc, rtv_handle);
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {texture->GetDXGIFormat(), D3D12_SRV_DIMENSION_TEXTURE2D, D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING};
 	srv_desc.Texture2D = {src_level, 1u, 0u, 0.0f};
-	m_device.get()->CreateShaderResourceView(texture->GetResource(), &srv_desc, srv_handle);
+	m_device.Get()->CreateShaderResourceView(texture->GetResource(), &srv_desc, srv_handle);
 
 	// We need to set the descriptors up manually, because we're not going through GSTexture.
 	if (!GetTextureGroupDescriptors(&m_utility_texture_gpu, &srv_handle, 1))
@@ -3883,7 +3883,7 @@ bool GSDevice12::ApplyTFXState(bool already_execed)
 		flags |= DIRTY_FLAG_VS_CONSTANT_BUFFER_BINDING | DIRTY_FLAG_PS_CONSTANT_BUFFER_BINDING |
 				 DIRTY_FLAG_TEXTURES_DESCRIPTOR_TABLE | DIRTY_FLAG_SAMPLERS_DESCRIPTOR_TABLE | DIRTY_FLAG_TEXTURES_DESCRIPTOR_TABLE_2 |
 				 DIRTY_FLAG_PIPELINE;
-		cmdlist->SetGraphicsRootSignature(m_tfx_root_signature.get());
+		cmdlist->SetGraphicsRootSignature(m_tfx_root_signature.Get());
 	}
 
 	if (flags & DIRTY_FLAG_VS_CONSTANT_BUFFER_BINDING)
@@ -3923,7 +3923,7 @@ bool GSDevice12::ApplyUtilityState(bool already_execed)
 	{
 		m_current_root_signature = RootSignature::Utility;
 		flags |= DIRTY_FLAG_TEXTURES_DESCRIPTOR_TABLE | DIRTY_FLAG_SAMPLERS_DESCRIPTOR_TABLE | DIRTY_FLAG_PIPELINE;
-		cmdlist->SetGraphicsRootSignature(m_utility_root_signature.get());
+		cmdlist->SetGraphicsRootSignature(m_utility_root_signature.Get());
 	}
 
 	if (flags & DIRTY_FLAG_TEXTURES_DESCRIPTOR_TABLE)

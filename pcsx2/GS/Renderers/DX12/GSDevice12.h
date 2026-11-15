@@ -36,7 +36,7 @@
 #include <memory>
 #include <vector>
 #include <functional>
-#include "common/RedtapeWilCom.h"
+#include <wrl/client.h>
 
 struct IDXGIAdapter;
 namespace D3D12 { class GraphicsPipelineBuilder; }
@@ -53,7 +53,7 @@ class GSDevice12 final : public GSDevice
 	friend struct GSDevice12_ops_access;
 public:
 	template <typename T>
-	using ComPtr = wil::com_ptr_nothrow<T>;
+	using ComPtr = Microsoft::WRL::ComPtr<T>;
 
 	enum : u32
        {
@@ -314,7 +314,7 @@ private:
 
 	__fi ID3D12PipelineState* UtilityPipeline(u32 slot)
 	{
-		ID3D12PipelineState* p = m_utility[slot].get();
+		ID3D12PipelineState* p = m_utility[slot].Get();
 		return likely(p) ? p : MissingUtilityPipeline(slot);
 	}
 	__noinline ID3D12PipelineState* MissingUtilityPipeline(u32 slot);
@@ -444,8 +444,8 @@ public:
 	void SetScissor(const GSVector4i& scissor);
 	void SetPipeline(const ID3D12PipelineState* pipeline);
 
-       __fi IDXGIAdapter* GetAdapter() const { return m_adapter.get(); }
-       __fi ID3D12Device* GetDevice() const { return m_device.get(); }
+       __fi IDXGIAdapter* GetAdapter() const { return m_adapter.Get(); }
+       __fi ID3D12Device* GetDevice() const { return m_device.Get(); }
        __fi gs_d3d12_heap_t* GetHeap() { return &m_heap; }
 
        /* One place that turns a resource description into memory: it
@@ -463,7 +463,7 @@ public:
        /// Returns the current command list, commands can be recorded directly.
        ID3D12GraphicsCommandList4* GetCommandList() const
        {
-	       return m_command_lists[m_current_command_list].command_lists[1].get();
+	       return m_command_lists[m_current_command_list].command_lists[1].Get();
        }
 
        /// Returns the init command list for uploading.

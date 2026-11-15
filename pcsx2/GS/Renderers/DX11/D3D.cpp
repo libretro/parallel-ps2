@@ -32,14 +32,14 @@ extern "C" {
 
 }
 
-wil::com_ptr_nothrow<IDXGIFactory5> D3D::CreateFactory(bool debug)
+Microsoft::WRL::ComPtr<IDXGIFactory5> D3D::CreateFactory(bool debug)
 {
 	UINT flags = 0;
 	if (debug)
 		flags |= DXGI_CREATE_FACTORY_DEBUG;
 
-	wil::com_ptr_nothrow<IDXGIFactory5> factory;
-	const HRESULT hr = CreateDXGIFactory2(flags, IID_PPV_ARGS(factory.put()));
+	Microsoft::WRL::ComPtr<IDXGIFactory5> factory;
+	const HRESULT hr = CreateDXGIFactory2(flags, IID_PPV_ARGS(factory.ReleaseAndGetAddressOf()));
 	if (FAILED(hr))
 		log_cb(RETRO_LOG_ERROR, "D3D: Failed to create DXGI factory: %08X\n", hr);
 
@@ -72,14 +72,14 @@ D3D::VendorID D3D::GetVendorID(IDXGIAdapter1* adapter)
 
 static unsigned s_next_bad_shader_id = 1;
 
-static wil::com_ptr_nothrow<ID3DBlob> D3D_CompileShader(D3D::ShaderType type, D3D_FEATURE_LEVEL feature_level, bool debug,
+static Microsoft::WRL::ComPtr<ID3DBlob> D3D_CompileShader(D3D::ShaderType type, D3D_FEATURE_LEVEL feature_level, bool debug,
 	const void *code, size_t code_len, const D3D_SHADER_MACRO* macros /* = nullptr */, const char* entry_point /* = "main" */)
 {
 	static constexpr UINT flags_non_debug = D3DCOMPILE_OPTIMIZATION_LEVEL3;
 	static constexpr UINT flags_debug     = D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_DEBUG;
 	std::string error_string;
-	wil::com_ptr_nothrow<ID3DBlob> blob;
-	wil::com_ptr_nothrow<ID3DBlob> error_blob;
+	Microsoft::WRL::ComPtr<ID3DBlob> blob;
+	Microsoft::WRL::ComPtr<ID3DBlob> error_blob;
 	const char* target;
 	switch (feature_level)
 	{
@@ -115,7 +115,7 @@ static wil::com_ptr_nothrow<ID3DBlob> D3D_CompileShader(D3D::ShaderType type, D3
 
 	const HRESULT hr =
 		D3DCompile(code, code_len, "0", macros, nullptr, entry_point, target, debug ? flags_debug : flags_non_debug,
-			0, blob.put(), error_blob.put());
+			0, blob.ReleaseAndGetAddressOf(), error_blob.ReleaseAndGetAddressOf());
 
 	if (error_blob)
 	{
@@ -123,7 +123,7 @@ static wil::com_ptr_nothrow<ID3DBlob> D3D_CompileShader(D3D::ShaderType type, D3
 		/* The log line supplies its own newline. */
 		while (!error_string.empty() && error_string.back() == '\n')
 			error_string.pop_back();
-		error_blob.reset();
+		error_blob.Reset();
 	}
 
 	if (FAILED(hr))
@@ -138,7 +138,7 @@ static wil::com_ptr_nothrow<ID3DBlob> D3D_CompileShader(D3D::ShaderType type, D3
 	return blob;
 }
 
-wil::com_ptr_nothrow<ID3DBlob> D3D::CompileShader(ShaderType type, D3D_FEATURE_LEVEL feature_level, bool debug,
+Microsoft::WRL::ComPtr<ID3DBlob> D3D::CompileShader(ShaderType type, D3D_FEATURE_LEVEL feature_level, bool debug,
 	const std::string_view& code, const D3D_SHADER_MACRO* macros /* = nullptr */, const char* entry_point /* = "main" */)
 {
 	return D3D_CompileShader(type, feature_level, debug, code.data(), code.size(), macros, entry_point);

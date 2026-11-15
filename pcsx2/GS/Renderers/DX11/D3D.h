@@ -16,7 +16,7 @@
 #pragma once
 
 #include "common/RedtapeWindows.h"
-#include "common/RedtapeWilCom.h"
+#include <wrl/client.h>
 
 #include "pcsx2/Config.h"
 
@@ -29,7 +29,7 @@
 namespace D3D
 {
 	// create a dxgi factory
-	wil::com_ptr_nothrow<IDXGIFactory5> CreateFactory(bool debug);
+	Microsoft::WRL::ComPtr<IDXGIFactory5> CreateFactory(bool debug);
 
 	// this is sort of a legacy thing that doesn't have much to do with d3d (just the easiest way)
 	// checks to see if the adapter at 0 is NV and thus we should prefer OpenGL
@@ -51,6 +51,6 @@ namespace D3D
 		Compute
 	};
 
-	wil::com_ptr_nothrow<ID3DBlob> CompileShader(ShaderType type, D3D_FEATURE_LEVEL feature_level, bool debug, const std::string_view& code,
+	Microsoft::WRL::ComPtr<ID3DBlob> CompileShader(ShaderType type, D3D_FEATURE_LEVEL feature_level, bool debug, const std::string_view& code,
 		const D3D_SHADER_MACRO* macros = nullptr, const char* entry_point = "main");
 }; // namespace D3D
