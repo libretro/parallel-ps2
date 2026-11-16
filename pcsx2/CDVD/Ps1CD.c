@@ -157,7 +157,7 @@ static INLINE void SetResultSize(u8 size)
 	cdr.ResultReady = 1;
 }
 
-static void ReadTrack()
+static void ReadTrack(void)
 {
 	cdr.Prev[0] = itob(cdr.SetSector[0]);
 	cdr.Prev[1] = itob(cdr.SetSector[1]);
@@ -176,7 +176,7 @@ static void AddIrqQueue(u8 irq, u32 ecycle)
 	}
 }
 
-void cdrInterrupt()
+void cdrInterrupt(void)
 {
 	cdvdTD trackInfo;
 	int i;

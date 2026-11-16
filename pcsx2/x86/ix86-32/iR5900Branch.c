@@ -299,7 +299,7 @@ static void recBNEL_process(int process)
 	SetBranchImm(branchTo);
 }
 
-void recBNEL()
+void recBNEL(void)
 {
 	if (GPR_IS_CONST2(_Rs_, _Rt_))
 		recBNEL_const();

@@ -277,7 +277,7 @@ void recLWL(void)
 #endif
 }
 
-void recLWR()
+void recLWR(void)
 {
 	int temp;
 	int treg;
@@ -345,7 +345,7 @@ void recLWR()
 #endif
 }
 
-void recSWL()
+void recSWL(void)
 {
 	int temp;
 	uint8_t* skip;
@@ -422,7 +422,7 @@ void recSWL()
 #endif
 }
 
-void recSWR()
+void recSWR(void)
 {
 	int temp;
 	uint8_t* skip;
@@ -525,7 +525,7 @@ static void ldlrhelper(int maskamt, int maskg2, int amt, int g2op, int value, in
 	xe_or64_rr(rt, value);
 }
 
-void recLDL()
+void recLDL(void)
 {
 	int temp1;
 	int treg;
@@ -612,7 +612,7 @@ void recLDL()
 #endif
 }
 
-void recLDR()
+void recLDR(void)
 {
 	int temp1;
 	int treg;

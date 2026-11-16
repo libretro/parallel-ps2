@@ -201,7 +201,7 @@ int cpuTestCycle(u64 startCycle, s32 delta)
 	return (int)(cpuRegs.cycle - startCycle) >= delta;
 }
 
-static __fi void TESTINT(u8 n, void (*callback)())
+static __fi void TESTINT(u8 n, void (*callback)(void))
 {
 	if (!g_GameStarted || (emu_hot & EMU_HOT_INSTANT_DMA) || cpuTestCycle(cpuRegs.sCycle[n], cpuRegs.eCycle[n]))
 	{

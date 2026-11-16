@@ -310,7 +310,12 @@ static u32 pick_addr(void)
 	if (rnd_n(4) != 0)
 		a = kRegs[rnd_n(sizeof(kRegs) / sizeof(kRegs[0]))];
 	else
-		a = 0x10000000u | (rnd_n(16) << 12) | (rnd_n(0x1000));
+	{
+		/* (one draw a statement: the order of a call's arguments, and of
+		 * an operator's operands, is the compiler's to pick) */
+		a = 0x10000000u | (rnd_n(16) << 12);
+		a |= rnd_n(0x1000);
+	}
 	return a;
 }
 
@@ -371,7 +376,8 @@ static void access(void)
 		default:
 			if (rnd_n(2))
 			{
-				v64 = ((u64)rnd() << 32) | rnd();
+				v64 = (u64)rnd() << 32;
+				v64 |= rnd();
 				h->w64(addr & ~7u, v64);
 			}
 			else
@@ -410,7 +416,11 @@ static void step(void)
 			}
 			psHu32(DMAC_RBOR) = (rnd_n(0x1000) << 12) | 0x100000;
 			psHu32(DMAC_RBSR) = (rnd_n(0x40) << 4) | 0xf;
-			mix(hwMFIFOWrite(rnd(), data, rnd_n(9)));
+			{
+				/* (drawn last argument first, as the hashes were made) */
+				const u32 qwc = rnd_n(9);
+				mix(hwMFIFOWrite(rnd(), data, qwc));
+			}
 			mix_bytes(s_physmem + (psHu32(DMAC_RBOR) & 0x1fffff00), 0x500);
 			break;
 		case 5: set_hacks(); break;
@@ -429,7 +439,12 @@ static void step(void)
 		{
 			/* An RDRAM command for MCH_DRD to answer. */
 			static const u32 cmds[] = { 0x21, 0x23, 0x24, 0x40, 0x11 };
-			s_sets[15].w32(MCH_RICM, (cmds[rnd_n(5)] << 16) | (rnd_n(2) << 6) | rnd_n(32));
+			{
+				u32 ricm = cmds[rnd_n(5)] << 16;
+				ricm |= rnd_n(2) << 6;
+				ricm |= rnd_n(32);
+				s_sets[15].w32(MCH_RICM, ricm);
+			}
 			if (rnd_n(2))
 				psHu32(0xf440) = rnd() & 0x80;
 			break;

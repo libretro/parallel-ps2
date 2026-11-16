@@ -52,7 +52,7 @@ static void _setupBranchTest(void)
 	xe_cmp32_rr(XE_AX, XE_CX);
 }
 
-void recBC0F()
+void recBC0F(void)
 {
 	const u32 branchTo = ((s32)_Imm_ * 4) + pc;
 	const int swap = !!(TrySwapDelaySlot(0, 0, 0, 0));
@@ -60,7 +60,7 @@ void recBC0F()
 	{ uint8_t* bslot_; xe_fwd_jcc32(Jcc_Equal, bslot_); recDoBranchImm(branchTo, bslot_, 0, swap); }
 }
 
-void recBC0T()
+void recBC0T(void)
 {
 	const u32 branchTo = ((s32)_Imm_ * 4) + pc;
 	const int swap = !!(TrySwapDelaySlot(0, 0, 0, 0));
@@ -68,14 +68,14 @@ void recBC0T()
 	{ uint8_t* bslot_; xe_fwd_jcc32(Jcc_NotEqual, bslot_); recDoBranchImm(branchTo, bslot_, 0, swap); }
 }
 
-void recBC0FL()
+void recBC0FL(void)
 {
 	const u32 branchTo = ((s32)_Imm_ * 4) + pc;
 	_setupBranchTest();
 	{ uint8_t* bslot_; xe_fwd_jcc32(Jcc_Equal, bslot_); recDoBranchImm(branchTo, bslot_, 1, 0); }
 }
 
-void recBC0TL()
+void recBC0TL(void)
 {
 	const u32 branchTo = ((s32)_Imm_ * 4) + pc;
 	_setupBranchTest();
@@ -94,7 +94,7 @@ void recBC0TL()
 /* The whole sequence fits in eax, ecx and edx: rcx holds &tlb[i] so rax is */
 /* free as a scratch, and the G bit is computed once into edx and reused by */
 /* both EntryLo halves. */
-void recTLBR()
+void recTLBR(void)
 {
 	_freeX86reg(XE_AX);
 	_freeX86reg(XE_CX);
@@ -146,7 +146,7 @@ void recTLBR()
 /* Registers: RCX walks the table, R10D is the loop counter, R8D and R9D hold */
 /* the two EntryHi fields across the whole loop, EAX and EDX are scratch. All */
 /* six are caller-saved under both ABIs. */
-void recTLBP()
+void recTLBP(void)
 {
 	u8* loop;
 	_freeX86reg(XE_AX);
@@ -206,8 +206,8 @@ void recTLBP()
 		xe_fwd_set8(done);
 	}
 }
-void recTLBWI() { recCall(intTLBWI); }
-void recTLBWR() { recCall(intTLBWR); }
+void recTLBWI(void) { recCall(intTLBWI); }
+void recTLBWR(void) { recCall(intTLBWR); }
 
 /* recBranchCall forces nextEventCycle = cycle before calling, which makes the */
 /* interpreter's own "if (nextEventCycle - cycle > 4) nextEventCycle = cycle+4" */
@@ -236,7 +236,7 @@ static void recCOP0_BranchCallPrologue(void)
 	iFlushCall(FLUSH_INTERPRETER);
 }
 
-void recERET()
+void recERET(void)
 {
 	uint8_t* useEPC;
 	uint8_t* done;
@@ -260,7 +260,7 @@ void recERET()
 	g_branch = 2;
 }
 
-void recEI()
+void recEI(void)
 {
 	uint8_t* privileged;
 	uint8_t* inUserMode;
@@ -282,7 +282,7 @@ void recEI()
 	g_branch = 2;
 }
 
-void recDI()
+void recDI(void)
 {
 	uint8_t* iHaveNoIdea;
 	uint8_t* inUserMode;
@@ -312,7 +312,7 @@ void recDI()
 	xe_fwd_set8(inUserMode);
 }
 
-void recMFC0()
+void recMFC0(void)
 {
 	if (_Rd_ == 9)
 	{
@@ -410,7 +410,7 @@ void recMFC0()
 	}
 }
 
-void recMTC0()
+void recMTC0(void)
 {
 	if (GPR_IS_CONST1(_Rt_))
 	{

@@ -28,7 +28,7 @@
 #include "iMMI.h"
 
 #include "../../common/MathUtils.h"
-void recPLZCW()
+void recPLZCW(void)
 {
 	int x86regs = -1;
 	int xmmregs = -1;
@@ -127,7 +127,7 @@ void recPLZCW()
 	GPR_DEL_CONST(_Rd_);
 }
 
-void recPMFHL()
+void recPMFHL(void)
 {
 	int info;
 	int t0reg;
@@ -245,7 +245,7 @@ void recPMFHL()
 	_clearNeededXMMregs();
 }
 
-void recPMTHL()
+void recPMTHL(void)
 {
 	int info;
 	if (_Sa_ != 0)
@@ -260,7 +260,7 @@ void recPMTHL()
 	_clearNeededXMMregs();
 }
 
-void recPSRLH()
+void recPSRLH(void)
 {
 	int info;
 	if (!_Rd_)
@@ -279,7 +279,7 @@ void recPSRLH()
 	_clearNeededXMMregs();
 }
 
-void recPSRLW()
+void recPSRLW(void)
 {
 	int info;
 	if (!_Rd_)
@@ -298,7 +298,7 @@ void recPSRLW()
 	_clearNeededXMMregs();
 }
 
-void recPSRAH()
+void recPSRAH(void)
 {
 	int info;
 	if (!_Rd_)
@@ -317,7 +317,7 @@ void recPSRAH()
 	_clearNeededXMMregs();
 }
 
-void recPSRAW()
+void recPSRAW(void)
 {
 	int info;
 	if (!_Rd_)
@@ -336,7 +336,7 @@ void recPSRAW()
 	_clearNeededXMMregs();
 }
 
-void recPSLLH()
+void recPSLLH(void)
 {
 	int info;
 	if (!_Rd_)
@@ -355,7 +355,7 @@ void recPSLLH()
 	_clearNeededXMMregs();
 }
 
-void recPSLLW()
+void recPSLLW(void)
 {
 	int info;
 	if (!_Rd_)
@@ -379,7 +379,7 @@ void recPSLLW()
 *                                                        *
 *********************************************************/
 
-void recPMAXW()
+void recPMAXW(void)
 {
 	int info;
 	if (!_Rd_)

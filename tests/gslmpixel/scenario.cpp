@@ -95,10 +95,14 @@ static void pixels(GSLocalMemory& m)
 		{
 			const u32 bw = 1 + rnd(16), bp = rnd(16384);
 			const int x = (int)rnd(bw * 64), y = (int)rnd(1024);
-			WP(m, psm, x, y, rnd(0), bp, bw);
-			WPA(m, psm, rnd(limit), rnd(0));
+			const u32 c = rnd(0);
+			const u32 a = rnd(limit);
+			const u32 fc = rnd(0);
+			const u32 fa = rnd(1024 * 1024);
+			WP(m, psm, x, y, c, bp, bw);
+			WPA(m, psm, a, rnd(0));
 			/* (a frame is written 16 or 32 bits wide, whatever the format) */
-			WFA(m, psm, rnd(1024 * 1024), rnd(0));
+			WFA(m, psm, fa, fc);
 		}
 		hash_memory(m);
 	}
@@ -147,9 +151,15 @@ static void rects()
 	for (int i = 0; i < 4000; i++)
 	{
 		const u32 psm = kPsm[rnd(kNPsm - 2)];
-		const GSVector4i r((int)rnd(512) & ~((int)rnd(2) * 31), (int)rnd(512) & ~((int)rnd(2) * 31),
-			(int)rnd(1024) & ~((int)rnd(2) * 63), (int)rnd(1024) & ~((int)rnd(2) * 63));
-		const GSVector4i r2((int)rnd(512), (int)rnd(512), (int)rnd(1024), (int)rnd(1024));
+		/* (one draw a statement: the order of a call's arguments, and of
+		 * an operator's operands, is the compiler's to pick) */
+		int e[8];
+		for (int j = 0; j < 8; j++)
+			e[j] = (int)rnd(j < 4 ? (j < 2 ? 512 : 1024) : 2);
+		const GSVector4i r(e[0] & ~(e[4] * 31), e[1] & ~(e[5] * 31), e[2] & ~(e[6] * 63), e[3] & ~(e[7] * 63));
+		for (int j = 0; j < 4; j++)
+			e[j] = (int)rnd(j < 2 ? 512 : 1024);
+		const GSVector4i r2(e[0], e[1], e[2], e[3]);
 		const u32 bp = rnd(16384), bw = rnd(17), bp2 = rnd(16384);
 		const u32 psm2 = kPsm[rnd(kNPsm - 2)];
 		hu(GSLocalMemory::IsPageAlignedMasked(psm, r));
@@ -186,7 +196,8 @@ static void accessors(GSLocalMemory& m)
 		m.WritePixel4(x, y, rnd(0), bp, bw);
 		m.WriteFrame16S(x, y, rnd(0), bp, bw);
 		m.WritePixel8H(x, y, rnd(0), bp, bw);
-		GSLocalMemory::WritePixel4HL(m.vm32() + rnd(1024 * 1024), rnd(0));
+		const u32 c4 = rnd(0);
+		GSLocalMemory::WritePixel4HL(m.vm32() + rnd(1024 * 1024), c4);
 	}
 	hash_memory(m);
 }

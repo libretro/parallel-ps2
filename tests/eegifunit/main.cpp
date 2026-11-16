@@ -275,7 +275,11 @@ static u32 put_tag(u8* out, u32 nloop, bool eop, u32 flg, u32 nreg, u64 regs)
 {
 	u32 w[4];
 	w[0] = (nloop & 0x7fff) | (eop ? 0x8000u : 0) | ((rnd() & 0xffff) << 16);
-	w[1] = (rnd() & 0x3fff) | ((rnd() & 0xfff) << 14) | (flg << 26) | ((nreg & 0xf) << 28);
+	/* (one draw a statement: the order of a call's arguments, and of an
+	 * operator's operands, is the compiler's to pick) */
+	w[1] = rnd() & 0x3fff;
+	w[1] |= (rnd() & 0xfff) << 14;
+	w[1] |= (flg << 26) | ((nreg & 0xf) << 28);
 	w[2] = (u32)regs;
 	w[3] = (u32)(regs >> 32);
 	memcpy(out, w, 16);
@@ -519,7 +523,13 @@ static void step(void)
 			break;
 		case 8:  mix(EXECUTE(rnd() & 1, true)); break;
 		case 9:  FLUSH(); break;
-		case 10: mix(CHECK(rnd() & 1, rnd() & 1, rnd() & 1, rnd() & 1)); break;
+		case 10:
+		{
+			/* (drawn last argument first, as the hashes were made) */
+			const u32 q = rnd() & 1, c = rnd() & 1, b = rnd() & 1, a = rnd() & 1;
+			mix(CHECK(a, b, c, q));
+			break;
+		}
 		case 11:
 			mix(CAN1()); mix(CAN2()); mix(CAN2HL()); mix(CAN3()); mix(MASKED());
 			mix(DONE(0)); mix(DONE(1)); mix(DONE(2));
@@ -528,7 +538,9 @@ static void step(void)
 		case 13:
 		{
 			const u32 off = rnd() & 0x3ff0;
-			const u32 size = SIZE(GIF_PATH_1, s_vumem, off, rnd_n(2) ? ~0u : rnd_n(0x2000), rnd() & 1);
+			const u32 flush = rnd() & 1;
+			const u32 limit = rnd_n(2) ? ~0u : rnd_n(0x2000);
+			const u32 size = SIZE(GIF_PATH_1, s_vumem, off, limit, flush);
 			mix(size);
 			/* A kick the size came back 0 for still reaches the unit. */
 			if (!(size & 0x7fffffffu) && rnd_n(2))

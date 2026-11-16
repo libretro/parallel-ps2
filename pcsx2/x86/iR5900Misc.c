@@ -57,11 +57,11 @@ void recDoBranchImm(u32 branchTo, uint8_t* jmpSkip, int isLikely, int swappedDel
 	SetBranchImm(pc); /* start a new recompiled block. */
 }
 
-void recPREF()
+void recPREF(void)
 {
 }
 
-void recSYNC()
+void recSYNC(void)
 {
 }
 
@@ -94,7 +94,7 @@ void recMFSA(void)
 }
 
 /* SA is 4-bit and contains the amount of bytes to shift */
-void recMTSA()
+void recMTSA(void)
 {
 	if (GPR_IS_CONST1(_Rs_))
 	{
@@ -121,7 +121,7 @@ void recMTSA()
 	}
 }
 
-void recMTSAB()
+void recMTSAB(void)
 {
 	if (GPR_IS_CONST1(_Rs_))
 	{
@@ -136,7 +136,7 @@ void recMTSAB()
 	}
 }
 
-void recMTSAH()
+void recMTSAH(void)
 {
 	if (GPR_IS_CONST1(_Rs_))
 	{
@@ -182,7 +182,7 @@ void recCOP1_Unknown(void)
 **********************************************************/
 
 /* Suikoden 3 uses it a lot */
-void recCACHE() /* Interpreter only! */
+void recCACHE(void) /* Interpreter only! */
 {
 	/* xMOV(ptr32[&cpuRegs.code], (u32)cpuRegs.code ); */
 	/* xMOV(ptr32[&cpuRegs.pc], (u32)pc ); */
@@ -232,27 +232,27 @@ static void recTrap(JccComparisonType skip_cond, int use_imm, int is_unsigned)
 	g_branch = 2;
 }
 
-void recTGE()  { recTrap(Jcc_Less,           0, 0); }
+void recTGE(void)  { recTrap(Jcc_Less,           0, 0); }
 
-void recTGEU() { recTrap(Jcc_Below,          0, 1 ); }
+void recTGEU(void) { recTrap(Jcc_Below,          0, 1 ); }
 
-void recTLT()  { recTrap(Jcc_GreaterOrEqual, 0, 0); }
+void recTLT(void)  { recTrap(Jcc_GreaterOrEqual, 0, 0); }
 
-void recTLTU() { recTrap(Jcc_AboveOrEqual,   0, 1 ); }
+void recTLTU(void) { recTrap(Jcc_AboveOrEqual,   0, 1 ); }
 
-void recTEQ()  { recTrap(Jcc_NotEqual,       0, 0); }
+void recTEQ(void)  { recTrap(Jcc_NotEqual,       0, 0); }
 
-void recTNE()  { recTrap(Jcc_Equal,          0, 0); }
+void recTNE(void)  { recTrap(Jcc_Equal,          0, 0); }
 
-void recTGEI() { recTrap(Jcc_Less,           1,  0); }
+void recTGEI(void) { recTrap(Jcc_Less,           1,  0); }
 
-void recTGEIU(){ recTrap(Jcc_Below,          1,  1 ); }
+void recTGEIU(void){ recTrap(Jcc_Below,          1,  1 ); }
 
-void recTLTI() { recTrap(Jcc_GreaterOrEqual, 1,  0); }
+void recTLTI(void) { recTrap(Jcc_GreaterOrEqual, 1,  0); }
 
-void recTLTIU(){ recTrap(Jcc_AboveOrEqual,   1,  1 ); }
+void recTLTIU(void){ recTrap(Jcc_AboveOrEqual,   1,  1 ); }
 
-void recTEQI() { recTrap(Jcc_NotEqual,       1,  0); }
+void recTEQI(void) { recTrap(Jcc_NotEqual,       1,  0); }
 
-void recTNEI() { recTrap(Jcc_Equal,          1,  0); }
+void recTNEI(void) { recTrap(Jcc_Equal,          1,  0); }
 

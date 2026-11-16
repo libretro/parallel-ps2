@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <stddef.h>
 #include "USB/libretro-usb/qusb.h"
 #include "common/Pcsx2Types.h"
 
@@ -91,7 +92,8 @@ struct ohci_hcca
         const typeof(((type *) 0)->member) *__mptr = (ptr);     \
         (type *) ((char *) __mptr - offsetof(type, member));})
 */
-#define USB_CONTAINER_OF(p, type, field) ((type*)((char*)p - ((ptrdiff_t) & ((type*)0)->field)))
+/* (offsetof: a member of a null pointer is not an offset) */
+#define USB_CONTAINER_OF(p, type, field) ((type*)((char*)(p) - offsetof(type, field)))
 
 #define HCCA_WRITEBACK_OFFSET 128 /*offsetof(struct ohci_hcca, frame) */
 #define HCCA_WRITEBACK_SIZE 8     /* frame, pad, done */

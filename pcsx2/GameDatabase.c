@@ -558,11 +558,13 @@ static bool gamedb_finish(void)
 		e->eeClampMode    = b->eeClampMode;
 		e->vu0ClampMode   = b->vu0ClampMode;
 		e->vu1ClampMode   = b->vu1ClampMode;
-		e->gameFixes      = s_fixes + b->fix_first;
+		/* (a pool nothing was pushed to is NULL, and NULL + 0 is not a
+		 * pointer: an entry with none of them points at none) */
+		e->gameFixes      = b->nfix ? s_fixes + b->fix_first : NULL;
 		e->nGameFixes     = b->nfix;
-		e->speedHacks     = s_hacks + b->hack_first;
+		e->speedHacks     = b->nhack ? s_hacks + b->hack_first : NULL;
 		e->nSpeedHacks    = b->nhack;
-		e->gsHWFixes      = s_hwfixes + b->hw_first;
+		e->gsHWFixes      = b->nhw ? s_hwfixes + b->hw_first : NULL;
 		e->nGSHWFixes     = b->nhw;
 		e->memcardFilters = s_chars + b->memcard;
 		e->patches        = s_patches + b->patch_first;

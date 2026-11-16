@@ -33,8 +33,10 @@ case "$("$CC" -dumpmachine 2>/dev/null)" in x86_64*|i?86*) ARCH="-msse4.1" ;; es
 "$CC" $C89 -O2 -g $ARCH $SANFLAGS $INC -o "$TMP/gsutil$EXE" $SRC
 $RUN "$TMP/gsutil$EXE"
 
+# sanitized as the core builds its C (gnu99): C89 leaves a shift into the
+# sign bit alone, C99 does not, and gcc checks it only there
 if [ -z "$SANFLAGS" ] && [ -z "$RUN" ] && [ -z "$EXE" ]; then
-	"$CC" $C89 -O1 -g $ARCH -fsanitize=address,undefined -fno-sanitize-recover=all $INC \
+	"$CC" $C89 -std=gnu99 -O1 -g $ARCH -fsanitize=address,undefined -fno-sanitize-recover=all $INC \
 		-o "$TMP/gsutil_san" $SRC
 	"$TMP/gsutil_san"
 fi

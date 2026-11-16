@@ -533,7 +533,7 @@ static void addEaxEdxAndWriteBackToHiLoRd(int hiloID)
 	writeBackMAddToHiLoRd(hiloID);
 }
 
-void recMADD()
+void recMADD(void)
 {
 	if (GPR_IS_CONST2(_Rs_, _Rt_))
 	{
@@ -568,7 +568,7 @@ void recMADD()
 	addEaxEdxAndWriteBackToHiLoRd(0);
 }
 
-void recMADDU()
+void recMADDU(void)
 {
 	if (GPR_IS_CONST2(_Rs_, _Rt_))
 	{
@@ -603,7 +603,7 @@ void recMADDU()
 	addEaxEdxAndWriteBackToHiLoRd(0);
 }
 
-void recMADD1()
+void recMADD1(void)
 {
 	if (GPR_IS_CONST2(_Rs_, _Rt_))
 	{
@@ -638,7 +638,7 @@ void recMADD1()
 	addEaxEdxAndWriteBackToHiLoRd(1);
 }
 
-void recMADDU1()
+void recMADDU1(void)
 {
 	if (GPR_IS_CONST2(_Rs_, _Rt_))
 	{

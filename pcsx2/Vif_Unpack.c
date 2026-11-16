@@ -104,8 +104,10 @@ static __ri void writeXYZW_##mode##_1(vifStruct* vif, const VIFregisters* regs, 
 }
 
 /* The invalid VN/VL combinations: nothing is written. These slots used to
- * be NULL, which a malformed transfer selecting one would have called. */
-static void UNPACK_Invalid(u32* dest, const void* src, vifStruct* vif, const VIFregisters* regs)
+ * be NULL, which a malformed transfer selecting one would have called.
+ * (Of the table's own type: a call through a pointer of another type is
+ * undefined.) */
+static void UNPACK_Invalid(void* dest, const void* src, vifStruct* vif, const VIFregisters* regs)
 {
 	(void)dest; (void)src; (void)vif; (void)regs;
 }
@@ -114,11 +116,15 @@ static void UNPACK_Invalid(u32* dest, const void* src, vifStruct* vif, const VIF
  * V3 and V4 both use the V4 logic -- confirmed hardware behaviour that Ape
  * Escape 3 depends on -- and V2 writes v1v0v1v0, the second pair officially
  * indeterminate but relied on by games. V4_5 ignores MODE and acts as
- * mode 0 always, so it is generated per doMask only. */
+ * mode 0 always, so it is generated per doMask only. Each is of the
+ * table's own type, its source typed inside: a call through a pointer of
+ * another type is undefined. */
 #define VIF_DEFINE_UNPACKS(mode, dm, T, tag)                                   \
-static void UNPACK_S_##mode##_##dm##_##tag(u32* dest, const T* src,            \
+static void UNPACK_S_##mode##_##dm##_##tag(void* dest_, const void* src_,      \
 	vifStruct* vif, const VIFregisters* regs)                                  \
 {                                                                              \
+	u32* const dest = (u32*)dest_;                                             \
+	const T* const src = (const T*)src_;                                       \
 	const u32 data = *src;                                                     \
 	/* S-# is always a complete packet, so the offset bits can be skipped. */  \
 	writeXYZW_##mode##_##dm(vif, regs, OFFSET_X, dest + 0, data);              \
@@ -126,17 +132,21 @@ static void UNPACK_S_##mode##_##dm##_##tag(u32* dest, const T* src,            \
 	writeXYZW_##mode##_##dm(vif, regs, OFFSET_Z, dest + 2, data);              \
 	writeXYZW_##mode##_##dm(vif, regs, OFFSET_W, dest + 3, data);              \
 }                                                                              \
-static void UNPACK_V2_##mode##_##dm##_##tag(u32* dest, const T* src,           \
+static void UNPACK_V2_##mode##_##dm##_##tag(void* dest_, const void* src_,     \
 	vifStruct* vif, const VIFregisters* regs)                                  \
 {                                                                              \
+	u32* const dest = (u32*)dest_;                                             \
+	const T* const src = (const T*)src_;                                       \
 	writeXYZW_##mode##_##dm(vif, regs, OFFSET_X, dest + 0, src[0]);            \
 	writeXYZW_##mode##_##dm(vif, regs, OFFSET_Y, dest + 1, src[1]);            \
 	writeXYZW_##mode##_##dm(vif, regs, OFFSET_Z, dest + 2, src[0]);            \
 	writeXYZW_##mode##_##dm(vif, regs, OFFSET_W, dest + 3, src[1]);            \
 }                                                                              \
-static void UNPACK_V4_##mode##_##dm##_##tag(u32* dest, const T* src,           \
+static void UNPACK_V4_##mode##_##dm##_##tag(void* dest_, const void* src_,     \
 	vifStruct* vif, const VIFregisters* regs)                                  \
 {                                                                              \
+	u32* const dest = (u32*)dest_;                                             \
+	const T* const src = (const T*)src_;                                       \
 	writeXYZW_##mode##_##dm(vif, regs, OFFSET_X, dest + 0, src[0]);            \
 	writeXYZW_##mode##_##dm(vif, regs, OFFSET_Y, dest + 1, src[1]);            \
 	writeXYZW_##mode##_##dm(vif, regs, OFFSET_Z, dest + 2, src[2]);            \
@@ -147,9 +157,11 @@ static void UNPACK_V4_##mode##_##dm##_##tag(u32* dest, const T* src,           \
  * not as a word that is misaligned every other element and runs two
  * bytes past the last. */
 #define VIF_DEFINE_V4_5(dm)                                                    \
-static void UNPACK_V4_5_##dm(u32* dest, const u16* src,                        \
+static void UNPACK_V4_5_##dm(void* dest_, const void* src_,                    \
 	vifStruct* vif, const VIFregisters* regs)                                  \
 {                                                                              \
+	u32* const dest = (u32*)dest_;                                             \
+	const u16* const src = (const u16*)src_;                                   \
 	const u32 data = *src;                                                     \
 	writeXYZW_0_##dm(vif, regs, OFFSET_X, dest + 0, ((data & 0x001f) << 3));   \
 	writeXYZW_0_##dm(vif, regs, OFFSET_Y, dest + 1, ((data & 0x03e0) >> 2));   \
@@ -177,31 +189,31 @@ VIF_DEFINE_V4_5(0) VIF_DEFINE_V4_5(1)
 
 /* Table rows. `usn` selects the signed or unsigned 16/8-bit source type. */
 #define UnpackFuncSet(vt, mode, usn, dm) \
-	(UNPACKFUNCTYPE)UNPACK_##vt##_##mode##_##dm##_u32, \
-	(UNPACKFUNCTYPE)UNPACK_##vt##_##mode##_##dm##_##usn##16, \
-	(UNPACKFUNCTYPE)UNPACK_##vt##_##mode##_##dm##_##usn##8
+	UNPACK_##vt##_##mode##_##dm##_u32, \
+	UNPACK_##vt##_##mode##_##dm##_##usn##16, \
+	UNPACK_##vt##_##mode##_##dm##_##usn##8
 
-#define UnpackV4_5set(dm) (UNPACKFUNCTYPE)UNPACK_V4_5_##dm
+#define UnpackV4_5set(dm) UNPACK_V4_5_##dm
 
 #define UnpackModeSet(mode) \
-	UnpackFuncSet( S,  mode, s, 0 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
-	UnpackFuncSet( V2, mode, s, 0 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
-	UnpackFuncSet( V4, mode, s, 0 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
+	UnpackFuncSet( S,  mode, s, 0 ), UNPACK_Invalid,  \
+	UnpackFuncSet( V2, mode, s, 0 ), UNPACK_Invalid,  \
+	UnpackFuncSet( V4, mode, s, 0 ), UNPACK_Invalid,  \
 	UnpackFuncSet( V4, mode, s, 0 ), UnpackV4_5set(0), \
  \
-	UnpackFuncSet( S,  mode, u, 0 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
-	UnpackFuncSet( V2, mode, u, 0 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
-	UnpackFuncSet( V4, mode, u, 0 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
+	UnpackFuncSet( S,  mode, u, 0 ), UNPACK_Invalid,  \
+	UnpackFuncSet( V2, mode, u, 0 ), UNPACK_Invalid,  \
+	UnpackFuncSet( V4, mode, u, 0 ), UNPACK_Invalid,  \
 	UnpackFuncSet( V4, mode, u, 0 ), UnpackV4_5set(0), \
  \
-	UnpackFuncSet( S,  mode, s, 1 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
-	UnpackFuncSet( V2, mode, s, 1 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
-	UnpackFuncSet( V4, mode, s, 1 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
+	UnpackFuncSet( S,  mode, s, 1 ), UNPACK_Invalid,  \
+	UnpackFuncSet( V2, mode, s, 1 ), UNPACK_Invalid,  \
+	UnpackFuncSet( V4, mode, s, 1 ), UNPACK_Invalid,  \
 	UnpackFuncSet( V4, mode, s, 1 ), UnpackV4_5set(1), \
  \
-	UnpackFuncSet( S,  mode, u, 1 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
-	UnpackFuncSet( V2, mode, u, 1 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
-	UnpackFuncSet( V4, mode, u, 1 ), (UNPACKFUNCTYPE)UNPACK_Invalid,  \
+	UnpackFuncSet( S,  mode, u, 1 ), UNPACK_Invalid,  \
+	UnpackFuncSet( V2, mode, u, 1 ), UNPACK_Invalid,  \
+	UnpackFuncSet( V4, mode, u, 1 ), UNPACK_Invalid,  \
 	UnpackFuncSet( V4, mode, u, 1 ), UnpackV4_5set(1)
 
 PCSX2_ALIGN(16) const UNPACKFUNCTYPE VIFfuncTable[4][4 * 4 * 2 * 2] =

@@ -815,7 +815,7 @@ void recC_EQ_xmm(int info)
 
 FPURECOMPILE_CONSTCODE_EXACT_SS(C_EQ, XMMINFO_READS | XMMINFO_READT);
 
-void recC_F()
+void recC_F(void)
 {
 	xe_and32_mi(&fpuRegs.fprc[31], ~FPUflagC);
 }

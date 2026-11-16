@@ -276,7 +276,7 @@ __ri static int get_macroblock_address_increment(void)
 	return ((mba->mba + 1) | (mba->len << 16));
 }
 
-__fi static int get_luma_dc_dct_diff()
+__fi static int get_luma_dc_dct_diff(void)
 {
 	int size;
 	u16 code    = UBITS(5);

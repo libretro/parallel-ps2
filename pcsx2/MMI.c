@@ -249,7 +249,7 @@ static __fi void _PSRLH(int n)
 	cpuRegs.GPR.r[_Rd_].US[n] = cpuRegs.GPR.r[_Rt_].US[n] >> ( _Sa_ & 0xf );
 }
 
-void intPSRLH () {
+void intPSRLH (void) {
 	if (!_Rd_) return;
 
 	_PSRLH(0); _PSRLH(1); _PSRLH(2); _PSRLH(3);
@@ -842,7 +842,7 @@ static __fi void  _PADDUW(int n)
 		cpuRegs.GPR.r[_Rd_].UL[n] = (u32)tmp;
 }
 
-void intPADDUW () {
+void intPADDUW (void) {
 	if (!_Rd_) return;
 
 	_PADDUW(0); _PADDUW(1); _PADDUW(2); _PADDUW(3);
@@ -1349,7 +1349,7 @@ void intPEXEH(void) {
 	cpuRegs.GPR.r[_Rd_].US[7] = Rt.US[7];
 }
 
-void intPREVH () {
+void intPREVH (void) {
 	GPR_reg Rt;
 
 	if (!_Rd_) return;
@@ -1555,7 +1555,7 @@ void intPOR(void) {
 	cpuRegs.GPR.r[_Rd_].UD[1] = cpuRegs.GPR.r[_Rs_].UD[1] | cpuRegs.GPR.r[_Rt_].UD[1];
 }
 
-void intPNOR () {
+void intPNOR (void) {
 	if (!_Rd_) return;
 
 	cpuRegs.GPR.r[_Rd_].UD[0] = ~(cpuRegs.GPR.r[_Rs_].UD[0] | cpuRegs.GPR.r[_Rt_].UD[0]);

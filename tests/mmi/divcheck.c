@@ -122,6 +122,17 @@ static void emit_divide(int is_signed)
 	xe_ret();
 }
 
+/* Into the emitted code. clang's function sanitizer reads a type
+ * signature from the bytes before an indirect callee, which emitted code
+ * has none of (and here, at the start of its page, no bytes either) */
+#if defined(__clang__)
+__attribute__((no_sanitize("function")))
+#endif
+static Result call_div(DivFn f, int32_t a, int32_t b)
+{
+	return f(a, b);
+}
+
 static DivFn build(u8* page, int is_signed)
 {
 	x86Ptr = page;
@@ -161,7 +172,7 @@ int main(void)
 			Result got;
 
 			ref_signed((int32_t)vals[i], (int32_t)vals[j], &rq, &rr);
-			got = sdiv((int32_t)vals[i], (int32_t)vals[j]);
+			got = call_div(sdiv, (int32_t)vals[i], (int32_t)vals[j]);
 			checked++;
 			if (got.quot != rq || got.rem != rr)
 			{
@@ -171,7 +182,7 @@ int main(void)
 			}
 
 			ref_unsigned(vals[i], vals[j], &rq, &rr);
-			got = udiv((int32_t)vals[i], (int32_t)vals[j]);
+			got = call_div(udiv, (int32_t)vals[i], (int32_t)vals[j]);
 			checked++;
 			if (got.quot != rq || got.rem != rr)
 			{

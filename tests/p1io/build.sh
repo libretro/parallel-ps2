@@ -14,8 +14,11 @@ EXE=
 case "$CC" in *mingw*) EXE=.exe ;; esac
 
 C89="-std=c89 -pedantic -Werror=pedantic -Werror=declaration-after-statement -Wno-long-long -Wall -Wextra"
+# (the core's C takes bool from <boolean.h>; clang calls the _Bool behind
+# it a C99 extension, which gcc's pass already holds the rest of to C89)
+case "$("$CC" --version 2>/dev/null)" in *clang*) C89="$C89 -Wno-c99-extensions" ;; esac
 GNU89="-std=gnu89 -Wall -Wno-comment -Werror=declaration-after-statement"
-INC="-I$ROOT/pcsx2 -I$ROOT -I$ROOT/common -I$LC/include -D__LIBRETRO__"
+INC="-I$ROOT/pcsx2 -I$ROOT -I$ROOT/common -isystem $LC/include -D__LIBRETRO__"
 OBJ="$DIR/.obj"
 rm -rf "$OBJ" && mkdir -p "$OBJ"
 for src in "$ROOT/pcsx2/FireWire/p1io.c" "$ROOT/pcsx2/FireWire/fatimg.c" "$ROOT/pcsx2/FireWire/py1desc.c"; do

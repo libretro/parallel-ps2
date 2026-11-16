@@ -3766,175 +3766,175 @@ static __ri void _vuRegsXTOP(const VURegs* VU, _VURegsNum* VUregsn)
 /*   VU Micromode Upper instructions    */
 /****************************************/
 
-static void VU0MI_ABS()  { _vuABS(&vuRegs[0]); }
-static void VU0MI_ADD()  { _vuADD(&vuRegs[0]); }
-static void VU0MI_ADDi() { _vuADDi(&vuRegs[0]); }
-static void VU0MI_ADDq() { _vuADDq(&vuRegs[0]); }
-static void VU0MI_ADDx() { _vuADDx(&vuRegs[0]); }
-static void VU0MI_ADDy() { _vuADDy(&vuRegs[0]); }
-static void VU0MI_ADDz() { _vuADDz(&vuRegs[0]); }
-static void VU0MI_ADDw() { _vuADDw(&vuRegs[0]); }
-static void VU0MI_ADDA() { _vuADDA(&vuRegs[0]); }
-static void VU0MI_ADDAi() { _vuADDAi(&vuRegs[0]); }
-static void VU0MI_ADDAq() { _vuADDAq(&vuRegs[0]); }
-static void VU0MI_ADDAx() { _vuADDAx(&vuRegs[0]); }
-static void VU0MI_ADDAy() { _vuADDAy(&vuRegs[0]); }
-static void VU0MI_ADDAz() { _vuADDAz(&vuRegs[0]); }
-static void VU0MI_ADDAw() { _vuADDAw(&vuRegs[0]); }
-static void VU0MI_SUB()  { _vuSUB(&vuRegs[0]); }
-static void VU0MI_SUBi() { _vuSUBi(&vuRegs[0]); }
-static void VU0MI_SUBq() { _vuSUBq(&vuRegs[0]); }
-static void VU0MI_SUBx() { _vuSUBx(&vuRegs[0]); }
-static void VU0MI_SUBy() { _vuSUBy(&vuRegs[0]); }
-static void VU0MI_SUBz() { _vuSUBz(&vuRegs[0]); }
-static void VU0MI_SUBw() { _vuSUBw(&vuRegs[0]); }
-static void VU0MI_SUBA()  { _vuSUBA(&vuRegs[0]); }
-static void VU0MI_SUBAi() { _vuSUBAi(&vuRegs[0]); }
-static void VU0MI_SUBAq() { _vuSUBAq(&vuRegs[0]); }
-static void VU0MI_SUBAx() { _vuSUBAx(&vuRegs[0]); }
-static void VU0MI_SUBAy() { _vuSUBAy(&vuRegs[0]); }
-static void VU0MI_SUBAz() { _vuSUBAz(&vuRegs[0]); }
-static void VU0MI_SUBAw() { _vuSUBAw(&vuRegs[0]); }
-static void VU0MI_MUL()  { _vuMUL(&vuRegs[0]); }
-static void VU0MI_MULi() { _vuMULi(&vuRegs[0]); }
-static void VU0MI_MULq() { _vuMULq(&vuRegs[0]); }
-static void VU0MI_MULx() { _vuMULx(&vuRegs[0]); }
-static void VU0MI_MULy() { _vuMULy(&vuRegs[0]); }
-static void VU0MI_MULz() { _vuMULz(&vuRegs[0]); }
-static void VU0MI_MULw() { _vuMULw(&vuRegs[0]); }
-static void VU0MI_MULA()  { _vuMULA(&vuRegs[0]); }
-static void VU0MI_MULAi() { _vuMULAi(&vuRegs[0]); }
-static void VU0MI_MULAq() { _vuMULAq(&vuRegs[0]); }
-static void VU0MI_MULAx() { _vuMULAx(&vuRegs[0]); }
-static void VU0MI_MULAy() { _vuMULAy(&vuRegs[0]); }
-static void VU0MI_MULAz() { _vuMULAz(&vuRegs[0]); }
-static void VU0MI_MULAw() { _vuMULAw(&vuRegs[0]); }
-static void VU0MI_MADD()  { _vuMADD(&vuRegs[0]); }
-static void VU0MI_MADDi() { _vuMADDi(&vuRegs[0]); }
-static void VU0MI_MADDq() { _vuMADDq(&vuRegs[0]); }
-static void VU0MI_MADDx() { _vuMADDx(&vuRegs[0]); }
-static void VU0MI_MADDy() { _vuMADDy(&vuRegs[0]); }
-static void VU0MI_MADDz() { _vuMADDz(&vuRegs[0]); }
-static void VU0MI_MADDw() { _vuMADDw(&vuRegs[0]); }
-static void VU0MI_MADDA()  { _vuMADDA(&vuRegs[0]); }
-static void VU0MI_MADDAi() { _vuMADDAi(&vuRegs[0]); }
-static void VU0MI_MADDAq() { _vuMADDAq(&vuRegs[0]); }
-static void VU0MI_MADDAx() { _vuMADDAx(&vuRegs[0]); }
-static void VU0MI_MADDAy() { _vuMADDAy(&vuRegs[0]); }
-static void VU0MI_MADDAz() { _vuMADDAz(&vuRegs[0]); }
-static void VU0MI_MADDAw() { _vuMADDAw(&vuRegs[0]); }
-static void VU0MI_MSUB()  { _vuMSUB(&vuRegs[0]); }
-static void VU0MI_MSUBi() { _vuMSUBi(&vuRegs[0]); }
-static void VU0MI_MSUBq() { _vuMSUBq(&vuRegs[0]); }
-static void VU0MI_MSUBx() { _vuMSUBx(&vuRegs[0]); }
-static void VU0MI_MSUBy() { _vuMSUBy(&vuRegs[0]); }
-static void VU0MI_MSUBz() { _vuMSUBz(&vuRegs[0]); }
-static void VU0MI_MSUBw() { _vuMSUBw(&vuRegs[0]); }
-static void VU0MI_MSUBA()  { _vuMSUBA(&vuRegs[0]); }
-static void VU0MI_MSUBAi() { _vuMSUBAi(&vuRegs[0]); }
-static void VU0MI_MSUBAq() { _vuMSUBAq(&vuRegs[0]); }
-static void VU0MI_MSUBAx() { _vuMSUBAx(&vuRegs[0]); }
-static void VU0MI_MSUBAy() { _vuMSUBAy(&vuRegs[0]); }
-static void VU0MI_MSUBAz() { _vuMSUBAz(&vuRegs[0]); }
-static void VU0MI_MSUBAw() { _vuMSUBAw(&vuRegs[0]); }
-static void VU0MI_MAX()  { _vuMAX(&vuRegs[0]); }
-static void VU0MI_MAXi() { _vuMAXi(&vuRegs[0]); }
-static void VU0MI_MAXx() { _vuMAXx(&vuRegs[0]); }
-static void VU0MI_MAXy() { _vuMAXy(&vuRegs[0]); }
-static void VU0MI_MAXz() { _vuMAXz(&vuRegs[0]); }
-static void VU0MI_MAXw() { _vuMAXw(&vuRegs[0]); }
-static void VU0MI_MINI()  { _vuMINI(&vuRegs[0]); }
-static void VU0MI_MINIi() { _vuMINIi(&vuRegs[0]); }
-static void VU0MI_MINIx() { _vuMINIx(&vuRegs[0]); }
-static void VU0MI_MINIy() { _vuMINIy(&vuRegs[0]); }
-static void VU0MI_MINIz() { _vuMINIz(&vuRegs[0]); }
-static void VU0MI_MINIw() { _vuMINIw(&vuRegs[0]); }
-static void VU0MI_OPMULA() { _vuOPMULA(&vuRegs[0]); }
-static void VU0MI_OPMSUB() { _vuOPMSUB(&vuRegs[0]); }
-static void VU0MI_NOP() { _vuNOP(&vuRegs[0]); }
-static void VU0MI_FTOI0()  { _vuFTOI0(&vuRegs[0]); }
-static void VU0MI_FTOI4()  { _vuFTOI4(&vuRegs[0]); }
-static void VU0MI_FTOI12() { _vuFTOI12(&vuRegs[0]); }
-static void VU0MI_FTOI15() { _vuFTOI15(&vuRegs[0]); }
-static void VU0MI_ITOF0()  { _vuITOF0(&vuRegs[0]); }
-static void VU0MI_ITOF4()  { _vuITOF4(&vuRegs[0]); }
-static void VU0MI_ITOF12() { _vuITOF12(&vuRegs[0]); }
-static void VU0MI_ITOF15() { _vuITOF15(&vuRegs[0]); }
-static void VU0MI_CLIP() { _vuCLIP(&vuRegs[0]); }
+static void VU0MI_ABS(void)  { _vuABS(&vuRegs[0]); }
+static void VU0MI_ADD(void)  { _vuADD(&vuRegs[0]); }
+static void VU0MI_ADDi(void) { _vuADDi(&vuRegs[0]); }
+static void VU0MI_ADDq(void) { _vuADDq(&vuRegs[0]); }
+static void VU0MI_ADDx(void) { _vuADDx(&vuRegs[0]); }
+static void VU0MI_ADDy(void) { _vuADDy(&vuRegs[0]); }
+static void VU0MI_ADDz(void) { _vuADDz(&vuRegs[0]); }
+static void VU0MI_ADDw(void) { _vuADDw(&vuRegs[0]); }
+static void VU0MI_ADDA(void) { _vuADDA(&vuRegs[0]); }
+static void VU0MI_ADDAi(void) { _vuADDAi(&vuRegs[0]); }
+static void VU0MI_ADDAq(void) { _vuADDAq(&vuRegs[0]); }
+static void VU0MI_ADDAx(void) { _vuADDAx(&vuRegs[0]); }
+static void VU0MI_ADDAy(void) { _vuADDAy(&vuRegs[0]); }
+static void VU0MI_ADDAz(void) { _vuADDAz(&vuRegs[0]); }
+static void VU0MI_ADDAw(void) { _vuADDAw(&vuRegs[0]); }
+static void VU0MI_SUB(void)  { _vuSUB(&vuRegs[0]); }
+static void VU0MI_SUBi(void) { _vuSUBi(&vuRegs[0]); }
+static void VU0MI_SUBq(void) { _vuSUBq(&vuRegs[0]); }
+static void VU0MI_SUBx(void) { _vuSUBx(&vuRegs[0]); }
+static void VU0MI_SUBy(void) { _vuSUBy(&vuRegs[0]); }
+static void VU0MI_SUBz(void) { _vuSUBz(&vuRegs[0]); }
+static void VU0MI_SUBw(void) { _vuSUBw(&vuRegs[0]); }
+static void VU0MI_SUBA(void)  { _vuSUBA(&vuRegs[0]); }
+static void VU0MI_SUBAi(void) { _vuSUBAi(&vuRegs[0]); }
+static void VU0MI_SUBAq(void) { _vuSUBAq(&vuRegs[0]); }
+static void VU0MI_SUBAx(void) { _vuSUBAx(&vuRegs[0]); }
+static void VU0MI_SUBAy(void) { _vuSUBAy(&vuRegs[0]); }
+static void VU0MI_SUBAz(void) { _vuSUBAz(&vuRegs[0]); }
+static void VU0MI_SUBAw(void) { _vuSUBAw(&vuRegs[0]); }
+static void VU0MI_MUL(void)  { _vuMUL(&vuRegs[0]); }
+static void VU0MI_MULi(void) { _vuMULi(&vuRegs[0]); }
+static void VU0MI_MULq(void) { _vuMULq(&vuRegs[0]); }
+static void VU0MI_MULx(void) { _vuMULx(&vuRegs[0]); }
+static void VU0MI_MULy(void) { _vuMULy(&vuRegs[0]); }
+static void VU0MI_MULz(void) { _vuMULz(&vuRegs[0]); }
+static void VU0MI_MULw(void) { _vuMULw(&vuRegs[0]); }
+static void VU0MI_MULA(void)  { _vuMULA(&vuRegs[0]); }
+static void VU0MI_MULAi(void) { _vuMULAi(&vuRegs[0]); }
+static void VU0MI_MULAq(void) { _vuMULAq(&vuRegs[0]); }
+static void VU0MI_MULAx(void) { _vuMULAx(&vuRegs[0]); }
+static void VU0MI_MULAy(void) { _vuMULAy(&vuRegs[0]); }
+static void VU0MI_MULAz(void) { _vuMULAz(&vuRegs[0]); }
+static void VU0MI_MULAw(void) { _vuMULAw(&vuRegs[0]); }
+static void VU0MI_MADD(void)  { _vuMADD(&vuRegs[0]); }
+static void VU0MI_MADDi(void) { _vuMADDi(&vuRegs[0]); }
+static void VU0MI_MADDq(void) { _vuMADDq(&vuRegs[0]); }
+static void VU0MI_MADDx(void) { _vuMADDx(&vuRegs[0]); }
+static void VU0MI_MADDy(void) { _vuMADDy(&vuRegs[0]); }
+static void VU0MI_MADDz(void) { _vuMADDz(&vuRegs[0]); }
+static void VU0MI_MADDw(void) { _vuMADDw(&vuRegs[0]); }
+static void VU0MI_MADDA(void)  { _vuMADDA(&vuRegs[0]); }
+static void VU0MI_MADDAi(void) { _vuMADDAi(&vuRegs[0]); }
+static void VU0MI_MADDAq(void) { _vuMADDAq(&vuRegs[0]); }
+static void VU0MI_MADDAx(void) { _vuMADDAx(&vuRegs[0]); }
+static void VU0MI_MADDAy(void) { _vuMADDAy(&vuRegs[0]); }
+static void VU0MI_MADDAz(void) { _vuMADDAz(&vuRegs[0]); }
+static void VU0MI_MADDAw(void) { _vuMADDAw(&vuRegs[0]); }
+static void VU0MI_MSUB(void)  { _vuMSUB(&vuRegs[0]); }
+static void VU0MI_MSUBi(void) { _vuMSUBi(&vuRegs[0]); }
+static void VU0MI_MSUBq(void) { _vuMSUBq(&vuRegs[0]); }
+static void VU0MI_MSUBx(void) { _vuMSUBx(&vuRegs[0]); }
+static void VU0MI_MSUBy(void) { _vuMSUBy(&vuRegs[0]); }
+static void VU0MI_MSUBz(void) { _vuMSUBz(&vuRegs[0]); }
+static void VU0MI_MSUBw(void) { _vuMSUBw(&vuRegs[0]); }
+static void VU0MI_MSUBA(void)  { _vuMSUBA(&vuRegs[0]); }
+static void VU0MI_MSUBAi(void) { _vuMSUBAi(&vuRegs[0]); }
+static void VU0MI_MSUBAq(void) { _vuMSUBAq(&vuRegs[0]); }
+static void VU0MI_MSUBAx(void) { _vuMSUBAx(&vuRegs[0]); }
+static void VU0MI_MSUBAy(void) { _vuMSUBAy(&vuRegs[0]); }
+static void VU0MI_MSUBAz(void) { _vuMSUBAz(&vuRegs[0]); }
+static void VU0MI_MSUBAw(void) { _vuMSUBAw(&vuRegs[0]); }
+static void VU0MI_MAX(void)  { _vuMAX(&vuRegs[0]); }
+static void VU0MI_MAXi(void) { _vuMAXi(&vuRegs[0]); }
+static void VU0MI_MAXx(void) { _vuMAXx(&vuRegs[0]); }
+static void VU0MI_MAXy(void) { _vuMAXy(&vuRegs[0]); }
+static void VU0MI_MAXz(void) { _vuMAXz(&vuRegs[0]); }
+static void VU0MI_MAXw(void) { _vuMAXw(&vuRegs[0]); }
+static void VU0MI_MINI(void)  { _vuMINI(&vuRegs[0]); }
+static void VU0MI_MINIi(void) { _vuMINIi(&vuRegs[0]); }
+static void VU0MI_MINIx(void) { _vuMINIx(&vuRegs[0]); }
+static void VU0MI_MINIy(void) { _vuMINIy(&vuRegs[0]); }
+static void VU0MI_MINIz(void) { _vuMINIz(&vuRegs[0]); }
+static void VU0MI_MINIw(void) { _vuMINIw(&vuRegs[0]); }
+static void VU0MI_OPMULA(void) { _vuOPMULA(&vuRegs[0]); }
+static void VU0MI_OPMSUB(void) { _vuOPMSUB(&vuRegs[0]); }
+static void VU0MI_NOP(void) { _vuNOP(&vuRegs[0]); }
+static void VU0MI_FTOI0(void)  { _vuFTOI0(&vuRegs[0]); }
+static void VU0MI_FTOI4(void)  { _vuFTOI4(&vuRegs[0]); }
+static void VU0MI_FTOI12(void) { _vuFTOI12(&vuRegs[0]); }
+static void VU0MI_FTOI15(void) { _vuFTOI15(&vuRegs[0]); }
+static void VU0MI_ITOF0(void)  { _vuITOF0(&vuRegs[0]); }
+static void VU0MI_ITOF4(void)  { _vuITOF4(&vuRegs[0]); }
+static void VU0MI_ITOF12(void) { _vuITOF12(&vuRegs[0]); }
+static void VU0MI_ITOF15(void) { _vuITOF15(&vuRegs[0]); }
+static void VU0MI_CLIP(void) { _vuCLIP(&vuRegs[0]); }
 
 /*****************************************/
 /*   VU Micromode Lower instructions    */
 /*****************************************/
 
-static void VU0MI_DIV() { _vuDIV(&vuRegs[0]); }
-static void VU0MI_SQRT() { _vuSQRT(&vuRegs[0]); }
-static void VU0MI_RSQRT() { _vuRSQRT(&vuRegs[0]); }
-static void VU0MI_IADD() { _vuIADD(&vuRegs[0]); }
-static void VU0MI_IADDI() { _vuIADDI(&vuRegs[0]); }
-static void VU0MI_IADDIU() { _vuIADDIU(&vuRegs[0]); }
-static void VU0MI_IAND() { _vuIAND(&vuRegs[0]); }
-static void VU0MI_IOR() { _vuIOR(&vuRegs[0]); }
-static void VU0MI_ISUB() { _vuISUB(&vuRegs[0]); }
-static void VU0MI_ISUBIU() { _vuISUBIU(&vuRegs[0]); }
-static void VU0MI_MOVE() { _vuMOVE(&vuRegs[0]); }
-static void VU0MI_MFIR() { _vuMFIR(&vuRegs[0]); }
-static void VU0MI_MTIR() { _vuMTIR(&vuRegs[0]); }
-static void VU0MI_MR32() { _vuMR32(&vuRegs[0]); }
-static void VU0MI_LQ() { _vuLQ(&vuRegs[0]); }
-static void VU0MI_LQD() { _vuLQD(&vuRegs[0]); }
-static void VU0MI_LQI() { _vuLQI(&vuRegs[0]); }
-static void VU0MI_SQ() { _vuSQ(&vuRegs[0]); }
-static void VU0MI_SQD() { _vuSQD(&vuRegs[0]); }
-static void VU0MI_SQI() { _vuSQI(&vuRegs[0]); }
-static void VU0MI_ILW() { _vuILW(&vuRegs[0]); }
-static void VU0MI_ISW() { _vuISW(&vuRegs[0]); }
-static void VU0MI_ILWR() { _vuILWR(&vuRegs[0]); }
-static void VU0MI_ISWR() { _vuISWR(&vuRegs[0]); }
-static void VU0MI_RINIT() { vuRegs[0].VI[REG_R].UL = 0x3F800000 | (vuRegs[0].VF[((vuRegs[0].code >> 11) & 0x1F)].UL[((vuRegs[0].code >> 21) & 0x03)] & 0x007FFFFF); }
-static void VU0MI_RGET()  { _vuRGET(&vuRegs[0]); }
-static void VU0MI_RNEXT() { _vuRNEXT(&vuRegs[0]); }
-static void VU0MI_RXOR()  { vuRegs[0].VI[REG_R].UL = 0x3F800000 | ((vuRegs[0].VI[REG_R].UL ^ vuRegs[0].VF[((vuRegs[0].code >> 11) & 0x1F)].UL[((vuRegs[0].code >> 21) & 0x03)]) & 0x007FFFFF); }
-static void VU0MI_WAITQ() { }
-static void VU0MI_FSAND() { _vuFSAND(&vuRegs[0]); }
-static void VU0MI_FSEQ()  { _vuFSEQ(&vuRegs[0]); }
-static void VU0MI_FSOR()  { _vuFSOR(&vuRegs[0]); }
-static void VU0MI_FSSET() { _vuFSSET(&vuRegs[0]); }
-static void VU0MI_FMAND() { _vuFMAND(&vuRegs[0]); }
-static void VU0MI_FMEQ()  { _vuFMEQ(&vuRegs[0]); }
-static void VU0MI_FMOR()  { _vuFMOR(&vuRegs[0]); }
-static void VU0MI_FCAND() { _vuFCAND(&vuRegs[0]); }
-static void VU0MI_FCEQ()  { _vuFCEQ(&vuRegs[0]); }
-static void VU0MI_FCOR()  { _vuFCOR(&vuRegs[0]); }
-static void VU0MI_FCSET() { vuRegs[0].clipflag = (u32)(vuRegs[0].code & 0xFFFFFF); }
-static void VU0MI_FCGET() { _vuFCGET(&vuRegs[0]); }
-static void VU0MI_IBEQ() { _vuIBEQ(&vuRegs[0]); }
-static void VU0MI_IBGEZ() { _vuIBGEZ(&vuRegs[0]); }
-static void VU0MI_IBGTZ() { _vuIBGTZ(&vuRegs[0]); }
-static void VU0MI_IBLTZ() { _vuIBLTZ(&vuRegs[0]); }
-static void VU0MI_IBLEZ() { _vuIBLEZ(&vuRegs[0]); }
-static void VU0MI_IBNE() { _vuIBNE(&vuRegs[0]); }
-static void VU0MI_B()   { _vuB(&vuRegs[0]); }
-static void VU0MI_BAL() { _vuBAL(&vuRegs[0]); }
-static void VU0MI_JR()   { _vuJR(&vuRegs[0]); }
-static void VU0MI_JALR() { _vuJALR(&vuRegs[0]); }
-static void VU0MI_MFP() { _vuMFP(&vuRegs[0]); }
-static void VU0MI_WAITP() { }
-static void VU0MI_ESADD()   { _vuESADD(&vuRegs[0]); }
-static void VU0MI_ERSADD()  { _vuERSADD(&vuRegs[0]); }
-static void VU0MI_ELENG()   { _vuELENG(&vuRegs[0]); }
-static void VU0MI_ERLENG()  { _vuERLENG(&vuRegs[0]); }
-static void VU0MI_EATANxy() { _vuEATANxy(&vuRegs[0]); }
-static void VU0MI_EATANxz() { _vuEATANxz(&vuRegs[0]); }
-static void VU0MI_ESUM()    { _vuESUM(&vuRegs[0]); }
-static void VU0MI_ERCPR()   { _vuERCPR(&vuRegs[0]); }
-static void VU0MI_ESQRT()   { _vuESQRT(&vuRegs[0]); }
-static void VU0MI_ERSQRT()  { _vuERSQRT(&vuRegs[0]); }
-static void VU0MI_ESIN()    { _vuESIN(&vuRegs[0]); }
-static void VU0MI_EATAN()   { _vuEATAN(&vuRegs[0]); }
-static void VU0MI_EEXP()    { _vuEEXP(&vuRegs[0]); }
-static void VU0MI_XITOP() { _vuXITOP(&vuRegs[0]); }
-static void VU0MI_XGKICK() {}
-static void VU0MI_XTOP() {}
+static void VU0MI_DIV(void) { _vuDIV(&vuRegs[0]); }
+static void VU0MI_SQRT(void) { _vuSQRT(&vuRegs[0]); }
+static void VU0MI_RSQRT(void) { _vuRSQRT(&vuRegs[0]); }
+static void VU0MI_IADD(void) { _vuIADD(&vuRegs[0]); }
+static void VU0MI_IADDI(void) { _vuIADDI(&vuRegs[0]); }
+static void VU0MI_IADDIU(void) { _vuIADDIU(&vuRegs[0]); }
+static void VU0MI_IAND(void) { _vuIAND(&vuRegs[0]); }
+static void VU0MI_IOR(void) { _vuIOR(&vuRegs[0]); }
+static void VU0MI_ISUB(void) { _vuISUB(&vuRegs[0]); }
+static void VU0MI_ISUBIU(void) { _vuISUBIU(&vuRegs[0]); }
+static void VU0MI_MOVE(void) { _vuMOVE(&vuRegs[0]); }
+static void VU0MI_MFIR(void) { _vuMFIR(&vuRegs[0]); }
+static void VU0MI_MTIR(void) { _vuMTIR(&vuRegs[0]); }
+static void VU0MI_MR32(void) { _vuMR32(&vuRegs[0]); }
+static void VU0MI_LQ(void) { _vuLQ(&vuRegs[0]); }
+static void VU0MI_LQD(void) { _vuLQD(&vuRegs[0]); }
+static void VU0MI_LQI(void) { _vuLQI(&vuRegs[0]); }
+static void VU0MI_SQ(void) { _vuSQ(&vuRegs[0]); }
+static void VU0MI_SQD(void) { _vuSQD(&vuRegs[0]); }
+static void VU0MI_SQI(void) { _vuSQI(&vuRegs[0]); }
+static void VU0MI_ILW(void) { _vuILW(&vuRegs[0]); }
+static void VU0MI_ISW(void) { _vuISW(&vuRegs[0]); }
+static void VU0MI_ILWR(void) { _vuILWR(&vuRegs[0]); }
+static void VU0MI_ISWR(void) { _vuISWR(&vuRegs[0]); }
+static void VU0MI_RINIT(void) { vuRegs[0].VI[REG_R].UL = 0x3F800000 | (vuRegs[0].VF[((vuRegs[0].code >> 11) & 0x1F)].UL[((vuRegs[0].code >> 21) & 0x03)] & 0x007FFFFF); }
+static void VU0MI_RGET(void)  { _vuRGET(&vuRegs[0]); }
+static void VU0MI_RNEXT(void) { _vuRNEXT(&vuRegs[0]); }
+static void VU0MI_RXOR(void)  { vuRegs[0].VI[REG_R].UL = 0x3F800000 | ((vuRegs[0].VI[REG_R].UL ^ vuRegs[0].VF[((vuRegs[0].code >> 11) & 0x1F)].UL[((vuRegs[0].code >> 21) & 0x03)]) & 0x007FFFFF); }
+static void VU0MI_WAITQ(void) { }
+static void VU0MI_FSAND(void) { _vuFSAND(&vuRegs[0]); }
+static void VU0MI_FSEQ(void)  { _vuFSEQ(&vuRegs[0]); }
+static void VU0MI_FSOR(void)  { _vuFSOR(&vuRegs[0]); }
+static void VU0MI_FSSET(void) { _vuFSSET(&vuRegs[0]); }
+static void VU0MI_FMAND(void) { _vuFMAND(&vuRegs[0]); }
+static void VU0MI_FMEQ(void)  { _vuFMEQ(&vuRegs[0]); }
+static void VU0MI_FMOR(void)  { _vuFMOR(&vuRegs[0]); }
+static void VU0MI_FCAND(void) { _vuFCAND(&vuRegs[0]); }
+static void VU0MI_FCEQ(void)  { _vuFCEQ(&vuRegs[0]); }
+static void VU0MI_FCOR(void)  { _vuFCOR(&vuRegs[0]); }
+static void VU0MI_FCSET(void) { vuRegs[0].clipflag = (u32)(vuRegs[0].code & 0xFFFFFF); }
+static void VU0MI_FCGET(void) { _vuFCGET(&vuRegs[0]); }
+static void VU0MI_IBEQ(void) { _vuIBEQ(&vuRegs[0]); }
+static void VU0MI_IBGEZ(void) { _vuIBGEZ(&vuRegs[0]); }
+static void VU0MI_IBGTZ(void) { _vuIBGTZ(&vuRegs[0]); }
+static void VU0MI_IBLTZ(void) { _vuIBLTZ(&vuRegs[0]); }
+static void VU0MI_IBLEZ(void) { _vuIBLEZ(&vuRegs[0]); }
+static void VU0MI_IBNE(void) { _vuIBNE(&vuRegs[0]); }
+static void VU0MI_B(void)   { _vuB(&vuRegs[0]); }
+static void VU0MI_BAL(void) { _vuBAL(&vuRegs[0]); }
+static void VU0MI_JR(void)   { _vuJR(&vuRegs[0]); }
+static void VU0MI_JALR(void) { _vuJALR(&vuRegs[0]); }
+static void VU0MI_MFP(void) { _vuMFP(&vuRegs[0]); }
+static void VU0MI_WAITP(void) { }
+static void VU0MI_ESADD(void)   { _vuESADD(&vuRegs[0]); }
+static void VU0MI_ERSADD(void)  { _vuERSADD(&vuRegs[0]); }
+static void VU0MI_ELENG(void)   { _vuELENG(&vuRegs[0]); }
+static void VU0MI_ERLENG(void)  { _vuERLENG(&vuRegs[0]); }
+static void VU0MI_EATANxy(void) { _vuEATANxy(&vuRegs[0]); }
+static void VU0MI_EATANxz(void) { _vuEATANxz(&vuRegs[0]); }
+static void VU0MI_ESUM(void)    { _vuESUM(&vuRegs[0]); }
+static void VU0MI_ERCPR(void)   { _vuERCPR(&vuRegs[0]); }
+static void VU0MI_ESQRT(void)   { _vuESQRT(&vuRegs[0]); }
+static void VU0MI_ERSQRT(void)  { _vuERSQRT(&vuRegs[0]); }
+static void VU0MI_ESIN(void)    { _vuESIN(&vuRegs[0]); }
+static void VU0MI_EATAN(void)   { _vuEATAN(&vuRegs[0]); }
+static void VU0MI_EEXP(void)    { _vuEEXP(&vuRegs[0]); }
+static void VU0MI_XITOP(void) { _vuXITOP(&vuRegs[0]); }
+static void VU0MI_XGKICK(void) {}
+static void VU0MI_XTOP(void) {}
 
 /****************************************/
 /*   VU Micromode Upper instructions    */
@@ -4121,175 +4121,175 @@ static void VU0regsunknown(_VURegsNum* VUregsn) { }
 /*   VU Micromode Upper instructions    */
 /****************************************/
 
-static void VU1MI_ABS()  { _vuABS(&vuRegs[1]); }
-static void VU1MI_ADD()  { _vuADD(&vuRegs[1]); }
-static void VU1MI_ADDi() { _vuADDi(&vuRegs[1]); }
-static void VU1MI_ADDq() { _vuADDq(&vuRegs[1]); }
-static void VU1MI_ADDx() { _vuADDx(&vuRegs[1]); }
-static void VU1MI_ADDy() { _vuADDy(&vuRegs[1]); }
-static void VU1MI_ADDz() { _vuADDz(&vuRegs[1]); }
-static void VU1MI_ADDw() { _vuADDw(&vuRegs[1]); }
-static void VU1MI_ADDA() { _vuADDA(&vuRegs[1]); }
-static void VU1MI_ADDAi() { _vuADDAi(&vuRegs[1]); }
-static void VU1MI_ADDAq() { _vuADDAq(&vuRegs[1]); }
-static void VU1MI_ADDAx() { _vuADDAx(&vuRegs[1]); }
-static void VU1MI_ADDAy() { _vuADDAy(&vuRegs[1]); }
-static void VU1MI_ADDAz() { _vuADDAz(&vuRegs[1]); }
-static void VU1MI_ADDAw() { _vuADDAw(&vuRegs[1]); }
-static void VU1MI_SUB()  { _vuSUB(&vuRegs[1]); }
-static void VU1MI_SUBi() { _vuSUBi(&vuRegs[1]); }
-static void VU1MI_SUBq() { _vuSUBq(&vuRegs[1]); }
-static void VU1MI_SUBx() { _vuSUBx(&vuRegs[1]); }
-static void VU1MI_SUBy() { _vuSUBy(&vuRegs[1]); }
-static void VU1MI_SUBz() { _vuSUBz(&vuRegs[1]); }
-static void VU1MI_SUBw() { _vuSUBw(&vuRegs[1]); }
-static void VU1MI_SUBA()  { _vuSUBA(&vuRegs[1]); }
-static void VU1MI_SUBAi() { _vuSUBAi(&vuRegs[1]); }
-static void VU1MI_SUBAq() { _vuSUBAq(&vuRegs[1]); }
-static void VU1MI_SUBAx() { _vuSUBAx(&vuRegs[1]); }
-static void VU1MI_SUBAy() { _vuSUBAy(&vuRegs[1]); }
-static void VU1MI_SUBAz() { _vuSUBAz(&vuRegs[1]); }
-static void VU1MI_SUBAw() { _vuSUBAw(&vuRegs[1]); }
-static void VU1MI_MUL()  { _vuMUL(&vuRegs[1]); }
-static void VU1MI_MULi() { _vuMULi(&vuRegs[1]); }
-static void VU1MI_MULq() { _vuMULq(&vuRegs[1]); }
-static void VU1MI_MULx() { _vuMULx(&vuRegs[1]); }
-static void VU1MI_MULy() { _vuMULy(&vuRegs[1]); }
-static void VU1MI_MULz() { _vuMULz(&vuRegs[1]); }
-static void VU1MI_MULw() { _vuMULw(&vuRegs[1]); }
-static void VU1MI_MULA()  { _vuMULA(&vuRegs[1]); }
-static void VU1MI_MULAi() { _vuMULAi(&vuRegs[1]); }
-static void VU1MI_MULAq() { _vuMULAq(&vuRegs[1]); }
-static void VU1MI_MULAx() { _vuMULAx(&vuRegs[1]); }
-static void VU1MI_MULAy() { _vuMULAy(&vuRegs[1]); }
-static void VU1MI_MULAz() { _vuMULAz(&vuRegs[1]); }
-static void VU1MI_MULAw() { _vuMULAw(&vuRegs[1]); }
-static void VU1MI_MADD()  { _vuMADD(&vuRegs[1]); }
-static void VU1MI_MADDi() { _vuMADDi(&vuRegs[1]); }
-static void VU1MI_MADDq() { _vuMADDq(&vuRegs[1]); }
-static void VU1MI_MADDx() { _vuMADDx(&vuRegs[1]); }
-static void VU1MI_MADDy() { _vuMADDy(&vuRegs[1]); }
-static void VU1MI_MADDz() { _vuMADDz(&vuRegs[1]); }
-static void VU1MI_MADDw() { _vuMADDw(&vuRegs[1]); }
-static void VU1MI_MADDA()  { _vuMADDA(&vuRegs[1]); }
-static void VU1MI_MADDAi() { _vuMADDAi(&vuRegs[1]); }
-static void VU1MI_MADDAq() { _vuMADDAq(&vuRegs[1]); }
-static void VU1MI_MADDAx() { _vuMADDAx(&vuRegs[1]); }
-static void VU1MI_MADDAy() { _vuMADDAy(&vuRegs[1]); }
-static void VU1MI_MADDAz() { _vuMADDAz(&vuRegs[1]); }
-static void VU1MI_MADDAw() { _vuMADDAw(&vuRegs[1]); }
-static void VU1MI_MSUB()  { _vuMSUB(&vuRegs[1]); }
-static void VU1MI_MSUBi() { _vuMSUBi(&vuRegs[1]); }
-static void VU1MI_MSUBq() { _vuMSUBq(&vuRegs[1]); }
-static void VU1MI_MSUBx() { _vuMSUBx(&vuRegs[1]); }
-static void VU1MI_MSUBy() { _vuMSUBy(&vuRegs[1]); }
-static void VU1MI_MSUBz() { _vuMSUBz(&vuRegs[1]); }
-static void VU1MI_MSUBw() { _vuMSUBw(&vuRegs[1]); }
-static void VU1MI_MSUBA()  { _vuMSUBA(&vuRegs[1]); }
-static void VU1MI_MSUBAi() { _vuMSUBAi(&vuRegs[1]); }
-static void VU1MI_MSUBAq() { _vuMSUBAq(&vuRegs[1]); }
-static void VU1MI_MSUBAx() { _vuMSUBAx(&vuRegs[1]); }
-static void VU1MI_MSUBAy() { _vuMSUBAy(&vuRegs[1]); }
-static void VU1MI_MSUBAz() { _vuMSUBAz(&vuRegs[1]); }
-static void VU1MI_MSUBAw() { _vuMSUBAw(&vuRegs[1]); }
-static void VU1MI_MAX()  { _vuMAX(&vuRegs[1]); }
-static void VU1MI_MAXi() { _vuMAXi(&vuRegs[1]); }
-static void VU1MI_MAXx() { _vuMAXx(&vuRegs[1]); }
-static void VU1MI_MAXy() { _vuMAXy(&vuRegs[1]); }
-static void VU1MI_MAXz() { _vuMAXz(&vuRegs[1]); }
-static void VU1MI_MAXw() { _vuMAXw(&vuRegs[1]); }
-static void VU1MI_MINI()  { _vuMINI(&vuRegs[1]); }
-static void VU1MI_MINIi() { _vuMINIi(&vuRegs[1]); }
-static void VU1MI_MINIx() { _vuMINIx(&vuRegs[1]); }
-static void VU1MI_MINIy() { _vuMINIy(&vuRegs[1]); }
-static void VU1MI_MINIz() { _vuMINIz(&vuRegs[1]); }
-static void VU1MI_MINIw() { _vuMINIw(&vuRegs[1]); }
-static void VU1MI_OPMULA() { _vuOPMULA(&vuRegs[1]); }
-static void VU1MI_OPMSUB() { _vuOPMSUB(&vuRegs[1]); }
-static void VU1MI_NOP() { _vuNOP(&vuRegs[1]); }
-static void VU1MI_FTOI0()  { _vuFTOI0(&vuRegs[1]); }
-static void VU1MI_FTOI4()  { _vuFTOI4(&vuRegs[1]); }
-static void VU1MI_FTOI12() { _vuFTOI12(&vuRegs[1]); }
-static void VU1MI_FTOI15() { _vuFTOI15(&vuRegs[1]); }
-static void VU1MI_ITOF0()  { _vuITOF0(&vuRegs[1]); }
-static void VU1MI_ITOF4()  { _vuITOF4(&vuRegs[1]); }
-static void VU1MI_ITOF12() { _vuITOF12(&vuRegs[1]); }
-static void VU1MI_ITOF15() { _vuITOF15(&vuRegs[1]); }
-static void VU1MI_CLIP() { _vuCLIP(&vuRegs[1]); }
+static void VU1MI_ABS(void)  { _vuABS(&vuRegs[1]); }
+static void VU1MI_ADD(void)  { _vuADD(&vuRegs[1]); }
+static void VU1MI_ADDi(void) { _vuADDi(&vuRegs[1]); }
+static void VU1MI_ADDq(void) { _vuADDq(&vuRegs[1]); }
+static void VU1MI_ADDx(void) { _vuADDx(&vuRegs[1]); }
+static void VU1MI_ADDy(void) { _vuADDy(&vuRegs[1]); }
+static void VU1MI_ADDz(void) { _vuADDz(&vuRegs[1]); }
+static void VU1MI_ADDw(void) { _vuADDw(&vuRegs[1]); }
+static void VU1MI_ADDA(void) { _vuADDA(&vuRegs[1]); }
+static void VU1MI_ADDAi(void) { _vuADDAi(&vuRegs[1]); }
+static void VU1MI_ADDAq(void) { _vuADDAq(&vuRegs[1]); }
+static void VU1MI_ADDAx(void) { _vuADDAx(&vuRegs[1]); }
+static void VU1MI_ADDAy(void) { _vuADDAy(&vuRegs[1]); }
+static void VU1MI_ADDAz(void) { _vuADDAz(&vuRegs[1]); }
+static void VU1MI_ADDAw(void) { _vuADDAw(&vuRegs[1]); }
+static void VU1MI_SUB(void)  { _vuSUB(&vuRegs[1]); }
+static void VU1MI_SUBi(void) { _vuSUBi(&vuRegs[1]); }
+static void VU1MI_SUBq(void) { _vuSUBq(&vuRegs[1]); }
+static void VU1MI_SUBx(void) { _vuSUBx(&vuRegs[1]); }
+static void VU1MI_SUBy(void) { _vuSUBy(&vuRegs[1]); }
+static void VU1MI_SUBz(void) { _vuSUBz(&vuRegs[1]); }
+static void VU1MI_SUBw(void) { _vuSUBw(&vuRegs[1]); }
+static void VU1MI_SUBA(void)  { _vuSUBA(&vuRegs[1]); }
+static void VU1MI_SUBAi(void) { _vuSUBAi(&vuRegs[1]); }
+static void VU1MI_SUBAq(void) { _vuSUBAq(&vuRegs[1]); }
+static void VU1MI_SUBAx(void) { _vuSUBAx(&vuRegs[1]); }
+static void VU1MI_SUBAy(void) { _vuSUBAy(&vuRegs[1]); }
+static void VU1MI_SUBAz(void) { _vuSUBAz(&vuRegs[1]); }
+static void VU1MI_SUBAw(void) { _vuSUBAw(&vuRegs[1]); }
+static void VU1MI_MUL(void)  { _vuMUL(&vuRegs[1]); }
+static void VU1MI_MULi(void) { _vuMULi(&vuRegs[1]); }
+static void VU1MI_MULq(void) { _vuMULq(&vuRegs[1]); }
+static void VU1MI_MULx(void) { _vuMULx(&vuRegs[1]); }
+static void VU1MI_MULy(void) { _vuMULy(&vuRegs[1]); }
+static void VU1MI_MULz(void) { _vuMULz(&vuRegs[1]); }
+static void VU1MI_MULw(void) { _vuMULw(&vuRegs[1]); }
+static void VU1MI_MULA(void)  { _vuMULA(&vuRegs[1]); }
+static void VU1MI_MULAi(void) { _vuMULAi(&vuRegs[1]); }
+static void VU1MI_MULAq(void) { _vuMULAq(&vuRegs[1]); }
+static void VU1MI_MULAx(void) { _vuMULAx(&vuRegs[1]); }
+static void VU1MI_MULAy(void) { _vuMULAy(&vuRegs[1]); }
+static void VU1MI_MULAz(void) { _vuMULAz(&vuRegs[1]); }
+static void VU1MI_MULAw(void) { _vuMULAw(&vuRegs[1]); }
+static void VU1MI_MADD(void)  { _vuMADD(&vuRegs[1]); }
+static void VU1MI_MADDi(void) { _vuMADDi(&vuRegs[1]); }
+static void VU1MI_MADDq(void) { _vuMADDq(&vuRegs[1]); }
+static void VU1MI_MADDx(void) { _vuMADDx(&vuRegs[1]); }
+static void VU1MI_MADDy(void) { _vuMADDy(&vuRegs[1]); }
+static void VU1MI_MADDz(void) { _vuMADDz(&vuRegs[1]); }
+static void VU1MI_MADDw(void) { _vuMADDw(&vuRegs[1]); }
+static void VU1MI_MADDA(void)  { _vuMADDA(&vuRegs[1]); }
+static void VU1MI_MADDAi(void) { _vuMADDAi(&vuRegs[1]); }
+static void VU1MI_MADDAq(void) { _vuMADDAq(&vuRegs[1]); }
+static void VU1MI_MADDAx(void) { _vuMADDAx(&vuRegs[1]); }
+static void VU1MI_MADDAy(void) { _vuMADDAy(&vuRegs[1]); }
+static void VU1MI_MADDAz(void) { _vuMADDAz(&vuRegs[1]); }
+static void VU1MI_MADDAw(void) { _vuMADDAw(&vuRegs[1]); }
+static void VU1MI_MSUB(void)  { _vuMSUB(&vuRegs[1]); }
+static void VU1MI_MSUBi(void) { _vuMSUBi(&vuRegs[1]); }
+static void VU1MI_MSUBq(void) { _vuMSUBq(&vuRegs[1]); }
+static void VU1MI_MSUBx(void) { _vuMSUBx(&vuRegs[1]); }
+static void VU1MI_MSUBy(void) { _vuMSUBy(&vuRegs[1]); }
+static void VU1MI_MSUBz(void) { _vuMSUBz(&vuRegs[1]); }
+static void VU1MI_MSUBw(void) { _vuMSUBw(&vuRegs[1]); }
+static void VU1MI_MSUBA(void)  { _vuMSUBA(&vuRegs[1]); }
+static void VU1MI_MSUBAi(void) { _vuMSUBAi(&vuRegs[1]); }
+static void VU1MI_MSUBAq(void) { _vuMSUBAq(&vuRegs[1]); }
+static void VU1MI_MSUBAx(void) { _vuMSUBAx(&vuRegs[1]); }
+static void VU1MI_MSUBAy(void) { _vuMSUBAy(&vuRegs[1]); }
+static void VU1MI_MSUBAz(void) { _vuMSUBAz(&vuRegs[1]); }
+static void VU1MI_MSUBAw(void) { _vuMSUBAw(&vuRegs[1]); }
+static void VU1MI_MAX(void)  { _vuMAX(&vuRegs[1]); }
+static void VU1MI_MAXi(void) { _vuMAXi(&vuRegs[1]); }
+static void VU1MI_MAXx(void) { _vuMAXx(&vuRegs[1]); }
+static void VU1MI_MAXy(void) { _vuMAXy(&vuRegs[1]); }
+static void VU1MI_MAXz(void) { _vuMAXz(&vuRegs[1]); }
+static void VU1MI_MAXw(void) { _vuMAXw(&vuRegs[1]); }
+static void VU1MI_MINI(void)  { _vuMINI(&vuRegs[1]); }
+static void VU1MI_MINIi(void) { _vuMINIi(&vuRegs[1]); }
+static void VU1MI_MINIx(void) { _vuMINIx(&vuRegs[1]); }
+static void VU1MI_MINIy(void) { _vuMINIy(&vuRegs[1]); }
+static void VU1MI_MINIz(void) { _vuMINIz(&vuRegs[1]); }
+static void VU1MI_MINIw(void) { _vuMINIw(&vuRegs[1]); }
+static void VU1MI_OPMULA(void) { _vuOPMULA(&vuRegs[1]); }
+static void VU1MI_OPMSUB(void) { _vuOPMSUB(&vuRegs[1]); }
+static void VU1MI_NOP(void) { _vuNOP(&vuRegs[1]); }
+static void VU1MI_FTOI0(void)  { _vuFTOI0(&vuRegs[1]); }
+static void VU1MI_FTOI4(void)  { _vuFTOI4(&vuRegs[1]); }
+static void VU1MI_FTOI12(void) { _vuFTOI12(&vuRegs[1]); }
+static void VU1MI_FTOI15(void) { _vuFTOI15(&vuRegs[1]); }
+static void VU1MI_ITOF0(void)  { _vuITOF0(&vuRegs[1]); }
+static void VU1MI_ITOF4(void)  { _vuITOF4(&vuRegs[1]); }
+static void VU1MI_ITOF12(void) { _vuITOF12(&vuRegs[1]); }
+static void VU1MI_ITOF15(void) { _vuITOF15(&vuRegs[1]); }
+static void VU1MI_CLIP(void) { _vuCLIP(&vuRegs[1]); }
 
 /*****************************************/
 /*   VU Micromode Lower instructions    */
 /*****************************************/
 
-static void VU1MI_DIV() { _vuDIV(&vuRegs[1]); }
-static void VU1MI_SQRT() { _vuSQRT(&vuRegs[1]); }
-static void VU1MI_RSQRT() { _vuRSQRT(&vuRegs[1]); }
-static void VU1MI_IADD() { _vuIADD(&vuRegs[1]); }
-static void VU1MI_IADDI() { _vuIADDI(&vuRegs[1]); }
-static void VU1MI_IADDIU() { _vuIADDIU(&vuRegs[1]); }
-static void VU1MI_IAND() { _vuIAND(&vuRegs[1]); }
-static void VU1MI_IOR() { _vuIOR(&vuRegs[1]); }
-static void VU1MI_ISUB() { _vuISUB(&vuRegs[1]); }
-static void VU1MI_ISUBIU() { _vuISUBIU(&vuRegs[1]); }
-static void VU1MI_MOVE() { _vuMOVE(&vuRegs[1]); }
-static void VU1MI_MFIR() { _vuMFIR(&vuRegs[1]); }
-static void VU1MI_MTIR() { _vuMTIR(&vuRegs[1]); }
-static void VU1MI_MR32() { _vuMR32(&vuRegs[1]); }
-static void VU1MI_LQ() { _vuLQ(&vuRegs[1]); }
-static void VU1MI_LQD() { _vuLQD(&vuRegs[1]); }
-static void VU1MI_LQI() { _vuLQI(&vuRegs[1]); }
-static void VU1MI_SQ() { _vuSQ(&vuRegs[1]); }
-static void VU1MI_SQD() { _vuSQD(&vuRegs[1]); }
-static void VU1MI_SQI() { _vuSQI(&vuRegs[1]); }
-static void VU1MI_ILW() { _vuILW(&vuRegs[1]); }
-static void VU1MI_ISW() { _vuISW(&vuRegs[1]); }
-static void VU1MI_ILWR() { _vuILWR(&vuRegs[1]); }
-static void VU1MI_ISWR() { _vuISWR(&vuRegs[1]); }
-static void VU1MI_RINIT() { vuRegs[1].VI[REG_R].UL = 0x3F800000 | (vuRegs[1].VF[((vuRegs[1].code >> 11) & 0x1F)].UL[((vuRegs[1].code >> 21) & 0x03)] & 0x007FFFFF); }
-static void VU1MI_RGET()  { _vuRGET(&vuRegs[1]); }
-static void VU1MI_RNEXT() { _vuRNEXT(&vuRegs[1]); }
-static void VU1MI_RXOR()  { vuRegs[1].VI[REG_R].UL = 0x3F800000 | ((vuRegs[1].VI[REG_R].UL ^ vuRegs[1].VF[((vuRegs[1].code >> 11) & 0x1F)].UL[((vuRegs[1].code >> 21) & 0x03)]) & 0x007FFFFF); }
-static void VU1MI_WAITQ() { }
-static void VU1MI_FSAND() { _vuFSAND(&vuRegs[1]); }
-static void VU1MI_FSEQ()  { _vuFSEQ(&vuRegs[1]); }
-static void VU1MI_FSOR()  { _vuFSOR(&vuRegs[1]); }
-static void VU1MI_FSSET() { _vuFSSET(&vuRegs[1]); }
-static void VU1MI_FMAND() { _vuFMAND(&vuRegs[1]); }
-static void VU1MI_FMEQ()  { _vuFMEQ(&vuRegs[1]); }
-static void VU1MI_FMOR()  { _vuFMOR(&vuRegs[1]); }
-static void VU1MI_FCAND() { _vuFCAND(&vuRegs[1]); }
-static void VU1MI_FCEQ()  { _vuFCEQ(&vuRegs[1]); }
-static void VU1MI_FCOR()  { _vuFCOR(&vuRegs[1]); }
-static void VU1MI_FCSET() { vuRegs[1].clipflag = (u32)(vuRegs[1].code & 0xFFFFFF); }
-static void VU1MI_FCGET() { _vuFCGET(&vuRegs[1]); }
-static void VU1MI_IBEQ() { _vuIBEQ(&vuRegs[1]); }
-static void VU1MI_IBGEZ() { _vuIBGEZ(&vuRegs[1]); }
-static void VU1MI_IBGTZ() { _vuIBGTZ(&vuRegs[1]); }
-static void VU1MI_IBLTZ() { _vuIBLTZ(&vuRegs[1]); }
-static void VU1MI_IBLEZ() { _vuIBLEZ(&vuRegs[1]); }
-static void VU1MI_IBNE() { _vuIBNE(&vuRegs[1]); }
-static void VU1MI_B()   { _vuB(&vuRegs[1]); }
-static void VU1MI_BAL() { _vuBAL(&vuRegs[1]); }
-static void VU1MI_JR()   { _vuJR(&vuRegs[1]); }
-static void VU1MI_JALR() { _vuJALR(&vuRegs[1]); }
-static void VU1MI_MFP() { _vuMFP(&vuRegs[1]); }
-static void VU1MI_WAITP() { }
-static void VU1MI_ESADD()   { _vuESADD(&vuRegs[1]); }
-static void VU1MI_ERSADD()  { _vuERSADD(&vuRegs[1]); }
-static void VU1MI_ELENG()   { _vuELENG(&vuRegs[1]); }
-static void VU1MI_ERLENG()  { _vuERLENG(&vuRegs[1]); }
-static void VU1MI_EATANxy() { _vuEATANxy(&vuRegs[1]); }
-static void VU1MI_EATANxz() { _vuEATANxz(&vuRegs[1]); }
-static void VU1MI_ESUM()    { _vuESUM(&vuRegs[1]); }
-static void VU1MI_ERCPR()   { _vuERCPR(&vuRegs[1]); }
-static void VU1MI_ESQRT()   { _vuESQRT(&vuRegs[1]); }
-static void VU1MI_ERSQRT()  { _vuERSQRT(&vuRegs[1]); }
-static void VU1MI_ESIN()    { _vuESIN(&vuRegs[1]); }
-static void VU1MI_EATAN()   { _vuEATAN(&vuRegs[1]); }
-static void VU1MI_EEXP()    { _vuEEXP(&vuRegs[1]); }
-static void VU1MI_XITOP()   { _vuXITOP(&vuRegs[1]); }
-static void VU1MI_XGKICK()  { _vuXGKICK(&vuRegs[1]); }
-static void VU1MI_XTOP()    { _vuXTOP(&vuRegs[1]); }
+static void VU1MI_DIV(void) { _vuDIV(&vuRegs[1]); }
+static void VU1MI_SQRT(void) { _vuSQRT(&vuRegs[1]); }
+static void VU1MI_RSQRT(void) { _vuRSQRT(&vuRegs[1]); }
+static void VU1MI_IADD(void) { _vuIADD(&vuRegs[1]); }
+static void VU1MI_IADDI(void) { _vuIADDI(&vuRegs[1]); }
+static void VU1MI_IADDIU(void) { _vuIADDIU(&vuRegs[1]); }
+static void VU1MI_IAND(void) { _vuIAND(&vuRegs[1]); }
+static void VU1MI_IOR(void) { _vuIOR(&vuRegs[1]); }
+static void VU1MI_ISUB(void) { _vuISUB(&vuRegs[1]); }
+static void VU1MI_ISUBIU(void) { _vuISUBIU(&vuRegs[1]); }
+static void VU1MI_MOVE(void) { _vuMOVE(&vuRegs[1]); }
+static void VU1MI_MFIR(void) { _vuMFIR(&vuRegs[1]); }
+static void VU1MI_MTIR(void) { _vuMTIR(&vuRegs[1]); }
+static void VU1MI_MR32(void) { _vuMR32(&vuRegs[1]); }
+static void VU1MI_LQ(void) { _vuLQ(&vuRegs[1]); }
+static void VU1MI_LQD(void) { _vuLQD(&vuRegs[1]); }
+static void VU1MI_LQI(void) { _vuLQI(&vuRegs[1]); }
+static void VU1MI_SQ(void) { _vuSQ(&vuRegs[1]); }
+static void VU1MI_SQD(void) { _vuSQD(&vuRegs[1]); }
+static void VU1MI_SQI(void) { _vuSQI(&vuRegs[1]); }
+static void VU1MI_ILW(void) { _vuILW(&vuRegs[1]); }
+static void VU1MI_ISW(void) { _vuISW(&vuRegs[1]); }
+static void VU1MI_ILWR(void) { _vuILWR(&vuRegs[1]); }
+static void VU1MI_ISWR(void) { _vuISWR(&vuRegs[1]); }
+static void VU1MI_RINIT(void) { vuRegs[1].VI[REG_R].UL = 0x3F800000 | (vuRegs[1].VF[((vuRegs[1].code >> 11) & 0x1F)].UL[((vuRegs[1].code >> 21) & 0x03)] & 0x007FFFFF); }
+static void VU1MI_RGET(void)  { _vuRGET(&vuRegs[1]); }
+static void VU1MI_RNEXT(void) { _vuRNEXT(&vuRegs[1]); }
+static void VU1MI_RXOR(void)  { vuRegs[1].VI[REG_R].UL = 0x3F800000 | ((vuRegs[1].VI[REG_R].UL ^ vuRegs[1].VF[((vuRegs[1].code >> 11) & 0x1F)].UL[((vuRegs[1].code >> 21) & 0x03)]) & 0x007FFFFF); }
+static void VU1MI_WAITQ(void) { }
+static void VU1MI_FSAND(void) { _vuFSAND(&vuRegs[1]); }
+static void VU1MI_FSEQ(void)  { _vuFSEQ(&vuRegs[1]); }
+static void VU1MI_FSOR(void)  { _vuFSOR(&vuRegs[1]); }
+static void VU1MI_FSSET(void) { _vuFSSET(&vuRegs[1]); }
+static void VU1MI_FMAND(void) { _vuFMAND(&vuRegs[1]); }
+static void VU1MI_FMEQ(void)  { _vuFMEQ(&vuRegs[1]); }
+static void VU1MI_FMOR(void)  { _vuFMOR(&vuRegs[1]); }
+static void VU1MI_FCAND(void) { _vuFCAND(&vuRegs[1]); }
+static void VU1MI_FCEQ(void)  { _vuFCEQ(&vuRegs[1]); }
+static void VU1MI_FCOR(void)  { _vuFCOR(&vuRegs[1]); }
+static void VU1MI_FCSET(void) { vuRegs[1].clipflag = (u32)(vuRegs[1].code & 0xFFFFFF); }
+static void VU1MI_FCGET(void) { _vuFCGET(&vuRegs[1]); }
+static void VU1MI_IBEQ(void) { _vuIBEQ(&vuRegs[1]); }
+static void VU1MI_IBGEZ(void) { _vuIBGEZ(&vuRegs[1]); }
+static void VU1MI_IBGTZ(void) { _vuIBGTZ(&vuRegs[1]); }
+static void VU1MI_IBLTZ(void) { _vuIBLTZ(&vuRegs[1]); }
+static void VU1MI_IBLEZ(void) { _vuIBLEZ(&vuRegs[1]); }
+static void VU1MI_IBNE(void) { _vuIBNE(&vuRegs[1]); }
+static void VU1MI_B(void)   { _vuB(&vuRegs[1]); }
+static void VU1MI_BAL(void) { _vuBAL(&vuRegs[1]); }
+static void VU1MI_JR(void)   { _vuJR(&vuRegs[1]); }
+static void VU1MI_JALR(void) { _vuJALR(&vuRegs[1]); }
+static void VU1MI_MFP(void) { _vuMFP(&vuRegs[1]); }
+static void VU1MI_WAITP(void) { }
+static void VU1MI_ESADD(void)   { _vuESADD(&vuRegs[1]); }
+static void VU1MI_ERSADD(void)  { _vuERSADD(&vuRegs[1]); }
+static void VU1MI_ELENG(void)   { _vuELENG(&vuRegs[1]); }
+static void VU1MI_ERLENG(void)  { _vuERLENG(&vuRegs[1]); }
+static void VU1MI_EATANxy(void) { _vuEATANxy(&vuRegs[1]); }
+static void VU1MI_EATANxz(void) { _vuEATANxz(&vuRegs[1]); }
+static void VU1MI_ESUM(void)    { _vuESUM(&vuRegs[1]); }
+static void VU1MI_ERCPR(void)   { _vuERCPR(&vuRegs[1]); }
+static void VU1MI_ESQRT(void)   { _vuESQRT(&vuRegs[1]); }
+static void VU1MI_ERSQRT(void)  { _vuERSQRT(&vuRegs[1]); }
+static void VU1MI_ESIN(void)    { _vuESIN(&vuRegs[1]); }
+static void VU1MI_EATAN(void)   { _vuEATAN(&vuRegs[1]); }
+static void VU1MI_EEXP(void)    { _vuEEXP(&vuRegs[1]); }
+static void VU1MI_XITOP(void)   { _vuXITOP(&vuRegs[1]); }
+static void VU1MI_XGKICK(void)  { _vuXGKICK(&vuRegs[1]); }
+static void VU1MI_XTOP(void)    { _vuXTOP(&vuRegs[1]); }
 
 
 
@@ -4639,51 +4639,51 @@ PCSX2_ALIGN(16) const FNTYPE PREFIX##_UPPER_OPCODE[64] = { \
 
 #define _vuTablesPre(VU, PREFIX) \
  \
- static void PREFIX##_UPPER_FD_00(); \
- static void PREFIX##_UPPER_FD_01(); \
- static void PREFIX##_UPPER_FD_10(); \
- static void PREFIX##_UPPER_FD_11(); \
- static void PREFIX##LowerOP(); \
- static void PREFIX##LowerOP_T3_00(); \
- static void PREFIX##LowerOP_T3_01(); \
- static void PREFIX##LowerOP_T3_10(); \
- static void PREFIX##LowerOP_T3_11(); \
+ static void PREFIX##_UPPER_FD_00(void); \
+ static void PREFIX##_UPPER_FD_01(void); \
+ static void PREFIX##_UPPER_FD_10(void); \
+ static void PREFIX##_UPPER_FD_11(void); \
+ static void PREFIX##LowerOP(void); \
+ static void PREFIX##LowerOP_T3_00(void); \
+ static void PREFIX##LowerOP_T3_01(void); \
+ static void PREFIX##LowerOP_T3_10(void); \
+ static void PREFIX##LowerOP_T3_11(void); \
 
 #define _vuTablesPost(VU, PREFIX) \
  \
- static void PREFIX##_UPPER_FD_00() { \
+ static void PREFIX##_UPPER_FD_00(void) { \
  PREFIX##_UPPER_FD_00_TABLE[(VU.code >> 6) & 0x1f ](); \
 } \
  \
- static void PREFIX##_UPPER_FD_01() { \
+ static void PREFIX##_UPPER_FD_01(void) { \
  PREFIX##_UPPER_FD_01_TABLE[(VU.code >> 6) & 0x1f](); \
 } \
  \
- static void PREFIX##_UPPER_FD_10() { \
+ static void PREFIX##_UPPER_FD_10(void) { \
  PREFIX##_UPPER_FD_10_TABLE[(VU.code >> 6) & 0x1f](); \
 } \
  \
- static void PREFIX##_UPPER_FD_11() { \
+ static void PREFIX##_UPPER_FD_11(void) { \
  PREFIX##_UPPER_FD_11_TABLE[(VU.code >> 6) & 0x1f](); \
 } \
  \
- static void PREFIX##LowerOP() { \
+ static void PREFIX##LowerOP(void) { \
  PREFIX##LowerOP_OPCODE[VU.code & 0x3f](); \
 } \
  \
- static void PREFIX##LowerOP_T3_00() { \
+ static void PREFIX##LowerOP_T3_00(void) { \
  PREFIX##LowerOP_T3_00_OPCODE[(VU.code >> 6) & 0x1f](); \
 } \
  \
- static void PREFIX##LowerOP_T3_01() { \
+ static void PREFIX##LowerOP_T3_01(void) { \
  PREFIX##LowerOP_T3_01_OPCODE[(VU.code >> 6) & 0x1f](); \
 } \
  \
- static void PREFIX##LowerOP_T3_10() { \
+ static void PREFIX##LowerOP_T3_10(void) { \
  PREFIX##LowerOP_T3_10_OPCODE[(VU.code >> 6) & 0x1f](); \
 } \
  \
- static void PREFIX##LowerOP_T3_11() { \
+ static void PREFIX##LowerOP_T3_11(void) { \
  PREFIX##LowerOP_T3_11_OPCODE[(VU.code >> 6) & 0x1f](); \
 } \
 
@@ -4768,142 +4768,142 @@ _vuRegsTables(vuRegs[1], VU1regs, FnPtr_VuRegsN)
 	vuRegs[0].VI[REG_Q].UL = vuRegs[0].q.UL; \
 	vuRegs[0].VI[REG_STATUS_FLAG].UL = (vuRegs[0].VI[REG_STATUS_FLAG].UL & 0x3CF) | (vuRegs[0].statusflag & 0x30) | ((vuRegs[0].statusflag & 0x30) << 6)
 
-void VABS()  { vuRegs[0].code = cpuRegs.code; _vuABS(&vuRegs[0]); }
-void VADD()  { vuRegs[0].code = cpuRegs.code; _vuADD(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDi() { vuRegs[0].code = cpuRegs.code; _vuADDi(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDq() { vuRegs[0].code = cpuRegs.code; _vuADDq(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDx() { vuRegs[0].code = cpuRegs.code; _vuADDx(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDy() { vuRegs[0].code = cpuRegs.code; _vuADDy(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDz() { vuRegs[0].code = cpuRegs.code; _vuADDz(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDw() { vuRegs[0].code = cpuRegs.code; _vuADDw(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDA() { vuRegs[0].code = cpuRegs.code; _vuADDA(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDAi() { vuRegs[0].code = cpuRegs.code; _vuADDAi(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDAq() { vuRegs[0].code = cpuRegs.code; _vuADDAq(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDAx() { vuRegs[0].code = cpuRegs.code; _vuADDAx(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDAy() { vuRegs[0].code = cpuRegs.code; _vuADDAy(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDAz() { vuRegs[0].code = cpuRegs.code; _vuADDAz(&vuRegs[0]); SYNCMSFLAGS(); }
-void VADDAw() { vuRegs[0].code = cpuRegs.code; _vuADDAw(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUB()  { vuRegs[0].code = cpuRegs.code; _vuSUB(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBi() { vuRegs[0].code = cpuRegs.code; _vuSUBi(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBq() { vuRegs[0].code = cpuRegs.code; _vuSUBq(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBx() { vuRegs[0].code = cpuRegs.code; _vuSUBx(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBy() { vuRegs[0].code = cpuRegs.code; _vuSUBy(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBz() { vuRegs[0].code = cpuRegs.code; _vuSUBz(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBw() { vuRegs[0].code = cpuRegs.code; _vuSUBw(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBA()  { vuRegs[0].code = cpuRegs.code; _vuSUBA(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBAi() { vuRegs[0].code = cpuRegs.code; _vuSUBAi(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBAq() { vuRegs[0].code = cpuRegs.code; _vuSUBAq(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBAx() { vuRegs[0].code = cpuRegs.code; _vuSUBAx(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBAy() { vuRegs[0].code = cpuRegs.code; _vuSUBAy(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBAz() { vuRegs[0].code = cpuRegs.code; _vuSUBAz(&vuRegs[0]); SYNCMSFLAGS(); }
-void VSUBAw() { vuRegs[0].code = cpuRegs.code; _vuSUBAw(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMUL()  { vuRegs[0].code = cpuRegs.code; _vuMUL(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULi() { vuRegs[0].code = cpuRegs.code; _vuMULi(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULq() { vuRegs[0].code = cpuRegs.code; _vuMULq(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULx() { vuRegs[0].code = cpuRegs.code; _vuMULx(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULy() { vuRegs[0].code = cpuRegs.code; _vuMULy(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULz() { vuRegs[0].code = cpuRegs.code; _vuMULz(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULw() { vuRegs[0].code = cpuRegs.code; _vuMULw(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULA()  { vuRegs[0].code = cpuRegs.code; _vuMULA(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULAi() { vuRegs[0].code = cpuRegs.code; _vuMULAi(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULAq() { vuRegs[0].code = cpuRegs.code; _vuMULAq(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULAx() { vuRegs[0].code = cpuRegs.code; _vuMULAx(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULAy() { vuRegs[0].code = cpuRegs.code; _vuMULAy(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULAz() { vuRegs[0].code = cpuRegs.code; _vuMULAz(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMULAw() { vuRegs[0].code = cpuRegs.code; _vuMULAw(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADD()  { vuRegs[0].code = cpuRegs.code; _vuMADD(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDi() { vuRegs[0].code = cpuRegs.code; _vuMADDi(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDq() { vuRegs[0].code = cpuRegs.code; _vuMADDq(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDx() { vuRegs[0].code = cpuRegs.code; _vuMADDx(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDy() { vuRegs[0].code = cpuRegs.code; _vuMADDy(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDz() { vuRegs[0].code = cpuRegs.code; _vuMADDz(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDw() { vuRegs[0].code = cpuRegs.code; _vuMADDw(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDA()  { vuRegs[0].code = cpuRegs.code; _vuMADDA(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDAi() { vuRegs[0].code = cpuRegs.code; _vuMADDAi(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDAq() { vuRegs[0].code = cpuRegs.code; _vuMADDAq(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDAx() { vuRegs[0].code = cpuRegs.code; _vuMADDAx(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDAy() { vuRegs[0].code = cpuRegs.code; _vuMADDAy(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDAz() { vuRegs[0].code = cpuRegs.code; _vuMADDAz(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMADDAw() { vuRegs[0].code = cpuRegs.code; _vuMADDAw(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUB()  { vuRegs[0].code = cpuRegs.code; _vuMSUB(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBi() { vuRegs[0].code = cpuRegs.code; _vuMSUBi(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBq() { vuRegs[0].code = cpuRegs.code; _vuMSUBq(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBx() { vuRegs[0].code = cpuRegs.code; _vuMSUBx(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBy() { vuRegs[0].code = cpuRegs.code; _vuMSUBy(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBz() { vuRegs[0].code = cpuRegs.code; _vuMSUBz(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBw() { vuRegs[0].code = cpuRegs.code; _vuMSUBw(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBA()  { vuRegs[0].code = cpuRegs.code; _vuMSUBA(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBAi() { vuRegs[0].code = cpuRegs.code; _vuMSUBAi(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBAq() { vuRegs[0].code = cpuRegs.code; _vuMSUBAq(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBAx() { vuRegs[0].code = cpuRegs.code; _vuMSUBAx(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBAy() { vuRegs[0].code = cpuRegs.code; _vuMSUBAy(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBAz() { vuRegs[0].code = cpuRegs.code; _vuMSUBAz(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMSUBAw() { vuRegs[0].code = cpuRegs.code; _vuMSUBAw(&vuRegs[0]); SYNCMSFLAGS(); }
-void VMAX()  { vuRegs[0].code = cpuRegs.code; _vuMAX(&vuRegs[0]); }
-void VMAXi() { vuRegs[0].code = cpuRegs.code; _vuMAXi(&vuRegs[0]); }
-void VMAXx() { vuRegs[0].code = cpuRegs.code; _vuMAXx(&vuRegs[0]); }
-void VMAXy() { vuRegs[0].code = cpuRegs.code; _vuMAXy(&vuRegs[0]); }
-void VMAXz() { vuRegs[0].code = cpuRegs.code; _vuMAXz(&vuRegs[0]); }
-void VMAXw() { vuRegs[0].code = cpuRegs.code; _vuMAXw(&vuRegs[0]); }
-void VMINI()  { vuRegs[0].code = cpuRegs.code; _vuMINI(&vuRegs[0]); }
-void VMINIi() { vuRegs[0].code = cpuRegs.code; _vuMINIi(&vuRegs[0]); }
-void VMINIx() { vuRegs[0].code = cpuRegs.code; _vuMINIx(&vuRegs[0]); }
-void VMINIy() { vuRegs[0].code = cpuRegs.code; _vuMINIy(&vuRegs[0]); }
-void VMINIz() { vuRegs[0].code = cpuRegs.code; _vuMINIz(&vuRegs[0]); }
-void VMINIw() { vuRegs[0].code = cpuRegs.code; _vuMINIw(&vuRegs[0]); }
-void VOPMULA() { vuRegs[0].code = cpuRegs.code; _vuOPMULA(&vuRegs[0]); SYNCMSFLAGS(); }
-void VOPMSUB() { vuRegs[0].code = cpuRegs.code; _vuOPMSUB(&vuRegs[0]); SYNCMSFLAGS(); }
-void VNOP()    { vuRegs[0].code = cpuRegs.code; _vuNOP(&vuRegs[0]); }
-void VFTOI0()  { vuRegs[0].code = cpuRegs.code; _vuFTOI0(&vuRegs[0]); }
-void VFTOI4()  { vuRegs[0].code = cpuRegs.code; _vuFTOI4(&vuRegs[0]); }
-void VFTOI12() { vuRegs[0].code = cpuRegs.code; _vuFTOI12(&vuRegs[0]); }
-void VFTOI15() { vuRegs[0].code = cpuRegs.code; _vuFTOI15(&vuRegs[0]); }
-void VITOF0()  { vuRegs[0].code = cpuRegs.code; _vuITOF0(&vuRegs[0]); }
-void VITOF4()  { vuRegs[0].code = cpuRegs.code; _vuITOF4(&vuRegs[0]); }
-void VITOF12() { vuRegs[0].code = cpuRegs.code; _vuITOF12(&vuRegs[0]); }
-void VITOF15() { vuRegs[0].code = cpuRegs.code; _vuITOF15(&vuRegs[0]); }
-void VCLIPw()  { vuRegs[0].code = cpuRegs.code; _vuCLIP(&vuRegs[0]); SYNCCLIPFLAG(); }
+void VABS(void)  { vuRegs[0].code = cpuRegs.code; _vuABS(&vuRegs[0]); }
+void VADD(void)  { vuRegs[0].code = cpuRegs.code; _vuADD(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDi(void) { vuRegs[0].code = cpuRegs.code; _vuADDi(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDq(void) { vuRegs[0].code = cpuRegs.code; _vuADDq(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDx(void) { vuRegs[0].code = cpuRegs.code; _vuADDx(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDy(void) { vuRegs[0].code = cpuRegs.code; _vuADDy(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDz(void) { vuRegs[0].code = cpuRegs.code; _vuADDz(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDw(void) { vuRegs[0].code = cpuRegs.code; _vuADDw(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDA(void) { vuRegs[0].code = cpuRegs.code; _vuADDA(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDAi(void) { vuRegs[0].code = cpuRegs.code; _vuADDAi(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDAq(void) { vuRegs[0].code = cpuRegs.code; _vuADDAq(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDAx(void) { vuRegs[0].code = cpuRegs.code; _vuADDAx(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDAy(void) { vuRegs[0].code = cpuRegs.code; _vuADDAy(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDAz(void) { vuRegs[0].code = cpuRegs.code; _vuADDAz(&vuRegs[0]); SYNCMSFLAGS(); }
+void VADDAw(void) { vuRegs[0].code = cpuRegs.code; _vuADDAw(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUB(void)  { vuRegs[0].code = cpuRegs.code; _vuSUB(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBi(void) { vuRegs[0].code = cpuRegs.code; _vuSUBi(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBq(void) { vuRegs[0].code = cpuRegs.code; _vuSUBq(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBx(void) { vuRegs[0].code = cpuRegs.code; _vuSUBx(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBy(void) { vuRegs[0].code = cpuRegs.code; _vuSUBy(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBz(void) { vuRegs[0].code = cpuRegs.code; _vuSUBz(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBw(void) { vuRegs[0].code = cpuRegs.code; _vuSUBw(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBA(void)  { vuRegs[0].code = cpuRegs.code; _vuSUBA(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBAi(void) { vuRegs[0].code = cpuRegs.code; _vuSUBAi(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBAq(void) { vuRegs[0].code = cpuRegs.code; _vuSUBAq(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBAx(void) { vuRegs[0].code = cpuRegs.code; _vuSUBAx(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBAy(void) { vuRegs[0].code = cpuRegs.code; _vuSUBAy(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBAz(void) { vuRegs[0].code = cpuRegs.code; _vuSUBAz(&vuRegs[0]); SYNCMSFLAGS(); }
+void VSUBAw(void) { vuRegs[0].code = cpuRegs.code; _vuSUBAw(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMUL(void)  { vuRegs[0].code = cpuRegs.code; _vuMUL(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULi(void) { vuRegs[0].code = cpuRegs.code; _vuMULi(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULq(void) { vuRegs[0].code = cpuRegs.code; _vuMULq(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULx(void) { vuRegs[0].code = cpuRegs.code; _vuMULx(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULy(void) { vuRegs[0].code = cpuRegs.code; _vuMULy(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULz(void) { vuRegs[0].code = cpuRegs.code; _vuMULz(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULw(void) { vuRegs[0].code = cpuRegs.code; _vuMULw(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULA(void)  { vuRegs[0].code = cpuRegs.code; _vuMULA(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULAi(void) { vuRegs[0].code = cpuRegs.code; _vuMULAi(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULAq(void) { vuRegs[0].code = cpuRegs.code; _vuMULAq(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULAx(void) { vuRegs[0].code = cpuRegs.code; _vuMULAx(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULAy(void) { vuRegs[0].code = cpuRegs.code; _vuMULAy(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULAz(void) { vuRegs[0].code = cpuRegs.code; _vuMULAz(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMULAw(void) { vuRegs[0].code = cpuRegs.code; _vuMULAw(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADD(void)  { vuRegs[0].code = cpuRegs.code; _vuMADD(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDi(void) { vuRegs[0].code = cpuRegs.code; _vuMADDi(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDq(void) { vuRegs[0].code = cpuRegs.code; _vuMADDq(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDx(void) { vuRegs[0].code = cpuRegs.code; _vuMADDx(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDy(void) { vuRegs[0].code = cpuRegs.code; _vuMADDy(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDz(void) { vuRegs[0].code = cpuRegs.code; _vuMADDz(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDw(void) { vuRegs[0].code = cpuRegs.code; _vuMADDw(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDA(void)  { vuRegs[0].code = cpuRegs.code; _vuMADDA(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDAi(void) { vuRegs[0].code = cpuRegs.code; _vuMADDAi(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDAq(void) { vuRegs[0].code = cpuRegs.code; _vuMADDAq(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDAx(void) { vuRegs[0].code = cpuRegs.code; _vuMADDAx(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDAy(void) { vuRegs[0].code = cpuRegs.code; _vuMADDAy(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDAz(void) { vuRegs[0].code = cpuRegs.code; _vuMADDAz(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMADDAw(void) { vuRegs[0].code = cpuRegs.code; _vuMADDAw(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUB(void)  { vuRegs[0].code = cpuRegs.code; _vuMSUB(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBi(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBi(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBq(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBq(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBx(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBx(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBy(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBy(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBz(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBz(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBw(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBw(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBA(void)  { vuRegs[0].code = cpuRegs.code; _vuMSUBA(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBAi(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBAi(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBAq(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBAq(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBAx(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBAx(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBAy(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBAy(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBAz(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBAz(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMSUBAw(void) { vuRegs[0].code = cpuRegs.code; _vuMSUBAw(&vuRegs[0]); SYNCMSFLAGS(); }
+void VMAX(void)  { vuRegs[0].code = cpuRegs.code; _vuMAX(&vuRegs[0]); }
+void VMAXi(void) { vuRegs[0].code = cpuRegs.code; _vuMAXi(&vuRegs[0]); }
+void VMAXx(void) { vuRegs[0].code = cpuRegs.code; _vuMAXx(&vuRegs[0]); }
+void VMAXy(void) { vuRegs[0].code = cpuRegs.code; _vuMAXy(&vuRegs[0]); }
+void VMAXz(void) { vuRegs[0].code = cpuRegs.code; _vuMAXz(&vuRegs[0]); }
+void VMAXw(void) { vuRegs[0].code = cpuRegs.code; _vuMAXw(&vuRegs[0]); }
+void VMINI(void)  { vuRegs[0].code = cpuRegs.code; _vuMINI(&vuRegs[0]); }
+void VMINIi(void) { vuRegs[0].code = cpuRegs.code; _vuMINIi(&vuRegs[0]); }
+void VMINIx(void) { vuRegs[0].code = cpuRegs.code; _vuMINIx(&vuRegs[0]); }
+void VMINIy(void) { vuRegs[0].code = cpuRegs.code; _vuMINIy(&vuRegs[0]); }
+void VMINIz(void) { vuRegs[0].code = cpuRegs.code; _vuMINIz(&vuRegs[0]); }
+void VMINIw(void) { vuRegs[0].code = cpuRegs.code; _vuMINIw(&vuRegs[0]); }
+void VOPMULA(void) { vuRegs[0].code = cpuRegs.code; _vuOPMULA(&vuRegs[0]); SYNCMSFLAGS(); }
+void VOPMSUB(void) { vuRegs[0].code = cpuRegs.code; _vuOPMSUB(&vuRegs[0]); SYNCMSFLAGS(); }
+void VNOP(void)    { vuRegs[0].code = cpuRegs.code; _vuNOP(&vuRegs[0]); }
+void VFTOI0(void)  { vuRegs[0].code = cpuRegs.code; _vuFTOI0(&vuRegs[0]); }
+void VFTOI4(void)  { vuRegs[0].code = cpuRegs.code; _vuFTOI4(&vuRegs[0]); }
+void VFTOI12(void) { vuRegs[0].code = cpuRegs.code; _vuFTOI12(&vuRegs[0]); }
+void VFTOI15(void) { vuRegs[0].code = cpuRegs.code; _vuFTOI15(&vuRegs[0]); }
+void VITOF0(void)  { vuRegs[0].code = cpuRegs.code; _vuITOF0(&vuRegs[0]); }
+void VITOF4(void)  { vuRegs[0].code = cpuRegs.code; _vuITOF4(&vuRegs[0]); }
+void VITOF12(void) { vuRegs[0].code = cpuRegs.code; _vuITOF12(&vuRegs[0]); }
+void VITOF15(void) { vuRegs[0].code = cpuRegs.code; _vuITOF15(&vuRegs[0]); }
+void VCLIPw(void)  { vuRegs[0].code = cpuRegs.code; _vuCLIP(&vuRegs[0]); SYNCCLIPFLAG(); }
 
-void VDIV()    { vuRegs[0].code = cpuRegs.code; _vuDIV(&vuRegs[0]); SYNCFDIV(); }
-void VSQRT()   { vuRegs[0].code = cpuRegs.code; _vuSQRT(&vuRegs[0]); SYNCFDIV(); }
-void VRSQRT()  { vuRegs[0].code = cpuRegs.code; _vuRSQRT(&vuRegs[0]); SYNCFDIV(); }
-void VIADD()   { vuRegs[0].code = cpuRegs.code; _vuIADD(&vuRegs[0]); }
-void VIADDI()  { vuRegs[0].code = cpuRegs.code; _vuIADDI(&vuRegs[0]); }
-void VIADDIU() { vuRegs[0].code = cpuRegs.code; _vuIADDIU(&vuRegs[0]); }
-void VIAND()   { vuRegs[0].code = cpuRegs.code; _vuIAND(&vuRegs[0]); }
-void VIOR()    { vuRegs[0].code = cpuRegs.code; _vuIOR(&vuRegs[0]); }
-void VISUB()   { vuRegs[0].code = cpuRegs.code; _vuISUB(&vuRegs[0]); }
-void VISUBIU() { vuRegs[0].code = cpuRegs.code; _vuISUBIU(&vuRegs[0]); }
-void VMOVE()   { vuRegs[0].code = cpuRegs.code; _vuMOVE(&vuRegs[0]); }
-void VMFIR()   { vuRegs[0].code = cpuRegs.code; _vuMFIR(&vuRegs[0]); }
-void VMTIR()   { vuRegs[0].code = cpuRegs.code; _vuMTIR(&vuRegs[0]); }
-void VMR32()   { vuRegs[0].code = cpuRegs.code; _vuMR32(&vuRegs[0]); }
-void VLQ()     { vuRegs[0].code = cpuRegs.code; _vuLQ(&vuRegs[0]); }
-void VLQD()    { vuRegs[0].code = cpuRegs.code; _vuLQD(&vuRegs[0]); }
-void VLQI()    { vuRegs[0].code = cpuRegs.code; _vuLQI(&vuRegs[0]); }
-void VSQ()     { vuRegs[0].code = cpuRegs.code; _vuSQ(&vuRegs[0]); }
-void VSQD()    { vuRegs[0].code = cpuRegs.code; _vuSQD(&vuRegs[0]); }
-void VSQI()    { vuRegs[0].code = cpuRegs.code; _vuSQI(&vuRegs[0]); }
-void VILW()    { vuRegs[0].code = cpuRegs.code; _vuILW(&vuRegs[0]); }
-void VISW()    { vuRegs[0].code = cpuRegs.code; _vuISW(&vuRegs[0]); }
-void VILWR()   { vuRegs[0].code = cpuRegs.code; _vuILWR(&vuRegs[0]); }
-void VISWR()   { vuRegs[0].code = cpuRegs.code; _vuISWR(&vuRegs[0]); }
-void VRINIT()  { vuRegs[0].code = cpuRegs.code; vuRegs[0].VI[REG_R].UL = 0x3F800000 | (vuRegs[0].VF[((vuRegs[0].code >> 11) & 0x1F)].UL[((vuRegs[0].code >> 21) & 0x03)] & 0x007FFFFF); }
-void VRGET()   { vuRegs[0].code = cpuRegs.code; _vuRGET(&vuRegs[0]); }
-void VRNEXT()  { vuRegs[0].code = cpuRegs.code; _vuRNEXT(&vuRegs[0]); }
-void VRXOR()   { vuRegs[0].code = cpuRegs.code; vuRegs[0].VI[REG_R].UL = 0x3F800000 | ((vuRegs[0].VI[REG_R].UL ^ vuRegs[0].VF[((vuRegs[0].code >> 11) & 0x1F)].UL[((vuRegs[0].code >> 21) & 0x03)]) & 0x007FFFFF); }
-void VWAITQ()  { vuRegs[0].code = cpuRegs.code; }
-void VFSAND()  { vuRegs[0].code = cpuRegs.code; _vuFSAND(&vuRegs[0]); }
-void VFSEQ()   { vuRegs[0].code = cpuRegs.code; _vuFSEQ(&vuRegs[0]); }
-void VFSOR()   { vuRegs[0].code = cpuRegs.code; _vuFSOR(&vuRegs[0]); }
-void VFSSET()  { vuRegs[0].code = cpuRegs.code; _vuFSSET(&vuRegs[0]); SYNCSTATUSFLAG(); }
-void VFMAND()  { vuRegs[0].code = cpuRegs.code; _vuFMAND(&vuRegs[0]); }
-void VFMEQ()   { vuRegs[0].code = cpuRegs.code; _vuFMEQ(&vuRegs[0]); }
-void VFMOR()   { vuRegs[0].code = cpuRegs.code; _vuFMOR(&vuRegs[0]); }
-void VFCAND()  { vuRegs[0].code = cpuRegs.code; _vuFCAND(&vuRegs[0]); }
-void VFCEQ()   { vuRegs[0].code = cpuRegs.code; _vuFCEQ(&vuRegs[0]); }
-void VFCOR()   { vuRegs[0].code = cpuRegs.code; _vuFCOR(&vuRegs[0]); }
-void VFCSET()  { vuRegs[0].code = cpuRegs.code; vuRegs[0].clipflag = (u32)(vuRegs[0].code & 0xFFFFFF); SYNCCLIPFLAG(); }
-void VFCGET()  { vuRegs[0].code = cpuRegs.code; _vuFCGET(&vuRegs[0]); }
-void VXITOP()  { vuRegs[0].code = cpuRegs.code; _vuXITOP(&vuRegs[0]); }
+void VDIV(void)    { vuRegs[0].code = cpuRegs.code; _vuDIV(&vuRegs[0]); SYNCFDIV(); }
+void VSQRT(void)   { vuRegs[0].code = cpuRegs.code; _vuSQRT(&vuRegs[0]); SYNCFDIV(); }
+void VRSQRT(void)  { vuRegs[0].code = cpuRegs.code; _vuRSQRT(&vuRegs[0]); SYNCFDIV(); }
+void VIADD(void)   { vuRegs[0].code = cpuRegs.code; _vuIADD(&vuRegs[0]); }
+void VIADDI(void)  { vuRegs[0].code = cpuRegs.code; _vuIADDI(&vuRegs[0]); }
+void VIADDIU(void) { vuRegs[0].code = cpuRegs.code; _vuIADDIU(&vuRegs[0]); }
+void VIAND(void)   { vuRegs[0].code = cpuRegs.code; _vuIAND(&vuRegs[0]); }
+void VIOR(void)    { vuRegs[0].code = cpuRegs.code; _vuIOR(&vuRegs[0]); }
+void VISUB(void)   { vuRegs[0].code = cpuRegs.code; _vuISUB(&vuRegs[0]); }
+void VISUBIU(void) { vuRegs[0].code = cpuRegs.code; _vuISUBIU(&vuRegs[0]); }
+void VMOVE(void)   { vuRegs[0].code = cpuRegs.code; _vuMOVE(&vuRegs[0]); }
+void VMFIR(void)   { vuRegs[0].code = cpuRegs.code; _vuMFIR(&vuRegs[0]); }
+void VMTIR(void)   { vuRegs[0].code = cpuRegs.code; _vuMTIR(&vuRegs[0]); }
+void VMR32(void)   { vuRegs[0].code = cpuRegs.code; _vuMR32(&vuRegs[0]); }
+void VLQ(void)     { vuRegs[0].code = cpuRegs.code; _vuLQ(&vuRegs[0]); }
+void VLQD(void)    { vuRegs[0].code = cpuRegs.code; _vuLQD(&vuRegs[0]); }
+void VLQI(void)    { vuRegs[0].code = cpuRegs.code; _vuLQI(&vuRegs[0]); }
+void VSQ(void)     { vuRegs[0].code = cpuRegs.code; _vuSQ(&vuRegs[0]); }
+void VSQD(void)    { vuRegs[0].code = cpuRegs.code; _vuSQD(&vuRegs[0]); }
+void VSQI(void)    { vuRegs[0].code = cpuRegs.code; _vuSQI(&vuRegs[0]); }
+void VILW(void)    { vuRegs[0].code = cpuRegs.code; _vuILW(&vuRegs[0]); }
+void VISW(void)    { vuRegs[0].code = cpuRegs.code; _vuISW(&vuRegs[0]); }
+void VILWR(void)   { vuRegs[0].code = cpuRegs.code; _vuILWR(&vuRegs[0]); }
+void VISWR(void)   { vuRegs[0].code = cpuRegs.code; _vuISWR(&vuRegs[0]); }
+void VRINIT(void)  { vuRegs[0].code = cpuRegs.code; vuRegs[0].VI[REG_R].UL = 0x3F800000 | (vuRegs[0].VF[((vuRegs[0].code >> 11) & 0x1F)].UL[((vuRegs[0].code >> 21) & 0x03)] & 0x007FFFFF); }
+void VRGET(void)   { vuRegs[0].code = cpuRegs.code; _vuRGET(&vuRegs[0]); }
+void VRNEXT(void)  { vuRegs[0].code = cpuRegs.code; _vuRNEXT(&vuRegs[0]); }
+void VRXOR(void)   { vuRegs[0].code = cpuRegs.code; vuRegs[0].VI[REG_R].UL = 0x3F800000 | ((vuRegs[0].VI[REG_R].UL ^ vuRegs[0].VF[((vuRegs[0].code >> 11) & 0x1F)].UL[((vuRegs[0].code >> 21) & 0x03)]) & 0x007FFFFF); }
+void VWAITQ(void)  { vuRegs[0].code = cpuRegs.code; }
+void VFSAND(void)  { vuRegs[0].code = cpuRegs.code; _vuFSAND(&vuRegs[0]); }
+void VFSEQ(void)   { vuRegs[0].code = cpuRegs.code; _vuFSEQ(&vuRegs[0]); }
+void VFSOR(void)   { vuRegs[0].code = cpuRegs.code; _vuFSOR(&vuRegs[0]); }
+void VFSSET(void)  { vuRegs[0].code = cpuRegs.code; _vuFSSET(&vuRegs[0]); SYNCSTATUSFLAG(); }
+void VFMAND(void)  { vuRegs[0].code = cpuRegs.code; _vuFMAND(&vuRegs[0]); }
+void VFMEQ(void)   { vuRegs[0].code = cpuRegs.code; _vuFMEQ(&vuRegs[0]); }
+void VFMOR(void)   { vuRegs[0].code = cpuRegs.code; _vuFMOR(&vuRegs[0]); }
+void VFCAND(void)  { vuRegs[0].code = cpuRegs.code; _vuFCAND(&vuRegs[0]); }
+void VFCEQ(void)   { vuRegs[0].code = cpuRegs.code; _vuFCEQ(&vuRegs[0]); }
+void VFCOR(void)   { vuRegs[0].code = cpuRegs.code; _vuFCOR(&vuRegs[0]); }
+void VFCSET(void)  { vuRegs[0].code = cpuRegs.code; vuRegs[0].clipflag = (u32)(vuRegs[0].code & 0xFFFFFF); SYNCCLIPFLAG(); }
+void VFCGET(void)  { vuRegs[0].code = cpuRegs.code; _vuFCGET(&vuRegs[0]); }
+void VXITOP(void)  { vuRegs[0].code = cpuRegs.code; _vuXITOP(&vuRegs[0]); }
 

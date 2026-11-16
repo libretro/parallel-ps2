@@ -46,7 +46,7 @@ static u32 QWCinVIFMFIFO(u32 DrainADDR, u32 qwc)
 
 	return ret;
 }
-static __fi bool mfifoVIF1rbTransfer()
+static __fi bool mfifoVIF1rbTransfer(void)
 {
 	u32 msize = dmacRegs.rbor.ADDR + dmacRegs.rbsr.RMSK + 16;
 	u32 mfifoqwc = pcsx2_min_i(QWCinVIFMFIFO(vif1ch.madr, vif1ch.qwc), vif1ch.qwc);
@@ -100,7 +100,7 @@ static __fi bool mfifoVIF1rbTransfer()
 	return ret;
 }
 
-static __fi void mfifo_VIF1chain()
+static __fi void mfifo_VIF1chain(void)
 {
 	/* Is QWC = 0? if so there is nothing to transfer */
 	if (vif1ch.qwc == 0)

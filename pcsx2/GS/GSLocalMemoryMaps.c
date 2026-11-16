@@ -71,8 +71,9 @@ GSPixelOffset4* gs_pixel_offset4_get(gs_flat_map_t* map, const GIFRegFRAME* FRAM
 	gs_pa_init(&zr, &zo0, 0, 0);
 	for (i = 0; i < 512; i++)
 	{
-		off->col[i].x = (int)(gs_pa_value(&fr, i * 4) - gs_pa_value(&fr, 0)) << fs;
-		off->col[i].y = (int)(gs_pa_value(&zr, i * 4) - gs_pa_value(&zr, 0)) << zs;
+		/* (a difference that can be negative: shifted unsigned) */
+		off->col[i].x = (int)((u32)(gs_pa_value(&fr, i * 4) - gs_pa_value(&fr, 0)) << fs);
+		off->col[i].y = (int)((u32)(gs_pa_value(&zr, i * 4) - gs_pa_value(&zr, 0)) << zs);
 	}
 
 	slot = (GSPixelOffset4**)gs_flat_map_insert(map, &hash, key_hash, &inserted);

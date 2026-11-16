@@ -173,7 +173,10 @@ static const u32 kMargin = 0x10000;
 
 static u32 main_addr(void)
 {
-	return (rnd() & 1 ? kMainA : kMainB) + (rnd_n((kWindow - kMargin) >> 4) << 4);
+	/* (one draw a statement: the order of a call's arguments, and of an
+	 * operator's operands, is the compiler's to pick) */
+	const u32 base = rnd() & 1 ? kMainA : kMainB;
+	return base + (rnd_n((kWindow - kMargin) >> 4) << 4);
 }
 
 static void fill_tags(u8* p, u32 bytes)
@@ -181,7 +184,9 @@ static void fill_tags(u8* p, u32 bytes)
 	u32 i, w[4];
 	for (i = 0; i < bytes; i += 16)
 	{
-		w[0] = rnd_n(12) | (rnd_n(8) << 28) | (rnd_n(6) == 0 ? 0x80000000u : 0);
+		w[0] = rnd_n(12);
+		w[0] |= rnd_n(8) << 28;
+		w[0] |= rnd_n(6) == 0 ? 0x80000000u : 0;
 		w[1] = main_addr();
 		w[2] = rnd();
 		w[3] = rnd();
@@ -199,9 +204,13 @@ static void keep_normal_done(void)
 
 static void random_channel(void)
 {
-	gifch.chcr._u32 = 0x100 | (rnd_n(2) << 2) | (rnd() & 0xc1);
+	gifch.chcr._u32 = 0x100 | (rnd_n(2) << 2);
+	gifch.chcr._u32 |= rnd() & 0xc1;
 	if (rnd_n(4) == 0)
-		gifch.chcr._u32 |= (rnd_n(8) << 28) | (rnd() & 0x80000000u);
+	{
+		gifch.chcr._u32 |= rnd_n(8) << 28;
+		gifch.chcr._u32 |= rnd() & 0x80000000u;
+	}
 	gifch.qwc  = rnd_n(3) == 0 ? 0 : rnd_n(80);
 	gifch.madr = main_addr();
 	gifch.tadr = main_addr();
@@ -326,7 +335,8 @@ static void step(void)
 		}
 		case 9:
 		{
-			u32 n = FIFO_WRITE((u32*)&eeMem->Main[main_addr()], (int)rnd_n(5));
+			const int qwc = (int)rnd_n(5);
+			u32 n = FIFO_WRITE((u32*)&eeMem->Main[main_addr()], qwc);
 			mix(n);
 			mix((u32)FIFO_READ());
 			break;

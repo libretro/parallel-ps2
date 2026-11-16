@@ -53,7 +53,7 @@ static void recADDI_(int info)
 
 EERECOMPILE_CODEX(eeRecompileCodeRC1, ADDI, XMMINFO_WRITET | XMMINFO_READS);
 
-void recADDIU()
+void recADDIU(void)
 {
 	recADDI();
 }
@@ -72,7 +72,7 @@ static void recDADDI_(int info)
 EERECOMPILE_CODEX(eeRecompileCodeRC1, DADDI, XMMINFO_WRITET | XMMINFO_READS | XMMINFO_64BITOP);
 
 /* // DADDIU */
-void recDADDIU()
+void recDADDIU(void)
 {
 	recDADDI();
 }

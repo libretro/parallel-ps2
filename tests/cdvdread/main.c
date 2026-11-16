@@ -84,6 +84,27 @@ static int drive_ok(cdvd_iso_t *in, const u8 *image, unsigned lsn)
 	return cdvd_iso_finish_read(in, got, CDVD_MODE_2048) == 0 && same(got, image, lsn);
 }
 
+/* The VFS a frontend hands the core, over libretro-common's own files:
+ * each of the interface's own type (a call through a pointer of another
+ * type is undefined, so the impls are wrapped rather than cast) */
+typedef libretro_vfs_implementation_file vfs_file;
+static const char *RETRO_CALLCONV vfs_get_path(struct retro_vfs_file_handle *f) { return retro_vfs_file_get_path_impl((vfs_file *)f); }
+static struct retro_vfs_file_handle *RETRO_CALLCONV vfs_open(const char *path, unsigned mode, unsigned hints)
+{
+	return (struct retro_vfs_file_handle *)retro_vfs_file_open_impl(path, mode, hints);
+}
+static int RETRO_CALLCONV vfs_close(struct retro_vfs_file_handle *f) { return retro_vfs_file_close_impl((vfs_file *)f); }
+static int64_t RETRO_CALLCONV vfs_size(struct retro_vfs_file_handle *f) { return retro_vfs_file_size_impl((vfs_file *)f); }
+static int64_t RETRO_CALLCONV vfs_tell(struct retro_vfs_file_handle *f) { return retro_vfs_file_tell_impl((vfs_file *)f); }
+static int64_t RETRO_CALLCONV vfs_seek(struct retro_vfs_file_handle *f, int64_t offset, int whence)
+{
+	return retro_vfs_file_seek_impl((vfs_file *)f, offset, whence);
+}
+static int64_t RETRO_CALLCONV vfs_read(struct retro_vfs_file_handle *f, void *s, uint64_t len)
+{
+	return retro_vfs_file_read_impl((vfs_file *)f, s, len);
+}
+
 static void report(int good, const char *what, const char *how)
 {
 	printf("  %s: %s -- %s\n", good ? "ok" : "FAIL", what, how);
@@ -267,13 +288,13 @@ static void check_backwards_cso(const char *path)
 	fclose(f);
 	free(file);
 
-	iface.get_path = (retro_vfs_get_path_t)retro_vfs_file_get_path_impl;
-	iface.open     = (retro_vfs_open_t)retro_vfs_file_open_impl;
-	iface.close    = (retro_vfs_close_t)retro_vfs_file_close_impl;
-	iface.size     = (retro_vfs_size_t)retro_vfs_file_size_impl;
-	iface.tell     = (retro_vfs_tell_t)retro_vfs_file_tell_impl;
-	iface.seek     = (retro_vfs_seek_t)retro_vfs_file_seek_impl;
-	iface.read     = (retro_vfs_read_t)retro_vfs_file_read_impl;
+	iface.get_path = vfs_get_path;
+	iface.open     = vfs_open;
+	iface.close    = vfs_close;
+	iface.size     = vfs_size;
+	iface.tell     = vfs_tell;
+	iface.seek     = vfs_seek;
+	iface.read     = vfs_read;
 	info.required_interface_version = FILESTREAM_REQUIRED_VFS_VERSION;
 	info.iface = &iface;
 	filestream_vfs_init(&info);

@@ -363,8 +363,9 @@ static void gs_clut_expand16(const u16* src, u32* dst, int w, const GIFRegTEXA* 
 	const gs_vec4i rm  = gs_v4i_set32(0x0000001f);
 	const gs_vec4i gm  = gs_v4i_set32(0x000003e0);
 	const gs_vec4i bm  = gs_v4i_set32(0x00007c00);
-	const gs_vec4i ta0 = gs_v4i_set32((int)(TEXA->TA0 << 24));
-	const gs_vec4i ta1 = gs_v4i_set32((int)(TEXA->TA1 << 24));
+	/* (TA0 and TA1 are bit-fields, which promote to int: shifted as u32) */
+	const gs_vec4i ta0 = gs_v4i_set32((int)((u32)TEXA->TA0 << 24));
+	const gs_vec4i ta1 = gs_v4i_set32((int)((u32)TEXA->TA1 << 24));
 	const gs_vec4i zero = gs_v4i_zero();
 	const gs_vec4i* s = (const gs_vec4i*)src;
 	gs_vec4i* d = (gs_vec4i*)dst;

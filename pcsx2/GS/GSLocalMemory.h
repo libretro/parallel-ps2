@@ -162,11 +162,12 @@ static INLINE void gs_lm_write_frame16(gs_local_memory* mem, u32 addr, u32 c)
 
 static INLINE u32 gs_lm_expand24(u32 c, const GIFRegTEXA* TEXA)
 {
-	return (((!TEXA->AEM || (c & 0xffffff)) ? TEXA->TA0 : 0) << 24) | (c & 0xffffff);
+	/* (TA0 is a bit-field, which promotes to int: shifted as a u32) */
+	return ((u32)((!TEXA->AEM || (c & 0xffffff)) ? TEXA->TA0 : 0) << 24) | (c & 0xffffff);
 }
 static INLINE u32 gs_lm_expand16(u16 c, const GIFRegTEXA* TEXA)
 {
-	return (((c & 0x8000) ? TEXA->TA1 : (!TEXA->AEM || c) ? TEXA->TA0 : 0) << 24)
+	return ((u32)((c & 0x8000) ? TEXA->TA1 : (!TEXA->AEM || c) ? TEXA->TA0 : 0) << 24)
 		| ((c & 0x7c00) << 9)
 		| ((c & 0x03e0) << 6)
 		| ((c & 0x001f) << 3);

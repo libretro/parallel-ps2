@@ -12,7 +12,7 @@ EXE=
 case "$CC" in *mingw*) EXE=.exe ;; esac
 
 C89="-std=c89 -pedantic -Werror=pedantic -Werror=declaration-after-statement -Wno-long-long -Wall -Wextra"
-INC="-I$ROOT/pcsx2 -I$ROOT -I$LC/include"
+INC="-I$ROOT/pcsx2 -I$ROOT -isystem $LC/include"
 OBJ="$DIR/.obj"
 rm -rf "$OBJ" && mkdir -p "$OBJ"
 for src in "$ROOT/pcsx2/USB/usb-python2/p2io.c" "$ROOT/pcsx2/USB/usb-python2/py2desc.c" "$DIR/main.c"; do
