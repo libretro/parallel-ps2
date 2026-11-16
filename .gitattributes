@@ -2,7 +2,3 @@
 * text=auto
 
 # Declare files that will always have CRLF line endings on checkout.
-*.sln text eol=crlf
-*.props text eol=crlf
-*.vcxproj text eol=crlf
-*.vcxproj.filters text eol=crlf

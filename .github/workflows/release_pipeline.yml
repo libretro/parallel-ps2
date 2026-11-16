@@ -19,18 +19,6 @@ jobs:
       buildAppImage: true
     secrets: inherit
 
-  # Windows
-  build_windows_qt:
-    if: github.repository == 'PCSX2/pcsx2'
-    name: "Windows"
-    uses: ./.github/workflows/windows_build_qt.yml
-    with:
-      jobName: Qt
-      configuration: CMake
-      buildSystem: cmake
-      cmakeFlags: -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
-    secrets: inherit
-
   # MacOS
   build_macos_qt:
     if: github.repository == 'PCSX2/pcsx2'
@@ -46,7 +34,6 @@ jobs:
     if: github.repository == 'PCSX2/pcsx2'
     needs:
       - build_linux_qt
-      - build_windows_qt
       - build_macos_qt
     name: "Upload Artifacts"
     runs-on: ubuntu-latest

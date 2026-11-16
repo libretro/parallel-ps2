@@ -1062,9 +1062,7 @@ endif()
 
 set_property(GLOBAL PROPERTY PCSX2_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
-source_groups_from_vcxproj_filters(pcsx2core.vcxproj.filters)
-
-# Unix-only files aren't in the vcxproj.filters
+# IDE folders for the subsystems
 source_group(System/Ps2/DEV9 REGULAR_EXPRESSION DEV9/*)
 source_group(System/Ps2/PAD FILES ${pcsx2PADSources} ${pcsx2PADHeaders})
 source_group(System/Ps2/SPU2 REGULAR_EXPRESSION SPU2/*)
