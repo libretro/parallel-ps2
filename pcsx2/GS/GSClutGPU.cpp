@@ -21,18 +21,38 @@
 #include "GSLocalMemory.h"
 #include "Renderers/Common/GSDevice.h"
 #include "Renderers/Common/GSRenderer.h"
+#include "GSEntry.h"
 
 GSClut::GSClut(GSLocalMemory* mem)
 	: m_mem(mem)
 {
 	gs_clut_init(&m_c);
+	CreateGPUTextures();
 }
 
 GSClut::~GSClut()
 {
+	ReleaseGPUTextures();
+	gs_clut_deinit(&m_c);
+}
+
+void GSClut::CreateGPUTextures()
+{
+	if (!g_gs_device || !GSIsHardwareRenderer())
+		return;
+	if (!m_gpu_clut4)
+		m_gpu_clut4 = g_gs_device->CreateRenderTarget(16, 1, GSTexture::Format::Color, false);
+	if (!m_gpu_clut8)
+		m_gpu_clut8 = g_gs_device->CreateRenderTarget(256, 1, GSTexture::Format::Color, false);
+}
+
+void GSClut::ReleaseGPUTextures()
+{
 	gs_texture_free(m_gpu_clut4);
 	gs_texture_free(m_gpu_clut8);
-	gs_clut_deinit(&m_c);
+	m_gpu_clut4 = nullptr;
+	m_gpu_clut8 = nullptr;
+	m_current_gpu_clut = nullptr;
 }
 
 void GSClut::Write(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT)
@@ -76,15 +96,13 @@ void GSClut::Read32(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA)
 		GSTexture* src = g_gs_renderer->LookupPaletteSource(m_c.write.TEX0.CBP, m_c.write.TEX0.CPSM, 0, offset, &scale, &sample, size);
 		if (src && g_gs_device)
 		{
-			GSTexture** slot = is_4bit ? &m_gpu_clut4 : &m_gpu_clut8;
+			GSTexture* const slot = is_4bit ? m_gpu_clut4 : m_gpu_clut8;
 			const u32 dst_size = is_4bit ? 16 : 256;
 			const u32 dOffset = csa << 4;
-			if (!*slot)
-				*slot = g_gs_device->CreateRenderTarget(dst_size, 1, GSTexture::Format::Color, false);
-			if (*slot)
+			if (slot)
 			{
-				g_gs_device->UpdateCLUTTexture(src, scale, sample, offset.x, offset.y, *slot, dOffset, dst_size);
-				m_current_gpu_clut = *slot;
+				g_gs_device->UpdateCLUTTexture(src, scale, sample, offset.x, offset.y, slot, dOffset, dst_size);
+				m_current_gpu_clut = slot;
 			}
 		}
 	}

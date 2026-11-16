@@ -9,6 +9,7 @@
 #include "common/Pcsx2Defs.h"
 #include "GS/GSState.h"
 #include "GS.h"
+#include "GS/GSBackend.h"
 #ifdef ENABLE_PCSX2_PROFILER
 #include "Profiler.h"
 #else
@@ -1002,11 +1003,10 @@ void GSRendererPGS::ReadFIFO(u8 *mem, u32 size)
 	iface.read_transfer_fifo(mem, size);
 }
 
-/* --- the table GS.cpp calls through (see gs_renderer_ops in GS.h) -------
- * Plain functions over the one renderer object. No entry for the soft
- * reset, the CSR write or the unsynchronised local-memory read: this
- * renderer takes all of that from the GIF stream and its own copy of GS
- * memory. */
+/* --- the table GSEntry.c calls through (gs_renderer_ops, GSBackend.h) ----
+ * Plain functions over the one renderer object. No entry for the
+ * unsynchronised local-memory read: this renderer takes that from its own
+ * copy of GS memory. */
 
 static void pgs_op_reset(bool hardware_reset)            { g_pgs_renderer->Reset(hardware_reset); }
 static void pgs_op_read_fifo(u8* mem, u32 size)          { g_pgs_renderer->ReadFIFO(mem, size); }
@@ -1024,9 +1024,8 @@ static int pgs_op_freeze(int mode, freezeData* data)
 	return g_pgs_renderer->Defrost(data);
 }
 
-const struct gs_renderer_ops pgs_renderer_ops = {
+static const struct gs_renderer_ops pgs_renderer_ops = {
 	pgs_op_reset,
-	NULL, /* gif_soft_reset */
 	pgs_op_read_fifo,
 	NULL, /* read_local_memory_unsync */
 	pgs_op_transfer,
@@ -1035,3 +1034,20 @@ const struct gs_renderer_ops pgs_renderer_ops = {
 	pgs_op_update_config,
 	pgs_op_regs_mem
 };
+
+GSRendererPGS* g_pgs_renderer = nullptr;
+
+/* (one that fails Init is kept to gs_pgs_close, which frees it) */
+const struct gs_renderer_ops* gs_pgs_open(u8* basemem)
+{
+	g_pgs_renderer = new GSRendererPGS(basemem);
+	if (!g_pgs_renderer->Init())
+		return NULL;
+	return &pgs_renderer_ops;
+}
+
+void gs_pgs_close(void)
+{
+	delete g_pgs_renderer;
+	g_pgs_renderer = nullptr;
+}

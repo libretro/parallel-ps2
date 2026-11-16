@@ -107,6 +107,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/GSPage2Tile.c \
 	$(LRPS2_DIR)/GS/GSAlphaRange.c \
 	$(LRPS2_DIR)/GS/GSClut.c \
+	$(LRPS2_DIR)/GS/GSEntry.c \
 	$(LRPS2_DIR)/GS/GSDrawingContext.c \
 	$(LRPS2_DIR)/GS/GSLocalMemory.c \
 	$(LRPS2_DIR)/GS/GSWrappedMemory.c \
@@ -458,7 +459,6 @@ endif
 # pcsx2/GS - common renderer code
 # ============================================================================
 SOURCES_CXX += \
-	$(LRPS2_DIR)/GS/GS.cpp \
 	$(LRPS2_DIR)/GS/GSClutGPU.cpp \
 	$(LRPS2_DIR)/GS/GSLocalMemoryMultiISA.cpp \
 	$(LRPS2_DIR)/GS/GSState.cpp \

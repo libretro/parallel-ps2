@@ -26,6 +26,18 @@
 extern const char* GSTextureCacheMemoryUsage(void);
 #include "../../GS.h"
 #include "../../../Host.h"
+#include "../../GSBackend.h"
+#include "../SW/GSDeviceSW.h"
+#ifdef ENABLE_OPENGL
+#include "../OpenGL/GSDeviceOGL.h"
+#endif
+#ifdef ENABLE_VULKAN
+#include "../Vulkan/GSDeviceVK.h"
+#endif
+#ifdef _WIN32
+#include "../DX11/GSDevice11.h"
+#include "../DX12/GSDevice12.h"
+#endif
 
 int SetDATMShader(SetDATM datm)
 {
@@ -89,6 +101,85 @@ const char* shaderName(ShaderConvert value)
 }
 
 GSDevice* g_gs_device = NULL;
+
+/* The device on the frontend's context, for GS.c (GSBackend.h). One that
+ * fails to come up destroys what it managed to make, and goes. */
+static bool gs_device_create(GSDevice* dev)
+{
+	g_gs_device = dev;
+	if (!dev->Create())
+	{
+		gs_device_close();
+		return false;
+	}
+	return true;
+}
+
+bool gs_device_open(enum retro_hw_context_type context, GSRendererType renderer)
+{
+	switch (context)
+	{
+		case RETRO_HW_CONTEXT_D3D11:
+#ifdef _WIN32
+			if (!gs_device_create(new GSDevice11()))
+				return false;
+#endif
+			break;
+		case RETRO_HW_CONTEXT_D3D12:
+#ifdef _WIN32
+			if (!gs_device_create(new GSDevice12()))
+				return false;
+#endif
+			break;
+		case RETRO_HW_CONTEXT_VULKAN:
+#ifdef ENABLE_VULKAN
+			/* (paraLLEl-GS fuses device and renderer together) */
+			if (renderer != GS_RENDERER_PARALLEL_GS && !gs_device_create(new GSDeviceVK()))
+				return false;
+#endif
+			break;
+		case RETRO_HW_CONTEXT_OPENGL:
+		case RETRO_HW_CONTEXT_OPENGL_CORE:
+		case RETRO_HW_CONTEXT_OPENGLES3:
+		case RETRO_HW_CONTEXT_OPENGLES_VERSION:
+#ifdef ENABLE_OPENGL
+			if (!gs_device_create(new GSDeviceOGL()))
+				return false;
+#endif
+			break;
+		case RETRO_HW_CONTEXT_NONE:
+			/* No HW context (e.g. an SDL2 frontend): only the SW renderer
+			 * runs, and the caller forced it before reaching here. */
+			if (!gs_device_create(new GSDeviceSW()))
+				return false;
+			break;
+		default:
+			return false;
+	}
+	(void)renderer;
+
+	/* The device is up and has its command buffers, so the pool can be
+	 * filled with the sizes a game is going to ask for. Doing this inside
+	 * a backend's Create is too early - see GSDevice::PrewarmPool. */
+	if (g_gs_device)
+		g_gs_device->PrewarmPool();
+	return true;
+}
+
+void gs_device_close(void)
+{
+	if (!g_gs_device)
+		return;
+	g_gs_device->Destroy();
+	g_gs_device->Free();
+	g_gs_device = NULL;
+}
+
+void gs_device_clear_sampler_cache(void)
+{
+	if (g_gs_device)
+		g_gs_device->ClearSamplerCache();
+}
 
 GSDevice::GSDevice()
 {

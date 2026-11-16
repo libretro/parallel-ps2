@@ -20,6 +20,7 @@
 
 #include "GSRendererSW.h"
 #include "../Common/GSKeyHash.h"
+#include "../../GSBackend.h"
 
 MULTI_ISA_UNSHARED_IMPL;
 
@@ -485,6 +486,12 @@ GSVertexSW::ConvertVertexBufferPtr GSVertexSW::s_cvb[4][2][2][2];
 void GSVertexSW::InitStatic()
 {
 	MULTI_ISA_SELECT(GSVertexSWInitStatic)();
+}
+
+/* (GSinit's, GSBackend.h) */
+void gs_vertex_sw_init_static(void)
+{
+	GSVertexSW::InitStatic();
 }
 #endif
 

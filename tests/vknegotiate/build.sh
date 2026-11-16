@@ -1057,6 +1057,23 @@ else
 			exit 1
 		fi
 	done
+	# The device lost at the 30th present with a palette the GPU drew in
+	# use, and reopened under the renderer: nothing of the old device is
+	# used or freed on the new one (the texture cache's download textures
+	# and snapshots, the GPU palette's targets), and the device the reopen
+	# made is destroyed with it.
+	"$VAL/swdraw" --bios "$VAL/palette_bilinear_drawn.bin" palette_bilinear_drawn
+	LRPS2_TEST_VK_LOSE_AT=30 VK_LOADER_LAYERS_ENABLE='*validation*' VN_VERBOSE=1 \
+	VN_FRAMES=60 VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/palette_bilinear_drawn.bin" VN_RENDERER=Vulkan \
+		timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/lost.log" 2>&1 || true
+	if ! grep -q "vknegotiate v2: ok" "$VAL/lost.log" || ! grep -q "Reopening GS with new device and existing renderer" "$VAL/lost.log" \
+			|| grep -q "Validation Error" "$VAL/lost.log"; then
+		grep "Validation Error" "$VAL/lost.log" | sed 's/.*Validation Error: \(\[ [^]]* \]\).*/\1/' | sort | uniq -c | head -n 5
+		rm -rf "$VAL"
+		echo "  FAIL: the device lost under the renderer leaves objects of the old one"
+		exit 1
+	fi
 	rm -rf "$VAL"
 	echo "  validation layer, synchronization included: no error"
+	echo "  the device lost under the renderer: reopened, nothing of the old one left"
 fi

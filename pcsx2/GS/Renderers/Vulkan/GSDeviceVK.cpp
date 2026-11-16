@@ -188,6 +188,10 @@ static bool vk_negotiation_finish(retro_vulkan_context *context, VkInstance inst
 	return true;
 }
 
+/* Inside create_device(2)_vulkan: the device the GS makes is handed to
+ * the frontend, which destroys it */
+static bool s_vk_negotiating;
+
 bool create_device_vulkan(retro_vulkan_context *context, VkInstance instance, VkPhysicalDevice gpu, VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr, const char **required_device_extensions, unsigned num_required_device_extensions, const char **required_device_layers, unsigned num_required_device_layers, const VkPhysicalDeviceFeatures *required_features)
 {
 	vk_init_info.instance                       = instance;
@@ -205,7 +209,11 @@ bool create_device_vulkan(retro_vulkan_context *context, VkInstance instance, Vk
 		vkGetPhysicalDeviceProperties = (PFN_vkGetPhysicalDeviceProperties)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties");
 
 	if (!mtgs_is_open())
+	{
+		s_vk_negotiating = true;
 		mtgs_try_open_gs();
+		s_vk_negotiating = false;
+	}
 
 	return vk_negotiation_finish(context, instance, get_instance_proc_addr);
 }
@@ -260,7 +268,11 @@ bool create_device2_vulkan(retro_vulkan_context *context, VkInstance instance, V
 	vkGetPhysicalDeviceProperties = (PFN_vkGetPhysicalDeviceProperties)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties");
 
 	if (!mtgs_is_open())
+	{
+		s_vk_negotiating = true;
 		mtgs_try_open_gs();
+		s_vk_negotiating = false;
+	}
 
 	return vk_negotiation_finish(context, instance, get_instance_proc_addr);
 }
@@ -727,6 +739,7 @@ static void SafeDestroyDescriptorSetLayout(VkDevice dev, VkDescriptorSetLayout& 
 		VkResult res = vkCreateDevice(vk_init_info.gpu, &device_info, nullptr, &vk_init_info.device);
 		if (res != VK_SUCCESS)
 			return false;
+		m_owns_device = !s_vk_negotiating;
 
 		// With the device created, we can fill the remaining entry points.
 		if (!gs_vk_load_device_functions(vk_init_info.device))
@@ -2080,6 +2093,12 @@ bool GSDeviceVK::Create()
 		const char* fail = getenv("LRPS2_TEST_VK_UTILITY_FAIL");
 		s_devices_created++;
 		m_test_util_fail = fail && (!strcmp(fail, "always") || (!strcmp(fail, "first") && s_devices_created == 1));
+		/* LRPS2_TEST_VK_LOSE_AT=n: the first device reports itself lost
+		 * at its n-th present */
+		{
+			const char* at = getenv("LRPS2_TEST_VK_LOSE_AT");
+			m_test_lose_at = (at && s_devices_created == 1) ? (u32)strtoul(at, NULL, 10) : 0;
+		}
 	}
 	/* LRPS2_TEST_VK_PIPELINES=sync: every TFX pipeline built on the render
 	 * thread as it is first drawn with; =sibling: every draw drawn with a
@@ -2210,6 +2229,13 @@ void GSDeviceVK::Destroy()
 		m_heap_ready = false;
 	}
 
+	if (m_owns_device)
+	{
+		vkDestroyDevice(m_device, nullptr);
+		vk_init_info.device = VK_NULL_HANDLE;
+		m_owns_device       = false;
+	}
+
 	if (m_vulkan_library_held)
 		vk_unload_library();
 	m_vulkan_library_held = false;
@@ -2224,6 +2250,8 @@ GSDevice::PresentResult GSDeviceVK::BeginPresent(bool frame_skip)
 	if (m_warm && m_jobs_in_flight)
 		PipelineWarmTake();
 
+	if (m_test_lose_at && --m_test_lose_at == 0)
+		m_device_lost = true;
 	if (m_device_lost)
 		return PresentResult::DeviceLost;
 	return PresentResult::OK;

@@ -343,10 +343,10 @@ if(NOT _M_X86)
 endif()
 
 set(pcsx2GSSources
-	GS/GS.cpp
 	GS/GSClutGPU.cpp
 	GS/GSAlphaRange.c
 	GS/GSClut.c
+	GS/GSEntry.c
 	GS/GSDrawingContext.c
 	GS/GSLocalMemoryMaps.c
 	GS/GSLocalMemory.c
@@ -404,6 +404,7 @@ set(pcsx2GSHeaders
 	GS/GSOptionEnums.h
 	GS/GSRegs.h
 	GS/GS.h
+	GS/GSBackend.h
 	GS/GSAlphaRange.h
 	GS/GSLocalMemory.h
 	GS/GSRingHeap.h

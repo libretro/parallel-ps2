@@ -16,9 +16,10 @@
  *
  *  This checks that shape in the sources: libretro_set_hw_render and
  *  libretro_select_hw_render (libretro/main.c) and the GS context
- *  switches (pcsx2/GS/GS.cpp).
+ *  switches: the renderer's (GSsetRenderer, pcsx2/GS/GSEntry.c) and the
+ *  device's (gs_device_open, pcsx2/GS/Renderers/Common/GSDevice.cpp).
  *
- *  Usage: tests/hwctx/ctxaudit <libretro/main.c> <pcsx2/GS/GS.cpp>
+ *  Usage: tests/hwctx/ctxaudit <libretro/main.c> <GSEntry.c> <GSDevice.cpp>
  */
 
 #include <stdio.h>
@@ -99,21 +100,24 @@ int main(int argc, char** argv)
 		"\t\t\thw_render.version_minor = 1;\n";
 	char* m;
 	char* g;
+	char* d;
 	const char *s, *e;
 	int bad = 0;
 
-	if (argc != 3)
+	if (argc != 4)
 	{
-		fprintf(stderr, "usage: %s <libretro/main.c> <pcsx2/GS/GS.cpp>\n", argv[0]);
+		fprintf(stderr, "usage: %s <libretro/main.c> <GSEntry.c> <GSDevice.cpp>\n", argv[0]);
 		return 2;
 	}
 	m = read_file(argv[1]);
 	g = read_file(argv[2]);
-	if (!m || !g)
+	d = read_file(argv[3]);
+	if (!m || !g || !d)
 	{
 		fprintf(stderr, "cannot read the inputs\n");
 		free(m);
 		free(g);
+		free(d);
 		return 2;
 	}
 
@@ -149,17 +153,27 @@ int main(int argc, char** argv)
 			(size_t)(e + 3 - s) >= strlen(kNone) - 1 && !strncmp(e + 3 - (strlen(kNone) - 1), kNone + 1, strlen(kNone) - 1));
 	}
 
+	if (!body(g, "static GSRendererType GSsetRenderer(", &s, &e))
+		bad += verdict("GSsetRenderer found", 0);
+	else
 	{
-		const char* ge = g + strlen(g);
-		bad += verdict("GS.cpp maps no ES 2 type to a device", !first_in(g, ge, "RETRO_HW_CONTEXT_OPENGLES2"));
-		/* GSsetRenderer and OpenGSDevice */
-		bad += verdict("GS.cpp maps OPENGLES3 in both switches", count_in(g, ge, "case RETRO_HW_CONTEXT_OPENGLES3:") == 2);
-		bad += verdict("GS.cpp maps OPENGLES_VERSION in both switches",
-			count_in(g, ge, "case RETRO_HW_CONTEXT_OPENGLES_VERSION:") == 2);
+		bad += verdict("GSsetRenderer maps no ES 2 type", !first_in(s, e, "RETRO_HW_CONTEXT_OPENGLES2"));
+		bad += verdict("GSsetRenderer maps OPENGLES3", count_in(s, e, "case RETRO_HW_CONTEXT_OPENGLES3:") == 1);
+		bad += verdict("GSsetRenderer maps OPENGLES_VERSION", count_in(s, e, "case RETRO_HW_CONTEXT_OPENGLES_VERSION:") == 1);
+	}
+
+	if (!body(d, "bool gs_device_open(", &s, &e))
+		bad += verdict("gs_device_open found", 0);
+	else
+	{
+		bad += verdict("gs_device_open makes no device for ES 2", !first_in(s, e, "RETRO_HW_CONTEXT_OPENGLES2"));
+		bad += verdict("gs_device_open maps OPENGLES3", count_in(s, e, "case RETRO_HW_CONTEXT_OPENGLES3:") == 1);
+		bad += verdict("gs_device_open maps OPENGLES_VERSION", count_in(s, e, "case RETRO_HW_CONTEXT_OPENGLES_VERSION:") == 1);
 	}
 
 	free(m);
 	free(g);
+	free(d);
 	printf(bad ? "FAIL\n" : "PASS\n");
 	return bad ? 1 : 0;
 }

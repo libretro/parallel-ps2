@@ -240,6 +240,25 @@ void GSTextureCache::RemoveAll(bool sources, bool targets, bool hash_cache)
 	}
 }
 
+void GSTextureCache::ReleaseDevice()
+{
+	const bool keep = m_snap_keep;
+	m_snap_keep = false;
+	RemoveAll(true, true, true);
+	m_snap_keep = keep;
+	gs_download_texture_free(m_color_download_texture);
+	gs_download_texture_free(m_uint16_download_texture);
+	gs_download_texture_free(m_uint32_download_texture);
+	m_color_download_texture  = nullptr;
+	m_uint16_download_texture = nullptr;
+	m_uint32_download_texture = nullptr;
+	for (u32 i = 0; i < READ_BATCH_MAX; i++)
+	{
+		gs_download_texture_free(m_read_batch_download[i]);
+		m_read_batch_download[i] = nullptr;
+	}
+}
+
 bool GSTextureCache::FullRectDirty(Target* target, u32 rgba_mask)
 {
 	// One complete dirty rect, not pieces (Add dirty rect function should be able to join these all together).

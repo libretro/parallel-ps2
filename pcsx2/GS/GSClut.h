@@ -86,6 +86,11 @@ public:
 	GSClut(GSLocalMemory* mem);
 	~GSClut();
 
+	/* The GPU palette's two targets, made with the renderer on a hardware
+	 * device (none during play), and given up with the device it is on */
+	void CreateGPUTextures();
+	void ReleaseGPUTextures();
+
 	__fi GSTexture* GetGPUTexture() const { return m_current_gpu_clut; }
 
 	void Reset() { gs_clut_reset(&m_c); }

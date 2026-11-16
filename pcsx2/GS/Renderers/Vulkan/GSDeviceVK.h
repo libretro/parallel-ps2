@@ -524,6 +524,10 @@ private:
 	u32 m_util_built_ahead = 0;
 	bool m_device_lost = false;
 	bool m_test_util_fail = false; /* see Create() */
+	u32 m_test_lose_at = 0;        /* see Create() */
+	/* The VkDevice was made outside a negotiation (a reopen): no frontend
+	 * holds it, so Destroy destroys it */
+	bool m_owns_device = false;
 	static bool s_util_build_failed;
 	VkRenderPass m_date_image_setup_render_passes[2][2] = {}; // [depth][clear]
 

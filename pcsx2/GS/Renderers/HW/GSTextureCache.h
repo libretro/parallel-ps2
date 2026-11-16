@@ -766,6 +766,9 @@ public:
 	bool Read(Target* t, const GSVector4i& r);
 	void Read(Source* t, const GSVector4i& r);
 	void RemoveAll(bool sources, bool targets, bool hash_cache);
+	/* Everything held on the device, the snapshots and the download
+	 * textures too: before the device is replaced under the cache */
+	void ReleaseDevice();
 	void ReadbackAll();
 	void MemRestored(const u32* changed);
 	void TargetsRestored();

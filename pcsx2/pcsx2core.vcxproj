@@ -172,7 +172,6 @@
     <ClCompile Include="GS\Renderers\OpenGL\GLTextureFormat.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLVertexInput.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLState.c" />
-    <ClCompile Include="GS\GS.cpp" />
     <ClCompile Include="GS\GSClutGPU.cpp" />
     <ClCompile Include="GS\Renderers\Common\GSDevice.cpp" />
     <ClCompile Include="GS\Renderers\DX11\GSDevice11.cpp" />
@@ -180,6 +179,7 @@
     <ClCompile Include="GS\Renderers\Common\GSDirtyRect.c" />
     <ClCompile Include="GS\Renderers\Common\GSFastList.c" />
     <ClCompile Include="GS\GSClut.c" />
+    <ClCompile Include="GS\GSEntry.c" />
     <ClCompile Include="GS\GSDrawingContext.c" />
     <ClCompile Include="GS\GSLocalMemoryMaps.c" />
     <ClCompile Include="GS\Renderers\SW\GSDrawScanline.cpp" />
@@ -369,6 +369,7 @@
     <ClInclude Include="GS\Renderers\OpenGL\GLTextureFormat.h" />
     <ClInclude Include="GS\Renderers\OpenGL\GLVertexInput.h" />
     <ClInclude Include="GS\GS.h" />
+    <ClInclude Include="GS\GSBackend.h" />
     <ClInclude Include="GS\GSExtra.h" />
     <ClInclude Include="GS\GSOptionEnums.h" />
     <ClInclude Include="GS\GSRegs.h" />

@@ -1009,6 +1009,14 @@ endif
 # targets: "deps-mp" in the tag makes a tree built before it clean once.
 BUILD_TAG := $(CC)|$(CXX)|$(platform)|$(arch)|$(IS_ARM64)|$(IS_X86)|$(HAVE_VULKAN)|$(HAVE_OPENGL)|deps-mp
 
+#
+# Not in a make that only prints or asks (-n, -q, -p: the suites' dry runs
+# and a look at another platform's source lists): one of those with
+# another CC or platform removed every object the tree was built with,
+# and left a tag that made the next real build start over. The next real
+# build sees any change.
+MAKE_DRY_RUN := $(strip $(foreach f,n q p,$(findstring $(f),$(firstword -$(MAKEFLAGS)))))
+ifeq ($(MAKE_DRY_RUN),)
 BUILD_TAG_STATUS := $(shell \
 	if [ ! -f .build-tag ] || [ "`cat .build-tag 2>/dev/null`" != "$(BUILD_TAG)" ]; then \
 		if [ -f .build-tag ]; then \
@@ -1018,6 +1026,7 @@ BUILD_TAG_STATUS := $(shell \
 		fi; \
 		echo "$(BUILD_TAG)" > .build-tag; \
 	fi)
+endif
 
 ifeq ($(BUILD_TAG_STATUS),cleaned)
    $(info toolchain changed, removed objects from the previous build)
