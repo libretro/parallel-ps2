@@ -26,6 +26,7 @@
 #include "../../GSExtra.h"
 
 #include "GSFastList.h"
+#include "GSTexturePool.h"
 #include "GSTexture.h"
 #include "GSShaderEnums.h"
 #include "GSVertex.h"
@@ -861,53 +862,17 @@ public:
 	// clang-format on
 
 private:
-	FastList<GSTexture*> m_pool[2]; // [texture, target]
-
 	static const HWBlend m_blendMap[81];
 
 protected:
 	static constexpr int NUM_INTERLACE_SHADERS = 5;
-	/* How many the pool may hold. The ages that used to sit beside these
-	 * are gone: a pooled texture is not freed for being old, only for
-	 * putting the pool over one of its two ceilings, so in steady state
-	 * nothing is freed at all. */
-	static constexpr u32 MAX_POOLED_TARGETS = 300;
-	static constexpr u32 MAX_POOLED_TEXTURES = 300;
-
-	/* What the pool may hold, in bytes, from what the console has rather
-	 * than from a number someone picked.
-	 *
-	 * A count bounds nothing. A target at 4x is 4096x3584, 58 MB, and
-	 * three hundred of those is seventeen gigabytes the pool sits on
-	 * instead of handing back - which is what "Failed to allocate device
-	 * memory for 4096x3584 texture" is: not a card too small for the
-	 * game, a pool holding every size the game has ever used.
-	 *
-	 * The PS2 has four megabytes of GS memory, and every render target,
-	 * depth buffer and texture the game has at any moment lives in those
-	 * four megabytes. That is the real bound, and the host copy of it is
-	 * the same thing multiplied by the upscale squared: 64 MB at 4x, 16
-	 * at 2x, 4 at native. The pool holds a few times the live set so
-	 * that a target returned this frame and wanted the next is still
-	 * there, and nothing beyond that.
-	 *
-	 * For comparison, paraLLEl-GS allocates one buffer of exactly
-	 * GSLocalMemory::m_vmsize and renders out of it; its video memory is
-	 * bounded by construction, because it never makes a host texture per
-	 * target at all. GSdx has to, but the count of them is still the
-	 * console's, not three hundred. */
-	static constexpr u32 POOL_LIVE_SETS_TARGETS  = 4;
-	static constexpr u32 POOL_LIVE_SETS_TEXTURES = 2;
-
-	/* pool_idx 0 is textures, 1 is targets. */
-	/* The upscale the pool's textures are at, which is not the option's
-	 * value for the software renderer. */
-	float PoolScale() const;
-	u64 PoolByteBudget(u32 pool_idx) const;
+	/* Textures and targets kept for reuse (GSTexturePool.h) */
+	gs_tex_pool m_tex_pool;
+	gs_tex_pool* Pool();
+	static gs_texture* PoolCreateSurface(void* dev, unsigned type, int w, int h, int levels, unsigned format);
 
 
 
-	u64 m_pool_memory_usage[2] = {};
 	static constexpr u32 EXPAND_BUFFER_SIZE = sizeof(u16) * 16383 * 6;
 
 	WindowInfo m_window_info = {};
@@ -963,7 +928,6 @@ protected:
 	{
 		u32 start, count;
 	} m_index = {};
-	unsigned int m_frame = 0; // for ageing the pool
 	bool m_rbswapped = false;
 	FeatureSupport m_features;
 

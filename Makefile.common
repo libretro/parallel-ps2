@@ -124,6 +124,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSTargetBudget.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSStableGroup.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSRetireRing.c \
+	$(LRPS2_DIR)/GS/Renderers/Common/GSTexturePool.c \
 	$(LRPS2_DIR)/USB/libretro-usb/ohci_dma.c \
 	$(LRPS2_DIR)/memcard_ecc.c \
 	$(LRPS2_DIR)/CDVD/CDVDnvram.c \

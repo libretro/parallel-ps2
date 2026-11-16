@@ -21,9 +21,6 @@
 #include "GSDevice.h"
 #include "GSStableGroup.h"
 
-/* What the texture cache is holding, for the allocation failure message.
- * Defined in GSTextureCache.cpp; the device cannot include its header. */
-extern const char* GSTextureCacheMemoryUsage(void);
 #include "../../GS.h"
 #include "../../../Host.h"
 #include "../../GSBackend.h"
@@ -183,6 +180,7 @@ void gs_device_clear_sampler_cache(void)
 
 GSDevice::GSDevice()
 {
+	gs_tex_pool_init(&m_tex_pool, PoolCreateSurface, this);
 	m_weave_field[0]  = NULL;
 	m_weave_field[1]  = NULL;
 	m_vr_out          = NULL;
@@ -199,6 +197,23 @@ GSDevice::GSDevice()
 
 GSDevice::~GSDevice()
 {
+	gs_tex_pool_deinit(&m_tex_pool);
+}
+
+gs_texture* GSDevice::PoolCreateSurface(void* dev, unsigned type, int w, int h, int levels, unsigned format)
+{
+	return static_cast<GSDevice*>(dev)->CreateSurface(static_cast<GSTexture::Type>(type), w, h, levels,
+		static_cast<GSTexture::Format>(format));
+}
+
+gs_tex_pool* GSDevice::Pool()
+{
+	/* Known only once the device is up, changed by settings, and cheap
+	 * to read */
+	m_tex_pool.software   = GetRenderAPI() == RenderAPI::None;
+	m_tex_pool.prefer_new = m_features.prefer_new_textures;
+	m_tex_pool.upscale    = GSConfig.UpscaleMultiplier;
+	return &m_tex_pool;
 }
 
 void GSDevice::GenerateExpansionIndexBuffer(void* buffer)
@@ -252,59 +267,7 @@ bool GSDevice::CreateBase()
  */
 void GSDevice::PrewarmPool()
 {
-	/* Native sizes, most used first, because the budget runs out before
-	 * the list does and what gets made should be what a game asks for
-	 * first. 640x448 is NTSC, 640x512 PAL, the 512s and the half heights
-	 * are what games pick to save GS memory, and 704 is the widest FBW
-	 * in common use. */
-	static const struct { int w, h; } sizes[] =
-	{
-		{ 640, 448 }, { 512, 448 }, { 640, 224 }, { 512, 224 },
-		{ 640, 512 }, { 512, 256 }, { 640, 256 }, { 512, 512 },
-		{ 704, 448 }, { 704, 512 }, { 704, 224 }, { 704, 256 },
-	};
-	const float scale = PoolScale();
-	const u64 budget = PoolByteBudget(1);
-	u64 spent = 0;
-	u32 made = 0;
-	u32 pass;
-	u32 i;
-
-	/* Colour first, then depth: a game drawing to a target of some size
-	 * wants a depth buffer of it too, and if the budget only stretches to
-	 * one of the two the colour one is the one that matters. Within each
-	 * pass, most used size first. */
-	for (pass = 0; pass < 2; pass++)
-	{
-		const GSTexture::Type type = (pass == 0)
-			? GSTexture::Type::RenderTarget : GSTexture::Type::DepthStencil;
-		const GSTexture::Format format = (pass == 0)
-			? GSTexture::Format::Color : GSTexture::Format::DepthStencil;
-
-		for (i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++)
-		{
-			const int w = (int)((float)sizes[i].w * scale);
-			const int h = (int)((float)sizes[i].h * scale);
-			const u64 cost = (u64)w * (u64)h * 4u;
-			GSTexture* t;
-
-			/* Three quarters of the budget. The rest is for sizes a game
-			 * asks for that are not on this list - those are made once,
-			 * on first sight, and then kept like everything else. */
-			if (spent + cost > (budget / 4u) * 3u)
-				break;
-
-			t = CreateSurface(type, w, h, 1, format);
-			if (!t)
-				break;
-			spent += cost;
-			made++;
-			Recycle(t);
-		}
-	}
-
-	log_cb(RETRO_LOG_INFO, "GS: pool prewarmed, %u target sizes, %llu MB.\n",
-		made, (unsigned long long)(spent >> 20));
+	gs_tex_pool_prewarm(Pool());
 }
 
 static void retired_present_free(void* tex)
@@ -344,151 +307,16 @@ void GSDevice::InvalidateRenderTarget(GSTexture* t)
 
 GSTexture* GSDevice::FetchSurface(GSTexture::Type type, int width, int height, int levels, GSTexture::Format format, bool clear, bool prefer_reuse)
 {
-	const GSVector2i size(width, height);
-	const bool prefer_new_texture = (m_features.prefer_new_textures && type == GSTexture::Type::Texture && !prefer_reuse);
-	FastList<GSTexture*>& pool = m_pool[type != GSTexture::Type::Texture];
-
-	GSTexture* t = nullptr;
-	auto fallback = pool.end();
-
-	for (auto i = pool.begin(); i != pool.end(); ++i)
-	{
-		t = *i;
-
-		if (t->GetType() == type && t->GetFormat() == format && t->GetSize() == size && t->GetMipmapLevels() == levels)
-		{
-			if (!prefer_new_texture || t->GetLastFrameUsed() != m_frame)
-			{
-				m_pool_memory_usage[type != GSTexture::Type::Texture] -= t->GetMemUsage();
-				pool.erase(i);
-				break;
-			}
-			else if (fallback == pool.end())
-			{
-				fallback = i;
-			}
-		}
-
-		t = nullptr;
-	}
-
-	if (!t)
-	{
-		if (pool.size() >= ((type == GSTexture::Type::Texture) ? MAX_POOLED_TEXTURES : MAX_POOLED_TARGETS) &&
-			fallback != pool.end())
-		{
-			t = *fallback;
-			m_pool_memory_usage[type != GSTexture::Type::Texture] -= t->GetMemUsage();
-			pool.erase(fallback);
-		}
-		else
-		{
-			t = CreateSurface(type, width, height, levels, format);
-			if (!t)
-			{
-				log_cb(RETRO_LOG_ERROR,
-					"GS: Memory allocation failure for %dx%d texture (%u MB). Purging pool and retrying.\n"
-					"GS:   held: pool %llu MB textures + %llu MB targets"
-					" (budgets %llu / %llu), cache %s\n",
-					width, height,
-					(unsigned)((u64)width * (u64)height * 4u >> 20),
-					(unsigned long long)(m_pool_memory_usage[0] >> 20),
-					(unsigned long long)(m_pool_memory_usage[1] >> 20),
-					(unsigned long long)(PoolByteBudget(0) >> 20),
-					(unsigned long long)(PoolByteBudget(1) >> 20),
-					GSTextureCacheMemoryUsage());
-				PurgePool();
-				/* The retry the message promises. Without it the purge freed
-				 * memory, and descriptors, for nobody: t was still NULL and
-				 * every allocation failure was final. */
-				t = CreateSurface(type, width, height, levels, format);
-				if (!t)
-				{
-					log_cb(RETRO_LOG_ERROR, "GS: Memory allocation failure for %dx%d texture after purging pool.\n", width, height);
-					return nullptr;
-				}
-			}
-		}
-	}
-
-	switch (type)
-	{
-	case GSTexture::Type::RenderTarget:
-		{
-			if (clear)
-				ClearRenderTarget(t, 0);
-			else
-				InvalidateRenderTarget(t);
-		}
-		break;
-	case GSTexture::Type::DepthStencil:
-		{
-			if (clear)
-				ClearDepth(t, 0.0f);
-			else
-				InvalidateRenderTarget(t);
-		}
-		break;
-	default:
-		break;
-	}
-
-	return t;
-}
-
-float GSDevice::PoolScale() const
-{
-	/* The scale the textures in this pool are actually at. The software
-	 * renderer draws at native or at 2x, whatever larger scale the upscale
-	 * option asks for, and its textures are system memory, so taking the
-	 * option at face value there would reserve hundreds of megabytes of
-	 * RAM for textures that are never bigger than a PS2 frame buffer at
-	 * 2x. */
-	if (GetRenderAPI() == RenderAPI::None)
-		return GSConfig.UpscaleMultiplier >= 2.0f ? 2.0f : 1.0f;
-	return GSConfig.UpscaleMultiplier > 0.0f ? GSConfig.UpscaleMultiplier : 1.0f;
-}
-
-u64 GSDevice::PoolByteBudget(u32 pool_idx) const
-{
-	/* What the whole of GS memory costs as host textures at the current
-	 * upscale, times how many of those the pool keeps around. */
-	const float scale = PoolScale();
-	const u64 live_set = (u64)((float)VM_SIZE * scale * scale);
-	const u64 sets = (pool_idx == 0) ? POOL_LIVE_SETS_TEXTURES : POOL_LIVE_SETS_TARGETS;
-	return live_set * sets;
+	return static_cast<GSTexture*>(gs_tex_pool_fetch(Pool(), static_cast<unsigned>(type), width, height, levels,
+		static_cast<unsigned>(format), clear, prefer_reuse));
 }
 
 void GSDevice::Recycle(GSTexture* t)
 {
-	if (!t)
-		return;
-
-	t->SetLastFrameUsed(m_frame);
-
-	const u32 idx = !t->IsTexture();
-	FastList<GSTexture*>& pool = m_pool[idx];
-	pool.push_front(t);
-	m_pool_memory_usage[idx] += t->GetMemUsage();
-
-	/* Nothing is freed here. Recycle runs inside a draw, and freeing
-	 * inside a draw is what the allocation churn is made of: a texture
-	 * goes back, is deleted, and the next draw asks the driver for the
-	 * same size again. Returning it to the pool is the whole job.
-	 *
-	 * What the pool may hold is decided once per frame instead, in
-	 * AgePool. In steady state - a game using the same handful of target
-	 * sizes, which is all a PS2 game can do, since they all live in four
-	 * megabytes of GS memory - nothing is created and nothing is
-	 * destroyed at all: the first frames make the textures and every
-	 * frame after that hands the same ones out.
-	 *
-	 * This is the part of paraLLEl-GS's model that GSdx can have. It
-	 * reserves its four megabytes once because it rasterises out of GS
-	 * memory directly; GSdx has to keep a host texture per target to
-	 * upscale, so the inventory is per size rather than one buffer - but
-	 * the inventory is still made once and reused, not built and thrown
-	 * away inside a frame. */
+	/* Back into the pool, nothing freed: freeing inside a draw is the
+	 * churn the pool exists to stop. What it may hold is AgePool's call,
+	 * once a frame. */
+	gs_tex_pool_put(&m_tex_pool, t);
 }
 
 void GSDevice::AgePool()
@@ -503,55 +331,12 @@ void GSDevice::AgePool()
 	m_present_age++;
 	gs_retire_age(&m_retired_present, m_present_age, m_sync_waits, m_sync_slots,
 		RETIRED_PRESENT_MIN_AGE, retired_present_free);
-	m_frame++;
-
-	/* Age is not a reason to free a texture. It was: anything unused for
-	 * ten frames went, and the next time the game wanted that size it was
-	 * made again - the allocate-and-free cycle, once a frame, for the
-	 * life of the run.
-	 *
-	 * A PS2 game's targets are a handful of sizes, all of them inside
-	 * four megabytes of GS memory, and it asks for the same ones every
-	 * frame. Keeping them costs the pool's ceiling and nothing else. The
-	 * only reason left to free one is that the pool is over that ceiling,
-	 * which in steady state it never is, and which the prewarm has
-	 * already sized for.
-	 *
-	 * So in steady state nothing is created and nothing is destroyed, on
-	 * every backend: this is GSDevice, above D3D11, D3D12, OpenGL, Vulkan
-	 * and the software renderer alike. */
-	for (u32 pool_idx = 0; pool_idx < 2; pool_idx++)
-	{
-		const u32 max_size = (pool_idx == 0) ? MAX_POOLED_TEXTURES : MAX_POOLED_TARGETS;
-		const u64 max_bytes = PoolByteBudget(pool_idx);
-		FastList<GSTexture*>& pool = m_pool[pool_idx];
-		while (!pool.empty())
-		{
-			GSTexture* back = pool.back();
-
-			if (pool.size() <= max_size && m_pool_memory_usage[pool_idx] <= max_bytes)
-				break;
-			if (back->GetLastFrameUsed() == m_frame)
-				break;
-
-			m_pool_memory_usage[pool_idx] -= back->GetMemUsage();
-			gs_texture_free(back);
-
-			pool.pop_back();
-		}
-	}
+	gs_tex_pool_age(Pool());
 }
 
 void GSDevice::PurgePool()
 {
-	u32 idx = 0;
-	for (FastList<GSTexture*>& pool : m_pool)
-	{
-		for (GSTexture* t : pool)
-			gs_texture_free(t);
-		pool.clear();
-		m_pool_memory_usage[idx++] = 0;
-	}
+	gs_tex_pool_purge(&m_tex_pool);
 }
 
 GSTexture* GSDevice::CreateRenderTarget(int w, int h, GSTexture::Format format, bool clear)
