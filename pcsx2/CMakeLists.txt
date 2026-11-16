@@ -315,7 +315,6 @@ set(pcsx2PADHeaders
 
 # GS sources
 set(pcsx2GSSourcesUnshared
-	GS/GSBlock.cpp
 	GS/GSLocalMemoryMultiISA.cpp
 	GS/Renderers/Common/GSVertexTraceFMM.c
 	GS/Renderers/HW/GSRendererHWMultiISA.cpp

@@ -14,7 +14,7 @@ TMP=${TMPDIR:-/tmp}/gssearch.$$
 mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT
 
-for u in GS/GSBlock GS/GSLocalMemoryMultiISA; do
+for u in GS/GSLocalMemoryMultiISA; do
 	${CXX:-c++} -O1 -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 -w $SANFLAGS \
 	     $INC -c "$ROOT/pcsx2/$u.cpp" -o "$TMP/$(basename "$u").o"
 done

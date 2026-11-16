@@ -459,7 +459,6 @@ endif
 # ============================================================================
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/GS.cpp \
-	$(LRPS2_DIR)/GS/GSBlock.cpp \
 	$(LRPS2_DIR)/GS/GSClutGPU.cpp \
 	$(LRPS2_DIR)/GS/GSLocalMemoryMultiISA.cpp \
 	$(LRPS2_DIR)/GS/GSState.cpp \

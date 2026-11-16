@@ -17,7 +17,7 @@
 # than a wrong one. Upstream PCSX2 has it too.
 #
 # So the harness moves data and compares it. It links the real
-# GSLocalMemory, GSTables, GSBlock and the multi-ISA transfer routines,
+# GSLocalMemory, GSTables and the multi-ISA transfer routines,
 # which is nearly the whole of the swizzle and none of the renderer.
 #
 # Two things have to be stubbed. GSClut is held by value inside
@@ -46,7 +46,7 @@ for CXX in g++ clang++; do
 	echo
 	echo "=== $CXX ==="
 
-	for u in GS/GSBlock GS/GSLocalMemoryMultiISA; do
+	for u in GS/GSLocalMemoryMultiISA; do
 		$CXX -O1 -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 -w \
 		     $INC -c "$ROOT/pcsx2/$u.cpp" -o "$TMP/$(basename "$u").o"
 	done

@@ -228,6 +228,57 @@ int main(int argc, char **argv)
       chk("uph32", gs_v4i_uph32(a), w);
       w[0] = ra[0]; w[1] = ra[1]; w[2] = rb[0]; w[3] = rb[1];
       chk("upl64v", gs_v4i_upl64v(a, b), w);
+      w[0] = ra[2]; w[1] = ra[3]; w[2] = rb[2]; w[3] = rb[3];
+      chk("uph64v", gs_v4i_uph64v(a, b), w);
+
+      /* ---- the block swizzle's: byte shuffle (an index's top bit gives
+       * 0), bit select, high half store, 16-bit lanes of both halves and
+       * shufps on integers by one immediate ---- */
+      {
+         const uint8_t *pa = (const uint8_t *)ra;
+         const uint8_t *pb = (const uint8_t *)rb;
+         uint8_t g[16];
+         uint8_t m[16];
+         uint32_t h[4];
+         for (j = 0; j < 16; j++) m[j] = (uint8_t)(pb[j] & 0x8f);
+         for (j = 0; j < 16; j++) g[j] = (m[j] & 0x80) ? 0 : pa[m[j] & 15];
+         memcpy(w, g, 16);
+         chk("shuffle8", gs_v4i_shuffle8(a, gs_v4i_loadu(m)), w);
+         for (j = 0; j < 4; j++) h[j] = ra[j] ^ rb[j] ^ 0x5a5a5a5au;
+         for (j = 0; j < 4; j++) w[j] = (ra[j] & ~h[j]) | (rb[j] & h[j]);
+         chk("select", gs_v4i_select(a, b, gs_v4i_loadu(h)), w);
+         h[0] = h[1] = h[2] = h[3] = 0;
+         gs_v4i_storeh(h, a);
+         w[0] = ra[2]; w[1] = ra[3]; w[2] = 0; w[3] = 0;
+         chk("storeh", gs_v4i_loadu(h), w);
+      }
+      {
+         const uint16_t *pa = (const uint16_t *)ra;
+         uint16_t g[8];
+         static const int sh = 0x72; /* ZXWY */
+         for (j = 0; j < 4; j++) g[j] = pa[(sh >> (2 * j)) & 3];
+         for (j = 0; j < 4; j++) g[j + 4] = pa[4 + ((sh >> (2 * j)) & 3)];
+         memcpy(w, g, 16);
+         chk("shuffle16lh", GS_V4I_SHUFFLE16LH(a, 0x72), w);
+         w[0] = ra[0]; w[1] = ra[2]; w[2] = rb[1]; w[3] = rb[3];
+         chk("shuffle2", GS_V4I_SHUFFLE2(a, b, 0xD8), w);
+      }
+      {
+         const uint8_t *pa = (const uint8_t *)ra;
+         const uint8_t *pb = (const uint8_t *)rb;
+         const uint16_t *ha = (const uint16_t *)ra;
+         uint8_t g[16];
+         uint64_t q[2];
+         for (j = 0; j < 16; j++) g[j] = j + 12 < 16 ? pa[j + 12] : pb[j - 4];
+         memcpy(w, g, 16); chk("alignr12", GS_V4I_ALIGNR(b, a, 12), w);
+         for (j = 0; j < 16; j++) g[j] = j + 8 < 16 ? pa[j + 8] : pb[j - 8];
+         memcpy(w, g, 16); chk("alignr8", GS_V4I_ALIGNR(b, a, 8), w);
+         memcpy(w, ra, 16);
+         chk("set16", gs_v4i_set16(ha[0], ha[1], ha[2], ha[3], ha[4], ha[5], ha[6], ha[7]), w);
+         memcpy(q, rb, 16);
+         memcpy(w, rb, 16);
+         chk("set64", gs_v4i_set64(q[0], q[1]), w);
+      }
 
       /* ---- pack ---- */
       {
@@ -241,6 +292,14 @@ int main(int argc, char **argv)
          for (j = 0; j < 4; j++) g[j]     = sat_u16((int32_t)ra[j]);
          for (j = 0; j < 4; j++) g[j + 4] = sat_u16((int32_t)rb[j]);
          memcpy(w, g, 16); chk("pu32", gs_v4i_pu32(a, b), w);
+      }
+      {
+         const int16_t *sa = (const int16_t *)ra;
+         const int16_t *sb = (const int16_t *)rb;
+         uint8_t g[16];
+         for (j = 0; j < 8; j++) g[j]     = (uint8_t)(sa[j] < 0 ? 0 : sa[j] > 255 ? 255 : sa[j]);
+         for (j = 0; j < 8; j++) g[j + 8] = (uint8_t)(sb[j] < 0 ? 0 : sb[j] > 255 ? 255 : sb[j]);
+         memcpy(w, g, 16); chk("pu16", gs_v4i_pu16(a, b), w);
       }
 
       /* ---- blend: a byte comes from b where the mask byte is negative ---- */

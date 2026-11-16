@@ -23,7 +23,7 @@ mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT
 
 CF="-O1 -DNDEBUG -DPCSX2_CORE -msse4.1 $SAN"
-for u in GS/GSBlock GS/GSLocalMemoryMultiISA; do
+for u in GS/GSLocalMemoryMultiISA; do
 	"$CXX" $CF -std=c++17 -w $INC -c "$ROOT/pcsx2/$u.cpp" -o "$TMP/$(basename "$u").o"
 done
 "$CC" $CF -std=gnu89 -Wall -Wno-unused-function -Werror=declaration-after-statement $INC \

@@ -173,7 +173,6 @@
     <ClCompile Include="GS\Renderers\OpenGL\GLVertexInput.c" />
     <ClCompile Include="GS\Renderers\OpenGL\GLState.c" />
     <ClCompile Include="GS\GS.cpp" />
-    <ClCompile Include="GS\GSBlock.cpp" />
     <ClCompile Include="GS\GSClutGPU.cpp" />
     <ClCompile Include="GS\Renderers\Common\GSDevice.cpp" />
     <ClCompile Include="GS\Renderers\DX11\GSDevice11.cpp" />
@@ -375,6 +374,7 @@
     <ClInclude Include="GS\GSRegs.h" />
     <ClInclude Include="GS\GSAlignedClass.h" />
     <ClInclude Include="GS\GSBlock.h" />
+    <ClInclude Include="GS\gs_block.h" />
     <ClInclude Include="GS\GSClut.h" />
     <ClInclude Include="GS\Renderers\Common\GSDevice.h" />
     <ClInclude Include="GS\Renderers\DX11\GSDevice11.h" />

@@ -800,4 +800,123 @@ static GS_VEC_INLINE gs_vec4i gs_v4i_ralign_neginf(gs_vec4i r, const void *bs)
    return gs_v4i_andnot(GS_V4I_SHUFFLE32(gs_v4i_ralign_mask(bs), 0x44), r);
 }
 
+/* ------------------------------------------------------------------ */
+/* What the block swizzle (gs_block.h) takes besides.                  */
+/* ------------------------------------------------------------------ */
+
+static GS_VEC_INLINE gs_vec4i gs_v4i_uph64v(gs_vec4i a, gs_vec4i b)
+{
+#if defined(GS_VEC_X86)
+   return _mm_unpackhi_epi64(a, b);
+#else
+   return vreinterpretq_s32_s64(vzip2q_s64(vreinterpretq_s64_s32(a),
+                                           vreinterpretq_s64_s32(b)));
+#endif
+}
+
+/* a's eight and b's eight 16-bit lanes, each to an unsigned byte */
+static GS_VEC_INLINE gs_vec4i gs_v4i_pu16(gs_vec4i a, gs_vec4i b)
+{
+#if defined(GS_VEC_X86)
+   return _mm_packus_epi16(a, b);
+#else
+   return vreinterpretq_s32_u8(vcombine_u8(vqmovun_s16(vreinterpretq_s16_s32(a)),
+                                           vqmovun_s16(vreinterpretq_s16_s32(b))));
+#endif
+}
+
+/* Each byte of a by the index in that byte of mask; a mask byte with its
+ * top bit set gives 0 (pshufb; tbl gives 0 for any index past 15) */
+static GS_VEC_INLINE gs_vec4i gs_v4i_shuffle8(gs_vec4i a, gs_vec4i mask)
+{
+#if defined(GS_VEC_CAN_SSE41) || defined(__SSSE3__)
+   return _mm_shuffle_epi8(a, mask);
+#elif defined(GS_VEC_X86)
+   {
+      union gs_v4i_view x, m, r;
+      int i;
+      x.v = a;
+      m.v = mask;
+      for (i = 0; i < 16; i++)
+         r.u8[i] = (m.u8[i] & 0x80) ? 0 : x.u8[m.u8[i] & 15];
+      return r.v;
+   }
+#else
+   return vreinterpretq_s32_s8(vqtbl1q_s8(vreinterpretq_s8_s32(a), vreinterpretq_u8_s32(mask)));
+#endif
+}
+
+/* b where mask's bits are set, a where clear */
+static GS_VEC_INLINE gs_vec4i gs_v4i_select(gs_vec4i a, gs_vec4i b, gs_vec4i mask)
+{
+#if defined(GS_VEC_X86)
+   return _mm_or_si128(_mm_andnot_si128(mask, a), _mm_and_si128(mask, b));
+#else
+   return vbslq_s32(vreinterpretq_u32_s32(mask), b, a);
+#endif
+}
+
+static GS_VEC_INLINE void gs_v4i_storeh(void *p, gs_vec4i v)
+{
+#if defined(GS_VEC_X86)
+   _mm_storeh_pi((__m64 *)p, _mm_castsi128_ps(v));
+#else
+   vst1_s32((int32_t *)p, vget_high_s32(v));
+#endif
+}
+
+/* The 16-bit lanes of each 64-bit half by one _MM_SHUFFLE immediate
+ * (pshuflw then pshufhw) */
+#if defined(GS_VEC_X86)
+#define GS_V4I_SHUFFLE16LH(v, i) _mm_shufflehi_epi16(_mm_shufflelo_epi16((v), (i)), (i))
+#else
+#define GS_V4I_SHUFFLE16LH(v, i) \
+   vreinterpretq_s32_s16(__builtin_shufflevector( \
+      vreinterpretq_s16_s32(v), vreinterpretq_s16_s32(v), \
+      (i) & 3, ((i) >> 2) & 3, ((i) >> 4) & 3, ((i) >> 6) & 3, \
+      4 + ((i) & 3), 4 + (((i) >> 2) & 3), 4 + (((i) >> 4) & 3), 4 + (((i) >> 6) & 3)))
+#endif
+
+/* Two of a's 32-bit lanes then two of b's, by an _MM_SHUFFLE immediate
+ * (shufps on integers) */
+#if defined(GS_VEC_X86)
+#define GS_V4I_SHUFFLE2(a, b, i) \
+   _mm_castps_si128(_mm_shuffle_ps(_mm_castsi128_ps(a), _mm_castsi128_ps(b), (i)))
+#else
+#define GS_V4I_SHUFFLE2(a, b, i) \
+   __builtin_shufflevector((a), (b), (i) & 3, ((i) >> 2) & 3, \
+                           4 + (((i) >> 4) & 3), 4 + (((i) >> 6) & 3))
+#endif
+
+/* Bytes n.. of lo then hi, sixteen of them (palignr) */
+#if defined(GS_VEC_CAN_SSE41) || defined(__SSSE3__)
+#define GS_V4I_ALIGNR(hi, lo, n) _mm_alignr_epi8((hi), (lo), (n))
+#elif defined(GS_VEC_X86)
+#define GS_V4I_ALIGNR(hi, lo, n) _mm_or_si128(_mm_srli_si128((lo), (n)), _mm_slli_si128((hi), 16 - (n)))
+#else
+#define GS_V4I_ALIGNR(hi, lo, n) \
+   vreinterpretq_s32_s8(vextq_s8(vreinterpretq_s8_s32(lo), vreinterpretq_s8_s32(hi), (n)))
+#endif
+
+static GS_VEC_INLINE gs_vec4i gs_v4i_set16(int a, int b, int c, int d, int e, int f, int g, int h)
+{
+#if defined(GS_VEC_X86)
+   return _mm_set_epi16((short)h, (short)g, (short)f, (short)e, (short)d, (short)c, (short)b, (short)a);
+#else
+   int16_t t[8];
+   t[0] = (int16_t)a; t[1] = (int16_t)b; t[2] = (int16_t)c; t[3] = (int16_t)d;
+   t[4] = (int16_t)e; t[5] = (int16_t)f; t[6] = (int16_t)g; t[7] = (int16_t)h;
+   return vreinterpretq_s32_s16(vld1q_s16(t));
+#endif
+}
+
+static GS_VEC_INLINE gs_vec4i gs_v4i_set64(uint64_t lo, uint64_t hi)
+{
+#if defined(GS_VEC_X86)
+   return _mm_set_epi64x((long long)hi, (long long)lo);
+#else
+   return vreinterpretq_s32_u64(vcombine_u64(vcreate_u64(lo), vcreate_u64(hi)));
+#endif
+}
+
 #endif /* GS_VECTOR_H */
