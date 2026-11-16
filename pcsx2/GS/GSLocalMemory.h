@@ -483,13 +483,11 @@ protected:
 
 	// TODO
 
-	friend class GSClut;
 
 	//
 
 public:
 	GSLocalMemory()
-		: m_clut(this)
 	{
 		gs_local_memory_init(this);
 		m_clut32 = m_clut;

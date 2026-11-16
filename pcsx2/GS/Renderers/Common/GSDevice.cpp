@@ -24,6 +24,7 @@
 #include "../../GS.h"
 #include "../../../Host.h"
 #include "../../GSBackend.h"
+#include "../../GSEntry.h"
 #include "../SW/GSDeviceSW.h"
 #ifdef ENABLE_OPENGL
 #include "../OpenGL/GSDeviceOGL.h"
@@ -176,6 +177,23 @@ void gs_device_clear_sampler_cache(void)
 {
 	if (g_gs_device)
 		g_gs_device->ClearSamplerCache();
+}
+
+gs_texture* gs_device_create_clut_target(int width)
+{
+	if (!g_gs_device || !GSIsHardwareRenderer())
+		return NULL;
+	return g_gs_device->CreateRenderTarget(width, 1, GSTexture::Format::Color, false);
+}
+
+bool gs_device_update_clut_texture(gs_texture* src, float scale, float sample, u32 offset_x, u32 offset_y,
+	gs_texture* dst, u32 dst_offset, u32 dst_size)
+{
+	if (!g_gs_device)
+		return false;
+	g_gs_device->UpdateCLUTTexture(static_cast<GSTexture*>(src), scale, sample, offset_x, offset_y,
+		static_cast<GSTexture*>(dst), dst_offset, dst_size);
+	return true;
 }
 
 GSDevice::GSDevice()

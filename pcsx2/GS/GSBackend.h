@@ -55,6 +55,12 @@ bool GSreopen(bool recreate_device, bool recreate_renderer, const EmuGSOptions* 
 bool gs_device_open(enum retro_hw_context_type context, GSRendererType renderer);
 void gs_device_close(void);
 void gs_device_clear_sampler_cache(void);
+/* What the GPU palette needs of the device: a width x 1 colour target out
+ * of the pool (NULL with no device, or the software renderer's), and the
+ * palette copied into one from where src holds it (false: no device) */
+struct gs_texture* gs_device_create_clut_target(int width);
+bool gs_device_update_clut_texture(struct gs_texture* src, float scale, float sample, u32 offset_x, u32 offset_y,
+	struct gs_texture* dst, u32 dst_offset, u32 dst_size);
 
 /* The GSdx renderers, hardware and software (Renderers/Common/GSRenderer.cpp) */
 const struct gs_renderer_ops* gs_gsdx_open(GSRendererType renderer, u8* basemem);
@@ -70,6 +76,10 @@ void gs_gsdx_update_render_fixes(void);
 void gs_gsdx_update_settings(const EmuGSOptions* old_config);
 void gs_gsdx_readback_texture_cache(void);
 void gs_gsdx_purge_texture_cache(void);
+/* The target holding a palette at cbp of cpsm, w x h texels from
+ * *offset_x, *offset_y; NULL if none does (or no renderer) */
+struct gs_texture* gs_gsdx_lookup_palette_source(u32 cbp, u32 cpsm, u32 cbw, int* offset_x, int* offset_y,
+	float* scale, float* sample, int w, int h);
 
 /* paraLLEl-GS (Renderers/parallel-gs/GSRendererPGS.cpp, under
  * HAVE_PARALLEL_GS): NULL if it did not come up */

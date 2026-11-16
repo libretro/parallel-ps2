@@ -846,7 +846,7 @@ void GSState::ApplyTEX0(GIFRegTEX0& TEX0)
 			InvalidateLocalMem(BITBLTBUF, r, gpu_palette);
 		}
 
-		m_mem.m_clut.Write(m_env.CTXT[i].TEX0, m_env.TEXCLUT);
+		m_mem.m_clut.Write(m_mem.m_vm8, m_env.CTXT[i].TEX0, m_env.TEXCLUT);
 	}
 
 	u64 mask = 0x1fffffffffull; // TBP0 TBW PSM TW TH TCC TFX

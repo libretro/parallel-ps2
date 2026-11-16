@@ -21,9 +21,9 @@
 # which is nearly the whole of the swizzle and none of the renderer.
 #
 # Two things have to be stubbed. GSClut is held by value inside
-# GSLocalMemory, so its constructor must exist, but the real one reaches
-# the render device; the swizzle paths never touch the palette, so an
-# empty pair is honest. And the 4MB block is mapped four times over, as
+# GSLocalMemory, so its C half must exist, but the real one reaches the
+# render device; the swizzle paths never touch the palette, so an empty
+# one is honest. And the 4MB block is mapped four times over, as
 # the emulator maps it -- a plain allocation would turn the silent
 # wraparound the emulator relies on into a fault and answer a different
 # question.

@@ -50,14 +50,16 @@ extern "C" void GSFreeWrappedMemory(void* ptr, size_t size, size_t repeat)
 	munmap(ptr, size * repeat);
 }
 
-/* GSLocalMemory holds a GSClut by value, so its constructor has to exist
- * for the object to be built -- but the real one pulls in the render
- * device and the whole renderer. The swizzle paths under test never touch
- * the palette, so an empty pair is enough to link and honest about what
- * is and is not being exercised. */
+/* GSLocalMemory holds a GSClut by value, and its C half (GSClut.c,
+ * GSClutGPU.c) reaches the render device and the renderer. The swizzle
+ * paths under test never touch the palette, so an empty one is enough to
+ * link and honest about what is and is not being exercised. */
+#include <cstring>
 #include "GS/GSClut.h"
-GSClut::GSClut(GSLocalMemory* mem) : m_mem(mem) {}
-GSClut::~GSClut() {}
+extern "C" void gs_clut_init(gs_clut* c) { memset(c, 0, sizeof(*c)); }
+extern "C" void gs_clut_deinit(gs_clut*) {}
+extern "C" void gs_clut_gpu_create(gs_clut*) {}
+extern "C" void gs_clut_gpu_release(gs_clut*) {}
 
 /* The tables and the format table are filled as the GS starts
  * (gs_util_init); there is no GS here, so they are filled before main. */

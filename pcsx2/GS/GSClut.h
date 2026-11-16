@@ -18,6 +18,8 @@
 
 #include "GSRegs.h"
 
+struct gs_texture;
+
 /* The GS's colour lookup table: palettes loaded from local memory into
  * the CLUT buffer (as the hardware keeps it, 16-bit halves), and read
  * out as 32-bit colours for a draw. */
@@ -41,6 +43,12 @@ typedef struct gs_clut
 		int adirty; /* the alpha range is stale */
 		int amin, amax;
 	} read;
+	/* The GPU palette (GSClutGPU.c): a 16x1 and a 256x1 target on a
+	 * hardware device, and the one the last read filled from a target
+	 * the GPU drew the palette into, or NULL for the CPU palette */
+	struct gs_texture* gpu_clut4;
+	struct gs_texture* gpu_clut8;
+	struct gs_texture* gpu_current;
 } gs_clut;
 
 #ifdef __cplusplus
@@ -65,33 +73,45 @@ int gs_clut_read32(gs_clut* c, const GIFRegTEX0* TEX0, const GIFRegTEXA* TEXA);
 /* The palette's alpha range, after gs_clut_read32 */
 void gs_clut_alpha_minmax(gs_clut* c, int* amin, int* amax);
 
+/* GSClutGPU.c. The GPU palette's targets, made with the renderer on a
+ * hardware device (none during play) and given up with the device they
+ * are on */
+void gs_clut_gpu_create(gs_clut* c);
+void gs_clut_gpu_release(gs_clut* c);
+/* gs_clut_read32, then the palette from the target holding it, when one
+ * does and the GPU path can take it */
+void gs_clut_read32_gpu(gs_clut* c, const GIFRegTEX0* TEX0, const GIFRegTEXA* TEXA);
+
 #ifdef __cplusplus
 }
 
 #include "GSAlignedClass.h"
 
-class GSLocalMemory;
 class GSTexture;
 
 class alignas(32) GSClut final : public GSAlignedClass<32>
 {
 	gs_clut m_c;
-	GSLocalMemory* m_mem;
-
-	GSTexture* m_gpu_clut4 = nullptr;
-	GSTexture* m_gpu_clut8 = nullptr;
-	GSTexture* m_current_gpu_clut = nullptr;
 
 public:
-	GSClut(GSLocalMemory* mem);
-	~GSClut();
+	GSClut()
+	{
+		gs_clut_init(&m_c);
+		gs_clut_gpu_create(&m_c);
+	}
+	~GSClut()
+	{
+		gs_clut_gpu_release(&m_c);
+		gs_clut_deinit(&m_c);
+	}
+	GSClut(const GSClut&) = delete;
+	GSClut& operator=(const GSClut&) = delete;
 
-	/* The GPU palette's two targets, made with the renderer on a hardware
-	 * device (none during play), and given up with the device it is on */
-	void CreateGPUTextures();
-	void ReleaseGPUTextures();
+	void CreateGPUTextures() { gs_clut_gpu_create(&m_c); }
+	void ReleaseGPUTextures() { gs_clut_gpu_release(&m_c); }
 
-	__fi GSTexture* GetGPUTexture() const { return m_current_gpu_clut; }
+	/* (GSTexture starts with its gs_texture) */
+	__fi GSTexture* GetGPUTexture() const { return reinterpret_cast<GSTexture*>(m_c.gpu_current); }
 
 	void Reset() { gs_clut_reset(&m_c); }
 	bool InvalidateRange(u32 start_block, u32 end_block, bool is_draw = false)
@@ -115,8 +135,11 @@ public:
 	{
 		return gs_clut_write_test(&m_c, &TEX0, &TEXCLUT) != 0;
 	}
-	void Write(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
-	void Read32(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA);
+	void Write(const u8* vm, const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT)
+	{
+		gs_clut_write(&m_c, vm, &TEX0, &TEXCLUT);
+	}
+	void Read32(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA) { gs_clut_read32_gpu(&m_c, &TEX0, &TEXA); }
 	void GetAlphaMinMax32(int& amin, int& amax) { gs_clut_alpha_minmax(&m_c, &amin, &amax); }
 
 	u32 operator[](size_t i) const { return m_c.buff32[i]; }

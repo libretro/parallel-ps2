@@ -311,9 +311,6 @@
     <ClCompile Include="Pcsx2Config.c">
       <Filter>System</Filter>
     </ClCompile>
-    <ClCompile Include="SaveState.cpp">
-      <Filter>System</Filter>
-    </ClCompile>
     <ClCompile Include="Elfheader.c">
       <Filter>System\ISO</Filter>
     </ClCompile>
@@ -468,9 +465,6 @@
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec\ix86-32</Filter>
     </ClCompile>
     <ClCompile Include="COP0.c">
-      <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
-    </ClCompile>
-    <ClCompile Include="COP2.cpp">
       <Filter>System\Ps2\EmotionEngine\EE\Interpreter</Filter>
     </ClCompile>
     <ClCompile Include="FPU.c">
@@ -632,9 +626,6 @@
     <ClCompile Include="sif2.c">
       <Filter>System\Ps2\EmotionEngine\DMAC\Sif</Filter>
     </ClCompile>
-    <ClCompile Include="IopGte.cpp">
-      <Filter>System\Ps2\Iop</Filter>
-    </ClCompile>
     <ClCompile Include="ps2\pgif.c">
       <Filter>System\Ps2</Filter>
     </ClCompile>
@@ -649,30 +640,6 @@
     </ClCompile>
     <ClCompile Include="FW.c">
       <Filter>System\Ps2\Iop\FW</Filter>
-    </ClCompile>
-    <ClCompile Include="SPU2\spu2.cpp">
-      <Filter>System\Ps2\SPU2</Filter>
-    </ClCompile>
-    <ClCompile Include="SPU2\spu2freeze.cpp">
-      <Filter>System\Ps2\SPU2</Filter>
-    </ClCompile>
-    <ClCompile Include="SPU2\spu2sys.cpp">
-      <Filter>System\Ps2\SPU2</Filter>
-    </ClCompile>
-    <ClCompile Include="SPU2\Mixer.cpp">
-      <Filter>System\Ps2\SPU2</Filter>
-    </ClCompile>
-    <ClCompile Include="SPU2\ADSR.cpp">
-      <Filter>System\Ps2\SPU2</Filter>
-    </ClCompile>
-    <ClCompile Include="SPU2\ReadInput.cpp">
-      <Filter>System\Ps2\SPU2</Filter>
-    </ClCompile>
-    <ClCompile Include="SPU2\RegTable.cpp">
-      <Filter>System\Ps2\SPU2</Filter>
-    </ClCompile>
-    <ClCompile Include="SPU2\Reverb.cpp">
-      <Filter>System\Ps2\SPU2</Filter>
     </ClCompile>
     <ClCompile Include="DEV9\AdapterUtils.c">
       <Filter>System\Ps2\DEV9</Filter>
@@ -728,9 +695,6 @@
     <ClCompile Include="DEV9\PacketReader\netpkt.c">
       <Filter>System\Ps2\DEV9\PacketReader</Filter>
     </ClCompile>
-    <ClCompile Include="DEV9\pcap_io.c">
-      <Filter>System\Ps2\DEV9</Filter>
-    </ClCompile>
     <ClCompile Include="DEV9\Sessions\Session.c">
       <Filter>System\Ps2\DEV9\Sessions</Filter>
     </ClCompile>
@@ -752,7 +716,7 @@
     <ClCompile Include="DEV9\net.c">
       <Filter>System\Ps2\DEV9</Filter>
     </ClCompile>
-    <ClCompile Include="GS\GSClutGPU.cpp">
+    <ClCompile Include="GS\GSClutGPU.c">
       <Filter>System\Ps2\GS</Filter>
     </ClCompile>
     <ClCompile Include="GS\GSLocalMemory.c">
@@ -920,23 +884,11 @@
     <ClCompile Include="GS\Renderers\Vulkan\GSDeviceVK.cpp">
       <Filter>System\Ps2\GS\Renderers\Vulkan</Filter>
     </ClCompile>
-    <ClCompile Include="Frontend\LayeredSettingsInterface.cpp">
-      <Filter>Host</Filter>
-    </ClCompile>
-    <ClCompile Include="Frontend\HostSettings.cpp">
-      <Filter>Host</Filter>
-    </ClCompile>
     <ClCompile Include="VMManager.c">
       <Filter>System</Filter>
     </ClCompile>
     <ClCompile Include="PAD\PAD.c">
       <Filter>System\Ps2\PAD</Filter>
-    </ClCompile>
-    <ClCompile Include="GS\Renderers\HW\GSTextureReplacements.cpp">
-      <Filter>System\Ps2\GS\Renderers\Hardware</Filter>
-    </ClCompile>
-    <ClCompile Include="GS\Renderers\HW\GSTextureReplacementLoaders.cpp">
-      <Filter>System\Ps2\GS\Renderers\Hardware</Filter>
     </ClCompile>
     <ClCompile Include="x86\iR5900Analysis.c">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec</Filter>
@@ -953,14 +905,308 @@
     <ClCompile Include="MultitapProtocol.c">
       <Filter>System\Ps2\Iop</Filter>
     </ClCompile>
-    <ClCompile Include="USB\shared\ringbuffer.cpp">
-      <Filter>System\Ps2\USB\shared</Filter>
-    </ClCompile>
-    <ClCompile Include="SPU2\Dma.cpp">
-      <Filter>System\Ps2\SPU2</Filter>
-    </ClCompile>
     <ClCompile Include="VirtualMemory.c">
       <Filter>System</Filter>
+    </ClCompile>
+    <ClCompile Include="COP2.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="DEV9\ATA\HddImage.c">
+      <Filter>System\Ps2\DEV9\ATA</Filter>
+    </ClCompile>
+    <ClCompile Include="FireWire\fatimg.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="FireWire\p1io.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="FireWire\py1desc.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\GSPage2Tile.c">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\Common\GSFlatMap.c">
+      <Filter>System\Ps2\GS\Renderers\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\Common\GSRetireRing.c">
+      <Filter>System\Ps2\GS\Renderers\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\Common\GSScratch.c">
+      <Filter>System\Ps2\GS\Renderers\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\Common\GSStableGroup.c">
+      <Filter>System\Ps2\GS\Renderers\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\Common\GSStableMap.c">
+      <Filter>System\Ps2\GS\Renderers\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\DX11\D3D11ShaderCache.c">
+      <Filter>System\Ps2\GS\Renderers\Direct3D11</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\DX12\D3D12Builders.c">
+      <Filter>System\Ps2\GS\Renderers\Direct3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\DX12\D3D12DescriptorHeapManager.c">
+      <Filter>System\Ps2\GS\Renderers\Direct3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\DX12\D3D12ShaderCache.c">
+      <Filter>System\Ps2\GS\Renderers\Direct3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\DX12\D3D12StreamBuffer.c">
+      <Filter>System\Ps2\GS\Renderers\Direct3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\DX12\GSD3D12Heap.c">
+      <Filter>System\Ps2\GS\Renderers\Direct3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\DX12\GSD3D12Warm.c">
+      <Filter>System\Ps2\GS\Renderers\Direct3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\HW\GSHashTable.c">
+      <Filter>System\Ps2\GS\Renderers\Hardware</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\HW\GSObjectPool.c">
+      <Filter>System\Ps2\GS\Renderers\Hardware</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\HW\GSSpriteSnap.c">
+      <Filter>System\Ps2\GS\Renderers\Hardware</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\HW\GSTargetBudget.c">
+      <Filter>System\Ps2\GS\Renderers\Hardware</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\SW\GSDeviceSW.cpp">
+      <Filter>System\Ps2\GS\Renderers\Software</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\SW\GSHiresMem.c">
+      <Filter>System\Ps2\GS\Renderers\Software</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\Vulkan\GSVulkanHeap.c">
+      <Filter>System\Ps2\GS\Renderers\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\Vulkan\VKBuilders.c">
+      <Filter>System\Ps2\GS\Renderers\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\Vulkan\VKLoader.c">
+      <Filter>System\Ps2\GS\Renderers\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\Vulkan\VKSpirvPatch.c">
+      <Filter>System\Ps2\GS\Renderers\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\Vulkan\VKStreamBuffer.c">
+      <Filter>System\Ps2\GS\Renderers\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\parallel-gs\GSRendererPGS.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\util\aligned_alloc.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\util\arena_allocator.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\util\environment.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\util\logging.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\util\slab_allocator.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\util\thread_id.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\util\thread_name.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\util\timer.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\buffer.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\buffer_pool.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\command_buffer.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\command_pool.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\context.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\cookie.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\descriptor_set.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\device.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\fence.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\fence_manager.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\image.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\memory_allocator.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\pipeline_cache.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\render_pass.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\sampler.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\semaphore.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\semaphore_manager.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\shader.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\texture\texture_format.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\Granite\vulkan\vulkan_loader.c">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\gs\gs_interface.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\gs\gs_renderer.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\gs\gs_util.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\parallel-gs\gs\page_tracker.cpp">
+      <Filter>System\Ps2\GS</Filter>
+    </ClCompile>
+    <ClCompile Include="GameDatabaseBuiltin.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="HostFS.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="IopGte.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="NearPlace.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="SPU2\ADSR.c">
+      <Filter>System\Ps2\SPU2</Filter>
+    </ClCompile>
+    <ClCompile Include="SPU2\Dma.c">
+      <Filter>System\Ps2\SPU2</Filter>
+    </ClCompile>
+    <ClCompile Include="SPU2\Mixer.c">
+      <Filter>System\Ps2\SPU2</Filter>
+    </ClCompile>
+    <ClCompile Include="SPU2\ReadInput.c">
+      <Filter>System\Ps2\SPU2</Filter>
+    </ClCompile>
+    <ClCompile Include="SPU2\RegTable.c">
+      <Filter>System\Ps2\SPU2</Filter>
+    </ClCompile>
+    <ClCompile Include="SPU2\Reverb.c">
+      <Filter>System\Ps2\SPU2</Filter>
+    </ClCompile>
+    <ClCompile Include="SPU2\ReverbResample.c">
+      <Filter>System\Ps2\SPU2</Filter>
+    </ClCompile>
+    <ClCompile Include="SPU2\spu2.c">
+      <Filter>System\Ps2\SPU2</Filter>
+    </ClCompile>
+    <ClCompile Include="SPU2\spu2freeze.c">
+      <Filter>System\Ps2\SPU2</Filter>
+    </ClCompile>
+    <ClCompile Include="SPU2\spu2sys.c">
+      <Filter>System\Ps2\SPU2</Filter>
+    </ClCompile>
+    <ClCompile Include="SaveStateBase.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="SaveStateFreeze.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="SioFifo.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\libretro-usb\bus.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\libretro-usb\core.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\libretro-usb\desc.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\libretro-usb\hid.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\libretro-usb\ohci_dma.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\libretro-usb\usb-hid.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\libretro-usb\usb-ohci.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-eyetoy\cam-frame.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-eyetoy\cam-jpeg.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-eyetoy\eyetoy-frontend.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-eyetoy\eyetoy-host.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-eyetoy\jo_mpeg.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-eyetoy\usb-eyetoy-webcam.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-perfect-pool\ppcam.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-python2\p2io.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-python2\py2desc.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-python2\usb-python2.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="memcard_ecc.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="ps2float.c">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="x86\CpuState.c">
+      <Filter>System\Ps2</Filter>
+    </ClCompile>
+    <ClCompile Include="x86\JitHash.c">
+      <Filter>System\Ps2</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -1493,9 +1739,6 @@
       <Filter>System\Ps2\GS\Renderers\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="GS.h" />
-    <ClInclude Include="Frontend\LayeredSettingsInterface.h">
-      <Filter>Host</Filter>
-    </ClInclude>
     <ClInclude Include="VMManager.h">
       <Filter>System</Filter>
     </ClInclude>
@@ -1507,9 +1750,6 @@
     </ClInclude>
     <ClInclude Include="PAD\PAD.h">
       <Filter>System\Ps2\PAD</Filter>
-    </ClInclude>
-    <ClInclude Include="GS\Renderers\HW\GSTextureReplacements.h">
-      <Filter>System\Ps2\GS\Renderers\Hardware</Filter>
     </ClInclude>
     <ClInclude Include="x86\iR5900Analysis.h">
       <Filter>System\Ps2\EmotionEngine\EE\Dynarec</Filter>
@@ -1534,9 +1774,6 @@
     </ClInclude>
     <ClInclude Include="USB\USB.h">
       <Filter>System\Ps2\USB</Filter>
-    </ClInclude>
-    <ClInclude Include="USB\shared\ringbuffer.h">
-      <Filter>System\Ps2\USB\shared</Filter>
     </ClInclude>
     <ClInclude Include="SPU2\Dma.h">
       <Filter>System\Ps2\SPU2</Filter>

@@ -343,7 +343,7 @@ if(NOT _M_X86)
 endif()
 
 set(pcsx2GSSources
-	GS/GSClutGPU.cpp
+	GS/GSClutGPU.c
 	GS/GSAlphaRange.c
 	GS/GSClut.c
 	GS/GSEntry.c

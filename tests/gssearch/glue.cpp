@@ -2,8 +2,9 @@
  * GSLocalMemory, whose format table is filled as the GS starts. The
  * memory it allocates is never touched here, so a plain allocation
  * stands in for the emulator's wrapped mapping, and GSClut, held by value,
- * gets an empty constructor pair. Everything else is in main.c. */
+ * gets an empty C half. Everything else is in main.c. */
 #include <cstdlib>
+#include <cstring>
 
 #include "GS/GSLocalMemory.h"
 #include "GS/GSClut.h"
@@ -12,8 +13,10 @@
 
 extern "C" void* GSAllocateWrappedMemory(size_t size, size_t repeat) { return calloc(size, repeat); }
 extern "C" void GSFreeWrappedMemory(void* ptr, size_t, size_t) { free(ptr); }
-GSClut::GSClut(GSLocalMemory* mem) : m_mem(mem) {}
-GSClut::~GSClut() {}
+extern "C" void gs_clut_init(gs_clut* c) { memset(c, 0, sizeof(*c)); }
+extern "C" void gs_clut_deinit(gs_clut*) {}
+extern "C" void gs_clut_gpu_create(gs_clut*) {}
+extern "C" void gs_clut_gpu_release(gs_clut*) {}
 
 extern "C" {
 int gss_init(void)

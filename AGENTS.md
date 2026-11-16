@@ -26,7 +26,7 @@ section that covers the code you touch before touching it.
 - **Build it everywhere it ships.** Touched units compile with MinGW and
   in an Apple shape as well as on Linux. A commit that adds or removes a
   source builds the Makefile and CMake to completion, and updates the
-  vcxproj.
+  vcxproj (`tests/vcxproj` holds it to the Windows build's sources).
 - **Optional features are neutral when off.** A setting off costs
   nothing over the code without it.
 - **Never compile a pipeline on the draw path.** After boot, nothing on

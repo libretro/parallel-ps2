@@ -153,6 +153,20 @@ void gs_gsdx_purge_texture_cache(void)
 	g_gs_renderer->PurgePool();
 }
 
+gs_texture* gs_gsdx_lookup_palette_source(u32 cbp, u32 cpsm, u32 cbw, int* offset_x, int* offset_y,
+	float* scale, float* sample, int w, int h)
+{
+	GSVector2i offset(*offset_x, *offset_y);
+	const GSVector2i size(w, h);
+	GSTexture* src;
+	if (!g_gs_renderer)
+		return NULL;
+	src = g_gs_renderer->LookupPaletteSource(cbp, cpsm, cbw, offset, scale, sample, size);
+	*offset_x = offset.x;
+	*offset_y = offset.y;
+	return src;
+}
+
 /* What the software textures (SW/GSTextureCacheSW.c) read local memory
  * through */
 extern "C" void gs_sw_texture_read_block(u32 psm, u32 bp, u8* dst, int dstpitch, const GIFRegTEXA* TEXA)
