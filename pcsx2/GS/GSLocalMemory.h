@@ -96,9 +96,37 @@ u32 gs_lm_page_aligned_mask(u32 psm, const int r[4]);
  * counted in pages from base_bp in a buffer bw wide */
 void gs_lm_rect_for_page_offset(u32 base_bp, u32 offset_bp, u32 bw, u32 psm, int out[4]);
 
-/* What the C side asks of the C++ transfers (GSLocalMemoryMultiISA.cpp):
- * this CPU's readers and writers of rectangles put in the format table,
- * and a rectangle of whole blocks read */
+/* A format's transfers of rectangles (GSLocalMemoryMultiISA.c, built
+ * for each SIMD tier): an image written from a transfer or read back
+ * into one, len bytes from the cursor tx, ty; a rectangle (left, top,
+ * right, bottom) of whole blocks read as 32-bit texels, or as indexes
+ * (the P ones); one block read so */
+typedef void (*gs_lm_write_image_fn)(gs_local_memory* mem, int* tx, int* ty, const u8* src, int len,
+	const GIFRegBITBLTBUF* BITBLTBUF, const GIFRegTRXPOS* TRXPOS, const GIFRegTRXREG* TRXREG);
+typedef void (*gs_lm_read_image_fn)(const gs_local_memory* mem, int* tx, int* ty, u8* dst, int len,
+	const GIFRegBITBLTBUF* BITBLTBUF, const GIFRegTRXPOS* TRXPOS, const GIFRegTRXREG* TRXREG);
+typedef void (*gs_lm_read_texture_fn)(gs_local_memory* mem, const gs_offset* off, const int r[4], u8* dst,
+	int dstpitch, const GIFRegTEXA* TEXA);
+typedef void (*gs_lm_read_texture_block_fn)(const gs_local_memory* mem, u32 bp, u8* dst, int dstpitch,
+	const GIFRegTEXA* TEXA);
+
+/* A mode's attributes and transfers: the format table (C++: psm_t) */
+typedef struct gs_lm_psm
+{
+	gs_psm_attr attr;
+	gs_lm_write_image_fn wi;
+	gs_lm_read_image_fn ri;
+	gs_lm_read_texture_fn rtx, rtxP;
+	gs_lm_read_texture_block_fn rtxb, rtxbP;
+} gs_lm_psm;
+
+/* (the table, gs_lm_psm_table[64], is GSLocalMemoryMultiISA.c's; C++
+ * declares it as its view, GSLocalMemoryPsm) */
+/* Reads an image of any format (the table's ri) */
+extern gs_lm_read_image_fn gs_lm_read_image_x;
+
+/* The table filled for this CPU: the attributes, and the transfers of its
+ * SIMD tier; a rectangle of whole blocks read by it */
 void gs_local_memory_populate_transfers(void);
 void gs_local_memory_read_texture_blocks(gs_local_memory* mem, const gs_offset* off, const int r[4], u8* dst,
 	int dstpitch, const GIFRegTEXA* TEXA);
@@ -427,21 +455,58 @@ inline u32 GSSwizzleInfo::pa(int x, int y, u32 bp, u32 bw) const
 }
 
 class GSLocalMemory;
-MULTI_ISA_DEF(class GSLocalMemoryFunctions;)
-MULTI_ISA_DEF(void GSLocalMemoryPopulateFunctions();)
+
+/* The C transfers (gs_lm_psm's) with the C++ callers' arguments */
+struct GSLMWriteImage
+{
+	gs_lm_write_image_fn fn;
+	inline void operator()(GSLocalMemory& mem, int& tx, int& ty, const u8* src, int len, const GIFRegBITBLTBUF& BITBLTBUF,
+		const GIFRegTRXPOS& TRXPOS, const GIFRegTRXREG& TRXREG) const;
+	explicit operator bool() const { return fn != nullptr; }
+};
+struct GSLMReadImage
+{
+	gs_lm_read_image_fn fn;
+	inline void operator()(const GSLocalMemory& mem, int& tx, int& ty, u8* dst, int len, const GIFRegBITBLTBUF& BITBLTBUF,
+		const GIFRegTRXPOS& TRXPOS, const GIFRegTRXREG& TRXREG) const;
+	explicit operator bool() const { return fn != nullptr; }
+};
+struct GSLMReadTexture
+{
+	gs_lm_read_texture_fn fn;
+	inline void operator()(GSLocalMemory& mem, const GSOffset& off, const GSVector4i& r, u8* dst, int dstpitch,
+		const GIFRegTEXA& TEXA) const;
+	explicit operator bool() const { return fn != nullptr; }
+};
+struct GSLMReadTextureBlock
+{
+	gs_lm_read_texture_block_fn fn;
+	inline void operator()(const GSLocalMemory& mem, u32 bp, u8* dst, int dstpitch, const GIFRegTEXA& TEXA) const;
+	explicit operator bool() const { return fn != nullptr; }
+};
+
+/* gs_lm_psm, with the attributes as members */
+struct GSLocalMemoryPsm : gs_psm_attr
+{
+	GSLMWriteImage wi;
+	GSLMReadImage ri;
+	GSLMReadTexture rtx, rtxP;
+	GSLMReadTextureBlock rtxb, rtxbP;
+};
+static_assert(sizeof(GSLocalMemoryPsm) == sizeof(gs_lm_psm) && offsetof(GSLocalMemoryPsm, wi) == offsetof(gs_lm_psm, wi)
+	&& offsetof(GSLocalMemoryPsm, rtxbP) == offsetof(gs_lm_psm, rtxbP), "the C table's layout");
+extern "C" GSLocalMemoryPsm gs_lm_psm_table[64];
 
 /* The C local memory (above), with the C++ renderers' names, the palette
  * it reads paletted texels through, and the SIMD transfers per format */
 class GSLocalMemory final : public gs_local_memory, public GSAlignedClass<32>
 {
-	MULTI_ISA_FRIEND(GSLocalMemoryFunctions)
-
 public:
 	typedef u32 (*pixelAddress)(int x, int y, u32 bp, u32 bw);
-	typedef void (*writeImage)(GSLocalMemory& mem, int& tx, int& ty, const u8* src, int len, GIFRegBITBLTBUF& BITBLTBUF, GIFRegTRXPOS& TRXPOS, GIFRegTRXREG& TRXREG);
-	typedef void (*readImage)(const GSLocalMemory& mem, int& tx, int& ty, u8* dst, int len, GIFRegBITBLTBUF& BITBLTBUF, GIFRegTRXPOS& TRXPOS, GIFRegTRXREG& TRXREG);
-	typedef void (*readTexture)(GSLocalMemory& mem, const GSOffset& off, const GSVector4i& r, u8* dst, int dstpitch, const GIFRegTEXA& TEXA);
-	typedef void (*readTextureBlock)(const GSLocalMemory& mem, u32 bp, u8* dst, int dstpitch, const GIFRegTEXA& TEXA);
+	typedef GSLMWriteImage writeImage;
+	typedef GSLMReadImage readImage;
+	typedef GSLMReadTexture readTexture;
+	typedef GSLMReadTextureBlock readTextureBlock;
 
 	enum PSM_FMT
 	{
@@ -450,18 +515,10 @@ public:
 		PSM_FMT_16
 	};
 
-	/* A mode's attributes (GSPsm.h's gs_psm), and its transfers of
-	 * rectangles (one pixel at a time: gs_lm_pixel) */
-	struct alignas(128) psm_t : gs_psm_attr
-	{
-		writeImage wi;
-		readImage ri;
-		readTexture rtx, rtxP;
-		readTextureBlock rtxb, rtxbP;
-	};
-
-	static psm_t m_psm[64];
-	static readImage m_readImageX;
+	/* A mode's attributes (GSPsm.h's gs_psm) and its transfers of
+	 * rectangles (one pixel at a time: gs_lm_pixel): the C table */
+	typedef GSLocalMemoryPsm psm_t;
+	static constexpr psm_t* m_psm = gs_lm_psm_table;
 
 	static constexpr int m_vmsize = GS_LOCAL_MEMORY_SIZE;
 
@@ -1107,7 +1164,7 @@ public:
 
 	__forceinline void ReadImageX(int& tx, int& ty, u8* dst, int len, GIFRegBITBLTBUF& BITBLTBUF, GIFRegTRXPOS& TRXPOS, GIFRegTRXREG& TRXREG) const
 	{
-		m_readImageX(*this, tx, ty, dst, len, BITBLTBUF, TRXPOS, TRXREG);
+		gs_lm_read_image_x(this, &tx, &ty, dst, len, &BITBLTBUF, &TRXPOS, &TRXREG);
 	}
 
 	void ReadTexture(const GSOffset& off, const GSVector4i& r, u8* dst, int dstpitch, const GIFRegTEXA& TEXA)
@@ -1116,6 +1173,28 @@ public:
 		gs_local_memory_read_texture(this, &off, rc, dst, dstpitch, &TEXA);
 	}
 };
+
+inline void GSLMWriteImage::operator()(GSLocalMemory& mem, int& tx, int& ty, const u8* src, int len,
+	const GIFRegBITBLTBUF& BITBLTBUF, const GIFRegTRXPOS& TRXPOS, const GIFRegTRXREG& TRXREG) const
+{
+	fn(&mem, &tx, &ty, src, len, &BITBLTBUF, &TRXPOS, &TRXREG);
+}
+inline void GSLMReadImage::operator()(const GSLocalMemory& mem, int& tx, int& ty, u8* dst, int len,
+	const GIFRegBITBLTBUF& BITBLTBUF, const GIFRegTRXPOS& TRXPOS, const GIFRegTRXREG& TRXREG) const
+{
+	fn(&mem, &tx, &ty, dst, len, &BITBLTBUF, &TRXPOS, &TRXREG);
+}
+inline void GSLMReadTexture::operator()(GSLocalMemory& mem, const GSOffset& off, const GSVector4i& r, u8* dst,
+	int dstpitch, const GIFRegTEXA& TEXA) const
+{
+	const int rc[4] = {r.left, r.top, r.right, r.bottom};
+	fn(&mem, &off, rc, dst, dstpitch, &TEXA);
+}
+inline void GSLMReadTextureBlock::operator()(const GSLocalMemory& mem, u32 bp, u8* dst, int dstpitch,
+	const GIFRegTEXA& TEXA) const
+{
+	fn(&mem, bp, dst, dstpitch, &TEXA);
+}
 
 inline GSOffset GSOffset::fromKnownPSM(u32 bp, u32 bw, GS_PSM psm)
 {

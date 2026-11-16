@@ -32,9 +32,11 @@ mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT
 
 CF="-O1 -DNDEBUG -DPCSX2_CORE $ARCH $SAN"
-for u in GS/GSLocalMemoryMultiISA; do
-	"$CXX" $CF -std=c++17 -w $INC -c "$ROOT/pcsx2/$u.cpp" -o "$TMP/$(basename "$u").o"
-done
+# the transfers: C89 as written, built as the core builds them
+"$CC" $CF -std=gnu89 -fsyntax-only -Wall -Wno-unused-function -Werror=declaration-after-statement $INC \
+	"$ROOT/pcsx2/GS/GSLocalMemoryMultiISA.c"
+"$CC" $CF -std=gnu99 -Wall -Wno-unused-function $INC \
+	-c "$ROOT/pcsx2/GS/GSLocalMemoryMultiISA.c" -o "$TMP/GSLocalMemoryMultiISA.o"
 # C89 as written, and built as the core builds its C (gnu99): C89 leaves
 # a shift into the sign bit alone, C99 does not, and gcc checks it only
 # there

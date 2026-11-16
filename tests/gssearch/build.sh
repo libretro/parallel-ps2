@@ -14,12 +14,8 @@ TMP=${TMPDIR:-/tmp}/gssearch.$$
 mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT
 
-for u in GS/GSLocalMemoryMultiISA; do
-	${CXX:-c++} -O1 -std=c++17 -DNDEBUG -DPCSX2_CORE -msse4.1 -w $SANFLAGS \
-	     $INC -c "$ROOT/pcsx2/$u.cpp" -o "$TMP/$(basename "$u").o"
-done
-# (the tables, offsets, formats and maps are C)
-for u in GS/GSLocalMemory GS/GSTables GS/GSOffset GS/GSPsm GS/GSLocalMemoryMaps; do
+# (the transfers, tables, offsets, formats and maps are C)
+for u in GS/GSLocalMemoryMultiISA GS/GSLocalMemory GS/GSTables GS/GSOffset GS/GSPsm GS/GSLocalMemoryMaps; do
 	${CC:-cc} -O1 -DNDEBUG -DPCSX2_CORE -msse4.1 -w $SANFLAGS \
 	     $INC -c "$ROOT/pcsx2/$u.c" -o "$TMP/$(basename "$u").o"
 done
