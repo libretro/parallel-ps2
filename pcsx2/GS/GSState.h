@@ -29,6 +29,8 @@
 #include "Renderers/Common/GSArray.h"
 #include "GSVector.h"
 #include "GSPCRTC.h"
+#include "GSDrawQuery.h"
+#include "GSEntry.h"
 #include "Renderers/Common/GSPresent.h"
 
 class GSState;
@@ -192,7 +194,7 @@ private:
 	} m_tr;
 
 protected:
-	static constexpr int INVALID_ALPHA_MINMAX = 500;
+	static constexpr int INVALID_ALPHA_MINMAX = GS_INVALID_ALPHA_MINMAX;
 
 	GSVertex m_v = {};
 	float m_q = 1.0f;
@@ -265,6 +267,21 @@ protected:
 	// following functions need m_vt to be initialized
 
 	GSVertexTrace m_vt;
+	/* The draw in hand's registers and trace, for GSDrawQuery.c */
+	gs_draw_query DrawQuery()
+	{
+		gs_draw_query q;
+		q.vt         = &m_vt;
+		q.prim       = PRIM;
+		q.ctx        = m_context->Regs();
+		q.texa       = &m_draw_env->TEXA;
+		q.clut       = m_mem.m_clut.C();
+		q.vertex     = m_vertex.buff;
+		q.index      = m_index.buff;
+		q.gaps_found = m_primitive_covers_without_gaps == GapsFound;
+		q.hw         = GSIsHardwareRenderer();
+		return q;
+	}
 	GSVertexTrace::VertexAlpha& GetAlphaMinMax()
 	{
 		if (!m_vt.m_alpha.valid)
@@ -275,24 +292,32 @@ protected:
 	{
 		enum UsesBoundary
 		{
-			USES_BOUNDARY_LEFT   = 1 << 0,
-			USES_BOUNDARY_TOP    = 1 << 1,
-			USES_BOUNDARY_RIGHT  = 1 << 2,
-			USES_BOUNDARY_BOTTOM = 1 << 3,
-			USES_BOUNDARY_U = USES_BOUNDARY_LEFT | USES_BOUNDARY_RIGHT,
-			USES_BOUNDARY_V = USES_BOUNDARY_TOP | USES_BOUNDARY_BOTTOM,
+			USES_BOUNDARY_LEFT   = GS_USES_BOUNDARY_LEFT,
+			USES_BOUNDARY_TOP    = GS_USES_BOUNDARY_TOP,
+			USES_BOUNDARY_RIGHT  = GS_USES_BOUNDARY_RIGHT,
+			USES_BOUNDARY_BOTTOM = GS_USES_BOUNDARY_BOTTOM,
+			USES_BOUNDARY_U = GS_USES_BOUNDARY_U,
+			USES_BOUNDARY_V = GS_USES_BOUNDARY_V,
 		};
 		GSVector4i coverage; ///< Part of the texture used
 		u8 uses_boundary;    ///< Whether or not the usage touches the left, top, right, or bottom edge (and therefore needs wrap modes preserved)
 	};
-	TextureMinMaxResult GetTextureMinMax(GIFRegTEX0 TEX0, GIFRegCLAMP CLAMP, bool linear, bool clamp_to_tsize);
-	bool TryAlphaTest(u32& fm, u32& zm);
-	bool IsOpaque();
-	bool IsMipMapDraw();
-	bool IsMipMapActive();
-	bool IsCoverageAlpha();
-	void CalcAlphaMinMax(const int tex_min, const int tex_max);
-	void CorrectATEAlphaMinMax(const u32 atst, const int aref);
+	TextureMinMaxResult GetTextureMinMax(GIFRegTEX0 TEX0, GIFRegCLAMP CLAMP, bool linear, bool clamp_to_tsize)
+	{
+		const gs_draw_query q = DrawQuery();
+		const gs_tex_minmax r = gs_draw_texture_min_max(&q, TEX0, CLAMP, linear, clamp_to_tsize);
+		TextureMinMaxResult res;
+		res.coverage      = GSVector4i(r.coverage.x, r.coverage.y, r.coverage.z, r.coverage.w);
+		res.uses_boundary = r.uses_boundary;
+		return res;
+	}
+	bool TryAlphaTest(u32& fm, u32& zm) { const gs_draw_query q = DrawQuery(); return gs_draw_try_alpha_test(&q, &fm, &zm); }
+	bool IsOpaque() { const gs_draw_query q = DrawQuery(); return gs_draw_is_opaque(&q); }
+	bool IsMipMapDraw() { const gs_draw_query q = DrawQuery(); return gs_draw_is_mipmap_draw(&q); }
+	bool IsMipMapActive() { return m_mipmap && IsMipMapDraw(); }
+	bool IsCoverageAlpha() { const gs_draw_query q = DrawQuery(); return gs_draw_is_coverage_alpha(&q); }
+	void CalcAlphaMinMax(const int tex_min, const int tex_max) { const gs_draw_query q = DrawQuery(); gs_draw_calc_alpha_min_max(&q, tex_min, tex_max); }
+	void CorrectATEAlphaMinMax(const u32 atst, const int aref) { const gs_draw_query q = DrawQuery(); gs_draw_correct_ate_alpha_min_max(&q, atst, aref); }
 
 public:
 	struct GSUploadQueue
@@ -592,7 +617,7 @@ public:
 	PRIM_OVERLAP PrimitiveOverlap();
 	bool SpriteDrawWithoutGaps();
 	void CalculatePrimitiveCoversWithoutGaps();
-	GIFRegTEX0 GetTex0Layer(u32 lod);
+	GIFRegTEX0 GetTex0Layer(u32 lod) { const gs_draw_query q = DrawQuery(); return gs_draw_tex0_layer(&q, lod); }
 };
 
 static_assert(static_cast<int>(GSVideoMode::HDTV_1080I) == GS_VMODE_HDTV_1080I && static_cast<int>(GSVideoMode::SDTV_480P) == GS_VMODE_SDTV_480P

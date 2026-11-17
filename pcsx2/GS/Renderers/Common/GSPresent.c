@@ -33,12 +33,9 @@ static bool gs_recti_eq(const gs_recti* a, const gs_recti* b)
 
 static bool gs_recti_contains(const gs_recti* a, const gs_recti* b)
 {
-	/* (GSVector4i::rcontains: b clipped to a is b) */
-	gs_recti c;
-	c.x = (a->x > b->x) ? a->x : b->x;
-	c.y = (a->y > b->y) ? a->y : b->y;
-	c.z = (a->z < b->z) ? a->z : b->z;
-	c.w = (a->w < b->w) ? a->w : b->w;
+	/* (GSVector4i::rcontains: a clamped into b is b) */
+	gs_recti c = *a;
+	gs_recti_clamp_into(&c, b);
 	return gs_recti_eq(&c, b);
 }
 

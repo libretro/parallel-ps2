@@ -17,10 +17,35 @@
 #define GS_DRAWING_CONTEXT_H
 
 #include "GSRegs.h"
+#include "gs_rect.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* The registers of a drawing context and its scissor, as C sees the
+ * start of GSDrawingContext */
+typedef struct gs_drawing_regs
+{
+	GIFRegXYOFFSET XYOFFSET;
+	GIFRegTEX0     TEX0;
+	GIFRegTEX1     TEX1;
+	GIFRegCLAMP    CLAMP;
+	GIFRegMIPTBP1  MIPTBP1;
+	GIFRegMIPTBP2  MIPTBP2;
+	GIFRegSCISSOR  SCISSOR;
+	GIFRegALPHA    ALPHA;
+	GIFRegTEST     TEST;
+	GIFRegFBA      FBA;
+	GIFRegFRAME    FRAME;
+	GIFRegZBUF     ZBUF;
+	struct
+	{
+		gs_recti in;
+		gs_recti cull;
+		gs_recti xyof;
+	} scissor;
+} gs_drawing_regs;
 
 /* The scissor as a rectangle with its far edges exclusive, the same in
  * 12.4 fixed point for culling, and the offset culling subtracts from a
@@ -95,7 +120,13 @@ public:
 	{
 		return gs_ctx_size_fixed_tex0(&TEX0, &CLAMP, st.v, linear, mipmap);
 	}
+
+	const gs_drawing_regs* Regs() const { return reinterpret_cast<const gs_drawing_regs*>(this); }
 };
+
+static_assert(offsetof(GSDrawingContext, ZBUF) == offsetof(gs_drawing_regs, ZBUF)
+	&& offsetof(GSDrawingContext, scissor) == offsetof(gs_drawing_regs, scissor)
+	&& sizeof(GSDrawingContext::scissor) == sizeof(gs_drawing_regs::scissor), "gs_drawing_regs is GSDrawingContext's start");
 
 #endif
 

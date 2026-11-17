@@ -331,7 +331,7 @@ static const gs_present_ops s_c_ops = {c_get_output, c_get_feedback, c_vr_depth,
 
 /* --- a run ---------------------------------------------------------------- */
 
-enum { FRAMES = 6000, SEED = 0x2545F491 };
+enum { FRAMES = 20000, SEED = 0x2545F491 };
 
 static void random_regs(GSPrivRegSet* regs)
 {
@@ -375,7 +375,8 @@ static void random_regs(GSPrivRegSet* regs)
 		dp->DY   = 20 + rn(30);
 		dp->MAGH = rn(4) ? 3 : rn(16);
 		dp->MAGV = rn(4) ? 0 : rn(4);
-		dp->DW   = rn(4) ? 2559 : rn(4096);
+		/* (a width under the divider's is a display none wide) */
+		dp->DW   = rn(4) ? 2559 : (rn(2) ? rn(4) : rn(4096));
 		dp->DH   = 223 + rn(300);
 		fb->FBW  = 10;
 		fb->PSM  = psm[rn(4)];

@@ -141,6 +141,7 @@ public:
 	}
 	void Read32(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA) { gs_clut_read32_gpu(&m_c, &TEX0, &TEXA); }
 	void GetAlphaMinMax32(int& amin, int& amax) { gs_clut_alpha_minmax(&m_c, &amin, &amax); }
+	gs_clut* C() { return &m_c; }
 
 	u32 operator[](size_t i) const { return m_c.buff32[i]; }
 
