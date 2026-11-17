@@ -1520,12 +1520,13 @@ GSRendererHW::TextureShuffleInfo GSRendererHW::DetectTextureShuffleImpl()
 		if (i >= num_quads)
 			return false;
 
-		GSVertex v0, v1;
-		if (!GetQuadCorners(verts, index + verts_per_quad * i, v0, v1))
+		const GSVertex* v0;
+		const GSVertex* v1;
+		if (!GetQuadCorners(verts, index + verts_per_quad * i, &v0, &v1))
 			return false;
 
 		GSVector4 xy, uv;
-		GetQuadBBoxWindow(v0, v1, xy, uv);
+		GetQuadBBoxWindow(*v0, *v1, xy, uv);
 
 		GetQuadRasterizedPoints(xy, uv);
 

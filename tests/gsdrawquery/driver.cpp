@@ -214,6 +214,381 @@ static bool same_alpha(const gs_vertex_trace* a, const gs_vertex_trace* b)
 	return a->m_alpha.valid == b->m_alpha.valid && (!a->m_alpha.valid || (a->m_alpha.min == b->m_alpha.min && a->m_alpha.max == b->m_alpha.max));
 }
 
+/* --- the draw's geometry ------------------------------------------------ */
+
+enum { GV = 40, GI = 80 };
+struct Geo
+{
+	alignas(32) GSDrawingEnvironment env;
+	alignas(32) GSVertex vertex[GV];
+	alignas(32) GSVertex cur;
+	u16 index[GI];
+	GIFRegPRIM prim;
+	u32 vcount, icount;
+	GSVector4i r, r_no_scissor;
+};
+
+/* A vertex at x, y in pixels, with a 12.4 jitter now and then */
+static void put_xy(GSVertex* v, int x, int y)
+{
+	v->XYZ.X = (u16)((x << 4) + (rn(6) == 0 ? (int)rn(16) : 0));
+	v->XYZ.Y = (u16)((y << 4) + (rn(6) == 0 ? (int)rn(16) : 0));
+}
+
+static void random_geometry(Geo* g, GS_PRIM_CLASS* pc)
+{
+	static const u32 psm[] = {PSMCT32, PSMCT24, PSMCT16, PSMCT16S, PSMT8, PSMZ32, PSMZ24, PSMZ16};
+	static const u32 tpsm[] = {PSMCT32, PSMCT24, PSMCT16, PSMT8H, PSMT4HL, PSMT4HH, PSMZ32, PSMZ24};
+	static const u32 fbmsk[] = {0, 0x00FFFFFFu, 0xFF000000u, 0xFFFFFFFFu};
+	GSDrawingContext* c = &g->env.CTXT[0];
+	u32 i, n;
+
+	memset(g, 0, sizeof(*g));
+	for (i = 0; i < GV; i++)
+	{
+		GSVertex* v = &g->vertex[i];
+		put_xy(v, (int)rn(1024), (int)rn(1024));
+		v->XYZ.Z = rn(4) ? 0 : rnd();
+		v->U = (u16)rn(16384);
+		v->V = (u16)rn(16384);
+		/* (zero of either sign: the vector min and max tell them apart) */
+		v->ST.S = rn(12) == 0 ? (rn(2) ? -0.0f : 0.0f) : (float)rn(1024) / 1024.0f;
+		v->ST.T = rn(12) == 0 ? (rn(2) ? -0.0f : 0.0f) : (float)rn(1024) / 1024.0f;
+		v->RGBAQ.Q = rn(4) ? 1.0f : (float)rn(4);
+	}
+	for (i = 0; i < GI; i++)
+		g->index[i] = (u16)rn(GV);
+
+	*pc = static_cast<GS_PRIM_CLASS>(rn(4));
+	switch (rn(6))
+	{
+		case 0: /* sprites in rows: one width, stacked */
+		case 1: /* or in columns */
+		{
+			const bool rows = rn(2) == 0;
+			const int w = 16 + (int)rn(600), h = 8 + (int)rn(64);
+			int x = (int)rn(32), y = (int)rn(32);
+			n = 1 + rn(12);
+			for (i = 0; i < n; i++)
+			{
+				put_xy(&g->vertex[2 * i], x, y);
+				put_xy(&g->vertex[2 * i + 1], rows ? x + w : x + h, rows ? y + h : y + w);
+				if (rows)
+					y += h + (rn(8) == 0 ? (int)rn(4) : 0);
+				else
+					x += h + (rn(8) == 0 ? (int)rn(4) : 0);
+				/* a column wrapping back to the start now and then, or
+				 * starting where the one before did */
+				if (!rows && rn(10) == 0)
+					x = (int)rn(4);
+				else if (!rows && rn(10) == 0)
+					x -= h;
+			}
+			g->vcount = 2 * n;
+			g->icount = 2 * n;
+			*pc = rn(4) ? GS_SPRITE_CLASS : *pc;
+			break;
+		}
+		case 2: /* quads as triangle strips or lists */
+		{
+			const int w = 16 + (int)rn(300), h = 8 + (int)rn(200);
+			int x = (int)rn(64), y = (int)rn(64);
+			const bool shuffle = rn(2) == 0;
+			n = 1 + rn(6);
+			for (i = 0; i < n; i++)
+			{
+				GSVertex* v = &g->vertex[4 * i];
+				put_xy(&v[0], x, y);
+				put_xy(&v[1], x + w, y);
+				put_xy(&v[2], x, y + h);
+				put_xy(&v[3], x + w, y + h);
+				if (rn(2))
+				{
+					/* a strip: 0 1 2, 1 2 3 */
+					g->index[6 * i + 0] = (u16)(4 * i + 0);
+					g->index[6 * i + 1] = (u16)(4 * i + 1);
+					g->index[6 * i + 2] = (u16)(4 * i + 2);
+					g->index[6 * i + 3] = (u16)(4 * i + 1);
+					g->index[6 * i + 4] = (u16)(4 * i + 2);
+					g->index[6 * i + 5] = (u16)(4 * i + 3);
+				}
+				else
+				{
+					/* a list of its own six */
+					g->index[6 * i + 0] = (u16)(4 * i + 0);
+					g->index[6 * i + 1] = (u16)(4 * i + 1);
+					g->index[6 * i + 2] = (u16)(4 * i + 2);
+					g->index[6 * i + 3] = (u16)(4 * i + 2);
+					g->index[6 * i + 4] = (u16)(4 * i + 1);
+					g->index[6 * i + 5] = (u16)(4 * i + 3);
+				}
+				if (rn(8) == 0)
+					g->index[6 * i + rn(6)] = (u16)rn(GV);
+				/* the pair before again */
+				if (i > 0 && rn(10) == 0)
+					memcpy(&g->index[6 * i], &g->index[6 * (i - 1)], 6 * sizeof(u16));
+				/* the next one beside it: a shuffle's eight pixels, or its
+				 * own width */
+				x += shuffle ? 8 : w;
+			}
+			g->vcount = 4 * n;
+			g->icount = 6 * n;
+			*pc = rn(4) ? GS_TRIANGLE_CLASS : *pc;
+			break;
+		}
+		default: /* anything, a point or none included */
+			g->vcount = rn(4) ? rn(GV - 2) : rn(2);
+			g->icount = rn(GI - 6);
+			break;
+	}
+	if (rn(4) == 0)
+		g->icount = rn(2) ? 6 : 2;
+
+	g->prim.U64 = 0;
+	g->prim.TME = rn(5) != 0;
+	g->prim.FST = rn(2);
+	c->TEX0.U64  = 0;
+	c->TEX0.TBP0 = rn(3) ? 0x1000 : rn(16384);
+	c->TEX0.PSM  = tpsm[rn(8)];
+	c->TEX0.TW   = 6 + rn(5);
+	c->TEX0.TH   = 6 + rn(5);
+	c->FRAME.U64 = 0;
+	c->FRAME.FBP = rn(2) ? 0x1000 >> 5 : rn(512);
+	c->FRAME.PSM = psm[rn(8)];
+	c->FRAME.FBMSK = rn(5) ? fbmsk[rn(4)] : rnd();
+	c->ZBUF.U64  = 0;
+	c->ZBUF.ZBP  = rn(3) ? 0x1000 >> 5 : rn(512);
+	c->ZBUF.PSM  = psm[5 + rn(3)];
+	c->ZBUF.ZMSK = rn(2);
+	c->TEST.U64  = 0;
+	c->TEST.ATE  = rn(2);
+	c->TEST.ATST = rn(3) ? 0 : rn(8);
+	c->TEST.AFAIL = rn(4);
+	c->TEX1.U64  = 0;
+	c->TEX1.MMAG = rn(4) == 0;
+	c->TEX1.MMIN = rn(4) == 0 ? rn(8) : 0;
+	c->CLAMP.U64 = 0;
+	c->CLAMP.WMS = rn(4);
+	c->CLAMP.WMT = rn(4);
+	c->CLAMP.MINU = rn(256);
+	c->CLAMP.MAXU = rn(1024);
+	c->CLAMP.MINV = rn(256);
+	c->CLAMP.MAXV = rn(1024);
+	c->XYOFFSET.U64 = 0;
+	c->XYOFFSET.OFX = rn(2) ? 0 : rn(4096) << 4;
+	c->XYOFFSET.OFY = rn(2) ? 0 : rn(4096) << 4;
+	c->scissor.xyof = GSVector4i((int)c->XYOFFSET.OFX, (int)c->XYOFFSET.OFY, (int)c->XYOFFSET.OFX + 15, (int)c->XYOFFSET.OFY + 15);
+
+	/* the vertex in hand: on the texel of its pixel, often */
+	g->cur = g->vertex[rn(GV)];
+	for (i = 0; i < GV; i++)
+	{
+		GSVertex* v = (i == 0) ? &g->cur : &g->vertex[i];
+		if (rn(3))
+		{
+			const int u = ((int)v->XYZ.X - (int)c->XYOFFSET.OFX) + (rn(4) == 0 ? (int)rn(32) - 16 : 0);
+			const int t = ((int)v->XYZ.Y - (int)c->XYOFFSET.OFY) + (rn(4) == 0 ? (int)rn(32) - 16 : 0);
+			v->U = (u16)u;
+			v->V = (u16)t;
+			v->RGBAQ.Q = rn(2) ? 1.0f : (float)(1 + rn(4));
+			v->ST.S = (float)u / 16.0f / (float)(1 << c->TEX0.TW) * v->RGBAQ.Q;
+			v->ST.T = (float)t / 16.0f / (float)(1 << c->TEX0.TH) * v->RGBAQ.Q;
+		}
+	}
+
+	/* a region clamp ending at the vertex's texel */
+	if (rn(3) == 0)
+	{
+		c->CLAMP.MAXU = (g->cur.U >> 4) - rn(2);
+		c->CLAMP.MAXV = (g->cur.V >> 4) - rn(2);
+		c->CLAMP.MINU = 0;
+		c->CLAMP.MINV = 0;
+	}
+	g->r = rn(3) ? GSVector4i::zero() : GSVector4i(rn(3), rn(3), 64 + rn(512), 64 + rn(512));
+	{
+		const int dx = ((int)g->vertex[1].XYZ.X - (int)g->vertex[0].XYZ.X + 8) >> 4;
+		const int dy = ((int)g->vertex[1].XYZ.Y - (int)g->vertex[0].XYZ.Y + 8) >> 4;
+		g->r_no_scissor = GSVector4i(0, 0, rn(3) ? dx : (int)rn(640), rn(3) ? dy : (int)rn(480));
+	}
+}
+
+static bool feq(const float* a, const float* b)
+{
+	int i;
+	for (i = 0; i < 4; i++)
+		/* the same bits, or both NaN */
+		if (memcmp(&a[i], &b[i], sizeof(float)) != 0 && !(a[i] != a[i] && b[i] != b[i]))
+			return false;
+	return true;
+}
+
+static void geometry(unsigned long iterations)
+{
+	static Geo ga, gb;
+	static gs_vertex_trace va, vb;
+	RefDraw r;
+	gs_draw_query q;
+	gs_array_t list_c;
+	unsigned long it;
+
+	memset((void*)&r, 0, sizeof(r));
+	gs_array_init(&r.m_drawlist, sizeof(u32));
+	gs_array_init(&list_c, sizeof(u32));
+	gs_array_reserve(&r.m_drawlist, GV);
+	gs_array_reserve(&list_c, GV);
+
+	for (it = 0; it < iterations; it++)
+	{
+		GS_PRIM_CLASS pc;
+		u32 buff[2];
+		int n, k;
+
+		random_geometry(&ga, &pc);
+		memcpy((void*)&gb, (void*)&ga, sizeof(ga));
+		memset(&va, 0, sizeof(va));
+		va.m_primclass = pc;
+		vb = va;
+
+		r.m_vt          = va;
+		r.PRIM          = &ga.prim;
+		r.m_context     = &ga.env.CTXT[0];
+		r.m_draw_env    = &ga.env;
+		r.m_vertex.buff = ga.vertex;
+		r.m_vertex.next = ga.vcount;
+		r.m_index.buff  = ga.index;
+		r.m_index.tail  = ga.icount;
+		r.m_r           = ga.r;
+		r.m_r_no_scissor = ga.r_no_scissor;
+		r.m_v           = ga.cur;
+
+		q.vt           = &vb;
+		q.prim         = &gb.prim;
+		q.ctx          = gb.env.CTXT[0].Regs();
+		q.texa         = &gb.env.TEXA;
+		q.clut         = NULL;
+		q.vertex       = gb.vertex;
+		q.index        = gb.index;
+		q.vertex_count = gb.vcount;
+		q.index_count  = gb.icount;
+		q.r            = reinterpret_cast<const gs_recti*>(&gb.r);
+		q.r_no_scissor = reinterpret_cast<const gs_recti*>(&gb.r_no_scissor);
+		q.gaps_found   = false;
+		q.hw           = true;
+
+		s_step = "TrianglesAreQuads";
+		CHECK(r.TrianglesAreQuads(false) == gs_draw_triangles_are_quads(&q, false));
+		CHECK(r.TrianglesAreQuads(true) == gs_draw_triangles_are_quads(&q, true));
+		s_step = "PrimitiveOverlap";
+		r.m_drawlist.count = 7;
+		list_c.count = 7;
+		CHECK(static_cast<int>(r.PrimitiveOverlap()) == gs_draw_primitive_overlap(&q, &list_c));
+		CHECK(r.m_drawlist.count == list_c.count &&
+			!memcmp(r.m_drawlist.items, list_c.items, list_c.count * sizeof(u32)));
+		/* (two vertices read whatever the count) */
+		s_step = "SpriteDrawWithoutGaps";
+		CHECK(r.SpriteDrawWithoutGaps() == gs_draw_sprites_without_gaps(&q));
+		s_step = "CalculatePrimitiveCoversWithoutGaps";
+		r.CalculatePrimitiveCoversWithoutGaps();
+		CHECK(static_cast<int>(r.m_primitive_covers_without_gaps) == gs_draw_covers_without_gaps(&q));
+		s_step = "IsAutoFlushDraw";
+		CHECK(r.IsAutoFlushDraw() == gs_draw_reads_own_target(&q));
+		s_step = "IsPixelFeedbackPrim";
+		for (k = 0; k < 2; k++)
+		{
+			const u32 prim = rn(8);
+			n = 1 + (int)rn(3);
+			buff[0] = rn(GV);
+			buff[1] = rn(GV);
+			CHECK(r.IsPixelFeedbackPrim(prim, buff, n) == gs_draw_is_pixel_feedback_prim(&q, &gb.cur, prim, buff, n));
+		}
+	}
+	gs_array_free(&r.m_drawlist);
+	gs_array_free(&list_c);
+}
+
+/* The quads of a shuffle's detection: corners, their window rects and
+ * texture coordinates, and the pixels they cover */
+static void quads(unsigned long iterations)
+{
+	static Geo ga, gb;
+	static gs_vertex_trace va, vb;
+	RefDraw r;
+	gs_draw_query q;
+	unsigned long it;
+
+	memset((void*)&r, 0, sizeof(r));
+	for (it = 0; it < iterations; it++)
+	{
+		GS_PRIM_CLASS pc;
+		int k;
+
+		random_geometry(&ga, &pc);
+		memcpy((void*)&gb, (void*)&ga, sizeof(ga));
+		memset(&va, 0, sizeof(va));
+		va.m_primclass = pc;
+		vb = va;
+		r.m_vt          = va;
+		r.PRIM          = &ga.prim;
+		r.m_context     = &ga.env.CTXT[0];
+		q.vt            = &vb;
+		q.prim          = &gb.prim;
+		q.ctx           = gb.env.CTXT[0].Regs();
+
+		for (k = 0; k < 4; k++)
+		{
+			const u32 at = rn(GI - 6);
+			GSVertex a0, a1;
+			const void* b0 = NULL;
+			const void* b1 = NULL;
+			const bool keep = rn(2) != 0;
+			const float sentinel[4] = {-7.0f, -7.0f, -7.0f, -7.0f};
+			GSVector4 axy, atex, axy3;
+			float bxy[4], btex[4], bxy3[4];
+			bool ra, rb;
+
+			s_step = "GetQuadCorners";
+			ra = r.GetQuadCorners(ga.vertex, ga.index + at, a0, a1);
+			rb = gs_draw_quad_corners(&q, gb.vertex, gb.index + at, &b0, &b1);
+			CHECK(ra == rb);
+			if (!ra || !rb)
+			{
+				/* any two, for the rest */
+				a0 = ga.vertex[rn(GV)];
+				a1 = ga.vertex[rn(GV)];
+				b0 = &a0;
+				b1 = &a1;
+			}
+			else
+				CHECK(!memcmp(&a0, b0, sizeof(a0)) && !memcmp(&a1, b1, sizeof(a1)));
+
+			s_step = "GetQuadBBoxWindow";
+			memcpy(axy.v, sentinel, sizeof(sentinel));
+			memcpy(atex.v, sentinel, sizeof(sentinel));
+			memcpy(axy3.v, sentinel, sizeof(sentinel));
+			memcpy(bxy, sentinel, sizeof(sentinel));
+			memcpy(btex, sentinel, sizeof(sentinel));
+			memcpy(bxy3, sentinel, sizeof(sentinel));
+			r.GetQuadBBoxWindow(a0, a1, axy, atex, keep);
+			gs_draw_quad_bbox_window(&q, b0, b1, bxy, btex, keep);
+			CHECK(feq(axy.v, bxy) && feq(atex.v, btex));
+			r.GetQuadBBoxWindow(a0, a1, axy3);
+			gs_draw_quad_bbox_window(&q, b0, b1, bxy3, NULL, false);
+			CHECK(feq(axy3.v, bxy3));
+
+			s_step = "GetQuadRasterizedPoints";
+			{
+				const bool keep2 = rn(2) != 0;
+				RefDraw::GetQuadRasterizedPoints(axy, atex, keep2);
+				gs_draw_quad_rasterized_points(bxy, btex, keep2);
+				CHECK(feq(axy.v, bxy) && feq(atex.v, btex));
+				RefDraw::GetQuadRasterizedPoints(axy3, keep2);
+				gs_draw_quad_rasterized_points(bxy3, NULL, keep2);
+				CHECK(feq(axy3.v, bxy3));
+			}
+		}
+	}
+}
+
 int main(void)
 {
 	static World wa, wb;
@@ -330,6 +705,9 @@ int main(void)
 			CHECK(same_alpha(&r.m_vt, &vb));
 		}
 	}
+
+	geometry(300000);
+	quads(300000);
 
 	printf("gsdrawquery: %lu checks, %lu differed\n", s_checks, s_fail);
 	return s_fail ? 1 : 0;

@@ -2,6 +2,7 @@
 
 #include <float.h>
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <retro_inline.h>
@@ -9,6 +10,7 @@
 #include "common/Pcsx2Defs.h"
 #include "GSDrawQuery.h"
 #include "GSPsm.h"
+#include "GSUtil.h"
 #include "Renderers/Common/gs_vertex.h"
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64) || defined(__i386__) || defined(_M_IX86)
@@ -796,4 +798,493 @@ GIFRegTEX0 gs_draw_tex0_layer(const gs_draw_query* q, u32 lod)
 		TEX0.TW -= lod;
 
 	return TEX0;
+}
+
+static INLINE bool gs_dq_xyz_eq(const struct gs_vertex_xyz* a, const struct gs_vertex_xyz* b)
+{
+	return a->X == b->X && a->Y == b->Y && a->Z == b->Z;
+}
+
+bool gs_draw_triangles_are_quads(const gs_draw_query* q, bool shuffle_check)
+{
+	/* A quad has two values of X and two of Y, its bounds */
+	const union gs_vertex* v = (const union gs_vertex*)q->vertex;
+	u32 idx;
+
+	for (idx = 0; idx < q->index_count; idx += 6)
+	{
+		const u16* i = q->index + idx;
+		u16 dx[2], dy[2];
+		u32 nx = 1, ny = 1, extra = 0, j;
+
+		/* the pair shares an edge with the triangle before */
+		if (idx > 0)
+		{
+			const u16* prev = q->index + (idx - 3);
+			u32 matched = 0;
+
+			for (j = 0; j < 3; j++)
+			{
+				struct gs_vertex_xyz nv = v[i[j]].f.XYZ;
+				if (shuffle_check)
+					nv.X = (u16)(nv.X - (8 << 4));
+				if (gs_dq_xyz_eq(&nv, &v[prev[0]].f.XYZ) || gs_dq_xyz_eq(&nv, &v[prev[1]].f.XYZ) ||
+					gs_dq_xyz_eq(&nv, &v[prev[2]].f.XYZ))
+					matched++;
+			}
+			if (matched != 2)
+				return false;
+		}
+
+		/* (degenerate triangles are culled already: the indices tell)
+		 * a strip's second triangle brings one vertex of its own */
+		for (j = 3; j < 6; j++)
+			if (i[j] != i[0] && i[j] != i[1] && i[j] != i[2])
+				extra++;
+		if (extra == 1)
+			continue;
+
+		/* else a list, which is a quad only axis-aligned */
+		dx[0] = v[i[0]].f.XYZ.X;
+		dx[1] = 0;
+		dy[0] = v[i[0]].f.XYZ.Y;
+		dy[1] = 0;
+		for (j = 1; j < 6; j++)
+		{
+			const struct gs_vertex_xyz* p = &v[i[j]].f.XYZ;
+			if (p->X != dx[0] && p->X != dx[1])
+			{
+				if (nx > 1)
+					return false;
+				dx[nx++] = p->X;
+			}
+			if (p->Y != dy[0] && p->Y != dy[1])
+			{
+				if (ny > 1)
+					return false;
+				dy[ny++] = p->Y;
+			}
+		}
+	}
+
+	return true;
+}
+
+/* A sprite's bounds from its two vertices */
+static INLINE void gs_dq_sprite_rect(gs_recti* r, const union gs_vertex* a, const union gs_vertex* b)
+{
+	r->x = (a->f.XYZ.X < b->f.XYZ.X) ? a->f.XYZ.X : b->f.XYZ.X;
+	r->y = (a->f.XYZ.Y < b->f.XYZ.Y) ? a->f.XYZ.Y : b->f.XYZ.Y;
+	r->z = (a->f.XYZ.X > b->f.XYZ.X) ? a->f.XYZ.X : b->f.XYZ.X;
+	r->w = (a->f.XYZ.Y > b->f.XYZ.Y) ? a->f.XYZ.Y : b->f.XYZ.Y;
+}
+
+int gs_draw_primitive_overlap(const gs_draw_query* q, gs_array_t* drawlist)
+{
+	const union gs_vertex* v = (const union gs_vertex*)q->vertex;
+	const u32 count          = q->vertex_count;
+	int overlap              = GS_OVERLAP_NO;
+	u32 i                    = 0;
+
+	/* one triangle, one line or three points (points rarely overlap) */
+	if (count < 4)
+		return GS_OVERLAP_NO;
+
+	if (q->vt->m_primclass == GS_TRIANGLE_CLASS)
+		return (q->index_count == 6 && gs_draw_triangles_are_quads(q, false)) ? GS_OVERLAP_NO : GS_OVERLAP_UNKNOWN;
+	if (q->vt->m_primclass != GS_SPRITE_CLASS)
+		return GS_OVERLAP_UNKNOWN;
+
+	/* Sprites: a box of the run so far, which also keeps the Y order */
+	drawlist->count = 0;
+	while (i < count)
+	{
+		gs_recti all;
+		u32 j = i + 2;
+		u32* run;
+
+		gs_dq_sprite_rect(&all, &v[i], &v[i + 1]);
+		while (j < count)
+		{
+			gs_recti sprite, c;
+			gs_dq_sprite_rect(&sprite, &v[j], &v[j + 1]);
+			c = all;
+			gs_recti_clamp_into(&c, &sprite);
+			if (!(c.x < c.z && c.y < c.w))
+			{
+				if (sprite.x < all.x) all.x = sprite.x;
+				if (sprite.y < all.y) all.y = sprite.y;
+				if (sprite.z > all.z) all.z = sprite.z;
+				if (sprite.w > all.w) all.w = sprite.w;
+			}
+			else
+			{
+				overlap = GS_OVERLAP_YES;
+				break;
+			}
+			j += 2;
+		}
+		run = (u32*)gs_array_push(drawlist);
+		if (!run)
+			abort(); /* (room is made for a full vertex buffer's) */
+		*run = (j - i) >> 1;
+		i = j;
+	}
+
+	return overlap;
+}
+
+bool gs_draw_sprites_without_gaps(const gs_draw_query* q)
+{
+	const union gs_vertex* v = (const union gs_vertex*)q->vertex;
+	const int first_dpY      = v[1].f.XYZ.Y - v[0].f.XYZ.Y;
+	const int first_dpX      = v[1].f.XYZ.X - v[0].f.XYZ.X;
+	u32 i;
+
+	/* Rows: the heights match (Xenosaga 3 letterboxes an FMV with a
+	 * sprite above and one below) */
+	if (((first_dpX + 8) >> 4) == q->r_no_scissor->z)
+	{
+		for (i = 2; i < q->vertex_count; i += 2)
+		{
+			const int last_pY = v[i - 1].f.XYZ.Y;
+			const int dpY     = v[i + 1].f.XYZ.Y - v[i].f.XYZ.Y;
+			if (abs(dpY - first_dpY) >= 16 || abs((int)v[i].f.XYZ.Y - last_pY) >= 16)
+				return false;
+		}
+		return true;
+	}
+
+	/* Columns */
+	if (((first_dpY + 8) >> 4) == q->r_no_scissor->w)
+	{
+		const int offset_X = q->ctx->XYOFFSET.OFX;
+		for (i = 2; i < q->vertex_count; i += 2)
+		{
+			const int last_pX      = v[i - 1].f.XYZ.X;
+			const int this_start_X = v[i].f.XYZ.X;
+			const int last_start_X = v[i - 2].f.XYZ.X;
+			const int dpX          = v[i + 1].f.XYZ.X - v[i].f.XYZ.X;
+
+			if (this_start_X < last_start_X)
+			{
+				const int prev_X = last_start_X - offset_X;
+				if (abs(dpX - prev_X) >= 16 || abs(this_start_X - offset_X) >= 16)
+					return false;
+			}
+			else
+			{
+				const int dpY = v[i + 1].f.XYZ.Y - v[i].f.XYZ.Y;
+				if ((abs(dpY - first_dpY) >= 16 && (i + 2) < q->vertex_count) || abs(this_start_X - last_pX) >= 16)
+					return false;
+			}
+		}
+		return true;
+	}
+
+	return false;
+}
+
+int gs_draw_covers_without_gaps(const gs_draw_query* q)
+{
+	/* not offset */
+	int gaps = (q->r->x == 0 && q->r->y == 0) ? GS_GAPS_FULL_COVER : GS_GAPS_FOUND;
+
+	switch (q->vt->m_primclass)
+	{
+		case GS_POINT_CLASS:
+			return (q->vertex_count < 2) ? gaps : GS_GAPS_FOUND;
+		case GS_TRIANGLE_CLASS:
+			return (q->index_count == 6 && gs_draw_triangles_are_quads(q, false)) ? gaps : GS_GAPS_FOUND;
+		case GS_SPRITE_CLASS:
+			break;
+		default:
+			return GS_GAPS_FOUND;
+	}
+
+	/* one sprite */
+	if (gaps != GS_GAPS_FOUND && q->index_count == 2)
+		return gaps;
+
+	if (!gs_draw_sprites_without_gaps(q))
+		return GS_GAPS_FOUND;
+	return (gaps == GS_GAPS_FOUND) ? GS_GAPS_SPRITE_NONE : gaps;
+}
+
+bool gs_draw_reads_own_target(const gs_draw_query* q)
+{
+	const gs_drawing_regs* c = q->ctx;
+	const u32 frame_mask     = gs_psm[c->FRAME.PSM].fmsk;
+	const u32 frame_bp       = (u32)c->FRAME.FBP << 5;
+	const u32 zbuf_bp        = (u32)c->ZBUF.ZBP << 5;
+	bool frame_hit, z_needed, zbuf_hit;
+
+	if (!q->prim->TME)
+		return false;
+
+	/* not the same channels */
+	if (!(gs_util_channel_mask(c->TEX0.PSM) & gs_util_channel_mask_fbmsk(c->FRAME.PSM, c->FRAME.FBMSK | ~frame_mask)))
+		return false;
+
+	frame_hit = frame_bp == c->TEX0.TBP0 && !(c->TEST.ATE && c->TEST.ATST == 0 && c->TEST.AFAIL == 2) &&
+		((c->FRAME.FBMSK & frame_mask) != frame_mask);
+	/* (with a Z format frame, alpha failing FB only seems to write Z:
+	 * Powerdrome; to be tried on a PS2) */
+	z_needed = !(c->TEST.ATE && c->TEST.ATST == 0 && c->TEST.AFAIL != 2) && !c->ZBUF.ZMSK;
+	zbuf_hit = zbuf_bp == c->TEX0.TBP0 && z_needed;
+
+	return (frame_hit || zbuf_hit) &&
+		gs_util_has_shared_bits_bp(frame_hit ? frame_bp : zbuf_bp, frame_hit ? (u32)c->FRAME.PSM : (u32)c->ZBUF.PSM,
+			c->TEX0.TBP0, c->TEX0.PSM);
+}
+
+bool gs_draw_is_pixel_feedback_prim(const gs_draw_query* q, const void* cur, u32 prim, const u32* buff, int n)
+{
+	const gs_drawing_regs* c     = q->ctx;
+	const union gs_vertex* vb    = (const union gs_vertex*)q->vertex;
+	const union gs_vertex* vcur  = (const union gs_vertex*)cur;
+	const GS_PRIM_CLASS pc       = gs_util_get_prim_class(prim);
+	const float ox               = (float)c->XYOFFSET.OFX / 16.0f;
+	const float oy               = (float)c->XYOFFSET.OFY / 16.0f;
+	const float tw               = (float)(1 << c->TEX0.TW);
+	const float th               = (float)(1 << c->TEX0.TH);
+	int i;
+
+	if (((u32)c->FRAME.FBP << 5) != c->TEX0.TBP0 || c->TEX1.MMAG || c->TEX1.MMIN)
+		return false;
+	if (pc != GS_SPRITE_CLASS && !(pc == GS_TRIANGLE_CLASS && c->FRAME.FBMSK == 0x00FFFFFFu))
+		return false;
+	if (c->CLAMP.WMS == CLAMP_REGION_REPEAT || c->CLAMP.WMT == CLAMP_REGION_REPEAT)
+		return false;
+
+	for (i = 0; i < n; i++)
+	{
+		const union gs_vertex* v = (i == 0) ? vcur : &vb[buff[i - 1]];
+		const float x            = (float)v->f.XYZ.X / 16.0f - ox;
+		const float y            = (float)v->f.XYZ.Y / 16.0f - oy;
+		float u, t;
+
+		if (q->prim->FST)
+		{
+			u = (float)v->f.U / 16.0f;
+			t = (float)v->f.V / 16.0f;
+		}
+		else
+		{
+			/* a sprite's Q is its second vertex's */
+			const float qq = (pc == GS_SPRITE_CLASS) ? vcur->f.RGBAQ.Q : v->f.RGBAQ.Q;
+			if (!(qq != 0.0f))
+				return false;
+			u = v->f.ST.S / qq * tw;
+			t = v->f.ST.T / qq * th;
+		}
+		if (!(fabs(x - u) < 1.0) || !(fabs(y - t) < 1.0))
+			return false;
+		if (c->CLAMP.WMS == CLAMP_REGION_CLAMP && (u < (float)c->CLAMP.MINU || u > (float)(c->CLAMP.MAXU + 1)))
+			return false;
+		if (c->CLAMP.WMT == CLAMP_REGION_CLAMP && (t < (float)c->CLAMP.MINV || t > (float)(c->CLAMP.MAXV + 1)))
+			return false;
+	}
+	return true;
+}
+
+bool gs_draw_quad_corners(const gs_draw_query* q, const void* vertex, const u16* i, const void** v0,
+	const void** v1)
+{
+	const union gs_vertex* v = (const union gs_vertex*)vertex;
+	if (q->vt->m_primclass != GS_SPRITE_CLASS)
+		return false;
+	*v0 = &v[i[0]];
+	*v1 = &v[i[1]];
+	return true;
+}
+
+#if !defined(GS_DQ_X86)
+static INLINE bool gs_dq_sign(float f)
+{
+	u32 u;
+	memcpy(&u, &f, sizeof(u));
+	return (u >> 31) != 0;
+}
+#endif
+
+/* The vector min and max: x86 takes the second operand when either is
+ * NaN or both are zero, ARM returns the NaN and orders -0 below 0 */
+static INLINE float gs_dq_vmin(float a, float b)
+{
+#if defined(GS_DQ_X86)
+	return (a < b) ? a : b;
+#else
+	if (a != a)
+		return a;
+	if (b != b)
+		return b;
+	if (a == b)
+		return (a == 0.0f && gs_dq_sign(a)) ? a : b;
+	return (a < b) ? a : b;
+#endif
+}
+
+static INLINE float gs_dq_vmax(float a, float b)
+{
+#if defined(GS_DQ_X86)
+	return (a > b) ? a : b;
+#else
+	if (a != a)
+		return a;
+	if (b != b)
+		return b;
+	if (a == b)
+		return (a == 0.0f && !gs_dq_sign(a)) ? a : b;
+	return (a > b) ? a : b;
+#endif
+}
+
+static INLINE void gs_dq_swapf(float* a, float* b)
+{
+	const float t = *a;
+	*a = *b;
+	*b = t;
+}
+
+void gs_draw_quad_bbox_window(const gs_draw_query* q, const void* p0, const void* p1, float xy[4], float tex[4],
+	bool keep_order)
+{
+	const union gs_vertex* v0 = (const union gs_vertex*)p0;
+	const union gs_vertex* v1 = (const union gs_vertex*)p1;
+	const GS_PRIM_CLASS pc    = q->vt->m_primclass;
+	const gs_recti* xyof      = &q->ctx->scissor.xyof;
+	float x0, y0, x1, y1, s0, t0, s1, t1;
+
+	if (pc != GS_TRIANGLE_CLASS && pc != GS_SPRITE_CLASS)
+		return;
+
+	/* the window position: the offset off, in pixels */
+	x0 = (float)((int)v0->f.XYZ.X - xyof->x) / 16.0f;
+	y0 = (float)((int)v0->f.XYZ.Y - xyof->y) / 16.0f;
+	x1 = (float)((int)v1->f.XYZ.X - xyof->x) / 16.0f;
+	y1 = (float)((int)v1->f.XYZ.Y - xyof->y) / 16.0f;
+
+	if (!tex || !q->prim->TME)
+	{
+		xy[0] = gs_dq_vmin(x0, x1);
+		xy[1] = gs_dq_vmin(y0, y1);
+		xy[2] = gs_dq_vmax(x0, x1);
+		xy[3] = gs_dq_vmax(y0, y1);
+		return;
+	}
+
+	if (q->prim->FST)
+	{
+		s0 = (float)v0->f.U / 16.0f;
+		t0 = (float)v0->f.V / 16.0f;
+		s1 = (float)v1->f.U / 16.0f;
+		t1 = (float)v1->f.V / 16.0f;
+	}
+	else
+	{
+		/* a sprite's Q is its second vertex's */
+		const float tw = (float)(1 << q->ctx->TEX0.TW);
+		const float th = (float)(1 << q->ctx->TEX0.TH);
+		const float q0 = (pc == GS_SPRITE_CLASS) ? v1->f.RGBAQ.Q : v0->f.RGBAQ.Q;
+		const float q1 = v1->f.RGBAQ.Q;
+		s0 = v0->f.ST.S / q0 * tw;
+		t0 = v0->f.ST.T / q0 * th;
+		s1 = v1->f.ST.S / q1 * tw;
+		t1 = v1->f.ST.T / q1 * th;
+	}
+
+	if (!keep_order)
+	{
+		xy[0]  = gs_dq_vmin(x0, x1);
+		xy[1]  = gs_dq_vmin(y0, y1);
+		xy[2]  = gs_dq_vmax(x0, x1);
+		xy[3]  = gs_dq_vmax(y0, y1);
+		tex[0] = gs_dq_vmin(s0, s1);
+		tex[1] = gs_dq_vmin(t0, t1);
+		tex[2] = gs_dq_vmax(s0, s1);
+		tex[3] = gs_dq_vmax(t0, t1);
+	}
+	else
+	{
+		xy[0]  = x0;
+		xy[1]  = y0;
+		xy[2]  = x1;
+		xy[3]  = y1;
+		tex[0] = s0;
+		tex[1] = t0;
+		tex[2] = s1;
+		tex[3] = t1;
+		if (x0 > x1)
+		{
+			gs_dq_swapf(&xy[0], &xy[2]);
+			gs_dq_swapf(&tex[0], &tex[2]);
+		}
+		if (y0 > y1)
+		{
+			gs_dq_swapf(&xy[1], &xy[3]);
+			gs_dq_swapf(&tex[1], &tex[3]);
+		}
+	}
+}
+
+void gs_draw_quad_rasterized_points(float xy[4], float tex[4], bool keep_order)
+{
+	/* top-left and bottom-right */
+	const bool swap_x = xy[0] > xy[2];
+	const bool swap_y = xy[1] > xy[3];
+	float t[4], r[4], grad_x, grad_y;
+	int i;
+
+	if (!tex)
+	{
+		memset(t, 0, sizeof(t));
+		tex = t;
+	}
+	if (swap_x)
+	{
+		gs_dq_swapf(&xy[0], &xy[2]);
+		gs_dq_swapf(&tex[0], &tex[2]);
+	}
+	if (swap_y)
+	{
+		gs_dq_swapf(&xy[1], &xy[3]);
+		gs_dq_swapf(&tex[1], &tex[3]);
+	}
+
+	grad_x = (tex[2] - tex[0]) / (xy[2] - xy[0]);
+	grad_y = (tex[3] - tex[1]) / (xy[3] - xy[1]);
+
+	/* the pixels contained: those on the bottom-right edge left out */
+	r[0] = gs_dq_ceil(xy[0]);
+	r[1] = gs_dq_ceil(xy[1]);
+	r[2] = gs_dq_floor(xy[2]);
+	r[3] = gs_dq_floor(xy[3]);
+	if (xy[2] == r[2])
+		r[2] = r[2] - 1.0f;
+	if (xy[3] == r[3])
+		r[3] = r[3] - 1.0f;
+
+	/* the texture coordinates moved as far */
+	tex[0] += grad_x * (r[0] - xy[0]);
+	tex[1] += grad_y * (r[1] - xy[1]);
+	tex[2] += grad_x * (r[2] - xy[2]);
+	tex[3] += grad_y * (r[3] - xy[3]);
+	for (i = 0; i < 4; i++)
+		xy[i] = r[i];
+
+	/* back in the order they came */
+	if (keep_order)
+	{
+		if (swap_x)
+		{
+			gs_dq_swapf(&xy[0], &xy[2]);
+			gs_dq_swapf(&tex[0], &tex[2]);
+		}
+		if (swap_y)
+		{
+			gs_dq_swapf(&xy[1], &xy[3]);
+			gs_dq_swapf(&tex[1], &tex[3]);
+		}
+	}
 }

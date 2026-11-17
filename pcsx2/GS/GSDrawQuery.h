@@ -15,6 +15,7 @@
 #include "GSClut.h"
 #include "gs_rect.h"
 #include "Renderers/Common/GSVertexTrace.h"
+#include "Renderers/Common/GSArray.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,9 +40,14 @@ typedef struct gs_draw_query
 	const gs_drawing_regs* ctx;
 	const GIFRegTEXA* texa;
 	gs_clut* clut;
-	/* the vertices and indices (the first three read) */
+	/* the vertices and indices, how many of each */
 	const void* vertex;
 	const u16* index;
+	u32 vertex_count;
+	u32 index_count;
+	/* the draw's rect, with and without the scissor */
+	const gs_recti* r;
+	const gs_recti* r_no_scissor;
 	/* the draw's sprites were found to leave gaps */
 	bool gaps_found;
 	/* the hardware renderer's, not the software one's */
@@ -72,6 +78,51 @@ bool gs_draw_is_mipmap_draw(const gs_draw_query* q);
 bool gs_draw_is_coverage_alpha(const gs_draw_query* q);
 /* TEX0 for a mip level: its base, width and size */
 GIFRegTEX0 gs_draw_tex0_layer(const gs_draw_query* q, u32 lod);
+
+/* GSState's NoGapsType and PRIM_OVERLAP */
+#define GS_GAPS_UNKNOWN 0
+#define GS_GAPS_FOUND 1
+#define GS_GAPS_SPRITE_NONE 2
+#define GS_GAPS_FULL_COVER 3
+#define GS_OVERLAP_UNKNOWN 0
+#define GS_OVERLAP_YES 1
+#define GS_OVERLAP_NO 2
+
+/* The triangles, in pairs, are axis-aligned quads (each pair sharing an
+ * edge with the one before); shuffle_check moves the pairs after the
+ * first back 8 pixels, for a channel shuffle's */
+bool gs_draw_triangles_are_quads(const gs_draw_query* q, bool shuffle_check);
+/* Whether the draw's primitives overlap (GS_OVERLAP_*): for sprites,
+ * the runs of them that do not, as a count each, into drawlist (u32s;
+ * room made beforehand) */
+int gs_draw_primitive_overlap(const gs_draw_query* q, gs_array_t* drawlist);
+/* The sprites tile the draw's rect without gaps, in rows or columns */
+bool gs_draw_sprites_without_gaps(const gs_draw_query* q);
+/* Whether the primitives cover the draw's rect (GS_GAPS_*) */
+int gs_draw_covers_without_gaps(const gs_draw_query* q);
+/* The draw state reads what it draws: a texture at its frame's or Z
+ * buffer's address, sharing bits with what is written there */
+bool gs_draw_reads_own_target(const gs_draw_query* q);
+/* The primitive prim, from the vertex in hand (v, first) and the indices
+ * of the n - 1 before it, reads only the pixels it writes: a sprite, or
+ * a triangle writing alpha alone, each vertex's texel its pixel */
+bool gs_draw_is_pixel_feedback_prim(const gs_draw_query* q, const void* v, u32 prim, const u32* buff, int n);
+
+/* A quad's two corner vertices from its indices i into vertex: a
+ * sprite's own two (false for other primitives: triangle quads are not
+ * found yet) */
+bool gs_draw_quad_corners(const gs_draw_query* q, const void* vertex, const u16* i, const void** v0,
+	const void** v1);
+/* The window rect (pixels, offset taken off) of the quad with corners v0
+ * and v1, left, top, right, bottom, and with tex its texture coordinates
+ * (texels) at those corners: in the corners' order if keep_order, else
+ * as a bounding box too. Nothing for primitives other than sprites and
+ * triangles; tex left alone without TME. */
+void gs_draw_quad_bbox_window(const gs_draw_query* q, const void* v0, const void* v1, float xy[4], float tex[4],
+	bool keep_order);
+/* The quad's corners moved in to the pixels it covers, the texture
+ * coordinates moved with them (tex NULL: none) */
+void gs_draw_quad_rasterized_points(float xy[4], float tex[4], bool keep_order);
 
 #ifdef __cplusplus
 }

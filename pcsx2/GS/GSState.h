@@ -30,7 +30,7 @@
 #include "GSVector.h"
 #include "GSPCRTC.h"
 #include "GSDrawQuery.h"
-#include "GSEntry.h"
+#include "GSBackend.h"
 #include "Renderers/Common/GSPresent.h"
 
 class GSState;
@@ -252,11 +252,16 @@ protected:
 	GSVector4i m_af_seg_draw = {};
 	bool m_af_seg_fresh = true;
 	void FlushSegments();
-	bool IsPixelFeedbackPrim(u32 prim, const u32* buff, int n) const;
+	bool IsPixelFeedbackPrim(u32 prim, const u32* buff, int n) const
+	{
+		const gs_draw_query q = DrawQuery();
+		return gs_draw_is_pixel_feedback_prim(&q, &m_v, prim, buff, n);
+	}
 	void AutoFlushOverlap(bool pixel);
 
 	void GrowVertexBuffer();
-	bool IsAutoFlushDraw();
+	/* The draw state reads what it draws (GSDrawQuery.c) */
+	bool IsAutoFlushDraw() { const gs_draw_query q = DrawQuery(); return gs_draw_reads_own_target(&q); }
 	template<u32 prim, bool index_swap>
 	void HandleAutoFlush();
 	void CheckCLUTValidity(u32 prim);
@@ -268,18 +273,22 @@ protected:
 
 	GSVertexTrace m_vt;
 	/* The draw in hand's registers and trace, for GSDrawQuery.c */
-	gs_draw_query DrawQuery()
+	gs_draw_query DrawQuery() const
 	{
 		gs_draw_query q;
-		q.vt         = &m_vt;
+		q.vt         = const_cast<GSVertexTrace*>(&m_vt);
 		q.prim       = PRIM;
 		q.ctx        = m_context->Regs();
 		q.texa       = &m_draw_env->TEXA;
-		q.clut       = m_mem.m_clut.C();
+		q.clut       = const_cast<GSClut&>(m_mem.m_clut).C();
 		q.vertex     = m_vertex.buff;
 		q.index      = m_index.buff;
+		q.vertex_count = m_vertex.next;
+		q.index_count  = m_index.tail;
+		q.r            = reinterpret_cast<const gs_recti*>(&m_r);
+		q.r_no_scissor = reinterpret_cast<const gs_recti*>(&m_r_no_scissor);
 		q.gaps_found = m_primitive_covers_without_gaps == GapsFound;
-		q.hw         = GSIsHardwareRenderer();
+		q.hw         = emu_gs_hardware_renderer(&GSConfig);
 		return q;
 	}
 	GSVertexTrace::VertexAlpha& GetAlphaMinMax()
@@ -356,30 +365,26 @@ public:
 	 * memory, which it then reports through mem_restored. */
 	bool m_state_loading = false;
 
-	// Vertex / quad utility functions (ported from upstream refactor 26bd916e3),
-	// used by the texture-shuffle detection refactor. The triangle-class path of
-	// GetQuadCornersImpl is stubbed (sprite-class only) in the fork.
-	GSVector4 GetXYWindow(const GSVertex& v);
-	template<bool fst>
-	GSVector4 GetTexCoordsImpl(const GSVertex& v, float q);
-	template<bool fst>
-	GSVector4 GetTexCoordsImpl(const GSVertex& v);
-	GSVector4 GetTexCoords(const GSVertex& v, float q);
-	GSVector4 GetTexCoords(const GSVertex& v);
-
-	template<u32 primclass, bool tme = false, bool fst = false>
-	static bool GetQuadCornersImpl(const GSVertex* v, const u16* i, GSVertex& vout0, GSVertex& vout1);
-	bool GetQuadCorners(const GSVertex* v, const u16* i, GSVertex& vout0, GSVertex& vout1);
-
-	template<u32 primclass>
-	void GetQuadBBoxWindowImpl(const GSVertex& v0, const GSVertex& v1, GSVector4& xyout);
-	template<u32 primclass, bool tme = false, bool fst = false>
-	void GetQuadBBoxWindowImpl(const GSVertex& v0, const GSVertex& v1, GSVector4& xyout, GSVector4& texout, bool keep_tex_order = true);
-	void GetQuadBBoxWindow(const GSVertex& v0, const GSVertex& v1, GSVector4& xyout);
-	void GetQuadBBoxWindow(const GSVertex& v0, const GSVertex& v1, GSVector4& xyout, GSVector4& texout, bool keep_tex_order = true);
-
-	static void GetQuadRasterizedPoints(GSVector4& xy, bool keep_order = true);
-	static void GetQuadRasterizedPoints(GSVector4& xy, GSVector4& tex, bool keep_order = true);
+	/* Quads (GSDrawQuery.c), for the texture shuffle's detection: a
+	 * sprite's two corners in v, the window rect and texture coordinates
+	 * of two corners, and the pixels a quad covers */
+	bool GetQuadCorners(const GSVertex* v, const u16* i, const GSVertex** v0, const GSVertex** v1) const
+	{
+		const gs_draw_query q = DrawQuery();
+		return gs_draw_quad_corners(&q, v, i, reinterpret_cast<const void**>(v0), reinterpret_cast<const void**>(v1));
+	}
+	void GetQuadBBoxWindow(const GSVertex& v0, const GSVertex& v1, GSVector4& xyout) const
+	{
+		const gs_draw_query q = DrawQuery();
+		gs_draw_quad_bbox_window(&q, &v0, &v1, xyout.v, NULL, false);
+	}
+	void GetQuadBBoxWindow(const GSVertex& v0, const GSVertex& v1, GSVector4& xyout, GSVector4& texout, bool keep_tex_order = true) const
+	{
+		const gs_draw_query q = DrawQuery();
+		gs_draw_quad_bbox_window(&q, &v0, &v1, xyout.v, texout.v, keep_tex_order);
+	}
+	static void GetQuadRasterizedPoints(GSVector4& xy, bool keep_order = true) { gs_draw_quad_rasterized_points(xy.v, NULL, keep_order); }
+	static void GetQuadRasterizedPoints(GSVector4& xy, GSVector4& tex, bool keep_order = true) { gs_draw_quad_rasterized_points(xy.v, tex.v, keep_order); }
 
 	bool m_mipmap = false;
 	bool m_texflush_flag = false;
@@ -613,10 +618,22 @@ public:
 		m_present.regs = m_regs;
 	}
 
-	bool TrianglesAreQuads(bool shuffle_check = false) const;
-	PRIM_OVERLAP PrimitiveOverlap();
-	bool SpriteDrawWithoutGaps();
-	void CalculatePrimitiveCoversWithoutGaps();
+	bool TrianglesAreQuads(bool shuffle_check = false) const
+	{
+		const gs_draw_query q = DrawQuery();
+		return gs_draw_triangles_are_quads(&q, shuffle_check);
+	}
+	PRIM_OVERLAP PrimitiveOverlap()
+	{
+		const gs_draw_query q = DrawQuery();
+		return static_cast<PRIM_OVERLAP>(gs_draw_primitive_overlap(&q, &m_drawlist));
+	}
+	bool SpriteDrawWithoutGaps() { const gs_draw_query q = DrawQuery(); return gs_draw_sprites_without_gaps(&q); }
+	void CalculatePrimitiveCoversWithoutGaps()
+	{
+		const gs_draw_query q = DrawQuery();
+		m_primitive_covers_without_gaps = static_cast<NoGapsType>(gs_draw_covers_without_gaps(&q));
+	}
 	GIFRegTEX0 GetTex0Layer(u32 lod) { const gs_draw_query q = DrawQuery(); return gs_draw_tex0_layer(&q, lod); }
 };
 
@@ -624,6 +641,8 @@ static_assert(static_cast<int>(GSVideoMode::HDTV_1080I) == GS_VMODE_HDTV_1080I &
 	&& static_cast<int>(GSVideoMode::PAL) == GS_VMODE_PAL, "GSVideoMode is GS_VMODE_*");
 
 static_assert(MAX_SKIPPED_DUPLICATE_FRAMES == GS_MAX_SKIPPED_DUPLICATE_FRAMES, "GSPresent.c skips as many");
+static_assert(GSState::GapsFound == GS_GAPS_FOUND && GSState::SpriteNoGaps == GS_GAPS_SPRITE_NONE && GSState::FullCover == GS_GAPS_FULL_COVER
+	&& GSState::PRIM_OVERLAP_YES == GS_OVERLAP_YES && GSState::PRIM_OVERLAP_NO == GS_OVERLAP_NO, "GSDrawQuery.c's numbers");
 
 // We put this in the header because of Multi-ISA.
 inline void GSState::ExpandDIMX(GSVector4i* dimx, const GIFRegDIMX DIMX)
