@@ -38,12 +38,11 @@ g++ -O2 -std=c++17 -o "$DIR/gs_reg_index" "$DIR/gs_reg_index.cpp"
 
 # The savestate restore path re-applies what the register write handlers do.
 # The two Q scrubs are written with GSVector in GSState.cpp and re-done in
-# scalar code on the restore path, so this links the real GSVector.cpp and
+# scalar code on the restore path, so this uses the real GSVector and
 # runs the handler's own expression against the scalar one, bit pattern by
 # bit pattern -- negative zero being the case where a tidier scalar version
 # would silently disagree.
 g++ -O2 -std=c++17 -msse4.1 -o "$DIR/gs_restore_norm" "$DIR/gs_restore_norm.cpp" \
-    "$ROOT/pcsx2/GS/GSVector.cpp" \
     -I"$ROOT" -I"$ROOT/common" -I"$ROOT/common/include" -I"$ROOT/pcsx2" \
     -I"$ROOT/3rdparty" -I"$ROOT/3rdparty/include" \
     -I"$ROOT/libretro/libretro-common/include"
@@ -56,7 +55,7 @@ gcc -O2 -msse4.1 -c "$ROOT/pcsx2/GS/GSDrawingContext.c" -o "$DIR/gs_texsize_dc.o
     -I"$ROOT/3rdparty" -I"$ROOT/3rdparty/include" \
     -I"$ROOT/libretro/libretro-common/include"
 g++ -O2 -std=c++17 -msse4.1 -o "$DIR/gs_texsize" "$DIR/gs_texsize.cpp" \
-    "$DIR/gs_texsize_dc.o" "$ROOT/pcsx2/GS/GSVector.cpp" \
+    "$DIR/gs_texsize_dc.o" \
     -I"$ROOT" -I"$ROOT/common" -I"$ROOT/common/include" -I"$ROOT/pcsx2" \
     -I"$ROOT/3rdparty" -I"$ROOT/3rdparty/include" \
     -I"$ROOT/libretro/libretro-common/include"

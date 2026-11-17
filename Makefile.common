@@ -463,7 +463,6 @@ endif
 # ============================================================================
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/GSState.cpp \
-	$(LRPS2_DIR)/GS/GSVector.cpp \
 	\
 	$(LRPS2_DIR)/GS/Renderers/Common/GSDevice.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSRenderer.cpp \

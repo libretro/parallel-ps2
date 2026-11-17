@@ -357,7 +357,6 @@ set(pcsx2GSSources
 	GS/GSPsm.c
 	GS/GSTables.c
 	GS/GSUtil.c
-	GS/GSVector.cpp
 	GS/Renderers/Common/GSDevice.cpp
 	GS/Renderers/Common/GSDirtyRect.c
 	GS/Renderers/Common/GSCodeReserve.c

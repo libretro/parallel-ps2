@@ -223,9 +223,6 @@ public:
 		return _ralign_helper<mode>(GSVector4i(a) - GSVector4i(1, 1));
 	}
 
-	GSVector4i fit(int arx, int ary) const;
-
-	GSVector4i fit(int preset) const;
 
 	//
 
