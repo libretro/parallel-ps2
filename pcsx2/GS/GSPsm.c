@@ -132,7 +132,9 @@ u32 gs_psm_start_block(u32 bp, u32 bw, u32 psm, int l, int t)
 u32 gs_psm_end_block(u32 bp, u32 bw, u32 psm, int r, int b)
 {
 	const gs_int2 pgs = gs_psm[psm].pgs;
-	u32 result = gs_psm_bn(bp, bw, psm, r - 1, b - 1);
+	/* (a rect's far side can be INT_MIN, from a texture coordinate run to
+	 * -inf: one before it wraps, as the CPU does, without overflowing) */
+	u32 result = gs_psm_bn(bp, bw, psm, (int)((u32)r - 1u), (int)((u32)b - 1u));
 	/* Z formats' real last block is lower */
 	if ((r & (pgs.x - 1)) == 0 && (b & (pgs.y - 1)) == 0)
 		result = ((result + GS_BLOCKS_PER_PAGE - 1) & ~(u32)(GS_BLOCKS_PER_PAGE - 1)) - 1;

@@ -12,39 +12,11 @@
 #include "GSPsm.h"
 #include "GSUtil.h"
 #include "Renderers/Common/gs_vertex.h"
+#include "gs_cvt.h"
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64) || defined(__i386__) || defined(_M_IX86)
+#if defined(GS_CVT_X86)
 #define GS_DQ_X86 1
 #endif
-
-/* A float to an int, truncated, as the CPU converts one: past an int it
- * is INT_MIN on x86 and saturates on ARM, never undefined */
-static INLINE int gs_dq_f2i(float f)
-{
-#if defined(GS_DQ_X86)
-	return _mm_cvtt_ss2si(_mm_set_ss(f));
-#else
-	return vcvts_s32_f32(f);
-#endif
-}
-
-/* An int through a float and back (the C++ took the min and max of ints
- * as floats) */
-static INLINE int gs_dq_minf(int a, int b)
-{
-	const float fa = (float)a, fb = (float)b;
-	return gs_dq_f2i((fa < fb) ? fa : fb);
-}
-
-static INLINE int gs_dq_maxf(int a, int b)
-{
-	const float fa = (float)a, fb = (float)b;
-	return gs_dq_f2i((fa > fb) ? fa : fb);
-}
-
-/* (floorf and ceilf are C99; a float is exact as a double) */
-static INLINE float gs_dq_floor(float f) { return (float)floor(f); }
-static INLINE float gs_dq_ceil(float f) { return (float)ceil(f); }
 
 /* max(f, 0) as the vector max takes it: a NaN is 0 on x86 (its second
  * operand), NaN on ARM */
@@ -133,18 +105,18 @@ static void gs_dq_cut_axis(int mode, int* lo, int* hi, int a, int b, int mask, i
 		case CLAMP_REPEAT:
 			if ((a & ~mask) == (b & ~mask))
 			{
-				*lo = gs_dq_maxf(*lo, a & mask);
-				*hi = gs_dq_minf(*hi, (b & mask) + inclusive);
+				*lo = gs_maxf_i(*lo, a & mask);
+				*hi = gs_minf_i(*hi, (b & mask) + inclusive);
 			}
 			break;
 		case CLAMP_CLAMP:
 		case CLAMP_REGION_CLAMP:
 			if (*lo < a)
-				*lo = gs_dq_minf(a, *hi - 1);
+				*lo = gs_minf_i(a, *hi - 1);
 			if (*hi > (b + 1))
 			{
 				const float fa = (float)b, fb = (float)*lo;
-				*hi = gs_dq_f2i(((fa > fb) ? fa : fb) + (float)inclusive);
+				*hi = gs_f2i(((fa > fb) ? fa : fb) + (float)inclusive);
 			}
 			break;
 		case CLAMP_REGION_REPEAT:
@@ -288,7 +260,7 @@ gs_tex_minmax gs_draw_texture_min_max(const gs_draw_query* q, GIFRegTEX0 TEX0, G
 
 			/* At the start of the texture, with only the half texel past
 			 * it, clamped to 0: repeat would take the whole texture */
-			if (!clamp_to_tsize && gs_dq_floor(tmin[0]) == 0.0f && gs_dq_floor(tmin[1]) == 0.0f)
+			if (!clamp_to_tsize && gs_floorf(tmin[0]) == 0.0f && gs_floorf(tmin[1]) == 0.0f)
 			{
 				int i;
 				for (i = 0; i < 4; i++)
@@ -310,10 +282,10 @@ gs_tex_minmax gs_draw_texture_min_max(const gs_draw_query* q, GIFRegTEX0 TEX0, G
 			/* Fractional coordinates draw to the right and bottom: the
 			 * ceiling, not the floor */
 			gs_recti rc, sc;
-			rc.x = gs_dq_f2i(gs_dq_ceil(pmin[0]));
-			rc.y = gs_dq_f2i(gs_dq_ceil(pmin[1]));
-			rc.z = gs_dq_f2i(gs_dq_floor(pmax[0]));
-			rc.w = gs_dq_f2i(gs_dq_floor(pmax[1]));
+			rc.x = gs_f2i(gs_ceilf(pmin[0]));
+			rc.y = gs_f2i(gs_ceilf(pmin[1]));
+			rc.z = gs_f2i(gs_floorf(pmax[0]));
+			rc.w = gs_f2i(gs_floorf(pmax[1]));
 			sc = rc;
 			gs_recti_clamp_into(&sc, &q->ctx->scissor.in);
 			if (rc.x != sc.x || rc.y != sc.y || rc.z != sc.z || rc.w != sc.w)
@@ -325,7 +297,7 @@ gs_tex_minmax gs_draw_texture_min_max(const gs_draw_query* q, GIFRegTEX0 TEX0, G
 				swap = gs_dq_swap(q, 0);
 				if (rc.x < sc.x)
 				{
-					const float d = gs_dq_floor((float)(sc.x - rc.x) * grad_x);
+					const float d = gs_floorf((float)(sc.x - rc.x) * grad_x);
 					if (!swap)
 						n[0] += d;
 					else
@@ -333,7 +305,7 @@ gs_tex_minmax gs_draw_texture_min_max(const gs_draw_query* q, GIFRegTEX0 TEX0, G
 				}
 				if (rc.z > sc.z)
 				{
-					const float d = gs_dq_floor((float)(rc.z - sc.z) * grad_x);
+					const float d = gs_floorf((float)(rc.z - sc.z) * grad_x);
 					if (!swap)
 						n[2] -= d;
 					else
@@ -341,7 +313,7 @@ gs_tex_minmax gs_draw_texture_min_max(const gs_draw_query* q, GIFRegTEX0 TEX0, G
 				}
 				/* not where it repeats over the part not clipped */
 				if (wms != CLAMP_REGION_REPEAT &&
-					(wms != CLAMP_REPEAT || (gs_dq_f2i(n[0]) & ~tw_mask) == (gs_dq_f2i(n[2] - 1) & ~tw_mask)))
+					(wms != CLAMP_REPEAT || (gs_f2i(n[0]) & ~tw_mask) == (gs_f2i(n[2] - 1) & ~tw_mask)))
 				{
 					st[0] = n[0];
 					st[2] = n[2];
@@ -350,7 +322,7 @@ gs_tex_minmax gs_draw_texture_min_max(const gs_draw_query* q, GIFRegTEX0 TEX0, G
 				swap = gs_dq_swap(q, 1);
 				if (rc.y < sc.y)
 				{
-					const float d = gs_dq_floor((float)(sc.y - rc.y) * grad_y);
+					const float d = gs_floorf((float)(sc.y - rc.y) * grad_y);
 					if (!swap)
 						n[1] += d;
 					else
@@ -358,14 +330,14 @@ gs_tex_minmax gs_draw_texture_min_max(const gs_draw_query* q, GIFRegTEX0 TEX0, G
 				}
 				if (rc.w > sc.w)
 				{
-					const float d = gs_dq_floor((float)(rc.w - sc.w) * grad_y);
+					const float d = gs_floorf((float)(rc.w - sc.w) * grad_y);
 					if (!swap)
 						n[3] -= d;
 					else
 						n[1] += d;
 				}
 				if (wmt != CLAMP_REGION_REPEAT &&
-					(wmt != CLAMP_REPEAT || (gs_dq_f2i(n[1]) & ~th_mask) == (gs_dq_f2i(n[3] - 1) & ~th_mask)))
+					(wmt != CLAMP_REPEAT || (gs_f2i(n[1]) & ~th_mask) == (gs_f2i(n[3] - 1) & ~th_mask)))
 				{
 					st[1] = n[1];
 					st[3] = n[3];
@@ -373,10 +345,10 @@ gs_tex_minmax gs_draw_texture_min_max(const gs_draw_query* q, GIFRegTEX0 TEX0, G
 			}
 		}
 
-		uv[0] = gs_dq_f2i(gs_dq_floor(st[0]));
-		uv[1] = gs_dq_f2i(gs_dq_floor(st[1]));
-		uv[2] = gs_dq_f2i(gs_dq_floor(st[2]));
-		uv[3] = gs_dq_f2i(gs_dq_floor(st[3]));
+		uv[0] = gs_f2i(gs_floorf(st[0]));
+		uv[1] = gs_f2i(gs_floorf(st[1]));
+		uv[2] = gs_f2i(gs_floorf(st[2]));
+		uv[3] = gs_f2i(gs_floorf(st[3]));
 		uses_border = (u8)((uv[0] < vr.x ? GS_USES_BOUNDARY_LEFT : 0) | (uv[1] < vr.y ? GS_USES_BOUNDARY_TOP : 0) |
 			(uv[2] >= vr.z ? GS_USES_BOUNDARY_RIGHT : 0) | (uv[3] >= vr.w ? GS_USES_BOUNDARY_BOTTOM : 0));
 
@@ -388,9 +360,9 @@ gs_tex_minmax gs_draw_texture_min_max(const gs_draw_query* q, GIFRegTEX0 TEX0, G
 		if (q->hw)
 		{
 			inc_x = ((vt->m_primclass < GS_TRIANGLE_CLASS) ||
-				(grad_x < 1.0f || (grad_x == 1.0f && pmax[0] != gs_dq_floor(pmax[0])))) ? 1 : 0;
+				(grad_x < 1.0f || (grad_x == 1.0f && pmax[0] != gs_floorf(pmax[0])))) ? 1 : 0;
 			inc_y = ((vt->m_primclass < GS_TRIANGLE_CLASS) ||
-				(grad_y < 1.0f || (grad_y == 1.0f && pmax[1] != gs_dq_floor(pmax[1])))) ? 1 : 0;
+				(grad_y < 1.0f || (grad_y == 1.0f && pmax[1] != gs_floorf(pmax[1])))) ? 1 : 0;
 		}
 
 		/* the read cut down to what is used */
@@ -1256,10 +1228,10 @@ void gs_draw_quad_rasterized_points(float xy[4], float tex[4], bool keep_order)
 	grad_y = (tex[3] - tex[1]) / (xy[3] - xy[1]);
 
 	/* the pixels contained: those on the bottom-right edge left out */
-	r[0] = gs_dq_ceil(xy[0]);
-	r[1] = gs_dq_ceil(xy[1]);
-	r[2] = gs_dq_floor(xy[2]);
-	r[3] = gs_dq_floor(xy[3]);
+	r[0] = gs_ceilf(xy[0]);
+	r[1] = gs_ceilf(xy[1]);
+	r[2] = gs_floorf(xy[2]);
+	r[3] = gs_floorf(xy[3]);
 	if (xy[2] == r[2])
 		r[2] = r[2] - 1.0f;
 	if (xy[3] == r[3])

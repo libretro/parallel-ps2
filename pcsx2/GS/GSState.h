@@ -30,6 +30,7 @@
 #include "GSVector.h"
 #include "GSPCRTC.h"
 #include "GSDrawQuery.h"
+#include "GSTransfer.h"
 #include "GSBackend.h"
 #include "Renderers/Common/GSPresent.h"
 
@@ -177,20 +178,14 @@ private:
 	template<bool index_swap>
 	void SetPrimHandlers();
 
-	struct GSTransferBuffer
+	/* The EE's transfer in progress and its buffer (GSTransfer.c) */
+	struct GSTransferBuffer : gs_transfer
 	{
-		int x = 0, y = 0;
-		int start = 0, end = 0, total = 0;
-		u8* buff = nullptr;
-		GIFRegBITBLTBUF m_blit = {};
-		bool write = false;
-
 		GSTransferBuffer();
 		~GSTransferBuffer();
 
-		void Init(int tx, int ty, const GIFRegBITBLTBUF& blit, bool write);
-		bool Update(int tw, int th, int bpp, int& len);
-
+		void Init(int tx, int ty, const GIFRegBITBLTBUF& blit, bool is_write) { gs_transfer_init(this, tx, ty, &blit, is_write); }
+		bool Update(int tw, int th, int bpp, int& len) { return gs_transfer_update(this, tw, th, bpp, &len); }
 	} m_tr;
 
 protected:
@@ -598,7 +593,11 @@ public:
 
 	void Move() { if (m_ops && m_ops->move) m_ops->move(this); else MoveBase(); }
 
-	GSVector4i GetTEX0Rect();
+	GSVector4i GetTEX0Rect()
+	{
+		const gs_recti r = gs_transfer_tex0_rect(m_prev_env.CTXT[m_prev_env.PRIM.CTXT].Regs());
+		return GSVector4i(r.x, r.y, r.z, r.w);
+	}
 	void CheckWriteOverlap(bool req_write, bool req_read);
 	void Write(const u8* mem, int len);
 	void Read(u8* mem, int len);

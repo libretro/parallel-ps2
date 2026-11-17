@@ -356,6 +356,7 @@ set(pcsx2GSSources
 	GS/GSOffset.c
 	GS/GSDrawQuery.c
 	GS/GSPCRTC.c
+	GS/GSTransfer.c
 	GS/GSPsm.c
 	GS/GSTables.c
 	GS/GSUtil.c
@@ -419,6 +420,8 @@ set(pcsx2GSHeaders
 	GS/GSOffset.h
 	GS/GSDrawQuery.h
 	GS/GSPCRTC.h
+	GS/GSTransfer.h
+	GS/gs_cvt.h
 	GS/GSPsm.h
 	GS/gs_rect.h
 	GS/GSTables.h

@@ -118,6 +118,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/GSOffset.c \
 	$(LRPS2_DIR)/GS/GSDrawQuery.c \
 	$(LRPS2_DIR)/GS/GSPCRTC.c \
+	$(LRPS2_DIR)/GS/GSTransfer.c \
 	$(LRPS2_DIR)/GS/GSPsm.c \
 	$(LRPS2_DIR)/GS/GSRingHeap.c \
 	$(LRPS2_DIR)/GS/GSTables.c \
