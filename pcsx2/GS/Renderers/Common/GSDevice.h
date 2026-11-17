@@ -1060,6 +1060,11 @@ static_assert(sizeof(GSVRFrame) == sizeof(gs_vr_frame) && offsetof(GSVRFrame, de
 static_assert(sizeof(VRRangeConstants) == sizeof(gs_vr_range_constants) && sizeof(VREyeConstants) == sizeof(gs_vr_eye_constants),
 	"the VR constants are C's");
 static_assert(sizeof(InterlaceConstantBuffer) == sizeof(gs_rectf), "InterlaceConstantBuffer is four floats");
+static_assert(static_cast<int>(RenderAPI::D3D11) == GS_RENDER_API_D3D11 && static_cast<int>(RenderAPI::OpenGL) == GS_RENDER_API_OPENGL
+	&& static_cast<int>(RenderAPI::Vulkan) == GS_RENDER_API_VULKAN, "RenderAPI is GS_RENDER_API_*");
+static_assert(static_cast<int>(GSDevice::PresentResult::OK) == GS_PRESENT_OK
+	&& static_cast<int>(GSDevice::PresentResult::FrameSkipped) == GS_PRESENT_FRAME_SKIPPED
+	&& static_cast<int>(GSDevice::PresentResult::DeviceLost) == GS_PRESENT_DEVICE_LOST, "PresentResult is GS_PRESENT_*");
 
 /* The open device, or NULL (gs_device_open). A plain pointer: a device is
  * disposed of with Free(), through its table. */

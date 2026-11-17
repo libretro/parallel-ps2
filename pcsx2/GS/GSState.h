@@ -29,6 +29,7 @@
 #include "Renderers/Common/GSArray.h"
 #include "GSVector.h"
 #include "GSPCRTC.h"
+#include "Renderers/Common/GSPresent.h"
 
 class GSState;
 
@@ -492,7 +493,7 @@ public:
 	void ResetBase(bool hardware_reset);
 	void UpdateSettingsBase(const EmuGSOptions& old_config);
 	void MoveBase();
-	void VSyncBase(u32 field, bool registers_written, bool idle_frame);
+	void VSyncBase(u32 field, bool registers_written, bool idle_frame) { gs_present_vsync(&m_present, field, registers_written, idle_frame); }
 
 	void Reset(bool hardware_reset)
 	{
@@ -513,7 +514,7 @@ public:
 	 * Renderers/Common/GSRenderer.cpp. */
 	void Destroy()           { if (m_ops && m_ops->destroy) m_ops->destroy(this); }
 	void UpdateRenderFixes() { if (m_ops && m_ops->update_render_fixes) m_ops->update_render_fixes(this); }
-	void PurgePool();
+	void PurgePool() { gs_present_purge_pool(); }
 	void VSync(u32 field, bool registers_written, bool idle_frame)
 	{
 		if (m_ops && m_ops->vsync) m_ops->vsync(this, field, registers_written, idle_frame); else VSyncBase(field, registers_written, idle_frame);
@@ -525,14 +526,12 @@ public:
 	{
 		return (m_ops && m_ops->lookup_palette_source) ? m_ops->lookup_palette_source(this, CBP, CPSM, CBW, &offset, scale, sample, &size) : nullptr;
 	}
-	bool IsIdleFrame() const;
+	bool IsIdleFrame() const { return gs_present_idle_frame(&m_present); }
+
+	/* The merge, the VR eyes and the present at a vsync (GSPresent.c) */
+	gs_present m_present;
 
 protected:
-	GSVector2i m_real_size{0, 0};
-	/* The last vsync made VR eyes, or would have: the frontend shows a
-	 * stereo pair and the option asks for one. The renderer keeps track
-	 * of depth buffers only while it does. */
-	bool m_vr_active;
 	bool m_process_texture = false;
 	bool m_downscale_source = false;
 
@@ -544,29 +543,6 @@ protected:
 	{
 		return (m_ops && m_ops->get_feedback_output) ? m_ops->get_feedback_output(this, &scale) : nullptr;
 	}
-
-private:
-	bool Merge(int field);
-	bool BeginPresentFrame(bool frame_skip);
-	GSTexture* VRFrame(GSTexture* current, bool blank_frame);
-	void VRClearViews();
-
-	/* The circuit Merge took the picture from, for the VR eyes: the part
-	 * read (normalised), where that went in the merge (pixels of
-	 * m_real_size) and its texture. */
-	GSVector4 m_vr_merge_src;
-	GSVector4 m_vr_merge_dst;
-	GSTexture* m_vr_merge_tex;
-	/* The size of one eye in the map that stands. */
-	GSVector2i m_vr_eye_size;
-	/* A view map was sent and stands until one with no views is. */
-	bool m_vr_map_set;
-
-	u32 m_skipped_duplicate_frames = 0;
-
-	// Tracking draw counters for idle frame detection.
-	int m_last_draw_n = 0;
-	int m_last_transfer_n = 0;
 
 public:
 
@@ -606,7 +582,11 @@ public:
 	int Defrost(const freezeData* fd);
 
 	u8* GetRegsMem() const { return reinterpret_cast<u8*>(m_regs); }
-	void SetRegsMem(u8* basemem) { m_regs = reinterpret_cast<GSPrivRegSet*>(basemem); }
+	void SetRegsMem(u8* basemem)
+	{
+		m_regs         = reinterpret_cast<GSPrivRegSet*>(basemem);
+		m_present.regs = m_regs;
+	}
 
 	bool TrianglesAreQuads(bool shuffle_check = false) const;
 	PRIM_OVERLAP PrimitiveOverlap();
@@ -617,6 +597,8 @@ public:
 
 static_assert(static_cast<int>(GSVideoMode::HDTV_1080I) == GS_VMODE_HDTV_1080I && static_cast<int>(GSVideoMode::SDTV_480P) == GS_VMODE_SDTV_480P
 	&& static_cast<int>(GSVideoMode::PAL) == GS_VMODE_PAL, "GSVideoMode is GS_VMODE_*");
+
+static_assert(MAX_SKIPPED_DUPLICATE_FRAMES == GS_MAX_SKIPPED_DUPLICATE_FRAMES, "GSPresent.c skips as many");
 
 // We put this in the header because of Multi-ISA.
 inline void GSState::ExpandDIMX(GSVector4i* dimx, const GIFRegDIMX DIMX)

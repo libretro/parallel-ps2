@@ -111,6 +111,42 @@ void GSVertexTrace::Update(const void* vertex, const u16* index, int v_count, in
 	gs_vertex_trace_update(this, vertex, index, v_count, i_count, primclass, &regs);
 }
 
+/* What the present asks the renderer (GSPresent.c) */
+static gs_texture* present_get_output(void* gs, int i, float* scale, int* y_offset)
+{
+	GSState* s = static_cast<GSState*>(gs);
+	return (s->m_ops && s->m_ops->get_output) ? s->m_ops->get_output(s, i, scale, y_offset) : NULL;
+}
+
+static gs_texture* present_get_feedback_output(void* gs, float* scale)
+{
+	GSState* s = static_cast<GSState*>(gs);
+	return (s->m_ops && s->m_ops->get_feedback_output) ? s->m_ops->get_feedback_output(s, scale) : NULL;
+}
+
+static bool present_get_vr_depth(void* gs, gs_texture* color, gs_texture** depth, bool* encoded, float* z_scale)
+{
+	GSState* s = static_cast<GSState*>(gs);
+	GSTexture* d = NULL;
+	if (!s->m_ops || !s->m_ops->get_vr_depth ||
+		!s->m_ops->get_vr_depth(s, static_cast<GSTexture*>(color), &d, encoded, z_scale))
+		return false;
+	*depth = d;
+	return true;
+}
+
+static float present_get_upscale_multiplier(void* gs)
+{
+	return static_cast<GSState*>(gs)->GetUpscaleMultiplier();
+}
+
+static const gs_present_ops s_present_ops = {
+	present_get_output,
+	present_get_feedback_output,
+	present_get_vr_depth,
+	present_get_upscale_multiplier
+};
+
 GSState::GSState()
 	: m_vt(this, IsFirstProvokingVertex())
 {
@@ -122,12 +158,7 @@ GSState::GSState()
 	s_n = 0;
 	s_transfer_n = 0;
 
-	m_vr_merge_src = GSVector4::zero();
-	m_vr_merge_dst = GSVector4::zero();
-	m_vr_merge_tex = NULL;
-	m_vr_eye_size  = GSVector2i(0, 0);
-	m_vr_map_set   = false;
-	m_vr_active    = false;
+	gs_present_init(&m_present, this, &s_present_ops, &PCRTCDisplays, &m_scanmask_used, &s_n, &s_transfer_n);
 
 	memset(&m_v, 0, sizeof(m_v));
 	memset(&m_vertex, 0, sizeof(m_vertex));

@@ -44,8 +44,15 @@ extern "C" {
 #define GS_SHADER_INTERLACE_MAD_BUFFER 3
 #define GS_SHADER_INTERLACE_MAD_RECONSTRUCT 4
 
-/* (GS.h's RenderAPI::None) */
+/* GS.h's RenderAPI, and GSDevice::PresentResult */
 #define GS_RENDER_API_NONE 0
+#define GS_RENDER_API_D3D11 1
+#define GS_RENDER_API_D3D12 2
+#define GS_RENDER_API_VULKAN 3
+#define GS_RENDER_API_OPENGL 4
+#define GS_PRESENT_OK 0
+#define GS_PRESENT_FRAME_SKIPPED 1
+#define GS_PRESENT_DEVICE_LOST 2
 
 /* What a device can do (C++: GSDevice::FeatureSupport) */
 typedef struct gs_device_features

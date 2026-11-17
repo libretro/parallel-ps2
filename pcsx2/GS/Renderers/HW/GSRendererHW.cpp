@@ -2984,7 +2984,7 @@ void GSRendererHW::Draw()
 
 	/* Before anything this draw does to its depth buffer, the clears on
 	 * the CPU included: which frame buffer it now holds the depth of. */
-	if (m_vr_active)
+	if (m_present.vr_active)
 	{
 		if (zm == 0)
 			VRDepthDrawn(m_cached_ctx.FRAME.Block(), m_cached_ctx.ZBUF.Block(), m_cached_ctx.ZBUF.PSM);
