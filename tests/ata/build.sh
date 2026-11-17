@@ -25,7 +25,7 @@ COMMON="$ATA/ATA_State.c $ATA/ATA_Transfer.c $ATA/ATA_Info.c \
   $ATA/Commands/ATA_CmdPIOData.c $ATA/Commands/ATA_CmdSMART.c \
   $ATA/Commands/ATA_SCE.c $ATA/HddImage.c \
   $LC/formats/chd/rchd.c $LC/formats/flac/rflac.c $LC/formats/7z/r7z_lzma.c \
-  $LC/encodings/encoding_rzstd.c $LC/encodings/encoding_huffman.c \
+  $LC/encodings/encoding_rzstd.c $LC/encodings/encoding_xxh64.c $LC/encodings/encoding_huffman.c \
   $LC/encodings/encoding_deflate.c $LC/encodings/encoding_crc32.c \
   $LC/encodings/encoding_rlz4.c $LC/features/features_cpu.c \
   $LC/rthreads/rthreads.c $LC/rthreads/retro_eventcount.c \

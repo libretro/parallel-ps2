@@ -21,7 +21,7 @@ for c in streams/file_stream vfs/vfs_implementation compat/fopen_utf8 \
          encodings/encoding_utf compat/compat_strl file/file_path \
          file/file_path_io file/retro_dirent time/rtime string/stdstring \
          string/rstrtod formats/chd/rchd formats/flac/rflac formats/yaml/ryaml \
-         formats/7z/r7z_lzma encodings/encoding_rzstd \
+         formats/7z/r7z_lzma encodings/encoding_rzstd encodings/encoding_xxh64 \
          encodings/encoding_huffman encodings/encoding_deflate \
          encodings/encoding_crc32 encodings/encoding_rlz4 \
          streams/trans_stream streams/trans_stream_deflate \

@@ -646,7 +646,7 @@ SOURCES_C += \
 	$(LIBRETRO_COMM_DIR)/formats/flac/rflac.c \
 	$(LIBRETRO_COMM_DIR)/formats/yaml/ryaml.c \
 	$(LIBRETRO_COMM_DIR)/formats/7z/r7z_lzma.c \
-	$(LIBRETRO_COMM_DIR)/encodings/encoding_rzstd.c \
+	$(LIBRETRO_COMM_DIR)/encodings/encoding_rzstd.c $(LIBRETRO_COMM_DIR)/encodings/encoding_xxh64.c \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_huffman.c \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_deflate.c \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_crc32.c \

@@ -22,7 +22,7 @@ for c in streams/file_stream vfs/vfs_implementation compat/fopen_utf8 \
          encodings/encoding_utf compat/compat_strl file/file_path \
          file/file_path_io time/rtime string/stdstring string/rstrtod \
          formats/chd/rchd formats/flac/rflac formats/7z/r7z_lzma \
-         encodings/encoding_rzstd encodings/encoding_huffman \
+         encodings/encoding_rzstd encodings/encoding_xxh64 encodings/encoding_huffman \
          encodings/encoding_deflate encodings/encoding_crc32 \
          encodings/encoding_rlz4 features/features_cpu; do
 	"$CC" -O1 -g -w $SANFLAGS $DEFS $INC -c "$LC/$c.c" -o "$OBJ/$(echo $c | tr / _).o"
