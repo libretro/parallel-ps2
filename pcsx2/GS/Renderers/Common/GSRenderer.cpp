@@ -246,7 +246,7 @@ bool GSState::Merge(int field)
 		// The following two flags determine if RC1 output completely overwrites RC2 output
 		// due to the alpha used for blending and the respective rectangles of the outputs.
 		const bool rc1_contains_rc2 =
-			PCRTCDisplays.PCRTCDisplays[0].displayRect.rcontains(PCRTCDisplays.PCRTCDisplays[1].displayRect);
+			PCRTCDisplays.DisplayRect(0).rcontains(PCRTCDisplays.DisplayRect(1));
 		
 		const bool rc1_overwrites_rc2 = use_rc1 && rc1_contains_rc2 && m_regs->PMODE.MMOD == 1 && m_regs->PMODE.ALP == 255;
 
@@ -303,10 +303,10 @@ bool GSState::Merge(int field)
 		GSVector4 scale = GSVector4(tex_scale[i]);
 
 		// dst is the final destination rect with offset on the screen.
-		dst[i] = scale * GSVector4(curCircuit.displayRect);
+		dst[i] = scale * GSVector4(GS_V4I(&curCircuit.displayRect));
 
 		// src_gs_read is the size which we're really reading from GS memory.
-		src_gs_read[i] = ((GSVector4(curCircuit.framebufferRect) + GSVector4(0, y_offset[i], 0, y_offset[i])) * scale) / GSVector4(tex[i]->GetSize()).xyxy();
+		src_gs_read[i] = ((GSVector4(GS_V4I(&curCircuit.framebufferRect)) + GSVector4(0, y_offset[i], 0, y_offset[i])) * scale) / GSVector4(tex[i]->GetSize()).xyxy();
 		
 		/* A half-height field is not offset here for the weave: the
 		 * interlace takes each line's rows from the field that drew it. */
@@ -377,8 +377,8 @@ bool GSState::Merge(int field)
 	m_real_size = GSVector2i(fs.x, fs.y);
 
 	if ((tex[0] == tex[1]) && (src_gs_read[0] == src_gs_read[1]).alltrue() && (dst[0] == dst[1]).alltrue() &&
-		(PCRTCDisplays.PCRTCDisplays[0].displayRect == PCRTCDisplays.PCRTCDisplays[1].displayRect).alltrue() &&
-		(PCRTCDisplays.PCRTCDisplays[0].framebufferRect == PCRTCDisplays.PCRTCDisplays[1].framebufferRect).alltrue() &&
+		(PCRTCDisplays.DisplayRect(0) == PCRTCDisplays.DisplayRect(1)).alltrue() &&
+		(PCRTCDisplays.FramebufferRect(0) == PCRTCDisplays.FramebufferRect(1)).alltrue() &&
 		!feedback_merge && !m_regs->PMODE.SLBG)
 	{
 		// the two outputs are identical, skip drawing one of them (the one that is alpha blended)

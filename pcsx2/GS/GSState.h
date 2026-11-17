@@ -28,6 +28,7 @@
 #include "Renderers/Common/GSDevice.h"
 #include "Renderers/Common/GSArray.h"
 #include "GSVector.h"
+#include "GSPCRTC.h"
 
 class GSState;
 
@@ -441,83 +442,32 @@ public:
 	 * (u32), for the device to draw a run at a time between barriers. */
 	gs_array_t m_drawlist;
 
-	struct GSPCRTCRegs
+	/* The PCRTC's two read circuits, as GSPCRTC.c keeps them */
+	struct GSPCRTCRegs : gs_pcrtc
 	{
-		struct PCRTCDisplay
+		typedef gs_pcrtc_display PCRTCDisplay;
+		bool IsAnalogue() const { return gs_pcrtc_is_analogue(this); }
+		void SetVideoMode(GSVideoMode mode) { gs_pcrtc_set_video_mode(this, static_cast<int>(mode)); }
+		void EnableDisplays(GSRegPMODE pmode, GSRegSMODE2 smode2, bool smodetoggle) { gs_pcrtc_enable_displays(this, pmode, smode2, smodetoggle); }
+		void CheckSameSource() { gs_pcrtc_check_same_source(this); }
+		bool FrameWrap() const { return gs_pcrtc_frame_wrap(this); }
+		/* Both reads start at the same place: one read does */
+		bool FrameRectMatch() const { return PCRTCSameSrc; }
+		GSVector2i GetResolution() const { const gs_point r = gs_pcrtc_resolution(this); return GSVector2i(r.x, r.y); }
+		GSVector4i GetFramebufferRect(int display) const
 		{
-			bool enabled;
-			int FBP;
-			int FBW;
-			int PSM;
-			GSRegDISPFB prevFramebufferReg;
-			GSVector2i prevDisplayOffset;
-			GSVector2i displayOffset;
-			GSVector4i displayRect;
-			GSVector2i magnification;
-			GSVector2i prevFramebufferOffsets;
-			GSVector2i framebufferOffsets;
-			GSVector4i framebufferRect;
-
-			__fi int Block() const { return FBP << 5; }
-		};
-
-		// One less than the GSVideoMode enumerator, so that the six named
-		// modes index the six-row VideoMode* tables directly. Unknown has
-		// no row and lands on -1; read it through VideoModeRow() rather
-		// than subscripting with it. IsAnalogue() wants the raw value.
-		int videomode = 0;
-		int interlaced = 0;
-		int FFMD = 0;
-		bool PCRTCSameSrc = false;
-		bool toggling_field = false;
-		PCRTCDisplay PCRTCDisplays[2] = {};
-
-		bool IsAnalogue();
-
-		// The row of the VideoMode* tables to read for the current mode.
-		// GetVideoMode() returns Unknown whenever SMODE1.CMOD holds a value
-		// identifying no colorburst -- a 2-bit field, so a game can write
-		// one -- and Unknown has no row of its own, so it reads as NTSC.
-		// Without this the subtraction above gave -1 and every one of the
-		// table reads went an element before the start.
-		__fi int VideoModeRow() const { return (videomode < 0) ? 0 : videomode; }
-
-		// Calculates which display is closest to matching zero offsets in either direction.
-		GSVector2i NearestToZeroOffset();
-
-		void SetVideoMode(GSVideoMode videoModeIn);
-
-		// Enable each of the displays.
-		void EnableDisplays(GSRegPMODE pmode, GSRegSMODE2 smode2, bool smodetoggle);
-
-		void CheckSameSource();
-		
-		bool FrameWrap();
-
-		// If the start point of both frames match, we can do a single read
-		bool FrameRectMatch();
-
-		GSVector2i GetResolution();
-
-		GSVector4i GetFramebufferRect(int display);
-
-		int GetFramebufferBitDepth();
-
-		GSVector2i GetFramebufferSize(int display);
-
-		// Sets up the rectangles for both the framebuffer read and the displays for the merge circuit.
-		void SetRects(int display, GSRegDISPLAY displayReg, GSRegDISPFB framebufferReg);
-
-		// Calculate framebuffer read offsets, should be considered if only one circuit is enabled, or difference is more than 1 line.
-		// Only considered if "Anti-blur" is enabled.
-		void CalculateFramebufferOffset(bool scanmask);
-
-		// Used in software mode to align the buffer when reading. Offset is accounted for (block aligned) by GetOutput.
-		void RemoveFramebufferOffset(int display);
-
-		// If the two displays are offset from each other, move them to the correct offsets.
-		// If using screen offsets, calculate the positions here.
-		void CalculateDisplayOffset(bool scanmask);
+			const gs_recti r = gs_pcrtc_framebuffer_rect(this, display);
+			return GSVector4i(r.x, r.y, r.z, r.w);
+		}
+		int GetFramebufferBitDepth() const { return gs_pcrtc_framebuffer_bit_depth(this); }
+		GSVector2i GetFramebufferSize(int display) const { const gs_point r = gs_pcrtc_framebuffer_size(this, display); return GSVector2i(r.x, r.y); }
+		void SetRects(int display, GSRegDISPLAY displayReg, GSRegDISPFB framebufferReg) { gs_pcrtc_set_rects(this, display, displayReg, framebufferReg); }
+		void CalculateFramebufferOffset(bool scanmask) { gs_pcrtc_calculate_framebuffer_offset(this, scanmask); }
+		void RemoveFramebufferOffset(int display) { gs_pcrtc_remove_framebuffer_offset(this, display); }
+		void CalculateDisplayOffset(bool scanmask) { gs_pcrtc_calculate_display_offset(this, scanmask); }
+		/* A display's rects as vectors */
+		GSVector4i DisplayRect(int i) const { return GS_V4I(&PCRTCDisplays[i].displayRect); }
+		GSVector4i FramebufferRect(int i) const { return GS_V4I(&PCRTCDisplays[i].framebufferRect); }
 	} PCRTCDisplays;
 
 public:
@@ -525,14 +475,14 @@ public:
 	static void ExpandDIMX(GSVector4i* dimx, const GIFRegDIMX DIMX);
 
 	void ResetHandlers();
-	void ResetPCRTC();
+	void ResetPCRTC() { gs_pcrtc_reset(&PCRTCDisplays, m_regs); }
 
-	GSVideoMode GetVideoMode();
+	GSVideoMode GetVideoMode() { return static_cast<GSVideoMode>(gs_regs_video_mode(m_regs)); }
 
-	bool isinterlaced();
-	bool isReallyInterlaced();
+	bool isinterlaced() { return gs_regs_interlaced(m_regs); }
+	bool isReallyInterlaced() { return gs_regs_really_interlaced(m_regs); }
 
-	float GetTvRefreshRate();
+	float GetTvRefreshRate() { return gs_regs_tv_refresh_rate(m_regs); }
 
 	/* The table, and the functions that call through it. The *Base
 	 * functions are what GSState itself does; a renderer's own version
@@ -664,6 +614,9 @@ public:
 	void CalculatePrimitiveCoversWithoutGaps();
 	GIFRegTEX0 GetTex0Layer(u32 lod);
 };
+
+static_assert(static_cast<int>(GSVideoMode::HDTV_1080I) == GS_VMODE_HDTV_1080I && static_cast<int>(GSVideoMode::SDTV_480P) == GS_VMODE_SDTV_480P
+	&& static_cast<int>(GSVideoMode::PAL) == GS_VMODE_PAL, "GSVideoMode is GS_VMODE_*");
 
 // We put this in the header because of Multi-ISA.
 inline void GSState::ExpandDIMX(GSVector4i* dimx, const GIFRegDIMX DIMX)

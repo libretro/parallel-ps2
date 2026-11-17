@@ -26,6 +26,7 @@
 #include "common/Pcsx2Defs.h"
 #include "common/WindowInfo.h"
 #include "../../GSRegs.h"
+#include "../../gs_rect.h"
 #include "GSTextureBase.h"
 #include "GSTexturePool.h"
 #include "GSRetireRing.h"
@@ -33,21 +34,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* GSVector4's layout and alignment: a rect's left, top, right, bottom, or
- * any four floats. gs_recti is GSVector4i's, gs_point GSVector2i's. */
-typedef struct PCSX2_ALIGN(16) gs_rectf
-{
-	float x, y, z, w;
-} gs_rectf;
-typedef struct PCSX2_ALIGN(16) gs_recti
-{
-	int x, y, z, w;
-} gs_recti;
-typedef struct gs_point
-{
-	int x, y;
-} gs_point;
 
 /* The shaders C asks for by number (C++: ShaderConvert, ShaderInterlace) */
 #define GS_SHADER_CONVERT_COPY 0

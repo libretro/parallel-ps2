@@ -326,7 +326,7 @@ GSTexture* GSRendererSW::GetOutput(int i, float& scale, int& y_offset)
 			GSTexture::GSMap m;
 			if (m_texture[index]->Map(m, &out_r))
 			{
-				const GSOffset off = m_mem.GetOffset(curFramebuffer.Block(), curFramebuffer.FBW, curFramebuffer.PSM);
+				const GSOffset off = m_mem.GetOffset((curFramebuffer.FBP << 5), curFramebuffer.FBW, curFramebuffer.PSM);
 				const int whole = (h / psm.bs.y) * psm.bs.y;
 				int y;
 				if (whole > 0)
@@ -344,7 +344,7 @@ GSTexture* GSRendererSW::GetOutput(int i, float& scale, int& y_offset)
 		}
 
 		// Top left rect
-		psm.rtx(m_mem, m_mem.GetOffset(curFramebuffer.Block(), curFramebuffer.FBW, curFramebuffer.PSM), r.ralign<Align_Outside>(psm.bs), m_output, pitch, texa);
+		psm.rtx(m_mem, m_mem.GetOffset((curFramebuffer.FBP << 5), curFramebuffer.FBW, curFramebuffer.PSM), r.ralign<Align_Outside>(psm.bs), m_output, pitch, texa);
 
 		int top = (h_wrap) ? ((r.bottom - r.top) * pitch) : 0;
 		int left = (w_wrap) ? (r.right - r.left) * (GSLocalMemory::m_psm[curFramebuffer.PSM].bpp / 8) : 0;
@@ -353,18 +353,18 @@ GSTexture* GSRendererSW::GetOutput(int i, float& scale, int& y_offset)
 
 		// Top right rect
 		if (w_wrap)
-			psm.rtx(m_mem, m_mem.GetOffset(curFramebuffer.Block(), curFramebuffer.FBW, curFramebuffer.PSM), rw.ralign<Align_Outside>(psm.bs), &m_output[left], pitch, texa);
+			psm.rtx(m_mem, m_mem.GetOffset((curFramebuffer.FBP << 5), curFramebuffer.FBW, curFramebuffer.PSM), rw.ralign<Align_Outside>(psm.bs), &m_output[left], pitch, texa);
 
 		// Bottom left rect
 		if (h_wrap)
-			psm.rtx(m_mem, m_mem.GetOffset(curFramebuffer.Block(), curFramebuffer.FBW, curFramebuffer.PSM), rh.ralign<Align_Outside>(psm.bs), &m_output[top], pitch, texa);
+			psm.rtx(m_mem, m_mem.GetOffset((curFramebuffer.FBP << 5), curFramebuffer.FBW, curFramebuffer.PSM), rh.ralign<Align_Outside>(psm.bs), &m_output[top], pitch, texa);
 
 		// Bottom right rect
 		if (h_wrap && w_wrap)
 		{
 			// Needs also rw with the start/end height of rh, fills in the bottom right rect which will be missing if both overflow.
 			const GSVector4i rwh(rw.left, rh.top, rw.right, rh.bottom);
-			psm.rtx(m_mem, m_mem.GetOffset(curFramebuffer.Block(), curFramebuffer.FBW, curFramebuffer.PSM), rwh.ralign<Align_Outside>(psm.bs), &m_output[top + left], pitch, texa);
+			psm.rtx(m_mem, m_mem.GetOffset((curFramebuffer.FBP << 5), curFramebuffer.FBW, curFramebuffer.PSM), rwh.ralign<Align_Outside>(psm.bs), &m_output[top + left], pitch, texa);
 		}
 
 		if (s > 1)
@@ -439,7 +439,7 @@ GSTexture* GSRendererSW::GetOutputHires(int index, const GSPCRTCRegs::PCRTCDispl
 	}
 
 	HiresRestored();
-	HiresRefresh(m_mem.GetOffset(fb.Block(), fb.FBW, fb.PSM), fb.PSM, GSVector4i(off_x, off_y, off_x + w, off_y + h));
+	HiresRefresh(m_mem.GetOffset(fb.FBP << 5, fb.FBW, fb.PSM), fb.PSM, GSVector4i(off_x, off_y, off_x + w, off_y + h));
 
 	u32* const colbuf = HiresColBuf(W);
 	if (!colbuf)

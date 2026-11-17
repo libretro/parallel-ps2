@@ -268,7 +268,7 @@ GSTexture* GSRendererHW::GetOutput(int i, float& scale, int& y_offset)
 	const GSVector2i framebufferSize(PCRTCDisplays.GetFramebufferSize(i));
 
 	// Try to avoid broken/incomplete setups which are probably ignored on console, but can cause us problems.
-	if (curFramebuffer.framebufferRect.rempty() || curFramebuffer.FBW == 0 || framebufferSize.x < 0 || framebufferSize.y < 0)
+	if (GS_V4I(&curFramebuffer.framebufferRect).rempty() || curFramebuffer.FBW == 0 || framebufferSize.x < 0 || framebufferSize.y < 0)
 		return nullptr;
 
 	PCRTCDisplays.RemoveFramebufferOffset(i);
@@ -276,7 +276,7 @@ GSTexture* GSRendererHW::GetOutput(int i, float& scale, int& y_offset)
 	GSTexture* t = nullptr;
 
 	GIFRegTEX0 TEX0 = {};
-	TEX0.TBP0 = curFramebuffer.Block();
+	TEX0.TBP0 = (curFramebuffer.FBP << 5);
 	TEX0.TBW = curFramebuffer.FBW;
 	TEX0.PSM = curFramebuffer.PSM;
 
