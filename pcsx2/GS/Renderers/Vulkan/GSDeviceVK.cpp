@@ -2000,15 +2000,23 @@ static VkAttachmentLoadOp GetLoadOpForTexture(GSTextureVK* tex)
 GS_DEVICE_OPS_DEFINE(GSDeviceVK, vulkan);
 
 /* The VR passes (gs_vr_ops), set once they have compiled. */
-static void vk_vr_range(GSDevice* d, GSTexture* sTex, GSTexture* dTex, const GSVector4* dRect, const VRRangeConstants* cb)
+static void vk_vr_range(gs_device* d, gs_texture* sTex, gs_texture* dTex, const gs_rectf* dRect, const gs_vr_range_constants* cb)
 {
-	((GSDeviceVK*)d)->VRRange(sTex, dTex, *dRect, *cb);
+	GS_DEV_THIS(GSDeviceVK, d)->VRRange(static_cast<GSTexture*>(sTex), static_cast<GSTexture*>(dTex), GS_V4(dRect),
+		*reinterpret_cast<const VRRangeConstants*>(cb));
 }
-static void vk_vr_eye(GSDevice* d, GSTexture* sTex, GSTexture* dTex, const GSVector4* dRect, const VREyeConstants* cb)
+static void vk_vr_eye(gs_device* d, gs_texture* sTex, gs_texture* dTex, const gs_rectf* dRect, const gs_vr_eye_constants* cb)
 {
-	((GSDeviceVK*)d)->VREye(sTex, dTex, *dRect, *cb);
+	GS_DEV_THIS(GSDeviceVK, d)->VREye(static_cast<GSTexture*>(sTex), static_cast<GSTexture*>(dTex), GS_V4(dRect),
+		*reinterpret_cast<const VREyeConstants*>(cb));
 }
 static const struct gs_vr_ops s_vulkan_vr_ops = {vk_vr_range, vk_vr_eye};
+
+/* (gs_device_open) */
+gs_device* gs_device_new_vulkan(void)
+{
+	return new GSDeviceVK();
+}
 
 GSDeviceVK::GSDeviceVK()
 {

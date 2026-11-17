@@ -452,7 +452,7 @@ bool GSRendererHW::GetVRDepth(GSTexture* color, GSTexture** depth, bool* encoded
 	}
 	if (have_snapshot)
 	{
-		*depth   = g_gs_device->m_vr_snapshot;
+		*depth   = static_cast<GSTexture*>(g_gs_device->m_vr_snapshot);
 		*encoded = true;
 		*z_scale = vr_z_scale(m_vr_snapshot.zpsm);
 		return true;

@@ -1100,6 +1100,12 @@ D3D_SHADER_MACRO* GSDevice12::ShaderMacro::GetPtr(void)
  * name, and each was a virtual function. */
 GS_DEVICE_OPS_DEFINE(GSDevice12, d3d12);
 
+/* (gs_device_open) */
+gs_device* gs_device_new_d3d12(void)
+{
+	return new GSDevice12();
+}
+
 GSDevice12::GSDevice12()
 {
 	m_ops = &s_d3d12_device_ops;

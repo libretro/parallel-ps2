@@ -202,6 +202,12 @@ static bool SupportsTextureFormat(ID3D11Device* dev, DXGI_FORMAT format)
  * name, and each was a virtual function. */
 GS_DEVICE_OPS_DEFINE(GSDevice11, d3d11);
 
+/* (gs_device_open) */
+gs_device* gs_device_new_d3d11(void)
+{
+	return new GSDevice11();
+}
+
 GSDevice11::GSDevice11()
 {
 	m_ops = &s_d3d11_device_ops;

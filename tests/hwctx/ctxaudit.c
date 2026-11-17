@@ -17,9 +17,9 @@
  *  This checks that shape in the sources: libretro_set_hw_render and
  *  libretro_select_hw_render (libretro/main.c) and the GS context
  *  switches: the renderer's (GSsetRenderer, pcsx2/GS/GSEntry.c) and the
- *  device's (gs_device_open, pcsx2/GS/Renderers/Common/GSDevice.cpp).
+ *  device's (gs_device_open, pcsx2/GS/Renderers/Common/GSDevice.c).
  *
- *  Usage: tests/hwctx/ctxaudit <libretro/main.c> <GSEntry.c> <GSDevice.cpp>
+ *  Usage: tests/hwctx/ctxaudit <libretro/main.c> <GSEntry.c> <GSDevice.c>
  */
 
 #include <stdio.h>
@@ -106,7 +106,7 @@ int main(int argc, char** argv)
 
 	if (argc != 4)
 	{
-		fprintf(stderr, "usage: %s <libretro/main.c> <GSEntry.c> <GSDevice.cpp>\n", argv[0]);
+		fprintf(stderr, "usage: %s <libretro/main.c> <GSEntry.c> <GSDevice.c>\n", argv[0]);
 		return 2;
 	}
 	m = read_file(argv[1]);

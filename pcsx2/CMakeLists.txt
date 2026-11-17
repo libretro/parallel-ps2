@@ -357,7 +357,7 @@ set(pcsx2GSSources
 	GS/GSPsm.c
 	GS/GSTables.c
 	GS/GSUtil.c
-	GS/Renderers/Common/GSDevice.cpp
+	GS/Renderers/Common/GSDevice.c
 	GS/Renderers/Common/GSDirtyRect.c
 	GS/Renderers/Common/GSCodeReserve.c
 	GS/Renderers/Common/GSRenderer.cpp
@@ -383,6 +383,7 @@ set(pcsx2GSSources
 	GS/Renderers/Common/GSRetireRing.h
 	GS/Renderers/Common/GSTexturePool.c
 	GS/Renderers/Common/GSTexturePool.h
+	GS/Renderers/Common/GSDeviceBase.h
 	GS/Renderers/Common/GSScratch.c
 	GS/Renderers/Common/GSScratch.h
 	GS/Renderers/HW/GSObjectPool.h

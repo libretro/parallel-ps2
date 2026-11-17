@@ -171,15 +171,23 @@ namespace Emulate_DSA
 GS_DEVICE_OPS_DEFINE(GSDeviceOGL, opengl);
 
 /* The VR passes (gs_vr_ops), set once they have linked. */
-static void gl_vr_range(GSDevice* d, GSTexture* sTex, GSTexture* dTex, const GSVector4* dRect, const VRRangeConstants* cb)
+static void gl_vr_range(gs_device* d, gs_texture* sTex, gs_texture* dTex, const gs_rectf* dRect, const gs_vr_range_constants* cb)
 {
-	((GSDeviceOGL*)d)->VRRange(sTex, dTex, *dRect, *cb);
+	GS_DEV_THIS(GSDeviceOGL, d)->VRRange(static_cast<GSTexture*>(sTex), static_cast<GSTexture*>(dTex), GS_V4(dRect),
+		*reinterpret_cast<const VRRangeConstants*>(cb));
 }
-static void gl_vr_eye(GSDevice* d, GSTexture* sTex, GSTexture* dTex, const GSVector4* dRect, const VREyeConstants* cb)
+static void gl_vr_eye(gs_device* d, gs_texture* sTex, gs_texture* dTex, const gs_rectf* dRect, const gs_vr_eye_constants* cb)
 {
-	((GSDeviceOGL*)d)->VREye(sTex, dTex, *dRect, *cb);
+	GS_DEV_THIS(GSDeviceOGL, d)->VREye(static_cast<GSTexture*>(sTex), static_cast<GSTexture*>(dTex), GS_V4(dRect),
+		*reinterpret_cast<const VREyeConstants*>(cb));
 }
 static const struct gs_vr_ops s_opengl_vr_ops = {gl_vr_range, gl_vr_eye};
+
+/* (gs_device_open) */
+gs_device* gs_device_new_opengl(void)
+{
+	return new GSDeviceOGL();
+}
 
 GSDeviceOGL::GSDeviceOGL()
 {
@@ -904,7 +912,7 @@ void GSDeviceOGL::EndPresent()
 {
 	if (m_current)
 	{
-		const GSVector2i size = (m_present_size.x > 0) ? m_present_size : m_current->GetSize();
+		const GSVector2i size = (m_present_size.x > 0) ? m_present_size : GetCurrent()->GetSize();
 		video_cb(RETRO_HW_FRAME_BUFFER_VALID, size.x, size.y, 0);
 	}
 	else

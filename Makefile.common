@@ -127,6 +127,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSStableGroup.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSRetireRing.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSTexturePool.c \
+	$(LRPS2_DIR)/GS/Renderers/Common/GSDevice.c \
 	$(LRPS2_DIR)/USB/libretro-usb/ohci_dma.c \
 	$(LRPS2_DIR)/memcard_ecc.c \
 	$(LRPS2_DIR)/CDVD/CDVDnvram.c \
@@ -464,7 +465,6 @@ endif
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/GSState.cpp \
 	\
-	$(LRPS2_DIR)/GS/Renderers/Common/GSDevice.cpp \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSRenderer.cpp \
 	\
 	$(LRPS2_DIR)/GS/Renderers/HW/GSHwHack.cpp \

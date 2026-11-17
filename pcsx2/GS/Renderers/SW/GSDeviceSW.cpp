@@ -1136,27 +1136,27 @@ namespace
  * out rather than made with GS_DEVICE_OPS_DEFINE: it has no version of
  * the two API-state calls, of the batched stretch, or of the sampler
  * cache, and NULL there means what GSDevice does by default. */
-#define SWDEV(d) (static_cast<GSDeviceSW*>(d))
+#define SWDEV(d) GS_DEV_THIS(GSDeviceSW, d)
 struct GSDeviceSW_ops_access
 {
-static void       sw_dev_free(GSDevice* d) { delete SWDEV(d); }
-static bool       sw_dev_create(GSDevice* d) { return SWDEV(d)->Create(); }
-static void       sw_dev_destroy(GSDevice* d) { SWDEV(d)->Destroy(); }
-static RenderAPI  sw_dev_get_render_api(const GSDevice* d) { return static_cast<const GSDeviceSW*>(d)->GetRenderAPI(); }
-static int        sw_dev_begin_present(GSDevice* d, bool frame_skip) { return static_cast<int>(SWDEV(d)->BeginPresent(frame_skip)); }
-static void       sw_dev_end_present(GSDevice* d) { SWDEV(d)->EndPresent(); }
-static GSTexture* sw_dev_create_surface(GSDevice* d, GSTexture::Type type, int w, int h, int levels, GSTexture::Format format) { return SWDEV(d)->CreateSurface(type, w, h, levels, format); }
-static GSDownloadTexture* sw_dev_create_download_texture(GSDevice* d, u32 w, u32 h, GSTexture::Format format) { return SWDEV(d)->CreateDownloadTexture(w, h, format); }
-static void       sw_dev_do_merge(GSDevice* d, GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE* PMODE, const GSRegEXTBUF* EXTBUF, u32 c, bool linear) { SWDEV(d)->DoMerge(sTex, sRect, dTex, dRect, *PMODE, *EXTBUF, c, linear); }
-static void       sw_dev_do_interlace(GSDevice* d, GSTexture* sTex, const GSVector4* sRect, GSTexture* dTex, const GSVector4* dRect, ShaderInterlace shader, bool linear, const InterlaceConstantBuffer* cb) { SWDEV(d)->DoInterlace(sTex, *sRect, dTex, *dRect, shader, linear, *cb); }
-static void       sw_dev_copy_rect(GSDevice* d, GSTexture* sTex, GSTexture* dTex, const GSVector4i* r, u32 destX, u32 destY) { SWDEV(d)->CopyRect(sTex, dTex, *r, destX, destY); }
-static void       sw_dev_stretch_rect(GSDevice* d, GSTexture* sTex, const GSVector4* sRect, GSTexture* dTex, const GSVector4* dRect, ShaderConvert shader, bool linear) { SWDEV(d)->StretchRect(sTex, *sRect, dTex, *dRect, shader, linear); }
-static void       sw_dev_stretch_rect_mask(GSDevice* d, GSTexture* sTex, const GSVector4* sRect, GSTexture* dTex, const GSVector4* dRect, bool red, bool green, bool blue, bool alpha, ShaderConvert shader) { SWDEV(d)->StretchRect(sTex, *sRect, dTex, *dRect, red, green, blue, alpha, shader); }
-static void       sw_dev_present_rect(GSDevice* d, GSTexture* sTex, const GSVector4* sRect, GSTexture* dTex, const GSVector4* dRect) { SWDEV(d)->PresentRect(sTex, *sRect, dTex, *dRect); }
-static void       sw_dev_update_clut_texture(GSDevice* d, GSTexture* sTex, float sScale, float sSample, u32 offsetX, u32 offsetY, GSTexture* dTex, u32 dOffset, u32 dSize) { SWDEV(d)->UpdateCLUTTexture(sTex, sScale, sSample, offsetX, offsetY, dTex, dOffset, dSize); }
-static void       sw_dev_convert_to_indexed_texture(GSDevice* d, GSTexture* sTex, float sScale, u32 offsetX, u32 offsetY, u32 SBW, u32 SPSM, GSTexture* dTex, u32 DBW, u32 DPSM) { SWDEV(d)->ConvertToIndexedTexture(sTex, sScale, offsetX, offsetY, SBW, SPSM, dTex, DBW, DPSM); }
-static void       sw_dev_filtered_downsample_texture(GSDevice* d, GSTexture* sTex, GSTexture* dTex, u32 factor, const GSVector2i* clamp_min, const GSVector4* dRect) { SWDEV(d)->FilteredDownsampleTexture(sTex, dTex, factor, *clamp_min, *dRect); }
-static void       sw_dev_render_hw(GSDevice* d, GSHWDrawConfig* config) { SWDEV(d)->RenderHW(*config); }
+static void        sw_dev_free(gs_device* d) { delete SWDEV(d); }
+static bool        sw_dev_create(gs_device* d) { return SWDEV(d)->Create(); }
+static void        sw_dev_destroy(gs_device* d) { SWDEV(d)->Destroy(); }
+static int         sw_dev_get_render_api(const gs_device* d) { return static_cast<int>(static_cast<const GSDeviceSW*>(static_cast<const GSDevice*>(d))->GetRenderAPI()); }
+static int         sw_dev_begin_present(gs_device* d, bool frame_skip) { return static_cast<int>(SWDEV(d)->BeginPresent(frame_skip)); }
+static void        sw_dev_end_present(gs_device* d) { SWDEV(d)->EndPresent(); }
+static gs_texture* sw_dev_create_surface(gs_device* d, unsigned type, int w, int h, int levels, unsigned format) { return SWDEV(d)->CreateSurface(static_cast<GSTexture::Type>(type), w, h, levels, static_cast<GSTexture::Format>(format)); }
+static void*       sw_dev_create_download_texture(gs_device* d, u32 w, u32 h, unsigned format) { return SWDEV(d)->CreateDownloadTexture(w, h, static_cast<GSTexture::Format>(format)); }
+static void        sw_dev_do_merge(gs_device* d, gs_texture* sTex[3], gs_rectf* sRect, gs_texture* dTex, gs_rectf* dRect, const GSRegPMODE* PMODE, const GSRegEXTBUF* EXTBUF, u32 c, bool linear) { SWDEV(d)->DoMerge(reinterpret_cast<GSTexture**>(sTex), reinterpret_cast<GSVector4*>(sRect), static_cast<GSTexture*>(dTex), reinterpret_cast<GSVector4*>(dRect), *PMODE, *EXTBUF, c, linear); }
+static void        sw_dev_do_interlace(gs_device* d, gs_texture* sTex, const gs_rectf* sRect, gs_texture* dTex, const gs_rectf* dRect, int shader, bool linear, const gs_rectf* zrh) { InterlaceConstantBuffer cb; cb.ZrH = GS_V4(zrh); SWDEV(d)->DoInterlace(static_cast<GSTexture*>(sTex), GS_V4(sRect), static_cast<GSTexture*>(dTex), GS_V4(dRect), static_cast<ShaderInterlace>(shader), linear, cb); }
+static void        sw_dev_copy_rect(gs_device* d, gs_texture* sTex, gs_texture* dTex, const gs_recti* r, u32 destX, u32 destY) { SWDEV(d)->CopyRect(static_cast<GSTexture*>(sTex), static_cast<GSTexture*>(dTex), GS_V4I(r), destX, destY); }
+static void        sw_dev_stretch_rect(gs_device* d, gs_texture* sTex, const gs_rectf* sRect, gs_texture* dTex, const gs_rectf* dRect, int shader, bool linear) { SWDEV(d)->StretchRect(static_cast<GSTexture*>(sTex), GS_V4(sRect), static_cast<GSTexture*>(dTex), GS_V4(dRect), static_cast<ShaderConvert>(shader), linear); }
+static void        sw_dev_stretch_rect_mask(gs_device* d, gs_texture* sTex, const gs_rectf* sRect, gs_texture* dTex, const gs_rectf* dRect, bool red, bool green, bool blue, bool alpha, int shader) { SWDEV(d)->StretchRect(static_cast<GSTexture*>(sTex), GS_V4(sRect), static_cast<GSTexture*>(dTex), GS_V4(dRect), red, green, blue, alpha, static_cast<ShaderConvert>(shader)); }
+static void        sw_dev_present_rect(gs_device* d, gs_texture* sTex, const gs_rectf* sRect, gs_texture* dTex, const gs_rectf* dRect) { SWDEV(d)->PresentRect(static_cast<GSTexture*>(sTex), GS_V4(sRect), static_cast<GSTexture*>(dTex), GS_V4(dRect)); }
+static void        sw_dev_update_clut_texture(gs_device* d, gs_texture* sTex, float sScale, float sSample, u32 offsetX, u32 offsetY, gs_texture* dTex, u32 dOffset, u32 dSize) { SWDEV(d)->UpdateCLUTTexture(static_cast<GSTexture*>(sTex), sScale, sSample, offsetX, offsetY, static_cast<GSTexture*>(dTex), dOffset, dSize); }
+static void        sw_dev_convert_to_indexed_texture(gs_device* d, gs_texture* sTex, float sScale, u32 offsetX, u32 offsetY, u32 SBW, u32 SPSM, gs_texture* dTex, u32 DBW, u32 DPSM) { SWDEV(d)->ConvertToIndexedTexture(static_cast<GSTexture*>(sTex), sScale, offsetX, offsetY, SBW, SPSM, static_cast<GSTexture*>(dTex), DBW, DPSM); }
+static void        sw_dev_filtered_downsample_texture(gs_device* d, gs_texture* sTex, gs_texture* dTex, u32 factor, const gs_point* clamp_min, const gs_rectf* dRect) { SWDEV(d)->FilteredDownsampleTexture(static_cast<GSTexture*>(sTex), static_cast<GSTexture*>(dTex), factor, GS_V2I(clamp_min), GS_V4(dRect)); }
+static void        sw_dev_render_hw(gs_device* d, GSHWDrawConfig* config) { SWDEV(d)->RenderHW(*config); }
 };
 #undef SWDEV
 
@@ -1186,6 +1186,12 @@ static const struct gs_device_ops s_sw_device_ops = {
 	NULL  /* clear_sampler_cache */
 };
 
+/* (gs_device_open) */
+gs_device* gs_device_new_sw(void)
+{
+	return new GSDeviceSW();
+}
+
 GSDeviceSW::GSDeviceSW()
 {
 	m_ops = &s_sw_device_ops;
@@ -1212,7 +1218,7 @@ bool GSDeviceSW::Create()
 	 * no GPU features at all - it's all CPU - so every advanced flag
 	 * stays false. The SW renderer doesn't actually check most of
 	 * these (they're HW-renderer concerns); zero defaults are right. */
-	m_features = FeatureSupport();
+	gs_device_features_init(&m_features);
 
 	return true;
 }
