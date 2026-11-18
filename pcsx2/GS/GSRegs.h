@@ -28,6 +28,8 @@
 #define GS_MAX_BLOCKS (VM_SIZE / GS_BLOCK_SIZE)
 #define GS_MAX_COLUMNS (VM_SIZE / GS_COLUMN_SIZE)
 
+#include <retro_inline.h>
+
 #include "common/Pcsx2Defs.h"
 #ifdef __cplusplus
 #include "GSVector.h"
@@ -1152,134 +1154,133 @@ REG128_SET(GIFPackedReg)
 	GIFPackedNOP    NOP;
 REG_SET_END
 
-#ifdef __cplusplus
-struct alignas(32) GIFPath
+/* A GIF path's tag in progress: the tag, the loops and the register left,
+ * the registers of a loop one to a byte (regs.U8), and the shape of its
+ * data the transfer recognises */
+#define GIF_PATH_TYPE_UNKNOWN 0
+#define GIF_PATH_TYPE_ADONLY 1
+#define GIF_PATH_TYPE_STQRGBAXYZF2 2
+#define GIF_PATH_TYPE_STQRGBAXYZ2 3
+
+typedef struct PCSX2_ALIGN(32) GIFPath
 {
 	GIFTag tag;
 	u32 nloop;
 	u32 nreg;
 	u32 reg;
 	u32 type;
-	GSVector4i regs;
-
+	union
+	{
+		u8 U8[16];
+		u32 U32[4];
+	} regs;
+#ifdef __cplusplus
 	enum
 	{
-		TYPE_UNKNOWN,
-		TYPE_ADONLY,
-		TYPE_STQRGBAXYZF2,
-		TYPE_STQRGBAXYZ2
+		TYPE_UNKNOWN = GIF_PATH_TYPE_UNKNOWN,
+		TYPE_ADONLY = GIF_PATH_TYPE_ADONLY,
+		TYPE_STQRGBAXYZF2 = GIF_PATH_TYPE_STQRGBAXYZF2,
+		TYPE_STQRGBAXYZ2 = GIF_PATH_TYPE_STQRGBAXYZ2
 	};
 
-	__forceinline void SetTag(const void* mem)
-	{
-		const GIFTag* RESTRICT src = (const GIFTag*)mem;
-
-		/* the compiler has a hard time not reloading every time a field of src is accessed */
-
-		u32 a = src->U32[0];
-		u32 b = src->U32[1];
-
-		tag.U32[0] = a;
-		tag.U32[1] = b;
-
-		nloop = a & 0x7fff;
-
-		if (nloop == 0)
-			return;
-
-		GSVector4i v = GSVector4i::loadl(&src->REGS); /* REGS not stored to tag.REGS, only into this->regs, restored before saving the state though */
-
-		nreg = (b & 0xf0000000) ? (b >> 28) : 16; /* src->NREG */
-		regs = v.upl8(v >> 4) & GSVector4i::x0f(nreg);
-		reg = 0;
-
-		type = TYPE_UNKNOWN;
-
-		if (tag.FLG == GIF_FLG_PACKED)
-		{
-			if (regs.eq8(GSVector4i(0x0e0e0e0e)).mask() == (1 << nreg) - 1)
-			{
-				type = TYPE_ADONLY;
-			}
-			else
-			{
-				switch (nreg)
-				{
-					case 3:
-						/* many games, TODO: formats mixed with NOPs (xeno2: 040f010f02, 04010f020f, mgs3: 04010f0f02, 0401020f0f, 04010f020f) */
-						if (regs.U32[0] == 0x00040102)
-							type = TYPE_STQRGBAXYZF2;
-						/* GoW (has other crazy formats, like ...030503050103) */
-						if (regs.U32[0] == 0x00050102)
-							type = TYPE_STQRGBAXYZ2;
-						/* TODO: common types with UV instead */
-						break;
-					case 9:
-						/* ffx */
-						if (regs.U32[0] == 0x02040102 && regs.U32[1] == 0x01020401 && regs.U32[2] == 0x00000004)
-						{
-							type = TYPE_STQRGBAXYZF2;
-							nreg = 3;
-							nloop *= 3;
-						}
-						break;
-					case 12:
-						/* dq8 (not many, mostly 040102) */
-						if (regs.U32[0] == 0x02040102 && regs.U32[1] == 0x01020401 && regs.U32[2] == 0x04010204)
-						{
-							type = TYPE_STQRGBAXYZF2;
-							nreg = 3;
-							nloop *= 4;
-						}
-						break;
-					case 1:
-					case 2:
-					case 4:
-					case 5:
-					case 6:
-					case 7:
-					case 8:
-					case 10:
-					case 11:
-					case 13:
-					case 14:
-					case 15:
-					case 16:
-						break;
-					default:
-						__assume(0);
-				}
-			}
-		}
-	}
-
-	__forceinline u8 GetReg() const
-	{
-		return regs.U8[reg];
-	}
-
-	__forceinline u8 GetReg(u32 index) const
-	{
-		return regs.U8[index];
-	}
-
+	inline void SetTag(const void* mem);
+	__forceinline u8 GetReg() const { return regs.U8[reg]; }
+	__forceinline u8 GetReg(u32 index) const { return regs.U8[index]; }
 	__forceinline bool StepReg()
 	{
 		if (++reg == nreg)
 		{
 			reg = 0;
-
 			if (--nloop == 0)
-			{
 				return false;
-			}
 		}
-
 		return true;
 	}
-};
+#endif
+} GIFPath;
 
-#endif /* __cplusplus: GIFPath */
+/* The registers of a tag's REGS, one nibble each, nreg of them */
+static INLINE void gs_gif_path_unpack_regs(GIFPath* p, u64 regs, u32 nreg)
+{
+	u32 j;
+	for (j = 0; j < 16; j++)
+		p->regs.U8[j] = (u8)((j < nreg) ? ((regs >> (4 * j)) & 0xf) : 0);
+}
+
+/* A new tag at mem: the loops and registers it gives (left as they were
+ * for a tag of no loops), and the shape of its data where that is one the
+ * transfer takes faster */
+static INLINE void gs_gif_path_set_tag(GIFPath* p, const void* mem)
+{
+	const GIFTag* src = (const GIFTag*)mem;
+	/* (read once each: the fields would be loaded again and again) */
+	const u32 a = src->U32[0];
+	const u32 b = src->U32[1];
+	u32 j;
+
+	p->tag.U32[0] = a;
+	p->tag.U32[1] = b;
+	p->nloop      = a & 0x7fff;
+	if (p->nloop == 0)
+		return;
+
+	/* REGS is not stored to tag.REGS, only to regs: put back before a
+	 * state is saved */
+	p->nreg = (b & 0xf0000000) ? (b >> 28) : 16;
+	gs_gif_path_unpack_regs(p, src->REGS, p->nreg);
+	p->reg  = 0;
+	p->type = GIF_PATH_TYPE_UNKNOWN;
+
+	if (p->tag.FLG != GIF_FLG_PACKED)
+		return;
+
+	for (j = 0; j < p->nreg && p->regs.U8[j] == 0x0e; j++)
+	{
+	}
+	if (j == p->nreg)
+	{
+		p->type = GIF_PATH_TYPE_ADONLY;
+		return;
+	}
+
+	switch (p->nreg)
+	{
+		case 3:
+			/* many games, TODO: formats mixed with NOPs (xeno2: 040f010f02,
+			 * 04010f020f, mgs3: 04010f0f02, 0401020f0f, 04010f020f) */
+			if (p->regs.U32[0] == 0x00040102)
+				p->type = GIF_PATH_TYPE_STQRGBAXYZF2;
+			/* GoW (has other crazy formats, like ...030503050103) */
+			if (p->regs.U32[0] == 0x00050102)
+				p->type = GIF_PATH_TYPE_STQRGBAXYZ2;
+			/* TODO: common types with UV instead */
+			break;
+		case 9:
+			/* ffx */
+			if (p->regs.U32[0] == 0x02040102 && p->regs.U32[1] == 0x01020401 && p->regs.U32[2] == 0x00000004)
+			{
+				p->type = GIF_PATH_TYPE_STQRGBAXYZF2;
+				p->nreg = 3;
+				p->nloop *= 3;
+			}
+			break;
+		case 12:
+			/* dq8 (not many, mostly 040102) */
+			if (p->regs.U32[0] == 0x02040102 && p->regs.U32[1] == 0x01020401 && p->regs.U32[2] == 0x04010204)
+			{
+				p->type = GIF_PATH_TYPE_STQRGBAXYZF2;
+				p->nreg = 3;
+				p->nloop *= 4;
+			}
+			break;
+		default:
+			break;
+	}
+}
+
+#ifdef __cplusplus
+inline void GIFPath::SetTag(const void* mem) { gs_gif_path_set_tag(this, mem); }
+#endif
 
 typedef struct GSPrivRegSet GSPrivRegSet;
 struct GSPrivRegSet

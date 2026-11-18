@@ -31,6 +31,7 @@
 #include "GSPCRTC.h"
 #include "GSDrawQuery.h"
 #include "GSTransfer.h"
+#include "GSStateFile.h"
 #include "GSBackend.h"
 #include "Renderers/Common/GSPresent.h"
 
@@ -224,7 +225,20 @@ protected:
 	// Re-applies what the GIFRegHandler* functions do to a register on the
 	// way in. Defrost restores registers with a raw copy, so none of it
 	// happens there; see the definition for why that matters.
-	void NormalizeRestoredRegs();
+	/* Where the savestate's parts live (GSStateFile.c) */
+	gs_state_parts StateParts()
+	{
+		gs_state_parts p;
+		p.env    = reinterpret_cast<gs_env_regs*>(&m_env);
+		p.ctx[0] = const_cast<gs_drawing_regs*>(m_env.CTXT[0].Regs());
+		p.ctx[1] = const_cast<gs_drawing_regs*>(m_env.CTXT[1].Regs());
+		p.v      = reinterpret_cast<union gs_vertex*>(&m_v);
+		p.tr     = &m_tr;
+		p.vm     = m_mem.m_vm8;
+		p.path   = m_path;
+		p.q      = &m_q;
+		return p;
+	}
 
 	void UpdateVertexKick();
 	/* Whether the draw state samples its own frame or Z buffer, so its
@@ -408,7 +422,7 @@ public:
 	static int s_last_transfer_draw_n;
 	static int s_transfer_n;
 
-	static constexpr u32 STATE_VERSION = 8;
+	static constexpr u32 STATE_VERSION = GS_STATE_VERSION;
 
 	enum REG_DIRTY
 	{
@@ -640,6 +654,10 @@ static_assert(static_cast<int>(GSVideoMode::HDTV_1080I) == GS_VMODE_HDTV_1080I &
 	&& static_cast<int>(GSVideoMode::PAL) == GS_VMODE_PAL, "GSVideoMode is GS_VMODE_*");
 
 static_assert(MAX_SKIPPED_DUPLICATE_FRAMES == GS_MAX_SKIPPED_DUPLICATE_FRAMES, "GSPresent.c skips as many");
+static_assert(offsetof(GSDrawingEnvironment, TRXREG) == offsetof(gs_env_regs, TRXREG)
+	&& offsetof(GSDrawingEnvironment, PRMODECONT) == offsetof(gs_env_regs, PRMODECONT), "gs_env_regs is GSDrawingEnvironment's start");
+static_assert(sizeof(GIFRegRGBAQ) == 8 && sizeof(GIFRegST) == 8 && sizeof(GIFRegXYZ) == 8 && sizeof(GIFReg) == 8,
+	"the state's register sizes");
 static_assert(GSState::GapsFound == GS_GAPS_FOUND && GSState::SpriteNoGaps == GS_GAPS_SPRITE_NONE && GSState::FullCover == GS_GAPS_FULL_COVER
 	&& GSState::PRIM_OVERLAP_YES == GS_OVERLAP_YES && GSState::PRIM_OVERLAP_NO == GS_OVERLAP_NO, "GSDrawQuery.c's numbers");
 
