@@ -550,12 +550,12 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 	}
 
 #ifndef ARCH_ARM64
-	// GSSingleRasterizer is part of the x86 SW renderer, which isn't built on
-	// arm64; the HW renderer's CPU-side draw fallback is unavailable there.
+	// The SW rasterizer isn't built into the HW renderer on arm64; the
+	// HW renderer's CPU-side draw fallback is unavailable there.
 	if (!hw.m_sw_rasterizer)
-		hw.m_sw_rasterizer = new GSSingleRasterizer();
+		hw.m_sw_rasterizer = GSRasterizerList::Create(0);
 
-	static_cast<GSSingleRasterizer*>(hw.m_sw_rasterizer)->Draw(data);
+	static_cast<GSRasterizerList*>(hw.m_sw_rasterizer)->Draw(data);
 #endif
 
 	if (invalidate_tc)

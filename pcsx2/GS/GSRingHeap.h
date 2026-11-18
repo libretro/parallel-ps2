@@ -182,6 +182,16 @@ public:
 			}
 		}
 
+		/* A reference more, or one less, to what get() gave: for a
+		 * holder that keeps the bare pointer (GSRasterList.c) */
+		static void Retain(T* ptr)
+		{
+			SharedPtr s(ptr);
+			retro_atomic_inc_int(&s.getHeader()->refcnt);
+			s.m_ptr = nullptr;
+		}
+		static void Release(T* ptr) { SharedPtr s(ptr); }
+
 		T* operator->() const { return m_ptr; }
 		T* get() const { return m_ptr; }
 
