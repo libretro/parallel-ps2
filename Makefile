@@ -778,7 +778,7 @@ DEPS    += $(MULTI_ISA_OBJECTS:.o=.d)
 # fused behind the code's back (the avx2 tier's -mfma, aarch64).
 ifeq (,$(findstring msvc,$(platform)))
    $(filter $(LRPS2_DIR)/GS/Renderers/SW/%.o $(LRPS2_DIR)/GS/Renderers/Common/GSVertexTrace%.o,$(OBJECTS)): CXXFLAGS += -ffp-contract=off
-   $(filter $(LRPS2_DIR)/GS/Renderers/Common/GSVertexTrace%.o,$(OBJECTS)): CFLAGS += -ffp-contract=off
+   $(filter $(LRPS2_DIR)/GS/Renderers/SW/%.o $(LRPS2_DIR)/GS/Renderers/Common/GSVertexTrace%.o,$(OBJECTS)): CFLAGS += -ffp-contract=off
 endif
 
 # VIXL (SOURCES_CC) is third-party; silence its warnings for those objects only

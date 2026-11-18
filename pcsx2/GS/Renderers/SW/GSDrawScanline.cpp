@@ -158,8 +158,10 @@ typedef GSVector4i VectorI;
 typedef GSVector4  VectorF;
 #define LOCAL_STEP local.d4
 
-void GSDrawScanline::CSetupPrim(const GSVertexSW* vertex, const u16* index, const GSVertexSW& dscan, GSScanlineLocalData& local)
+void GSDrawScanline::CSetupPrim(const GSVertexSW* vertex, const u16* index, const GSVertexSW* dscan_p, GSScanlineLocalData* local_p)
 {
+	const GSVertexSW& dscan = *dscan_p;
+	GSScanlineLocalData& local = *local_p;
 	const GSScanlineGlobalData& global = GlobalFromLocal(local);
 	GSScanlineSelector sel = global.sel;
 
@@ -437,9 +439,9 @@ __ri static void WritePixel(const T& src, int addr, int i, u32 psm, const GSScan
 	}
 }
 
-void GSDrawScanline::CDrawScanline(int pixels, int left, int top, const GSVertexSW& scan, GSScanlineLocalData& local)
+void GSDrawScanline::CDrawScanline(int pixels, int left, int top, const GSVertexSW* scan, GSScanlineLocalData* local)
 {
-	CDrawScanline(pixels, left, top, scan, local, GlobalFromLocal(local).sel);
+	CDrawScanline(pixels, left, top, *scan, *local, GlobalFromLocal(*local).sel);
 }
 
 __ri void GSDrawScanline::CDrawScanline(int pixels, int left, int top, const GSVertexSW& scan, GSScanlineLocalData& local, GSScanlineSelector sel)
@@ -1578,8 +1580,10 @@ __ri void GSDrawScanline::CDrawScanline(int pixels, int left, int top, const GSV
 	}
 }
 
-void GSDrawScanline::CDrawEdge(int pixels, int left, int top, const GSVertexSW& scan, GSScanlineLocalData& local)
+void GSDrawScanline::CDrawEdge(int pixels, int left, int top, const GSVertexSW* scan_p, GSScanlineLocalData* local_p)
 {
+	const GSVertexSW& scan = *scan_p;
+	GSScanlineLocalData& local = *local_p;
 	GSScanlineSelector sel = local.gd->sel;
 	sel.zwrite = 0;
 	sel.edge = 1;

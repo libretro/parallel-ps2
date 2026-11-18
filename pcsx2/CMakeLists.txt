@@ -397,6 +397,7 @@ set(pcsx2GSSources
 	GS/Renderers/SW/GSDeviceSW.cpp
 	GS/Renderers/SW/GSHiresMem.c
 	GS/Renderers/SW/GSHiresMem.h
+	GS/Renderers/SW/GSRaster.c
 	GS/Renderers/SW/GSTextureCacheSW.c
 	GS/Renderers/SW/GSTextureSW.c
 	)
@@ -464,6 +465,7 @@ set(pcsx2GSHeaders
 	GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.h
 	GS/Renderers/SW/GSDrawScanline.h
 	GS/Renderers/SW/GSNewCodeGenerator.h
+	GS/Renderers/SW/GSRaster.h
 	GS/Renderers/SW/GSRasterizer.h
 	GS/Renderers/SW/GSRendererSW.h
 	GS/Renderers/SW/GSScanlineEnvironment.h

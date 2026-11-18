@@ -485,6 +485,7 @@ SOURCES_CXX += \
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDeviceSW.cpp
 SOURCES_C += \
+	$(LRPS2_DIR)/GS/Renderers/SW/GSRaster.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSTextureCacheSW.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSTextureSW.c
 

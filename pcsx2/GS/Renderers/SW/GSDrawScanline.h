@@ -23,6 +23,8 @@
 
 struct GSScanlineLocalData;
 
+#include "GSRaster.h"
+
 MULTI_ISA_UNSHARED_START
 
 class GSRasterizerData;
@@ -44,8 +46,8 @@ public:
 	~GSDrawScanline() override;
 
 	/// Function pointer types which we call back into.
-	using SetupPrimPtr = void(*)(const GSVertexSW* vertex, const u16* index, const GSVertexSW& dscan, GSScanlineLocalData& local);
-	using DrawScanlinePtr = void(*)(int pixels, int left, int top, const GSVertexSW& scan, GSScanlineLocalData& local);
+	using SetupPrimPtr = gs_raster_setup_prim_fn;
+	using DrawScanlinePtr = gs_raster_scanline_fn;
 
 	/// Flushes the code cache, forcing everything to be recompiled.
 	void ResetCodeCache();
@@ -65,9 +67,9 @@ private:
 	GSCodeGeneratorFunctionMap<GSDrawScanlineCodeGenerator, u64, DrawScanlinePtr> m_ds_map;
 #else
 	/* The C++ rasterizer, where no code is generated. */
-	static void CSetupPrim(const GSVertexSW* vertex, const u16* index, const GSVertexSW& dscan, GSScanlineLocalData& local);
-	static void CDrawScanline(int pixels, int left, int top, const GSVertexSW& scan, GSScanlineLocalData& local);
-	static void CDrawEdge(int pixels, int left, int top, const GSVertexSW& scan, GSScanlineLocalData& local);
+	static void CSetupPrim(const GSVertexSW* vertex, const u16* index, const GSVertexSW* dscan, GSScanlineLocalData* local);
+	static void CDrawScanline(int pixels, int left, int top, const GSVertexSW* scan, GSScanlineLocalData* local);
+	static void CDrawEdge(int pixels, int left, int top, const GSVertexSW* scan, GSScanlineLocalData* local);
 	__ri static void CDrawScanline(int pixels, int left, int top, const GSVertexSW& scan, GSScanlineLocalData& local, GSScanlineSelector sel);
 #endif
 };

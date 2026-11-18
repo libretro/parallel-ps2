@@ -25,6 +25,7 @@
 
 #include "GSVertexSW.h"
 #include "GSDrawScanline.h"
+#include "GSRaster.h"
 #include "../../GSAlignedClass.h"
 #include "../../GSRingHeap.h"
 #include "../../MultiISA.h"
@@ -235,69 +236,24 @@ public:
 	}
 };
 
+/* A drawing thread's rasterizer (GSRaster.c), with the scanline code's
+ * data for it */
 class alignas(32) GSRasterizer final : public GSVirtualAlignedClass<32>
 {
 protected:
-	GSDrawScanline* m_ds;
-	int m_id;
-	int m_threads;
-	int m_thread_height;
-	u8* m_scanline;
-	/* m_scanline and m_threads for this thread's bands, and for every
-	 * row (DrawWhole) */
-	u8* m_scanline_own;
-	u8* m_scanline_all;
-	int m_threads_own;
-	u8 m_scanmsk_value;
-	GSVector4i m_scissor;
-	GSVector4 m_fscissor_x;
-	GSVector4 m_fscissor_y;
-	struct { GSVertexSW* buff; int count; } m_edge;
-
-	// For the current draw.
+	gs_raster m_r;
 	GSScanlineLocalData m_local = {};
-	GSDrawScanline::SetupPrimPtr m_setup_prim = nullptr;
-	GSDrawScanline::DrawScanlinePtr m_draw_scanline = nullptr;
-	GSDrawScanline::DrawScanlinePtr m_draw_edge = nullptr;
 
-	__forceinline bool HasEdge() const { return (m_draw_edge != nullptr); }
-
-	template <bool scissor_test>
-	void DrawPoint(const GSVertexSW* vertex, int vertex_count, const u16* index, int index_count);
-	void DrawLine(const GSVertexSW* vertex, const u16* index);
-	void DrawLineImpl(const GSVertexSW* vertex, const u16* index);
-	void DrawPoint2x(const GSVertexSW* vertex, const u16* index);
-	void DrawTriangle(const GSVertexSW* vertex, const u16* index);
-	void DrawSprite(const GSVertexSW* vertex, const u16* index);
-
-#if _M_SSE >= 0x501
-	__forceinline void DrawTriangleSection(int top, int bottom, GSVertexSW2& RESTRICT edge, const GSVertexSW2& RESTRICT dedge, const GSVertexSW2& RESTRICT dscan, const GSVector4& RESTRICT p0);
-#else
-	__forceinline void DrawTriangleSection(int top, int bottom, GSVertexSW& RESTRICT edge, const GSVertexSW& RESTRICT dedge, const GSVertexSW& RESTRICT dscan, const GSVector4& RESTRICT p0);
-#endif
-
-	void DrawEdge(const GSVertexSW& v0, const GSVertexSW& v1, const GSVertexSW& dv, int orientation, int side);
-
-	void SetupPrim(const GSVertexSW* vertex, const u16* index, const GSVertexSW& dscan, int count);
-
-	__forceinline void AddScanline(GSVertexSW* e, int pixels, int left, int top, const GSVertexSW& scan);
-	__forceinline void Flush(const GSVertexSW* vertex, const u16* index, const GSVertexSW& dscan, bool edge = false);
-
-	__forceinline void DrawScanline(int pixels, int left, int top, const GSVertexSW& scan);
-	__forceinline void DrawEdge(int pixels, int left, int top, const GSVertexSW& scan);
+	void Draw(GSRasterizerData& data, bool whole);
 
 public:
-	GSRasterizer(GSDrawScanline* ds, int id, int threads);
+	GSRasterizer(int id, int threads);
 	~GSRasterizer();
 
-	__forceinline bool IsOneOfMyScanlines(int top) const;
-	__forceinline bool IsOneOfMyScanlines(int top, int bottom) const;
-	__forceinline int FindMyNextScanline(int top) const;
-
-	void Draw(GSRasterizerData& data);
+	void Draw(GSRasterizerData& data) { Draw(data, false); }
 	/* Every row of it, on the calling thread, while no other thread
 	 * draws (GSRasterizerData::whole). */
-	void DrawWhole(GSRasterizerData& data);
+	void DrawWhole(GSRasterizerData& data) { Draw(data, true); }
 };
 
 class IRasterizer : public GSVirtualAlignedClass<32>
