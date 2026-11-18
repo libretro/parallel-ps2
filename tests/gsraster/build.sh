@@ -45,9 +45,12 @@ for A in $ARCHS; do
 		-c "$ROOT/pcsx2/GS/Renderers/SW/GSRaster.c" -o "$TMP/rs.o" 2> "$TMP/rs.log" || { cat "$TMP/rs.log"; exit 1; }
 	grep -E "GSRaster\.[ch]:[0-9]+:[0-9]+: (warning|error)" "$TMP/rs.log" && exit 1
 	"$CC" $CF -w -I"$LRC/include" -c "$LRC/memmap/memalign.c" -o "$TMP/memalign.o"
+	for u in GSPsm GSTables; do
+		"$CC" $CF -std=gnu99 -w $INC -c "$ROOT/pcsx2/GS/$u.c" -o "$TMP/c_$u.o"
+	done
 	"$CXX" $CF -std=c++17 -w $INC -c "$DIR/reference.cpp" -o "$TMP/ref.o"
 	"$CXX" $CF -std=c++17 -w $INC -c "$DIR/driver.cpp" -o "$TMP/driver.o"
-	"$CXX" $SAN $LDSTATIC -Wl,--gc-sections "$TMP/driver.o" "$TMP/ref.o" "$TMP/rs.o" "$TMP/memalign.o" -o "$TMP/gsraster$EXE"
+	"$CXX" $SAN $LDSTATIC -Wl,--gc-sections "$TMP/driver.o" "$TMP/ref.o" "$TMP/rs.o" "$TMP/memalign.o" "$TMP"/c_*.o -o "$TMP/gsraster$EXE"
 	echo "gsraster: ${A:-native}"
 	$RUN "$TMP/gsraster$EXE" ${GSRASTER_DRAWS:-}
 done

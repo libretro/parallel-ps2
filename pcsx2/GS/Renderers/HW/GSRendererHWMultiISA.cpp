@@ -79,9 +79,9 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 	// If you have both GS_SPRITE_CLASS && vt.m_eq.q, it will depends on the first part of the 'OR'.
 #ifndef ARCH_ARM64
 	const u32 q_div = !hw.IsMipMapActive() && ((vt.m_eq.q && vt.m_min.t.z != 1.0f) || (!vt.m_eq.q && vt.m_primclass == GS_SPRITE_CLASS));
-	// GSVertexSW::s_cvb lives in the (excluded) SW renderer; this fills data for
-	// the CPU-side GSSingleRasterizer draw, which is also disabled on arm64.
-	GSVertexSW::s_cvb[vt.m_primclass][PRIM->TME][PRIM->FST][q_div](context, data.vertex, hw.m_vertex.buff, hw.m_vertex.next);
+	// The vertices for the CPU-side draw, which is disabled on arm64.
+	gs_raster_convert_vertices(context->Regs(), data.vertex, reinterpret_cast<const gs_vertex*>(hw.m_vertex.buff),
+		hw.m_vertex.next, vt.m_primclass, PRIM->TME, PRIM->FST, q_div);
 #endif
 
 	GSVector4i scissor = context->scissor.in;

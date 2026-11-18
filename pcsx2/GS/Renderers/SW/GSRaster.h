@@ -37,13 +37,28 @@ typedef struct PCSX2_ALIGN(32) GSVertexSW
 
 struct GSVertexSW;
 struct GSScanlineLocalData;
+struct gs_offset;
+struct gs_drawing_regs;
+union gs_vertex;
+
+/* A draw's rect fills (GSDrawScanline's global data): local memory, the
+ * frame and depth buffers, their write masks (all ones: not written),
+ * whether each is 16 bits a pixel, and FBA */
+typedef struct gs_raster_fill
+{
+	u8* vm;
+	const struct gs_offset* fbo;
+	const struct gs_offset* zbo;
+	u32 fm, zm;
+	u8 fpsm16, zpsm16, fba;
+} gs_raster_fill;
 
 /* The scanline code's three entries (GSDrawScanline), and its rect fill */
 typedef void (*gs_raster_setup_prim_fn)(const struct GSVertexSW* vertex, const u16* index,
 	const struct GSVertexSW* dscan, struct GSScanlineLocalData* local);
 typedef void (*gs_raster_scanline_fn)(int pixels, int left, int top, const struct GSVertexSW* scan,
 	struct GSScanlineLocalData* local);
-typedef void (*gs_raster_rect_fn)(const gs_recti* r, const struct GSVertexSW* v, struct GSScanlineLocalData* local);
+typedef void (*gs_raster_rect_fn)(const gs_raster_fill* f, const gs_recti* r, const struct GSVertexSW* v);
 
 /* What of the draw's selector the rasterizer goes by */
 #define GS_RASTER_SEL_TEX_GRID   (1u << 0) /* fb and a texture function: S, T, Q snapped */
@@ -67,6 +82,7 @@ typedef struct gs_raster_draw
 	gs_raster_setup_prim_fn setup_prim;
 	gs_raster_scanline_fn draw_scanline;
 	gs_raster_scanline_fn draw_edge; /* NULL: no antialiased edges */
+	const gs_raster_fill* fill;
 } gs_raster_draw;
 
 typedef struct gs_raster
@@ -93,6 +109,7 @@ typedef struct gs_raster
 	gs_raster_setup_prim_fn setup_prim;
 	gs_raster_scanline_fn draw_scanline;
 	gs_raster_scanline_fn draw_edge;
+	const gs_raster_fill* fill;
 
 	/* The scanline code's data for this thread, and the grids in it
 	 * the primitive's set up with: S, T, Q, Z's four floats and their
@@ -101,7 +118,7 @@ typedef struct gs_raster
 	float* tgrid;
 	float* tgrid_rcp;
 	double* zgrid;
-	gs_raster_rect_fn draw_rect;
+	gs_raster_rect_fn draw_rect; /* gs_raster_fill_rect */
 } gs_raster;
 
 /* Thread id of threads, bands of 1 << thread_height rows; local and its
@@ -112,6 +129,16 @@ void gs_raster_free(gs_raster* r);
 void gs_raster_draw_bands(gs_raster* r, const gs_raster_draw* d);
 /* Every row, as one thread, while no other draws */
 void gs_raster_draw_whole(gs_raster* r, const gs_raster_draw* d);
+
+/* A solid rect, of v's colour and depth (t.w), into the frame and depth
+ * buffers, swizzled */
+void gs_raster_fill_rect(const gs_raster_fill* f, const gs_recti* r, const struct GSVertexSW* v);
+
+/* count of the GS's vertices to the rasterizer's, in ctx's offset, as a
+ * primclass draws them: tme and fst its texturing, q_div whether S and T
+ * are divided by Q (a sprite's by the second vertex's) */
+void gs_raster_convert_vertices(const struct gs_drawing_regs* ctx, struct GSVertexSW* dst, const union gs_vertex* src,
+	u32 count, int primclass, int tme, int fst, int q_div);
 
 #ifdef __cplusplus
 }

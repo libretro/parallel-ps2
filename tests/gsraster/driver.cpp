@@ -133,7 +133,7 @@ static void c_edge(int pixels, int left, int top, const GSVertexSW* scan, GSScan
 {
 	rec_scan(3, pixels, left, top, scan);
 }
-static void c_rect(const gs_recti* r, const GSVertexSW* v, GSScanlineLocalData*)
+static void c_rect(const gs_raster_fill*, const gs_recti* r, const GSVertexSW* v)
 {
 	put_i(4);
 	put(r, 16);
@@ -379,6 +379,7 @@ int main(int argc, char** argv)
 		d.setup_prim    = c_setup;
 		d.draw_scanline = c_scan;
 		d.draw_edge     = data.draw_edge ? c_edge : NULL;
+		d.fill          = NULL;
 		d.sel           = ((data.global.sel.fb && data.global.sel.tfx != TFX_NONE) ? GS_RASTER_SEL_TEX_GRID : 0)
 		                | (data.global.sel.fst ? GS_RASTER_SEL_FST : 0)
 		                | ((data.global.sel.zb && primclass != GS_SPRITE_CLASS && !data.global.sel.zequal) ? GS_RASTER_SEL_Z_GRID : 0)

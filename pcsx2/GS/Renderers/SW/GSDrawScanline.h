@@ -58,8 +58,6 @@ public:
 	/// Draw pre-calculations, computed per-thread.
 	static void BeginDraw(const GSRasterizerData& data, GSScanlineLocalData& local);
 
-	/// Not currently jitted.
-	static void DrawRect(const GSVector4i& r, const GSVertexSW& v, GSScanlineLocalData& local);
 
 private:
 #ifdef ARCH_X86

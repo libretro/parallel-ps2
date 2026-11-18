@@ -25,7 +25,11 @@
 
 #include "GSRaster.h"
 #include "../../GSRegs.h"
+#include "../../GSOffset.h"
+#include "../../GSPsm.h"
+#include "../../GSDrawingContext.h"
 #include "../../gs_cvt.h"
+#include "../Common/gs_vertex.h"
 
 #ifdef GS_CVT_X86
 typedef __m128 rs_v;
@@ -63,6 +67,9 @@ static INLINE double rs_rint64(double d) { return vget_lane_f64(vrndn_f64(vdup_n
 static INLINE float rs_min(float a, float b) { return vgetq_lane_f32(vminq_f32(vdupq_n_f32(a), vdupq_n_f32(b)), 0); }
 static INLINE float rs_max(float a, float b) { return vgetq_lane_f32(vmaxq_f32(vdupq_n_f32(a), vdupq_n_f32(b)), 0); }
 #endif
+
+/* A float[4] aligned for the vector loads */
+#define GS_ALIGNED_FLOAT4(n) gs_raster_lane n##_lane; float* const n = n##_lane.F32
 
 static INLINE u32 rs_bits(float f)
 {
@@ -766,7 +773,7 @@ static void rs_sprite(gs_raster* r, const GSVertexSW* vertex, const u16* index)
 	if ((r->scanmsk_value & 2) == 0 && (r->sel & GS_RASTER_SEL_SOLID_RECT) && !(r->sel & GS_RASTER_SEL_HIRES))
 	{
 		if (r->threads == 1)
-			r->draw_rect(&rc, &scan, r->local);
+			r->draw_rect(r->fill, &rc, &scan);
 		else
 		{
 			const int band = 1 << r->thread_height;
@@ -778,7 +785,7 @@ static void rs_sprite(gs_raster* r, const GSVertexSW* vertex, const u16* index)
 				const int next = (top + band) & ~(band - 1);
 				rc.y = top;
 				rc.w = (next < bottom) ? next : bottom;
-				r->draw_rect(&rc, &scan, r->local);
+				r->draw_rect(r->fill, &rc, &scan);
 				top = rc.w + ((r->threads - 1) << r->thread_height);
 			}
 		}
@@ -865,6 +872,7 @@ void gs_raster_draw_bands(gs_raster* r, const gs_raster_draw* d)
 	r->setup_prim    = d->setup_prim;
 	r->draw_scanline = d->draw_scanline;
 	r->draw_edge     = d->draw_edge;
+	r->fill          = d->fill;
 	r->scissor       = d->scissor;
 	r->fscissor_x[0] = r->fscissor_x[2] = (float)d->scissor.x;
 	r->fscissor_x[1] = r->fscissor_x[3] = (float)d->scissor.z;
@@ -955,4 +963,230 @@ void gs_raster_draw_whole(gs_raster* r, const gs_raster_draw* d)
 	gs_raster_draw_bands(r, d);
 	r->scanline = r->scanline_own;
 	r->threads  = r->threads_own;
+}
+
+/* (a rect's pixels one by one, c into the bits m clears) */
+static void rs_fill_pixels32(u32* vm, const gs_offset* off, int x0, int y0, int x1, int y1, u32 c, u32 m, int masked)
+{
+	int x, y;
+	for (y = y0; y < y1; y++)
+	{
+		gs_pa_helper pa;
+		gs_pa_init(&pa, off, 0, y);
+		for (x = x0; x < x1; x++)
+		{
+			u32* d = &vm[gs_pa_value(&pa, x)];
+			*d = masked ? (c | (*d & m)) : c;
+		}
+	}
+}
+
+static void rs_fill_pixels16(u16* vm, const gs_offset* off, int x0, int y0, int x1, int y1, u32 c, u32 m, int masked)
+{
+	int x, y;
+	for (y = y0; y < y1; y++)
+	{
+		gs_pa_helper pa;
+		gs_pa_init(&pa, off, 0, y);
+		for (x = x0; x < x1; x++)
+		{
+			u16* d = &vm[gs_pa_value(&pa, x)];
+			*d = (u16)(masked ? (c | (*d & m)) : c);
+		}
+	}
+}
+
+/* A rect in the buffer's format: its whole blocks (256 bytes, 8 rows of
+ * 32 bytes) at once, the pixels around them one by one */
+static void rs_fill(u8* vm, const gs_offset* off, const gs_recti* r, u32 c, u32 m, int bits16, int masked)
+{
+	const int bw = bits16 ? 16 : 8;
+	int bx0, by0, bx1, by1;
+
+	if (m == 0xffffffffu)
+		return;
+
+	if (bits16)
+	{
+		c = (c & 0xffff) | (c << 16);
+		m = (m & 0xffff) | (m << 16);
+	}
+	c &= ~m;
+
+	bx0 = (r->x + bw - 1) & ~(bw - 1);
+	by0 = (r->y + 7) & ~7;
+	bx1 = r->z & ~(bw - 1);
+	by1 = r->w & ~7;
+
+#define RS_PIXELS(x0, y0, x1, y1) \
+	do \
+	{ \
+		if ((x0) < (x1)) \
+		{ \
+			if (bits16) \
+				rs_fill_pixels16((u16*)vm, off, x0, y0, x1, y1, c, m, masked); \
+			else \
+				rs_fill_pixels32((u32*)vm, off, x0, y0, x1, y1, c, m, masked); \
+		} \
+	} while (0)
+
+	if (bx0 < bx1 && by0 < by1)
+	{
+		int x, y, k;
+
+		RS_PIXELS(r->x, r->y, r->z, by0);
+		RS_PIXELS(r->x, by1, r->z, r->w);
+		if (r->x < bx0 || bx1 < r->z)
+		{
+			RS_PIXELS(r->x, by0, bx0, by1);
+			RS_PIXELS(bx1, by0, r->z, by1);
+		}
+
+		for (y = by0; y < by1; y += 8)
+		{
+			gs_pa_helper pa;
+			gs_pa_init(&pa, off, 0, y);
+			for (x = bx0; x < bx1; x += bw)
+			{
+				u32* p = (u32*)(vm + (size_t)gs_pa_value(&pa, x) * (bits16 ? 2 : 4));
+				for (k = 0; k < 64; k++)
+					p[k] = masked ? (c | (p[k] & m)) : c;
+			}
+		}
+	}
+	else
+		RS_PIXELS(r->x, r->y, r->z, r->w);
+
+#undef RS_PIXELS
+}
+
+/* (a lane of the colour: shifted as an unsigned, so a negative one is
+ * large, then to a byte as the vector packs did) */
+static INLINE u32 rs_byte(float f)
+{
+	const int v = (int)((u32)gs_f2i(f) >> 7);
+	return (u32)(v < 0 ? 0 : v > 255 ? 255 : v);
+}
+
+void gs_raster_fill_rect(const gs_raster_fill* f, const gs_recti* r, const GSVertexSW* v)
+{
+	/* (the frame and depth buffer may overlap: what comes of it is
+	 * undefined) */
+	if (f->zm != 0xffffffffu)
+		rs_fill(f->vm, f->zbo, r, v->t.U32[3], f->zm, f->zpsm16, f->zpsm16 ? (f->zm & 0xffff) != 0 : f->zm != 0);
+
+	if (f->fm != 0xffffffffu)
+	{
+		u32 c = rs_byte(v->c.F32[0]) | (rs_byte(v->c.F32[1]) << 8) | (rs_byte(v->c.F32[2]) << 16)
+			| (rs_byte(v->c.F32[3]) << 24);
+		if (f->fba)
+			c |= 0x80000000u;
+		if (f->fpsm16)
+			c = ((c & 0xf8) >> 3) | ((c & 0xf800) >> 6) | ((c & 0xf80000) >> 9) | ((c & 0x80000000u) >> 16);
+		rs_fill(f->vm, f->fbo, r, c, f->fm, f->fpsm16, f->fpsm16 ? (f->fm & 0xffff) != 0 : f->fm != 0);
+	}
+}
+
+/* (one primitive class and texturing's loop: the call below gives each
+ * its constants) */
+static INLINE void rs_convert(const gs_drawing_regs* ctx, GSVertexSW* dst, const union gs_vertex* src, u32 count,
+	const int primclass, const int tme, const int fst, const int q_div)
+{
+	u32 ofs[2];
+	const u32 fmt  = gs_psm[ctx->ZBUF.PSM].fmt;
+	const u32 zmax = fmt * 8 >= 32 ? 0u : 0xffffffffu >> (fmt * 8);
+	GS_ALIGNED_FLOAT4(tsize);
+	int i;
+
+	memcpy(ofs, &ctx->XYOFFSET, sizeof(ofs));
+	tsize[0] = (float)(s32)(0x10000u << ctx->TEX0.TW);
+	tsize[1] = (float)(s32)(0x10000u << ctx->TEX0.TH);
+	tsize[2] = 1.0f;
+	tsize[3] = 0.0f;
+
+	for (i = (int)count; i > 0; i--, src++, dst++)
+	{
+		GS_ALIGNED_FLOAT4(st);
+		u32 w[8];
+		int k;
+
+		memcpy(w, src, sizeof(w));
+
+		for (k = 0; k < 4; k++)
+			dst->c.F32[k] = (float)(s32)(((w[2] >> (8 * k)) & 0xff) << 7);
+
+		dst->t.U32[0] = dst->t.U32[1] = dst->t.U32[2] = dst->t.U32[3] = 0;
+		if (tme)
+		{
+			if (fst)
+			{
+				dst->t.F32[0] = (float)(s32)((w[6] & 0xffff) << 12);
+				dst->t.F32[1] = (float)(s32)((w[6] >> 16) << 12);
+				dst->t.F32[2] = (float)(s32)((w[7] & 0xffff) << 12);
+			}
+			else
+			{
+				rs_v t;
+				memcpy(st, w, 16);
+				if (q_div)
+				{
+					/* Division where the numbers are huge (Pro Soccer
+					 * Club); a sprite's first Q isn't valid, its
+					 * second's is */
+					float q;
+					memcpy(&q, (primclass == GS_SPRITE_CLASS && (i & 1) == 0) ? (const u8*)(src + 1) + 12 : (const u8*)src + 12, 4);
+					t = rs_vdiv(rs_vload(st), rs_vsplat(q));
+				}
+				else
+				{
+					memcpy(&st[2], &st[3], 4); /* s t q q */
+					t = rs_vload(st);
+				}
+				rs_vstore(dst->t.F32, rs_vmul(t, rs_vload(tsize)));
+			}
+		}
+
+		if (primclass == GS_SPRITE_CLASS)
+		{
+			dst->p.F32[0] = (float)(s32)((w[4] & 0xffff) - ofs[0]) * (1.0f / 16);
+			dst->p.F32[1] = (float)(s32)((w[4] >> 16) - ofs[1]) * (1.0f / 16);
+			dst->p.F32[2] = (float)(s32)w[5] * 1.0f;
+			dst->p.F32[3] = (float)(s32)w[7] * 128.0f;
+			dst->t.U32[3] = w[5] < zmax ? w[5] : zmax;
+		}
+		else
+		{
+			dst->p.F32[0] = (float)(s32)((w[4] & 0xffff) - ofs[0]) * (1.0f / 16);
+			dst->p.F32[1] = (float)(s32)((w[4] >> 16) - ofs[1]) * (1.0f / 16);
+			dst->p.F64[1] = (double)w[5];
+			dst->t.F32[3] = (float)(s32)(w[7] << 7);
+		}
+	}
+}
+
+void gs_raster_convert_vertices(const gs_drawing_regs* ctx, GSVertexSW* dst, const union gs_vertex* src, u32 count,
+	int primclass, int tme, int fst, int q_div)
+{
+#define RS_CVT(P) \
+	case P: \
+		if (!tme) \
+			rs_convert(ctx, dst, src, count, P, 0, 0, 0); \
+		else if (fst) \
+			rs_convert(ctx, dst, src, count, P, 1, 1, 0); \
+		else if (q_div) \
+			rs_convert(ctx, dst, src, count, P, 1, 0, 1); \
+		else \
+			rs_convert(ctx, dst, src, count, P, 1, 0, 0); \
+		break;
+
+	switch (primclass)
+	{
+		RS_CVT(GS_POINT_CLASS)
+		RS_CVT(GS_LINE_CLASS)
+		RS_CVT(GS_TRIANGLE_CLASS)
+		RS_CVT(GS_SPRITE_CLASS)
+		default:
+			break;
+	}
+#undef RS_CVT
 }

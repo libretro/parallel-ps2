@@ -79,6 +79,7 @@ class alignas(32) GSRasterizer final : public GSVirtualAlignedClass<32>
 {
 protected:
 	gs_raster m_r;
+	gs_raster_fill m_fill = {};
 	GSScanlineLocalData m_local = {};
 
 	void Draw(GSRasterizerData& data, bool whole);

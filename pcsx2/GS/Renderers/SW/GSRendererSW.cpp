@@ -29,8 +29,6 @@ GSRenderer* CURRENT_ISA::makeGSRendererSW(int threads)
 	return new GSRendererSW(threads);
 }
 
-static constexpr GSVector4 s_pos_scale = GSVector4::cxpr(1.0f / 16, 1.0f / 16, 1.0f, 128.0f);
-
 /* --- the table GSState calls this renderer through (gs_state_ops) -------
  * Every one of these was a virtual function. What this renderer has no
  * version of is NULL, and GSState does what it always did for those. */
@@ -479,107 +477,12 @@ GSTexture* GSRendererSW::GetFeedbackOutput(float& scale)
 	return nullptr;
 }
 
-MULTI_ISA_DEF(void GSVertexSWInitStatic();)
-
 #if MULTI_ISA_COMPILE_ONCE
-GSVertexSW::ConvertVertexBufferPtr GSVertexSW::s_cvb[4][2][2][2];
-void GSVertexSW::InitStatic()
-{
-	MULTI_ISA_SELECT(GSVertexSWInitStatic)();
-}
-
-/* (GSinit's, GSBackend.h) */
+/* (GSinit's, GSBackend.h: nothing left to set up) */
 void gs_vertex_sw_init_static(void)
 {
-	GSVertexSW::InitStatic();
 }
 #endif
-
-MULTI_ISA_UNSHARED_START
-
-template <u32 primclass, u32 tme, u32 fst, u32 q_div>
-void ConvertVertexBuffer(const GSDrawingContext* RESTRICT ctx, GSVertexSW* RESTRICT dst, const GSVertex* RESTRICT src, u32 count)
-{
-	// FIXME q_div wasn't added to AVX2 code path.
-
-	GSVector4i off = (GSVector4i)ctx->XYOFFSET;
-	GSVector4 tsize = GSVector4(0x10000 << ctx->TEX0.TW, 0x10000 << ctx->TEX0.TH, 1, 0);
-	GSVector4i z_max = GSVector4i::xffffffff().srl32(GSLocalMemory::m_psm[ctx->ZBUF.PSM].fmt * 8);
-
-	for (int i = (int)count; i > 0; i--, src++, dst++)
-	{
-		GSVector4 stcq = GSVector4::load<true>(&src->m[0]); // s t rgba q
-
-		GSVector4i xyzuvf(src->m[1]);
-
-		GSVector4i xy = xyzuvf.upl16() - off;
-
-		dst->c = GSVector4(GSVector4i::cast(stcq).zzzz().u8to32() << 7);
-
-		GSVector4 t = GSVector4::zero();
-
-		if (tme)
-		{
-			if (fst)
-			{
-				t = GSVector4(xyzuvf.uph16() << (16 - 4));
-			}
-			else if (q_div)
-			{
-				// Division is required if number are huge (Pro Soccer Club)
-				if (primclass == GS_SPRITE_CLASS && (i & 1) == 0)
-				{
-					// q(n) isn't valid, you need to take q(n+1)
-					const GSVertex* next = src + 1;
-					GSVector4 stcq1 = GSVector4::load<true>(&next->m[0]); // s t rgba q
-					t = (stcq / stcq1.wwww()) * tsize;
-				}
-				else
-				{
-					t = (stcq / stcq.wwww()) * tsize;
-				}
-			}
-			else
-			{
-				t = stcq.xyww() * tsize;
-			}
-		}
-
-		if (primclass == GS_SPRITE_CLASS)
-		{
-			dst->p = GSVector4(xy).xyyw(GSVector4(xyzuvf)) * s_pos_scale;
-
-			xyzuvf = xyzuvf.min_u32(z_max);
-			t = t.insert32<1, 3>(GSVector4::cast(xyzuvf));
-		}
-		else
-		{
-			double z = static_cast<double>(static_cast<u32>(xyzuvf.extract32<1>()));
-			dst->p = (GSVector4(xy) * s_pos_scale).upld(GSVector4::f64(z, 0.0));
-			t = t.blend32<8>(GSVector4(xyzuvf << 7));
-		}
-
-		dst->t = t;
-	}
-}
-
-void GSVertexSWInitStatic()
-{
-#define InitCVB4(P, T, F, Q) GSVertexSW::s_cvb[P][T][F][Q] = ConvertVertexBuffer<P, T, F, Q>;
-#define InitCVB3(P, T, F) InitCVB4(P, T, F, 0) InitCVB4(P, T, F, 1)
-#define InitCVB2(P, T) InitCVB3(P, T, 0) InitCVB3(P, T, 1)
-#define InitCVB1(P) InitCVB2(P, 0) InitCVB2(P, 1)
-	InitCVB1(GS_POINT_CLASS)
-	InitCVB1(GS_LINE_CLASS)
-	InitCVB1(GS_TRIANGLE_CLASS)
-	InitCVB1(GS_SPRITE_CLASS)
-#undef InitCVB1
-#undef InitCVB2
-#undef InitCVB3
-#undef InitCVB4
-}
-
-MULTI_ISA_UNSHARED_END
 
 void GSRendererSW::Draw()
 {
@@ -601,7 +504,8 @@ void GSRendererSW::Draw()
 	// If you have both GS_SPRITE_CLASS && m_vt.m_eq.q, it will depends on the first part of the 'OR'
 	u32 q_div = !IsMipMapActive() && ((m_vt.m_eq.q && m_vt.m_min.t.z != 1.0f) || (!m_vt.m_eq.q && m_vt.m_primclass == GS_SPRITE_CLASS));
 
-	GSVertexSW::s_cvb[m_vt.m_primclass][PRIM->TME][PRIM->FST][q_div](m_context, sd->vertex, m_vertex.buff, m_vertex.next);
+	gs_raster_convert_vertices(m_context->Regs(), sd->vertex, reinterpret_cast<const gs_vertex*>(m_vertex.buff),
+		m_vertex.next, m_vt.m_primclass, PRIM->TME, PRIM->FST, q_div);
 
 	memcpy(sd->index, m_index.buff, sizeof(u16) * m_index.tail);
 

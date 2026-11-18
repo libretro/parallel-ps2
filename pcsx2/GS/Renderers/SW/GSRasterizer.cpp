@@ -44,11 +44,6 @@ static_assert(sizeof(GSVertexSW) == 4 * sizeof(gs_raster_lane) && alignof(GSVert
 static_assert(offsetof(GSVertexSW, p) == 0 && offsetof(GSVertexSW, _pad) == 16 && offsetof(GSVertexSW, t) == 32
 	&& offsetof(GSVertexSW, c) == 48, "GSVertexSW layout");
 
-static void DrawRect(const gs_recti* r, const GSVertexSW* v, GSScanlineLocalData* local)
-{
-	GSDrawScanline::DrawRect(GSVector4i(r->x, r->y, r->z, r->w), *v, *local);
-}
-
 GSRasterizer::GSRasterizer(int id, int threads)
 {
 	if (!gs_raster_init(&m_r, id, threads, compute_best_thread_height(threads)))
@@ -57,7 +52,7 @@ GSRasterizer::GSRasterizer(int id, int threads)
 	m_r.tgrid     = m_local.tgrid.F32;
 	m_r.tgrid_rcp = m_local.tgrid_rcp.F32;
 	m_r.zgrid     = &m_local.zgrid.grid;
-	m_r.draw_rect = DrawRect;
+	m_r.draw_rect = gs_raster_fill_rect;
 }
 
 GSRasterizer::~GSRasterizer()
@@ -87,6 +82,20 @@ void GSRasterizer::Draw(GSRasterizerData& data, bool whole)
 	d.setup_prim    = data.setup_prim;
 	d.draw_scanline = data.draw_scanline;
 	d.draw_edge     = data.draw_edge;
+	d.fill          = &m_fill;
+	m_fill.vm       = static_cast<u8*>(data.global.vm);
+	m_fill.fbo      = &data.global.fbo;
+	m_fill.zbo      = &data.global.zbo;
+#if _M_SSE >= 0x501
+	m_fill.fm       = data.global.fm;
+	m_fill.zm       = data.global.zm;
+#else
+	m_fill.fm       = data.global.fm.U32[0];
+	m_fill.zm       = data.global.zm.U32[0];
+#endif
+	m_fill.fpsm16   = sel.fpsm == 2;
+	m_fill.zpsm16   = sel.zpsm == 2;
+	m_fill.fba      = sel.fba;
 	d.sel           = ((sel.fb && sel.tfx != TFX_NONE) ? GS_RASTER_SEL_TEX_GRID : 0)
 	                | (sel.fst ? GS_RASTER_SEL_FST : 0)
 	                | ((sel.zb && sel.prim != GS_SPRITE_CLASS && !sel.zequal) ? GS_RASTER_SEL_Z_GRID : 0)
