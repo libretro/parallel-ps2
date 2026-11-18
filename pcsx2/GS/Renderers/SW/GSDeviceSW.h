@@ -1,117 +1,63 @@
-/*  PCSX2 - PS2 Emulator for PCs
- *  Copyright (C) 2002-2021 PCSX2 Dev Team
- *
- *  PCSX2 is free software: you can redistribute it and/or modify it under the terms
- *  of the GNU Lesser General Public License as published by the Free Software Found-
- *  ation, either version 3 of the License, or (at your option) any later version.
- *
- *  PCSX2 is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
- *  without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- *  PURPOSE.  See the GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License along with PCSX2.
- *  If not, see <http://www.gnu.org/licenses/>.
- */
+/* SPDX-License-Identifier: LGPL-3.0+ */
+#ifndef GS_DEVICE_SW_H
+#define GS_DEVICE_SW_H
 
-#pragma once
+/* The device where there is no GPU context (RetroArch's SDL2 driver,
+ * say): every composite and present done on the CPU, on the textures in
+ * CPU memory GSTextureSW.c makes, and the frame handed to the frontend
+ * as a raw XRGB8888 buffer, its own where the frontend offers one. Only
+ * the SW renderer draws through it: the HW renderers are not compatible
+ * with it.
+ *
+ * The textures hold the PS2's ABGR (R in byte 0) as the SW renderer
+ * wrote it; the one conversion, to XRGB8888 (B in byte 0, alpha opaque),
+ * is on the way to the frontend. */
 
-#include "GS/Renderers/Common/GSDevice.h"
-#include "GS/Renderers/SW/GSTextureSW.h"
+#include <boolean.h>
 
-/* GSDeviceSW
- *
- * A GSDevice that performs all composite/present operations on the
- * CPU and delivers final frames to the libretro frontend as a raw
- * pixel buffer (no HW context required).
- *
- * Used as a fallback when the libretro frontend does not provide any
- * HW context (e.g. RetroArch with the SDL2 video driver). The HW
- * renderers (DX11/DX12/Vulkan/OpenGL/parallel-gs) are *not* compatible
- * with this device - it asserts on RenderHW(). Only the SW renderer
- * goes through this path.
- *
- * Stage 1 (this commit): all virtuals are stubs sufficient to keep
- * the SW renderer from crashing, but no actual compositing is done.
- * EndPresent emits black frames at native PS2 resolution. The
- * libretro RETRO_ENVIRONMENT_GET_CURRENT_SOFTWARE_FRAMEBUFFER hook is
- * negotiated so future stages can render directly into a frontend-
- * provided buffer when supported.
- *
- * Stage 2: implement DoMerge, StretchRect, PresentRect on CPU.
- * Stage 3: implement DoInterlace modes on CPU. */
-class GSDeviceSW final : public GSDevice
+#include "common/Pcsx2Defs.h"
+#include "../Common/GSDeviceBase.h"
+#include "../Common/GSScratch.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct gs_device_sw
 {
-	/* The table this device answers through is a set of free functions
-	 * in its own .cpp (gs_device_ops, Common/GSDevice.h); they call what
-	 * used to be reached through a vtable, whatever its access. */
-	friend struct GSDeviceSW_ops_access;
-private:
-	/* Backing buffer for the frame we hand to video_cb when the
-	 * frontend doesn't support direct rendering. XRGB8888, pitch is
-	 * m_present_pitch. */
-	u8* m_present_buffer = nullptr;
-	int m_present_buffer_capacity = 0;   /* bytes */
-	int m_present_pitch = 0;             /* bytes per row of the buffer */
-	int m_present_width = 0;             /* logical width  */
-	int m_present_height = 0;            /* logical height */
+	gs_device base;
 
-	/* Direct-rendering negotiation state. Probed once at startup,
-	 * then re-probed on geometry change. */
-	bool m_direct_rendering_checked = false;
-	bool m_direct_rendering_supported = false;
+	/* The frame when the frontend has no buffer of its own to offer:
+	 * XRGB8888, rows of present_pitch bytes */
+	u8* present_buffer;
+	int present_buffer_capacity; /* bytes */
+	int present_pitch;
+	int present_width;
+	int present_height;
 
-	/* Per-frame direct-rendering target. If non-null after
-	 * BeginPresent, PresentRect writes into the frontend's buffer
-	 * directly; EndPresent hands the same pointer to video_cb. */
-	u8* m_direct_render_buffer = nullptr;
-	size_t m_direct_render_pitch = 0;
+	/* Whether the frontend offers its buffer (asked again when the
+	 * frame's size changes), and this frame's if so: it is only good
+	 * for the frame it was asked for */
+	bool direct_rendering_checked;
+	bool direct_rendering_supported;
+	u8* direct_render_buffer;
+	size_t direct_render_pitch;
 
-	/* Set by PresentRect, cleared by BeginPresent. Tracks whether a
-	 * present was actually produced this frame - VSync calls
-	 * EndPresent unconditionally on the non-skip path but may skip
-	 * the PresentRect call if g_gs_device->GetCurrent() is null
-	 * (very-early frames before any Merge has happened). */
-	bool m_present_pending = false;
+	/* A frame was presented since BeginPresent: EndPresent hands one
+	 * over only then */
+	bool present_pending;
 
-	void EnsurePresentBuffer(int width, int height);
-	bool AcquireDirectRenderBuffer(int width, int height);
+	/* The half-height fields' motion-adaptive rows, kept between frames */
+	struct gs_scratch scratch_mad;
+} gs_device_sw;
 
-protected:
-	GSTexture* CreateSurface(GSTexture::Type type, int width, int height, int levels, GSTexture::Format format);
-	void DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect,
-		const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, u32 c, const bool linear);
-	void DoInterlace(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect,
-		ShaderInterlace shader, bool linear, const InterlaceConstantBuffer& cb);
+/* The device's table (gs_device_ops) */
+extern const struct gs_device_ops gs_device_sw_ops;
 
-public:
-	GSDeviceSW();
-	~GSDeviceSW();
+/* (gs_device_open's, GSDeviceBase.h: gs_device_new_sw) */
 
-	bool Create();
-	void Destroy();
+#ifdef __cplusplus
+}
+#endif
 
-	RenderAPI GetRenderAPI() const { return RenderAPI::None; }
-
-	PresentResult BeginPresent(bool frame_skip);
-	void EndPresent();
-
-	GSDownloadTexture* CreateDownloadTexture(u32 width, u32 height, GSTexture::Format format);
-
-	void CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r, u32 destX, u32 destY);
-	void StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect,
-		ShaderConvert shader = ShaderConvert::COPY, bool linear = true);
-	void StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect,
-		bool red, bool green, bool blue, bool alpha, ShaderConvert shader = ShaderConvert::COPY);
-
-	void PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect);
-
-	void UpdateCLUTTexture(GSTexture* sTex, float sScale, float sSample, u32 offsetX, u32 offsetY,
-		GSTexture* dTex, u32 dOffset, u32 dSize);
-	void ConvertToIndexedTexture(GSTexture* sTex, float sScale, u32 offsetX, u32 offsetY,
-		u32 SBW, u32 SPSM, GSTexture* dTex, u32 DBW, u32 DPSM);
-	void FilteredDownsampleTexture(GSTexture* sTex, GSTexture* dTex, u32 downsample_factor,
-		const GSVector2i& clamp_min, const GSVector4& dRect);
-
-	void RenderHW(GSHWDrawConfig& config);
-	void ClearSamplerCache();
-};
+#endif

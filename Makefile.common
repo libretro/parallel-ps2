@@ -482,9 +482,8 @@ SOURCES_CXX += \
 # xbyak codegen with no arm64 backend, so they are dropped on aarch64 (the HW
 # renderer / paraLLEl-GS cover it; GS.cpp gates the SW path on ARCH_ARM64).
 # Mirrors the `list(REMOVE_ITEM ... NOT _M_X86)` in pcsx2/CMakeLists.txt.
-SOURCES_CXX += \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSDeviceSW.cpp
 SOURCES_C += \
+	$(LRPS2_DIR)/GS/Renderers/SW/GSDeviceSW.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRaster.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRasterList.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSTextureCacheSW.c \

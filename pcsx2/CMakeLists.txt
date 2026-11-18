@@ -394,7 +394,7 @@ set(pcsx2GSSources
 	GS/Renderers/Common/GSScratch.h
 	GS/Renderers/HW/GSObjectPool.h
 	GS/Renderers/HW/GSTextureCache.cpp
-	GS/Renderers/SW/GSDeviceSW.cpp
+	GS/Renderers/SW/GSDeviceSW.c
 	GS/Renderers/SW/GSHiresMem.c
 	GS/Renderers/SW/GSHiresMem.h
 	GS/Renderers/SW/GSRaster.c
