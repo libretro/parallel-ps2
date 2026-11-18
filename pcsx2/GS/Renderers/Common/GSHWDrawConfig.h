@@ -541,6 +541,16 @@ typedef struct PCSX2_ALIGN(16) gs_hw_draw_config
 	GS_HW_V4I(colclip_update_area); /* what of the framebuffer the colclip changes */
 } gs_hw_draw_config;
 
+/* A batched stretch's rect (GSDevice::MultiStretchRect) */
+typedef struct gs_multi_stretch_rect
+{
+	GS_HW_V4(src_rect);
+	GS_HW_V4(dst_rect);
+	GS_HW_TEX(src);
+	bool linear;
+	gs_hw_color_mask wmask; /* 0xf for all channels by default */
+} gs_multi_stretch_rect;
+
 #ifdef __cplusplus
 static_assert(sizeof(gs_hw_vs_selector) == 1, "gs_hw_vs_selector");
 static_assert(sizeof(gs_hw_ps_selector) == 12, "gs_hw_ps_selector");

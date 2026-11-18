@@ -493,6 +493,9 @@ int main(int argc, char** argv)
 		GN_FAIL("LRPS2_BIOS names the BIOS image to boot (tests/swdraw writes one)");
 	if (!gn_context())
 	{
+		/* (CI, where a skip would pass with nothing run) */
+		if (getenv("GN_REQUIRE_GL"))
+			GN_FAIL("no OpenGL context (EGL surfaceless), and GN_REQUIRE_GL is set");
 		printf("glnegotiate: skip: no OpenGL context (EGL surfaceless)\n");
 		return 0;
 	}

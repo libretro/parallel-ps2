@@ -99,69 +99,6 @@ void gs_gl_program_uniform4fv(const gs_gl_program* p, int index, const float* v)
 
 #ifdef __cplusplus
 }
-
-#include <type_traits>
-
-/* The program as the device holds it: moved, never copied, destroyed with
- * it. */
-class GLProgram
-{
-public:
-	GLProgram() { gs_gl_program_init(&m_p); }
-	GLProgram(const GLProgram&) = delete;
-	GLProgram(GLProgram&& prog)
-	{
-		m_p = prog.m_p;
-		gs_gl_program_init(&prog.m_p);
-	}
-	~GLProgram() { gs_gl_program_destroy(&m_p); }
-
-	GLProgram& operator=(const GLProgram&) = delete;
-	GLProgram& operator=(GLProgram&& prog)
-	{
-		gs_gl_program_destroy(&m_p);
-		m_p = prog.m_p;
-		gs_gl_program_init(&prog.m_p);
-		return *this;
-	}
-
-	static void ResetLastProgram() { gs_gl_program_reset_last(); }
-	/* The wrapper of a C program (it is its only member) */
-	static GLProgram* Of(gs_gl_program* p) { return reinterpret_cast<GLProgram*>(p); }
-	/* The C program it wraps */
-	gs_gl_program* C() { return &m_p; }
-
-	bool Compile(const char* vs, size_t vs_length, const char* fs, size_t fs_length) { return gs_gl_program_compile(&m_p, vs, vs_length, fs, fs_length) != 0; }
-	bool CreateFromBinary(const void* data, u32 data_length, u32 data_format) { return gs_gl_program_create_from_binary(&m_p, data, data_length, data_format) != 0; }
-	bool GetBinary(gs_array_t* out_data, u32* out_data_format) const { return gs_gl_program_get_binary(&m_p, out_data, out_data_format) != 0; }
-	void SetBinaryRetrievableHint() { gs_gl_program_set_binary_retrievable_hint(&m_p); }
-	bool Link() { return gs_gl_program_link(&m_p) != 0; }
-	bool StartCompile(const char* vs, size_t vs_length, const char* fs, size_t fs_length) { return gs_gl_program_start_compile(&m_p, vs, vs_length, fs, fs_length) != 0; }
-	int Poll() { return gs_gl_program_poll(&m_p); }
-	bool IsPending() const { return m_p.pending != 0; }
-	bool IsValid() const { return m_p.program_id != 0; }
-	void Bind() const { gs_gl_program_bind(&m_p); }
-	void Destroy() { gs_gl_program_destroy(&m_p); }
-
-	int RegisterUniform(const char* name) { return gs_gl_program_register_uniform(&m_p, name); }
-	void Uniform1ui(int index, u32 x) const { gs_gl_program_uniform1ui(&m_p, index, x); }
-	void Uniform3ui(int index, u32 x, u32 y, u32 z) const { gs_gl_program_uniform3ui(&m_p, index, x, y, z); }
-	void Uniform4ui(int index, u32 x, u32 y, u32 z, u32 w) const { gs_gl_program_uniform4ui(&m_p, index, x, y, z, w); }
-	void Uniform1i(int index, s32 x) const { gs_gl_program_uniform1i(&m_p, index, x); }
-	void Uniform2i(int index, s32 x, s32 y) const { gs_gl_program_uniform2i(&m_p, index, x, y); }
-	void Uniform1f(int index, float x) const { gs_gl_program_uniform1f(&m_p, index, x); }
-	void Uniform2iv(int index, const s32* v) const { gs_gl_program_uniform2iv(&m_p, index, v); }
-	void Uniform4iv(int index, const s32* v) const { gs_gl_program_uniform4iv(&m_p, index, v); }
-	void Uniform2fv(int index, const float* v) const { gs_gl_program_uniform2fv(&m_p, index, v); }
-	void Uniform4fv(int index, const float* v) const { gs_gl_program_uniform4fv(&m_p, index, v); }
-
-	bool operator==(const GLProgram& rhs) const { return m_p.program_id == rhs.m_p.program_id; }
-	bool operator!=(const GLProgram& rhs) const { return m_p.program_id != rhs.m_p.program_id; }
-
-private:
-	gs_gl_program m_p;
-};
-static_assert(sizeof(GLProgram) == sizeof(gs_gl_program) && std::is_standard_layout<GLProgram>::value, "GLProgram is a gs_gl_program");
 #endif
 
 #endif

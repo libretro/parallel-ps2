@@ -29,6 +29,7 @@
 #include "GSVertexKick.h"
 
 int GSState::s_n = 0;
+extern "C" int gs_state_draw_number(void) { return GSState::s_n; }
 int GSState::s_last_transfer_draw_n = 0;
 int GSState::s_transfer_n = 0;
 

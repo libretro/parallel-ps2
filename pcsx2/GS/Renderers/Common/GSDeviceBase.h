@@ -35,9 +35,8 @@
 extern "C" {
 #endif
 
-/* The shaders C asks for by number (C++: ShaderConvert, ShaderInterlace) */
-#define GS_SHADER_CONVERT_COPY 0
-#define GS_SHADER_CONVERT_FLOAT32_TO_RGBA8 13
+/* The shaders C asks for by number (C++: ShaderConvert, below,
+ * ShaderInterlace) */
 #define GS_SHADER_INTERLACE_WEAVE 0
 #define GS_SHADER_INTERLACE_BOB 1
 #define GS_SHADER_INTERLACE_BLEND 2
@@ -145,10 +144,69 @@ typedef struct gs_device
 	gs_device_features m_features;
 } gs_device;
 
-/* (C++ types the table passes on, opaque here) */
+/* (C++ types the table passes on, opaque here; GSHWDrawConfig is
+ * gs_hw_draw_config, GSHWDrawConfig.h) */
 struct gs_multi_stretch_rect;
 struct GSHWDrawConfig;
-struct MoveTexelsConstants;
+
+/* The convert shaders (C++: ShaderConvert), in its order */
+enum gs_shader_convert
+{
+	GS_SHADER_CONVERT_COPY = 0,
+	GS_SHADER_CONVERT_RGBA8_TO_16_BITS,
+	GS_SHADER_CONVERT_DATM_1,
+	GS_SHADER_CONVERT_DATM_0,
+	GS_SHADER_CONVERT_DATM_1_RTA_CORRECTION,
+	GS_SHADER_CONVERT_DATM_0_RTA_CORRECTION,
+	GS_SHADER_CONVERT_COLCLIP_INIT,
+	GS_SHADER_CONVERT_COLCLIP_RESOLVE,
+	GS_SHADER_CONVERT_RTA_CORRECTION,
+	GS_SHADER_CONVERT_RTA_DECORRECTION,
+	GS_SHADER_CONVERT_TRANSPARENCY_FILTER,
+	GS_SHADER_CONVERT_FLOAT32_TO_16_BITS,
+	GS_SHADER_CONVERT_FLOAT32_TO_32_BITS,
+	GS_SHADER_CONVERT_FLOAT32_TO_RGBA8,
+	GS_SHADER_CONVERT_FLOAT32_TO_RGB8,
+	GS_SHADER_CONVERT_FLOAT16_TO_RGB5A1,
+	GS_SHADER_CONVERT_RGBA8_TO_FLOAT32,
+	GS_SHADER_CONVERT_RGBA8_TO_FLOAT24,
+	GS_SHADER_CONVERT_RGBA8_TO_FLOAT16,
+	GS_SHADER_CONVERT_RGB5A1_TO_FLOAT16,
+	GS_SHADER_CONVERT_RGBA8_TO_FLOAT32_BILN,
+	GS_SHADER_CONVERT_RGBA8_TO_FLOAT24_BILN,
+	GS_SHADER_CONVERT_RGBA8_TO_FLOAT16_BILN,
+	GS_SHADER_CONVERT_RGB5A1_TO_FLOAT16_BILN,
+	GS_SHADER_CONVERT_FLOAT32_TO_FLOAT24,
+	GS_SHADER_CONVERT_DEPTH_COPY,
+	GS_SHADER_CONVERT_DOWNSAMPLE_COPY,
+	GS_SHADER_CONVERT_RGBA_TO_8I,
+	GS_SHADER_CONVERT_MOVE_TEXELS,
+	GS_SHADER_CONVERT_CLUT_4,
+	GS_SHADER_CONVERT_CLUT_8,
+	GS_SHADER_CONVERT_YUV,
+	GS_SHADER_CONVERT_COUNT
+};
+
+/* The deinterlacing shaders (C++: ShaderInterlace) */
+#define GS_SHADER_INTERLACE_COUNT 5
+
+/* A local-memory move worked out on the targets (ps_move_texels), packed
+ * so that it fits every backend's utility constants, 32 bytes on D3D11.
+ * Pairs are x | y << 16, in texels of the staging texture the move reads:
+ * the old words of the destination block, the source block, and the
+ * remap, one 32-bit entry per destination element. flags is
+ * scale | nibbles << 8 | entries << 16 | has_old << 24: the integer
+ * scale, the nibbles of a destination element, the elements a word holds
+ * (8 / nibbles), and whether the words keep the bits the move leaves. */
+typedef struct PCSX2_ALIGN(16) MoveTexelsConstants
+{
+	u32 dst_origin;
+	u32 old_base;
+	u32 src_base;
+	u32 remap_base;
+	u32 flags;
+	u32 pad[3];
+} MoveTexelsConstants;
 
 /* What the five devices - D3D11, D3D12, Vulkan, OpenGL and the software
  * one - answer differently, with the device first. A NULL entry is what
@@ -275,6 +333,15 @@ void gs_device_vr_release(gs_device* dev);
 /* The shaders' names, and the DATM shader for a SetDATM */
 const char* gs_shader_convert_name(int shader);
 int gs_set_datm_shader(int datm);
+/* Whether a convert shader writes depth, and the channels it writes */
+bool gs_shader_convert_has_depth_output(int shader);
+u32 gs_shader_convert_write_mask(int shader);
+
+/* The page of a 32-bit source that a page-aligned pixel offset lands on */
+static INLINE u32 gs_indexed_conversion_page_offset(u32 offset_x, u32 offset_y, u32 sbw)
+{
+	return (offset_y / 32) * ((sbw > 64u ? sbw : 64u) / 64) + (offset_x / 64);
+}
 
 /* The hardware blend of each GS blend equation, indexed by
  * ((A * 3 + B) * 3 + C) * 3 + D of the ALPHA register */

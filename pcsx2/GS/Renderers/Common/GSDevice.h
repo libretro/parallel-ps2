@@ -82,38 +82,14 @@ enum class ShaderInterlace
 	Count
 };
 
-static inline bool HasDepthOutput(ShaderConvert shader)
-{
-	switch (shader)
-	{
-		case ShaderConvert::RGBA8_TO_FLOAT32:
-		case ShaderConvert::RGBA8_TO_FLOAT24:
-		case ShaderConvert::RGBA8_TO_FLOAT16:
-		case ShaderConvert::RGB5A1_TO_FLOAT16:
-		case ShaderConvert::RGBA8_TO_FLOAT32_BILN:
-		case ShaderConvert::RGBA8_TO_FLOAT24_BILN:
-		case ShaderConvert::RGBA8_TO_FLOAT16_BILN:
-		case ShaderConvert::RGB5A1_TO_FLOAT16_BILN:
-		case ShaderConvert::FLOAT32_TO_FLOAT24:
-		case ShaderConvert::DEPTH_COPY:
-			return true;
-		default:
-			break;
-	}
-	return false;
-}
+static_assert(static_cast<int>(ShaderConvert::Count) == GS_SHADER_CONVERT_COUNT
+	&& static_cast<int>(ShaderConvert::DEPTH_COPY) == GS_SHADER_CONVERT_DEPTH_COPY
+	&& static_cast<int>(ShaderConvert::RGBA_TO_8I) == GS_SHADER_CONVERT_RGBA_TO_8I
+	&& static_cast<int>(ShaderConvert::YUV) == GS_SHADER_CONVERT_YUV, "ShaderConvert is gs_shader_convert");
+static_assert(static_cast<int>(ShaderInterlace::Count) == GS_SHADER_INTERLACE_COUNT, "ShaderInterlace");
 
-static inline u32 ShaderConvertWriteMask(ShaderConvert shader)
-{
-	switch (shader)
-	{
-		case ShaderConvert::FLOAT32_TO_RGB8:
-			return 0x7;
-		default:
-			break;
-	}
-	return 0xf;
-}
+static inline bool HasDepthOutput(ShaderConvert shader) { return gs_shader_convert_has_depth_output(static_cast<int>(shader)); }
+static inline u32 ShaderConvertWriteMask(ShaderConvert shader) { return gs_shader_convert_write_mask(static_cast<int>(shader)); }
 
 enum class PresentShader
 {
@@ -184,24 +160,6 @@ struct alignas(16) MergeConstantBuffer
 	u32 EMODC;
 	u32 DOFFSET;
 	float ScaleFactor;
-};
-
-/* A local-memory move worked out on the targets (ps_move_texels), packed
- * so that it fits every backend's utility constants, 32 bytes on D3D11.
- * Pairs are x | y << 16, in texels of the staging texture the move reads:
- * the old words of the destination block, the source block, and the
- * remap, one 32-bit entry per destination element. flags is
- * scale | nibbles << 8 | entries << 16 | has_old << 24: the integer
- * scale, the nibbles of a destination element, the elements a word holds
- * (8 / nibbles), and whether the words keep the bits the move leaves. */
-struct alignas(16) MoveTexelsConstants
-{
-	u32 dst_origin;
-	u32 old_base;
-	u32 src_base;
-	u32 remap_base;
-	u32 flags;
-	u32 pad[3];
 };
 
 struct alignas(16) InterlaceConstantBuffer
@@ -323,15 +281,6 @@ struct alignas(16) GSHWDrawConfig : gs_hw_draw_config
 };
 static_assert(sizeof(GSHWDrawConfig) == sizeof(gs_hw_draw_config), "GSHWDrawConfig is gs_hw_draw_config");
 
-/* A batched stretch's rect (GSDevice::MultiStretchRect) */
-struct gs_multi_stretch_rect
-{
-	GSVector4 src_rect;
-	GSVector4 dst_rect;
-	GSTexture* src;
-	bool linear;
-	GSHWDrawConfig::ColorMaskSelector wmask; // 0xf for all channels by default
-};
 
 /* The C++ view of a render device (gs_device, GSDeviceBase.h): what every
  * backend has and does the same is C, and a backend derives from this.
@@ -376,7 +325,7 @@ public:
 	// clang-format on
 
 protected:
-	static constexpr int NUM_INTERLACE_SHADERS = 5;
+	static constexpr int NUM_INTERLACE_SHADERS = GS_SHADER_INTERLACE_COUNT;
 	static constexpr u32 EXPAND_BUFFER_SIZE = GS_DEVICE_EXPAND_BUFFER_SIZE;
 	static constexpr u32 RETIRED_PRESENT_MIN_AGE = GS_RETIRED_PRESENT_MIN_AGE;
 
@@ -492,7 +441,7 @@ public:
 	/// The page of a 32-bit source that a page-aligned pixel offset lands on.
 	static u32 IndexedConversionPageOffset(u32 offsetX, u32 offsetY, u32 SBW)
 	{
-		return (offsetY / 32) * (pcsx2_max_u(SBW, 64u) / 64) + (offsetX / 64);
+		return gs_indexed_conversion_page_offset(offsetX, offsetY, SBW);
 	}
 
 	/// Uses box downsampling to resize a texture.

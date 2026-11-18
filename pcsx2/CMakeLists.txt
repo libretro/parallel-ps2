@@ -482,7 +482,7 @@ set(pcsx2GSHeaders
 if(USE_OPENGL)
 	list(APPEND pcsx2GSSources
 		GS/Renderers/OpenGL/GLState.c
-		GS/Renderers/OpenGL/GSDeviceOGL.cpp
+		GS/Renderers/OpenGL/GSDeviceOGL.c
 		GS/Renderers/OpenGL/GSTextureOGL.c
 		GS/Renderers/OpenGL/GLContext.c
 		GS/Renderers/OpenGL/GLProgram.c

@@ -822,6 +822,32 @@ const char* gs_shader_convert_name(int shader)
 	return names[shader];
 }
 
+bool gs_shader_convert_has_depth_output(int shader)
+{
+	switch (shader)
+	{
+		case GS_SHADER_CONVERT_RGBA8_TO_FLOAT32:
+		case GS_SHADER_CONVERT_RGBA8_TO_FLOAT24:
+		case GS_SHADER_CONVERT_RGBA8_TO_FLOAT16:
+		case GS_SHADER_CONVERT_RGB5A1_TO_FLOAT16:
+		case GS_SHADER_CONVERT_RGBA8_TO_FLOAT32_BILN:
+		case GS_SHADER_CONVERT_RGBA8_TO_FLOAT24_BILN:
+		case GS_SHADER_CONVERT_RGBA8_TO_FLOAT16_BILN:
+		case GS_SHADER_CONVERT_RGB5A1_TO_FLOAT16_BILN:
+		case GS_SHADER_CONVERT_FLOAT32_TO_FLOAT24:
+		case GS_SHADER_CONVERT_DEPTH_COPY:
+			return true;
+		default:
+			break;
+	}
+	return false;
+}
+
+u32 gs_shader_convert_write_mask(int shader)
+{
+	return shader == GS_SHADER_CONVERT_FLOAT32_TO_RGB8 ? 0x7u : 0xFu;
+}
+
 /* GSDevice::BlendFactor and BlendOp, and HWBlendFlags */
 enum
 {

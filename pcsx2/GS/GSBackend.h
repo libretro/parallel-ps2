@@ -50,6 +50,9 @@ extern EmuGSOptions GSConfig;
 extern int m_disp_fb_sprite_blits;
 bool GSreopen(bool recreate_device, bool recreate_renderer, const EmuGSOptions* old_config);
 
+/* The GS draw being made (GSState::s_n), for the backends' logs */
+int gs_state_draw_number(void);
+
 /* The device on the frontend's context (Renderers/Common/GSDevice.cpp):
  * none for paraLLEl-GS, which brings its own. False if none came up. */
 bool gs_device_open(enum retro_hw_context_type context, GSRendererType renderer);

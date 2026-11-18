@@ -16,8 +16,9 @@
 #
 # Runs the built core: pcsx2_libretro.so/.dll/.dylib at the top of the
 # tree, or LRPS2_CORE. Without one, or without an OpenGL context, the
-# harness is still compiled and the run is skipped; without a Vulkan
-# device the pictures are not compared. CFLAGS reaches the harnesses.
+# harness is still compiled and the run is skipped (a failure with
+# GN_REQUIRE_GL set, as CI sets it); without a Vulkan device the pictures
+# are not compared. CFLAGS reaches the harnesses.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
@@ -44,6 +45,10 @@ ${CC:-cc} -std=c89 -pedantic -Wall -Wno-long-long -O2 \
 echo "built: glnegotiate, vknegotiate, swdraw"
 
 if [ ! -f "$CORE" ]; then
+	if [ -n "$GN_REQUIRE_GL" ]; then
+		echo "FAIL: no core at $CORE, and GN_REQUIRE_GL is set"
+		exit 1
+	fi
 	echo "skip: no core at $CORE (build it, or set LRPS2_CORE)"
 	exit 0
 fi

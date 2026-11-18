@@ -10,6 +10,7 @@
  *
  *     <name> = ... CreateRenderTarget(..., GSTexture::Format::ColorClip ...);
  *
+ * (or in C, gs_device_create_render_target(..., GS_TEX_COLOR_CLIP ...))
  * must be the check of <name> for null. The draw needs a live GPU device
  * on every backend, so this reads the sources.
  *
@@ -76,7 +77,8 @@ static int audit(const char *path, int *sites)
 			}
 			pending = 0;
 		}
-		if (strstr(p, "CreateRenderTarget(") && strstr(p, "Format::ColorClip")
+		if (((strstr(p, "CreateRenderTarget(") && strstr(p, "Format::ColorClip"))
+			|| (strstr(p, "gs_device_create_render_target(") && strstr(p, "GS_TEX_COLOR_CLIP")))
 		 && assigned_name(p, name, sizeof(name)))
 		{
 			pending = 1;
