@@ -22,6 +22,7 @@
 #include "GLProgram.h"
 #include "GLShaderCache.h"
 #include "GLShaderSource.h"
+#include "GLPipeline.h"
 #include "GS/Renderers/Common/GSString.h"
 #include "GS/Renderers/Common/GSKeyHash.h"
 #include "GS/Renderers/Common/GSFlatMap.h"
@@ -40,97 +41,6 @@ namespace GLLoader
 	extern bool buggy_pbo;
 	extern bool disable_download_pbo;
 } // namespace GLLoader
-
-class GSDepthStencilOGL
-{
-	bool m_depth_enable;
-	GLenum m_depth_func;
-	bool m_depth_mask;
-	// Note front face and back might be split but it seems they have same parameter configuration
-	bool m_stencil_enable;
-	GLenum m_stencil_func;
-	GLenum m_stencil_spass_dpass_op;
-
-public:
-	GSDepthStencilOGL()
-		: m_depth_enable(false)
-		, m_depth_func(GL_ALWAYS)
-		, m_depth_mask(0)
-		, m_stencil_enable(false)
-		, m_stencil_func(0)
-		, m_stencil_spass_dpass_op(GL_KEEP)
-	{
-	}
-
-	void EnableDepth() { m_depth_enable = true; }
-	void EnableStencil() { m_stencil_enable = true; }
-
-	void SetDepth(GLenum func, bool mask)
-	{
-		m_depth_func = func;
-		m_depth_mask = mask;
-	}
-	void SetStencil(GLenum func, GLenum pass)
-	{
-		m_stencil_func = func;
-		m_stencil_spass_dpass_op = pass;
-	}
-
-	void SetupDepth()
-	{
-		if (g_gl_state.depth != m_depth_enable)
-		{
-			g_gl_state.depth = m_depth_enable;
-			if (m_depth_enable)
-				glEnable(GL_DEPTH_TEST);
-			else
-				glDisable(GL_DEPTH_TEST);
-		}
-
-		if (m_depth_enable)
-		{
-			if (g_gl_state.depth_func != m_depth_func)
-			{
-				g_gl_state.depth_func = m_depth_func;
-				glDepthFunc(m_depth_func);
-			}
-			if (g_gl_state.depth_mask != m_depth_mask)
-			{
-				g_gl_state.depth_mask = m_depth_mask;
-				glDepthMask((GLboolean)m_depth_mask);
-			}
-		}
-	}
-
-	void SetupStencil()
-	{
-		if (g_gl_state.stencil != m_stencil_enable)
-		{
-			g_gl_state.stencil = m_stencil_enable;
-			if (m_stencil_enable)
-				glEnable(GL_STENCIL_TEST);
-			else
-				glDisable(GL_STENCIL_TEST);
-		}
-
-		if (m_stencil_enable)
-		{
-			// Note: here the mask control which bitplane is considered by the operation
-			if (g_gl_state.stencil_func != m_stencil_func)
-			{
-				g_gl_state.stencil_func = m_stencil_func;
-				glStencilFunc(m_stencil_func, 1, 1);
-			}
-			if (g_gl_state.stencil_pass != m_stencil_spass_dpass_op)
-			{
-				g_gl_state.stencil_pass = m_stencil_spass_dpass_op;
-				glStencilOp(GL_KEEP, GL_KEEP, m_stencil_spass_dpass_op);
-			}
-		}
-	}
-
-	bool IsMaskEnable() { return m_depth_mask != GL_FALSE; }
-};
 
 class GSDeviceOGL final : public GSDevice
 {
@@ -198,8 +108,8 @@ private:
 		GLProgram ps[static_cast<int>(ShaderConvert::Count)]; // program object
 		GLuint ln = 0; // sampler object
 		GLuint pt = 0; // sampler object
-		GSDepthStencilOGL* dss = nullptr;
-		GSDepthStencilOGL* dss_write = nullptr;
+		gs_gl_depth_stencil dss;
+		gs_gl_depth_stencil dss_write;
 	} m_convert;
 
 	GLProgram m_present[static_cast<int>(PresentShader::Count)];
@@ -210,12 +120,12 @@ private:
 
 	struct
 	{
-		GSDepthStencilOGL* dss = nullptr;
+		gs_gl_depth_stencil dss;
 		GLProgram primid_ps[4];
 	} m_date;
 
 	GLuint m_ps_ss[1 << 8];
-	GSDepthStencilOGL* m_om_dss[1 << 5] = {};
+	gs_gl_depth_stencil m_om_dss[1 << 5];
 	/* The draw programs by selector, compared bit for bit: a pool made
 	 * with the device, so a lookup reads one slot and a new selector's
 	 * program is never allocated as the game draws. */
@@ -291,7 +201,6 @@ public:
 			glFinish();
 	}
 	__fi bool IsColClipFloat() const { return m_colclip_float; }
-	GLenum GLBlendFactor(u8 factor) const;
 	__fi u32 GetFBORead() const { return m_fbo_read; }
 	__fi u32 GetFBOWrite() const { return m_fbo_write; }
 	/* The PBO uploads go through, or NULL when there is none */
@@ -348,11 +257,14 @@ public:
 	void PSSetSamplerState(GLuint ss);
 	void ClearSamplerCache();
 
-	void OMSetDepthStencilState(GSDepthStencilOGL* dss);
+	void OMSetDepthStencilState(const gs_gl_depth_stencil* dss) { gs_gl_depth_stencil_apply(dss); }
 	void OMSetBlendState(bool enable = false, GLenum src_factor = GL_ONE, GLenum dst_factor = GL_ZERO, GLenum op = GL_FUNC_ADD,
-		GLenum src_factor_alpha = GL_ONE, GLenum dst_factor_alpha = GL_ZERO, bool is_constant = false, u8 constant = 0);
+		GLenum src_factor_alpha = GL_ONE, GLenum dst_factor_alpha = GL_ZERO, bool is_constant = false, u8 constant = 0)
+	{
+		gs_gl_set_blend(enable, src_factor, dst_factor, op, src_factor_alpha, dst_factor_alpha, is_constant, constant);
+	}
 	void OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVector4i* scissor = nullptr);
-	void OMSetColorMaskState(OMColorMaskSelector sel = OMColorMaskSelector());
+	void OMSetColorMaskState(OMColorMaskSelector sel = OMColorMaskSelector()) { gs_gl_set_color_mask(sel); }
 	void OMUnbindTexture(GSTextureOGL* tex);
 
 	void SetViewport(const GSVector2i& viewport);
@@ -368,8 +280,7 @@ public:
 	/* The sources of the program being made, kept at the largest. */
 	gs_str_t m_src_vs;
 	gs_str_t m_src_ps;
-	GLuint CreateSampler(PSSamplerSelector sel);
-	GSDepthStencilOGL* CreateDepthStencil(OMDepthStencilSelector dssel);
+	GLuint CreateSampler(PSSamplerSelector sel) { return gs_gl_sampler_create(sel, GSConfig.MaxAnisotropy); }
 
 	void SetupPipeline(const ProgramSelector& psel);
 	void SetupSampler(PSSamplerSelector ssel);

@@ -595,10 +595,11 @@ bool GSDeviceOGL::Create()
 		bilinear.biln = true;
 		m_convert.ln = GetSamplerID(bilinear);
 
-		m_convert.dss = new GSDepthStencilOGL();
-		m_convert.dss_write = new GSDepthStencilOGL();
-		m_convert.dss_write->EnableDepth();
-		m_convert.dss_write->SetDepth(GL_ALWAYS, true);
+		gs_gl_depth_stencil_init(&m_convert.dss);
+		gs_gl_depth_stencil_init(&m_convert.dss_write);
+		m_convert.dss_write.depth_enable = true;
+		m_convert.dss_write.depth_func   = GL_ALWAYS;
+		m_convert.dss_write.depth_mask   = true;
 	}
 
 	// ****************************************************************
@@ -702,9 +703,10 @@ bool GSDeviceOGL::Create()
 	// DATE
 	// ****************************************************************
 	{
-		m_date.dss = new GSDepthStencilOGL();
-		m_date.dss->EnableStencil();
-		m_date.dss->SetStencil(GL_ALWAYS, GL_REPLACE);
+		gs_gl_depth_stencil_init(&m_date.dss);
+		m_date.dss.stencil_enable = true;
+		m_date.dss.stencil_func   = GL_ALWAYS;
+		m_date.dss.stencil_op     = GL_REPLACE;
 
 		for (unsigned i = 0; i < C89_ARRAY_SIZE(m_date.primid_ps); i++)
 		{
@@ -774,7 +776,7 @@ bool GSDeviceOGL::CreateTextureFX()
 	// to the mask.
 	glStencilMask(0xFF);
 	for (u32 key = 0; key < C89_ARRAY_SIZE(m_om_dss); key++)
-		m_om_dss[key] = CreateDepthStencil(OMDepthStencilSelector(key));
+		gs_gl_depth_stencil_from(&m_om_dss[key], OMDepthStencilSelector(key));
 
 	/* Every dynamic program, as the game boots: then no draw waits for a
 	 * program, and a new selector's own is compiled by the driver's
@@ -843,23 +845,18 @@ void GSDeviceOGL::DestroyResources()
 	m_last_program = nullptr;
 	gs_gl_program_cache_free(&m_programs);
 
-	for (GSDepthStencilOGL* ds : m_om_dss)
-		delete ds;
 
 	if (m_ps_ss[0] != 0)
 		glDeleteSamplers(C89_ARRAY_SIZE(m_ps_ss), m_ps_ss);
 
 	for (GLProgram& prog : m_date.primid_ps)
 		prog.Destroy();
-	delete m_date.dss;
 
 	for (GLProgram& prog : m_present)
 		prog.Destroy();
 
 	for (GLProgram& prog : m_convert.ps)
 		prog.Destroy();
-	delete m_convert.dss;
-	delete m_convert.dss_write;
 
 	for (GLProgram& prog : m_interlace.ps)
 		prog.Destroy();
@@ -1118,82 +1115,9 @@ GSDownloadTexture* GSDeviceOGL::CreateDownloadTexture(u32 width, u32 height, GST
 	return static_cast<GSDownloadTexture*>(gs_download_texture_gl_create(width, height, static_cast<unsigned>(format)));
 }
 
-GLuint GSDeviceOGL::CreateSampler(PSSamplerSelector sel)
-{
-	GLuint sampler;
-	glCreateSamplers(1, &sampler);
-
-	glSamplerParameteri(sampler, GL_TEXTURE_MAG_FILTER, sel.IsMagFilterLinear() ? GL_LINEAR : GL_NEAREST);
-	if (!sel.UseMipmapFiltering())
-	{
-		glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, sel.IsMinFilterLinear() ? GL_LINEAR : GL_NEAREST);
-	}
-	else
-	{
-		if (sel.IsMipFilterLinear())
-			glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, sel.IsMinFilterLinear() ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR);
-		else
-			glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, sel.IsMinFilterLinear() ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST);
-	}
-
-	glSamplerParameterf(sampler, GL_TEXTURE_MIN_LOD, -1000.0f);
-	glSamplerParameterf(sampler, GL_TEXTURE_MAX_LOD, sel.lodclamp ? 0.25f : 1000.0f);
-
-	if (sel.tau)
-		glSamplerParameteri(sampler, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	else
-		glSamplerParameteri(sampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	if (sel.tav)
-		glSamplerParameteri(sampler, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	else
-		glSamplerParameteri(sampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-	glSamplerParameteri(sampler, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-
-	const int anisotropy = GSConfig.MaxAnisotropy;
-	if (anisotropy > 1 && sel.aniso)
-	{
-		if (GLAD_GL_ARB_texture_filter_anisotropic)
-			glSamplerParameterf(sampler, GL_TEXTURE_MAX_ANISOTROPY, static_cast<float>(anisotropy));
-		else if (GLAD_GL_EXT_texture_filter_anisotropic)
-			glSamplerParameterf(sampler, GL_TEXTURE_MAX_ANISOTROPY_EXT, static_cast<float>(anisotropy));
-	}
-
-	return sampler;
-}
-
 GLuint GSDeviceOGL::GetSamplerID(PSSamplerSelector ssel)
 {
 	return m_ps_ss[ssel.key];
-}
-
-GSDepthStencilOGL* GSDeviceOGL::CreateDepthStencil(OMDepthStencilSelector dssel)
-{
-	GSDepthStencilOGL* dss = new GSDepthStencilOGL();
-
-	if (dssel.date)
-	{
-		dss->EnableStencil();
-		if (dssel.date_one)
-			dss->SetStencil(GL_EQUAL, GL_ZERO);
-		else
-			dss->SetStencil(GL_EQUAL, GL_KEEP);
-	}
-
-	if (dssel.ztst != ZTST_ALWAYS || dssel.zwe)
-	{
-		static const GLenum ztst[] =
-		{
-			GL_NEVER,
-			GL_ALWAYS,
-			GL_GEQUAL,
-			GL_GREATER
-		};
-		dss->EnableDepth();
-		dss->SetDepth(ztst[dssel.ztst], dssel.zwe);
-	}
-
-	return dss;
 }
 
 GSTexture* GSDeviceOGL::InitPrimDateTexture(GSTexture* rt, const GSVector4i& area, SetDATM datm)
@@ -1330,9 +1254,9 @@ void GSDeviceOGL::StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture
 	// ************************************
 
 	if (draw_in_depth)
-		OMSetDepthStencilState(m_convert.dss_write);
+		OMSetDepthStencilState(&m_convert.dss_write);
 	else
-		OMSetDepthStencilState(m_convert.dss);
+		OMSetDepthStencilState(&m_convert.dss);
 
 	OMSetBlendState(alpha_blend, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_FUNC_ADD);
 	OMSetColorMaskState(cms);
@@ -1370,7 +1294,7 @@ void GSDeviceOGL::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture
 	prog.Uniform2fv(6, &cb.SourceResolution.x);
 	prog.Uniform2fv(7, &cb.RcpSourceResolution.x);
 
-	OMSetDepthStencilState(m_convert.dss);
+	OMSetDepthStencilState(&m_convert.dss);
 	OMSetBlendState(false);
 	OMSetColorMaskState();
 
@@ -1400,7 +1324,7 @@ void GSDeviceOGL::UpdateCLUTTexture(GSTexture* sTex, float sScale, float sSample
 	prog.Uniform1f(1, sScale);
 	prog.Uniform1f(2, sSample);
 
-	OMSetDepthStencilState(m_convert.dss);
+	OMSetDepthStencilState(&m_convert.dss);
 	OMSetBlendState(false);
 	OMSetColorMaskState();
 	OMSetRenderTargets(dTex, nullptr);
@@ -1424,7 +1348,7 @@ void GSDeviceOGL::ConvertToIndexedTexture(GSTexture* sTex, float sScale, u32 off
 	prog.Uniform1f(2, sScale);
 	prog.Uniform1ui(3, IndexedConversionPageOffset(offsetX, offsetY, SBW));
 
-	OMSetDepthStencilState(m_convert.dss);
+	OMSetDepthStencilState(&m_convert.dss);
 	OMSetBlendState(false);
 	OMSetColorMaskState();
 	OMSetRenderTargets(dTex, nullptr);
@@ -1447,7 +1371,7 @@ void GSDeviceOGL::FilteredDownsampleTexture(GSTexture* sTex, GSTexture* dTex, u3
 	prog.Uniform1i(1, downsample_factor);
 	prog.Uniform1f(2, static_cast<float>(downsample_factor * downsample_factor));
 
-	OMSetDepthStencilState(m_convert.dss);
+	OMSetDepthStencilState(&m_convert.dss);
 	OMSetBlendState(false);
 	OMSetColorMaskState();
 	OMSetRenderTargets(dTex, nullptr);
@@ -1468,7 +1392,7 @@ void GSDeviceOGL::MoveTexels(GSTexture* sTex, GSTexture* dTex, const GSVector4& 
 	prog.Uniform4ui(0, cb.dst_origin, cb.old_base, cb.src_base, cb.remap_base);
 	prog.Uniform4ui(1, cb.flags, 0, 0, 0);
 
-	OMSetDepthStencilState(m_convert.dss);
+	OMSetDepthStencilState(&m_convert.dss);
 	OMSetBlendState(false);
 	OMSetColorMaskState();
 	OMSetRenderTargets(dTex, nullptr);
@@ -1489,7 +1413,7 @@ void GSDeviceOGL::VRRange(GSTexture* sTex, GSTexture* dTex, const GSVector4& dRe
 	prog.Uniform4iv(1, cb.params.v);
 	prog.Uniform4fv(2, cb.fparams.v);
 
-	OMSetDepthStencilState(m_convert.dss);
+	OMSetDepthStencilState(&m_convert.dss);
 	OMSetBlendState(false);
 	OMSetColorMaskState();
 	OMSetRenderTargets(dTex, NULL);
@@ -1512,7 +1436,7 @@ void GSDeviceOGL::VREye(GSTexture* sTex, GSTexture* dTex, const GSVector4& dRect
 	prog.Uniform4fv(3, cb.screen.v);
 	prog.Uniform4fv(4, cb.depth.v);
 
-	OMSetDepthStencilState(m_convert.dss);
+	OMSetDepthStencilState(&m_convert.dss);
 	OMSetBlendState(false);
 	OMSetColorMaskState();
 	OMSetRenderTargets(dTex, NULL);
@@ -1557,7 +1481,7 @@ void GSDeviceOGL::DrawMultiStretchRects(
 {
 	IASetVAO(m_vi.vao);
 	IASetPrimitiveTopology(GL_TRIANGLE_STRIP);
-	OMSetDepthStencilState(HasDepthOutput(shader) ? m_convert.dss_write : m_convert.dss);
+	OMSetDepthStencilState(HasDepthOutput(shader) ? &m_convert.dss_write : &m_convert.dss);
 	OMSetBlendState(false);
 	OMSetColorMaskState();
 	if (!dTex->IsDepthStencil())
@@ -1726,7 +1650,7 @@ void GSDeviceOGL::SetupDATE(GSTexture* rt, GSTexture* ds, const GSVertexPT1* ver
 
 	// om
 
-	OMSetDepthStencilState(m_date.dss);
+	OMSetDepthStencilState(&m_date.dss);
 	OMSetBlendState(false);
 	OMSetColorMaskState();
 
@@ -1847,22 +1771,6 @@ void GSDeviceOGL::OMSetFBO(GLuint fbo)
 	}
 }
 
-void GSDeviceOGL::OMSetDepthStencilState(GSDepthStencilOGL* dss)
-{
-	dss->SetupDepth();
-	dss->SetupStencil();
-}
-
-void GSDeviceOGL::OMSetColorMaskState(OMColorMaskSelector sel)
-{
-	if (sel.wrgba != g_gl_state.wrgba)
-	{
-		g_gl_state.wrgba = sel.wrgba;
-
-		glColorMaski(0, sel.wr, sel.wg, sel.wb, sel.wa);
-	}
-}
-
 /* What the C textures ask of the device (GLDevice.h) */
 extern "C" {
 void gs_gl_device_commit_clear(gs_texture* t, int use_write_fbo)
@@ -1892,50 +1800,6 @@ void GSDeviceOGL::OMUnbindTexture(GSTextureOGL* tex)
 		OMAttachRt();
 	if (g_gl_state.ds == tex)
 		OMAttachDs();
-}
-
-void GSDeviceOGL::OMSetBlendState(bool enable, GLenum src_factor, GLenum dst_factor, GLenum op,
-	GLenum src_factor_alpha, GLenum dst_factor_alpha, bool is_constant, u8 constant)
-{
-	if (enable)
-	{
-		if (!g_gl_state.blend)
-		{
-			g_gl_state.blend = true;
-			glEnable(GL_BLEND);
-		}
-
-		if (is_constant && g_gl_state.bf != constant)
-		{
-			g_gl_state.bf = constant;
-			const float bf = static_cast<float>(constant) / 128.0f;
-			glBlendColor(bf, bf, bf, bf);
-		}
-
-		if (g_gl_state.eq_RGB != op)
-		{
-			g_gl_state.eq_RGB = op;
-			glBlendEquationSeparate(op, GL_FUNC_ADD);
-		}
-
-		if (g_gl_state.f_sRGB != src_factor || g_gl_state.f_dRGB != dst_factor ||
-			g_gl_state.f_sA != src_factor_alpha || g_gl_state.f_dA != dst_factor_alpha)
-		{
-			g_gl_state.f_sRGB = src_factor;
-			g_gl_state.f_dRGB = dst_factor;
-			g_gl_state.f_sA   = src_factor_alpha;
-			g_gl_state.f_dA   = dst_factor_alpha;
-			glBlendFuncSeparate(src_factor, dst_factor, src_factor_alpha, dst_factor_alpha);
-		}
-	}
-	else
-	{
-		if (g_gl_state.blend)
-		{
-			g_gl_state.blend = false;
-			glDisable(GL_BLEND);
-		}
-	}
 }
 
 void GSDeviceOGL::OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVector4i* scissor)
@@ -2065,41 +1929,7 @@ GLuint GSDeviceOGL::GetPaletteSamplerID()
 
 void GSDeviceOGL::SetupOM(OMDepthStencilSelector dssel)
 {
-	OMSetDepthStencilState(m_om_dss[dssel.key]);
-}
-
-// clang-format off
-static constexpr GLenum s_gl_blend_factors[16] = {
-	GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR, GL_DST_COLOR, GL_ONE_MINUS_DST_COLOR,
-	GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-	GL_DST_ALPHA, GL_ONE_MINUS_DST_ALPHA, GL_SRC1_ALPHA, GL_ONE_MINUS_SRC1_ALPHA,
-	GL_CONSTANT_COLOR, GL_ONE_MINUS_CONSTANT_COLOR, GL_ONE, GL_ZERO
-};
-static constexpr GLenum s_gl_blend_ops[3] = {
-		GL_FUNC_ADD, GL_FUNC_SUBTRACT, GL_FUNC_REVERSE_SUBTRACT
-};
-// clang-format on
-
-// The renderer keeps SRC1 factors off a device without dual source blending
-// (EmulateBlending); one that slips through would be GL_INVALID_ENUM and a
-// blend silently left as it was. It is logged once and takes the SRC
-// factor, which at least lands in the right range.
-GLenum GSDeviceOGL::GLBlendFactor(u8 factor) const
-{
-	if (!m_features.dual_source_blend && GSDevice::IsDualSourceBlendFactor(factor))
-	{
-		static bool s_logged = false;
-		if (!s_logged)
-		{
-			s_logged = true;
-			log_cb(RETRO_LOG_ERROR, "A dual source blend factor reached a device without dual source blending.\n");
-		}
-		factor = (factor == GSDevice::SRC1_COLOR)     ? GSDevice::SRC_COLOR :
-		         (factor == GSDevice::INV_SRC1_COLOR) ? GSDevice::INV_SRC_COLOR :
-		         (factor == GSDevice::SRC1_ALPHA)     ? GSDevice::SRC_ALPHA :
-		                                                 GSDevice::INV_SRC_ALPHA;
-	}
-	return s_gl_blend_factors[factor];
+	OMSetDepthStencilState(&m_om_dss[dssel.key]);
 }
 
 void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
@@ -2313,15 +2143,7 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 
 	if (config.blend.IsEffective(config.colormask))
 	{
-		OMSetBlendState(config.blend.enable,
-				GLBlendFactor(config.blend.src_factor),
-				GLBlendFactor(config.blend.dst_factor),
-				s_gl_blend_ops[config.blend.op],
-				GLBlendFactor(config.blend.src_factor_alpha),
-				GLBlendFactor(config.blend.dst_factor_alpha),
-				config.blend.constant_enable,
-				config.blend.constant);
-
+		gs_gl_set_hw_blend(&config.blend, m_features.dual_source_blend);
 	}
 	else
 	{
@@ -2354,10 +2176,7 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 	{
 		if (config.blend.IsEffective(config.colormask))
 		{
-			OMSetBlendState(config.blend_multi_pass.blend.enable, GLBlendFactor(config.blend_multi_pass.blend.src_factor),
-				GLBlendFactor(config.blend_multi_pass.blend.dst_factor), s_gl_blend_ops[config.blend_multi_pass.blend.op],
-				GLBlendFactor(config.blend_multi_pass.blend.src_factor_alpha), GLBlendFactor(config.blend_multi_pass.blend.dst_factor_alpha),
-				config.blend_multi_pass.blend.constant_enable, config.blend_multi_pass.blend.constant);
+			gs_gl_set_hw_blend(&config.blend_multi_pass.blend, m_features.dual_source_blend);
 		}
 		else
 		{
@@ -2384,10 +2203,7 @@ void GSDeviceOGL::RenderHW(GSHWDrawConfig& config)
 		OMSetColorMaskState(config.alpha_second_pass.colormask);
 		if (config.blend.IsEffective(config.alpha_second_pass.colormask))
 		{
-			OMSetBlendState(config.blend.enable, GLBlendFactor(config.blend.src_factor),
-				GLBlendFactor(config.blend.dst_factor), s_gl_blend_ops[config.blend.op],
-				GLBlendFactor(config.blend.src_factor_alpha), GLBlendFactor(config.blend.dst_factor_alpha),
-				config.blend.constant_enable, config.blend.constant);
+			gs_gl_set_hw_blend(&config.blend, m_features.dual_source_blend);
 		}
 		else
 		{

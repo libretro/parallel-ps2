@@ -11,7 +11,7 @@
 #include "common/Pcsx2Defs.h"
 #include "glad.h"
 #include "GS/Renderers/Common/GSString.h"
-#include "GS/Renderers/Common/GSHWSelectors.h"
+#include "GS/Renderers/Common/GSHWDrawConfig.h"
 
 #ifdef __cplusplus
 extern "C" {
