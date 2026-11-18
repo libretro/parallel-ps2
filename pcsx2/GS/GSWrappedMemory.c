@@ -196,10 +196,11 @@ void GSFreeWrappedMemory(void* ptr, size_t size, size_t repeat)
 
 static int s_shm_fd = -1;
 
-/* An unnamed shared memory file: a memfd where the kernel has one (Bionic
- * has no shm_open, and there is no /dev/shm on Android; the libc wrapper
- * is declared from API 30 and the syscall is in every kernel since Android
- * 8; 1 is MFD_CLOEXEC), else a POSIX one unlinked the moment it is open */
+/* An unnamed shared memory file: a memfd where the kernel has one (the
+ * libc wrapper is declared from Android API 30, the syscall is in every
+ * kernel since Android 8; 1 is MFD_CLOEXEC), else a POSIX one unlinked
+ * the moment it is open. Android has only the memfd: Bionic declares no
+ * shm_open below API 26 and there is no /dev/shm. */
 static int gs_wrapped_file(void)
 {
 	int fd;
@@ -207,7 +208,11 @@ static int gs_wrapped_file(void)
 	fd = (int)syscall(__NR_memfd_create, "GS.mem", 1U);
 	if (fd != -1 || errno != ENOSYS)
 		return fd;
+#elif defined(__ANDROID__)
+	fd    = -1;
+	errno = ENOSYS;
 #endif
+#ifndef __ANDROID__
 	{
 		/* (a name of this process's own: another instance holds its own) */
 		char name[32];
@@ -222,6 +227,7 @@ static int gs_wrapped_file(void)
 		if (fd != -1)
 			shm_unlink(name);
 	}
+#endif
 	return fd;
 }
 
