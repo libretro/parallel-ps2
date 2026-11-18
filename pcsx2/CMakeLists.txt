@@ -438,6 +438,7 @@ set(pcsx2GSHeaders
 	GS/GSVector8i.h
 	GS/MultiISA.h
 	GS/Renderers/Common/GSDevice.h
+	GS/Renderers/Common/GSHWSelectors.h
 	GS/Renderers/Common/GSDirtyRect.h
 	GS/Renderers/Common/GSFastList.h
 	GS/Renderers/Common/GSKeyHash.h
@@ -487,6 +488,7 @@ if(USE_OPENGL)
 		GS/Renderers/OpenGL/GLProgram.c
 		GS/Renderers/OpenGL/GLProgramCache.c
 		GS/Renderers/OpenGL/GLShaderCache.c
+		GS/Renderers/OpenGL/GLShaderSource.c
 		GS/Renderers/OpenGL/GLStreamBuffer.c
 		GS/Renderers/OpenGL/GLTextureFormat.c
 		GS/Renderers/OpenGL/GLVertexInput.c
@@ -500,6 +502,7 @@ if(USE_OPENGL)
 		GS/Renderers/OpenGL/GLProgram.h
 		GS/Renderers/OpenGL/GLProgramCache.h
 		GS/Renderers/OpenGL/GLShaderCache.h
+		GS/Renderers/OpenGL/GLShaderSource.h
 		GS/Renderers/OpenGL/GLStreamBuffer.h
 		GS/Renderers/OpenGL/GLTextureFormat.h
 		GS/Renderers/OpenGL/GLVertexInput.h

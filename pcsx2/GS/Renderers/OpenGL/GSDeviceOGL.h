@@ -21,6 +21,7 @@
 #include "GLProgramCache.h"
 #include "GLProgram.h"
 #include "GLShaderCache.h"
+#include "GLShaderSource.h"
 #include "GS/Renderers/Common/GSString.h"
 #include "GS/Renderers/Common/GSKeyHash.h"
 #include "GS/Renderers/Common/GSFlatMap.h"
@@ -361,9 +362,7 @@ public:
 	/* A shader's source into out: the GLSL header for entry and type,
 	 * the macros, then the shader file's code. */
 	bool GetShaderSource(gs_str_t* out, const char* entry, GLenum type, const char* glsl_h_code, const char* macro = nullptr);
-	bool GenGlslHeader(gs_str_t* out, const char* entry, GLenum type, const char* macro);
-	bool GetVSSource(gs_str_t* out, VSSelector sel);
-	bool GetPSSource(gs_str_t* out, const PSSelector& sel);
+	gs_gl_shader_caps ShaderCaps() const;
 	/* prog from the sources vs and ps, through the program cache. */
 	bool GetProgram(GLProgram* prog, const gs_str_t* vs, const gs_str_t* ps);
 	/* The sources of the program being made, kept at the largest. */

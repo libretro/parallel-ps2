@@ -513,6 +513,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLProgram.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLProgramCache.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLShaderCache.c \
+	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLShaderSource.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLState.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLStreamBuffer.c \
 	$(LRPS2_DIR)/GS/Renderers/OpenGL/GLTextureFormat.c \
