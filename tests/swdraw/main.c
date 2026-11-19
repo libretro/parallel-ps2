@@ -756,6 +756,64 @@ static void case_big_triangles(void)
 	ad(GS_XYZ2, 0, XY(0, 4000));
 }
 
+/* A long batch sent as REGLIST: nloop times nreg XYZ2 writes, two a
+ * quadword, every quadword data_a then data_b, after a setup with prim;
+ * with tail_xy, two more vertices after it. Then 8x8 at 8,8 of a 64-wide
+ * frame is read back: 64 times the colour, which nothing else draws. */
+static void long_batch(unsigned prim, unsigned nreg, unsigned nloop, unsigned data_a, unsigned data_b,
+	const unsigned* tail_xy)
+{
+	unsigned tail, setup;
+	tail = s_qw_count;
+	qw((tail_xy ? 5u : 3u) | 0x8000u, 0x10000000u, 0xEu, 0);    /* A+D, EOP */
+	if (tail_xy)
+	{
+		qw(tail_xy[0], 0, GS_XYZ2, 0);
+		qw(tail_xy[1], 0, GS_XYZ2, 0);
+	}
+	qw(8u | (8u << 16), 0, GS_TRXPOS, 0);                  /* from 8,8 */
+	qw(8, 8, GS_TRXREG, 0);
+	qw(1, 0, GS_TRXDIR, 0);                                /* local to host */
+	setup = s_qw_count;
+	qw(9 | 0x8000u, 0x10000000u, 0xEu, 0);                 /* A+D, NLOOP 9, EOP */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(1u << 16, 0, GS_FRAME_1, 0);                        /* FBP 0, FBW 1, PSMCT32 */
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(63u << 16, 31u << 16, GS_SCISSOR, 0);
+	qw(0x78563412u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(prim, 0, GS_PRIM, 0);
+	qw(1u << 16, 0, GS_BITBLTBUF, 0);                      /* SBP 0, SBW 1, PSMCT32 */
+	qw(nloop | 0x8000u, (1u << 26) | ((nreg & 15u) << 28), 0x55555555u, 0x55555555u); /* REGLIST, XYZ2s, EOP */
+	qw(data_a, 0, data_b, 0);
+	s_qw_repeat = nloop * nreg / 2 - 1;
+	kick(setup, s_qw_count + s_qw_repeat - setup, 0);
+	kick(tail, setup - tail, 5);
+	readback(16);
+	s_run_frames    = 60;
+	s_expect_run[0] = 0x78563412ul;
+}
+
+/* A triangle strip, and a fan, of 65532 vertices taking turns between
+ * two points, each of its triangles culled (none covers a pixel), then
+ * two more: of the dead vertices that pile up, the ones the next
+ * triangles take must be kept - a strip's last two, in order, a fan's
+ * centre and last (they pile up to as many as a draw takes, the last
+ * one included). One triangle after them covers the block read back,
+ * and only with those: with any others every triangle left has two
+ * vertices the same, and nothing is drawn. More than a draw's buffer
+ * holds, made once. */
+static const unsigned s_strip_tail[2] = { (unsigned)XY(0, 31), (unsigned)XY(63, 0) };
+static const unsigned s_fan_tail[2] = { (unsigned)XY(63, 0), (unsigned)XY(63, 0) };
+static void case_culled_strip(void) { long_batch(4, 12, 5461, (unsigned)XY(0, 31), 0, s_strip_tail); }
+static void case_culled_fan(void) { long_batch(5, 12, 5461, 0, (unsigned)XY(0, 31), s_fan_tail); }
+
+/* 20000 sprites over the block read back, in one batch: two draws as
+ * full as a draw of sprites gets, each one run of them per sprite (they
+ * all overlap), in storage made before the game ran. */
+static void case_many_sprites(void) { long_batch(6, 16, 2500, (unsigned)XY(8, 8), (unsigned)XY(16, 16), NULL); }
+
 /* A shaded triangle on an NTSC display that SMODE1 sets as the BIOS
  * does, for a renderer that scans out only a mode it knows. */
 static void case_present(void)
@@ -3378,6 +3436,9 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "palette_bilinear_drawn", case_palette_bilinear_drawn, "1" },
 	{ "palette_shaded", case_palette_shaded, "1" },
 	{ "big_triangles",   case_big_triangles, "1" },
+	{ "culled_strip",    case_culled_strip, "1" },
+	{ "culled_fan",      case_culled_fan,   "1" },
+	{ "many_sprites",    case_many_sprites, "1" },
 	{ "present",         case_present,       "1" },
 	{ "points",          case_points,        "1" },
 	{ "scan_field",      case_scan_field,    "1" },

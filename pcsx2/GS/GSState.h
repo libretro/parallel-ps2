@@ -204,10 +204,16 @@ protected:
 	GSVector4i m_scissor_cull_max = {};
 	GSVector4i m_xyof = {};
 
+	/* The vertices a draw can hold, made once: a kick that is drawn flushes
+	 * at MaxVerticesForPrim's 0xFFFC at most, and the dead vertices of a
+	 * strip or fan whose primitives are all culled go when it reaches
+	 * that. Indices: six a vertex (points expanded in the vertex shader). */
+	enum { VERTEX_CAPACITY = 0x10000 + 8, DRAW_TRANSFERS_MAX = 4096 };
+
 	struct
 	{
 		GSVertex* buff;
-		u32 head, tail, next, maxcount; // head: first vertex, tail: last vertex + 1, next: last indexed + 1
+		u32 head, tail, next; // head: first vertex, tail: last vertex + 1, next: last indexed + 1
 		u32 xy_tail;
 		GSVector4i xy[4];
 		GSVector4i xyhead;
@@ -261,6 +267,10 @@ protected:
 	GSVector4i m_af_seg_draw = {};
 	bool m_af_seg_fresh = true;
 	void FlushSegments();
+	/* (where FlushSegments keeps the batch while it draws a segment at a
+	 * time, made with the buffers) */
+	u16* m_af_saved_index = nullptr;
+	GSVertex* m_af_saved_vertex = nullptr;
 	bool IsPixelFeedbackPrim(u32 prim, const u32* buff, int n) const
 	{
 		const gs_draw_query q = DrawQuery();
@@ -268,7 +278,7 @@ protected:
 	}
 	void AutoFlushOverlap(bool pixel);
 
-	void GrowVertexBuffer();
+	void CompactSkippedVertices();
 	/* The draw state reads what it draws (GSDrawQuery.c) */
 	bool IsAutoFlushDraw() { const gs_draw_query q = DrawQuery(); return gs_draw_reads_own_target(&q); }
 	template<u32 prim, bool index_swap>
@@ -276,7 +286,7 @@ protected:
 	void CheckCLUTValidity(u32 prim);
 
 	template <u32 prim, bool auto_flush, bool index_swap>
-	void VertexKick(u32 skip, u32& maxcount);
+	void VertexKick(u32 skip);
 
 	// following functions need m_vt to be initialized
 

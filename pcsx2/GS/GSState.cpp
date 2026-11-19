@@ -121,11 +121,16 @@ GSState::GSState()
 	m_v.RGBAQ.Q = 1.0f;
 	gs_array_init(&m_draw_transfers, sizeof(GSUploadQueue));
 	gs_array_init(&m_drawlist, sizeof(u32));
-	/* (room for the runs of a full vertex buffer of sprites, made now) */
-	if (!gs_array_reserve(&m_drawlist, 2048))
+	/* Everything a draw is held in, at its most, made now: the runs of a
+	 * full buffer of sprites (two vertices each), the EE transfers kept,
+	 * and the vertices and indices with FlushSegments' copy of them. */
+	m_vertex.buff     = static_cast<GSVertex*>(memalign_alloc(32, sizeof(GSVertex) * VERTEX_CAPACITY));
+	m_index.buff      = static_cast<u16*>(memalign_alloc(32, sizeof(u16) * VERTEX_CAPACITY * 6));
+	m_af_saved_vertex = static_cast<GSVertex*>(memalign_alloc(32, sizeof(GSVertex) * VERTEX_CAPACITY));
+	m_af_saved_index  = static_cast<u16*>(memalign_alloc(32, sizeof(u16) * VERTEX_CAPACITY * 6));
+	if (!gs_array_reserve(&m_drawlist, VERTEX_CAPACITY / 2) || !gs_array_reserve(&m_draw_transfers, DRAW_TRANSFERS_MAX)
+		|| !m_vertex.buff || !m_index.buff || !m_af_saved_vertex || !m_af_saved_index)
 		abort();
-
-	GrowVertexBuffer();
 
 	PRIM = &m_env.PRIM;
 	//CSR->rREV = 0x20;
@@ -139,20 +144,21 @@ GSState::GSState()
 
 GSState::~GSState()
 {
-	if (m_vertex.buff)
-		memalign_free(m_vertex.buff);
-	if (m_index.buff)
-		memalign_free(m_index.buff);
+	memalign_free(m_vertex.buff);
+	memalign_free(m_index.buff);
+	memalign_free(m_af_saved_vertex);
+	memalign_free(m_af_saved_index);
 	gs_array_free(&m_draw_transfers);
 	gs_array_free(&m_drawlist);
 }
 
+/* (full, the oldest goes: the targets made from them look at the
+ * newest, and the renderer keeps fifty draws' worth) */
 void GSState::PushDrawTransfer(const GSUploadQueue& transfer)
 {
-	GSUploadQueue* const slot = static_cast<GSUploadQueue*>(gs_array_push(&m_draw_transfers));
-	if (!slot)
-		abort(); /* out of memory, as the vector's push_back was without exceptions */
-	*slot = transfer;
+	if (m_draw_transfers.count == DRAW_TRANSFERS_MAX)
+		gs_array_erase_front(&m_draw_transfers, 1);
+	*static_cast<GSUploadQueue*>(gs_array_push(&m_draw_transfers)) = transfer;
 }
 
 void GSState::ResetBase(bool hardware_reset)
@@ -442,7 +448,7 @@ void GSState::GIFPackedRegHandlerXYZF2(const GIFPackedReg* RESTRICT r)
 
 	m_v.m[1] = xy.upl32(zf);
 
-	VertexKick<prim, auto_flush, index_swap>(adc ? 1 : r->XYZF2.Skip(), m_vertex.maxcount);
+	VertexKick<prim, auto_flush, index_swap>(adc ? 1 : r->XYZF2.Skip());
 }
 
 template <u32 prim, u32 adc, bool auto_flush, bool index_swap>
@@ -457,7 +463,7 @@ void GSState::GIFPackedRegHandlerXYZ2(const GIFPackedReg* RESTRICT r)
 
 	m_v.m[1] = xyz.upl64(GSVector4i::loadl(&m_v.UV));
 
-	VertexKick<prim, auto_flush, index_swap>(adc ? 1 : r->XYZ2.Skip(), m_vertex.maxcount);
+	VertexKick<prim, auto_flush, index_swap>(adc ? 1 : r->XYZ2.Skip());
 }
 
 void GSState::GIFPackedRegHandlerFOG(const GIFPackedReg* RESTRICT r)
@@ -486,7 +492,6 @@ void GSState::GIFPackedRegHandlerSTQRGBAXYZF2(const GIFPackedReg* RESTRICT r, u3
 	}
 
 	const GIFPackedReg* RESTRICT r_end = r + size;
-	u32 local_maxcount = m_vertex.maxcount;
 
 	while (r < r_end)
 	{
@@ -501,7 +506,7 @@ void GSState::GIFPackedRegHandlerSTQRGBAXYZF2(const GIFPackedReg* RESTRICT r, u3
 			flushes_checked = true;
 			CheckFlushes();
 		}
-		VertexKick<prim, auto_flush, index_swap>(skip, local_maxcount);
+		VertexKick<prim, auto_flush, index_swap>(skip);
 
 		r += 3;
 	}
@@ -521,7 +526,6 @@ void GSState::GIFPackedRegHandlerSTQRGBAXYZ2(const GIFPackedReg* RESTRICT r, u32
 	}
 
 	const GIFPackedReg* RESTRICT r_end = r + size;
-	u32 local_maxcount = m_vertex.maxcount;
 
 	while (r < r_end)
 	{
@@ -536,7 +540,7 @@ void GSState::GIFPackedRegHandlerSTQRGBAXYZ2(const GIFPackedReg* RESTRICT r, u32
 			flushes_checked = true;
 			CheckFlushes();
 		}
-		VertexKick<prim, auto_flush, index_swap>(skip, local_maxcount);
+		VertexKick<prim, auto_flush, index_swap>(skip);
 
 		r += 3;
 	}
@@ -626,7 +630,7 @@ void GSState::GIFRegHandlerXYZF2(const GIFReg* RESTRICT r)
 
 	m_v.m[1] = xyz.upl64(uvf);
 
-	VertexKick<prim, auto_flush, index_swap>(adc, m_vertex.maxcount);
+	VertexKick<prim, auto_flush, index_swap>(adc);
 }
 
 template <u32 prim, u32 adc, bool auto_flush, bool index_swap>
@@ -637,7 +641,7 @@ void GSState::GIFRegHandlerXYZ2(const GIFReg* RESTRICT r)
 
 	m_v.m[1] = GSVector4i::load(&r->XYZ, &m_v.UV);
 
-	VertexKick<prim, auto_flush, index_swap>(adc, m_vertex.maxcount);
+	VertexKick<prim, auto_flush, index_swap>(adc);
 }
 
 template <int i>
@@ -2135,31 +2139,38 @@ void GSState::UpdateAutoFlushKick()
 		UpdateVertexKick();
 }
 
-void GSState::GrowVertexBuffer()
+/* A strip or fan culled for long: the vertices after the indexed ones
+ * that no primitive will take again go, the live ones moved down after
+ * the indexed. A strip's are its last two (from head), a fan's its centre
+ * (head, unless indexed already) and its last. */
+void GSState::CompactSkippedVertices()
 {
-	const u32 maxcount = pcsx2_max_u(m_vertex.maxcount * 3 / 2, 10000);
+	const u32 next = m_vertex.next;
+	u32 head = m_vertex.head;
+	const u32 tail = m_vertex.tail;
+	u32 dst = next;
 
-	GSVertex* vertex = static_cast<GSVertex*>(memalign_alloc(32, sizeof(GSVertex) * maxcount));
-	// Worst case index list is a list of points with vs expansion, 6 indices per point
-	u16* index = static_cast<u16*>(memalign_alloc(32, sizeof(u16) * maxcount * 6));
-
-	if (m_vertex.buff)
+	if (PRIM->PRIM == GS_TRIANGLEFAN)
 	{
-		memcpy(vertex, m_vertex.buff, sizeof(GSVertex) * m_vertex.tail);
-
-		memalign_free(m_vertex.buff);
+		if (head >= next)
+		{
+			m_vertex.buff[dst] = m_vertex.buff[head];
+			head = dst++;
+		}
+		if (tail - 1 > m_vertex.head)
+			m_vertex.buff[dst++] = m_vertex.buff[tail - 1];
 	}
-
-	if (m_index.buff)
+	else
 	{
-		memcpy(index, m_index.buff, sizeof(u16) * m_index.tail);
-
-		memalign_free(m_index.buff);
+		if (head > next)
+		{
+			memmove(&m_vertex.buff[next], &m_vertex.buff[head], sizeof(GSVertex) * (tail - head));
+			head = next;
+		}
+		dst = head + (tail - m_vertex.head);
 	}
-
-	m_vertex.buff = vertex;
-	m_vertex.maxcount = maxcount - 3; // -3 to have some space at the end of the buffer before DrawingKick can grow it
-	m_index.buff = index;
+	m_vertex.head = head;
+	m_vertex.tail = dst;
 }
 
 static constexpr u32 NumIndicesForPrim(u32 prim)
@@ -2265,8 +2276,8 @@ void GSState::FlushSegments()
 	const u32 nverts = m_vertex.tail;
 	const u32 segs = m_af_seg_count;
 	const GS_PRIM_CLASS pc = GSUtil::GetPrimClass(PRIM->PRIM);
-	u16* const saved_index = static_cast<u16*>(malloc(sizeof(u16) * total));
-	GSVertex* const saved_vertex = static_cast<GSVertex*>(malloc(sizeof(GSVertex) * nverts));
+	u16* const saved_index = m_af_saved_index;
+	GSVertex* const saved_vertex = m_af_saved_vertex;
 	u32 start = 0;
 	u32 end;
 	u32 i;
@@ -2275,13 +2286,6 @@ void GSState::FlushSegments()
 	u32 vmax;
 
 	m_af_seg_count = 0;
-	if (!saved_index || !saved_vertex)
-	{
-		free(saved_index);
-		free(saved_vertex);
-		Draw();
-		return;
-	}
 	memcpy(saved_index, m_index.buff, sizeof(u16) * total);
 	memcpy(saved_vertex, m_vertex.buff, sizeof(GSVertex) * nverts);
 	for (i = 0; i <= segs; i++)
@@ -2312,8 +2316,6 @@ void GSState::FlushSegments()
 		}
 		start = end;
 	}
-	free(saved_index);
-	free(saved_vertex);
 }
 
 template<u32 prim, bool index_swap>
@@ -2614,7 +2616,7 @@ __noinline void GSState::HandleAutoFlush()
 }
 
 template <u32 prim, bool auto_flush, bool index_swap>
-__forceinline void GSState::VertexKick(u32 skip, u32& maxcount)
+__forceinline void GSState::VertexKick(u32 skip)
 {
 	constexpr u32 n = NumIndicesForPrim(prim);
 
@@ -2702,8 +2704,10 @@ __forceinline void GSState::VertexKick(u32 skip, u32& maxcount)
 				m_vertex.head = head + 1;
 				// fallthrough
 			case GS_TRIANGLEFAN:
-				if (tail >= maxcount)
-					{ GrowVertexBuffer(); maxcount = m_vertex.maxcount; } // in case too many vertices were skipped
+				/* (culled all along: only the vertices the next primitive
+				 * takes are alive past the indexed ones) */
+				if (tail >= MaxVerticesForPrim(prim))
+					CompactSkippedVertices();
 				break;
 			default:
 				break;
@@ -2712,8 +2716,8 @@ __forceinline void GSState::VertexKick(u32 skip, u32& maxcount)
 		return;
 	}
 
-	if (tail >= maxcount)
-		{ GrowVertexBuffer(); maxcount = m_vertex.maxcount; }
+	/* (tail is under MaxVerticesForPrim here, a flush past it below) */
+	static_assert(VERTEX_CAPACITY - 3 > 0xFFFF, "a draw's vertices fit");
 
 	if (m_index.tail == 0 && ((m_backed_up_ctx != m_env.PRIM.CTXT) || m_dirty_gs_regs))
 	{

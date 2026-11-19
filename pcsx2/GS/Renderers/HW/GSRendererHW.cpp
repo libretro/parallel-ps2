@@ -483,12 +483,8 @@ GSTexture* GSRendererHW::GetFeedbackOutput(float& scale)
 
 void GSRendererHW::Lines2Sprites()
 {
-	// each sprite converted to quad needs twice the space
-
-	while (m_vertex.tail * 2 > m_vertex.maxcount)
-	{
-		GrowVertexBuffer();
-	}
+	/* Each sprite made a quad takes twice the space: a draw of lines or
+	 * sprites flushes at a quarter or half of what the buffer holds. */
 
 	// assume vertices are tightly packed and sequentially indexed (it should be the case)
 	const bool predivide_q = PRIM->TME && !PRIM->FST && m_vt.m_accurate_stq;

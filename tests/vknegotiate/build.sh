@@ -712,22 +712,28 @@ echo "  pipelines built ahead: the heap stays flat after, and a rate set meanwhi
 # lowers its number here. Over it, the sites are named (resolve them with
 # addr2line -f -C -e <core> <offset>).
 ALLOC_CEILINGS="
-Vulkan stream_ct32 86
+Vulkan stream_ct32 84
 Vulkan depth_states 18
 Vulkan mip_tw8 20
-Vulkan dest_alpha 25
+Vulkan dest_alpha 24
 Vulkan aa1_line 14
+Vulkan culled_strip 22
+Vulkan culled_fan 22
+Vulkan many_sprites 22
 paraLLEl-GS stream_ct32 210
 paraLLEl-GS depth_states 79
 paraLLEl-GS mip_tw8 104
 paraLLEl-GS dest_alpha 86
 paraLLEl-GS aa1_line 77
-Software_(HW) stream_ct32 98
+Software_(HW) stream_ct32 97
 Software_(HW) depth_states 151
 Software_(HW) mip_tw8 77
 Software_(HW) dest_alpha 53
-Software_(HW) aa1_line 42"
-for c in stream_ct32 depth_states mip_tw8 dest_alpha aa1_line; do
+Software_(HW) aa1_line 42
+Software_(HW) culled_strip 35
+Software_(HW) culled_fan 35
+Software_(HW) many_sprites 20"
+for c in stream_ct32 depth_states mip_tw8 dest_alpha aa1_line culled_strip culled_fan many_sprites; do
 	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c > /dev/null
 done
 echo "$ALLOC_CEILINGS" | while read r c most; do
@@ -750,7 +756,7 @@ echo "$ALLOC_CEILINGS" | while read r c most; do
 	true
 done
 case $? in
-	0) echo "  allocations during play: none more than before, five cases on three renderers" ;;
+	0) echo "  allocations during play: none more than before, eight cases on three renderers" ;;
 	1) rm -rf "$SCRATCH"; exit 1 ;;
 esac
 
@@ -761,7 +767,7 @@ esac
 # present scans out frames while the frontend's sync slots grow from one
 # to three, the frontend reading the image it was last given meanwhile.
 # The software renderer runs them too, its output on the Vulkan device.
-for c in upload_short big_triangles present nine_frames fb_wrap uv_huge frame_on_depth dirty_whole_target depth_texture_far move_width_change frame_on_depth32 shuffle_left_of_offset split_clear_no_display; do
+for c in upload_short big_triangles culled_strip culled_fan many_sprites present nine_frames fb_wrap uv_huge frame_on_depth dirty_whole_target depth_texture_far move_width_change frame_on_depth32 shuffle_left_of_offset split_clear_no_display; do
 	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c
 	for renderer in Vulkan paraLLEl-GS "Software (HW)"; do
 		if ! UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
