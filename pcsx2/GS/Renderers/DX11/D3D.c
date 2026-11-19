@@ -14,9 +14,11 @@
  */
 
 #define COBJMACROS
+#include <stdio.h>
 #include <string.h>
 
 #include "D3D.h"
+#include "D3DDynamicPS.h"
 
 #include <d3dcompiler.h>
 
@@ -120,4 +122,82 @@ ID3DBlob* gs_d3d_compile_shader(unsigned type, D3D_FEATURE_LEVEL feature_level, 
 	if (errors)
 		ID3D10Blob_Release(errors);
 	return blob;
+}
+
+/* ---- shader macros (D3DDynamicPS.h) ---- */
+
+void gs_d3d_macros_init(gs_d3d_macros* m, D3D_FEATURE_LEVEL fl)
+{
+	m->count = 0;
+	switch (fl)
+	{
+		case D3D_FEATURE_LEVEL_10_0:
+			gs_d3d_macros_add(m, "SHADER_MODEL", "0x400");
+			break;
+		case D3D_FEATURE_LEVEL_10_1:
+			gs_d3d_macros_add(m, "SHADER_MODEL", "0x401");
+			break;
+		case D3D_FEATURE_LEVEL_11_0:
+		default:
+			gs_d3d_macros_add(m, "SHADER_MODEL", "0x500");
+			break;
+	}
+}
+
+void gs_d3d_macros_add(gs_d3d_macros* m, const char* name, const char* value)
+{
+	size_t len;
+	if (m->count >= GS_D3D_MACROS_MAX)
+		return;
+	len = strlen(value);
+	if (len >= sizeof(m->values[0]))
+		len = sizeof(m->values[0]) - 1;
+	memcpy(m->values[m->count], value, len);
+	m->values[m->count][len] = '\0';
+	m->list[m->count].Name       = name;
+	m->list[m->count].Definition = m->values[m->count];
+	m->count++;
+}
+
+void gs_d3d_macros_add_int(gs_d3d_macros* m, const char* name, int value)
+{
+	char buf[16];
+	sprintf(buf, "%d", value);
+	gs_d3d_macros_add(m, name, buf);
+}
+
+const D3D_SHADER_MACRO* gs_d3d_macros_list(gs_d3d_macros* m)
+{
+	m->list[m->count].Name       = NULL;
+	m->list[m->count].Definition = NULL;
+	return m->list;
+}
+
+void gs_d3d_ps_macros(gs_d3d_macros* m, const gs_hw_ps_selector* sel)
+{
+	gs_d3d_macros_add_int(m, "PIXEL_SHADER", 1);
+#define D3D_MACRO(name, field, bits) gs_d3d_macros_add_int(m, #name, (int)(sel->field));
+	D3D_PS_FIELDS(D3D_MACRO)
+#undef D3D_MACRO
+}
+
+void gs_d3d_dynamic_macros(gs_d3d_macros* m, u32 index)
+{
+	const u32 date = index % 3u;
+	char buf[48];
+	u32 at = 0, place;
+	gs_d3d_macros_add_int(m, "PIXEL_SHADER", 1);
+	gs_d3d_macros_add_int(m, "PS_DYNAMIC", 1);
+	gs_d3d_macros_add_int(m, "PS_IF_IIP", (int)(index / 3u));
+	gs_d3d_macros_add_int(m, "PS_IF_DATE_INIT", date == 1);
+	gs_d3d_macros_add_int(m, "PS_IF_PRIMID", date != 0);
+	gs_d3d_macros_add_int(m, "PS_IF_NO_COLOR", 0);
+	gs_d3d_macros_add_int(m, "PS_IF_NO_COLOR1", 0);
+	gs_d3d_macros_add_int(m, "PS_IF_ZCLAMP", date != 1);
+#define D3D_DYN(name, field, bits) \
+	place = gs_d3d_key_place(&at, bits); \
+	sprintf(buf, "((PsKey[%u] >> %uu) & %uu)", place >> 5, place & 31u, (1u << bits) - 1u); \
+	gs_d3d_macros_add(m, #name, buf);
+	D3D_PS_FIELDS(D3D_DYN)
+#undef D3D_DYN
 }

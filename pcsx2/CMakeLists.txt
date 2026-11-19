@@ -560,7 +560,7 @@ target_compile_options(PCSX2_FLAGS INTERFACE "-DHAVE_D3D12")
 
 	list(APPEND pcsx2GSSources
 		GS/Renderers/DX11/D3D.c
-		GS/Renderers/DX11/GSDevice11.cpp
+		GS/Renderers/DX11/GSDevice11.c
 		GS/Renderers/DX11/GSTexture11.c
 		GS/Renderers/DX11/D3D11ShaderCache.c
 		GS/Renderers/DX12/GSDevice12.cpp

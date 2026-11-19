@@ -1,12 +1,15 @@
 /* The D3D renderers' dynamic pixel shaders (tfx.fx's PS_DYNAMIC): a pixel
  * selector packed into PsKey, and the macros of the shader that reads it.
  * D3D11 and D3D12 pack it the same, from the one list. */
-#pragma once
+#ifndef GS_D3D_DYNAMIC_PS_H
+#define GS_D3D_DYNAMIC_PS_H
 
-#include "GS/Renderers/Common/GSDevice.h"
+#include <boolean.h>
+#include <retro_inline.h>
 
-#include <cstdio>
-#include <string>
+#include "common/Pcsx2Defs.h"
+#include "GS/Renderers/Common/GSHWDrawConfig.h"
+#include "D3D.h"
 
 /* The pixel selector fields as tfx.fx's macros, each in the bits after the
  * last and none across a word: the dynamic pixel shader's PsKey. */
@@ -33,7 +36,7 @@
 #define D3D_DYNAMIC_PS_COUNT 6u
 
 /* The next field's place: in the word it starts in, else the next. */
-static inline u32 D3DKeyPlace(u32* at, u32 bits)
+static INLINE u32 gs_d3d_key_place(u32* at, u32 bits)
 {
 	u32 place;
 	if ((*at & 31u) + bits > 32u)
@@ -43,27 +46,63 @@ static inline u32 D3DKeyPlace(u32* at, u32 bits)
 	return place;
 }
 
-static inline void D3DDynamicKey(const GSHWDrawConfig::PSSelector& sel, u32* key)
+static INLINE void gs_d3d_dynamic_key(const gs_hw_ps_selector* sel, u32* key)
 {
 	u32 at = 0, place;
 	key[0] = key[1] = key[2] = key[3] = 0;
 #define D3D_PACK(name, field, bits) \
-	place = D3DKeyPlace(&at, bits); \
-	key[place >> 5] |= (static_cast<u32>(sel.field) & ((1u << bits) - 1u)) << (place & 31u);
+	place = gs_d3d_key_place(&at, bits); \
+	key[place >> 5] |= ((u32)(sel->field) & ((1u << bits) - 1u)) << (place & 31u);
 	D3D_PS_FIELDS(D3D_PACK)
 #undef D3D_PACK
 }
 
 /* The interface a selector's dynamic pixel shader has: the flat colour,
  * and the destination alpha test's first pass or primitive ID test. */
-static inline u32 D3DDynamicIndex(const GSHWDrawConfig::PSSelector& sel)
+static INLINE u32 gs_d3d_dynamic_index(const gs_hw_ps_selector* sel)
 {
-	const u32 date = (sel.date == 1 || sel.date == 2) ? 1u : (sel.date == 3) ? 2u : 0u;
-	return sel.iip * 3u + date;
+	const u32 date = (sel->date == 1 || sel->date == 2) ? 1u : (sel->date == 3) ? 2u : 0u;
+	return sel->iip * 3u + date;
 }
 
+/* A shader's macros (D3D_SHADER_MACRO, NULL ended), with room for their
+ * values: the shader model's for a feature level, then those added */
+#define GS_D3D_MACROS_MAX 96
+typedef struct gs_d3d_macros
+{
+	D3D_SHADER_MACRO list[GS_D3D_MACROS_MAX + 1];
+	char values[GS_D3D_MACROS_MAX][48];
+	unsigned count;
+} gs_d3d_macros;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void gs_d3d_macros_init(gs_d3d_macros* m, D3D_FEATURE_LEVEL fl);
+void gs_d3d_macros_add(gs_d3d_macros* m, const char* name, const char* value);
+void gs_d3d_macros_add_int(gs_d3d_macros* m, const char* name, int value);
+/* The list, ended */
+const D3D_SHADER_MACRO* gs_d3d_macros_list(gs_d3d_macros* m);
+/* A pixel selector's tfx.fx macros */
+void gs_d3d_ps_macros(gs_d3d_macros* m, const gs_hw_ps_selector* sel);
+/* The dynamic pixel shader of interface index: every field read from
+ * PsKey but what shapes the interface; the second output and the depth
+ * output are kept (a draw that does without them leaves them unread). */
+void gs_d3d_dynamic_macros(gs_d3d_macros* m, u32 index);
+
+#ifdef __cplusplus
+}
+
+#include <cstdio>
+#include <string>
+
+/* (the D3D12 renderer's names, over its own macro list) */
+static inline void D3DDynamicKey(const gs_hw_ps_selector& sel, u32* key) { gs_d3d_dynamic_key(&sel, key); }
+static inline u32 D3DDynamicIndex(const gs_hw_ps_selector& sel) { return gs_d3d_dynamic_index(&sel); }
+
 template <typename SM>
-static inline void D3DPixelShaderMacros(SM& sm, const GSHWDrawConfig::PSSelector& sel)
+static inline void D3DPixelShaderMacros(SM& sm, const gs_hw_ps_selector& sel)
 {
 	sm.AddMacro("PIXEL_SHADER", 1);
 #define D3D_MACRO(name, field, bits) sm.AddMacro(#name, static_cast<int>(sel.field));
@@ -71,9 +110,6 @@ static inline void D3DPixelShaderMacros(SM& sm, const GSHWDrawConfig::PSSelector
 #undef D3D_MACRO
 }
 
-/* The dynamic pixel shader of interface index: every field read from
- * PsKey but what shapes the interface; the second output and the depth
- * output are kept (a draw that does without them leaves them unread). */
 template <typename SM>
 static inline void D3DDynamicMacros(SM& sm, u32 index)
 {
@@ -89,9 +125,12 @@ static inline void D3DDynamicMacros(SM& sm, u32 index)
 	sm.AddMacro("PS_IF_NO_COLOR1", 0);
 	sm.AddMacro("PS_IF_ZCLAMP", date != 1);
 #define D3D_DYN(name, field, bits) \
-	place = D3DKeyPlace(&at, bits); \
+	place = gs_d3d_key_place(&at, bits); \
 	snprintf(buf, sizeof(buf), "((PsKey[%u] >> %uu) & %uu)", place >> 5, place & 31u, (1u << bits) - 1u); \
 	sm.AddMacro(#name, std::string(buf));
 	D3D_PS_FIELDS(D3D_DYN)
 #undef D3D_DYN
 }
+#endif
+
+#endif
