@@ -326,12 +326,9 @@ set(pcsx2GSSourcesUnshared
 	GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
 )
 
-# The software rasterizer JITs scanlines with x86 xbyak (GS*CodeGenerator) and
-# has no arm64 backend here, so drop the whole SW renderer on aarch64; the HW
-# renderer and paraLLEl-GS cover it (GS.cpp gates the SW path on ARCH_ARM64).
-# Only the xbyak code generators are x86-only; the rasterizer, the renderer
-# and the scanline dispatcher build anywhere GSVector4/4i does, and
-# GSDrawScanline uses its C++ reference path when the generators are absent.
+# The software renderer builds everywhere; only its code generators are
+# x86-only. Without them GSDrawScanline draws through its C++ reference path,
+# which tests/swdraw runs on AArch64 in CI.
 if(NOT _M_X86)
 	list(REMOVE_ITEM pcsx2GSSourcesUnshared
 		GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp

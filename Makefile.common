@@ -477,11 +477,7 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSRendererHWMultiISA.cpp \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSTextureCache.cpp \
 
-# pcsx2/GS/Renderers/SW - software renderer. The device + texture cache/texture
-# build everywhere; the scanline JIT (GS*CodeGenerator) and rasterizer are x86
-# xbyak codegen with no arm64 backend, so they are dropped on aarch64 (the HW
-# renderer / paraLLEl-GS cover it; GS.cpp gates the SW path on ARCH_ARM64).
-# Mirrors the `list(REMOVE_ITEM ... NOT _M_X86)` in pcsx2/CMakeLists.txt.
+# pcsx2/GS/Renderers/SW - the software renderer, on every architecture.
 SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDeviceSW.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRaster.c \
@@ -491,8 +487,9 @@ SOURCES_C += \
 
 # The rasterizer, the renderer and the scanline dispatcher are portable: they
 # are written against GSVector4/4i, which have NEON implementations. Only the
-# xbyak code generators are x86-only, and GSDrawScanline falls back to its C++
-# reference path (CSetupPrim / CDrawScanline / CDrawEdge) without them.
+# code generators are x86-only (below); without them GSDrawScanline draws
+# through its C++ reference path (CSetupPrim / CDrawScanline / CDrawEdge),
+# which tests/swdraw runs on AArch64 in CI.
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanline.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRasterizer.cpp \

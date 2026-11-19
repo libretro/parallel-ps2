@@ -110,6 +110,11 @@ jobs:
           LRPS2_CHECKED_CORE: ${{ github.workspace }}/pcsx2_libretro.so
         run: sh tests/pgsowner/build.sh
 
+      # The software renderer's own draws on the core; the suites job has
+      # no core and skips them, so they ran nowhere in CI.
+      - name: Run the software renderer suite on it
+        run: sh tests/swdraw/build.sh
+
       # The Vulkan renderers against lavapipe: negotiation, savestates,
       # pictures against the software renderer, and what a frame
       # allocates. The suites job has no Vulkan device, so these skip
@@ -156,7 +161,7 @@ jobs:
         run: |
           WINE=$(command -v wine || command -v wine64)
           export WINE
-          for t in biosver dev9dhcp dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d11device d3d11shadercache d3d11texture d3d12builders d3d12desc d3d12device d3d12shadercache d3d12stream d3d12texture d3dshader granitevk gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics profiler ringheap settings usbhid vkbuilders vkloader vkstream vktexture vtrace vuops; do
+          for t in biosver dev9dhcp dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d11device d3d11shadercache d3d11texture d3d12builders d3d12desc d3d12device d3d12shadercache d3d12stream d3d12texture d3dshader granitevk gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics profiler ringheap settings swjit usbhid vkbuilders vkloader vkstream vktexture vtrace vuops; do
             echo "== $t"
             sh "tests/$t/build.sh"
           done
@@ -185,6 +190,30 @@ jobs:
             echo "== $t"
             sh "tests/$t/build.sh"
           done
+
+  # The software renderer on an AArch64 core, on GitHub's arm64 runner:
+  # there no code is generated and it draws through GSDrawScanline's
+  # reference path, which no x86 build compiles. Its pictures are the
+  # x86 ones (swdraw holds the cases that must agree to each other).
+  swdraw-aarch64:
+    name: software renderer on AArch64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install the build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3 liblzma-dev zlib1g-dev libgl-dev
+
+      - name: Build the core
+        run: make -j"$(nproc)"
+
+      - name: Run the software renderer suite on it
+        run: sh tests/swdraw/build.sh
 
   # PROFILER=1 adds a source and turns on the PROFILE_* macros in a dozen
   # units, none of which another build compiles: a change that broke them
