@@ -15,9 +15,9 @@
 
 #pragma once
 
-#include "GSScanlineEnvironment.h"
-#include "GSNewCodeGenerator.h"
-#include "../../MultiISA.h"
+#include "GS/Renderers/SW/GSScanlineEnvironment.h"
+#include "GS/Renderers/SW/GSNewCodeGenerator.h"
+#include "GS/MultiISA.h"
 
 #if _M_SSE >= 0x501
 	#define SETUP_PRIM_VECTOR_REGISTER Xbyak::Ymm

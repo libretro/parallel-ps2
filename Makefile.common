@@ -499,10 +499,12 @@ SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRendererSW.cpp
 
 ifneq ($(IS_ARM64), 1)
+SOURCES_C += \
+	$(LRPS2_DIR)/GS/Renderers/SW/GSJitX86.c \
+	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimJit.c
 SOURCES_CXX += \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.all.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
 endif
 

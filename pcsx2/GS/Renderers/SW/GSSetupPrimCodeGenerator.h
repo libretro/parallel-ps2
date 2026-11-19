@@ -16,41 +16,21 @@
 #pragma once
 
 #include "GSScanlineEnvironment.h"
-#include "../../GSUtil.h"
 #include "../../MultiISA.h"
-
-#ifdef _WIN32
-#include "common/RedtapeWindows.h"
-#endif
-#if defined(__GNUC__) && !defined(__clang__)
-// GCC's -Warray-bounds flags the isMEM()-guarded Operand -> Address downcast
-// in opModRM/opModM when a register temporary is passed by const Operand&
-// (e.g. test(reg, reg)): the speculative Address::mode_ access is reported
-// against the smaller Reg object even though the branch is dead for
-// registers. False positive; suppress for this third-party header only.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#endif
-#include <xbyak/xbyak.h>
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 MULTI_ISA_UNSHARED_START
 
-class GSSetupPrimCodeGenerator : public Xbyak::CodeGenerator
+/* The primitive setup's code for a selector, as the code map generates
+ * it: the C generator (GSSetupPrimJit.c) for this tier's layout. */
+class GSSetupPrimCodeGenerator
 {
-	void operator=(const GSSetupPrimCodeGenerator&);
-
-	GSScanlineSelector m_sel;
-
-	struct
-	{
-		u32 z : 1, f : 1, t : 1, c : 1;
-	} m_en;
+	void* m_code;
+	size_t m_size;
 
 public:
 	GSSetupPrimCodeGenerator(u64 key, void* code, size_t maxsize);
+	size_t getSize() const { return m_size; }
+	const u8* getCode() const { return static_cast<const u8*>(m_code); }
 };
 
 MULTI_ISA_UNSHARED_END

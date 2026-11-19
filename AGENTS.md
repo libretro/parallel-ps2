@@ -188,14 +188,15 @@ What is left, by the count, largest first, every one a bug:
   (`DescriptorSetAllocator`), command buffers and buffer blocks, and the
   bindless pools grow as a session meets them. They want tables sized at
   device creation with a defined full path.
-- The software renderer's JIT (`GSDrawScanlineCodeGenerator`,
-  `GSSetupPrimCodeGenerator`, Xbyak's labels): a draw function is
-  generated, and allocates, at a draw's first use, which is a compile on
-  the draw path too.
-- The texture cache: a new source or target (`SourceMap::Add`,
-  `Target::Create`, their object pools, `GetTargetSize`), the texture
-  behind it (`GSTextureVK::Create`), its framebuffer
-  (`GetLinkedFramebuffer`) and `GSLocalMemory::GetPixelOffset4`.
+- The software renderer's scanline JIT (`GSDrawScanlineCodeGenerator`,
+  through Xbyak and its labels): a draw function is generated, and
+  allocates, at a draw's first use, which is a compile on the draw path
+  too. The primitive setup's generator is C over the C emitter
+  (`GSSetupPrimJit.c`, `GSJitX86.c`) and allocates nothing; the scanline
+  one is next, and then Xbyak goes.
+- The texture cache: the texture behind a new source or target
+  (`gs_texture_vk_create`, when the pool has none to give) and
+  `gs_pixel_offset4_get` (a table for each new FRAME and ZBUF pair).
 - The EE and IOP recompilers: a block linked (`BaseBlocks_Link`) and a
   load or store recorded (`vtlb_AddLoadStoreInfo`).
 - The Vulkan renderer's draw pipeline tables and list are sized when

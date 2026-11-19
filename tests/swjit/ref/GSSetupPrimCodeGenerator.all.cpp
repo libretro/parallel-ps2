@@ -14,7 +14,7 @@
  */
 
 #include "GSSetupPrimCodeGenerator.all.h"
-#include "GSVertexSW.h"
+#include "GS/Renderers/SW/GSVertexSW.h"
 
 MULTI_ISA_UNSHARED_IMPL;
 using namespace Xbyak;

@@ -14,19 +14,19 @@
  */
 
 #include "GSSetupPrimCodeGenerator.h"
-#include "GSSetupPrimCodeGenerator.all.h"
+#include "GSSwJitLayout.h"
 
 MULTI_ISA_UNSHARED_IMPL;
 
 GSSetupPrimCodeGenerator::GSSetupPrimCodeGenerator(u64 key, void* code, size_t maxsize)
-	: Xbyak::CodeGenerator(maxsize, code)
+	: m_code(code)
 {
-	m_sel.key = key;
-
-	m_en.z = m_sel.zb ? 1 : 0;
-	m_en.f = m_sel.fb && m_sel.fge ? 1 : 0;
-	m_en.t = m_sel.fb && m_sel.tfx != TFX_NONE ? 1 : 0;
-	m_en.c = m_sel.fb && !(m_sel.tfx == TFX_DECAL && m_sel.tcc) ? 1 : 0;
-
-	GSSetupPrimCodeGenerator2(this, key).Generate();
+	gs_swj_target t;
+	t.key        = key;
+	t.avx        = CPU_HAS_AVX;
+	t.ymm        = _M_SSE >= 0x501;
+	t.win64      = GS_SWJ_WIN64;
+	t.shift_128b = g_const.m_shift_128b;
+	t.shift_256b = g_const.m_shift_256b;
+	m_size = gs_swj_setup_prim(&t, code, maxsize);
 }

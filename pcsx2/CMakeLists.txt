@@ -324,7 +324,6 @@ set(pcsx2GSSourcesUnshared
 	GS/Renderers/SW/GSRasterizer.cpp
 	GS/Renderers/SW/GSRendererSW.cpp
 	GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
-	GS/Renderers/SW/GSSetupPrimCodeGenerator.all.cpp
 )
 
 # The software rasterizer JITs scanlines with x86 xbyak (GS*CodeGenerator) and
@@ -338,7 +337,6 @@ if(NOT _M_X86)
 		GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp
 		GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.cpp
 		GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
-		GS/Renderers/SW/GSSetupPrimCodeGenerator.all.cpp
 	)
 endif()
 
@@ -473,7 +471,9 @@ set(pcsx2GSHeaders
 	GS/Renderers/SW/GSRendererSW.h
 	GS/Renderers/SW/GSScanlineEnvironment.h
 	GS/Renderers/SW/GSSetupPrimCodeGenerator.h
-	GS/Renderers/SW/GSSetupPrimCodeGenerator.all.h
+	GS/Renderers/SW/GSJitX86.h
+	GS/Renderers/SW/GSSwJit.h
+	GS/Renderers/SW/GSSwJitLayout.h
 	GS/Renderers/SW/GSTextureCacheSW.h
 	GS/Renderers/SW/GSTextureSW.h
 	GS/Renderers/SW/GSVertexSW.h
@@ -601,6 +601,15 @@ set(pcsx2IPUSources
 	IPU/IPUdma.c
 	IPU/yuv2rgb.c
 )
+
+# The software renderer's x86-64 code generators, in C (shared by the
+# tiers: the encodings are chosen at run time)
+if(_M_X86)
+	list(APPEND pcsx2GSSources
+		GS/Renderers/SW/GSJitX86.c
+		GS/Renderers/SW/GSSetupPrimJit.c
+	)
+endif()
 
 set(pcsx2IPUSourcesUnshared
 	IPU/IPU_MultiISA.c

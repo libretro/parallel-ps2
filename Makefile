@@ -651,8 +651,7 @@ MULTI_ISA_UNSHARED_SRC := \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRasterizer.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRendererSW.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.all.cpp
+	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
 
 # The C ones, which name their per-ISA functions after the tier rather
 # than taking a namespace.
