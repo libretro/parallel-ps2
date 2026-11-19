@@ -21,12 +21,7 @@
 #include "GSD3D12Heap.h"
 #include "D3D12DescriptorHeapManager.h"
 
-#ifdef __cplusplus
-#include "common/RedtapeWindows.h"
-#include "GS/Renderers/Common/GSTexture.h"
-#else
 #include <windows.h>
-#endif
 #include <d3d12.h>
 
 /* Which descriptor heap a descriptor is in */
@@ -109,70 +104,6 @@ void gs_d3d12_device_render_mipmap(gs_texture_d3d12* t, u32 dst_level, u32 dst_w
 
 #ifdef __cplusplus
 }
-
-/* A gs_texture_d3d12 as the device's C++ sees it: GSTexture and the C
- * functions, no state of its own. */
-class GSTexture12 final : public GSTexture
-{
-public:
-	GSTexture12() = delete;
-
-	__fi gs_texture_d3d12* C() { return reinterpret_cast<gs_texture_d3d12*>(static_cast<gs_texture*>(this)); }
-	__fi const gs_texture_d3d12* C() const
-	{
-		return reinterpret_cast<const gs_texture_d3d12*>(static_cast<const gs_texture*>(this));
-	}
-	static __fi GSTexture12* Of(gs_texture_d3d12* t)
-	{
-		return t ? static_cast<GSTexture12*>(static_cast<GSTexture*>(&t->base)) : nullptr;
-	}
-
-	static __fi GSTexture12* Create(Type type, Format format, int width, int height, int levels, DXGI_FORMAT dxgi_format,
-		DXGI_FORMAT srv_format, DXGI_FORMAT rtv_format, DXGI_FORMAT dsv_format, DXGI_FORMAT uav_format)
-	{
-		return Of(gs_texture_d3d12_create(static_cast<unsigned>(type), static_cast<unsigned>(format), width, height,
-			levels, dxgi_format, srv_format, rtv_format, dsv_format, uav_format));
-	}
-
-	__fi const D3D12DescriptorHandle& GetSRVDescriptor() const
-	{
-		return *static_cast<const D3D12DescriptorHandle*>(&C()->srv_descriptor);
-	}
-	__fi const D3D12DescriptorHandle& GetWriteDescriptor() const
-	{
-		return *static_cast<const D3D12DescriptorHandle*>(&C()->write_descriptor);
-	}
-	__fi const D3D12DescriptorHandle& GetUAVDescriptor() const
-	{
-		return *static_cast<const D3D12DescriptorHandle*>(&C()->uav_descriptor);
-	}
-	__fi D3D12_RESOURCE_STATES GetResourceState() const { return C()->resource_state; }
-	__fi DXGI_FORMAT GetDXGIFormat() const { return C()->dxgi_format; }
-	__fi ID3D12Resource* GetResource() const { return C()->resource; }
-
-	__fi void TransitionToState(D3D12_RESOURCE_STATES state)
-	{
-		gs_texture_d3d12_transition(C(), gs_d3d12_device_command_list(), state);
-	}
-	__fi void TransitionToState(ID3D12GraphicsCommandList* cmdlist, D3D12_RESOURCE_STATES state)
-	{
-		gs_texture_d3d12_transition(C(), cmdlist, state);
-	}
-	__fi void TransitionSubresourceToState(ID3D12GraphicsCommandList* cmdlist, int level,
-		D3D12_RESOURCE_STATES before_state, D3D12_RESOURCE_STATES after_state) const
-	{
-		gs_texture_d3d12_transition_level(C(), cmdlist, level, before_state, after_state);
-	}
-	__fi void CommitClear() { gs_texture_d3d12_commit_clear(C(), nullptr); }
-	__fi void CommitClear(ID3D12GraphicsCommandList* cmdlist) { gs_texture_d3d12_commit_clear(C(), cmdlist); }
-
-	__fi void Destroy(bool defer = true) { gs_texture_d3d12_destroy(C(), defer); }
-
-	/* Call when the texture is bound to the pipeline, or read from in a copy. */
-	__fi void SetUseFenceCounter(u64 val) { C()->use_fence_counter = val; }
-};
-
-static_assert(sizeof(GSTexture12) == sizeof(GSTexture), "GSTexture12 adds nothing to GSTexture");
 #endif
 
 #endif

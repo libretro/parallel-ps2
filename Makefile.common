@@ -541,8 +541,6 @@ endif
 
 # pcsx2/GS/Renderers/DX11/DX12 (Windows only)
 ifeq ($(IS_WINDOWS), 1)
-SOURCES_CXX += \
-	$(LRPS2_DIR)/GS/Renderers/DX12/GSDevice12.cpp
 SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/DX11/D3D.c \
 	$(LRPS2_DIR)/GS/Renderers/DX11/D3D11ShaderCache.c \
@@ -552,6 +550,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/DX12/D3D12DescriptorHeapManager.c \
 	$(LRPS2_DIR)/GS/Renderers/DX12/D3D12ShaderCache.c \
 	$(LRPS2_DIR)/GS/Renderers/DX12/D3D12StreamBuffer.c \
+	$(LRPS2_DIR)/GS/Renderers/DX12/GSDevice12.c \
 	$(LRPS2_DIR)/GS/Renderers/DX12/GSTexture12.c
 endif
 

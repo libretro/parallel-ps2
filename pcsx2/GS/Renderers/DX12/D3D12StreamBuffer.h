@@ -82,34 +82,6 @@ void gs_d3d12_device_wait_fence(u64 counter);
 
 #ifdef __cplusplus
 }
-
-#include <d3d12.h>
-
-/* The device's stream buffers: the C one */
-class D3D12StreamBuffer
-{
-public:
-	D3D12StreamBuffer() { gs_d3d12_stream_buffer_init(&m_sb); }
-	D3D12StreamBuffer(const D3D12StreamBuffer&) = delete;
-	D3D12StreamBuffer& operator=(const D3D12StreamBuffer&) = delete;
-	~D3D12StreamBuffer() { Destroy(); }
-
-	__fi ID3D12Resource* GetBuffer() const { return static_cast<ID3D12Resource*>(m_sb.buffer); }
-	__fi D3D12_GPU_VIRTUAL_ADDRESS GetGPUPointer() const { return m_sb.gpu_pointer; }
-	__fi void* GetCurrentHostPointer() const { return m_sb.host_pointer + m_sb.current_offset; }
-	__fi D3D12_GPU_VIRTUAL_ADDRESS GetCurrentGPUPointer() const { return m_sb.gpu_pointer + m_sb.current_offset; }
-	__fi u32 GetSize() const { return m_sb.size; }
-	__fi u32 GetCurrentOffset() const { return m_sb.current_offset; }
-	__fi gs_d3d12_stream_buffer* C() { return &m_sb; }
-
-	bool Create(u32 size) { return gs_d3d12_stream_buffer_create(&m_sb, size) != 0; }
-	bool ReserveMemory(u32 num_bytes, u32 alignment) { return gs_d3d12_stream_buffer_reserve(&m_sb, num_bytes, alignment) != 0; }
-	void CommitMemory(u32 final_num_bytes) { gs_d3d12_stream_buffer_commit(&m_sb, final_num_bytes); }
-	void Destroy(bool defer = true) { gs_d3d12_stream_buffer_destroy(&m_sb, defer); }
-
-private:
-	gs_d3d12_stream_buffer m_sb;
-};
 #endif
 
 #endif

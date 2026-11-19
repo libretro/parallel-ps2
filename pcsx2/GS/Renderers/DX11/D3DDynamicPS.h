@@ -93,44 +93,6 @@ void gs_d3d_dynamic_macros(gs_d3d_macros* m, u32 index);
 
 #ifdef __cplusplus
 }
-
-#include <cstdio>
-#include <string>
-
-/* (the D3D12 renderer's names, over its own macro list) */
-static inline void D3DDynamicKey(const gs_hw_ps_selector& sel, u32* key) { gs_d3d_dynamic_key(&sel, key); }
-static inline u32 D3DDynamicIndex(const gs_hw_ps_selector& sel) { return gs_d3d_dynamic_index(&sel); }
-
-template <typename SM>
-static inline void D3DPixelShaderMacros(SM& sm, const gs_hw_ps_selector& sel)
-{
-	sm.AddMacro("PIXEL_SHADER", 1);
-#define D3D_MACRO(name, field, bits) sm.AddMacro(#name, static_cast<int>(sel.field));
-	D3D_PS_FIELDS(D3D_MACRO)
-#undef D3D_MACRO
-}
-
-template <typename SM>
-static inline void D3DDynamicMacros(SM& sm, u32 index)
-{
-	const u32 date = index % 3u;
-	char buf[48];
-	u32 at = 0, place;
-	sm.AddMacro("PIXEL_SHADER", 1);
-	sm.AddMacro("PS_DYNAMIC", 1);
-	sm.AddMacro("PS_IF_IIP", static_cast<int>(index / 3u));
-	sm.AddMacro("PS_IF_DATE_INIT", date == 1);
-	sm.AddMacro("PS_IF_PRIMID", date != 0);
-	sm.AddMacro("PS_IF_NO_COLOR", 0);
-	sm.AddMacro("PS_IF_NO_COLOR1", 0);
-	sm.AddMacro("PS_IF_ZCLAMP", date != 1);
-#define D3D_DYN(name, field, bits) \
-	place = gs_d3d_key_place(&at, bits); \
-	snprintf(buf, sizeof(buf), "((PsKey[%u] >> %uu) & %uu)", place >> 5, place & 31u, (1u << bits) - 1u); \
-	sm.AddMacro(#name, std::string(buf));
-	D3D_PS_FIELDS(D3D_DYN)
-#undef D3D_DYN
-}
 #endif
 
 #endif
