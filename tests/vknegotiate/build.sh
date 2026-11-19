@@ -712,27 +712,27 @@ echo "  pipelines built ahead: the heap stays flat after, and a rate set meanwhi
 # lowers its number here. Over it, the sites are named (resolve them with
 # addr2line -f -C -e <core> <offset>).
 ALLOC_CEILINGS="
-Vulkan stream_ct32 84
-Vulkan depth_states 18
-Vulkan mip_tw8 20
-Vulkan dest_alpha 24
-Vulkan aa1_line 14
-Vulkan culled_strip 22
-Vulkan culled_fan 22
-Vulkan many_sprites 22
+Vulkan stream_ct32 40
+Vulkan depth_states 8
+Vulkan mip_tw8 8
+Vulkan dest_alpha 13
+Vulkan aa1_line 6
+Vulkan culled_strip 11
+Vulkan culled_fan 11
+Vulkan many_sprites 11
 paraLLEl-GS stream_ct32 210
 paraLLEl-GS depth_states 79
 paraLLEl-GS mip_tw8 104
 paraLLEl-GS dest_alpha 86
 paraLLEl-GS aa1_line 77
-Software_(HW) stream_ct32 97
-Software_(HW) depth_states 151
-Software_(HW) mip_tw8 77
-Software_(HW) dest_alpha 53
-Software_(HW) aa1_line 42
-Software_(HW) culled_strip 35
-Software_(HW) culled_fan 35
-Software_(HW) many_sprites 20"
+Software_(HW) stream_ct32 62
+Software_(HW) depth_states 149
+Software_(HW) mip_tw8 68
+Software_(HW) dest_alpha 51
+Software_(HW) aa1_line 40
+Software_(HW) culled_strip 33
+Software_(HW) culled_fan 33
+Software_(HW) many_sprites 18"
 for c in stream_ct32 depth_states mip_tw8 dest_alpha aa1_line culled_strip culled_fan many_sprites; do
 	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c > /dev/null
 done

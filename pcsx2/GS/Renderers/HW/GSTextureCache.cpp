@@ -103,8 +103,56 @@ static int HashCachePurgeOldestFirst(const void* a, const void* b)
  * pitch, which 2048 already is. */
 #define GS_UNSWIZZLE_BUFFER_SIZE (2048 * 2048 * 4)
 
+/* Where the copy builders put their lists of copies, which are sized by
+ * page counts and dirty lists rather than anything the stack can be
+ * trusted with (GSScratch.h). One per site, so none holds another's. */
+static struct gs_scratch s_scratch_copy_pages;
+static struct gs_scratch s_scratch_merged_done;
+static struct gs_scratch s_scratch_merged_queue;
+static struct gs_scratch s_scratch_dirty;
+/* BuildMoveRemap's element records, remap table and coverage bytes, and
+ * its nibble marks (a bit per nibble of local memory, 1 MiB), kept
+ * between builds rather than made for each. */
+static struct gs_scratch s_scratch_move_recs;
+static struct gs_scratch s_scratch_move_table;
+static struct gs_scratch s_scratch_move_covered;
+static u64* s_move_marks;
+
+/* (as many copies as a page move or a merged target can have: 63 pages
+ * by 64 rows of them, made with the cache) */
+#define GS_TC_SCRATCH_PAGES 4096
+#define GS_TC_SCRATCH_DIRTY 256
+
+/* --- the pools ----------------------------------------------------------
+ * The pool itself is C (GSObjectPool.c). Sources and targets get a pool
+ * apiece rather than sharing one by size, so a target can never land in
+ * a slot sized for a source. Made with the first cache, kept after. */
+static gs_object_pool_t s_source_pool;
+static gs_object_pool_t s_target_pool;
+static gs_object_pool_t s_palette_pool;
+
 GSTextureCache::GSTextureCache()
 {
+	gs_object_pool_init(&s_source_pool, sizeof(Source), SOURCE_POOL_SIZE);
+	gs_object_pool_init(&s_target_pool, sizeof(Target), TARGET_POOL_SIZE);
+	gs_object_pool_init(&s_palette_pool, sizeof(Palette), PALETTE_POOL_SIZE);
+	gs_scratch_get(&s_scratch_copy_pages, sizeof(GSDevice::MultiStretchRect) * GS_TC_SCRATCH_PAGES);
+	gs_scratch_get(&s_scratch_merged_done, GS_TC_SCRATCH_PAGES / 8);
+	gs_scratch_get(&s_scratch_merged_queue, sizeof(GSDevice::MultiStretchRect) * GS_TC_SCRATCH_PAGES * 2);
+	gs_scratch_get(&s_scratch_dirty, sizeof(GSDevice::MultiStretchRect) * GS_TC_SCRATCH_DIRTY);
+	/* (the target lists' arrays from the source map's heap: they are
+	 * emptied before it goes, declared after it) */
+	if (m_src.m_heap.base)
+	{
+		m_dst[0].use_heap(&m_src.m_heap);
+		m_dst[1].use_heap(&m_src.m_heap);
+		m_target_heights.use_heap(&m_src.m_heap);
+		for (u32 i = 0; i < TARGET_SNAPSHOTS; i++)
+		{
+			m_snap[i][0].use_heap(&m_src.m_heap);
+			m_snap[i][1].use_heap(&m_src.m_heap);
+		}
+	}
 	s_unswizzle_buffer = (u8*)memalign_alloc(VECTOR_ALIGNMENT, GS_UNSWIZZLE_BUFFER_SIZE);
 	gs_flat_map_init(&m_palette_seen, sizeof(HashCacheKey), sizeof(HashType));
 	gs_stable_map_init(&m_hash_cache, sizeof(HashCacheKey), sizeof(HashCacheEntry), &s_hash_cache_nodes);
@@ -121,20 +169,6 @@ GSTextureCache::GSTextureCache()
 	m_auto_index = !getenv("LRPS2_TEST_NO_AUTO_INDEX");
 }
 
-/* Where the copy builders put their lists of copies, which are sized by
- * page counts and dirty lists rather than anything the stack can be
- * trusted with (GSScratch.h). One per site, so none holds another's. */
-static struct gs_scratch s_scratch_copy_pages;
-static struct gs_scratch s_scratch_merged_done;
-static struct gs_scratch s_scratch_merged_queue;
-static struct gs_scratch s_scratch_dirty;
-/* BuildMoveRemap's element records, remap table and coverage bytes, and
- * its nibble marks (a bit per nibble of local memory, 1 MiB), kept
- * between builds rather than made for each. */
-static struct gs_scratch s_scratch_move_recs;
-static struct gs_scratch s_scratch_move_table;
-static struct gs_scratch s_scratch_move_covered;
-static u64* s_move_marks;
 
 GSTextureCache::~GSTextureCache()
 {
@@ -7996,15 +8030,8 @@ bool GSTextureCache::Surface::Overlaps(u32 bp, u32 bw, u32 psm, const GSVector4i
 
 // GSTextureCache::Source
 
-/* --- the two pools -----------------------------------------------------
- * The pool itself is C (GSObjectPool.c); what is left here is the pair
- * of hooks the classes need, one call each. Sources and targets get a
- * pool apiece rather than sharing one by size, so a target can never
- * land in a slot sized for a source. */
-static gs_object_pool_t s_source_pool;
-static gs_object_pool_t s_target_pool;
-
-static gs_object_pool_t s_palette_pool;
+/* --- the pools: the hooks the classes need, one call each (the pools
+ * themselves are made with the cache, above) --------------------------- */
 
 void* GSTextureCache::Palette::operator new(size_t size)
 {
@@ -8805,8 +8832,23 @@ bool GSTextureCache::Target::ResizeTexture(int new_unscaled_width, int new_unsca
 
 // GSTextureCache::SourceMap
 
+/* The sources' room and the page lists' arrays, made now: the arrays
+ * come back to the heap as lists empty, for the next to grow into. */
+GSTextureCache::SourceMap::SourceMap()
+{
+	m_surfaces          = static_cast<Source**>(malloc(SOURCE_POOL_SIZE * 2 * sizeof(Source*)));
+	m_surfaces_capacity = m_surfaces ? SOURCE_POOL_SIZE * 2 : 0;
+	if (gs_fast_list_heap_init(&m_heap, PAGE_LIST_HEAP_SIZE))
+		for (u32 i = 0; i < GS_MAX_PAGES; i++)
+			m_map[i].use_heap(&m_heap);
+}
+
 GSTextureCache::SourceMap::~SourceMap()
 {
+	/* (the lists' arrays given back before the heap goes) */
+	for (u32 i = 0; i < GS_MAX_PAGES; i++)
+		m_map[i].clear();
+	gs_fast_list_heap_free(&m_heap);
 	free(m_surfaces);
 }
 

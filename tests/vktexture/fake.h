@@ -34,6 +34,9 @@ static unsigned long long fk_next = 0x100;
 /* the device's state */
 static unsigned long long fk_fence = 1, fk_completed = 0;
 static unsigned long long fk_made = 0, fk_destroyed = 0;
+/* framebuffers made, and destroyed or deferred; the last deferred */
+static unsigned long long fk_fb_made = 0, fk_fb_gone = 0;
+static VkFramebuffer fk_fb_deferred;
 static VkCommandBuffer fk_cmd, fk_init_cmd;
 static int fk_stencil = 1;
 static u32 fk_pitch_align = 64, fk_offset_align = 16;
@@ -67,7 +70,7 @@ static VkResult VKAPI_CALL fk_create_view(VkDevice d, const VkImageViewCreateInf
 }
 static void VKAPI_CALL fk_destroy_view(VkDevice d, VkImageView v, const VkAllocationCallbacks* a) { (void)d; (void)a; HU(0xd71e); HN(v); }
 static void VKAPI_CALL fk_destroy_image(VkDevice d, VkImage v, const VkAllocationCallbacks* a) { (void)d; (void)a; HU(0xd1a6); HN(v); }
-static void VKAPI_CALL fk_destroy_fb(VkDevice d, VkFramebuffer v, const VkAllocationCallbacks* a) { (void)d; (void)a; HU(0xdfb0); HN(v); }
+static void VKAPI_CALL fk_destroy_fb(VkDevice d, VkFramebuffer v, const VkAllocationCallbacks* a) { (void)d; (void)a; HU(0xdfb0); HN(v); fk_fb_gone++; }
 static void VKAPI_CALL fk_destroy_buffer(VkDevice d, VkBuffer v, const VkAllocationCallbacks* a) { (void)d; (void)a; HU(0xdb0f); HN(v); }
 static VkResult VKAPI_CALL fk_create_fb(VkDevice d, const VkFramebufferCreateInfo* ci, const VkAllocationCallbacks* a, VkFramebuffer* fb)
 {
@@ -78,6 +81,7 @@ static VkResult VKAPI_CALL fk_create_fb(VkDevice d, const VkFramebufferCreateInf
 		HN(ci->pAttachments[i]);
 	HU(ci->width); HU(ci->height); HU(ci->layers);
 	*fb = FK_NEW(VkFramebuffer);
+	fk_fb_made++;
 	return VK_SUCCESS;
 }
 static void VKAPI_CALL fk_barrier(VkCommandBuffer c, VkPipelineStageFlags src, VkPipelineStageFlags dst, VkDependencyFlags f,
@@ -219,7 +223,7 @@ static int fk_create_image(const VkImageCreateInfo* ici, VkImage* image, gs_vk_a
 	return 1;
 }
 static void fk_unbind(void) { HU(0x0b1d); }
-static void fk_defer_fb(VkFramebuffer fb) { HU(0xdefb); HN(fb); }
+static void fk_defer_fb(VkFramebuffer fb) { HU(0xdefb); HN(fb); fk_fb_gone++; fk_fb_deferred = fb; }
 static void fk_defer_view(VkImageView v) { HU(0xdef1); HN(v); }
 static void fk_defer_image(VkImage i, const gs_vk_alloc_t* a, unsigned long long bytes)
 {

@@ -24,7 +24,10 @@
  * kept; the device keeps its texture pool in two.
  *
  * An empty list owns nothing: the array is made at the first insertion,
- * since of GS_MAX_PAGES lists a frame touches a handful.
+ * since of GS_MAX_PAGES lists a frame touches a handful. Lists given a
+ * heap (gs_fast_list_heap) take their arrays from it, made once at start,
+ * and give them back to it: none of theirs come from the allocator while
+ * it has room.
  *
  * Insert, erase and move are static in the header, as the flat map's
  * find is. Not thread safe.
@@ -59,11 +62,30 @@
 extern "C" {
 #endif
 
+/* Arrays for lists, from one block made at start: a free chain for each
+ * power of two of bytes, from 64 up, and what was never handed out.
+ * Past the block, the allocator. Not thread safe. */
+#define GS_FAST_LIST_HEAP_CLASSES 26
+typedef struct gs_fast_list_heap
+{
+	unsigned char* base;
+	size_t size;
+	size_t used;
+	void* free_head[GS_FAST_LIST_HEAP_CLASSES];
+	unsigned spilled; /* arrays that came from the allocator */
+} gs_fast_list_heap;
+
+/* A heap of bytes; zero if it cannot be had (lists then use the allocator) */
+int gs_fast_list_heap_init(gs_fast_list_heap* h, size_t bytes);
+/* (every list using it emptied first) */
+void gs_fast_list_heap_free(gs_fast_list_heap* h);
+
 typedef struct gs_fast_list
 {
 	/* capacity elements of stride bytes: the data, then at link the next
 	 * and prev indexes; then the free indexes, capacity - 1 of them */
 	unsigned char* buf;
+	gs_fast_list_heap* heap; /* where buf comes from: NULL, the allocator */
 	u16 capacity;
 	u16 count; /* elements held, and the top of the free stack */
 	u16 elem_size;
@@ -78,6 +100,8 @@ typedef struct gs_fast_list
 
 /* An empty list of elements of this size. Allocates nothing. */
 void gs_fast_list_init(gs_fast_list* l, size_t elem_size);
+/* An empty list's arrays taken from heap from now on */
+void gs_fast_list_use_heap(gs_fast_list* l, gs_fast_list_heap* heap);
 /* Empty again, owning nothing */
 void gs_fast_list_clear(gs_fast_list* l);
 /* (the first insertion's array, or twice the room: zero if it cannot be
@@ -198,6 +222,7 @@ public:
 	FastList& operator=(const FastList&) = delete;
 
 	void clear() { gs_fast_list_clear(&m_l); }
+	void use_heap(gs_fast_list_heap* heap) { gs_fast_list_use_heap(&m_l, heap); }
 
 	/* (0 when there is no room: an index erase and move ignore) */
 	__forceinline u16 InsertFront(const T& data) { return gs_fast_list_insert_front(&m_l, &data); }

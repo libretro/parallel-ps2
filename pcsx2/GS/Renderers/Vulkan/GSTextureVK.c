@@ -49,7 +49,6 @@ static void gs_texture_vk_free(gs_texture* base)
 {
 	gs_texture_vk* t = (gs_texture_vk*)base;
 	gs_texture_vk_destroy(t, 1);
-	gs_array_free(&t->framebuffers);
 	free(t);
 }
 
@@ -171,39 +170,50 @@ gs_texture_vk* gs_texture_vk_create(unsigned type, unsigned format, int width, i
 	t->vk_format            = vk_format;
 	t->layout               = GS_VK_LAYOUT_UNDEFINED;
 	t->map_level            = 0x7fffffff;
-	gs_array_init(&t->framebuffers, sizeof(gs_vk_linked_fb));
+	t->framebuffer_count    = 0;
 	return t;
+}
+
+/* framebuffer n out of t's list, the later ones moved down */
+static void gs_texture_vk_unlist_fb(gs_texture_vk* t, u32 n)
+{
+	t->framebuffer_count--;
+	memmove(&t->framebuffers[n], &t->framebuffers[n + 1], (t->framebuffer_count - n) * sizeof(t->framebuffers[0]));
+}
+
+/* t's framebuffer n gone: out of both lists, destroyed */
+static void gs_texture_vk_drop_fb(gs_texture_vk* t, u32 n, int defer)
+{
+	const gs_vk_linked_fb lfb = t->framebuffers[n];
+	u32 m;
+	if (lfb.other)
+	{
+		gs_texture_vk* o = lfb.other;
+		for (m = 0; m < o->framebuffer_count; m++)
+		{
+			if (o->framebuffers[m].fb == lfb.fb)
+			{
+				gs_texture_vk_unlist_fb(o, m);
+				break;
+			}
+		}
+	}
+	gs_texture_vk_unlist_fb(t, n);
+	if (defer)
+		gs_vk_device_defer_framebuffer(lfb.fb);
+	else
+		vkDestroyFramebuffer(gs_vk_device_handle(), lfb.fb, NULL);
 }
 
 void gs_texture_vk_destroy(gs_texture_vk* t, int defer)
 {
 	const VkDevice dev = gs_vk_device_handle();
-	size_t n, m;
 
 	gs_vk_device_unbind_texture(t);
 
 	/* (of any type: a texture drawn into has one too, the palette's say) */
-	for (n = 0; n < t->framebuffers.count; n++)
-	{
-		const gs_vk_linked_fb* lfb = &GS_ARRAY_AT(&t->framebuffers, gs_vk_linked_fb, n);
-		if (lfb->other)
-		{
-			gs_array_t* others = &lfb->other->framebuffers;
-			for (m = 0; m < others->count; m++)
-			{
-				if (GS_ARRAY_AT(others, gs_vk_linked_fb, m).other == t)
-				{
-					gs_array_erase(others, m);
-					break;
-				}
-			}
-		}
-		if (defer)
-			gs_vk_device_defer_framebuffer(lfb->fb);
-		else
-			vkDestroyFramebuffer(dev, lfb->fb, NULL);
-	}
-	t->framebuffers.count = 0;
+	while (t->framebuffer_count)
+		gs_texture_vk_drop_fb(t, 0, defer);
 
 	if (t->view != VK_NULL_HANDLE)
 	{
@@ -620,16 +630,15 @@ VkFramebuffer gs_texture_vk_framebuffer(gs_texture_vk* t, gs_texture_vk* depth, 
 {
 	struct gs_vk_fb_builder fbb;
 	gs_vk_linked_fb* mine;
-	gs_vk_linked_fb* theirs = NULL;
 	VkRenderPass rp;
 	VkFramebuffer fb;
-	size_t n;
+	u32 n;
 	const int is_depth = t->base.m_type == GS_TEXTYPE_DEPTH_STENCIL;
 
 	feedback_loop = feedback_loop ? 1 : 0;
-	for (n = 0; n < t->framebuffers.count; n++)
+	for (n = 0; n < t->framebuffer_count; n++)
 	{
-		const gs_vk_linked_fb* lfb = &GS_ARRAY_AT(&t->framebuffers, gs_vk_linked_fb, n);
+		const gs_vk_linked_fb* lfb = &t->framebuffers[n];
 		if (lfb->other == depth && lfb->feedback_loop == feedback_loop)
 			return lfb->fb;
 	}
@@ -647,24 +656,18 @@ VkFramebuffer gs_texture_vk_framebuffer(gs_texture_vk* t, gs_texture_vk* depth, 
 	if (!fb)
 		return VK_NULL_HANDLE;
 
-	mine = (gs_vk_linked_fb*)gs_array_push(&t->framebuffers);
-	if (depth)
-		theirs = (gs_vk_linked_fb*)gs_array_push(&depth->framebuffers);
-	if (!mine || (depth && !theirs))
-	{
-		/* (whichever was pushed comes back off) */
-		if (mine)
-			t->framebuffers.count--;
-		if (theirs)
-			depth->framebuffers.count--;
-		vkDestroyFramebuffer(gs_vk_device_handle(), fb, NULL);
-		return VK_NULL_HANDLE;
-	}
+	/* (full, the oldest goes - when the GPU is done with it) */
+	if (t->framebuffer_count == GS_VK_TEXTURE_FRAMEBUFFERS)
+		gs_texture_vk_drop_fb(t, 0, 1);
+	if (depth && depth->framebuffer_count == GS_VK_TEXTURE_FRAMEBUFFERS)
+		gs_texture_vk_drop_fb(depth, 0, 1);
+	mine                = &t->framebuffers[t->framebuffer_count++];
 	mine->other         = depth;
 	mine->fb            = fb;
 	mine->feedback_loop = feedback_loop;
-	if (theirs)
+	if (depth)
 	{
+		gs_vk_linked_fb* theirs = &depth->framebuffers[depth->framebuffer_count++];
 		theirs->other         = t;
 		theirs->fb            = fb;
 		theirs->feedback_loop = feedback_loop;

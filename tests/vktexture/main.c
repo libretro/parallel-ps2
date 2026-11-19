@@ -123,6 +123,51 @@ static int sc_dmap(DTEX d, const int* rc)
 
 #include "scenario.h"
 
+/* A texture's framebuffers in slots it is made with: a depth buffer
+ * drawn with more targets than it has slots for lets its oldest go,
+ * when the GPU is done with it, out of the target's slots too; drawn
+ * with that target again, a new one is made. Every one made goes once. */
+#define FB_TARGETS (GS_VK_TEXTURE_FRAMEBUFFERS + 4)
+static int fb_slots(void)
+{
+	TEX d, t[FB_TARGETS];
+	VkFramebuffer fb[FB_TARGETS], again;
+	const unsigned long long made0 = fk_fb_made, gone0 = fk_fb_gone;
+	int fails = 0;
+	u32 i;
+#define FB_CHECK(c, m) do { if (!(c)) { printf("  FAIL: %s\n", m); fails++; } } while (0)
+	d = T_CREATE(GS_TEXTYPE_DEPTH_STENCIL, 3, 64, 64, 1);
+	for (i = 0; i < FB_TARGETS; i++)
+	{
+		t[i]  = T_CREATE(GS_TEXTYPE_RENDER_TARGET, 1, 64, 64, 1);
+		fb[i] = T_FB(t[i], d, 0);
+		FB_CHECK(fb[i] != VK_NULL_HANDLE, "a target with the depth buffer: a framebuffer");
+	}
+	FB_CHECK(d->framebuffer_count == GS_VK_TEXTURE_FRAMEBUFFERS, "the depth buffer's slots full, no more");
+	FB_CHECK(fk_fb_gone - gone0 == FB_TARGETS - GS_VK_TEXTURE_FRAMEBUFFERS, "one deferred for each past them");
+	FB_CHECK(fk_fb_deferred == fb[FB_TARGETS - GS_VK_TEXTURE_FRAMEBUFFERS - 1], "the oldest going first");
+	FB_CHECK(t[0]->framebuffer_count == 0, "and out of its target's slots");
+	FB_CHECK(t[FB_TARGETS - 1]->framebuffer_count == 1 && t[FB_TARGETS - 1]->framebuffers[0].fb == fb[FB_TARGETS - 1],
+		"the newest kept on both");
+	FB_CHECK(T_FB(t[FB_TARGETS - 1], d, 0) == fb[FB_TARGETS - 1], "a kept one found again");
+	again = T_FB(t[0], d, 0);
+	FB_CHECK(again != VK_NULL_HANDLE && again != fb[0], "the first target again: a new one");
+	/* (a target with its own slots full: drawn alone, with and without a
+	 * feedback loop, and with the depth buffer) */
+	for (i = 0; i < GS_VK_TEXTURE_FRAMEBUFFERS; i++)
+		T_FB(t[1], i & 1 ? d : NULL, (int)(i >> 1));
+	FB_CHECK(t[1]->framebuffer_count <= GS_VK_TEXTURE_FRAMEBUFFERS && d->framebuffer_count <= GS_VK_TEXTURE_FRAMEBUFFERS,
+		"no slot past the last");
+	for (i = 0; i < FB_TARGETS; i++)
+		T_FREE(t[i]);
+	FB_CHECK(d->framebuffer_count == 0, "every target gone: none left on the depth buffer");
+	T_FREE(d);
+	FB_CHECK(fk_fb_made - made0 == fk_fb_gone - gone0, "every framebuffer made goes, once");
+	printf(fails ? "vktexture framebuffer slots: FAILED (%d)\n" : "vktexture framebuffer slots: ok\n", fails);
+	return fails;
+#undef FB_CHECK
+}
+
 int main(int argc, char** argv)
 {
 	unsigned long long want = argc > 1 ? strtoull(argv[1], NULL, 16) : 0;
@@ -137,5 +182,5 @@ int main(int argc, char** argv)
 		printf("FAIL: expected %016llx\n", want);
 		return 1;
 	}
-	return 0;
+	return fb_slots() != 0;
 }

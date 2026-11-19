@@ -28,11 +28,90 @@
 /* Elements in a list's first array: no growth on the first insertions */
 #define GS_FAST_LIST_FIRST 4
 
+/* The heap's chain for a size: the smallest power of two from 64 that
+ * holds it */
+static unsigned gs_fl_heap_class(size_t bytes)
+{
+	unsigned c = 0;
+	while (((size_t)64 << c) < bytes)
+		c++;
+	return c;
+}
+
+int gs_fast_list_heap_init(gs_fast_list_heap* h, size_t bytes)
+{
+	memset(h, 0, sizeof(*h));
+	h->base = (unsigned char*)memalign_alloc(64, bytes);
+	if (!h->base)
+		return 0;
+	h->size = bytes;
+	return 1;
+}
+
+void gs_fast_list_heap_free(gs_fast_list_heap* h)
+{
+	memalign_free(h->base);
+	memset(h, 0, sizeof(*h));
+}
+
+static unsigned char* gs_fl_alloc(gs_fast_list_heap* h, size_t bytes)
+{
+	unsigned c;
+	size_t whole;
+	unsigned char* p;
+	if (!h)
+		return (unsigned char*)memalign_alloc(64, bytes);
+	c     = gs_fl_heap_class(bytes);
+	whole = (size_t)64 << c;
+	if (c < GS_FAST_LIST_HEAP_CLASSES && h->free_head[c])
+	{
+		p               = (unsigned char*)h->free_head[c];
+		h->free_head[c] = *(void**)p;
+		return p;
+	}
+	if (c < GS_FAST_LIST_HEAP_CLASSES && h->base && whole <= h->size - h->used)
+	{
+		p = h->base + h->used;
+		h->used += whole;
+		return p;
+	}
+	h->spilled++;
+	return (unsigned char*)memalign_alloc(64, bytes);
+}
+
+static void gs_fl_free(gs_fast_list_heap* h, unsigned char* p, size_t bytes)
+{
+	unsigned c;
+	if (!p)
+		return;
+	if (!h || p < h->base || p >= h->base + h->size)
+	{
+		memalign_free(p);
+		return;
+	}
+	c               = gs_fl_heap_class(bytes);
+	*(void**)p      = h->free_head[c];
+	h->free_head[c] = p;
+}
+
+/* (an array of capacity elements and its free stack) */
+static size_t gs_fl_bytes(const gs_fast_list* l, u16 capacity)
+{
+	return (size_t)capacity * l->stride + (size_t)(capacity - 1) * sizeof(u16);
+}
+
+void gs_fast_list_use_heap(gs_fast_list* l, gs_fast_list_heap* heap)
+{
+	gs_fast_list_clear(l);
+	l->heap = heap;
+}
+
 void gs_fast_list_init(gs_fast_list* l, size_t elem_size)
 {
 	/* an element and its two indexes, at the element's alignment */
 	const size_t align = elem_size >= 8 ? 8 : 4;
 	l->buf       = NULL;
+	l->heap      = NULL;
 	l->capacity  = 0;
 	l->count     = 0;
 	l->elem_size = (u16)elem_size;
@@ -42,7 +121,8 @@ void gs_fast_list_init(gs_fast_list* l, size_t elem_size)
 
 void gs_fast_list_clear(gs_fast_list* l)
 {
-	memalign_free(l->buf);
+	if (l->buf)
+		gs_fl_free(l->heap, l->buf, gs_fl_bytes(l, l->capacity));
 	l->buf      = NULL;
 	l->capacity = 0;
 	l->count    = 0;
@@ -59,7 +139,7 @@ int gs_fast_list_grow(gs_fast_list* l)
 	/* (index 0 is the head: a full array of 65535 holds 65534) */
 	if (capacity == l->capacity)
 		return 0;
-	buf = (unsigned char*)memalign_alloc(64, (size_t)capacity * l->stride + (size_t)(capacity - 1) * sizeof(u16));
+	buf = gs_fl_alloc(l->heap, gs_fl_bytes(l, capacity));
 	if (!buf)
 		return 0;
 	stack = (u16*)(buf + (size_t)capacity * l->stride);
@@ -69,7 +149,7 @@ int gs_fast_list_grow(gs_fast_list* l)
 		/* in order: a kept index still names its element */
 		memcpy(buf, l->buf, (size_t)l->capacity * l->stride);
 		memcpy(stack, GS_FAST_LIST_FREE(l), (size_t)(l->capacity - 1) * sizeof(u16));
-		memalign_free(l->buf);
+		gs_fl_free(l->heap, l->buf, gs_fl_bytes(l, l->capacity));
 		i = (u16)(l->capacity - 1);
 	}
 	else

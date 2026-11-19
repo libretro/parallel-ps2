@@ -474,8 +474,13 @@ public:
 		Source** m_surfaces = nullptr;
 		u32 m_surfaces_count = 0;
 		u32 m_surfaces_capacity = 0;
+		/* (what the page lists' arrays come from: a page a source covers
+		 * is an entry in its list) */
+		static constexpr size_t PAGE_LIST_HEAP_SIZE = 4 * 1024 * 1024;
+		gs_fast_list_heap m_heap;
 		FastList<Source*> m_map[GS_MAX_PAGES];
 
+		SourceMap();
 		~SourceMap();
 
 		void Add(Source* s, const GIFRegTEX0& TEX0);

@@ -195,19 +195,29 @@ int gs_sw_texture_update(gs_sw_texture* t, int left, int top, int right, int bot
 			}               \
 	}
 
+/* (the textures' room and the page lists' arrays, made now) */
+#define GS_SW_TEXTURES_FIRST 256
+#define GS_SW_PAGE_LIST_HEAP_SIZE (4 * 1024 * 1024)
+
 void gs_sw_texture_cache_init(gs_sw_texture_cache* c)
 {
 	u32 i;
-	c->textures = NULL;
+	const int heap = gs_fast_list_heap_init(&c->heap, GS_SW_PAGE_LIST_HEAP_SIZE);
+	c->textures = (gs_sw_texture**)malloc(GS_SW_TEXTURES_FIRST * sizeof(*c->textures));
 	c->count    = 0;
-	c->capacity = 0;
+	c->capacity = c->textures ? GS_SW_TEXTURES_FIRST : 0;
 	for (i = 0; i < GS_MAX_PAGES; i++)
+	{
 		gs_fast_list_init(&c->map[i], sizeof(gs_sw_texture*));
+		if (heap)
+			gs_fast_list_use_heap(&c->map[i], &c->heap);
+	}
 }
 
 void gs_sw_texture_cache_free(gs_sw_texture_cache* c)
 {
 	gs_sw_texture_cache_remove_all(c);
+	gs_fast_list_heap_free(&c->heap);
 	free(c->textures);
 	c->textures = NULL;
 	c->capacity = 0;
@@ -256,7 +266,7 @@ gs_sw_texture* gs_sw_texture_cache_lookup(gs_sw_texture_cache* c, const GIFRegTE
 
 	if (c->count == c->capacity)
 	{
-		const u32 capacity     = c->capacity ? c->capacity * 2 : 64;
+		const u32 capacity     = c->capacity ? c->capacity * 2 : GS_SW_TEXTURES_FIRST;
 		gs_sw_texture** grown = (gs_sw_texture**)realloc(c->textures, capacity * sizeof(*grown));
 		if (!grown)
 			return NULL;

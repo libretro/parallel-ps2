@@ -45,6 +45,8 @@ enum gs_vk_layout
 /* A framebuffer of a texture with another (a colour target's with its
  * depth, or the reverse) or with none: on both textures' lists, and
  * destroyed with whichever goes first. */
+#define GS_VK_TEXTURE_FRAMEBUFFERS 16
+
 typedef struct gs_vk_linked_fb
 {
 	struct gs_texture_vk* other;
@@ -62,7 +64,10 @@ typedef struct gs_texture_vk
 	u32 layout;          /* gs_vk_layout */
 	gs_texture_rect map_area;
 	int map_level;
-	gs_array_t framebuffers; /* of gs_vk_linked_fb */
+	/* the framebuffers drawn through, oldest first: past this many the
+	 * oldest goes */
+	gs_vk_linked_fb framebuffers[GS_VK_TEXTURE_FRAMEBUFFERS];
+	u32 framebuffer_count;
 	/* the fence counter of the command buffer that last used it */
 	u64 use_fence_counter;
 } gs_texture_vk;

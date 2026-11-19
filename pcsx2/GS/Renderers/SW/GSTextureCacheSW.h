@@ -58,6 +58,7 @@ typedef struct gs_sw_texture_cache
 	u32 count;
 	u32 capacity;
 	gs_fast_list map[GS_MAX_PAGES]; /* gs_sw_texture*, most recent first */
+	gs_fast_list_heap heap;         /* the lists' arrays, made at init */
 } gs_sw_texture_cache;
 
 #ifdef __cplusplus
