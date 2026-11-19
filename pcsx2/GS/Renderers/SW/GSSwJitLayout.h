@@ -44,8 +44,10 @@ GS_SWJ_AT(GSScanlineGlobalData, t.max, GS_SLG_T_MAX);
 GS_SWJ_AT(GSScanlineGlobalData, t.minmax, GS_SLG_T_MINMAX);
 GS_SWJ_AT(GSScanlineGlobalData, t.mask, GS_SLG_T_MASK);
 GS_SWJ_AT(GSScanlineConstantData, m_test_256b, GS_SLC_TEST_256B);
+GS_SWJ_AT(GSScanlineConstantData, m_shift_256b, GS_SLC_SHIFT_256B);
 GS_SWJ_AT(GSScanlineConstantData, m_one_256b, GS_SLC_ONE_256B);
 GS_SWJ_AT(GSScanlineConstantData, m_test_128b, GS_SLC_TEST_128B);
+GS_SWJ_AT(GSScanlineConstantData, m_shift_128b, GS_SLC_SHIFT_128B);
 GS_SWJ_AT(GSScanlineConstantData, m_one_128b, GS_SLC_ONE_128B);
 
 #if _M_SSE >= 0x501

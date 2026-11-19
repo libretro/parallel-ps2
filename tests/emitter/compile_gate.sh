@@ -7,7 +7,7 @@
 # this gate reported 31/31, because it was never in the list. When a new
 # recompiler header appears, add it here.
 D=$(pwd)
-INC="-I$D -I$D/pcsx2 -I$D/pcsx2/x86 -I$D/common -I$D/common/include -I$D/libretro -I$D/libretro/libretro-common/include -I$D/3rdparty -I$D/3rdparty/include -I$D/3rdparty/xbyak"
+INC="-I$D -I$D/pcsx2 -I$D/pcsx2/x86 -I$D/common -I$D/common/include -I$D/libretro -I$D/libretro/libretro-common/include -I$D/3rdparty -I$D/3rdparty/include"
 DEFS="-DGIT_VERSION=\"\" -D_GNU_SOURCE -DWANT_THREADING -DHAVE_THREADS -D__LIBRETRO__ -D_FILE_OFFSET_BITS=64 -DMULTI_ISA_SHARED_COMPILATION -DNDEBUG -msse -msse2 -msse4.1 -mfxsr -msse3 -std=c++17 -fno-rtti -fno-exceptions -fPIC -fno-semantic-interposition"
 FLAG="$1"
 fail=0; n=0

@@ -193,9 +193,7 @@ What is left, by the count, largest first, every one a bug:
   `GSDrawScanlineJit.c`, `GSJitX86.c`) and allocate nothing, but a
   function is still generated at a draw's first use, which is a compile
   on the draw path too, and the maps that hold them
-  (`GSCodeGeneratorFunctionMap`) grow as they meet keys. Xbyak is left
-  only as `tests/swjit`'s reference, until its hashes alone hold the
-  bytes.
+  (`GSCodeGeneratorFunctionMap`) grow as they meet keys.
 - The texture cache: the texture behind a new source or target
   (`gs_texture_vk_create`, when the pool has none to give) and
   `gs_pixel_offset4_get` (a table for each new FRAME and ZBUF pair).

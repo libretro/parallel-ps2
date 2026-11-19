@@ -3,10 +3,10 @@
  * instructions they use (SSE4.1, AVX, AVX2 and the general ones around
  * them), encoded straight into the function's room in the code reserve.
  *
- * The encodings are xbyak's, byte for byte (tests/swjit holds them to it):
- * the same prefixes, ModRM, SIB and displacement choices, imm8 where an
- * immediate fits, the 2-byte VEX form wherever it can be had, and forward
- * jumps short unless asked for near. A generator written against this
+ * The encodings are xbyak's, byte for byte (tests/swjit holds them, by
+ * hash, to the bytes xbyak made): the same prefixes, ModRM, SIB and
+ * displacement choices, imm8 where an immediate fits, the 2-byte VEX form
+ * wherever it can be had, and forward jumps short unless asked for near. A generator written against this
  * emits what it emitted through xbyak.
  *
  * Instructions with an SSE and an AVX form take the AVX one when the

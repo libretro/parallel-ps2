@@ -220,10 +220,12 @@ enum
 /* --- GSScanlineConstantData (g_const) ------------------------------------ */
 enum
 {
-	GS_SLC_TEST_256B = 0,
-	GS_SLC_ONE_256B  = 416,
-	GS_SLC_TEST_128B = 448,
-	GS_SLC_ONE_128B  = 656
+	GS_SLC_TEST_256B  = 0,
+	GS_SLC_SHIFT_256B = 128,
+	GS_SLC_ONE_256B   = 416,
+	GS_SLC_TEST_128B  = 448,
+	GS_SLC_SHIFT_128B = 576,
+	GS_SLC_ONE_128B   = 656
 };
 
 /* What a generator is asked for: the selector, the instruction set (AVX
