@@ -31,6 +31,9 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
+#ifndef XBYAK_ENABLE_OMITTED_OPERAND
+#define XBYAK_ENABLE_OMITTED_OPERAND /* as the core built it */
+#endif
 #include <xbyak/xbyak.h>
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop

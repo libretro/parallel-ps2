@@ -16,7 +16,7 @@
 #pragma once
 
 #include "../../GSState.h"
-#ifdef ARCH_X86 /* the xbyak generators; see ENABLE_JIT_RASTERIZER */
+#ifdef ARCH_X86 /* the code generators; see ENABLE_JIT_RASTERIZER */
 #include "GSSetupPrimCodeGenerator.h"
 #include "GSDrawScanlineCodeGenerator.h"
 #endif

@@ -14,8 +14,8 @@
  */
 
 #include "GSDrawScanlineCodeGenerator.all.h"
-#include "../Common/GSFunctionMap.h"
-#include "GSVertexSW.h"
+#include "GS/Renderers/Common/GSFunctionMap.h"
+#include "GS/Renderers/SW/GSVertexSW.h"
 
 MULTI_ISA_UNSHARED_IMPL;
 using namespace Xbyak;

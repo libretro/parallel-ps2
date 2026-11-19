@@ -320,7 +320,6 @@ set(pcsx2GSSourcesUnshared
 	GS/Renderers/HW/GSRendererHWMultiISA.cpp
 	GS/Renderers/SW/GSDrawScanline.cpp
 	GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp
-	GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.cpp
 	GS/Renderers/SW/GSRasterizer.cpp
 	GS/Renderers/SW/GSRendererSW.cpp
 	GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
@@ -332,7 +331,6 @@ set(pcsx2GSSourcesUnshared
 if(NOT _M_X86)
 	list(REMOVE_ITEM pcsx2GSSourcesUnshared
 		GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp
-		GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.cpp
 		GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
 	)
 endif()
@@ -459,9 +457,7 @@ set(pcsx2GSHeaders
 	GS/Renderers/HW/GSVertexHW.h
 	GS/Renderers/SW/GSDeviceSW.h
 	GS/Renderers/SW/GSDrawScanlineCodeGenerator.h
-	GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.h
 	GS/Renderers/SW/GSDrawScanline.h
-	GS/Renderers/SW/GSNewCodeGenerator.h
 	GS/Renderers/SW/GSRaster.h
 	GS/Renderers/SW/GSRasterList.h
 	GS/Renderers/SW/GSRasterizer.h
@@ -605,6 +601,7 @@ if(_M_X86)
 	list(APPEND pcsx2GSSources
 		GS/Renderers/SW/GSJitX86.c
 		GS/Renderers/SW/GSSetupPrimJit.c
+		GS/Renderers/SW/GSDrawScanlineJit.c
 	)
 endif()
 
@@ -1061,7 +1058,6 @@ target_include_directories(PCSX2_FLAGS INTERFACE
 	x86
 	${CMAKE_BINARY_DIR}/pcsx2
 	${CMAKE_BINARY_DIR}/common/include/
-	"${CMAKE_SOURCE_DIR}/3rdparty/xbyak/"
 	"${FFMPEG_INCLUDE_DIRS}"
 )
 

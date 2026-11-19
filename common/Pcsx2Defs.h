@@ -314,9 +314,6 @@
 #endif
 #endif
 
-/* Makes sure that if anyone includes xbyak, it doesn't do anything bad */
-#define XBYAK_ENABLE_OMITTED_OPERAND
-
 #if defined(__x86_64__) && !defined(_M_AMD64)
 	#define _M_AMD64
 #endif

@@ -29,7 +29,6 @@ INCFLAGS := \
 	-I$(LIBRETRO_COMM_DIR)/include \
 	-I$(DEPS_DIR) \
 	-I$(DEPS_DIR)/include \
-	-I$(DEPS_DIR)/xbyak \
 
 ifeq ($(HAVE_OPENGL), 1)
 	INCFLAGS += -I$(DEPS_DIR)/glad/include
@@ -498,9 +497,9 @@ SOURCES_CXX += \
 ifneq ($(IS_ARM64), 1)
 SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSJitX86.c \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimJit.c
+	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimJit.c \
+	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineJit.c
 SOURCES_CXX += \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
 endif

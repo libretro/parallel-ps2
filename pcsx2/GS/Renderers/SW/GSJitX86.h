@@ -94,6 +94,9 @@ static INLINE gsj_op gsj_mem(unsigned bits, int base, int index, unsigned scale,
 }
 /* [base + disp], unsized */
 #define gsj_ptr(base, disp) gsj_mem(0, (base), -1, 1, (disp))
+/* [rip + disp32] at target: the base GSJ_RIP, the displacement target's
+ * distance from the emitter's buffer (resolved as it is encoded) */
+#define GSJ_RIP (-2)
 /* The same operand with another size (xbyak's dword[...] and so on) */
 static INLINE gsj_op gsj_sized(gsj_op o, unsigned bits)
 {
@@ -141,6 +144,7 @@ typedef struct gsj
 	 * jump that did not reach waits under its own) */
 	s32 label[GSJ_LABELS + 2];
 	unsigned anon; /* gsj_bind_anon calls so far */
+	unsigned tail; /* immediate bytes after the operand being encoded */
 	struct
 	{
 		s32 end; /* the offset after the jump's displacement */
@@ -153,6 +157,11 @@ typedef struct gsj
 /* An emitter writing into room bytes at buf, for SSE4.1 (avx 0), AVX, or
  * AVX2 (avx2 1 as well) */
 void gsj_init(gsj* j, void* buf, size_t room, int avx, int avx2);
+/* [rip + ...] addressing target (within 2 GiB of the buffer) */
+static INLINE gsj_op gsj_rip(const gsj* j, const void* target)
+{
+	return gsj_mem(0, GSJ_RIP, -1, 1, (s32)((size_t)target - (size_t)j->buf));
+}
 /* What was emitted: the room itself when it ran out */
 size_t gsj_size(const gsj* j);
 

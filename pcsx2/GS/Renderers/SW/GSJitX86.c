@@ -265,6 +265,13 @@ static void gsj_modrm_mem(gsj* j, unsigned reg, const gsj_op* o)
 	const unsigned base = has_base ? (unsigned)m->reg & 7 : 5;
 	unsigned mod        = 2;
 	int sib;
+	if (m->reg == GSJ_RIP)
+	{
+		/* (xbyak's opAddr: from the end of the instruction) */
+		gsj_b(j, ((reg & 7) << 3) | 5);
+		gsj_b32(j, (u32)(m->disp - (gsj_at(j) + 4 + (s32)j->tail)));
+		return;
+	}
 	if (!has_base || (base != 5 && disp == 0))
 		mod = 0;
 	else if (gsj_s8((s32)disp))
@@ -322,7 +329,9 @@ static void gsj_sse(gsj* j, unsigned pref, unsigned map, unsigned op, unsigned r
 	if (map)
 		gsj_b(j, map);
 	gsj_b(j, op);
+	j->tail = imm >= 0;
 	gsj_modrm(j, reg, rm);
+	j->tail = 0;
 	if (imm >= 0)
 		gsj_b(j, (unsigned)imm);
 }
@@ -360,7 +369,9 @@ static void gsj_vex(gsj* j, unsigned pref, unsigned map, int w, int l, unsigned 
 		gsj_b(j, (w ? 0x80 : 0) | v);
 	}
 	gsj_b(j, op);
+	j->tail = imm >= 0;
 	gsj_modrm(j, reg, rm);
+	j->tail = 0;
 	if (imm >= 0)
 		gsj_b(j, (unsigned)imm);
 }
@@ -443,7 +454,9 @@ static void gsj_alu_i(gsj* j, unsigned code, unsigned ext, gsj_op op, u32 imm)
 		const unsigned tmp = imm_bits < (bits < 32 ? bits : 32) ? 2 : 0;
 		gsj_grex(j, ext, bits, &op, 0);
 		gsj_b(j, (0x80 | tmp) | (bits == 8 ? 0 : 1));
+		j->tail = imm_bits / 8;
 		gsj_modrm(j, ext, &op);
+		j->tail = 0;
 	}
 	gsj_bn(j, imm, imm_bits / 8);
 }
@@ -517,7 +530,9 @@ void gsj_mov_i(gsj* j, gsj_op a, u64 imm)
 		}
 		gsj_grex(j, 0, a.bits, &a, 0);
 		gsj_b(j, 0xC6 | (a.bits == 8 ? 0 : 1));
+		j->tail = size;
 		gsj_modrm(j, 0, &a);
+		j->tail = 0;
 		gsj_bn(j, imm, size);
 	}
 }
@@ -578,7 +593,9 @@ void gsj_pop(gsj* j, gsj_op op)
 
 static void gsj_shift(gsj* j, unsigned ext, gsj_op op, unsigned imm)
 {
+	j->tail = imm != 1;
 	gsj_ext(j, imm == 1 ? 0xD0 : 0xC0, ext, op);
+	j->tail = 0;
 	if (imm != 1)
 		gsj_b(j, imm);
 }
@@ -609,7 +626,11 @@ void gsj_test_i(gsj* j, gsj_op op, u32 imm)
 		gsj_b(j, 0xA8 | (op.bits == 8 ? 0 : 1));
 	}
 	else
+	{
+		j->tail = size;
 		gsj_ext(j, 0xF6, 0, op);
+		j->tail = 0;
+	}
 	gsj_bn(j, imm, size);
 }
 

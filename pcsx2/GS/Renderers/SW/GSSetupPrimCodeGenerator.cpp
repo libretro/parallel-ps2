@@ -24,9 +24,12 @@ GSSetupPrimCodeGenerator::GSSetupPrimCodeGenerator(u64 key, void* code, size_t m
 	gs_swj_target t;
 	t.key        = key;
 	t.avx        = CPU_HAS_AVX;
+	t.avx2       = CPU_HAS_AVX2;
 	t.ymm        = _M_SSE >= 0x501;
 	t.win64      = GS_SWJ_WIN64;
 	t.shift_128b = g_const.m_shift_128b;
 	t.shift_256b = g_const.m_shift_256b;
+	t.consts     = &g_const;
+	t.zbias      = &GSVector4::m_xc1e00000000fffff;
 	m_size = gs_swj_setup_prim(&t, code, maxsize);
 }

@@ -20,7 +20,7 @@
 
 /* Comment to disable all dynamic code generation.
  *
- * The scanline/setup code generators are xbyak and x86-only. On other
+ * The scanline/setup code generators emit x86-64 (GSJitX86.c). On other
  * architectures the C++ reference rasterizer below (CSetupPrim,
  * CDrawScanline, CDrawEdge) is the whole renderer: slower than generated
  * code, but it is written against GSVector4/4i, which have NEON

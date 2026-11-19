@@ -188,12 +188,14 @@ What is left, by the count, largest first, every one a bug:
   (`DescriptorSetAllocator`), command buffers and buffer blocks, and the
   bindless pools grow as a session meets them. They want tables sized at
   device creation with a defined full path.
-- The software renderer's scanline JIT (`GSDrawScanlineCodeGenerator`,
-  through Xbyak and its labels): a draw function is generated, and
-  allocates, at a draw's first use, which is a compile on the draw path
-  too. The primitive setup's generator is C over the C emitter
-  (`GSSetupPrimJit.c`, `GSJitX86.c`) and allocates nothing; the scanline
-  one is next, and then Xbyak goes.
+- The software renderer's generated code: the primitive setup and the
+  scanline are C over the C emitter (`GSSetupPrimJit.c`,
+  `GSDrawScanlineJit.c`, `GSJitX86.c`) and allocate nothing, but a
+  function is still generated at a draw's first use, which is a compile
+  on the draw path too, and the maps that hold them
+  (`GSCodeGeneratorFunctionMap`) grow as they meet keys. Xbyak is left
+  only as `tests/swjit`'s reference, until its hashes alone hold the
+  bytes.
 - The texture cache: the texture behind a new source or target
   (`gs_texture_vk_create`, when the pool has none to give) and
   `gs_pixel_offset4_get` (a table for each new FRAME and ZBUF pair).

@@ -18,10 +18,11 @@ extern "C" uint64_t cpu_features_get(void) { return s_cpu; }
 static void quiet(enum retro_log_level level, const char* fmt, ...) { (void)level; (void)fmt; }
 extern "C" { retro_log_printf_t log_cb = quiet; }
 
-#include "GS/Renderers/SW/GSNewCodeGenerator.h"
+#include "ref/GSNewCodeGenerator.h"
 #include "GS/Renderers/SW/GSJitX86.h"
 
 using namespace Xbyak;
+using namespace Xbyak::util;
 
 static unsigned long long s_rng = 0x9E3779B97F4A7C15ull;
 static unsigned rnd(unsigned n)
@@ -510,6 +511,41 @@ int main(int argc, char** argv)
 				gsj_jcc_abs(j, GSJ_CC_E, s_cbuf + t2);
 				gsj_ret(j);
 			});
+	}
+
+	/* [rip + target]: the displacement from the instruction's end, past
+	 * any immediate (the target the same distance from each buffer) */
+	for (isa = 0; isa < 3; isa++)
+	{
+		set_isa(isa);
+		for (n = 0; n < 200; n++)
+		{
+			static const s32 dist[] = {0, 64, -64, 4096, -100000, 0x10000000, -0x10000000};
+			const s32 d   = dist[rnd(sizeof(dist) / sizeof(dist[0]))] + (s32)rnd(64);
+			const int r   = (int)rnd(16);
+			const int x   = (int)rnd(16);
+			const u32 imm = rnd(2) ? rnd(100) : 0x12345;
+			const Address xa = ptr[rip + (const void*)(s_xbuf + d)];
+			const Address xd = dword[rip + (const void*)(s_xbuf + d)];
+#define CA (gsj_rip(j, s_cbuf + d))
+			ONE(isa, "lea rip", g.lea(R64[r], xa), gsj_lea(j, gsj_r64(r), CA));
+			ONE(isa, "mov rip", g.mov(R64[r], xa), gsj_mov(j, gsj_r64(r), CA));
+			ONE(isa, "add rip", g.add(R64[r], xa), gsj_add(j, gsj_r64(r), CA));
+			ONE(isa, "movdqa rip", g.movdqa(Xmm(x), xa), gsj_movdqa(j, gsj_x(x), CA));
+			ONE(isa, "orps rip", g.orps(Xmm(x), xa), gsj_orps(j, gsj_x(x), CA));
+			ONE(isa, "pshufd rip", g.pshufd(Xmm(x), xa, (u8)imm), gsj_pshufd(j, gsj_x(x), CA, imm & 0xFF));
+			ONE(isa, "add rip i", g.add(xd, imm), gsj_add_i(j, gsj_sized(CA, 32), imm));
+			ONE(isa, "mov rip i", g.mov(xd, (size_t)imm), gsj_mov_i(j, gsj_sized(CA, 32), imm));
+			ONE(isa, "test rip i", g.test(xd, imm), gsj_test_i(j, gsj_sized(CA, 32), imm));
+			ONE(isa, "shl rip i", g.shl(xd, (u32)(imm & 31)), gsj_shl(j, gsj_sized(CA, 32), imm & 31));
+			if (isa == 2)
+			{
+				ONE(isa, "vbroadcastsd rip", g.vbroadcastsd(Ymm(x), xa), gsj_vbroadcastsd(j, gsj_y(x), CA));
+				ONE(isa, "vpblendvb rip", g.vpblendvb(Ymm(x), Ymm(r), xa, Ymm(0)),
+					gsj_vpblendvb(j, gsj_y(x), gsj_y(r), CA, gsj_y(0)));
+			}
+#undef CA
+		}
 	}
 
 	printf("swjit emit: %d checked, %d failed, %016llx\n", s_checked, s_fails, s_hash);

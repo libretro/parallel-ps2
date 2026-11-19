@@ -14,15 +14,22 @@
  */
 
 #include "GSDrawScanlineCodeGenerator.h"
-#include "GSDrawScanlineCodeGenerator.all.h"
-#include "GSDrawScanline.h"
+#include "GSSwJitLayout.h"
 
 MULTI_ISA_UNSHARED_IMPL;
 
 GSDrawScanlineCodeGenerator::GSDrawScanlineCodeGenerator(u64 key, void* code, size_t maxsize)
-	: Xbyak::CodeGenerator(maxsize, code)
+	: m_code(code)
 {
-	m_sel.key = key;
-
-	GSDrawScanlineCodeGenerator2(this, m_sel.key).Generate();
+	gs_swj_target t;
+	t.key        = key;
+	t.avx        = CPU_HAS_AVX;
+	t.avx2       = CPU_HAS_AVX2;
+	t.ymm        = _M_SSE >= 0x501;
+	t.win64      = GS_SWJ_WIN64;
+	t.shift_128b = g_const.m_shift_128b;
+	t.shift_256b = g_const.m_shift_256b;
+	t.consts     = &g_const;
+	t.zbias      = &GSVector4::m_xc1e00000000fffff;
+	m_size = gs_swj_draw_scanline(&t, code, maxsize);
 }

@@ -648,7 +648,6 @@ MULTI_ISA_UNSHARED_SRC := \
 		$(LRPS2_DIR)/GS/Renderers/HW/GSRendererHWMultiISA.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanline.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRasterizer.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRendererSW.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp

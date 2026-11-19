@@ -16,43 +16,21 @@
 #pragma once
 
 #include "GSScanlineEnvironment.h"
-#include "../Common/GSFunctionMap.h"
-#include "../../GSUtil.h"
 #include "../../MultiISA.h"
-
-#ifdef _WIN32
-#include "common/RedtapeWindows.h"
-#endif
-#if defined(__GNUC__) && !defined(__clang__)
-// GCC's -Warray-bounds flags the isMEM()-guarded Operand -> Address downcast
-// in opModRM/opModM when a register temporary is passed by const Operand&
-// (e.g. test(reg, reg)): the speculative Address::mode_ access is reported
-// against the smaller Reg object even though the branch is dead for
-// registers. False positive; suppress for this third-party header only.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#endif
-#include <xbyak/xbyak.h>
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-
-#if defined(_M_AMD64) || defined(_WIN64)
-#define RegLong Xbyak::Reg64
-#else
-#define RegLong Xbyak::Reg32
-#endif
 
 MULTI_ISA_UNSHARED_START
 
-class GSDrawScanlineCodeGenerator : public Xbyak::CodeGenerator
+/* A scanline's code for a selector, as the code map generates it: the C
+ * generator (GSDrawScanlineJit.c) for this tier's layout. */
+class GSDrawScanlineCodeGenerator
 {
-	void operator=(const GSDrawScanlineCodeGenerator&);
-
-	GSScanlineSelector m_sel;
+	void* m_code;
+	size_t m_size;
 
 public:
 	GSDrawScanlineCodeGenerator(u64 key, void* code, size_t maxsize);
+	size_t getSize() const { return m_size; }
+	const u8* getCode() const { return static_cast<const u8*>(m_code); }
 };
 
 MULTI_ISA_UNSHARED_END

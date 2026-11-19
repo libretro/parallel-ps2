@@ -725,14 +725,14 @@ paraLLEl-GS depth_states 79
 paraLLEl-GS mip_tw8 104
 paraLLEl-GS dest_alpha 86
 paraLLEl-GS aa1_line 77
-Software_(HW) stream_ct32 58
-Software_(HW) depth_states 141
-Software_(HW) mip_tw8 64
-Software_(HW) dest_alpha 47
-Software_(HW) aa1_line 38
-Software_(HW) culled_strip 31
-Software_(HW) culled_fan 31
-Software_(HW) many_sprites 16"
+Software_(HW) stream_ct32 9
+Software_(HW) depth_states 8
+Software_(HW) mip_tw8 16
+Software_(HW) dest_alpha 7
+Software_(HW) aa1_line 7
+Software_(HW) culled_strip 7
+Software_(HW) culled_fan 7
+Software_(HW) many_sprites 8"
 for c in stream_ct32 depth_states mip_tw8 dest_alpha aa1_line culled_strip culled_fan many_sprites; do
 	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c > /dev/null
 done
