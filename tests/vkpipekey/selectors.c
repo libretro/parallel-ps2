@@ -13,13 +13,13 @@
  * hold for every one. Half the fields are drawn from 0 more often, so the
  * rules' conditions come out both ways. */
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <vulkan/vulkan_core.h>
 
-#include "GS/Renderers/Common/GSDevice.h"
+#include "GS/Renderers/Common/GSHWDrawConfig.h"
 
 typedef struct VKSpirv
 {
@@ -68,16 +68,18 @@ int main(int argc, char** argv)
 
 	for (i = 0; i < count; i++)
 	{
-		GSHWDrawConfig::PSSelector ps, key, again;
+		gs_hw_ps_selector ps, key, again, sib;
 		u32 a[VKSC_PS_COUNT], b[VKSC_PS_COUNT];
+		u32 k[4];
+		u32 f;
 
 		ps.key_lo = 0;
 		ps.key_hi = 0;
 		ps.fst = field(1); ps.wms = field(2); ps.wmt = field(2); ps.adjs = field(1); ps.adjt = field(1);
 		ps.aem_fmt = field(2); ps.pal_fmt = field(2); ps.dst_fmt = field(2); ps.depth_fmt = field(2);
 		ps.channel = field(3); ps.urban_chaos_hle = field(1); ps.tales_of_abyss_hle = field(1);
-		ps.aem = field(1); ps.tfx = rnd(3) ? rnd(5) : 4; ps.tcc = field(1); ps.atst = static_cast<GSShader::PS_ATST>(field(3));
-		ps.afail = static_cast<GSShader::PS_AFAIL>(field(3)); ps.fog = field(1); ps.blend_hw = field(3); ps.a_masked = field(1);
+		ps.aem = field(1); ps.tfx = rnd(3) ? rnd(5) : 4; ps.tcc = field(1); ps.atst = field(3);
+		ps.afail = field(3); ps.fog = field(1); ps.blend_hw = field(3); ps.a_masked = field(1);
 		ps.fba = field(1); ps.ltf = field(1); ps.automatic_lod = field(1); ps.manual_lod = field(1);
 		ps.colclip = field(1); ps.date = field(3); ps.tcoffsethack = field(1); ps.region_rect = field(1);
 		ps.blend_a = field(2); ps.blend_b = field(2); ps.blend_c = field(2); ps.blend_d = field(2);
@@ -90,17 +92,17 @@ int main(int argc, char** argv)
 		ps.no_color1 = field(1); ps.iip = field(1); ps.zclamp = field(1);
 
 		key = ps;
-		VKCanonicalPS(key);
+		VKCanonicalPS(&key);
 		again = key;
-		VKCanonicalPS(again);
+		VKCanonicalPS(&again);
 		if (memcmp(&again, &key, sizeof(key)))
 		{
 			printf("FAIL: selector %u: its key is not its own key\n", i);
 			return 1;
 		}
-		VKTFXSpecPS(ps, a);
-		VKTFXSpecPS(key, b);
-		for (u32 f = 0; f < VKSC_PS_COUNT; f++)
+		VKTFXSpecPS(&ps, a);
+		VKTFXSpecPS(&key, b);
+		for (f = 0; f < VKSC_PS_COUNT; f++)
 		{
 			if (a[f] >> vkspv_tfx_fs_key_bits[f])
 			{
@@ -109,30 +111,29 @@ int main(int argc, char** argv)
 				return 1;
 			}
 		}
-		GSHWDrawConfig::PSSelector sib = key;
-		u32 k[4];
-		VKDynamicPS(sib);
-		VKTFXDynamicKey(ps, k);
+		sib = key;
+		VKDynamicPS(&sib);
+		VKTFXDynamicKey(&ps, k);
 		printf("P");
 		print("", a, VKSC_PS_COUNT);
 		printf(" |");
 		print("", b, VKSC_PS_COUNT);
-		printf(" | %d %d %u | %d %u %u %u %u %u\n", VKTFXReadsRT(ps) ? 1 : 0, VKTFXReadsRT(key) ? 1 : 0,
-			VKTFXFragmentDrop(true, key), VKTFXReadsRT(sib) ? 1 : 0, VKTFXFragmentDrop(true, sib), k[0], k[1], k[2], k[3]);
+		printf(" | %d %d %u | %d %u %u %u %u %u\n", VKTFXReadsRT(&ps) ? 1 : 0, VKTFXReadsRT(&key) ? 1 : 0,
+			VKTFXFragmentDrop(true, &key), VKTFXReadsRT(&sib) ? 1 : 0, VKTFXFragmentDrop(true, &sib), k[0], k[1], k[2], k[3]);
 	}
 	for (i = 0; i < count / 4; i++)
 	{
-		GSHWDrawConfig::VSSelector vs, key, again;
+		gs_hw_vs_selector vs, key, again;
 		const u32 topology = rnd(3);
 		u32 a[VKSC_VS_COUNT], b[VKSC_VS_COUNT];
 
 		vs.key = 0;
 		vs.fst = field(1); vs.tme = field(1); vs.iip = field(1); vs.point_size = field(1);
-		vs.expand = static_cast<GSHWDrawConfig::VSExpand>(rnd(2) ? 0 : rnd(4));
+		vs.expand = rnd(2) ? 0 : rnd(4);
 		key = vs;
-		VKCanonicalVS(key, topology);
+		VKCanonicalVS(&key, topology);
 		again = key;
-		VKCanonicalVS(again, topology);
+		VKCanonicalVS(&again, topology);
 		if (again.key != key.key)
 		{
 			printf("FAIL: vertex selector %u: its key is not its own key\n", i);
@@ -145,13 +146,13 @@ int main(int argc, char** argv)
 		 * it. So the shaders are compared with the key's, and the key
 		 * keeps it for those. */
 		a[VKSC_VS_POINT_SIZE] = b[VKSC_VS_POINT_SIZE];
-		if (topology == static_cast<u32>(GSHWDrawConfig::Topology::Point) && vs.expand == GSHWDrawConfig::VSExpand::None
+		if (topology == GS_HW_TOPOLOGY_POINT && vs.expand == GS_HW_VS_EXPAND_NONE
 			&& vs.point_size && !key.point_size)
 		{
 			printf("FAIL: vertex selector %u: points lost their size\n", i);
 			return 1;
 		}
-		printf("V %d", vs.expand != GSHWDrawConfig::VSExpand::None ? 1 : 0);
+		printf("V %d", vs.expand != GS_HW_VS_EXPAND_NONE ? 1 : 0);
 		print("", a, VKSC_VS_COUNT);
 		printf(" |");
 		print("", b, VKSC_VS_COUNT);

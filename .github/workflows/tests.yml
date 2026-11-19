@@ -181,7 +181,7 @@ jobs:
           CC: aarch64-linux-gnu-gcc
           CXX: aarch64-linux-gnu-g++
         run: |
-          for t in dev9dhcp dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d12desc d3d12stream granitevk gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics ringheap settings usbhid vkbuilders vkloader vkstream vktexture vtrace; do
+          for t in dev9dhcp dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d12desc d3d12stream granitevk gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics ringheap settings usbhid vkbuilders vkdevice vkloader vkstream vktexture vtrace; do
             echo "== $t"
             sh "tests/$t/build.sh"
           done

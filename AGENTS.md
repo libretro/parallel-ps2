@@ -227,8 +227,8 @@ remove, most-played first:
 
 - Vulkan without graphics pipeline libraries (or without depth/stencil
   state on the command buffer, whose pixel shader parts the cover cannot
-  hold): `GSDeviceVK::GetTFXPipelineMissed` builds a key of a state no
-  pipeline list held whole (`BuildTFXPipeline`) and lists it; with no
+  hold): `vkd_get_tfx_pipeline_missed` (GSDeviceVK.c) builds a key of a state no
+  pipeline list held whole (`vkd_build_tfx_pipeline`) and lists it; with no
   warm-up thread every key is built so. The utility pipelines and a
   sibling for every listed state are built before the device is handed
   over, so a listed key the thread has not got to draws with its

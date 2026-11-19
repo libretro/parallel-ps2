@@ -7,7 +7,7 @@
 # chosen for them has them. See check.py; no GPU or shader compiler is
 # needed, only python3 (skipped, and said so, without).
 #
-# SANFLAGS reaches selectors.cpp (the CI's asan and ubsan rows).
+# SANFLAGS reaches selectors.c (the CI's asan and ubsan rows).
 # Runnable from any directory.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -19,11 +19,11 @@ case "$(uname -s 2>/dev/null)" in
 esac
 
 OUT="$DIR/selectors$EXE"
-${CXX:-c++} -std=c++17 -O1 -Wall -msse4.1 ${SANFLAGS:-} -D__LIBRETRO__ \
+${CC:-cc} -std=gnu99 -O1 -Wall -Werror=implicit-function-declaration -msse4.1 ${SANFLAGS:-} -D__LIBRETRO__ \
 	-I "$ROOT" -I "$ROOT/pcsx2" -I "$ROOT/common" -I "$ROOT/common/include" \
 	-I "$ROOT/libretro/libretro-common/include" -I "$ROOT/3rdparty/include" -I "$ROOT/3rdparty" \
 	-I "$ROOT/pcsx2/GS/Renderers/Vulkan" -isystem "$ROOT/3rdparty/vulkan-headers/include" \
-	-o "$OUT" "$DIR/selectors.cpp"
+	-o "$OUT" "$DIR/selectors.c"
 echo "built: $OUT"
 
 if ! command -v python3 >/dev/null 2>&1; then

@@ -182,30 +182,28 @@ void gs_texture_vk_destroy(gs_texture_vk* t, int defer)
 
 	gs_vk_device_unbind_texture(t);
 
-	if (t->base.m_type == GS_TEXTYPE_RENDER_TARGET || t->base.m_type == GS_TEXTYPE_DEPTH_STENCIL)
+	/* (of any type: a texture drawn into has one too, the palette's say) */
+	for (n = 0; n < t->framebuffers.count; n++)
 	{
-		for (n = 0; n < t->framebuffers.count; n++)
+		const gs_vk_linked_fb* lfb = &GS_ARRAY_AT(&t->framebuffers, gs_vk_linked_fb, n);
+		if (lfb->other)
 		{
-			const gs_vk_linked_fb* lfb = &GS_ARRAY_AT(&t->framebuffers, gs_vk_linked_fb, n);
-			if (lfb->other)
+			gs_array_t* others = &lfb->other->framebuffers;
+			for (m = 0; m < others->count; m++)
 			{
-				gs_array_t* others = &lfb->other->framebuffers;
-				for (m = 0; m < others->count; m++)
+				if (GS_ARRAY_AT(others, gs_vk_linked_fb, m).other == t)
 				{
-					if (GS_ARRAY_AT(others, gs_vk_linked_fb, m).other == t)
-					{
-						gs_array_erase(others, m);
-						break;
-					}
+					gs_array_erase(others, m);
+					break;
 				}
 			}
-			if (defer)
-				gs_vk_device_defer_framebuffer(lfb->fb);
-			else
-				vkDestroyFramebuffer(dev, lfb->fb, NULL);
 		}
-		t->framebuffers.count = 0;
+		if (defer)
+			gs_vk_device_defer_framebuffer(lfb->fb);
+		else
+			vkDestroyFramebuffer(dev, lfb->fb, NULL);
 	}
+	t->framebuffers.count = 0;
 
 	if (t->view != VK_NULL_HANDLE)
 	{

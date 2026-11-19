@@ -122,7 +122,7 @@ static void req(VkMemoryRequirements *r, VkDeviceSize size, VkDeviceSize align, 
    r->memoryTypeBits = bits;
 }
 
-/* What GSDeviceVK::CreateHeap and CreateBuffers do at startup, in order:
+/* What the Vulkan device's vkd_create_heap and vkd_create_buffers do at startup, in order:
  * two image blocks and one buffer block reserved, then the texture upload
  * buffer, the vertex, index and two uniform stream buffers (host visible,
  * preferring device local), and the expansion index buffer - a host-visible

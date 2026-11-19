@@ -66,7 +66,7 @@ int gs_vk_stream_buffer_reserve(gs_vk_stream_buffer* sb, u32 num_bytes, u32 alig
 /* Hands over final_num_bytes written at the current offset */
 void gs_vk_stream_buffer_commit(gs_vk_stream_buffer* sb, u32 final_num_bytes);
 
-/* What the stream buffers ask of the device (GSDeviceVK.cpp) */
+/* What the stream buffers ask of the device (GSDeviceVK.c) */
 gs_vk_heap_t* gs_vk_device_heap(void);
 int gs_vk_device_create_host_buffer(VkBufferUsageFlags usage, u32 size, VkBuffer* buffer, gs_vk_alloc_t* alloc, void** mapped);
 void gs_vk_device_release_buffer(VkBuffer buffer, const gs_vk_alloc_t* alloc, int defer);
@@ -76,39 +76,6 @@ void gs_vk_device_wait_fence(u64 counter);
 
 #ifdef __cplusplus
 }
-
-/* The device's stream buffers: the C one, released with the device */
-class VKStreamBuffer
-{
-public:
-	VKStreamBuffer() { gs_vk_stream_buffer_init(&m_sb); }
-	VKStreamBuffer(VKStreamBuffer&&) = delete;
-	VKStreamBuffer(const VKStreamBuffer&) = delete;
-	~VKStreamBuffer()
-	{
-		if (IsValid())
-			Destroy(true);
-	}
-
-	VKStreamBuffer& operator=(VKStreamBuffer&&) = delete;
-	VKStreamBuffer& operator=(const VKStreamBuffer&) = delete;
-
-	__fi bool IsValid() const { return m_sb.buffer != VK_NULL_HANDLE; }
-	__fi const VkBuffer* GetBufferPtr() const { return &m_sb.buffer; }
-	__fi VkBuffer GetBuffer() const { return m_sb.buffer; }
-	__fi u8* GetCurrentHostPointer() const { return m_sb.host_pointer + m_sb.current_offset; }
-	__fi u32 GetCurrentSize() const { return m_sb.size; }
-	__fi gs_vk_stream_buffer* C() { return &m_sb; }
-	__fi u32 GetCurrentOffset() const { return m_sb.current_offset; }
-
-	bool Create(VkBufferUsageFlags usage, u32 size) { return gs_vk_stream_buffer_create(&m_sb, usage, size) != 0; }
-	void Destroy(bool defer) { gs_vk_stream_buffer_destroy(&m_sb, defer); }
-	bool ReserveMemory(u32 num_bytes, u32 alignment) { return gs_vk_stream_buffer_reserve(&m_sb, num_bytes, alignment) != 0; }
-	void CommitMemory(u32 final_num_bytes) { gs_vk_stream_buffer_commit(&m_sb, final_num_bytes); }
-
-private:
-	gs_vk_stream_buffer m_sb;
-};
 #endif
 
 #endif
