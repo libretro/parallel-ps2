@@ -21,9 +21,33 @@
 #include "GSTextureCacheSW.h"
 #include "GS/GSPsm.h"
 #include "GS/GSUtil.h"
+#include "../Common/GSBuddy.h"
+#include "../HW/GSObjectPool.h"
 
 /* (the scanline drawer's loads) */
 #define GS_SW_TEXTURE_ALIGN 32
+
+/* The textures and their pixels come from room made with the cache: the
+ * objects from a pool, the pixels from one 64 MiB block in pieces of
+ * 4 KiB and up. Past either they come from the allocator. Without an
+ * address sanitizer only, so with one it sees every texture. */
+#define GS_SW_TEXTURE_OBJECTS 512
+#define GS_SW_PIXELS_SHIFT 26
+#define GS_SW_PIXELS_PIECE_SHIFT 12
+static gs_object_pool_t s_sw_texture_objects;
+static gs_buddy s_sw_pixels;
+
+static void* gs_sw_pixels_alloc(size_t size)
+{
+	void* p = gs_buddy_alloc(&s_sw_pixels, size);
+	return p ? p : memalign_alloc(GS_SW_TEXTURE_ALIGN, size);
+}
+
+static void gs_sw_pixels_free(void* p)
+{
+	if (!gs_buddy_free(&s_sw_pixels, p))
+		memalign_free(p);
+}
 
 /* Whether TEX0's texture spans more than one page */
 static int gs_sw_tex0_repeating(const GIFRegTEX0* TEX0)
@@ -70,9 +94,12 @@ static void gs_sw_texture_set(gs_sw_texture* t, u32 tw0, const GIFRegTEX0* TEX0,
 
 gs_sw_texture* gs_sw_texture_new(u32 tw0, const GIFRegTEX0* TEX0, const GIFRegTEXA* TEXA)
 {
-	gs_sw_texture* t = (gs_sw_texture*)calloc(1, sizeof(*t));
+	gs_sw_texture* t = (gs_sw_texture*)gs_object_pool_take(&s_sw_texture_objects, sizeof(*t));
 	if (t)
-		gs_sw_texture_set(t, tw0, TEX0, TEXA);
+		memset(t, 0, sizeof(*t));
+	else if (!(t = (gs_sw_texture*)calloc(1, sizeof(*t))))
+		return NULL;
+	gs_sw_texture_set(t, tw0, TEX0, TEXA);
 	return t;
 }
 
@@ -86,8 +113,9 @@ void gs_sw_texture_free(gs_sw_texture* t)
 	if (!t)
 		return;
 	if (t->m_buff)
-		memalign_free(t->m_buff);
-	free(t);
+		gs_sw_pixels_free(t->m_buff);
+	if (!gs_object_pool_give(&s_sw_texture_objects, t))
+		free(t);
 }
 
 int gs_sw_texture_update(gs_sw_texture* t, int left, int top, int right, int bottom)
@@ -127,13 +155,13 @@ int gs_sw_texture_update(gs_sw_texture* t, int left, int top, int right, int bot
 	buff_size = ((size_t)(1 << t->m_tw) << shift) * (size_t)th * 4;
 	if (t->m_buff && t->m_buff_size != buff_size)
 	{
-		memalign_free(t->m_buff);
+		gs_sw_pixels_free(t->m_buff);
 		t->m_buff = NULL;
 		memset(t->m_valid, 0, sizeof(t->m_valid));
 	}
 	if (!t->m_buff)
 	{
-		t->m_buff = memalign_alloc(GS_SW_TEXTURE_ALIGN, buff_size);
+		t->m_buff = gs_sw_pixels_alloc(buff_size);
 		if (!t->m_buff)
 			return 0;
 		t->m_buff_size = buff_size;
@@ -196,13 +224,18 @@ int gs_sw_texture_update(gs_sw_texture* t, int left, int top, int right, int bot
 	}
 
 /* (the textures' room and the page lists' arrays, made now) */
-#define GS_SW_TEXTURES_FIRST 256
+#define GS_SW_TEXTURES_FIRST GS_SW_TEXTURE_OBJECTS
 #define GS_SW_PAGE_LIST_HEAP_SIZE (4 * 1024 * 1024)
 
 void gs_sw_texture_cache_init(gs_sw_texture_cache* c)
 {
 	u32 i;
 	const int heap = gs_fast_list_heap_init(&c->heap, GS_SW_PAGE_LIST_HEAP_SIZE);
+#if !GS_OBJECT_POOL_SANITIZED
+	gs_object_pool_init(&s_sw_texture_objects, sizeof(gs_sw_texture), GS_SW_TEXTURE_OBJECTS);
+	if (!s_sw_pixels.base)
+		gs_buddy_init(&s_sw_pixels, GS_SW_PIXELS_SHIFT, GS_SW_PIXELS_PIECE_SHIFT);
+#endif
 	c->textures = (gs_sw_texture**)malloc(GS_SW_TEXTURES_FIRST * sizeof(*c->textures));
 	c->count    = 0;
 	c->capacity = c->textures ? GS_SW_TEXTURES_FIRST : 0;
@@ -217,6 +250,10 @@ void gs_sw_texture_cache_init(gs_sw_texture_cache* c)
 void gs_sw_texture_cache_free(gs_sw_texture_cache* c)
 {
 	gs_sw_texture_cache_remove_all(c);
+	/* (the pixels' block goes with the cache, unless a texture elsewhere,
+	 * the hardware renderer's, still has a piece) */
+	if (!s_sw_pixels.used)
+		gs_buddy_deinit(&s_sw_pixels);
 	gs_fast_list_heap_free(&c->heap);
 	free(c->textures);
 	c->textures = NULL;

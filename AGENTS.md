@@ -197,8 +197,9 @@ What is left, by the count, largest first, every one a bug:
 - The software renderer's generated code allocates nothing (its maps
   are sized when it starts), but a function is still generated at a
   draw's first use, which is a compile on the draw path too.
-- The software renderer's texture cache: a new texture's object and
-  pixels (`gs_sw_texture_cache_lookup`, `gs_sw_texture_update`).
+- The software renderer's texture cache past the room made with it: a
+  texture's object past 512, its pixels past a 64 MiB block
+  (`gs_sw_texture_cache_lookup`, `gs_sw_texture_update`).
 - The software renderer's vertex heap, past its two buffers made for
   the largest draw: when both are still held by queued draws.
 - Local memory's page-to-tile maps (`gs_page2tile_map_get`), made for

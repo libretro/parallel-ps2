@@ -62,6 +62,27 @@ int main(int argc, char** argv)
 	scenario();
 	h = fk_hash;
 	printf("gstexcachesw: %016llx\n", h);
+	{
+		/* the hardware renderer's texture, its pixels from the cache's
+		 * block, outlives the cache: the block stays for it */
+		GIFRegTEX0 t0;
+		GIFRegTEXA ta;
+		gs_sw_texture_cache* c = c_new();
+		gs_sw_texture* t;
+		t0.U64 = 0;
+		t0.PSM = PSMCT32;
+		t0.TBW = 4;
+		t0.TW  = 8;
+		t0.TH  = 8;
+		ta.U64 = 0;
+		t      = gs_sw_texture_new(0, &t0, &ta);
+		gs_sw_texture_update(t, 0, 0, 256, 256);
+		c_free(c);
+		memset(t->m_buff, 0x5A, t->m_buff_size);
+		gs_sw_texture_free(t);
+		c = c_new();
+		c_free(c);
+	}
 	gs_local_memory_map_free(&sc_p2t);
 	if (argc > 1 && strtoull(argv[1], NULL, 16) != h)
 	{

@@ -357,6 +357,7 @@ set(pcsx2GSSources
 	GS/Renderers/Common/GSDevice.c
 	GS/Renderers/Common/GSPresent.c
 	GS/Renderers/Common/GSDirtyRect.c
+	GS/Renderers/Common/GSBuddy.c
 	GS/Renderers/Common/GSCodeReserve.c
 	GS/Renderers/Common/GSRenderer.cpp
 	GS/Renderers/Common/GSVertexTrace.c
@@ -433,6 +434,7 @@ set(pcsx2GSHeaders
 	GS/Renderers/Common/GSDevice.h
 	GS/Renderers/Common/GSHWDrawConfig.h
 	GS/Renderers/Common/GSDirtyRect.h
+	GS/Renderers/Common/GSBuddy.h
 	GS/Renderers/Common/GSFastList.h
 	GS/Renderers/Common/GSKeyHash.h
 	GS/Renderers/Common/GSArray.h

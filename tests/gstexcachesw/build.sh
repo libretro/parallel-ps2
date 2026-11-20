@@ -2,7 +2,8 @@
 # The software renderer's texture cache (GS/Renderers/SW/GSTextureCacheSW.c)
 # on the GS tables and the C list: lookups, block reads into the buffers,
 # page writes by format and by tile, ageing and purges, against the hash
-# the C++ GSTextureCacheSW gave (ORACLE). Plain, sanitized where the host
+# the C++ GSTextureCacheSW gave (ORACLE), with the textures and pixels
+# from their pools and from the allocator. Plain, sanitized where the host
 # runs it, and for mingw-w64 and AArch64 when CC is one of those.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -30,7 +31,13 @@ SRC="$DIR/main.c $DIR/fake.c $ROOT/pcsx2/GS/Renderers/SW/GSTextureCacheSW.c $ROO
      $ROOT/pcsx2/GS/GSUtil.c $ROOT/pcsx2/GS/GSTables.c $ROOT/pcsx2/GS/GSOffset.c $ROOT/pcsx2/GS/GSPsm.c
      $ROOT/pcsx2/GS/GSLocalMemoryMaps.c $ROOT/pcsx2/GS/GSPage2Tile.c $ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c
      $LC/memmap/memalign.c $LC/encodings/encoding_xxh3.c $LC/features/features_cpu.c $LC/time/rtime.c
-     $LC/compat/compat_strl.c"
+     $LC/compat/compat_strl.c $ROOT/pcsx2/GS/Renderers/Common/GSBuddy.c $ROOT/pcsx2/GS/Renderers/HW/GSObjectPool.c"
 
 "$CC" $C89 -O2 -g $ARCH $SAN $INC -o "$TMP/gstexcachesw$EXE" $SRC
 $RUN "$TMP/gstexcachesw$EXE" $ORACLE
+# Sanitized, the textures and pixels come from the allocator; built plain
+# too, so the pool and the pixels' block give the same
+if [ -n "$SAN" ]; then
+	"$CC" $C89 -O2 -g $ARCH $INC -o "$TMP/gstexcachesw_pooled$EXE" $SRC
+	$RUN "$TMP/gstexcachesw_pooled$EXE" $ORACLE
+fi

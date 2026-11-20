@@ -114,6 +114,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/GSWrappedMemory.c \
 	$(LRPS2_DIR)/GS/GSLocalMemoryMaps.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSDirtyRect.c \
+	$(LRPS2_DIR)/GS/Renderers/Common/GSBuddy.c \
 	$(LRPS2_DIR)/GS/GSOffset.c \
 	$(LRPS2_DIR)/GS/GSDrawQuery.c \
 	$(LRPS2_DIR)/GS/GSPCRTC.c \

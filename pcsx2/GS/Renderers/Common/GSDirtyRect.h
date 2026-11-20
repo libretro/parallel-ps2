@@ -91,19 +91,57 @@ struct GSDirtyRect : gs_dirty_rect
 };
 
 /* The rectangles of a target that local memory has newer data for, in
- * the order they were marked; a plain growable array, walked and indexed
- * by the texture cache. */
+ * the order they were marked, walked and indexed by the texture cache.
+ * The first INLINE_COUNT live in the list itself (targets come from a
+ * pool, so a new one marked dirty allocates nothing); past them they
+ * move to the heap. */
 class GSDirtyRectList
 {
-	gs_array_t m_list;
+	enum { INLINE_COUNT = 16 };
+
+	GSDirtyRect* m_items;
+	size_t m_count;
+	size_t m_capacity;
+	/* (bytes, not GSDirtyRects: nothing to construct) */
+	alignas(16) unsigned char m_inline[INLINE_COUNT * sizeof(GSDirtyRect)];
+
+	__fi GSDirtyRect* inline_items() { return reinterpret_cast<GSDirtyRect*>(m_inline); }
+	__fi bool on_heap() const { return m_items != reinterpret_cast<const GSDirtyRect*>(m_inline); }
+	void reserve(size_t n)
+	{
+		size_t capacity = m_capacity;
+		GSDirtyRect* grown;
+		if (n <= capacity)
+			return;
+		while (capacity < n)
+			capacity *= 2;
+		grown = static_cast<GSDirtyRect*>(malloc(capacity * sizeof(GSDirtyRect)));
+		if (!grown)
+			abort();
+		memcpy(static_cast<void*>(grown), m_items, m_count * sizeof(GSDirtyRect));
+		if (on_heap())
+			free(m_items);
+		m_items = grown;
+		m_capacity = capacity;
+	}
+	__fi void reset()
+	{
+		m_items = inline_items();
+		m_count = 0;
+		m_capacity = INLINE_COUNT;
+	}
 
 public:
-	GSDirtyRectList() { gs_array_init(&m_list, sizeof(GSDirtyRect)); }
-	~GSDirtyRectList() { gs_array_free(&m_list); }
+	GSDirtyRectList() { reset(); }
+	~GSDirtyRectList()
+	{
+		if (on_heap())
+			free(m_items);
+	}
 	/* (a target's clone, for a snapshot, keeps its own copy) */
 	GSDirtyRectList(const GSDirtyRectList& other)
 	{
-		gs_array_init(&m_list, sizeof(GSDirtyRect));
+		reset();
 		copy(other);
 	}
 	GSDirtyRectList& operator=(const GSDirtyRectList& other)
@@ -113,45 +151,65 @@ public:
 		return *this;
 	}
 
-	__fi size_t size() const { return m_list.count; }
-	__fi bool empty() const { return m_list.count == 0; }
-	__fi void clear() { m_list.count = 0; }
-	__fi GSDirtyRect* begin() { return GS_ARRAY_ITEMS(&m_list, GSDirtyRect); }
-	__fi GSDirtyRect* end() { return begin() + m_list.count; }
-	__fi const GSDirtyRect* begin() const { return GS_ARRAY_ITEMS(&m_list, const GSDirtyRect); }
-	__fi const GSDirtyRect* end() const { return begin() + m_list.count; }
-	__fi GSDirtyRect& operator[](size_t i) { return GS_ARRAY_AT(&m_list, GSDirtyRect, i); }
-	__fi const GSDirtyRect& operator[](size_t i) const { return GS_ARRAY_AT(&m_list, const GSDirtyRect, i); }
+	__fi size_t size() const { return m_count; }
+	__fi bool empty() const { return m_count == 0; }
+	__fi void clear() { m_count = 0; }
+	__fi GSDirtyRect* begin() { return m_items; }
+	__fi GSDirtyRect* end() { return m_items + m_count; }
+	__fi const GSDirtyRect* begin() const { return m_items; }
+	__fi const GSDirtyRect* end() const { return m_items + m_count; }
+	__fi GSDirtyRect& operator[](size_t i) { return m_items[i]; }
+	__fi const GSDirtyRect& operator[](size_t i) const { return m_items[i]; }
 	__fi void push_back(const GSDirtyRect& r)
 	{
-		GSDirtyRect* slot = static_cast<GSDirtyRect*>(gs_array_push(&m_list));
-		if (!slot)
-			abort();
-		*slot = r;
+		if (m_count == m_capacity)
+			reserve(m_count + 1);
+		m_items[m_count++] = r;
 	}
-	__fi void erase(size_t i) { gs_array_erase(&m_list, i); }
+	__fi void erase(size_t i)
+	{
+		memmove(static_cast<void*>(m_items + i), m_items + i + 1, (m_count - i - 1) * sizeof(GSDirtyRect));
+		m_count--;
+	}
 	void copy(const GSDirtyRectList& other)
 	{
-		if (other.m_list.count && !gs_array_reserve(&m_list, other.m_list.count))
-			abort();
-		if (other.m_list.count)
-			memcpy(m_list.items, other.m_list.items, other.m_list.count * sizeof(GSDirtyRect));
-		m_list.count = other.m_list.count;
+		reserve(other.m_count);
+		if (other.m_count)
+			memcpy(static_cast<void*>(m_items), other.m_items, other.m_count * sizeof(GSDirtyRect));
+		m_count = other.m_count;
 	}
-	/* This list takes the other's rectangles; the other is left empty. */
-	__fi void take(GSDirtyRectList& other)
+	/* This list takes the other's rectangles; the other is left empty. A
+	 * heap block moves across rather than being copied, and this list's
+	 * own goes to the other. */
+	void take(GSDirtyRectList& other)
 	{
-		gs_array_t mine = m_list;
-		m_list = other.m_list;
-		other.m_list = mine;
-		other.m_list.count = 0;
+		if (!other.on_heap())
+		{
+			copy(other);
+			other.m_count = 0;
+			return;
+		}
+		GSDirtyRect* const theirs = other.m_items;
+		const size_t theirs_count = other.m_count;
+		const size_t theirs_capacity = other.m_capacity;
+		if (on_heap())
+		{
+			other.m_items = m_items;
+			other.m_capacity = m_capacity;
+		}
+		else
+			other.reset();
+		other.m_count = 0;
+		m_items = theirs;
+		m_count = theirs_count;
+		m_capacity = theirs_capacity;
 	}
 
 	GSVector4i GetTotalRect(GIFRegTEX0 TEX0, const GSVector2i& size) const
 	{
-		return GSVector4i(gs_dirty_total_rect(begin(), m_list.count, TEX0.PSM, size.x, size.y));
+		return GSVector4i(gs_dirty_total_rect(begin(), m_count, TEX0.PSM, size.x, size.y));
 	}
-	u32 GetDirtyChannels() const { return gs_dirty_channels(begin(), m_list.count); }
+	u32 GetDirtyChannels() const { return gs_dirty_channels(begin(), m_count); }
 	GSVector4i GetDirtyRect(size_t index, GIFRegTEX0 TEX0, const GSVector4i& clamp, bool align) const
 	{
 		return GSVector4i(gs_dirty_rect_clamped(&(*this)[index], TEX0.PSM, clamp, align));
