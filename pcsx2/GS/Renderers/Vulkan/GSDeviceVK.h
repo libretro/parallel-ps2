@@ -149,7 +149,9 @@ typedef struct PCSX2_ALIGN(8) gs_vk_pipeline_selector
 
 /* The shader modules, made from the SPIR-V in VKShaders.inc as each is
  * first asked for: one set a thread (the render thread's, and the warm-up
- * thread's own), so neither waits on the other. Handles only. */
+ * thread's own), so neither waits on the other. The handles, then the
+ * words a module is patched into, made with the set (vkd_init_modules)
+ * for the largest one, so making a module allocates nothing. */
 typedef struct gs_vk_modules
 {
 	VkShaderModule util_vs[3];                /* convert, interlace, merge */
@@ -157,6 +159,7 @@ typedef struct gs_vk_modules
 	VkShaderModule tfx_vs[2 * 2];             /* [expand][iip] */
 	VkShaderModule tfx_fs[3 * 16];            /* [how the target is read][VKSPV_DROP_* bits] */
 	VkShaderModule tfx_fs_dynamic[3 * 16];    /* their dynamic siblings, likewise */
+	u32* patch;                               /* after the handles: vkd_destroy_modules walks them */
 } gs_vk_modules;
 
 /* A mapped upload buffer, kept and reused */

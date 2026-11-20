@@ -174,8 +174,14 @@ reason a reader can see.
 `tests/vknegotiate` counts what the core allocates during play (glibc on
 Linux, no sanitizer): its frontend takes the core's `malloc`, `calloc`,
 `realloc` and aligned allocations (`operator new` comes through them),
-names each by the core's three innermost frames, and leaves out what the
-driver allocates while the core records into it. Five cases on the
+names each by the core's three innermost frames and its thread, and
+leaves out what the driver allocates while the core records into it.
+Every thread counts, the build-ahead ones too: they run beside play, so
+an allocation of theirs lands in the count or not as they are scheduled,
+and the rule holds for them as for the frame's threads. They make their
+storage when they start (the Vulkan warm-up thread, `VK-Warm`, must
+allocate nothing during play), and a thread a core makes is named
+(`sthread_setname`) so its sites say whose they are. Five cases on the
 Vulkan, paraLLEl-GS and software renderers each have a ceiling there: a
 commit may lower one and no commit may raise one. To see where a case
 allocates, run it with `VN_COUNT_ALLOCS=1` and resolve the sites with

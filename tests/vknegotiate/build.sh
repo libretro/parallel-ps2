@@ -707,32 +707,33 @@ echo "  pipelines built ahead: the heap stays flat after, and a rate set meanwhi
 # The core's own allocations while it plays (Linux, glibc): every one is
 # a bug (AGENTS.md, "No allocation mid-game"), and none may be added. Each
 # case is played from its first retro_run on each renderer, and what the
-# core allocates - not the driver while the core records, not this
-# frontend - must stay at or under what it was: a commit that removes one
-# lowers its number here. Over it, the sites are named (resolve them with
+# core allocates on any thread - the build-ahead threads too, which
+# allocate nothing, so the count does not hang on when they run - not the
+# driver while the core records, not this frontend, must stay at or under
+# what it was: a commit that removes one lowers its number here. Over it, the sites are named (resolve them with
 # addr2line -f -C -e <core> <offset>).
 ALLOC_CEILINGS="
-Vulkan stream_ct32 40
-Vulkan depth_states 7
-Vulkan mip_tw8 8
-Vulkan dest_alpha 13
-Vulkan aa1_line 6
-Vulkan culled_strip 11
-Vulkan culled_fan 11
-Vulkan many_sprites 11
+Vulkan stream_ct32 37
+Vulkan depth_states 4
+Vulkan mip_tw8 5
+Vulkan dest_alpha 10
+Vulkan aa1_line 4
+Vulkan culled_strip 9
+Vulkan culled_fan 9
+Vulkan many_sprites 9
 paraLLEl-GS stream_ct32 210
 paraLLEl-GS depth_states 79
 paraLLEl-GS mip_tw8 104
 paraLLEl-GS dest_alpha 86
 paraLLEl-GS aa1_line 77
-Software_(HW) stream_ct32 7
-Software_(HW) depth_states 5
-Software_(HW) mip_tw8 14
-Software_(HW) dest_alpha 5
-Software_(HW) aa1_line 5
-Software_(HW) culled_strip 5
-Software_(HW) culled_fan 5
-Software_(HW) many_sprites 6"
+Software_(HW) stream_ct32 6
+Software_(HW) depth_states 4
+Software_(HW) mip_tw8 13
+Software_(HW) dest_alpha 4
+Software_(HW) aa1_line 4
+Software_(HW) culled_strip 4
+Software_(HW) culled_fan 4
+Software_(HW) many_sprites 5"
 for c in stream_ct32 depth_states mip_tw8 dest_alpha aa1_line culled_strip culled_fan many_sprites; do
 	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c > /dev/null
 done
@@ -746,6 +747,14 @@ echo "$ALLOC_CEILINGS" | while read r c most; do
 	if [ -z "$n" ]; then
 		echo "  allocations during play: not counted here (glibc on Linux only)"
 		exit 2
+	fi
+	# (the build-ahead threads count like any other, and allocate nothing
+	# from the core's loading on: their storage is made with them, so
+	# when they run never changes the count)
+	b=$(sed -n 's/.*allocations: \([0-9]*\) by the build-ahead threads.*/\1/p' "$SCRATCH/alloc.log")
+	if [ "${b:-x}" != 0 ]; then
+		echo "  FAIL: $c on $renderer: the build-ahead threads allocate ${b:-an unknown number of} times"
+		exit 1
 	fi
 	if [ "$n" -gt "$most" ]; then
 		grep "allocation site" "$SCRATCH/alloc.log" | sort -t: -k3 -n -r | head -n 20

@@ -951,6 +951,13 @@ void sthread_join(sthread_t* thread)
 	free(t);
 }
 
+/* (the "threads" here are the main thread's coroutines: no name of their
+ * own) */
+void sthread_setname(const char* name)
+{
+	(void)name;
+}
+
 bool retro_eventcount_init(retro_eventcount_t* ec)
 {
 	memset(ec, 0, sizeof(*ec));

@@ -286,7 +286,8 @@ static void vkd_add_utility_vertex_attributes(struct gs_vk_gp_builder* gpb);
 static void vkd_set_pipeline_provoking_vertex(const gs_device_features* features, struct gs_vk_gp_builder* gpb);
 static u32 vkd_utility_fragment_of(u32 id);
 static u32 vkd_utility_vertex_of(u32 id);
-static VkShaderModule vkd_make_module(const VKSpirv* spv, unsigned drop);
+static VkShaderModule vkd_make_module(gs_vk_modules* mods, const VKSpirv* spv, unsigned drop);
+static bool vkd_init_modules(gs_vk_modules* mods);
 static const VKSpirv* vkd_utility_spirv(u32 id, bool vertex);
 static VkShaderModule vkd_utility_module(gs_vk_modules* mods, u32 id, bool vertex);
 static VkShaderModule vkd_tfx_vertex_module(gs_vk_modules* mods, gs_hw_vs_selector sel);
@@ -4016,13 +4017,12 @@ static u32 vkd_utility_vertex_of(u32 id)
 /* ==== the shader modules ==== */
 
 /* A module of spv's words, without what drop takes out of its interface
- * (VKSpirvPatch.h); made straight from the core's own words when that is
- * nothing. */
-static VkShaderModule vkd_make_module(const VKSpirv* spv, unsigned drop)
+ * (VKSpirvPatch.h), patched into mods' words; made straight from the
+ * core's own words when that is nothing. */
+static VkShaderModule vkd_make_module(gs_vk_modules* mods, const VKSpirv* spv, unsigned drop)
 {
 	VkShaderModuleCreateInfo ci;
 	VkShaderModule mod = VK_NULL_HANDLE;
-	u32* patched       = NULL;
 
 	memset(&ci, 0, sizeof(ci));
 	ci.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -4031,21 +4031,36 @@ static VkShaderModule vkd_make_module(const VKSpirv* spv, unsigned drop)
 	if (drop)
 	{
 		size_t n;
-		if (!(patched = (u32*)malloc((spv->count + VKSPV_PATCH_EXTRA) * sizeof(u32))))
+		if (!mods->patch)
 			return VK_NULL_HANDLE;
-		if (!(n = vkspv_patch(spv->words, spv->count, drop, patched)))
+		if (!(n = vkspv_patch(spv->words, spv->count, drop, mods->patch)))
 		{
 			log_cb(RETRO_LOG_ERROR, "Vulkan: a shader module's SPIR-V could not be patched (%u)\n", drop);
-			free(patched);
 			return VK_NULL_HANDLE;
 		}
 		ci.codeSize = n * sizeof(u32);
-		ci.pCode    = patched;
+		ci.pCode    = mods->patch;
 	}
 	if (vkCreateShaderModule(vk_init_info.device, &ci, NULL, &mod) != VK_SUCCESS)
 		mod = VK_NULL_HANDLE;
-	free(patched);
 	return mod;
+}
+
+/* No handles, and the words the largest module that is patched (a TFX
+ * vertex or fragment shader) is patched into. False if they could not be
+ * had: a module that needs them is then not made. */
+static bool vkd_init_modules(gs_vk_modules* mods)
+{
+	size_t most = 0, i;
+	memset(mods, 0, sizeof(*mods));
+	for (i = 0; i < VK_ARRAY_SIZE(vkspv_tfx_vs_mod); i++)
+		most = (vkspv_tfx_vs_mod[i].count > most) ? vkspv_tfx_vs_mod[i].count : most;
+	for (i = 0; i < VK_ARRAY_SIZE(vkspv_tfx_fs_mod); i++)
+		most = (vkspv_tfx_fs_mod[i].count > most) ? vkspv_tfx_fs_mod[i].count : most;
+	for (i = 0; i < VK_ARRAY_SIZE(vkspv_tfx_fs_dynamic_mod); i++)
+		most = (vkspv_tfx_fs_dynamic_mod[i].count > most) ? vkspv_tfx_fs_dynamic_mod[i].count : most;
+	mods->patch = (u32*)malloc((most + VKSPV_PATCH_EXTRA) * sizeof(u32));
+	return mods->patch != NULL;
 }
 
 /* The SPIR-V of utility pipeline id's vertex or fragment shader. */
@@ -4085,7 +4100,7 @@ static VkShaderModule vkd_utility_module(gs_vk_modules* mods, u32 id, bool verte
 	{
 		const VKSpirv* spv = vkd_utility_spirv(id, vertex);
 		if (spv)
-			*slot = vkd_make_module(spv, 0);
+			*slot = vkd_make_module(mods, spv, 0);
 	}
 	return *slot;
 }
@@ -4095,7 +4110,7 @@ static VkShaderModule vkd_tfx_vertex_module(gs_vk_modules* mods, gs_hw_vs_select
 	const u32 expand     = (sel.expand != GS_HW_VS_EXPAND_NONE) ? 1u : 0u;
 	VkShaderModule* slot = &mods->tfx_vs[expand * 2 + sel.iip];
 	if (*slot == VK_NULL_HANDLE)
-		*slot = vkd_make_module(&vkspv_tfx_vs_mod[expand], sel.iip ? VKSPV_DROP_FLAT : 0u);
+		*slot = vkd_make_module(mods, &vkspv_tfx_vs_mod[expand], sel.iip ? VKSPV_DROP_FLAT : 0u);
 	return *slot;
 }
 
@@ -4107,18 +4122,19 @@ static VkShaderModule vkd_tfx_fragment_module(const gs_device_vk* dev, gs_vk_mod
 	const unsigned drop  = VKTFXFragmentDrop(dev->base.m_features.dual_source_blend, sel);
 	VkShaderModule* slot = dynamic ? &mods->tfx_fs_dynamic[rt * 16 + drop] : &mods->tfx_fs[rt * 16 + drop];
 	if (*slot == VK_NULL_HANDLE)
-		*slot = vkd_make_module(dynamic ? &vkspv_tfx_fs_dynamic_mod[rt] : &vkspv_tfx_fs_mod[rt], drop);
+		*slot = vkd_make_module(mods, dynamic ? &vkspv_tfx_fs_dynamic_mod[rt] : &vkspv_tfx_fs_mod[rt], drop);
 	return *slot;
 }
 
 static void vkd_destroy_modules(gs_vk_modules* mods)
 {
 	VkShaderModule* m  = &mods->util_vs[0];
-	const size_t count = sizeof(*mods) / sizeof(VkShaderModule);
+	const size_t count = offsetof(gs_vk_modules, patch) / sizeof(VkShaderModule);
 	size_t i;
 	for (i = 0; i < count; i++)
 		if (m[i] != VK_NULL_HANDLE)
 			vkDestroyShaderModule(vk_init_info.device, m[i], NULL);
+	free(mods->patch);
 	memset(mods, 0, sizeof(*mods));
 }
 
@@ -5405,6 +5421,8 @@ static void vkd_pipeline_warm_thread(void* data)
 	vkd_warm_job job;
 	u32 i;
 
+	/* (by name in tests/vknegotiate's allocation sites) */
+	sthread_setname("VK-Warm");
 	memset(&res, 0, sizeof(res));
 	for (i = 0; i < GS_VK_UP_COUNT; i++)
 	{
@@ -5538,6 +5556,8 @@ static void vkd_pipeline_warm_start(gs_device_vk* dev)
 		goto fail_results;
 	if (dev->plist_count)
 		memcpy(w->list, dev->plist, dev->plist_count * sizeof(*w->list));
+	if (!vkd_init_modules(&w->mods))
+		goto fail_jobs;
 	if (!(w->thread = sthread_create(vkd_pipeline_warm_thread, w)))
 		goto fail_jobs;
 	dev->warm           = w;
@@ -5561,6 +5581,7 @@ static void vkd_pipeline_warm_start(gs_device_vk* dev)
 	return;
 
 fail_jobs:
+	free(w->mods.patch);
 	retro_spsc_free(&w->jobs);
 fail_results:
 	retro_spsc_free(&w->results);
@@ -7142,6 +7163,12 @@ static bool vkd_dev_create(gs_device* d)
 			                           : 0;
 	}
 
+	/* (before any module is made into the set) */
+	if (!vkd_init_modules(&dev->modules))
+	{
+		log_cb(RETRO_LOG_ERROR, "Failed to make room for the shader modules\n");
+		return false;
+	}
 	if (!vkd_create_render_passes(dev) || !vkd_util_prepare(dev))
 	{
 		log_cb(RETRO_LOG_ERROR, "Failed to create render passes\n");

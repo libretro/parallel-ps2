@@ -193,6 +193,11 @@ extern void* __libc_memalign(size_t, size_t);
 extern void  __libc_free(void*);
 #define VN_ALLOC_SITES 512
 static volatile int vn_alloc_on;
+/* ...and from the core's loading on, whatever the window, the core's
+ * allocations on its build-ahead threads (by name), which make their
+ * storage when they start and allocate nothing after */
+static volatile int vn_alloc_life;
+static long vn_alloc_builders;
 static uintptr_t vn_core_lo, vn_core_hi;
 /* a site: the core's innermost frame and the two above it, as the core's
  * own allocator wrappers name no caller by themselves */
@@ -211,7 +216,7 @@ static __attribute__((noinline)) void vn_alloc_note(void)
 {
 	void* bt[24];
 	int n, i;
-	if (!vn_alloc_on || vn_alloc_inside)
+	if ((!vn_alloc_on && !vn_alloc_life) || vn_alloc_inside)
 		return;
 	vn_alloc_inside = 1;
 	n = backtrace(bt, 24);
@@ -230,6 +235,14 @@ static __attribute__((noinline)) void vn_alloc_note(void)
 				&& (strstr(di.dli_fname, "libstdc++") || strstr(di.dli_fname, "libc.so")))
 			continue;
 		if (a < vn_core_lo || a >= vn_core_hi)
+			break;
+		{
+			char name[16] = "";
+			pthread_getname_np(pthread_self(), name, sizeof(name));
+			if (!strcmp(name, "VK-Warm"))
+				__sync_fetch_and_add(&vn_alloc_builders, 1);
+		}
+		if (!vn_alloc_on)
 			break;
 		__sync_fetch_and_add(&vn_alloc_total, 1);
 		h = (unsigned)(((key >> 2) * 2654435761u) % VN_ALLOC_SITES);
@@ -297,6 +310,7 @@ static void vn_alloc_report(void)
 {
 	unsigned j;
 	printf("  allocations: %ld by the core during play\n", vn_alloc_total);
+	printf("  allocations: %ld by the build-ahead threads from the core's loading on\n", vn_alloc_builders);
 	for (j = 0; j < VN_ALLOC_SITES; j++)
 		if (vn_alloc_key[j])
 			printf("  allocation site: core+0x%lx 0x%lx 0x%lx on %s: %ld\n",
@@ -1765,6 +1779,7 @@ int main(int argc, char** argv)
 		uintptr_t sym = (uintptr_t)vn_sym(h, "retro_run");
 		backtrace(bt, 2); /* (loads what it needs before counting starts) */
 		dl_iterate_phdr(vn_core_range, &sym);
+		vn_alloc_life = 1;
 	}
 #endif
 	set_environment = (retro_set_environment_t*)vn_sym(h, "retro_set_environment");
