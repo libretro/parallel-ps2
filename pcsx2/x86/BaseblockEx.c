@@ -14,26 +14,46 @@
  */
 
 #include "BaseblockEx.h"
+#include "../HostMem.h"
 
-/* The old class ran its constructor once, at static-init time. The call
- * sites that replace it (_DynGen_Dispatchers) run on every recompiler
- * reset, so this is idempotent: allocate on the first call, and on later
- * calls just reset the contents the way the destructor-then-constructor
- * pair never did. Re-allocating here would leak a 256KB bucket table per
- * reset. */
-void BaseBlocks_init(struct BaseBlocks* b)
+/* Room made once, mapped and committed as it is touched (the heap, at
+ * boot, if the mapping is refused) */
+static void* BaseBlocks_room(size_t bytes)
 {
-	if (!b->links.m_buckets)
-		BlockLinkMap_init(&b->links);
-	else
-		BlockLinkMap_clear(&b->links);
+	const PageProtectionMode rw = {true, true, false};
+	void* p = host_mmap(NULL, bytes, rw);
+	return p ? p : malloc(bytes);
+}
+
+/* Called on every recompiler reset (_DynGen_Dispatchers): the room is made
+ * on the first call, for one block per 64 bytes of code and one link per
+ * 32, far denser than real code, and emptied on later ones. */
+void BaseBlocks_init(struct BaseBlocks* b, size_t code_size)
+{
+	struct BlockLinkMap* m = &b->links;
+	if (!m->m_buckets)
+	{
+		m->m_bucket_count = 0x10000; /* 64k buckets, covers typical live-link counts */
+		m->m_bucket_mask  = m->m_bucket_count - 1;
+		m->m_buckets      = (s32*)malloc(m->m_bucket_count * sizeof(s32));
+		m->m_capacity     = (s32)(code_size / 32);
+		m->m_entries      = (struct BlockLinkEntry*)BaseBlocks_room((size_t)m->m_capacity * sizeof(struct BlockLinkEntry));
+		if (!m->m_entries)
+			m->m_capacity = 0;
+	}
+	m->m_count = 0;
+	memset(m->m_buckets, 0xFF, m->m_bucket_count * sizeof(s32)); /* all -1 */
 
 	b->recompiler = 0;
 
 	if (!b->blocks.blocks)
-		BaseBlockArray_init(&b->blocks, 0x4000);
-	else
-		BaseBlockArray_clear(&b->blocks);
+	{
+		b->blocks._Reserved = (s32)(code_size / 64);
+		b->blocks.blocks    = (BASEBLOCKEX*)BaseBlocks_room((size_t)b->blocks._Reserved * sizeof(BASEBLOCKEX));
+		if (!b->blocks.blocks)
+			b->blocks._Reserved = 0;
+	}
+	b->blocks._Size = 0;
 }
 
 BASEBLOCKEX* BaseBlocks_New(struct BaseBlocks* b, u32 startpc, uptr fnptr)
@@ -69,10 +89,12 @@ int BaseBlocks_LastIndex(const struct BaseBlocks* b, u32 startpc)
 void BaseBlocks_Link(struct BaseBlocks* b, u32 pc, s32* jumpptr)
 {
 	BASEBLOCKEX* targetblock = BaseBlocks_Get(b, pc);
+	/* (a site the links cannot hold goes through the recompiler, which is
+	 * always right, rather than to a block it could not be moved off) */
+	const int recorded = BlockLinkMap_insert(&b->links, pc, (uptr)jumpptr);
 	/* jumpptr aims into the code buffer at arbitrary alignment. */
-	const s32 rel32_ = (targetblock && targetblock->startpc == pc)
+	const s32 rel32_ = (recorded && targetblock && targetblock->startpc == pc)
 		? (s32)(targetblock->fnptr - (sptr)(jumpptr + 1))
 		: (s32)(b->recompiler - (sptr)(jumpptr + 1));
 	memcpy(jumpptr, &rel32_, sizeof(s32));
-	BlockLinkMap_insert(&b->links, pc, (uptr)jumpptr);
 }

@@ -179,7 +179,7 @@ static void threaded(void)
 	int k;
 
 	memset(&q, 0, sizeof(q));
-	gs_ring_heap_init(&h);
+	gs_ring_heap_init(&h, 4000);
 	t = sthread_create(consumer, &q);
 	CHECK(t != NULL);
 	if (!t)
@@ -207,8 +207,8 @@ int main(void)
 	gs_ring_heap h;
 	size_t warm;
 
-	/* Small allocations, then ones that outgrow the first buffer */
-	gs_ring_heap_init(&h);
+	/* Small allocations, then ones that outgrow the buffers made for them */
+	gs_ring_heap_init(&h, 3000);
 	churn(&h, 20000, 0);
 	churn(&h, 20000, 1);
 
@@ -221,13 +221,72 @@ int main(void)
 	CHECK(h.made <= 12);
 	gs_ring_heap_deinit(&h);
 
-	/* The first buffer and one more, taking turns */
-	gs_ring_heap_init(&h);
+	/* The two buffers made with the heap, taking turns: none made after */
+	gs_ring_heap_init(&h, 3056);
+	CHECK(h.made == 2);
 	pinned_draws(&h);
-	if (h.made > 2)
+	if (h.made != 2)
 		printf("  buffers: %u for pinned draws\n", (unsigned)h.made);
-	CHECK(h.made <= 2);
+	CHECK(h.made == 2);
 	gs_ring_heap_deinit(&h);
+
+	/* Draws of up to 400 KiB, two alive at once: the buffers made for
+	 * them hold them, and none is made after */
+	gs_ring_heap_init(&h, 400 * 1024);
+	{
+		live big[2];
+		int k;
+		memset(big, 0, sizeof(big));
+		for (k = 0; k < 2000; k++)
+		{
+			live* l = &big[k & 1];
+			if (l->p)
+			{
+				CHECK(intact(l));
+				gs_ring_heap_free(l->p);
+			}
+			l->size = 64 * 1024 + next_rand() % (336 * 1024);
+			l->fill = (unsigned char)k;
+			l->p    = (unsigned char*)gs_ring_heap_alloc(&h, l->size, 64);
+			fill(l);
+		}
+		for (k = 0; k < 2; k++)
+		{
+			CHECK(intact(&big[k]));
+			gs_ring_heap_free(big[k].p);
+		}
+	}
+	if (h.made != 2)
+		printf("  buffers: %u for big draws\n", (unsigned)h.made);
+	CHECK(h.made == 2);
+	gs_ring_heap_deinit(&h);
+
+	/* The largest allocation exactly, either side of where the buffers
+	 * double (its two prefixes taking it over half of one, or to exactly
+	 * half): still in the buffers made for it */
+	{
+		static const size_t sizes[3] = {512 * 1024, 512 * 1024 - 2 * sizeof(size_t) + 4, 512 * 1024 - 2 * sizeof(size_t)};
+		void* p[2];
+		int i, k;
+		for (i = 0; i < 3; i++)
+		{
+			gs_ring_heap_init(&h, sizes[i]);
+			p[0] = p[1] = NULL;
+			for (k = 0; k < 16; k++)
+			{
+				if (p[k & 1])
+					gs_ring_heap_free(p[k & 1]);
+				p[k & 1] = gs_ring_heap_alloc(&h, sizes[i], 64);
+				CHECK(((size_t)p[k & 1] & 63) == 0);
+			}
+			gs_ring_heap_free(p[0]);
+			gs_ring_heap_free(p[1]);
+			if (h.made != 2)
+				printf("  buffers: %u for %u-byte draws\n", (unsigned)h.made, (unsigned)sizes[i]);
+			CHECK(h.made == 2);
+			gs_ring_heap_deinit(&h);
+		}
+	}
 
 	threaded();
 

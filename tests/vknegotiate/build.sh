@@ -713,27 +713,27 @@ echo "  pipelines built ahead: the heap stays flat after, and a rate set meanwhi
 # what it was: a commit that removes one lowers its number here. Over it, the sites are named (resolve them with
 # addr2line -f -C -e <core> <offset>).
 ALLOC_CEILINGS="
-Vulkan stream_ct32 37
-Vulkan depth_states 4
-Vulkan mip_tw8 5
-Vulkan dest_alpha 10
-Vulkan aa1_line 4
-Vulkan culled_strip 9
-Vulkan culled_fan 9
-Vulkan many_sprites 9
-paraLLEl-GS stream_ct32 210
-paraLLEl-GS depth_states 79
-paraLLEl-GS mip_tw8 104
-paraLLEl-GS dest_alpha 86
-paraLLEl-GS aa1_line 77
-Software_(HW) stream_ct32 6
-Software_(HW) depth_states 4
-Software_(HW) mip_tw8 13
-Software_(HW) dest_alpha 4
-Software_(HW) aa1_line 4
-Software_(HW) culled_strip 4
-Software_(HW) culled_fan 4
-Software_(HW) many_sprites 5"
+Vulkan stream_ct32 35
+Vulkan depth_states 2
+Vulkan mip_tw8 3
+Vulkan dest_alpha 8
+Vulkan aa1_line 2
+Vulkan culled_strip 7
+Vulkan culled_fan 7
+Vulkan many_sprites 7
+paraLLEl-GS stream_ct32 208
+paraLLEl-GS depth_states 77
+paraLLEl-GS mip_tw8 102
+paraLLEl-GS dest_alpha 84
+paraLLEl-GS aa1_line 75
+Software_(HW) stream_ct32 4
+Software_(HW) depth_states 2
+Software_(HW) mip_tw8 11
+Software_(HW) dest_alpha 2
+Software_(HW) aa1_line 2
+Software_(HW) culled_strip 2
+Software_(HW) culled_fan 2
+Software_(HW) many_sprites 2"
 for c in stream_ct32 depth_states mip_tw8 dest_alpha aa1_line culled_strip culled_fan many_sprites; do
 	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c > /dev/null
 done

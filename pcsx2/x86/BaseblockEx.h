@@ -42,9 +42,10 @@ typedef struct BASEBLOCKEX
 	u32 x86size; /* The size in byte of the translated x86 instructions */
 } BASEBLOCKEX;
 
-/* Growable, startpc-ordered array of BASEBLOCKEX. C89 shape: plain struct,
- * malloc/realloc-backed (the old new[]/delete[] copied only the live prefix
- * anyway, which is exactly what realloc does). */
+/* The startpc-ordered array of BASEBLOCKEX: its room is made once, with
+ * the code cache (BaseBlocks_init), and never grows - the recompiler
+ * resets its cache while a block's worth of room is left
+ * (BaseBlocks_NearlyFull). */
 typedef struct BaseBlockArray
 {
 	s32 _Reserved;
@@ -52,32 +53,13 @@ typedef struct BaseBlockArray
 	BASEBLOCKEX* blocks;
 } BaseBlockArray;
 
-static __fi void BaseBlockArray_reserve(struct BaseBlockArray* a, u32 size)
-{
-	a->blocks    = (BASEBLOCKEX*)realloc(a->blocks, size * sizeof(BASEBLOCKEX));
-	a->_Reserved = size;
-}
-
-static __fi void BaseBlockArray_init(struct BaseBlockArray* a, s32 size)
-{
-	a->_Reserved = 0;
-	a->_Size     = 0;
-	a->blocks    = NULL;
-	BaseBlockArray_reserve(a, size);
-}
-
-static __fi void BaseBlockArray_destroy(struct BaseBlockArray* a)
-{
-	free(a->blocks);
-	a->blocks = NULL;
-}
-
 static BASEBLOCKEX* BaseBlockArray_insert(struct BaseBlockArray* a, u32 startpc, uptr fnptr)
 {
 	int imin = 0, imax, imid;
 
-	if (a->_Size + 1 >= a->_Reserved)
-		BaseBlockArray_reserve(a, a->_Reserved + 0x2000); /* some games requires even more! */
+	/* (the cache resets before this: BaseBlocks_NearlyFull) */
+	if (a->_Size >= a->_Reserved)
+		return NULL;
 
 	/* Insert the the new BASEBLOCKEX by startpc order */
 	imax = a->_Size;
@@ -130,8 +112,8 @@ static __fi void BaseBlockArray_erase(struct BaseBlockArray* a, s32 first, s32 l
 /* Maps a guest start PC to the set of host jump sites (u32* patch locations,
  * stored as uptr) that target it. Chained hash: insert-with-duplicates,
  * "walk all jump sites for a given PC", and clear, all the callers need.
- * Entries live in a single growable POD pool and are chained by index (not
- * pointer) so a realloc of the pool never invalidates the chains. */
+ * Entries live in one pool, made with the code cache and never grown, and
+ * are chained by index. */
 typedef struct BlockLinkEntry
 {
 	u32  pc;
@@ -153,44 +135,23 @@ typedef struct BlockLinkMap
  * adjacent block PCs spread across buckets. */
 #define BlockLinkMap_bucket_of(m, pc) (((pc) >> 2) & (m)->m_bucket_mask)
 
-static __fi void BlockLinkMap_init(struct BlockLinkMap* m)
-{
-	m->m_entries      = NULL;
-	m->m_count        = 0;
-	m->m_capacity     = 0;
-	m->m_bucket_count = 0x10000; /* 64k buckets, covers typical live-link counts */
-	m->m_bucket_mask  = m->m_bucket_count - 1;
-	m->m_buckets      = (s32*)malloc(m->m_bucket_count * sizeof(s32));
-	memset(m->m_buckets, 0xFF, m->m_bucket_count * sizeof(s32)); /* all -1 */
-}
-
-static __fi void BlockLinkMap_destroy(struct BlockLinkMap* m)
-{
-	free(m->m_entries);
-	free(m->m_buckets);
-	m->m_entries = NULL;
-	m->m_buckets = NULL;
-}
-
-static __fi void BlockLinkMap_insert(struct BlockLinkMap* m, u32 pc, uptr jumpptr)
+/* Records a jump site for pc; zero when the pool is full (the cache resets
+ * before that: BaseBlocks_NearlyFull) */
+static __fi int BlockLinkMap_insert(struct BlockLinkMap* m, u32 pc, uptr jumpptr)
 {
 	u32 b;
 	struct BlockLinkEntry* e;
 
-	if (m->m_count == m->m_capacity)
-	{
-		const s32 newcap = m->m_capacity ? m->m_capacity * 2 : 4096;
-		m->m_entries  = (struct BlockLinkEntry*)realloc(m->m_entries, newcap * sizeof(struct BlockLinkEntry));
-		m->m_capacity = newcap;
-	}
-
-	b            = BlockLinkMap_bucket_of(m, pc);
-	e            = &m->m_entries[m->m_count];
-	e->pc        = pc;
-	e->jumpptr   = jumpptr;
-	e->next      = m->m_buckets[b];
+	if (m->m_count >= m->m_capacity)
+		return 0;
+	b               = BlockLinkMap_bucket_of(m, pc);
+	e               = &m->m_entries[m->m_count];
+	e->pc           = pc;
+	e->jumpptr      = jumpptr;
+	e->next         = m->m_buckets[b];
 	m->m_buckets[b] = m->m_count;
 	m->m_count++;
+	return 1;
 }
 
 /* Walks every jump site registered for pc and rewrites each one to a 32-bit
@@ -223,7 +184,13 @@ typedef struct BaseBlocks
 	struct BaseBlockArray blocks;
 } BaseBlocks;
 
-void BaseBlocks_init(struct BaseBlocks* b);
+/* Makes the blocks' and links' room for a code cache of code_size bytes
+ * the first time, and empties them after */
+void BaseBlocks_init(struct BaseBlocks* b, size_t code_size);
+/* Less than room blocks or links left: reset the cache before a block */
+#define BaseBlocks_NearlyFull(b, room) \
+	((b)->blocks._Size + (s32)(room) > (b)->blocks._Reserved \
+		|| (b)->links.m_count + (s32)(room) > (b)->links.m_capacity)
 BASEBLOCKEX* BaseBlocks_New(struct BaseBlocks* b, u32 startpc, uptr fnptr);
 int BaseBlocks_LastIndex(const struct BaseBlocks* b, u32 startpc);
 void BaseBlocks_Link(struct BaseBlocks* b, u32 pc, s32* jumpptr);

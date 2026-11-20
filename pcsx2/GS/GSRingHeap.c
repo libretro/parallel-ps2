@@ -152,11 +152,19 @@ static void* gs_ring_buffer_alloc(gs_ring_buffer* b, size_t size, size_t align_m
 	return (char*)b + base_off - prefix_size;
 }
 
-void gs_ring_heap_init(gs_ring_heap* h)
+/* Both buffers that take turns are made here, each big enough for two
+ * of the largest allocation (one takes at most half of a buffer), so a
+ * heap that never meets a larger one allocates nothing after */
+void gs_ring_heap_init(gs_ring_heap* h, size_t largest)
 {
+	/* (with its prefixes: its buffer's and gs_ring_heap_alloc's) */
+	const size_t total = largest + sizeof(gs_ring_buffer*) + sizeof(size_t);
+	int shift = 14; /* 64 KiB at least */
+	while (total > ((size_t)2 << shift))
+		shift++;
 	h->made = 0;
-	h->kept = NULL;
-	h->cur  = gs_ring_buffer_make(h, 14); /* 64 KiB */
+	h->kept = gs_ring_buffer_make(h, shift);
+	h->cur  = gs_ring_buffer_make(h, shift);
 }
 
 void gs_ring_heap_deinit(gs_ring_heap* h)
@@ -189,8 +197,7 @@ void* gs_ring_heap_alloc_prefixed(gs_ring_heap* h, size_t size, size_t align_mas
 	}
 
 	/* Two buffers of a size take turns: the one left last time is taken
-	 * back once every allocation from it is freed, and the first time a
-	 * buffer is left a second like it is made. Only when the other one is
+	 * back once every allocation from it is freed. Only when the other one is
 	 * still in use too, or the allocation is too big, does the heap grow,
 	 * past what is needed as it always has: to at most 64 MiB, unless the
 	 * allocation needs more. */
@@ -201,8 +208,6 @@ void* gs_ring_heap_alloc_prefixed(gs_ring_heap* h, size_t size, size_t align_mas
 		next = h->kept;
 		gs_ring_buffer_reset(next);
 	}
-	else if (!h->kept && total <= h->cur->size / 2)
-		next = gs_ring_buffer_make(h, h->cur->quadrant_shift);
 	else
 	{
 		shift = h->cur->quadrant_shift;

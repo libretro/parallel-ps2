@@ -127,8 +127,12 @@ static bool DrawsOverItself(const GSDrawingContext* context, bool fb, bool zb, b
 		&& (((zf - ff) % GS_MAX_PAGES) < fspan || ((ff - zf) % GS_MAX_PAGES) < zspan);
 }
 
+/* A draw's vertices and indices, the most GSState holds (Queue, and
+ * the copy for upscaled sprites) */
+#define SW_DRAW_LARGEST (sizeof(GSVertexSW) * GSState::VERTEX_CAPACITY + sizeof(u32) * GSState::VERTEX_CAPACITY * 6)
+
 GSRendererSW::GSRendererSW(int threads)
-	: GSRenderer(), m_fzb(~0ull)
+	: GSRenderer(), m_vertex_heap(SW_DRAW_LARGEST), m_fzb(~0ull)
 {
 	m_ops = &s_sw_ops;
 	m_nativeres = true; // ignore ini, sw is always native

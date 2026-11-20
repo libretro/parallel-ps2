@@ -199,6 +199,8 @@ What is left, by the count, largest first, every one a bug:
   draw's first use, which is a compile on the draw path too.
 - The software renderer's texture cache: a new texture's object and
   pixels (`gs_sw_texture_cache_lookup`, `gs_sw_texture_update`).
+- The software renderer's vertex heap, past its two buffers made for
+  the largest draw: when both are still held by queued draws.
 - Local memory's page-to-tile maps (`gs_page2tile_map_get`), made for
   each new TEX0 and kept until local memory goes, and their map growing.
   The texture caches' textures hold them, so a bound needs those let go
@@ -206,8 +208,6 @@ What is left, by the count, largest first, every one a bug:
   now the formats' alone, from a pool made with local memory.)
 - The texture cache: the texture behind a new source or target
   (`gs_texture_vk_create`, when the pool has none to give).
-- The EE and IOP recompilers: a block linked (`BaseBlocks_Link`) and a
-  load or store recorded (`vtlb_AddLoadStoreInfo`).
 - The Vulkan renderer's draw pipeline tables and list are sized when
   the device is created, for the keys the list holds and 4096 more a
   session; past those a table grows and the list takes no more.

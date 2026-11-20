@@ -25,8 +25,9 @@
  * in it; when the next quarter is still in use, or an allocation is over
  * half the buffer, the buffer is left to its allocations and a new one
  * taken. The last one left is kept: once all of its allocations are
- * freed and it is big enough, it is taken again rather than allocating,
- * so a heap that has grown to its working size allocates no more. */
+ * freed and it is big enough, it is taken again rather than allocating.
+ * Two are made with the heap, so one that has not grown allocates
+ * nothing, and one that has grown to its working size no more. */
 
 typedef struct gs_ring_buffer gs_ring_buffer;
 
@@ -46,7 +47,8 @@ typedef struct gs_ring_heap
 extern "C" {
 #endif
 
-void gs_ring_heap_init(gs_ring_heap* h);
+/* Makes its buffers for allocations of up to largest bytes */
+void gs_ring_heap_init(gs_ring_heap* h, size_t largest);
 /* Lets go of its buffers; each is freed with its last allocation */
 void gs_ring_heap_deinit(gs_ring_heap* h);
 
@@ -97,7 +99,7 @@ class GSRingHeap
 
 public:
 	GSRingHeap(GSRingHeap&&) = delete;
-	GSRingHeap() { gs_ring_heap_init(&m_heap); }
+	explicit GSRingHeap(size_t largest) { gs_ring_heap_init(&m_heap, largest); }
 	~GSRingHeap() noexcept { gs_ring_heap_deinit(&m_heap); }
 
 	/// Allocate a piece of memory with the given size and alignment

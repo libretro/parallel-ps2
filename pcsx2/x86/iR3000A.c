@@ -203,7 +203,7 @@ static void _DynGen_Dispatchers(void)
 
 	/* Was the BaseBlocks constructor; the struct is POD now, so the
 	 * one-time allocation is explicit and happens here, before any use. */
-	BaseBlocks_init(&recBlocks);
+	BaseBlocks_init(&recBlocks, recMem.size);
 	BaseBlocks_SetJITCompile(&recBlocks, iopJITCompile);
 }
 
@@ -1214,8 +1214,9 @@ static void iopRecRecompile(const u32 startpc)
 		}
 	}
 
-	/* if recPtr reached the mem limit reset whole mem */
-	if (recPtr >= ((recMem.baseptr + recMem.size) - _64kb))
+	/* if recPtr reached the mem limit, or the blocks and links have less
+	 * than a block's worth left, reset whole mem */
+	if (recPtr >= ((recMem.baseptr + recMem.size) - _64kb) || BaseBlocks_NearlyFull(&recBlocks, _64kb / 5))
 	{
 		recResetIOP();
 	}

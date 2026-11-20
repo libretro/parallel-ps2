@@ -534,7 +534,7 @@ static void _DynGen_Dispatchers(void)
 
 	/* Was the BaseBlocks constructor; the struct is POD now, so the
 	 * one-time allocation is explicit and happens here, before any use. */
-	BaseBlocks_init(&recBlocks);
+	BaseBlocks_init(&recBlocks, recMem.size);
 	BaseBlocks_SetJITCompile(&recBlocks, JITCompile);
 
 	for (i = 0; i < C89_ARRAY_SIZE(s_invalidBlockLUT); i++)
@@ -1839,11 +1839,13 @@ static void recRecompile(const u32 startpc)
 	int has_cop2_instructions;
 	int doRecompilation;
 
-	/* Reset the whole cache when the code buffer, or the fastmem site
-	 * table, has less than a block's worth left: a block is under 64 KB
-	 * of code, and a fastmem site takes at least 5 bytes of it. */
+	/* Reset the whole cache when the code buffer, the fastmem site table,
+	 * or the blocks and links, have less than a block's worth left: a
+	 * block is under 64 KB of code, and a fastmem site or a link takes
+	 * at least 5 bytes of it. */
 	if (recPtr >= ((recMem.baseptr + recMem.size) - _64kb)
-		|| vtlb_LoadStoreInfoNearlyFull(_64kb / 5))
+		|| vtlb_LoadStoreInfoNearlyFull(_64kb / 5)
+		|| BaseBlocks_NearlyFull(&recBlocks, _64kb / 5))
 		eeRecNeedsReset = 1;
 
 	if (eeRecNeedsReset)
