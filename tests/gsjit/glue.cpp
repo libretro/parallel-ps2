@@ -37,7 +37,16 @@ struct FakeCG
 	const u8* getCode() const { return m_code; }
 };
 
-static GSCodeGeneratorFunctionMap<FakeCG, u64, FakeFn> s_map;
+/* The map's allocations: GSFlatMap.c's calloc is this (build.sh). */
+static unsigned s_callocs;
+extern "C" void* gsjit_calloc(size_t n, size_t size)
+{
+	s_callocs++;
+	return calloc(n, size);
+}
+extern "C" unsigned gsjit_allocations(void) { return s_callocs; }
+
+static GSCodeGeneratorFunctionMap<FakeCG, u64, FakeFn, 256> s_map;
 
 extern "C" void gsjit_assign(unsigned char* base, size_t size)
 {

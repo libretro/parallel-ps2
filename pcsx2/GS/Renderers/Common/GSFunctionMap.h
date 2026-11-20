@@ -22,14 +22,17 @@
 #include "GSFlatMap.h"
 #include "GSKeyHash.h"
 
-#include <stdlib.h>
 
 /* The functions a code generator has made, by the selector each was made
  * for, in a GSFlatMap from the selector to the function: a draw's lookup
  * reads one slot. A selector the generator could not make a function for
  * (the code reserve full) is kept with none, so it is not tried again
- * until Clear. One map per rasterizer, as before: not shared. */
-template <class CG, class KEY, class VALUE>
+ * until Clear. One map per rasterizer, as before: not shared.
+ *
+ * Its slots are made with it, for CAPACITY functions, and never grow:
+ * a new selector past them gets no function, as when the code reserve is
+ * full, and the caller starts both over (GSRasterizerList::SetupDraw). */
+template <class CG, class KEY, class VALUE, size_t CAPACITY>
 class GSCodeGeneratorFunctionMap
 {
 	gs_flat_map_t m_map;
@@ -63,6 +66,8 @@ public:
 	{
 		static_assert(sizeof(KEY) % sizeof(size_t) == 0, "the key fills whole words");
 		gs_flat_map_init(&m_map, sizeof(KEY), sizeof(VALUE));
+		/* (no slots if this fails: full, and every draw gets none) */
+		gs_flat_map_reserve(&m_map, CAPACITY);
 	}
 
 	~GSCodeGeneratorFunctionMap()
@@ -83,13 +88,13 @@ public:
 		VALUE* const found = static_cast<VALUE*>(gs_flat_map_find(&m_map, &key, sizeof(key), hash));
 		if (found)
 			return *found;
+		if (gs_flat_map_full(&m_map))
+			return nullptr;
 		{
 			const VALUE f = Generate(key);
 			int inserted;
 			VALUE* const slot = static_cast<VALUE*>(gs_flat_map_insert(&m_map, &key, hash, &inserted));
-			if (!slot)
-				abort(); /* out of memory, as the map's operator[] did without exceptions */
-			*slot = f;
+			*slot = f; /* (not full: never NULL) */
 			return f;
 		}
 	}

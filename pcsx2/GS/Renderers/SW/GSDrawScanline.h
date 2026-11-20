@@ -61,8 +61,11 @@ public:
 
 private:
 #ifdef ARCH_X86
-	GSCodeGeneratorFunctionMap<GSSetupPrimCodeGenerator, u64, SetupPrimPtr> m_sp_map;
-	GSCodeGeneratorFunctionMap<GSDrawScanlineCodeGenerator, u64, DrawScanlinePtr> m_ds_map;
+	/* (made at start for more functions than a game makes: random
+	 * selectors average 0.3 to 0.7 KiB of setup and 1.1 to 1.3 KiB of
+	 * scanline, so the 64 MiB code reserve fills first) */
+	GSCodeGeneratorFunctionMap<GSSetupPrimCodeGenerator, u64, SetupPrimPtr, 2048> m_sp_map;
+	GSCodeGeneratorFunctionMap<GSDrawScanlineCodeGenerator, u64, DrawScanlinePtr, 8192> m_ds_map;
 #else
 	/* The C++ rasterizer, where no code is generated. */
 	static void CSetupPrim(const GSVertexSW* vertex, const u16* index, const GSVertexSW* dscan, GSScanlineLocalData* local);

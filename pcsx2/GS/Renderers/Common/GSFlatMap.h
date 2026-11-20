@@ -58,6 +58,9 @@ int  gs_flat_map_reserve(gs_flat_map_t *map, size_t entries);
 /* The value under key, or, if there is none, a new entry's value, zeroed;
  * *inserted says which. NULL only if the slots could not grow. */
 void *gs_flat_map_insert(gs_flat_map_t *map, const void *key, size_t hash, int *inserted);
+/* Nonzero if a new key would grow the slots: inserting one allocates.
+ * (An existing key's insert finds it and never does.) */
+#define gs_flat_map_full(map) (!(map)->slots || ((map)->count + 1) * 2 > (map)->mask + 1)
 /* Takes key out. Nonzero if it was there. */
 int   gs_flat_map_erase(gs_flat_map_t *map, const void *key, size_t hash);
 

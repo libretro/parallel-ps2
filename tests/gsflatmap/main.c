@@ -114,6 +114,26 @@ static void run(unsigned spread)
       CHECK(m.slots == slots, "and so does a clear");
    }
    gs_flat_map_free(&m);
+
+   /* full says whether the next new key grows the slots: never while it
+    * is zero, and the very insert after it is one does. */
+   CHECK(gs_flat_map_full(&m), "a map with no slots is full");
+   CHECK(gs_flat_map_reserve(&m, KEYS / 4), "reserve");
+   {
+      const unsigned char* slots = m.slots;
+      for (k = 0; k < KEYS && !gs_flat_map_full(&m); k++)
+      {
+         CHECK(gs_flat_map_insert(&m, &s_keys[k], hash_of(k, spread), &inserted) != NULL, "insert while not full");
+         CHECK(m.slots == slots, "an insert while not full grew the slots");
+      }
+      CHECK(k >= KEYS / 4 && k < KEYS, "full as the reserve runs out");
+      CHECK(m.count * 2 == m.mask + 1, "full exactly when half the slots are used");
+      CHECK(gs_flat_map_insert(&m, &s_keys[0], hash_of(0, spread), &inserted) != NULL && !inserted && m.slots == slots,
+         "a key already there is found while full, not grown for");
+      CHECK(gs_flat_map_insert(&m, &s_keys[k], hash_of(k, spread), &inserted) != NULL && inserted && m.slots != slots,
+         "the insert after full grows the slots");
+   }
+   gs_flat_map_free(&m);
 }
 
 int main(void)

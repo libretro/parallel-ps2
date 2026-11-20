@@ -53,11 +53,11 @@ static unsigned char *gs_flat_map_place(gs_flat_map_t *map, size_t stored)
    return map->slots + i * map->stride;
 }
 
-/* Twice the slots (or the first ones), every entry placed again. */
-static int gs_flat_map_grow(gs_flat_map_t *map)
+/* slots slots (a power of two, more than there are), every entry placed
+ * again. */
+static int gs_flat_map_resize(gs_flat_map_t *map, size_t slots)
 {
    const size_t   old_slots = map->slots ? map->mask + 1 : 0;
-   const size_t   slots     = old_slots ? old_slots * 2 : GS_FLAT_MAP_FIRST;
    unsigned char *old       = map->slots;
    unsigned char *fresh     = (unsigned char*)calloc(slots, map->stride);
    size_t         i;
@@ -77,15 +77,21 @@ static int gs_flat_map_grow(gs_flat_map_t *map)
    return 1;
 }
 
+/* Twice the slots (or the first ones). */
+static int gs_flat_map_grow(gs_flat_map_t *map)
+{
+   return gs_flat_map_resize(map, map->slots ? (map->mask + 1) * 2 : GS_FLAT_MAP_FIRST);
+}
+
 int gs_flat_map_reserve(gs_flat_map_t *map, size_t entries)
 {
-   /* (half full at most, as an insert keeps it) */
-   while (!map->slots || entries * 2 > map->mask + 1)
-   {
-      if (!gs_flat_map_grow(map))
-         return 0;
-   }
-   return 1;
+   /* (half full at most, as an insert keeps it; made in one step) */
+   size_t slots = GS_FLAT_MAP_FIRST;
+   while (entries * 2 > slots)
+      slots *= 2;
+   if (map->slots && slots <= map->mask + 1)
+      return 1;
+   return gs_flat_map_resize(map, slots);
 }
 
 void *gs_flat_map_insert(gs_flat_map_t *map, const void *key, size_t hash, int *inserted)
@@ -100,7 +106,7 @@ void *gs_flat_map_insert(gs_flat_map_t *map, const void *key, size_t hash, int *
 
    /* At most half full: probes stay short, and there is always a free
     * slot to end one. */
-   if (!map->slots || (map->count + 1) * 2 > map->mask + 1)
+   if (gs_flat_map_full(map))
    {
       if (!gs_flat_map_grow(map))
          return NULL;

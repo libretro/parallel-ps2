@@ -6,7 +6,10 @@
  *     again in more and comes back whole, and one longer than the most
  *     any function is given gets NULL;
  *   - after a reset a function asked for again is generated again: it is
- *     not the old address, which the next function now overwrites.
+ *     not the old address, which the next function now overwrites;
+ *   - the map's slots are made with it and never grow: a new function
+ *     past its capacity (256) gets NULL, those it has are still found,
+ *     and a reset makes room again.
  * C89. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +19,9 @@ void                 gsjit_assign(unsigned char* base, size_t size);
 const unsigned char* gsjit_get(unsigned long long key);
 void                 gsjit_reset(void);
 void                 gsjit_release(void);
+unsigned             gsjit_allocations(void);
+
+#define CAPACITY 256
 
 #define RESERVE (256u * 1024u)
 
@@ -98,6 +104,23 @@ int main(void)
 	(void)first;
 	check(whole(again, key(203, 1000)) && whole(p, key(204, 1000)),
 		"after a reset a function asked for again shares its code with another");
+
+	/* The capacity, in functions small enough that the reserve is not
+	 * what runs out. */
+	{
+		const unsigned allocs = gsjit_allocations();
+		int all = 1;
+		gsjit_reset();
+		for (id = 0; id < CAPACITY; id++)
+			all &= whole(gsjit_get(key(1000 + id, 16)), key(1000 + id, 16));
+		check(all, "a function within the capacity was not made");
+		check(gsjit_get(key(1000 + CAPACITY, 16)) == NULL, "a new function past the capacity was made");
+		check(whole(gsjit_get(key(1000, 16)), key(1000, 16)), "a function made before the capacity ran out is gone");
+		gsjit_reset();
+		check(whole(gsjit_get(key(1000 + CAPACITY, 16)), key(1000 + CAPACITY, 16)), "a reset did not make room again");
+		check(gsjit_allocations() == allocs, "the map allocated after it was made");
+		check(allocs == 1, "the map's slots were not made with it");
+	}
 
 	gsjit_release();
 	free(s_base);

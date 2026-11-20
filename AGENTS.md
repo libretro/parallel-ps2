@@ -188,15 +188,18 @@ What is left, by the count, largest first, every one a bug:
   (`DescriptorSetAllocator`), command buffers and buffer blocks, and the
   bindless pools grow as a session meets them. They want tables sized at
   device creation with a defined full path.
-- The software renderer's generated code: the primitive setup and the
-  scanline are C over the C emitter (`GSSetupPrimJit.c`,
-  `GSDrawScanlineJit.c`, `GSJitX86.c`) and allocate nothing, but a
-  function is still generated at a draw's first use, which is a compile
-  on the draw path too, and the maps that hold them
-  (`GSCodeGeneratorFunctionMap`) grow as they meet keys.
+- The software renderer's generated code allocates nothing (its maps
+  are sized when it starts), but a function is still generated at a
+  draw's first use, which is a compile on the draw path too.
+- The software renderer's texture cache: a new texture's object and
+  pixels (`gs_sw_texture_cache_lookup`, `gs_sw_texture_update`).
+- Local memory's lookup tables, made for each new register value and
+  kept until local memory goes: `gs_pixel_offset4_get` (a FRAME and ZBUF
+  pair) and `gs_page2tile_map_get` (a TEX0, and its map growing). Draws
+  queued to the rasterizers and textures in the caches hold them, so a
+  bound needs a sync before one is reused.
 - The texture cache: the texture behind a new source or target
-  (`gs_texture_vk_create`, when the pool has none to give) and
-  `gs_pixel_offset4_get` (a table for each new FRAME and ZBUF pair).
+  (`gs_texture_vk_create`, when the pool has none to give).
 - The EE and IOP recompilers: a block linked (`BaseBlocks_Link`) and a
   load or store recorded (`vtlb_AddLoadStoreInfo`).
 - The Vulkan renderer's draw pipeline tables and list are sized when
