@@ -92,7 +92,8 @@ public:
 	{
 		GSOffset fb;
 		GSOffset zb;
-		GSPixelOffset4* fzb4;
+		GSPixelOffset4* fzb4; /* NULL: the pool was full (GSState::RefetchPixelOffsets) */
+		u32 fzbase[2];        /* the frame and Z buffer's bases, to add to fzb4's */
 	} offset;
 
 	void Reset()

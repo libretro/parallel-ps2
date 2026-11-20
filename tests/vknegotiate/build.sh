@@ -713,7 +713,7 @@ echo "  pipelines built ahead: the heap stays flat after, and a rate set meanwhi
 # addr2line -f -C -e <core> <offset>).
 ALLOC_CEILINGS="
 Vulkan stream_ct32 40
-Vulkan depth_states 8
+Vulkan depth_states 7
 Vulkan mip_tw8 8
 Vulkan dest_alpha 13
 Vulkan aa1_line 6
@@ -726,7 +726,7 @@ paraLLEl-GS mip_tw8 104
 paraLLEl-GS dest_alpha 86
 paraLLEl-GS aa1_line 77
 Software_(HW) stream_ct32 7
-Software_(HW) depth_states 6
+Software_(HW) depth_states 5
 Software_(HW) mip_tw8 14
 Software_(HW) dest_alpha 5
 Software_(HW) aa1_line 5

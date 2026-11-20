@@ -193,11 +193,11 @@ What is left, by the count, largest first, every one a bug:
   draw's first use, which is a compile on the draw path too.
 - The software renderer's texture cache: a new texture's object and
   pixels (`gs_sw_texture_cache_lookup`, `gs_sw_texture_update`).
-- Local memory's lookup tables, made for each new register value and
-  kept until local memory goes: `gs_pixel_offset4_get` (a FRAME and ZBUF
-  pair) and `gs_page2tile_map_get` (a TEX0, and its map growing). Draws
-  queued to the rasterizers and textures in the caches hold them, so a
-  bound needs a sync before one is reused.
+- Local memory's page-to-tile maps (`gs_page2tile_map_get`), made for
+  each new TEX0 and kept until local memory goes, and their map growing.
+  The texture caches' textures hold them, so a bound needs those let go
+  before one is reused. (The pixel offset tables were the same, and are
+  now the formats' alone, from a pool made with local memory.)
 - The texture cache: the texture behind a new source or target
   (`gs_texture_vk_create`, when the pool has none to give).
 - The EE and IOP recompilers: a block linked (`BaseBlocks_Link`) and a

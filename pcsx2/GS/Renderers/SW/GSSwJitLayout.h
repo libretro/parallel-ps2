@@ -37,6 +37,8 @@ GS_SWJ_AT(GSScanlineGlobalData, clut, GS_SLG_CLUT);
 GS_SWJ_AT(GSScanlineGlobalData, dimx, GS_SLG_DIMX);
 GS_SWJ_AT(GSScanlineGlobalData, fzbr, GS_SLG_FZBR);
 GS_SWJ_AT(GSScanlineGlobalData, fzbc, GS_SLG_FZBC);
+GS_SWJ_AT(GSScanlineGlobalData, fbase, GS_SLG_FBASE);
+GS_SWJ_AT(GSScanlineGlobalData, zbase, GS_SLG_ZBASE);
 GS_SWJ_AT(GSScanlineGlobalData, aref, GS_SLG_AREF);
 GS_SWJ_AT(GSScanlineGlobalData, afix, GS_SLG_AFIX);
 GS_SWJ_AT(GSScanlineGlobalData, t.min, GS_SLG_T_MIN);

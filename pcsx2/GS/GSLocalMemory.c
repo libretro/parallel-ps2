@@ -173,8 +173,9 @@ const gs_lm_pixel_fns gs_lm_pixel[64] = {
 
 int gs_local_memory_init(gs_local_memory* mem)
 {
-	gs_flat_map_init(&mem->m_po4map, sizeof(u64), sizeof(GSPixelOffset4*));
 	gs_flat_map_init(&mem->m_p2tmap, sizeof(u64), sizeof(GSPage2TileMap*));
+	if (!gs_po4_pool_init(&mem->m_po4))
+		return 0;
 	mem->m_clut32 = NULL;
 	gs_local_memory_populate_transfers();
 
@@ -190,7 +191,7 @@ void gs_local_memory_deinit(gs_local_memory* mem)
 	if (mem->m_vm8)
 		GSFreeWrappedMemory(mem->m_vm8, GS_LOCAL_MEMORY_SIZE, 4);
 	mem->m_vm8 = NULL;
-	gs_local_memory_map_free(&mem->m_po4map);
+	gs_po4_pool_free(&mem->m_po4);
 	gs_local_memory_map_free(&mem->m_p2tmap);
 }
 

@@ -682,9 +682,10 @@ static void test_z(swd* s, gsj_op temp1, gsj_op temp2)
 	if (!s->zb)
 		return;
 
-	/* za = fza_base.y + fza_offset->y */
+	/* za = fza_base.y + fza_offset->y + zbase */
 	gsj_mov(J, D(s->t2), gsj_mem(32, s->t1, -1, 1, 4));
 	gsj_add(J, D(s->t2), gsj_mem(32, s->t0, -1, 1, 4));
+	gsj_add(J, D(s->t2), glb(s, GS_SLG_ZBASE));
 	gsj_and_i(J, D(s->t2), (s->hires ? 4 * GS_SWJ_HALF_VM_SIZE : GS_SWJ_HALF_VM_SIZE) - 1);
 
 	if (s->prim != GS_SWJ_SPRITE_CLASS)
@@ -1548,9 +1549,10 @@ static void read_frame(swd* s)
 {
 	if (!s->fb)
 		return;
-	/* rbx = fa = fza_base.x + fza_offset->x */
+	/* rbx = fa = fza_base.x + fza_offset->x + fbase */
 	gsj_mov(J, D(GSJ_RBX), gsj_mem(32, s->t1, -1, 1, 0));
 	gsj_add(J, D(GSJ_RBX), gsj_mem(32, s->t0, -1, 1, 0));
+	gsj_add(J, D(GSJ_RBX), glb(s, GS_SLG_FBASE));
 	gsj_and_i(J, D(GSJ_RBX), (s->hires ? 4 * GS_SWJ_HALF_VM_SIZE : GS_SWJ_HALF_VM_SIZE) - 1);
 	if (!s->rfb)
 		return;

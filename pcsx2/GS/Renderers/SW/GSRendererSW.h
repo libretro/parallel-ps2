@@ -90,7 +90,7 @@ public: /* called through gs_state_ops (GSRendererSW.cpp); these were protected 
 	 * pixel; grown to what the display needs. */
 	u8* m_output;
 	size_t m_output_size;
-	GSPixelOffset4* m_fzb;
+	u64 m_fzb; /* gs_fzb_key of the targets the pages below are of */
 	GSVector4i m_fzb_bbox;
 	u32 m_fzb_cur_pages[16];
 	retro_atomic_int_t m_fzb_pages[512]; // u16 frame/zbuf pages interleaved
@@ -106,7 +106,7 @@ public: /* called through gs_state_ops (GSRendererSW.cpp); these were protected 
 	HiresTex* m_hr_tex = nullptr; // the last 2x texture, for the draws after it
 	gs_hr_layout_t* m_hr_layout[64] = {};
 	u64 m_hr_tex_key[3] = {};     // its TEX0, TEXA and the sum of its pages' generations
-	gs_flat_map_t m_hr_offsets = {}; /* fzb4 hash -> HiresOffset* */
+	gs_flat_map_t m_hr_offsets = {}; /* gs_fzb_key -> HiresOffset* */
 	u32* m_hr_colbuf = nullptr;   // a row of colours, as wide as the widest read so far
 	size_t m_hr_colbuf_size = 0;
 	u32* HiresColBuf(size_t count);

@@ -104,8 +104,13 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 
 	gd.fbo = context->offset.fb;
 	gd.zbo = context->offset.zb;
+	/* (the pool was full: this draws here and now, nothing else reads it) */
+	if (unlikely(!context->offset.fzb4))
+		hw.RefetchPixelOffsets();
 	gd.fzbr = context->offset.fzb4->row;
 	gd.fzbc = context->offset.fzb4->col;
+	gd.fbase = context->offset.fzbase[0];
+	gd.zbase = context->offset.fzbase[1];
 
 	gd.sel.key = 0;
 

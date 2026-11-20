@@ -17,9 +17,9 @@
 #define GS_LOCAL_MEMORY_MAPS_H
 
 /* What the renderers look up in local memory by a register's value, made
- * the first time and kept until local memory goes: each row and column's
- * pixel offsets for a frame and Z buffer, and which tiles of a texture
- * live in each page. */
+ * the first time: each row and column's pixel offsets for a frame and Z
+ * buffer's formats, from a pool made with local memory, and which tiles of
+ * a texture live in each page, kept until local memory goes. */
 
 #include "GSRegs.h"
 #include "GSPsm.h"
@@ -45,8 +45,12 @@ typedef struct GSPage2TileMap
 #endif
 } GSPage2TileMap;
 
-/* 16-bit offsets into local memory of a frame (x) and Z buffer (y) pixel:
- * each row's first, and each fourth column's from it */
+/* 16-bit offsets into local memory of a frame (x) and Z buffer (y) pixel,
+ * from their bases: each row's first, and each fourth column's from it.
+ * A buffer's base is page aligned, and a pixel's address is the base plus
+ * an offset that does not depend on it (local memory's size apart), so
+ * the tables are the formats' and the width's alone, and the bases are
+ * added to a row and a column where they are read. */
 typedef struct GSPixelOffset4
 {
 #ifdef __cplusplus
@@ -56,19 +60,40 @@ typedef struct GSPixelOffset4
 	gs_int2 row[2048];
 	gs_int2 col[512];
 #endif
-	u64 hash; /* FBP, ZBP, FBW and both PSMs whole */
-	u32 fbp, zbp, fpsm, zpsm, bw;
+	u32 key; /* FRAME.PSM | ZBUF.PSM << 6 | FRAME.FBW << 12 */
 } GSPixelOffset4;
+
+/* The tables in use, made when local memory is: as many as a game draws
+ * with between two clears, and more */
+#define GS_PO4_POOL 32
+typedef struct gs_po4_pool
+{
+	GSPixelOffset4* entries; /* GS_PO4_POOL of them */
+	unsigned count;          /* in use */
+	unsigned last;           /* the last found */
+} gs_po4_pool;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* The offsets for FRAME and ZBUF, from map (u64 -> GSPixelOffset4*) */
-GSPixelOffset4* gs_pixel_offset4_get(struct gs_flat_map* map, const GIFRegFRAME* FRAME, const GIFRegZBUF* ZBUF);
+/* The pool's tables. Zero if they could not be made (every get is NULL). */
+int gs_po4_pool_init(gs_po4_pool* pool);
+void gs_po4_pool_free(gs_po4_pool* pool);
+/* Forgets every table: only once nothing reads one (queued draws done) */
+#define gs_po4_pool_clear(pool) ((pool)->count = 0, (pool)->last = 0)
+
+/* The tables for FRAME and ZBUF's formats and FRAME's width, and in
+ * base[0] and base[1] the frame and Z buffer's bases in the tables' units.
+ * NULL if the pool has none and no room for them: the bases are set all
+ * the same, and the caller clears the pool once nothing reads it. */
+GSPixelOffset4* gs_pixel_offset4_get(gs_po4_pool* pool, const GIFRegFRAME* FRAME, const GIFRegZBUF* ZBUF, u32 base[2]);
+
+/* FRAME and ZBUF's fields the tables and bases come from, as one key */
+u64 gs_fzb_key(const GIFRegFRAME* FRAME, const GIFRegZBUF* ZBUF);
 /* The tiles of TEX0's texture by page, from map (u64 -> GSPage2TileMap*) */
 GSPage2TileMap* gs_page2tile_map_get(struct gs_flat_map* map, const GIFRegTEX0* TEX0);
-/* Frees what either map holds, and the map */
+/* Frees what the map holds, and the map */
 void gs_local_memory_map_free(struct gs_flat_map* map);
 
 #ifdef __cplusplus

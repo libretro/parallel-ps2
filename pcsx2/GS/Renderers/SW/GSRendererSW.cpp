@@ -128,7 +128,7 @@ static bool DrawsOverItself(const GSDrawingContext* context, bool fb, bool zb, b
 }
 
 GSRendererSW::GSRendererSW(int threads)
-	: GSRenderer(), m_fzb(NULL)
+	: GSRenderer(), m_fzb(~0ull)
 {
 	m_ops = &s_sw_ops;
 	m_nativeres = true; // ignore ini, sw is always native
@@ -716,11 +716,11 @@ bool GSRendererSW::CheckTargetPages(const GSOffset::PageLooper* fb_pages, const 
 
 	bool res = false;
 
-	if (m_fzb != m_context->offset.fzb4)
+	if (m_fzb != gs_fzb_key(&m_context->FRAME, &m_context->ZBUF))
 	{
 		// targets changed, check everything
 
-		m_fzb = m_context->offset.fzb4;
+		m_fzb = gs_fzb_key(&m_context->FRAME, &m_context->ZBUF);
 		m_fzb_bbox = r;
 
 		memset(m_fzb_cur_pages, 0, sizeof(m_fzb_cur_pages));
@@ -946,7 +946,7 @@ const GSRendererSW::HiresOffset* GSRendererSW::HiresOffsets()
 {
 	const GIFRegFRAME& FRAME = m_context->FRAME;
 	const GIFRegZBUF& ZBUF = m_context->ZBUF;
-	const u64 hash = m_context->offset.fzb4->hash;
+	const u64 hash = gs_fzb_key(&FRAME, &ZBUF);
 	const size_t key_hash = gs_key_hash(&hash, sizeof(hash));
 	HiresOffset** const found = static_cast<HiresOffset**>(gs_flat_map_find(&m_hr_offsets, &hash, sizeof(hash), key_hash));
 	const gs_hr_layout_t* fl;
@@ -1312,6 +1312,8 @@ void GSRendererSW::DrawHires(SharedData* sd)
 	hd->global.vm = m_hr_vm;
 	hd->global.fzbr = o->row;
 	hd->global.fzbc = o->col;
+	hd->global.fbase = 0; /* (in the 2x tables) */
+	hd->global.zbase = 0;
 	hd->global.sel.hires = 1;
 	hd->global.clut = nullptr;
 	hd->global.dimx = nullptr;
@@ -1360,10 +1362,19 @@ bool GSRendererSW::GetScanlineGlobalData(SharedData* data)
 
 	gd.vm = m_mem.m_vm8;
 
+	/* (the pool was full: start it over once the queued draws are done) */
+	if (unlikely(!context->offset.fzb4))
+	{
+		m_rl->Sync();
+		RefetchPixelOffsets();
+	}
+
 	gd.fbo = context->offset.fb;
 	gd.zbo = context->offset.zb;
 	gd.fzbr = context->offset.fzb4->row;
 	gd.fzbc = context->offset.fzb4->col;
+	gd.fbase = context->offset.fzbase[0];
+	gd.zbase = context->offset.fzbase[1];
 
 	gd.sel.key = 0;
 

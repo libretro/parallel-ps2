@@ -23,45 +23,73 @@
 #include "Renderers/Common/GSFlatMap.h"
 #include "Renderers/Common/GSKeyHash.h"
 
-GSPixelOffset4* gs_pixel_offset4_get(gs_flat_map_t* map, const GIFRegFRAME* FRAME, const GIFRegZBUF* ZBUF)
+int gs_po4_pool_init(gs_po4_pool* pool)
 {
-	const u32 fbp = FRAME->FBP << 5, zbp = ZBUF->ZBP << 5;
-	const u32 fpsm = FRAME->PSM, zpsm = ZBUF->PSM, bw = FRAME->FBW;
+	pool->entries = (GSPixelOffset4*)memalign_alloc(32, GS_PO4_POOL * sizeof(GSPixelOffset4));
+	gs_po4_pool_clear(pool);
+	return pool->entries != NULL;
+}
+
+void gs_po4_pool_free(gs_po4_pool* pool)
+{
+	if (pool->entries)
+		memalign_free(pool->entries);
+	pool->entries = NULL;
+	gs_po4_pool_clear(pool);
+}
+
+u64 gs_fzb_key(const GIFRegFRAME* FRAME, const GIFRegZBUF* ZBUF)
+{
 	/* every field whole: FRAME and ZBUF take any of the six-bit formats,
 	 * not only the ones a render target is meant to have */
-	const u64 hash = (u64)FRAME->FBP | ((u64)ZBUF->ZBP << 9) | ((u64)bw << 18)
-		| ((u64)fpsm << 24) | ((u64)zpsm << 30);
-	const size_t key_hash = gs_key_hash(&hash, sizeof(hash));
-	GSPixelOffset4** found = (GSPixelOffset4**)gs_flat_map_find(map, &hash, sizeof(hash), key_hash);
+	return (u64)FRAME->FBP | ((u64)ZBUF->ZBP << 9) | ((u64)FRAME->FBW << 18)
+		| ((u64)FRAME->PSM << 24) | ((u64)ZBUF->PSM << 30);
+}
+
+/* Where a buffer at bp starts, from one at 0, in the units of a row */
+static u32 gs_po4_base(u32 psm, u32 bp, u32 bw)
+{
+	const gs_offset o0 = gs_offset_make(&gs_psm[psm].info, 0, bw, psm);
+	const gs_offset ob = gs_offset_make(&gs_psm[psm].info, bp, bw, psm);
+	return (gs_offset_pa(&ob, 0, 0) - gs_offset_pa(&o0, 0, 0)) << (gs_psm[psm].bpp >> 5);
+}
+
+GSPixelOffset4* gs_pixel_offset4_get(gs_po4_pool* pool, const GIFRegFRAME* FRAME, const GIFRegZBUF* ZBUF, u32 base[2])
+{
+	const u32 fpsm = FRAME->PSM, zpsm = ZBUF->PSM, bw = FRAME->FBW;
+	const u32 key = fpsm | (zpsm << 6) | (bw << 12);
 	GSPixelOffset4* off;
-	GSPixelOffset4** slot;
 	gs_offset fo, zo, fo0, zo0;
 	gs_pa_helper fr, zr;
-	int fs, zs, i, inserted;
+	int fs, zs, i;
+	unsigned n;
 
-	if (found)
-		return *found;
+	base[0] = gs_po4_base(fpsm, FRAME->FBP << 5, bw);
+	base[1] = gs_po4_base(zpsm, ZBUF->ZBP << 5, bw);
 
-	off = (GSPixelOffset4*)memalign_alloc(32, sizeof(GSPixelOffset4));
-	if (!off)
-		abort();
-	off->hash = hash;
-	off->fbp  = fbp;
-	off->zbp  = zbp;
-	off->fpsm = fpsm;
-	off->zpsm = zpsm;
-	off->bw   = bw;
+	if (pool->count && pool->entries[pool->last].key == key)
+		return &pool->entries[pool->last];
+	for (n = 0; n < pool->count; n++)
+		if (pool->entries[n].key == key)
+		{
+			pool->last = n;
+			return &pool->entries[n];
+		}
+	if (!pool->entries || pool->count == GS_PO4_POOL)
+		return NULL;
 
+	off      = &pool->entries[pool->count];
+	off->key = key;
 	fs = gs_psm[fpsm].bpp >> 5;
 	zs = gs_psm[zpsm].bpp >> 5;
 
-	/* x = 0 on each row */
-	fo = gs_offset_make(&gs_psm[fpsm].info, fbp, bw, fpsm);
-	zo = gs_offset_make(&gs_psm[zpsm].info, zbp, bw, zpsm);
+	/* x = 0 on each row, the buffers at 0 */
+	fo = gs_offset_make(&gs_psm[fpsm].info, 0, bw, fpsm);
+	zo = gs_offset_make(&gs_psm[zpsm].info, 0, bw, zpsm);
 	for (i = 0; i < 2048; i++)
 	{
-		off->row[i].x = (int)gs_offset_pa(&fo, 0, i) << fs;
-		off->row[i].y = (int)gs_offset_pa(&zo, 0, i) << zs;
+		off->row[i].x = (int)(gs_offset_pa(&fo, 0, i) << fs);
+		off->row[i].y = (int)(gs_offset_pa(&zo, 0, i) << zs);
 	}
 
 	/* every fourth x along row 0 of a 2048-wide buffer at 0, from x = 0 */
@@ -76,10 +104,7 @@ GSPixelOffset4* gs_pixel_offset4_get(gs_flat_map_t* map, const GIFRegFRAME* FRAM
 		off->col[i].y = (int)((u32)(gs_pa_value(&zr, i * 4) - gs_pa_value(&zr, 0)) << zs);
 	}
 
-	slot = (GSPixelOffset4**)gs_flat_map_insert(map, &hash, key_hash, &inserted);
-	if (!slot)
-		abort();
-	*slot = off;
+	pool->last = pool->count++;
 	return off;
 }
 

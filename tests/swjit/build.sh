@@ -30,7 +30,7 @@ case "$("$CC" -dumpmachine 2>/dev/null)" in
 esac
 EMIT=284169c3f49ade3f
 SETUP=39985b662581ad33
-SCANLINE=592a8f00c5a5cc08
+SCANLINE=8ffc65ff5a7658f2
 TMP=${TMPDIR:-/tmp}/swjit.$$
 mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT

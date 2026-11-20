@@ -195,6 +195,8 @@ enum
 	GS_SLG_DIMX     = 80,
 	GS_SLG_FZBR     = 248,
 	GS_SLG_FZBC     = 256,
+	GS_SLG_FBASE    = 264,
+	GS_SLG_ZBASE    = 268,
 	GS_SLG_AREF     = 272,
 	GS_SLG_AFIX     = 288,
 	GS_SLG_T_MIN    = 304,

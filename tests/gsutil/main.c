@@ -484,19 +484,38 @@ static void check_clut(void)
 	free(vm);
 }
 
-/* The pixel offsets of random frame and Z buffers and the page-to-tile
- * maps of random textures, each made once and found again, hashed: the
- * sum is what GSLocalMemory gave */
+/* A pixel's offset as the tables made for each base gave it: row y's
+ * first pixel and column x's (x a multiple of 4) from it, in the units
+ * the scanline adds, masked as it masks */
+static u32 old_offset(u32 psm, u32 bp, u32 bw, int x, int y)
+{
+	const int fs = gs_psm[psm].bpp >> 5;
+	const gs_offset o = gs_offset_make(&gs_psm[psm].info, bp, bw, psm);
+	const gs_offset o0 = gs_offset_make(&gs_psm[psm].info, 0, 32, psm);
+	gs_pa_helper h;
+	u32 col;
+	gs_pa_init(&h, &o0, 0, 0);
+	col = (u32)(gs_pa_value(&h, x) - gs_pa_value(&h, 0)) << fs;
+	return ((gs_offset_pa(&o, 0, y) << fs) + col) & (HALF_VM_SIZE - 1);
+}
+
+/* The pixel offsets of random frame and Z buffers, against the tables
+ * made for each base before (old_offset), from a pool that fills, and the
+ * page-to-tile maps of random textures, each made once and found again,
+ * hashed: the sum is what GSLocalMemory gave */
+/* (the page-to-tile maps' hash, from GSLocalMemory as it was) */
+#define P2T_HASH 0x696addd38650eea8ULL
 static void check_maps(void)
 {
 	static const u32 psms[15] = {PSMCT32, PSMCT24, PSMCT16, PSMCT16S, PSMT8, PSMT4, PSMT8H,
 		PSMT4HL, PSMT4HH, PSMZ32, PSMZ24, PSMZ16, PSMZ16S, PSGPU24, 7};
-	gs_flat_map_t po4, p2t;
+	gs_po4_pool pool;
+	gs_flat_map_t p2t;
 	u64 h = 0;
-	int k;
+	int k, differ = 0, full = 0, refound = 1, kept = 1;
 
 	s_rng = 9;
-	gs_flat_map_init(&po4, sizeof(u64), sizeof(GSPixelOffset4*));
+	CHECK(gs_po4_pool_init(&pool));
 	gs_flat_map_init(&p2t, sizeof(u64), sizeof(GSPage2TileMap*));
 	for (k = 0; k < 600; k++)
 	{
@@ -505,6 +524,8 @@ static void check_maps(void)
 		GIFRegTEX0 T;
 		GSPixelOffset4* p;
 		GSPage2TileMap* m;
+		u32 base[2], again[2];
+		int y, c;
 		F.U64 = 0;
 		Z.U64 = 0;
 		T.U64 = 0;
@@ -513,10 +534,30 @@ static void check_maps(void)
 		F.PSM = psms[next_rand() % 15];
 		Z.ZBP = next_rand() % 512;
 		Z.PSM = psms[next_rand() % 15];
-		p = gs_pixel_offset4_get(&po4, &F, &Z);
-		h = xxh3_64(p->row, sizeof(p->row), h);
-		h = xxh3_64(p->col, sizeof(p->col), h);
-		h ^= p->hash + p->fbp * 3 + p->zbp * 5 + p->fpsm * 7 + p->zpsm * 11 + p->bw * 13;
+		p = gs_pixel_offset4_get(&pool, &F, &Z, base);
+		if (!p)
+		{
+			/* full: no more than the pool holds, the bases set all the
+			 * same, and a clear makes room */
+			full++;
+			CHECK(pool.count == GS_PO4_POOL);
+			base[0] = base[1] = 0xdeadbeef;
+			gs_pixel_offset4_get(&pool, &F, &Z, base);
+			kept &= base[0] != 0xdeadbeef && base[1] != 0xdeadbeef;
+			gs_po4_pool_clear(&pool);
+			p = gs_pixel_offset4_get(&pool, &F, &Z, base);
+			CHECK(p && pool.count == 1);
+		}
+		for (y = 0; y < 2048; y += 1 + (int)(next_rand() % 7))
+		{
+			c = (int)(next_rand() % 512);
+			differ |= old_offset(F.PSM, F.FBP << 5, F.FBW, c * 4, y)
+				!= (((u32)p->row[y].x + (u32)p->col[c].x + base[0]) & (HALF_VM_SIZE - 1));
+			differ |= old_offset(Z.PSM, Z.ZBP << 5, F.FBW, c * 4, y)
+				!= (((u32)p->row[y].y + (u32)p->col[c].y + base[1]) & (HALF_VM_SIZE - 1));
+		}
+		refound &= gs_pixel_offset4_get(&pool, &F, &Z, again) == p && again[0] == base[0] && again[1] == base[1];
+
 		T.TBP0 = next_rand() % 16384;
 		T.TBW = next_rand() % 64;
 		T.PSM = psms[next_rand() % 15];
@@ -525,11 +566,15 @@ static void check_maps(void)
 		m = gs_page2tile_map_get(&p2t, &T);
 		h = xxh3_64(m->first, sizeof(m->first), h);
 		h = xxh3_64(m->entries, m->first[GS_MAX_PAGES] * 8, h);
-		if (gs_pixel_offset4_get(&po4, &F, &Z) != p || gs_page2tile_map_get(&p2t, &T) != m)
+		if (gs_page2tile_map_get(&p2t, &T) != m)
 			h ^= 1;
 	}
-	CHECK(h == 0x85f715263c20ec07ULL);
-	gs_local_memory_map_free(&po4);
+	CHECK(!differ);
+	CHECK(refound);
+	CHECK(kept);
+	CHECK(full > 0);
+	CHECK(h == P2T_HASH);
+	gs_po4_pool_free(&pool);
 	gs_local_memory_map_free(&p2t);
 }
 

@@ -42,9 +42,9 @@
 typedef struct gs_local_memory
 {
 	u8* m_vm8;
-	/* u64 key -> GSPixelOffset4* / GSPage2TileMap*, in GSFlatMaps: made
-	 * once each, kept until the local memory goes */
-	gs_flat_map_t m_po4map;
+	/* the pixel offset tables in use; u64 key -> GSPage2TileMap*, in a
+	 * GSFlatMap, made once each and kept until the local memory goes */
+	gs_po4_pool m_po4;
 	gs_flat_map_t m_p2tmap;
 	/* the palette as read out (GSClut.h's buff32): 8- and 4-bit texels */
 	const u32* m_clut32;
@@ -561,9 +561,9 @@ public:
 	{
 		return GSOffset(m_psm[psm].info, bp, bw, psm);
 	}
-	GSPixelOffset4* GetPixelOffset4(const GIFRegFRAME& FRAME, const GIFRegZBUF& ZBUF)
+	GSPixelOffset4* GetPixelOffset4(const GIFRegFRAME& FRAME, const GIFRegZBUF& ZBUF, u32 base[2])
 	{
-		return gs_pixel_offset4_get(&m_po4map, &FRAME, &ZBUF);
+		return gs_pixel_offset4_get(&m_po4, &FRAME, &ZBUF, base);
 	}
 	GSPage2TileMap* GetPage2TileMap(const GIFRegTEX0& TEX0) { return gs_page2tile_map_get(&m_p2tmap, &TEX0); }
 	static bool HasOverlap(u32 src_bp, u32 src_bw, u32 src_psm, GSVector4i src_rect, u32 dst_bp, u32 dst_bw, u32 dst_psm, GSVector4i dst_rect)

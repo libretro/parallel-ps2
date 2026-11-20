@@ -576,7 +576,8 @@ __ri void GSDrawScanline::CDrawScanline(int pixels, int left, int top, const GSV
 
 			if (sel.zb)
 			{
-				za = (fza_base->y + fza_offset->y) % (sel.hires ? 4 * HALF_VM_SIZE : HALF_VM_SIZE);
+				/* (unsigned and masked, as the generated code does) */
+				za = (int)(((u32)fza_base->y + (u32)fza_offset->y + global.zbase) & ((sel.hires ? 4 * HALF_VM_SIZE : HALF_VM_SIZE) - 1));
 
 				if (sel.prim != GS_SPRITE_CLASS)
 				{
@@ -1199,7 +1200,7 @@ __ri void GSDrawScanline::CDrawScanline(int pixels, int left, int top, const GSV
 
 			if (sel.fb)
 			{
-				fa = (fza_base->x + fza_offset->x) % (sel.hires ? 4 * HALF_VM_SIZE : HALF_VM_SIZE);
+				fa = (int)(((u32)fza_base->x + (u32)fza_offset->x + global.fbase) & ((sel.hires ? 4 * HALF_VM_SIZE : HALF_VM_SIZE) - 1));
 
 				if (sel.rfb)
 				{

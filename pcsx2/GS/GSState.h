@@ -525,6 +525,10 @@ public:
 	static void ExpandDIMX(GSVector4i* dimx, const GIFRegDIMX DIMX);
 
 	void ResetHandlers();
+	/* Both contexts' pixel offset tables again from an empty pool: when a
+	 * draw finds one NULL, once nothing reads the pool's (queued draws
+	 * done). */
+	void RefetchPixelOffsets();
 	void ResetPCRTC() { gs_pcrtc_reset(&PCRTCDisplays, m_regs); }
 
 	GSVideoMode GetVideoMode() { return static_cast<GSVideoMode>(gs_regs_video_mode(m_regs)); }
