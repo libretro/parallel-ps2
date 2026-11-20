@@ -161,6 +161,11 @@ typedef struct gs_node_pool
  * aborts, as operator new does without exceptions. */
 void *gs_node_pool_refill(gs_node_pool_t *pool);
 
+/* Makes room for nodes in all, in one slab, unless the pool's slabs hold
+ * that many already: what a cache needs from its start, so it does not
+ * refill while it plays. Cold. */
+void gs_node_pool_reserve(gs_node_pool_t *pool, size_t nodes);
+
 /* Frees the slabs of every pool whose nodes are all back. A pool with
  * any still out keeps its slabs. Cold: when the texture cache goes. */
 void gs_node_pools_release(void);
@@ -179,6 +184,25 @@ static void gs_node_pool_give(gs_node_pool_t *pool, void *node)
    *(void**)node   = pool->free_head;
    pool->free_head = node;
 }
+
+/* --- texture objects -------------------------------------------------
+ * Every renderer's texture and download texture objects (gs_texture_vk,
+ * gs_download_texture_gl and the rest; their images and buffers are the
+ * device's own heaps) come from two pools made with the device
+ * (gs_texture_objects_reserve), so making one mid-game is not an
+ * allocation. A backend's object must fit a slot: each says so where it
+ * makes them. Past the pools they come from the allocator. */
+#define GS_TEXTURE_OBJECT_BYTES 576
+#define GS_TEXTURE_OBJECTS 4096
+#define GS_DOWNLOAD_OBJECT_BYTES 128
+#define GS_DOWNLOAD_OBJECTS 256
+
+/* Makes both pools the first time; nothing after */
+void gs_texture_objects_reserve(void);
+/* size zeroed bytes for a texture object (download: a download one) */
+void* gs_texture_object_take(int download, size_t size);
+/* Gives back what gs_texture_object_take gave */
+void gs_texture_object_give(int download, void* p);
 
 #ifdef __cplusplus
 }

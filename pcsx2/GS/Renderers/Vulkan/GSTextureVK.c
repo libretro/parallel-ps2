@@ -19,6 +19,11 @@
 #include <retro_inline.h>
 
 #include "GSTextureVK.h"
+#include "../HW/GSObjectPool.h"
+
+/* (each fits a slot of the texture object pools) */
+typedef char gs_texture_vk_fits_slot[sizeof(gs_texture_vk) <= GS_TEXTURE_OBJECT_BYTES ? 1 : -1];
+typedef char gs_download_texture_vk_fits_slot[sizeof(gs_download_texture_vk) <= GS_DOWNLOAD_OBJECT_BYTES ? 1 : -1];
 #include "VKBuilders.h"
 #include "VKStreamBuffer.h"
 
@@ -49,7 +54,7 @@ static void gs_texture_vk_free(gs_texture* base)
 {
 	gs_texture_vk* t = (gs_texture_vk*)base;
 	gs_texture_vk_destroy(t, 1);
-	free(t);
+	gs_texture_object_give(0, t);
 }
 
 static int gs_texture_vk_update(gs_texture* base, const gs_texture_rect* r, const void* data, int pitch, int layer);
@@ -153,7 +158,7 @@ gs_texture_vk* gs_texture_vk_create(unsigned type, unsigned format, int width, i
 		return NULL;
 	}
 
-	t = (gs_texture_vk*)calloc(1, sizeof(*t));
+	t = (gs_texture_vk*)gs_texture_object_take(0, sizeof(*t));
 	if (!t)
 	{
 		vkDestroyImageView(gs_vk_device_handle(), view, NULL);
@@ -683,7 +688,7 @@ static void gs_download_texture_vk_free(gs_download_texture* base)
 	gs_download_texture_vk* t = (gs_download_texture_vk*)base;
 	if (t->buffer != VK_NULL_HANDLE)
 		gs_vk_device_release_buffer(t->buffer, &t->alloc, 1);
-	free(t);
+	gs_texture_object_give(1, t);
 }
 
 static void gs_download_texture_vk_copy(gs_download_texture* base, const gs_texture_rect* drc, gs_texture* stex,
@@ -802,7 +807,7 @@ gs_download_texture* gs_download_texture_vk_create(u32 width, u32 height, unsign
 	if (!gs_vk_device_create_readback_buffer(size, &buffer, &alloc, &mapped))
 		return NULL;
 
-	t = (gs_download_texture_vk*)calloc(1, sizeof(*t));
+	t = (gs_download_texture_vk*)gs_texture_object_take(1, sizeof(*t));
 	if (!t)
 	{
 		gs_vk_device_release_buffer(buffer, &alloc, 0);

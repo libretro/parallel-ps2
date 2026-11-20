@@ -19,6 +19,11 @@
 
 #include "common/Align.h"
 #include "GSTexture11.h"
+#include "../HW/GSObjectPool.h"
+
+/* (each fits a slot of the texture object pools) */
+typedef char gs_texture_d3d11_fits_slot[sizeof(gs_texture_d3d11) <= GS_TEXTURE_OBJECT_BYTES ? 1 : -1];
+typedef char gs_download_texture_d3d11_fits_slot[sizeof(gs_download_texture_d3d11) <= GS_DOWNLOAD_OBJECT_BYTES ? 1 : -1];
 #include "GS/Renderers/Common/GSTextureFormat.h"
 
 DXGI_FORMAT gs_texture_d3d11_dxgi_format(unsigned format)
@@ -60,7 +65,7 @@ static void gs_texture_d3d11_free(gs_texture* base)
 		ID3D11ShaderResourceView_Release(t->srv);
 	if (t->texture)
 		ID3D11Texture2D_Release(t->texture);
-	free(t);
+	gs_texture_object_give(0, t);
 }
 
 static const gs_texture_ops s_d3d11_texture_ops = {
@@ -107,7 +112,7 @@ gs_texture_d3d11* gs_texture_d3d11_create(unsigned type, unsigned format, int wi
 	if (FAILED(ID3D11Device_CreateTexture2D(gs_d3d11_device_device(), &desc, NULL, &texture)))
 		return NULL;
 
-	t = (gs_texture_d3d11*)calloc(1, sizeof(*t));
+	t = (gs_texture_d3d11*)gs_texture_object_take(0, sizeof(*t));
 	if (!t)
 	{
 		ID3D11Texture2D_Release(texture);
@@ -230,7 +235,7 @@ static void gs_download_texture_d3d11_free(gs_download_texture* base)
 	gs_download_texture_d3d11_unmap(base);
 	if (t->texture)
 		ID3D11Texture2D_Release(t->texture);
-	free(t);
+	gs_texture_object_give(1, t);
 }
 
 static void gs_download_texture_d3d11_copy(gs_download_texture* base, const gs_texture_rect* drc, gs_texture* stex,
@@ -319,7 +324,7 @@ gs_download_texture* gs_download_texture_d3d11_create(u32 width, u32 height, uns
 		return NULL;
 	}
 
-	t = (gs_download_texture_d3d11*)calloc(1, sizeof(*t));
+	t = (gs_download_texture_d3d11*)gs_texture_object_take(1, sizeof(*t));
 	if (!t)
 	{
 		ID3D11Texture2D_Release(texture);

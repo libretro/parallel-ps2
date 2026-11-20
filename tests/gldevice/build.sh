@@ -34,7 +34,7 @@ trap 'rm -rf "$TMP"' EXIT
 GL="$ROOT/pcsx2/GS/Renderers/OpenGL"
 INC="-I$ROOT -I$ROOT/pcsx2 -I$ROOT/common -I$ROOT/common/include -I$ROOT/3rdparty/include -I$ROOT/3rdparty/glad/include -I$ROOT/libretro/libretro-common/include -I$DIR"
 C89="-std=gnu89 -w -Werror=implicit-function-declaration"
-CSRC="$DIR/main.c $DIR/stubs.c $DIR/stubs_gl.c $GL/GLProgram.c $GL/GLProgramCache.c $GL/GLPipeline.c $GL/GLShaderSource.c $GL/GLState.c $GL/GLStreamBuffer.c $GL/GLTextureFormat.c $GL/GLVertexInput.c $GL/GSTextureOGL.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureBase.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureFormat.c $ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c $ROOT/libretro/libretro-common/memmap/memalign.c"
+CSRC="$DIR/main.c $DIR/stubs.c $DIR/stubs_gl.c $GL/GLProgram.c $GL/GLProgramCache.c $GL/GLPipeline.c $GL/GLShaderSource.c $GL/GLState.c $GL/GLStreamBuffer.c $GL/GLTextureFormat.c $GL/GLVertexInput.c $GL/GSTextureOGL.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureBase.c $ROOT/pcsx2/GS/Renderers/HW/GSObjectPool.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureFormat.c $ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c $ROOT/libretro/libretro-common/memmap/memalign.c"
 [ -f "$GL/GSDeviceOGL.c" ] && CSRC="$CSRC $GL/GSDeviceOGL.c"
 
 build()

@@ -19,6 +19,11 @@
 
 #include "common/Align.h"
 #include "GSTexture12.h"
+#include "../HW/GSObjectPool.h"
+
+/* (each fits a slot of the texture object pools) */
+typedef char gs_texture_d3d12_fits_slot[sizeof(gs_texture_d3d12) <= GS_TEXTURE_OBJECT_BYTES ? 1 : -1];
+typedef char gs_download_texture_d3d12_fits_slot[sizeof(gs_download_texture_d3d12) <= GS_DOWNLOAD_OBJECT_BYTES ? 1 : -1];
 #include "D3D12StreamBuffer.h"
 #include "GS/Renderers/Common/GSTextureFormat.h"
 
@@ -38,7 +43,7 @@ static void gs_texture_d3d12_free(gs_texture* base)
 {
 	gs_texture_d3d12* t = (gs_texture_d3d12*)base;
 	gs_texture_d3d12_destroy(t, 1);
-	free(t);
+	gs_texture_object_give(0, t);
 }
 
 static const gs_texture_ops s_d3d12_texture_ops = {
@@ -223,7 +228,7 @@ gs_texture_d3d12* gs_texture_d3d12_create(unsigned type, unsigned format, int wi
 	if (ok && uav_format != DXGI_FORMAT_UNKNOWN)
 		ok = gs_texture_d3d12_uav(resource, uav_format, &uav);
 
-	t = ok ? (gs_texture_d3d12*)calloc(1, sizeof(*t)) : NULL;
+	t = ok ? (gs_texture_d3d12*)gs_texture_object_take(0, sizeof(*t)) : NULL;
 	if (!t)
 	{
 		/* Each descriptor back to the heap it came from. The resource is
@@ -597,7 +602,7 @@ static void gs_download_texture_d3d12_free(gs_download_texture* base)
 		gs_d3d12_device_defer_resource(&t->alloc, t->buffer);
 		ID3D12Resource_Release(t->buffer);
 	}
-	free(t);
+	gs_texture_object_give(1, t);
 }
 
 static void gs_download_texture_d3d12_copy(gs_download_texture* base, const gs_texture_rect* drc, gs_texture* stex,
@@ -732,7 +737,7 @@ gs_download_texture* gs_download_texture_d3d12_create(u32 width, u32 height, uns
 		return NULL;
 	}
 
-	t = (gs_download_texture_d3d12*)calloc(1, sizeof(*t));
+	t = (gs_download_texture_d3d12*)gs_texture_object_take(1, sizeof(*t));
 	if (!t)
 	{
 		gs_d3d12_device_defer_resource(&alloc, buffer);

@@ -136,6 +136,11 @@ GSTextureCache::GSTextureCache()
 	gs_object_pool_init(&s_source_pool, sizeof(Source), SOURCE_POOL_SIZE);
 	gs_object_pool_init(&s_target_pool, sizeof(Target), TARGET_POOL_SIZE);
 	gs_object_pool_init(&s_palette_pool, sizeof(Palette), PALETTE_POOL_SIZE);
+	/* the maps' nodes: a palette in either map, and a hash cache entry
+	 * for every texture the pools hold (GS_TEXTURE_OBJECTS) */
+	gs_node_pool_reserve(&s_palette_nodes_16, PALETTE_POOL_SIZE);
+	gs_node_pool_reserve(&s_palette_nodes_256, PALETTE_POOL_SIZE);
+	gs_node_pool_reserve(&s_hash_cache_nodes, GS_TEXTURE_OBJECTS);
 	gs_scratch_get(&s_scratch_copy_pages, sizeof(GSDevice::MultiStretchRect) * GS_TC_SCRATCH_PAGES);
 	gs_scratch_get(&s_scratch_merged_done, GS_TC_SCRATCH_PAGES / 8);
 	gs_scratch_get(&s_scratch_merged_queue, sizeof(GSDevice::MultiStretchRect) * GS_TC_SCRATCH_PAGES * 2);

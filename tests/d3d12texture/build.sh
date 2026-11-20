@@ -35,7 +35,7 @@ R="$ROOT/pcsx2/GS/Renderers"
 INC="-I$ROOT -I$ROOT/pcsx2 -I$ROOT/common -I$ROOT/common/include -I$LC/include -I$DIR"
 C89="-std=gnu89 -Wall -Wno-unused-function -Werror=declaration-after-statement -Werror=implicit-function-declaration"
 SRC="$DIR/main.c $DIR/fake.c $R/DX12/GSTexture12.c $R/DX12/D3D12StreamBuffer.c $R/DX12/D3D12DescriptorHeapManager.c
-     $R/Common/GSFlatMap.c $R/Common/GSTextureBase.c $R/Common/GSTextureFormat.c
+     $R/Common/GSFlatMap.c $R/Common/GSTextureBase.c $ROOT/pcsx2/GS/Renderers/HW/GSObjectPool.c $ROOT/libretro/libretro-common/memmap/memalign.c $R/Common/GSTextureFormat.c
      $LC/encodings/encoding_xxh3.c $LC/features/features_cpu.c $LC/compat/compat_strl.c $ROOT/tests/d3d12desc/stub.c"
 
 "$CC" $C89 -O2 -g $INC -o "$TMP/d3d12texture.exe" $SRC

@@ -23,6 +23,7 @@
 
 #include "common/Pcsx2Defs.h"
 #include "GSDeviceBase.h"
+#include "../HW/GSObjectPool.h"
 #include "../../GSBackend.h"
 #include "../../GSEntry.h"
 
@@ -91,6 +92,7 @@ void gs_device_init(gs_device* dev)
 	memset(dev, 0, sizeof(*dev));
 	gs_tex_pool_init(&dev->m_tex_pool, dev_pool_create, dev);
 	gs_device_features_init(&dev->m_features);
+	gs_texture_objects_reserve();
 }
 
 void gs_device_deinit(gs_device* dev)

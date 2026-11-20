@@ -281,6 +281,7 @@ tests/ata/*.img
 /tests/fpaudit/jit_stage
 /tests/gsinterlace/sw_fields
 /tests/gspool/gspool_test
+/tests/gspool/gspool_texobj
 /tests/gstc/target_budget
 /tests/gstc/hash_keep
 /tests/gstc/zwrite_colour

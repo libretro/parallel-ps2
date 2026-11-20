@@ -33,7 +33,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 CF="-O1 -g -DNDEBUG -DPCSX2_CORE $ARCH $SAN -ffunction-sections -fdata-sections"
 for u in GS/Renderers/Common/GSTexturePool GS/Renderers/Common/GSFastList GS/Renderers/Common/GSRetireRing \
-	GS/Renderers/Common/GSStableGroup; do
+	GS/Renderers/Common/GSStableGroup GS/Renderers/HW/GSObjectPool; do
 	"$CC" $CF -std=gnu99 -w $INC -c "$ROOT/pcsx2/$u.c" -o "$TMP/c_$(basename "$u").o"
 done
 "$CC" $CF -w -I"$LRC/include" -c "$LRC/memmap/memalign.c" -o "$TMP/c_memalign.o"

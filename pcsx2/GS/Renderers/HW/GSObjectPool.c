@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <memalign.h>
 
 /* The header's take and give are static, so a translation unit that uses
@@ -130,6 +131,46 @@ void *gs_node_pool_refill(gs_node_pool_t *pool)
    return node;
 }
 
+void gs_node_pool_reserve(gs_node_pool_t *pool, size_t nodes)
+{
+   unsigned char *slab;
+   unsigned char *node;
+   size_t         count;
+   size_t         i;
+
+   if (pool->capacity >= nodes)
+      return;
+   count = nodes - pool->capacity;
+   slab  = (unsigned char*)memalign_alloc(GS_OBJECT_POOL_ALIGN,
+         GS_OBJECT_POOL_ALIGN + count * pool->stride);
+   if (!slab)
+      abort();
+
+   if (!pool->slabs)
+   {
+      pool->next_pool = gs_node_pools;
+      gs_node_pools   = pool;
+   }
+   *(void**)slab   = pool->slabs;
+   pool->slabs     = slab;
+   pool->capacity += count;
+
+   node = slab + GS_OBJECT_POOL_ALIGN;
+   if (pool->bump == pool->bump_end)
+   {
+      /* handed out in address order, as a refilled slab is */
+      pool->bump     = node;
+      pool->bump_end = node + count * pool->stride;
+      return;
+   }
+   for (i = count; i-- > 0;)
+   {
+      void *n         = node + i * pool->stride;
+      *(void**)n      = pool->free_head;
+      pool->free_head = n;
+   }
+}
+
 void gs_node_pools_release(void)
 {
    gs_node_pool_t **link = &gs_node_pools;
@@ -162,4 +203,29 @@ void gs_node_pools_release(void)
       *link           = pool->next_pool;
       pool->next_pool = NULL;
    }
+}
+
+/* --- texture objects -------------------------------------------------- */
+
+static gs_object_pool_t gs_texture_objects[2];
+
+void gs_texture_objects_reserve(void)
+{
+   gs_object_pool_init(&gs_texture_objects[0], GS_TEXTURE_OBJECT_BYTES, GS_TEXTURE_OBJECTS);
+   gs_object_pool_init(&gs_texture_objects[1], GS_DOWNLOAD_OBJECT_BYTES, GS_DOWNLOAD_OBJECTS);
+}
+
+void* gs_texture_object_take(int download, size_t size)
+{
+   void* p = gs_object_pool_take(&gs_texture_objects[download != 0], size);
+   if (!p)
+      return calloc(1, size);
+   memset(p, 0, size);
+   return p;
+}
+
+void gs_texture_object_give(int download, void* p)
+{
+   if (p && !gs_object_pool_give(&gs_texture_objects[download != 0], p))
+      free(p);
 }

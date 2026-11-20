@@ -206,8 +206,9 @@ What is left, by the count, largest first, every one a bug:
   The texture caches' textures hold them, so a bound needs those let go
   before one is reused. (The pixel offset tables were the same, and are
   now the formats' alone, from a pool made with local memory.)
-- The texture cache: the texture behind a new source or target
-  (`gs_texture_vk_create`, when the pool has none to give).
+- Texture objects past the pools made with the device
+  (`gs_texture_object_take`: 4096 textures and 256 download textures
+  live at once, every renderer).
 - The Vulkan renderer's draw pipeline tables and list are sized when
   the device is created, for the keys the list holds and 4096 more a
   session; past those a table grows and the list takes no more.

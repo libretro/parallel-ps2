@@ -45,7 +45,7 @@ LC="$HERE/libretro/libretro-common"
 INC="-I$ROOT -I$ROOT/pcsx2 -I$ROOT/common -I$ROOT/common/include -I$ROOT/3rdparty/include -isystem $HERE/3rdparty/vulkan-headers/include -I$LC/include -I$DIR"
 DEFS="-D__LIBRETRO__ -DHAVE_VULKAN -DENABLE_VULKAN -DHAVE_THREADS"
 C89="-std=gnu99 -Wall -Wno-unused-function -Werror=implicit-function-declaration"
-CSRC="$DIR/main.c $DIR/stubs.c $DIR/stubs_vk.c $DIR/unused.c $V/GSTextureVK.c $V/GSVulkanHeap.c $V/VKBuilders.c $V/VKSpirvPatch.c $V/VKStreamBuffer.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureBase.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureFormat.c $ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c $LC/memmap/memalign.c $LC/queues/retro_spsc.c $LC/encodings/encoding_xxh3.c $LC/features/features_cpu.c $LC/compat/compat_strl.c"
+CSRC="$DIR/main.c $DIR/stubs.c $DIR/stubs_vk.c $DIR/unused.c $V/GSTextureVK.c $V/GSVulkanHeap.c $V/VKBuilders.c $V/VKSpirvPatch.c $V/VKStreamBuffer.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureBase.c $ROOT/pcsx2/GS/Renderers/HW/GSObjectPool.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureFormat.c $ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c $LC/memmap/memalign.c $LC/queues/retro_spsc.c $LC/encodings/encoding_xxh3.c $LC/features/features_cpu.c $LC/compat/compat_strl.c"
 [ -f "$V/GSDeviceVK.c" ] && CSRC="$CSRC $V/GSDeviceVK.c"
 
 for f in $CSRC; do

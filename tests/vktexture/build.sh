@@ -29,7 +29,7 @@ INC="-I$ROOT -I$ROOT/pcsx2 -I$ROOT/common -I$ROOT/common/include -I$ROOT/3rdpart
 C89="-std=gnu99 -Wall -Wno-unused-function -Werror=declaration-after-statement -Werror=implicit-function-declaration"
 V="$ROOT/pcsx2/GS/Renderers/Vulkan"
 C="$ROOT/pcsx2/GS/Renderers/Common"
-SRC="$DIR/main.c $V/GSTextureVK.c $V/VKBuilders.c $V/VKStreamBuffer.c $V/VKLoader.c $C/GSTextureBase.c $C/GSTextureFormat.c"
+SRC="$DIR/main.c $V/GSTextureVK.c $V/VKBuilders.c $V/VKStreamBuffer.c $V/VKLoader.c $C/GSTextureBase.c $ROOT/pcsx2/GS/Renderers/HW/GSObjectPool.c $ROOT/libretro/libretro-common/memmap/memalign.c $C/GSTextureFormat.c"
 
 "$CC" $C89 -O2 $ISA $INC -o "$TMP/vktexture$EXE" $SRC $LIBS
 $RUN "$TMP/vktexture$EXE" $ORACLE

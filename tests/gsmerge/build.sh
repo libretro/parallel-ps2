@@ -37,7 +37,7 @@ C89W=""
 	-c "$ROOT/pcsx2/GS/Renderers/Common/GSPresent.c" -o "$TMP/present.o" 2> "$TMP/present.log" || { cat "$TMP/present.log"; exit 1; }
 grep -E "GSPresent\.[ch]:[0-9]+:[0-9]+: (warning|error)" "$TMP/present.log" && exit 1
 for u in GS/Renderers/Common/GSTexturePool GS/Renderers/Common/GSFastList GS/Renderers/Common/GSRetireRing \
-	GS/Renderers/Common/GSStableGroup GS/Renderers/Common/GSDevice GS/GSPCRTC GS/GSUtil GS/GSPsm GS/GSTables; do
+	GS/Renderers/Common/GSStableGroup GS/Renderers/Common/GSDevice GS/Renderers/HW/GSObjectPool GS/GSPCRTC GS/GSUtil GS/GSPsm GS/GSTables; do
 	"$CC" $CF -std=gnu99 -w $INC -c "$ROOT/pcsx2/$u.c" -o "$TMP/c_$(basename "$u").o"
 done
 "$CC" $CF -w -I"$LRC/include" -c "$LRC/memmap/memalign.c" -o "$TMP/c_memalign.o"

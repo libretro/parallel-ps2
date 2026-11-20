@@ -33,7 +33,7 @@ LC="$ROOT/libretro/libretro-common"
 INC="-I$ROOT -I$ROOT/pcsx2 -I$ROOT/common -I$ROOT/common/include -I$ROOT/3rdparty/include -I$LC/include -I$DIR"
 DEFS="-DPCSX2_CORE -D__LIBRETRO__ -DHAVE_D3D11 -DHAVE_THREADS -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 -DNTDDI_VERSION=0x0A000006 -DWIN32_LEAN_AND_MEAN= -DNOMINMAX= -DUNICODE -D_UNICODE -msse4.1"
 C89="-std=gnu89 -w -Werror=implicit-function-declaration"
-CSRC="$DIR/main.c $DIR/stubs.c $DIR/stubs_com.c $DIR/unused.c $DX/D3D.c $DX/D3D11ShaderCache.c $DX/GSTexture11.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureBase.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureFormat.c $ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c $LC/memmap/memalign.c $LC/queues/retro_spsc.c"
+CSRC="$DIR/main.c $DIR/stubs.c $DIR/stubs_com.c $DIR/unused.c $DX/D3D.c $DX/D3D11ShaderCache.c $DX/GSTexture11.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureBase.c $ROOT/pcsx2/GS/Renderers/HW/GSObjectPool.c $ROOT/pcsx2/GS/Renderers/Common/GSTextureFormat.c $ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c $LC/memmap/memalign.c $LC/queues/retro_spsc.c"
 [ -f "$DX/GSDevice11.c" ] && CSRC="$CSRC $DX/GSDevice11.c"
 
 for f in $CSRC; do

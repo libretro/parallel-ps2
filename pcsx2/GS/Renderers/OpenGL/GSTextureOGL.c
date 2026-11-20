@@ -22,6 +22,11 @@
 #include "GLState.h"
 #include "GLTextureFormat.h"
 #include "GSTextureOGL.h"
+#include "../HW/GSObjectPool.h"
+
+/* (each fits a slot of the texture object pools) */
+typedef char gs_texture_gl_fits_slot[sizeof(gs_texture_gl) <= GS_TEXTURE_OBJECT_BYTES ? 1 : -1];
+typedef char gs_download_texture_gl_fits_slot[sizeof(gs_download_texture_gl) <= GS_DOWNLOAD_OBJECT_BYTES ? 1 : -1];
 
 /* The optimal copy alignment across drivers is between 1 (AMD/NV) and 64
  * (Intel); a row's pitch is no more than that, and 32 is AVX2's */
@@ -49,7 +54,7 @@ static void gs_texture_gl_free(gs_texture* base)
 	}
 
 	glDeleteTextures(1, &t->id);
-	free(t);
+	gs_texture_object_give(0, t);
 }
 
 static int gs_texture_gl_update(gs_texture* base, const gs_texture_rect* r, const void* data, int pitch, int layer)
@@ -178,7 +183,7 @@ static const gs_texture_ops s_gl_texture_ops = {gs_texture_gl_free, gs_texture_g
 
 gs_texture* gs_texture_gl_create(unsigned type, int width, int height, int levels, unsigned format)
 {
-	gs_texture_gl* t = (gs_texture_gl*)calloc(1, sizeof(*t));
+	gs_texture_gl* t = (gs_texture_gl*)gs_texture_object_take(0, sizeof(*t));
 	gs_gl_texture_format gl;
 	if (!t)
 		return NULL;
@@ -221,7 +226,7 @@ static void gs_download_texture_gl_free(gs_download_texture* base)
 	}
 	else
 		memalign_free(t->cpu_buffer);
-	free(t);
+	gs_texture_object_give(1, t);
 }
 
 static void gs_download_texture_gl_copy(gs_download_texture* base, const gs_texture_rect* drc, gs_texture* stex,
@@ -319,7 +324,7 @@ gs_download_texture* gs_download_texture_gl_create(u32 width, u32 height, unsign
 			return NULL;
 		}
 
-		t = (gs_download_texture_gl*)calloc(1, sizeof(*t));
+		t = (gs_download_texture_gl*)gs_texture_object_take(1, sizeof(*t));
 		if (!t)
 		{
 			glBindBuffer(GL_PIXEL_PACK_BUFFER, buffer_id);
@@ -337,13 +342,13 @@ gs_download_texture* gs_download_texture_gl_create(u32 width, u32 height, unsign
 	}
 
 	/* glReadPixels into CPU memory */
-	t = (gs_download_texture_gl*)calloc(1, sizeof(*t));
+	t = (gs_download_texture_gl*)gs_texture_object_take(1, sizeof(*t));
 	if (!t)
 		return NULL;
 	t->cpu_buffer = (u8*)memalign_alloc(GS_GL_CPU_BUFFER_ALIGN, size);
 	if (!t->cpu_buffer)
 	{
-		free(t);
+		gs_texture_object_give(1, t);
 		return NULL;
 	}
 	gs_download_texture_base_init(&t->base, width, height, format);

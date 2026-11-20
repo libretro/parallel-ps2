@@ -34,7 +34,7 @@ LC="$ROOT/libretro/libretro-common"
 R="$ROOT/pcsx2/GS/Renderers"
 INC="-I$ROOT -I$ROOT/pcsx2 -I$ROOT/common -I$ROOT/common/include -I$LC/include -I$DIR"
 C89="-std=gnu89 -Wall -Wno-unused-function -Werror=declaration-after-statement -Werror=implicit-function-declaration"
-SRC="$DIR/main.c $DIR/fake.c $R/DX11/GSTexture11.c $R/Common/GSTextureBase.c $R/Common/GSTextureFormat.c"
+SRC="$DIR/main.c $DIR/fake.c $R/DX11/GSTexture11.c $R/Common/GSTextureBase.c $ROOT/pcsx2/GS/Renderers/HW/GSObjectPool.c $ROOT/libretro/libretro-common/memmap/memalign.c $R/Common/GSTextureFormat.c"
 
 "$CC" $C89 -O2 -g $INC -o "$TMP/d3d11texture.exe" $SRC
 WINEDEBUG=${WINEDEBUG:--all} $RUN "$TMP/d3d11texture.exe" $ORACLE
