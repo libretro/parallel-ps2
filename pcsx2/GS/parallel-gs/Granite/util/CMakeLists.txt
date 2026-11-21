@@ -22,7 +22,6 @@ add_granite_internal_lib(granite-util
         thread_id.cpp thread_id.hpp
         dynamic_array.hpp
         arena_allocator.cpp arena_allocator.hpp
-        slab_allocator.cpp slab_allocator.hpp
         thread_prims.hpp
        )
 target_include_directories(granite-util PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

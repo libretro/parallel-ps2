@@ -32,21 +32,6 @@ Sampler::Sampler(Device *device_, VkSampler sampler_, const SamplerCreateInfo &i
     , create_info(info)
     , immutable(immutable_)
 {
-	// In heap, the VkSampler is a dummy object which is literally just the index into heap.
-
-	if (device->get_device_features().supports_descriptor_buffer &&
-		!device->get_device_features().descriptor_heap_features.descriptorHeap)
-	{
-		payload = device->managers.descriptor_buffer.alloc_sampler();
-		VkDescriptorGetInfoEXT get_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
-		get_info.type = VK_DESCRIPTOR_TYPE_SAMPLER;
-		get_info.data.pSampler = &sampler;
-		device->get_device_table().vkGetDescriptorEXT(
-				device->get_device(),
-				&get_info,
-				device->get_device_features().descriptor_buffer_properties.samplerDescriptorSize,
-				payload.ptr);
-	}
 }
 
 Sampler::~Sampler()
@@ -54,19 +39,11 @@ Sampler::~Sampler()
 	if (sampler)
 	{
 		if (immutable)
-			device->managers.descriptor_buffer.destroy_sampler(sampler);
+			device->managers.views.destroy_sampler(sampler);
 		else if (internal_sync)
 			device->destroy_sampler_nolock(sampler);
 		else
 			device->destroy_sampler(sampler);
-	}
-
-	if (payload)
-	{
-		if (internal_sync)
-			device->free_cached_descriptor_payload_nolock(payload);
-		else
-			device->free_cached_descriptor_payload(payload);
 	}
 }
 
@@ -110,8 +87,7 @@ ImmutableSampler::ImmutableSampler(Util::Hash hash, Device *device_, const Sampl
 		info.pNext = &conv_info;
 	}
 
-	VkSampler vk_sampler = device->managers.descriptor_buffer.create_sampler(&info);
-
+	VkSampler vk_sampler = device->managers.views.create_sampler(&info);
 
 	sampler = SamplerHandle(device->handle_pool.samplers.allocate(device, vk_sampler, sampler_info, true));
 }

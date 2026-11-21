@@ -100,9 +100,8 @@ public:
 	bool allocate_descriptors(unsigned count);
 	BindlessDescriptorSet get_descriptor_set() const;
 	// The first descriptor of the range the last allocate_descriptors()
-	// took, as the shader indexes the set: a descriptor-set pool holds one
-	// set, every range at its own place in it; a descriptor-buffer pool's
-	// range is its own set, from 0.
+	// took, as the shader indexes the set: the pool holds one set, every
+	// range at its own place in it.
 	uint32_t get_descriptor_base() const;
 
 	void push_texture(const ImageView &view);
@@ -113,8 +112,6 @@ private:
 	DescriptorSetAllocator *allocator;
 
 	VkDescriptorPool desc_pool;
-	DescriptorBufferAllocation bindless_buffer;
-	VkDeviceSize bindless_buffer_offset = 0;
 
 	BindlessDescriptorSet desc_set;
 
@@ -123,9 +120,7 @@ private:
 	uint32_t total_descriptors = 0;
 
 	void push_texture(VkImageView view, VkImageLayout layout);
-	void push_texture(const uint8_t *ptr);
 	Util::DynamicArray<VkDescriptorImageInfo> infos;
-	Util::DynamicArray<const uint8_t *> info_ptrs;
 	uint32_t write_count = 0;
 };
 using BindlessDescriptorPoolHandle = Util::IntrusivePtr<BindlessDescriptorPool>;
@@ -170,35 +165,11 @@ public:
 	BindlessDescriptorSet allocate_bindless_set(VkDescriptorPool pool, unsigned num_descriptors);
 	void reset_bindless_pool(VkDescriptorPool pool);
 
-	// Descriptor buffer integration.
-	DescriptorBufferAllocation allocate_bindless_buffer(unsigned num_sets, unsigned num_descriptors);
-
-	VkDeviceSize get_resource_heap_size() const
-	{
-		return desc_set_size;
-	}
-
-	VkDeviceSize get_variable_offset() const
-	{
-		return desc_set_variable_offset;
-	}
-
-	VkDeviceSize get_variable_size(unsigned count) const;
-
-	uint32_t get_binding_offset(uint32_t binding) const
-	{
-		return desc_offsets[binding];
-	}
-
 private:
 	Device *device;
 	const VulkanDeviceTable &table;
 	VkDescriptorSetLayout set_layout_pool = VK_NULL_HANDLE;
 	VkDescriptorSetLayout set_layout_push = VK_NULL_HANDLE;
-
-	VkDeviceSize desc_set_size = 0;
-	VkDeviceSize desc_set_variable_offset = 0;
-	uint32_t desc_offsets[VULKAN_NUM_BINDINGS] = {};
 
 	struct Pool
 	{

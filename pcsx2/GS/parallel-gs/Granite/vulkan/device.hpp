@@ -443,7 +443,7 @@ private:
 		FenceManager fence;
 		SemaphoreManager semaphore;
 		BufferPool vbo, ibo, ubo, staging;
-		DescriptorBufferAllocator descriptor_buffer;
+		ViewFactory views;
 	};
 	Managers managers;
 
@@ -498,8 +498,6 @@ private:
 		std::vector<VkSemaphore> recycled_semaphores;
 		std::vector<VkSemaphore> destroyed_semaphores;
 		std::vector<VkSemaphore> consumed_semaphores;
-		std::vector<DescriptorBufferAllocation> descriptor_buffer_allocs;
-		std::vector<CachedDescriptorPayload> cached_descriptor_payloads;
 
 		bool in_destructor = false;
 	};
@@ -523,8 +521,6 @@ private:
 		Util::DeferredList<VkSemaphore> recycled_semaphores;
 		Util::DeferredList<VkSemaphore> destroyed_semaphores;
 		Util::DeferredList<VkSemaphore> consumed_semaphores;
-		Util::DeferredList<DescriptorBufferAllocation> descriptor_buffer_allocs;
-		Util::DeferredList<CachedDescriptorPayload> cached_descriptor_payloads;
 	} deferred;
 	/* Files everything handed back so far into @f. Called where the
 	 * frame advances, in wait_idle, and by a frame as it is destroyed. */
@@ -635,8 +631,6 @@ private:
 	void free_memory(const DeviceAllocation &alloc);
 	void reset_fence(VkFence fence, bool observed_wait);
 	void destroy_descriptor_pool(VkDescriptorPool desc_pool);
-	void free_descriptor_buffer_allocation(const DescriptorBufferAllocation &alloc);
-	void free_cached_descriptor_payload(const CachedDescriptorPayload &payload);
 
 	void destroy_buffer_nolock(VkBuffer buffer);
 	void destroy_image_nolock(VkImage image);
@@ -650,8 +644,6 @@ private:
 	void free_memory_nolock(const DeviceAllocation &alloc);
 	void destroy_descriptor_pool_nolock(VkDescriptorPool desc_pool);
 	void reset_fence_nolock(VkFence fence, bool observed_wait);
-	void free_descriptor_buffer_allocation_nolock(const DescriptorBufferAllocation &alloc);
-	void free_cached_descriptor_payload_nolock(const CachedDescriptorPayload &payload);
 
 	void flush_frame_nolock();
 	CommandBufferHandle request_command_buffer_nolock(unsigned thread_index, CommandBuffer::Type type);

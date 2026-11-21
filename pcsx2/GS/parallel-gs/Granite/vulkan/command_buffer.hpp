@@ -801,18 +801,6 @@ private:
 		uint32_t &first_set, uint32_t &set_count);
 	void flush_descriptor_binds(const VkDescriptorSet *sets,
 		uint32_t &first_set, uint32_t &set_count);
-	void rebind_descriptor_offset(uint32_t set, uint32_t &first_set, uint32_t &set_count);
-	void allocate_descriptor_offset(uint32_t set, uint32_t &first_set, uint32_t &set_count);
-	void flush_descriptor_offsets(uint32_t &first_set, uint32_t &set_count);
-	void allocate_descriptor_heap_set(uint32_t set);
-	void rebind_descriptor_heap_set(uint32_t set);
-
-	struct DescriptorSlice
-	{
-		uint8_t *mapped;
-		VkDeviceSize offset;
-	};
-	DescriptorSlice allocate_descriptor_slice(VkDeviceSize size, VkDeviceSize alignment);
 
 	void begin_compute();
 	void begin_context();
@@ -822,16 +810,8 @@ private:
 	BufferBlock ubo_block;
 	BufferBlock staging_block;
 
-	DescriptorBufferAllocation desc_buffer = {};
-	VkDeviceSize desc_buffer_alloc_offset = 0;
-	VkDeviceSize desc_buffer_heap_cached_offsets[VULKAN_NUM_DESCRIPTOR_SETS];
-	VkDeviceAddress desc_heap_cached_table[VULKAN_NUM_DESCRIPTOR_SETS];
-	bool desc_buffer_enable = false;
-	bool desc_heap_enable = false;
-
 	void set_texture(unsigned set, unsigned binding,
 	                 VkImageView float_view, VkImageView integer_view, VkImageLayout layout,
-	                 const CachedDescriptorPayload &float_payload, const CachedDescriptorPayload &integer_payload,
 	                 uint64_t cookie);
 	void set_buffer_view_common(unsigned set, unsigned binding, const BufferView &view, VkDescriptorType type);
 

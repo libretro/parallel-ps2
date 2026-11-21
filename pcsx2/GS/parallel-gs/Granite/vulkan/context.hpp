@@ -67,12 +67,6 @@ struct DeviceFeatures
 	bool supports_store_op_none = false;
 	bool supports_low_latency2_nv = false;
 	bool supports_drm_modifiers = false;
-	bool supports_descriptor_buffer = false;
-
-	bool supports_descriptor_buffer_or_heap = false;
-	uint32_t resource_heap_offset_alignment = 0;
-	uint32_t resource_heap_resource_desc_size = 0;
-	uint32_t resource_heap_resource_desc_size_log2 = 0;
 
 	VkPhysicalDeviceFeatures enabled_features = {};
 
@@ -97,7 +91,6 @@ struct DeviceFeatures
 	VkPhysicalDeviceMaintenance5FeaturesKHR maintenance5_features = {};
 	VkPhysicalDeviceVideoEncodeAV1FeaturesKHR av1_features = {};
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR rtas_features = {};
-	VkPhysicalDeviceShaderUntypedPointersFeaturesKHR untyped_pointers_features = {};
 	VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR intra_refresh_features = {};
 
 	// EXT
@@ -108,11 +101,7 @@ struct DeviceFeatures
 	VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pageable_device_local_memory_features = {};
 	VkPhysicalDeviceDeviceGeneratedCommandsPropertiesEXT device_generated_commands_properties = {};
 	VkPhysicalDeviceRobustness2FeaturesEXT robustness2_features = {};
-	VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = {};
-	VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer_properties = {};
 	VkPhysicalDevicePresentTimingFeaturesEXT present_timing_features = {};
-	VkPhysicalDeviceDescriptorHeapFeaturesEXT descriptor_heap_features = {};
-	VkPhysicalDeviceDescriptorHeapPropertiesEXT descriptor_heap_properties = {};
 
 	// Vendor
 	VkPhysicalDeviceDescriptorPoolOverallocationFeaturesNV descriptor_pool_overallocation_features = {};
@@ -159,8 +148,6 @@ enum ContextCreationFlagBits
 	CONTEXT_CREATION_ENABLE_PUSH_DESCRIPTOR_BIT = 1 << 6,
 	CONTEXT_CREATION_ENABLE_ROBUSTNESS_2_BIT = 1 << 7,
 	CONTEXT_CREATION_ENABLE_VIDEO_AV1_BIT = 1 << 8,
-	CONTEXT_CREATION_ENABLE_DESCRIPTOR_BUFFER_BIT = 1 << 9,
-	CONTEXT_CREATION_ENABLE_DESCRIPTOR_HEAP_BIT = 1 << 10,
 	CONTEXT_CREATION_ENABLE_VIDEO_FEATURE_ONLY_BIT = 1 << 12,
 };
 using ContextCreationFlags = uint32_t;

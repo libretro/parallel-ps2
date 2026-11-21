@@ -147,18 +147,6 @@ public:
 		return view.view;
 	}
 
-	const CachedDescriptorPayload &get_uniform_payload() const
-	{
-		VK_ASSERT(view.uniform.ptr && view.uniform.type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER);
-		return view.uniform;
-	}
-
-	const CachedDescriptorPayload &get_storage_payload() const
-	{
-		VK_ASSERT(view.storage.ptr && view.storage.type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER);
-		return view.storage;
-	}
-
 	const BufferViewCreateInfo &get_create_info()
 	{
 		return info;

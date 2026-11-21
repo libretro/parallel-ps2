@@ -58,24 +58,16 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash, Device *device_, const
 
 	if (bindless)
 	{
-		if (!device->ext.supports_descriptor_buffer)
-			info.flags |= VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+		info.flags |= VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
 		info.pNext = &flags;
 
 		flags.bindingCount = 1;
 		flags.pBindingFlags = &binding_flags;
 
 		binding_flags = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
-		if (!device->ext.supports_descriptor_buffer)
-		{
-			// These flags are implied when using descriptor buffer.
-			binding_flags |= VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-			                 VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-		}
+		binding_flags |= VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+		                 VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
 	}
-
-	if (device->ext.supports_descriptor_buffer)
-		info.flags |= VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
 
 	for (unsigned i = 0; i < VULKAN_NUM_BINDINGS; i++)
 	{
@@ -141,13 +133,6 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash, Device *device_, const
 			types++;
 		}
 
-		if (layout.rtas_mask & (1u << i))
-		{
-			bindings.push_back({ i, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, array_size, stages, nullptr });
-			pool_size.push_back({ VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, pool_array_size });
-			types++;
-		}
-
 		if (layout.input_attachment_mask & (1u << i))
 		{
 			bindings.push_back({ i, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, array_size, stages, nullptr });
@@ -166,10 +151,7 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash, Device *device_, const
 		{
 			if ((layout.immutable_sampler_mask & (1u << i)) && immutable_samplers && immutable_samplers[i])
 			{
-				if (!device->get_device_features().supports_descriptor_buffer)
-					vk_immutable_samplers[i] = immutable_samplers[i]->get_sampler().get_sampler();
-				else
-					LOGE("Cannot use immutable samplers with descriptor buffer. Ignoring.\n");
+				vk_immutable_samplers[i] = immutable_samplers[i]->get_sampler().get_sampler();
 			}
 
 			bindings.push_back({ i, VK_DESCRIPTOR_TYPE_SAMPLER, array_size, stages,
@@ -194,47 +176,13 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash, Device *device_, const
 		}
 	}
 
-	bool heap = device->get_device_features().descriptor_heap_features.descriptorHeap == VK_TRUE;
-
-	if (!heap)
-	{
 #ifdef VULKAN_DEBUG
-		LOGI("Creating descriptor set layout.\n");
+	LOGI("Creating descriptor set layout.\n");
 #endif
-		if (table.vkCreateDescriptorSetLayout(device->get_device(), &info, nullptr, &set_layout_pool) != VK_SUCCESS)
-			LOGE("Failed to create descriptor set layout.");
-	}
+	if (table.vkCreateDescriptorSetLayout(device->get_device(), &info, nullptr, &set_layout_pool) != VK_SUCCESS)
+		LOGE("Failed to create descriptor set layout.");
 
-	if (device->ext.supports_descriptor_buffer && !heap)
-	{
-		// Query the memory layout.
-		table.vkGetDescriptorSetLayoutSizeEXT(device->get_device(), set_layout_pool, &desc_set_size);
-
-		if (bindless)
-		{
-			table.vkGetDescriptorSetLayoutBindingOffsetEXT(
-					device->get_device(), set_layout_pool, 0, &desc_set_variable_offset);
-		}
-		else
-		{
-			for (auto &bind : bindings)
-			{
-				VkDeviceSize offset = 0;
-				VkDeviceSize stride = device->managers.descriptor_buffer.get_descriptor_size_for_type(bind.descriptorType);
-
-				table.vkGetDescriptorSetLayoutBindingOffsetEXT(
-						device->get_device(), set_layout_pool, bind.binding, &offset);
-
-				for (uint32_t i = 0; i < bind.descriptorCount; i++)
-					desc_offsets[bind.binding + i] = offset + i * stride;
-			}
-		}
-	}
-
-
-	// Push descriptors is not used with descriptor buffer.
-	if (!bindless && device->get_device_features().vk14_features.pushDescriptor &&
-	    !heap && !device->get_device_features().descriptor_buffer_features.descriptorBuffer)
+	if (!bindless && device->get_device_features().vk14_features.pushDescriptor)
 	{
 		info.flags |= VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT;
 		if (table.vkCreateDescriptorSetLayout(device->get_device(), &info, nullptr, &set_layout_push) != VK_SUCCESS)
@@ -271,30 +219,6 @@ BindlessDescriptorSet DescriptorSetAllocator::allocate_bindless_set(VkDescriptor
 
 	desc_set.valid = true;
 	return desc_set;
-}
-
-DescriptorBufferAllocation DescriptorSetAllocator::allocate_bindless_buffer(unsigned num_sets, unsigned num_descriptors)
-{
-	if (!bindless)
-		return {};
-
-	VkDeviceSize size = get_variable_offset() * num_sets +
-	                    device->managers.descriptor_buffer.get_descriptor_size_for_type(pool_size[0].type) *
-	                    num_descriptors;
-
-	size += (std::max<uint32_t>(num_sets, 1u) - 1u) *
-			std::max<VkDeviceSize>(
-				device->get_device_features().resource_heap_offset_alignment,
-				device->get_device_features().resource_heap_resource_desc_size);
-
-	return device->managers.descriptor_buffer.allocate(size);
-}
-
-VkDeviceSize DescriptorSetAllocator::get_variable_size(unsigned count) const
-{
-	return get_variable_offset() +
-	       device->managers.descriptor_buffer.get_descriptor_size_for_type(pool_size[0].type) *
-	       count;
 }
 
 VkDescriptorPool DescriptorSetAllocator::allocate_bindless_pool(unsigned num_sets, unsigned num_descriptors)
@@ -423,10 +347,9 @@ DescriptorSetAllocator::~DescriptorSetAllocator()
 BindlessDescriptorPool::BindlessDescriptorPool(Device *device_, DescriptorSetAllocator *allocator_,
                                                VkDescriptorPool pool, uint32_t num_sets, uint32_t num_desc)
 	: device(device_), allocator(allocator_), desc_pool(pool),
-	  total_descriptors(pool ? std::min<uint32_t>(num_desc, VULKAN_NUM_BINDINGS_BINDLESS_VARYING) : num_desc)
+	  total_descriptors(std::min<uint32_t>(num_desc, VULKAN_NUM_BINDINGS_BINDLESS_VARYING))
 {
-	if (!desc_pool)
-		bindless_buffer = allocator->allocate_bindless_buffer(num_sets, num_desc);
+	(void)num_sets;
 }
 
 BindlessDescriptorPool::~BindlessDescriptorPool()
@@ -438,14 +361,6 @@ BindlessDescriptorPool::~BindlessDescriptorPool()
 		else
 			device->destroy_descriptor_pool(desc_pool);
 	}
-
-	if (bindless_buffer.get_size() != 0)
-	{
-		if (internal_sync)
-			device->free_descriptor_buffer_allocation_nolock(bindless_buffer);
-		else
-			device->free_descriptor_buffer_allocation(bindless_buffer);
-	}
 }
 
 BindlessDescriptorSet BindlessDescriptorPool::get_descriptor_set() const
@@ -455,7 +370,7 @@ BindlessDescriptorSet BindlessDescriptorPool::get_descriptor_set() const
 
 uint32_t BindlessDescriptorPool::get_descriptor_base() const
 {
-	return desc_pool ? descriptor_base : 0;
+	return descriptor_base;
 }
 
 void BindlessDescriptorPool::reset()
@@ -465,53 +380,28 @@ void BindlessDescriptorPool::reset()
 	desc_set = {};
 	descriptor_base = 0;
 	allocated_descriptor_count = 0;
-	bindless_buffer_offset = 0;
 }
 
 bool BindlessDescriptorPool::allocate_descriptors(unsigned count)
 {
-	if (device->get_device_features().supports_descriptor_buffer_or_heap)
+	// One set a pool, of every descriptor the pool has, and each
+	// allocation a range of it from where the last ended: a set is
+	// allocated once, written at its range while bound (update after
+	// bind), and a driver that backs a set with its layout's whole
+	// capacity, whatever its count, is charged for one set rather than
+	// one per draw.
+	if (allocated_descriptor_count + count > total_descriptors)
+		return false;
+	if (!desc_set)
 	{
-		auto alignment = std::max<VkDeviceSize>(
-				device->get_device_features().resource_heap_offset_alignment,
-				device->get_device_features().resource_heap_resource_desc_size);
-
-		bindless_buffer_offset = (bindless_buffer_offset + alignment - 1) & ~(alignment - 1);
-		VkDeviceSize size = allocator->get_variable_size(count);
-
-		desc_set = {};
-		if (bindless_buffer_offset + size <= bindless_buffer.get_size())
-		{
-			desc_set.handle.offset = bindless_buffer_offset + bindless_buffer.get_offset();
-			desc_set.valid = true;
-			bindless_buffer_offset += size;
-
-			allocated_descriptor_count += count;
-		}
-
-		info_ptrs.reserve(count);
-	}
-	else
-	{
-		// One set a pool, of every descriptor the pool has, and each
-		// allocation a range of it from where the last ended: a set is
-		// allocated once, written at its range while bound (update after
-		// bind), and a driver that backs a set with its layout's whole
-		// capacity, whatever its count, is charged for one set rather than
-		// one per draw.
-		if (allocated_descriptor_count + count > total_descriptors)
-			return false;
+		desc_set = allocator->allocate_bindless_set(desc_pool, total_descriptors);
 		if (!desc_set)
-		{
-			desc_set = allocator->allocate_bindless_set(desc_pool, total_descriptors);
-			if (!desc_set)
-				return false;
-		}
-
-		descriptor_base = allocated_descriptor_count;
-		allocated_descriptor_count += count;
-		infos.reserve(count);
+			return false;
 	}
+
+	descriptor_base = allocated_descriptor_count;
+	allocated_descriptor_count += count;
+	infos.reserve(count);
 
 	write_count = 0;
 	return bool(desc_set);
@@ -520,10 +410,7 @@ bool BindlessDescriptorPool::allocate_descriptors(unsigned count)
 void BindlessDescriptorPool::push_texture(const ImageView &view)
 {
 	// TODO: Deal with integer view for depth-stencil images?
-	if (!desc_pool)
-		push_texture(view.get_float_view().sampled.ptr);
-	else
-		push_texture(view.get_float_view().view, view.get_image().get_layout(VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL));
+	push_texture(view.get_float_view().view, view.get_image().get_layout(VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL));
 }
 
 void BindlessDescriptorPool::push_texture(VkImageView view, VkImageLayout layout)
@@ -534,38 +421,22 @@ void BindlessDescriptorPool::push_texture(VkImageView view, VkImageLayout layout
 	write_count++;
 }
 
-void BindlessDescriptorPool::push_texture(const uint8_t *ptr)
-{
-	VK_ASSERT(write_count < info_ptrs.get_capacity());
-	info_ptrs[write_count++] = ptr;
-}
-
 void BindlessDescriptorPool::update()
 {
-	if (device->get_device_features().supports_descriptor_buffer_or_heap)
-	{
-		device->managers.descriptor_buffer.copy_sampled_image_n(
-				device->managers.descriptor_buffer.get_resource_heap().mapped +
-				desc_set.handle.offset + allocator->get_variable_offset(),
-				info_ptrs.data(), write_count);
-	}
-	else
-	{
-		VkWriteDescriptorSet desc = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-		desc.descriptorCount = write_count;
-		desc.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-		desc.dstSet = desc_set.handle.set;
-		desc.dstArrayElement = descriptor_base;
+	VkWriteDescriptorSet desc = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+	desc.descriptorCount = write_count;
+	desc.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+	desc.dstSet = desc_set.handle.set;
+	desc.dstArrayElement = descriptor_base;
 
-		desc.pImageInfo = infos.data();
-		desc.pBufferInfo = nullptr;
-		desc.pTexelBufferView = nullptr;
+	desc.pImageInfo = infos.data();
+	desc.pBufferInfo = nullptr;
+	desc.pTexelBufferView = nullptr;
 
-		if (write_count)
-		{
-			auto &table = device->get_device_table();
-			table.vkUpdateDescriptorSets(device->get_device(), 1, &desc, 0, nullptr);
-		}
+	if (write_count)
+	{
+		auto &table = device->get_device_table();
+		table.vkUpdateDescriptorSets(device->get_device(), 1, &desc, 0, nullptr);
 	}
 }
 

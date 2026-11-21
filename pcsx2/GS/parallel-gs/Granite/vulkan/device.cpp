@@ -37,7 +37,6 @@
 #include <windows.h>
 #endif
 
-
 #include "thread_id.hpp"
 static unsigned get_thread_index()
 {
@@ -939,7 +938,7 @@ void Device::set_context(const Context &context)
 	 * textures every frame); the blocks they take come back for the next
 	 * frame rather than being made again past the first two megabytes. */
 	managers.staging.set_max_retained_blocks(256);
-	managers.descriptor_buffer.init(this);
+	managers.views.init(this);
 
 	init_stock_samplers();
 }
@@ -1707,10 +1706,9 @@ Device::~Device()
 {
 	/* (whoever opened it has joined its builders by now) */
 	close_pipeline_handoff();
-	managers.descriptor_buffer.teardown();
+	managers.views.teardown();
 
 	wait_idle();
-
 
 	if (legacy_pipeline_cache != VK_NULL_HANDLE || ext.pipeline_binary_features.pipelineBinaries)
 		flush_pipeline_cache();
@@ -1800,8 +1798,6 @@ Device::PerFrame::PerFrame(Device *device_, unsigned frame_index_)
 	recycled_semaphores.reserve(64);
 	destroyed_semaphores.reserve(64);
 	consumed_semaphores.reserve(64);
-	descriptor_buffer_allocs.reserve(256);
-	cached_descriptor_payloads.reserve(256);
 }
 
 void Device::free_memory_nolock(const DeviceAllocation &alloc)
@@ -1830,8 +1826,6 @@ void Device::drain_deferred(PerFrame &f)
 	 * submission waits on them and recycles them, which is why the
 	 * drains come before end_frame. */
 	deferred.consumed_semaphores.drain([&](VkSemaphore v) { f.consumed_semaphores.push_back(v); });
-	deferred.descriptor_buffer_allocs.drain([&](const DescriptorBufferAllocation &v) { f.descriptor_buffer_allocs.push_back(v); });
-	deferred.cached_descriptor_payloads.drain([&](const CachedDescriptorPayload &v) { f.cached_descriptor_payloads.push_back(v); });
 }
 
 #ifdef VULKAN_DEBUG
@@ -1905,16 +1899,6 @@ void Device::destroy_image_view(const CachedImageView &view)
 	destroy_image_view_nolock(view);
 }
 
-void Device::free_descriptor_buffer_allocation(const DescriptorBufferAllocation &alloc)
-{
-	free_descriptor_buffer_allocation_nolock(alloc);
-}
-
-void Device::free_cached_descriptor_payload(const CachedDescriptorPayload &payload)
-{
-	free_cached_descriptor_payload_nolock(payload);
-}
-
 void Device::destroy_image_view_nolock(const CachedImageView &view)
 {
 	deferred.destroyed_image_views.push(view);
@@ -1946,16 +1930,6 @@ void Device::reset_fence_nolock(VkFence fence, bool observed_wait)
 		deferred.reset_fences.push(fence);
 	else
 		deferred.wait_and_recycle_fences.push(fence);
-}
-
-void Device::free_descriptor_buffer_allocation_nolock(const DescriptorBufferAllocation &alloc)
-{
-	deferred.descriptor_buffer_allocs.push(alloc);
-}
-
-void Device::free_cached_descriptor_payload_nolock(const CachedDescriptorPayload &payload)
-{
-	deferred.cached_descriptor_payloads.push(payload);
 }
 
 void Device::destroy_image_nolock(VkImage image)
@@ -2024,12 +1998,9 @@ void Device::wait_idle_nolock()
 	framebuffer_allocator.clear();
 	transient_allocator.clear();
 
-	if (!ext.supports_descriptor_buffer_or_heap)
-	{
-		descriptor_set_allocators.for_each([](DescriptorSetAllocator &allocator) {
-			allocator.clear();
-		});
-	}
+	descriptor_set_allocators.for_each([](DescriptorSetAllocator &allocator) {
+		allocator.clear();
+	});
 
 	for (auto &frame : per_frame)
 	{
@@ -2063,12 +2034,9 @@ void Device::next_frame_context()
 	framebuffer_allocator.begin_frame();
 	transient_allocator.begin_frame();
 
-	if (!ext.supports_descriptor_buffer_or_heap)
-	{
-		descriptor_set_allocators.for_each([](DescriptorSetAllocator &allocator) {
-			allocator.begin_frame();
-		});
-	}
+	descriptor_set_allocators.for_each([](DescriptorSetAllocator &allocator) {
+		allocator.begin_frame();
+	});
 
 	VK_ASSERT(!per_frame.empty());
 	frame_context_index++;
@@ -2200,11 +2168,11 @@ void Device::PerFrame::begin()
 	for (auto &framebuffer : destroyed_framebuffers)
 		table.vkDestroyFramebuffer(vkdevice, framebuffer, nullptr);
 	for (auto &sampler : destroyed_samplers)
-		managers.descriptor_buffer.destroy_sampler(sampler);
+		managers.views.destroy_sampler(sampler);
 	for (auto &view : destroyed_image_views)
-		managers.descriptor_buffer.free_image_view(view);
+		managers.views.free_image_view(view);
 	for (auto &view : destroyed_buffer_views)
-		managers.descriptor_buffer.free_buffer_view(view);
+		managers.views.free_buffer_view(view);
 	for (auto &image : destroyed_images)
 		table.vkDestroyImage(vkdevice, image, nullptr);
 	for (auto &buffer : destroyed_buffers)
@@ -2215,9 +2183,6 @@ void Device::PerFrame::begin()
 		table.vkDestroyDescriptorPool(vkdevice, pool, nullptr);
 	for (auto &semaphore : recycled_semaphores)
 		managers.semaphore.recycle(semaphore);
-	managers.descriptor_buffer.free(descriptor_buffer_allocs.data(), descriptor_buffer_allocs.size());
-	managers.descriptor_buffer.free_cached_descriptors(
-			cached_descriptor_payloads.data(), cached_descriptor_payloads.size());
 	VK_ASSERT(consumed_semaphores.empty());
 
 	if (!allocations.empty())
@@ -2236,8 +2201,6 @@ void Device::PerFrame::begin()
 	destroyed_descriptor_pools.clear();
 	recycled_semaphores.clear();
 	allocations.clear();
-	descriptor_buffer_allocs.clear();
-	cached_descriptor_payloads.clear();
 }
 
 Device::PerFrame::~PerFrame()
@@ -2487,7 +2450,7 @@ static inline VkImageViewType get_image_view_type(const ImageCreateInfo &create_
 BufferViewHandle Device::create_buffer_view(const BufferViewCreateInfo &view_info)
 {
 	CachedBufferView view;
-	if (!managers.descriptor_buffer.create_buffer_view(view_info, view))
+	if (!managers.views.create_buffer_view(view_info, view))
 		return BufferViewHandle(nullptr);
 	return BufferViewHandle(handle_pool.buffer_views.allocate(this, view, view_info));
 }
@@ -2662,12 +2625,12 @@ public:
 			if (create_info.usage & VK_IMAGE_USAGE_STORAGE_BIT)
 				srgb_unorm_usage |= VK_IMAGE_USAGE_STORAGE_BIT;
 			info.format = view_formats[0];
-			if (!device->managers.descriptor_buffer.create_image_view(info, srgb_unorm_usage, create_info.layout, unorm_view))
+			if (!device->managers.views.create_image_view(info, srgb_unorm_usage, create_info.layout, unorm_view))
 				return false;
 
 			srgb_unorm_usage &= ~VK_IMAGE_USAGE_STORAGE_BIT;
 			info.format = view_formats[1];
-			if (!device->managers.descriptor_buffer.create_image_view(info, srgb_unorm_usage, create_info.layout, srgb_view))
+			if (!device->managers.views.create_image_view(info, srgb_unorm_usage, create_info.layout, srgb_view))
 				return false;
 		}
 
@@ -2705,7 +2668,7 @@ private:
 				view_info.subresourceRange.baseArrayLayer = layer + info.subresourceRange.baseArrayLayer;
 
 				CachedImageView rt_view = {};
-				if (!device->managers.descriptor_buffer.create_image_view(view_info, view_usage, layout, rt_view))
+				if (!device->managers.views.create_image_view(view_info, view_usage, layout, rt_view))
 					return false;
 				rt_views.push_back(rt_view);
 			}
@@ -2730,7 +2693,7 @@ private:
 			view_info.subresourceRange.levelCount = 1;
 
 			CachedImageView mip_view = {};
-			if (!device->managers.descriptor_buffer.create_image_view(view_info, view_usage, layout, mip_view))
+			if (!device->managers.views.create_image_view(view_info, view_usage, layout, mip_view))
 				return false;
 			mip_views.push_back(mip_view);
 		}
@@ -2758,11 +2721,11 @@ private:
 
 			// We need this to be able to sample the texture, or otherwise use it as a non-pure DS attachment.
 			view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-			if (!device->managers.descriptor_buffer.create_image_view(view_info, view_usage, layout, depth_view))
+			if (!device->managers.views.create_image_view(view_info, view_usage, layout, depth_view))
 				return false;
 
 			view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
-			if (!device->managers.descriptor_buffer.create_image_view(view_info, view_usage, layout, stencil_view))
+			if (!device->managers.views.create_image_view(view_info, view_usage, layout, stencil_view))
 				return false;
 		}
 
@@ -2772,12 +2735,12 @@ private:
 	bool create_default_view(const VkImageViewCreateInfo &info, ImageLayout layout, VkImageUsageFlags usage)
 	{
 		// Create the normal image view. This one contains every subresource.
-		return device->managers.descriptor_buffer.create_image_view(info, usage, layout, image_view);
+		return device->managers.views.create_image_view(info, usage, layout, image_view);
 	}
 
 	void cleanup()
 	{
-		auto &m = device->managers.descriptor_buffer;
+		auto &m = device->managers.views;
 		m.free_image_view(image_view);
 		m.free_image_view(depth_view);
 		m.free_image_view(stencil_view);
@@ -3690,16 +3653,13 @@ BindlessDescriptorPoolHandle Device::create_bindless_descriptor_pool(BindlessRes
 
 	VkDescriptorPool pool = VK_NULL_HANDLE;
 
-	if (!ext.supports_descriptor_buffer_or_heap)
-	{
-		if (allocator)
-			pool = allocator->allocate_bindless_pool(num_sets, num_descriptors);
+	if (allocator)
+		pool = allocator->allocate_bindless_pool(num_sets, num_descriptors);
 
-		if (!pool)
-		{
-			LOGE("Failed to allocate bindless pool.\n");
-			return BindlessDescriptorPoolHandle{nullptr};
-		}
+	if (!pool)
+	{
+		LOGE("Failed to allocate bindless pool.\n");
+		return BindlessDescriptorPoolHandle{nullptr};
 	}
 
 	auto *handle = handle_pool.bindless_descriptor_pool.allocate(this, allocator, pool,
@@ -4163,12 +4123,10 @@ void Device::set_name(const CommandBuffer &cmd, const char *name)
 	set_name((uint64_t)cmd.get_command_buffer(), VK_OBJECT_TYPE_COMMAND_BUFFER, name);
 }
 
-
 const VulkanDeviceTable &Device::get_device_table() const
 {
 	return *table;
 }
-
 
 bool Device::supports_subgroup_size_log2(bool subgroup_full_group, uint8_t subgroup_minimum_size_log2,
                                          uint8_t subgroup_maximum_size_log2, VkShaderStageFlagBits stage) const

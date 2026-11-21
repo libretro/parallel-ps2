@@ -82,12 +82,6 @@ public:
 		return sampler;
 	}
 
-	const CachedDescriptorPayload &get_descriptor_payload() const
-	{
-		VK_ASSERT(payload && payload.type == VK_DESCRIPTOR_TYPE_SAMPLER);
-		return payload;
-	}
-
 	const SamplerCreateInfo &get_create_info() const
 	{
 		return create_info;
@@ -102,7 +96,6 @@ private:
 
 	Device *device;
 	VkSampler sampler;
-	CachedDescriptorPayload payload = {};
 	SamplerCreateInfo create_info;
 	bool immutable;
 };

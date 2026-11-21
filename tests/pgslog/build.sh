@@ -37,6 +37,17 @@ if grep -rqE "LoggingInterface|set_thread_logging_interface|get_current_time_nse
 	exit 1
 fi
 
+# Gone as dead weight: descriptor buffers and heaps (the core asks only
+# for push descriptors), with the slab and slice allocators behind them
+for f in util/slab_allocator.cpp util/slab_allocator.hpp; do
+	if [ -e "$G/$f" ]; then echo "FAIL: Granite/$f is back"; exit 1; fi
+done
+if grep -rqE "VK_EXT_descriptor_buffer|VK_EXT_descriptor_heap|DescriptorBufferAllocator|SliceAllocator|SlabAllocator|DESCRIPTOR_HEAP_BIT|DESCRIPTOR_BUFFER_BIT|descriptorBuffer" \
+	"$ROOT/pcsx2/GS/parallel-gs" "$ROOT/pcsx2/GS/Renderers/parallel-gs" "$ROOT/Makefile.common" "$ROOT/pcsx2/CMakeLists.txt"; then
+	echo "FAIL: descriptor buffer or heap support is back in Granite"
+	exit 1
+fi
+
 C89="-std=gnu89 -pedantic -Wall -Wextra -Werror=declaration-after-statement -Werror=implicit-function-declaration"
 "$CC" $C89 -O2 -g $SAN -I"$LC/include" -c "$ROOT/pcsx2/GS/Renderers/parallel-gs/PGSLog.c" -o "$TMP/log.o"
 "$CC" $C89 -O2 -g $SAN -I"$LC/include" -c "$DIR/main.c" -o "$TMP/main.o"

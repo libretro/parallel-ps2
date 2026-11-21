@@ -6,7 +6,6 @@
  *     freed on threads other than the one that made them. Each object
  *     carries an in-use flag set on allocation: a slot handed to two
  *     threads at once trips it, and so does a torn free list;
- *   - ThreadSafeSlabAllocator, the same way, through a stamp in the slab;
  *   - growth: one thread holds enough objects live to need many blocks,
  *     every one distinct. */
 #include <stdio.h>
@@ -24,7 +23,6 @@ static thread_local unsigned s_pops;
 	do { if ((++s_pops & 7) == 0) sthread_yield(); } while (0)
 
 #include "object_pool.hpp"
-#include "slab_allocator.hpp"
 #include "deferred_list.hpp"
 
 namespace
@@ -39,9 +37,7 @@ struct Obj
 enum { THREADS = 4, SHARED = 16, LIVE = 20000 };
 
 Util::ThreadSafeObjectPool<Obj> s_pool;
-Util::ThreadSafeSlabAllocator s_slab;
 retro_atomic_ptr_t s_shared[SHARED];
-retro_atomic_ptr_t s_shared_slab[SHARED];
 retro_atomic_int_t s_fails;
 int s_iters;
 
@@ -81,18 +77,6 @@ void worker(void *arg)
 			release(old);
 			s_pool.free(old);
 		}
-
-		uint8_t *b = s_slab.allocate();
-		if (!b)
-		{
-			retro_atomic_inc_int(&s_fails);
-			return;
-		}
-		uint32_t stamp = id ^ uint32_t(i);
-		memcpy(b, &stamp, sizeof(stamp));
-		uint8_t *oldb = static_cast<uint8_t *>(retro_atomic_exchange_ptr(&s_shared_slab[k], b));
-		if (oldb)
-			s_slab.free(oldb);
 	}
 }
 }
@@ -151,11 +135,7 @@ int main(int argc, char **argv)
 	s_iters = argc > 1 ? atoi(argv[1]) : 200000;
 	retro_atomic_int_init(&s_fails, 0);
 	for (i = 0; i < SHARED; i++)
-	{
 		retro_atomic_ptr_init(&s_shared[i], nullptr);
-		retro_atomic_ptr_init(&s_shared_slab[i], nullptr);
-	}
-	s_slab.init(24);
 
 	/* Growth: LIVE objects at once, all distinct. */
 	{
@@ -200,14 +180,11 @@ int main(int argc, char **argv)
 	for (i = 0; i < SHARED; i++)
 	{
 		Obj *o = static_cast<Obj *>(retro_atomic_load_acquire_ptr(&s_shared[i]));
-		uint8_t *b = static_cast<uint8_t *>(retro_atomic_load_acquire_ptr(&s_shared_slab[i]));
 		if (o)
 		{
 			release(o);
 			s_pool.free(o);
 		}
-		if (b)
-			s_slab.free(b);
 	}
 
 	if (retro_atomic_load_acquire_int(&s_fails))

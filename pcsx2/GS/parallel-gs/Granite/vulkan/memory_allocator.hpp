@@ -25,7 +25,6 @@
 #include "thread_prims.hpp"
 #include "intrusive.hpp"
 #include "object_pool.hpp"
-#include "slab_allocator.hpp"
 #include "intrusive_list.hpp"
 #include "vulkan_headers.hpp"
 #include "logging.hpp"
@@ -301,129 +300,35 @@ private:
 // Avoid cross-dependency in header.
 class Buffer;
 
-struct DescriptorBufferAllocation
-{
-	inline VkDeviceSize get_offset() const { return backing_slice.offset; }
-	inline VkDeviceSize get_size() const { return backing_slice.count; }
-
-	// Internal detail.
-	Util::AllocatedSlice backing_slice;
-};
-
-using DescriptorCopyFunc = void (*)(uint8_t *, const uint8_t *, size_t size);
-using DescriptorCopyNFunc = void (*)(uint8_t *, const uint8_t * const *, size_t count, size_t size);
-
-struct CachedDescriptorPayload
-{
-	uint8_t *ptr;
-	VkDescriptorType type;
-	uint32_t heap_index;
-	explicit operator bool() const { return ptr != nullptr; }
-};
-
 struct CachedImageView
 {
-	VkImageView view; // For legacy and descriptor buffer.
-
-	// For DB, this is used all the time. For heap, only occasionally as needed,
-	// usually for bindless.
-	CachedDescriptorPayload sampled; // SHADER_READ_ONLY
-	CachedDescriptorPayload input_attachment; // INPUT_ATTACHMENT + read only (if applicable)
-	CachedDescriptorPayload input_attachment_feedback; // INPUT_ATTACHMENT + GENERAL (if applicable)
-	CachedDescriptorPayload storage; // For storage image, always GENERAL layout.
+	VkImageView view;
 };
 
 struct CachedBufferView
 {
 	VkBufferView view;
-	CachedDescriptorPayload uniform;
-	CachedDescriptorPayload storage;
 };
 
 struct BufferViewCreateInfo;
 
-class DescriptorBufferAllocator : private Util::SliceAllocator
+/* Makes and frees the device's image views, buffer views and samplers. */
+class ViewFactory
 {
 public:
 	bool init(Device *device);
-	~DescriptorBufferAllocator();
-
-	void teardown();
-
-	struct HeapInfo
-	{
-		VkDeviceAddress va;
-		uint8_t *mapped;
-		VkDeviceSize reserved_offset;
-		VkDeviceSize size;
-	};
-
-	HeapInfo get_resource_heap() const { return resource_heap; }
-	// Only for descriptor_heap.
-	HeapInfo get_sampler_heap() const { return sampler_heap; }
-
-	DescriptorBufferAllocation allocate(VkDeviceSize size);
-	void free(const DescriptorBufferAllocation *alloc, size_t count);
-
-	uint32_t get_descriptor_size_for_type(VkDescriptorType type) const;
+	void teardown() {}
 
 	bool create_image_view(const VkImageViewCreateInfo &info, VkImageUsageFlags usage,
 	                       ImageLayout layout, CachedImageView &view);
 	void free_image_view(const CachedImageView &view);
-
 	bool create_buffer_view(const BufferViewCreateInfo &info, CachedBufferView &view);
 	void free_buffer_view(const CachedBufferView &view);
 
-#define IMPL_TYPE(type, desc_type) \
-	inline void copy_##type(uint8_t *dst, const uint8_t *src) const { type##_copy.func(dst, src, type##_copy.size); } \
-	inline void copy_##type##_n(uint8_t *dst, const uint8_t * const *src, size_t count) const { type##_copy.func_n(dst, src, count, type##_copy.size); } \
-	inline CachedDescriptorPayload alloc_##type() { return { type##_copy.slab.allocate(), desc_type }; } \
-	inline void free_##type(uint8_t *ptr) { type##_copy.slab.free(ptr); }
-
-	IMPL_TYPE(combined_image, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-	IMPL_TYPE(sampled_image, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-	IMPL_TYPE(storage_image, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-	IMPL_TYPE(sampler, VK_DESCRIPTOR_TYPE_SAMPLER)
-	IMPL_TYPE(input_attachment, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)
-	IMPL_TYPE(ubo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-	IMPL_TYPE(ssbo, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-	IMPL_TYPE(uniform_texel, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER)
-	IMPL_TYPE(storage_texel, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)
-
-	void free_cached_descriptors(const CachedDescriptorPayload *payloads, size_t count);
-
-	// On heap, this is a dummy handle.
 	VkSampler create_sampler(const VkSamplerCreateInfo *info);
 	void destroy_sampler(VkSampler sampler);
 
 private:
 	Device *device = nullptr;
-	Buffer *resource_buffer = nullptr;
-	Buffer *sampler_buffer = nullptr;
-	Util::SliceBackingAllocatorVA backing_va;
-	VkDeviceSize alignment = 0;
-	VkDeviceSize sub_block_size = 0;
-
-	HeapInfo resource_heap = {}, sampler_heap = {};
-
-	struct DescriptorTypeInfo
-	{
-		DescriptorCopyFunc func;
-		DescriptorCopyNFunc func_n;
-		size_t size;
-		Util::ThreadSafeSlabAllocator slab;
-	};
-	DescriptorTypeInfo sampled_image_copy, storage_image_copy, combined_image_copy, sampler_copy, input_attachment_copy;
-	DescriptorTypeInfo ubo_copy, ssbo_copy, uniform_texel_copy, storage_texel_copy;
-	void init_copy_func(DescriptorTypeInfo &info, VkDescriptorType type) const;
-
-	VkDeviceSize total_size = 0;
-	VkDeviceSize high_water_mark = 0;
-	std::vector<uint32_t> heap_resource_indices;
-	std::vector<uint32_t> heap_sampler_indices;
-
-	// For descriptor heap.
-	uint32_t allocate_single_resource_heap_entry();
-	void free_single_resource_heap_entry(uint32_t index);
 };
 }

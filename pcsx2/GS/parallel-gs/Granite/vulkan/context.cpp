@@ -37,9 +37,7 @@
 #include <windows.h>
 #endif
 
-
 //#undef VULKAN_DEBUG
-
 
 #define NV_DRIVER_VERSION_MAJOR(v) (uint32_t(v) >> 22)
 
@@ -214,7 +212,6 @@ void Context::destroy_device()
 {
 	if (device != VK_NULL_HANDLE)
 		device_table.vkDeviceWaitIdle(device);
-
 
 	if (owned_device && device != VK_NULL_HANDLE)
 	{
@@ -548,7 +545,6 @@ bool Context::create_instance(const char * const *instance_ext, uint32_t instanc
 
 	for (uint32_t i = 0; i < info.enabledExtensionCount; i++)
 		LOGI("Enabling instance extension: %s.\n", info.ppEnabledExtensionNames[i]);
-
 
 	// instance != VK_NULL_HANDLE here is deprecated and somewhat broken.
 	// For libretro Vulkan context negotiation v1.
@@ -978,7 +974,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		}
 	}
 
-
 #ifdef _WIN32
 	if (ext.supports_surface_capabilities2 && has_extension(VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME))
 	{
@@ -1334,23 +1329,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		ADD_CHAIN(ext.robustness2_features, ROBUSTNESS_2_FEATURES_EXT);
 	}
 
-#if !defined(VULKAN_DEBUG)
-	if ((flags & CONTEXT_CREATION_ENABLE_DESCRIPTOR_HEAP_BIT) != 0 &&
-	    has_extension(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME))
-	{
-		ADD_CHAIN(ext.descriptor_heap_features, DESCRIPTOR_HEAP_FEATURES_EXT);
-		enabled_extensions.push_back(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
-		ADD_CHAIN(ext.untyped_pointers_features, SHADER_UNTYPED_POINTERS_FEATURES_KHR);
-		enabled_extensions.push_back(VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME);
-	}
-	else if ((flags & CONTEXT_CREATION_ENABLE_DESCRIPTOR_BUFFER_BIT) != 0 &&
-	         has_extension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME))
-	{
-		ADD_CHAIN(ext.descriptor_buffer_features, DESCRIPTOR_BUFFER_FEATURES_EXT);
-		enabled_extensions.push_back(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME);
-	}
-#endif
-
 	if ((flags & CONTEXT_CREATION_ENABLE_ADVANCED_WSI_BIT) != 0 && requires_swapchain)
 	{
 		if (has_extension(VK_KHR_PRESENT_ID_2_EXTENSION_NAME))
@@ -1485,12 +1463,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	if ((flags & CONTEXT_CREATION_ENABLE_PUSH_DESCRIPTOR_BIT) == 0)
 		ext.vk14_features.pushDescriptor = VK_FALSE;
 
-	ext.descriptor_buffer_features.descriptorBufferCaptureReplay = VK_FALSE;
-	ext.descriptor_buffer_features.descriptorBufferImageLayoutIgnored = VK_FALSE;
-	ext.descriptor_buffer_features.descriptorBufferPushDescriptors = VK_FALSE;
-
-	ext.descriptor_heap_features.descriptorHeapCaptureReplay = VK_FALSE;
-
 	// Enable device features we might care about.
 	{
 		VkPhysicalDeviceFeatures enabled_features = *required_features;
@@ -1589,17 +1561,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	if (ext.supports_external_memory_host)
 		ADD_CHAIN(ext.host_memory_properties, EXTERNAL_MEMORY_HOST_PROPERTIES_EXT);
 
-	if ((flags & CONTEXT_CREATION_ENABLE_DESCRIPTOR_HEAP_BIT) != 0 &&
-	    has_extension(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME))
-	{
-		ADD_CHAIN(ext.descriptor_heap_properties, DESCRIPTOR_HEAP_PROPERTIES_EXT);
-	}
-	else if ((flags & CONTEXT_CREATION_ENABLE_DESCRIPTOR_BUFFER_BIT) != 0 &&
-	         has_extension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME))
-	{
-		ADD_CHAIN(ext.descriptor_buffer_properties, DESCRIPTOR_BUFFER_PROPERTIES_EXT);
-	}
-
 	if ((flags & CONTEXT_CREATION_ENABLE_PIPELINE_BINARY_BIT) != 0 &&
 	    has_extension(VK_KHR_PIPELINE_BINARY_EXTENSION_NAME))
 		ADD_CHAIN(ext.pipeline_binary_properties, PIPELINE_BINARY_PROPERTIES_KHR);
@@ -1647,7 +1608,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		ext.vk13_props.requiredSubgroupSizeStages = size_control_props.requiredSubgroupSizeStages;
 		ext.vk13_props.maxComputeWorkgroupSubgroups = size_control_props.maxComputeWorkgroupSubgroups;
 	}
-
 
 	if (inherit_info)
 	{
@@ -1697,7 +1657,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		ext.pdf2 = &pdf2;
 	}
 
-
 	granite_vk_load_device_table(&device_table, device);
 
 #define PROMOTE_CALL(n, e) if (!device_table.vk##n) device_table.vk##n = device_table.vk##n##e
@@ -1738,45 +1697,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		if (queue_info.family_indices[i] != VK_QUEUE_FAMILY_IGNORED)
 			LOGI("%s queue: family %u, index %u.\n", family_names[i], queue_info.family_indices[i], queue_indices[i]);
 #endif
-
-	if (ext.descriptor_buffer_features.descriptorBuffer)
-	{
-		auto max_heap_size = std::min<VkDeviceSize>(
-				ext.descriptor_buffer_properties.maxSamplerDescriptorBufferRange,
-				ext.descriptor_buffer_properties.maxResourceDescriptorBufferRange);
-
-		// Only expose this if we can easily linearly allocate samplers and combined image samplers.
-		// Cba to deal with planar arrays of combined image samplers either.
-		ext.supports_descriptor_buffer =
-				ext.descriptor_buffer_properties.samplerDescriptorSize * 512ull * 1024ull <= max_heap_size &&
-				ext.descriptor_buffer_properties.sampledImageDescriptorSize * 512ull * 1024ull <= max_heap_size &&
-				ext.descriptor_buffer_properties.combinedImageSamplerDescriptorSingleArray;
-	}
-
-	ext.supports_descriptor_buffer_or_heap =
-		ext.supports_descriptor_buffer || ext.descriptor_heap_features.descriptorHeap;
-
-	if (ext.descriptor_heap_features.descriptorHeap)
-	{
-		ext.resource_heap_offset_alignment = std::max<uint32_t>(
-			ext.descriptor_heap_properties.bufferDescriptorAlignment,
-			ext.descriptor_heap_properties.imageDescriptorAlignment);
-
-		ext.resource_heap_resource_desc_size = std::max<uint32_t>(
-			ext.descriptor_heap_properties.bufferDescriptorSize,
-			ext.resource_heap_resource_desc_size);
-
-		ext.resource_heap_resource_desc_size = std::max<uint32_t>(
-			ext.descriptor_heap_properties.imageDescriptorSize,
-			ext.resource_heap_resource_desc_size);
-
-		ext.resource_heap_resource_desc_size = Util::next_pow2(ext.resource_heap_resource_desc_size);
-		ext.resource_heap_resource_desc_size_log2 = Util::floor_log2(ext.resource_heap_resource_desc_size);
-	}
-	else
-	{
-		ext.resource_heap_offset_alignment = ext.descriptor_buffer_properties.descriptorBufferOffsetAlignment;
-	}
 
 	return true;
 }

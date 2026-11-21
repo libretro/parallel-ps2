@@ -578,7 +578,6 @@ SOURCES_CXX += \
 # defined symbols are referenced anywhere we link in.
 SOURCES_CXX += \
 	$(GRANITE_DIR)/util/arena_allocator.cpp \
-	$(GRANITE_DIR)/util/slab_allocator.cpp \
 	$(GRANITE_DIR)/util/thread_id.cpp
 
 # Granite vulkan
