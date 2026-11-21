@@ -30,7 +30,7 @@
 #error "Must include vulkan_headers.hpp before Vulkan headers"
 #endif
 
-#include "vulkan_loader.h"
+#include "../../../Renderers/Vulkan/VKLoader.h"
 #include <stdlib.h>
 #include "logging.hpp"
 #include <utility>

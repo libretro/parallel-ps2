@@ -1,7 +1,6 @@
 add_granite_internal_lib(granite-vulkan
         context.cpp context.hpp
         vulkan_headers.hpp
-        vulkan_loader.c vulkan_loader.h vulkan_loader.inl
         device.cpp device.hpp
         buffer_pool.cpp buffer_pool.hpp
         image.cpp image.hpp

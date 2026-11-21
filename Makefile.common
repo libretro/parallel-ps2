@@ -611,9 +611,6 @@ SOURCES_CXX += \
 	$(GRANITE_DIR)/vulkan/semaphore_manager.cpp \
 	$(GRANITE_DIR)/vulkan/shader.cpp \
 	$(GRANITE_DIR)/vulkan/texture/texture_format.cpp
-
-# Granite's Vulkan loader (C)
-SOURCES_C += $(GRANITE_DIR)/vulkan/vulkan_loader.c
 endif
 
 # ============================================================================

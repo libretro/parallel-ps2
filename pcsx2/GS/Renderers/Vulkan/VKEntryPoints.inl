@@ -18,6 +18,17 @@
 /* VULKAN_MODULE_ENTRY_POINT is for functions in vulkan-1.dll */
 /* VULKAN_INSTANCE_ENTRY_POINT is for instance-specific functions. */
 /* VULKAN_DEVICE_ENTRY_POINT is for device-specific functions. */
+/* VULKAN_GLOBAL_ENTRY_POINT is for vkGetInstanceProcAddr(NULL, ...). */
+
+#ifdef VULKAN_GLOBAL_ENTRY_POINT
+
+/* paraLLEl-GS (Granite), which makes its instance itself */
+VULKAN_GLOBAL_ENTRY_POINT(vkCreateInstance, false)
+VULKAN_GLOBAL_ENTRY_POINT(vkEnumerateInstanceExtensionProperties, false)
+VULKAN_GLOBAL_ENTRY_POINT(vkEnumerateInstanceLayerProperties, false)
+VULKAN_GLOBAL_ENTRY_POINT(vkEnumerateInstanceVersion, false)
+
+#endif /* VULKAN_GLOBAL_ENTRY_POINT */
 
 #ifdef VULKAN_MODULE_ENTRY_POINT
 
@@ -60,6 +71,15 @@ VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceDisplayPlanePropertiesKHR, false)
 VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceFeatures2, true)
 VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceProperties2, true)
 VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceMemoryProperties2, true)
+
+/* paraLLEl-GS (Granite) */
+VULKAN_INSTANCE_ENTRY_POINT(vkDestroyInstance, false)
+VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceExternalBufferProperties, false)
+VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceFormatProperties2, false)
+VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceImageFormatProperties2, false)
+VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceQueueFamilyProperties2, false)
+VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceSurfaceSupportKHR, false)
+VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceToolPropertiesEXT, false)
 
 #endif /* VULKAN_INSTANCE_ENTRY_POINT */
 
@@ -201,5 +221,25 @@ VULKAN_DEVICE_ENTRY_POINT(vkCmdSetDepthWriteEnableEXT, false)
 VULKAN_DEVICE_ENTRY_POINT(vkCmdSetDepthCompareOpEXT, false)
 VULKAN_DEVICE_ENTRY_POINT(vkCmdSetStencilTestEnableEXT, false)
 VULKAN_DEVICE_ENTRY_POINT(vkCmdSetStencilOpEXT, false)
+
+/* paraLLEl-GS (Granite), which loads these into its device table */
+VULKAN_DEVICE_ENTRY_POINT(vkCmdPipelineBarrier2, false)
+VULKAN_DEVICE_ENTRY_POINT(vkCmdPipelineBarrier2KHR, false)
+VULKAN_DEVICE_ENTRY_POINT(vkCmdPushDescriptorSetWithTemplate, false)
+VULKAN_DEVICE_ENTRY_POINT(vkCmdPushDescriptorSetWithTemplateKHR, false)
+VULKAN_DEVICE_ENTRY_POINT(vkCopyMemoryToImage, false)
+VULKAN_DEVICE_ENTRY_POINT(vkCreateDescriptorUpdateTemplate, false)
+VULKAN_DEVICE_ENTRY_POINT(vkCreateRenderPass2, false)
+VULKAN_DEVICE_ENTRY_POINT(vkCreateRenderPass2KHR, false)
+VULKAN_DEVICE_ENTRY_POINT(vkDestroyDescriptorUpdateTemplate, false)
+VULKAN_DEVICE_ENTRY_POINT(vkGetBufferDeviceAddress, false)
+VULKAN_DEVICE_ENTRY_POINT(vkGetSemaphoreCounterValue, false)
+VULKAN_DEVICE_ENTRY_POINT(vkQueueSubmit2, false)
+VULKAN_DEVICE_ENTRY_POINT(vkQueueSubmit2KHR, false)
+VULKAN_DEVICE_ENTRY_POINT(vkQueueWaitIdle, false)
+VULKAN_DEVICE_ENTRY_POINT(vkTransitionImageLayout, false)
+VULKAN_DEVICE_ENTRY_POINT(vkTrimCommandPool, false)
+VULKAN_DEVICE_ENTRY_POINT(vkUpdateDescriptorSetWithTemplate, false)
+VULKAN_DEVICE_ENTRY_POINT(vkWaitSemaphores, false)
 
 #endif /* VULKAN_DEVICE_ENTRY_POINT */

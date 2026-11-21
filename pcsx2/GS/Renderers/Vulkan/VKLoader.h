@@ -39,6 +39,23 @@ int gs_vk_load_instance_functions(VkInstance instance);
 int gs_vk_load_device_functions(VkDevice device);
 void gs_vk_reset_function_pointers(void);
 
+/* paraLLEl-GS's way in: the frontend's @gipa, and the functions it
+ * takes with no instance (vkCreateInstance and the enumerations). */
+void gs_vk_init(PFN_vkGetInstanceProcAddr gipa);
+/* What vkEnumerateInstanceVersion reports; 1.0 without it, 0 before
+ * gs_vk_init. */
+uint32_t gs_vk_instance_version(void);
+
+/* Every device entry point, for a renderer that keeps one table per
+ * device rather than the globals (paraLLEl-GS). */
+struct VulkanDeviceTable
+{
+#define VULKAN_DEVICE_ENTRY_POINT(name, required) PFN_##name name;
+#include "VKEntryPoints.inl"
+#undef VULKAN_DEVICE_ENTRY_POINT
+};
+void gs_vk_load_device_table(struct VulkanDeviceTable* table, VkDevice device);
+
 #ifdef __cplusplus
 }
 #endif

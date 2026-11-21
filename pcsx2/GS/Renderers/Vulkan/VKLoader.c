@@ -14,6 +14,7 @@
  */
 
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 
 #include <boolean.h>
@@ -30,6 +31,7 @@
 #include <mach-o/dyld.h>
 #endif
 
+#define VULKAN_GLOBAL_ENTRY_POINT(name, required) PFN_##name pcsx2_##name;
 #define VULKAN_MODULE_ENTRY_POINT(name, required) PFN_##name pcsx2_##name;
 #define VULKAN_INSTANCE_ENTRY_POINT(name, required) PFN_##name pcsx2_##name;
 #define VULKAN_DEVICE_ENTRY_POINT(name, required) PFN_##name pcsx2_##name;
@@ -37,6 +39,7 @@
 #undef VULKAN_DEVICE_ENTRY_POINT
 #undef VULKAN_INSTANCE_ENTRY_POINT
 #undef VULKAN_MODULE_ENTRY_POINT
+#undef VULKAN_GLOBAL_ENTRY_POINT
 
 /* One table per kind of entry point: where it goes, the name it is
  * looked up by, and whether the loader fails without it. Every slot is
@@ -51,6 +54,12 @@ struct gs_vk_entry
 /* (#name in the entry point macro itself: vkGetInstanceProcAddr is a
  * macro for pcsx2_vkGetInstanceProcAddr, and an argument handed on to
  * a second macro arrives expanded) */
+
+static const struct gs_vk_entry gs_vk_global_entries[] = {
+#define VULKAN_GLOBAL_ENTRY_POINT(name, required) {(PFN_vkVoidFunction*)&name, #name, (unsigned char)(required)},
+#include "VKEntryPoints.inl"
+#undef VULKAN_GLOBAL_ENTRY_POINT
+};
 
 static const struct gs_vk_entry gs_vk_module_entries[] = {
 #define VULKAN_MODULE_ENTRY_POINT(name, required) {(PFN_vkVoidFunction*)&name, #name, (unsigned char)(required)},
@@ -70,6 +79,19 @@ static const struct gs_vk_entry gs_vk_device_entries[] = {
 #undef VULKAN_DEVICE_ENTRY_POINT
 };
 
+/* A device table's members, by offset. */
+struct gs_vk_member
+{
+	size_t offset;
+	const char* name;
+};
+
+static const struct gs_vk_member gs_vk_table_entries[] = {
+#define VULKAN_DEVICE_ENTRY_POINT(name, required) {offsetof(struct VulkanDeviceTable, name), #name},
+#include "VKEntryPoints.inl"
+#undef VULKAN_DEVICE_ENTRY_POINT
+};
+
 #define GS_VK_COUNT(t) (sizeof(t) / sizeof((t)[0]))
 
 static void gs_vk_clear(const struct gs_vk_entry* e, size_t n)
@@ -81,6 +103,7 @@ static void gs_vk_clear(const struct gs_vk_entry* e, size_t n)
 
 void gs_vk_reset_function_pointers(void)
 {
+	gs_vk_clear(gs_vk_global_entries, GS_VK_COUNT(gs_vk_global_entries));
 	gs_vk_clear(gs_vk_module_entries, GS_VK_COUNT(gs_vk_module_entries));
 	gs_vk_clear(gs_vk_instance_entries, GS_VK_COUNT(gs_vk_instance_entries));
 	gs_vk_clear(gs_vk_device_entries, GS_VK_COUNT(gs_vk_device_entries));
@@ -250,4 +273,28 @@ int gs_vk_load_device_functions(VkDevice device)
 	for (i = 0; i < GS_VK_COUNT(gs_vk_device_entries); i++)
 		*gs_vk_device_entries[i].slot = vkGetDeviceProcAddr(device, gs_vk_device_entries[i].name);
 	return gs_vk_check(gs_vk_device_entries, GS_VK_COUNT(gs_vk_device_entries), "device");
+}
+
+void gs_vk_init(PFN_vkGetInstanceProcAddr gipa)
+{
+	size_t i;
+	vkGetInstanceProcAddr = gipa;
+	for (i = 0; i < GS_VK_COUNT(gs_vk_global_entries); i++)
+		*gs_vk_global_entries[i].slot = vkGetInstanceProcAddr(VK_NULL_HANDLE, gs_vk_global_entries[i].name);
+}
+
+uint32_t gs_vk_instance_version(void)
+{
+	uint32_t version = 0;
+	if (vkEnumerateInstanceVersion && vkEnumerateInstanceVersion(&version) == VK_SUCCESS)
+		return version;
+	return vkCreateInstance ? VK_API_VERSION_1_0 : 0;
+}
+
+void gs_vk_load_device_table(struct VulkanDeviceTable* table, VkDevice device)
+{
+	size_t i;
+	for (i = 0; i < GS_VK_COUNT(gs_vk_table_entries); i++)
+		*(PFN_vkVoidFunction*)((char*)table + gs_vk_table_entries[i].offset) =
+			vkGetDeviceProcAddr(device, gs_vk_table_entries[i].name);
 }

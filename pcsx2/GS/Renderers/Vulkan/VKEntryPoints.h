@@ -21,6 +21,7 @@ extern "C" {
 
 /* We abuse the preprocessor here to only need to specify function names once. */
 /* Function names are prefixed so to not conflict with system symbols at runtime. */
+#define VULKAN_GLOBAL_ENTRY_POINT(name, required) extern PFN_##name pcsx2_##name;
 #define VULKAN_MODULE_ENTRY_POINT(name, required) extern PFN_##name pcsx2_##name;
 #define VULKAN_INSTANCE_ENTRY_POINT(name, required) extern PFN_##name pcsx2_##name;
 #define VULKAN_DEVICE_ENTRY_POINT(name, required) extern PFN_##name pcsx2_##name;
@@ -30,6 +31,7 @@ extern "C" {
 #undef VULKAN_DEVICE_ENTRY_POINT
 #undef VULKAN_INSTANCE_ENTRY_POINT
 #undef VULKAN_MODULE_ENTRY_POINT
+#undef VULKAN_GLOBAL_ENTRY_POINT
 
 #ifdef __cplusplus
 }
@@ -203,3 +205,33 @@ extern "C" {
 #define vkCmdSetDepthCompareOpEXT pcsx2_vkCmdSetDepthCompareOpEXT
 #define vkCmdSetStencilTestEnableEXT pcsx2_vkCmdSetStencilTestEnableEXT
 #define vkCmdSetStencilOpEXT pcsx2_vkCmdSetStencilOpEXT
+
+#define vkCreateInstance pcsx2_vkCreateInstance
+#define vkEnumerateInstanceExtensionProperties pcsx2_vkEnumerateInstanceExtensionProperties
+#define vkEnumerateInstanceLayerProperties pcsx2_vkEnumerateInstanceLayerProperties
+#define vkEnumerateInstanceVersion pcsx2_vkEnumerateInstanceVersion
+#define vkDestroyInstance pcsx2_vkDestroyInstance
+#define vkGetPhysicalDeviceExternalBufferProperties pcsx2_vkGetPhysicalDeviceExternalBufferProperties
+#define vkGetPhysicalDeviceFormatProperties2 pcsx2_vkGetPhysicalDeviceFormatProperties2
+#define vkGetPhysicalDeviceImageFormatProperties2 pcsx2_vkGetPhysicalDeviceImageFormatProperties2
+#define vkGetPhysicalDeviceQueueFamilyProperties2 pcsx2_vkGetPhysicalDeviceQueueFamilyProperties2
+#define vkGetPhysicalDeviceSurfaceSupportKHR pcsx2_vkGetPhysicalDeviceSurfaceSupportKHR
+#define vkGetPhysicalDeviceToolPropertiesEXT pcsx2_vkGetPhysicalDeviceToolPropertiesEXT
+#define vkCmdPipelineBarrier2 pcsx2_vkCmdPipelineBarrier2
+#define vkCmdPipelineBarrier2KHR pcsx2_vkCmdPipelineBarrier2KHR
+#define vkCmdPushDescriptorSetWithTemplate pcsx2_vkCmdPushDescriptorSetWithTemplate
+#define vkCmdPushDescriptorSetWithTemplateKHR pcsx2_vkCmdPushDescriptorSetWithTemplateKHR
+#define vkCopyMemoryToImage pcsx2_vkCopyMemoryToImage
+#define vkCreateDescriptorUpdateTemplate pcsx2_vkCreateDescriptorUpdateTemplate
+#define vkCreateRenderPass2 pcsx2_vkCreateRenderPass2
+#define vkCreateRenderPass2KHR pcsx2_vkCreateRenderPass2KHR
+#define vkDestroyDescriptorUpdateTemplate pcsx2_vkDestroyDescriptorUpdateTemplate
+#define vkGetBufferDeviceAddress pcsx2_vkGetBufferDeviceAddress
+#define vkGetSemaphoreCounterValue pcsx2_vkGetSemaphoreCounterValue
+#define vkQueueSubmit2 pcsx2_vkQueueSubmit2
+#define vkQueueSubmit2KHR pcsx2_vkQueueSubmit2KHR
+#define vkQueueWaitIdle pcsx2_vkQueueWaitIdle
+#define vkTransitionImageLayout pcsx2_vkTransitionImageLayout
+#define vkTrimCommandPool pcsx2_vkTrimCommandPool
+#define vkUpdateDescriptorSetWithTemplate pcsx2_vkUpdateDescriptorSetWithTemplate
+#define vkWaitSemaphores pcsx2_vkWaitSemaphores

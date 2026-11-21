@@ -196,7 +196,7 @@ bool Context::init_loader(PFN_vkGetInstanceProcAddr addr, bool force_reload)
 	}
 
 	instance_proc_addr = addr;
-	granite_vk_init(addr);
+	gs_vk_init(addr);
 	loader_init_once = true;
 	return true;
 }
@@ -328,7 +328,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_messenger_cb(
 VkApplicationInfo Context::get_promoted_application_info() const
 {
 	auto app_info = get_application_info();
-	uint32_t supported_instance_version = granite_vk_instance_version();
+	uint32_t supported_instance_version = gs_vk_instance_version();
 
 	// Granite min-req is 1.1.
 	app_info.apiVersion = std::max(VK_API_VERSION_1_1, app_info.apiVersion);
@@ -344,7 +344,7 @@ bool Context::create_instance()
 {
 	VkInstanceCreateInfo info = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
 	auto app_info = get_promoted_application_info();
-	uint32_t supported_instance_version = granite_vk_instance_version();
+	uint32_t supported_instance_version = gs_vk_instance_version();
 
 	if (supported_instance_version < app_info.apiVersion)
 	{
@@ -477,7 +477,7 @@ bool Context::create_instance()
 	ext.instance_extensions = enabled_instance_extensions.data();
 	ext.num_instance_extensions = uint32_t(enabled_instance_extensions.size());
 
-	granite_vk_load_instance(instance);
+	gs_vk_load_instance_functions(instance);
 
 #if defined(VULKAN_DEBUG)
 	if (ext.supports_debug_utils)
@@ -1180,7 +1180,7 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 	ext.num_device_extensions = uint32_t(enabled_device_extensions.size());
 	ext.pdf2 = &pdf2;
 
-	granite_vk_load_device_table(&device_table, device);
+	gs_vk_load_device_table(&device_table, device);
 
 #define PROMOTE_CALL(n, e) if (!device_table.vk##n) device_table.vk##n = device_table.vk##n##e
 	PROMOTE_CALL(CreateRenderPass2, KHR);
