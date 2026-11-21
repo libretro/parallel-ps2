@@ -37,7 +37,7 @@ C89W=""
 	-c "$ROOT/pcsx2/GS/GSTransfer.c" -o "$TMP/tr.o" 2> "$TMP/tr.log" || { cat "$TMP/tr.log"; exit 1; }
 grep -E "GSTransfer\.[ch]:[0-9]+:[0-9]+: (warning|error)|gs_cvt\.h:[0-9]+:[0-9]+: (warning|error)" "$TMP/tr.log" && exit 1
 for u in GS/GSClut GS/GSLocalMemory GS/GSLocalMemoryMultiISA GS/GSTables GS/GSOffset GS/GSPsm GS/GSUtil GS/GSLocalMemoryMaps \
-	GS/GSPage2Tile GS/GSWrappedMemory GS/Renderers/Common/GSFlatMap; do
+	GS/GSPage2Tile GS/GSWrappedMemory GS/Renderers/Common/GSFlatMap GS/Renderers/Common/GSBuddy; do
 	"$CC" $CF -std=gnu99 -w $INC -c "$ROOT/pcsx2/$u.c" -o "$TMP/c_$(basename "$u").o"
 done
 for u in memmap/memalign features/features_cpu compat/compat_strl time/rtime; do

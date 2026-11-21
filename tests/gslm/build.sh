@@ -59,6 +59,7 @@ for CXX in g++ clang++; do
 	$CC -O1 -w -I"$LRC/include" -c "$LRC/memmap/memalign.c"       -o "$TMP/memalign.o"
 	$CC -O1 -w -I"$LRC/include" -c "$LRC/features/features_cpu.c" -o "$TMP/cpu.o"
 	$CC -O1 -w $INC -c "$ROOT/pcsx2/GS/Renderers/Common/GSFlatMap.c" -o "$TMP/flatmap.o"
+	$CC -O1 -w $INC -c "$ROOT/pcsx2/GS/Renderers/Common/GSBuddy.c" -o "$TMP/buddy.o"
 	$CC -O1 -w $INC -c "$ROOT/pcsx2/GS/GSPage2Tile.c" -o "$TMP/page2tile.o"
 
 	$CXX -O1 "$TMP"/*.o -o "$TMP/gs_swizzle_oracle"

@@ -18,13 +18,13 @@
 
 /* What the renderers look up in local memory by a register's value, made
  * the first time: each row and column's pixel offsets for a frame and Z
- * buffer's formats, from a pool made with local memory, and which tiles of
- * a texture live in each page, kept until local memory goes. */
+ * buffer's formats, and which tiles of a texture live in each page, both
+ * in room made with local memory. */
 
 #include "GSRegs.h"
 #include "GSPsm.h"
-
-struct gs_flat_map; /* Renderers/Common/GSFlatMap.h */
+#include "Renderers/Common/GSBuddy.h"
+#include "Renderers/Common/GSFlatMap.h"
 
 /* Which tiles of a texture live in each GS page, for the repeating-texture
  * invalidation in both texture caches: the entries pages back to back,
@@ -39,6 +39,7 @@ typedef struct GSPage2TileMap
 	const gs_int2* entries;
 #endif
 	u32 first[GS_MAX_PAGES + 1];
+	u32 refs; /* the textures holding it */
 #ifdef __cplusplus
 	__fi const GSVector2i* begin(u32 page) const { return entries + first[page]; }
 	__fi const GSVector2i* end(u32 page) const { return entries + first[page + 1]; }
@@ -73,9 +74,28 @@ typedef struct gs_po4_pool
 	unsigned last;           /* the last found */
 } gs_po4_pool;
 
+/* The page-to-tile maps, made with local memory: room for GS_P2T_MAPS,
+ * their tables in one block of 1 << GS_P2T_SHIFT bytes, and what a new
+ * one is sorted in (a key a block of the largest texture, twice). Past
+ * them a map is allocated. */
+#define GS_P2T_MAPS 1024
+#define GS_P2T_SHIFT 23
+#define GS_P2T_KEYS (2 * (VM_SIZE / 64) + 1)
+typedef struct gs_p2t_cache
+{
+	gs_flat_map_t map; /* u64 TEX0 bits -> GSPage2TileMap* */
+	gs_buddy tables;
+	unsigned* keys; /* GS_P2T_KEYS */
+} gs_p2t_cache;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Zero if the room could not be made */
+int gs_p2t_cache_init(gs_p2t_cache* c);
+/* Frees every map, held or not: nothing reads one after */
+void gs_p2t_cache_free(gs_p2t_cache* c);
 
 /* The pool's tables. Zero if they could not be made (every get is NULL). */
 int gs_po4_pool_init(gs_po4_pool* pool);
@@ -91,10 +111,18 @@ GSPixelOffset4* gs_pixel_offset4_get(gs_po4_pool* pool, const GIFRegFRAME* FRAME
 
 /* FRAME and ZBUF's fields the tables and bases come from, as one key */
 u64 gs_fzb_key(const GIFRegFRAME* FRAME, const GIFRegZBUF* ZBUF);
-/* The tiles of TEX0's texture by page, from map (u64 -> GSPage2TileMap*) */
-GSPage2TileMap* gs_page2tile_map_get(struct gs_flat_map* map, const GIFRegTEX0* TEX0);
-/* Frees what the map holds, and the map */
-void gs_local_memory_map_free(struct gs_flat_map* map);
+/* The tiles of TEX0's texture by page, a reference the caller gives back
+ * with gs_page2tile_map_put. Made the first time and kept while there is
+ * room, held or not; when there is none, those no texture holds go. */
+GSPage2TileMap* gs_page2tile_map_get(gs_p2t_cache* c, const GIFRegTEX0* TEX0);
+/* Gives back a reference (NULL: none) */
+#define gs_page2tile_map_put(p2t) \
+	do \
+	{ \
+		GSPage2TileMap* const put_ = (p2t); \
+		if (put_ && put_->refs) \
+			put_->refs--; \
+	} while (0)
 
 #ifdef __cplusplus
 }

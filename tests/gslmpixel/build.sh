@@ -44,7 +44,7 @@ CF="-O1 -DNDEBUG -DPCSX2_CORE $ARCH $SAN"
 	"$ROOT/pcsx2/GS/GSLocalMemory.c"
 "$CC" $CF -std=gnu99 -Wall -Wno-unused-function $INC \
 	-c "$ROOT/pcsx2/GS/GSLocalMemory.c" -o "$TMP/GSLocalMemory.o"
-for u in GS/GSTables GS/GSOffset GS/GSPsm GS/GSLocalMemoryMaps GS/GSPage2Tile GS/GSWrappedMemory GS/Renderers/Common/GSFlatMap; do
+for u in GS/GSTables GS/GSOffset GS/GSPsm GS/GSLocalMemoryMaps GS/GSPage2Tile GS/GSWrappedMemory GS/Renderers/Common/GSFlatMap GS/Renderers/Common/GSBuddy; do
 	"$CC" $CF -std=gnu99 -w $INC -c "$ROOT/pcsx2/$u.c" -o "$TMP/$(basename "$u").o"
 done
 "$CC" $CF -w -I"$LRC/include" -c "$LRC/memmap/memalign.c" -o "$TMP/memalign.o"
@@ -64,5 +64,5 @@ fi
 # the C side from C89, with a block reader that is not called
 "$CC" $CF $LDSTATIC -std=gnu89 -Wall -Wno-unused-function -Werror=declaration-after-statement $INC \
 	-o "$TMP/gslmpixel_c89$EXE" "$DIR/c89.c" "$TMP/GSLocalMemory.o" "$TMP/GSTables.o" "$TMP/GSOffset.o" \
-	"$TMP/GSPsm.o" "$TMP/GSLocalMemoryMaps.o" "$TMP/GSPage2Tile.o" "$TMP/GSFlatMap.o" "$TMP/memalign.o" "$TMP/cpu.o" "$TMP/strl.o" "$TMP/rtime.o"
+	"$TMP/GSPsm.o" "$TMP/GSLocalMemoryMaps.o" "$TMP/GSPage2Tile.o" "$TMP/GSFlatMap.o" "$TMP/GSBuddy.o" "$TMP/memalign.o" "$TMP/cpu.o" "$TMP/strl.o" "$TMP/rtime.o"
 $RUN "$TMP/gslmpixel_c89$EXE"

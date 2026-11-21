@@ -18,6 +18,19 @@
 
 #include <stddef.h>
 
+/* Built with an address sanitizer: users hand out their memory with the
+ * allocator instead, so it sees every piece */
+#if defined(__SANITIZE_ADDRESS__)
+#define GS_BUDDY_SANITIZED 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define GS_BUDDY_SANITIZED 1
+#endif
+#endif
+#ifndef GS_BUDDY_SANITIZED
+#define GS_BUDDY_SANITIZED 0
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

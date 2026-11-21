@@ -46,7 +46,7 @@ build() { # tag, transfer flags
 
 CF="-O1 -DNDEBUG -DPCSX2_CORE $ARCH $SAN"
 for u in GS/GSLocalMemory GS/GSTables GS/GSOffset GS/GSPsm GS/GSLocalMemoryMaps GS/GSPage2Tile GS/GSWrappedMemory \
-	GS/Renderers/Common/GSFlatMap; do
+	GS/Renderers/Common/GSFlatMap GS/Renderers/Common/GSBuddy; do
 	"$CC" $CF -std=gnu99 -w $INC -c "$ROOT/pcsx2/$u.c" -o "$TMP/c_$(basename "$u").o"
 done
 "$CC" $CF -w -I"$LRC/include" -c "$LRC/memmap/memalign.c" -o "$TMP/c_memalign.o"

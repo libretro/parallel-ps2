@@ -14,6 +14,7 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 
 #include <memalign.h>
 
@@ -108,23 +109,86 @@ GSPixelOffset4* gs_pixel_offset4_get(gs_po4_pool* pool, const GIFRegFRAME* FRAME
 	return off;
 }
 
-GSPage2TileMap* gs_page2tile_map_get(gs_flat_map_t* map, const GIFRegTEX0* TEX0)
+int gs_p2t_cache_init(gs_p2t_cache* c)
+{
+	gs_flat_map_init(&c->map, sizeof(u64), sizeof(GSPage2TileMap*));
+	memset(&c->tables, 0, sizeof(c->tables));
+	c->keys = (unsigned*)malloc(GS_P2T_KEYS * sizeof(unsigned));
+	if (!c->keys || !gs_flat_map_reserve(&c->map, GS_P2T_MAPS))
+		return 0;
+#if !GS_BUDDY_SANITIZED
+	/* (with an address sanitizer each table is its own allocation, so it
+	 * sees them) */
+	gs_buddy_init(&c->tables, GS_P2T_SHIFT, 12);
+#endif
+	return 1;
+}
+
+static void gs_p2t_table_free(gs_p2t_cache* c, GSPage2TileMap* p2t)
+{
+	if (!gs_buddy_free(&c->tables, p2t))
+		memalign_free(p2t);
+}
+
+void gs_p2t_cache_free(gs_p2t_cache* c)
+{
+	size_t i;
+	for (i = 0; i < GS_FLAT_MAP_SLOTS(&c->map); i++)
+		if (GS_FLAT_MAP_USED(&c->map, i))
+			gs_p2t_table_free(c, *(GSPage2TileMap**)GS_FLAT_MAP_VALUE(&c->map, i));
+	gs_flat_map_free(&c->map);
+	gs_buddy_deinit(&c->tables);
+	free(c->keys);
+	c->keys = NULL;
+}
+
+/* Frees the maps no texture holds. Taking one out moves entries after it
+ * back into its slot (or, past the end, into the last ones), never into
+ * a slot already walked: the slot is looked at again. */
+static void gs_p2t_evict(gs_p2t_cache* c)
+{
+	size_t i = 0;
+	while (i < GS_FLAT_MAP_SLOTS(&c->map))
+	{
+		GSPage2TileMap* p2t;
+		u64 key;
+		if (!GS_FLAT_MAP_USED(&c->map, i))
+		{
+			i++;
+			continue;
+		}
+		p2t = *(GSPage2TileMap**)GS_FLAT_MAP_VALUE(&c->map, i);
+		if (p2t->refs)
+		{
+			i++;
+			continue;
+		}
+		memcpy(&key, GS_FLAT_MAP_KEY(&c->map, i), sizeof(key));
+		gs_flat_map_erase(&c->map, &key, gs_key_hash(&key, sizeof(key)));
+		gs_p2t_table_free(c, p2t);
+	}
+}
+
+GSPage2TileMap* gs_page2tile_map_get(gs_p2t_cache* c, const GIFRegTEX0* TEX0)
 {
 	const u64 hash = TEX0->U64 & 0x3ffffffffull; /* TBP0 TBW PSM TW TH */
 	const size_t key_hash = gs_key_hash(&hash, sizeof(hash));
-	GSPage2TileMap** found = (GSPage2TileMap**)gs_flat_map_find(map, &hash, sizeof(hash), key_hash);
+	GSPage2TileMap** found = (GSPage2TileMap**)gs_flat_map_find(&c->map, &hash, sizeof(hash), key_hash);
 	const gs_int2 bs = gs_psm[TEX0->PSM].bs;
 	GSPage2TileMap* p2t;
 	GSPage2TileMap** slot;
 	gs_offset off;
 	gs_bn_helper bn;
-	unsigned* keys;
+	unsigned* keys = c->keys;
 	u8* block;
-	size_t blocks, n = 0, total;
+	size_t blocks, n = 0, total, bytes;
 	int tw, th, bw_blk, bh_blk, inserted;
 
 	if (found)
+	{
+		(*found)->refs++;
 		return *found;
+	}
 
 	tw = 1 << TEX0->TW;
 	th = 1 << TEX0->TH;
@@ -142,11 +206,9 @@ GSPage2TileMap* gs_page2tile_map_get(gs_flat_map_t* map, const GIFRegTEX0* TEX0)
 
 	/* A key a block: its page, and y:x, 7 bits each (at most 128x128
 	 * tiles, 1024x1024 32bpp in 8x8 blocks), then sorted and merged into
-	 * each page's rows (GSPage2Tile.c) */
+	 * each page's rows (GSPage2Tile.c). A block is 64 pixels at least, so
+	 * the scratch holds every texture's. */
 	blocks = (size_t)bh_blk * (size_t)bw_blk;
-	keys = (unsigned*)malloc(2 * blocks * sizeof(unsigned) + 1);
-	if (!keys)
-		abort();
 	for (gs_bn_init(&bn, &off, 0, 0); bn.blk_y < bh_blk; gs_bn_next_y(&bn))
 		for (; bn.blk_x < bw_blk; gs_bn_next_x(&bn))
 		{
@@ -155,27 +217,26 @@ GSPage2TileMap* gs_page2tile_map_get(gs_flat_map_t* map, const GIFRegTEX0* TEX0)
 		}
 	total = gs_page2tile_sort(keys, keys + blocks, n);
 
-	/* the header and its entries in one allocation */
-	block = (u8*)memalign_alloc(16, sizeof(GSPage2TileMap) + total * sizeof(gs_int2));
-	if (!block)
+	/* the header and its entries in one piece; with no room, the maps no
+	 * texture holds make some */
+	bytes = sizeof(GSPage2TileMap) + total * sizeof(gs_int2);
+	block = (u8*)gs_buddy_alloc(&c->tables, bytes);
+	if ((!block && c->tables.base) || gs_flat_map_full(&c->map))
+	{
+		gs_p2t_evict(c);
+		if (!block)
+			block = (u8*)gs_buddy_alloc(&c->tables, bytes);
+	}
+	if (!block && !(block = (u8*)memalign_alloc(16, bytes)))
 		abort();
 	p2t = (GSPage2TileMap*)block;
 	p2t->entries = (const gs_int2*)(block + sizeof(GSPage2TileMap));
+	p2t->refs    = 1;
 	gs_page2tile_fill(keys, n, GS_MAX_PAGES, (int*)(block + sizeof(GSPage2TileMap)), p2t->first);
-	free(keys);
 
-	slot = (GSPage2TileMap**)gs_flat_map_insert(map, &hash, key_hash, &inserted);
+	slot = (GSPage2TileMap**)gs_flat_map_insert(&c->map, &hash, key_hash, &inserted);
 	if (!slot)
 		abort();
 	*slot = p2t;
 	return p2t;
-}
-
-void gs_local_memory_map_free(gs_flat_map_t* map)
-{
-	size_t i;
-	for (i = 0; i < GS_FLAT_MAP_SLOTS(map); i++)
-		if (GS_FLAT_MAP_USED(map, i))
-			memalign_free(*(void**)GS_FLAT_MAP_VALUE(map, i));
-	gs_flat_map_free(map);
 }

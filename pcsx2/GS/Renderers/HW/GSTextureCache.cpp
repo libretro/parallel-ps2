@@ -8117,6 +8117,9 @@ GSTextureCache::Source::~Source()
 	}
 	m_alive = 0;
 
+	gs_page2tile_map_put(m_p2t);
+	m_p2t = nullptr;
+
 	/* The reference taken in AttachPaletteToSource. The palette itself
 	 * belongs to the map. */
 	if (m_palette_obj)
@@ -8149,6 +8152,7 @@ void GSTextureCache::Source::SetPages()
 	if (m_repeating && !m_target && !CanPreload())
 	{
 		// TODO: wrong for lupin/invalid tex0
+		gs_page2tile_map_put(m_p2t);
 		m_p2t = g_gs_renderer->m_mem.GetPage2TileMap(m_TEX0);
 	}
 

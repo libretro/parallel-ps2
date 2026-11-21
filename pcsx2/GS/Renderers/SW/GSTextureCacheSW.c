@@ -72,6 +72,7 @@ static void gs_sw_texture_set(gs_sw_texture* t, u32 tw0, const GIFRegTEX0* TEX0,
 	t->m_tw       = tw0;
 	t->m_age      = 0;
 	t->m_complete = 0;
+	gs_page2tile_map_put(t->m_p2t);
 	t->m_p2t      = NULL;
 	/* (one row at least 32 bytes: the smallest block the buffer is made
 	 * of) */
@@ -112,6 +113,7 @@ void gs_sw_texture_free(gs_sw_texture* t)
 {
 	if (!t)
 		return;
+	gs_page2tile_map_put(t->m_p2t);
 	if (t->m_buff)
 		gs_sw_pixels_free(t->m_buff);
 	if (!gs_object_pool_give(&s_sw_texture_objects, t))

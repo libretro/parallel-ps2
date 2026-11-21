@@ -728,7 +728,7 @@ paraLLEl-GS dest_alpha 84
 paraLLEl-GS aa1_line 75
 Software_(HW) stream_ct32 0
 Software_(HW) depth_states 0
-Software_(HW) mip_tw8 3
+Software_(HW) mip_tw8 0
 Software_(HW) dest_alpha 0
 Software_(HW) aa1_line 0
 Software_(HW) culled_strip 0

@@ -510,13 +510,13 @@ static void check_maps(void)
 	static const u32 psms[15] = {PSMCT32, PSMCT24, PSMCT16, PSMCT16S, PSMT8, PSMT4, PSMT8H,
 		PSMT4HL, PSMT4HH, PSMZ32, PSMZ24, PSMZ16, PSMZ16S, PSGPU24, 7};
 	gs_po4_pool pool;
-	gs_flat_map_t p2t;
+	gs_p2t_cache p2t;
 	u64 h = 0;
 	int k, differ = 0, full = 0, refound = 1, kept = 1;
 
 	s_rng = 9;
 	CHECK(gs_po4_pool_init(&pool));
-	gs_flat_map_init(&p2t, sizeof(u64), sizeof(GSPage2TileMap*));
+	CHECK(gs_p2t_cache_init(&p2t));
 	for (k = 0; k < 600; k++)
 	{
 		GIFRegFRAME F;
@@ -568,6 +568,8 @@ static void check_maps(void)
 		h = xxh3_64(m->entries, m->first[GS_MAX_PAGES] * 8, h);
 		if (gs_page2tile_map_get(&p2t, &T) != m)
 			h ^= 1;
+		gs_page2tile_map_put(m);
+		gs_page2tile_map_put(m);
 	}
 	CHECK(!differ);
 	CHECK(refound);
@@ -575,7 +577,102 @@ static void check_maps(void)
 	CHECK(full > 0);
 	CHECK(h == P2T_HASH);
 	gs_po4_pool_free(&pool);
-	gs_local_memory_map_free(&p2t);
+	gs_p2t_cache_free(&p2t);
+}
+
+/* The page-to-tile maps' room: a map is shared and counted, one no
+ * texture holds stays to be found again, and when there is no room those
+ * go, never one held, and the room does not grow */
+static void check_p2t_room(void)
+{
+	static GSPage2TileMap* held[64];
+	static u64 held_sum[64];
+	gs_p2t_cache c;
+	GIFRegTEX0 T;
+	GSPage2TileMap *a, *b;
+	size_t slots;
+	int k, i, kept = 1, refound = 1, evicted = 0;
+
+	CHECK(gs_p2t_cache_init(&c));
+	slots = GS_FLAT_MAP_SLOTS(&c.map);
+	CHECK(slots >= 2 * GS_P2T_MAPS);
+
+	T.U64 = 0;
+	T.PSM = PSMCT32;
+	T.TBW = 4;
+	T.TW  = 8;
+	T.TH  = 8;
+	a = gs_page2tile_map_get(&c, &T);
+	b = gs_page2tile_map_get(&c, &T);
+	CHECK(a == b && a->refs == 2);
+	gs_page2tile_map_put(a);
+	gs_page2tile_map_put(b);
+	CHECK(a->refs == 0);
+	gs_page2tile_map_put(a); /* (one too many does nothing) */
+	CHECK(a->refs == 0);
+	/* not held, still there */
+	CHECK(gs_page2tile_map_get(&c, &T) == a && a->refs == 1);
+	gs_page2tile_map_put(a);
+	gs_page2tile_map_put((GSPage2TileMap*)NULL);
+
+	/* four times the maps there is room for, one in 64 held: when room
+	 * is made, every map not held goes */
+	s_rng = 77;
+	for (k = 0; k < 4 * GS_P2T_MAPS; k++)
+	{
+		GSPage2TileMap* m;
+		const size_t before = c.map.count;
+		T.U64  = 0;
+		T.TBP0 = (u32)k; /* (distinct) */
+		T.TBW  = 1 + next_rand() % 16;
+		T.PSM  = (next_rand() & 1) ? PSMCT32 : PSMT8;
+		T.TW   = 3 + next_rand() % 8;
+		T.TH   = 3 + next_rand() % 8;
+		m = gs_page2tile_map_get(&c, &T);
+		CHECK(m && m->refs == 1);
+		if (c.map.count <= before)
+		{
+			evicted++;
+			CHECK(c.map.count == (size_t)(k / 64 + (k & 63 ? 1 : 0)) + 1);
+		}
+		if ((k & 63) == 0 && k / 64 < 64)
+		{
+			held[k / 64]     = m;
+			held_sum[k / 64] = xxh3_64(m->first, sizeof(m->first), 0) ^ xxh3_64(m->entries, m->first[GS_MAX_PAGES] * 8, 0);
+		}
+		else
+			gs_page2tile_map_put(m);
+		CHECK(c.map.count <= GS_P2T_MAPS);
+	}
+	CHECK(GS_FLAT_MAP_SLOTS(&c.map) == slots);
+	CHECK(evicted > 0);
+	/* the held ones untouched, and still found */
+	for (i = 0; i < 64; i++)
+	{
+		const u64 sum = xxh3_64(held[i]->first, sizeof(held[i]->first), 0) ^ xxh3_64(held[i]->entries, held[i]->first[GS_MAX_PAGES] * 8, 0);
+		kept &= sum == held_sum[i] && held[i]->refs == 1;
+	}
+	CHECK(kept);
+	s_rng = 77;
+	for (k = 0; k < 64 * 64; k++)
+	{
+		T.U64  = 0;
+		T.TBP0 = (u32)k;
+		T.TBW  = 1 + next_rand() % 16;
+		T.PSM  = (next_rand() & 1) ? PSMCT32 : PSMT8;
+		T.TW   = 3 + next_rand() % 8;
+		T.TH   = 3 + next_rand() % 8;
+		if ((k & 63) == 0)
+		{
+			GSPage2TileMap* m = gs_page2tile_map_get(&c, &T);
+			refound &= m == held[k / 64];
+			gs_page2tile_map_put(m);
+		}
+	}
+	CHECK(refound);
+	for (i = 0; i < 64; i++)
+		gs_page2tile_map_put(held[i]);
+	gs_p2t_cache_free(&c);
 }
 
 int main(void)
@@ -592,6 +689,7 @@ int main(void)
 	check_dirty();
 	check_clut();
 	check_maps();
+	check_p2t_room();
 
 	/* Primitive classes. */
 	CHECK(gs_util_get_prim_class(GS_POINTLIST) == GS_POINT_CLASS);

@@ -202,11 +202,10 @@ What is left, by the count, largest first, every one a bug:
   (`gs_sw_texture_cache_lookup`, `gs_sw_texture_update`).
 - The software renderer's vertex heap, past its two buffers made for
   the largest draw: when both are still held by queued draws.
-- Local memory's page-to-tile maps (`gs_page2tile_map_get`), made for
-  each new TEX0 and kept until local memory goes, and their map growing.
-  The texture caches' textures hold them, so a bound needs those let go
-  before one is reused. (The pixel offset tables were the same, and are
-  now the formats' alone, from a pool made with local memory.)
+- Local memory's page-to-tile maps (`gs_page2tile_map_get`) past their
+  room: more than 1024 held at once, or tables past an 8 MiB block. The
+  textures holding one count it; those none holds go when room is
+  needed.
 - Texture objects past the pools made with the device
   (`gs_texture_object_take`: 4096 textures and 256 download textures
   live at once, every renderer).

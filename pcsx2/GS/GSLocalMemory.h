@@ -45,7 +45,7 @@ typedef struct gs_local_memory
 	/* the pixel offset tables in use; u64 key -> GSPage2TileMap*, in a
 	 * GSFlatMap, made once each and kept until the local memory goes */
 	gs_po4_pool m_po4;
-	gs_flat_map_t m_p2tmap;
+	gs_p2t_cache m_p2tmap;
 	/* the palette as read out (GSClut.h's buff32): 8- and 4-bit texels */
 	const u32* m_clut32;
 } gs_local_memory;
@@ -565,6 +565,7 @@ public:
 	{
 		return gs_pixel_offset4_get(&m_po4, &FRAME, &ZBUF, base);
 	}
+	/* A reference: give it back with gs_page2tile_map_put */
 	GSPage2TileMap* GetPage2TileMap(const GIFRegTEX0& TEX0) { return gs_page2tile_map_get(&m_p2tmap, &TEX0); }
 	static bool HasOverlap(u32 src_bp, u32 src_bw, u32 src_psm, GSVector4i src_rect, u32 dst_bp, u32 dst_bw, u32 dst_psm, GSVector4i dst_rect)
 	{
