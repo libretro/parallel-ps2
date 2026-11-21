@@ -765,40 +765,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 	std::vector<const char *> enabled_extensions;
 
-	if (
-#ifdef _WIN32
-	    has_extension(VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME) &&
-	    has_extension(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME)
-#else
-	    has_extension(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME) &&
-	    has_extension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME)
-#endif
-		)
-	{
-		ext.supports_external = true;
-#ifdef _WIN32
-		enabled_extensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME);
-		enabled_extensions.push_back(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
-#else
-		enabled_extensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);
-		enabled_extensions.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
-#endif
-	}
-	else
-		ext.supports_external = false;
-
-	if (ext.supports_external)
-	{
-		if (has_extension(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME))
-			enabled_extensions.push_back(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME);
-
-		if (has_extension(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME))
-		{
-			enabled_extensions.push_back(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME);
-			ext.supports_drm_modifiers = true;
-		}
-	}
-
 	if (ext.device_api_core_version < VK_API_VERSION_1_2)
 	{
 		if (!has_extension(VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME))
@@ -937,12 +903,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 	/* Looked for and never enabled: the NVIDIA pipeline cache control
 	 * workaround in Device::init_workarounds keys on it. */
 	ext.exposes_mesh_shader = has_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME);
-
-	if (has_extension(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME))
-	{
-		ext.supports_external_memory_host = true;
-		enabled_extensions.push_back(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
-	}
 
 	if (ext.device_api_core_version >= VK_API_VERSION_1_3)
 	{
@@ -1120,9 +1080,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 	if (ext.device_api_core_version >= VK_API_VERSION_1_4)
 		ADD_CHAIN(ext.vk14_props, VULKAN_1_4_PROPERTIES);
-
-	if (ext.supports_external_memory_host)
-		ADD_CHAIN(ext.host_memory_properties, EXTERNAL_MEMORY_HOST_PROPERTIES_EXT);
 
 	vkGetPhysicalDeviceProperties2(gpu, &props);
 

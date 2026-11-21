@@ -2733,19 +2733,6 @@ bool Device::allocate_image_memory(DeviceAllocation *allocation, const ImageCrea
 		return false;
 	}
 
-	bool use_external = (info.misc & IMAGE_MISC_EXTERNAL_MEMORY_BIT) != 0;
-	if (use_external && info.num_memory_aliases != 0)
-	{
-		LOGE("Cannot use external and memory aliases at the same time.\n");
-		return false;
-	}
-
-	if (use_external && tiling == VK_IMAGE_TILING_LINEAR)
-	{
-		LOGE("Cannot use linear tiling with external memory.\n");
-		return false;
-	}
-
 	if (info.num_memory_aliases != 0)
 	{
 		*allocation = {};
@@ -2840,14 +2827,8 @@ bool Device::allocate_image_memory(DeviceAllocation *allocation, const ImageCrea
 				return false;
 		}
 
-		ExternalHandle external = info.external;
-
 		AllocationMode mode;
-		if (use_external)
-		{
-			mode = AllocationMode::External;
-		}
-		else if (tiling == VK_IMAGE_TILING_OPTIMAL &&
+		if (tiling == VK_IMAGE_TILING_OPTIMAL &&
 		         (info.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT)) != 0)
 		{
 			mode = AllocationMode::OptimalRenderTarget;
@@ -2861,8 +2842,7 @@ bool Device::allocate_image_memory(DeviceAllocation *allocation, const ImageCrea
 		{
 			LOCK_MEMORY();
 			if (!managers.memory.allocate_image_memory(reqs.size, reqs.alignment, mode, memory_type, image,
-			                                           (info.misc & IMAGE_MISC_FORCE_NO_DEDICATED_BIT) != 0, allocation,
-			                                           use_external ? &external : nullptr))
+			                                           (info.misc & IMAGE_MISC_FORCE_NO_DEDICATED_BIT) != 0, allocation))
 			{
 				LOGE("Failed to allocate image memory (type %u, size: %u).\n",
 				     unsigned(memory_type), unsigned(reqs.size));
@@ -2919,18 +2899,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	{
 		info.tiling = VK_IMAGE_TILING_OPTIMAL;
 		info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	}
-
-	if ((create_info.misc & IMAGE_MISC_EXTERNAL_MEMORY_BIT) != 0)
-	{
-		if (info.initialLayout != VK_IMAGE_LAYOUT_UNDEFINED)
-		{
-			LOGE("Cannot use non-undefined initial layout for external memory.\n");
-			return {};
-		}
-
-		if (create_info.external.memory_handle_type == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT)
-			info.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
 	}
 
 	info.usage = create_info.usage;
@@ -3068,103 +3036,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	{
 		LOGE("Format %u is not supported for usage flags!\n", unsigned(create_info.format));
 		return ImageHandle(nullptr);
-	}
-
-	bool use_external = (create_info.misc & IMAGE_MISC_EXTERNAL_MEMORY_BIT) != 0;
-	if (use_external && create_info.domain != ImageDomain::Physical)
-	{
-		LOGE("Must use physical image domain for external memory images.\n");
-		return ImageHandle(nullptr);
-	}
-
-	if (use_external && !ext.supports_external)
-	{
-		LOGE("External memory not supported.\n");
-		return ImageHandle(nullptr);
-	}
-
-	VkExternalMemoryImageCreateInfo external_info = { VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO };
-	if (ext.supports_external && use_external)
-	{
-		// Ensure that the handle type is supported.
-		VkImageFormatProperties2 props2 = { VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2 };
-		VkExternalImageFormatProperties external_props =
-		    { VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES };
-		VkPhysicalDeviceExternalImageFormatInfo external_format_info =
-		    { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO };
-		external_format_info.handleType = create_info.external.memory_handle_type;
-
-		VkPhysicalDeviceImageDrmFormatModifierInfoEXT modifier_info =
-				{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT };
-
-		VkImageFormatListCreateInfo format_list = {};
-		if (const auto *list_info = find_pnext<VkImageFormatListCreateInfo>(
-				info.pNext, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO))
-		{
-			format_list = *list_info;
-			format_list.pNext = nullptr;
-			external_format_info.pNext = &format_list;
-		}
-
-		if (info.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
-		{
-			modifier_info.pNext = external_format_info.pNext;
-			external_format_info.pNext = &modifier_info;
-
-			// If we're exporting, we have a list of formats instead.
-			if (auto *list_info = find_pnext<VkImageDrmFormatModifierListCreateInfoEXT>(
-					info.pNext, VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT))
-			{
-				VK_ASSERT(list_info->drmFormatModifierCount != 0);
-				modifier_info.drmFormatModifier = list_info->pDrmFormatModifiers[0];
-			}
-			else if (auto *drm_info = find_pnext<VkImageDrmFormatModifierExplicitCreateInfoEXT>(
-					info.pNext, VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT))
-			{
-				modifier_info.drmFormatModifier = drm_info->drmFormatModifier;
-			}
-			else
-			{
-				LOGE("Trying to create DRM modifier image without explicit info.\n");
-				return ImageHandle(nullptr);
-			}
-
-			modifier_info.sharingMode = info.sharingMode;
-			modifier_info.queueFamilyIndexCount = info.queueFamilyIndexCount;
-			modifier_info.pQueueFamilyIndices = info.pQueueFamilyIndices;
-		}
-
-		props2.pNext = &external_props;
-		if (!get_image_format_properties(info.format, info.imageType, info.tiling,
-		                                 info.usage, info.flags,
-		                                 &external_format_info, &props2))
-		{
-			LOGE("Image format is not supported for external memory type #%x.\n",
-			     external_format_info.handleType);
-			return ImageHandle(nullptr);
-		}
-
-		bool supports_import = (external_props.externalMemoryProperties.externalMemoryFeatures &
-		                        VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) != 0;
-		bool supports_export = (external_props.externalMemoryProperties.externalMemoryFeatures &
-		                        VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT) != 0;
-
-		if (!supports_import && create_info.external)
-		{
-			LOGE("Attempting to import with handle type #%x, but it is not supported.\n",
-			     create_info.external.memory_handle_type);
-			return ImageHandle(nullptr);
-		}
-		else if (!supports_export && !create_info.external)
-		{
-			LOGE("Attempting to export with handle type #%x, but it is not supported.\n",
-			     create_info.external.memory_handle_type);
-			return ImageHandle(nullptr);
-		}
-
-		external_info.handleTypes = create_info.external.memory_handle_type;
-		external_info.pNext = info.pNext;
-		info.pNext = &external_info;
 	}
 
 	// FIXME: Is there a more intelligent way to detect if we should be using host image copy?
@@ -3520,16 +3391,9 @@ BufferHandle Device::create_buffer(const BufferCreateInfo &create_info, const vo
 	VkBuffer buffer;
 
 	bool zero_initialize = (create_info.misc & BUFFER_MISC_ZERO_INITIALIZE_BIT) != 0;
-	bool use_external = (create_info.misc & BUFFER_MISC_EXTERNAL_MEMORY_BIT) != 0;
 	if (initial && zero_initialize)
 	{
 		LOGE("Cannot initialize buffer with data and clear.\n");
-		return BufferHandle{};
-	}
-
-	if (use_external && create_info.domain != BufferDomain::Device)
-	{
-		LOGE("When using external memory, must be Device domain.\n");
 		return BufferHandle{};
 	}
 
@@ -3544,47 +3408,6 @@ BufferHandle Device::create_buffer(const BufferCreateInfo &create_info, const vo
 
 	uint32_t sharing_indices[QUEUE_INDEX_COUNT];
 	fill_buffer_sharing_indices(info, sharing_indices);
-
-	if (use_external && !ext.supports_external)
-	{
-		LOGE("External memory not supported.\n");
-		return BufferHandle{};
-	}
-
-	VkExternalMemoryBufferCreateInfo external_info = { VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO };
-	if (ext.supports_external && use_external)
-	{
-		// Ensure that the handle type is supported.
-		VkPhysicalDeviceExternalBufferInfo external_buffer_props_info =
-		    { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO };
-		VkExternalBufferProperties external_buffer_props = { VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES };
-		external_buffer_props_info.handleType = create_info.external.memory_handle_type;
-		external_buffer_props_info.usage = VkBufferUsageFlags(usage2.usage);
-		external_buffer_props_info.flags = info.flags;
-		vkGetPhysicalDeviceExternalBufferProperties(gpu, &external_buffer_props_info, &external_buffer_props);
-
-		bool supports_import = (external_buffer_props.externalMemoryProperties.externalMemoryFeatures &
-		                        VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) != 0;
-		bool supports_export = (external_buffer_props.externalMemoryProperties.externalMemoryFeatures &
-		                        VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT) != 0;
-
-		if (!supports_import && !create_info.external)
-		{
-			LOGE("Attempting to import with handle type #%x, but it is not supported.\n",
-			     create_info.external.memory_handle_type);
-			return BufferHandle{};
-		}
-		else if (!supports_export && create_info.external)
-		{
-			LOGE("Attempting to export with handle type #%x, but it is not supported.\n",
-			     create_info.external.memory_handle_type);
-			return BufferHandle{};
-		}
-
-		external_info.handleTypes = create_info.external.memory_handle_type;
-		external_info.pNext = info.pNext;
-		info.pNext = &external_info;
-	}
 
 	if (ext.vk14_features.maintenance5)
 	{
@@ -3625,9 +3448,7 @@ BufferHandle Device::create_buffer(const BufferCreateInfo &create_info, const vo
 	}
 
 	AllocationMode mode;
-	if ((create_info.misc & BUFFER_MISC_EXTERNAL_MEMORY_BIT) != 0)
-		mode = AllocationMode::External;
-	else if (create_info.domain == BufferDomain::Device &&
+	if (create_info.domain == BufferDomain::Device &&
 	    (create_info.usage & (VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) != 0)
 		mode = AllocationMode::LinearDeviceHighPriority;
 	else if (create_info.domain == BufferDomain::Device ||
@@ -3636,20 +3457,11 @@ BufferHandle Device::create_buffer(const BufferCreateInfo &create_info, const vo
 	else
 		mode = AllocationMode::LinearHostMappable;
 
-	auto external = create_info.external;
-
 	{
 		LOCK_MEMORY();
-		if (!managers.memory.allocate_buffer_memory(reqs.memoryRequirements.size, reqs.memoryRequirements.alignment,
-		                                            mode, memory_type, buffer, &allocation,
-		                                            use_external ? &external : nullptr))
+		if (!managers.memory.allocate_generic_memory(reqs.memoryRequirements.size, reqs.memoryRequirements.alignment,
+		                                            mode, memory_type, &allocation))
 		{
-			if (use_external)
-			{
-				LOGE("Failed to export / import buffer memory.\n");
-				table->vkDestroyBuffer(device, buffer, nullptr);
-				return BufferHandle(nullptr);
-			}
 
 			auto fallback_domain = create_info.domain;
 
@@ -3668,8 +3480,8 @@ BufferHandle Device::create_buffer(const BufferCreateInfo &create_info, const vo
 			memory_type = find_memory_type(fallback_domain, reqs.memoryRequirements.memoryTypeBits);
 
 			if (memory_type == UINT32_MAX || fallback_domain == create_info.domain ||
-			    !managers.memory.allocate_buffer_memory(reqs.memoryRequirements.size, reqs.memoryRequirements.alignment,
-			                                            mode, memory_type, buffer, &allocation, nullptr))
+			    !managers.memory.allocate_generic_memory(reqs.memoryRequirements.size, reqs.memoryRequirements.alignment,
+			                                            mode, memory_type, &allocation))
 			{
 				LOGE("Failed to allocate fallback memory.\n");
 				table->vkDestroyBuffer(device, buffer, nullptr);

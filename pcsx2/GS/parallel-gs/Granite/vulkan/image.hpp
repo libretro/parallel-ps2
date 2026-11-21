@@ -73,7 +73,6 @@ enum ImageMiscFlagBits
 	IMAGE_MISC_LINEAR_IMAGE_IGNORE_DEVICE_LOCAL_BIT = 1 << 9,
 	IMAGE_MISC_FORCE_NO_DEDICATED_BIT = 1 << 10,
 	IMAGE_MISC_NO_DEFAULT_VIEWS_BIT = 1 << 11,
-	IMAGE_MISC_EXTERNAL_MEMORY_BIT = 1 << 12,
 	IMAGE_MISC_CREATE_PER_MIP_LEVEL_VIEWS_BIT = 1 << 14
 };
 using ImageMiscFlags = uint32_t;
@@ -253,7 +252,6 @@ struct ImageCreateInfo
 	const DeviceAllocation **memory_aliases = nullptr;
 	unsigned num_memory_aliases = 0;
 	void *pnext = nullptr;
-	ExternalHandle external;
 	ImageLayout layout = ImageLayout::Optimal;
 
 	static ImageCreateInfo immutable_2d_image(unsigned width, unsigned height, VkFormat format, bool mipmapped = false)

@@ -26,13 +26,6 @@
 #include "owned.hpp"
 #include <algorithm>
 
-#ifndef _WIN32
-#include <unistd.h>
-#else
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
-
 namespace Vulkan
 {
 static bool allocation_mode_supports_bda(AllocationMode mode)
@@ -132,7 +125,7 @@ bool ClassAllocator::allocate_backing_heap(DeviceAllocation *alloc)
 		return global_allocator->internal_allocate(
 		    alloc_size, memory_type, global_allocator_mode, &alloc->base,
 		    mode_request_host_mapping(global_allocator_mode) ? &alloc->host_base : nullptr,
-		    VK_OBJECT_TYPE_DEVICE, 0, nullptr);
+		    VK_OBJECT_TYPE_DEVICE, 0);
 	}
 }
 
@@ -155,7 +148,7 @@ bool Allocator::allocate_global(uint32_t size, AllocationMode mode, DeviceAlloca
 	if (!global_allocator->internal_allocate(
 		size, memory_type, mode, &alloc->base,
 		mode_request_host_mapping(mode) ? &alloc->host_base : nullptr,
-		VK_OBJECT_TYPE_DEVICE, 0, nullptr))
+		VK_OBJECT_TYPE_DEVICE, 0))
 	{
 		return false;
 	}
@@ -168,14 +161,14 @@ bool Allocator::allocate_global(uint32_t size, AllocationMode mode, DeviceAlloca
 }
 
 bool Allocator::allocate_dedicated(uint32_t size, AllocationMode mode, DeviceAllocation *alloc,
-                                   VkObjectType type, uint64_t object, ExternalHandle *external)
+                                   VkObjectType type, uint64_t object)
 {
 	// Fall back to global allocation, do not recycle.
 	alloc->host_base = nullptr;
 	if (!global_allocator->internal_allocate(
 		size, memory_type, mode, &alloc->base,
 		mode_request_host_mapping(mode) ? &alloc->host_base : nullptr,
-		type, object, external))
+		type, object))
 	{
 		return false;
 	}
@@ -186,8 +179,6 @@ bool Allocator::allocate_dedicated(uint32_t size, AllocationMode mode, DeviceAll
 	alloc->size = size;
 
 	// If we imported memory instead, do not allow handle export.
-	if (external && !(*external))
-		alloc->exportable_types = external->memory_handle_type;
 
 	return true;
 }
@@ -337,31 +328,11 @@ bool DeviceAllocator::allocate_generic_memory(uint32_t size, uint32_t alignment,
 	return allocators[memory_type]->allocate(size, alignment, mode, alloc);
 }
 
-bool DeviceAllocator::allocate_buffer_memory(uint32_t size, uint32_t alignment, AllocationMode mode,
-                                             uint32_t memory_type, VkBuffer buffer,
-                                             DeviceAllocation *alloc, ExternalHandle *external)
-{
-	if (mode == AllocationMode::External)
-	{
-		return allocators[memory_type]->allocate_dedicated(
-			size, mode, alloc,
-			VK_OBJECT_TYPE_BUFFER, (uint64_t)buffer, external);
-	}
-	else
-	{
-		return allocate_generic_memory(size, alignment, mode, memory_type, alloc);
-	}
-}
-
 bool DeviceAllocator::allocate_image_memory(uint32_t size, uint32_t alignment, AllocationMode mode, uint32_t memory_type,
-                                            VkImage image, bool force_no_dedicated, DeviceAllocation *alloc,
-                                            ExternalHandle *external)
+                                            VkImage image, bool force_no_dedicated, DeviceAllocation *alloc)
 {
 	if (force_no_dedicated)
-	{
-		VK_ASSERT(mode != AllocationMode::External && !external);
 		return allocate_generic_memory(size, alignment, mode, memory_type, alloc);
-	}
 
 	VkImageMemoryRequirementsInfo2 info = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2 };
 	info.image = image;
@@ -371,12 +342,10 @@ bool DeviceAllocator::allocate_image_memory(uint32_t size, uint32_t alignment, A
 	mem_req.pNext = &dedicated_req;
 	table->vkGetImageMemoryRequirements2(device->get_device(), &info, &mem_req);
 
-	if (dedicated_req.prefersDedicatedAllocation ||
-	    dedicated_req.requiresDedicatedAllocation ||
-	    mode == AllocationMode::External)
+	if (dedicated_req.prefersDedicatedAllocation || dedicated_req.requiresDedicatedAllocation)
 	{
 		return allocators[memory_type]->allocate_dedicated(
-			size, mode, alloc, VK_OBJECT_TYPE_IMAGE, (uint64_t)image, external);
+			size, mode, alloc, VK_OBJECT_TYPE_IMAGE, (uint64_t)image);
 	}
 	else
 	{
@@ -527,14 +496,14 @@ void DeviceAllocator::get_memory_budget(HeapBudget *heap_budgets)
 bool DeviceAllocator::internal_allocate(
 	uint32_t size, uint32_t memory_type, AllocationMode mode,
 	VkDeviceMemory *memory, uint8_t **host_memory,
-	VkObjectType object_type, uint64_t dedicated_object, ExternalHandle *external)
+	VkObjectType object_type, uint64_t dedicated_object)
 {
 	uint32_t heap_index = mem_props.memoryTypes[memory_type].heapIndex;
 	auto &heap = heaps[heap_index];
 
 	// Naive searching is fine here as vkAllocate blocks are *huge* and we won't have many of them.
 	auto itr = end(heap.blocks);
-	if (dedicated_object == 0 && !external)
+	if (dedicated_object == 0)
 	{
 		itr = find_if(begin(heap.blocks), end(heap.blocks),
 		              [=](const Allocation &alloc) { return size == alloc.size && memory_type == alloc.type && mode == alloc.mode; });
@@ -557,59 +526,48 @@ bool DeviceAllocator::internal_allocate(
 		return true;
 	}
 
-	// Don't bother checking against budgets on external memory.
-	// It's not very meaningful.
-	if (!external)
-	{
-		HeapBudget budgets[VK_MAX_MEMORY_HEAPS];
-		get_memory_budget_nolock(budgets);
+	HeapBudget budgets[VK_MAX_MEMORY_HEAPS];
+	get_memory_budget_nolock(budgets);
 
 #ifdef VULKAN_DEBUG
-		LOGI("Allocating %.1f MiB on heap #%u (mode #%u), before allocating budget: (%.1f MiB / %.1f MiB) [%.1f / %.1f].\n",
-		     double(size) / double(1024 * 1024), heap_index, unsigned(mode),
-		     double(budgets[heap_index].device_usage) / double(1024 * 1024),
-		     double(budgets[heap_index].budget_size) / double(1024 * 1024),
-		     double(budgets[heap_index].tracked_usage) / double(1024 * 1024),
-		     double(budgets[heap_index].max_size) / double(1024 * 1024));
+	LOGI("Allocating %.1f MiB on heap #%u (mode #%u), before allocating budget: (%.1f MiB / %.1f MiB) [%.1f / %.1f].\n",
+	     double(size) / double(1024 * 1024), heap_index, unsigned(mode),
+	     double(budgets[heap_index].device_usage) / double(1024 * 1024),
+	     double(budgets[heap_index].budget_size) / double(1024 * 1024),
+	     double(budgets[heap_index].tracked_usage) / double(1024 * 1024),
+	     double(budgets[heap_index].max_size) / double(1024 * 1024));
 #endif
 
-		const auto log_heap_index = [&]()
-		{
-			LOGW("  Size: %u MiB.\n", unsigned(size / (1024 * 1024)));
-			LOGW("  Device usage: %u MiB.\n", unsigned(budgets[heap_index].device_usage / (1024 * 1024)));
-			LOGW("  Tracked usage: %u MiB.\n", unsigned(budgets[heap_index].tracked_usage / (1024 * 1024)));
-			LOGW("  Budget size: %u MiB.\n", unsigned(budgets[heap_index].budget_size / (1024 * 1024)));
-			LOGW("  Max size: %u MiB.\n", unsigned(budgets[heap_index].max_size / (1024 * 1024)));
-		};
+	const auto log_heap_index = [&]()
+	{
+		LOGW("  Size: %u MiB.\n", unsigned(size / (1024 * 1024)));
+		LOGW("  Device usage: %u MiB.\n", unsigned(budgets[heap_index].device_usage / (1024 * 1024)));
+		LOGW("  Tracked usage: %u MiB.\n", unsigned(budgets[heap_index].tracked_usage / (1024 * 1024)));
+		LOGW("  Budget size: %u MiB.\n", unsigned(budgets[heap_index].budget_size / (1024 * 1024)));
+		LOGW("  Max size: %u MiB.\n", unsigned(budgets[heap_index].max_size / (1024 * 1024)));
+	};
 
-		// If we're going to blow out the budget, we should recycle a bit.
-		if (budgets[heap_index].device_usage + size >= budgets[heap_index].budget_size)
-		{
-			LOGW("Will exceed memory budget, cleaning up ...\n");
-			log_heap_index();
-			heap.garbage_collect(device);
-		}
+	// If we're going to blow out the budget, we should recycle a bit.
+	if (budgets[heap_index].device_usage + size >= budgets[heap_index].budget_size)
+	{
+		LOGW("Will exceed memory budget, cleaning up ...\n");
+		log_heap_index();
+		heap.garbage_collect(device);
+	}
 
-		get_memory_budget_nolock(budgets);
-		if (budgets[heap_index].device_usage + size >= budgets[heap_index].budget_size)
-		{
-			LOGW("Even after garbage collection, we will exceed budget ...\n");
-			if (memory_heap_is_budget_critical[heap_index])
-				return false;
-			log_heap_index();
-		}
+	get_memory_budget_nolock(budgets);
+	if (budgets[heap_index].device_usage + size >= budgets[heap_index].budget_size)
+	{
+		LOGW("Even after garbage collection, we will exceed budget ...\n");
+		if (memory_heap_is_budget_critical[heap_index])
+			return false;
+		log_heap_index();
 	}
 
 	VkMemoryAllocateInfo info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, size, memory_type };
 	VkMemoryDedicatedAllocateInfo dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO };
-	VkExportMemoryAllocateInfo export_info = { VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO };
 	VkMemoryPriorityAllocateInfoEXT priority_info = { VK_STRUCTURE_TYPE_MEMORY_PRIORITY_ALLOCATE_INFO_EXT };
 	VkMemoryAllocateFlagsInfo flags_info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO };
-#ifdef _WIN32
-	VkImportMemoryWin32HandleInfoKHR import_info = { VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR };
-#else
-	VkImportMemoryFdInfoKHR import_info = { VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR };
-#endif
 
 	if (dedicated_object != 0)
 	{
@@ -620,32 +578,7 @@ bool DeviceAllocator::internal_allocate(
 		info.pNext = &dedicated;
 	}
 
-	if (external)
-	{
-		VK_ASSERT(dedicated_object);
-
-		if (bool(*external))
-		{
-			import_info.handleType = external->memory_handle_type;
-			import_info.pNext = info.pNext;
-			info.pNext = &import_info;
-
-#ifdef _WIN32
-			import_info.handle = external->handle;
-#else
-			import_info.fd = external->handle;
-#endif
-		}
-		else
-		{
-			export_info.handleTypes = external->memory_handle_type;
-			export_info.pNext = info.pNext;
-			info.pNext = &export_info;
-		}
-	}
-
-	// Don't bother with memory priority on external objects.
-	if (device->get_device_features().memory_priority_features.memoryPriority && !external)
+	if (device->get_device_features().memory_priority_features.memoryPriority)
 	{
 		switch (mode)
 		{
@@ -681,15 +614,6 @@ bool DeviceAllocator::internal_allocate(
 	res = table->vkAllocateMemory(device->get_device(), &info, nullptr, &device_memory);
 
 	// If we're importing, make sure we consume the native handle.
-	if (external && bool(*external) &&
-	    ExternalHandle::memory_handle_type_imports_by_reference(external->memory_handle_type))
-	{
-#ifdef _WIN32
-		::CloseHandle(external->handle);
-#else
-		::close(external->handle);
-#endif
-	}
 
 	if (res == VK_SUCCESS)
 	{

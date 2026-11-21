@@ -44,8 +44,7 @@ enum class BufferDomain
 
 enum BufferMiscFlagBits
 {
-	BUFFER_MISC_ZERO_INITIALIZE_BIT = 1 << 0,
-	BUFFER_MISC_EXTERNAL_MEMORY_BIT = 1 << 1
+	BUFFER_MISC_ZERO_INITIALIZE_BIT = 1 << 0
 };
 
 using BufferMiscFlags = uint32_t;
@@ -57,7 +56,6 @@ struct BufferCreateInfo
 	VkBufferUsageFlags2 usage = 0;
 	BufferMiscFlags misc = 0;
 	VkMemoryRequirements allocation_requirements = {};
-	ExternalHandle external;
 	void *pnext = nullptr;
 };
 

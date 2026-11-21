@@ -76,7 +76,6 @@ extern "C" {
 #define vkDestroyDevice pcsx2_vkDestroyDevice
 #define vkGetDeviceQueue pcsx2_vkGetDeviceQueue
 #define vkQueueSubmit pcsx2_vkQueueSubmit
-#define vkQueueWaitIdle pcsx2_vkQueueWaitIdle
 #define vkDeviceWaitIdle pcsx2_vkDeviceWaitIdle
 #define vkAllocateMemory pcsx2_vkAllocateMemory
 #define vkFreeMemory pcsx2_vkFreeMemory
@@ -211,7 +210,6 @@ extern "C" {
 #define vkEnumerateInstanceLayerProperties pcsx2_vkEnumerateInstanceLayerProperties
 #define vkEnumerateInstanceVersion pcsx2_vkEnumerateInstanceVersion
 #define vkDestroyInstance pcsx2_vkDestroyInstance
-#define vkGetPhysicalDeviceExternalBufferProperties pcsx2_vkGetPhysicalDeviceExternalBufferProperties
 #define vkGetPhysicalDeviceFormatProperties2 pcsx2_vkGetPhysicalDeviceFormatProperties2
 #define vkGetPhysicalDeviceImageFormatProperties2 pcsx2_vkGetPhysicalDeviceImageFormatProperties2
 #define vkGetPhysicalDeviceQueueFamilyProperties2 pcsx2_vkGetPhysicalDeviceQueueFamilyProperties2
@@ -230,7 +228,6 @@ extern "C" {
 #define vkGetSemaphoreCounterValue pcsx2_vkGetSemaphoreCounterValue
 #define vkQueueSubmit2 pcsx2_vkQueueSubmit2
 #define vkQueueSubmit2KHR pcsx2_vkQueueSubmit2KHR
-#define vkQueueWaitIdle pcsx2_vkQueueWaitIdle
 #define vkTransitionImageLayout pcsx2_vkTransitionImageLayout
 #define vkTrimCommandPool pcsx2_vkTrimCommandPool
 #define vkUpdateDescriptorSetWithTemplate pcsx2_vkUpdateDescriptorSetWithTemplate

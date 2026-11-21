@@ -1274,7 +1274,11 @@ static const char *const vn_unwanted_exts[] = {
 	"VK_EXT_astc_decode_mode", "VK_EXT_rgba10x6_formats",
 	"VK_EXT_image_compression_control",
 	"VK_EXT_image_compression_control_swapchain", "VK_AMD_anti_lag",
-	"VK_KHR_cooperative_matrix", "VK_VALVE_shader_mixed_float_dot_product"
+	"VK_KHR_cooperative_matrix", "VK_VALVE_shader_mixed_float_dot_product",
+	"VK_KHR_external_memory_fd", "VK_KHR_external_semaphore_fd",
+	"VK_KHR_external_memory_win32", "VK_KHR_external_semaphore_win32",
+	"VK_EXT_external_memory_dma_buf", "VK_EXT_image_drm_format_modifier",
+	"VK_EXT_external_memory_host"
 };
 
 /* RetroArch's wrapper in miniature: append what the frontend wants. */

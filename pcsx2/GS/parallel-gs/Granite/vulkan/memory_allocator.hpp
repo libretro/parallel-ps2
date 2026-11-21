@@ -60,7 +60,6 @@ enum class AllocationMode : uint8_t
 	LinearDeviceHighPriority,
 	OptimalResource,
 	OptimalRenderTarget,
-	External,
 	Count
 };
 
@@ -115,7 +114,6 @@ private:
 	uint32_t offset = 0;
 	uint32_t mask = 0;
 	uint32_t size = 0;
-	VkExternalMemoryHandleTypeFlags exportable_types = 0;
 
 	AllocationMode mode = AllocationMode::Count;
 	uint8_t memory_type = 0;
@@ -187,7 +185,7 @@ public:
 	bool allocate(uint32_t size, uint32_t alignment, AllocationMode mode, DeviceAllocation *alloc);
 	bool allocate_global(uint32_t size, AllocationMode mode, DeviceAllocation *alloc);
 	bool allocate_dedicated(uint32_t size, AllocationMode mode, DeviceAllocation *alloc,
-	                        VkObjectType object_type, uint64_t object, ExternalHandle *external);
+	                        VkObjectType object_type, uint64_t object);
 
 	inline ClassAllocator &get_class_allocator(MemoryClass clazz, AllocationMode mode)
 	{
@@ -231,10 +229,8 @@ public:
 
 	bool allocate_generic_memory(uint32_t size, uint32_t alignment, AllocationMode mode, uint32_t memory_type,
 	                             DeviceAllocation *alloc);
-	bool allocate_buffer_memory(uint32_t size, uint32_t alignment, AllocationMode mode, uint32_t memory_type,
-	                            VkBuffer buffer, DeviceAllocation *alloc, ExternalHandle *external);
 	bool allocate_image_memory(uint32_t size, uint32_t alignment, AllocationMode mode, uint32_t memory_type,
-	                           VkImage image, bool force_no_dedicated, DeviceAllocation *alloc, ExternalHandle *external);
+	                           VkImage image, bool force_no_dedicated, DeviceAllocation *alloc);
 
 	void garbage_collect();
 	void *map_memory(const DeviceAllocation &alloc, MemoryAccessFlags flags, VkDeviceSize offset, VkDeviceSize length);
@@ -244,7 +240,7 @@ public:
 
 	bool internal_allocate(uint32_t size, uint32_t memory_type, AllocationMode mode,
 	                       VkDeviceMemory *memory, uint8_t **host_memory,
-	                       VkObjectType object_type, uint64_t dedicated_object, ExternalHandle *external);
+	                       VkObjectType object_type, uint64_t dedicated_object);
 	void internal_free(uint32_t size, uint32_t memory_type, AllocationMode mode, VkDeviceMemory memory, bool is_mapped);
 	void internal_free_no_recycle(uint32_t size, uint32_t memory_type, VkDeviceMemory memory);
 

@@ -33,16 +33,13 @@ namespace Vulkan
 struct DeviceFeatures
 {
 	bool supports_debug_utils = false;
-	bool supports_external_memory_host = false;
 	bool exposes_mesh_shader = false;
 	bool supports_memory_budget = false;
 	bool supports_driver_properties = false;
 	bool supports_image_format_list = false;
 	bool supports_format_feature_flags2 = false;
-	bool supports_external = false;
 	bool supports_tooling_info = false;
 	bool supports_store_op_none = false;
-	bool supports_drm_modifiers = false;
 
 	VkPhysicalDeviceFeatures enabled_features = {};
 
@@ -59,7 +56,6 @@ struct DeviceFeatures
 	VkPhysicalDeviceMaintenance5FeaturesKHR maintenance5_features = {};
 
 	// EXT
-	VkPhysicalDeviceExternalMemoryHostPropertiesEXT host_memory_properties = {};
 	VkPhysicalDeviceMemoryPriorityFeaturesEXT memory_priority_features = {};
 	VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pageable_device_local_memory_features = {};
 
