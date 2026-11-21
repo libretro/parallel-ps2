@@ -58,7 +58,11 @@ bool GSInterface::init(Vulkan::Device *device, const GSOptions &options)
 	uint32_t num_pages_u32 = (num_pages + 31) / 32;
 	sync_host_vram_blocks.resize(num_pages * PGS_BLOCKS_PER_PAGE / 32);
 	sync_vram_host_pages.resize(num_pages_u32);
-	block_buffer.reserve(num_pages_u32);
+	/* (a block or a page each, at most every block of local memory) */
+	block_buffer.reserve(size_t(num_pages) * PGS_BLOCKS_PER_PAGE);
+	/* (a render pass takes at most MaxStateVectors) */
+	render_pass.state_vectors.reserve(MaxStateVectors);
+	render_pass.state_vector_map.reserve(MaxStateVectors);
 
 	if (!renderer.init(device, options))
 		return false;

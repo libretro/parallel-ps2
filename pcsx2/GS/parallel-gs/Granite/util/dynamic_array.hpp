@@ -59,7 +59,7 @@ public:
 
 		align = alignof(T) > 64 ? alignof(T) : 64;
 
-		new_ptr = static_cast<T *>(memalign_alloc(align, n * sizeof(T)));
+		new_ptr = static_cast<T *>(::Util::memalign_alloc(align, n * sizeof(T)));
 		if (!new_ptr)
 			return false;
 

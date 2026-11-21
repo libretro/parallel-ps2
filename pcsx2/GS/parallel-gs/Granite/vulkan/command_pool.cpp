@@ -33,6 +33,9 @@ CommandPool::CommandPool(Device *device_, uint32_t queue_family_index)
 	info.queueFamilyIndex = queue_family_index;
 	if (queue_family_index != VK_QUEUE_FAMILY_IGNORED)
 		table->vkCreateCommandPool(device->get_device(), &info, nullptr, &pool);
+	/* (the command buffers a frame records on one thread, and more: the
+	 * list never grows during play) */
+	buffers.reserve(64);
 }
 
 CommandPool::CommandPool(CommandPool &&other) noexcept

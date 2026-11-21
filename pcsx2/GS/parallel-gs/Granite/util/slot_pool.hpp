@@ -111,7 +111,7 @@ public:
 			void *blk = retro_atomic_load_relaxed_ptr(&blocks[b]);
 			if (!blk)
 				break;
-			memalign_free(blk);
+			::Util::memalign_free(blk);
 			retro_atomic_store_relaxed_ptr(&blocks[b], nullptr);
 		}
 		retro_atomic_store_relaxed_64(&top, 0);
@@ -196,7 +196,7 @@ private:
 			b++;
 		if (b == MAX_BLOCKS)
 			return false;
-		uint8_t *blk = static_cast<uint8_t *>(memalign_alloc(align_ > 64 ? align_ : 64, block_bytes(b)));
+		uint8_t *blk = static_cast<uint8_t *>(::Util::memalign_alloc(align_ > 64 ? align_ : 64, block_bytes(b)));
 		if (!blk)
 			return false;
 		retro_atomic_int_t *next = reinterpret_cast<retro_atomic_int_t *>(blk + block_slots(b) * stride);
@@ -206,7 +206,7 @@ private:
 		if (!retro_atomic_cas_ptr(&blocks[b], nullptr, blk))
 		{
 			/* Another thread added this block: take from it. */
-			memalign_free(blk);
+			::Util::memalign_free(blk);
 			return true;
 		}
 		push_chain(uint32_t(base), uint32_t(base + block_slots(b) - 1));

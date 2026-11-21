@@ -1264,6 +1264,24 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 	const size_t num_small = small_tasks.size();
 	retro_atomic_store_release_size(&small_built, 0);
 
+	{
+		/* Each program's room for what is built for it: grouped by
+		 * program, then each group's count reserved. (At load: what this
+		 * allocates is the room.) */
+		std::vector<Vulkan::Program *> programs;
+		size_t run;
+		programs.reserve(tasks.size());
+		for (i = 0; i < tasks.size(); i++)
+			programs.push_back(tasks[i].program);
+		std::sort(programs.begin(), programs.end());
+		for (i = 0; i < programs.size(); i += run)
+		{
+			for (run = 1; i + run < programs.size() && programs[i + run] == programs[i]; run++)
+				;
+			programs[i]->reserve_pipelines(run);
+		}
+	}
+
 	size_t num_tasks = tasks.size();
 	size_t target_threads = (cpu_features_get_core_amount() + 1) / 2;
 	if (target_threads == 0)

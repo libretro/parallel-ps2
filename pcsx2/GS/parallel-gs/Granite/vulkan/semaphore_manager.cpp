@@ -29,6 +29,8 @@ void SemaphoreManager::init(Device *device_)
 {
 	device = device_;
 	table = &device->get_device_table();
+	/* (the semaphores the frames in flight hand back, and more) */
+	semaphores.reserve(64);
 }
 
 SemaphoreManager::~SemaphoreManager()

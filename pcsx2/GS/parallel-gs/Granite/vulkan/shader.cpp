@@ -861,6 +861,12 @@ void Program::stage_pipeline(Hash hash, const Pipeline &pipeline)
 		staged.emplace_yield(hash, pipeline);
 }
 
+void Program::reserve_pipelines(size_t n)
+{
+	pipelines.reserve(n);
+	staged.reserve(n);
+}
+
 bool Program::has_pipeline(Hash hash) const
 {
 	return pipelines.find(hash) || staged.find(hash);

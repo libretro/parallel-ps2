@@ -90,10 +90,13 @@ class IntrusiveHashMapHolder
 public:
 	enum { InitialSize = 16, InitialLoadCount = 3 };
 
-	/* The first table, made now rather than at the first insert. */
-	void reserve()
+	/* The first table, made now rather than at the first insert; with
+	 * @n, big enough that @n entries fill no more than a quarter. */
+	void reserve(size_t n = 0)
 	{
 		if (values.empty())
+			grow();
+		while (values.size() < 4 * n)
 			grow();
 	}
 
@@ -334,10 +337,10 @@ public:
 	/* The first table and the first block of its pool, so an owner made
 	 * at load time inserts its first entries during play without
 	 * allocating. */
-	void reserve()
+	void reserve(size_t n = 0)
 	{
-		hashmap.reserve();
-		pool.reserve();
+		hashmap.reserve(n);
+		pool.reserve(n);
 	}
 
 	void clear()

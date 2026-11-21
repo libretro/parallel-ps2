@@ -56,14 +56,18 @@ public:
 	/* The first block, made now rather than at the first allocate():
 	 * an owner made at load time takes its first objects during play
 	 * without allocating. */
-	void reserve()
+	void reserve(size_t n = 0)
 	{
 #ifndef OBJECT_POOL_DEBUG
 		if (memory.empty())
 		{
-			memory.reserve(4);
+			memory.reserve(16);
 			add_block();
 		}
+		/* (blocks of 64, 128, ...: the first k hold 64 * (2^k - 1)) */
+		while (((size_t(64) << memory.size()) - 64) < n && memory.size() < memory.capacity())
+			if (!add_block())
+				break;
 #endif
 	}
 
@@ -92,7 +96,7 @@ protected:
 	bool add_block()
 	{
 		unsigned num_objects = 64u << memory.size();
-		T *ptr = static_cast<T *>(memalign_alloc(std::max<size_t>(64, alignof(T)),
+		T *ptr = static_cast<T *>(::Util::memalign_alloc(std::max<size_t>(64, alignof(T)),
 		                                         num_objects * sizeof(T)));
 		if (!ptr)
 			return false;
@@ -111,7 +115,7 @@ protected:
 	{
 		void operator()(T *ptr)
 		{
-			memalign_free(ptr);
+			::Util::memalign_free(ptr);
 		}
 	};
 

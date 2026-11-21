@@ -43,7 +43,7 @@ private:
 	{
 		void operator()(uint8_t *ptr)
 		{
-			memalign_free(ptr);
+			::Util::memalign_free(ptr);
 		}
 	};
 

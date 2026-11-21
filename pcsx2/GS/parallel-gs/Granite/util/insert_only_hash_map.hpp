@@ -76,6 +76,28 @@ public:
 			cap <<= 1;
 		first_capacity = cap;
 		retro_atomic_ptr_init(&head, nullptr);
+		retro_atomic_int_init(&slab_next, 0);
+	}
+
+	/* Room for @n objects, made now: their first segment, at most half
+	 * full with them, and a slab they are made in, a slot taken with one
+	 * atomic add, so inserting them allocates nothing. Before any other
+	 * thread uses the map, and once. */
+	void reserve(size_t n)
+	{
+		size_t cap = first_capacity;
+		if (slab || !n)
+			return;
+		while (cap < 2 * n + 2)
+			cap <<= 1;
+		if (!retro_atomic_load_relaxed_ptr(&head))
+		{
+			Segment *first = make_segment(cap, nullptr);
+			if (first)
+				retro_atomic_store_release_ptr(&head, first);
+		}
+		slab = static_cast<unsigned char *>(::Util::memalign_alloc(slab_align(), n * slab_stride()));
+		slab_count = slab ? n : 0;
 	}
 
 	InsertOnlyHashMap(const InsertOnlyHashMap &) = delete;
@@ -104,7 +126,15 @@ public:
 	template <typename... P>
 	T *emplace_yield(Hash hash, P &&... p)
 	{
-		void *mem = memalign_alloc(alignof(T) > 64 ? alignof(T) : 64, sizeof(T));
+		void *mem = nullptr;
+		if (slab)
+		{
+			const size_t k = size_t(retro_atomic_fetch_add_int(&slab_next, 1));
+			if (k < slab_count)
+				mem = slab + k * slab_stride();
+		}
+		if (!mem)
+			mem = ::Util::memalign_alloc(slab_align(), sizeof(T));
 		if (!mem)
 			return nullptr;
 		T *t = new (mem) T(std::forward<P>(p)...);
@@ -152,9 +182,13 @@ public:
 				if (t && !is_sealed(t))
 					destroy(t);
 			}
-			free(seg);
+			::Util::memalign_free(seg);
 			seg = older;
 		}
+		::Util::memalign_free(slab);
+		slab       = nullptr;
+		slab_count = 0;
+		retro_atomic_store_relaxed_int(&slab_next, 0);
 	}
 
 private:
@@ -191,6 +225,24 @@ private:
 
 	retro_atomic_ptr_t head;
 	size_t first_capacity;
+	/* (reserve's objects: slab_count of them, the next at slab_next) */
+	unsigned char *slab = nullptr;
+	size_t slab_count = 0;
+	retro_atomic_int_t slab_next;
+
+	static constexpr size_t slab_align()
+	{
+		return alignof(T) > 64 ? alignof(T) : 64;
+	}
+	static constexpr size_t slab_stride()
+	{
+		return (sizeof(T) + slab_align() - 1) & ~(slab_align() - 1);
+	}
+	bool in_slab(const T *t) const
+	{
+		const unsigned char *p = reinterpret_cast<const unsigned char *>(t);
+		return slab && p >= slab && p < slab + slab_count * slab_stride();
+	}
 
 	static T *sealed()
 	{
@@ -203,15 +255,16 @@ private:
 		return t == sealed();
 	}
 
-	static void destroy(T *t)
+	void destroy(T *t)
 	{
 		t->~T();
-		memalign_free(t);
+		if (!in_slab(t))
+			::Util::memalign_free(t);
 	}
 
 	static Segment *make_segment(size_t capacity, Segment *older)
 	{
-		Segment *seg = static_cast<Segment *>(calloc(1, sizeof(Segment) + (capacity - 1) * sizeof(seg->slots[0])));
+		Segment *seg = static_cast<Segment *>(::Util::memalign_calloc(64, sizeof(Segment) + (capacity - 1) * sizeof(seg->slots[0])));
 		if (!seg)
 			return nullptr;
 		seg->older = older;
@@ -236,7 +289,7 @@ private:
 		if (!next)
 			return false;
 		if (!retro_atomic_cas_ptr(&head, seg, next))
-			free(next);
+			::Util::memalign_free(next);
 		return true;
 	}
 
@@ -252,7 +305,7 @@ private:
 				if (!first)
 					return nullptr;
 				if (!retro_atomic_cas_ptr(&head, nullptr, first))
-					free(first);
+					::Util::memalign_free(first);
 				continue;
 			}
 

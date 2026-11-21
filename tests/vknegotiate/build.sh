@@ -721,11 +721,11 @@ Vulkan aa1_line 0
 Vulkan culled_strip 0
 Vulkan culled_fan 0
 Vulkan many_sprites 0
-paraLLEl-GS stream_ct32 208
-paraLLEl-GS depth_states 77
-paraLLEl-GS mip_tw8 102
-paraLLEl-GS dest_alpha 84
-paraLLEl-GS aa1_line 75
+paraLLEl-GS stream_ct32 71
+paraLLEl-GS depth_states 11
+paraLLEl-GS mip_tw8 30
+paraLLEl-GS dest_alpha 19
+paraLLEl-GS aa1_line 11
 Software_(HW) stream_ct32 0
 Software_(HW) depth_states 0
 Software_(HW) mip_tw8 0

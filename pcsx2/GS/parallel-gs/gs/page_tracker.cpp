@@ -24,6 +24,15 @@ void PageTracker::set_num_pages(unsigned num_pages)
 	accessed_cache_pages.reserve(num_pages);
 	accessed_copy_pages.reserve(num_pages);
 	accessed_readback_pages.reserve(num_pages);
+	accessed_shadow_pages.reserve(num_pages);
+	short_term_cache_pages.reserve(num_pages);
+	/* (the textures a page is part of: room for a busy one's, made now;
+	 * one past it still grows the list) */
+	for (auto &page : page_state)
+	{
+		page.cached_textures.reserve(32);
+		page.short_term_cached_textures.reserve(8);
+	}
 }
 
 bool PageTracker::page_has_host_write_timeline_update(const PageRect &rect) const

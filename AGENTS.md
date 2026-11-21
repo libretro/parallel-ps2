@@ -189,11 +189,15 @@ allocates, run it with `VN_COUNT_ALLOCS=1` and resolve the sites with
 
 What is left, by the count, largest first, every one a bug:
 
-- paraLLEl-GS's Granite tables: a pipeline taken from the compile
-  threads (`Program::stage_pipeline`, `add_pipeline`), descriptor sets
-  (`DescriptorSetAllocator`), command buffers and buffer blocks, and the
-  bindless pools grow as a session meets them. They want tables sized at
-  device creation with a defined full path.
+- paraLLEl-GS: a page's texture list past its room
+  (`PageTracker::register_cached_texture`), descriptor sets
+  (`DescriptorSetAllocator`: a pool for each layout, thread and frame as
+  it is first used), buffer blocks past those kept, cached textures and
+  copies (`create_cached_texture`, `copy_vram`), and the bindless pools.
+  Pipelines built ahead go into room each program reserves before the
+  builders start (`Program::reserve_pipelines`); command buffers, the
+  frames' deferred lists, the state vectors and the flush's block list
+  are sized when they are made.
 - The software renderer's generated code allocates nothing (its maps
   are sized when it starts), but a function is still generated at a
   draw's first use, which is a compile on the draw path too.

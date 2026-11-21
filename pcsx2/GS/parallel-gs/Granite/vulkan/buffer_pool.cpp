@@ -39,6 +39,8 @@ void BufferPool::init(Device *device_, VkDeviceSize block_size_,
 void BufferPool::set_max_retained_blocks(size_t max_blocks)
 {
 	max_retained_blocks = max_blocks;
+	/* (all it keeps, made now: recycling never grows the list) */
+	blocks.reserve(max_blocks);
 }
 
 BufferBlock::~BufferBlock()

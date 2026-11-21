@@ -340,6 +340,10 @@ public:
 	/* Keeps @pipeline for a later miss, or destroys it when the table
 	 * or the staged set already has one for @hash. */
 	void stage_pipeline(Util::Hash hash, const Pipeline &pipeline);
+	/* Room for @n pipelines in the table and the staged set, made now, so
+	 * the ones built ahead go in during play without allocating. Before
+	 * any is built. */
+	void reserve_pipelines(size_t n);
 	/* Whether the table or the staged set has one for @hash. */
 	bool has_pipeline(Util::Hash hash) const;
 

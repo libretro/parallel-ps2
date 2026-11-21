@@ -1781,6 +1781,27 @@ Device::PerFrame::PerFrame(Device *device_, unsigned frame_index_)
 		for (unsigned j = 0; j < count; j++)
 			cmd_pools[i].emplace_back(device_, device_->queue_info.family_indices[i]);
 	}
+
+	/* What a frame hands back when it retires, with room for a busy
+	 * frame's worth: draining into these during play never grows them */
+	vbo_blocks.reserve(64);
+	ibo_blocks.reserve(64);
+	ubo_blocks.reserve(64);
+	staging_blocks.reserve(64);
+	wait_and_recycle_fences.reserve(64);
+	allocations.reserve(256);
+	destroyed_framebuffers.reserve(64);
+	destroyed_samplers.reserve(64);
+	destroyed_image_views.reserve(256);
+	destroyed_buffer_views.reserve(64);
+	destroyed_images.reserve(256);
+	destroyed_buffers.reserve(256);
+	destroyed_descriptor_pools.reserve(64);
+	recycled_semaphores.reserve(64);
+	destroyed_semaphores.reserve(64);
+	consumed_semaphores.reserve(64);
+	descriptor_buffer_allocs.reserve(256);
+	cached_descriptor_payloads.reserve(256);
 }
 
 void Device::free_memory_nolock(const DeviceAllocation &alloc)
