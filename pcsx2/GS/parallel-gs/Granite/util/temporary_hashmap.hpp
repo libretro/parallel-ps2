@@ -122,26 +122,6 @@ public:
 	}
 
 	template <typename... P>
-	void make_vacant(P &&... p)
-	{
-		vacants.push_back(object_pool.allocate(std::forward<P>(p)...));
-	}
-
-	T *request_vacant(Hash hash)
-	{
-		if (vacants.empty())
-			return nullptr;
-
-		auto top = vacants.back();
-		vacants.pop_back();
-		top->set_index(index);
-		top->set_hash(hash);
-		hashmap.emplace_replace(hash, top);
-		rings[index].insert_front(top);
-		return &*top;
-	}
-
-	template <typename... P>
 	T *emplace(Hash hash, P &&... p)
 	{
 		auto *node = object_pool.allocate(std::forward<P>(p)...);

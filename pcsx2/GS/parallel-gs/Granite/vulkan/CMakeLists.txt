@@ -1,6 +1,6 @@
 add_granite_internal_lib(granite-vulkan
         context.cpp context.hpp
-        vulkan_headers.hpp vulkan_prerotate.hpp
+        vulkan_headers.hpp
         vulkan_loader.c vulkan_loader.h vulkan_loader.inl
         device.cpp device.hpp
         buffer_pool.cpp buffer_pool.hpp
@@ -20,7 +20,6 @@ add_granite_internal_lib(granite-vulkan
         fence.hpp fence.cpp
         format.hpp
         limits.hpp
-        type_to_string.hpp
         quirks.hpp
         vulkan_common.hpp
         texture/texture_format.cpp texture/texture_format.hpp)

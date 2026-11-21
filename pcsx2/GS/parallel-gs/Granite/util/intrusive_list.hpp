@@ -179,12 +179,6 @@ public:
 		insert_front(itr);
 	}
 
-	void move_to_back(IntrusiveList<T> &other, Iterator itr)
-	{
-		other.erase(itr);
-		insert_back(itr);
-	}
-
 	bool empty() const
 	{
 		return head == nullptr;

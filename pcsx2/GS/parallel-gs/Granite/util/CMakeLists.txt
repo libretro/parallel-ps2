@@ -16,7 +16,6 @@ add_granite_internal_lib(granite-util
         owned.hpp
         stack_allocator.hpp
         temporary_hashmap.hpp
-        unstable_remove_if.hpp
         intrusive_hash_map.hpp
         small_vector.hpp
         thread_id.cpp thread_id.hpp

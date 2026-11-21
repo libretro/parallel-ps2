@@ -46,37 +46,23 @@ void SemaphoreHolder::recycle_semaphore()
 
 	if (internal_sync)
 	{
-		if (semaphore_type == VK_SEMAPHORE_TYPE_TIMELINE || external_compatible_features)
+		if (semaphore_type == VK_SEMAPHORE_TYPE_TIMELINE)
 		{
 			device->destroy_semaphore_nolock(semaphore);
 		}
 		else if (is_signalled())
-		{
-			// We can't just destroy a semaphore if we don't know who signals it (e.g. WSI).
-			// Have to consume it by waiting then recycle.
-			if (signal_is_foreign_queue)
-				device->consume_semaphore_nolock(semaphore);
-			else
-				device->destroy_semaphore_nolock(semaphore);
-		}
+			device->destroy_semaphore_nolock(semaphore);
 		else
 			device->recycle_semaphore_nolock(semaphore);
 	}
 	else
 	{
-		if (semaphore_type == VK_SEMAPHORE_TYPE_TIMELINE || external_compatible_features)
+		if (semaphore_type == VK_SEMAPHORE_TYPE_TIMELINE)
 		{
 			device->destroy_semaphore(semaphore);
 		}
 		else if (is_signalled())
-		{
-			// We can't just destroy a semaphore if we don't know who signals it (e.g. WSI).
-			// Have to consume it by waiting then recycle.
-			if (signal_is_foreign_queue)
-				device->consume_semaphore(semaphore);
-			else
-				device->destroy_semaphore(semaphore);
-		}
+			device->destroy_semaphore(semaphore);
 		else
 			device->recycle_semaphore(semaphore);
 	}
@@ -110,14 +96,12 @@ SemaphoreHolder &SemaphoreHolder::operator=(SemaphoreHolder &&other) noexcept
 	semaphore = other.semaphore;
 	timeline = other.timeline;
 	signalled = other.signalled;
-	pending_wait = other.pending_wait;
 	semaphore_type = other.semaphore_type;
 	owned = other.owned;
 
 	other.semaphore = VK_NULL_HANDLE;
 	other.timeline = 0;
 	other.signalled = false;
-	other.pending_wait = false;
 	other.owned = false;
 
 	return *this;

@@ -178,7 +178,7 @@ for damage in short byte version old junk; do
 		short)   head -c $((size - 5)) "$SCRATCH/list.good" > "$LIST" ;;
 		byte)    printf '\377' | dd of="$LIST" bs=1 seek=$((size - 3)) count=1 conv=notrunc 2> /dev/null ;;
 		version) printf '\011' | dd of="$LIST" bs=1 seek=4 count=1 conv=notrunc 2> /dev/null ;;
-		old)     printf '\002' | dd of="$LIST" bs=1 seek=4 count=1 conv=notrunc 2> /dev/null ;;
+		old)     printf '\003' | dd of="$LIST" bs=1 seek=4 count=1 conv=notrunc 2> /dev/null ;;
 		junk)    head -c "$size" /dev/urandom > "$LIST" ;;
 	esac
 	rm -f "$BLOB"

@@ -293,12 +293,6 @@ IntrusivePtr<T> IntrusivePtrEnabled<T, Deleter, ReferenceOps>::reference_from_th
 template <typename Derived>
 using DerivedIntrusivePtrType = IntrusivePtr<Derived>;
 
-template <typename T, typename... P>
-DerivedIntrusivePtrType<T> make_handle(P &&... p)
-{
-	return DerivedIntrusivePtrType<T>(new T(std::forward<P>(p)...));
-}
-
 template <typename Base, typename Derived, typename... P>
 typename Base::IntrusivePtrType make_derived_handle(P &&... p)
 {

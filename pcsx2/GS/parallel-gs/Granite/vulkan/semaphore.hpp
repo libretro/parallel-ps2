@@ -77,55 +77,11 @@ public:
 		return ret;
 	}
 
-	VkSemaphore release_semaphore()
-	{
-		auto ret = semaphore;
-		semaphore = VK_NULL_HANDLE;
-		signalled = false;
-		owned = false;
-		return ret;
-	}
-
-	void wait_external()
-	{
-		VK_ASSERT(semaphore);
-		VK_ASSERT(signalled);
-		signalled = false;
-	}
-
 	void signal_external()
 	{
 		VK_ASSERT(!signalled);
 		VK_ASSERT(semaphore);
 		signalled = true;
-	}
-
-	void set_signal_is_foreign_queue()
-	{
-		VK_ASSERT(signalled);
-		signal_is_foreign_queue = true;
-	}
-
-	void set_pending_wait()
-	{
-		pending_wait = true;
-	}
-
-	bool is_pending_wait() const
-	{
-		return pending_wait;
-	}
-
-	void set_external_object_compatible(VkExternalSemaphoreHandleTypeFlagBits handle_type,
-	                                    VkExternalSemaphoreFeatureFlags features)
-	{
-		external_compatible_handle_type = handle_type;
-		external_compatible_features = features;
-	}
-
-	bool is_external_object_compatible() const
-	{
-		return external_compatible_features != 0;
 	}
 
 	VkSemaphoreTypeKHR get_semaphore_type() const
@@ -142,16 +98,6 @@ public:
 	{
 		proxy_timeline = true;
 		signalled = false;
-	}
-
-	VkExternalSemaphoreFeatureFlags get_external_features() const
-	{
-		return external_compatible_features;
-	}
-
-	VkExternalSemaphoreHandleTypeFlagBits get_external_handle_type() const
-	{
-		return external_compatible_handle_type;
 	}
 
 	SemaphoreHolder &operator=(SemaphoreHolder &&other) noexcept;
@@ -193,12 +139,8 @@ private:
 	uint64_t timeline = 0;
 	VkSemaphoreTypeKHR semaphore_type = VK_SEMAPHORE_TYPE_BINARY_KHR;
 	bool signalled = false;
-	bool pending_wait = false;
 	bool owned = false;
 	bool proxy_timeline = false;
-	bool signal_is_foreign_queue = false;
-	VkExternalSemaphoreHandleTypeFlagBits external_compatible_handle_type = {};
-	VkExternalSemaphoreFeatureFlags external_compatible_features = 0;
 };
 
 using Semaphore = Util::IntrusivePtr<SemaphoreHolder>;

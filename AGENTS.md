@@ -400,7 +400,8 @@ first time, play may not.
   the frontend's device. Paths behind context flags the core never
   passes (descriptor buffers and heaps, video queues, pipeline binaries,
   presentation extensions) and features nothing asks for (mesh and task
-  stages, YCbCr conversions, events) are deleted, not kept dormant.
+  stages, YCbCr conversions, events, surface prerotation) are deleted,
+  not kept dormant.
   `tests/vknegotiate` fails on any extension in its unwanted list; drop
   vendored Granite code rather than gate it.
   Where libretro-common or the core already has a piece (aligned

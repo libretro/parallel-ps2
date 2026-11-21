@@ -25,7 +25,6 @@
 
 using namespace Vulkan;
 using namespace ParallelGS;
-using namespace Granite;
 
 static retro_hw_render_interface_vulkan *hw_render_iface;
 /* Owned here: made by pgs_create_instance, freed by vulkan_ctx_free. */
@@ -143,8 +142,6 @@ VkInstance pgs_create_instance(PFN_vkGetInstanceProcAddr get_instance_proc_addr,
 		return VK_NULL_HANDLE;
 
 	vulkan_ctx = new Context();
-	Context::SystemHandles handles = {};
-	vulkan_ctx->set_system_handles(handles);
 	/* One command pool per recording thread per frame: the GS thread
 	 * (index 0, registered by Device::set_context) and whichever other
 	 * thread records - the EE/VM thread on a readback, say. The pools
@@ -263,7 +260,7 @@ GSRendererPGS::~GSRendererPGS()
  * ------------------------------------------------------------------------ */
 
 #define PGS_LIST_MAGIC   0x4c534750u /* "PGSL" */
-#define PGS_LIST_VERSION 3u
+#define PGS_LIST_VERSION 4u
 #define PGS_LIST_HEADER  28u
 #define PGS_LIST_MAX     (2u * Vulkan::Device::COMPUTE_PIPELINE_RECORDS)
 #define PGS_LIST_MAX_GFX (2u * Vulkan::Device::GRAPHICS_PIPELINE_RECORDS)

@@ -106,11 +106,6 @@ public:
 		return bda;
 	}
 
-	void disown_buffer()
-	{
-		owns_buffer = false;
-	}
-
 private:
 	friend class Util::ObjectPool<Buffer>;
 	friend class Util::ThreadSafeObjectPool<Buffer>;

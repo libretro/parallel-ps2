@@ -6,7 +6,7 @@
 #pragma once
 #include <vector>
 #include "intrusive_hash_map.hpp"
-#include "hashmap.hpp"
+#include "hash.hpp"
 #include "image.hpp"
 
 namespace ParallelGS

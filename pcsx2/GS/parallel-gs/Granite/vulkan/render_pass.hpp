@@ -161,24 +161,11 @@ public:
 		return subpasses_info[subpass].num_color_attachments;
 	}
 
-	unsigned get_num_input_attachments(unsigned subpass) const
-	{
-		VK_ASSERT(subpass < subpasses_info.size());
-		return subpasses_info[subpass].num_input_attachments;
-	}
-
 	const VkAttachmentReference2 &get_color_attachment(unsigned subpass, unsigned index) const
 	{
 		VK_ASSERT(subpass < subpasses_info.size());
 		VK_ASSERT(index < subpasses_info[subpass].num_color_attachments);
 		return subpasses_info[subpass].color_attachments[index];
-	}
-
-	const VkAttachmentReference2 &get_input_attachment(unsigned subpass, unsigned index) const
-	{
-		VK_ASSERT(subpass < subpasses_info.size());
-		VK_ASSERT(index < subpasses_info[subpass].num_input_attachments);
-		return subpasses_info[subpass].input_attachments[index];
 	}
 
 	bool has_depth(unsigned subpass) const
@@ -297,4 +284,3 @@ private:
 	Util::TemporaryHashmap<TransientNode, VULKAN_FRAMEBUFFER_RING_SIZE, false> attachments;
 };
 }
-

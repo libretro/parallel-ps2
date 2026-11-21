@@ -155,11 +155,6 @@ public:
 
 	void clear();
 
-	bool is_bindless() const
-	{
-		return bindless;
-	}
-
 	// Legacy descriptors.
 	VkDescriptorPool allocate_bindless_pool(unsigned num_sets, unsigned num_descriptors);
 	BindlessDescriptorSet allocate_bindless_set(VkDescriptorPool pool, unsigned num_descriptors);
@@ -188,5 +183,4 @@ private:
 	std::vector<VkDescriptorPoolSize> pool_size;
 	bool bindless = false;
 };
-
 }

@@ -97,11 +97,6 @@ public:
 		return base;
 	}
 
-	inline bool allocation_is_global() const
-	{
-		return !alloc && base;
-	}
-
 	inline uint32_t get_offset() const
 	{
 		return offset;
@@ -110,16 +105,6 @@ public:
 	inline uint32_t get_size() const
 	{
 		return size;
-	}
-
-	inline uint32_t get_mask() const
-	{
-		return mask;
-	}
-
-	inline bool is_host_allocation() const
-	{
-		return host_base != nullptr;
 	}
 
 private:
@@ -161,13 +146,6 @@ private:
 	DeviceAllocation alloc;
 };
 using DeviceAllocationOwnerHandle = Util::IntrusivePtr<DeviceAllocationOwner>;
-
-struct MemoryAllocateInfo
-{
-	VkMemoryRequirements requirements = {};
-	VkMemoryPropertyFlags required_properties = 0;
-	AllocationMode mode = {};
-};
 
 class ClassAllocator : public Util::ArenaAllocator<ClassAllocator, DeviceAllocation>
 {

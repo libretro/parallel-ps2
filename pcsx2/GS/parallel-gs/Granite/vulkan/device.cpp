@@ -25,7 +25,6 @@
 #include "device.hpp"
 #include <retro_spsc.h>
 #include "format.hpp"
-#include "type_to_string.hpp"
 #include "quirks.hpp"
 #include <algorithm>
 #include <limits>
@@ -144,7 +143,6 @@ void Device::add_wait_semaphore_nolock(QueueIndices physical_type, Semaphore sem
 		VK_ASSERT(sem.get() != semaphore.get());
 #endif
 
-	semaphore->set_pending_wait();
 	data.wait_semaphores.push_back(semaphore);
 	data.wait_stages.push_back(stages);
 	data.need_fence = true;
@@ -465,10 +463,9 @@ void Device::record_compute_pipeline(const DeferredPipelineCompile &compile)
 	r->pipeline_hash     = compile.hash;
 	for (i = 0; i < 4; i++)
 		r->static_words[i] = compile.static_state.words[i];
-	for (i = 0; i < VULKAN_NUM_TOTAL_SPEC_CONSTANTS; i++)
+	for (i = 0; i < VULKAN_NUM_USER_SPEC_CONSTANTS; i++)
 		r->spec_constants[i] = compile.potential_static_state.spec_constants[i];
-	r->spec_masks        = compile.potential_static_state.spec_constant_mask |
-	                       (uint32_t(compile.potential_static_state.internal_spec_constant_mask) << 8);
+	r->spec_masks        = compile.potential_static_state.spec_constant_mask;
 	r->subgroup_size_tag = compile.subgroup_size_tag;
 	compute_records_written.fetch_add(1);
 }
@@ -495,10 +492,9 @@ bool Device::resolve_compute_pipeline_record(const ComputePipelineRecord &record
 	compile.layout  = program->get_pipeline_layout();
 	for (i = 0; i < 4; i++)
 		compile.static_state.words[i] = record.static_words[i];
-	for (i = 0; i < VULKAN_NUM_TOTAL_SPEC_CONSTANTS; i++)
+	for (i = 0; i < VULKAN_NUM_USER_SPEC_CONSTANTS; i++)
 		compile.potential_static_state.spec_constants[i] = record.spec_constants[i];
-	compile.potential_static_state.spec_constant_mask          = uint8_t(record.spec_masks & 0xff);
-	compile.potential_static_state.internal_spec_constant_mask = uint8_t((record.spec_masks >> 8) & 0xff);
+	compile.potential_static_state.spec_constant_mask = uint8_t(record.spec_masks & 0xff);
 	compile.subgroup_size_tag = record.subgroup_size_tag;
 	compile.cache             = legacy_pipeline_cache;
 	CommandBuffer::update_hash_compute_pipeline(compile);
@@ -523,10 +519,9 @@ void Device::record_graphics_pipeline(const DeferredPipelineCompile &compile)
 	r->render_pass_hash = compile.compatible_render_pass->get_hash();
 	for (i = 0; i < 4; i++)
 		r->static_words[i] = compile.static_state.words[i];
-	for (i = 0; i < VULKAN_NUM_TOTAL_SPEC_CONSTANTS; i++)
+	for (i = 0; i < VULKAN_NUM_USER_SPEC_CONSTANTS; i++)
 		r->spec_constants[i] = compile.potential_static_state.spec_constants[i];
-	r->spec_masks        = compile.potential_static_state.spec_constant_mask |
-	                       (uint32_t(compile.potential_static_state.internal_spec_constant_mask) << 8);
+	r->spec_masks        = compile.potential_static_state.spec_constant_mask;
 	r->subgroup_size_tag = compile.subgroup_size_tag;
 	r->subpass_index     = compile.subpass_index;
 	memcpy(r->blend_constants, compile.potential_static_state.blend_constants, sizeof(r->blend_constants));
@@ -645,10 +640,9 @@ bool Device::resolve_graphics_pipeline_record(const GraphicsPipelineRecord &reco
 	compile.subpass_index         = record.subpass_index;
 	for (i = 0; i < 4; i++)
 		compile.static_state.words[i] = record.static_words[i];
-	for (i = 0; i < VULKAN_NUM_TOTAL_SPEC_CONSTANTS; i++)
+	for (i = 0; i < VULKAN_NUM_USER_SPEC_CONSTANTS; i++)
 		compile.potential_static_state.spec_constants[i] = record.spec_constants[i];
-	compile.potential_static_state.spec_constant_mask          = uint8_t(record.spec_masks & 0xff);
-	compile.potential_static_state.internal_spec_constant_mask = uint8_t((record.spec_masks >> 8) & 0xff);
+	compile.potential_static_state.spec_constant_mask = uint8_t(record.spec_masks & 0xff);
 	memcpy(compile.potential_static_state.blend_constants, record.blend_constants,
 	       sizeof(compile.potential_static_state.blend_constants));
 	for (i = 0; i < VULKAN_NUM_VERTEX_ATTRIBS; i++)
@@ -874,7 +868,6 @@ void Device::set_context(const Context &context)
 	mem_props = context.get_mem_props();
 	gpu_props = context.get_gpu_props();
 	ext = context.get_enabled_device_features();
-	system_handles = context.get_system_handles();
 
 	init_workarounds();
 	init_timeline_semaphores();
@@ -1119,10 +1112,7 @@ void Device::submit_and_sync_to_queues(CommandBufferHandle &cmd, uint32_t sync_t
 
 void Device::submit_discard_nolock(CommandBufferHandle &cmd)
 {
-	bool borrowed = cmd->is_borrowed();
-
 #ifdef VULKAN_DEBUG
-	if (!borrowed)
 	{
 		auto type = cmd->get_command_buffer_type();
 		auto &pool = frame().cmd_pools[get_physical_queue_type(type)][cmd->get_thread_index()];
@@ -1133,9 +1123,7 @@ void Device::submit_discard_nolock(CommandBufferHandle &cmd)
 	cmd->end();
 
 	cmd.reset();
-
-	if (!borrowed)
-		decrement_frame_counter_nolock();
+	decrement_frame_counter_nolock();
 }
 
 void Device::submit_discard(CommandBufferHandle &cmd)
@@ -1224,13 +1212,6 @@ void Device::submit_empty_inner(QueueIndices physical_type, InternalFence *fence
 	collect_wait_semaphores(data, wait_semaphores);
 	composer.add_wait_submissions(wait_semaphores);
 
-	for (auto consume : frame().consumed_semaphores)
-	{
-		composer.add_wait_semaphore(consume, VK_PIPELINE_STAGE_NONE);
-		frame().recycled_semaphores.push_back(consume);
-	}
-	frame().consumed_semaphores.clear();
-
 	emit_queue_signals(composer, external_semaphore,
 	                   timeline_semaphore, timeline_value,
 	                   fence, semaphore_count, semaphores);
@@ -1285,10 +1266,7 @@ void Device::collect_wait_semaphores(QueueData &data, Helper::WaitSemaphores &se
 		{
 			if (is_owned)
 			{
-				if (semaphore->is_external_object_compatible())
-					frame().destroyed_semaphores.push_back(vk_semaphore);
-				else
-					frame().recycled_semaphores.push_back(vk_semaphore);
+				frame().recycled_semaphores.push_back(vk_semaphore);
 			}
 
 			info.semaphore = vk_semaphore;
@@ -1564,13 +1542,6 @@ void Device::submit_queue(QueueIndices physical_type, InternalFence *fence,
 	if (fence)
 		fence->fence = cleared_fence;
 
-	for (auto consume : frame().consumed_semaphores)
-	{
-		composer.add_wait_semaphore(consume, VK_PIPELINE_STAGE_NONE);
-		frame().recycled_semaphores.push_back(consume);
-	}
-	frame().consumed_semaphores.clear();
-
 	emit_queue_signals(composer, external_semaphore, timeline_semaphore, timeline_value,
 	                   fence, semaphore_count, semaphores);
 
@@ -1604,8 +1575,7 @@ void Device::end_frame_nolock()
 	for (auto &i : queue_flush_order)
 	{
 		if (queue_data[i].need_fence ||
-		    !frame().submissions[i].empty() ||
-		    !frame().consumed_semaphores.empty())
+		    !frame().submissions[i].empty())
 		{
 			InternalFence fence = {};
 			submit_queue(i, &fence);
@@ -1754,7 +1724,6 @@ Device::PerFrame::PerFrame(Device *device_, unsigned frame_index_)
 	destroyed_descriptor_pools.reserve(64);
 	recycled_semaphores.reserve(64);
 	destroyed_semaphores.reserve(64);
-	consumed_semaphores.reserve(64);
 }
 
 void Device::free_memory_nolock(const DeviceAllocation &alloc)
@@ -1779,10 +1748,6 @@ void Device::drain_deferred(PerFrame &f)
 	deferred.destroyed_descriptor_pools.drain([&](VkDescriptorPool v) { f.destroyed_descriptor_pools.push_back(v); });
 	deferred.recycled_semaphores.drain([&](VkSemaphore v) { f.recycled_semaphores.push_back(v); });
 	deferred.destroyed_semaphores.drain([&](VkSemaphore v) { f.destroyed_semaphores.push_back(v); });
-	/* Consumed: signalled and never waited on. The frame's next
-	 * submission waits on them and recycles them, which is why the
-	 * drains come before end_frame. */
-	deferred.consumed_semaphores.drain([&](VkSemaphore v) { f.consumed_semaphores.push_back(v); });
 }
 
 #ifdef VULKAN_DEBUG
@@ -1831,11 +1796,6 @@ void Device::destroy_semaphore(VkSemaphore semaphore)
 	destroy_semaphore_nolock(semaphore);
 }
 
-void Device::consume_semaphore(VkSemaphore semaphore)
-{
-	consume_semaphore_nolock(semaphore);
-}
-
 void Device::recycle_semaphore(VkSemaphore semaphore)
 {
 	recycle_semaphore_nolock(semaphore);
@@ -1869,11 +1829,6 @@ void Device::destroy_buffer_view_nolock(const CachedBufferView &view)
 void Device::destroy_semaphore_nolock(VkSemaphore semaphore)
 {
 	deferred.destroyed_semaphores.push(semaphore);
-}
-
-void Device::consume_semaphore_nolock(VkSemaphore semaphore)
-{
-	deferred.consumed_semaphores.push(semaphore);
 }
 
 void Device::recycle_semaphore_nolock(VkSemaphore semaphore)
@@ -2140,7 +2095,6 @@ void Device::PerFrame::begin()
 		table.vkDestroyDescriptorPool(vkdevice, pool, nullptr);
 	for (auto &semaphore : recycled_semaphores)
 		managers.semaphore.recycle(semaphore);
-	VK_ASSERT(consumed_semaphores.empty());
 
 	if (!allocations.empty())
 	{
@@ -2166,10 +2120,6 @@ Device::PerFrame::~PerFrame()
 	/* Anything handed back since the last drain, from the caches torn
 	 * down after the device's own destructor, is deleted here. */
 	device.drain_deferred(*this);
-	/* No submission will wait on these now; the device is idle. */
-	for (auto &semaphore : consumed_semaphores)
-		destroyed_semaphores.push_back(semaphore);
-	consumed_semaphores.clear();
 	begin();
 }
 
@@ -3888,9 +3838,6 @@ const RenderPass &Device::request_render_pass(const RenderPassInfo &info, bool c
 			lazy |= 1u << i;
 		if (info.color_attachments[i]->get_image().get_create_info().layout == ImageLayout::Optimal)
 			optimal |= 1u << i;
-
-		// This can change external subpass dependencies, so it must always be hashed.
-		h.u32(info.color_attachments[i]->get_image().get_swapchain_layout());
 	}
 
 	if (info.depth_stencil)

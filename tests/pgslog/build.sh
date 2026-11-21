@@ -51,11 +51,14 @@ fi
 # Gone the same way: the context creation flags and the paths behind them
 # (video queues, pipeline binaries, robustness2, presentation extensions),
 # the frontend create-info inheritance, mesh and task stages, YCbCr
-# conversions, ASTC decode modes, events and the never-set quirks
-for f in vulkan/pipeline_cache.cpp vulkan/pipeline_cache.hpp; do
+# conversions, ASTC decode modes, events and the never-set quirks, then
+# what only presentation needed: surface prerotation and its internal
+# specialisation constants, swapchain layouts, consumed semaphores
+for f in vulkan/pipeline_cache.cpp vulkan/pipeline_cache.hpp vulkan/vulkan_prerotate.hpp \
+	vulkan/type_to_string.hpp util/hashmap.hpp util/unstable_remove_if.hpp; do
 	if [ -e "$G/$f" ]; then echo "FAIL: Granite/$f is back"; exit 1; fi
 done
-if grep -rqE "CONTEXT_CREATION_|VK_KHR_VIDEO_|PipelineBinar|VK_EXT_ROBUSTNESS_2|VK_KHR_PRESENT_(ID|WAIT)|VK_NV_LOW_LATENCY_2|get_existing_create_info|QUEUE_INDEX_VIDEO|ShaderStage::(Mesh|Task)|conservative_raster|indirect_bindable|YcbcrConversion|ASTCDecode|Event2|ImplementationQuirks" \
+if grep -rqE "CONTEXT_CREATION_|VK_KHR_VIDEO_|PipelineBinar|VK_EXT_ROBUSTNESS_2|VK_KHR_PRESENT_(ID|WAIT)|VK_NV_LOW_LATENCY_2|get_existing_create_info|QUEUE_INDEX_VIDEO|ShaderStage::(Mesh|Task)|conservative_raster|indirect_bindable|YcbcrConversion|ASTCDecode|Event2|ImplementationQuirks|surface_transform|SystemHandles|INTERNAL_SPEC_CONSTANTS|swapchain_layout|consume_semaphore" \
 	"$ROOT/pcsx2/GS/parallel-gs" "$ROOT/pcsx2/GS/Renderers/parallel-gs" "$ROOT/Makefile.common" "$ROOT/pcsx2/CMakeLists.txt"; then
 	echo "FAIL: a path behind a context flag the core never passes is back in Granite"
 	exit 1

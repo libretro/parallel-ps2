@@ -34,75 +34,6 @@
 
 namespace Vulkan
 {
-static inline VkPipelineStageFlags convert_vk_stage2(VkPipelineStageFlags2 stages)
-{
-	constexpr VkPipelineStageFlags2 transfer_mask =
-			VK_PIPELINE_STAGE_2_COPY_BIT |
-			VK_PIPELINE_STAGE_2_BLIT_BIT |
-			VK_PIPELINE_STAGE_2_RESOLVE_BIT |
-			VK_PIPELINE_STAGE_2_CLEAR_BIT |
-			VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR;
-
-	constexpr VkPipelineStageFlags2 preraster_mask =
-			VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT;
-
-	if ((stages & transfer_mask) != 0)
-	{
-		stages |= VK_PIPELINE_STAGE_TRANSFER_BIT;
-		stages &= ~transfer_mask;
-	}
-
-	if ((stages & preraster_mask) != 0)
-	{
-		// TODO: Augment if we add mesh shader support eventually.
-		stages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-		stages &= ~preraster_mask;
-	}
-
-	return VkPipelineStageFlags(stages);
-}
-
-static inline VkPipelineStageFlags convert_vk_src_stage2(VkPipelineStageFlags2 stages)
-{
-	stages = convert_vk_stage2(stages);
-	if (stages == VK_PIPELINE_STAGE_NONE)
-		stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-	return VkPipelineStageFlags(stages);
-}
-
-static inline VkPipelineStageFlags convert_vk_dst_stage2(VkPipelineStageFlags2 stages)
-{
-	stages = convert_vk_stage2(stages);
-	if (stages == VK_PIPELINE_STAGE_NONE)
-		stages = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	return VkPipelineStageFlags(stages);
-}
-
-static inline VkAccessFlags convert_vk_access_flags2(VkAccessFlags2 access)
-{
-	constexpr VkAccessFlags2 sampled_mask =
-			VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
-			VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
-			VK_ACCESS_2_SHADER_BINDING_TABLE_READ_BIT_KHR;
-
-	constexpr VkAccessFlags2 storage_mask =
-			VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-
-	if ((access & sampled_mask) != 0)
-	{
-		access |= VK_ACCESS_SHADER_READ_BIT;
-		access &= ~sampled_mask;
-	}
-
-	if ((access & storage_mask) != 0)
-	{
-		access |= VK_ACCESS_SHADER_WRITE_BIT;
-		access &= ~storage_mask;
-	}
-
-	return VkAccessFlags(access);
-}
-
 enum CommandBufferDirtyBits
 {
 	COMMAND_BUFFER_DIRTY_STATIC_STATE_BIT = 1 << 0,
@@ -186,9 +117,8 @@ union PipelineState {
 struct PotentialState
 {
 	float blend_constants[4];
-	uint32_t spec_constants[VULKAN_NUM_TOTAL_SPEC_CONSTANTS];
+	uint32_t spec_constants[VULKAN_NUM_USER_SPEC_CONSTANTS];
 	uint8_t spec_constant_mask;
-	uint8_t internal_spec_constant_mask;
 };
 
 struct DynamicState
@@ -283,24 +213,9 @@ public:
 		thread_index = index_;
 	}
 
-	void set_borrowed()
-	{
-		borrowed = true;
-	}
-
-	bool is_borrowed() const
-	{
-		return borrowed;
-	}
-
 	unsigned get_thread_index() const
 	{
 		return thread_index;
-	}
-
-	bool get_is_secondary() const
-	{
-		return is_secondary;
 	}
 
 	void fill_buffer(const Buffer &dst, uint32_t value);
@@ -350,10 +265,6 @@ public:
 
 	void begin_render_pass(const RenderPassInfo &info, VkSubpassContents contents = VK_SUBPASS_CONTENTS_INLINE);
 	void end_render_pass();
-	inline unsigned get_current_subpass() const
-	{
-		return pipeline_state.subpass_index;
-	}
 
 	void set_program(Program *program);
 
@@ -417,22 +328,6 @@ public:
 		}                                                         \
 	} while (0)
 
-	inline void set_depth_test(bool depth_test, bool depth_write)
-	{
-		SET_STATIC_STATE(depth_test);
-		SET_STATIC_STATE(depth_write);
-	}
-
-	inline void set_wireframe(bool wireframe)
-	{
-		SET_STATIC_STATE(wireframe);
-	}
-
-	inline void set_depth_compare(VkCompareOp depth_compare)
-	{
-		SET_STATIC_STATE(depth_compare);
-	}
-
 	inline void set_blend_enable(bool blend_enable)
 	{
 		SET_STATIC_STATE(blend_enable);
@@ -468,16 +363,6 @@ public:
 		SET_STATIC_STATE(depth_bias_enable);
 	}
 
-	inline void set_color_write_mask(uint32_t write_mask)
-	{
-		SET_STATIC_STATE(write_mask);
-	}
-
-	inline void set_stencil_test(bool stencil_test)
-	{
-		SET_STATIC_STATE(stencil_test);
-	}
-
 	inline void set_stencil_front_ops(VkCompareOp stencil_front_compare_op, VkStencilOp stencil_front_pass,
 	                                  VkStencilOp stencil_front_fail, VkStencilOp stencil_front_depth_fail)
 	{
@@ -494,48 +379,6 @@ public:
 		SET_STATIC_STATE(stencil_back_pass);
 		SET_STATIC_STATE(stencil_back_fail);
 		SET_STATIC_STATE(stencil_back_depth_fail);
-	}
-
-	inline void set_stencil_ops(VkCompareOp stencil_compare_op, VkStencilOp stencil_pass, VkStencilOp stencil_fail,
-	                            VkStencilOp stencil_depth_fail)
-	{
-		set_stencil_front_ops(stencil_compare_op, stencil_pass, stencil_fail, stencil_depth_fail);
-		set_stencil_back_ops(stencil_compare_op, stencil_pass, stencil_fail, stencil_depth_fail);
-	}
-
-	inline void set_primitive_topology(VkPrimitiveTopology topology)
-	{
-		SET_STATIC_STATE(topology);
-	}
-
-	inline void set_primitive_restart(bool primitive_restart)
-	{
-		SET_STATIC_STATE(primitive_restart);
-	}
-
-	inline void set_multisample_state(bool alpha_to_coverage, bool alpha_to_one = false, bool sample_shading = false)
-	{
-		SET_STATIC_STATE(alpha_to_coverage);
-		SET_STATIC_STATE(alpha_to_one);
-		SET_STATIC_STATE(sample_shading);
-	}
-
-	inline void set_front_face(VkFrontFace front_face)
-	{
-		SET_STATIC_STATE(front_face);
-	}
-
-	inline void set_cull_mode(VkCullModeFlags cull_mode)
-	{
-		SET_STATIC_STATE(cull_mode);
-	}
-
-	inline void set_blend_constants(const float blend_constants[4])
-	{
-		SET_POTENTIALLY_STATIC_STATE(blend_constants[0]);
-		SET_POTENTIALLY_STATIC_STATE(blend_constants[1]);
-		SET_POTENTIALLY_STATIC_STATE(blend_constants[2]);
-		SET_POTENTIALLY_STATIC_STATE(blend_constants[3]);
 	}
 
 	inline void set_specialization_constant_mask(uint32_t spec_constant_mask)
@@ -628,12 +471,6 @@ public:
 		SET_DYNAMIC_STATE(back_reference, COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT);
 	}
 
-	inline void set_stencil_reference(uint8_t compare_mask, uint8_t write_mask, uint8_t reference)
-	{
-		set_stencil_front_reference(compare_mask, write_mask, reference);
-		set_stencil_back_reference(compare_mask, write_mask, reference);
-	}
-
 	/* Blend constants the pipeline takes as dynamic state: one pipeline
 	 * for every value, the value set with vkCmdSetBlendConstants when it
 	 * changes. Static state again after the next clear of the state. */
@@ -704,7 +541,6 @@ private:
 	VkPipelineLayout current_pipeline_layout = VK_NULL_HANDLE;
 	VkSubpassContents current_contents = VK_SUBPASS_CONTENTS_INLINE;
 	unsigned thread_index = 0;
-	bool borrowed = false;
 
 	VkViewport viewport = {};
 	VkRect2D scissor = {};
@@ -773,12 +609,8 @@ private:
 	void set_buffer_view_common(unsigned set, unsigned binding, const BufferView &view, VkDescriptorType type);
 
 	void init_viewport_scissor(const RenderPassInfo &info, const Framebuffer *framebuffer);
-	void init_surface_transform(const RenderPassInfo &info);
-	VkSurfaceTransformFlagBitsKHR current_framebuffer_surface_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
 
 	void bind_pipeline(VkPipelineBindPoint bind_point, VkPipeline pipeline, uint32_t active_dynamic_state);
-
-	void set_surface_transform_specialization_constants();
 
 	void set_program_layout(const PipelineLayout *layout);
 

@@ -134,8 +134,6 @@ static void fill_render_pass_signature(RenderPassSignature &sig, const RenderPas
 		sig.samples[i] = image.get_create_info().samples;
 		if (image.get_create_info().domain == ImageDomain::Transient)
 			sig.lazy |= 1u << i;
-		if (image.get_swapchain_layout() != VK_IMAGE_LAYOUT_UNDEFINED)
-			sig.recordable = 0;
 	}
 	if (info.depth_stencil)
 	{
@@ -284,22 +282,6 @@ RenderPass::RenderPass(Hash hash, Device *device_, const RenderPassInfo &info)
 			if (!enable_transient_store)
 				att.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 
-			implicit_transitions |= 1u << i;
-		}
-		else if (image.is_swapchain_image())
-		{
-			if (att.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD)
-				att.initialLayout = image.get_swapchain_layout();
-			else
-				att.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-			att.finalLayout = image.get_swapchain_layout();
-
-			// If we transition from PRESENT_SRC_KHR, this came from an implicit external subpass dependency
-			// which happens in BOTTOM_OF_PIPE. To properly transition away from it, we must wait for BOTTOM_OF_PIPE,
-			// without any memory barriers, since memory has been made available in the implicit barrier.
-			if (att.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD)
-				implicit_bottom_of_pipe |= 1u << i;
 			implicit_transitions |= 1u << i;
 		}
 		else

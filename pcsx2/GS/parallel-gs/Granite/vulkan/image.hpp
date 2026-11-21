@@ -182,11 +182,6 @@ public:
 		return unorm_view.view != VK_NULL_HANDLE ? unorm_view : view;
 	}
 
-	const CachedImageView &get_srgb_view() const
-	{
-		return srgb_view.view != VK_NULL_HANDLE ? srgb_view : view;
-	}
-
 	VkFormat get_format() const
 	{
 		return info.format;
@@ -276,15 +271,6 @@ struct ImageCreateInfo
 		info.flags = 0;
 		info.misc = mipmapped ? unsigned(IMAGE_MISC_GENERATE_MIPS_BIT) : 0u;
 		info.initial_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-		return info;
-	}
-
-	static ImageCreateInfo
-	immutable_3d_image(unsigned width, unsigned height, unsigned depth, VkFormat format, bool mipmapped = false)
-	{
-		ImageCreateInfo info = immutable_2d_image(width, height, format, mipmapped);
-		info.depth = depth;
-		info.type = VK_IMAGE_TYPE_3D;
 		return info;
 	}
 
@@ -412,11 +398,6 @@ public:
 		return std::max<uint32_t>(1u, create_info.height >> lod);
 	}
 
-	uint32_t get_depth(uint32_t lod = 0) const
-	{
-		return std::max<uint32_t>(1u, create_info.depth >> lod);
-	}
-
 	const ImageCreateInfo &get_create_info() const
 	{
 		return create_info;
@@ -427,48 +408,9 @@ public:
 		return create_info.layout == ImageLayout::Optimal ? optimal : VK_IMAGE_LAYOUT_GENERAL;
 	}
 
-	bool is_swapchain_image() const
-	{
-		return swapchain_layout != VK_IMAGE_LAYOUT_UNDEFINED;
-	}
-
-	VkImageLayout get_swapchain_layout() const
-	{
-		return swapchain_layout;
-	}
-
-	void set_swapchain_layout(VkImageLayout layout)
-	{
-		swapchain_layout = layout;
-	}
-
 	const DeviceAllocation &get_allocation() const
 	{
 		return alloc;
-	}
-
-	void set_surface_transform(VkSurfaceTransformFlagBitsKHR transform)
-	{
-		surface_transform = transform;
-		if (transform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
-		{
-			const VkImageUsageFlags safe_usage_flags =
-					VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
-					VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-					VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-					VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
-
-			if ((create_info.usage & ~safe_usage_flags) != 0)
-			{
-				LOGW("Using surface transform for non-pure render target image (usage: %u). This can lead to weird results.\n",
-				     create_info.usage);
-			}
-		}
-	}
-
-	VkSurfaceTransformFlagBitsKHR get_surface_transform() const
-	{
-		return surface_transform;
 	}
 
 private:
@@ -484,12 +426,9 @@ private:
 	DeviceAllocation alloc;
 	ImageCreateInfo create_info;
 
-	VkImageLayout swapchain_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-	VkSurfaceTransformFlagBitsKHR surface_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
 	bool owns_image = true;
 	bool owns_memory_allocation = true;
 };
 
 using ImageHandle = Util::IntrusivePtr<Image>;
-
 }

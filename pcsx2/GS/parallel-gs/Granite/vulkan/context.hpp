@@ -28,13 +28,6 @@
 #include <memory>
 #include <functional>
 
-namespace Granite
-{
-class Filesystem;
-class ThreadGroup;
-class AssetManager;
-}
-
 namespace Vulkan
 {
 struct DeviceFeatures
@@ -236,28 +229,6 @@ public:
 		return device_table;
 	}
 
-	struct SystemHandles
-	{
-		Granite::Filesystem *filesystem = nullptr;
-		Granite::ThreadGroup *thread_group = nullptr;
-		Granite::AssetManager *asset_manager = nullptr;
-	};
-
-	void set_system_handles(const SystemHandles &handles_)
-	{
-		handles = handles_;
-	}
-
-	const SystemHandles &get_system_handles() const
-	{
-		return handles;
-	}
-
-	const VkPhysicalDeviceFeatures2 &get_physical_device_features() const
-	{
-		return pdf2;
-	}
-
 private:
 	InstanceFactory *instance_factory = nullptr;
 	DeviceFactory *device_factory = nullptr;
@@ -265,7 +236,6 @@ private:
 	VkInstance instance = VK_NULL_HANDLE;
 	VkPhysicalDevice gpu = VK_NULL_HANDLE;
 	VulkanDeviceTable device_table = {};
-	SystemHandles handles;
 	VkPhysicalDeviceProperties gpu_props = {};
 	VkPhysicalDeviceMemoryProperties mem_props = {};
 

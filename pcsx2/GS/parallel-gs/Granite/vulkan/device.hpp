@@ -49,15 +49,6 @@
 #include "owned.hpp"
 #include <rthreads/retro_eventcount.h>
 
-namespace Util
-{
-}
-
-namespace Granite
-{
-struct TaskGroup;
-}
-
 struct retro_spsc; /* libretro-common's retro_spsc.h */
 
 namespace Vulkan
@@ -190,8 +181,8 @@ public:
 		uint64_t program_hash;
 		uint64_t pipeline_hash;
 		uint32_t static_words[4];
-		uint32_t spec_constants[VULKAN_NUM_TOTAL_SPEC_CONSTANTS];
-		uint32_t spec_masks;       /* user mask | internal mask << 8 */
+		uint32_t spec_constants[VULKAN_NUM_USER_SPEC_CONSTANTS];
+		uint32_t spec_masks;       /* the specialisation constant mask */
 		uint32_t subgroup_size_tag;
 	};
 	enum { COMPUTE_PIPELINE_RECORDS = 4096 };
@@ -202,10 +193,6 @@ public:
 	 * program is not there or the state no longer hashes to its key. */
 	bool resolve_compute_pipeline_record(const ComputePipelineRecord &record,
 	                                     DeferredPipelineCompile &compile) const;
-	VkPipelineCache get_legacy_pipeline_cache() const
-	{
-		return legacy_pipeline_cache;
-	}
 
 	/* A graphics pipeline the same way: the program, the compatible
 	 * render pass by its key and by what it is made from, the subpass,
@@ -217,8 +204,8 @@ public:
 		uint64_t pipeline_hash;
 		uint64_t render_pass_hash;
 		uint32_t static_words[4];
-		uint32_t spec_constants[VULKAN_NUM_TOTAL_SPEC_CONSTANTS];
-		uint32_t spec_masks;       /* user mask | internal mask << 8 */
+		uint32_t spec_constants[VULKAN_NUM_USER_SPEC_CONSTANTS];
+		uint32_t spec_masks;       /* the specialisation constant mask */
 		uint32_t subgroup_size_tag;
 		uint32_t subpass_index;
 		uint32_t blend_constants[4]; /* the floats' bits */
@@ -384,11 +371,6 @@ public:
 		return debug_marker_sensitive;
 	}
 
-	const Context::SystemHandles &get_system_handles() const
-	{
-		return system_handles;
-	}
-
 	bool supports_subgroup_size_log2(bool subgroup_full_group,
 	                                 uint8_t subgroup_minimum_size_log2,
 	                                 uint8_t subgroup_maximum_size_log2,
@@ -429,8 +411,6 @@ private:
 	void init_stock_sampler(StockSampler sampler, float max_aniso, float lod_bias);
 	void init_timeline_semaphores();
 	void deinit_timeline_semaphores();
-
-	Context::SystemHandles system_handles;
 
 	// Make sure this is deleted last.
 	HandlePool handle_pool;
@@ -495,7 +475,6 @@ private:
 		Util::SmallVector<CommandBufferHandle> submissions[QUEUE_INDEX_COUNT];
 		std::vector<VkSemaphore> recycled_semaphores;
 		std::vector<VkSemaphore> destroyed_semaphores;
-		std::vector<VkSemaphore> consumed_semaphores;
 
 		bool in_destructor = false;
 	};
@@ -518,7 +497,6 @@ private:
 		Util::DeferredList<VkDescriptorPool> destroyed_descriptor_pools;
 		Util::DeferredList<VkSemaphore> recycled_semaphores;
 		Util::DeferredList<VkSemaphore> destroyed_semaphores;
-		Util::DeferredList<VkSemaphore> consumed_semaphores;
 	} deferred;
 	/* Files everything handed back so far into @f. Called where the
 	 * frame advances, in wait_idle, and by a frame as it is destroyed. */
@@ -619,7 +597,6 @@ private:
 	void destroy_sampler(VkSampler sampler);
 	void destroy_framebuffer(VkFramebuffer framebuffer);
 	void destroy_semaphore(VkSemaphore semaphore);
-	void consume_semaphore(VkSemaphore semaphore);
 	void recycle_semaphore(VkSemaphore semaphore);
 	void free_memory(const DeviceAllocation &alloc);
 	void reset_fence(VkFence fence, bool observed_wait);
@@ -632,7 +609,6 @@ private:
 	void destroy_sampler_nolock(VkSampler sampler);
 	void destroy_framebuffer_nolock(VkFramebuffer framebuffer);
 	void destroy_semaphore_nolock(VkSemaphore semaphore);
-	void consume_semaphore_nolock(VkSemaphore semaphore);
 	void recycle_semaphore_nolock(VkSemaphore semaphore);
 	void free_memory_nolock(const DeviceAllocation &alloc);
 	void destroy_descriptor_pool_nolock(VkDescriptorPool desc_pool);
