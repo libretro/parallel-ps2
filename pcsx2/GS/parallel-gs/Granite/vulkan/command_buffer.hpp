@@ -172,16 +172,10 @@ union PipelineState {
 		uint32_t subgroup_full_group : 1;
 		uint32_t subgroup_minimum_size_log2 : 3;
 		uint32_t subgroup_maximum_size_log2 : 3;
-		uint32_t subgroup_control_size_task : 1;
-		uint32_t subgroup_full_group_task : 1;
-		uint32_t subgroup_minimum_size_log2_task : 3;
-		uint32_t subgroup_maximum_size_log2_task : 3;
-		uint32_t conservative_raster : 1;
-		uint32_t indirect_bindable : 1;
 		/* Blend constants are dynamic state, set by
 		 * set_dynamic_blend_constants: not part of the pipeline. */
 		uint32_t dynamic_blend_constants : 1;
-		uint32_t padding : 7;
+		uint32_t padding : 17;
 
 		// Word 3
 		uint32_t write_mask;
@@ -266,8 +260,6 @@ public:
 		Generic = QUEUE_INDEX_GRAPHICS,
 		AsyncCompute = QUEUE_INDEX_COMPUTE,
 		AsyncTransfer = QUEUE_INDEX_TRANSFER,
-		VideoDecode = QUEUE_INDEX_VIDEO_DECODE,
-		VideoEncode = QUEUE_INDEX_VIDEO_ENCODE,
 		Count
 	};
 
@@ -588,56 +580,21 @@ public:
 		return pipeline_state.potential_static_state.spec_constant_mask;
 	}
 
-	inline void enable_subgroup_size_control(bool subgroup_control_size,
-	                                         VkShaderStageFlagBits stage = VK_SHADER_STAGE_COMPUTE_BIT)
+	inline void enable_subgroup_size_control(bool subgroup_control_size)
 	{
-		VK_ASSERT(stage == VK_SHADER_STAGE_TASK_BIT_EXT ||
-		          stage == VK_SHADER_STAGE_MESH_BIT_EXT ||
-		          stage == VK_SHADER_STAGE_COMPUTE_BIT);
-
-		if (stage != VK_SHADER_STAGE_TASK_BIT_EXT)
-		{
-			SET_STATIC_STATE(subgroup_control_size);
-		}
-		else
-		{
-			auto subgroup_control_size_task = subgroup_control_size;
-			SET_STATIC_STATE(subgroup_control_size_task);
-		}
+		SET_STATIC_STATE(subgroup_control_size);
 	}
 
 	inline void set_subgroup_size_log2(bool subgroup_full_group,
 	                                   uint8_t subgroup_minimum_size_log2,
-	                                   uint8_t subgroup_maximum_size_log2,
-	                                   VkShaderStageFlagBits stage = VK_SHADER_STAGE_COMPUTE_BIT)
+	                                   uint8_t subgroup_maximum_size_log2)
 	{
-		VK_ASSERT(stage == VK_SHADER_STAGE_TASK_BIT_EXT ||
-		          stage == VK_SHADER_STAGE_MESH_BIT_EXT ||
-		          stage == VK_SHADER_STAGE_COMPUTE_BIT);
-
 		VK_ASSERT(subgroup_minimum_size_log2 < 8);
 		VK_ASSERT(subgroup_maximum_size_log2 < 8);
 
-		if (stage != VK_SHADER_STAGE_TASK_BIT_EXT)
-		{
-			SET_STATIC_STATE(subgroup_full_group);
-			SET_STATIC_STATE(subgroup_minimum_size_log2);
-			SET_STATIC_STATE(subgroup_maximum_size_log2);
-		}
-		else
-		{
-			auto subgroup_full_group_task = subgroup_full_group;
-			auto subgroup_minimum_size_log2_task = subgroup_minimum_size_log2;
-			auto subgroup_maximum_size_log2_task = subgroup_maximum_size_log2;
-			SET_STATIC_STATE(subgroup_full_group_task);
-			SET_STATIC_STATE(subgroup_minimum_size_log2_task);
-			SET_STATIC_STATE(subgroup_maximum_size_log2_task);
-		}
-	}
-
-	inline void set_conservative_rasterization(bool conservative_raster)
-	{
-		SET_STATIC_STATE(conservative_raster);
+		SET_STATIC_STATE(subgroup_full_group);
+		SET_STATIC_STATE(subgroup_minimum_size_log2);
+		SET_STATIC_STATE(subgroup_maximum_size_log2);
 	}
 
 #define SET_DYNAMIC_STATE(state, flags)   \

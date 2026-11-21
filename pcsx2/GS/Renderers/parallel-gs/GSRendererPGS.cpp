@@ -94,7 +94,6 @@ static void pgs_give_back(ImageHandle& image, uint32_t sync_slots)
 	spare_vsync_images.push_back(std::move(image));
 }
 
-
 void pgs_set_hwrender_interface(retro_hw_render_interface_vulkan *iface)
 {
 	hw_render_iface = iface;
@@ -171,7 +170,7 @@ VkInstance pgs_create_instance(PFN_vkGetInstanceProcAddr get_instance_proc_addr,
 	factory.opaque = opaque;
 	vulkan_ctx->set_instance_factory(&factory);
 
-	if (!vulkan_ctx->init_instance(nullptr, 0))
+	if (!vulkan_ctx->init_instance())
 	{
 		vulkan_ctx_free();
 		return VK_NULL_HANDLE;
@@ -215,7 +214,7 @@ bool pgs_create_device2(
 	factory.opaque = opaque;
 	vulkan_ctx->set_device_factory(&factory);
 
-	if (!vulkan_ctx->init_device(gpu, surface, nullptr, 0, Vulkan::CONTEXT_CREATION_ENABLE_PUSH_DESCRIPTOR_BIT))
+	if (!vulkan_ctx->init_device(gpu, surface))
 		return false;
 
 	vulkan_ctx->release_device();

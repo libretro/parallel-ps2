@@ -658,40 +658,16 @@ Pipeline CommandBuffer::build_compute_pipeline(Device *device, const DeferredPip
 		}
 	}
 
-	VkPipelineCreateFlags2CreateInfoKHR flags2 = { VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO_KHR };
-
-	if (compile.static_state.state.indirect_bindable)
-	{
-		flags2.pNext = info.pNext;
-		info.pNext = &flags2;
-	}
-
-	if (compile.static_state.state.indirect_bindable)
-	{
-		flags2.flags |= VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT;
-
-		auto supported_stages = device->get_device_features().
-				device_generated_commands_properties.supportedIndirectCommandsShaderStagesPipelineBinding;
-		(void)supported_stages;
-		VK_ASSERT((supported_stages & VK_SHADER_STAGE_COMPUTE_BIT) != 0);
-	}
-
 	VkPipeline compute_pipeline = VK_NULL_HANDLE;
 
 	auto &table = device->get_device_table();
 
 	if (mode == CompileMode::FailOnCompileRequired)
-	{
 		info.flags |= VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
-		flags2.flags |= VK_PIPELINE_CREATE_2_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
-	}
-
-	// Setup mapping structures after Fossilize capture since we want a normalized capture.
-	VkShaderDescriptorSetAndBindingMappingInfoEXT mapping_info =
-		{ VK_STRUCTURE_TYPE_SHADER_DESCRIPTOR_SET_AND_BINDING_MAPPING_INFO_EXT };
 
 	auto start_ts = (int64_t(cpu_features_get_time_usec()) * 1000);
-	VkResult vr = device->pipeline_binary_cache.create_pipeline(&info, compile.cache, &compute_pipeline);
+	VkResult vr = table.vkCreateComputePipelines(device->get_device(), compile.cache, 1, &info, nullptr,
+	                                             &compute_pipeline);
 	auto end_ts = (int64_t(cpu_features_get_time_usec()) * 1000);
 	log_compile_time("compute", compile.hash, end_ts - start_ts, vr, mode);
 
@@ -917,23 +893,6 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 	raster.polygonMode = compile.static_state.state.wireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
 	raster.depthBiasEnable = compile.static_state.state.depth_bias_enable != 0;
 
-	VkPipelineRasterizationConservativeStateCreateInfoEXT conservative_raster = {
-		VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT
-	};
-	if (compile.static_state.state.conservative_raster)
-	{
-		if (device->get_device_features().supports_conservative_rasterization)
-		{
-			raster.pNext = &conservative_raster;
-			conservative_raster.conservativeRasterizationMode = VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT;
-		}
-		else
-		{
-			LOGE("Conservative rasterization is not supported on this device.\n");
-			return {};
-		}
-	}
-
 	// Stages
 	VkPipelineShaderStageCreateInfo stages[Util::ecast(ShaderStage::Count)];
 	unsigned num_stages = 0;
@@ -941,9 +900,6 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 	VkSpecializationInfo spec_info[ecast(ShaderStage::Count)] = {};
 	VkSpecializationMapEntry spec_entries[ecast(ShaderStage::Count)][VULKAN_NUM_TOTAL_SPEC_CONSTANTS];
 	uint32_t spec_constants[Util::ecast(ShaderStage::Count)][VULKAN_NUM_TOTAL_SPEC_CONSTANTS];
-
-	VkPipelineShaderStageRequiredSubgroupSizeCreateInfo subgroup_size_info_task;
-	VkPipelineShaderStageRequiredSubgroupSizeCreateInfo subgroup_size_info_mesh;
 
 	for (int i = 0; i < Util::ecast(ShaderStage::Count); i++)
 	{
@@ -981,40 +937,6 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 			if (spec_info[i].mapEntryCount)
 				s.pSpecializationInfo = &spec_info[i];
 
-			if (stage == ShaderStage::Mesh || stage == ShaderStage::Task)
-			{
-				VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *required_info;
-				unsigned min_size_log2, max_size_log2;
-				bool size_enabled, full_group;
-
-				if (stage == ShaderStage::Mesh)
-				{
-					size_enabled = compile.static_state.state.subgroup_control_size;
-					full_group = compile.static_state.state.subgroup_full_group;
-					min_size_log2 = compile.static_state.state.subgroup_minimum_size_log2;
-					max_size_log2 = compile.static_state.state.subgroup_maximum_size_log2;
-					required_info = &subgroup_size_info_mesh;
-				}
-				else
-				{
-					size_enabled = compile.static_state.state.subgroup_control_size_task;
-					full_group = compile.static_state.state.subgroup_full_group_task;
-					min_size_log2 = compile.static_state.state.subgroup_minimum_size_log2_task;
-					max_size_log2 = compile.static_state.state.subgroup_maximum_size_log2_task;
-					required_info = &subgroup_size_info_task;
-				}
-
-				if (size_enabled)
-				{
-					if (!setup_subgroup_size_control(
-							*device, s, *required_info, s.stage,
-							full_group, min_size_log2, max_size_log2))
-					{
-						LOGE("Subgroup size configuration not supported.\n");
-						return {};
-					}
-				}
-			}
 		}
 	}
 
@@ -1037,44 +959,15 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 	pipe.pStages = stages;
 	pipe.stageCount = num_stages;
 
-	VkPipelineCreateFlags2CreateInfoKHR flags2 = { VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO_KHR };
-
-	if (compile.static_state.state.indirect_bindable)
-	{
-		flags2.pNext = pipe.pNext;
-		pipe.pNext = &flags2;
-	}
-
-	if (compile.static_state.state.indirect_bindable)
-	{
-		flags2.flags |= VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT;
-
-		auto supported_stages = device->get_device_features().
-				device_generated_commands_properties.supportedIndirectCommandsShaderStagesPipelineBinding;
-		(void)supported_stages;
-		VK_ASSERT(!compile.program->get_shader(ShaderStage::Vertex) || (supported_stages & VK_SHADER_STAGE_VERTEX_BIT) != 0);
-		VK_ASSERT(!compile.program->get_shader(ShaderStage::Fragment) || (supported_stages & VK_SHADER_STAGE_FRAGMENT_BIT) != 0);
-		VK_ASSERT(!compile.program->get_shader(ShaderStage::Mesh) || (supported_stages & VK_SHADER_STAGE_MESH_BIT_EXT) != 0);
-		VK_ASSERT(!compile.program->get_shader(ShaderStage::Task) || (supported_stages & VK_SHADER_STAGE_TASK_BIT_EXT) != 0);
-		VK_ASSERT(!compile.program->get_shader(ShaderStage::Compute) || (supported_stages & VK_SHADER_STAGE_COMPUTE_BIT) != 0);
-	}
-
 	VkPipeline pipeline = VK_NULL_HANDLE;
-
-	// Patch in mapping structs late since we don't want to capture it in Fossilize.
-	// It is somewhat device dependent.
-	VkShaderDescriptorSetAndBindingMappingInfoEXT mapping_info[3];
 
 	auto &table = device->get_device_table();
 
 	if (mode == CompileMode::FailOnCompileRequired)
-	{
 		pipe.flags |= VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
-		flags2.flags |= VK_PIPELINE_CREATE_2_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
-	}
 
 	auto start_ts = (int64_t(cpu_features_get_time_usec()) * 1000);
-	VkResult res = device->pipeline_binary_cache.create_pipeline(&pipe, compile.cache, &pipeline);
+	VkResult res = table.vkCreateGraphicsPipelines(device->get_device(), compile.cache, 1, &pipe, nullptr, &pipeline);
 	auto end_ts = (int64_t(cpu_features_get_time_usec()) * 1000);
 	log_compile_time("graphics", compile.hash, end_ts - start_ts, res, mode);
 
@@ -1218,38 +1111,6 @@ void CommandBuffer::update_hash_graphics_pipeline(DeferredPipelineCompile &compi
 	for_each_bit(combined_spec_constant, [&](uint32_t bit) {
 		h.u32(compile.potential_static_state.spec_constants[bit]);
 	});
-
-	if (compile.program->get_shader(ShaderStage::Task))
-	{
-		if (compile.static_state.state.subgroup_control_size_task)
-		{
-			h.s32(1);
-			h.u32(compile.static_state.state.subgroup_minimum_size_log2_task);
-			h.u32(compile.static_state.state.subgroup_maximum_size_log2_task);
-			h.u32(compile.static_state.state.subgroup_full_group_task);
-			// Required for Fossilize since we don't know exactly how to lower these requirements to a PSO
-			// without knowing some device state.
-			h.u32(compile.subgroup_size_tag);
-		}
-		else
-			h.s32(0);
-	}
-
-	if (compile.program->get_shader(ShaderStage::Mesh))
-	{
-		if (compile.static_state.state.subgroup_control_size)
-		{
-			h.s32(1);
-			h.u32(compile.static_state.state.subgroup_minimum_size_log2);
-			h.u32(compile.static_state.state.subgroup_maximum_size_log2);
-			h.u32(compile.static_state.state.subgroup_full_group);
-			// Required for Fossilize since we don't know exactly how to lower these requirements to a PSO
-			// without knowing some device state.
-			h.u32(compile.subgroup_size_tag);
-		}
-		else
-			h.s32(0);
-	}
 
 	compile.hash = h.get();
 }
@@ -1490,7 +1351,6 @@ void CommandBuffer::set_program(Program *program)
 		return;
 
 	pipeline_state.program = program;
-	pipeline_state.static_state.state.indirect_bindable = 0;
 	current_pipeline = {};
 
 	set_dirty(COMMAND_BUFFER_DIRTY_PIPELINE_BIT);

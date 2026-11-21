@@ -43,11 +43,6 @@
 
 namespace Vulkan
 {
-static constexpr ContextCreationFlags video_context_flags =
-	CONTEXT_CREATION_ENABLE_VIDEO_DECODE_BIT |
-	CONTEXT_CREATION_ENABLE_VIDEO_ENCODE_BIT |
-	CONTEXT_CREATION_ENABLE_VIDEO_FEATURE_ONLY_BIT;
-
 void Context::set_instance_factory(InstanceFactory *factory)
 {
 	instance_factory = factory;
@@ -113,13 +108,13 @@ const VkApplicationInfo &CopiedApplicationInfo::get_application_info() const
 	return app;
 }
 
-bool Context::init_instance(const char * const *instance_ext, uint32_t instance_ext_count, ContextCreationFlags flags)
+bool Context::init_instance()
 {
 	destroy_device();
 	destroy_instance();
 
 	owned_instance = !instance_factory || !instance_factory->factory_owns_created_instance();
-	if (!create_instance(instance_ext, instance_ext_count, flags))
+	if (!create_instance())
 	{
 		destroy_instance();
 		LOGE("Failed to create Vulkan instance.\n");
@@ -129,12 +124,10 @@ bool Context::init_instance(const char * const *instance_ext, uint32_t instance_
 	return true;
 }
 
-bool Context::init_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface_compat, const char *const *device_ext,
-                          uint32_t device_ext_count, ContextCreationFlags flags)
+bool Context::init_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface_compat)
 {
 	owned_device = !device_factory || !device_factory->factory_owns_created_device();
-	VkPhysicalDeviceFeatures features = {};
-	if (!create_device(gpu_, surface_compat, device_ext, device_ext_count, &features, flags))
+	if (!create_device(gpu_, surface_compat))
 	{
 		destroy_device();
 		LOGE("Failed to create Vulkan device.\n");
@@ -334,12 +327,8 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_messenger_cb(
 
 VkApplicationInfo Context::get_promoted_application_info() const
 {
-	auto *inherit_info = instance_factory ? instance_factory->get_existing_create_info() : nullptr;
 	auto app_info = get_application_info();
-
-	VK_ASSERT(!inherit_info || inherit_info->pApplicationInfo);
-	uint32_t supported_instance_version =
-			inherit_info ? inherit_info->pApplicationInfo->apiVersion : granite_vk_instance_version();
+	uint32_t supported_instance_version = granite_vk_instance_version();
 
 	// Granite min-req is 1.1.
 	app_info.apiVersion = std::max(VK_API_VERSION_1_1, app_info.apiVersion);
@@ -351,13 +340,11 @@ VkApplicationInfo Context::get_promoted_application_info() const
 	return app_info;
 }
 
-bool Context::create_instance(const char * const *instance_ext, uint32_t instance_ext_count, ContextCreationFlags flags)
+bool Context::create_instance()
 {
 	VkInstanceCreateInfo info = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
 	auto app_info = get_promoted_application_info();
-	auto *inherit_info = instance_factory ? instance_factory->get_existing_create_info() : nullptr;
-	uint32_t supported_instance_version =
-			inherit_info ? inherit_info->pApplicationInfo->apiVersion : granite_vk_instance_version();
+	uint32_t supported_instance_version = granite_vk_instance_version();
 
 	if (supported_instance_version < app_info.apiVersion)
 	{
@@ -365,59 +352,33 @@ bool Context::create_instance(const char * const *instance_ext, uint32_t instanc
 		return false;
 	}
 
-	if (inherit_info)
-	{
-		instance_ext = inherit_info->ppEnabledExtensionNames;
-		instance_ext_count = inherit_info->enabledExtensionCount;
-	}
-
 	info.pApplicationInfo = &app_info;
 
 	std::vector<const char *> instance_exts;
 	std::vector<const char *> instance_layers;
-	for (uint32_t i = 0; i < instance_ext_count; i++)
-		instance_exts.push_back(instance_ext[i]);
 
 	uint32_t ext_count = 0;
-	if (!inherit_info)
-		vkEnumerateInstanceExtensionProperties(nullptr, &ext_count, nullptr);
+	vkEnumerateInstanceExtensionProperties(nullptr, &ext_count, nullptr);
 	std::vector<VkExtensionProperties> queried_extensions(ext_count);
-	if (ext_count && !inherit_info)
+	if (ext_count)
 		vkEnumerateInstanceExtensionProperties(nullptr, &ext_count, queried_extensions.data());
 
 	uint32_t layer_count = 0;
-	if (!inherit_info)
-		vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
+	vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
 	std::vector<VkLayerProperties> queried_layers(layer_count);
-	if (layer_count && !inherit_info)
+	if (layer_count)
 		vkEnumerateInstanceLayerProperties(&layer_count, queried_layers.data());
 
-	if (!inherit_info)
-	{
-		LOGI("Layer count: %u\n", layer_count);
-		for (auto &layer: queried_layers)
-			LOGI("Found layer: %s.\n", layer.layerName);
-	}
+	LOGI("Layer count: %u\n", layer_count);
+	for (auto &layer: queried_layers)
+		LOGI("Found layer: %s.\n", layer.layerName);
 
 	const auto has_extension = [&](const char *name) -> bool {
-		if (inherit_info)
-		{
-			for (uint32_t i = 0; i < inherit_info->enabledExtensionCount; i++)
-				if (strcmp(inherit_info->ppEnabledExtensionNames[i], name) == 0)
-					return true;
-			return false;
-		}
-
 		auto itr = find_if(begin(queried_extensions), end(queried_extensions), [name](const VkExtensionProperties &e) -> bool {
 			return strcmp(e.extensionName, name) == 0;
 		});
 		return itr != end(queried_extensions);
 	};
-
-	if (!inherit_info)
-		for (uint32_t i = 0; i < instance_ext_count; i++)
-			if (!has_extension(instance_ext[i]))
-				return false;
 
 	if (has_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
 	{
@@ -425,35 +386,8 @@ bool Context::create_instance(const char * const *instance_ext, uint32_t instanc
 		ext.supports_debug_utils = true;
 	}
 
-	auto itr = std::find_if(instance_ext, instance_ext + instance_ext_count, [](const char *name) {
-		return strcmp(name, VK_KHR_SURFACE_EXTENSION_NAME) == 0;
-	});
-	bool has_surface_extension = itr != (instance_ext + instance_ext_count);
-
-	if (has_surface_extension && has_extension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME))
-	{
-		instance_exts.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
-		ext.supports_surface_capabilities2 = true;
-	}
-
-	if ((flags & CONTEXT_CREATION_ENABLE_ADVANCED_WSI_BIT) != 0 &&
-	    has_surface_extension &&
-	    has_extension(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME))
-	{
-		instance_exts.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
-		ext.supports_swapchain_colorspace = true;
-	}
-
 #ifdef VULKAN_DEBUG
 	const auto has_layer = [&](const char *name) -> bool {
-		if (inherit_info)
-		{
-			for (uint32_t i = 0; i < inherit_info->enabledLayerCount; i++)
-				if (strcmp(inherit_info->ppEnabledLayerNames[i], name) == 0)
-					return true;
-			return false;
-		}
-
 		auto layer_itr = find_if(begin(queried_layers), end(queried_layers), [name](const VkLayerProperties &e) -> bool {
 			return strcmp(e.layerName, name) == 0;
 		});
@@ -503,20 +437,6 @@ bool Context::create_instance(const char * const *instance_ext, uint32_t instanc
 	}
 #endif
 
-	if (ext.supports_surface_capabilities2)
-	{
-		bool supports_khr = has_extension(VK_KHR_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
-		bool supports_ext = has_extension(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
-
-		if (supports_khr || supports_ext)
-		{
-			instance_exts.push_back(
-					supports_khr ? VK_KHR_SURFACE_MAINTENANCE_1_EXTENSION_NAME
-					             : VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
-			ext.supports_surface_maintenance1 = true;
-		}
-	}
-
 	if (has_extension(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME))
 	{
 		// Permit MoltenVK (and other portability drivers) when enumerating drivers via the Vulkan loader.
@@ -528,20 +448,10 @@ bool Context::create_instance(const char * const *instance_ext, uint32_t instanc
 		// Just ignore this requirement, since only VVL is likely to complain here.
 	}
 
-	if (inherit_info)
-	{
-		info.enabledExtensionCount = inherit_info->enabledExtensionCount;
-		info.ppEnabledExtensionNames = inherit_info->ppEnabledExtensionNames;
-		info.enabledLayerCount = inherit_info->enabledLayerCount;
-		info.ppEnabledLayerNames = inherit_info->ppEnabledLayerNames;
-	}
-	else
-	{
-		info.enabledExtensionCount = instance_exts.size();
-		info.ppEnabledExtensionNames = instance_exts.empty() ? nullptr : instance_exts.data();
-		info.enabledLayerCount = instance_layers.size();
-		info.ppEnabledLayerNames = instance_layers.empty() ? nullptr : instance_layers.data();
-	}
+	info.enabledExtensionCount = instance_exts.size();
+	info.ppEnabledExtensionNames = instance_exts.empty() ? nullptr : instance_exts.data();
+	info.enabledLayerCount = instance_layers.size();
+	info.ppEnabledLayerNames = instance_layers.empty() ? nullptr : instance_layers.data();
 
 	for (uint32_t i = 0; i < info.enabledExtensionCount; i++)
 		LOGI("Enabling instance extension: %s.\n", info.ppEnabledExtensionNames[i]);
@@ -563,17 +473,9 @@ bool Context::create_instance(const char * const *instance_ext, uint32_t instanc
 		ext.instance_api_core_version = app_info.apiVersion;
 	}
 
-	if (inherit_info)
-	{
-		ext.instance_extensions = inherit_info->ppEnabledExtensionNames;
-		ext.num_instance_extensions = inherit_info->enabledExtensionCount;
-	}
-	else
-	{
-		enabled_instance_extensions = std::move(instance_exts);
-		ext.instance_extensions = enabled_instance_extensions.data();
-		ext.num_instance_extensions = uint32_t(enabled_instance_extensions.size());
-	}
+	enabled_instance_extensions = std::move(instance_exts);
+	ext.instance_extensions = enabled_instance_extensions.data();
+	ext.num_instance_extensions = uint32_t(enabled_instance_extensions.size());
 
 	granite_vk_load_instance(instance);
 
@@ -666,10 +568,7 @@ bool Context::physical_device_supports_surface_and_profile(VkPhysicalDevice cand
 	return false;
 }
 
-bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
-                            const char * const *required_device_extensions, uint32_t num_required_device_extensions,
-                            const VkPhysicalDeviceFeatures *required_features,
-                            ContextCreationFlags flags)
+bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 {
 	gpu = gpu_;
 	if (gpu == VK_NULL_HANDLE)
@@ -736,43 +635,22 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		return false;
 	}
 
-	auto *inherit_info = device_factory ? device_factory->get_existing_create_info() : nullptr;
 	std::vector<VkExtensionProperties> queried_extensions;
-
-	if (inherit_info)
-	{
-		required_device_extensions = inherit_info->ppEnabledExtensionNames;
-		num_required_device_extensions = inherit_info->enabledExtensionCount;
-	}
 
 	{
 		uint32_t ext_count = 0;
-		if (!inherit_info)
-			vkEnumerateDeviceExtensionProperties(gpu, nullptr, &ext_count, nullptr);
+		vkEnumerateDeviceExtensionProperties(gpu, nullptr, &ext_count, nullptr);
 		queried_extensions.resize(ext_count);
-		if (ext_count && !inherit_info)
+		if (ext_count)
 			vkEnumerateDeviceExtensionProperties(gpu, nullptr, &ext_count, queried_extensions.data());
 	}
 
 	const auto has_extension = [&](const char *name) -> bool {
-		if (inherit_info)
-		{
-			for (uint32_t i = 0; i < inherit_info->enabledExtensionCount; i++)
-				if (strcmp(inherit_info->ppEnabledExtensionNames[i], name) == 0)
-					return true;
-			return false;
-		}
-
 		auto itr = find_if(begin(queried_extensions), end(queried_extensions), [name](const VkExtensionProperties &e) -> bool {
 			return strcmp(e.extensionName, name) == 0;
 		});
 		return itr != end(queried_extensions);
 	};
-
-	if (!inherit_info)
-		for (uint32_t i = 0; i < num_required_device_extensions; i++)
-			if (!has_extension(required_device_extensions[i]))
-				return false;
 
 	vkGetPhysicalDeviceProperties(gpu, &gpu_props);
 	// We can use core device functionality if enabled VkInstance apiVersion and physical device supports it.
@@ -780,19 +658,9 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 
 	LOGI("Using Vulkan GPU: %s\n", gpu_props.deviceName);
 
-	// FFmpeg integration requires Vulkan 1.3 core for physical device.
-	uint32_t minimum_api_version = (flags & video_context_flags) ? VK_API_VERSION_1_3 : VK_API_VERSION_1_1;
-	if (ext.device_api_core_version < minimum_api_version && (flags & video_context_flags) != 0)
+	if (ext.device_api_core_version < VK_API_VERSION_1_1)
 	{
-		LOGW("Requested FFmpeg-enabled context, but Vulkan 1.3 was not supported. Falling back to 1.1 without support.\n");
-		minimum_api_version = VK_API_VERSION_1_1;
-		flags &= ~video_context_flags;
-	}
-
-	if (ext.device_api_core_version < minimum_api_version)
-	{
-		LOGE("Found no Vulkan GPU which supports Vulkan 1.%u.\n",
-		     VK_API_VERSION_MINOR(minimum_api_version));
+		LOGE("Found no Vulkan GPU which supports Vulkan 1.1.\n");
 		return false;
 	}
 
@@ -801,39 +669,13 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	uint32_t queue_family_count = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties2(gpu, &queue_family_count, nullptr);
 	Util::SmallVector<VkQueueFamilyProperties2> queue_props(queue_family_count);
-	Util::SmallVector<VkQueueFamilyVideoPropertiesKHR> video_queue_props2(queue_family_count);
-
-	if ((flags & video_context_flags) != 0 && has_extension(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME))
-		ext.supports_video_queue = true;
 
 	for (uint32_t i = 0; i < queue_family_count; i++)
-	{
 		queue_props[i].sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2;
-		if (ext.supports_video_queue)
-		{
-			queue_props[i].pNext = &video_queue_props2[i];
-			video_queue_props2[i].sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR;
-		}
-	}
 
 	Util::SmallVector<uint32_t> queue_offsets(queue_family_count);
 	Util::SmallVector<Util::SmallVector<float, QUEUE_INDEX_COUNT>> queue_priorities(queue_family_count);
 	vkGetPhysicalDeviceQueueFamilyProperties2(gpu, &queue_family_count, queue_props.data());
-
-	if (inherit_info)
-	{
-		for (uint32_t i = 0; i < queue_family_count; i++)
-		{
-			auto itr = std::find_if(inherit_info->pQueueCreateInfos,
-			                        inherit_info->pQueueCreateInfos + inherit_info->queueCreateInfoCount,
-			                        [&](const VkDeviceQueueCreateInfo &queue) { return queue.queueFamilyIndex == i; });
-
-			if (itr != inherit_info->pQueueCreateInfos + inherit_info->queueCreateInfoCount)
-				queue_props[i].queueFamilyProperties.queueCount = itr->queueCount;
-			else
-				queue_props[i].queueFamilyProperties.queueCount = 0;
-		}
-	}
 
 	queue_info = {};
 	uint32_t queue_indices[QUEUE_INDEX_COUNT] = {};
@@ -903,31 +745,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		queue_indices[QUEUE_INDEX_TRANSFER] = queue_indices[QUEUE_INDEX_COMPUTE];
 	}
 
-	if (ext.supports_video_queue)
-	{
-		if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_DECODE_BIT) != 0)
-		{
-			if (!find_vacant_queue(queue_info.family_indices[QUEUE_INDEX_VIDEO_DECODE],
-			                       queue_indices[QUEUE_INDEX_VIDEO_DECODE],
-			                       VK_QUEUE_VIDEO_DECODE_BIT_KHR, 0, 0.5f))
-			{
-				queue_info.family_indices[QUEUE_INDEX_VIDEO_DECODE] = VK_QUEUE_FAMILY_IGNORED;
-				queue_indices[QUEUE_INDEX_VIDEO_DECODE] = UINT32_MAX;
-			}
-		}
-
-		if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_ENCODE_BIT) != 0)
-		{
-			if (!find_vacant_queue(queue_info.family_indices[QUEUE_INDEX_VIDEO_ENCODE],
-			                       queue_indices[QUEUE_INDEX_VIDEO_ENCODE],
-			                       VK_QUEUE_VIDEO_ENCODE_BIT_KHR, 0, 0.5f))
-			{
-				queue_info.family_indices[QUEUE_INDEX_VIDEO_ENCODE] = VK_QUEUE_FAMILY_IGNORED;
-				queue_indices[QUEUE_INDEX_VIDEO_ENCODE] = UINT32_MAX;
-			}
-		}
-	}
-
 	VkDeviceCreateInfo device_info = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
 
 	Util::SmallVector<VkDeviceQueueCreateInfo> queue_infos;
@@ -943,44 +760,10 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		queue_infos.push_back(info);
 	}
 
-	if (inherit_info)
-	{
-		device_info.pQueueCreateInfos = inherit_info->pQueueCreateInfos;
-		device_info.queueCreateInfoCount = inherit_info->queueCreateInfoCount;
-	}
-	else
-	{
-		device_info.pQueueCreateInfos = queue_infos.data();
-		device_info.queueCreateInfoCount = uint32_t(queue_infos.size());
-	}
+	device_info.pQueueCreateInfos = queue_infos.data();
+	device_info.queueCreateInfoCount = uint32_t(queue_infos.size());
 
 	std::vector<const char *> enabled_extensions;
-
-	bool requires_swapchain = false;
-	for (uint32_t i = 0; i < num_required_device_extensions; i++)
-	{
-		enabled_extensions.push_back(required_device_extensions[i]);
-		if (strcmp(required_device_extensions[i], VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0)
-			requires_swapchain = true;
-		else if (strcmp(required_device_extensions[i], VK_KHR_PRESENT_ID_EXTENSION_NAME) == 0 ||
-		         strcmp(required_device_extensions[i], VK_KHR_PRESENT_ID_2_EXTENSION_NAME) == 0 ||
-		         strcmp(required_device_extensions[i], VK_KHR_PRESENT_WAIT_EXTENSION_NAME) == 0 ||
-		         strcmp(required_device_extensions[i], VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME) == 0 ||
-		         strcmp(required_device_extensions[i], VK_EXT_HDR_METADATA_EXTENSION_NAME) == 0 ||
-		         strcmp(required_device_extensions[i], VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME) == 0 ||
-		         strcmp(required_device_extensions[i], VK_KHR_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME) == 0)
-		{
-			flags |= CONTEXT_CREATION_ENABLE_ADVANCED_WSI_BIT;
-		}
-	}
-
-#ifdef _WIN32
-	if (ext.supports_surface_capabilities2 && has_extension(VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME))
-	{
-		ext.supports_full_screen_exclusive = true;
-		enabled_extensions.push_back(VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME);
-	}
-#endif
 
 	if (
 #ifdef _WIN32
@@ -1042,144 +825,18 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	if (has_extension(VK_EXT_TOOLING_INFO_EXTENSION_NAME))
 		ext.supports_tooling_info = true;
 
-	if (ext.supports_video_queue)
-	{
-		enabled_extensions.push_back(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
-
-		if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_DECODE_BIT) != 0 &&
-		    has_extension(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME))
-		{
-			enabled_extensions.push_back(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
-			ext.supports_video_decode_queue = true;
-
-			if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_H264_BIT) != 0 &&
-			    has_extension(VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME))
-			{
-				enabled_extensions.push_back(VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME);
-
-				if (queue_info.family_indices[QUEUE_INDEX_VIDEO_DECODE] != VK_QUEUE_FAMILY_IGNORED)
-				{
-					ext.supports_video_decode_h264 =
-							(video_queue_props2[queue_info.family_indices[QUEUE_INDEX_VIDEO_DECODE]].videoCodecOperations &
-							 VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) != 0;
-				}
-			}
-
-			if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_H265_BIT) != 0 &&
-			    has_extension(VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME))
-			{
-				enabled_extensions.push_back(VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME);
-
-				if (queue_info.family_indices[QUEUE_INDEX_VIDEO_DECODE] != VK_QUEUE_FAMILY_IGNORED)
-				{
-					ext.supports_video_decode_h265 =
-							(video_queue_props2[queue_info.family_indices[QUEUE_INDEX_VIDEO_DECODE]].videoCodecOperations &
-							 VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) != 0;
-				}
-			}
-
-			if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_AV1_BIT) != 0 &&
-			    has_extension(VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME))
-			{
-				enabled_extensions.push_back(VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME);
-
-				if (queue_info.family_indices[QUEUE_INDEX_VIDEO_DECODE] != VK_QUEUE_FAMILY_IGNORED)
-				{
-					ext.supports_video_decode_av1 =
-							(video_queue_props2[queue_info.family_indices[QUEUE_INDEX_VIDEO_DECODE]].videoCodecOperations &
-							 VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) != 0;
-				}
-			}
-		}
-		else if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_FEATURE_ONLY_BIT) != 0 &&
-		         has_extension(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME))
-		{
-			enabled_extensions.push_back(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
-		}
-
-		if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_ENCODE_BIT) != 0 &&
-		    has_extension(VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME))
-		{
-			enabled_extensions.push_back(VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME);
-			ext.supports_video_encode_queue = true;
-
-			if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_H264_BIT) != 0 &&
-			    has_extension(VK_KHR_VIDEO_ENCODE_H264_EXTENSION_NAME))
-			{
-				enabled_extensions.push_back(VK_KHR_VIDEO_ENCODE_H264_EXTENSION_NAME);
-
-				if (queue_info.family_indices[QUEUE_INDEX_VIDEO_ENCODE] != VK_QUEUE_FAMILY_IGNORED)
-				{
-					ext.supports_video_encode_h264 =
-							(video_queue_props2[queue_info.family_indices[QUEUE_INDEX_VIDEO_ENCODE]].videoCodecOperations &
-							 VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) != 0;
-				}
-			}
-
-			if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_H265_BIT) != 0 &&
-			    has_extension(VK_KHR_VIDEO_ENCODE_H265_EXTENSION_NAME))
-			{
-				enabled_extensions.push_back(VK_KHR_VIDEO_ENCODE_H265_EXTENSION_NAME);
-
-				if (queue_info.family_indices[QUEUE_INDEX_VIDEO_ENCODE] != VK_QUEUE_FAMILY_IGNORED)
-				{
-					ext.supports_video_encode_h265 =
-							(video_queue_props2[queue_info.family_indices[QUEUE_INDEX_VIDEO_ENCODE]].videoCodecOperations &
-							 VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) != 0;
-				}
-			}
-
-			if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_AV1_BIT) != 0 &&
-			    has_extension(VK_KHR_VIDEO_ENCODE_AV1_EXTENSION_NAME))
-			{
-				enabled_extensions.push_back(VK_KHR_VIDEO_ENCODE_AV1_EXTENSION_NAME);
-
-				if (queue_info.family_indices[QUEUE_INDEX_VIDEO_ENCODE] != VK_QUEUE_FAMILY_IGNORED)
-				{
-					ext.supports_video_encode_av1 =
-							(video_queue_props2[queue_info.family_indices[QUEUE_INDEX_VIDEO_ENCODE]].videoCodecOperations &
-							 VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0;
-				}
-			}
-		}
-		else if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_FEATURE_ONLY_BIT) != 0 &&
-		         has_extension(VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME))
-		{
-			enabled_extensions.push_back(VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME);
-		}
-	}
-
 	pdf2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
 	auto **ppNext = reinterpret_cast<VkBaseOutStructure **>(&pdf2.pNext);
 
-	const auto add_chain = [&](void *pnext, size_t size,
-	                           VkStructureType type, const VkDeviceCreateInfo *device_create_info) {
+	const auto add_chain = [&](void *pnext, size_t size, VkStructureType type) {
 		auto *sout = static_cast<VkBaseOutStructure *>(pnext);
 		memset(sout, 0, size);
 		sout->sType = type;
-
-		if (device_create_info)
-		{
-			auto *existing = find_pnext<VkBaseOutStructure>(device_create_info->pNext, type);
-			if (existing)
-				memcpy(sout + 1, existing + 1, size - sizeof(*sout));
-		}
-
 		*ppNext = sout;
 		ppNext = &sout->pNext;
 	};
 
-#define ADD_CHAIN(s, type) add_chain(&(s), sizeof(s), VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ ## type, inherit_info)
-
-	if (ext.supports_video_encode_av1)
-		ADD_CHAIN(ext.av1_features, VIDEO_ENCODE_AV1_FEATURES_KHR);
-
-	if ((flags & CONTEXT_CREATION_ENABLE_VIDEO_ENCODE_BIT) != 0 &&
-	    has_extension(VK_KHR_VIDEO_ENCODE_INTRA_REFRESH_EXTENSION_NAME))
-	{
-		enabled_extensions.push_back(VK_KHR_VIDEO_ENCODE_INTRA_REFRESH_EXTENSION_NAME);
-		ADD_CHAIN(ext.intra_refresh_features, VIDEO_ENCODE_INTRA_REFRESH_FEATURES_KHR);
-	}
+#define ADD_CHAIN(s, type) add_chain(&(s), sizeof(s), VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ ## type)
 
 	if (ext.device_api_core_version >= VK_API_VERSION_1_2)
 	{
@@ -1240,7 +897,7 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	}
 	else
 	{
-		if ((flags & CONTEXT_CREATION_ENABLE_PUSH_DESCRIPTOR_BIT) != 0 && has_extension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME))
+		if (has_extension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME))
 		{
 			enabled_extensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
 			supports_khr_push_descriptor = true;
@@ -1287,19 +944,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		enabled_extensions.push_back(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
 	}
 
-	if (ext.supports_video_queue && has_extension(VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME))
-	{
-		enabled_extensions.push_back(VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME);
-		ADD_CHAIN(ext.video_maintenance1_features, VIDEO_MAINTENANCE_1_FEATURES_KHR);
-	}
-
-	if ((flags & CONTEXT_CREATION_ENABLE_ADVANCED_WSI_BIT) != 0 && requires_swapchain &&
-	    has_extension(VK_NV_LOW_LATENCY_2_EXTENSION_NAME))
-	{
-		enabled_extensions.push_back(VK_NV_LOW_LATENCY_2_EXTENSION_NAME);
-		ext.supports_low_latency2_nv = true;
-	}
-
 	if (ext.device_api_core_version >= VK_API_VERSION_1_3)
 	{
 		ext.supports_store_op_none = true;
@@ -1316,84 +960,9 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	}
 
 	// Pipeline binaries are currently borked in VVL.
-	if ((flags & CONTEXT_CREATION_ENABLE_PIPELINE_BINARY_BIT) != 0 &&
-	    has_extension(VK_KHR_PIPELINE_BINARY_EXTENSION_NAME))
-	{
-		enabled_extensions.push_back(VK_KHR_PIPELINE_BINARY_EXTENSION_NAME);
-		ADD_CHAIN(ext.pipeline_binary_features, PIPELINE_BINARY_FEATURES_KHR);
-	}
-
-	if ((flags & CONTEXT_CREATION_ENABLE_ROBUSTNESS_2_BIT) != 0 && has_extension(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME))
-	{
-		enabled_extensions.push_back(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME);
-		ADD_CHAIN(ext.robustness2_features, ROBUSTNESS_2_FEATURES_EXT);
-	}
-
-	if ((flags & CONTEXT_CREATION_ENABLE_ADVANCED_WSI_BIT) != 0 && requires_swapchain)
-	{
-		if (has_extension(VK_KHR_PRESENT_ID_2_EXTENSION_NAME))
-		{
-			enabled_extensions.push_back(VK_KHR_PRESENT_ID_2_EXTENSION_NAME);
-			ADD_CHAIN(ext.present_id2_features, PRESENT_ID_2_FEATURES_KHR);
-		}
-		else if (has_extension(VK_KHR_PRESENT_ID_EXTENSION_NAME))
-		{
-			enabled_extensions.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
-			ADD_CHAIN(ext.present_id_features, PRESENT_ID_FEATURES_KHR);
-		}
-
-		if (has_extension(VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME))
-		{
-			enabled_extensions.push_back(VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME);
-			ADD_CHAIN(ext.present_wait2_features, PRESENT_WAIT_2_FEATURES_KHR);
-		}
-		else if (has_extension(VK_KHR_PRESENT_WAIT_EXTENSION_NAME))
-		{
-			enabled_extensions.push_back(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
-			ADD_CHAIN(ext.present_wait_features, PRESENT_WAIT_FEATURES_KHR);
-		}
-
-		if (has_extension(VK_EXT_PRESENT_TIMING_EXTENSION_NAME))
-		{
-			enabled_extensions.push_back(VK_EXT_PRESENT_TIMING_EXTENSION_NAME);
-			ADD_CHAIN(ext.present_timing_features, PRESENT_TIMING_FEATURES_EXT);
-		}
-
-		if (ext.supports_surface_maintenance1)
-		{
-			if (has_extension(VK_KHR_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME))
-			{
-				enabled_extensions.push_back(VK_KHR_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);
-				ADD_CHAIN(ext.swapchain_maintenance1_features, SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR);
-			}
-			else if (has_extension(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME))
-			{
-				enabled_extensions.push_back(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);
-				ADD_CHAIN(ext.swapchain_maintenance1_features, SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR);
-			}
-		}
-
-		if (ext.supports_swapchain_colorspace && has_extension(VK_EXT_HDR_METADATA_EXTENSION_NAME))
-		{
-			ext.supports_hdr_metadata = true;
-			enabled_extensions.push_back(VK_EXT_HDR_METADATA_EXTENSION_NAME);
-		}
-	}
 
 	{
-		if (!inherit_info)
-		{
-			vkGetPhysicalDeviceFeatures2(gpu, &pdf2);
-		}
-		else if (inherit_info->pNext)
-		{
-			auto *features = find_pnext<VkPhysicalDeviceFeatures2>(inherit_info->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2);
-			pdf2.features = features->features;
-		}
-		else if (inherit_info->pEnabledFeatures)
-		{
-			pdf2.features = *inherit_info->pEnabledFeatures;
-		}
+		vkGetPhysicalDeviceFeatures2(gpu, &pdf2);
 	}
 
 	// Promote fallback features to core structs.
@@ -1460,14 +1029,10 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	ext.vk14_features.rectangularLines = VK_FALSE;
 	ext.vk14_features.smoothLines = VK_FALSE;
 	ext.vk14_features.bresenhamLines = VK_FALSE;
-	if ((flags & CONTEXT_CREATION_ENABLE_PUSH_DESCRIPTOR_BIT) == 0)
-		ext.vk14_features.pushDescriptor = VK_FALSE;
 
 	// Enable device features we might care about.
 	{
-		VkPhysicalDeviceFeatures enabled_features = *required_features;
-		if (pdf2.features.robustBufferAccess && (flags & CONTEXT_CREATION_ENABLE_ROBUSTNESS_2_BIT) != 0)
-			enabled_features.robustBufferAccess = VK_TRUE;
+		VkPhysicalDeviceFeatures enabled_features = {};
 		if (pdf2.features.textureCompressionETC2)
 			enabled_features.textureCompressionETC2 = VK_TRUE;
 		if (pdf2.features.textureCompressionBC)
@@ -1523,7 +1088,7 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		ext.enabled_features = enabled_features;
 	}
 
-	device_info.pNext = inherit_info ? inherit_info->pNext : &pdf2;
+	device_info.pNext = &pdf2;
 
 	// Only need GetPhysicalDeviceProperties2 for Vulkan 1.1-only code, so don't bother getting KHR variant.
 	VkPhysicalDeviceProperties2 props = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
@@ -1533,8 +1098,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	VkPhysicalDeviceSubgroupProperties subgroup_properties = {};
 	VkPhysicalDeviceSubgroupSizeControlProperties size_control_props = {};
 
-#undef ADD_CHAIN
-#define ADD_CHAIN(s, type) add_chain(&(s), sizeof(s), VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ ## type, nullptr)
 	ppNext = reinterpret_cast<VkBaseOutStructure **>(&props.pNext);
 
 	if (ext.device_api_core_version >= VK_API_VERSION_1_2)
@@ -1561,24 +1124,10 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	if (ext.supports_external_memory_host)
 		ADD_CHAIN(ext.host_memory_properties, EXTERNAL_MEMORY_HOST_PROPERTIES_EXT);
 
-	if ((flags & CONTEXT_CREATION_ENABLE_PIPELINE_BINARY_BIT) != 0 &&
-	    has_extension(VK_KHR_PIPELINE_BINARY_EXTENSION_NAME))
-		ADD_CHAIN(ext.pipeline_binary_properties, PIPELINE_BINARY_PROPERTIES_KHR);
-
 	vkGetPhysicalDeviceProperties2(gpu, &props);
 
 	// If a layer or driver doesn't tell us that internal cache is preferred,
 	// go ahead and take full control over the cache.
-	if (!ext.pipeline_binary_properties.pipelineBinaryPrefersInternalCache &&
-	    ext.pipeline_binary_features.pipelineBinaries &&
-	    ext.pipeline_binary_properties.pipelineBinaryInternalCacheControl)
-	{
-		ext.pipeline_binary_internal_cache_control.sType =
-				VK_STRUCTURE_TYPE_DEVICE_PIPELINE_BINARY_INTERNAL_CACHE_CONTROL_KHR;
-		ext.pipeline_binary_internal_cache_control.disableInternalCache = VK_TRUE;
-		ext.pipeline_binary_internal_cache_control.pNext = device_info.pNext;
-		device_info.pNext = &ext.pipeline_binary_internal_cache_control;
-	}
 
 	if (ext.device_api_core_version < VK_API_VERSION_1_2)
 	{
@@ -1609,16 +1158,8 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		ext.vk13_props.maxComputeWorkgroupSubgroups = size_control_props.maxComputeWorkgroupSubgroups;
 	}
 
-	if (inherit_info)
-	{
-		device_info.enabledExtensionCount = inherit_info->enabledExtensionCount;
-		device_info.ppEnabledExtensionNames = inherit_info->ppEnabledExtensionNames;
-	}
-	else
-	{
-		device_info.enabledExtensionCount = enabled_extensions.size();
-		device_info.ppEnabledExtensionNames = enabled_extensions.empty() ? nullptr : enabled_extensions.data();
-	}
+	device_info.enabledExtensionCount = enabled_extensions.size();
+	device_info.ppEnabledExtensionNames = enabled_extensions.empty() ? nullptr : enabled_extensions.data();
 
 	for (uint32_t i = 0; i < device_info.enabledExtensionCount; i++)
 		LOGI("Enabling device extension: %s.\n", device_info.ppEnabledExtensionNames[i]);
@@ -1634,28 +1175,10 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 			return false;
 	}
 
-	if (inherit_info)
-	{
-		ext.device_extensions = inherit_info->ppEnabledExtensionNames;
-		ext.num_device_extensions = inherit_info->enabledExtensionCount;
-
-		if (inherit_info->pNext)
-		{
-			ext.pdf2 = static_cast<const VkPhysicalDeviceFeatures2 *>(inherit_info->pNext);
-			VK_ASSERT(ext.pdf2->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2);
-		}
-		else
-		{
-			ext.pdf2 = &pdf2;
-		}
-	}
-	else
-	{
-		enabled_device_extensions = std::move(enabled_extensions);
-		ext.device_extensions = enabled_device_extensions.data();
-		ext.num_device_extensions = uint32_t(enabled_device_extensions.size());
-		ext.pdf2 = &pdf2;
-	}
+	enabled_device_extensions = std::move(enabled_extensions);
+	ext.device_extensions = enabled_device_extensions.data();
+	ext.num_device_extensions = uint32_t(enabled_device_extensions.size());
+	ext.pdf2 = &pdf2;
 
 	granite_vk_load_device_table(&device_table, device);
 
@@ -1663,9 +1186,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	PROMOTE_CALL(CreateRenderPass2, KHR);
 	PROMOTE_CALL(QueueSubmit2, KHR);
 	PROMOTE_CALL(CmdPipelineBarrier2, KHR);
-	PROMOTE_CALL(CmdSetEvent2, KHR);
-	PROMOTE_CALL(CmdResetEvent2, KHR);
-	PROMOTE_CALL(CmdWaitEvents2, KHR);
 	PROMOTE_CALL(CmdPushDescriptorSetWithTemplate, KHR);
 #undef PROMOTE_CALL
 
@@ -1701,11 +1221,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 	return true;
 }
 
-const VkDeviceCreateInfo *DeviceFactory::get_existing_create_info()
-{
-	return nullptr;
-}
-
 bool DeviceFactory::factory_owns_created_device()
 {
 	return false;
@@ -1714,11 +1229,6 @@ bool DeviceFactory::factory_owns_created_device()
 VkQueue DeviceFactory::get_queue(uint32_t, uint32_t)
 {
 	return VK_NULL_HANDLE;
-}
-
-const VkInstanceCreateInfo *InstanceFactory::get_existing_create_info()
-{
-	return nullptr;
 }
 
 bool InstanceFactory::factory_owns_created_instance()

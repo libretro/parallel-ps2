@@ -48,6 +48,19 @@ if grep -rqE "VK_EXT_descriptor_buffer|VK_EXT_descriptor_heap|DescriptorBufferAl
 	exit 1
 fi
 
+# Gone the same way: the context creation flags and the paths behind them
+# (video queues, pipeline binaries, robustness2, presentation extensions),
+# the frontend create-info inheritance, mesh and task stages, YCbCr
+# conversions, ASTC decode modes, events and the never-set quirks
+for f in vulkan/pipeline_cache.cpp vulkan/pipeline_cache.hpp; do
+	if [ -e "$G/$f" ]; then echo "FAIL: Granite/$f is back"; exit 1; fi
+done
+if grep -rqE "CONTEXT_CREATION_|VK_KHR_VIDEO_|PipelineBinar|VK_EXT_ROBUSTNESS_2|VK_KHR_PRESENT_(ID|WAIT)|VK_NV_LOW_LATENCY_2|get_existing_create_info|QUEUE_INDEX_VIDEO|ShaderStage::(Mesh|Task)|conservative_raster|indirect_bindable|YcbcrConversion|ASTCDecode|Event2|ImplementationQuirks" \
+	"$ROOT/pcsx2/GS/parallel-gs" "$ROOT/pcsx2/GS/Renderers/parallel-gs" "$ROOT/Makefile.common" "$ROOT/pcsx2/CMakeLists.txt"; then
+	echo "FAIL: a path behind a context flag the core never passes is back in Granite"
+	exit 1
+fi
+
 C89="-std=gnu89 -pedantic -Wall -Wextra -Werror=declaration-after-statement -Werror=implicit-function-declaration"
 "$CC" $C89 -O2 -g $SAN -I"$LC/include" -c "$ROOT/pcsx2/GS/Renderers/parallel-gs/PGSLog.c" -o "$TMP/log.o"
 "$CC" $C89 -O2 -g $SAN -I"$LC/include" -c "$DIR/main.c" -o "$TMP/main.o"

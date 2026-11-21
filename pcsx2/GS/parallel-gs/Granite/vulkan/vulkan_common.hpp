@@ -37,14 +37,11 @@ using VulkanObjectPool = Util::ThreadSafeObjectPool<T>;
 template <typename T>
 using VulkanCache = Util::InsertOnlyHashMap<T>;
 
-
 enum QueueIndices
 {
 	QUEUE_INDEX_GRAPHICS,
 	QUEUE_INDEX_COMPUTE,
 	QUEUE_INDEX_TRANSFER,
-	QUEUE_INDEX_VIDEO_DECODE,
-	QUEUE_INDEX_VIDEO_ENCODE,
 	QUEUE_INDEX_COUNT
 };
 

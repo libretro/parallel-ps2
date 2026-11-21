@@ -37,7 +37,6 @@
 #include "shader.hpp"
 #include "context.hpp"
 #include "buffer_pool.hpp"
-#include "pipeline_cache.hpp"
 #include <memory>
 #include <vector>
 #include <functional>
@@ -138,7 +137,6 @@ public:
 	friend class Sampler;
 	friend struct SamplerDeleter;
 	friend class ImmutableSampler;
-	friend class ImmutableYcbcrConversion;
 	friend class Buffer;
 	friend struct BufferDeleter;
 	friend class BufferView;
@@ -181,7 +179,7 @@ public:
 	bool get_pipeline_cache_data(uint8_t *data, size_t size);
 	// If persistent_mapping is true, the data pointer lifetime is live as long as the device is.
 	// Useful for read-only file mmap.
-	bool init_pipeline_cache(const uint8_t *data, size_t size, bool persistent_mapping = false);
+	bool init_pipeline_cache(const uint8_t *data, size_t size);
 
 	/* A compute pipeline as it is made, without the driver: the program
 	 * by its hash, the state words, the specialisation constants and the
@@ -292,7 +290,7 @@ public:
 	Program *request_program(Shader *vertex, Shader *fragment, const ImmutableSamplerBank *sampler_bank = nullptr);
 	Program *request_program(Shader *compute, const ImmutableSamplerBank *sampler_bank = nullptr);
 
-	const ImmutableSampler *request_immutable_sampler(const SamplerCreateInfo &info, const ImmutableYcbcrConversion *ycbcr);
+	const ImmutableSampler *request_immutable_sampler(const SamplerCreateInfo &info);
 
 	// Map and unmap buffer objects.
 	void *map_host_buffer(const Buffer &buffer, MemoryAccessFlags access);
@@ -583,12 +581,10 @@ private:
 	VulkanCache<Shader> shaders;
 	VulkanCache<Program> programs;
 	VulkanCache<ImmutableSampler> immutable_samplers;
-	VulkanCache<ImmutableYcbcrConversion> immutable_ycbcr_conversions;
 
 	FramebufferAllocator framebuffer_allocator;
 	TransientAttachmentAllocator transient_allocator;
 	VkPipelineCache legacy_pipeline_cache = VK_NULL_HANDLE;
-	PipelineCache pipeline_binary_cache;
 
 	ComputePipelineRecord *compute_records = nullptr;
 	PGS::atomic_uint32_t compute_records_claimed;
@@ -598,9 +594,6 @@ private:
 	GraphicsPipelineRecord *graphics_records = nullptr;
 	PGS::atomic_uint32_t graphics_records_claimed;
 	PGS::atomic_uint32_t graphics_records_written;
-
-	void init_pipeline_cache();
-	void flush_pipeline_cache();
 
 	std::function<void ()> queue_lock_callback;
 	std::function<void ()> queue_unlock_callback;

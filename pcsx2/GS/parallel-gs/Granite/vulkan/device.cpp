@@ -53,18 +53,8 @@ using namespace Util;
 
 namespace Vulkan
 {
-static constexpr VkImageUsageFlags image_usage_video_flags =
-		VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR |
-		VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR |
-		VK_IMAGE_USAGE_VIDEO_ENCODE_DST_BIT_KHR |
-		VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
-		VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR |
-		VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
-
 static const QueueIndices queue_flush_order[] = {
 	QUEUE_INDEX_TRANSFER,
-	QUEUE_INDEX_VIDEO_DECODE,
-	QUEUE_INDEX_VIDEO_ENCODE,
 	QUEUE_INDEX_GRAPHICS,
 	QUEUE_INDEX_COMPUTE,
 };
@@ -72,7 +62,6 @@ static const QueueIndices queue_flush_order[] = {
 Device::Device()
     : framebuffer_allocator(this)
     , transient_allocator(this)
-	, pipeline_binary_cache(this)
 {
 	compute_records = static_cast<ComputePipelineRecord *>(
 			calloc(COMPUTE_PIPELINE_RECORDS, sizeof(ComputePipelineRecord)));
@@ -421,11 +410,8 @@ void Device::bake_program(Program &program, const ImmutableSamplerBank *sampler_
 	program.set_pipeline_layout(request_pipeline_layout(layout, &ext_immutable_samplers));
 }
 
-bool Device::init_pipeline_cache(const uint8_t *data, size_t size, bool persistent_mapping)
+bool Device::init_pipeline_cache(const uint8_t *data, size_t size)
 {
-	if (ext.pipeline_binary_features.pipelineBinaries)
-		return pipeline_binary_cache.init_from_payload(data, size, persistent_mapping);
-
 	static const auto uuid_size = sizeof(gpu_props.pipelineCacheUUID);
 	static const auto hash_size = sizeof(Util::Hash);
 
@@ -464,10 +450,6 @@ bool Device::init_pipeline_cache(const uint8_t *data, size_t size, bool persiste
 		table->vkDestroyPipelineCache(device, legacy_pipeline_cache, nullptr);
 	legacy_pipeline_cache = VK_NULL_HANDLE;
 	return table->vkCreatePipelineCache(device, &info, nullptr, &legacy_pipeline_cache) == VK_SUCCESS;
-}
-
-void Device::init_pipeline_cache()
-{
 }
 
 void Device::record_compute_pipeline(const DeferredPipelineCompile &compile)
@@ -769,7 +751,7 @@ void Device::close_pipeline_handoff()
 size_t Device::get_pipeline_cache_size()
 {
 	if (legacy_pipeline_cache == VK_NULL_HANDLE)
-		return pipeline_binary_cache.get_serialized_size();
+		return 0;
 
 	static const auto uuid_size = sizeof(gpu_props.pipelineCacheUUID);
 	static const auto hash_size = sizeof(Util::Hash);
@@ -786,7 +768,7 @@ size_t Device::get_pipeline_cache_size()
 bool Device::get_pipeline_cache_data(uint8_t *data, size_t size)
 {
 	if (legacy_pipeline_cache == VK_NULL_HANDLE)
-		return pipeline_binary_cache.serialize(data, size);
+		return false;
 
 	static const auto uuid_size = sizeof(gpu_props.pipelineCacheUUID);
 	static const auto hash_size = sizeof(Util::Hash);
@@ -813,27 +795,11 @@ bool Device::get_pipeline_cache_data(uint8_t *data, size_t size)
 	return true;
 }
 
-void Device::flush_pipeline_cache()
-{
-}
-
 void Device::init_workarounds()
 {
 	workarounds = {};
 
-#ifdef __APPLE__
-	// Events are not supported in MoltenVK.
-	// TODO: Use VK_KHR_portability_subset to determine this.
-	workarounds.emulate_event_as_pipeline_barrier = true;
-	LOGW("Emulating events as pipeline barriers on Metal emulation.\n");
-	LOGW("Disabling push descriptors on Metal emulation.\n");
-#else
-	if (gpu_props.vendorID == VENDOR_ID_ARM)
-	{
-		LOGW("Workaround applied: Emulating events as pipeline barriers.\n");
-		workarounds.emulate_event_as_pipeline_barrier = true;
-	}
-
+#ifndef __APPLE__
 	// For whatever ridiculous reason, pipeline cache control causes GPU hangs on Pascal cards in parallel-rdp.
 	// Use mesh shaders as the sentinel to check for that: Pascal does not expose them. The extension
 	// is only looked for, never enabled.
@@ -850,9 +816,6 @@ void Device::init_workarounds()
 		LOGW("Disabling pipeline cache control.\n");
 		workarounds.broken_pipeline_cache_control = true;
 	}
-
-	if (ext.driver_id == VK_DRIVER_ID_NVIDIA_PROPRIETARY)
-		workarounds.broken_present_fence = true;
 #endif
 
 	if (ext.supports_tooling_info && vkGetPhysicalDeviceToolPropertiesEXT)
@@ -914,7 +877,6 @@ void Device::set_context(const Context &context)
 	system_handles = context.get_system_handles();
 
 	init_workarounds();
-	init_pipeline_cache();
 	init_timeline_semaphores();
 	init_frame_contexts(2); // By default, regular double buffer between CPU and GPU.
 
@@ -1051,7 +1013,7 @@ void Device::init_stock_sampler(StockSampler mode, float max_aniso, float lod_bi
 		break;
 	}
 
-	samplers[unsigned(mode)] = request_immutable_sampler(info, nullptr);
+	samplers[unsigned(mode)] = request_immutable_sampler(info);
 }
 
 void Device::init_stock_samplers()
@@ -1554,8 +1516,6 @@ VkResult Device::submit_batches(Helper::BatchComposer &composer, VkQueue queue, 
 
 	VkResult result = queue_submit(queue, uint32_t(submits.size()), submits.data(), fence);
 
-	if (ImplementationQuirks::get().queue_wait_on_submission)
-		table->vkQueueWaitIdle(queue);
 	if (queue_unlock_callback)
 		queue_unlock_callback();
 
@@ -1709,9 +1669,6 @@ Device::~Device()
 	managers.views.teardown();
 
 	wait_idle();
-
-	if (legacy_pipeline_cache != VK_NULL_HANDLE || ext.pipeline_binary_features.pipelineBinaries)
-		flush_pipeline_cache();
 
 	if (table)
 		table->vkDestroyPipelineCache(device, legacy_pipeline_cache, nullptr);
@@ -2492,23 +2449,6 @@ public:
 		return default_view_type;
 	}
 
-	bool setup_conversion_info(VkImageViewCreateInfo &create_info,
-	                           VkSamplerYcbcrConversionInfo &conversion,
-	                           const ImmutableYcbcrConversion *ycbcr_conversion) const
-	{
-		if (ycbcr_conversion)
-		{
-			if (!device->get_device_features().vk11_features.samplerYcbcrConversion)
-				return false;
-			conversion = { VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO };
-			conversion.conversion = ycbcr_conversion->get_conversion();
-			conversion.pNext = create_info.pNext;
-			create_info.pNext = &conversion;
-		}
-
-		return true;
-	}
-
 	bool setup_view_usage_info(VkImageViewCreateInfo &create_info, VkImageUsageFlags usage,
 	                           VkImageUsageFlags &view_usage) const
 	{
@@ -2516,12 +2456,7 @@ public:
 		view_usage &= VK_IMAGE_USAGE_SAMPLED_BIT |
 				VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
 				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-				VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
-				image_usage_video_flags;
-
-		// Don't include video usage for views that aren't planar.
-		if (format_ycbcr_num_planes(create_info.format) == 1)
-			view_usage &= ~image_usage_video_flags;
+				VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
 
 		if (view_usage & VK_IMAGE_USAGE_STORAGE_BIT)
 		{
@@ -2534,51 +2469,18 @@ public:
 		return true;
 	}
 
-	bool setup_astc_decode_mode_info(VkImageViewCreateInfo &create_info, VkImageViewASTCDecodeModeEXT &astc_info) const
-	{
-		if (!device->get_device_features().supports_astc_decode_mode)
-			return true;
-
-		auto type = format_compression_type(create_info.format);
-		if (type != FormatCompressionType::ASTC)
-			return true;
-
-		if (format_is_srgb(create_info.format))
-			return true;
-
-		if (format_is_compressed_hdr(create_info.format))
-		{
-			if (device->get_device_features().astc_decode_features.decodeModeSharedExponent)
-				astc_info.decodeMode = VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
-			else
-				astc_info.decodeMode = VK_FORMAT_R16G16B16A16_SFLOAT;
-		}
-		else
-		{
-			astc_info.decodeMode = VK_FORMAT_R8G8B8A8_UNORM;
-		}
-
-		astc_info.pNext = create_info.pNext;
-		create_info.pNext = &astc_info;
-		return true;
-	}
-
 	bool create_default_views(const ImageCreateInfo &create_info, const VkImageViewCreateInfo *view_info,
-	                          const ImmutableYcbcrConversion *ycbcr_conversion,
 	                          bool create_unorm_srgb_views = false, bool create_mip_level_views = false,
 	                          const VkFormat *view_formats = nullptr)
 	{
 		if ((create_info.usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-		                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
-		                          image_usage_video_flags)) == 0)
+		                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) == 0)
 		{
 			LOGE("Cannot create image view unless certain usage flags are present.\n");
 			return false;
 		}
 
 		VkImageViewCreateInfo default_view_info = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-		VkSamplerYcbcrConversionInfo conversion_info = { VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO };
-		VkImageViewASTCDecodeModeEXT astc_decode_mode_info = { VK_STRUCTURE_TYPE_IMAGE_VIEW_ASTC_DECODE_MODE_EXT };
 		VkImageUsageFlags view_usage = 0;
 
 		if (!view_info)
@@ -2599,13 +2501,8 @@ public:
 			default_view_info = *view_info;
 
 		view_info = &default_view_info;
-		if (!setup_conversion_info(default_view_info, conversion_info, ycbcr_conversion))
-			return false;
 
 		if (!setup_view_usage_info(default_view_info, create_info.usage, view_usage))
-			return false;
-
-		if (!setup_astc_decode_mode_info(default_view_info, astc_decode_mode_info))
 			return false;
 
 		if (!create_alt_views(*view_info, create_info.layout, view_usage))
@@ -3128,8 +3025,7 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 
 	uint32_t queue_flags = create_info.misc & (IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT |
 	                                           IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_COMPUTE_BIT |
-	                                           IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT |
-	                                           IMAGE_MISC_CONCURRENT_QUEUE_VIDEO_DUPLEX);
+	                                           IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT);
 	bool concurrent_queue = queue_flags != 0 ||
 	                        staging_buffer != nullptr ||
 	                        create_info.initial_layout != VK_IMAGE_LAYOUT_UNDEFINED;
@@ -3142,7 +3038,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 		// just enable every queue since we need to use transfer queue for initial upload.
 		if (staging_buffer && queue_flags == 0)
 		{
-			// We never imply video here.
 			constexpr ImageMiscFlags implicit_queues_all =
 					IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT |
 					IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_COMPUTE_BIT |
@@ -3166,8 +3061,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 			{ IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT, QUEUE_INDEX_GRAPHICS },
 			{ IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_COMPUTE_BIT, QUEUE_INDEX_COMPUTE },
 			{ IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT, QUEUE_INDEX_TRANSFER },
-			{ IMAGE_MISC_CONCURRENT_QUEUE_VIDEO_DECODE_BIT, QUEUE_INDEX_VIDEO_DECODE },
-			{ IMAGE_MISC_CONCURRENT_QUEUE_VIDEO_ENCODE_BIT, QUEUE_INDEX_VIDEO_ENCODE },
 		};
 
 		for (auto &m : mappings)
@@ -3373,15 +3266,14 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	}
 
 	bool has_view = (info.usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-	                               VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
-	                               image_usage_video_flags)) != 0 &&
+	                               VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) != 0 &&
 	                (create_info.misc & IMAGE_MISC_NO_DEFAULT_VIEWS_BIT) == 0;
 	bool create_mip_views = info.mipLevels > 1 && (create_info.misc & IMAGE_MISC_CREATE_PER_MIP_LEVEL_VIEWS_BIT) != 0;
 
 	VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
 	if (has_view)
 	{
-		if (!holder.create_default_views(tmpinfo, nullptr, create_info.ycbcr_conversion,
+		if (!holder.create_default_views(tmpinfo, nullptr,
 		                                 create_unorm_srgb_views, create_mip_views, view_formats))
 		{
 			LOCK_MEMORY();
@@ -3547,10 +3439,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 			type = CommandBuffer::Type::AsyncCompute;
 		else if (queue_flags & IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT)
 			type = CommandBuffer::Type::AsyncTransfer;
-		else if (queue_flags & IMAGE_MISC_CONCURRENT_QUEUE_VIDEO_DECODE_BIT)
-			type = CommandBuffer::Type::VideoDecode;
-		else if (queue_flags & IMAGE_MISC_CONCURRENT_QUEUE_VIDEO_ENCODE_BIT)
-			type = CommandBuffer::Type::VideoEncode;
 		VK_ASSERT(type != CommandBuffer::Type::Count);
 
 		auto cmd = request_command_buffer(type);
@@ -3560,7 +3448,7 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 		transition_cmd = std::move(cmd);
 	}
 
-	// For concurrent queue, make sure that compute, transfer or video decode can see the final image as well.
+	// For concurrent queue, make sure that compute or transfer can see the final image as well.
 	if (transition_cmd)
 	{
 		uint32_t sync_queues = 0;
@@ -3571,7 +3459,7 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 		if (queue_flags & IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_COMPUTE_BIT)
 			sync_queues |= 1u << QUEUE_INDEX_COMPUTE;
 
-		// Do not synchronize transfer/video queues here unless we explicitly asked for it.
+		// Do not synchronize the transfer queue here unless we explicitly asked for it.
 		if (create_info.misc & IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT)
 		{
 			// Avoid transfer -> graphics -> transfer cycle, have to flush transfer queue before we introduce dependency.
@@ -3582,10 +3470,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 			}
 			sync_queues |= 1u << QUEUE_INDEX_TRANSFER;
 		}
-		if (create_info.misc & IMAGE_MISC_CONCURRENT_QUEUE_VIDEO_DECODE_BIT)
-			sync_queues |= 1u << QUEUE_INDEX_VIDEO_DECODE;
-		if (create_info.misc & IMAGE_MISC_CONCURRENT_QUEUE_VIDEO_ENCODE_BIT)
-			sync_queues |= 1u << QUEUE_INDEX_VIDEO_ENCODE;
 
 		submit_and_sync_to_queues(transition_cmd, sync_queues);
 	}
@@ -3593,8 +3477,7 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	return handle;
 }
 
-const ImmutableSampler *Device::request_immutable_sampler(const SamplerCreateInfo &sampler_info,
-                                                          const ImmutableYcbcrConversion *ycbcr)
+const ImmutableSampler *Device::request_immutable_sampler(const SamplerCreateInfo &sampler_info)
 {
 	auto info = Sampler::fill_vk_sampler_info(sampler_info);
 	Util::Hasher h;
@@ -3615,14 +3498,10 @@ const ImmutableSampler *Device::request_immutable_sampler(const SamplerCreateInf
 	h.f32(info.maxAnisotropy);
 	h.u32(info.borderColor);
 	h.u32(info.unnormalizedCoordinates);
-	if (ycbcr)
-		h.u64(ycbcr->get_hash());
-	else
-		h.u32(0);
 
 	auto *sampler = immutable_samplers.find(h.get());
 	if (!sampler)
-		sampler = immutable_samplers.emplace_yield(h.get(), h.get(), this, sampler_info, ycbcr);
+		sampler = immutable_samplers.emplace_yield(h.get(), h.get(), this, sampler_info);
 
 	return sampler;
 }
@@ -3900,10 +3779,6 @@ BufferHandle Device::create_buffer(const BufferCreateInfo &create_info, const vo
 		}
 
 		uint32_t queue_indices = (1u << QUEUE_INDEX_GRAPHICS) | (1u << QUEUE_INDEX_COMPUTE);
-		if (ext.supports_video_decode_queue)
-			queue_indices |= 1u << QUEUE_INDEX_VIDEO_DECODE;
-		if (ext.supports_video_encode_queue)
-			queue_indices |= 1u << QUEUE_INDEX_VIDEO_ENCODE;
 		submit_and_sync_to_queues(cmd, queue_indices);
 	}
 	else if (need_init)
@@ -4131,15 +4006,8 @@ const VulkanDeviceTable &Device::get_device_table() const
 bool Device::supports_subgroup_size_log2(bool subgroup_full_group, uint8_t subgroup_minimum_size_log2,
                                          uint8_t subgroup_maximum_size_log2, VkShaderStageFlagBits stage) const
 {
-	if (ImplementationQuirks::get().force_no_subgroup_size_control)
+	if (stage != VK_SHADER_STAGE_COMPUTE_BIT)
 		return false;
-
-	if (stage != VK_SHADER_STAGE_COMPUTE_BIT &&
-	    stage != VK_SHADER_STAGE_MESH_BIT_EXT &&
-	    stage != VK_SHADER_STAGE_TASK_BIT_EXT)
-	{
-		return false;
-	}
 
 	if (!ext.vk13_features.subgroupSizeControl)
 		return false;
@@ -4170,11 +4038,5 @@ bool Device::supports_subgroup_size_log2(bool subgroup_full_group, uint8_t subgr
 
 	// We need requiredSubgroupSizeStages support here.
 	return (ext.vk13_props.requiredSubgroupSizeStages & stage) != 0;
-}
-
-static ImplementationQuirks implementation_quirks;
-ImplementationQuirks &ImplementationQuirks::get()
-{
-	return implementation_quirks;
 }
 }
