@@ -3,8 +3,8 @@
 # built in the libretro core; verified via nm). Header-only utilities that the
 # compiled TUs include are retained.
 add_granite_internal_lib(granite-util
-        logging.cpp logging.hpp
-        aligned_alloc.cpp aligned_alloc.hpp
+        logging.hpp
+        aligned_alloc.hpp
         bitops.hpp
         enum_cast.hpp
         hash.hpp
@@ -18,13 +18,10 @@ add_granite_internal_lib(granite-util
         temporary_hashmap.hpp
         unstable_remove_if.hpp
         intrusive_hash_map.hpp
-        timer.cpp timer.hpp
         small_vector.hpp
         thread_id.cpp thread_id.hpp
-        thread_name.cpp thread_name.hpp
         dynamic_array.hpp
         arena_allocator.cpp arena_allocator.hpp
-        environment.cpp environment.hpp
         slab_allocator.cpp slab_allocator.hpp
         thread_prims.hpp
        )

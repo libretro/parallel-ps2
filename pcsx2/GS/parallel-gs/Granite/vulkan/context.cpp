@@ -25,7 +25,6 @@
 #include "context.hpp"
 #include "limits.hpp"
 #include "small_vector.hpp"
-#include "environment.hpp"
 #include "bitops.hpp"
 #include <vector>
 #include <algorithm>
@@ -168,9 +167,6 @@ bool Context::init_loader(PFN_vkGetInstanceProcAddr addr, bool force_reload)
 		static void *module;
 		if (!module)
 		{
-			auto vulkan_path = Util::get_environment_string("GRANITE_VULKAN_LIBRARY", "");
-			if (!vulkan_path.empty())
-				module = dlopen(vulkan_path.c_str(), RTLD_LOCAL | RTLD_LAZY);
 #ifdef __APPLE__
 			if (!module)
 				module = dlopen("libvulkan.1.dylib", RTLD_LOCAL | RTLD_LAZY);
@@ -467,7 +463,7 @@ bool Context::create_instance(const char * const *instance_ext, uint32_t instanc
 		return layer_itr != end(queried_layers);
 	};
 
-	force_no_validation = Util::get_environment_bool("GRANITE_VULKAN_NO_VALIDATION", false);
+	force_no_validation = false;
 	VkValidationFeaturesEXT validation_features = { VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT };
 
 	if (!force_no_validation && has_layer("VK_LAYER_KHRONOS_validation"))
@@ -480,7 +476,7 @@ bool Context::create_instance(const char * const *instance_ext, uint32_t instanc
 		std::vector<VkExtensionProperties> layer_exts(layer_ext_count);
 		vkEnumerateInstanceExtensionProperties("VK_LAYER_KHRONOS_validation", &layer_ext_count, layer_exts.data());
 
-		if (Util::get_environment_bool("GRANITE_VULKAN_SYNC_VALIDATION", false))
+		if (false) /* (synchronisation validation: off) */
 		{
 			// Tons of false positives around timeline semaphores atm, so don't bother.
 			if (find_if(begin(layer_exts), end(layer_exts), [](const VkExtensionProperties &e)
@@ -707,10 +703,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 			     VK_VERSION_MINOR(props.driverVersion),
 			     VK_VERSION_PATCH(props.driverVersion));
 		}
-
-		int gpu_index = Util::get_environment_int("GRANITE_VULKAN_DEVICE_INDEX", -1);
-		if (gpu_index >= 0 && gpu_index < int(gpu_count))
-			gpu = gpus[gpu_index];
 
 		if (gpu != VK_NULL_HANDLE)
 		{

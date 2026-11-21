@@ -23,8 +23,9 @@ trap 'rm -rf "$SCRATCH"' EXIT
 build() {
 	"$CC" -std=c89 -pedantic -Wall -Wno-long-long $2 $INC -c "$DIR/main.c" -o "$SCRATCH/main.o"
 	"$CC" -w -DHAVE_THREADS $2 $INC -c "$LC/rthreads/rthreads.c" -o "$SCRATCH/rthreads.o"
+	"$CC" -w $2 $INC -c "$LC/memmap/memalign.c" -o "$SCRATCH/memalign.o"
 	"$CXX" -std=c++17 -Wall -DHAVE_THREADS $2 $INC -o "$SCRATCH/$1$EXE" "$DIR/glue.cpp" \
-		"$G/util/aligned_alloc.cpp" "$SCRATCH/main.o" "$SCRATCH/rthreads.o" $LIBS
+		"$SCRATCH/memalign.o" "$SCRATCH/main.o" "$SCRATCH/rthreads.o" $LIBS
 }
 
 build pgscache "-O2 -g"

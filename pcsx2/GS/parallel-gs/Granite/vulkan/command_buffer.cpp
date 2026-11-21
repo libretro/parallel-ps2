@@ -26,7 +26,7 @@
 #include "format.hpp"
 #include "thread_id.hpp"
 #include "vulkan_prerotate.hpp"
-#include "timer.hpp"
+#include <features/features_cpu.h>
 #include <string.h>
 
 using namespace Util;
@@ -749,9 +749,9 @@ Pipeline CommandBuffer::build_compute_pipeline(Device *device, const DeferredPip
 		info.stage.pNext = &mapping_info;
 	}
 
-	auto start_ts = Util::get_current_time_nsecs();
+	auto start_ts = (int64_t(cpu_features_get_time_usec()) * 1000);
 	VkResult vr = device->pipeline_binary_cache.create_pipeline(&info, compile.cache, &compute_pipeline);
-	auto end_ts = Util::get_current_time_nsecs();
+	auto end_ts = (int64_t(cpu_features_get_time_usec()) * 1000);
 	log_compile_time("compute", compile.hash, end_ts - start_ts, vr, mode);
 
 	if (vr != VK_SUCCESS || compute_pipeline == VK_NULL_HANDLE)
@@ -1155,9 +1155,9 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 		flags2.flags |= VK_PIPELINE_CREATE_2_DESCRIPTOR_BUFFER_BIT_EXT;
 	}
 
-	auto start_ts = Util::get_current_time_nsecs();
+	auto start_ts = (int64_t(cpu_features_get_time_usec()) * 1000);
 	VkResult res = device->pipeline_binary_cache.create_pipeline(&pipe, compile.cache, &pipeline);
-	auto end_ts = Util::get_current_time_nsecs();
+	auto end_ts = (int64_t(cpu_features_get_time_usec()) * 1000);
 	log_compile_time("graphics", compile.hash, end_ts - start_ts, res, mode);
 
 	if (res != VK_SUCCESS || pipeline == VK_NULL_HANDLE)

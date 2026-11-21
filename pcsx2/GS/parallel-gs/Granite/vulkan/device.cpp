@@ -27,7 +27,6 @@
 #include "format.hpp"
 #include "type_to_string.hpp"
 #include "quirks.hpp"
-#include "timer.hpp"
 #include <algorithm>
 #include <limits>
 #include <string.h>

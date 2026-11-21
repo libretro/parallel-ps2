@@ -23,46 +23,62 @@
 #pragma once
 
 #include <stddef.h>
-#include <stdexcept>
+#include <string.h>
 #include <new>
+#include <memalign.h>
 
+/* libretro-common's aligned allocator, under Granite's names */
 namespace Util
 {
-void *memalign_alloc(size_t boundary, size_t size);
-void *memalign_calloc(size_t boundary, size_t size);
-void memalign_free(void *ptr);
+static inline void *memalign_alloc(size_t boundary, size_t size)
+{
+	return ::memalign_alloc(boundary, size);
+}
+
+static inline void *memalign_calloc(size_t boundary, size_t size)
+{
+	void *ret = ::memalign_alloc(boundary, size);
+	if (ret)
+		memset(ret, 0, size);
+	return ret;
+}
+
+static inline void memalign_free(void *ptr)
+{
+	::memalign_free(ptr);
+}
 
 struct AlignedDeleter { void operator()(void *ptr) { memalign_free(ptr); }};
 
 template <typename T>
 struct AlignedAllocation
 {
-    static void *operator new(size_t size)
-    {
-        void *ret = ::Util::memalign_alloc(alignof(T), size);
+	static void *operator new(size_t size)
+	{
+		void *ret = ::Util::memalign_alloc(alignof(T), size);
 #ifdef __EXCEPTIONS
-        if (!ret) throw std::bad_alloc();
+		if (!ret) throw std::bad_alloc();
 #endif
-        return ret;
-    }
+		return ret;
+	}
 
-    static void *operator new[](size_t size)
-    {
-        void *ret = ::Util::memalign_alloc(alignof(T), size);
+	static void *operator new[](size_t size)
+	{
+		void *ret = ::Util::memalign_alloc(alignof(T), size);
 #ifdef __EXCEPTIONS
-        if (!ret) throw std::bad_alloc();
+		if (!ret) throw std::bad_alloc();
 #endif
-        return ret;
-    }
+		return ret;
+	}
 
-    static void operator delete(void *ptr)
-    {
-        return ::Util::memalign_free(ptr);
-    }
+	static void operator delete(void *ptr)
+	{
+		return ::Util::memalign_free(ptr);
+	}
 
-    static void operator delete[](void *ptr)
-    {
-        return ::Util::memalign_free(ptr);
-    }
+	static void operator delete[](void *ptr)
+	{
+		return ::Util::memalign_free(ptr);
+	}
 };
 }

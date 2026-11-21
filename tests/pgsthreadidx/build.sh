@@ -24,7 +24,7 @@ build() { # output, extra flags
 	"$CC" -w -DHAVE_THREADS $2 $INC -c "$LC/rthreads/rthreads.c" -o "$OBJ/rthreads.o"
 	"$CC" -w -DHAVE_THREADS $2 $INC -c "$LC/rthreads/retro_eventcount.c" -o "$OBJ/retro_eventcount.o"
 	"$CXX" -std=c++17 -w -DHAVE_THREADS $2 $INC -o "$DIR/$1$EXE" "$DIR/glue.cpp" \
-		"$G/util/thread_id.cpp" "$G/util/logging.cpp" "$OBJ"/*.o $LIBS
+		"$G/util/thread_id.cpp" "$OBJ"/*.o $LIBS
 	rm -rf "$OBJ"
 }
 

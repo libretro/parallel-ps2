@@ -94,46 +94,10 @@ static void pgs_give_back(ImageHandle& image, uint32_t sync_slots)
 	spare_vsync_images.push_back(std::move(image));
 }
 
-struct LibretroLog final : Util::LoggingInterface
-{
-	bool log(const char *tag, const char *fmt, va_list va) override
-	{
-		if (!log_cb)
-			return false;
-
-		/* Logs from any of Granite's threads: short lines on the stack,
-		 * longer ones on the heap. */
-		char small[512];
-		char* buf = small;
-		va_list again;
-		va_copy(again, va);
-		const int len = vsnprintf(small, sizeof(small), fmt, va);
-		if (len >= (int)sizeof(small) && (buf = (char*)malloc((size_t)len + 1)) != nullptr)
-			vsnprintf(buf, (size_t)len + 1, fmt, again);
-		else if (!buf)
-			buf = small;
-		va_end(again);
-
-		retro_log_level level = RETRO_LOG_DUMMY;
-		if (strcmp(tag, "[ERROR]: ") == 0)
-			level = RETRO_LOG_ERROR;
-		else if (strcmp(tag, "[INFO]: ") == 0)
-			level = RETRO_LOG_INFO;
-		else if (strcmp(tag, "[WARN]: ") == 0)
-			level = RETRO_LOG_WARN;
-
-		log_cb(level, "%s", buf);
-		if (buf != small)
-			free(buf);
-		return true;
-	}
-};
-static LibretroLog logging_iface;
 
 void pgs_set_hwrender_interface(retro_hw_render_interface_vulkan *iface)
 {
 	hw_render_iface = iface;
-	Util::set_thread_logging_interface(&logging_iface);
 }
 
 const VkApplicationInfo *pgs_get_application_info()
@@ -172,7 +136,6 @@ VkInstance pgs_create_instance(PFN_vkGetInstanceProcAddr get_instance_proc_addr,
 	retro_vulkan_create_instance_wrapper_t create_instance_wrapper,
 	void *opaque)
 {
-	Util::set_thread_logging_interface(&logging_iface);
 	vulkan_ctx_free();
 
 	/* Reloaded every time: each instance may come with its own

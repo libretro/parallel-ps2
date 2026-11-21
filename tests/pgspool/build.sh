@@ -23,8 +23,9 @@ trap 'rm -rf "$SCRATCH"' EXIT
 # $1 output, $2 flags
 build() {
 	"$CC" -w -DHAVE_THREADS $2 $INC -c "$LC/rthreads/rthreads.c" -o "$SCRATCH/rthreads.o"
+	"$CC" -w $2 $INC -c "$LC/memmap/memalign.c" -o "$SCRATCH/memalign.o"
 	"$CXX" -std=c++17 -Wall -DHAVE_THREADS $2 $INC -o "$SCRATCH/$1$EXE" "$DIR/main.cpp" \
-		"$G/util/aligned_alloc.cpp" "$SCRATCH/rthreads.o" $LIBS
+		"$SCRATCH/memalign.o" "$SCRATCH/rthreads.o" $LIBS
 }
 
 build pgspool "-O2 -g"

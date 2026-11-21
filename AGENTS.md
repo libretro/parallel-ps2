@@ -395,6 +395,9 @@ first time, play may not.
   extension the core never touches: everything Granite enables lands on
   the frontend's device. `tests/vknegotiate` fails on any extension in
   its unwanted list; drop vendored Granite code rather than gate it.
+  Where libretro-common or the core already has a piece (aligned
+  allocation, logging, thread names, time), Granite uses that rather than
+  its own copy; `tests/pgslog` fails if a replaced one comes back.
 
 ### Regressions to guard
 

@@ -24,7 +24,7 @@
 #include "shaders/swizzle_utils.h"
 #include "thread_id.hpp"
 #include "gs_util.hpp"
-#include "thread_name.hpp"
+#include <rthreads/rthreads.h>
 #include <utility>
 #include <algorithm>
 #include <cmath>
@@ -598,7 +598,7 @@ void GSRenderer::start_variant_builder()
 	variant_thread = PGS::thread([this]() {
 		// As the compile threads: pipelines only, no command buffer.
 		Util::register_thread_index(0);
-		Util::set_current_thread_name("PGS-Variant");
+		sthread_setname("PGS-Variant");
 		for (;;)
 		{
 			Vulkan::DeferredPipelineCompile job;
@@ -1302,7 +1302,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 			// Compiles pipelines only, never records a command buffer,
 			// so it can share index 0 rather than take a pool of its own.
 			Util::register_thread_index(0);
-			Util::set_current_thread_name("PGS-Compile");
+			sthread_setname("PGS-Compile");
 			for (const Vulkan::DeferredPipelineCompile &task: moved_tasks)
 			{
 				// If we destroy the device before threads are done spinning.
@@ -1352,7 +1352,7 @@ GSRenderer::GSRenderer(PageTracker &tracker_)
 		LOGE("Failed to create the timeline waiter's eventcounts.\n");
 	retro_atomic_size_init(&small_built, 0);
 	timeline_thread = PGS::thread([this]() {
-		Util::set_current_thread_name("PGS-Waiter");
+		sthread_setname("PGS-Waiter");
 		uint64_t last_waited = 0;
 
 		for (;;)
