@@ -60,7 +60,6 @@ static const QueueIndices queue_flush_order[] = {
 
 Device::Device()
     : framebuffer_allocator(this)
-    , transient_allocator(this)
 {
 	compute_records = static_cast<ComputePipelineRecord *>(
 			calloc(COMPUTE_PIPELINE_RECORDS, sizeof(ComputePipelineRecord)));
@@ -503,9 +502,6 @@ void Device::record_graphics_pipeline(const DeferredPipelineCompile &compile)
 	unsigned i;
 	uint32_t slot;
 
-	/* A pass that cannot be made again is not one to build ahead for. */
-	if (!compile.compatible_render_pass->get_signature().recordable)
-		return;
 	slot = graphics_records_claimed.fetch_add(1);
 	if (!graphics_records || slot >= GRAPHICS_PIPELINE_RECORDS)
 		return;
@@ -519,7 +515,6 @@ void Device::record_graphics_pipeline(const DeferredPipelineCompile &compile)
 		r->spec_constants[i] = compile.potential_static_state.spec_constants[i];
 	r->spec_masks        = compile.potential_static_state.spec_constant_mask;
 	r->subgroup_size_tag = compile.subgroup_size_tag;
-	r->subpass_index     = compile.subpass_index;
 	memcpy(r->blend_constants, compile.potential_static_state.blend_constants, sizeof(r->blend_constants));
 	for (i = 0; i < VULKAN_NUM_VERTEX_ATTRIBS; i++)
 	{
@@ -546,11 +541,9 @@ unsigned Device::get_graphics_pipeline_records(const GraphicsPipelineRecord **re
 }
 
 /* A 1x1 attachment of @format: what a listed pass is made from again. */
-static ImageHandle render_pass_stand_in(Device &device, uint32_t format, uint32_t samples, bool lazy)
+static ImageHandle render_pass_stand_in(Device &device, uint32_t format, uint32_t samples)
 {
-	ImageCreateInfo info = lazy
-		? ImageCreateInfo::transient_render_target(1, 1, VkFormat(format))
-		: ImageCreateInfo::render_target(1, 1, VkFormat(format));
+	ImageCreateInfo info = ImageCreateInfo::render_target(1, 1, VkFormat(format));
 	info.samples        = VkSampleCountFlagBits(samples ? samples : 1);
 	info.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 	return device.create_image(info, nullptr);
@@ -558,57 +551,21 @@ static ImageHandle render_pass_stand_in(Device &device, uint32_t format, uint32_
 
 const RenderPass *Device::recreate_render_pass(const RenderPassSignature &sig)
 {
-	ImageHandle images[VULKAN_NUM_ATTACHMENTS + 1];
-	RenderPassInfo::Subpass subpasses[RENDER_PASS_SIGNATURE_SUBPASSES];
+	ImageHandle images[VULKAN_NUM_ATTACHMENTS];
 	RenderPassInfo info;
-	unsigned i, j;
-	const unsigned num_attachments = sig.num_color + (sig.depth_format != VK_FORMAT_UNDEFINED ? 1u : 0u);
+	unsigned i;
 
 	/* (the list's checks make these hold; a pass is not made from less) */
-	if (!sig.recordable || sig.num_color > VULKAN_NUM_ATTACHMENTS || !num_attachments
-	    || sig.num_subpasses > RENDER_PASS_SIGNATURE_SUBPASSES)
+	if (!sig.num_color || sig.num_color > VULKAN_NUM_ATTACHMENTS)
 		return nullptr;
-	for (i = 0; i < sig.num_subpasses; i++)
-	{
-		const auto &s = sig.subpasses[i];
-		if (s.num_color > VULKAN_NUM_ATTACHMENTS || s.num_input > VULKAN_NUM_ATTACHMENTS
-		    || s.num_resolve > VULKAN_NUM_ATTACHMENTS || s.depth_mode > uint32_t(RenderPassInfo::DepthStencil::ReadWrite))
-			return nullptr;
-		subpasses[i].num_color_attachments   = s.num_color;
-		subpasses[i].num_input_attachments   = s.num_input;
-		subpasses[i].num_resolve_attachments = s.num_resolve;
-		subpasses[i].depth_stencil_mode      = RenderPassInfo::DepthStencil(s.depth_mode);
-		for (j = 0; j < s.num_color; j++)
-			if ((subpasses[i].color_attachments[j] = s.color[j]) >= num_attachments)
-				return nullptr;
-		for (j = 0; j < s.num_input; j++)
-			if ((subpasses[i].input_attachments[j] = s.input[j]) >= num_attachments)
-				return nullptr;
-		for (j = 0; j < s.num_resolve; j++)
-			if ((subpasses[i].resolve_attachments[j] = s.resolve[j]) >= num_attachments)
-				return nullptr;
-	}
-
 	for (i = 0; i < sig.num_color; i++)
 	{
-		images[i] = render_pass_stand_in(*this, sig.formats[i], sig.samples[i], (sig.lazy >> i) & 1);
+		images[i] = render_pass_stand_in(*this, sig.formats[i], sig.samples[i]);
 		if (!images[i])
 			return nullptr;
 		info.color_attachments[i] = &images[i]->get_view();
 	}
-	if (sig.depth_format != VK_FORMAT_UNDEFINED)
-	{
-		images[VULKAN_NUM_ATTACHMENTS] = render_pass_stand_in(*this, sig.depth_format,
-		                                                      sig.samples[VULKAN_NUM_ATTACHMENTS],
-		                                                      (sig.lazy >> sig.num_color) & 1);
-		if (!images[VULKAN_NUM_ATTACHMENTS])
-			return nullptr;
-		info.depth_stencil = &images[VULKAN_NUM_ATTACHMENTS]->get_view();
-	}
 	info.num_color_attachments = sig.num_color;
-	info.op_flags              = sig.op_flags;
-	info.num_subpasses         = sig.num_subpasses;
-	info.subpasses             = sig.num_subpasses ? subpasses : nullptr;
 	/* The stand-ins go once this returns; the pass holds none of them. */
 	return &request_render_pass(info, true);
 }
@@ -625,15 +582,13 @@ bool Device::resolve_graphics_pipeline_record(const GraphicsPipelineRecord &reco
 	pass = render_passes.find(record.render_pass_hash);
 	if (!pass)
 		pass = recreate_render_pass(record.pass);
-	if (!pass || pass->get_hash() != record.render_pass_hash
-	    || record.subpass_index >= pass->get_num_subpasses())
+	if (!pass || pass->get_hash() != record.render_pass_hash)
 		return false;
 
 	compile = DeferredPipelineCompile();
 	compile.program               = program;
 	compile.layout                = program->get_pipeline_layout();
 	compile.compatible_render_pass = pass;
-	compile.subpass_index         = record.subpass_index;
 	for (i = 0; i < 4; i++)
 		compile.static_state.words[i] = record.static_words[i];
 	for (i = 0; i < VULKAN_NUM_USER_SPEC_CONSTANTS; i++)
@@ -1633,7 +1588,6 @@ Device::~Device()
 	graphics_records = nullptr;
 
 	framebuffer_allocator.clear();
-	transient_allocator.clear();
 
 	deinit_timeline_semaphores();
 	if (lock.drained_ok)
@@ -1667,7 +1621,6 @@ void Device::init_frame_contexts(unsigned count)
 
 	// Clear out caches which might contain stale data from now on.
 	framebuffer_allocator.clear();
-	transient_allocator.clear();
 	per_frame.clear();
 
 	for (unsigned i = 0; i < count; i++)
@@ -1884,7 +1837,6 @@ void Device::wait_idle_nolock()
 	}
 
 	framebuffer_allocator.clear();
-	transient_allocator.clear();
 
 	descriptor_set_allocators.for_each([](DescriptorSetAllocator &allocator) {
 		allocator.clear();
@@ -1920,7 +1872,6 @@ void Device::next_frame_context()
 	end_frame_nolock();
 
 	framebuffer_allocator.begin_frame();
-	transient_allocator.begin_frame();
 
 	descriptor_set_allocators.for_each([](DescriptorSetAllocator &allocator) {
 		allocator.begin_frame();
@@ -2233,11 +2184,6 @@ uint32_t Device::find_memory_type(ImageDomain domain, uint32_t mask) const
 	case ImageDomain::Physical:
 		desired = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 		fallback = 0;
-		break;
-
-	case ImageDomain::Transient:
-		desired = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
-		fallback = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 		break;
 
 	case ImageDomain::LinearHostCached:
@@ -2798,8 +2744,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 
 	info.usage = create_info.usage;
 	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	if (create_info.domain == ImageDomain::Transient)
-		info.usage |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
 
 	info.flags = create_info.flags;
 
@@ -3039,7 +2983,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 			buffer = scratch_buffer.get();
 		}
 
-		VK_ASSERT(create_info.domain != ImageDomain::Transient);
 		VK_ASSERT(create_info.initial_layout != VK_IMAGE_LAYOUT_UNDEFINED);
 
 		// Now we've used the TRANSFER queue to copy data over to the GPU.
@@ -3144,7 +3087,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	}
 	else if (create_info.initial_layout != VK_IMAGE_LAYOUT_UNDEFINED)
 	{
-		VK_ASSERT(create_info.domain != ImageDomain::Transient);
 
 		// Need to perform the barrier in some command buffer, pick an appropriate one based on supported queues.
 		// Pick the most lenient queue first in case we need to transition to a weird layout.
@@ -3533,75 +3475,27 @@ const RenderPass &Device::request_render_pass(const RenderPassInfo &info, bool c
 {
 	Hasher h;
 	VkFormat formats[VULKAN_NUM_ATTACHMENTS];
-	VkFormat depth_stencil;
-	uint32_t lazy = 0;
 	uint32_t optimal = 0;
 
 	for (unsigned i = 0; i < info.num_color_attachments; i++)
 	{
 		VK_ASSERT(info.color_attachments[i]);
 		formats[i] = info.color_attachments[i]->get_format();
-		if (info.color_attachments[i]->get_image().get_create_info().domain == ImageDomain::Transient)
-			lazy |= 1u << i;
 		if (info.color_attachments[i]->get_image().get_create_info().layout == ImageLayout::Optimal)
 			optimal |= 1u << i;
 	}
 
-	if (info.depth_stencil)
-	{
-		if (info.depth_stencil->get_image().get_create_info().domain == ImageDomain::Transient)
-			lazy |= 1u << info.num_color_attachments;
-		if (info.depth_stencil->get_image().get_create_info().layout == ImageLayout::Optimal)
-			optimal |= 1u << info.num_color_attachments;
-	}
-
-	// For multiview, base layer is encoded into the view mask.
-	if (info.num_layers > 1)
-	{
-		h.u32(info.base_layer);
-		h.u32(info.num_layers);
-	}
-	else
-	{
-		h.u32(0);
-		h.u32(info.num_layers);
-	}
-
-	h.u32(info.num_subpasses);
-	for (unsigned i = 0; i < info.num_subpasses; i++)
-	{
-		h.u32(info.subpasses[i].num_color_attachments);
-		h.u32(info.subpasses[i].num_input_attachments);
-		h.u32(info.subpasses[i].num_resolve_attachments);
-		h.u32(static_cast<uint32_t>(info.subpasses[i].depth_stencil_mode));
-		for (unsigned j = 0; j < info.subpasses[i].num_color_attachments; j++)
-			h.u32(info.subpasses[i].color_attachments[j]);
-		for (unsigned j = 0; j < info.subpasses[i].num_input_attachments; j++)
-			h.u32(info.subpasses[i].input_attachments[j]);
-		for (unsigned j = 0; j < info.subpasses[i].num_resolve_attachments; j++)
-			h.u32(info.subpasses[i].resolve_attachments[j]);
-	}
-
-	depth_stencil = info.depth_stencil ? info.depth_stencil->get_format() : VK_FORMAT_UNDEFINED;
 	h.data(formats, info.num_color_attachments * sizeof(VkFormat));
 	h.u32(info.num_color_attachments);
-	h.u32(depth_stencil);
 
 	// Compatible render passes do not care about load/store, or image layouts.
 	if (!compatible)
 	{
-		h.u32(info.op_flags);
 		h.u32(info.clear_attachments);
 		h.u32(info.load_attachments);
 		h.u32(info.store_attachments);
 		h.u32(optimal);
 	}
-
-	// Lazy flag can change external subpass dependencies, which is not compatible.
-	h.u32(lazy);
-
-	// Marked for v2 render passes.
-	h.u32(2);
 
 	auto hash = h.get();
 

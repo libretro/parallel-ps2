@@ -168,7 +168,6 @@ struct DeferredPipelineCompile
 	VkDeviceSize strides[VULKAN_NUM_VERTEX_BUFFERS];
 	VkVertexInputRate input_rates[VULKAN_NUM_VERTEX_BUFFERS];
 
-	unsigned subpass_index;
 	Util::Hash hash;
 	VkPipelineCache cache;
 	uint32_t subgroup_size_tag;
@@ -515,7 +514,7 @@ public:
 	/* The graphics state set so far as it would be drawn with in @pass,
 	 * whether or not a render pass is begun. */
 	void extract_graphics_pipeline_state(DeferredPipelineCompile &compile,
-	                                     const RenderPass &pass, unsigned subpass) const;
+	                                     const RenderPass &pass) const;
 
 private:
 	friend class Util::ObjectPool<CommandBuffer>;
@@ -529,7 +528,6 @@ private:
 
 	const Framebuffer *framebuffer = nullptr;
 	const RenderPass *actual_render_pass = nullptr;
-	const Vulkan::ImageView *framebuffer_attachments[VULKAN_NUM_ATTACHMENTS + 1] = {};
 
 	IndexState index_state = {};
 	VertexBindingState vbo = {};
@@ -553,7 +551,6 @@ private:
 	bool is_compute = true;
 	bool is_secondary = false;
 	bool is_ended = false;
-	bool framebuffer_is_multiview = false;
 
 	void set_dirty(CommandBufferDirtyFlags flags)
 	{
@@ -608,7 +605,7 @@ private:
 	                 uint64_t cookie);
 	void set_buffer_view_common(unsigned set, unsigned binding, const BufferView &view, VkDescriptorType type);
 
-	void init_viewport_scissor(const RenderPassInfo &info, const Framebuffer *framebuffer);
+	void init_viewport_scissor(const Framebuffer *framebuffer);
 
 	void bind_pipeline(VkPipelineBindPoint bind_point, VkPipeline pipeline, uint32_t active_dynamic_state);
 

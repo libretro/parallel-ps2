@@ -1072,6 +1072,21 @@ else
 			exit 1
 		fi
 	done
+	# paraLLEl-GS the same way: its render passes, barriers and memory
+	# are Granite's made smaller, and the layer is what says they still
+	# hold.
+	for c in stream_ct32 many_copies; do
+		VK_LOADER_LAYERS_ENABLE='*validation*' \
+		VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT \
+		VN_FRAMES=20 VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/$c.bin" VN_RENDERER=paraLLEl-GS \
+			timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/pgs.$c.log" 2>&1 || true
+		if ! grep -q "vknegotiate v2: ok" "$VAL/pgs.$c.log" || grep -q "Validation Error" "$VAL/pgs.$c.log"; then
+			grep "Validation Error" "$VAL/pgs.$c.log" | sort | uniq -c | head -n 5
+			rm -rf "$VAL"
+			echo "  FAIL: validation errors drawing $c with paraLLEl-GS"
+			exit 1
+		fi
+	done
 	# The device lost at the 30th present with a palette the GPU drew in
 	# use, and reopened under the renderer: nothing of the old device is
 	# used or freed on the new one (the texture cache's download textures

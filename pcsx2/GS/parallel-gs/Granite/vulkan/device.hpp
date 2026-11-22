@@ -193,7 +193,7 @@ public:
 	                                     DeferredPipelineCompile &compile) const;
 
 	/* A graphics pipeline the same way: the program, the compatible
-	 * render pass by its key and by what it is made from, the subpass,
+	 * render pass by its key and by what it is made from,
 	 * the state words, blend and specialisation constants and the
 	 * vertex layout. */
 	struct GraphicsPipelineRecord
@@ -205,7 +205,6 @@ public:
 		uint32_t spec_constants[VULKAN_NUM_USER_SPEC_CONSTANTS];
 		uint32_t spec_masks;       /* the specialisation constant mask */
 		uint32_t subgroup_size_tag;
-		uint32_t subpass_index;
 		uint32_t blend_constants[4]; /* the floats' bits */
 		uint32_t attribs[VULKAN_NUM_VERTEX_ATTRIBS][3]; /* binding, format, offset */
 		uint32_t strides[VULKAN_NUM_VERTEX_BUFFERS];
@@ -559,7 +558,6 @@ private:
 	VulkanCache<ImmutableSampler> immutable_samplers;
 
 	FramebufferAllocator framebuffer_allocator;
-	TransientAttachmentAllocator transient_allocator;
 	VkPipelineCache legacy_pipeline_cache = VK_NULL_HANDLE;
 
 	ComputePipelineRecord *compute_records = nullptr;

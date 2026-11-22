@@ -34,110 +34,34 @@
 
 namespace Vulkan
 {
-enum RenderPassOp
-{
-	RENDER_PASS_OP_CLEAR_DEPTH_STENCIL_BIT = 1 << 0,
-	RENDER_PASS_OP_LOAD_DEPTH_STENCIL_BIT = 1 << 1,
-	RENDER_PASS_OP_STORE_DEPTH_STENCIL_BIT = 1 << 2,
-	RENDER_PASS_OP_DEPTH_STENCIL_READ_ONLY_BIT = 1 << 3,
-	RENDER_PASS_OP_ENABLE_TRANSIENT_STORE_BIT = 1 << 4,
-	RENDER_PASS_OP_ENABLE_TRANSIENT_LOAD_BIT = 1 << 5,
-	RENDER_PASS_OP_PRESERVE_DEPTH_STENCIL_BIT = 1 << 6
-};
-using RenderPassOpFlags = uint32_t;
-
 class ImageView;
+/* One subpass drawing to colour attachments: all paraLLEl-GS asks of a
+ * render pass. */
 struct RenderPassInfo
 {
 	const ImageView *color_attachments[VULKAN_NUM_ATTACHMENTS];
-	const ImageView *depth_stencil = nullptr;
 	unsigned num_color_attachments = 0;
-	RenderPassOpFlags op_flags = 0;
 	uint32_t clear_attachments = 0;
 	uint32_t load_attachments = 0;
 	uint32_t store_attachments = 0;
-	uint32_t base_layer = 0;
-	uint32_t num_layers = 1;
-
-	// Render area will be clipped to the actual framebuffer.
-	VkRect2D render_area = { { 0, 0 }, { UINT32_MAX, UINT32_MAX } };
-
 	VkClearColorValue clear_color[VULKAN_NUM_ATTACHMENTS] = {};
-	VkClearDepthStencilValue clear_depth_stencil = {};
-
-	enum class DepthStencil
-	{
-		None,
-		ReadOnly,
-		ReadWrite
-	};
-
-	struct Subpass
-	{
-		uint32_t color_attachments[VULKAN_NUM_ATTACHMENTS];
-		uint32_t input_attachments[VULKAN_NUM_ATTACHMENTS];
-		uint32_t resolve_attachments[VULKAN_NUM_ATTACHMENTS];
-		unsigned num_color_attachments = 0;
-		unsigned num_input_attachments = 0;
-		unsigned num_resolve_attachments = 0;
-		DepthStencil depth_stencil_mode = DepthStencil::ReadWrite;
-	};
-	// If 0/nullptr, assume a default subpass.
-	const Subpass *subpasses = nullptr;
-	unsigned num_subpasses = 0;
 };
 
 /* What a compatible render pass is made from, without its images: the
- * attachment formats and sample counts, which of them are transient, and
- * the subpasses. Compatibility goes by these alone, so 1x1 stand-ins for
- * the attachments make the same pass again. */
-enum { RENDER_PASS_SIGNATURE_SUBPASSES = 4 };
+ * attachment formats and sample counts. Compatibility goes by these
+ * alone, so 1x1 stand-ins for the attachments make the same pass again. */
 struct RenderPassSignature
 {
 	uint32_t formats[VULKAN_NUM_ATTACHMENTS];
-	uint32_t samples[VULKAN_NUM_ATTACHMENTS + 1]; /* the depth one last */
+	uint32_t samples[VULKAN_NUM_ATTACHMENTS];
 	uint32_t num_color;
-	uint32_t depth_format;  /* VK_FORMAT_UNDEFINED: none */
-	uint32_t lazy;          /* transient attachments, depth after the colour ones */
-	uint32_t op_flags;
-	uint32_t num_subpasses; /* 0: the default one */
-	/* 0 when it cannot be made again from this: a swapchain image,
-	 * more than one layer, more subpasses than are kept. */
-	uint32_t recordable;
-	struct
-	{
-		uint32_t color[VULKAN_NUM_ATTACHMENTS];
-		uint32_t input[VULKAN_NUM_ATTACHMENTS];
-		uint32_t resolve[VULKAN_NUM_ATTACHMENTS];
-		uint32_t num_color;
-		uint32_t num_input;
-		uint32_t num_resolve;
-		uint32_t depth_mode;
-	} subpasses[RENDER_PASS_SIGNATURE_SUBPASSES];
 };
 
 class RenderPass : public HashedObject<RenderPass>, public NoCopyNoMove
 {
 public:
-	struct SubpassInfo
-	{
-		VkAttachmentReference2 color_attachments[VULKAN_NUM_ATTACHMENTS];
-		unsigned num_color_attachments;
-		VkAttachmentReference2 input_attachments[VULKAN_NUM_ATTACHMENTS];
-		unsigned num_input_attachments;
-		VkAttachmentReference2 depth_stencil_attachment;
-
-		unsigned samples;
-	};
-
 	RenderPass(Util::Hash hash, Device *device, const RenderPassInfo &info);
-	RenderPass(Util::Hash hash, Device *device, const VkRenderPassCreateInfo2 &create_info);
 	~RenderPass();
-
-	unsigned get_num_subpasses() const
-	{
-		return unsigned(subpasses_info.size());
-	}
 
 	VkRenderPass get_render_pass() const
 	{
@@ -149,49 +73,21 @@ public:
 		return signature;
 	}
 
-	uint32_t get_sample_count(unsigned subpass) const
+	uint32_t get_sample_count() const
 	{
-		VK_ASSERT(subpass < subpasses_info.size());
-		return subpasses_info[subpass].samples;
+		return samples;
 	}
 
-	unsigned get_num_color_attachments(unsigned subpass) const
+	unsigned get_num_color_attachments() const
 	{
-		VK_ASSERT(subpass < subpasses_info.size());
-		return subpasses_info[subpass].num_color_attachments;
-	}
-
-	const VkAttachmentReference2 &get_color_attachment(unsigned subpass, unsigned index) const
-	{
-		VK_ASSERT(subpass < subpasses_info.size());
-		VK_ASSERT(index < subpasses_info[subpass].num_color_attachments);
-		return subpasses_info[subpass].color_attachments[index];
-	}
-
-	bool has_depth(unsigned subpass) const
-	{
-		VK_ASSERT(subpass < subpasses_info.size());
-		return subpasses_info[subpass].depth_stencil_attachment.attachment != VK_ATTACHMENT_UNUSED &&
-		       format_has_depth_aspect(depth_stencil);
-	}
-
-	bool has_stencil(unsigned subpass) const
-	{
-		VK_ASSERT(subpass < subpasses_info.size());
-		return subpasses_info[subpass].depth_stencil_attachment.attachment != VK_ATTACHMENT_UNUSED &&
-		       format_has_stencil_aspect(depth_stencil);
+		return signature.num_color;
 	}
 
 private:
 	Device *device;
 	VkRenderPass render_pass = VK_NULL_HANDLE;
-
-	VkFormat color_attachments[VULKAN_NUM_ATTACHMENTS] = {};
-	VkFormat depth_stencil = VK_FORMAT_UNDEFINED;
-	std::vector<SubpassInfo> subpasses_info;
 	RenderPassSignature signature;
-
-	void setup_subpasses(const VkRenderPassCreateInfo2 &create_info);
+	uint32_t samples = 1;
 };
 
 class Framebuffer : public Cookie, public NoCopyNoMove, public InternalSyncEnabled
@@ -256,31 +152,5 @@ private:
 
 	Device *device;
 	Util::TemporaryHashmap<FramebufferNode, VULKAN_FRAMEBUFFER_RING_SIZE, false> framebuffers;
-};
-
-class TransientAttachmentAllocator
-{
-public:
-	TransientAttachmentAllocator(Device *device_)
-		: device(device_)
-	{
-	}
-
-	void begin_frame();
-	void clear();
-
-private:
-	struct TransientNode : Util::TemporaryHashmapEnabled<TransientNode>, Util::IntrusiveListEnabled<TransientNode>
-	{
-		explicit TransientNode(ImageHandle handle_)
-		    : handle(std::move(handle_))
-		{
-		}
-
-		ImageHandle handle;
-	};
-
-	Device *device;
-	Util::TemporaryHashmap<TransientNode, VULKAN_FRAMEBUFFER_RING_SIZE, false> attachments;
 };
 }

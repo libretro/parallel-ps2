@@ -14,7 +14,6 @@ add_granite_internal_lib(granite-util
         slot_pool.hpp
         deferred_list.hpp
         owned.hpp
-        stack_allocator.hpp
         temporary_hashmap.hpp
         intrusive_hash_map.hpp
         small_vector.hpp

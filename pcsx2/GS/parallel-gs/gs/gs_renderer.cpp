@@ -1130,8 +1130,6 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 		sig.formats[0]    = VK_FORMAT_R8G8B8A8_UNORM;
 		sig.samples[0]    = VK_SAMPLE_COUNT_1_BIT;
 		sig.num_color     = 1;
-		sig.depth_format  = VK_FORMAT_UNDEFINED;
-		sig.recordable    = 1;
 		pass = device->recreate_render_pass(sig);
 		if (pass)
 		{
@@ -1153,33 +1151,33 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 						cmd->set_specialization_constant(0, psms[f]);
 						cmd->set_specialization_constant(1, vram_size - 1);
 						cmd->set_specialization_constant(2, super_samples[s]);
-						cmd->extract_graphics_pipeline_state(deferred, *pass, 0);
+						cmd->extract_graphics_pipeline_state(deferred, *pass);
 						scanout_tasks.push_back(deferred);
 					}
 
 			cmd->set_specialization_constant_mask(0);
 			cmd->set_opaque_sprite_state();
 			cmd->set_program(blit_quad);
-			cmd->extract_graphics_pipeline_state(deferred, *pass, 0);
+			cmd->extract_graphics_pipeline_state(deferred, *pass);
 			scanout_tasks.push_back(deferred);
 			cmd->set_blend_enable(true);
 			cmd->set_blend_op(VK_BLEND_OP_ADD);
 			cmd->set_blend_factors(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE,
 			                       VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_FACTOR_ZERO);
-			cmd->extract_graphics_pipeline_state(deferred, *pass, 0);
+			cmd->extract_graphics_pipeline_state(deferred, *pass);
 			scanout_tasks.push_back(deferred);
 			{
 				static const float no_alp[4] = {};
 				cmd->set_blend_factors(VK_BLEND_FACTOR_CONSTANT_ALPHA, VK_BLEND_FACTOR_ONE,
 				                       VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA, VK_BLEND_FACTOR_ZERO);
 				cmd->set_dynamic_blend_constants(no_alp);
-				cmd->extract_graphics_pipeline_state(deferred, *pass, 0);
+				cmd->extract_graphics_pipeline_state(deferred, *pass);
 				scanout_tasks.push_back(deferred);
 			}
 
 			cmd->set_opaque_sprite_state();
 			cmd->set_program(weave_quad);
-			cmd->extract_graphics_pipeline_state(deferred, *pass, 0);
+			cmd->extract_graphics_pipeline_state(deferred, *pass);
 			scanout_tasks.push_back(deferred);
 			device->submit_discard(cmd);
 		}
@@ -1770,7 +1768,6 @@ void GSRenderer::flush_qword_clears()
 
 	uint32_t wgx = (count + 63) / 64;
 
-
 	if (wgx <= device->get_gpu_properties().limits.maxComputeWorkGroupCount[0])
 	{
 		clear_cmd->dispatch(wgx, 1, 1);
@@ -2195,17 +2192,14 @@ void GSRenderer::flush_host_vram_copy(const uint32_t *block_indices, uint32_t nu
 
 	cmd.begin_region("flush-host-vram-copy");
 
-
 	VkPipelineStageFlags2 stages = VK_PIPELINE_STAGE_2_COPY_BIT;
 	bool invalidate_super_sampling = can_potentially_super_sample();
 	if (invalidate_super_sampling)
 		stages |= VK_PIPELINE_STAGE_2_CLEAR_BIT;
 
-
 	copy_blocks(cmd, *buffers.gpu, *buffers.cpu, block_indices, num_indices, invalidate_super_sampling,
 	            PGS_BLOCK_ALIGNMENT_BYTES);
 	stats.num_copies++;
-
 
 	cmd.barrier(stages, VK_ACCESS_2_TRANSFER_WRITE_BIT,
 	            stages, VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT);
@@ -2226,7 +2220,6 @@ void GSRenderer::flush_readback(const uint32_t *page_indices, uint32_t num_indic
 
 	copy_blocks(cmd, *buffers.cpu, *buffers.gpu, page_indices, num_indices, false, PageSize);
 	stats.num_copies++;
-
 
 	cmd.barrier(VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
 	            VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
@@ -3021,7 +3014,6 @@ void GSRenderer::dispatch_shading(Vulkan::CommandBuffer &cmd, const RenderPass &
 	cmd.begin_region("shading");
 	const RenderPass::Instance &inst = rp.instances[instance];
 
-
 	// The shading itself runs at workgroup size == 64, we can handle multiple subgroups, but prefer large waves,
 	// since we're doing so much scalar work.
 
@@ -3420,7 +3412,6 @@ static const char *reason_to_str(FlushReason reason)
 	}
 }
 
-
 void GSRenderer::flush_rendering(const RenderPass &rp, uint32_t instance,
                                  uint32_t base_primitive, uint32_t num_primitives)
 {
@@ -3634,7 +3625,6 @@ void GSRenderer::flush_rendering(const RenderPass &rp)
 		return;
 	assert(rp.num_primitives <= MaxPrimitivesPerFlush);
 
-
 	ensure_clear_cmd();
 
 	ensure_command_buffer(triangle_setup_cmd, Vulkan::CommandBuffer::Type::Generic);
@@ -3769,7 +3759,6 @@ void GSRenderer::flush_rendering(const RenderPass &rp)
 		            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
 		            VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
 		            VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
-
 
 		stats.num_primitives += rp.num_primitives;
 		check_flush_stats();
@@ -4085,7 +4074,6 @@ void GSRenderer::upload_texture(const TextureUpload &upload)
 		cmd.set_storage_texture_level(0, 1, img.get_view(), level);
 		cmd.push_constants(&info, 0, sizeof(info));
 
-
 		if (upload.indirection.buffer)
 			cmd.dispatch_indirect(*upload.indirection.indirect, upload.indirection.indirect_offset);
 		else
@@ -4251,7 +4239,6 @@ void GSRenderer::flush_palette_upload()
 		}
 	}
 
-
 	Push push = {};
 	push.read_index = palette_uploads[0].incoming_clut_instance;
 
@@ -4309,7 +4296,6 @@ void GSRenderer::flush_palette_upload()
 	if (device->consumes_debug_markers())
 		insert_label(cmd, "Split [%u, %u)", push.wg_offset, push.wg_offset + push.count);
 	cmd.dispatch(1, 1, 1);
-
 
 	cmd.barrier(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
 	            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
@@ -4370,7 +4356,6 @@ void GSRenderer::flush_transfer()
 	Vulkan::CommandBuffer &cmd = *direct_cmd;
 
 	cmd.begin_region("vram-copy");
-
 
 	cmd.barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
 	            VK_PIPELINE_STAGE_2_CLEAR_BIT | VK_PIPELINE_STAGE_2_COPY_BIT,
@@ -4525,7 +4510,6 @@ void GSRenderer::flush_transfer()
 	for (uint32_t i = 0; i < num_dispatches; i++)
 		emit_copy_vram(cmd, dispatch_order + dispatches[i].offset, dispatches[i].range, false);
 	cmd.end_region();
-
 
 	pending_copies.clear();
 
@@ -5431,7 +5415,6 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 	rp.clear_color[0].float32[1] = float(priv.bgcolor.G) * (1.0f / 255.0f);
 	rp.clear_color[0].float32[2] = float(priv.bgcolor.B) * (1.0f / 255.0f);
 
-
 	cmd.begin_render_pass(rp);
 	cmd.set_opaque_sprite_state();
 
@@ -5674,7 +5657,6 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 	}
 
 	cmd.end_region();
-
 
 	result.image = std::move(merged);
 	result.interlaced = should_deinterlace;

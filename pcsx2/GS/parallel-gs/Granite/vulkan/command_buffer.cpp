@@ -193,7 +193,6 @@ void CommandBuffer::image_barrier(const Image &image,
 {
 	VK_ASSERT(!actual_render_pass);
 	VK_ASSERT(!framebuffer);
-	VK_ASSERT(image.get_create_info().domain != ImageDomain::Transient);
 
 	VkImageMemoryBarrier2 b = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
 	b.srcAccessMask = src_access;
@@ -353,17 +352,9 @@ void CommandBuffer::begin_graphics()
 	begin_context();
 }
 
-void CommandBuffer::init_viewport_scissor(const RenderPassInfo &info, const Framebuffer *fb)
+void CommandBuffer::init_viewport_scissor(const Framebuffer *fb)
 {
-	VkRect2D rect = info.render_area;
-
-	uint32_t fb_width = fb->get_width();
-	uint32_t fb_height = fb->get_height();
-
-	rect.offset.x = std::min(int32_t(fb_width), rect.offset.x);
-	rect.offset.y = std::min(int32_t(fb_height), rect.offset.y);
-	rect.extent.width = std::min(fb_width - rect.offset.x, rect.extent.width);
-	rect.extent.height = std::min(fb_height - rect.offset.y, rect.extent.height);
+	VkRect2D rect = { { 0, 0 }, { fb->get_width(), fb->get_height() } };
 
 	viewport = {
 		float(rect.offset.x), float(rect.offset.y),
@@ -382,19 +373,10 @@ void CommandBuffer::begin_render_pass(const RenderPassInfo &info, VkSubpassConte
 	framebuffer = &device->request_framebuffer(info);
 	pipeline_state.compatible_render_pass = &framebuffer->get_compatible_render_pass();
 	actual_render_pass = &device->request_render_pass(info, false);
-	pipeline_state.subpass_index = 0;
-	framebuffer_is_multiview = info.num_layers > 1;
 
-	memset(framebuffer_attachments, 0, sizeof(framebuffer_attachments));
-	unsigned att;
-	for (att = 0; att < info.num_color_attachments; att++)
-		framebuffer_attachments[att] = info.color_attachments[att];
-	if (info.depth_stencil)
-		framebuffer_attachments[att++] = info.depth_stencil;
+	init_viewport_scissor(framebuffer);
 
-	init_viewport_scissor(info, framebuffer);
-
-	VkClearValue clear_values[VULKAN_NUM_ATTACHMENTS + 1];
+	VkClearValue clear_values[VULKAN_NUM_ATTACHMENTS];
 	unsigned num_clear_values = 0;
 
 	for (unsigned i = 0; i < info.num_color_attachments; i++)
@@ -405,12 +387,6 @@ void CommandBuffer::begin_render_pass(const RenderPassInfo &info, VkSubpassConte
 			clear_values[i].color = info.clear_color[i];
 			num_clear_values = i + 1;
 		}
-	}
-
-	if (info.depth_stencil && (info.op_flags & RENDER_PASS_OP_CLEAR_DEPTH_STENCIL_BIT) != 0)
-	{
-		clear_values[info.num_color_attachments].depthStencil = info.clear_depth_stencil;
-		num_clear_values = info.num_color_attachments + 1;
 	}
 
 	VkRenderPassBeginInfo begin_info = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
@@ -671,15 +647,14 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 	// Blend state
 	VkPipelineColorBlendAttachmentState blend_attachments[VULKAN_NUM_ATTACHMENTS];
 	VkPipelineColorBlendStateCreateInfo blend = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
-	blend.attachmentCount = compile.compatible_render_pass->get_num_color_attachments(compile.subpass_index);
+	blend.attachmentCount = compile.compatible_render_pass->get_num_color_attachments();
 	blend.pAttachments = blend_attachments;
 	for (unsigned i = 0; i < blend.attachmentCount; i++)
 	{
 		auto &att = blend_attachments[i];
 		att = {};
 
-		if (compile.compatible_render_pass->get_color_attachment(compile.subpass_index, i).attachment != VK_ATTACHMENT_UNUSED &&
-			(compile.layout->get_resource_layout().render_target_mask & (1u << i)))
+		if (compile.layout->get_resource_layout().render_target_mask & (1u << i))
 		{
 			att.colorWriteMask = (compile.static_state.state.write_mask >> (4 * i)) & 0xf;
 			att.blendEnable = compile.static_state.state.blend_enable;
@@ -697,26 +672,8 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 	if (!compile.static_state.state.dynamic_blend_constants)
 		memcpy(blend.blendConstants, compile.potential_static_state.blend_constants, sizeof(blend.blendConstants));
 
-	// Depth state
+	/* No pass has a depth attachment: no depth or stencil test. */
 	VkPipelineDepthStencilStateCreateInfo ds = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
-	ds.stencilTestEnable = compile.compatible_render_pass->has_stencil(compile.subpass_index) && compile.static_state.state.stencil_test != 0;
-	ds.depthTestEnable = compile.compatible_render_pass->has_depth(compile.subpass_index) && compile.static_state.state.depth_test != 0;
-	ds.depthWriteEnable = compile.compatible_render_pass->has_depth(compile.subpass_index) && compile.static_state.state.depth_write != 0;
-
-	if (ds.depthTestEnable)
-		ds.depthCompareOp = static_cast<VkCompareOp>(compile.static_state.state.depth_compare);
-
-	if (ds.stencilTestEnable)
-	{
-		ds.front.compareOp = static_cast<VkCompareOp>(compile.static_state.state.stencil_front_compare_op);
-		ds.front.passOp = static_cast<VkStencilOp>(compile.static_state.state.stencil_front_pass);
-		ds.front.failOp = static_cast<VkStencilOp>(compile.static_state.state.stencil_front_fail);
-		ds.front.depthFailOp = static_cast<VkStencilOp>(compile.static_state.state.stencil_front_depth_fail);
-		ds.back.compareOp = static_cast<VkCompareOp>(compile.static_state.state.stencil_back_compare_op);
-		ds.back.passOp = static_cast<VkStencilOp>(compile.static_state.state.stencil_back_pass);
-		ds.back.failOp = static_cast<VkStencilOp>(compile.static_state.state.stencil_back_fail);
-		ds.back.depthFailOp = static_cast<VkStencilOp>(compile.static_state.state.stencil_back_depth_fail);
-	}
 
 	// Vertex input
 	VkPipelineVertexInputStateCreateInfo vi = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
@@ -753,9 +710,9 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 
 	// Multisample
 	VkPipelineMultisampleStateCreateInfo ms = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
-	ms.rasterizationSamples = static_cast<VkSampleCountFlagBits>(compile.compatible_render_pass->get_sample_count(compile.subpass_index));
+	ms.rasterizationSamples = static_cast<VkSampleCountFlagBits>(compile.compatible_render_pass->get_sample_count());
 
-	if (compile.compatible_render_pass->get_sample_count(compile.subpass_index) > 1)
+	if (compile.compatible_render_pass->get_sample_count() > 1)
 	{
 		ms.alphaToCoverageEnable = compile.static_state.state.alpha_to_coverage;
 		ms.alphaToOneEnable = compile.static_state.state.alpha_to_one;
@@ -821,7 +778,7 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 	VkGraphicsPipelineCreateInfo pipe = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
 	pipe.layout = compile.layout->get_layout();
 	pipe.renderPass = compile.compatible_render_pass->get_render_pass();
-	pipe.subpass = compile.subpass_index;
+	pipe.subpass = 0;
 
 	pipe.pViewportState = &vp;
 	pipe.pDynamicState = &dyn;
@@ -963,7 +920,6 @@ void CommandBuffer::update_hash_graphics_pipeline(DeferredPipelineCompile &compi
 		*out_active_vbos = active_vbos;
 
 	h.u64(compile.compatible_render_pass->get_hash());
-	h.u32(compile.subpass_index);
 	h.u64(compile.program->get_hash());
 	h.u64(compile.layout->get_hash());
 	h.data(compile.static_state.words, sizeof(compile.static_state.words));
@@ -1048,11 +1004,10 @@ bool CommandBuffer::flush_graphics_pipeline_miss(bool synchronous)
 }
 
 void CommandBuffer::extract_graphics_pipeline_state(DeferredPipelineCompile &compile,
-                                                    const RenderPass &pass, unsigned subpass) const
+                                                    const RenderPass &pass) const
 {
 	compile = pipeline_state;
 	compile.compatible_render_pass = &pass;
-	compile.subpass_index          = subpass;
 	if (compile.program)
 		update_hash_graphics_pipeline(compile, nullptr);
 }
