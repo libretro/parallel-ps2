@@ -1120,8 +1120,8 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 	 * count the device can take, read from the buffer or a promoted
 	 * image; the merge's opaque, alpha-blended and PMODE.ALP-blended
 	 * blits (the last with its constant dynamic); the weave.
-	 * They go ahead of the compute variants, after the records, whose
-	 * render passes are only ever made from what the list says. */
+	 * They are built with the small passes, before the device is
+	 * handed over. */
 	std::vector<Vulkan::DeferredPipelineCompile> scanout_tasks;
 	{
 		Vulkan::RenderPassSignature sig;
@@ -1242,10 +1242,6 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 
 	if (num_first)
 		qsort(first, num_first, sizeof(*first), compare_hash);
-	for (i = 0; i < scanout_tasks.size(); i++)
-		if ((!num_first || !bsearch(&scanout_tasks[i].hash, first, num_first, sizeof(*first), compare_hash)) &&
-		    !scanout_tasks[i].program->has_pipeline(scanout_tasks[i].hash))
-			ordered.push_back(scanout_tasks[i]);
 	for (i = 0; i < tasks.size(); i++)
 		if ((!num_first || !bsearch(&tasks[i].hash, first, num_first, sizeof(*first), compare_hash)) &&
 		    !tasks[i].program->has_pipeline(tasks[i].hash))
@@ -1259,6 +1255,21 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 			if (!small_tasks[i].program->has_pipeline(small_tasks[i].hash))
 				small_tasks[n++] = small_tasks[i];
 		small_tasks.resize(n);
+		/* The scanout's with them: the first vsync draws with them. A
+		 * record of one is built here, not again with the records. */
+		for (i = 0; i < scanout_tasks.size(); i++)
+		{
+			size_t r;
+			if (scanout_tasks[i].program->has_pipeline(scanout_tasks[i].hash))
+				continue;
+			small_tasks.push_back(scanout_tasks[i]);
+			for (r = 0; r < tasks.size(); r++)
+				if (tasks[r].hash == scanout_tasks[i].hash)
+				{
+					tasks.erase(tasks.begin() + r);
+					break;
+				}
+		}
 		tasks.insert(tasks.begin(), small_tasks.begin(), small_tasks.end());
 	}
 	const size_t num_small = small_tasks.size();
@@ -3249,7 +3260,10 @@ void GSRenderer::emit_copy_vram(Vulkan::CommandBuffer &cmd,
 	cmd.enable_subgroup_size_control(false);
 	cmd.set_specialization_constant_mask(0x7f);
 	cmd.set_specialization_constant(0, workgroup_size);
-	cmd.set_specialization_constant(1, base_desc.bitbltbuf.desc.SPSM);
+	/* A host transfer reads no source format (SPSM is whatever was left
+	 * in BITBLTBUF): keyed on the destination's, as built ahead. */
+	cmd.set_specialization_constant(1, base_desc.trxdir.desc.XDIR == HOST_TO_LOCAL ?
+	                                   base_desc.bitbltbuf.desc.DPSM : base_desc.bitbltbuf.desc.SPSM);
 	cmd.set_specialization_constant(2, base_desc.bitbltbuf.desc.DPSM);
 	cmd.set_specialization_constant(3, vram_size - 1);
 	cmd.set_specialization_constant(4, base_desc.trxdir.desc.XDIR);

@@ -22,6 +22,10 @@
 # many as a first run and still holds the right memory and image, and the
 # list it leaves is one the next run uses.
 #
+# And from nothing with no time between loading and the first frame: the
+# scanout's pipelines are built before the device is handed over, so the
+# first vsync builds none either.
+#
 # Every scanout the core options reach gets a lane of its own, cold and
 # then with the driver's cache deleted, none built on the frame's
 # threads either way: the field mode deinterlaced or
@@ -32,7 +36,8 @@
 #
 # Then cases whose passes take shading variants no list or enumeration
 # need hold (AA1, a primitive range, texture feedback) and that upload
-# and copy in their first frames, each from nothing with no time between
+# and copy in their first frames (one into CT24 with SPSM left at CT32),
+# each from nothing with no time between
 # loading and the first frame: none built on the frame's threads - a
 # variant not built yet is drawn with the dynamic ubershader while the
 # variant builder builds it - and the run ends in the state the dynamic
@@ -66,7 +71,7 @@ ${CC:-cc} -std=c99 -pedantic -Wall -O2 ${CFLAGS} \
 ${CC:-cc} -std=c89 -pedantic -Wall -Wno-long-long -O2 \
 	-I "$ROOT/libretro/libretro-common/include" \
 	-o "$SCRATCH/swdraw" "$ROOT/tests/swdraw/main.c" $LIBS
-RARE="aa1_line aa1_small depth_states mip_tw8 stream_ct24_aem"
+RARE="aa1_line aa1_small depth_states mip_tw8 stream_ct24_aem upload_clut_between"
 for c in scan_field scan_noninterlaced scan_alp scan_src_alpha scan_ct16s scan_fade $RARE; do
 	"$SCRATCH/swdraw" --bios "$SCRATCH/$c.bin" $c > /dev/null
 done
@@ -219,6 +224,17 @@ wide()
 	w=$(image "$1_warm" | sed 's/x.*//')
 	[ -n "$w" ] && [ "$w" -gt 640 ] || { echo "pgspipelines: FAIL: $1: scanned out ${w:-?} wide, not high-res"; fail=1; }
 }
+
+# From nothing with no pause: the first vsync scans out with what was
+# built before the device was handed over
+CASE=scan_field
+OPTS=
+rm -rf "$DATA"
+PAUSE_MS=0
+run nopause
+unset PAUSE_MS
+expect nopause 0
+echo "  from nothing, no pause: $(built nopause) on the frame's threads ($(gfx nopause) graphics)"
 
 lane noninterlaced scan_noninterlaced ""
 lane alp           scan_alp ""
