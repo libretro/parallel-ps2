@@ -54,7 +54,7 @@ void Context::set_device_factory(DeviceFactory *factory)
 void Context::set_application_info(const VkApplicationInfo *app_info)
 {
 	user_application_info.copy_assign(app_info);
-	VK_ASSERT(!app_info || app_info->apiVersion >= VK_API_VERSION_1_2);
+	VK_ASSERT(!app_info || app_info->apiVersion >= VK_API_VERSION_1_1);
 }
 
 CopiedApplicationInfo::CopiedApplicationInfo()
@@ -69,7 +69,7 @@ void CopiedApplicationInfo::set_default_app()
 	app = {
 		VK_STRUCTURE_TYPE_APPLICATION_INFO, nullptr,
 		"Granite", 0, "Granite", 0,
-		VK_API_VERSION_1_2,
+		VK_API_VERSION_1_1,
 	};
 }
 
@@ -244,9 +244,10 @@ VkApplicationInfo Context::get_promoted_application_info() const
 	auto app_info = get_application_info();
 	uint32_t supported_instance_version = gs_vk_instance_version();
 
-	/* paraLLEl-GS needs Vulkan 1.2 (descriptor indexing, timeline
-	 * semaphores, buffer device address, scalar layouts). */
-	app_info.apiVersion = std::max(VK_API_VERSION_1_2, app_info.apiVersion);
+	/* Vulkan 1.1 at least: what paraLLEl-GS needs of 1.2 (descriptor
+	 * indexing, timeline semaphores, buffer device address, scalar
+	 * layouts) a 1.1 device has from extensions. */
+	app_info.apiVersion = std::max(VK_API_VERSION_1_1, app_info.apiVersion);
 
 	// Target Vulkan 1.4 if available,
 	// but the tooling ecosystem isn't quite ready for this yet, so stick to 1.3 for the time being.
@@ -348,7 +349,7 @@ static unsigned device_score(VkPhysicalDevice &gpu)
 	VkPhysicalDeviceProperties props = {};
 	vkGetPhysicalDeviceProperties(gpu, &props);
 
-	if (props.apiVersion < VK_API_VERSION_1_2)
+	if (props.apiVersion < VK_API_VERSION_1_1)
 		return 0;
 
 	switch (props.deviceType)
@@ -384,9 +385,9 @@ bool Context::physical_device_supports_surface_and_profile(VkPhysicalDevice cand
 		return false;
 	}
 
-	if (dev_props.apiVersion < VK_API_VERSION_1_2)
+	if (dev_props.apiVersion < VK_API_VERSION_1_1)
 	{
-		LOGW("Device does not support Vulkan 1.2. Skipping.\n");
+		LOGW("Device does not support Vulkan 1.1. Skipping.\n");
 		return false;
 	}
 
@@ -499,9 +500,9 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 	LOGI("Using Vulkan GPU: %s\n", gpu_props.deviceName);
 
-	if (ext.device_api_core_version < VK_API_VERSION_1_2)
+	if (ext.device_api_core_version < VK_API_VERSION_1_1)
 	{
-		LOGE("Found no Vulkan GPU which supports Vulkan 1.2.\n");
+		LOGE("Found no Vulkan GPU which supports Vulkan 1.1.\n");
 		return false;
 	}
 
@@ -606,6 +607,24 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 	std::vector<const char *> enabled_extensions;
 
+	if (ext.device_api_core_version < VK_API_VERSION_1_2)
+	{
+		if (!has_extension(VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME))
+		{
+			LOGE("VK_KHR_create_renderpass2 is not supported.\n");
+			return false;
+		}
+		enabled_extensions.push_back(VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME);
+
+		if (has_extension(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME))
+		{
+			ext.supports_image_format_list = true;
+			enabled_extensions.push_back(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME);
+		}
+	}
+	else
+		ext.supports_image_format_list = true;
+
 	// Physical device functionality.
 	ext.supports_format_feature_flags2 = ext.device_api_core_version >= VK_API_VERSION_1_3 ||
 	                                     has_extension(VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME);
@@ -626,8 +645,45 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 #define ADD_CHAIN(s, type) add_chain(&(s), sizeof(s), VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ ## type)
 
-	ADD_CHAIN(ext.vk11_features, VULKAN_1_1_FEATURES);
-	ADD_CHAIN(ext.vk12_features, VULKAN_1_2_FEATURES);
+	if (ext.device_api_core_version >= VK_API_VERSION_1_2)
+	{
+		ADD_CHAIN(ext.vk11_features, VULKAN_1_1_FEATURES);
+		ADD_CHAIN(ext.vk12_features, VULKAN_1_2_FEATURES);
+	}
+	else
+	{
+		ADD_CHAIN(ext.storage_16bit_features, 16BIT_STORAGE_FEATURES);
+
+		if (has_extension(VK_KHR_8BIT_STORAGE_EXTENSION_NAME))
+		{
+			ADD_CHAIN(ext.storage_8bit_features, 8BIT_STORAGE_FEATURES);
+			enabled_extensions.push_back(VK_KHR_8BIT_STORAGE_EXTENSION_NAME);
+		}
+
+		if (has_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME))
+		{
+			ADD_CHAIN(ext.descriptor_indexing_features, DESCRIPTOR_INDEXING_FEATURES);
+			enabled_extensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+		}
+
+		if (has_extension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME))
+		{
+			ADD_CHAIN(ext.timeline_semaphore_features, TIMELINE_SEMAPHORE_FEATURES);
+			enabled_extensions.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+		}
+
+		if (has_extension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME))
+		{
+			ADD_CHAIN(ext.buffer_device_address_features, BUFFER_DEVICE_ADDRESS_FEATURES);
+			enabled_extensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+		}
+
+		if (has_extension(VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME))
+		{
+			ADD_CHAIN(ext.scalar_block_layout_features, SCALAR_BLOCK_LAYOUT_FEATURES);
+			enabled_extensions.push_back(VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME);
+		}
+	}
 
 	if (ext.device_api_core_version >= VK_API_VERSION_1_3)
 	{
@@ -666,12 +722,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 			enabled_extensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
 			supports_khr_push_descriptor = true;
 		}
-
-		if (has_extension(VK_KHR_MAINTENANCE_5_EXTENSION_NAME))
-		{
-			enabled_extensions.push_back(VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
-			ADD_CHAIN(ext.maintenance5_features, MAINTENANCE_5_FEATURES_KHR);
-		}
 	}
 
 	if (has_extension(VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME))
@@ -704,6 +754,21 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 	vkGetPhysicalDeviceFeatures2(gpu, &pdf2);
 
+	/* Promote the 1.1 device's extension features to the 1.2 structs,
+	 * where the renderer looks. */
+	if (ext.device_api_core_version < VK_API_VERSION_1_2)
+	{
+		ext.vk11_features.storageBuffer16BitAccess = ext.storage_16bit_features.storageBuffer16BitAccess;
+		ext.vk12_features.storageBuffer8BitAccess = ext.storage_8bit_features.storageBuffer8BitAccess;
+		ext.vk12_features.descriptorIndexing = has_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME) &&
+		                                       ext.descriptor_indexing_features.runtimeDescriptorArray;
+		ext.vk12_features.timelineSemaphore = ext.timeline_semaphore_features.timelineSemaphore;
+		ext.vk12_features.bufferDeviceAddress = ext.buffer_device_address_features.bufferDeviceAddress;
+		ext.vk12_features.scalarBlockLayout = ext.scalar_block_layout_features.scalarBlockLayout;
+		ext.buffer_device_address_features.bufferDeviceAddressCaptureReplay = VK_FALSE;
+		ext.buffer_device_address_features.bufferDeviceAddressMultiDevice = VK_FALSE;
+	}
+
 	// Promote fallback features to core structs.
 
 	if (ext.subgroup_size_control_features.computeFullSubgroups)
@@ -714,8 +779,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 	if (ext.sync2_features.synchronization2)
 		ext.vk13_features.synchronization2 = VK_TRUE;
 
-	if (ext.maintenance5_features.maintenance5)
-		ext.vk14_features.maintenance5 = VK_TRUE;
 	if (supports_khr_push_descriptor)
 		ext.vk14_features.pushDescriptor = VK_TRUE;
 	///
@@ -790,10 +853,21 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 	VkPhysicalDeviceProperties2 props = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
 	VkPhysicalDeviceSubgroupSizeControlProperties size_control_props = {};
+	VkPhysicalDeviceSubgroupProperties subgroup_properties = {};
+	VkPhysicalDeviceDriverProperties driver_properties = {};
 
 	ppNext = reinterpret_cast<VkBaseOutStructure **>(&props.pNext);
-	ADD_CHAIN(ext.vk11_props, VULKAN_1_1_PROPERTIES);
-	ADD_CHAIN(ext.vk12_props, VULKAN_1_2_PROPERTIES);
+	if (ext.device_api_core_version >= VK_API_VERSION_1_2)
+	{
+		ADD_CHAIN(ext.vk11_props, VULKAN_1_1_PROPERTIES);
+		ADD_CHAIN(ext.vk12_props, VULKAN_1_2_PROPERTIES);
+	}
+	else
+	{
+		ADD_CHAIN(subgroup_properties, SUBGROUP_PROPERTIES);
+		if (has_extension(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME))
+			ADD_CHAIN(driver_properties, DRIVER_PROPERTIES);
+	}
 
 	if (ext.device_api_core_version >= VK_API_VERSION_1_3)
 		ADD_CHAIN(ext.vk13_props, VULKAN_1_3_PROPERTIES);
@@ -803,6 +877,14 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 	vkGetPhysicalDeviceProperties2(gpu, &props);
 
+	if (ext.device_api_core_version < VK_API_VERSION_1_2)
+	{
+		ext.vk11_props.subgroupSize = subgroup_properties.subgroupSize;
+		ext.vk11_props.subgroupSupportedStages = subgroup_properties.supportedStages;
+		ext.vk11_props.subgroupSupportedOperations = subgroup_properties.supportedOperations;
+		ext.vk11_props.subgroupQuadOperationsInAllStages = subgroup_properties.quadOperationsInAllStages;
+		ext.vk12_props.driverID = driver_properties.driverID;
+	}
 	ext.driver_id = ext.vk12_props.driverID;
 
 	if (ext.device_api_core_version < VK_API_VERSION_1_3)
@@ -833,11 +915,23 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 	gs_vk_load_device_table(&device_table, device);
 
-#define PROMOTE_CALL(n, e) if (!device_table.vk##n) device_table.vk##n = device_table.vk##n##e
-	PROMOTE_CALL(QueueSubmit2, KHR);
-	PROMOTE_CALL(CmdPipelineBarrier2, KHR);
-	PROMOTE_CALL(CmdPushDescriptorSetWithTemplate, KHR);
-#undef PROMOTE_CALL
+	/* A core entry point past the device's version is the extension's. */
+#define USE_KHR(n) device_table.vk##n = device_table.vk##n##KHR
+	if (ext.device_api_core_version < VK_API_VERSION_1_2)
+	{
+		USE_KHR(CreateRenderPass2);
+		USE_KHR(GetBufferDeviceAddress);
+		USE_KHR(GetSemaphoreCounterValue);
+		USE_KHR(WaitSemaphores);
+	}
+	if (ext.device_api_core_version < VK_API_VERSION_1_3)
+	{
+		USE_KHR(QueueSubmit2);
+		USE_KHR(CmdPipelineBarrier2);
+	}
+	if (ext.device_api_core_version < VK_API_VERSION_1_4)
+		USE_KHR(CmdPushDescriptorSetWithTemplate);
+#undef USE_KHR
 
 	for (int i = 0; i < QUEUE_INDEX_COUNT; i++)
 	{

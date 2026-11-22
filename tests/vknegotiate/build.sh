@@ -1087,6 +1087,31 @@ else
 			exit 1
 		fi
 	done
+	# And on Vulkan 1.1 (the loader reporting 1.1 to the core): what
+	# paraLLEl-GS needs of 1.2 comes from device extensions, the layer
+	# holding the device to 1.1, and the picture is the full version's.
+	"$VAL/swdraw" --bios "$VAL/scan_field.bin" scan_field
+	for v in full 1.1; do
+		env $( [ $v = 1.1 ] && echo VN_VULKAN_1_1=1 ) \
+		VK_LOADER_LAYERS_ENABLE='*validation*' \
+		VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT \
+		VN_VERBOSE=1 VN_HASH_IMAGE=1 VN_FRAMES=60 VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/scan_field.bin" \
+		VN_RENDERER=paraLLEl-GS timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/pgs.$v.log" 2>&1 || true
+		if ! grep -q "vknegotiate v2: ok" "$VAL/pgs.$v.log" || grep -q "Validation Error" "$VAL/pgs.$v.log"; then
+			grep "Validation Error" "$VAL/pgs.$v.log" | sort | uniq -c | head -n 5
+			rm -rf "$VAL"
+			echo "  FAIL: paraLLEl-GS on Vulkan $v"
+			exit 1
+		fi
+	done
+	v11_image=$(sed -n 's/.*image: \(.*\)/\1/p' "$VAL/pgs.1.1.log")
+	if ! grep -q "Enabling device extension: VK_KHR_timeline_semaphore" "$VAL/pgs.1.1.log" ||
+	   [ -z "$v11_image" ] || [ "$v11_image" != "$(sed -n 's/.*image: \(.*\)/\1/p' "$VAL/pgs.full.log")" ]; then
+		rm -rf "$VAL"
+		echo "  FAIL: paraLLEl-GS on Vulkan 1.1: not through the 1.2 extensions, or another picture (${v11_image:-none})"
+		exit 1
+	fi
+	echo "  paraLLEl-GS on Vulkan 1.1: through the extensions, no validation error, the same picture"
 	# The device lost at the 30th present with a palette the GPU drew in
 	# use, and reopened under the renderer: nothing of the old device is
 	# used or freed on the new one (the texture cache's download textures

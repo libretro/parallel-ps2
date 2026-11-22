@@ -2596,7 +2596,7 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 			while (input_format_list && input_format_list->sType != VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO)
 				input_format_list = static_cast<const VkBaseInStructure *>(input_format_list->pNext);
 
-			if (!input_format_list)
+			if (ext.supports_image_format_list && !input_format_list)
 			{
 				format_info.pNext = info.pNext;
 				info.pNext = &format_info;
@@ -2840,24 +2840,15 @@ BufferHandle Device::create_buffer(const BufferCreateInfo &create_info, const vo
 	}
 
 	VkBufferCreateInfo info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-	VkBufferUsageFlags2CreateInfo usage2 = { VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO };
 	info.size = create_info.size;
-	usage2.usage = create_info.usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	info.usage = create_info.usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	if (get_device_features().vk12_features.bufferDeviceAddress)
-		usage2.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		info.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	info.pNext = create_info.pnext;
 
 	uint32_t sharing_indices[QUEUE_INDEX_COUNT];
 	fill_buffer_sharing_indices(info, sharing_indices);
-
-	if (ext.vk14_features.maintenance5)
-	{
-		usage2.pNext = info.pNext;
-		info.pNext = &usage2;
-	}
-	else
-		info.usage = VkBufferUsageFlags(usage2.usage);
 
 	if (table->vkCreateBuffer(device, &info, nullptr, &buffer) != VK_SUCCESS)
 		return BufferHandle(nullptr);

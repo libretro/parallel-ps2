@@ -31,6 +31,7 @@
  * and VN_TIMING has the longest frame after the first reported.
  * VN_LOAD_PAUSE_MS leaves that long between the context reset and the
  * first frame, as a frontend's own loading does.
+ * VN_VULKAN_1_1 has the loader report Vulkan 1.1 to the core.
  * VN_HASH_IMAGE reads back the last image the core handed over and has
  * its hash reported (of its first VN_HASH_ROWS rows, if set), for the
  * pictures of two builds or two cases to be compared.
@@ -644,6 +645,22 @@ static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_count_gipa(VkInstance inst, c
 	return gipa(inst, name);
 }
 
+
+/* VN_VULKAN_1_1: the loader reports Vulkan 1.1, so the core makes a 1.1
+ * instance and takes what it needs of 1.2 from device extensions. */
+static PFN_vkGetInstanceProcAddr vn_v11_base;
+static VKAPI_ATTR VkResult VKAPI_CALL vn_v11_instance_version(uint32_t *version)
+{
+	*version = VK_API_VERSION_1_1;
+	return VK_SUCCESS;
+}
+
+static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_v11_gipa(VkInstance inst, const char* name)
+{
+	if (!strcmp(name, "vkEnumerateInstanceVersion"))
+		return (PFN_vkVoidFunction)vn_v11_instance_version;
+	return vn_v11_base(inst, name);
+}
 
 /* The alloc modes: VN_ALLOC_OK device memory allocations are granted by
  * vkshim.c, the loader the core finds; this side only knows it is in one. */
@@ -1715,6 +1732,11 @@ int main(int argc, char** argv)
 		return 0;
 	}
 	core_gipa = (getenv("VN_COUNT_PIPELINES") || getenv("VN_COUNT_CALLS") || getenv("VN_HEAP_FLAT")) ? vn_count_gipa : gipa;
+	if (getenv("VN_VULKAN_1_1"))
+	{
+		vn_v11_base = core_gipa;
+		core_gipa = vn_v11_gipa;
+	}
 
 	strcpy(s_system_dir, argv[2]);
 	sprintf(path, "%s/pcsx2", s_system_dir);

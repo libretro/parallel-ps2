@@ -36,6 +36,7 @@ struct DeviceFeatures
 	bool supports_memory_budget = false;
 	bool supports_format_feature_flags2 = false;
 	bool supports_tooling_info = false;
+	bool supports_image_format_list = false;
 
 	VkPhysicalDeviceFeatures enabled_features = {};
 
@@ -47,9 +48,6 @@ struct DeviceFeatures
 	VkPhysicalDeviceVulkan12Properties vk12_props = {};
 	VkPhysicalDeviceVulkan13Properties vk13_props = {};
 
-	// KHR
-	VkPhysicalDeviceMaintenance5FeaturesKHR maintenance5_features = {};
-
 	// EXT
 	VkPhysicalDeviceMemoryPriorityFeaturesEXT memory_priority_features = {};
 	VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pageable_device_local_memory_features = {};
@@ -57,8 +55,15 @@ struct DeviceFeatures
 	// Vendor
 	VkPhysicalDeviceDescriptorPoolOverallocationFeaturesNV descriptor_pool_overallocation_features = {};
 
-	// Fallback feature structs (Vulkan 1.1)
-	// Fallback feature structs (Vulkan 1.2)
+	/* On a Vulkan 1.1 device, the extensions behind what paraLLEl-GS
+	 * needs of 1.2, promoted into vk11_features and vk12_features. */
+	VkPhysicalDevice16BitStorageFeatures storage_16bit_features = {};
+	VkPhysicalDevice8BitStorageFeatures storage_8bit_features = {};
+	VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = {};
+	VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features = {};
+	VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features = {};
+	VkPhysicalDeviceScalarBlockLayoutFeatures scalar_block_layout_features = {};
+
 	// Fallback feature structs (Vulkan 1.3)
 	VkPhysicalDeviceSubgroupSizeControlFeatures subgroup_size_control_features = {};
 	VkPhysicalDeviceSynchronization2Features sync2_features = {};
