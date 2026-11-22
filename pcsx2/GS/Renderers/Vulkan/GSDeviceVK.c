@@ -45,11 +45,7 @@
 #include "VKBuilders.h"
 #include "VKSpirvPatch.h"
 
-#ifdef ENABLE_PCSX2_PROFILER
 #include "Profiler.h"
-#else
-#define PROFILE_SCOPE(z) do {} while (0)
-#endif
 
 #define VK_NO_PROTOTYPES
 #include <libretro_vulkan.h>
@@ -2890,14 +2886,17 @@ static void vkd_dev_present_rect(gs_device* d, gs_texture* sTex, const gs_rectf*
 {
 	gs_device_vk* const dev = VKD(d);
 	gs_texture_vk* tex      = VKT(sTex);
-	(void)dTex;
-	(void)dRect;
 	/* The frontend's part: its slot, the wait on it, set_image and the
 	 * video callback, which on a threaded video path holds until a slot
 	 * frees. Its own zone, so the vsync zone is the render. */
-	PROFILE_SCOPE(ZONE_GS_HANDOVER);
+	const int prof          = PROFILE_ZONE_BEGIN(ZONE_GS_HANDOVER);
+	(void)dTex;
+	(void)dRect;
 	if (!tex)
+	{
+		PROFILE_ZONE_END(ZONE_GS_HANDOVER, prof);
 		return;
+	}
 	/* Blanking enforce, see 'GSRenderer::VSync()' */
 	if (!sRect->z && !sRect->w)
 	{
@@ -2973,6 +2972,7 @@ static void vkd_dev_present_rect(gs_device* d, gs_texture* sTex, const gs_rectf*
 		if (gs_device_swap_present_texture(d, sTex, vk_present_textures[sync_index]))
 			vk_present_textures[sync_index] = sTex;
 	}
+	PROFILE_ZONE_END(ZONE_GS_HANDOVER, prof);
 }
 
 static void vkd_do_multi_stretch_rects(gs_device_vk* dev, const gs_multi_stretch_rect* rects, u32 num_rects,

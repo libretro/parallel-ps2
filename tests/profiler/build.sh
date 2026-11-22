@@ -41,13 +41,14 @@ rm -rf "$OBJ" && mkdir -p "$OBJ"
 rm -rf "$OBJ"
 $RUN "$DIR/profiler_test$EXE"
 
-# The profiler's C units, compiled for the host and for aarch64: an x86
-# host accepts x86-only builtins (MTGS.c used __builtin_ia32_rdtsc).
-# Skips a compiler that is missing or has no C library headers.
-UNITS=$(grep -rl ENABLE_PCSX2_PROFILER "$ROOT/pcsx2" --include='*.c')
+# The C units that use the profiler, compiled with it on for the host and
+# for aarch64: an x86 host accepts x86-only builtins, and a C unit can
+# only use the zone pair, not the C++ scope. Skips a compiler that is
+# missing or has no C library headers.
+UNITS=$(grep -rlE 'ENABLE_PCSX2_PROFILER|PROFILE_(ZONE_BEGIN|SCOPE|FRAME_END)' "$ROOT/pcsx2" --include='*.c')
 A64=${A64:-aarch64-linux-gnu-gcc}
 A64_CLANG=${A64_CLANG:-clang --target=aarch64-linux-gnu}
-A64INC="$INC -I $ROOT/3rdparty/include"
+A64INC="$INC -I $ROOT/3rdparty/include -I $ROOT/3rdparty/vulkan-headers/include"
 fail=0
 for cc in "$CC" "$A64" "$A64_CLANG"; do
 	if ! printf '#include <string.h>\n' | $cc -fsyntax-only -xc - 2>/dev/null; then
