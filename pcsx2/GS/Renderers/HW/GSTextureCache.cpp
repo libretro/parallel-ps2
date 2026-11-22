@@ -2537,7 +2537,7 @@ GSVector2i GSTextureCache::ScaleRenderTargetSize(const GSVector2i& sz, float sca
 
 GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVector2i& size, float scale, int type,
 	bool used, u32 fbmask, bool is_frame, bool preload, bool preserve_rgb, bool preserve_alpha, const GSVector4i draw_rect, bool is_shuffle, bool possible_clear, bool preserve_scale,
-	const Target* keep)
+	const Target* keep, const Target* in_use)
 {
 	const GSLocalMemory::psm_t& psm_s = GSLocalMemory::m_psm[TEX0.PSM];
 	const u32 bp = TEX0.TBP0;
@@ -2610,20 +2610,32 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVe
 					/* Drawn at another width: the pages move to that width's
 					 * places first, before the draw's size is fitted to the
 					 * target (fitted to the old layout, the texture would be
-					 * wider than a page column of the new). A shuffle fetches
-					 * by position in the layout there is, and keeps it, the
-					 * width it comes at being a label on the target. */
-					if (!is_shuffle && !is_frame && TEX0.TBW != dst->m_TEX0.TBW && TEX0.PSM == dst->m_TEX0.PSM && dst->m_TEX0.TBW > 0 && TEX0.TBW > 0)
+					 * wider than a page column of the new). Moving them drops
+					 * every source made from the target, so a target the
+					 * draw's texture comes from (in_use) keeps its layout. */
+					if (dst != in_use && !is_shuffle && !is_frame && TEX0.TBW != dst->m_TEX0.TBW && TEX0.PSM == dst->m_TEX0.PSM && dst->m_TEX0.TBW > 0 && TEX0.TBW > 0)
 						RelayoutTarget(dst, TEX0.TBW, !preserve_rgb && !preserve_alpha, draw_rect);
 					/* A 16-bit shuffle on a 32-bit target at another width
-					 * writes where that width puts its pixels, so the pages
-					 * move there first here too. Left at the old width, the
-					 * next change of width moved what the shuffle had drawn
-					 * as if it lay at the old one (Okami: a 256x224 buffer
-					 * shuffled at 512, then a quarter of the picture). */
-					else if (is_shuffle && !is_frame && type == RenderTarget && TEX0.TBW != dst->m_TEX0.TBW && psm_s.bpp == 16 &&
-						GSLocalMemory::m_psm[dst->m_TEX0.PSM].bpp == 32 && dst->m_TEX0.TBW > 0 && TEX0.TBW > 0)
-						RelayoutTarget(dst, TEX0.TBW, false, draw_rect);
+					 * writes where that width puts its pages, so they move
+					 * there first too, but not when:
+					 *  - every page it draws (16-bit coordinates, one page
+					 *    row, within the narrower width) sits at the same
+					 *    place at both widths;
+					 *  - it comes at twice the width and stays within the
+					 *    target's height: the shuffle conversion maps that
+					 *    one onto the layout there is (half the width);
+					 *  - its width is 1, a single page column, which split
+					 *    shuffles pass through before their real width. */
+					else if (is_shuffle && dst != in_use && !is_frame && type == RenderTarget && psm_s.bpp == 16 &&
+						GSLocalMemory::m_psm[dst->m_TEX0.PSM].bpp == 32 && TEX0.TBW > 1 && dst->m_TEX0.TBW > 0 &&
+						TEX0.TBW != dst->m_TEX0.TBW)
+					{
+						const int narrow = (int)(pcsx2_min_u(TEX0.TBW, dst->m_TEX0.TBW) * 64u);
+						const bool same_pages = draw_rect.w <= psm_s.pgs.y && draw_rect.z <= narrow;
+						const bool double_width = TEX0.TBW == dst->m_TEX0.TBW * 2u && draw_rect.w <= dst->m_unscaled_size.y;
+						if (!same_pages && !double_width)
+							RelayoutTarget(dst, TEX0.TBW, false, draw_rect);
+					}
 					break;
 				}
 				else if (t != keep)
