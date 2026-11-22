@@ -64,16 +64,8 @@ struct ImageInitialData
 
 enum ImageMiscFlagBits
 {
-	IMAGE_MISC_GENERATE_MIPS_BIT = 1 << 0,
 	IMAGE_MISC_FORCE_ARRAY_BIT = 1 << 1,
 	IMAGE_MISC_MUTABLE_SRGB_BIT = 1 << 2,
-	IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT = 1 << 3,
-	IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_COMPUTE_BIT = 1 << 4,
-	IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT = 1 << 6,
-	IMAGE_MISC_VERIFY_FORMAT_FEATURE_SAMPLED_LINEAR_FILTER_BIT = 1 << 8,
-	IMAGE_MISC_LINEAR_IMAGE_IGNORE_DEVICE_LOCAL_BIT = 1 << 9,
-	IMAGE_MISC_FORCE_NO_DEDICATED_BIT = 1 << 10,
-	IMAGE_MISC_NO_DEFAULT_VIEWS_BIT = 1 << 11,
 	IMAGE_MISC_CREATE_PER_MIP_LEVEL_VIEWS_BIT = 1 << 14
 };
 using ImageMiscFlags = uint32_t;
@@ -190,24 +182,8 @@ private:
 
 using ImageViewHandle = Util::IntrusivePtr<ImageView>;
 
-enum class ImageDomain
-{
-	Physical,
-	LinearHostCached,
-	LinearHost,
-	LinearDevice,
-	HostCopy
-};
-
-enum class ImageLayout
-{
-	Optimal,
-	General
-};
-
 struct ImageCreateInfo
 {
-	ImageDomain domain = ImageDomain::Physical;
 	unsigned width = 0;
 	unsigned height = 0;
 	unsigned depth = 1;
@@ -224,22 +200,20 @@ struct ImageCreateInfo
 		VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
 	};
 	void *pnext = nullptr;
-	ImageLayout layout = ImageLayout::Optimal;
 
-	static ImageCreateInfo immutable_2d_image(unsigned width, unsigned height, VkFormat format, bool mipmapped = false)
+	static ImageCreateInfo immutable_2d_image(unsigned width, unsigned height, VkFormat format)
 	{
 		ImageCreateInfo info;
 		info.width = width;
 		info.height = height;
 		info.depth = 1;
-		info.levels = mipmapped ? 0u : 1u;
+		info.levels = 1;
 		info.format = format;
 		info.type = VK_IMAGE_TYPE_2D;
 		info.layers = 1;
 		info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
 		info.samples = VK_SAMPLE_COUNT_1_BIT;
 		info.flags = 0;
-		info.misc = mipmapped ? unsigned(IMAGE_MISC_GENERATE_MIPS_BIT) : 0u;
 		info.initial_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
 		return info;
 	}
@@ -350,11 +324,6 @@ public:
 	const ImageCreateInfo &get_create_info() const
 	{
 		return create_info;
-	}
-
-	VkImageLayout get_layout(VkImageLayout optimal) const
-	{
-		return create_info.layout == ImageLayout::Optimal ? optimal : VK_IMAGE_LAYOUT_GENERAL;
 	}
 
 	const DeviceAllocation &get_allocation() const

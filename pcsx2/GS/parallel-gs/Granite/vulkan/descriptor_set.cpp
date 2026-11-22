@@ -406,7 +406,7 @@ bool BindlessDescriptorPool::allocate_descriptors(unsigned count)
 
 void BindlessDescriptorPool::push_texture(const ImageView &view)
 {
-	push_texture(view.get_view().view, view.get_image().get_layout(VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL));
+	push_texture(view.get_view().view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 }
 
 void BindlessDescriptorPool::push_texture(VkImageView view, VkImageLayout layout)

@@ -181,24 +181,6 @@ public:
 
 	void image_barriers(uint32_t image_barriers, const VkImageMemoryBarrier2 *images);
 
-	void blit_image(const Image &dst,
-	                const Image &src,
-	                const VkOffset3D &dst_offset0, const VkOffset3D &dst_extent,
-	                const VkOffset3D &src_offset0, const VkOffset3D &src_extent, unsigned dst_level, unsigned src_level,
-	                unsigned dst_base_layer = 0, uint32_t src_base_layer = 0, unsigned num_layers = 1,
-	                VkFilter filter = VK_FILTER_LINEAR);
-
-	// Prepares an image to have its mipmap generated.
-	// Puts the top-level into TRANSFER_SRC_OPTIMAL, and all other levels are invalidated with an UNDEFINED -> TRANSFER_DST_OPTIMAL.
-	void barrier_prepare_generate_mipmap(const Image &image, VkImageLayout base_level_layout,
-	                                     VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
-	                                     bool need_top_level_barrier = true);
-
-	// The image must have been transitioned with barrier_prepare_generate_mipmap before calling this function.
-	// After calling this function, the image will be entirely in TRANSFER_SRC_OPTIMAL layout.
-	// Wait for TRANSFER stage to drain before transitioning away from TRANSFER_SRC_OPTIMAL.
-	void generate_mipmap(const Image &image);
-
 	void begin_render_pass(const RenderPassInfo &info, VkSubpassContents contents = VK_SUBPASS_CONTENTS_INLINE);
 	void end_render_pass();
 

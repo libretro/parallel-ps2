@@ -2124,48 +2124,6 @@ uint32_t Device::find_memory_type(BufferDomain domain, uint32_t mask) const
 	return UINT32_MAX;
 }
 
-uint32_t Device::find_memory_type(ImageDomain domain, uint32_t mask) const
-{
-	uint32_t desired = 0, fallback = 0;
-	switch (domain)
-	{
-	case ImageDomain::Physical:
-		desired = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-		fallback = 0;
-		break;
-
-	case ImageDomain::LinearHostCached:
-		desired = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-		fallback = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-		break;
-
-	case ImageDomain::LinearHost:
-		desired = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-		fallback = 0;
-		break;
-
-	case ImageDomain::LinearDevice:
-		desired = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-		fallback = 0;
-		break;
-
-	case ImageDomain::HostCopy:
-		desired = 0;
-		fallback = 0;
-		break;
-	}
-
-	uint32_t index = find_memory_type(desired, mask);
-	if (index != UINT32_MAX)
-		return index;
-
-	index = find_memory_type(fallback, mask);
-	if (index != UINT32_MAX)
-		return index;
-
-	return UINT32_MAX;
-}
-
 static inline VkImageViewType get_image_view_type(const ImageCreateInfo &create_info, const ImageViewCreateInfo *view)
 {
 	unsigned layers = view ? view->layers : create_info.layers;
@@ -2323,10 +2281,10 @@ public:
 		if (!setup_view_usage_info(default_view_info, create_info.usage, view_usage))
 			return false;
 
-		if (!create_render_target_views(*view_info, create_info.layout, view_usage))
+		if (!create_render_target_views(*view_info, view_usage))
 			return false;
 
-		if (!create_default_view(*view_info, create_info.layout, view_usage))
+		if (!create_default_view(*view_info, view_usage))
 			return false;
 
 		if (create_unorm_srgb_views)
@@ -2337,23 +2295,23 @@ public:
 			if (create_info.usage & VK_IMAGE_USAGE_STORAGE_BIT)
 				srgb_unorm_usage |= VK_IMAGE_USAGE_STORAGE_BIT;
 			info.format = view_formats[0];
-			if (!device->managers.views.create_image_view(info, srgb_unorm_usage, create_info.layout, unorm_view))
+			if (!device->managers.views.create_image_view(info, srgb_unorm_usage, unorm_view))
 				return false;
 
 			srgb_unorm_usage &= ~VK_IMAGE_USAGE_STORAGE_BIT;
 			info.format = view_formats[1];
-			if (!device->managers.views.create_image_view(info, srgb_unorm_usage, create_info.layout, srgb_view))
+			if (!device->managers.views.create_image_view(info, srgb_unorm_usage, srgb_view))
 				return false;
 		}
 
-		if (create_mip_level_views && !create_mip_views(*view_info, create_info.layout, view_usage))
+		if (create_mip_level_views && !create_mip_views(*view_info, view_usage))
 			return false;
 
 		return true;
 	}
 
 private:
-	bool create_render_target_views(const VkImageViewCreateInfo &info, ImageLayout layout, VkImageUsageFlags view_usage)
+	bool create_render_target_views(const VkImageViewCreateInfo &info, VkImageUsageFlags view_usage)
 	{
 		if (info.viewType == VK_IMAGE_VIEW_TYPE_3D)
 			return true;
@@ -2380,7 +2338,7 @@ private:
 				view_info.subresourceRange.baseArrayLayer = layer + info.subresourceRange.baseArrayLayer;
 
 				CachedImageView rt_view = {};
-				if (!device->managers.views.create_image_view(view_info, view_usage, layout, rt_view))
+				if (!device->managers.views.create_image_view(view_info, view_usage, rt_view))
 					return false;
 				rt_views.push_back(rt_view);
 			}
@@ -2389,7 +2347,7 @@ private:
 		return true;
 	}
 
-	bool create_mip_views(const VkImageViewCreateInfo &info, ImageLayout layout, VkImageUsageFlags view_usage)
+	bool create_mip_views(const VkImageViewCreateInfo &info, VkImageUsageFlags view_usage)
 	{
 		VK_ASSERT(info.subresourceRange.levelCount != VK_REMAINING_MIP_LEVELS);
 		if (info.subresourceRange.levelCount <= 1)
@@ -2405,7 +2363,7 @@ private:
 			view_info.subresourceRange.levelCount = 1;
 
 			CachedImageView mip_view = {};
-			if (!device->managers.views.create_image_view(view_info, view_usage, layout, mip_view))
+			if (!device->managers.views.create_image_view(view_info, view_usage, mip_view))
 				return false;
 			mip_views.push_back(mip_view);
 		}
@@ -2413,10 +2371,10 @@ private:
 		return true;
 	}
 
-	bool create_default_view(const VkImageViewCreateInfo &info, ImageLayout layout, VkImageUsageFlags usage)
+	bool create_default_view(const VkImageViewCreateInfo &info, VkImageUsageFlags usage)
 	{
 		// Create the normal image view. This one contains every subresource.
-		return device->managers.views.create_image_view(info, usage, layout, image_view);
+		return device->managers.views.create_image_view(info, usage, image_view);
 	}
 
 	void cleanup()
@@ -2443,18 +2401,11 @@ private:
 
 InitialImageBuffer Device::create_image_staging_buffer(const ImageCreateInfo &info, const ImageInitialData *initial)
 {
-	// This method is very annoying to deal with and requires shuffling a lot of data around.
-	// Plumbing this through to host image copy is a hot mess and is avoided.
-
 	InitialImageBuffer result = {};
-
-	bool generate_mips = (info.misc & IMAGE_MISC_GENERATE_MIPS_BIT) != 0;
 	TextureFormatLayout layout;
 
 	unsigned copy_levels;
-	if (generate_mips)
-		copy_levels = 1;
-	else if (info.levels == 0)
+	if (info.levels == 0)
 		copy_levels = TextureFormatLayout::num_miplevels(info.width, info.height, info.depth);
 	else
 		copy_levels = info.levels;
@@ -2556,45 +2507,26 @@ ImageHandle Device::create_image(const ImageCreateInfo &create_info, const Image
 		return create_image_from_staging_buffer(create_info, nullptr);
 }
 
-bool Device::allocate_image_memory(DeviceAllocation *allocation, const ImageCreateInfo &info,
-                                   VkImage image, VkImageTiling tiling, VkImageUsageFlags usage)
+bool Device::allocate_image_memory(DeviceAllocation *allocation, VkImage image, VkImageUsageFlags usage)
 {
 	VkMemoryRequirements reqs;
 	table->vkGetImageMemoryRequirements(device, image, &reqs);
 
-	auto domain = (usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT) != 0 ? ImageDomain::HostCopy : info.domain;
-	uint32_t memory_type = find_memory_type(domain, reqs.memoryTypeBits);
+	uint32_t memory_type = find_memory_type(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reqs.memoryTypeBits);
+	if (memory_type == UINT32_MAX)
+		memory_type = find_memory_type(0, reqs.memoryTypeBits);
 	if (memory_type == UINT32_MAX)
 	{
 		LOGE("Failed to find memory type.\n");
 		return false;
 	}
 
-	if (tiling == VK_IMAGE_TILING_LINEAR &&
-	    (info.misc & IMAGE_MISC_LINEAR_IMAGE_IGNORE_DEVICE_LOCAL_BIT) == 0)
-	{
-		// Is it also device local?
-		if ((mem_props.memoryTypes[memory_type].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == 0)
-			return false;
-	}
-
-	AllocationMode mode;
-	if (tiling == VK_IMAGE_TILING_OPTIMAL &&
-	         (info.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT)) != 0)
-	{
-		mode = AllocationMode::OptimalRenderTarget;
-	}
-	else
-	{
-		mode = tiling == VK_IMAGE_TILING_OPTIMAL || info.domain == ImageDomain::LinearDevice ?
-		       AllocationMode::OptimalResource : AllocationMode::LinearHostMappable;
-	}
+	AllocationMode mode = (usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT)) != 0 ?
+	                      AllocationMode::OptimalRenderTarget : AllocationMode::OptimalResource;
 
 	{
 		LOCK_MEMORY();
-		if (!managers.memory.allocate_image_memory(reqs.size, reqs.alignment, mode, memory_type, image,
-		                                           tiling == VK_IMAGE_TILING_LINEAR,
-		                                           (info.misc & IMAGE_MISC_FORCE_NO_DEDICATED_BIT) != 0, allocation))
+		if (!managers.memory.allocate_image_memory(reqs.size, reqs.alignment, mode, memory_type, image, allocation))
 		{
 			LOGE("Failed to allocate image memory (type %u, size: %u).\n",
 			     unsigned(memory_type), unsigned(reqs.size));
@@ -2638,23 +2570,10 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	info.arrayLayers = create_info.layers;
 	info.samples = create_info.samples;
 	info.pNext = create_info.pnext;
-
-	if (create_info.domain == ImageDomain::LinearHostCached ||
-	    create_info.domain == ImageDomain::LinearHost ||
-	    create_info.domain == ImageDomain::LinearDevice)
-	{
-		info.tiling = VK_IMAGE_TILING_LINEAR;
-		info.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
-	}
-	else
-	{
-		info.tiling = VK_IMAGE_TILING_OPTIMAL;
-		info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	}
-
+	info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	info.usage = create_info.usage;
 	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
 	info.flags = create_info.flags;
 
 	if (info.mipLevels == 0)
@@ -2683,133 +2602,33 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 				info.pNext = &format_info;
 			}
 		}
-	}
-
-	if ((create_info.misc & IMAGE_MISC_MUTABLE_SRGB_BIT) != 0)
 		info.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
-
-	uint32_t sharing_indices[QUEUE_INDEX_COUNT];
-
-	uint32_t queue_flags = create_info.misc & (IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT |
-	                                           IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_COMPUTE_BIT |
-	                                           IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT);
-	bool concurrent_queue = queue_flags != 0 ||
-	                        staging_buffer != nullptr ||
-	                        create_info.initial_layout != VK_IMAGE_LAYOUT_UNDEFINED;
-
-	if (concurrent_queue)
-	{
-		info.sharingMode = VK_SHARING_MODE_CONCURRENT;
-
-		// If we didn't specify queue usage,
-		// just enable every queue since we need to use transfer queue for initial upload.
-		if (staging_buffer && queue_flags == 0)
-		{
-			constexpr ImageMiscFlags implicit_queues_all =
-					IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT |
-					IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_COMPUTE_BIT |
-					IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT;
-
-			queue_flags |= implicit_queues_all;
-		}
-		else if (staging_buffer)
-		{
-			// Make sure that these queues are included.
-			queue_flags |= IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT;
-			if (create_info.misc & IMAGE_MISC_GENERATE_MIPS_BIT)
-				queue_flags |= IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT;
-		}
-
-		struct
-		{
-			uint32_t flags;
-			QueueIndices index;
-		} static const mappings[] = {
-			{ IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT, QUEUE_INDEX_GRAPHICS },
-			{ IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_COMPUTE_BIT, QUEUE_INDEX_COMPUTE },
-			{ IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT, QUEUE_INDEX_TRANSFER },
-		};
-
-		for (auto &m : mappings)
-			if ((queue_flags & m.flags) != 0)
-				add_unique_family(sharing_indices, info.queueFamilyIndexCount, queue_info.family_indices[m.index]);
-
-		if (info.queueFamilyIndexCount > 1)
-			info.pQueueFamilyIndices = sharing_indices;
-		else
-		{
-			info.pQueueFamilyIndices = nullptr;
-			info.queueFamilyIndexCount = 0;
-			info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		}
 	}
 
-	if (queue_flags == 0)
-		queue_flags |= IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT;
-
-	VkFormatFeatureFlags check_extra_features = 0;
-	if ((create_info.misc & IMAGE_MISC_VERIFY_FORMAT_FEATURE_SAMPLED_LINEAR_FILTER_BIT) != 0)
-		check_extra_features |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
-
-	if (info.tiling == VK_IMAGE_TILING_LINEAR)
+	/* An upload goes through the transfer queue, so the image is shared
+	 * by every queue that may use it. */
+	uint32_t sharing_indices[QUEUE_INDEX_COUNT];
+	if (staging_buffer)
 	{
-		if (staging_buffer)
-			return ImageHandle(nullptr);
-
-		// Do some more stringent checks.
-		if (info.mipLevels > 1)
-			return ImageHandle(nullptr);
-		if (info.arrayLayers > 1)
-			return ImageHandle(nullptr);
-		if (info.imageType != VK_IMAGE_TYPE_2D)
-			return ImageHandle(nullptr);
-		if (info.samples != VK_SAMPLE_COUNT_1_BIT)
-			return ImageHandle(nullptr);
-
-		VkImageFormatProperties2 props = { VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2 };
-		if (!get_image_format_properties(info.format, info.imageType, info.tiling, info.usage, info.flags, info.pNext, &props))
-			return ImageHandle(nullptr);
-
-		if (!props.imageFormatProperties.maxArrayLayers ||
-		    !props.imageFormatProperties.maxMipLevels ||
-		    (info.extent.width > props.imageFormatProperties.maxExtent.width) ||
-		    (info.extent.height > props.imageFormatProperties.maxExtent.height) ||
-		    (info.extent.depth > props.imageFormatProperties.maxExtent.depth))
+		static const QueueIndices queues[] = { QUEUE_INDEX_GRAPHICS, QUEUE_INDEX_COMPUTE, QUEUE_INDEX_TRANSFER };
+		for (auto q : queues)
+			add_unique_family(sharing_indices, info.queueFamilyIndexCount, queue_info.family_indices[q]);
+		if (info.queueFamilyIndexCount > 1)
 		{
-			return ImageHandle(nullptr);
+			info.sharingMode = VK_SHARING_MODE_CONCURRENT;
+			info.pQueueFamilyIndices = sharing_indices;
 		}
+		else
+			info.queueFamilyIndexCount = 0;
+		info.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	}
 
 	if ((create_info.flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT) == 0 &&
-	    (!image_format_is_supported(create_info.format, image_usage_to_features(info.usage) | check_extra_features, info.tiling)))
+	    !image_format_is_supported(create_info.format, image_usage_to_features(info.usage), info.tiling))
 	{
 		LOGE("Format %u is not supported for usage flags!\n", unsigned(create_info.format));
 		return ImageHandle(nullptr);
 	}
-
-	// FIXME: Is there a more intelligent way to detect if we should be using host image copy?
-	if (ext.vk14_features.hostImageCopy && staging_buffer && staging_buffer->host.size &&
-	    (gpu_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ||
-	     gpu_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU))
-	{
-		VkHostImageCopyDevicePerformanceQuery query =
-				{ VK_STRUCTURE_TYPE_HOST_IMAGE_COPY_DEVICE_PERFORMANCE_QUERY };
-		VkImageFormatProperties2 props2 = { VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2 };
-		props2.pNext = &query;
-
-		if (get_image_format_properties(info.format, info.imageType, info.tiling,
-		                                info.usage | VK_IMAGE_USAGE_HOST_TRANSFER_BIT,
-										info.flags, info.pNext, &props2))
-		{
-			// If we don't lose compression, go ahead.
-			if (query.optimalDeviceAccess)
-				info.usage |= VK_IMAGE_USAGE_HOST_TRANSFER_BIT;
-		}
-	}
-
-	bool generate_mips = (create_info.misc & IMAGE_MISC_GENERATE_MIPS_BIT) != 0;
-	if (staging_buffer && (generate_mips || (info.usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT) == 0))
-		info.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
 	if (table->vkCreateImage(device, &info, nullptr, &holder.image) != VK_SUCCESS)
 	{
@@ -2817,7 +2636,7 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 		return ImageHandle(nullptr);
 	}
 
-	if (!allocate_image_memory(&holder.allocation, create_info, holder.image, info.tiling, info.usage))
+	if (!allocate_image_memory(&holder.allocation, holder.image, info.usage))
 	{
 		LOGE("Failed to allocate memory for image.\n");
 		return ImageHandle(nullptr);
@@ -2828,16 +2647,8 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	tmpinfo.flags = info.flags;
 	tmpinfo.levels = info.mipLevels;
 
-	if ((info.usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT) != 0)
-	{
-		tmpinfo.layout = ImageLayout::General;
-		if (tmpinfo.initial_layout != VK_IMAGE_LAYOUT_UNDEFINED)
-			tmpinfo.initial_layout = VK_IMAGE_LAYOUT_GENERAL;
-	}
-
-	bool has_view = (info.usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-	                               VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) != 0 &&
-	                (create_info.misc & IMAGE_MISC_NO_DEFAULT_VIEWS_BIT) == 0;
+	bool has_view = (info.usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+	                               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) != 0;
 	bool create_mip_views = info.mipLevels > 1 && (create_info.misc & IMAGE_MISC_CREATE_PER_MIP_LEVEL_VIEWS_BIT) != 0;
 
 	VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
@@ -2873,10 +2684,8 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	if (staging_buffer)
 	{
 		auto *buffer = staging_buffer->buffer.get();
-
-		// TODO: If we have host image copy, we can bypass this whole thing.
 		BufferHandle scratch_buffer;
-		if (!buffer && (info.usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT) == 0)
+		if (!buffer)
 		{
 			if (staging_buffer->host.size == 0)
 			{
@@ -2894,152 +2703,39 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 
 		VK_ASSERT(create_info.initial_layout != VK_IMAGE_LAYOUT_UNDEFINED);
 
-		// Now we've used the TRANSFER queue to copy data over to the GPU.
-		// For mipmapping, we're now moving over to graphics,
-		// the transfer queue is designed for CPU <-> GPU and that's it.
-		// For concurrent queue mode, we just need to inject a semaphore.
+		auto transfer_cmd = request_command_buffer(CommandBuffer::Type::AsyncTransfer);
+		transfer_cmd->image_barrier(*handle, VK_IMAGE_LAYOUT_UNDEFINED,
+		                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		                            VK_PIPELINE_STAGE_NONE, 0, VK_PIPELINE_STAGE_2_COPY_BIT,
+		                            VK_ACCESS_TRANSFER_WRITE_BIT);
 
-		CommandBufferHandle transfer_cmd;
+		transfer_cmd->begin_region("copy-image-to-gpu");
+		transfer_cmd->copy_buffer_to_image(*handle, *buffer,
+		                                   staging_buffer->blits.size(), staging_buffer->blits.data());
+		transfer_cmd->end_region();
 
-		if ((info.usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT) == 0)
-		{
-			transfer_cmd = request_command_buffer(CommandBuffer::Type::AsyncTransfer);
+		transfer_cmd->image_barrier(
+				*handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				tmpinfo.initial_layout,
+				VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+				VK_PIPELINE_STAGE_NONE, VK_ACCESS_NONE);
 
-			transfer_cmd->image_barrier(*handle, VK_IMAGE_LAYOUT_UNDEFINED,
-			                            handle->get_layout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
-			                            VK_PIPELINE_STAGE_NONE, 0, VK_PIPELINE_STAGE_2_COPY_BIT,
-			                            VK_ACCESS_TRANSFER_WRITE_BIT);
-
-			transfer_cmd->begin_region("copy-image-to-gpu");
-			transfer_cmd->copy_buffer_to_image(*handle, *buffer,
-			                                   staging_buffer->blits.size(), staging_buffer->blits.data());
-			transfer_cmd->end_region();
-		}
-		else
-		{
-			VkHostImageLayoutTransitionInfo transition = { VK_STRUCTURE_TYPE_HOST_IMAGE_LAYOUT_TRANSITION_INFO };
-			transition.image = holder.image;
-			transition.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			transition.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-			transition.subresourceRange = {
-				format_to_aspect_mask(info.format),
-				0, VK_REMAINING_MIP_LEVELS,
-				0, VK_REMAINING_ARRAY_LAYERS,
-			};
-			table->vkTransitionImageLayout(device, 1, &transition);
-
-			VkCopyMemoryToImageInfo copy = { VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO };
-			copy.dstImage = handle->get_image();
-			copy.dstImageLayout = VK_IMAGE_LAYOUT_GENERAL;
-			copy.regionCount = staging_buffer->blits.size();
-			SmallVector<VkMemoryToImageCopy, 32> copies(copy.regionCount);
-			copy.pRegions = copies.data();
-
-			for (uint32_t i = 0; i < copy.regionCount; i++)
-			{
-				auto &dst = copies[i];
-				auto &src = staging_buffer->blits[i];
-				dst.sType = VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY;
-				dst.pHostPointer = static_cast<const uint8_t *>(staging_buffer->host.data) + src.bufferOffset;
-				dst.imageSubresource = src.imageSubresource;
-				dst.imageOffset = src.imageOffset;
-				dst.imageExtent = src.imageExtent;
-				dst.memoryRowLength = src.bufferRowLength;
-				dst.memoryImageHeight = src.bufferImageHeight;
-			}
-
-			// Bang the memory straight into the image without a staging copy.
-			table->vkCopyMemoryToImage(device, &copy);
-		}
-
-		if (generate_mips)
-		{
-			auto graphics_cmd = request_command_buffer(CommandBuffer::Type::Generic);
-			Semaphore sem;
-
-			if (transfer_cmd)
-				submit_and_sync_to_queues(transfer_cmd, 1u << QUEUE_INDEX_GRAPHICS);
-
-			auto src_layout =
-					(info.usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT) != 0 ?
-					VK_IMAGE_LAYOUT_GENERAL : handle->get_layout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-			graphics_cmd->begin_region("mipgen");
-			graphics_cmd->barrier_prepare_generate_mipmap(*handle, src_layout, VK_PIPELINE_STAGE_NONE, 0, true);
-			graphics_cmd->generate_mipmap(*handle);
-			graphics_cmd->end_region();
-
-			bool sync_with_graphics = (queue_flags & IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT) != 0;
-
-			graphics_cmd->image_barrier(
-					*handle, handle->get_layout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
-					tmpinfo.initial_layout,
-					VK_PIPELINE_STAGE_2_BLIT_BIT, 0,
-					sync_with_graphics ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT : VK_PIPELINE_STAGE_NONE,
-					sync_with_graphics ? VK_ACCESS_MEMORY_READ_BIT : VK_ACCESS_NONE);
-
-			transition_cmd = std::move(graphics_cmd);
-		}
-		else if (transfer_cmd)
-		{
-			bool sync_with_transfer = (create_info.misc & IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT) != 0;
-
-			transfer_cmd->image_barrier(
-					*handle, handle->get_layout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
-					tmpinfo.initial_layout,
-					VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-					sync_with_transfer ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT : VK_PIPELINE_STAGE_NONE,
-					sync_with_transfer ? VK_ACCESS_MEMORY_READ_BIT : VK_ACCESS_NONE);
-
-			transition_cmd = std::move(transfer_cmd);
-		}
+		transition_cmd = std::move(transfer_cmd);
 	}
 	else if (create_info.initial_layout != VK_IMAGE_LAYOUT_UNDEFINED)
 	{
-
-		// Need to perform the barrier in some command buffer, pick an appropriate one based on supported queues.
-		// Pick the most lenient queue first in case we need to transition to a weird layout.
-		CommandBuffer::Type type = CommandBuffer::Type::Count;
-		if (queue_flags & IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT)
-			type = CommandBuffer::Type::Generic;
-		else if (queue_flags & IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_COMPUTE_BIT)
-			type = CommandBuffer::Type::AsyncCompute;
-		else if (queue_flags & IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT)
-			type = CommandBuffer::Type::AsyncTransfer;
-		VK_ASSERT(type != CommandBuffer::Type::Count);
-
-		auto cmd = request_command_buffer(type);
+		auto cmd = request_command_buffer(CommandBuffer::Type::Generic);
 		cmd->image_barrier(*handle, info.initialLayout, create_info.initial_layout,
 		                   VK_PIPELINE_STAGE_NONE, 0,
 		                   VK_PIPELINE_STAGE_NONE, 0);
 		transition_cmd = std::move(cmd);
 	}
 
-	// For concurrent queue, make sure that compute or transfer can see the final image as well.
+	/* Graphics, and compute too for an upload shared with it, see the
+	 * image as it was left. */
 	if (transition_cmd)
-	{
-		uint32_t sync_queues = 0;
-
-		// These are implied by default.
-		if (queue_flags & IMAGE_MISC_CONCURRENT_QUEUE_GRAPHICS_BIT)
-			sync_queues |= 1u << QUEUE_INDEX_GRAPHICS;
-		if (queue_flags & IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_COMPUTE_BIT)
-			sync_queues |= 1u << QUEUE_INDEX_COMPUTE;
-
-		// Do not synchronize the transfer queue here unless we explicitly asked for it.
-		if (create_info.misc & IMAGE_MISC_CONCURRENT_QUEUE_ASYNC_TRANSFER_BIT)
-		{
-			// Avoid transfer -> graphics -> transfer cycle, have to flush transfer queue before we introduce dependency.
-			if (generate_mips)
-			{
-				LOCK();
-				flush_frame_nolock(QUEUE_INDEX_TRANSFER);
-			}
-			sync_queues |= 1u << QUEUE_INDEX_TRANSFER;
-		}
-
-		submit_and_sync_to_queues(transition_cmd, sync_queues);
-	}
+		submit_and_sync_to_queues(transition_cmd, (1u << QUEUE_INDEX_GRAPHICS) |
+		                                          (staging_buffer ? 1u << QUEUE_INDEX_COMPUTE : 0u));
 
 	return handle;
 }
@@ -3348,24 +3044,6 @@ void Device::get_format_properties(VkFormat format, VkFormatProperties3 *propert
 	}
 }
 
-bool Device::get_image_format_properties(VkFormat format, VkImageType type, VkImageTiling tiling,
-                                         VkImageUsageFlags usage, VkImageCreateFlags flags,
-                                         const void *pNext,
-                                         VkImageFormatProperties2 *properties2) const
-{
-	VK_ASSERT(properties2->sType == VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2);
-	VkPhysicalDeviceImageFormatInfo2 info = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2 };
-	info.pNext = pNext;
-	info.format = format;
-	info.type = type;
-	info.tiling = tiling;
-	info.usage = usage;
-	info.flags = flags;
-
-	VkResult res = vkGetPhysicalDeviceImageFormatProperties2(gpu, &info, properties2);
-	return res == VK_SUCCESS;
-}
-
 bool Device::image_format_is_supported(VkFormat format, VkFormatFeatureFlags2 required, VkImageTiling tiling) const
 {
 	VkFormatProperties3 props3 = { VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3 };
@@ -3384,14 +3062,11 @@ const RenderPass &Device::request_render_pass(const RenderPassInfo &info, bool c
 {
 	Hasher h;
 	VkFormat formats[VULKAN_NUM_ATTACHMENTS];
-	uint32_t optimal = 0;
 
 	for (unsigned i = 0; i < info.num_color_attachments; i++)
 	{
 		VK_ASSERT(info.color_attachments[i]);
 		formats[i] = info.color_attachments[i]->get_format();
-		if (info.color_attachments[i]->get_image().get_create_info().layout == ImageLayout::Optimal)
-			optimal |= 1u << i;
 	}
 
 	h.data(formats, info.num_color_attachments * sizeof(VkFormat));
@@ -3403,7 +3078,6 @@ const RenderPass &Device::request_render_pass(const RenderPassInfo &info, bool c
 		h.u32(info.clear_attachments);
 		h.u32(info.load_attachments);
 		h.u32(info.store_attachments);
-		h.u32(optimal);
 	}
 
 	auto hash = h.get();

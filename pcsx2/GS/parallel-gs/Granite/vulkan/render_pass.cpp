@@ -57,7 +57,7 @@ RenderPass::RenderPass(Hash hash, Device *device_, const RenderPassInfo &info)
 	{
 		VK_ASSERT(info.color_attachments[i]);
 		auto &image = info.color_attachments[i]->get_image();
-		const VkImageLayout layout = image.get_layout(VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL);
+		const VkImageLayout layout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
 		auto &att = attachments[i];
 
 		signature.formats[i] = info.color_attachments[i]->get_format();

@@ -130,22 +130,17 @@ bool DeviceAllocator::allocate_generic_memory(VkDeviceSize size, VkDeviceSize al
 }
 
 bool DeviceAllocator::allocate_image_memory(VkDeviceSize size, VkDeviceSize alignment, AllocationMode mode,
-                                            uint32_t memory_type, VkImage image, bool linear_tiling,
-                                            bool force_no_dedicated, DeviceAllocation *alloc)
+                                            uint32_t memory_type, VkImage image, DeviceAllocation *alloc)
 {
 	VkMemoryDedicatedRequirements dedicated_req = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS };
-
-	if (!force_no_dedicated)
-	{
-		VkImageMemoryRequirementsInfo2 info = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2 };
-		VkMemoryRequirements2 mem_req = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 };
-		info.image = image;
-		mem_req.pNext = &dedicated_req;
-		table->vkGetImageMemoryRequirements2(device->get_device(), &info, &mem_req);
-	}
+	VkImageMemoryRequirementsInfo2 info = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2 };
+	VkMemoryRequirements2 mem_req = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 };
+	info.image = image;
+	mem_req.pNext = &dedicated_req;
+	table->vkGetImageMemoryRequirements2(device->get_device(), &info, &mem_req);
 
 	const bool dedicated = dedicated_req.prefersDedicatedAllocation || dedicated_req.requiresDedicatedAllocation;
-	return allocate(size, alignment, mode, linear_tiling, memory_type, dedicated ? image : VK_NULL_HANDLE, alloc);
+	return allocate(size, alignment, mode, false, memory_type, dedicated ? image : VK_NULL_HANDLE, alloc);
 }
 
 void DeviceAllocator::free(DeviceAllocation &alloc)
@@ -270,7 +265,7 @@ void ViewFactory::destroy_sampler(VkSampler sampler)
 }
 
 bool ViewFactory::create_image_view(const VkImageViewCreateInfo &info, VkImageUsageFlags usage,
-                                    ImageLayout, CachedImageView &view)
+                                    CachedImageView &view)
 {
 	VkImageViewUsageCreateInfo view_usage_create_info = { VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO };
 	auto tmpinfo = info;

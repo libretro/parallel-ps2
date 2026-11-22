@@ -39,7 +39,6 @@ namespace Vulkan
 {
 class Device;
 
-enum class ImageLayout;
 
 /* What the memory is for: whether it is a buffer (linear) or an image,
  * and its priority under pressure. */
@@ -106,8 +105,7 @@ public:
 	bool allocate_generic_memory(VkDeviceSize size, VkDeviceSize alignment, AllocationMode mode,
 	                             uint32_t memory_type, DeviceAllocation *alloc);
 	bool allocate_image_memory(VkDeviceSize size, VkDeviceSize alignment, AllocationMode mode,
-	                           uint32_t memory_type, VkImage image, bool linear_tiling,
-	                           bool force_no_dedicated, DeviceAllocation *alloc);
+	                           uint32_t memory_type, VkImage image, DeviceAllocation *alloc);
 	void free(DeviceAllocation &alloc);
 
 	/* Empty blocks back to the driver. */
@@ -151,8 +149,7 @@ public:
 	bool init(Device *device);
 	void teardown() {}
 
-	bool create_image_view(const VkImageViewCreateInfo &info, VkImageUsageFlags usage,
-	                       ImageLayout layout, CachedImageView &view);
+	bool create_image_view(const VkImageViewCreateInfo &info, VkImageUsageFlags usage, CachedImageView &view);
 	void free_image_view(const CachedImageView &view);
 	bool create_buffer_view(const BufferViewCreateInfo &info, CachedBufferView &view);
 	void free_buffer_view(const CachedBufferView &view);

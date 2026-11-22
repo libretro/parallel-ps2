@@ -119,8 +119,8 @@ void CommandBuffer::copy_image(const Vulkan::Image &dst, const Vulkan::Image &sr
 	region.srcSubresource = src_subresource;
 	region.dstSubresource = dst_subresource;
 
-	table.vkCmdCopyImage(cmd, src.get_image(), src.get_layout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
-	               dst.get_image(), dst.get_layout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
+	table.vkCmdCopyImage(cmd, src.get_image(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+	               dst.get_image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 	               1, &region);
 }
 
@@ -128,7 +128,7 @@ void CommandBuffer::copy_buffer_to_image(const Image &image, const Buffer &buffe
                                          const VkBufferImageCopy *blits)
 {
 	table.vkCmdCopyBufferToImage(cmd, buffer.get_buffer(),
-	                             image.get_image(), image.get_layout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL), num_blits, blits);
+	                             image.get_image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_blits, blits);
 }
 
 void CommandBuffer::barrier(VkPipelineStageFlags2 src_stages, VkAccessFlags2 src_access,
@@ -214,109 +214,6 @@ void CommandBuffer::image_barriers(uint32_t image_barriers, const VkImageMemoryB
 	dep.imageMemoryBarrierCount = image_barriers;
 	dep.pImageMemoryBarriers = images;
 	barrier(dep);
-}
-
-void CommandBuffer::barrier_prepare_generate_mipmap(const Image &image, VkImageLayout base_level_layout,
-                                                    VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access,
-                                                    bool need_top_level_barrier)
-{
-	auto &create_info = image.get_create_info();
-	VkImageMemoryBarrier2 barriers[2] = {};
-	VK_ASSERT(create_info.levels > 1);
-	(void)create_info;
-
-	for (unsigned i = 0; i < 2; i++)
-	{
-		barriers[i].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-		barriers[i].image = image.get_image();
-		barriers[i].subresourceRange.aspectMask = format_to_aspect_mask(image.get_format());
-		barriers[i].subresourceRange.layerCount = image.get_create_info().layers;
-		barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barriers[i].srcStageMask = src_stage;
-		barriers[i].dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-
-		if (i == 0)
-		{
-			barriers[i].oldLayout = base_level_layout;
-			barriers[i].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-			barriers[i].srcAccessMask = src_access;
-			barriers[i].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-			barriers[i].subresourceRange.baseMipLevel = 0;
-			barriers[i].subresourceRange.levelCount = 1;
-		}
-		else
-		{
-			barriers[i].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			barriers[i].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			barriers[i].srcAccessMask = 0;
-			barriers[i].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			barriers[i].subresourceRange.baseMipLevel = 1;
-			barriers[i].subresourceRange.levelCount = image.get_create_info().levels - 1;
-		}
-	}
-
-	image_barriers(need_top_level_barrier ? 2 : 1, need_top_level_barrier ? barriers : barriers + 1);
-}
-
-void CommandBuffer::generate_mipmap(const Image &image)
-{
-	auto &create_info = image.get_create_info();
-	VkOffset3D size = { int(create_info.width), int(create_info.height), int(create_info.depth) };
-	const VkOffset3D origin = { 0, 0, 0 };
-
-	VK_ASSERT(image.get_layout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-
-	VkImageMemoryBarrier2 b = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
-	b.image = image.get_image();
-	b.subresourceRange.levelCount = 1;
-	b.subresourceRange.layerCount = image.get_create_info().layers;
-	b.subresourceRange.aspectMask = format_to_aspect_mask(image.get_format());
-	b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	b.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-	b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	b.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-	b.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-
-	for (unsigned i = 1; i < create_info.levels; i++)
-	{
-		VkOffset3D src_size = size;
-		size.x = std::max(size.x >> 1, 1);
-		size.y = std::max(size.y >> 1, 1);
-		size.z = std::max(size.z >> 1, 1);
-
-		blit_image(image, image,
-		           origin, size, origin, src_size, i, i - 1, 0, 0, create_info.layers, VK_FILTER_LINEAR);
-
-		b.subresourceRange.baseMipLevel = i;
-		image_barriers(1, &b);
-	}
-}
-
-void CommandBuffer::blit_image(const Image &dst, const Image &src,
-                               const VkOffset3D &dst_offset,
-                               const VkOffset3D &dst_extent, const VkOffset3D &src_offset, const VkOffset3D &src_extent,
-                               unsigned dst_level, unsigned src_level, unsigned dst_base_layer, unsigned src_base_layer,
-                               unsigned num_layers, VkFilter filter)
-{
-	const auto add_offset = [](const VkOffset3D &a, const VkOffset3D &b) -> VkOffset3D {
-		return { a.x + b.x, a.y + b.y, a.z + b.z };
-	};
-
-	const VkImageBlit blit = {
-		{ format_to_aspect_mask(src.get_create_info().format), src_level, src_base_layer, num_layers },
-		{ src_offset, add_offset(src_offset, src_extent) },
-		{ format_to_aspect_mask(dst.get_create_info().format), dst_level, dst_base_layer, num_layers },
-		{ dst_offset, add_offset(dst_offset, dst_extent) },
-	};
-
-	table.vkCmdBlitImage(cmd,
-	                     src.get_image(), src.get_layout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
-	                     dst.get_image(), dst.get_layout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
-	                     1, &blit, filter);
 }
 
 void CommandBuffer::begin_context()
@@ -1280,7 +1177,7 @@ void CommandBuffer::set_bindless(unsigned set, const BindlessDescriptorSet &hand
 void CommandBuffer::set_texture(unsigned set, unsigned binding, const ImageView &view)
 {
 	VK_ASSERT(view.get_image().get_create_info().usage & VK_IMAGE_USAGE_SAMPLED_BIT);
-	set_texture(set, binding, view.get_view().view, view.get_image().get_layout(VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL),
+	set_texture(set, binding, view.get_view().view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
 	            view.get_cookie());
 }
 
@@ -1318,7 +1215,7 @@ void CommandBuffer::set_storage_texture_level(unsigned set, unsigned binding,
 	VK_ASSERT(view.get_image().get_create_info().usage & VK_IMAGE_USAGE_STORAGE_BIT);
 	auto &mip_view = view.get_mip_view(level);
 	set_texture(set, binding, mip_view.view,
-	            view.get_image().get_layout(VK_IMAGE_LAYOUT_GENERAL),
+	            VK_IMAGE_LAYOUT_GENERAL,
 	            view.get_cookie() | COOKIE_BIT_PER_MIP | level);
 }
 
