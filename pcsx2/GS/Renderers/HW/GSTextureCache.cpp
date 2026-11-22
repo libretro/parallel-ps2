@@ -2615,6 +2615,15 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(GIFRegTEX0 TEX0, const GSVe
 					 * width it comes at being a label on the target. */
 					if (!is_shuffle && !is_frame && TEX0.TBW != dst->m_TEX0.TBW && TEX0.PSM == dst->m_TEX0.PSM && dst->m_TEX0.TBW > 0 && TEX0.TBW > 0)
 						RelayoutTarget(dst, TEX0.TBW, !preserve_rgb && !preserve_alpha, draw_rect);
+					/* A 16-bit shuffle on a 32-bit target at another width
+					 * writes where that width puts its pixels, so the pages
+					 * move there first here too. Left at the old width, the
+					 * next change of width moved what the shuffle had drawn
+					 * as if it lay at the old one (Okami: a 256x224 buffer
+					 * shuffled at 512, then a quarter of the picture). */
+					else if (is_shuffle && !is_frame && type == RenderTarget && TEX0.TBW != dst->m_TEX0.TBW && psm_s.bpp == 16 &&
+						GSLocalMemory::m_psm[dst->m_TEX0.PSM].bpp == 32 && dst->m_TEX0.TBW > 0 && TEX0.TBW > 0)
+						RelayoutTarget(dst, TEX0.TBW, false, draw_rect);
 					break;
 				}
 				else if (t != keep)
