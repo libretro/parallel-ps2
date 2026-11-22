@@ -138,10 +138,6 @@ void Device::add_wait_semaphore_nolock(QueueIndices physical_type, Semaphore sem
 		flush_frame_nolock(physical_type);
 	auto &data = queue_data[physical_type];
 
-#ifdef VULKAN_DEBUG
-	for (auto &sem : data.wait_semaphores)
-		VK_ASSERT(sem.get() != semaphore.get());
-#endif
 
 	data.wait_semaphores.push_back(semaphore);
 	data.wait_stages.push_back(stages);
@@ -1112,13 +1108,6 @@ void Device::submit_and_sync_to_queues(CommandBufferHandle &cmd, uint32_t sync_t
 
 void Device::submit_discard_nolock(CommandBufferHandle &cmd)
 {
-#ifdef VULKAN_DEBUG
-	{
-		auto type = cmd->get_command_buffer_type();
-		auto &pool = frame().cmd_pools[get_physical_queue_type(type)][cmd->get_thread_index()];
-		pool.signal_submitted(cmd->get_command_buffer());
-	}
-#endif
 
 	cmd->end();
 
@@ -1143,10 +1132,6 @@ void Device::submit_nolock(CommandBufferHandle cmd, Fence *fence, unsigned semap
 	auto type = cmd->get_command_buffer_type();
 	auto physical_type = get_physical_queue_type(type);
 	auto &submissions = frame().submissions[physical_type];
-#ifdef VULKAN_DEBUG
-	auto &pool = frame().cmd_pools[physical_type][cmd->get_thread_index()];
-	pool.signal_submitted(cmd->get_command_buffer());
-#endif
 
 	cmd->end();
 	submissions.push_back(std::move(cmd));
@@ -1750,15 +1735,6 @@ void Device::drain_deferred(PerFrame &f)
 	deferred.destroyed_semaphores.drain([&](VkSemaphore v) { f.destroyed_semaphores.push_back(v); });
 }
 
-#ifdef VULKAN_DEBUG
-
-template <typename T, typename U>
-static inline bool exists(const T &container, const U &value)
-{
-	return find(begin(container), end(container), value) != end(container);
-}
-
-#endif
 
 /* Handed back without a lock (Device::deferred), from any thread. */
 void Device::reset_fence(VkFence fence, bool observed_wait)

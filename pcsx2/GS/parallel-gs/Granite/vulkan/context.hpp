@@ -250,10 +250,6 @@ private:
 	std::vector<const char *> enabled_device_extensions;
 	std::vector<const char *> enabled_instance_extensions;
 
-#ifdef VULKAN_DEBUG
-	VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
-	bool force_no_validation = false;
-#endif
 	std::function<void (const char *)> message_callback;
 
 	void destroy_instance();

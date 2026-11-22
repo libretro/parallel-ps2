@@ -89,9 +89,6 @@ void PipelineLayout::init_legacy(const ImmutableSamplerBank *immutable_samplers)
 		info.pPushConstantRanges = &layout.push_constant_range;
 	}
 
-#ifdef VULKAN_DEBUG
-	LOGI("Creating pipeline layout.\n");
-#endif
 	auto &table = device->get_device_table();
 	if (table.vkCreatePipelineLayout(device->get_device(), &info, nullptr, &pipe_layout) != VK_SUCCESS)
 		LOGE("Failed to create pipeline layout.\n");
@@ -344,9 +341,6 @@ Shader::Shader(Hash hash, Device *device_, const uint32_t *data, size_t size,
 	info.codeSize = size;
 	info.pCode = data;
 
-#ifdef VULKAN_DEBUG
-	LOGI("Creating shader module.\n");
-#endif
 	auto &table = device->get_device_table();
 	if (table.vkCreateShaderModule(device->get_device(), &info, nullptr, &module) != VK_SUCCESS)
 		LOGE("Failed to create shader module.\n");

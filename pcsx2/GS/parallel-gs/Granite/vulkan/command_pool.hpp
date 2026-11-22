@@ -49,9 +49,6 @@ private:
 	const VulkanDeviceTable *table;
 	VkCommandPool pool = VK_NULL_HANDLE;
 	std::vector<VkCommandBuffer> buffers;
-#ifdef VULKAN_DEBUG
-	std::unordered_set<VkCommandBuffer> in_flight;
-#endif
 	unsigned index = 0;
 };
 }

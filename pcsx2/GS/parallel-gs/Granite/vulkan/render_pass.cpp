@@ -108,9 +108,6 @@ RenderPass::RenderPass(Hash hash, Device *device_, const VkRenderPassCreateInfo2
 	// Store the important subpass information for later.
 	setup_subpasses(create_info);
 
-#ifdef VULKAN_DEBUG
-	LOGI("Creating render pass.\n");
-#endif
 	if (table.vkCreateRenderPass2(device->get_device(), &create_info, nullptr, &render_pass) != VK_SUCCESS)
 		LOGE("Failed to create render pass.");
 
@@ -858,9 +855,6 @@ RenderPass::RenderPass(Hash hash, Device *device_, const RenderPassInfo &info)
 	// Store the important subpass information for later.
 	setup_subpasses(rp_info);
 
-#ifdef VULKAN_DEBUG
-	LOGI("Creating render pass.\n");
-#endif
 	auto &table = device->get_device_table();
 	if (table.vkCreateRenderPass2(device->get_device(), &rp_info, nullptr, &render_pass) != VK_SUCCESS)
 		LOGE("Failed to create render pass.");

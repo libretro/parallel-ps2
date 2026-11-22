@@ -37,8 +37,6 @@
 #include <windows.h>
 #endif
 
-//#undef VULKAN_DEBUG
-
 #define NV_DRIVER_VERSION_MAJOR(v) (uint32_t(v) >> 22)
 
 namespace Vulkan
@@ -216,11 +214,6 @@ void Context::destroy_device()
 
 void Context::destroy_instance()
 {
-#ifdef VULKAN_DEBUG
-	if (debug_messenger)
-		vkDestroyDebugUtilsMessengerEXT(instance, debug_messenger, nullptr);
-	debug_messenger = VK_NULL_HANDLE;
-#endif
 
 	if (owned_instance && instance != VK_NULL_HANDLE)
 	{
@@ -245,85 +238,6 @@ const VkApplicationInfo &Context::get_application_info() const
 	return user_application_info.get_application_info();
 }
 
-#ifdef VULKAN_DEBUG
-static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_messenger_cb(
-		VkDebugUtilsMessageSeverityFlagBitsEXT           messageSeverity,
-		VkDebugUtilsMessageTypeFlagsEXT                  messageType,
-		const VkDebugUtilsMessengerCallbackDataEXT*      pCallbackData,
-		void *pUserData)
-{
-	auto *context = static_cast<Context *>(pUserData);
-
-	switch (messageSeverity)
-	{
-	case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-		if (messageType == VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
-		{
-			// FFmpeg triggers this when decoding. Nothing we can do about it for now.
-			static const char *known_failures[] = {
-				"VUID-VkVideoBeginCodingInfoKHR-slotIndex-07245",
-			};
-
-			if (pCallbackData->pMessageIdName)
-			{
-				for (auto *failure : known_failures)
-				{
-					if (strcmp(failure, pCallbackData->pMessageIdName) == 0)
-						return VK_FALSE;
-				}
-			}
-
-			LOGE("[Vulkan]: Validation Error: %s - %s\n", pCallbackData->pMessageIdName, pCallbackData->pMessage);
-			context->notify_validation_error(pCallbackData->pMessage);
-		}
-		else
-			LOGE("[Vulkan]: Other Error: %s\n", pCallbackData->pMessage);
-		break;
-
-	case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-		if (messageType == VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
-			LOGW("[Vulkan]: Validation Warning: %s - %s\n", pCallbackData->pMessageIdName, pCallbackData->pMessage);
-		else
-			LOGW("[Vulkan]: Other Warning: %s\n", pCallbackData->pMessage);
-		break;
-
-#if 0
-	case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-	case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-		if (messageType == VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
-			LOGI("[Vulkan]: Validation Info: %s\n", pCallbackData->pMessage);
-		else
-			LOGI("[Vulkan]: Other Info: %s\n", pCallbackData->pMessage);
-		break;
-#endif
-
-	default:
-		return VK_FALSE;
-	}
-
-	bool log_object_names = false;
-	for (uint32_t i = 0; i < pCallbackData->objectCount; i++)
-	{
-		auto *name = pCallbackData->pObjects[i].pObjectName;
-		if (name)
-		{
-			log_object_names = true;
-			break;
-		}
-	}
-
-	if (log_object_names)
-	{
-		for (uint32_t i = 0; i < pCallbackData->objectCount; i++)
-		{
-			auto *name = pCallbackData->pObjects[i].pObjectName;
-			LOGI("  Object #%u: %s\n", i, name ? name : "N/A");
-		}
-	}
-
-	return VK_FALSE;
-}
-#endif
 
 VkApplicationInfo Context::get_promoted_application_info() const
 {
@@ -386,56 +300,6 @@ bool Context::create_instance()
 		ext.supports_debug_utils = true;
 	}
 
-#ifdef VULKAN_DEBUG
-	const auto has_layer = [&](const char *name) -> bool {
-		auto layer_itr = find_if(begin(queried_layers), end(queried_layers), [name](const VkLayerProperties &e) -> bool {
-			return strcmp(e.layerName, name) == 0;
-		});
-		return layer_itr != end(queried_layers);
-	};
-
-	force_no_validation = false;
-	VkValidationFeaturesEXT validation_features = { VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT };
-
-	if (!force_no_validation && has_layer("VK_LAYER_KHRONOS_validation"))
-	{
-		instance_layers.push_back("VK_LAYER_KHRONOS_validation");
-		LOGI("Enabling VK_LAYER_KHRONOS_validation.\n");
-
-		uint32_t layer_ext_count = 0;
-		vkEnumerateInstanceExtensionProperties("VK_LAYER_KHRONOS_validation", &layer_ext_count, nullptr);
-		std::vector<VkExtensionProperties> layer_exts(layer_ext_count);
-		vkEnumerateInstanceExtensionProperties("VK_LAYER_KHRONOS_validation", &layer_ext_count, layer_exts.data());
-
-		if (false) /* (synchronisation validation: off) */
-		{
-			// Tons of false positives around timeline semaphores atm, so don't bother.
-			if (find_if(begin(layer_exts), end(layer_exts), [](const VkExtensionProperties &e)
-			{
-				return strcmp(e.extensionName, VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME) == 0;
-			}) != end(layer_exts))
-			{
-				instance_exts.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
-				static const VkValidationFeatureEnableEXT validation_sync_features[1] = {
-					VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
-				};
-				LOGI("Enabling VK_EXT_validation_features for synchronization validation.\n");
-				validation_features.enabledValidationFeatureCount = 1;
-				validation_features.pEnabledValidationFeatures = validation_sync_features;
-				info.pNext = &validation_features;
-			}
-		}
-
-		if (!ext.supports_debug_utils &&
-		    find_if(begin(layer_exts), end(layer_exts), [](const VkExtensionProperties &e) {
-			    return strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0;
-		    }) != end(layer_exts))
-		{
-			instance_exts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-			ext.supports_debug_utils = true;
-		}
-	}
-#endif
 
 	if (has_extension(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME))
 	{
@@ -479,25 +343,6 @@ bool Context::create_instance()
 
 	gs_vk_load_instance_functions(instance);
 
-#if defined(VULKAN_DEBUG)
-	if (ext.supports_debug_utils)
-	{
-		VkDebugUtilsMessengerCreateInfoEXT debug_info = { VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
-		debug_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
-		                             VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
-		                             VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-		                             VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
-		debug_info.pfnUserCallback = vulkan_messenger_cb;
-		debug_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-		                         VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
-		                         VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT;
-		debug_info.pUserData = this;
-
-		// For some reason, this segfaults Android, sigh ... We get relevant output in logcat anyways.
-		if (vkCreateDebugUtilsMessengerEXT)
-			vkCreateDebugUtilsMessengerEXT(instance, &debug_info, nullptr, &debug_messenger);
-	}
-#endif
 
 	return true;
 }
@@ -1168,12 +1013,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 		}
 	}
 
-#ifdef VULKAN_DEBUG
-	static const char *family_names[QUEUE_INDEX_COUNT] = { "Graphics", "Compute", "Transfer", "Video decode", "Video encode" };
-	for (int i = 0; i < QUEUE_INDEX_COUNT; i++)
-		if (queue_info.family_indices[i] != VK_QUEUE_FAMILY_IGNORED)
-			LOGI("%s queue: family %u, index %u.\n", family_names[i], queue_info.family_indices[i], queue_indices[i]);
-#endif
 
 	return true;
 }

@@ -148,21 +148,6 @@ void CommandBuffer::barrier(VkPipelineStageFlags2 src_stages, VkAccessFlags2 src
 	barrier(dep);
 }
 
-static inline bool is_legacy_layout(VkImageLayout layout)
-{
-	switch (layout)
-	{
-	case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-	case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
-	case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-	case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-		return true;
-
-	default:
-		return false;
-	}
-}
-
 void CommandBuffer::barrier(const VkDependencyInfo &dep)
 {
 	VK_ASSERT(!actual_render_pass);
@@ -197,49 +182,6 @@ void CommandBuffer::barrier(const VkDependencyInfo &dep)
 		return;
 	}
 
-#ifdef VULKAN_DEBUG
-	VkPipelineStageFlags2 stages = 0;
-	VkAccessFlags2 access = 0;
-
-	for (uint32_t i = 0; i < dep.memoryBarrierCount; i++)
-	{
-		auto &b = dep.pMemoryBarriers[i];
-		stages |= b.srcStageMask | b.dstStageMask;
-		access |= b.srcAccessMask | b.dstAccessMask;
-	}
-
-	for (uint32_t i = 0; i < dep.bufferMemoryBarrierCount; i++)
-	{
-		auto &b = dep.pBufferMemoryBarriers[i];
-		stages |= b.srcStageMask | b.dstStageMask;
-		access |= b.srcAccessMask | b.dstAccessMask;
-	}
-
-	for (uint32_t i = 0; i < dep.imageMemoryBarrierCount; i++)
-	{
-		auto &b = dep.pImageMemoryBarriers[i];
-		stages |= b.srcStageMask | b.dstStageMask;
-		access |= b.srcAccessMask | b.dstAccessMask;
-	}
-
-	if (stages & VK_PIPELINE_STAGE_TRANSFER_BIT)
-		LOGW("Using deprecated TRANSFER stage.\n");
-	if (stages & VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT)
-		LOGW("Using deprecated BOTTOM_OF_PIPE stage.\n");
-	if (stages & VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT)
-		LOGW("Using deprecated TOP_OF_PIPE stage.\n");
-
-	if (access & VK_ACCESS_SHADER_READ_BIT)
-		LOGW("Using deprecated SHADER_READ access.\n");
-	if (stages & VK_ACCESS_SHADER_WRITE_BIT)
-		LOGW("Using deprecated SHADER_WRITE access.\n");
-
-	for (uint32_t i = 0; i < dep.imageMemoryBarrierCount; i++)
-	{
-		VK_ASSERT(!is_legacy_layout(dep.pImageMemoryBarriers[i].oldLayout) &&
-		          !is_legacy_layout(dep.pImageMemoryBarriers[i].newLayout));
-	}
-#endif
 
 	table.vkCmdPipelineBarrier2(cmd, &dep);
 }
@@ -252,7 +194,6 @@ void CommandBuffer::image_barrier(const Image &image,
 	VK_ASSERT(!actual_render_pass);
 	VK_ASSERT(!framebuffer);
 	VK_ASSERT(image.get_create_info().domain != ImageDomain::Transient);
-	VK_ASSERT(!is_legacy_layout(old_layout) && !is_legacy_layout(new_layout));
 
 	VkImageMemoryBarrier2 b = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
 	b.srcAccessMask = src_access;
@@ -504,11 +445,9 @@ static void log_compile_time(const char *tag, Hash hash,
                              CommandBuffer::CompileMode mode)
 {
 	bool stall = time_ns >= 5 * 1000 * 1000 && mode != CommandBuffer::CompileMode::AsyncThread;
-#ifndef VULKAN_DEBUG
 	// If a compile takes more than 5 ms and it's not happening on an async thread,
 	// we consider it a stall.
 	if (stall)
-#endif
 	{
 		double time_us = 1e-3 * double(time_ns);
 		const char *mode_str;
@@ -528,16 +467,6 @@ static void log_compile_time(const char *tag, Hash hash,
 			break;
 		}
 
-#ifdef VULKAN_DEBUG
-		if (!stall)
-		{
-			LOGI("Compile (%s, %016llx): thread %u - %.3f us (mode: %s, success: %s).\n",
-			     tag, static_cast<unsigned long long>(hash),
-			     get_current_thread_index(),
-			     time_us, mode_str, result == VK_SUCCESS ? "yes" : "no");
-		}
-		else
-#endif
 		{
 			LOGW("Stalled compile (%s, %016llx): thread %u - %.3f us (mode: %s, success: %s).\n",
 			     tag, static_cast<unsigned long long>(hash),
@@ -1240,10 +1169,6 @@ VkPipeline CommandBuffer::flush_render_state(bool synchronous)
 
 	uint32_t update_vbo_mask = dirty_vbos & active_vbos;
 	for_each_bit_range(update_vbo_mask, [&](uint32_t binding, uint32_t binding_count) {
-#ifdef VULKAN_DEBUG
-		for (unsigned i = binding; i < binding + binding_count; i++)
-			VK_ASSERT(vbo.buffers[i] != VK_NULL_HANDLE);
-#endif
 		table.vkCmdBindVertexBuffers(cmd, binding, binding_count, vbo.buffers + binding, vbo.offsets + binding);
 	});
 	dirty_vbos &= ~update_vbo_mask;
@@ -1286,11 +1211,7 @@ void CommandBuffer::set_program(Program *program)
 	if (!program)
 		return;
 
-	VK_ASSERT((framebuffer && pipeline_state.program->get_shader(ShaderStage::Fragment)) ||
-	          (!framebuffer && pipeline_state.program->get_shader(ShaderStage::Compute)));
-
 	set_program_layout(program->get_pipeline_layout());
-
 }
 
 void CommandBuffer::set_program_layout(const PipelineLayout *layout)
@@ -1583,9 +1504,6 @@ void CommandBuffer::rebind_descriptor_set(uint32_t set, VkDescriptorSet *sets, u
 
 void CommandBuffer::push_descriptor_set(uint32_t set)
 {
-#ifdef VULKAN_DEBUG
-	validate_descriptor_binds(set);
-#endif
 
 	VkDescriptorUpdateTemplate update_template = pipeline_state.layout->get_update_template(set);
 	VK_ASSERT(update_template);
@@ -1615,9 +1533,6 @@ void CommandBuffer::flush_descriptor_set(uint32_t set, VkDescriptorSet *sets,
 		return;
 	}
 
-#ifdef VULKAN_DEBUG
-	validate_descriptor_binds(set);
-#endif
 
 	auto vk_set = pipeline_state.layout->get_allocator(set)->request_descriptor_set(thread_index, device->frame_context_index);
 

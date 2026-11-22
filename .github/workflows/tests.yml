@@ -161,7 +161,7 @@ jobs:
         run: |
           WINE=$(command -v wine || command -v wine64)
           export WINE
-          for t in baseblocks biosver dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d11device d3d11shadercache d3d11texture d3d12builders d3d12desc d3d12device d3d12shadercache d3d12stream d3d12texture d3dshader granitevk gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics profiler ringheap settings swjit usbhid vkbuilders vkloader vkstream vktexture vtrace vuops; do
+          for t in baseblocks biosver dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d11device d3d11shadercache d3d11texture d3d12builders d3d12desc d3d12device d3d12shadercache d3d12stream d3d12texture d3dshader granitevk granitedebug gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics profiler ringheap settings swjit usbhid vkbuilders vkloader vkstream vktexture vtrace vuops; do
             echo "== $t"
             sh "tests/$t/build.sh"
           done
@@ -186,7 +186,7 @@ jobs:
           CC: aarch64-linux-gnu-gcc
           CXX: aarch64-linux-gnu-g++
         run: |
-          for t in baseblocks dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d12desc d3d12stream granitevk gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics ringheap settings usbhid vkbuilders vkdevice vkloader vkstream vktexture vtrace; do
+          for t in baseblocks dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d12desc d3d12stream granitevk granitedebug gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics ringheap settings usbhid vkbuilders vkdevice vkloader vkstream vktexture vtrace; do
             echo "== $t"
             sh "tests/$t/build.sh"
           done
@@ -274,6 +274,34 @@ jobs:
       - name: Build the core with CMake
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Run the Vulkan negotiation suite on it
+        env:
+          LRPS2_CORE: ${{ github.workspace }}/build/bin/pcsx2_libretro.so
+          VN_REQUIRE_VALIDATION: 1
+        run: sh tests/vknegotiate/build.sh
+
+  # The same as a Debug build: -O0 leaves a plain C inline function
+  # without an external definition, and VULKAN_DEBUG turns Granite's
+  # asserts into code. Neither shows in the Release build.
+  cmake-debug:
+    name: CMake Debug core on lavapipe
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install the build and lavapipe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build python3 liblzma-dev zlib1g-dev libgl-dev libegl1 mesa-vulkan-drivers libvulkan1 vulkan-validationlayers glslc
+
+      - name: Build the core with CMake
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
           cmake --build build
 
       - name: Run the Vulkan negotiation suite on it

@@ -261,7 +261,7 @@ static int u32_compare(const void* a, const void* b)
  * bits above 12 encode the page size as a run of set bits. Convert it into an
  * actual ((1 << (12 + n)) - 1) mask so the cacheable-range check below is
  * correct. */
-__inline int ConvertPageMask(u32 PageMask)
+static __inline int ConvertPageMask(u32 PageMask)
 {
 	/* Count the set bits in the page-size field portably (MSVC has no
 	 * __builtin_popcount). This is only called during TLB setup, so a small
@@ -277,7 +277,7 @@ __inline int ConvertPageMask(u32 PageMask)
 	return (1 << (12 + mask)) - 1;
 }
 
-__inline int CheckCache(u32 addr)
+static __inline int CheckCache(u32 addr)
 {
 	int i;
 	if (((cpuRegs.CP0.n.Config >> 16) & 0x1) != 0)
