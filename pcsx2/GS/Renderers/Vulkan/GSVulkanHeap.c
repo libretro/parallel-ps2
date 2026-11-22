@@ -84,11 +84,22 @@ static int gs_vk_block_insert_span(gs_vk_block_t *b, unsigned at,
    if (b->free_count == b->free_capacity)
    {
       const unsigned cap = b->free_capacity ? b->free_capacity * 2u : GS_VK_HEAP_MIN_SPANS;
-      gs_vk_span_t *grown = (gs_vk_span_t*)realloc(b->free_spans, cap * sizeof(gs_vk_span_t));
+      gs_vk_span_t *grown;
+
+      /* The first growth leaves the heap's pool, which is not realloc's. */
+      if (b->spans_owned)
+         grown = (gs_vk_span_t*)realloc(b->free_spans, cap * sizeof(gs_vk_span_t));
+      else
+      {
+         grown = (gs_vk_span_t*)malloc(cap * sizeof(gs_vk_span_t));
+         if (grown && b->free_count)
+            memcpy(grown, b->free_spans, b->free_count * sizeof(gs_vk_span_t));
+      }
       if (!grown)
          return 0;
       b->free_spans    = grown;
       b->free_capacity = cap;
+      b->spans_owned   = 1;
    }
    if (at < b->free_count)
       memmove(&b->free_spans[at + 1], &b->free_spans[at],
@@ -111,10 +122,19 @@ static void gs_vk_block_remove_span(gs_vk_block_t *b, unsigned at)
  * is for something written through its address, and a block that cannot
  * be mapped is no use to it - it goes back to the driver and this fails.
  * Returns the block's index, or -1 with heap->last_error saying why. */
-static int gs_vk_heap_add_block(gs_vk_heap_t *heap, unsigned type, unsigned linear,
-      VkDeviceSize size, int need_map)
+/* kind: bit 0 linear, bits 1 and 2 the priority class. */
+#define GS_VK_KIND(linear, priority) (((linear) ? 1u : 0u) | (((priority) & 3u) << 1))
+
+static int gs_vk_heap_add_block(gs_vk_heap_t *heap, unsigned type, unsigned kind,
+      VkDeviceSize size, int need_map, const VkMemoryDedicatedAllocateInfo *dedicated)
 {
+   static const float priorities[4] = { 0.5f, 0.0f, 0.5f, 1.0f };
    VkMemoryAllocateInfo mai;
+   VkMemoryPriorityAllocateInfoEXT priority;
+   VkMemoryAllocateFlagsInfo flags;
+   const unsigned heap_index = heap->props.memoryTypes[type].heapIndex;
+   const unsigned linear     = kind & 1u;
+   const unsigned klass      = (kind >> 1) & 3u;
    gs_vk_block_t *b;
    VkDeviceMemory memory = VK_NULL_HANDLE;
    void *mapped          = NULL;
@@ -131,7 +151,9 @@ static int gs_vk_heap_add_block(gs_vk_heap_t *heap, unsigned type, unsigned line
     * texture and a line in the log; a heap that does not is a dead
     * machine. */
    if (slot >= GS_VK_HEAP_MAX_BLOCKS
-         || (heap->max_bytes && heap->bytes_reserved + size > heap->max_bytes))
+         || (heap->max_bytes && heap->bytes_reserved + size > heap->max_bytes)
+         || (heap_index < VK_MAX_MEMORY_HEAPS && heap->heap_limit[heap_index]
+            && heap->heap_reserved[heap_index] + size > heap->heap_limit[heap_index]))
    {
       heap->last_error = VK_ERROR_OUT_OF_DEVICE_MEMORY;
       return -1;
@@ -141,6 +163,24 @@ static int gs_vk_heap_add_block(gs_vk_heap_t *heap, unsigned type, unsigned line
    mai.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
    mai.allocationSize  = size;
    mai.memoryTypeIndex = type;
+   if (dedicated)
+      mai.pNext = dedicated;
+   if (linear && heap->linear_flags)
+   {
+      memset(&flags, 0, sizeof(flags));
+      flags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+      flags.flags = heap->linear_flags;
+      flags.pNext = mai.pNext;
+      mai.pNext   = &flags;
+   }
+   if (heap->use_priority)
+   {
+      memset(&priority, 0, sizeof(priority));
+      priority.sType    = VK_STRUCTURE_TYPE_MEMORY_PRIORITY_ALLOCATE_INFO_EXT;
+      priority.priority = priorities[klass];
+      priority.pNext    = mai.pNext;
+      mai.pNext         = &priority;
+   }
 
    result = heap->fns.allocate_memory(heap->device, &mai, NULL, &memory);
    if (result != VK_SUCCESS)
@@ -174,6 +214,13 @@ static int gs_vk_heap_add_block(gs_vk_heap_t *heap, unsigned type, unsigned line
    b->max_free = size;
    b->type     = type;
    b->linear   = linear;
+   b->priority  = (unsigned char)klass;
+   b->dedicated = dedicated ? 1 : 0;
+   if (heap->span_pool)
+   {
+      b->free_spans    = heap->span_pool + (size_t)slot * GS_VK_HEAP_MIN_SPANS;
+      b->free_capacity = GS_VK_HEAP_MIN_SPANS;
+   }
 
    if (!gs_vk_block_insert_span(b, 0, 0, size))
    {
@@ -188,6 +235,8 @@ static int gs_vk_heap_add_block(gs_vk_heap_t *heap, unsigned type, unsigned line
    if (slot == heap->block_count)
       heap->block_count++;
    heap->bytes_reserved += size;
+   if (heap_index < VK_MAX_MEMORY_HEAPS)
+      heap->heap_reserved[heap_index] += size;
    return (int)slot;
 }
 
@@ -206,7 +255,9 @@ int gs_vk_heap_init(gs_vk_heap_t *heap, VkDevice device,
    heap->block_size = block_size ? block_size : (64u * 1024u * 1024u);
    heap->atom_size  = non_coherent_atom_size ? non_coherent_atom_size : 256u;
    heap->max_bytes  = max_bytes;
-   return 1;
+   heap->span_pool  = (gs_vk_span_t*)malloc(
+         (size_t)GS_VK_HEAP_MAX_BLOCKS * GS_VK_HEAP_MIN_SPANS * sizeof(gs_vk_span_t));
+   return heap->span_pool != NULL;
 }
 
 VkDeviceSize gs_vk_heap_ceiling(VkDeviceSize working_set, VkDeviceSize block,
@@ -231,11 +282,14 @@ void gs_vk_heap_shutdown(gs_vk_heap_t *heap)
       if (b->mapped)
          heap->fns.unmap_memory(heap->device, b->memory);
       heap->fns.free_memory(heap->device, b->memory, NULL);
-      if (b->free_spans)
+      if (b->spans_owned)
          free(b->free_spans);
    }
+   free(heap->span_pool);
+   heap->span_pool      = NULL;
    heap->block_count    = 0;
    heap->bytes_reserved = 0;
+   memset(heap->heap_reserved, 0, sizeof(heap->heap_reserved));
    heap->bytes_used     = 0;
    heap->bytes_host     = 0;
    heap->bytes_device   = 0;
@@ -254,8 +308,8 @@ unsigned gs_vk_heap_reserve(gs_vk_heap_t *heap, uint32_t type_bits,
    /* The first type that will do; whatever the driver would not give of
     * it comes from the next. */
    for (i = 0; i < count && made < blocks; i++)
-      while (made < blocks && gs_vk_heap_add_block(heap, types[i], linear ? 1u : 0u,
-               gs_vk_block_size(heap, types[i], 0), need_map) >= 0)
+      while (made < blocks && gs_vk_heap_add_block(heap, types[i], GS_VK_KIND(linear, 0),
+               gs_vk_block_size(heap, types[i], 0), need_map, NULL) >= 0)
          made++;
    return made;
 }
@@ -327,6 +381,29 @@ static int gs_vk_block_alloc(gs_vk_heap_t *heap, gs_vk_block_t *b, unsigned inde
    return 0;
 }
 
+/* A block back to the driver. */
+static void gs_vk_heap_release_block(gs_vk_heap_t *heap, gs_vk_block_t *b)
+{
+   const unsigned heap_index = heap->props.memoryTypes[b->type].heapIndex;
+
+   if (b->mapped)
+      heap->fns.unmap_memory(heap->device, b->memory);
+   heap->fns.free_memory(heap->device, b->memory, NULL);
+   if (b->spans_owned)
+      free(b->free_spans);
+
+   heap->bytes_reserved -= b->size;
+   if (heap_index < VK_MAX_MEMORY_HEAPS && heap->heap_reserved[heap_index] >= b->size)
+      heap->heap_reserved[heap_index] -= b->size;
+
+   /* A hole, not a gap closed up. Every live allocation carries the
+    * index of its block, so the array must not be compacted - moving
+    * the last block into this slot would leave those allocations
+    * pointing at someone else's memory. The slot is reused by the
+    * next block instead. */
+   memset(b, 0, sizeof(*b));
+}
+
 unsigned gs_vk_heap_trim(gs_vk_heap_t *heap)
 {
    unsigned freed = 0;
@@ -338,29 +415,15 @@ unsigned gs_vk_heap_trim(gs_vk_heap_t *heap)
 
       if (!b->memory || b->used != 0)
          continue;
-
-      if (b->mapped)
-         heap->fns.unmap_memory(heap->device, b->memory);
-      heap->fns.free_memory(heap->device, b->memory, NULL);
-      if (b->free_spans)
-         free(b->free_spans);
-
-      heap->bytes_reserved -= b->size;
+      gs_vk_heap_release_block(heap, b);
       freed++;
-
-      /* A hole, not a gap closed up. Every live allocation carries the
-       * index of its block, so the array must not be compacted - moving
-       * the last block into this slot would leave those allocations
-       * pointing at someone else's memory. The slot is reused by the
-       * next block instead. */
-      memset(b, 0, sizeof(*b));
    }
    return freed;
 }
 
 /* An allocation from the blocks there are of one memory type and kind. */
 static int gs_vk_heap_alloc_existing(gs_vk_heap_t *heap, const VkMemoryRequirements *req,
-      unsigned type, unsigned linear, int need_map, gs_vk_alloc_t *out)
+      unsigned type, unsigned kind, int need_map, gs_vk_alloc_t *out)
 {
    unsigned i;
 
@@ -368,7 +431,8 @@ static int gs_vk_heap_alloc_existing(gs_vk_heap_t *heap, const VkMemoryRequireme
    {
       gs_vk_block_t *b = &heap->blocks[i];
 
-      if (!b->memory || b->type != type || b->linear != linear)
+      if (!b->memory || b->dedicated || b->type != type
+            || b->linear != (kind & 1u) || b->priority != ((kind >> 1) & 3u))
          continue;
       if (need_map && !b->mapped)
          continue;
@@ -382,10 +446,14 @@ static int gs_vk_heap_alloc_existing(gs_vk_heap_t *heap, const VkMemoryRequireme
  * that asks the driver for memory, and the reason gs_vk_heap_reserve
  * exists - reserve enough at startup and this never runs. */
 static int gs_vk_heap_alloc_new(gs_vk_heap_t *heap, const VkMemoryRequirements *req,
-      unsigned type, unsigned linear, int need_map, gs_vk_alloc_t *out)
+      unsigned type, unsigned kind, int need_map,
+      const VkMemoryDedicatedAllocateInfo *dedicated, gs_vk_alloc_t *out)
 {
-   const int slot = gs_vk_heap_add_block(heap, type, linear,
-         gs_vk_block_size(heap, type, req->size), need_map);
+   /* Dedicated memory is exactly what the object needs: the driver may
+    * refuse anything else. */
+   const int slot = gs_vk_heap_add_block(heap, type, kind,
+         dedicated ? req->size : gs_vk_block_size(heap, type, req->size),
+         need_map, dedicated);
 
    if (slot < 0)
       return 0;
@@ -397,7 +465,26 @@ int gs_vk_heap_alloc(gs_vk_heap_t *heap, const VkMemoryRequirements *req,
       VkMemoryPropertyFlags required, VkMemoryPropertyFlags preferred,
       int linear, gs_vk_alloc_t *out)
 {
-   const unsigned kind = linear ? 1u : 0u;
+   gs_vk_alloc_request_t request;
+
+   memset(&request, 0, sizeof(request));
+   request.req       = *req;
+   request.required  = required;
+   request.preferred = preferred;
+   request.linear    = linear;
+   return gs_vk_heap_alloc_request(heap, &request, out);
+}
+
+int gs_vk_heap_alloc_request(gs_vk_heap_t *heap, const gs_vk_alloc_request_t *request,
+      gs_vk_alloc_t *out)
+{
+   const VkMemoryRequirements *req      = &request->req;
+   const VkMemoryPropertyFlags required = request->required;
+   const VkMemoryPropertyFlags preferred = request->preferred;
+   const unsigned kind = GS_VK_KIND(request->linear,
+         heap->use_priority ? request->priority : 0u);
+   VkMemoryDedicatedAllocateInfo dedicated_info;
+   const VkMemoryDedicatedAllocateInfo *dedicated = NULL;
    /* Asked for as a requirement, the memory is written through its
     * address: the allocation is mapped, or it fails. */
    const int need_map  = (required & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
@@ -415,6 +502,15 @@ int gs_vk_heap_alloc(gs_vk_heap_t *heap, const VkMemoryRequirements *req,
       return 0;
    }
 
+   if (request->dedicated_image != VK_NULL_HANDLE || request->dedicated_buffer != VK_NULL_HANDLE)
+   {
+      memset(&dedicated_info, 0, sizeof(dedicated_info));
+      dedicated_info.sType  = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+      dedicated_info.image  = request->dedicated_image;
+      dedicated_info.buffer = request->dedicated_buffer;
+      dedicated             = &dedicated_info;
+   }
+
    /* preferred is a preference. A type that has it may not exist, and
     * where it does the driver may have none of it left long before the
     * device runs out: the device-local host-visible type is the PCI BAR
@@ -425,11 +521,12 @@ int gs_vk_heap_alloc(gs_vk_heap_t *heap, const VkMemoryRequirements *req,
     * driver lists them in. */
    for (;;)
    {
+      if (!dedicated)
+         for (i = first; i < end; i++)
+            if (gs_vk_heap_alloc_existing(heap, req, types[i], kind, need_map, out))
+               return 1;
       for (i = first; i < end; i++)
-         if (gs_vk_heap_alloc_existing(heap, req, types[i], kind, need_map, out))
-            return 1;
-      for (i = first; i < end; i++)
-         if (gs_vk_heap_alloc_new(heap, req, types[i], kind, need_map, out))
+         if (gs_vk_heap_alloc_new(heap, req, types[i], kind, need_map, dedicated, out))
             return 1;
       if (end == count)
          break;
@@ -443,7 +540,7 @@ int gs_vk_heap_alloc(gs_vk_heap_t *heap, const VkMemoryRequirements *req,
     * more. */
    if (gs_vk_heap_trim(heap))
       for (i = 0; i < count; i++)
-         if (gs_vk_heap_alloc_new(heap, req, types[i], kind, need_map, out))
+         if (gs_vk_heap_alloc_new(heap, req, types[i], kind, need_map, dedicated, out))
             return 1;
    return 0;
 }
@@ -533,6 +630,10 @@ void gs_vk_heap_free(gs_vk_heap_t *heap, const gs_vk_alloc_t *alloc)
 
    if (size > b->max_free)
       b->max_free = size;
+
+   /* Memory made for one object goes when the object does. */
+   if (b->dedicated && !b->used)
+      gs_vk_heap_release_block(heap, b);
 }
 
 /* A flush has to name a range that starts and ends on

@@ -2727,135 +2727,54 @@ ImageHandle Device::create_image(const ImageCreateInfo &create_info, const Image
 bool Device::allocate_image_memory(DeviceAllocation *allocation, const ImageCreateInfo &info,
                                    VkImage image, VkImageTiling tiling, VkImageUsageFlags usage)
 {
-	if ((info.flags & VK_IMAGE_CREATE_DISJOINT_BIT) != 0 && info.num_memory_aliases == 0)
+	VkMemoryRequirements reqs;
+	table->vkGetImageMemoryRequirements(device, image, &reqs);
+
+	auto domain = (usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT) != 0 ? ImageDomain::HostCopy : info.domain;
+	uint32_t memory_type = find_memory_type(domain, reqs.memoryTypeBits);
+	if (memory_type == UINT32_MAX)
 	{
-		LOGE("Must use memory aliases when creating a DISJOINT planar image.\n");
+		LOGE("Failed to find memory type.\n");
 		return false;
 	}
 
-	if (info.num_memory_aliases != 0)
+	if (tiling == VK_IMAGE_TILING_LINEAR &&
+	    (info.misc & IMAGE_MISC_LINEAR_IMAGE_IGNORE_DEVICE_LOCAL_BIT) == 0)
 	{
-		*allocation = {};
-
-		unsigned num_planes = format_ycbcr_num_planes(info.format);
-		if (info.num_memory_aliases < num_planes)
+		// Is it also device local?
+		if ((mem_props.memoryTypes[memory_type].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == 0)
 			return false;
+	}
 
-		if (num_planes == 1)
-		{
-			VkMemoryRequirements reqs;
-			table->vkGetImageMemoryRequirements(device, image, &reqs);
-			auto &alias = *info.memory_aliases[0];
-
-			// Verify we can actually use this aliased allocation.
-			if ((reqs.memoryTypeBits & (1u << alias.memory_type)) == 0)
-				return false;
-			if (reqs.size > alias.size)
-				return false;
-			if (((alias.offset + reqs.alignment - 1) & ~(reqs.alignment - 1)) != alias.offset)
-				return false;
-
-			if (table->vkBindImageMemory(device, image, alias.get_memory(), alias.get_offset()) != VK_SUCCESS)
-				return false;
-		}
-		else
-		{
-			VkBindImageMemoryInfo bind_infos[3];
-			VkBindImagePlaneMemoryInfo bind_plane_infos[3];
-			VK_ASSERT(num_planes <= 3);
-
-			for (unsigned plane = 0; plane < num_planes; plane++)
-			{
-				VkMemoryRequirements2 memory_req = {VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 };
-				VkImageMemoryRequirementsInfo2 image_info = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2 };
-				image_info.image = image;
-
-				VkImagePlaneMemoryRequirementsInfo plane_info = { VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO };
-				plane_info.planeAspect = static_cast<VkImageAspectFlagBits>(VK_IMAGE_ASPECT_PLANE_0_BIT << plane);
-				image_info.pNext = &plane_info;
-
-				table->vkGetImageMemoryRequirements2(device, &image_info, &memory_req);
-				auto &reqs = memory_req.memoryRequirements;
-				auto &alias = *info.memory_aliases[plane];
-
-				// Verify we can actually use this aliased allocation.
-				if ((reqs.memoryTypeBits & (1u << alias.memory_type)) == 0)
-					return false;
-				if (reqs.size > alias.size)
-					return false;
-				if (((alias.offset + reqs.alignment - 1) & ~(reqs.alignment - 1)) != alias.offset)
-					return false;
-
-				bind_infos[plane] = { VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO };
-				bind_infos[plane].image = image;
-				bind_infos[plane].memory = alias.base;
-				bind_infos[plane].memoryOffset = alias.offset;
-				bind_infos[plane].pNext = &bind_plane_infos[plane];
-
-				bind_plane_infos[plane] = { VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO };
-				bind_plane_infos[plane].planeAspect = static_cast<VkImageAspectFlagBits>(VK_IMAGE_ASPECT_PLANE_0_BIT << plane);
-			}
-
-			if (table->vkBindImageMemory2(device, num_planes, bind_infos) != VK_SUCCESS)
-				return false;
-		}
+	AllocationMode mode;
+	if (tiling == VK_IMAGE_TILING_OPTIMAL &&
+	         (info.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT)) != 0)
+	{
+		mode = AllocationMode::OptimalRenderTarget;
 	}
 	else
 	{
-		VkMemoryRequirements reqs;
-		table->vkGetImageMemoryRequirements(device, image, &reqs);
+		mode = tiling == VK_IMAGE_TILING_OPTIMAL || info.domain == ImageDomain::LinearDevice ?
+		       AllocationMode::OptimalResource : AllocationMode::LinearHostMappable;
+	}
 
-		// If we intend to alias with other images bump the alignment to something very high.
-		// This is kind of crude, but should be high enough to allow YCbCr disjoint aliasing on any implementation.
-		if (info.flags & VK_IMAGE_CREATE_ALIAS_BIT)
-			if (reqs.alignment < 64 * 1024)
-				reqs.alignment = 64 * 1024;
-
-		auto domain = (usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT) != 0 ? ImageDomain::HostCopy : info.domain;
-		uint32_t memory_type = find_memory_type(domain, reqs.memoryTypeBits);
-		if (memory_type == UINT32_MAX)
+	{
+		LOCK_MEMORY();
+		if (!managers.memory.allocate_image_memory(reqs.size, reqs.alignment, mode, memory_type, image,
+		                                           tiling == VK_IMAGE_TILING_LINEAR,
+		                                           (info.misc & IMAGE_MISC_FORCE_NO_DEDICATED_BIT) != 0, allocation))
 		{
-			LOGE("Failed to find memory type.\n");
+			LOGE("Failed to allocate image memory (type %u, size: %u).\n",
+			     unsigned(memory_type), unsigned(reqs.size));
 			return false;
 		}
+	}
 
-		if (tiling == VK_IMAGE_TILING_LINEAR &&
-		    (info.misc & IMAGE_MISC_LINEAR_IMAGE_IGNORE_DEVICE_LOCAL_BIT) == 0)
-		{
-			// Is it also device local?
-			if ((mem_props.memoryTypes[memory_type].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == 0)
-				return false;
-		}
-
-		AllocationMode mode;
-		if (tiling == VK_IMAGE_TILING_OPTIMAL &&
-		         (info.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT)) != 0)
-		{
-			mode = AllocationMode::OptimalRenderTarget;
-		}
-		else
-		{
-			mode = tiling == VK_IMAGE_TILING_OPTIMAL || info.domain == ImageDomain::LinearDevice ?
-			       AllocationMode::OptimalResource : AllocationMode::LinearHostMappable;
-		}
-
-		{
-			LOCK_MEMORY();
-			if (!managers.memory.allocate_image_memory(reqs.size, reqs.alignment, mode, memory_type, image,
-			                                           (info.misc & IMAGE_MISC_FORCE_NO_DEDICATED_BIT) != 0, allocation))
-			{
-				LOGE("Failed to allocate image memory (type %u, size: %u).\n",
-				     unsigned(memory_type), unsigned(reqs.size));
-				return false;
-			}
-		}
-
-		if (table->vkBindImageMemory(device, image, allocation->get_memory(),
-		                             allocation->get_offset()) != VK_SUCCESS)
-		{
-			LOGE("Failed to bind image memory.\n");
-			return false;
-		}
+	if (table->vkBindImageMemory(device, image, allocation->get_memory(),
+	                             allocation->get_offset()) != VK_SUCCESS)
+	{
+		LOGE("Failed to bind image memory.\n");
+		return false;
 	}
 
 	return true;

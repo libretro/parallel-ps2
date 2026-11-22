@@ -577,7 +577,6 @@ SOURCES_CXX += \
 # string_helpers and thread_priority are also excluded: nm shows none of their
 # defined symbols are referenced anywhere we link in.
 SOURCES_CXX += \
-	$(GRANITE_DIR)/util/arena_allocator.cpp \
 	$(GRANITE_DIR)/util/thread_id.cpp
 
 # Granite vulkan

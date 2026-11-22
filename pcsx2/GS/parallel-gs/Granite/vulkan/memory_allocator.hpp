@@ -22,21 +22,18 @@
 
 #pragma once
 
-#include "thread_prims.hpp"
-#include "intrusive.hpp"
-#include "object_pool.hpp"
-#include "intrusive_list.hpp"
 #include "vulkan_headers.hpp"
-#include "logging.hpp"
-#include "bitops.hpp"
-#include "enum_cast.hpp"
 #include "vulkan_common.hpp"
-#include "arena_allocator.hpp"
-#include <assert.h>
-#include <memory>
+#include "../../../Renderers/Vulkan/GSVulkanHeap.h"
 #include <stddef.h>
 #include <stdint.h>
-#include <vector>
+
+/* Device memory is the core's heap (GS/Renderers/Vulkan/GSVulkanHeap.c),
+ * the one the Vulkan renderer uses: blocks taken from the driver and
+ * kept, allocations an offset inside one, host-visible blocks mapped
+ * once. On top of what that renderer asks of it, this asks for memory
+ * priorities, device addresses for buffers, dedicated memory where the
+ * driver prefers it, and a limit on a small shared PCI BAR heap. */
 
 namespace Vulkan
 {
@@ -44,15 +41,8 @@ class Device;
 
 enum class ImageLayout;
 
-enum class MemoryClass : uint8_t
-{
-	Small = 0,
-	Medium,
-	Large,
-	Huge,
-	Count
-};
-
+/* What the memory is for: whether it is a buffer (linear) or an image,
+ * and its priority under pressure. */
 enum class AllocationMode : uint8_t
 {
 	LinearHostMappable = 0,
@@ -71,145 +61,32 @@ enum MemoryAccessFlag : uint32_t
 };
 using MemoryAccessFlags = uint32_t;
 
-struct DeviceAllocation;
 class DeviceAllocator;
-
-class ClassAllocator;
-class DeviceAllocator;
-class Allocator;
-class Device;
-
-using MiniHeap = Util::LegionHeap<DeviceAllocation>;
 
 struct DeviceAllocation
 {
-	friend class Util::ArenaAllocator<ClassAllocator, DeviceAllocation>;
-	friend class ClassAllocator;
-	friend class Allocator;
 	friend class DeviceAllocator;
-	friend class Device;
-	friend class ImageResourceHolder;
 
 public:
 	inline VkDeviceMemory get_memory() const
 	{
-		return base;
+		return alloc.memory;
 	}
 
-	inline uint32_t get_offset() const
+	inline VkDeviceSize get_offset() const
 	{
-		return offset;
+		return alloc.offset;
 	}
 
-	inline uint32_t get_size() const
+	inline VkDeviceSize get_size() const
 	{
-		return size;
+		return alloc.size;
 	}
 
-private:
-	VkDeviceMemory base = VK_NULL_HANDLE;
-	uint8_t *host_base = nullptr;
-	ClassAllocator *alloc = nullptr;
-	Util::IntrusiveList<MiniHeap>::Iterator heap = {};
-	uint32_t offset = 0;
-	uint32_t mask = 0;
-	uint32_t size = 0;
-
-	AllocationMode mode = AllocationMode::Count;
-	uint8_t memory_type = 0;
-
-	void free_global(DeviceAllocator &allocator, uint32_t size, uint32_t memory_type);
-	void free_immediate();
 	void free_immediate(DeviceAllocator &allocator);
-};
-
-class DeviceAllocationOwner;
-struct DeviceAllocationDeleter
-{
-	void operator()(DeviceAllocationOwner *owner);
-};
-
-class DeviceAllocationOwner : public Util::IntrusivePtrEnabled<DeviceAllocationOwner, DeviceAllocationDeleter, HandleCounter>
-{
-public:
-	friend class Util::ObjectPool<DeviceAllocationOwner>;
-	friend class Util::ThreadSafeObjectPool<DeviceAllocationOwner>;
-	friend struct DeviceAllocationDeleter;
-
-	~DeviceAllocationOwner();
 
 private:
-	DeviceAllocationOwner(Device *device, const DeviceAllocation &alloc);
-	Device *device;
-	DeviceAllocation alloc;
-};
-using DeviceAllocationOwnerHandle = Util::IntrusivePtr<DeviceAllocationOwner>;
-
-class ClassAllocator : public Util::ArenaAllocator<ClassAllocator, DeviceAllocation>
-{
-public:
-	friend class Util::ArenaAllocator<ClassAllocator, DeviceAllocation>;
-
-	inline void set_global_allocator(DeviceAllocator *allocator, AllocationMode mode, uint32_t memory_type_)
-	{
-		global_allocator = allocator;
-		global_allocator_mode = mode;
-		memory_type = memory_type_;
-	}
-
-	inline void set_parent(ClassAllocator *allocator)
-	{
-		parent = allocator;
-	}
-
-private:
-	ClassAllocator *parent = nullptr;
-	uint32_t memory_type = 0;
-	DeviceAllocator *global_allocator = nullptr;
-	AllocationMode global_allocator_mode = AllocationMode::Count;
-
-	// Implements curious recurring template pattern calls.
-	bool allocate_backing_heap(DeviceAllocation *allocation);
-	void free_backing_heap(DeviceAllocation *allocation);
-	void prepare_allocation(DeviceAllocation *allocation, Util::IntrusiveList<MiniHeap>::Iterator heap_itr,
-	                        const Util::SuballocationResult &suballoc);
-};
-
-class Allocator
-{
-public:
-	explicit Allocator(Util::ObjectPool<MiniHeap> &object_pool);
-	void operator=(const Allocator &) = delete;
-	Allocator(const Allocator &) = delete;
-
-	bool allocate(uint32_t size, uint32_t alignment, AllocationMode mode, DeviceAllocation *alloc);
-	bool allocate_global(uint32_t size, AllocationMode mode, DeviceAllocation *alloc);
-	bool allocate_dedicated(uint32_t size, AllocationMode mode, DeviceAllocation *alloc,
-	                        VkObjectType object_type, uint64_t object);
-
-	inline ClassAllocator &get_class_allocator(MemoryClass clazz, AllocationMode mode)
-	{
-		return classes[unsigned(clazz)][unsigned(mode)];
-	}
-
-	static void free(DeviceAllocation *alloc)
-	{
-		alloc->free_immediate();
-	}
-
-	void set_global_allocator(DeviceAllocator *allocator, uint32_t memory_type_)
-	{
-		memory_type = memory_type_;
-		for (auto &sub : classes)
-			for (int i = 0; i < Util::ecast(AllocationMode::Count); i++)
-				sub[i].set_global_allocator(allocator, AllocationMode(i), memory_type);
-		global_allocator = allocator;
-	}
-
-private:
-	ClassAllocator classes[Util::ecast(MemoryClass::Count)][Util::ecast(AllocationMode::Count)];
-	DeviceAllocator *global_allocator = nullptr;
-	uint32_t memory_type = 0;
+	gs_vk_alloc_t alloc = {};
 };
 
 struct HeapBudget
@@ -224,51 +101,32 @@ class DeviceAllocator
 {
 public:
 	void init(Device *device);
-
 	~DeviceAllocator();
 
-	bool allocate_generic_memory(uint32_t size, uint32_t alignment, AllocationMode mode, uint32_t memory_type,
-	                             DeviceAllocation *alloc);
-	bool allocate_image_memory(uint32_t size, uint32_t alignment, AllocationMode mode, uint32_t memory_type,
-	                           VkImage image, bool force_no_dedicated, DeviceAllocation *alloc);
+	bool allocate_generic_memory(VkDeviceSize size, VkDeviceSize alignment, AllocationMode mode,
+	                             uint32_t memory_type, DeviceAllocation *alloc);
+	bool allocate_image_memory(VkDeviceSize size, VkDeviceSize alignment, AllocationMode mode,
+	                           uint32_t memory_type, VkImage image, bool linear_tiling,
+	                           bool force_no_dedicated, DeviceAllocation *alloc);
+	void free(DeviceAllocation &alloc);
 
+	/* Empty blocks back to the driver. */
 	void garbage_collect();
 	void *map_memory(const DeviceAllocation &alloc, MemoryAccessFlags flags, VkDeviceSize offset, VkDeviceSize length);
 	void unmap_memory(const DeviceAllocation &alloc, MemoryAccessFlags flags, VkDeviceSize offset, VkDeviceSize length);
 
 	void get_memory_budget(HeapBudget *heaps);
 
-	bool internal_allocate(uint32_t size, uint32_t memory_type, AllocationMode mode,
-	                       VkDeviceMemory *memory, uint8_t **host_memory,
-	                       VkObjectType object_type, uint64_t dedicated_object);
-	void internal_free(uint32_t size, uint32_t memory_type, AllocationMode mode, VkDeviceMemory memory, bool is_mapped);
-	void internal_free_no_recycle(uint32_t size, uint32_t memory_type, VkDeviceMemory memory);
-
 private:
-	Util::ObjectPool<MiniHeap> object_pool;
-	std::vector<std::unique_ptr<Allocator>> allocators;
+	bool allocate(VkDeviceSize size, VkDeviceSize alignment, AllocationMode mode, bool linear,
+	              uint32_t memory_type, VkImage dedicated, DeviceAllocation *alloc);
+	void range(const DeviceAllocation &alloc, VkDeviceSize offset, VkDeviceSize length,
+	           VkMappedMemoryRange *out) const;
+
 	Device *device = nullptr;
 	const VulkanDeviceTable *table = nullptr;
-	VkPhysicalDeviceMemoryProperties mem_props;
-	VkDeviceSize atom_alignment = 1;
-	struct Allocation
-	{
-		VkDeviceMemory memory;
-		uint32_t size;
-		uint32_t type;
-		AllocationMode mode;
-	};
-
-	struct Heap
-	{
-		uint64_t size = 0;
-		std::vector<Allocation> blocks;
-		void garbage_collect(Device *device);
-	};
-
-	std::vector<Heap> heaps;
-	bool memory_heap_is_budget_critical[VK_MAX_MEMORY_HEAPS] = {};
-	void get_memory_budget_nolock(HeapBudget *heaps);
+	gs_vk_heap_t heap = {};
+	bool initialized = false;
 };
 
 // Avoid cross-dependency in header.

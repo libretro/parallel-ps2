@@ -78,7 +78,6 @@ struct HandlePool
 	VulkanObjectPool<SemaphoreHolder> semaphores;
 	VulkanObjectPool<CommandBuffer> command_buffers;
 	VulkanObjectPool<BindlessDescriptorPool> bindless_descriptor_pool;
-	VulkanObjectPool<DeviceAllocationOwner> allocations;
 };
 
 namespace Helper
@@ -150,7 +149,6 @@ public:
 	friend class DescriptorSetAllocator;
 	friend class Shader;
 	friend class ImageResourceHolder;
-	friend class DeviceAllocationOwner;
 	friend struct DeviceAllocationDeleter;
 
 	Device();

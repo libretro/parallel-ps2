@@ -26,6 +26,7 @@
 #include "format.hpp"
 #include "vulkan_common.hpp"
 #include "memory_allocator.hpp"
+#include "bitops.hpp"
 #include "vulkan_headers.hpp"
 #include <algorithm>
 
@@ -249,8 +250,6 @@ struct ImageCreateInfo
 	VkComponentMapping swizzle = {
 		VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
 	};
-	const DeviceAllocation **memory_aliases = nullptr;
-	unsigned num_memory_aliases = 0;
 	void *pnext = nullptr;
 	ImageLayout layout = ImageLayout::Optimal;
 

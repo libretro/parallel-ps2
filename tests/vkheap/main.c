@@ -28,6 +28,12 @@ static int map_fail_type = -1;
 #define TYPE_OF_MAX 4096
 static unsigned char type_of[TYPE_OF_MAX];
 
+/* What the last driver allocation chained: 1 dedicated, 2 allocate
+ * flags, 4 a priority, 8 anything else; its size and priority. */
+static int          last_chain;
+static VkDeviceSize last_size;
+static float        last_priority;
+
 static VkResult stub_allocate(VkDevice d, const VkMemoryAllocateInfo *ai,
       const VkAllocationCallbacks *cb, VkDeviceMemory *out)
 {
@@ -39,6 +45,26 @@ static VkResult stub_allocate(VkDevice d, const VkMemoryAllocateInfo *ai,
       refuse_taken += ai->allocationSize;
    }
    allocations++;
+   last_size  = ai->allocationSize;
+   last_chain = 0;
+   last_priority = -1.0f;
+   {
+      const VkBaseInStructure *n = (const VkBaseInStructure*)ai->pNext;
+      for (; n; n = n->pNext)
+      {
+         if (n->sType == VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO)
+            last_chain |= 1;
+         else if (n->sType == VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO)
+            last_chain |= 2;
+         else if (n->sType == VK_STRUCTURE_TYPE_MEMORY_PRIORITY_ALLOCATE_INFO_EXT)
+         {
+            last_chain |= 4;
+            last_priority = ((const VkMemoryPriorityAllocateInfoEXT*)n)->priority;
+         }
+         else
+            last_chain |= 8;
+      }
+   }
    *out = (VkDeviceMemory)(uintptr_t)(0x1000 + allocations);
    if (allocations < TYPE_OF_MAX)
       type_of[allocations] = (unsigned char)ai->memoryTypeIndex;
@@ -826,6 +852,82 @@ int main(void)
    }
 
    check_startup(&fns);
+
+   /* What paraLLEl-GS asks of the heap on top: all of it off by default,
+    * so the renderer that does not ask gets the same driver calls. */
+   {
+      gs_vk_heap_t x;
+      gs_vk_alloc_request_t rq;
+      gs_vk_alloc_t d, e, f;
+      int before;
+
+      CHECK(gs_vk_heap_init(&x, (VkDevice)1, &props, &fns, 1024 * 1024, 256, 0) != 0, "extras: init");
+      req(&r, 4096, 256, 0x1u);
+      CHECK(gs_vk_heap_alloc(&x, &r, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, 1, &d) != 0, "extras: plain");
+      CHECK(last_chain == 0, "nothing chained unless asked for");
+      CHECK(!x.blocks[d.block].spans_owned && x.blocks[d.block].free_spans >= x.span_pool
+            && x.blocks[d.block].free_spans < x.span_pool + GS_VK_HEAP_MAX_BLOCKS * 16,
+            "a block taken after init keeps its spans in the heap's pool, allocating nothing");
+      gs_vk_heap_free(&x, &d);
+      gs_vk_heap_trim(&x);
+
+      x.linear_flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+      x.use_priority = 1;
+      memset(&rq, 0, sizeof(rq));
+      req(&rq.req, 4096, 256, 0x1u);
+      rq.required = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      rq.linear   = 1;
+      rq.priority = 3;
+      CHECK(gs_vk_heap_alloc_request(&x, &rq, &d) != 0, "extras: a high-priority buffer");
+      CHECK(last_chain == (2 | 4) && last_priority == 1.0f,
+            "a buffer block carries the allocate flags and its priority");
+      before = allocations;
+      rq.priority = 1;
+      CHECK(gs_vk_heap_alloc_request(&x, &rq, &e) != 0, "extras: a low-priority buffer");
+      CHECK(allocations == before + 1 && e.memory != d.memory && last_priority == 0.0f,
+            "another priority class, another block");
+      rq.priority = 3;
+      before = allocations;
+      CHECK(gs_vk_heap_alloc_request(&x, &rq, &f) != 0 && f.memory == d.memory && allocations == before,
+            "the same class shares the block");
+      gs_vk_heap_free(&x, &f);
+      rq.linear = 0;
+      CHECK(gs_vk_heap_alloc_request(&x, &rq, &f) != 0 && !(last_chain & 2),
+            "an image block has no allocate flags");
+      gs_vk_heap_free(&x, &f);
+
+      /* Dedicated: memory of its own, exactly the size, given back on free. */
+      memset(&rq, 0, sizeof(rq));
+      req(&rq.req, 3 * 1024 * 1024 + 4096, 4096, 0x1u);
+      rq.required        = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      rq.dedicated_image = (VkImage)(uintptr_t)0x77;
+      before = allocations;
+      CHECK(gs_vk_heap_alloc_request(&x, &rq, &f) != 0, "extras: dedicated");
+      CHECK(allocations == before + 1 && (last_chain & 1) && last_size == rq.req.size && f.offset == 0,
+            "dedicated memory is its own allocation, exactly the size");
+      req(&r, 4096, 256, 0x1u);
+      CHECK(gs_vk_heap_alloc(&x, &r, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, 0, &e) != 0 && e.memory != f.memory,
+            "and nothing else lands in it");
+      gs_vk_heap_free(&x, &e);
+      frees = 0;
+      gs_vk_heap_free(&x, &f);
+      CHECK(frees == 1 && !x.blocks[f.block].memory, "freed, it goes straight back to the driver");
+      gs_vk_heap_free(&x, &d);
+      gs_vk_heap_trim(&x);
+      CHECK(x.heap_reserved[0] == x.bytes_reserved, "per-heap accounting follows every block");
+
+      /* A limit on a memory heap: blocks stop there, and the caller can
+       * go elsewhere. */
+      x.heap_limit[0] = x.heap_reserved[0] + 1024 * 1024;
+      req(&r, 600 * 1024, 256, 0x1u);
+      CHECK(gs_vk_heap_alloc(&x, &r, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, 0, &d) != 0, "limit: first block");
+      CHECK(gs_vk_heap_alloc(&x, &r, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, 0, &e) == 0,
+            "limit: no block past the heap's limit");
+      CHECK(x.heap_reserved[0] <= x.heap_limit[0], "limit: never past it");
+      gs_vk_heap_free(&x, &d);
+      gs_vk_heap_shutdown(&x);
+      CHECK(x.heap_reserved[0] == 0, "shutdown clears the per-heap accounting");
+   }
 
    frees = 0;
    gs_vk_heap_shutdown(&heap);

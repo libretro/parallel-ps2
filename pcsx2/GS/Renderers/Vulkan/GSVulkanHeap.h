@@ -85,6 +85,13 @@ typedef struct gs_vk_block
     * each other in one VkDeviceMemory, and keeping them in blocks of
     * their own is that rule kept without padding anything. */
    unsigned       linear;
+   /* A priority class (gs_vk_alloc_request), blocks of one class never
+    * holding another's; and whether the block is one allocation's alone,
+    * made for it and given back when it is freed. */
+   unsigned char  priority;
+   unsigned char  dedicated;
+   /* free_spans was grown past the heap's own and is the block's to free. */
+   unsigned char  spans_owned;
 } gs_vk_block_t;
 
 /* Enough that the ceiling is what stops the heap growing, never this
@@ -115,7 +122,39 @@ typedef struct gs_vk_heap
    VkDeviceSize                     bytes_device;
    VkResult                         last_error;     /* why the last block could not be had */
    VkDeviceSize                     bad_frees;      /* frees of memory already free, refused */
+
+   /* Off unless the caller sets them after gs_vk_heap_init. heap_limit:
+    * no block is taken that would put a memory heap past it (0: no
+    * limit), for a heap that is small and shared, such as the PCI BAR
+    * window. use_priority: blocks carry VkMemoryPriorityAllocateInfoEXT
+    * with their class's priority (the device has memoryPriority).
+    * linear_flags: VkMemoryAllocateFlags for buffer blocks, such as
+    * VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT. */
+   VkDeviceSize                     heap_limit[VK_MAX_MEMORY_HEAPS];
+   /* Each block slot's first spans, taken once by gs_vk_heap_init: a
+    * block taken in play costs the driver call and no allocation here. */
+   gs_vk_span_t                    *span_pool;
+   VkDeviceSize                     heap_reserved[VK_MAX_MEMORY_HEAPS];
+   int                              use_priority;
+   VkMemoryAllocateFlags            linear_flags;
 } gs_vk_heap_t;
+
+/* What gs_vk_heap_alloc asks, and more. priority is a class, 0 to 3:
+ * 0 none, then low, middle and high (0, 0.5 and 1 to the driver); it
+ * keeps allocations of different classes in different blocks and means
+ * nothing without use_priority. A dedicated image or buffer gets memory
+ * of its own, exactly req.size, with VkMemoryDedicatedAllocateInfo; at
+ * most one of the two is set. */
+typedef struct gs_vk_alloc_request
+{
+   VkMemoryRequirements  req;
+   VkMemoryPropertyFlags required;
+   VkMemoryPropertyFlags preferred;
+   int                   linear;
+   unsigned              priority;
+   VkImage               dedicated_image;
+   VkBuffer              dedicated_buffer;
+} gs_vk_alloc_request_t;
 
 /* block_size is what one VkDeviceMemory is; anything larger than it gets
  * a block of its own. Returns 0 on failure. */
@@ -158,6 +197,10 @@ unsigned gs_vk_heap_reserve(gs_vk_heap_t *heap, uint32_t type_bits,
 int  gs_vk_heap_alloc(gs_vk_heap_t *heap, const VkMemoryRequirements *req,
       VkMemoryPropertyFlags required, VkMemoryPropertyFlags preferred,
       int linear, gs_vk_alloc_t *out);
+
+/* gs_vk_heap_alloc with a priority class or a dedicated object. */
+int  gs_vk_heap_alloc_request(gs_vk_heap_t *heap, const gs_vk_alloc_request_t *request,
+      gs_vk_alloc_t *out);
 
 /* A free of memory that is already free, or of an allocation whose block
  * has since been given back, changes nothing; the first kind is counted

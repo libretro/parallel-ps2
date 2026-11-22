@@ -405,8 +405,9 @@ first time, play may not.
   unwanted list; drop vendored Granite code rather than gate it. Where
   libretro-common or the core already has a piece (aligned allocation,
   logging, thread names, time, the Vulkan loader and its entry point
-  list), Granite uses that rather than its own copy; `tests/pgslog`
-  fails if a replaced or deleted one comes back.
+  list, device memory through GSVulkanHeap.c), Granite uses that rather
+  than its own copy; `tests/pgslog` fails if a replaced or deleted one
+  comes back.
 
 ### Regressions to guard
 
