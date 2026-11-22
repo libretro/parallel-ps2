@@ -32,14 +32,10 @@ namespace Vulkan
 {
 struct DeviceFeatures
 {
-	bool supports_debug_utils = false;
 	bool exposes_mesh_shader = false;
 	bool supports_memory_budget = false;
-	bool supports_driver_properties = false;
-	bool supports_image_format_list = false;
 	bool supports_format_feature_flags2 = false;
 	bool supports_tooling_info = false;
-	bool supports_store_op_none = false;
 
 	VkPhysicalDeviceFeatures enabled_features = {};
 
@@ -50,7 +46,6 @@ struct DeviceFeatures
 	VkPhysicalDeviceVulkan11Properties vk11_props = {};
 	VkPhysicalDeviceVulkan12Properties vk12_props = {};
 	VkPhysicalDeviceVulkan13Properties vk13_props = {};
-	VkPhysicalDeviceVulkan14Properties vk14_props = {};
 
 	// KHR
 	VkPhysicalDeviceMaintenance5FeaturesKHR maintenance5_features = {};
@@ -63,10 +58,7 @@ struct DeviceFeatures
 	VkPhysicalDeviceDescriptorPoolOverallocationFeaturesNV descriptor_pool_overallocation_features = {};
 
 	// Fallback feature structs (Vulkan 1.1)
-	VkPhysicalDevice16BitStorageFeaturesKHR storage_16bit_features = {};
 	// Fallback feature structs (Vulkan 1.2)
-	VkPhysicalDeviceFloat16Int8FeaturesKHR float16_int8_features = {};
-	VkPhysicalDevice8BitStorageFeaturesKHR storage_8bit_features = {};
 	// Fallback feature structs (Vulkan 1.3)
 	VkPhysicalDeviceSubgroupSizeControlFeatures subgroup_size_control_features = {};
 	VkPhysicalDeviceSynchronization2Features sync2_features = {};
@@ -74,11 +66,6 @@ struct DeviceFeatures
 	VkDriverId driver_id = {};
 
 	// References Vulkan::Context.
-	const VkPhysicalDeviceFeatures2 *pdf2 = nullptr;
-	const char * const * instance_extensions = nullptr;
-	uint32_t num_instance_extensions = 0;
-	const char * const * device_extensions = nullptr;
-	uint32_t num_device_extensions = 0;
 
 	uint32_t instance_api_core_version = VK_API_VERSION_1_1;
 	uint32_t device_api_core_version = VK_API_VERSION_1_1;
@@ -247,8 +234,6 @@ private:
 	bool owned_device = false;
 	DeviceFeatures ext;
 	VkPhysicalDeviceFeatures2 pdf2;
-	std::vector<const char *> enabled_device_extensions;
-	std::vector<const char *> enabled_instance_extensions;
 
 	std::function<void (const char *)> message_callback;
 

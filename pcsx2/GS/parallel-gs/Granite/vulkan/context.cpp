@@ -54,7 +54,7 @@ void Context::set_device_factory(DeviceFactory *factory)
 void Context::set_application_info(const VkApplicationInfo *app_info)
 {
 	user_application_info.copy_assign(app_info);
-	VK_ASSERT(!app_info || app_info->apiVersion >= VK_API_VERSION_1_1);
+	VK_ASSERT(!app_info || app_info->apiVersion >= VK_API_VERSION_1_2);
 }
 
 CopiedApplicationInfo::CopiedApplicationInfo()
@@ -69,7 +69,7 @@ void CopiedApplicationInfo::set_default_app()
 	app = {
 		VK_STRUCTURE_TYPE_APPLICATION_INFO, nullptr,
 		"Granite", 0, "Granite", 0,
-		VK_API_VERSION_1_1,
+		VK_API_VERSION_1_2,
 	};
 }
 
@@ -244,8 +244,9 @@ VkApplicationInfo Context::get_promoted_application_info() const
 	auto app_info = get_application_info();
 	uint32_t supported_instance_version = gs_vk_instance_version();
 
-	// Granite min-req is 1.1.
-	app_info.apiVersion = std::max(VK_API_VERSION_1_1, app_info.apiVersion);
+	/* paraLLEl-GS needs Vulkan 1.2 (descriptor indexing, timeline
+	 * semaphores, buffer device address, scalar layouts). */
+	app_info.apiVersion = std::max(VK_API_VERSION_1_2, app_info.apiVersion);
 
 	// Target Vulkan 1.4 if available,
 	// but the tooling ecosystem isn't quite ready for this yet, so stick to 1.3 for the time being.
@@ -297,7 +298,6 @@ bool Context::create_instance()
 	if (has_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
 	{
 		instance_exts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-		ext.supports_debug_utils = true;
 	}
 
 
@@ -337,10 +337,6 @@ bool Context::create_instance()
 		ext.instance_api_core_version = app_info.apiVersion;
 	}
 
-	enabled_instance_extensions = std::move(instance_exts);
-	ext.instance_extensions = enabled_instance_extensions.data();
-	ext.num_instance_extensions = uint32_t(enabled_instance_extensions.size());
-
 	gs_vk_load_instance_functions(instance);
 
 
@@ -352,7 +348,7 @@ static unsigned device_score(VkPhysicalDevice &gpu)
 	VkPhysicalDeviceProperties props = {};
 	vkGetPhysicalDeviceProperties(gpu, &props);
 
-	if (props.apiVersion < VK_API_VERSION_1_1)
+	if (props.apiVersion < VK_API_VERSION_1_2)
 		return 0;
 
 	switch (props.deviceType)
@@ -388,9 +384,9 @@ bool Context::physical_device_supports_surface_and_profile(VkPhysicalDevice cand
 		return false;
 	}
 
-	if (dev_props.apiVersion < VK_API_VERSION_1_1)
+	if (dev_props.apiVersion < VK_API_VERSION_1_2)
 	{
-		LOGW("Device does not support Vulkan 1.1. Skipping.\n");
+		LOGW("Device does not support Vulkan 1.2. Skipping.\n");
 		return false;
 	}
 
@@ -503,9 +499,9 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 	LOGI("Using Vulkan GPU: %s\n", gpu_props.deviceName);
 
-	if (ext.device_api_core_version < VK_API_VERSION_1_1)
+	if (ext.device_api_core_version < VK_API_VERSION_1_2)
 	{
-		LOGE("Found no Vulkan GPU which supports Vulkan 1.1.\n");
+		LOGE("Found no Vulkan GPU which supports Vulkan 1.2.\n");
 		return false;
 	}
 
@@ -610,25 +606,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 	std::vector<const char *> enabled_extensions;
 
-	if (ext.device_api_core_version < VK_API_VERSION_1_2)
-	{
-		if (!has_extension(VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME))
-		{
-			LOGE("VK_KHR_create_renderpass2 is not supported.\n");
-			return false;
-		}
-
-		enabled_extensions.push_back(VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME);
-
-		if (has_extension(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME))
-		{
-			ext.supports_image_format_list = true;
-			enabled_extensions.push_back(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME);
-		}
-	}
-	else
-		ext.supports_image_format_list = true;
-
 	// Physical device functionality.
 	ext.supports_format_feature_flags2 = ext.device_api_core_version >= VK_API_VERSION_1_3 ||
 	                                     has_extension(VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME);
@@ -649,32 +626,8 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 #define ADD_CHAIN(s, type) add_chain(&(s), sizeof(s), VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ ## type)
 
-	if (ext.device_api_core_version >= VK_API_VERSION_1_2)
-	{
-		ADD_CHAIN(ext.vk11_features, VULKAN_1_1_FEATURES);
-		ADD_CHAIN(ext.vk12_features, VULKAN_1_2_FEATURES);
-	}
-	else
-	{
-
-		if (has_extension(VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME))
-		{
-			ADD_CHAIN(ext.float16_int8_features, FLOAT16_INT8_FEATURES_KHR);
-			enabled_extensions.push_back(VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME);
-		}
-
-		if (has_extension(VK_KHR_16BIT_STORAGE_EXTENSION_NAME))
-		{
-			ADD_CHAIN(ext.storage_16bit_features, 16BIT_STORAGE_FEATURES_KHR);
-			enabled_extensions.push_back(VK_KHR_16BIT_STORAGE_EXTENSION_NAME);
-		}
-
-		if (has_extension(VK_KHR_8BIT_STORAGE_EXTENSION_NAME))
-		{
-			ADD_CHAIN(ext.storage_8bit_features, 8BIT_STORAGE_FEATURES_KHR);
-			enabled_extensions.push_back(VK_KHR_8BIT_STORAGE_EXTENSION_NAME);
-		}
-	}
+	ADD_CHAIN(ext.vk11_features, VULKAN_1_1_FEATURES);
+	ADD_CHAIN(ext.vk12_features, VULKAN_1_2_FEATURES);
 
 	if (ext.device_api_core_version >= VK_API_VERSION_1_3)
 	{
@@ -749,49 +702,9 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 	 * workaround in Device::init_workarounds keys on it. */
 	ext.exposes_mesh_shader = has_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME);
 
-	if (ext.device_api_core_version >= VK_API_VERSION_1_3)
-	{
-		ext.supports_store_op_none = true;
-	}
-	else if (has_extension(VK_KHR_LOAD_STORE_OP_NONE_EXTENSION_NAME))
-	{
-		ext.supports_store_op_none = true;
-		enabled_extensions.push_back(VK_KHR_LOAD_STORE_OP_NONE_EXTENSION_NAME);
-	}
-	else if (has_extension(VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME))
-	{
-		ext.supports_store_op_none = true;
-		enabled_extensions.push_back(VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME);
-	}
-
-	// Pipeline binaries are currently borked in VVL.
-
-	{
-		vkGetPhysicalDeviceFeatures2(gpu, &pdf2);
-	}
+	vkGetPhysicalDeviceFeatures2(gpu, &pdf2);
 
 	// Promote fallback features to core structs.
-
-	if (ext.storage_16bit_features.storageBuffer16BitAccess)
-		ext.vk11_features.storageBuffer16BitAccess = VK_TRUE;
-	if (ext.storage_16bit_features.storageInputOutput16)
-		ext.vk11_features.storageInputOutput16 = VK_TRUE;
-	if (ext.storage_16bit_features.storagePushConstant16)
-		ext.vk11_features.storagePushConstant16 = VK_TRUE;
-	if (ext.storage_16bit_features.uniformAndStorageBuffer16BitAccess)
-		ext.vk11_features.uniformAndStorageBuffer16BitAccess = VK_TRUE;
-
-	if (ext.storage_8bit_features.storageBuffer8BitAccess)
-		ext.vk12_features.storageBuffer8BitAccess = VK_TRUE;
-	if (ext.storage_8bit_features.storagePushConstant8)
-		ext.vk12_features.storagePushConstant8 = VK_TRUE;
-	if (ext.storage_8bit_features.uniformAndStorageBuffer8BitAccess)
-		ext.vk12_features.uniformAndStorageBuffer8BitAccess = VK_TRUE;
-
-	if (ext.float16_int8_features.shaderFloat16)
-		ext.vk12_features.shaderFloat16 = VK_TRUE;
-	if (ext.float16_int8_features.shaderInt8)
-		ext.vk12_features.shaderInt8 = VK_TRUE;
 
 	if (ext.subgroup_size_control_features.computeFullSubgroups)
 		ext.vk13_features.computeFullSubgroups = VK_TRUE;
@@ -835,25 +748,9 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 	ext.vk14_features.smoothLines = VK_FALSE;
 	ext.vk14_features.bresenhamLines = VK_FALSE;
 
-	// Enable device features we might care about.
+	/* The core features paraLLEl-GS's shaders and samplers use. */
 	{
 		VkPhysicalDeviceFeatures enabled_features = {};
-		if (pdf2.features.textureCompressionETC2)
-			enabled_features.textureCompressionETC2 = VK_TRUE;
-		if (pdf2.features.textureCompressionBC)
-			enabled_features.textureCompressionBC = VK_TRUE;
-		if (pdf2.features.textureCompressionASTC_LDR)
-			enabled_features.textureCompressionASTC_LDR = VK_TRUE;
-		if (pdf2.features.fullDrawIndexUint32)
-			enabled_features.fullDrawIndexUint32 = VK_TRUE;
-		if (pdf2.features.imageCubeArray)
-			enabled_features.imageCubeArray = VK_TRUE;
-		if (pdf2.features.fillModeNonSolid)
-			enabled_features.fillModeNonSolid = VK_TRUE;
-		if (pdf2.features.independentBlend)
-			enabled_features.independentBlend = VK_TRUE;
-		if (pdf2.features.sampleRateShading)
-			enabled_features.sampleRateShading = VK_TRUE;
 		if (pdf2.features.vertexPipelineStoresAndAtomics)
 			enabled_features.vertexPipelineStoresAndAtomics = VK_TRUE;
 		if (pdf2.features.fragmentStoresAndAtomics)
@@ -862,8 +759,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 			enabled_features.shaderStorageImageExtendedFormats = VK_TRUE;
 		if (pdf2.features.shaderStorageImageMultisample)
 			enabled_features.shaderStorageImageMultisample = VK_TRUE;
-		if (pdf2.features.largePoints)
-			enabled_features.largePoints = VK_TRUE;
 		if (pdf2.features.shaderInt16)
 			enabled_features.shaderInt16 = VK_TRUE;
 		if (pdf2.features.shaderInt64)
@@ -872,8 +767,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 			enabled_features.shaderStorageImageWriteWithoutFormat = VK_TRUE;
 		if (pdf2.features.shaderStorageImageReadWithoutFormat)
 			enabled_features.shaderStorageImageReadWithoutFormat = VK_TRUE;
-		if (pdf2.features.multiDrawIndirect)
-			enabled_features.multiDrawIndirect = VK_TRUE;
 
 		if (pdf2.features.shaderSampledImageArrayDynamicIndexing)
 			enabled_features.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
@@ -895,62 +788,22 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 
 	device_info.pNext = &pdf2;
 
-	// Only need GetPhysicalDeviceProperties2 for Vulkan 1.1-only code, so don't bother getting KHR variant.
 	VkPhysicalDeviceProperties2 props = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-	// Fallback, query some important Vulkan 1.1 structs if we cannot use core 1.2 method.
-	VkPhysicalDeviceDriverProperties driver_properties = {};
-	VkPhysicalDeviceIDProperties id_properties = {};
-	VkPhysicalDeviceSubgroupProperties subgroup_properties = {};
 	VkPhysicalDeviceSubgroupSizeControlProperties size_control_props = {};
 
 	ppNext = reinterpret_cast<VkBaseOutStructure **>(&props.pNext);
-
-	if (ext.device_api_core_version >= VK_API_VERSION_1_2)
-	{
-		ADD_CHAIN(ext.vk11_props, VULKAN_1_1_PROPERTIES);
-		ADD_CHAIN(ext.vk12_props, VULKAN_1_2_PROPERTIES);
-	}
-	else
-	{
-		if (has_extension(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME))
-			ADD_CHAIN(driver_properties, DRIVER_PROPERTIES);
-		ADD_CHAIN(id_properties, ID_PROPERTIES);
-		ADD_CHAIN(subgroup_properties, SUBGROUP_PROPERTIES);
-	}
+	ADD_CHAIN(ext.vk11_props, VULKAN_1_1_PROPERTIES);
+	ADD_CHAIN(ext.vk12_props, VULKAN_1_2_PROPERTIES);
 
 	if (ext.device_api_core_version >= VK_API_VERSION_1_3)
 		ADD_CHAIN(ext.vk13_props, VULKAN_1_3_PROPERTIES);
 	else if (has_extension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME))
 		ADD_CHAIN(size_control_props, SUBGROUP_SIZE_CONTROL_PROPERTIES);
 
-	if (ext.device_api_core_version >= VK_API_VERSION_1_4)
-		ADD_CHAIN(ext.vk14_props, VULKAN_1_4_PROPERTIES);
 
 	vkGetPhysicalDeviceProperties2(gpu, &props);
 
-	// If a layer or driver doesn't tell us that internal cache is preferred,
-	// go ahead and take full control over the cache.
-
-	if (ext.device_api_core_version < VK_API_VERSION_1_2)
-	{
-		ext.driver_id = driver_properties.driverID;
-		ext.supports_driver_properties = has_extension(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME);
-		ext.vk12_props.driverID = ext.driver_id;
-		memcpy(ext.vk11_props.deviceUUID, id_properties.deviceUUID, sizeof(id_properties.deviceUUID));
-		memcpy(ext.vk11_props.driverUUID, id_properties.driverUUID, sizeof(id_properties.driverUUID));
-		memcpy(ext.vk11_props.deviceLUID, id_properties.deviceLUID, sizeof(id_properties.deviceLUID));
-		ext.vk11_props.deviceNodeMask = id_properties.deviceNodeMask;
-		ext.vk11_props.deviceLUIDValid = id_properties.deviceLUIDValid;
-		ext.vk11_props.subgroupQuadOperationsInAllStages = subgroup_properties.quadOperationsInAllStages;
-		ext.vk11_props.subgroupSupportedOperations = subgroup_properties.supportedOperations;
-		ext.vk11_props.subgroupSupportedStages = subgroup_properties.supportedStages;
-		ext.vk11_props.subgroupSize = subgroup_properties.subgroupSize;
-	}
-	else
-	{
-		ext.driver_id = ext.vk12_props.driverID;
-		ext.supports_driver_properties = true;
-	}
+	ext.driver_id = ext.vk12_props.driverID;
 
 	if (ext.device_api_core_version < VK_API_VERSION_1_3)
 	{
@@ -977,15 +830,10 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 			return false;
 	}
 
-	enabled_device_extensions = std::move(enabled_extensions);
-	ext.device_extensions = enabled_device_extensions.data();
-	ext.num_device_extensions = uint32_t(enabled_device_extensions.size());
-	ext.pdf2 = &pdf2;
 
 	gs_vk_load_device_table(&device_table, device);
 
 #define PROMOTE_CALL(n, e) if (!device_table.vk##n) device_table.vk##n = device_table.vk##n##e
-	PROMOTE_CALL(CreateRenderPass2, KHR);
 	PROMOTE_CALL(QueueSubmit2, KHR);
 	PROMOTE_CALL(CmdPipelineBarrier2, KHR);
 	PROMOTE_CALL(CmdPushDescriptorSetWithTemplate, KHR);
