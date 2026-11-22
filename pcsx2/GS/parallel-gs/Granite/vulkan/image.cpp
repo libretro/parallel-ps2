@@ -71,8 +71,6 @@ void ImageView::free_cached_view(CachedImageView &cached)
 ImageView::~ImageView()
 {
 	free_cached_view(view);
-	free_cached_view(depth_view);
-	free_cached_view(stencil_view);
 	free_cached_view(unorm_view);
 	free_cached_view(srgb_view);
 	for (auto &v : render_target_views)

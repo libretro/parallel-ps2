@@ -119,14 +119,6 @@ public:
 
 	~ImageView();
 
-	void set_separate_depth_stencil_views(const CachedImageView &depth, const CachedImageView &stencil)
-	{
-		VK_ASSERT(depth_view.view == VK_NULL_HANDLE);
-		VK_ASSERT(stencil_view.view == VK_NULL_HANDLE);
-		depth_view = depth;
-		stencil_view = stencil;
-	}
-
 	void set_render_target_views(std::vector<CachedImageView> views)
 	{
 		VK_ASSERT(render_target_views.empty());
@@ -161,22 +153,6 @@ public:
 	const CachedImageView &get_render_target_view(unsigned layer) const;
 	const CachedImageView &get_mip_view(unsigned level) const;
 
-	// Gets an image view which only includes floating point domains.
-	// Takes effect when we want to sample from an image which is Depth/Stencil,
-	// but we only want to sample depth.
-	const CachedImageView &get_float_view() const
-	{
-		return depth_view.view != VK_NULL_HANDLE ? depth_view : view;
-	}
-
-	// Gets an image view which only includes integer domains.
-	// Takes effect when we want to sample from an image which is Depth/Stencil,
-	// but we only want to sample stencil.
-	const CachedImageView &get_integer_view() const
-	{
-		return stencil_view.view != VK_NULL_HANDLE ? stencil_view : view;
-	}
-
 	const CachedImageView &get_unorm_view() const
 	{
 		return unorm_view.view != VK_NULL_HANDLE ? unorm_view : view;
@@ -205,8 +181,6 @@ private:
 	CachedImageView view = {};
 	std::vector<CachedImageView> render_target_views;
 	std::vector<CachedImageView> mip_views;
-	CachedImageView depth_view = {};
-	CachedImageView stencil_view = {};
 	CachedImageView unorm_view = {};
 	CachedImageView srgb_view = {};
 	ImageViewCreateInfo info;

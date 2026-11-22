@@ -45,7 +45,7 @@ enum class ShaderStage
 struct ResourceLayout
 {
 	DescriptorSetLayout sets[VULKAN_NUM_DESCRIPTOR_SETS];
-	uint32_t input_mask = 0;
+	uint32_t input_mask = 0; /* serialized; unused */
 	uint32_t output_mask = 0;
 	uint32_t push_constant_size = 0;
 	uint32_t spec_constant_mask = 0;
@@ -58,7 +58,6 @@ static_assert(sizeof(DescriptorSetLayout) % 8 == 0, "Size of DescriptorSetLayout
 
 struct CombinedResourceLayout
 {
-	uint32_t attribute_mask = 0;
 	uint32_t render_target_mask = 0;
 	DescriptorSetLayout sets[VULKAN_NUM_DESCRIPTOR_SETS] = {};
 	uint32_t stages_for_bindings[VULKAN_NUM_DESCRIPTOR_SETS][VULKAN_NUM_BINDINGS] = {};
@@ -75,11 +74,7 @@ union ResourceBinding
 {
 	VkDescriptorBufferInfo buffer;
 
-	struct
-	{
-		VkDescriptorImageInfo fp;
-		VkDescriptorImageInfo integer;
-	} image;
+	VkDescriptorImageInfo image;
 
 	union
 	{

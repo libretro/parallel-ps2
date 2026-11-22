@@ -224,7 +224,6 @@ const PipelineLayout *Device::request_pipeline_layout(const CombinedResourceLayo
 	h.u32(layout.push_constant_range.stageFlags);
 	h.u32(layout.push_constant_range.size);
 	h.data(layout.spec_constant_mask, sizeof(layout.spec_constant_mask));
-	h.u32(layout.attribute_mask);
 	h.u32(layout.render_target_mask);
 	for (unsigned set = 0; set < VULKAN_NUM_DESCRIPTOR_SETS; set++)
 	{
@@ -261,8 +260,6 @@ DescriptorSetAllocator *Device::request_descriptor_set_allocator(const Descripto
 
 void Device::merge_combined_resource_layout(CombinedResourceLayout &layout, const Program &program)
 {
-	if (program.get_shader(ShaderStage::Vertex))
-		layout.attribute_mask |= program.get_shader(ShaderStage::Vertex)->get_layout().input_mask;
 	if (program.get_shader(ShaderStage::Fragment))
 		layout.render_target_mask |= program.get_shader(ShaderStage::Fragment)->get_layout().output_mask;
 
@@ -288,7 +285,6 @@ void Device::merge_combined_resource_layout(CombinedResourceLayout &layout, cons
 			layout.sets[set].input_attachment_mask |= shader_layout.sets[set].input_attachment_mask;
 			layout.sets[set].sampler_mask |= shader_layout.sets[set].sampler_mask;
 			layout.sets[set].separate_image_mask |= shader_layout.sets[set].separate_image_mask;
-			layout.sets[set].fp_mask |= shader_layout.sets[set].fp_mask;
 
 			uint32_t active_binds =
 					shader_layout.sets[set].sampled_image_mask |
@@ -456,7 +452,7 @@ void Device::record_compute_pipeline(const DeferredPipelineCompile &compile)
 	r = &compute_records[slot];
 	r->program_hash      = compile.program->get_hash();
 	r->pipeline_hash     = compile.hash;
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 3; i++)
 		r->static_words[i] = compile.static_state.words[i];
 	for (i = 0; i < VULKAN_NUM_USER_SPEC_CONSTANTS; i++)
 		r->spec_constants[i] = compile.potential_static_state.spec_constants[i];
@@ -485,7 +481,7 @@ bool Device::resolve_compute_pipeline_record(const ComputePipelineRecord &record
 	compile = DeferredPipelineCompile();
 	compile.program = program;
 	compile.layout  = program->get_pipeline_layout();
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 3; i++)
 		compile.static_state.words[i] = record.static_words[i];
 	for (i = 0; i < VULKAN_NUM_USER_SPEC_CONSTANTS; i++)
 		compile.potential_static_state.spec_constants[i] = record.spec_constants[i];
@@ -509,24 +505,13 @@ void Device::record_graphics_pipeline(const DeferredPipelineCompile &compile)
 	r->program_hash     = compile.program->get_hash();
 	r->pipeline_hash    = compile.hash;
 	r->render_pass_hash = compile.compatible_render_pass->get_hash();
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 3; i++)
 		r->static_words[i] = compile.static_state.words[i];
 	for (i = 0; i < VULKAN_NUM_USER_SPEC_CONSTANTS; i++)
 		r->spec_constants[i] = compile.potential_static_state.spec_constants[i];
 	r->spec_masks        = compile.potential_static_state.spec_constant_mask;
 	r->subgroup_size_tag = compile.subgroup_size_tag;
 	memcpy(r->blend_constants, compile.potential_static_state.blend_constants, sizeof(r->blend_constants));
-	for (i = 0; i < VULKAN_NUM_VERTEX_ATTRIBS; i++)
-	{
-		r->attribs[i][0] = compile.attribs[i].binding;
-		r->attribs[i][1] = uint32_t(compile.attribs[i].format);
-		r->attribs[i][2] = compile.attribs[i].offset;
-	}
-	for (i = 0; i < VULKAN_NUM_VERTEX_BUFFERS; i++)
-	{
-		r->strides[i]     = uint32_t(compile.strides[i]);
-		r->input_rates[i] = uint32_t(compile.input_rates[i]);
-	}
 	r->pass = compile.compatible_render_pass->get_signature();
 	graphics_records_written.fetch_add(1);
 }
@@ -589,27 +574,16 @@ bool Device::resolve_graphics_pipeline_record(const GraphicsPipelineRecord &reco
 	compile.program               = program;
 	compile.layout                = program->get_pipeline_layout();
 	compile.compatible_render_pass = pass;
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 3; i++)
 		compile.static_state.words[i] = record.static_words[i];
 	for (i = 0; i < VULKAN_NUM_USER_SPEC_CONSTANTS; i++)
 		compile.potential_static_state.spec_constants[i] = record.spec_constants[i];
 	compile.potential_static_state.spec_constant_mask = uint8_t(record.spec_masks & 0xff);
 	memcpy(compile.potential_static_state.blend_constants, record.blend_constants,
 	       sizeof(compile.potential_static_state.blend_constants));
-	for (i = 0; i < VULKAN_NUM_VERTEX_ATTRIBS; i++)
-	{
-		compile.attribs[i].binding = record.attribs[i][0];
-		compile.attribs[i].format  = VkFormat(record.attribs[i][1]);
-		compile.attribs[i].offset  = record.attribs[i][2];
-	}
-	for (i = 0; i < VULKAN_NUM_VERTEX_BUFFERS; i++)
-	{
-		compile.strides[i]     = record.strides[i];
-		compile.input_rates[i] = VkVertexInputRate(record.input_rates[i]);
-	}
 	compile.subgroup_size_tag = record.subgroup_size_tag;
 	compile.cache             = legacy_pipeline_cache;
-	CommandBuffer::update_hash_graphics_pipeline(compile, nullptr);
+	CommandBuffer::update_hash_graphics_pipeline(compile);
 	return compile.hash == record.pipeline_hash;
 }
 
@@ -827,8 +801,6 @@ void Device::set_context(const Context &context)
 	managers.memory.init(this);
 	managers.semaphore.init(this);
 	managers.fence.init(this);
-	managers.vbo.init(this, 4 * 1024, 16, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-	managers.ibo.init(this, 4 * 1024, 16, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 	managers.ubo.init(this, 256 * 1024, std::max<VkDeviceSize>(16u, gpu_props.limits.minUniformBufferOffsetAlignment),
 	                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 
@@ -837,8 +809,6 @@ void Device::set_context(const Context &context)
 	                                             std::max<VkDeviceSize>(16u, gpu_props.limits.optimalBufferCopyOffsetAlignment)),
 	                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
-	managers.vbo.set_max_retained_blocks(256);
-	managers.ibo.set_max_retained_blocks(256);
 	managers.ubo.set_max_retained_blocks(64);
 	/* Host uploads a frame run to a few megabytes (a game streaming its
 	 * textures every frame); the blocks they take come back for the next
@@ -992,16 +962,6 @@ static void request_block(Device &device, BufferBlock &block, VkDeviceSize size,
 		block = pool.request_block(size);
 	else
 		block = {};
-}
-
-void Device::request_vertex_block_nolock(BufferBlock &block, VkDeviceSize size)
-{
-	request_block(*this, block, size, managers.vbo, frame().vbo_blocks);
-}
-
-void Device::request_index_block_nolock(BufferBlock &block, VkDeviceSize size)
-{
-	request_block(*this, block, size, managers.ibo, frame().ibo_blocks);
 }
 
 void Device::request_uniform_block(BufferBlock &block, VkDeviceSize size)
@@ -1647,8 +1607,6 @@ Device::PerFrame::PerFrame(Device *device_, unsigned frame_index_)
 
 	/* What a frame hands back when it retires, with room for a busy
 	 * frame's worth: draining into these during play never grows them */
-	vbo_blocks.reserve(64);
-	ibo_blocks.reserve(64);
 	ubo_blocks.reserve(64);
 	staging_blocks.reserve(64);
 	wait_and_recycle_fences.reserve(64);
@@ -1824,14 +1782,10 @@ void Device::wait_idle_nolock()
 	}
 
 	// Free memory for buffer pools.
-	managers.vbo.reset();
 	managers.ubo.reset();
-	managers.ibo.reset();
 	managers.staging.reset();
 	for (auto &frame : per_frame)
 	{
-		frame->vbo_blocks.clear();
-		frame->ibo_blocks.clear();
 		frame->ubo_blocks.clear();
 		frame->staging_blocks.clear();
 	}
@@ -1991,16 +1945,10 @@ void Device::PerFrame::begin()
 		for (auto &pool : cmd_pool)
 			pool.begin();
 
-	for (auto &block : vbo_blocks)
-		managers.vbo.recycle_block(block);
-	for (auto &block : ibo_blocks)
-		managers.ibo.recycle_block(block);
 	for (auto &block : ubo_blocks)
 		managers.ubo.recycle_block(block);
 	for (auto &block : staging_blocks)
 		managers.staging.recycle_block(block);
-	vbo_blocks.clear();
-	ibo_blocks.clear();
 	ubo_blocks.clear();
 	staging_blocks.clear();
 
@@ -2305,8 +2253,6 @@ public:
 	VkImage image = VK_NULL_HANDLE;
 	VkDeviceMemory memory = VK_NULL_HANDLE;
 	CachedImageView image_view = {};
-	CachedImageView depth_view = {};
-	CachedImageView stencil_view = {};
 	CachedImageView unorm_view = {};
 	CachedImageView srgb_view = {};
 	VkImageViewType default_view_type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
@@ -2375,9 +2321,6 @@ public:
 		view_info = &default_view_info;
 
 		if (!setup_view_usage_info(default_view_info, create_info.usage, view_usage))
-			return false;
-
-		if (!create_alt_views(*view_info, create_info.layout, view_usage))
 			return false;
 
 		if (!create_render_target_views(*view_info, create_info.layout, view_usage))
@@ -2470,37 +2413,6 @@ private:
 		return true;
 	}
 
-	bool create_alt_views(const VkImageViewCreateInfo &info, ImageLayout layout, VkImageUsageFlags view_usage)
-	{
-		if (info.viewType == VK_IMAGE_VIEW_TYPE_CUBE ||
-		    info.viewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY ||
-		    info.viewType == VK_IMAGE_VIEW_TYPE_3D)
-		{
-			return true;
-		}
-
-		constexpr VkImageUsageFlags sampled_usage =
-			VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
-
-		if (info.subresourceRange.aspectMask == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) &&
-		    (view_usage & sampled_usage) != 0)
-		{
-			auto view_info = info;
-			view_usage &= sampled_usage;
-
-			// We need this to be able to sample the texture, or otherwise use it as a non-pure DS attachment.
-			view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-			if (!device->managers.views.create_image_view(view_info, view_usage, layout, depth_view))
-				return false;
-
-			view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
-			if (!device->managers.views.create_image_view(view_info, view_usage, layout, stencil_view))
-				return false;
-		}
-
-		return true;
-	}
-
 	bool create_default_view(const VkImageViewCreateInfo &info, ImageLayout layout, VkImageUsageFlags usage)
 	{
 		// Create the normal image view. This one contains every subresource.
@@ -2511,8 +2423,6 @@ private:
 	{
 		auto &m = device->managers.views;
 		m.free_image_view(image_view);
-		m.free_image_view(depth_view);
-		m.free_image_view(stencil_view);
 		m.free_image_view(unorm_view);
 		m.free_image_view(srgb_view);
 		for (auto &view : rt_views)
@@ -2950,7 +2860,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 		holder.owned = false;
 		if (has_view)
 		{
-			handle->get_view().set_separate_depth_stencil_views(holder.depth_view, holder.stencil_view);
 			handle->get_view().set_render_target_views(holder.rt_views);
 			handle->get_view().set_mip_views(holder.mip_views);
 			handle->get_view().set_unorm_view(holder.unorm_view);

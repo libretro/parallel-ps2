@@ -178,7 +178,7 @@ public:
 	{
 		uint64_t program_hash;
 		uint64_t pipeline_hash;
-		uint32_t static_words[4];
+		uint32_t static_words[3];
 		uint32_t spec_constants[VULKAN_NUM_USER_SPEC_CONSTANTS];
 		uint32_t spec_masks;       /* the specialisation constant mask */
 		uint32_t subgroup_size_tag;
@@ -201,14 +201,11 @@ public:
 		uint64_t program_hash;
 		uint64_t pipeline_hash;
 		uint64_t render_pass_hash;
-		uint32_t static_words[4];
+		uint32_t static_words[3];
 		uint32_t spec_constants[VULKAN_NUM_USER_SPEC_CONSTANTS];
 		uint32_t spec_masks;       /* the specialisation constant mask */
 		uint32_t subgroup_size_tag;
 		uint32_t blend_constants[4]; /* the floats' bits */
-		uint32_t attribs[VULKAN_NUM_VERTEX_ATTRIBS][3]; /* binding, format, offset */
-		uint32_t strides[VULKAN_NUM_VERTEX_BUFFERS];
-		uint32_t input_rates[VULKAN_NUM_VERTEX_BUFFERS];
 		RenderPassSignature pass;
 	};
 	enum { GRAPHICS_PIPELINE_RECORDS = 1024 };
@@ -417,7 +414,7 @@ private:
 		DeviceAllocator memory;
 		FenceManager fence;
 		SemaphoreManager semaphore;
-		BufferPool vbo, ibo, ubo, staging;
+		BufferPool ubo, staging;
 		ViewFactory views;
 	};
 	Managers managers;
@@ -454,8 +451,6 @@ private:
 		VkSemaphore timeline_semaphores[QUEUE_INDEX_COUNT] = {};
 		uint64_t timeline_fences[QUEUE_INDEX_COUNT] = {};
 
-		std::vector<BufferBlock> vbo_blocks;
-		std::vector<BufferBlock> ibo_blocks;
 		std::vector<BufferBlock> ubo_blocks;
 		std::vector<BufferBlock> staging_blocks;
 
@@ -621,8 +616,6 @@ private:
 	void add_wait_semaphore_nolock(QueueIndices type, Semaphore semaphore,
 	                               VkPipelineStageFlags2 stages, bool flush);
 
-	void request_vertex_block_nolock(BufferBlock &block, VkDeviceSize size);
-	void request_index_block_nolock(BufferBlock &block, VkDeviceSize size);
 	void request_uniform_block_nolock(BufferBlock &block, VkDeviceSize size);
 	void request_staging_block_nolock(BufferBlock &block, VkDeviceSize size);
 

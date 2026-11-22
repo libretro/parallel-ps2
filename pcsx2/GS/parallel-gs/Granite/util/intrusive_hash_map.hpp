@@ -442,16 +442,6 @@ public:
 		return hashmap.end();
 	}
 
-	IntrusiveHashMap &get_thread_unsafe()
-	{
-		return *this;
-	}
-
-	const IntrusiveHashMap &get_thread_unsafe() const
-	{
-		return *this;
-	}
-
 private:
 	IntrusiveHashMapHolder<T> hashmap;
 	ObjectPool<T> pool;

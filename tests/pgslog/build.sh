@@ -57,14 +57,16 @@ fi
 # Granite's own Vulkan loader, the core's VKLoader.c serving both; and
 # memory imported or exported through OS handles; and Granite's memory
 # allocator, device memory coming from the core's GSVulkanHeap.c; and
-# render passes past one subpass of colour attachments
+# render passes past one subpass of colour attachments; and the pipeline
+# state no pass varies (depth, stencil, culling, topology, multisample
+# coverage, vertex input) with the depth and stencil views behind it
 for f in vulkan/pipeline_cache.cpp vulkan/pipeline_cache.hpp vulkan/vulkan_prerotate.hpp \
 	vulkan/type_to_string.hpp util/hashmap.hpp util/unstable_remove_if.hpp \
 	vulkan/vulkan_loader.c vulkan/vulkan_loader.h vulkan/vulkan_loader.inl \
 	util/arena_allocator.cpp util/arena_allocator.hpp util/stack_allocator.hpp; do
 	if [ -e "$G/$f" ]; then echo "FAIL: Granite/$f is back"; exit 1; fi
 done
-if grep -rqE "CONTEXT_CREATION_|VK_KHR_VIDEO_|PipelineBinar|VK_EXT_ROBUSTNESS_2|VK_KHR_PRESENT_(ID|WAIT)|VK_NV_LOW_LATENCY_2|get_existing_create_info|QUEUE_INDEX_VIDEO|ShaderStage::(Mesh|Task)|conservative_raster|indirect_bindable|YcbcrConversion|ASTCDecode|Event2|ImplementationQuirks|surface_transform|SystemHandles|INTERNAL_SPEC_CONSTANTS|swapchain_layout|consume_semaphore|granite_vk_|GRANITE_VK_|ExternalHandle|supports_external|EXTERNAL_MEMORY_BIT|ClassAllocator|LegionHeap|MiniHeap|DeviceAllocationOwner|memory_aliases|RenderPassOp|RENDER_PASS_OP_|num_subpasses|subpass_index|ImageDomain::Transient|TransientAttachmentAllocator" \
+if grep -rqE "CONTEXT_CREATION_|VK_KHR_VIDEO_|PipelineBinar|VK_EXT_ROBUSTNESS_2|VK_KHR_PRESENT_(ID|WAIT)|VK_NV_LOW_LATENCY_2|get_existing_create_info|QUEUE_INDEX_VIDEO|ShaderStage::(Mesh|Task)|conservative_raster|indirect_bindable|YcbcrConversion|ASTCDecode|Event2|ImplementationQuirks|surface_transform|SystemHandles|INTERNAL_SPEC_CONSTANTS|swapchain_layout|consume_semaphore|granite_vk_|GRANITE_VK_|ExternalHandle|supports_external|EXTERNAL_MEMORY_BIT|ClassAllocator|LegionHeap|MiniHeap|DeviceAllocationOwner|memory_aliases|RenderPassOp|RENDER_PASS_OP_|num_subpasses|subpass_index|ImageDomain::Transient|TransientAttachmentAllocator|set_stencil_|set_depth_bias|depth_bias_enable|stencil_test|VertexAttribState|VertexBindingState|vbo_block|ibo_block|request_vertex_block|request_index_block|set_opaque_state|set_separate_depth_stencil_views|get_float_view|get_integer_view|image\\.integer|attribute_mask|VULKAN_NUM_VERTEX_|COMMAND_BUFFER_DIRTY_STATIC_VERTEX_BIT|alpha_to_coverage|primitive_restart" \
 	"$ROOT/pcsx2/GS/parallel-gs" "$ROOT/pcsx2/GS/Renderers/parallel-gs" "$ROOT/Makefile.common" "$ROOT/pcsx2/CMakeLists.txt"; then
 	echo "FAIL: a path behind a context flag the core never passes is back in Granite"
 	exit 1

@@ -118,11 +118,6 @@ public:
 		return Iterator(head);
 	}
 
-	Iterator rbegin() const
-	{
-		return Iterator(tail);
-	}
-
 	Iterator end() const
 	{
 		return Iterator();
@@ -158,19 +153,6 @@ public:
 		node->next = head;
 		node->prev = nullptr;
 		head = node;
-	}
-
-	void insert_back(Iterator itr)
-	{
-		auto *node = itr.get();
-		if (tail)
-			tail->next = node;
-		else
-			head = node;
-
-		node->prev = tail;
-		node->next = nullptr;
-		tail = node;
 	}
 
 	void move_to_front(IntrusiveList<T> &other, Iterator itr)

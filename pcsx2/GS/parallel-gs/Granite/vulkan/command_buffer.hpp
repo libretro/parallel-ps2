@@ -41,77 +41,45 @@ enum CommandBufferDirtyBits
 
 	COMMAND_BUFFER_DIRTY_VIEWPORT_BIT = 1 << 2,
 	COMMAND_BUFFER_DIRTY_SCISSOR_BIT = 1 << 3,
-	COMMAND_BUFFER_DIRTY_DEPTH_BIAS_BIT = 1 << 4,
-	COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT = 1 << 5,
-
-	COMMAND_BUFFER_DIRTY_STATIC_VERTEX_BIT = 1 << 6,
-
-	COMMAND_BUFFER_DIRTY_PUSH_CONSTANTS_BIT = 1 << 7,
-	COMMAND_BUFFER_DIRTY_BLEND_CONSTANTS_BIT = 1 << 8,
+	COMMAND_BUFFER_DIRTY_PUSH_CONSTANTS_BIT = 1 << 4,
+	COMMAND_BUFFER_DIRTY_BLEND_CONSTANTS_BIT = 1 << 5,
 
 	COMMAND_BUFFER_DYNAMIC_BITS = COMMAND_BUFFER_DIRTY_VIEWPORT_BIT | COMMAND_BUFFER_DIRTY_SCISSOR_BIT |
-	                              COMMAND_BUFFER_DIRTY_DEPTH_BIAS_BIT |
-	                              COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT |
 	                              COMMAND_BUFFER_DIRTY_BLEND_CONSTANTS_BIT
 };
 using CommandBufferDirtyFlags = uint32_t;
 
-#define COMPARE_OP_BITS 3
-#define STENCIL_OP_BITS 3
 #define BLEND_FACTOR_BITS 5
 #define BLEND_OP_BITS 3
-#define CULL_MODE_BITS 2
-#define FRONT_FACE_BITS 1
-#define TOPOLOGY_BITS 4
+/* Every pass draws a triangle strip, culling nothing, into colour alone:
+ * blend, write mask and subgroup control are all a pipeline varies by. */
 union PipelineState {
 	struct
 	{
 		// Word 0, tightly packed.
-		uint32_t depth_write : 1;
-		uint32_t depth_test : 1;
 		uint32_t blend_enable : 1;
-		uint32_t cull_mode : CULL_MODE_BITS;
-		uint32_t front_face : FRONT_FACE_BITS;
-		uint32_t depth_compare : COMPARE_OP_BITS;
-		uint32_t depth_bias_enable : 1;
-		uint32_t stencil_test : 1;
-		uint32_t stencil_front_fail : STENCIL_OP_BITS;
-		uint32_t stencil_front_pass : STENCIL_OP_BITS;
-		uint32_t stencil_front_depth_fail : STENCIL_OP_BITS;
-		uint32_t stencil_front_compare_op : COMPARE_OP_BITS;
-		uint32_t stencil_back_fail : STENCIL_OP_BITS;
-		uint32_t stencil_back_pass : STENCIL_OP_BITS;
-		uint32_t stencil_back_depth_fail : STENCIL_OP_BITS;
-
-		// Word 1, tightly packed.
-		uint32_t stencil_back_compare_op : COMPARE_OP_BITS;
-		uint32_t alpha_to_coverage : 1;
-		uint32_t alpha_to_one : 1;
-		uint32_t sample_shading : 1;
 		uint32_t src_color_blend : BLEND_FACTOR_BITS;
 		uint32_t dst_color_blend : BLEND_FACTOR_BITS;
 		uint32_t color_blend_op : BLEND_OP_BITS;
 		uint32_t src_alpha_blend : BLEND_FACTOR_BITS;
 		uint32_t dst_alpha_blend : BLEND_FACTOR_BITS;
 		uint32_t alpha_blend_op : BLEND_OP_BITS;
-
-		// Word 2, tightly packed.
-		uint32_t primitive_restart : 1;
-		uint32_t topology : TOPOLOGY_BITS;
-		uint32_t wireframe : 1;
-		uint32_t subgroup_control_size : 1;
-		uint32_t subgroup_full_group : 1;
-		uint32_t subgroup_minimum_size_log2 : 3;
-		uint32_t subgroup_maximum_size_log2 : 3;
 		/* Blend constants are dynamic state, set by
 		 * set_dynamic_blend_constants: not part of the pipeline. */
 		uint32_t dynamic_blend_constants : 1;
-		uint32_t padding : 17;
+		uint32_t subgroup_control_size : 1;
+		uint32_t subgroup_full_group : 1;
+		uint32_t padding0 : 2;
 
-		// Word 3
+		// Word 1, tightly packed.
+		uint32_t subgroup_minimum_size_log2 : 3;
+		uint32_t subgroup_maximum_size_log2 : 3;
+		uint32_t padding1 : 26;
+
+		// Word 2
 		uint32_t write_mask;
 	} state;
-	uint32_t words[4];
+	uint32_t words[3];
 };
 
 struct PotentialState
@@ -123,35 +91,7 @@ struct PotentialState
 
 struct DynamicState
 {
-	float depth_bias_constant = 0.0f;
-	float depth_bias_slope = 0.0f;
-	uint8_t front_compare_mask = 0;
-	uint8_t front_write_mask = 0;
-	uint8_t front_reference = 0;
-	uint8_t back_compare_mask = 0;
-	uint8_t back_write_mask = 0;
-	uint8_t back_reference = 0;
 	float blend_constants[4] = {};
-};
-
-struct VertexAttribState
-{
-	uint32_t binding;
-	VkFormat format;
-	uint32_t offset;
-};
-
-struct IndexState
-{
-	VkBuffer buffer;
-	VkDeviceSize offset;
-	VkIndexType index_type;
-};
-
-struct VertexBindingState
-{
-	VkBuffer buffers[VULKAN_NUM_VERTEX_BUFFERS];
-	VkDeviceSize offsets[VULKAN_NUM_VERTEX_BUFFERS];
 };
 
 static_assert(VULKAN_NUM_DESCRIPTOR_SETS == 4, "Number of descriptor sets != 4.");
@@ -164,9 +104,6 @@ struct DeferredPipelineCompile
 	const RenderPass *compatible_render_pass;
 	PipelineState static_state;
 	PotentialState potential_static_state;
-	VertexAttribState attribs[VULKAN_NUM_VERTEX_ATTRIBS];
-	VkDeviceSize strides[VULKAN_NUM_VERTEX_BUFFERS];
-	VkVertexInputRate input_rates[VULKAN_NUM_VERTEX_BUFFERS];
 
 	Util::Hash hash;
 	VkPipelineCache cache;
@@ -304,7 +241,6 @@ public:
 	void dispatch(uint32_t groups_x, uint32_t groups_y, uint32_t groups_z);
 
 	void dispatch_indirect(const Buffer &buffer, VkDeviceSize offset);
-	void set_opaque_state();
 	void set_opaque_sprite_state();
 
 #define SET_STATIC_STATE(value)                               \
@@ -355,29 +291,6 @@ public:
 	inline void set_blend_op(VkBlendOp blend_op)
 	{
 		set_blend_op(blend_op, blend_op);
-	}
-
-	inline void set_depth_bias(bool depth_bias_enable)
-	{
-		SET_STATIC_STATE(depth_bias_enable);
-	}
-
-	inline void set_stencil_front_ops(VkCompareOp stencil_front_compare_op, VkStencilOp stencil_front_pass,
-	                                  VkStencilOp stencil_front_fail, VkStencilOp stencil_front_depth_fail)
-	{
-		SET_STATIC_STATE(stencil_front_compare_op);
-		SET_STATIC_STATE(stencil_front_pass);
-		SET_STATIC_STATE(stencil_front_fail);
-		SET_STATIC_STATE(stencil_front_depth_fail);
-	}
-
-	inline void set_stencil_back_ops(VkCompareOp stencil_back_compare_op, VkStencilOp stencil_back_pass,
-	                                 VkStencilOp stencil_back_fail, VkStencilOp stencil_back_depth_fail)
-	{
-		SET_STATIC_STATE(stencil_back_compare_op);
-		SET_STATIC_STATE(stencil_back_pass);
-		SET_STATIC_STATE(stencil_back_fail);
-		SET_STATIC_STATE(stencil_back_depth_fail);
 	}
 
 	inline void set_specialization_constant_mask(uint32_t spec_constant_mask)
@@ -449,27 +362,6 @@ public:
 		}                                 \
 	} while (0)
 
-	inline void set_depth_bias(float depth_bias_constant, float depth_bias_slope)
-	{
-		SET_DYNAMIC_STATE(depth_bias_constant, COMMAND_BUFFER_DIRTY_DEPTH_BIAS_BIT);
-		SET_DYNAMIC_STATE(depth_bias_slope, COMMAND_BUFFER_DIRTY_DEPTH_BIAS_BIT);
-	}
-
-	inline void set_stencil_front_reference(uint8_t front_compare_mask, uint8_t front_write_mask,
-	                                        uint8_t front_reference)
-	{
-		SET_DYNAMIC_STATE(front_compare_mask, COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT);
-		SET_DYNAMIC_STATE(front_write_mask, COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT);
-		SET_DYNAMIC_STATE(front_reference, COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT);
-	}
-
-	inline void set_stencil_back_reference(uint8_t back_compare_mask, uint8_t back_write_mask, uint8_t back_reference)
-	{
-		SET_DYNAMIC_STATE(back_compare_mask, COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT);
-		SET_DYNAMIC_STATE(back_write_mask, COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT);
-		SET_DYNAMIC_STATE(back_reference, COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT);
-	}
-
 	/* Blend constants the pipeline takes as dynamic state: one pipeline
 	 * for every value, the value set with vkCmdSetBlendConstants when it
 	 * changes. Static state again after the next clear of the state. */
@@ -510,7 +402,7 @@ public:
 	static Pipeline build_graphics_pipeline(Device *device, const DeferredPipelineCompile &compile, CompileMode mode);
 	static Pipeline build_compute_pipeline(Device *device, const DeferredPipelineCompile &compile, CompileMode mode);
 	static void update_hash_compute_pipeline(DeferredPipelineCompile &compile);
-	static void update_hash_graphics_pipeline(DeferredPipelineCompile &compile, uint32_t *active_vbos);
+	static void update_hash_graphics_pipeline(DeferredPipelineCompile &compile);
 	/* The graphics state set so far as it would be drawn with in @pass,
 	 * whether or not a render pass is begun. */
 	void extract_graphics_pipeline_state(DeferredPipelineCompile &compile,
@@ -529,8 +421,6 @@ private:
 	const Framebuffer *framebuffer = nullptr;
 	const RenderPass *actual_render_pass = nullptr;
 
-	IndexState index_state = {};
-	VertexBindingState vbo = {};
 	ResourceBindings bindings;
 	VkDescriptorSet bindless_sets[VULKAN_NUM_DESCRIPTOR_SETS] = {};
 	VkDescriptorSet allocated_sets[VULKAN_NUM_DESCRIPTOR_SETS] = {};
@@ -546,8 +436,6 @@ private:
 	CommandBufferDirtyFlags dirty = ~0u;
 	uint32_t dirty_sets_realloc = 0;
 	uint32_t dirty_sets_rebind = 0;
-	uint32_t dirty_vbos = 0;
-	uint32_t active_vbos = 0;
 	bool is_compute = true;
 	bool is_secondary = false;
 	bool is_ended = false;
@@ -595,14 +483,11 @@ private:
 	void begin_compute();
 	void begin_context();
 
-	BufferBlock vbo_block;
-	BufferBlock ibo_block;
 	BufferBlock ubo_block;
 	BufferBlock staging_block;
 
 	void set_texture(unsigned set, unsigned binding,
-	                 VkImageView float_view, VkImageView integer_view, VkImageLayout layout,
-	                 uint64_t cookie);
+	                 VkImageView view, VkImageLayout layout, uint64_t cookie);
 	void set_buffer_view_common(unsigned set, unsigned binding, const BufferView &view, VkDescriptorType type);
 
 	void init_viewport_scissor(const Framebuffer *framebuffer);

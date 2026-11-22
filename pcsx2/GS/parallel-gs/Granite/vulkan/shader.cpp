@@ -191,10 +191,7 @@ void PipelineLayout::create_update_templates()
 				entry.dstBinding = binding;
 				entry.dstArrayElement = i;
 				entry.descriptorCount = 1;
-				if (set_layout.fp_mask & (1u << binding))
-					entry.offset = offsetof(ResourceBinding, image.fp) + sizeof(ResourceBinding) * (binding + i);
-				else
-					entry.offset = offsetof(ResourceBinding, image.integer) + sizeof(ResourceBinding) * (binding + i);
+				entry.offset = offsetof(ResourceBinding, image) + sizeof(ResourceBinding) * (binding + i);
 				entry.stride = sizeof(ResourceBinding);
 			}
 		});
@@ -209,10 +206,7 @@ void PipelineLayout::create_update_templates()
 				entry.dstBinding = binding;
 				entry.dstArrayElement = i;
 				entry.descriptorCount = 1;
-				if (set_layout.fp_mask & (1u << binding))
-					entry.offset = offsetof(ResourceBinding, image.fp) + sizeof(ResourceBinding) * (binding + i);
-				else
-					entry.offset = offsetof(ResourceBinding, image.integer) + sizeof(ResourceBinding) * (binding + i);
+				entry.offset = offsetof(ResourceBinding, image) + sizeof(ResourceBinding) * (binding + i);
 				entry.stride = sizeof(ResourceBinding);
 			}
 		});
@@ -227,7 +221,7 @@ void PipelineLayout::create_update_templates()
 				entry.dstBinding = binding;
 				entry.dstArrayElement = i;
 				entry.descriptorCount = 1;
-				entry.offset = offsetof(ResourceBinding, image.fp) + sizeof(ResourceBinding) * (binding + i);
+				entry.offset = offsetof(ResourceBinding, image) + sizeof(ResourceBinding) * (binding + i);
 				entry.stride = sizeof(ResourceBinding);
 			}
 		});
@@ -242,7 +236,7 @@ void PipelineLayout::create_update_templates()
 				entry.dstBinding = binding;
 				entry.dstArrayElement = i;
 				entry.descriptorCount = 1;
-				entry.offset = offsetof(ResourceBinding, image.fp) + sizeof(ResourceBinding) * (binding + i);
+				entry.offset = offsetof(ResourceBinding, image) + sizeof(ResourceBinding) * (binding + i);
 				entry.stride = sizeof(ResourceBinding);
 			}
 		});
@@ -257,10 +251,7 @@ void PipelineLayout::create_update_templates()
 				entry.dstBinding = binding;
 				entry.dstArrayElement = i;
 				entry.descriptorCount = 1;
-				if (set_layout.fp_mask & (1u << binding))
-					entry.offset = offsetof(ResourceBinding, image.fp) + sizeof(ResourceBinding) * (binding + i);
-				else
-					entry.offset = offsetof(ResourceBinding, image.integer) + sizeof(ResourceBinding) * (binding + i);
+				entry.offset = offsetof(ResourceBinding, image) + sizeof(ResourceBinding) * (binding + i);
 				entry.stride = sizeof(ResourceBinding);
 			}
 		});

@@ -64,7 +64,6 @@ CommandBuffer::CommandBuffer(Device *device_, VkCommandBuffer cmd_, VkPipelineCa
 {
 	pipeline_state.cache = cache;
 	begin_compute();
-	set_opaque_state();
 	memset(&pipeline_state.static_state, 0, sizeof(pipeline_state.static_state));
 	memset(&bindings, 0, sizeof(bindings));
 
@@ -79,8 +78,6 @@ CommandBuffer::CommandBuffer(Device *device_, VkCommandBuffer cmd_, VkPipelineCa
 
 CommandBuffer::~CommandBuffer()
 {
-	VK_ASSERT(!vbo_block.is_mapped());
-	VK_ASSERT(!ibo_block.is_mapped());
 	VK_ASSERT(!ubo_block.is_mapped());
 	VK_ASSERT(!staging_block.is_mapped());
 }
@@ -326,7 +323,6 @@ void CommandBuffer::begin_context()
 {
 	dirty = ~0u;
 	dirty_sets_realloc = ~0u;
-	dirty_vbos = ~0u;
 	current_pipeline = {};
 	current_pipeline_layout = VK_NULL_HANDLE;
 	pipeline_state.layout = nullptr;
@@ -334,8 +330,6 @@ void CommandBuffer::begin_context()
 	pipeline_state.potential_static_state.spec_constant_mask = 0;
 	memset(bindings.cookies, 0, sizeof(bindings.cookies));
 	memset(bindings.secondary_cookies, 0, sizeof(bindings.secondary_cookies));
-	memset(&index_state, 0, sizeof(index_state));
-	memset(vbo.buffers, 0, sizeof(vbo.buffers));
 
 	VK_ASSERT(!barrier_batch.active);
 }
@@ -554,7 +548,7 @@ void CommandBuffer::extract_pipeline_state(DeferredPipelineCompile &compile) con
 	if (is_compute)
 		update_hash_compute_pipeline(compile);
 	else
-		update_hash_graphics_pipeline(compile, nullptr);
+		update_hash_graphics_pipeline(compile);
 }
 
 bool CommandBuffer::setup_subgroup_size_control(
@@ -617,26 +611,12 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 	// Dynamic state
 	VkPipelineDynamicStateCreateInfo dyn = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
 	dyn.dynamicStateCount = 2;
-	VkDynamicState states[7] = {
+	VkDynamicState states[3] = {
 		VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_VIEWPORT,
 	};
 	dyn.pDynamicStates = states;
 
 	uint32_t dynamic_mask = COMMAND_BUFFER_DIRTY_VIEWPORT_BIT | COMMAND_BUFFER_DIRTY_SCISSOR_BIT;
-
-	if (compile.static_state.state.depth_bias_enable)
-	{
-		states[dyn.dynamicStateCount++] = VK_DYNAMIC_STATE_DEPTH_BIAS;
-		dynamic_mask |= COMMAND_BUFFER_DIRTY_DEPTH_BIAS_BIT;
-	}
-
-	if (compile.static_state.state.stencil_test)
-	{
-		states[dyn.dynamicStateCount++] = VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK;
-		states[dyn.dynamicStateCount++] = VK_DYNAMIC_STATE_STENCIL_REFERENCE;
-		states[dyn.dynamicStateCount++] = VK_DYNAMIC_STATE_STENCIL_WRITE_MASK;
-		dynamic_mask |= COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT;
-	}
 
 	if (compile.static_state.state.dynamic_blend_constants)
 	{
@@ -675,58 +655,20 @@ Pipeline CommandBuffer::build_graphics_pipeline(Device *device, const DeferredPi
 	/* No pass has a depth attachment: no depth or stencil test. */
 	VkPipelineDepthStencilStateCreateInfo ds = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
 
-	// Vertex input
+	/* No vertex input: each pass makes its vertices from their index. */
 	VkPipelineVertexInputStateCreateInfo vi = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
-	VkVertexInputAttributeDescription vi_attribs[VULKAN_NUM_VERTEX_ATTRIBS];
-	VkVertexInputBindingDescription vi_bindings[VULKAN_NUM_VERTEX_BUFFERS];
 
-	if (compile.program->get_shader(ShaderStage::Vertex))
-	{
-		vi.pVertexAttributeDescriptions = vi_attribs;
-		uint32_t attr_mask = compile.layout->get_resource_layout().attribute_mask;
-		uint32_t binding_mask = 0;
-		for_each_bit(attr_mask, [&](uint32_t bit) {
-			auto &attr = vi_attribs[vi.vertexAttributeDescriptionCount++];
-			attr.location = bit;
-			attr.binding = compile.attribs[bit].binding;
-			attr.format = compile.attribs[bit].format;
-			attr.offset = compile.attribs[bit].offset;
-			binding_mask |= 1u << attr.binding;
-		});
-
-		vi.pVertexBindingDescriptions = vi_bindings;
-		for_each_bit(binding_mask, [&](uint32_t bit) {
-			auto &bind = vi_bindings[vi.vertexBindingDescriptionCount++];
-			bind.binding = bit;
-			bind.inputRate = compile.input_rates[bit];
-			bind.stride = compile.strides[bit];
-		});
-	}
-
-	// Input assembly
 	VkPipelineInputAssemblyStateCreateInfo ia = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
-	ia.primitiveRestartEnable = compile.static_state.state.primitive_restart;
-	ia.topology = static_cast<VkPrimitiveTopology>(compile.static_state.state.topology);
+	ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
 
-	// Multisample
 	VkPipelineMultisampleStateCreateInfo ms = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
 	ms.rasterizationSamples = static_cast<VkSampleCountFlagBits>(compile.compatible_render_pass->get_sample_count());
 
-	if (compile.compatible_render_pass->get_sample_count() > 1)
-	{
-		ms.alphaToCoverageEnable = compile.static_state.state.alpha_to_coverage;
-		ms.alphaToOneEnable = compile.static_state.state.alpha_to_one;
-		ms.sampleShadingEnable = compile.static_state.state.sample_shading;
-		ms.minSampleShading = 1.0f;
-	}
-
-	// Raster
 	VkPipelineRasterizationStateCreateInfo raster = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
-	raster.cullMode = static_cast<VkCullModeFlags>(compile.static_state.state.cull_mode);
-	raster.frontFace = static_cast<VkFrontFace>(compile.static_state.state.front_face);
+	raster.cullMode = VK_CULL_MODE_NONE;
+	raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	raster.lineWidth = 1.0f;
-	raster.polygonMode = compile.static_state.state.wireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
-	raster.depthBiasEnable = compile.static_state.state.depth_bias_enable != 0;
+	raster.polygonMode = VK_POLYGON_MODE_FILL;
 
 	// Stages
 	VkPipelineShaderStageCreateInfo stages[Util::ecast(ShaderStage::Count)];
@@ -898,26 +840,10 @@ void CommandBuffer::update_hash_compute_pipeline(DeferredPipelineCompile &compil
 	compile.hash = h.get();
 }
 
-void CommandBuffer::update_hash_graphics_pipeline(DeferredPipelineCompile &compile, uint32_t *out_active_vbos)
+void CommandBuffer::update_hash_graphics_pipeline(DeferredPipelineCompile &compile)
 {
 	Hasher h;
-	uint32_t active_vbos = 0;
 	auto &layout = compile.layout->get_resource_layout();
-	for_each_bit(layout.attribute_mask, [&](uint32_t bit) {
-		h.u32(bit);
-		active_vbos |= 1u << compile.attribs[bit].binding;
-		h.u32(compile.attribs[bit].binding);
-		h.u32(compile.attribs[bit].format);
-		h.u32(compile.attribs[bit].offset);
-	});
-
-	for_each_bit(active_vbos, [&](uint32_t bit) {
-		h.u32(compile.input_rates[bit]);
-		h.u32(compile.strides[bit]);
-	});
-
-	if (out_active_vbos)
-		*out_active_vbos = active_vbos;
 
 	h.u64(compile.compatible_render_pass->get_hash());
 	h.u64(compile.program->get_hash());
@@ -949,7 +875,7 @@ void CommandBuffer::update_hash_graphics_pipeline(DeferredPipelineCompile &compi
 	compile.hash = h.get();
 }
 
-/* Depth bias, stencil reference, blend constants: off the draw path. */
+/* Blend constants: off the draw path. */
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((noinline))
 #elif defined(_MSC_VER)
@@ -957,24 +883,13 @@ __declspec(noinline)
 #endif
 void CommandBuffer::flush_dynamic_render_state()
 {
-	if (get_and_clear(current_pipeline.dynamic_mask & COMMAND_BUFFER_DIRTY_DEPTH_BIAS_BIT))
-		table.vkCmdSetDepthBias(cmd, dynamic_state.depth_bias_constant, 0.0f, dynamic_state.depth_bias_slope);
-	if (get_and_clear(current_pipeline.dynamic_mask & COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT))
-	{
-		table.vkCmdSetStencilCompareMask(cmd, VK_STENCIL_FACE_FRONT_BIT, dynamic_state.front_compare_mask);
-		table.vkCmdSetStencilReference(cmd, VK_STENCIL_FACE_FRONT_BIT, dynamic_state.front_reference);
-		table.vkCmdSetStencilWriteMask(cmd, VK_STENCIL_FACE_FRONT_BIT, dynamic_state.front_write_mask);
-		table.vkCmdSetStencilCompareMask(cmd, VK_STENCIL_FACE_BACK_BIT, dynamic_state.back_compare_mask);
-		table.vkCmdSetStencilReference(cmd, VK_STENCIL_FACE_BACK_BIT, dynamic_state.back_reference);
-		table.vkCmdSetStencilWriteMask(cmd, VK_STENCIL_FACE_BACK_BIT, dynamic_state.back_write_mask);
-	}
 	if (get_and_clear(current_pipeline.dynamic_mask & COMMAND_BUFFER_DIRTY_BLEND_CONSTANTS_BIT))
 		table.vkCmdSetBlendConstants(cmd, dynamic_state.blend_constants);
 }
 
 bool CommandBuffer::flush_graphics_pipeline(bool synchronous)
 {
-	update_hash_graphics_pipeline(pipeline_state, &active_vbos);
+	update_hash_graphics_pipeline(pipeline_state);
 	current_pipeline = pipeline_state.program->get_pipeline(pipeline_state.hash);
 	if (current_pipeline.pipeline == VK_NULL_HANDLE)
 		return flush_graphics_pipeline_miss(synchronous);
@@ -1009,7 +924,7 @@ void CommandBuffer::extract_graphics_pipeline_state(DeferredPipelineCompile &com
 	compile = pipeline_state;
 	compile.compatible_render_pass = &pass;
 	if (compile.program)
-		update_hash_graphics_pipeline(compile, nullptr);
+		update_hash_graphics_pipeline(compile);
 }
 
 void CommandBuffer::bind_pipeline(VkPipelineBindPoint bind_point, VkPipeline pipeline, uint32_t active_dynamic_state)
@@ -1074,8 +989,7 @@ VkPipeline CommandBuffer::flush_render_state(bool synchronous)
 		set_dirty(COMMAND_BUFFER_DIRTY_PIPELINE_BIT);
 
 	// We've invalidated pipeline state, update the VkPipeline.
-	if (get_and_clear(COMMAND_BUFFER_DIRTY_STATIC_STATE_BIT | COMMAND_BUFFER_DIRTY_PIPELINE_BIT |
-	                  COMMAND_BUFFER_DIRTY_STATIC_VERTEX_BIT))
+	if (get_and_clear(COMMAND_BUFFER_DIRTY_STATIC_STATE_BIT | COMMAND_BUFFER_DIRTY_PIPELINE_BIT))
 	{
 		VkPipeline old_pipe = current_pipeline.pipeline;
 		if (!flush_graphics_pipeline(synchronous))
@@ -1115,18 +1029,10 @@ VkPipeline CommandBuffer::flush_render_state(bool synchronous)
 		table.vkCmdSetScissor(cmd, 0, 1, &tmp_scissor);
 	}
 
-	/* The bound pipeline's dynamic mask has a bit for each of these only
-	 * when its state takes it: one test for all three. */
-	if (dirty & current_pipeline.dynamic_mask &
-	    (COMMAND_BUFFER_DIRTY_DEPTH_BIAS_BIT | COMMAND_BUFFER_DIRTY_STENCIL_REFERENCE_BIT |
-	     COMMAND_BUFFER_DIRTY_BLEND_CONSTANTS_BIT))
+	/* The bound pipeline's dynamic mask has the bit only when its state
+	 * takes the constants. */
+	if (dirty & current_pipeline.dynamic_mask & COMMAND_BUFFER_DIRTY_BLEND_CONSTANTS_BIT)
 		flush_dynamic_render_state();
-
-	uint32_t update_vbo_mask = dirty_vbos & active_vbos;
-	for_each_bit_range(update_vbo_mask, [&](uint32_t binding, uint32_t binding_count) {
-		table.vkCmdBindVertexBuffers(cmd, binding, binding_count, vbo.buffers + binding, vbo.offsets + binding);
-	});
-	dirty_vbos &= ~update_vbo_mask;
 
 	return current_pipeline.pipeline;
 }
@@ -1318,8 +1224,7 @@ void CommandBuffer::set_sampler(unsigned set, unsigned binding, const Sampler &s
 		return;
 
 	auto &b = bindings.bindings[set][binding];
-	b.image.fp.sampler = sampler.get_sampler();
-	b.image.integer.sampler = sampler.get_sampler();
+	b.image.sampler = sampler.get_sampler();
 	dirty_sets_realloc |= 1u << set;
 	bindings.secondary_cookies[set][binding] = sampler.get_cookie();
 }
@@ -1349,20 +1254,17 @@ void CommandBuffer::set_buffer_view(unsigned set, unsigned binding, const Buffer
 }
 
 void CommandBuffer::set_texture(unsigned set, unsigned binding,
-                                VkImageView float_view, VkImageView integer_view, VkImageLayout layout,
-                                uint64_t cookie)
+                                VkImageView view, VkImageLayout layout, uint64_t cookie)
 {
 	VK_ASSERT(set < VULKAN_NUM_DESCRIPTOR_SETS);
 	VK_ASSERT(binding < VULKAN_NUM_BINDINGS);
 
-	if (cookie == bindings.cookies[set][binding] && bindings.bindings[set][binding].image.fp.imageLayout == layout)
+	if (cookie == bindings.cookies[set][binding] && bindings.bindings[set][binding].image.imageLayout == layout)
 		return;
 
 	auto &b = bindings.bindings[set][binding];
-	b.image.fp.imageLayout = layout;
-	b.image.fp.imageView = float_view;
-	b.image.integer.imageLayout = layout;
-	b.image.integer.imageView = integer_view;
+	b.image.imageLayout = layout;
+	b.image.imageView = view;
 	bindings.cookies[set][binding] = cookie;
 	dirty_sets_realloc |= 1u << set;
 }
@@ -1378,9 +1280,7 @@ void CommandBuffer::set_bindless(unsigned set, const BindlessDescriptorSet &hand
 void CommandBuffer::set_texture(unsigned set, unsigned binding, const ImageView &view)
 {
 	VK_ASSERT(view.get_image().get_create_info().usage & VK_IMAGE_USAGE_SAMPLED_BIT);
-	auto &fp = view.get_float_view();
-	auto &integer = view.get_integer_view();
-	set_texture(set, binding, fp.view, integer.view, view.get_image().get_layout(VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL),
+	set_texture(set, binding, view.get_view().view, view.get_image().get_layout(VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL),
 	            view.get_cookie());
 }
 
@@ -1417,7 +1317,7 @@ void CommandBuffer::set_storage_texture_level(unsigned set, unsigned binding,
 {
 	VK_ASSERT(view.get_image().get_create_info().usage & VK_IMAGE_USAGE_STORAGE_BIT);
 	auto &mip_view = view.get_mip_view(level);
-	set_texture(set, binding, mip_view.view, mip_view.view,
+	set_texture(set, binding, mip_view.view,
 	            view.get_image().get_layout(VK_IMAGE_LAYOUT_GENERAL),
 	            view.get_cookie() | COOKIE_BIT_PER_MIP | level);
 }
@@ -1572,36 +1472,10 @@ void CommandBuffer::clear_render_state()
 	memset(&state, 0, sizeof(state));
 }
 
-void CommandBuffer::set_opaque_state()
-{
-	clear_render_state();
-	auto &state = pipeline_state.static_state.state;
-	state.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-	state.cull_mode = VK_CULL_MODE_BACK_BIT;
-	state.blend_enable = false;
-	state.depth_test = true;
-	state.depth_compare = VK_COMPARE_OP_GREATER_OR_EQUAL;
-	state.depth_write = true;
-	state.depth_bias_enable = false;
-	state.primitive_restart = false;
-	state.stencil_test = false;
-	state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	state.write_mask = ~0u;
-	set_dirty(COMMAND_BUFFER_DIRTY_STATIC_STATE_BIT);
-}
-
 void CommandBuffer::set_opaque_sprite_state()
 {
 	clear_render_state();
-	auto &state = pipeline_state.static_state.state;
-	state.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-	state.cull_mode = VK_CULL_MODE_NONE;
-	state.blend_enable = false;
-	state.depth_compare = VK_COMPARE_OP_GREATER;
-	state.depth_test = true;
-	state.depth_write = true;
-	state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
-	state.write_mask = ~0u;
+	pipeline_state.static_state.state.write_mask = ~0u;
 	set_dirty(COMMAND_BUFFER_DIRTY_STATIC_STATE_BIT);
 }
 
@@ -1626,10 +1500,6 @@ void CommandBuffer::end()
 	// When called, we're holding a device submission lock.
 	end_threaded_recording();
 
-	if (vbo_block.is_mapped())
-		device->request_vertex_block_nolock(vbo_block, 0);
-	if (ibo_block.is_mapped())
-		device->request_index_block_nolock(ibo_block, 0);
 	if (ubo_block.is_mapped())
 		device->request_uniform_block_nolock(ubo_block, 0);
 	if (staging_block.is_mapped())

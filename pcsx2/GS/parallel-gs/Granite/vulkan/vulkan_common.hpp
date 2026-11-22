@@ -45,17 +45,4 @@ enum QueueIndices
 	QUEUE_INDEX_COUNT
 };
 
-template <typename T>
-static inline const T *find_pnext(const void *pnext, VkStructureType sType)
-{
-	auto *chain = static_cast<const VkBaseInStructure *>(pnext);
-	while (chain)
-	{
-		if (chain->sType == sType)
-			break;
-		chain = static_cast<const VkBaseInStructure *>(chain->pNext);
-	}
-	return reinterpret_cast<const T *>(chain);
-}
-
 }
