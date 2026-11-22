@@ -3654,7 +3654,8 @@ void GSRendererHW::Draw()
 		const bool preserve_downscale_draw = abs(scale_draw) == 1 || (scale_draw == 0 && ((src && src->m_from_target && src->m_from_target->m_downscaled) || is_possible_mem_clear == ClearType::ClearWithDraw));
 
 		rt = g_texture_cache->LookupTarget(FRAME_TEX0, t_size, ((src && src->m_scale != 1) && GSConfig.UserHacks_NativeScaling == GS_NATIVE_SCALING_NORMAL && !possible_shuffle) ? GetTextureScaleFactor() : target_scale, GSTextureCache::RenderTarget, true,
-			fm, false, force_preload, preserve_rt_rgb, preserve_rt_alpha, unclamped_draw_rect, possible_shuffle, is_possible_mem_clear && FRAME_TEX0.TBP0 != m_cached_ctx.ZBUF.Block(), GSConfig.UserHacks_NativeScaling != GS_NATIVE_SCALING_OFF && preserve_downscale_draw && is_possible_mem_clear != ClearType::NormalClear);
+			fm, false, force_preload, preserve_rt_rgb, preserve_rt_alpha, unclamped_draw_rect, possible_shuffle, is_possible_mem_clear && FRAME_TEX0.TBP0 != m_cached_ctx.ZBUF.Block(), GSConfig.UserHacks_NativeScaling != GS_NATIVE_SCALING_OFF && preserve_downscale_draw && is_possible_mem_clear != ClearType::NormalClear,
+			nullptr, src ? src->m_from_target : nullptr);
 		if (rt)
 			g_texture_cache->SeedSubTargetFromEnclosing(rt);
 
@@ -3720,7 +3721,7 @@ void GSRendererHW::Draw()
 
 		ds = g_texture_cache->LookupTarget(ZBUF_TEX0, t_size, target_scale, GSTextureCache::DepthStencil,
 			m_cached_ctx.DepthWrite(), 0, false, force_preload, preserve_depth, preserve_depth, unclamped_draw_rect, IsPossibleChannelShuffle(), is_possible_mem_clear && ZBUF_TEX0.TBP0 != m_cached_ctx.FRAME.Block(),
-			false, rt);
+			false, rt, src ? src->m_from_target : nullptr);
 		if (!ds)
 		{
 			ds = g_texture_cache->CreateTarget(ZBUF_TEX0, t_size, GetValidSize(src), target_scale, GSTextureCache::DepthStencil,

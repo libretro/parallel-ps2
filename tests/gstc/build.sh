@@ -14,6 +14,9 @@
 #                   memory, never over newer pixels.
 # park_flush      : a target parked by age reaches local memory before
 #                   anything reads what it drew.
+# shuffle_relayout: a 16-bit shuffle at another width moves a 32-bit
+#                   target's pages first, never those of the target the
+#                   draw's texture comes from.
 set -e
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/../.." && pwd)
@@ -39,3 +42,7 @@ ${CC:-cc} -std=c89 -pedantic -Wall -Wextra -O2 -g $SANFLAGS \
 ${CC:-cc} -std=c89 -pedantic -Wall -Wextra -O2 -g $SANFLAGS \
 	-o "$DIR/park_flush" "$DIR/park_flush.c"
 "$DIR/park_flush"
+${CC:-cc} -std=c89 -pedantic -Wall -Wextra -O2 -g $SANFLAGS \
+	-o "$DIR/shuffle_relayout" "$DIR/shuffle_relayout.c"
+"$DIR/shuffle_relayout" "$ROOT/pcsx2/GS/Renderers/HW/GSRendererHW.cpp" \
+	"$ROOT/pcsx2/GS/Renderers/HW/GSTextureCache.cpp"
