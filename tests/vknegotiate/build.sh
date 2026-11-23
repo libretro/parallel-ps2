@@ -1112,10 +1112,11 @@ else
 		exit 1
 	fi
 	echo "  paraLLEl-GS on Vulkan 1.1: through the extensions, no validation error, the same picture"
-	# And without buffer device address (Vulkan 1.1, the extension hidden),
-	# every host-visible allocation starting as 0xA5 bytes: the qword
-	# clears go as fills, sampler feedback is left off, and copies read
-	# their source through vram_copy_nobda, batched by source buffer.
+	# And without buffer device address or without scalar block layout
+	# (Vulkan 1.1, the extension hidden), every host-visible allocation
+	# starting as 0xA5 bytes: the qword clears go as fills, sampler
+	# feedback is left off, and copies read their source through
+	# vram_copy_nobda, batched by source buffer.
 	# Uploads ordered after a draw (24-bit pixels straddling words, 4-bit
 	# and 8-bit high parts, two staging blocks in one batch), readbacks,
 	# local copies, a blur through sampler feedback and the scanned field
@@ -1134,15 +1135,22 @@ else
 			blur_in_place)      expect=ffffffff ;;
 		esac
 		[ -f "$VAL/$c.bin" ] || "$VAL/swdraw" --bios "$VAL/$c.bin" $c
-		for v in bda nobda; do
-			env $( [ $v = nobda ] && echo VN_HIDE_EXT=VK_KHR_buffer_device_address ) \
+		for v in bda nobda noscalar; do
+			case $v in
+				bda)      hide= ;;
+				nobda)    hide=VK_KHR_buffer_device_address ;;
+				noscalar) hide=VK_EXT_scalar_block_layout ;;
+			esac
+			env ${hide:+VN_HIDE_EXT=$hide} \
 			VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 VN_VERBOSE=1 VK_LOADER_LAYERS_ENABLE='*validation*' \
 			VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT \
 			VN_EXPECT_RUN=$expect VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/$c.bin" VN_RENDERER=paraLLEl-GS \
 				timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/$c.$v.log" 2>&1 || true
-			bda=$(grep -c "Enabling device extension: VK_KHR_buffer_device_address" "$VAL/$c.$v.log") || true
+			# The extension hidden is not enabled; with none hidden, BDA is.
+			shown=$(grep -c "Enabling device extension: ${hide:-VK_KHR_buffer_device_address}" "$VAL/$c.$v.log") || true
+			[ -n "$hide" ] || shown=$((1 - shown))
 			if ! grep -q "vknegotiate v2: ok" "$VAL/$c.$v.log" || grep -q "Validation Error" "$VAL/$c.$v.log" ||
-			   { [ $v = nobda ] && [ "$bda" != 0 ]; } || { [ $v = bda ] && [ "$bda" = 0 ]; }; then
+			   [ "$shown" != 0 ]; then
 				grep "Validation Error\|FAIL" "$VAL/$c.$v.log" | sort | uniq -c | head -n 5
 				rm -rf "$VAL"
 				echo "  FAIL: paraLLEl-GS on Vulkan 1.1 ($v): $c"
@@ -1150,17 +1158,19 @@ else
 			fi
 		done
 	done
-	VN_HIDE_EXT=VK_KHR_buffer_device_address VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
-	VK_LOADER_LAYERS_ENABLE='*validation*' VN_HASH_IMAGE=1 VN_FRAMES=60 VN_IDLE_BIOS=1 \
-	LRPS2_BIOS="$VAL/scan_field.bin" VN_RENDERER=paraLLEl-GS \
-		timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/pgs.nobda.log" 2>&1 || true
-	if [ "$(sed -n 's/.*image: \(.*\)/\1/p' "$VAL/pgs.nobda.log")" != "$v11_image" ] ||
-	   grep -q "Validation Error" "$VAL/pgs.nobda.log"; then
-		rm -rf "$VAL"
-		echo "  FAIL: paraLLEl-GS without buffer device address: another picture or a validation error"
-		exit 1
-	fi
-	echo "  paraLLEl-GS without buffer device address: the same memory and picture, no validation error"
+	for hide in VK_KHR_buffer_device_address VK_EXT_scalar_block_layout; do
+		VN_HIDE_EXT=$hide VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
+		VK_LOADER_LAYERS_ENABLE='*validation*' VN_HASH_IMAGE=1 VN_FRAMES=60 VN_IDLE_BIOS=1 \
+		LRPS2_BIOS="$VAL/scan_field.bin" VN_RENDERER=paraLLEl-GS \
+			timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/pgs.$hide.log" 2>&1 || true
+		if [ "$(sed -n 's/.*image: \(.*\)/\1/p' "$VAL/pgs.$hide.log")" != "$v11_image" ] ||
+		   grep -q "Validation Error" "$VAL/pgs.$hide.log"; then
+			rm -rf "$VAL"
+			echo "  FAIL: paraLLEl-GS without $hide: another picture or a validation error"
+			exit 1
+		fi
+	done
+	echo "  paraLLEl-GS without buffer device address or scalar block layout: the same memory and picture, no validation error"
 	# The device lost at the 30th present with a palette the GPU drew in
 	# use, and reopened under the renderer: nothing of the old device is
 	# used or freed on the new one (the texture cache's download textures

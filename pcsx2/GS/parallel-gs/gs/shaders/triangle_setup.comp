@@ -6,7 +6,6 @@
 // SPDX-License-Identifier: LGPL-3.0+
 
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
-#extension GL_EXT_scalar_block_layout : require
 
 //#extension GL_EXT_spirv_intrinsics : require
 //spirv_execution_mode(extensions = ["SPV_KHR_float_controls"], capabilities = [4467], 4462, 32);
@@ -49,9 +48,10 @@ layout(set = 0, binding = BINDING_SINGLE_SAMPLE_HEURISTIC, std430) buffer Single
     SingleSampleHeuristic data;
 } heuristic;
 
-layout(set = 0, binding = BINDING_OPAQUE_FBMASKS, std430) uniform FBMasks
+// Eight words, as std140 lays them out without scalar block layout.
+layout(set = 0, binding = BINDING_OPAQUE_FBMASKS, std140) uniform FBMasks
 {
-    uint opaque_fbmasks[8];
+    uvec4 opaque_fbmasks[2];
 };
 
 bool tie_break_rule(ivec2 edge)
@@ -140,7 +140,7 @@ void main_inner(uint index)
     uint provoking = bitfieldExtract(state_word, STATE_PARALLELOGRAM_PROVOKING_OFFSET, STATE_PARALLELOGRAM_PROVOKING_COUNT);
 
     uint instance = bitfieldExtract(state_word, STATE_VERTEX_RENDER_PASS_INSTANCE_OFFSET, STATE_VERTEX_RENDER_PASS_INSTANCE_COUNT);
-    uint opaque_fbmask = opaque_fbmasks[instance];
+    uint opaque_fbmask = opaque_fbmasks[instance >> 2u][instance & 3u];
 
     VertexPosition v0 = vertex_position.data[3u * index + 0u];
     VertexPosition v1 = vertex_position.data[3u * index + 1u];

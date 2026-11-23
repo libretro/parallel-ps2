@@ -108,6 +108,27 @@ if command -v python3 >/dev/null 2>&1; then
 	echo "=== shader bank records ==="
 	python3 -B "$DIR/shaderbank_reflect.py" --check "$PGS/gs/shaders/slangmosh.hpp"
 fi
+# Every module a device without scalar block layout is given (all but
+# those declaring PhysicalStorageBufferAddresses, which need it there too)
+# is valid SPIR-V for Vulkan 1.1 laid out without it.
+if command -v spirv-val >/dev/null 2>&1 && command -v spirv-dis >/dev/null 2>&1; then
+	echo "=== shader bank without scalar block layout ==="
+	B=$(mktemp -d)
+	sh "$DIR/shaderbank.sh" "$B" > /dev/null
+	for f in "$B"/[0-9]*.spv; do
+		grep -q PhysicalStorageBufferAddresses "${f%.spv}.dis" && continue
+		if ! spirv-val --target-env vulkan1.1 "$f"; then
+			rm -rf "$B"
+			echo "  FAIL: bank module $(basename "$f" .spv) needs scalar block layout"
+			exit 1
+		fi
+	done
+	rm -rf "$B"
+	echo "    every one valid"
+else
+	echo
+	echo "skipping the scalar block layout check (no spirv-val / spirv-dis)"
+fi
 case $(glslc --version 2>/dev/null) in
 	"shaderc 2023.8"*)
 		echo "=== shader bank modules against their sources ==="

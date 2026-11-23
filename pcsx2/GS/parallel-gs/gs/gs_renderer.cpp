@@ -1414,8 +1414,9 @@ GSRenderer::GSRenderer(PageTracker &tracker_)
 }
 
 /* Hands the bank's modules to the device, leaving out those declaring
- * PhysicalStorageBufferAddresses when it has no buffer device address:
- * such a module cannot be made there, and its _nobda variant is used. */
+ * PhysicalStorageBufferAddresses when it has no buffer device address (or
+ * no scalar block layout, which vram_copy's needs): such a module cannot
+ * be made there, and its _nobda variant is used. */
 struct BankDevice
 {
 	Vulkan::Device &device;
@@ -1451,7 +1452,9 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	drain_compilation_tasks();
 	stop_variant_builder();
 
-	use_bda = device_->get_device_features().vk12_features.bufferDeviceAddress != VK_FALSE;
+	/* vram_copy's 24-bit source reads through BDA are scalar laid out. */
+	use_bda = device_->get_device_features().vk12_features.bufferDeviceAddress &&
+	          device_->get_device_features().vk12_features.scalarBlockLayout;
 	Vulkan::ResourceLayout layout;
 	BankDevice bank_device = { *device_, use_bda };
 	shaders = Shaders<>(bank_device, layout, 0);
@@ -1487,7 +1490,6 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	    !ext.vk12_features.storageBuffer8BitAccess ||
 	    !ext.vk11_features.storageBuffer16BitAccess ||
 	    !ext.enabled_features.shaderInt16 ||
-	    !ext.vk12_features.scalarBlockLayout ||
 	    (ext.vk11_props.subgroupSupportedOperations & required_subgroup_flags) != required_subgroup_flags ||
 	    !device_->supports_subgroup_size_log2(true, 2, 6) ||
 	    device_->get_gpu_properties().limits.maxComputeSharedMemorySize < 32 * 1024)
@@ -1498,7 +1500,6 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 		LOGE("  - storageBuffer8BitAccess\n");
 		LOGE("  - storageBuffer16BitAccess\n");
 		LOGE("  - shaderInt16\n");
-		LOGE("  - scalarBlockLayout\n");
 		LOGE("  - Arithmetic / Shuffle / Vote / Ballot / Basic subgroup operations\n");
 		LOGE("  - SubgroupSize control for [4, 64] invocations per subgroup\n");
 		LOGE("  - 32 KiB shared memory\n");
