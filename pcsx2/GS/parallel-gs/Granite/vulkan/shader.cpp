@@ -28,35 +28,13 @@ using namespace Util;
 
 namespace Vulkan
 {
-void ImmutableSamplerBank::hash(Util::Hasher &h, const ImmutableSamplerBank *sampler_bank)
-{
-	h.u32(0);
-	if (sampler_bank)
-	{
-		unsigned index = 0;
-		for (auto &set : sampler_bank->samplers)
-		{
-			for (auto *binding : set)
-			{
-				if (binding)
-				{
-					h.u32(index);
-					h.u64(binding->get_hash());
-				}
-				index++;
-			}
-		}
-	}
-}
-
-void PipelineLayout::init_legacy(const ImmutableSamplerBank *immutable_samplers)
+void PipelineLayout::init_legacy()
 {
 	VkDescriptorSetLayout layouts[VULKAN_NUM_DESCRIPTOR_SETS] = {};
 	unsigned num_sets = 0;
 	for (unsigned i = 0; i < VULKAN_NUM_DESCRIPTOR_SETS; i++)
 	{
-		set_allocators[i] = device->request_descriptor_set_allocator(layout.sets[i], layout.stages_for_bindings[i],
-																	 immutable_samplers ? immutable_samplers->samplers[i] : nullptr);
+		set_allocators[i] = device->request_descriptor_set_allocator(layout.sets[i], layout.stages_for_bindings[i]);
 		layouts[i] = set_allocators[i]->get_layout_for_pool();
 		if (layout.descriptor_set_mask & (1u << i))
 		{
@@ -96,13 +74,12 @@ void PipelineLayout::init_legacy(const ImmutableSamplerBank *immutable_samplers)
 	create_update_templates();
 }
 
-PipelineLayout::PipelineLayout(Hash hash, Device *device_, const CombinedResourceLayout &layout_,
-                               const ImmutableSamplerBank *immutable_samplers)
+PipelineLayout::PipelineLayout(Hash hash, Device *device_, const CombinedResourceLayout &layout_)
 	: IntrusiveHashMapEnabled<PipelineLayout>(hash)
 	, device(device_)
 	, layout(layout_)
 {
-	init_legacy(immutable_samplers);
+	init_legacy();
 }
 
 void PipelineLayout::create_update_templates()
@@ -355,21 +332,21 @@ void Program::set_shader(ShaderStage stage, Shader *handle)
 	shaders[Util::ecast(stage)] = handle;
 }
 
-Program::Program(Device *device_, Shader *vertex, Shader *fragment, const ImmutableSamplerBank *sampler_bank)
+Program::Program(Device *device_, Shader *vertex, Shader *fragment)
     : device(device_)
 {
 	set_shader(ShaderStage::Vertex, vertex);
 	set_shader(ShaderStage::Fragment, fragment);
-	device->bake_program(*this, sampler_bank);
+	device->bake_program(*this);
 	/* A pipeline built ahead is staged here during play. */
 	staged.reserve();
 }
 
-Program::Program(Device *device_, Shader *compute_shader, const ImmutableSamplerBank *sampler_bank)
+Program::Program(Device *device_, Shader *compute_shader)
     : device(device_)
 {
 	set_shader(ShaderStage::Compute, compute_shader);
-	device->bake_program(*this, sampler_bank);
+	device->bake_program(*this);
 	/* A pipeline built ahead is staged here during play. */
 	staged.reserve();
 }

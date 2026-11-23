@@ -842,8 +842,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 		if (pdf2.features.shaderImageGatherExtended)
 			enabled_features.shaderImageGatherExtended = VK_TRUE;
 
-		if (pdf2.features.samplerAnisotropy)
-			enabled_features.samplerAnisotropy = VK_TRUE;
 
 		pdf2.features = enabled_features;
 		ext.enabled_features = enabled_features;

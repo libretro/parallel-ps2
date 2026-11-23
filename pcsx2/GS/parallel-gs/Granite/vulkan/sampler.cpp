@@ -62,15 +62,9 @@ VkSamplerCreateInfo Sampler::fill_vk_sampler_info(const SamplerCreateInfo &sampl
 	info.addressModeU = sampler_info.address_mode_u;
 	info.addressModeV = sampler_info.address_mode_v;
 	info.addressModeW = sampler_info.address_mode_w;
-	info.mipLodBias = sampler_info.mip_lod_bias;
-	info.anisotropyEnable = sampler_info.anisotropy_enable;
-	info.maxAnisotropy = sampler_info.max_anisotropy;
-	info.compareEnable = sampler_info.compare_enable;
-	info.compareOp = sampler_info.compare_op;
+	info.maxAnisotropy = 1.0f;
 	info.minLod = sampler_info.min_lod;
 	info.maxLod = sampler_info.max_lod;
-	info.borderColor = sampler_info.border_color;
-	info.unnormalizedCoordinates = sampler_info.unnormalized_coordinates;
 	return info;
 }
 

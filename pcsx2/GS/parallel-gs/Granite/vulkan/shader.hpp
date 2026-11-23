@@ -90,17 +90,10 @@ struct ResourceBindings
 	uint8_t push_constant_data[VULKAN_PUSH_CONSTANT_SIZE];
 };
 
-struct ImmutableSamplerBank
-{
-	const ImmutableSampler *samplers[VULKAN_NUM_DESCRIPTOR_SETS][VULKAN_NUM_BINDINGS];
-	static void hash(Util::Hasher &h, const ImmutableSamplerBank *bank);
-};
-
 class PipelineLayout : public HashedObject<PipelineLayout>
 {
 public:
-	PipelineLayout(Util::Hash hash, Device *device, const CombinedResourceLayout &layout,
-				   const ImmutableSamplerBank *sampler_bank);
+	PipelineLayout(Util::Hash hash, Device *device, const CombinedResourceLayout &layout);
 	~PipelineLayout();
 
 	const CombinedResourceLayout &get_resource_layout() const
@@ -138,7 +131,7 @@ private:
 	uint32_t push_set_index = UINT32_MAX;
 	void create_update_templates();
 
-	void init_legacy(const ImmutableSamplerBank *immutable_samplers);
+	void init_legacy();
 };
 
 class Shader : public HashedObject<Shader>
@@ -175,8 +168,8 @@ struct Pipeline
 class Program : public HashedObject<Program>
 {
 public:
-	Program(Device *device, Shader *vertex, Shader *fragment, const ImmutableSamplerBank *sampler_bank);
-	Program(Device *device, Shader *compute, const ImmutableSamplerBank *sampler_bank);
+	Program(Device *device, Shader *vertex, Shader *fragment);
+	Program(Device *device, Shader *compute);
 	~Program();
 
 	inline Shader *get_shader(ShaderStage stage) const

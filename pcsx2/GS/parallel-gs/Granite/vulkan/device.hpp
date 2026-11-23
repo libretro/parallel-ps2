@@ -268,8 +268,8 @@ public:
 	Shader *request_shader(const uint32_t *code, size_t size, const ResourceLayout *layout = nullptr);
 	Program *request_program(const uint32_t *compute_data, size_t compute_size,
 	                         const ResourceLayout *layout = nullptr);
-	Program *request_program(Shader *vertex, Shader *fragment, const ImmutableSamplerBank *sampler_bank = nullptr);
-	Program *request_program(Shader *compute, const ImmutableSamplerBank *sampler_bank = nullptr);
+	Program *request_program(Shader *vertex, Shader *fragment);
+	Program *request_program(Shader *compute);
 
 	const ImmutableSampler *request_immutable_sampler(const SamplerCreateInfo &info);
 
@@ -378,17 +378,14 @@ private:
 	PGS::atomic_uint64_t cookie;
 
 	uint64_t allocate_cookie();
-	void bake_program(Program &program, const ImmutableSamplerBank *sampler_bank);
+	void bake_program(Program &program);
 	void merge_combined_resource_layout(CombinedResourceLayout &layout, const Program &program);
 
 	void request_uniform_block(BufferBlock &block, VkDeviceSize size);
 	void request_staging_block(BufferBlock &block, VkDeviceSize size);
 
-	const PipelineLayout *request_pipeline_layout(const CombinedResourceLayout &layout,
-	                                              const ImmutableSamplerBank *immutable_samplers);
-	DescriptorSetAllocator *request_descriptor_set_allocator(const DescriptorSetLayout &layout,
-	                                                         const uint32_t *stages_for_sets,
-	                                                         const ImmutableSampler * const *immutable_samplers);
+	const PipelineLayout *request_pipeline_layout(const CombinedResourceLayout &layout);
+	DescriptorSetAllocator *request_descriptor_set_allocator(const DescriptorSetLayout &layout, const uint32_t *stages_for_bindings);
 	const Framebuffer &request_framebuffer(const RenderPassInfo &info);
 	const RenderPass &request_render_pass(const RenderPassInfo &info, bool compatible);
 
@@ -398,7 +395,6 @@ private:
 	DeviceFeatures ext;
 	bool debug_marker_sensitive = false;
 	void init_stock_samplers();
-	void init_stock_sampler(StockSampler sampler, float max_aniso, float lod_bias);
 	void init_timeline_semaphores();
 	void deinit_timeline_semaphores();
 

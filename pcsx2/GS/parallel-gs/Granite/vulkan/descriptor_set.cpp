@@ -30,8 +30,7 @@ using namespace Util;
 namespace Vulkan
 {
 DescriptorSetAllocator::DescriptorSetAllocator(Hash hash, Device *device_, const DescriptorSetLayout &layout,
-                                               const uint32_t *stages_for_binds,
-                                               const ImmutableSampler * const *immutable_samplers)
+                                               const uint32_t *stages_for_binds)
 	: IntrusiveHashMapEnabled<DescriptorSetAllocator>(hash)
 	, device(device_)
 	, table(device_->get_device_table())
@@ -52,7 +51,6 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash, Device *device_, const
 
 	VkDescriptorSetLayoutCreateInfo info = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
 	VkDescriptorSetLayoutBindingFlagsCreateInfoEXT flags = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT };
-	VkSampler vk_immutable_samplers[VULKAN_NUM_BINDINGS] = {};
 	std::vector<VkDescriptorSetLayoutBinding> bindings;
 	VkDescriptorBindingFlagsEXT binding_flags = 0;
 
@@ -88,11 +86,7 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash, Device *device_, const
 		unsigned types = 0;
 		if (layout.sampled_image_mask & (1u << i))
 		{
-			if ((layout.immutable_sampler_mask & (1u << i)) && immutable_samplers && immutable_samplers[i])
-				vk_immutable_samplers[i] = immutable_samplers[i]->get_sampler().get_sampler();
-
-			bindings.push_back({ i, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, array_size, stages,
-			                     vk_immutable_samplers[i] != VK_NULL_HANDLE ? &vk_immutable_samplers[i] : nullptr });
+			bindings.push_back({ i, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, array_size, stages, nullptr });
 			pool_size.push_back({ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, pool_array_size });
 			types++;
 		}
@@ -149,13 +143,7 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash, Device *device_, const
 
 		if (layout.sampler_mask & (1u << i))
 		{
-			if ((layout.immutable_sampler_mask & (1u << i)) && immutable_samplers && immutable_samplers[i])
-			{
-				vk_immutable_samplers[i] = immutable_samplers[i]->get_sampler().get_sampler();
-			}
-
-			bindings.push_back({ i, VK_DESCRIPTOR_TYPE_SAMPLER, array_size, stages,
-			                     vk_immutable_samplers[i] != VK_NULL_HANDLE ? &vk_immutable_samplers[i] : nullptr });
+			bindings.push_back({ i, VK_DESCRIPTOR_TYPE_SAMPLER, array_size, stages, nullptr });
 			pool_size.push_back({ VK_DESCRIPTOR_TYPE_SAMPLER, pool_array_size });
 			types++;
 		}

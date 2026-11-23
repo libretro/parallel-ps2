@@ -134,8 +134,7 @@ class DescriptorSetAllocator : public HashedObject<DescriptorSetAllocator>
 {
 public:
 	DescriptorSetAllocator(Util::Hash hash, Device *device, const DescriptorSetLayout &layout,
-	                       const uint32_t *stages_for_bindings,
-	                       const ImmutableSampler * const *immutable_samplers);
+	                       const uint32_t *stages_for_bindings);
 	~DescriptorSetAllocator();
 	void operator=(const DescriptorSetAllocator &) = delete;
 	DescriptorSetAllocator(const DescriptorSetAllocator &) = delete;

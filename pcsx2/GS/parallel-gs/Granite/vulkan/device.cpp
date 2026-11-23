@@ -172,19 +172,19 @@ Shader *Device::request_shader(const uint32_t *data, size_t size, const Resource
 	return ret;
 }
 
-Program *Device::request_program(Vulkan::Shader *compute_shader, const ImmutableSamplerBank *sampler_bank)
+Program *Device::request_program(Vulkan::Shader *compute_shader)
 {
 	if (!compute_shader)
 		return nullptr;
 
 	Util::Hasher hasher;
 	hasher.u64(compute_shader->get_hash());
-	ImmutableSamplerBank::hash(hasher, sampler_bank);
+	hasher.u32(0);
 
 	auto hash = hasher.get();
 	auto *ret = programs.find(hash);
 	if (!ret)
-		ret = programs.emplace_yield(hash, this, compute_shader, sampler_bank);
+		ret = programs.emplace_yield(hash, this, compute_shader);
 	return ret;
 }
 
@@ -197,7 +197,7 @@ Program *Device::request_program(const uint32_t *compute_data, size_t compute_si
 	return request_program(compute_shader);
 }
 
-Program *Device::request_program(Shader *vertex, Shader *fragment, const ImmutableSamplerBank *sampler_bank)
+Program *Device::request_program(Shader *vertex, Shader *fragment)
 {
 	if (!vertex || !fragment)
 		return nullptr;
@@ -205,18 +205,17 @@ Program *Device::request_program(Shader *vertex, Shader *fragment, const Immutab
 	Util::Hasher hasher;
 	hasher.u64(vertex->get_hash());
 	hasher.u64(fragment->get_hash());
-	ImmutableSamplerBank::hash(hasher, sampler_bank);
+	hasher.u32(0);
 
 	auto hash = hasher.get();
 	auto *ret = programs.find(hash);
 
 	if (!ret)
-		ret = programs.emplace_yield(hash, this, vertex, fragment, sampler_bank);
+		ret = programs.emplace_yield(hash, this, vertex, fragment);
 	return ret;
 }
 
-const PipelineLayout *Device::request_pipeline_layout(const CombinedResourceLayout &layout,
-                                                      const ImmutableSamplerBank *sampler_bank)
+const PipelineLayout *Device::request_pipeline_layout(const CombinedResourceLayout &layout)
 {
 	Hasher h;
 	h.data(reinterpret_cast<const uint32_t *>(layout.sets), sizeof(layout.sets));
@@ -225,36 +224,24 @@ const PipelineLayout *Device::request_pipeline_layout(const CombinedResourceLayo
 	h.u32(layout.push_constant_range.size);
 	h.data(layout.spec_constant_mask, sizeof(layout.spec_constant_mask));
 	h.u32(layout.render_target_mask);
-	for (unsigned set = 0; set < VULKAN_NUM_DESCRIPTOR_SETS; set++)
-	{
-		Util::for_each_bit(layout.sets[set].immutable_sampler_mask, [&](unsigned bit) {
-			VK_ASSERT(sampler_bank && sampler_bank->samplers[set][bit]);
-			h.u64(sampler_bank->samplers[set][bit]->get_hash());
-		});
-	}
 
 	auto hash = h.get();
 	auto *ret = pipeline_layouts.find(hash);
 	if (!ret)
-		ret = pipeline_layouts.emplace_yield(hash, hash, this, layout, sampler_bank);
+		ret = pipeline_layouts.emplace_yield(hash, hash, this, layout);
 	return ret;
 }
 
-DescriptorSetAllocator *Device::request_descriptor_set_allocator(const DescriptorSetLayout &layout, const uint32_t *stages_for_bindings,
-                                                                 const ImmutableSampler * const *immutable_samplers_)
+DescriptorSetAllocator *Device::request_descriptor_set_allocator(const DescriptorSetLayout &layout, const uint32_t *stages_for_bindings)
 {
 	Hasher h;
 	h.data(reinterpret_cast<const uint32_t *>(&layout), sizeof(layout));
 	h.data(stages_for_bindings, sizeof(uint32_t) * VULKAN_NUM_BINDINGS);
-	Util::for_each_bit(layout.immutable_sampler_mask, [&](unsigned bit) {
-		VK_ASSERT(immutable_samplers_ && immutable_samplers_[bit]);
-		h.u64(immutable_samplers_[bit]->get_hash());
-	});
 	auto hash = h.get();
 
 	auto *ret = descriptor_set_allocators.find(hash);
 	if (!ret)
-		ret = descriptor_set_allocators.emplace_yield(hash, hash, this, layout, stages_for_bindings, immutable_samplers_);
+		ret = descriptor_set_allocators.emplace_yield(hash, hash, this, layout, stages_for_bindings);
 	return ret;
 }
 
@@ -374,29 +361,13 @@ void Device::merge_combined_resource_layout(CombinedResourceLayout &layout, cons
 	layout.push_constant_layout_hash = h.get();
 }
 
-void Device::bake_program(Program &program, const ImmutableSamplerBank *sampler_bank)
+void Device::bake_program(Program &program)
 {
 	CombinedResourceLayout layout;
-	ImmutableSamplerBank ext_immutable_samplers = {};
 
 	merge_combined_resource_layout(layout, program);
 
-	if (sampler_bank)
-	{
-		for (unsigned set = 0; set < VULKAN_NUM_DESCRIPTOR_SETS; set++)
-		{
-			for_each_bit(layout.sets[set].sampler_mask | layout.sets[set].sampled_image_mask, [&](uint32_t binding)
-			{
-				if (sampler_bank->samplers[set][binding])
-				{
-					ext_immutable_samplers.samplers[set][binding] = sampler_bank->samplers[set][binding];
-					layout.sets[set].immutable_sampler_mask |= 1u << binding;
-				}
-			});
-		}
-	}
-
-	program.set_pipeline_layout(request_pipeline_layout(layout, &ext_immutable_samplers));
+	program.set_pipeline_layout(request_pipeline_layout(layout));
 }
 
 bool Device::init_pipeline_cache(const uint8_t *data, size_t size)
@@ -835,107 +806,21 @@ void Device::init_timeline_semaphores()
 			LOGE("Failed to create timeline semaphore.\n");
 }
 
-void Device::init_stock_sampler(StockSampler mode, float max_aniso, float lod_bias)
-{
-	SamplerCreateInfo info = {};
-	info.max_lod = VK_LOD_CLAMP_NONE;
-	info.max_anisotropy = 1.0f;
-
-	switch (mode)
-	{
-	case StockSampler::NearestShadow:
-	case StockSampler::LinearShadow:
-		info.compare_enable = true;
-		info.compare_op = VK_COMPARE_OP_GREATER_OR_EQUAL;
-		break;
-
-	default:
-		info.compare_enable = false;
-		break;
-	}
-
-	switch (mode)
-	{
-	case StockSampler::TrilinearClamp:
-	case StockSampler::TrilinearWrap:
-	case StockSampler::DefaultGeometryFilterWrap:
-	case StockSampler::DefaultGeometryFilterClamp:
-		info.mipmap_mode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		break;
-
-	default:
-		info.mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-		break;
-	}
-
-	switch (mode)
-	{
-	case StockSampler::DefaultGeometryFilterClamp:
-	case StockSampler::DefaultGeometryFilterWrap:
-	case StockSampler::LinearClamp:
-	case StockSampler::LinearWrap:
-	case StockSampler::TrilinearClamp:
-	case StockSampler::TrilinearWrap:
-	case StockSampler::LinearShadow:
-		info.mag_filter = VK_FILTER_LINEAR;
-		info.min_filter = VK_FILTER_LINEAR;
-		break;
-
-	default:
-		info.mag_filter = VK_FILTER_NEAREST;
-		info.min_filter = VK_FILTER_NEAREST;
-		break;
-	}
-
-	switch (mode)
-	{
-	default:
-	case StockSampler::DefaultGeometryFilterWrap:
-	case StockSampler::LinearWrap:
-	case StockSampler::NearestWrap:
-	case StockSampler::TrilinearWrap:
-		info.address_mode_u = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		info.address_mode_v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		info.address_mode_w = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		break;
-
-	case StockSampler::DefaultGeometryFilterClamp:
-	case StockSampler::LinearClamp:
-	case StockSampler::NearestClamp:
-	case StockSampler::TrilinearClamp:
-	case StockSampler::NearestShadow:
-	case StockSampler::LinearShadow:
-		info.address_mode_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		info.address_mode_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		info.address_mode_w = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		break;
-	}
-
-	switch (mode)
-	{
-	case StockSampler::DefaultGeometryFilterWrap:
-	case StockSampler::DefaultGeometryFilterClamp:
-		if (get_device_features().enabled_features.samplerAnisotropy)
-		{
-			info.anisotropy_enable = true;
-			info.max_anisotropy = std::min(max_aniso, get_gpu_properties().limits.maxSamplerAnisotropy);
-		}
-		info.mip_lod_bias = lod_bias;
-		break;
-
-	default:
-		break;
-	}
-
-	samplers[unsigned(mode)] = request_immutable_sampler(info);
-}
-
 void Device::init_stock_samplers()
 {
 	for (unsigned i = 0; i < static_cast<unsigned>(StockSampler::Count); i++)
 	{
 		auto mode = static_cast<StockSampler>(i);
-		init_stock_sampler(mode, 8.0f, 0.0f);
+		bool linear = mode == StockSampler::LinearClamp || mode == StockSampler::LinearWrap;
+		bool wrap = mode == StockSampler::NearestWrap || mode == StockSampler::LinearWrap;
+		VkSamplerAddressMode address = wrap ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		SamplerCreateInfo info = {};
+
+		info.mag_filter = info.min_filter = linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+		info.mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+		info.address_mode_u = info.address_mode_v = info.address_mode_w = address;
+		info.max_lod = VK_LOD_CLAMP_NONE;
+		samplers[i] = request_immutable_sampler(info);
 	}
 }
 
@@ -2791,7 +2676,7 @@ BindlessDescriptorPoolHandle Device::create_bindless_descriptor_pool(BindlessRes
 		return BindlessDescriptorPoolHandle{nullptr};
 	}
 
-	auto *allocator = request_descriptor_set_allocator(layout, stages_for_sets, nullptr);
+	auto *allocator = request_descriptor_set_allocator(layout, stages_for_sets);
 
 	VkDescriptorPool pool = VK_NULL_HANDLE;
 
