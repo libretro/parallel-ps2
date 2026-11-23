@@ -3,12 +3,9 @@
 #pragma once
 
 #ifdef _WIN32
-/* vulkan.h pulls in windows.h on Windows, so ours comes first; C units
- * (the loader) take windows.h with the same two settings, without
- * RedtapeWindows.h's C++ helpers. */
-#ifdef __cplusplus
-#include "common/RedtapeWindows.h"
-#else
+/* vulkan.h pulls in windows.h on Windows, so ours comes first, lean and
+ * without min/max. Nothing outside this directory: Granite includes this
+ * with only its own include paths. */
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -16,5 +13,4 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#endif
 #endif
