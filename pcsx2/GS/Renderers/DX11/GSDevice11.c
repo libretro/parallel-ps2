@@ -38,6 +38,13 @@
 
 extern retro_environment_t environ_cb;
 
+/* The interfaces asked for (here rather than from dxguid, which is not
+ * linked) */
+static const IID s_iid_d3d11_device1 = {0xa04bfb29, 0x08ef, 0x43d6, {0xa4, 0x9c, 0xa9, 0xbd, 0xbd, 0xcb, 0xe6, 0x86}};
+static const IID s_iid_d3d11_context1 = {0xbb2c6faa, 0xb5fb, 0x4082, {0x8e, 0x6b, 0x38, 0x8b, 0x8c, 0xfa, 0x90, 0xe1}};
+static const IID s_iid_dxgi_adapter1 = {0x29038f61, 0x3839, 0x4626, {0x91, 0xfd, 0x08, 0x68, 0x79, 0x01, 0x1a, 0x05}};
+static const IID s_iid_dxgi_device = {0x54ec77fa, 0x1377, 0x44e6, {0x8c, 0x32, 0x88, 0xfd, 0x5f, 0x44, 0xc8, 0x4c}};
+
 #define D11_DEV(d) ((gs_device_d3d11*)(d))
 #define D11_TEX(t) ((gs_texture_d3d11*)(t))
 #define D11_ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
@@ -2214,7 +2221,7 @@ static bool d11_dev_create(gs_device* d)
 	s_d3d11_resolved = true;
 
 	D11_RELEASE(dev->dev);
-	if (FAILED(ID3D11Device_QueryInterface(d3d11->device, &IID_ID3D11Device1, (void**)&dev->dev)))
+	if (FAILED(ID3D11Device_QueryInterface(d3d11->device, &s_iid_d3d11_device1, (void**)&dev->dev)))
 	{
 		dev->dev = NULL;
 		log_cb(RETRO_LOG_ERROR, "Direct3D 11.1 is required and not supported.\n");
@@ -2232,7 +2239,7 @@ static bool d11_dev_create(gs_device* d)
 	}
 	ID3D11DeviceContext_AddRef(dev->ctx);
 	D11_RELEASE(dev->ctx1);
-	if (FAILED(ID3D11DeviceContext_QueryInterface(d3d11->context, &IID_ID3D11DeviceContext1, (void**)&dev->ctx1)))
+	if (FAILED(ID3D11DeviceContext_QueryInterface(d3d11->context, &s_iid_d3d11_context1, (void**)&dev->ctx1)))
 		dev->ctx1 = NULL;
 	gs_device_acquire_window(d);
 
@@ -2250,8 +2257,8 @@ static bool d11_dev_create(gs_device* d)
 		/* HACK: check AMD. Broken point sampler should be enabled only on AMD. */
 		IDXGIDevice* dxgi_device     = NULL;
 		IDXGIAdapter1* dxgi_adapter = NULL;
-		if (SUCCEEDED(ID3D11Device1_QueryInterface(dev->dev, &IID_IDXGIDevice, (void**)&dxgi_device))
-			&& SUCCEEDED(IDXGIDevice_GetParent(dxgi_device, &IID_IDXGIAdapter1, (void**)&dxgi_adapter)))
+		if (SUCCEEDED(ID3D11Device1_QueryInterface(dev->dev, &s_iid_dxgi_device, (void**)&dxgi_device))
+			&& SUCCEEDED(IDXGIDevice_GetParent(dxgi_device, &s_iid_dxgi_adapter1, (void**)&dxgi_adapter)))
 			dev->base.m_features.broken_point_sampler = (gs_d3d_vendor_id(dxgi_adapter) == GS_D3D_VENDOR_AMD);
 		d11_set_features(dev, dxgi_adapter);
 		D11_RELEASE(dxgi_adapter);
