@@ -11,7 +11,10 @@
  * Without buffer device address a module declaring
  * PhysicalStorageBufferAddresses cannot be made, so each one has a NAME_nobda
  * variant that does not declare it, or is one of the modules the renderer
- * goes without on such a device (no_bda_unused below).
+ * goes without on such a device (no_bda_unused below). Likewise without
+ * 8-bit storage for StorageBuffer8BitAccess: each such module has a
+ * variant with _no8 or _nobda_no8 added to its name (before any index)
+ * that declares neither.
  *
  * Reads slangmosh.hpp, finds each module from its spirv_bank + N offset
  * and walks the capabilities at its head.
@@ -29,6 +32,7 @@
 #define CAP_PUSHCONST16    4435UL
 #define CAP_INPUTOUTPUT16  4436UL
 #define CAP_BDA            5347UL
+#define CAP_STORAGE8       4448UL
 #define MAX_MODULES        64
 #define MAX_NAME           64
 
@@ -77,7 +81,7 @@ int main(int argc, char **argv)
    size_t nwords = 0, cap = 1 << 16;
    int modules = 0, bad = 0, m, n;
    static char names[MAX_MODULES][MAX_NAME];
-   static int bda[MAX_MODULES];
+   static int bda[MAX_MODULES], st8[MAX_MODULES];
 
    if (argc < 2 || !(text = read_file(argv[1])))
    {
@@ -114,7 +118,7 @@ int main(int argc, char **argv)
       unsigned long off;
       char *call = strstr(p, "spirv_bank + ");
       size_t i, len = strcspn(p + 6, " =");
-      int needs_bda = 0;
+      int needs_bda = 0, needs_8 = 0;
 
       if (!call || modules == MAX_MODULES || len >= MAX_NAME)
          break;
@@ -140,14 +144,17 @@ int main(int argc, char **argv)
          }
          if (op == OP_CAPABILITY && i + 1 < nwords && words[i + 1] == CAP_BDA)
             needs_bda = 1;
+         if (op == OP_CAPABILITY && i + 1 < nwords && words[i + 1] == CAP_STORAGE8)
+            needs_8 = 1;
          i += wc;
       }
-      bda[modules++] = needs_bda;
+      bda[modules] = needs_bda;
+      st8[modules++] = needs_8;
    }
 
    for (m = 0; m < modules; m++)
    {
-      char want[MAX_NAME + 8];
+      char want[MAX_NAME + 16];
       int found = 0;
       size_t len = strlen(names[m]);
 
@@ -155,6 +162,24 @@ int main(int argc, char **argv)
       {
          printf("  FAIL %s declares PhysicalStorageBufferAddresses\n", names[m]);
          bad++;
+      }
+      if (st8[m] && !strstr(names[m], "_no8"))
+      {
+         const char *suffixes[2] = { "_no8", "_nobda_no8" };
+         size_t base = strcspn(names[m], "[");
+         int k, ok = 0;
+         for (k = 0; k < 2; k++)
+         {
+            sprintf(want, "%.*s%s%s", (int)base, names[m], suffixes[k], names[m] + base);
+            for (n = 0; n < modules; n++)
+               if (!strcmp(names[n], want) && !st8[n] && !bda[n])
+                  ok = 1;
+         }
+         if (!ok)
+         {
+            printf("  FAIL %s needs 8-bit storage and has no _no8 variant\n", names[m]);
+            bad++;
+         }
       }
       if (!bda[m])
          continue;
@@ -184,6 +209,6 @@ int main(int argc, char **argv)
       printf("pgs_bank_caps: %d failure(s)\n", bad);
       return 1;
    }
-   printf("pgs_bank_caps: %d module loads, no unchecked 16-bit capability, a no-BDA path for each\n", modules);
+   printf("pgs_bank_caps: %d module loads, no unchecked 16-bit capability, a no-BDA and a no-8-bit path for each\n", modules);
    return 0;
 }

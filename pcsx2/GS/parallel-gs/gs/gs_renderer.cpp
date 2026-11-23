@@ -681,7 +681,7 @@ bool GSRenderer::use_dynamic_shading(Vulkan::CommandBuffer &cmd)
 	ShadingVariant variant;
 	unsigned i;
 
-	if (!variant_running || cmd.get_program() != shaders.ubershader[0][0])
+	if (!variant_running || cmd.get_program() != ubershader_program)
 		return false;
 	take_built_variants();
 	cmd.extract_pipeline_state(job);
@@ -773,7 +773,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 
 	{
 		Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
-		cmd->set_program(shaders.ubershader[0][0]);
+		cmd->set_program(ubershader_program);
 		Vulkan::DeferredPipelineCompile deferred = {};
 
 		/* The native rate, which a pass that cannot super-sample drops
@@ -935,7 +935,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 					cmd->extract_pipeline_state(deferred);
 					small_tasks.push_back(deferred);
 				}
-				cmd->set_program(shaders.ubershader[0][0]);
+				cmd->set_program(ubershader_program);
 				cmd->set_specialization_constant_mask(0xff);
 			}
 		}
@@ -1033,7 +1033,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 			for (uint32_t mask : vram_masks)
 			{
 				cmd->set_specialization_constant(1, mask);
-				for (Vulkan::Program *prog : shaders.upload)
+				for (Vulkan::Program *prog : upload_programs)
 				{
 					unsigned indirection;
 					cmd->set_program(prog);
@@ -1414,23 +1414,24 @@ GSRenderer::GSRenderer(PageTracker &tracker_)
 }
 
 /* Hands the bank's modules to the device, leaving out those declaring
- * PhysicalStorageBufferAddresses when it has no buffer device address (or
- * no scalar block layout, which vram_copy's needs): such a module cannot
- * be made there, and its _nobda variant is used. */
+ * PhysicalStorageBufferAddresses when the BDA paths are not taken, or
+ * StorageBuffer8BitAccess without 8-bit storage: such a module cannot be
+ * made there, and its _nobda or _no8 variant is used. */
 struct BankDevice
 {
 	Vulkan::Device &device;
 	bool bda;
+	bool storage8;
 
 	bool usable(const uint32_t *code, size_t size) const
 	{
 		size_t i, n = size / sizeof(uint32_t);
-		for (i = 5; !bda && i + 1 < n; i += code[i] >> 16)
+		for (i = 5; !(bda && storage8) && i + 1 < n; i += code[i] >> 16)
 		{
 			uint32_t op = code[i] & 0xffffu;
 			if ((code[i] >> 16) == 0 || (op != 17 && op != 10))
 				break;
-			if (op == 17 && code[i + 1] == 5347)
+			if (op == 17 && ((!bda && code[i + 1] == 5347) || (!storage8 && code[i + 1] == 4448)))
 				return false;
 		}
 		return true;
@@ -1452,21 +1453,28 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	drain_compilation_tasks();
 	stop_variant_builder();
 
-	/* vram_copy's 24-bit source reads through BDA are scalar laid out. */
+	/* vram_copy's source reads through BDA are scalar laid out and 8-bit. */
+	has_8bit = device_->get_device_features().vk12_features.storageBuffer8BitAccess != VK_FALSE;
 	use_bda = device_->get_device_features().vk12_features.bufferDeviceAddress &&
-	          device_->get_device_features().vk12_features.scalarBlockLayout;
+	          device_->get_device_features().vk12_features.scalarBlockLayout && has_8bit;
 	Vulkan::ResourceLayout layout;
-	BankDevice bank_device = { *device_, use_bda };
+	BankDevice bank_device = { *device_, use_bda, has_8bit };
 	shaders = Shaders<>(bank_device, layout, 0);
-	vram_copy_program = use_bda ? shaders.vram_copy : shaders.vram_copy_nobda;
+	vram_copy_program = !has_8bit ? shaders.vram_copy_nobda_no8 :
+	                    use_bda ? shaders.vram_copy : shaders.vram_copy_nobda;
+	ubershader_program = has_8bit ? shaders.ubershader[0][0] : shaders.ubershader_no8[0][0];
+	upload_programs[0] = has_8bit ? shaders.upload[0] : shaders.upload_no8[0];
+	upload_programs[1] = has_8bit ? shaders.upload[1] : shaders.upload_no8[1];
 	/* The ubershader's resources, with room for the variant pushed after
 	 * the descriptor. */
 	{
 		Vulkan::ResourceLayout dynamic_layout =
-				shaders.ubershader[0][0]->get_shader(Vulkan::ShaderStage::Compute)->get_layout();
+				ubershader_program->get_shader(Vulkan::ShaderStage::Compute)->get_layout();
 		dynamic_layout.push_constant_size = sizeof(ShadingDescriptor) + sizeof(ShadingVariant);
 		dynamic_layout.spec_constant_mask = PGS_DYNAMIC_SPEC_MASK;
-		ubershader_dynamic = device_->request_program(pgs_ubershader_dynamic, sizeof(pgs_ubershader_dynamic),
+		ubershader_dynamic = has_8bit ?
+				device_->request_program(pgs_ubershader_dynamic, sizeof(pgs_ubershader_dynamic), &dynamic_layout) :
+				device_->request_program(pgs_ubershader_dynamic_no8, sizeof(pgs_ubershader_dynamic_no8),
 		                                              &dynamic_layout);
 	}
 	blit_quad = device_->request_program(shaders.quad, shaders.blit_circuit);
@@ -1487,7 +1495,6 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	const Vulkan::DeviceFeatures &ext = device_->get_device_features();
 	if (!ext.vk12_features.descriptorIndexing ||
 	    !ext.vk12_features.timelineSemaphore ||
-	    !ext.vk12_features.storageBuffer8BitAccess ||
 	    !ext.vk11_features.storageBuffer16BitAccess ||
 	    !ext.enabled_features.shaderInt16 ||
 	    (ext.vk11_props.subgroupSupportedOperations & required_subgroup_flags) != required_subgroup_flags ||
@@ -1497,7 +1504,6 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 		LOGE("Minimum requirements for parallel-gs are not met.\n");
 		LOGE("  - descriptorIndexing\n");
 		LOGE("  - timelineSemaphore\n");
-		LOGE("  - storageBuffer8BitAccess\n");
 		LOGE("  - storageBuffer16BitAccess\n");
 		LOGE("  - shaderInt16\n");
 		LOGE("  - Arithmetic / Shuffle / Vote / Ballot / Basic subgroup operations\n");
@@ -2965,7 +2971,7 @@ void GSRenderer::dispatch_shading_indirect(Vulkan::CommandBuffer &cmd, const Vul
 	if (use_dynamic_shading(cmd))
 	{
 		cmd.dispatch_indirect(buffer, offset);
-		cmd.set_program(shaders.ubershader[0][0]);
+		cmd.set_program(ubershader_program);
 		cmd.set_specialization_constant_mask(mask);
 	}
 	else
@@ -3188,7 +3194,7 @@ void GSRenderer::dispatch_shading(Vulkan::CommandBuffer &cmd, const RenderPass &
 	assert(inst.sampling_rate_x_log2 <= 2);
 	assert(inst.sampling_rate_y_log2 <= 3);
 
-	cmd.set_program(shaders.ubershader[0][0]);
+	cmd.set_program(ubershader_program);
 	ivec2 snap_raster_mask = ivec2{ -(1 << inst.sampling_rate_y_log2),
 	                               -(1 << inst.sampling_rate_y_log2) };
 	// Snap single-sampled raster to half-texel instead.
@@ -4038,7 +4044,7 @@ void GSRenderer::upload_texture(const TextureUpload &upload)
 	Vulkan::CommandBuffer &cmd = *direct_cmd;
 
 	uint32_t levels = img.get_create_info().levels;
-	cmd.set_program(shaders.upload[int(upload.desc.samples > 1)]);
+	cmd.set_program(upload_programs[int(upload.desc.samples > 1)]);
 	if (scratch.buffer)
 		cmd.set_storage_buffer(0, 0, *scratch.buffer, scratch.offset, scratch.size);
 	else

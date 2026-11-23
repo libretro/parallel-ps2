@@ -6,7 +6,9 @@
 // SPDX-License-Identifier: LGPL-3.0+
 
 #extension GL_EXT_shader_16bit_storage : require
+#ifndef PGS_NO_8BIT
 #extension GL_EXT_shader_8bit_storage : require
+#endif
 layout(local_size_x = 8, local_size_y = 8) in;
 layout(constant_id = 0) const uint TEXTURE_FMT = 0;
 layout(constant_id = 1) const uint VRAM_MASK = 4 * 1024 * 1024 - 1;
@@ -27,10 +29,16 @@ layout(std430, set = 0, binding = 0) readonly buffer VRAM16
 	uint16_t data[];
 } vram16;
 
+#ifdef PGS_NO_8BIT
+// Without 8-bit storage a byte is read out of its word.
+#define VRAM8_LOAD(addr) bitfieldExtract(vram32.data[(addr) >> 2u], 8 * int((addr) & 3u), 8)
+#else
 layout(std430, set = 0, binding = 0) readonly buffer VRAM8
 {
 	uint8_t data[];
 } vram8;
+#define VRAM8_LOAD(addr) vram8.data[addr]
+#endif
 
 layout(std430, set = 0, binding = BINDING_CLUT) readonly buffer CLUT16
 {
@@ -165,13 +173,13 @@ void main()
 	}
 	else if (is_tex_8bit)
 	{
-		uint index = uint(vram8.data[addr]);
+		uint index = uint(VRAM8_LOAD(addr));
 #if SUPER_SAMPLED
 		if (sample_id != ~0u)
 		{
-			uint ref = uint(vram8.data[addr + VRAM_STRIDE_U8]);
+			uint ref = uint(VRAM8_LOAD(addr + VRAM_STRIDE_U8));
 			if (ref == 0xffu)
-				index = uint(vram8.data[addr + (2 + sample_id) * VRAM_STRIDE_U8]);
+				index = uint(VRAM8_LOAD(addr + (2 + sample_id) * VRAM_STRIDE_U8));
 		}
 #endif
 		payload = get_clut_color(index, registers.clut_offset);
@@ -179,13 +187,13 @@ void main()
 	else if (TEXTURE_FMT == PSMT8H)
 	{
 		uint addr8h = addr * 4 + 3;
-		uint index = uint(vram8.data[addr8h]);
+		uint index = uint(VRAM8_LOAD(addr8h));
 #if SUPER_SAMPLED
 		if (sample_id != ~0u)
 		{
-			uint ref = uint(vram8.data[addr8h + VRAM_STRIDE_U8]);
+			uint ref = uint(VRAM8_LOAD(addr8h + VRAM_STRIDE_U8));
 			if (ref == 0xffu)
-				index = uint(vram8.data[addr8h + (2 + sample_id) * VRAM_STRIDE_U8]);
+				index = uint(VRAM8_LOAD(addr8h + (2 + sample_id) * VRAM_STRIDE_U8));
 		}
 #endif
 		payload = get_clut_color(index, registers.clut_offset);
@@ -194,7 +202,7 @@ void main()
 	{
 		// It's not meaningful to sample PSMT4 from a framebuffer.
 		int nibble_address = bitfieldExtract(int(addr), 0, 1) & 0x1;
-		uint raw_byte = uint(vram8.data[addr >> 1]);
+		uint raw_byte = uint(VRAM8_LOAD(addr >> 1));
 		uint nibble = bitfieldExtract(raw_byte, nibble_address << 2, 4);
 		payload = get_clut_color(nibble, registers.clut_offset);
 	}

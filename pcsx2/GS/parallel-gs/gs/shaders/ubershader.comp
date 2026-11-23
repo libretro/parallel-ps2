@@ -10,7 +10,9 @@
 #extension GL_KHR_shader_subgroup_arithmetic : require
 #extension GL_KHR_shader_subgroup_shuffle : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#ifndef PGS_NO_8BIT
 #extension GL_EXT_shader_8bit_storage : require
+#endif
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_EXT_samplerless_texture_functions : require
 
@@ -718,7 +720,13 @@ void end_tile()
 				// The masked write ensures it won't be considered a race condition.
 				// color will alias, but not much we can do about that ...
 				if (is_zb_24bit)
+#ifdef PGS_NO_8BIT
+					// The tile's pixel is this thread's: its alpha byte is kept.
+					vram32.data[tile.fb_index_depth] =
+						(vram32.data[tile.fb_index_depth] & 0xff000000u) | (fb_depth & 0xffffffu);
+#else
 					vram24.data[tile.fb_index_depth] = u8vec3(uvec3(fb_depth) >> uvec3(0, 8, 16));
+#endif
 				else
 					vram32.data[tile.fb_index_depth] = fb_depth;
 			}

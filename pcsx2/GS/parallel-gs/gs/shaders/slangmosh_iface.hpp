@@ -28,6 +28,9 @@ struct Shaders
 	Program qword_clear = {};
 	Program sampler_feedback = {};
 	Program vram_copy_nobda = {};
+	Program upload_no8[2] = {};
+	Program vram_copy_nobda_no8 = {};
+	Program ubershader_no8[1][1] = {};
 	Shaders() = default;
 
 	template <typename Device, typename Layout, typename Resolver>

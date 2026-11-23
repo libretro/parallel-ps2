@@ -14,10 +14,12 @@ layout(set = 0, binding = BINDING_VRAM, std430) buffer VRAM32
 	uint data[];
 } vram32;
 
+#ifndef PGS_NO_8BIT
 layout(set = 0, binding = BINDING_VRAM, std430) buffer VRAM24
 {
 	u8vec3 data[];
 } vram24;
+#endif
 
 layout(set = 0, binding = BINDING_VRAM, std430) buffer VRAM16
 {

@@ -353,6 +353,10 @@ private:
 	bool use_bda = true;
 	void push_qword_clear(const Vulkan::BufferHandle &buffer, VkDeviceSize offset);
 	Vulkan::Program *vram_copy_program = nullptr;
+	/* Without 8-bit storage, the _no8 variants. */
+	bool has_8bit = true;
+	Vulkan::Program *ubershader_program = nullptr;
+	Vulkan::Program *upload_programs[2] = {};
 
 	struct Scratch
 	{

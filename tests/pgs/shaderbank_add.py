@@ -56,9 +56,19 @@ def main():
     bank = (bank[:s0] + emit(bank_words + words, 8, "0x%08xu") + bank[s1:r0] +
             emit(rbytes + list(record), 32, "0x%02x") + bank[r1:end] + loader + bank[end:])
 
-    member = "\t%s %s = {};\n" % ("Program" if kind == "program" else "Shader", name)
-    anchor = "\tShaders() = default;\n"
-    iface = iface.replace(anchor, member + anchor, 1)
+    # NAME may index an array member, upload_no8[1] say: the member is
+    # declared, or grown, to hold it.
+    m = re.match(r"(\w+)((?:\[\d+\])*)$", name)
+    base, index = m.group(1), [int(x) for x in re.findall(r"\d+", m.group(2))]
+    typ = "Program" if kind == "program" else "Shader"
+    decl = re.search(r"\t%s %s((?:\[\d+\])*) = \{\};\n" % (typ, base), iface)
+    if decl:
+        dims = [max(int(x), i + 1) for x, i in zip(re.findall(r"\d+", decl.group(1)), index)]
+        iface = iface.replace(decl.group(0), "\t%s %s%s = {};\n" % (typ, base, "".join("[%d]" % d for d in dims)), 1)
+    else:
+        anchor = "\tShaders() = default;\n"
+        member = "\t%s %s%s = {};\n" % (typ, base, "".join("[%d]" % (i + 1) for i in index))
+        iface = iface.replace(anchor, member + anchor, 1)
 
     open(bank_path, "w").write(bank)
     open(iface_path, "w").write(iface)

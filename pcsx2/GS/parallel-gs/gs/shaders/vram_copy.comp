@@ -6,7 +6,9 @@
 // SPDX-License-Identifier: LGPL-3.0+
 
 #extension GL_EXT_shader_16bit_storage : require
+#ifndef PGS_NO_8BIT
 #extension GL_EXT_shader_8bit_storage : require
+#endif
 #ifndef PGS_NO_BDA
 #extension GL_EXT_scalar_block_layout : require
 #endif
@@ -43,20 +45,24 @@ layout(std430, set = 0, binding = 0) buffer VRAM32
 	uint data[];
 } vram32;
 
+#ifndef PGS_NO_8BIT
 layout(std430, set = 0, binding = 0) buffer VRAM24
 {
 	u8vec3 data[];
 } vram24;
+#endif
 
 layout(std430, set = 0, binding = 0) buffer VRAM16
 {
 	uint16_t data[];
 } vram16;
 
+#ifndef PGS_NO_8BIT
 layout(std430, set = 0, binding = 0) buffer VRAM8
 {
 	uint8_t data[];
 } vram8;
+#endif
 
 #ifdef PGS_NO_BDA
 // Without buffer device address the source buffer is bound, and the
@@ -450,9 +456,16 @@ void main()
 
 			if (has_exclusive)
 			{
+#ifdef PGS_NO_8BIT
+				// Without 8-bit storage: the dword is this thread's alone.
+				vram32.data[dest_addr] = (vram32.data[dest_addr] & 0xff000000u) | (tex_data & 0xffffffu);
+				if (INVALIDATE_SUPER_SAMPLE)
+					vram32.data[dest_addr + (VRAM_MASK + 1) / 4] &= 0xff000000u;
+#else
 				vram24.data[dest_addr] = u8vec3(uvec3(tex_data) >> uvec3(0, 8, 16));
 				if (INVALIDATE_SUPER_SAMPLE)
 					vram24.data[dest_addr + (VRAM_MASK + 1) / 4] = u8vec3(uvec3(tex_data & CONSTANT_ZERO));
+#endif
 			}
 			else if (mask != 0u)
 			{
@@ -532,9 +545,18 @@ void main()
 
 			if (has_exclusive)
 			{
+#ifdef PGS_NO_8BIT
+				// Without 8-bit storage: the other bytes of the dword are
+				// other threads', so the byte goes in with atomics.
+				atomicAnd(vram32.data[word_addr], ~target_write_mask);
+				atomicOr(vram32.data[word_addr], (write_word << shamt) & target_write_mask);
+				if (INVALIDATE_SUPER_SAMPLE)
+					atomicAnd(vram32.data[word_addr + (VRAM_MASK + 1) / 4], ~target_write_mask);
+#else
 				vram8.data[byte_addr] = uint8_t(write_word);
 				if (INVALIDATE_SUPER_SAMPLE)
 					vram8.data[byte_addr + (VRAM_MASK + 1)] = uint8_t(write_word & CONSTANT_ZERO);
+#endif
 			}
 			else if (mask != 0u)
 			{
@@ -626,9 +648,18 @@ void main()
 
 			if (has_exclusive)
 			{
+#ifdef PGS_NO_8BIT
+				// Without 8-bit storage: the other bytes of the dword are
+				// other threads', so the byte goes in with atomics.
+				atomicAnd(vram32.data[word_addr], ~target_write_mask);
+				atomicOr(vram32.data[word_addr], (write_word << shamt) & target_write_mask);
+				if (INVALIDATE_SUPER_SAMPLE)
+					atomicAnd(vram32.data[word_addr + (VRAM_MASK + 1) / 4], ~target_write_mask);
+#else
 				vram8.data[byte_addr] = uint8_t(write_word);
 				if (INVALIDATE_SUPER_SAMPLE)
 					vram8.data[byte_addr + (VRAM_MASK + 1)] = uint8_t(write_word & CONSTANT_ZERO);
+#endif
 			}
 			else if (mask != 0u)
 			{

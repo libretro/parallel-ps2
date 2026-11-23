@@ -1112,11 +1112,12 @@ else
 		exit 1
 	fi
 	echo "  paraLLEl-GS on Vulkan 1.1: through the extensions, no validation error, the same picture"
-	# And without buffer device address or without scalar block layout
-	# (Vulkan 1.1, the extension hidden), every host-visible allocation
-	# starting as 0xA5 bytes: the qword clears go as fills, sampler
-	# feedback is left off, and copies read their source through
-	# vram_copy_nobda, batched by source buffer.
+	# And without buffer device address, scalar block layout or 8-bit
+	# storage (Vulkan 1.1, the extension hidden), every host-visible
+	# allocation starting as 0xA5 bytes: the qword clears go as fills,
+	# sampler feedback is left off, copies read their source through
+	# vram_copy_nobda, batched by source buffer, and without 8-bit storage
+	# the _no8 modules write bytes as masked words.
 	# Uploads ordered after a draw (24-bit pixels straddling words, 4-bit
 	# and 8-bit high parts, two staging blocks in one batch), readbacks,
 	# local copies, a blur through sampler feedback and the scanned field
@@ -1135,11 +1136,12 @@ else
 			blur_in_place)      expect=ffffffff ;;
 		esac
 		[ -f "$VAL/$c.bin" ] || "$VAL/swdraw" --bios "$VAL/$c.bin" $c
-		for v in bda nobda noscalar; do
+		for v in bda nobda noscalar no8; do
 			case $v in
 				bda)      hide= ;;
 				nobda)    hide=VK_KHR_buffer_device_address ;;
 				noscalar) hide=VK_EXT_scalar_block_layout ;;
+				no8)      hide=VK_KHR_8bit_storage ;;
 			esac
 			env ${hide:+VN_HIDE_EXT=$hide} \
 			VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 VN_VERBOSE=1 VK_LOADER_LAYERS_ENABLE='*validation*' \
@@ -1158,7 +1160,7 @@ else
 			fi
 		done
 	done
-	for hide in VK_KHR_buffer_device_address VK_EXT_scalar_block_layout; do
+	for hide in VK_KHR_buffer_device_address VK_EXT_scalar_block_layout VK_KHR_8bit_storage; do
 		VN_HIDE_EXT=$hide VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
 		VK_LOADER_LAYERS_ENABLE='*validation*' VN_HASH_IMAGE=1 VN_FRAMES=60 VN_IDLE_BIOS=1 \
 		LRPS2_BIOS="$VAL/scan_field.bin" VN_RENDERER=paraLLEl-GS \
@@ -1170,7 +1172,29 @@ else
 			exit 1
 		fi
 	done
-	echo "  paraLLEl-GS without buffer device address or scalar block layout: the same memory and picture, no validation error"
+	# A PSMT8 texture uploaded and drawn every round (stream_t8): the state
+	# at the end is the full run's, but for the sections any two runs
+	# differ in ("Gif" to "GIFdma", the timing, and "cdvd" to "deci2").
+	"$VAL/swdraw" --bios "$VAL/stream_t8.bin" stream_t8
+	for hide in none VK_KHR_buffer_device_address VK_EXT_scalar_block_layout VK_KHR_8bit_storage; do
+		mkdir -p "$VAL/st.$hide"
+		env $( [ $hide = none ] || echo VN_HIDE_EXT=$hide ) VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
+		VN_FRAMES=120 VN_DUMP_STATE="$VAL/st.$hide.state" VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/stream_t8.bin" \
+		VN_RENDERER=paraLLEl-GS timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL/st.$hide" v2 >"$VAL/st.$hide.log" 2>&1 || true
+		[ $hide = none ] && continue
+		f="$VAL/st.none.state"
+		tag() { grep -abo "$2" "$1" | head -n 1 | cut -d: -f1; }
+		g0=$(tag "$f" Gif); g1=$(tag "$f" GIFdma); c0=$(tag "$f" cdvd); c1=$(tag "$f" deci2)
+		n=$(cmp -l "$f" "$VAL/st.$hide.state" 2>/dev/null | awk -v g0="$g0" -v g1="$g1" -v c0="$c0" -v c1="$c1" \
+			'{ o = $1 - 1; if (!((o >= g0 && o < g1) || (o >= c0 && o < c1))) n++ } END { print n + 0 }')
+		if [ -z "$g0" ] || [ -z "$c0" ] || [ ! -s "$VAL/st.$hide.state" ] ||
+		   [ "$(wc -c < "$f")" != "$(wc -c < "$VAL/st.$hide.state")" ] || [ "$n" != 0 ]; then
+			rm -rf "$VAL"
+			echo "  FAIL: stream_t8 without $hide ends in another state (${n:-?} bytes)"
+			exit 1
+		fi
+	done
+	echo "  paraLLEl-GS without buffer device address, scalar block layout or 8-bit storage: the same memory and picture, no validation error"
 	# The device lost at the 30th present with a palette the GPU drew in
 	# use, and reopened under the renderer: nothing of the old device is
 	# used or freed on the new one (the texture cache's download textures
