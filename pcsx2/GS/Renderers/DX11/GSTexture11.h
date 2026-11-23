@@ -19,11 +19,15 @@
 #include "common/Pcsx2Defs.h"
 #include "GS/Renderers/Common/GSTextureBase.h"
 
-#ifdef __cplusplus
-#include "common/RedtapeWindows.h"
-#include "GS/Renderers/Common/GSTexture.h"
-#else
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#ifdef __cplusplus
+#include "GS/Renderers/Common/GSTexture.h"
 #endif
 #include <d3d11.h>
 

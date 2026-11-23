@@ -42,8 +42,9 @@
 #endif
 
 /* Windows 10's placeholder APIs, resolved at run time so the core still
- * loads on 8 and 8.1 (RedtapeWindows.h has why); the extended parameters
- * are never passed, so a pointer stands for their type */
+ * loads on 8 and 8.1: as imports they would keep the module from loading
+ * there at all; the extended parameters are never passed, so a pointer
+ * stands for their type */
 typedef PVOID(WINAPI* gs_virtual_alloc2_fn)(HANDLE, PVOID, SIZE_T, ULONG, ULONG, void*, ULONG);
 typedef PVOID(WINAPI* gs_map_view3_fn)(HANDLE, HANDLE, PVOID, ULONG64, SIZE_T, ULONG, ULONG, void*, ULONG);
 typedef BOOL(WINAPI* gs_unmap_view2_fn)(HANDLE, PVOID, ULONG);

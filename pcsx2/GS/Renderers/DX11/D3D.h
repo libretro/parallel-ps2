@@ -18,11 +18,15 @@
 
 #include "common/Pcsx2Defs.h"
 
-#ifdef __cplusplus
-#include "common/RedtapeWindows.h"
-#include <wrl/client.h>
-#else
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#ifdef __cplusplus
+#include <wrl/client.h>
 #endif
 
 #include <d3d11_1.h>

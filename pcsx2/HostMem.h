@@ -26,13 +26,8 @@
 #include "common/General.h"
 
 #if defined(_WIN32)
-/* For C++, RedtapeWindows.h rather than <windows.h>: it sets NOMINMAX and
- * WIN32_LEAN_AND_MEAN first, and without them the max macro breaks every
- * std::numeric_limits<>::max() in a translation unit that includes this
- * one. It is C++ itself, so C takes the same two settings directly. */
-#ifdef __cplusplus
-#include "common/RedtapeWindows.h"
-#else
+/* NOMINMAX first: the max macro would break every
+ * std::numeric_limits<>::max() in a C++ unit including this one. */
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -40,7 +35,6 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#endif
 #else
 #include <unistd.h>
 #endif

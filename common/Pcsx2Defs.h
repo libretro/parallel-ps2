@@ -386,9 +386,9 @@ PCSX2_DEFINE_MINMAX(d,   double)
  * NOMINMAX, so including it from a widely-included header turns min and
  * max into macros. Under MSVC that breaks every declaration named min or
  * max -- GSVector8::min(), GSTextureCache's std::max initialisers -- with
- * a cascade of syntax errors far from the include that caused them. The
- * tree already has common/RedtapeWindows.h for pulling in windows.h
- * safely; a config header has no business doing it at all.
+ * a cascade of syntax errors far from the include that caused them. A
+ * unit that needs windows.h takes it lean and with NOMINMAX itself; a
+ * config header has no business doing it at all.
  *
  * Having our own constant also fixes the size across translation units,
  * which PATH_MAX_LENGTH does not: it is 512 on some platforms and 2048 on
