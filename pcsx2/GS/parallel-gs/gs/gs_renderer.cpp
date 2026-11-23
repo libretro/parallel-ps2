@@ -1421,23 +1421,26 @@ GSRenderer::GSRenderer(PageTracker &tracker_)
 
 /* Hands the bank's modules to the device, leaving out those declaring
  * PhysicalStorageBufferAddresses when the BDA paths are not taken, or
- * StorageBuffer8BitAccess without 8-bit storage: such a module cannot be
- * made there, and its _nobda or _no8 variant is used. */
+ * StorageBuffer8BitAccess without 8-bit storage, or RuntimeDescriptorArray
+ * without descriptor indexing: such a module cannot be made there, and its
+ * _nobda, _no8 or _noindex variant is used. */
 struct BankDevice
 {
 	Vulkan::Device &device;
 	bool bda;
 	bool storage8;
+	bool indexing;
 
 	bool usable(const uint32_t *code, size_t size) const
 	{
 		size_t i, n = size / sizeof(uint32_t);
-		for (i = 5; !(bda && storage8) && i + 1 < n; i += code[i] >> 16)
+		for (i = 5; !(bda && storage8 && indexing) && i + 1 < n; i += code[i] >> 16)
 		{
 			uint32_t op = code[i] & 0xffffu;
 			if ((code[i] >> 16) == 0 || (op != 17 && op != 10))
 				break;
-			if (op == 17 && ((!bda && code[i + 1] == 5347) || (!storage8 && code[i + 1] == 4448)))
+			if (op == 17 && ((!bda && code[i + 1] == 5347) || (!storage8 && code[i + 1] == 4448) ||
+			                 (!indexing && code[i + 1] == 5302)))
 				return false;
 		}
 		return true;
@@ -1464,11 +1467,15 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	use_bda = device_->get_device_features().vk12_features.bufferDeviceAddress &&
 	          device_->get_device_features().vk12_features.scalarBlockLayout && has_8bit;
 	Vulkan::ResourceLayout layout;
-	BankDevice bank_device = { *device_, use_bda, has_8bit };
+	has_indexing = device_->get_device_features().vk12_features.descriptorIndexing != VK_FALSE;
+	BankDevice bank_device = { *device_, use_bda, has_8bit, has_indexing };
 	shaders = Shaders<>(bank_device, layout, 0);
 	vram_copy_program = !has_8bit ? shaders.vram_copy_nobda_no8 :
 	                    use_bda ? shaders.vram_copy : shaders.vram_copy_nobda;
-	ubershader_program = has_8bit ? shaders.ubershader[0][0] : shaders.ubershader_no8[0][0];
+	if (has_indexing)
+		ubershader_program = has_8bit ? shaders.ubershader[0][0] : shaders.ubershader_no8[0][0];
+	else
+		ubershader_program = has_8bit ? shaders.ubershader_noindex[0][0] : shaders.ubershader_no8_noindex[0][0];
 	upload_programs[0] = has_8bit ? shaders.upload[0] : shaders.upload_no8[0];
 	upload_programs[1] = has_8bit ? shaders.upload[1] : shaders.upload_no8[1];
 	/* The ubershader's resources, with room for the variant pushed after
@@ -1478,10 +1485,14 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 				ubershader_program->get_shader(Vulkan::ShaderStage::Compute)->get_layout();
 		dynamic_layout.push_constant_size = sizeof(ShadingDescriptor) + sizeof(ShadingVariant);
 		dynamic_layout.spec_constant_mask = PGS_DYNAMIC_SPEC_MASK;
-		ubershader_dynamic = has_8bit ?
-				device_->request_program(pgs_ubershader_dynamic, sizeof(pgs_ubershader_dynamic), &dynamic_layout) :
-				device_->request_program(pgs_ubershader_dynamic_no8, sizeof(pgs_ubershader_dynamic_no8),
-		                                              &dynamic_layout);
+		const uint32_t *code = has_8bit ? pgs_ubershader_dynamic : pgs_ubershader_dynamic_no8;
+		size_t size = has_8bit ? sizeof(pgs_ubershader_dynamic) : sizeof(pgs_ubershader_dynamic_no8);
+		if (!has_indexing)
+		{
+			code = has_8bit ? pgs_ubershader_dynamic_noindex : pgs_ubershader_dynamic_no8_noindex;
+			size = has_8bit ? sizeof(pgs_ubershader_dynamic_noindex) : sizeof(pgs_ubershader_dynamic_no8_noindex);
+		}
+		ubershader_dynamic = device_->request_program(code, size, &dynamic_layout);
 	}
 	blit_quad = device_->request_program(shaders.quad, shaders.blit_circuit);
 	sample_quad[0] = device_->request_program(shaders.quad, shaders.sample_circuit[0]);
@@ -1489,7 +1500,6 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	weave_quad = device_->request_program(shaders.quad, shaders.weave);
 
 	flush_submit(0);
-	// Descriptor indexing is a hard requirement.
 	// Wave-ops is critical.
 	constexpr VkSubgroupFeatureFlags required_subgroup_flags =
 			VK_SUBGROUP_FEATURE_ARITHMETIC_BIT |
@@ -1499,15 +1509,13 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 			VK_SUBGROUP_FEATURE_BASIC_BIT;
 
 	const Vulkan::DeviceFeatures &ext = device_->get_device_features();
-	if (!ext.vk12_features.descriptorIndexing ||
-	    !ext.vk11_features.storageBuffer16BitAccess ||
+	if (	    !ext.vk11_features.storageBuffer16BitAccess ||
 	    !ext.enabled_features.shaderInt16 ||
 	    (ext.vk11_props.subgroupSupportedOperations & required_subgroup_flags) != required_subgroup_flags ||
 	    !device_->supports_subgroup_size_log2(true, 2, 6) ||
 	    device_->get_gpu_properties().limits.maxComputeSharedMemorySize < 32 * 1024)
 	{
 		LOGE("Minimum requirements for parallel-gs are not met.\n");
-		LOGE("  - descriptorIndexing\n");
 		LOGE("  - storageBuffer16BitAccess\n");
 		LOGE("  - shaderInt16\n");
 		LOGE("  - Arithmetic / Shuffle / Vote / Ballot / Basic subgroup operations\n");
@@ -1527,6 +1535,14 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 			std::max<VkDeviceSize>(16, device->get_gpu_properties().limits.minStorageBufferOffsetAlignment);
 
 	init_vram(options);
+	if (!has_indexing)
+	{
+		static const uint32_t blank = 0;
+		Vulkan::ImageInitialData initial = {};
+		initial.data = &blank;
+		blank_texture = device->create_image(
+				Vulkan::ImageCreateInfo::immutable_2d_image(1, 1, VK_FORMAT_R8G8B8A8_UNORM), &initial);
+	}
 	prebuilt_sampling_rate = UINT32_MAX;
 	/* Without timeline semaphores, both are left empty: values are fences. */
 	if (device->get_device_features().vk12_features.timelineSemaphore)
@@ -2360,6 +2376,27 @@ void GSRenderer::bind_textures(Vulkan::CommandBuffer &cmd, const RenderPass &rp)
 			0, BINDING_TEXTURE_INFO, std::max<uint32_t>(1, rp.num_textures));
 
 	bound_texture_has_array = false;
+
+	/* Without descriptor indexing: the pass's textures in the fixed array,
+	 * the rest of it the blank texture. */
+	if (!has_indexing)
+	{
+		VK_ASSERT(rp.num_textures <= PGS_FIXED_TEXTURES);
+		for (uint32_t i = 0; i < PGS_FIXED_TEXTURES; i++)
+		{
+			if (i < rp.num_textures)
+			{
+				cmd.set_texture(DESCRIPTOR_SET_IMAGES, i, *rp.textures[i].view);
+				tex_infos[i] = rp.textures[i].info;
+				if (rp.textures[i].info.arrayed)
+					bound_texture_has_array = true;
+			}
+			else
+				cmd.set_texture(DESCRIPTOR_SET_IMAGES, i, blank_texture->get_view());
+		}
+		bindless_base = 0;
+		return;
+	}
 
 	if (!bindless_allocator)
 		bindless_allocator = get_bindless_pool();

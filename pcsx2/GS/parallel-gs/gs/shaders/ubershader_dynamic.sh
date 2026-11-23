@@ -2,7 +2,8 @@
 # Writes ubershader_dynamic.inc: ubershader.comp built with DYNAMIC_VARIANT
 # (its formats and variant flags read from the push constants), the way
 # slangmosh builds the rest (glslc -O for Vulkan 1.1), and again with
-# PGS_NO_8BIT for devices without 8-bit storage. tests/pgsdynamic runs
+# PGS_NO_8BIT and PGS_NO_DESCRIPTOR_INDEXING for devices without 8-bit
+# storage or descriptor indexing. tests/pgsdynamic runs
 # this and fails when the file in the tree differs.
 # Usage: ubershader_dynamic.sh [out]   (default: beside this script)
 set -e
@@ -26,4 +27,6 @@ emit() {
 	echo " * glslc: $(${GLSLC:-glslc} --version | head -n 1) */"
 	emit pgs_ubershader_dynamic
 	emit pgs_ubershader_dynamic_no8 -DPGS_NO_8BIT
+	emit pgs_ubershader_dynamic_noindex -DPGS_NO_DESCRIPTOR_INDEXING
+	emit pgs_ubershader_dynamic_no8_noindex -DPGS_NO_8BIT -DPGS_NO_DESCRIPTOR_INDEXING
 } > "$OUT"

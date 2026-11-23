@@ -110,8 +110,13 @@ layout(set = 0, binding = BINDING_STATE_VECTORS, std140) uniform StateVectors
 #ifdef BINDLESS
 layout(set = 0, binding = BINDING_SAMPLER_NEAREST) uniform sampler nearest_sampler;
 layout(set = 0, binding = BINDING_SAMPLER_LINEAR) uniform sampler linear_sampler;
+#ifdef PGS_NO_DESCRIPTOR_INDEXING
+layout(set = DESCRIPTOR_SET_IMAGES, binding = 0) uniform texture2D bindless_textures[PGS_FIXED_TEXTURES];
+layout(set = DESCRIPTOR_SET_IMAGES, binding = 0) uniform texture2DArray bindless_textures_array[PGS_FIXED_TEXTURES];
+#else
 layout(set = DESCRIPTOR_SET_IMAGES, binding = 0) uniform texture2D bindless_textures[];
 layout(set = DESCRIPTOR_SET_IMAGES, binding = 0) uniform texture2DArray bindless_textures_array[];
+#endif
 #endif
 
 #ifdef USE_RCP_FIXED

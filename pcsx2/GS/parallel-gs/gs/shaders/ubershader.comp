@@ -13,7 +13,9 @@
 #ifndef PGS_NO_8BIT
 #extension GL_EXT_shader_8bit_storage : require
 #endif
+#ifndef PGS_NO_DESCRIPTOR_INDEXING
 #extension GL_EXT_nonuniform_qualifier : require
+#endif
 #extension GL_EXT_samplerless_texture_functions : require
 
 #extension GL_EXT_spirv_intrinsics : require

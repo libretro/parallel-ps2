@@ -3093,7 +3093,7 @@ void GSInterface::post_draw_kick_handler()
 	// If we have buffered up too much, flush out automatically now.
 	if (render_pass.pending_palette_updates >= (CLUTInstances - 1) ||
 	    render_pass.primitive_count >= MaxPrimitivesPerFlush ||
-		render_pass.tex_infos.size() >= MaxTextures ||
+		render_pass.tex_infos.size() >= renderer.get_max_textures() ||
 		render_pass.state_vectors.size() >= MaxStateVectors)
 	{
 		flush_pending_transfer(true);

@@ -308,6 +308,10 @@ public:
 	                            uint32_t sampling_rate_x_log2, uint32_t sampling_rate_y_log2);
 
 	SuperSampling get_max_supported_super_sampling() const;
+	uint32_t get_max_textures() const
+	{
+		return has_indexing ? MaxTextures : uint32_t(PGS_FIXED_TEXTURES);
+	}
 
 	void set_field_aware_super_sampling(bool enable);
 
@@ -363,6 +367,11 @@ private:
 	/* Without 8-bit storage, the _no8 variants. */
 	bool has_8bit = true;
 	Vulkan::Program *ubershader_program = nullptr;
+	/* Without descriptor indexing, the fixed-array ubershaders, a render
+	 * pass of at most PGS_FIXED_TEXTURES textures, and a blank texture for
+	 * the array's unused bindings. */
+	bool has_indexing = true;
+	Vulkan::ImageHandle blank_texture;
 	Vulkan::Program *upload_programs[2] = {};
 
 	struct Scratch

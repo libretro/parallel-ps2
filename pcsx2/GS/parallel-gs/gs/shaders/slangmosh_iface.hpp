@@ -31,6 +31,8 @@ struct Shaders
 	Program upload_no8[2] = {};
 	Program vram_copy_nobda_no8 = {};
 	Program ubershader_no8[1][1] = {};
+	Program ubershader_noindex[1][1] = {};
+	Program ubershader_no8_noindex[1][1] = {};
 	Shaders() = default;
 
 	template <typename Device, typename Layout, typename Resolver>

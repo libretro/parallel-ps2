@@ -130,6 +130,10 @@ struct TexInfo
 	int flags;
 };
 
+// Without descriptor indexing, a render pass's textures are this many
+// bindings of a fixed array.
+#define PGS_FIXED_TEXTURES 12
+
 CONSTEXPR int TEX_INFO_FORCE_SAMPLE_MAPPING = 0x1;
 CONSTEXPR int TEX_INFO_LONG_TERM_REFERENCE = 0x2;
 

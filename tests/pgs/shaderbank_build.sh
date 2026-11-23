@@ -73,6 +73,8 @@ upload_no8[0]|upload.comp|compute|PGS_NO_8BIT SUPER_SAMPLED=0|glslc
 upload_no8[1]|upload.comp|compute|PGS_NO_8BIT SUPER_SAMPLED=1|glslc
 vram_copy_nobda_no8|vram_copy.comp|compute|PGS_NO_8BIT PGS_NO_BDA|glslc
 ubershader_no8[0][0]|ubershader.comp|compute|PGS_NO_8BIT|glslc
+ubershader_noindex[0][0]|ubershader.comp|compute|PGS_NO_DESCRIPTOR_INDEXING|glslc
+ubershader_no8_noindex[0][0]|ubershader.comp|compute|PGS_NO_8BIT PGS_NO_DESCRIPTOR_INDEXING|glslc
 EOF
 }
 

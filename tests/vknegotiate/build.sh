@@ -1115,17 +1115,19 @@ else
 	# And without buffer device address, scalar block layout, 8-bit
 	# storage, timeline semaphores (each submission's value then a fence)
 	# or subgroup size control (the device's one subgroup size taken where
-	# it is in range) - Vulkan 1.1, the extension hidden; every host-visible
+	# it is in range) or descriptor indexing (a render pass's textures a
+	# fixed array of PGS_FIXED_TEXTURES) - Vulkan 1.1, the extension
+	# hidden; every host-visible
 	# allocation starting as 0xA5 bytes: the qword clears go as fills,
 	# sampler feedback is left off, copies read their source through
 	# vram_copy_nobda, batched by source buffer, and without 8-bit storage
 	# the _no8 modules write bytes as masked words.
 	# Uploads ordered after a draw (24-bit pixels straddling words, 4-bit
 	# and 8-bit high parts, two staging blocks in one batch), readbacks,
-	# local copies, a blur through sampler feedback and the scanned field
-	# all come out as with it.
+	# local copies, a blur through sampler feedback, sixteen textures in
+	# one pass and the scanned field all come out as with it.
 	for c in upload_busy upload_busy_blocks copy_then_upload readback_t4hh readback_parts column_passes \
-	         many_copies alpha_under_depth blur_in_place; do
+	         many_copies alpha_under_depth blur_in_place many_textures; do
 		case $c in
 			upload_busy)        expect=78123456,58563412,9a563412 ;;
 			upload_busy_blocks) expect=78444444,78666666 ;;
@@ -1136,9 +1138,10 @@ else
 			many_copies)        expect=78563412 ;;
 			alpha_under_depth)  expect=40404040,c0c0c0c0,58585858,d8d8d8d8 ;;
 			blur_in_place)      expect=ffffffff ;;
+			many_textures)      expect=00080808,00404040,00686868,00808080 ;;
 		esac
 		[ -f "$VAL/$c.bin" ] || "$VAL/swdraw" --bios "$VAL/$c.bin" $c
-		for v in bda nobda noscalar no8 notimeline nosubgroupsize; do
+		for v in bda nobda noscalar no8 notimeline nosubgroupsize noindexing all; do
 			case $v in
 				bda)      hide= ;;
 				nobda)    hide=VK_KHR_buffer_device_address ;;
@@ -1146,14 +1149,21 @@ else
 				no8)      hide=VK_KHR_8bit_storage ;;
 				notimeline) hide=VK_KHR_timeline_semaphore ;;
 				nosubgroupsize) hide=VK_EXT_subgroup_size_control ;;
+				noindexing) hide=VK_EXT_descriptor_indexing ;;
+				# All of them: Vulkan 1.1 with 16-bit storage alone.
+				all)      hide=VK_KHR_buffer_device_address,VK_EXT_scalar_block_layout,VK_KHR_8bit_storage,VK_KHR_timeline_semaphore,VK_EXT_subgroup_size_control,VK_EXT_descriptor_indexing ;;
 			esac
 			env ${hide:+VN_HIDE_EXT=$hide} \
 			VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 VN_VERBOSE=1 VK_LOADER_LAYERS_ENABLE='*validation*' \
 			VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT \
 			VN_EXPECT_RUN=$expect VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/$c.bin" VN_RENDERER=paraLLEl-GS \
 				timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/$c.$v.log" 2>&1 || true
-			# The extension hidden is not enabled; with none hidden, BDA is.
-			shown=$(grep -c "Enabling device extension: ${hide:-VK_KHR_buffer_device_address}" "$VAL/$c.$v.log") || true
+			# No extension hidden is enabled; with none hidden, BDA is.
+			shown=0
+			for e in $(echo "${hide:-VK_KHR_buffer_device_address}" | tr ',' ' '); do
+				n=$(grep -c "Enabling device extension: $e\.\$" "$VAL/$c.$v.log") || true
+				shown=$((shown + n))
+			done
 			[ -n "$hide" ] || shown=$((1 - shown))
 			if ! grep -q "vknegotiate v2: ok" "$VAL/$c.$v.log" || grep -q "Validation Error" "$VAL/$c.$v.log" ||
 			   [ "$shown" != 0 ]; then
@@ -1165,7 +1175,7 @@ else
 		done
 	done
 	for hide in VK_KHR_buffer_device_address VK_EXT_scalar_block_layout VK_KHR_8bit_storage VK_KHR_timeline_semaphore \
-	            VK_EXT_subgroup_size_control; do
+	            VK_EXT_subgroup_size_control VK_EXT_descriptor_indexing; do
 		VN_HIDE_EXT=$hide VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
 		VK_LOADER_LAYERS_ENABLE='*validation*' VN_HASH_IMAGE=1 VN_FRAMES=60 VN_IDLE_BIOS=1 \
 		LRPS2_BIOS="$VAL/scan_field.bin" VN_RENDERER=paraLLEl-GS \
@@ -1182,7 +1192,8 @@ else
 	# differ in ("Gif" to "GIFdma", the timing, and "cdvd" to "deci2").
 	"$VAL/swdraw" --bios "$VAL/stream_t8.bin" stream_t8
 	for hide in none VK_KHR_buffer_device_address VK_EXT_scalar_block_layout VK_KHR_8bit_storage VK_KHR_timeline_semaphore \
-	            VK_EXT_subgroup_size_control; do
+	            VK_EXT_subgroup_size_control VK_EXT_descriptor_indexing \
+	            VK_KHR_buffer_device_address,VK_EXT_scalar_block_layout,VK_KHR_8bit_storage,VK_KHR_timeline_semaphore,VK_EXT_subgroup_size_control,VK_EXT_descriptor_indexing; do
 		mkdir -p "$VAL/st.$hide"
 		env $( [ $hide = none ] || echo VN_HIDE_EXT=$hide ) VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
 		VN_FRAMES=120 VN_DUMP_STATE="$VAL/st.$hide.state" VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/stream_t8.bin" \
@@ -1200,7 +1211,7 @@ else
 			exit 1
 		fi
 	done
-	echo "  paraLLEl-GS without buffer device address, scalar block layout, 8-bit storage, timeline semaphores or subgroup size control: the same memory and picture, no validation error"
+	echo "  paraLLEl-GS without buffer device address, scalar block layout, 8-bit storage, timeline semaphores, subgroup size control or descriptor indexing: the same memory and picture, no validation error"
 	# The device lost at the 30th present with a palette the GPU drew in
 	# use, and reopened under the renderer: nothing of the old device is
 	# used or freed on the new one (the texture cache's download textures
