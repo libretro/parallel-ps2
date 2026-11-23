@@ -3016,8 +3016,15 @@ bool Device::supports_subgroup_size_log2(bool subgroup_full_group, uint8_t subgr
 	if (stage != VK_SHADER_STAGE_COMPUTE_BIT)
 		return false;
 
+	/* Without subgroup size control a compute shader runs at the one size
+	 * the device reports, in the full subgroups of a workgroup whose size
+	 * is a multiple of it: that size is what the range must hold. */
 	if (!ext.vk13_features.subgroupSizeControl)
-		return false;
+	{
+		uint32_t size = ext.vk11_props.subgroupSize;
+		return (subgroup_minimum_size_log2 == 0 && subgroup_maximum_size_log2 == 0) ||
+		       ((1u << subgroup_minimum_size_log2) <= size && size <= (1u << subgroup_maximum_size_log2));
+	}
 	if (subgroup_full_group && !ext.vk13_features.computeFullSubgroups)
 		return false;
 

@@ -1511,7 +1511,7 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 		LOGE("  - storageBuffer16BitAccess\n");
 		LOGE("  - shaderInt16\n");
 		LOGE("  - Arithmetic / Shuffle / Vote / Ballot / Basic subgroup operations\n");
-		LOGE("  - SubgroupSize control for [4, 64] invocations per subgroup\n");
+		LOGE("  - Subgroups of 4 to 64 invocations (any size in range with subgroup size control)\n");
 		LOGE("  - 32 KiB shared memory\n");
 		return false;
 	}

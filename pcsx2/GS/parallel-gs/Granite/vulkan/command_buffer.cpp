@@ -459,6 +459,10 @@ bool CommandBuffer::setup_subgroup_size_control(
 
 	auto &features = device.get_device_features();
 
+	/* Without subgroup size control, the device's one size is in range. */
+	if (!features.vk13_features.subgroupSizeControl)
+		return true;
+
 	if (full_group)
 		stage_info.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT;
 
