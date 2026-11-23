@@ -1112,8 +1112,9 @@ else
 		exit 1
 	fi
 	echo "  paraLLEl-GS on Vulkan 1.1: through the extensions, no validation error, the same picture"
-	# And without buffer device address, scalar block layout or 8-bit
-	# storage (Vulkan 1.1, the extension hidden), every host-visible
+	# And without buffer device address, scalar block layout, 8-bit
+	# storage or timeline semaphores (Vulkan 1.1, the extension hidden),
+	# where each submission's value is a fence; every host-visible
 	# allocation starting as 0xA5 bytes: the qword clears go as fills,
 	# sampler feedback is left off, copies read their source through
 	# vram_copy_nobda, batched by source buffer, and without 8-bit storage
@@ -1136,12 +1137,13 @@ else
 			blur_in_place)      expect=ffffffff ;;
 		esac
 		[ -f "$VAL/$c.bin" ] || "$VAL/swdraw" --bios "$VAL/$c.bin" $c
-		for v in bda nobda noscalar no8; do
+		for v in bda nobda noscalar no8 notimeline; do
 			case $v in
 				bda)      hide= ;;
 				nobda)    hide=VK_KHR_buffer_device_address ;;
 				noscalar) hide=VK_EXT_scalar_block_layout ;;
 				no8)      hide=VK_KHR_8bit_storage ;;
+				notimeline) hide=VK_KHR_timeline_semaphore ;;
 			esac
 			env ${hide:+VN_HIDE_EXT=$hide} \
 			VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 VN_VERBOSE=1 VK_LOADER_LAYERS_ENABLE='*validation*' \
@@ -1160,7 +1162,7 @@ else
 			fi
 		done
 	done
-	for hide in VK_KHR_buffer_device_address VK_EXT_scalar_block_layout VK_KHR_8bit_storage; do
+	for hide in VK_KHR_buffer_device_address VK_EXT_scalar_block_layout VK_KHR_8bit_storage VK_KHR_timeline_semaphore; do
 		VN_HIDE_EXT=$hide VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
 		VK_LOADER_LAYERS_ENABLE='*validation*' VN_HASH_IMAGE=1 VN_FRAMES=60 VN_IDLE_BIOS=1 \
 		LRPS2_BIOS="$VAL/scan_field.bin" VN_RENDERER=paraLLEl-GS \
@@ -1176,7 +1178,7 @@ else
 	# at the end is the full run's, but for the sections any two runs
 	# differ in ("Gif" to "GIFdma", the timing, and "cdvd" to "deci2").
 	"$VAL/swdraw" --bios "$VAL/stream_t8.bin" stream_t8
-	for hide in none VK_KHR_buffer_device_address VK_EXT_scalar_block_layout VK_KHR_8bit_storage; do
+	for hide in none VK_KHR_buffer_device_address VK_EXT_scalar_block_layout VK_KHR_8bit_storage VK_KHR_timeline_semaphore; do
 		mkdir -p "$VAL/st.$hide"
 		env $( [ $hide = none ] || echo VN_HIDE_EXT=$hide ) VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
 		VN_FRAMES=120 VN_DUMP_STATE="$VAL/st.$hide.state" VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/stream_t8.bin" \
@@ -1194,7 +1196,7 @@ else
 			exit 1
 		fi
 	done
-	echo "  paraLLEl-GS without buffer device address, scalar block layout or 8-bit storage: the same memory and picture, no validation error"
+	echo "  paraLLEl-GS without buffer device address, scalar block layout, 8-bit storage or timeline semaphores: the same memory and picture, no validation error"
 	# The device lost at the 30th present with a palette the GPU drew in
 	# use, and reopened under the renderer: nothing of the old device is
 	# used or freed on the new one (the texture cache's download textures

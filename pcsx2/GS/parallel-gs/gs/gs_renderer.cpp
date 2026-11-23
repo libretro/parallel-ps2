@@ -1405,7 +1405,13 @@ GSRenderer::GSRenderer(PageTracker &tracker_)
 				break;
 
 			last_waited++;
-			timeline->wait_timeline(last_waited);
+			if (timeline)
+				timeline->wait_timeline(last_waited);
+			else
+			{
+				VkFence fence = submit_vk_fences[last_waited % MaxSubmitFences];
+				device->get_device_table().vkWaitForFences(device->get_device(), 1, &fence, VK_TRUE, UINT64_MAX);
+			}
 
 			timeline_value.store(last_waited, PGS::memory_order_release);
 			retro_eventcount_notify(&signalled_event);
@@ -1483,7 +1489,7 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	weave_quad = device_->request_program(shaders.quad, shaders.weave);
 
 	flush_submit(0);
-	// Descriptor indexing is a hard requirement, but timeline semaphore could be elided if really needed.
+	// Descriptor indexing is a hard requirement.
 	// Wave-ops is critical.
 	constexpr VkSubgroupFeatureFlags required_subgroup_flags =
 			VK_SUBGROUP_FEATURE_ARITHMETIC_BIT |
@@ -1494,7 +1500,6 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 
 	const Vulkan::DeviceFeatures &ext = device_->get_device_features();
 	if (!ext.vk12_features.descriptorIndexing ||
-	    !ext.vk12_features.timelineSemaphore ||
 	    !ext.vk11_features.storageBuffer16BitAccess ||
 	    !ext.enabled_features.shaderInt16 ||
 	    (ext.vk11_props.subgroupSupportedOperations & required_subgroup_flags) != required_subgroup_flags ||
@@ -1503,7 +1508,6 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	{
 		LOGE("Minimum requirements for parallel-gs are not met.\n");
 		LOGE("  - descriptorIndexing\n");
-		LOGE("  - timelineSemaphore\n");
 		LOGE("  - storageBuffer16BitAccess\n");
 		LOGE("  - shaderInt16\n");
 		LOGE("  - Arithmetic / Shuffle / Vote / Ballot / Basic subgroup operations\n");
@@ -1524,8 +1528,12 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 
 	init_vram(options);
 	prebuilt_sampling_rate = UINT32_MAX;
-	timeline = device->request_semaphore(VK_SEMAPHORE_TYPE_TIMELINE);
-	descriptor_timeline = device->request_semaphore(VK_SEMAPHORE_TYPE_TIMELINE);
+	/* Without timeline semaphores, both are left empty: values are fences. */
+	if (device->get_device_features().vk12_features.timelineSemaphore)
+	{
+		timeline = device->request_semaphore(VK_SEMAPHORE_TYPE_TIMELINE);
+		descriptor_timeline = device->request_semaphore(VK_SEMAPHORE_TYPE_TIMELINE);
+	}
 	init_luts();
 
 	// Reserve 1/3 of our budget to slab-allocate image handles.
@@ -1932,10 +1940,24 @@ void GSRenderer::flush_submit(uint64_t value)
 	if (direct_cmd)
 		device->submit(direct_cmd);
 
+	if (value && !timeline)
+	{
+		/* The slot's last fence is the value MaxSubmitFences back. */
+		uint32_t slot = uint32_t(value % MaxSubmitFences);
+		if (value > MaxSubmitFences)
+			wait_timeline(value - MaxSubmitFences);
+		submit_fences[slot].reset();
+		device->submit_empty(Vulkan::CommandBuffer::Type::Generic, &submit_fences[slot], nullptr);
+		submit_vk_fences[slot] = submit_fences[slot]->get_fence();
+	}
+
 	if (value)
 	{
-		Vulkan::Semaphore binary = device->request_timeline_semaphore_as_binary(*timeline, value);
-		device->submit_empty(Vulkan::CommandBuffer::Type::Generic, nullptr, binary.get());
+		if (timeline)
+		{
+			Vulkan::Semaphore binary = device->request_timeline_semaphore_as_binary(*timeline, value);
+			device->submit_empty(Vulkan::CommandBuffer::Type::Generic, nullptr, binary.get());
+		}
 		last_submitted_timeline.store(value, PGS::memory_order_release);
 		retro_eventcount_notify(&submitted_event);
 		/* Every scratch set aside so far is done with when this value
@@ -1949,10 +1971,11 @@ void GSRenderer::flush_submit(uint64_t value)
 		// Only a pool exhausted since the last signal waits on this
 		// value; otherwise the signal, an empty queue submission of its
 		// own, says nothing anyone reads. The value stays until it does.
-		if (!exhausted_descriptor_pools.empty() &&
+		if (descriptor_timeline && !exhausted_descriptor_pools.empty() &&
 		    exhausted_descriptor_pools.back().timeline == next_descriptor_timeline_signal)
 		{
-			binary = device->request_timeline_semaphore_as_binary(*descriptor_timeline, next_descriptor_timeline_signal++);
+			Vulkan::Semaphore binary =
+					device->request_timeline_semaphore_as_binary(*descriptor_timeline, next_descriptor_timeline_signal++);
 			device->submit_empty(Vulkan::CommandBuffer::Type::Generic, nullptr, binary.get());
 		}
 	}
@@ -2312,7 +2335,8 @@ void GSRenderer::ensure_command_buffer(Vulkan::CommandBufferHandle &cmd, Vulkan:
 
 Vulkan::BindlessDescriptorPoolHandle GSRenderer::get_bindless_pool()
 {
-	uint64_t progress = query_timeline(*descriptor_timeline);
+	/* Without timeline semaphores a pool's value is the main timeline's. */
+	uint64_t progress = descriptor_timeline ? query_timeline(*descriptor_timeline) : query_timeline();
 
 	if (!exhausted_descriptor_pools.empty() && progress >= exhausted_descriptor_pools.front().timeline)
 	{
@@ -2358,7 +2382,11 @@ void GSRenderer::bind_textures(Vulkan::CommandBuffer &cmd, const RenderPass &rp)
 
 	if (!bindless_allocator->allocate_descriptors(to_allocate))
 	{
-		exhausted_descriptor_pools.push({ std::move(bindless_allocator), next_descriptor_timeline_signal });
+		/* Without timeline semaphores: the next value submitted, which
+		 * follows every use of the pool. */
+		exhausted_descriptor_pools.push({ std::move(bindless_allocator), descriptor_timeline ?
+				next_descriptor_timeline_signal :
+				last_submitted_timeline.load(PGS::memory_order_relaxed) + 1 });
 		bindless_allocator = get_bindless_pool();
 		if (!bindless_allocator || !bindless_allocator->allocate_descriptors(to_allocate))
 		{

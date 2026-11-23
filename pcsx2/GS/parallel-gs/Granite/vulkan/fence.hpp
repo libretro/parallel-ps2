@@ -46,6 +46,12 @@ public:
 
 	~FenceHolder();
 
+	/* The fence a device without timeline semaphores signals. */
+	VkFence get_fence() const
+	{
+		return fence;
+	}
+
 private:
 	friend class Util::ObjectPool<FenceHolder>;
 	friend class Util::ThreadSafeObjectPool<FenceHolder>;

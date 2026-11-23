@@ -325,6 +325,13 @@ private:
 	uint32_t base_clut_instance = 0;
 
 	Vulkan::Semaphore timeline;
+	/* Without timeline semaphores, each value submitted signals a fence,
+	 * which the waiter thread waits for in turn: the slot of a value is
+	 * written before it is published, and taken again only once the
+	 * value MaxSubmitFences on has been waited for. */
+	enum { MaxSubmitFences = 64 };
+	Vulkan::Fence submit_fences[MaxSubmitFences];
+	VkFence submit_vk_fences[MaxSubmitFences] = {};
 	PGS::thread timeline_thread;
 	/* The last timeline value submitted (UINT64_MAX: stop), which the
 	 * waiter thread parks on, and the last one it has seen signalled,
