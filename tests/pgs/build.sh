@@ -35,7 +35,9 @@
 #                     bank, or takes one out; checked here by a splice that
 #                     replaces nothing.
 # pgs_bank_caps     : no bank module needs a 16-bit storage feature that
-#                     paraLLEl-GS neither requires nor checks for.
+#                     paraLLEl-GS neither requires nor checks for, and each
+#                     one needing buffer device address has a _nobda
+#                     variant or goes unused without it.
 # pgs_spv_canon     : canonical form of a SPIR-V disassembly, for
 #                     grid_fold.sh, which checks a shader change leaves the
 #                     other grids' folded code as it was.
@@ -97,6 +99,22 @@ else
 	echo
 	echo "skipping the grid fold lane (no glslc / spirv-tools)"
 fi
+
+# Every module's reflection record is what shaderbank_reflect.py makes of
+# its SPIR-V (the record a module added with shaderbank_add.py gets), and
+# each module built with glslc 2023.8 is what its source builds to: the
+# _nobda variants included, and the BDA modules the same source makes.
+if command -v python3 >/dev/null 2>&1; then
+	echo "=== shader bank records ==="
+	python3 -B "$DIR/shaderbank_reflect.py" --check "$PGS/gs/shaders/slangmosh.hpp"
+fi
+case $(glslc --version 2>/dev/null) in
+	"shaderc 2023.8"*)
+		echo "=== shader bank modules against their sources ==="
+		sh "$DIR/shaderbank_build.sh" check ;;
+	*)	echo
+		echo "skipping the bank source check (no glslc from shaderc 2023.8)" ;;
+esac
 
 # The scanout circuit as shipped, run on a Vulkan device. The module
 # comes out of the bank; the vertex shader is built here. Needs the

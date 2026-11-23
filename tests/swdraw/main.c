@@ -513,6 +513,100 @@ static void case_copy_then_upload(void)
 	s_expect_run[0] = 0x78563412ul;
 }
 
+/* Uploads into a page drawn to just before them in the same transfer,
+ * which the renderer takes in order after the draw rather than the CPU:
+ * over the drawn 0x78563412, 8x8 24-bit pixels of 0x123456 in block 0
+ * (the packet's words go round 0x56123456, 0x34561234, 0x12345612, so
+ * pixels straddle words), 4-bit pixels of 5 into the top nibbles of block
+ * 1 and 8-bit pixels of 0x9A into the top bytes of block 2. What the
+ * blocks end up holding is in no run of words the packet has in RAM. */
+static void case_upload_busy(void)
+{
+	static const unsigned words[3] = { 0x56123456u, 0x34561234u, 0x12345612u };
+	unsigned w;
+	qw(10, 0x10000000u, 0xEu, 0);                          /* A+D, NLOOP 10 */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(1u << 16, 0, GS_FRAME_1, 0);                        /* FBP 0, FBW 1, PSMCT32 */
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(63u << 16, 31u << 16, GS_SCISSOR, 0);
+	qw(0x78563412u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(6, 0, GS_PRIM, 0);                                  /* sprite */
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(16, 16), 0, GS_XYZ2, 0);
+	qw(4, 0x10000000u, 0xEu, 0);                           /* A+D, NLOOP 4 */
+	qw(0, (1u << 16) | (1u << 24), GS_BITBLTBUF, 0);       /* DBP 0, DBW 1, PSMCT24 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(8, 8, GS_TRXREG, 0);
+	qw(0, 0, GS_TRXDIR, 0);                                /* host to local */
+	qw(12, 0x08000000u, 0, 0);                             /* IMAGE, NLOOP 12 */
+	for (w = 0; w < 48; w += 4)
+		qw(words[w % 3], words[(w + 1) % 3], words[(w + 2) % 3], words[(w + 3) % 3]);
+	qw(4, 0x10000000u, 0xEu, 0);                           /* A+D, NLOOP 4 */
+	qw(0, 1u | (1u << 16) | (0x2Cu << 24), GS_BITBLTBUF, 0); /* DBP 1, DBW 1, PSMT4HH */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(8, 8, GS_TRXREG, 0);
+	qw(0, 0, GS_TRXDIR, 0);
+	qw(2, 0x08000000u, 0, 0);                              /* IMAGE, NLOOP 2 */
+	for (w = 0; w < 2; w++)
+		qw(0x55555555u, 0x55555555u, 0x55555555u, 0x55555555u);
+	qw(4, 0x10000000u, 0xEu, 0);                           /* A+D, NLOOP 4 */
+	qw(0, 2u | (1u << 16) | (0x1Bu << 24), GS_BITBLTBUF, 0); /* DBP 2, DBW 1, PSMT8H */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(8, 8, GS_TRXREG, 0);
+	qw(0, 0, GS_TRXDIR, 0);
+	qw(4 | 0x8000u, 0x08000000u, 0, 0);                    /* IMAGE, NLOOP 4, EOP */
+	for (w = 0; w < 4; w++)
+		qw(0x9A9A9A9Au, 0x9A9A9A9Au, 0x9A9A9A9Au, 0x9A9A9A9Au);
+	kick(0, s_qw_count, 0);
+	s_run_frames    = 60;
+	s_expect_run[0] = 0x78123456ul;
+	s_expect_run[1] = 0x58563412ul;
+	s_expect_run[2] = 0x9A563412ul;
+}
+
+/* A 9 KiB and a 72 KiB 24-bit upload over a draw of 0x78563412 covering
+ * both areas, in the same transfer: the renderer takes both in one batch,
+ * and the second does not fit the staging block the first was put in.
+ * Bytes of 0x44 and of 0x66 leave 0x78444444 and 0x78666666, which the
+ * packet in RAM does not hold. */
+static void case_upload_busy_blocks(void)
+{
+	unsigned w;
+	qw(10, 0x10000000u, 0xEu, 0);                          /* A+D, NLOOP 10 */
+	qw(1, 0, GS_PRMODECONT, 0);
+	qw(2u << 16, 0, GS_FRAME_1, 0);                        /* FBP 0, FBW 2, PSMCT32 */
+	qw(0, 1, GS_ZBUF_1, 0);                                /* ZMSK */
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);          /* ZTE, ZTST always */
+	qw(0, 0, GS_XYOFFSET, 0);
+	qw(127u << 16, 223u << 16, GS_SCISSOR, 0);
+	qw(0x78563412u, 0x3f800000u, GS_RGBAQ, 0);
+	qw(6, 0, GS_PRIM, 0);                                  /* sprite */
+	qw(0, 0, GS_XYZ2, 0);
+	qw((unsigned)XY(128, 224), 0, GS_XYZ2, 0);
+	qw(4, 0x10000000u, 0xEu, 0);                           /* A+D, NLOOP 4 */
+	qw(0, (2u << 16) | (1u << 24), GS_BITBLTBUF, 0);       /* DBP 0, DBW 2, PSMCT24 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(128, 24, GS_TRXREG, 0);
+	qw(0, 0, GS_TRXDIR, 0);                                /* host to local */
+	qw(576, 0x08000000u, 0, 0);                            /* IMAGE, NLOOP 576 */
+	for (w = 0; w < 576; w++)
+		qw(0x44444444u, 0x44444444u, 0x44444444u, 0x44444444u);
+	qw(4, 0x10000000u, 0xEu, 0);                           /* A+D, NLOOP 4 */
+	qw(0, 64u | (2u << 16) | (1u << 24), GS_BITBLTBUF, 0); /* DBP 64, DBW 2, PSMCT24 */
+	qw(0, 0, GS_TRXPOS, 0);
+	qw(128, 192, GS_TRXREG, 0);
+	qw(0, 0, GS_TRXDIR, 0);
+	qw(4608 | 0x8000u, 0x08000000u, 0, 0);                 /* IMAGE, NLOOP 4608, EOP */
+	qw(0x66666666u, 0x66666666u, 0x66666666u, 0x66666666u);
+	s_qw_repeat = 4608 - 1;
+	kick(0, s_qw_count + s_qw_repeat, 0);
+	s_run_frames    = 60;
+	s_expect_run[0] = 0x78444444ul;
+	s_expect_run[1] = 0x78666666ul;
+}
+
 /* A page of 0x5A000000, read back as PSMT8H and then as PSMT4HH: the
  * second is the top nibble of each pixel, two to a byte, and 64 words of
  * 0x55555555 reach RAM - not what the first readback left behind. */
@@ -3409,6 +3503,8 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "frame_after_t4_2x", case_frame_after_t4, "2" },
 	{ "gif_split",       case_gif_split,     "1" },
 	{ "copy_then_upload", case_copy_then_upload, "1" },
+	{ "upload_busy",     case_upload_busy,   "1" },
+	{ "upload_busy_blocks", case_upload_busy_blocks, "1" },
 	{ "readback_t4hh",   case_readback_t4hh, "1" },
 	{ "dest_alpha",      case_dest_alpha,    "1" },
 	{ "feedback_chain",  case_feedback_chain, "1" },

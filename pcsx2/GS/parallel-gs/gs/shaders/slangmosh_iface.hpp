@@ -27,6 +27,7 @@ struct Shaders
 	Program extwrite = {};
 	Program qword_clear = {};
 	Program sampler_feedback = {};
+	Program vram_copy_nobda = {};
 	Shaders() = default;
 
 	template <typename Device, typename Layout, typename Resolver>

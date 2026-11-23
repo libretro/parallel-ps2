@@ -68,6 +68,7 @@ weave|weave.frag|fragment||glslang-strip
 extwrite|extwrite.comp|compute||pinned
 qword_clear|qword_clear.comp|compute||pinned
 sampler_feedback|sampler_feedback.comp|compute||glslc
+vram_copy_nobda|vram_copy.comp|compute|PGS_NO_BDA|glslc
 EOF
 }
 

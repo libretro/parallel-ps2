@@ -31,7 +31,9 @@
  * and VN_TIMING has the longest frame after the first reported.
  * VN_LOAD_PAUSE_MS leaves that long between the context reset and the
  * first frame, as a frontend's own loading does.
- * VN_VULKAN_1_1 has the loader report Vulkan 1.1 to the core.
+ * VN_VULKAN_1_1 has the loader report Vulkan 1.1 to the core; VN_HIDE_EXT
+ * then hides the device extensions it lists, and VN_POISON_MEMORY fills
+ * each host-visible allocation with 0xA5 before the core sees it.
  * VN_HASH_IMAGE reads back the last image the core handed over and has
  * its hash reported (of its first VN_HASH_ROWS rows, if set), for the
  * pictures of two builds or two cases to be compared.
@@ -649,16 +651,136 @@ static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_count_gipa(VkInstance inst, c
 /* VN_VULKAN_1_1: the loader reports Vulkan 1.1, so the core makes a 1.1
  * instance and takes what it needs of 1.2 from device extensions. */
 static PFN_vkGetInstanceProcAddr vn_v11_base;
+static VkInstance s_poison_inst;
 static VKAPI_ATTR VkResult VKAPI_CALL vn_v11_instance_version(uint32_t *version)
 {
 	*version = VK_API_VERSION_1_1;
 	return VK_SUCCESS;
 }
 
+/* VN_HIDE_EXT, a comma separated list with VN_VULKAN_1_1: the device
+ * extensions the core is not shown, so it takes its fallback for each. */
+static PFN_vkEnumerateDeviceExtensionProperties vn_hide_real;
+static int vn_hidden(const char *name)
+{
+	const char *list = getenv("VN_HIDE_EXT");
+	size_t n = strlen(name);
+	while (list && *list)
+	{
+		const char *end = strchr(list, ',');
+		size_t len = end ? (size_t)(end - list) : strlen(list);
+		if (len == n && !strncmp(list, name, n))
+			return 1;
+		list = end ? end + 1 : NULL;
+	}
+	return 0;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL vn_hide_enum(VkPhysicalDevice gpu, const char *layer,
+		uint32_t *count, VkExtensionProperties *props)
+{
+	uint32_t n = 0, i, kept = 0;
+	VkExtensionProperties *all;
+	VkResult res = vn_hide_real(gpu, layer, &n, NULL);
+	if (res != VK_SUCCESS)
+		return res;
+	if (!(all = (VkExtensionProperties*)calloc(n ? n : 1, sizeof(*all))))
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	res = vn_hide_real(gpu, layer, &n, all);
+	for (i = 0; res == VK_SUCCESS && i < n; i++)
+	{
+		if (vn_hidden(all[i].extensionName))
+			continue;
+		if (props && kept < *count)
+			props[kept] = all[i];
+		kept++;
+	}
+	free(all);
+	if (res != VK_SUCCESS)
+		return res;
+	if (props && kept > *count)
+		return VK_INCOMPLETE;
+	*count = kept;
+	return VK_SUCCESS;
+}
+
+/* VN_POISON_MEMORY, with VN_VULKAN_1_1: every host-visible allocation the
+ * core makes starts as 0xA5 bytes, not the zeroes a fresh allocation on
+ * lavapipe happens to hold, so memory read before it is written shows. */
+static PFN_vkCreateDevice vn_poison_real_cd;
+static PFN_vkAllocateMemory vn_poison_real_am;
+static PFN_vkMapMemory vn_poison_map;
+static PFN_vkUnmapMemory vn_poison_unmap;
+static VkPhysicalDeviceMemoryProperties vn_poison_props;
+
+static VKAPI_ATTR VkResult VKAPI_CALL vn_poison_cd(VkPhysicalDevice gpu, const VkDeviceCreateInfo *info,
+		const VkAllocationCallbacks *cb, VkDevice *dev)
+{
+	PFN_vkGetPhysicalDeviceMemoryProperties props = (PFN_vkGetPhysicalDeviceMemoryProperties)
+			vn_v11_base(s_poison_inst, "vkGetPhysicalDeviceMemoryProperties");
+	if (props)
+		props(gpu, &vn_poison_props);
+	return vn_poison_real_cd(gpu, info, cb, dev);
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL vn_poison_am(VkDevice dev, const VkMemoryAllocateInfo *info,
+		const VkAllocationCallbacks *cb, VkDeviceMemory *mem)
+{
+	void *p = NULL;
+	VkResult res = vn_poison_real_am(dev, info, cb, mem);
+	if (res == VK_SUCCESS && info->memoryTypeIndex < vn_poison_props.memoryTypeCount &&
+	    (vn_poison_props.memoryTypes[info->memoryTypeIndex].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+	    vn_poison_map(dev, *mem, 0, VK_WHOLE_SIZE, 0, &p) == VK_SUCCESS)
+	{
+		memset(p, 0xA5, (size_t)info->allocationSize);
+		vn_poison_unmap(dev, *mem);
+	}
+	return res;
+}
+
+static PFN_vkGetDeviceProcAddr vn_poison_real_gdpa;
+static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_poison_gdpa(VkDevice dev, const char *name)
+{
+	if (!strcmp(name, "vkAllocateMemory"))
+	{
+		vn_poison_real_am = (PFN_vkAllocateMemory)vn_poison_real_gdpa(dev, name);
+		vn_poison_map = (PFN_vkMapMemory)vn_poison_real_gdpa(dev, "vkMapMemory");
+		vn_poison_unmap = (PFN_vkUnmapMemory)vn_poison_real_gdpa(dev, "vkUnmapMemory");
+		return vn_poison_real_am && vn_poison_map && vn_poison_unmap ? (PFN_vkVoidFunction)vn_poison_am : NULL;
+	}
+	return vn_poison_real_gdpa(dev, name);
+}
+
 static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_v11_gipa(VkInstance inst, const char* name)
 {
 	if (!strcmp(name, "vkEnumerateInstanceVersion"))
 		return (PFN_vkVoidFunction)vn_v11_instance_version;
+	if (inst && getenv("VN_POISON_MEMORY"))
+	{
+		s_poison_inst = inst;
+		if (!strcmp(name, "vkCreateDevice"))
+		{
+			vn_poison_real_cd = (PFN_vkCreateDevice)vn_v11_base(inst, name);
+			return vn_poison_real_cd ? (PFN_vkVoidFunction)vn_poison_cd : NULL;
+		}
+		if (!strcmp(name, "vkGetDeviceProcAddr"))
+		{
+			vn_poison_real_gdpa = (PFN_vkGetDeviceProcAddr)vn_v11_base(inst, name);
+			return vn_poison_real_gdpa ? (PFN_vkVoidFunction)vn_poison_gdpa : NULL;
+		}
+		if (!strcmp(name, "vkAllocateMemory"))
+		{
+			vn_poison_real_am = (PFN_vkAllocateMemory)vn_v11_base(inst, name);
+			vn_poison_map = (PFN_vkMapMemory)vn_v11_base(inst, "vkMapMemory");
+			vn_poison_unmap = (PFN_vkUnmapMemory)vn_v11_base(inst, "vkUnmapMemory");
+			return vn_poison_real_am && vn_poison_map && vn_poison_unmap ? (PFN_vkVoidFunction)vn_poison_am : NULL;
+		}
+	}
+	if (!strcmp(name, "vkEnumerateDeviceExtensionProperties") && getenv("VN_HIDE_EXT"))
+	{
+		vn_hide_real = (PFN_vkEnumerateDeviceExtensionProperties)vn_v11_base(inst, name);
+		return vn_hide_real ? (PFN_vkVoidFunction)vn_hide_enum : NULL;
+	}
 	return vn_v11_base(inst, name);
 }
 
@@ -1948,6 +2070,15 @@ int main(int argc, char** argv)
 		vn_real_gdpa                = pvkGetDeviceProcAddr;
 		s_vk.get_device_proc_addr   = vn_count_gdpa;
 		s_vk.get_instance_proc_addr = vn_count_gipa;
+	}
+	else if (getenv("VN_POISON_MEMORY") && getenv("VN_VULKAN_1_1"))
+	{
+		PFN_vkGetPhysicalDeviceMemoryProperties props = (PFN_vkGetPhysicalDeviceMemoryProperties)
+				gipa(instance, "vkGetPhysicalDeviceMemoryProperties");
+		if (props)
+			props(ctx.gpu, &vn_poison_props);
+		vn_poison_real_gdpa       = pvkGetDeviceProcAddr;
+		s_vk.get_device_proc_addr = vn_poison_gdpa;
 	}
 	s_vk.queue                  = ctx.queue;
 	s_vk.queue_index            = ctx.queue_family_index;

@@ -8,6 +8,11 @@
  * without that feature. sampler_feedback carried 16-bit UBO members; one
  * driver hang (NVIDIA Blackwell) was put down to them.
  *
+ * Without buffer device address a module declaring
+ * PhysicalStorageBufferAddresses cannot be made, so each one has a NAME_nobda
+ * variant that does not declare it, or is one of the modules the renderer
+ * goes without on such a device (no_bda_unused below).
+ *
  * Reads slangmosh.hpp, finds each module from its spirv_bank + N offset
  * and walks the capabilities at its head.
  *
@@ -23,6 +28,13 @@
 #define CAP_UBO16          4434UL
 #define CAP_PUSHCONST16    4435UL
 #define CAP_INPUTOUTPUT16  4436UL
+#define CAP_BDA            5347UL
+#define MAX_MODULES        64
+#define MAX_NAME           64
+
+/* Used only with buffer device address: the qword clears turn into
+ * fills, and sampler feedback is left off. */
+static const char *const no_bda_unused[] = { "qword_clear", "sampler_feedback" };
 
 static char *read_file(const char *path)
 {
@@ -63,7 +75,9 @@ int main(int argc, char **argv)
    char *text, *p, *end;
    unsigned long *words;
    size_t nwords = 0, cap = 1 << 16;
-   int modules = 0, bad = 0;
+   int modules = 0, bad = 0, m, n;
+   static char names[MAX_MODULES][MAX_NAME];
+   static int bda[MAX_MODULES];
 
    if (argc < 2 || !(text = read_file(argv[1])))
    {
@@ -95,18 +109,24 @@ int main(int argc, char **argv)
    if (!words)
       return 2;
 
-   for (p = end; (p = strstr(p, "spirv_bank + ")); )
+   for (p = end; (p = strstr(p, "this->")); )
    {
-      unsigned long off = strtoul(p + 13, &p, 10);
-      size_t i;
+      unsigned long off;
+      char *call = strstr(p, "spirv_bank + ");
+      size_t i, len = strcspn(p + 6, " =");
+      int needs_bda = 0;
 
+      if (!call || modules == MAX_MODULES || len >= MAX_NAME)
+         break;
+      memcpy(names[modules], p + 6, len);
+      names[modules][len] = '\0';
+      off = strtoul(call + 13, &p, 10);
       if (off + 5 >= nwords || words[off] != SPV_MAGIC)
       {
          printf("  FAIL module at word %lu: no SPIR-V header\n", off);
          bad++;
          continue;
       }
-      modules++;
       for (i = (size_t)off + 5; i < nwords; )
       {
          unsigned long op = words[i] & 0xffffUL;
@@ -118,7 +138,37 @@ int main(int argc, char **argv)
             printf("  FAIL module at word %lu declares %s\n", off, cap_name(words[i + 1]));
             bad++;
          }
+         if (op == OP_CAPABILITY && i + 1 < nwords && words[i + 1] == CAP_BDA)
+            needs_bda = 1;
          i += wc;
+      }
+      bda[modules++] = needs_bda;
+   }
+
+   for (m = 0; m < modules; m++)
+   {
+      char want[MAX_NAME + 8];
+      int found = 0;
+      size_t len = strlen(names[m]);
+
+      if (len > 6 && !strcmp(names[m] + len - 6, "_nobda") && bda[m])
+      {
+         printf("  FAIL %s declares PhysicalStorageBufferAddresses\n", names[m]);
+         bad++;
+      }
+      if (!bda[m])
+         continue;
+      for (n = 0; n < (int)(sizeof(no_bda_unused) / sizeof(no_bda_unused[0])); n++)
+         if (!strcmp(names[m], no_bda_unused[n]))
+            found = 1;
+      sprintf(want, "%s_nobda", names[m]);
+      for (n = 0; n < modules; n++)
+         if (!strcmp(names[n], want) && !bda[n])
+            found = 1;
+      if (!found)
+      {
+         printf("  FAIL %s needs buffer device address and has no %s\n", names[m], want);
+         bad++;
       }
    }
 
@@ -134,6 +184,6 @@ int main(int argc, char **argv)
       printf("pgs_bank_caps: %d failure(s)\n", bad);
       return 1;
    }
-   printf("pgs_bank_caps: %d module loads, no unchecked 16-bit capability\n", modules);
+   printf("pgs_bank_caps: %d module loads, no unchecked 16-bit capability, a no-BDA path for each\n", modules);
    return 0;
 }

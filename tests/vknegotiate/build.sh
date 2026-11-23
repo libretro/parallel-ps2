@@ -1112,6 +1112,55 @@ else
 		exit 1
 	fi
 	echo "  paraLLEl-GS on Vulkan 1.1: through the extensions, no validation error, the same picture"
+	# And without buffer device address (Vulkan 1.1, the extension hidden),
+	# every host-visible allocation starting as 0xA5 bytes: the qword
+	# clears go as fills, sampler feedback is left off, and copies read
+	# their source through vram_copy_nobda, batched by source buffer.
+	# Uploads ordered after a draw (24-bit pixels straddling words, 4-bit
+	# and 8-bit high parts, two staging blocks in one batch), readbacks,
+	# local copies, a blur through sampler feedback and the scanned field
+	# all come out as with it.
+	for c in upload_busy upload_busy_blocks copy_then_upload readback_t4hh readback_parts column_passes \
+	         many_copies alpha_under_depth blur_in_place; do
+		case $c in
+			upload_busy)        expect=78123456,58563412,9a563412 ;;
+			upload_busy_blocks) expect=78444444,78666666 ;;
+			copy_then_upload)   expect=78563412 ;;
+			readback_t4hh)      expect=55555555 ;;
+			readback_parts)     expect=00112233,00445566 ;;
+			column_passes)      expect=00181818,00505050,00404040 ;;
+			many_copies)        expect=78563412 ;;
+			alpha_under_depth)  expect=40404040,c0c0c0c0,58585858,d8d8d8d8 ;;
+			blur_in_place)      expect=ffffffff ;;
+		esac
+		[ -f "$VAL/$c.bin" ] || "$VAL/swdraw" --bios "$VAL/$c.bin" $c
+		for v in bda nobda; do
+			env $( [ $v = nobda ] && echo VN_HIDE_EXT=VK_KHR_buffer_device_address ) \
+			VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 VN_VERBOSE=1 VK_LOADER_LAYERS_ENABLE='*validation*' \
+			VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT \
+			VN_EXPECT_RUN=$expect VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/$c.bin" VN_RENDERER=paraLLEl-GS \
+				timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/$c.$v.log" 2>&1 || true
+			bda=$(grep -c "Enabling device extension: VK_KHR_buffer_device_address" "$VAL/$c.$v.log") || true
+			if ! grep -q "vknegotiate v2: ok" "$VAL/$c.$v.log" || grep -q "Validation Error" "$VAL/$c.$v.log" ||
+			   { [ $v = nobda ] && [ "$bda" != 0 ]; } || { [ $v = bda ] && [ "$bda" = 0 ]; }; then
+				grep "Validation Error\|FAIL" "$VAL/$c.$v.log" | sort | uniq -c | head -n 5
+				rm -rf "$VAL"
+				echo "  FAIL: paraLLEl-GS on Vulkan 1.1 ($v): $c"
+				exit 1
+			fi
+		done
+	done
+	VN_HIDE_EXT=VK_KHR_buffer_device_address VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
+	VK_LOADER_LAYERS_ENABLE='*validation*' VN_HASH_IMAGE=1 VN_FRAMES=60 VN_IDLE_BIOS=1 \
+	LRPS2_BIOS="$VAL/scan_field.bin" VN_RENDERER=paraLLEl-GS \
+		timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/pgs.nobda.log" 2>&1 || true
+	if [ "$(sed -n 's/.*image: \(.*\)/\1/p' "$VAL/pgs.nobda.log")" != "$v11_image" ] ||
+	   grep -q "Validation Error" "$VAL/pgs.nobda.log"; then
+		rm -rf "$VAL"
+		echo "  FAIL: paraLLEl-GS without buffer device address: another picture or a validation error"
+		exit 1
+	fi
+	echo "  paraLLEl-GS without buffer device address: the same memory and picture, no validation error"
 	# The device lost at the 30th present with a palette the GPU drew in
 	# use, and reopened under the renderer: nothing of the old device is
 	# used or freed on the new one (the texture cache's download textures

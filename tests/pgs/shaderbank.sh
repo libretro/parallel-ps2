@@ -1,7 +1,7 @@
 #!/bin/sh
 # Read the paraLLEl-GS shader bank, and identify a module from its source.
 #
-# shaders/slangmosh.hpp is a precompiled SPIR-V bank -- sixteen modules in
+# shaders/slangmosh.hpp is a precompiled SPIR-V bank -- its modules in
 # one uint32 array -- and it ships name-stripped, so it says nothing about
 # what the GPU does with a given input. This splits it into one .spv per
 # module and disassembles them when spirv-dis is installed.

@@ -343,6 +343,16 @@ private:
 	std::vector<VkImageMemoryBarrier2> post_image_barriers;
 	std::vector<PaletteUploadDescriptor> palette_uploads;
 	std::vector<VkDeviceAddress> qword_clears;
+	/* Without buffer device address the clears are fills of these. */
+	struct QwordFill
+	{
+		Vulkan::BufferHandle buffer;
+		VkDeviceSize offset;
+	};
+	std::vector<QwordFill> qword_fills;
+	bool use_bda = true;
+	void push_qword_clear(const Vulkan::BufferHandle &buffer, VkDeviceSize offset);
+	Vulkan::Program *vram_copy_program = nullptr;
 
 	struct Scratch
 	{
@@ -538,6 +548,7 @@ private:
 		Vulkan::BufferBlockAllocation alloc;
 	};
 	std::vector<CopyDescriptorPayload> pending_copies;
+	const Vulkan::Buffer *copy_source_buffer(const CopyDescriptorPayload &copy) const;
 	void emit_copy_vram(Vulkan::CommandBuffer &cmd,
 	                    const uint32_t *dispatch_order,
 	                    uint32_t num_dispatches, bool prepare_only);

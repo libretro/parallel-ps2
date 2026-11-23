@@ -946,7 +946,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 	{
 		Vulkan::DeferredPipelineCompile deferred = {};
 		Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
-		cmd->set_program(shaders.vram_copy);
+		cmd->set_program(vram_copy_program);
 
 		struct CopyFormat { uint32_t wg_size, psm; };
 		static const CopyFormat formats[] = {
@@ -1211,12 +1211,15 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 			}
 
 		cmd->set_specialization_constant_mask(0);
-		cmd->set_program(shaders.qword_clear);
-		cmd->extract_pipeline_state(deferred);
-		small_tasks.push_back(deferred);
-		cmd->set_program(shaders.sampler_feedback);
-		cmd->extract_pipeline_state(deferred);
-		small_tasks.push_back(deferred);
+		if (use_bda)
+		{
+			cmd->set_program(shaders.qword_clear);
+			cmd->extract_pipeline_state(deferred);
+			small_tasks.push_back(deferred);
+			cmd->set_program(shaders.sampler_feedback);
+			cmd->extract_pipeline_state(deferred);
+			small_tasks.push_back(deferred);
+		}
 
 		cmd->set_specialization_constant_mask(1);
 		cmd->set_program(shaders.single_sample_heuristic);
@@ -1410,13 +1413,49 @@ GSRenderer::GSRenderer(PageTracker &tracker_)
 	});
 }
 
+/* Hands the bank's modules to the device, leaving out those declaring
+ * PhysicalStorageBufferAddresses when it has no buffer device address:
+ * such a module cannot be made there, and its _nobda variant is used. */
+struct BankDevice
+{
+	Vulkan::Device &device;
+	bool bda;
+
+	bool usable(const uint32_t *code, size_t size) const
+	{
+		size_t i, n = size / sizeof(uint32_t);
+		for (i = 5; !bda && i + 1 < n; i += code[i] >> 16)
+		{
+			uint32_t op = code[i] & 0xffffu;
+			if ((code[i] >> 16) == 0 || (op != 17 && op != 10))
+				break;
+			if (op == 17 && code[i + 1] == 5347)
+				return false;
+		}
+		return true;
+	}
+
+	Vulkan::Program *request_program(const uint32_t *code, size_t size, const Vulkan::ResourceLayout *layout)
+	{
+		return usable(code, size) ? device.request_program(code, size, layout) : nullptr;
+	}
+
+	Vulkan::Shader *request_shader(const uint32_t *code, size_t size, const Vulkan::ResourceLayout *layout)
+	{
+		return usable(code, size) ? device.request_shader(code, size, layout) : nullptr;
+	}
+};
+
 bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 {
 	drain_compilation_tasks();
 	stop_variant_builder();
 
+	use_bda = device_->get_device_features().vk12_features.bufferDeviceAddress != VK_FALSE;
 	Vulkan::ResourceLayout layout;
-	shaders = Shaders<>(*device_, layout, 0);
+	BankDevice bank_device = { *device_, use_bda };
+	shaders = Shaders<>(bank_device, layout, 0);
+	vram_copy_program = use_bda ? shaders.vram_copy : shaders.vram_copy_nobda;
 	/* The ubershader's resources, with room for the variant pushed after
 	 * the descriptor. */
 	{
@@ -1445,7 +1484,6 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	const Vulkan::DeviceFeatures &ext = device_->get_device_features();
 	if (!ext.vk12_features.descriptorIndexing ||
 	    !ext.vk12_features.timelineSemaphore ||
-	    !ext.vk12_features.bufferDeviceAddress ||
 	    !ext.vk12_features.storageBuffer8BitAccess ||
 	    !ext.vk11_features.storageBuffer16BitAccess ||
 	    !ext.enabled_features.shaderInt16 ||
@@ -1457,7 +1495,6 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 		LOGE("Minimum requirements for parallel-gs are not met.\n");
 		LOGE("  - descriptorIndexing\n");
 		LOGE("  - timelineSemaphore\n");
-		LOGE("  - bufferDeviceAddress\n");
 		LOGE("  - storageBuffer8BitAccess\n");
 		LOGE("  - storageBuffer16BitAccess\n");
 		LOGE("  - shaderInt16\n");
@@ -1754,9 +1791,35 @@ uint64_t GSRenderer::query_timeline()
 	return timeline_value.load(PGS::memory_order_acquire);
 }
 
+void GSRenderer::push_qword_clear(const Vulkan::BufferHandle &buffer, VkDeviceSize offset)
+{
+	if (use_bda)
+		qword_clears.push_back(buffer->get_device_address() + offset);
+	else
+		qword_fills.push_back({ buffer, offset });
+}
+
 void GSRenderer::flush_qword_clears()
 {
 	ensure_clear_cmd();
+
+	if (!use_bda)
+	{
+		/* Neighbouring qwords of one buffer go as one fill. */
+		size_t i = 0, n = qword_fills.size();
+		while (i < n)
+		{
+			const Vulkan::Buffer &buffer = *qword_fills[i].buffer;
+			VkDeviceSize offset = qword_fills[i].offset;
+			VkDeviceSize size = 16;
+			for (i++; i < n && qword_fills[i].buffer.get() == &buffer &&
+			          qword_fills[i].offset == offset + size; i++)
+				size += 16;
+			clear_cmd->fill_buffer(buffer, 0, offset, size);
+		}
+		qword_fills.clear();
+		return;
+	}
 
 	uint32_t count = qword_clears.size();
 	VkDeviceSize offset = allocate_device_scratch(count * sizeof(qword_clears.front()), buffers.rebar_scratch, qword_clears.data());
@@ -1807,7 +1870,7 @@ void GSRenderer::flush_submit(uint64_t value)
 	}
 
 	// This must come before async transfer cmd since we risk allocating a transfer.
-	if (!qword_clears.empty())
+	if (!qword_clears.empty() || !qword_fills.empty())
 		flush_qword_clears();
 
 	if (async_transfer_cmd)
@@ -1821,7 +1884,11 @@ void GSRenderer::flush_submit(uint64_t value)
 
 	if (clear_cmd)
 	{
-		clear_cmd->barrier(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+		/* Without buffer device address the clears were fills. */
+		clear_cmd->barrier(use_bda ? VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT :
+		                   VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+		                   use_bda ? VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT :
+		                   VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT,
 		                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
 		                   VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT |
 		                   VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
@@ -2104,7 +2171,8 @@ void GSRenderer::commit_cached_texture(uint32_t tex_info_index, bool sampler_fee
 	// Assert that there were no stray flushes between create_cached_texture() and commit_cached_texture().
 	assert(!texture_uploads.empty());
 
-	if (sampler_feedback)
+	/* Sampler feedback writes through buffer device addresses. */
+	if (sampler_feedback && use_bda)
 	{
 		texture_analysis.resize(std::max<size_t>(texture_analysis.size(), tex_info_index + 1));
 		allocate_upload_indirection(texture_analysis[tex_info_index], texture_uploads.back());
@@ -2421,7 +2489,7 @@ void GSRenderer::allocate_scratch_buffers(Vulkan::CommandBuffer &cmd, const Rend
 			                                  single_sampled_heuristic_offset, sizeof(SingleSampleHeuristic));
 
 			for (VkDeviceSize bda_offset = 0; bda_offset < sizeof(SingleSampleHeuristic); bda_offset += 16)
-				qword_clears.push_back(buffers.device_scratch.buffer->get_device_address() + single_sampled_heuristic_offset + bda_offset);
+				push_qword_clear(buffers.device_scratch.buffer, single_sampled_heuristic_offset + bda_offset);
 
 			indirect_single_sample_heuristic = buffers.device_scratch;
 			indirect_single_sample_heuristic.offset = single_sampled_heuristic_offset;
@@ -2492,7 +2560,7 @@ void GSRenderer::allocate_scratch_buffers_instanced(Vulkan::CommandBuffer &cmd, 
 	VkDeviceSize work_list_size = 256 + aligned_width * aligned_height * sizeof(uvec2);
 
 	VkDeviceSize work_list_scratch = allocate_device_scratch(work_list_size, buffers.device_scratch, nullptr);
-	qword_clears.push_back(buffers.device_scratch.buffer->get_device_address() + work_list_scratch);
+	push_qword_clear(buffers.device_scratch.buffer, work_list_scratch);
 
 	binning_cmd->set_storage_buffer(1, 0, *buffers.device_scratch.buffer, work_list_scratch, work_list_size);
 	work_list_single_sample = buffers.device_scratch;
@@ -2502,7 +2570,7 @@ void GSRenderer::allocate_scratch_buffers_instanced(Vulkan::CommandBuffer &cmd, 
 	if (inst.sampling_rate_y_log2 != 0)
 	{
 		work_list_scratch = allocate_device_scratch(work_list_size, buffers.device_scratch, nullptr);
-		qword_clears.push_back(buffers.device_scratch.buffer->get_device_address() + work_list_scratch);
+		push_qword_clear(buffers.device_scratch.buffer, work_list_scratch);
 		binning_cmd->set_storage_buffer(1, 1, *buffers.device_scratch.buffer, work_list_scratch, work_list_size);
 		work_list_super_sample = buffers.device_scratch;
 		work_list_super_sample.offset = work_list_scratch;
@@ -3239,10 +3307,15 @@ static uint32_t copy_pipeline_key(const CopyDescriptor &desc)
 	return key;
 }
 
+const Vulkan::Buffer *GSRenderer::copy_source_buffer(const CopyDescriptorPayload &copy) const
+{
+	return copy.copy.trxdir.desc.XDIR == HOST_TO_LOCAL ? copy.alloc.buffer.get() : buffers.gpu.get();
+}
+
 void GSRenderer::emit_copy_vram(Vulkan::CommandBuffer &cmd,
 								const uint32_t *dispatch_order, uint32_t num_dispatches, bool prepare_only)
 {
-	cmd.set_program(shaders.vram_copy);
+	cmd.set_program(vram_copy_program);
 	CopyDescriptor &base_desc = pending_copies[dispatch_order[0]].copy;
 
 	// One thread will write two values in PSMT4 fused mode.
@@ -3265,6 +3338,8 @@ void GSRenderer::emit_copy_vram(Vulkan::CommandBuffer &cmd,
 	cmd.set_storage_buffer(0, 0, *buffers.gpu);
 	cmd.set_storage_buffer(0, 1, *buffers.vram_copy_atomics);
 	cmd.set_storage_buffer(0, 2, *buffers.vram_copy_payloads);
+	if (!use_bda)
+		cmd.set_storage_buffer(0, 5, *copy_source_buffer(pending_copies[dispatch_order[0]]));
 #if 0
 	cmd.set_storage_buffer(0, 4, *buffers.bug_feedback);
 #endif
@@ -4445,15 +4520,16 @@ void GSRenderer::flush_transfer()
 
 		// Use BDA to get bindless buffers.
 		// We handle robustness anyway, so this is fine.
+		// Without BDA, an offset into the buffer emit_copy_vram binds.
 		if (desc.trxdir.desc.XDIR == HOST_TO_LOCAL)
 		{
-			ubo->source_bda = copy.alloc.buffer->get_device_address() + copy.alloc.offset;
+			ubo->source_bda = (use_bda ? copy.alloc.buffer->get_device_address() : 0) + copy.alloc.offset;
 			ubo->source_size = desc.host_data_size;
 		}
 		else
 		{
 			VkDeviceSize offset = copy.copy.needs_shadow_vram ? buffers.gpu->get_create_info().size / 2 : 0;
-			ubo->source_bda = buffers.gpu->get_device_address() + offset;
+			ubo->source_bda = (use_bda ? buffers.gpu->get_device_address() : 0) + offset;
 			ubo->source_size = UINT32_MAX;
 		}
 
@@ -4473,17 +4549,26 @@ void GSRenderer::flush_transfer()
 	for (size_t i = 0, n = pending_copies.size(); i < n; i++)
 		dispatch_order[i] = i;
 
+	/* Without buffer device address, a dispatch reads one bound source
+	 * buffer, so copies are batched by it too. */
 	std::sort(dispatch_order, dispatch_order + pending_copies.size(), [&](uint32_t a, uint32_t b) {
-		return copy_pipeline_key(pending_copies[a].copy) < copy_pipeline_key(pending_copies[b].copy);
+		uint32_t key_a = copy_pipeline_key(pending_copies[a].copy);
+		uint32_t key_b = copy_pipeline_key(pending_copies[b].copy);
+		if (key_a != key_b || use_bda)
+			return key_a < key_b;
+		return std::less<const Vulkan::Buffer *>()(copy_source_buffer(pending_copies[a]),
+		                                           copy_source_buffer(pending_copies[b]));
 	});
 
 	uint32_t current_key = copy_pipeline_key(pending_copies[dispatch_order[0]].copy);
+	const Vulkan::Buffer *current_source = use_bda ? nullptr : copy_source_buffer(pending_copies[dispatch_order[0]]);
 	dispatches[0] = { 0, 1 };
 
 	for (size_t i = 1, n = pending_copies.size(); i < n; i++)
 	{
 		uint32_t next_key = copy_pipeline_key(pending_copies[dispatch_order[i]].copy);
-		if (next_key == current_key)
+		const Vulkan::Buffer *next_source = use_bda ? nullptr : copy_source_buffer(pending_copies[dispatch_order[i]]);
+		if (next_key == current_key && next_source == current_source)
 		{
 			dispatches[num_dispatches - 1].range++;
 		}
@@ -4493,6 +4578,7 @@ void GSRenderer::flush_transfer()
 			dispatches[num_dispatches].range = 1;
 			num_dispatches++;
 			current_key = next_key;
+			current_source = next_source;
 		}
 	}
 
