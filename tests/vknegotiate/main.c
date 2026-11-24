@@ -784,6 +784,92 @@ static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_v11_gipa(VkInstance inst, con
 	return vn_v11_base(inst, name);
 }
 
+/* VN_QUEUE_FAMILIES, e.g. "gct:1,t:1,c:2", has the core see those queue
+ * families (graphics, compute, transfer: count) in place of the device's;
+ * VN_EXPECT_QUEUES, e.g. "0x1,1x1", is each family and the queues the
+ * device it then creates must ask of it, and the run ends there. */
+static PFN_vkGetInstanceProcAddr vn_qf_base;
+static uint32_t vn_qf_fill(VkQueueFamilyProperties *props, uint32_t room)
+{
+	const char *spec = getenv("VN_QUEUE_FAMILIES");
+	uint32_t n = 0;
+	while (spec && *spec)
+	{
+		VkQueueFlags flags = 0;
+		for (; *spec && *spec != ':'; spec++)
+			flags |= *spec == 'g' ? VK_QUEUE_GRAPHICS_BIT : *spec == 'c' ? VK_QUEUE_COMPUTE_BIT :
+				*spec == 't' ? VK_QUEUE_TRANSFER_BIT : 0;
+		if (props && n < room)
+		{
+			memset(&props[n], 0, sizeof(props[n]));
+			props[n].queueFlags = flags;
+			props[n].queueCount = (uint32_t)strtoul(spec + (*spec == ':'), NULL, 10);
+			props[n].minImageTransferGranularity.width = 1;
+			props[n].minImageTransferGranularity.height = 1;
+			props[n].minImageTransferGranularity.depth = 1;
+		}
+		n++;
+		spec = strchr(spec, ',');
+		if (spec)
+			spec++;
+	}
+	return n;
+}
+
+static VKAPI_ATTR void VKAPI_CALL vn_qf_props(VkPhysicalDevice gpu, uint32_t *count, VkQueueFamilyProperties *props)
+{
+	(void)gpu;
+	*count = props ? vn_qf_fill(props, *count) : vn_qf_fill(NULL, 0);
+}
+
+static VKAPI_ATTR void VKAPI_CALL vn_qf_props2(VkPhysicalDevice gpu, uint32_t *count, VkQueueFamilyProperties2 *props)
+{
+	VkQueueFamilyProperties one[16];
+	uint32_t n = vn_qf_fill(one, 16), i;
+	(void)gpu;
+	if (props)
+	{
+		if (n > *count)
+			n = *count;
+		for (i = 0; i < n; i++)
+			props[i].queueFamilyProperties = one[i];
+	}
+	*count = n;
+}
+
+static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_qf_gipa(VkInstance inst, const char *name)
+{
+	if (!strcmp(name, "vkGetPhysicalDeviceQueueFamilyProperties"))
+		return (PFN_vkVoidFunction)vn_qf_props;
+	if (!strcmp(name, "vkGetPhysicalDeviceQueueFamilyProperties2") ||
+	    !strcmp(name, "vkGetPhysicalDeviceQueueFamilyProperties2KHR"))
+		return (PFN_vkVoidFunction)vn_qf_props2;
+	return vn_qf_base(inst, name);
+}
+
+/* The wrapper's end of VN_QUEUE_FAMILIES: the request, against
+ * VN_EXPECT_QUEUES. */
+static void vn_qf_check(const VkDeviceCreateInfo *ci)
+{
+	const char *want = getenv("VN_EXPECT_QUEUES");
+	char got[256];
+	size_t len = 0;
+	uint32_t i;
+	got[0] = '\0';
+	for (i = 0; i < ci->queueCreateInfoCount && len < sizeof(got) - 32; i++)
+		len += (size_t)sprintf(got + len, "%s%ux%u", i ? "," : "",
+			ci->pQueueCreateInfos[i].queueFamilyIndex, ci->pQueueCreateInfos[i].queueCount);
+	printf("  queues asked of %s: %s\n", getenv("VN_QUEUE_FAMILIES"), got);
+	fflush(NULL);
+	if (!want || strcmp(want, got))
+	{
+		fprintf(stderr, "vknegotiate: queues %s, not %s\n", got, want ? want : "(VN_EXPECT_QUEUES unset)");
+		fflush(NULL);
+		_exit(1);
+	}
+	_exit(0);
+}
+
 /* The alloc modes: VN_ALLOC_OK device memory allocations are granted by
  * vkshim.c, the loader the core finds; this side only knows it is in one. */
 static int s_alloc_ok = -1;
@@ -1432,6 +1518,8 @@ static VkDevice vn_device_wrapper(VkPhysicalDevice gpu, void *opaque,
 	int have = 0;
 	(void)opaque;
 	s_wrapper_calls++;
+	if (getenv("VN_QUEUE_FAMILIES"))
+		vn_qf_check(ci);
 	if (s_mode == VN_V2RETRY && s_wrapper_calls == 1)
 		return VK_NULL_HANDLE;
 	if (info.enabledExtensionCount >= 63)
@@ -1867,6 +1955,11 @@ int main(int argc, char** argv)
 	{
 		vn_v11_base = core_gipa;
 		core_gipa = vn_v11_gipa;
+	}
+	if (getenv("VN_QUEUE_FAMILIES"))
+	{
+		vn_qf_base = core_gipa;
+		core_gipa = vn_qf_gipa;
 	}
 
 	strcpy(s_system_dir, argv[2]);

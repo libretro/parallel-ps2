@@ -125,7 +125,6 @@ public:
 	enum class Type
 	{
 		Generic = QUEUE_INDEX_GRAPHICS,
-		AsyncCompute = QUEUE_INDEX_COMPUTE,
 		AsyncTransfer = QUEUE_INDEX_TRANSFER,
 		Count
 	};

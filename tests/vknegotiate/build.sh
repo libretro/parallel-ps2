@@ -59,6 +59,23 @@ fi
 rm -rf "$SCRATCH"
 echo "  paraLLEl-GS device: no extension the core has no use for"
 
+# paraLLEl-GS asks for the graphics queue and one queue for uploads, as
+# separate from it as the device allows; never a third (nothing runs on
+# an async compute queue). Families: g graphics, c compute, t transfer.
+SCRATCH=$(mktemp -d)
+for q in "gct:1=0x1" "gct:2=0x2" "gct:3=0x2" "gct:1,t:1,c:1=0x1,1x1" \
+	"gct:16,t:2,ct:8=0x1,1x1" "gct:1,ct:4=0x1,1x1" "gct:1,c:2=0x1,1x1" "t:1,gct:1=0x1,1x1"; do
+	if ! VN_RENDERER=paraLLEl-GS VN_QUEUE_FAMILIES="${q%%=*}" VN_EXPECT_QUEUES="${q#*=}" \
+		timeout 300 "$DIR/vknegotiate" "$CORE" "$SCRATCH" v2 > "$SCRATCH/q.log" 2>&1; then
+		cat "$SCRATCH/q.log"
+		rm -rf "$SCRATCH"
+		echo "  FAIL: paraLLEl-GS queues for families ${q%%=*}"
+		exit 1
+	fi
+done
+rm -rf "$SCRATCH"
+echo "  paraLLEl-GS queues: graphics, and one for uploads where the device has one"
+
 # The utility pipelines are the warm-up thread's, not the render
 # thread's. A build without HAVE_THREADS compiles all of them on the
 # render thread while the device is made -- which is what every CMake

@@ -89,7 +89,6 @@ struct QueueInfo
 	QueueInfo();
 	VkQueue queues[QUEUE_INDEX_COUNT] = {};
 	uint32_t family_indices[QUEUE_INDEX_COUNT];
-	uint32_t counts[QUEUE_INDEX_COUNT] = {};
 };
 
 struct InstanceFactory

@@ -560,27 +560,18 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 		return false;
 	}
 
-	// Prefer standalone compute queue. If not, fall back to another graphics queue.
-	if (!find_vacant_queue(queue_info.family_indices[QUEUE_INDEX_COMPUTE], queue_indices[QUEUE_INDEX_COMPUTE],
-	                       VK_QUEUE_COMPUTE_BIT, VK_QUEUE_GRAPHICS_BIT, 0.5f) &&
-	    !find_vacant_queue(queue_info.family_indices[QUEUE_INDEX_COMPUTE], queue_indices[QUEUE_INDEX_COMPUTE],
-	                       VK_QUEUE_COMPUTE_BIT, 0, 0.5f))
-	{
-		// Fallback to the graphics queue if we must.
-		queue_info.family_indices[QUEUE_INDEX_COMPUTE] = queue_info.family_indices[QUEUE_INDEX_GRAPHICS];
-		queue_indices[QUEUE_INDEX_COMPUTE] = queue_indices[QUEUE_INDEX_GRAPHICS];
-	}
-
-	// For transfer, try to find a queue which only supports transfer, e.g. DMA queue.
-	// If not, fallback to a dedicated compute queue.
-	// Finally, fallback to same queue as compute.
+	/* Every pass runs on the graphics queue; uploads go to a second one:
+	 * a transfer-only (DMA) family, else a compute family without
+	 * graphics, else another graphics queue, else the graphics queue. */
 	if (!find_vacant_queue(queue_info.family_indices[QUEUE_INDEX_TRANSFER], queue_indices[QUEUE_INDEX_TRANSFER],
 	                       VK_QUEUE_TRANSFER_BIT, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, 0.5f) &&
 	    !find_vacant_queue(queue_info.family_indices[QUEUE_INDEX_TRANSFER], queue_indices[QUEUE_INDEX_TRANSFER],
-	                       VK_QUEUE_COMPUTE_BIT, VK_QUEUE_GRAPHICS_BIT, 0.5f))
+	                       VK_QUEUE_COMPUTE_BIT, VK_QUEUE_GRAPHICS_BIT, 0.5f) &&
+	    !find_vacant_queue(queue_info.family_indices[QUEUE_INDEX_TRANSFER], queue_indices[QUEUE_INDEX_TRANSFER],
+	                       VK_QUEUE_TRANSFER_BIT, 0, 0.5f))
 	{
-		queue_info.family_indices[QUEUE_INDEX_TRANSFER] = queue_info.family_indices[QUEUE_INDEX_COMPUTE];
-		queue_indices[QUEUE_INDEX_TRANSFER] = queue_indices[QUEUE_INDEX_COMPUTE];
+		queue_info.family_indices[QUEUE_INDEX_TRANSFER] = queue_info.family_indices[QUEUE_INDEX_GRAPHICS];
+		queue_indices[QUEUE_INDEX_TRANSFER] = queue_indices[QUEUE_INDEX_GRAPHICS];
 	}
 
 	VkDeviceCreateInfo device_info = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
@@ -931,8 +922,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 				device_table.vkGetDeviceQueue(device, queue_info.family_indices[i], queue_indices[i],
 											  &queue_info.queues[i]);
 			}
-
-			queue_info.counts[i] = queue_offsets[queue_info.family_indices[i]];
 
 		}
 		else

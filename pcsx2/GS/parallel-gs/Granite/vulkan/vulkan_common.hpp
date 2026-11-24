@@ -40,7 +40,6 @@ using VulkanCache = Util::InsertOnlyHashMap<T>;
 enum QueueIndices
 {
 	QUEUE_INDEX_GRAPHICS,
-	QUEUE_INDEX_COMPUTE,
 	QUEUE_INDEX_TRANSFER,
 	QUEUE_INDEX_COUNT
 };

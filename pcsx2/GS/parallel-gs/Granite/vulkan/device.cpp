@@ -55,7 +55,6 @@ namespace Vulkan
 static const QueueIndices queue_flush_order[] = {
 	QUEUE_INDEX_TRANSFER,
 	QUEUE_INDEX_GRAPHICS,
-	QUEUE_INDEX_COMPUTE,
 };
 
 Device::Device()
@@ -2235,7 +2234,7 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	uint32_t sharing_indices[QUEUE_INDEX_COUNT];
 	if (staging_buffer)
 	{
-		static const QueueIndices queues[] = { QUEUE_INDEX_GRAPHICS, QUEUE_INDEX_COMPUTE, QUEUE_INDEX_TRANSFER };
+		static const QueueIndices queues[] = { QUEUE_INDEX_GRAPHICS, QUEUE_INDEX_TRANSFER };
 		for (auto q : queues)
 			add_unique_family(sharing_indices, info.queueFamilyIndexCount, queue_info.family_indices[q]);
 		if (info.queueFamilyIndexCount > 1)
@@ -2338,11 +2337,9 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 		transition_cmd = std::move(cmd);
 	}
 
-	/* Graphics, and compute too for an upload shared with it, see the
-	 * image as it was left. */
+	/* Graphics sees the image as it was left. */
 	if (transition_cmd)
-		submit_and_sync_to_queues(transition_cmd, (1u << QUEUE_INDEX_GRAPHICS) |
-		                                          (staging_buffer ? 1u << QUEUE_INDEX_COMPUTE : 0u));
+		submit_and_sync_to_queues(transition_cmd, 1u << QUEUE_INDEX_GRAPHICS);
 
 	return handle;
 }
@@ -2569,8 +2566,7 @@ BufferHandle Device::create_buffer(const BufferCreateInfo &create_info, const vo
 			cmd->end_region();
 		}
 
-		uint32_t queue_indices = (1u << QUEUE_INDEX_GRAPHICS) | (1u << QUEUE_INDEX_COMPUTE);
-		submit_and_sync_to_queues(cmd, queue_indices);
+		submit_and_sync_to_queues(cmd, 1u << QUEUE_INDEX_GRAPHICS);
 	}
 	else if (need_init)
 	{
