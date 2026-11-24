@@ -1125,9 +1125,12 @@ else
 	# Uploads ordered after a draw (24-bit pixels straddling words, 4-bit
 	# and 8-bit high parts, two staging blocks in one batch), readbacks,
 	# local copies, a blur through sampler feedback, sixteen textures in
-	# one pass and the scanned field all come out as with it.
+	# one pass, bindless pools used up and handed back, and the scanned
+	# field all come out as with it.
 	for c in upload_busy upload_busy_blocks copy_then_upload readback_t4hh readback_parts column_passes \
-	         many_copies alpha_under_depth blur_in_place many_textures; do
+	         many_copies alpha_under_depth blur_in_place many_textures many_textures_loop; do
+		frames=
+		variants="bda nobda noscalar no8 notimeline nosubgroupsize noindexing all"
 		case $c in
 			upload_busy)        expect=78123456,58563412,9a563412 ;;
 			upload_busy_blocks) expect=78444444,78666666 ;;
@@ -1139,9 +1142,15 @@ else
 			alpha_under_depth)  expect=40404040,c0c0c0c0,58585858,d8d8d8d8 ;;
 			blur_in_place)      expect=ffffffff ;;
 			many_textures)      expect=00080808,00404040,00686868,00808080 ;;
+			# Bindless pools used up and handed back seven times, where
+			# each is handed back on a main timeline value: the timeline
+			# semaphore path, which takes far longer under validation, has
+			# its own descriptor timeline.
+			many_textures_loop) expect=00080808,00404040,00686868,00808080 frames=8200
+			                    variants="notimeline all" ;;
 		esac
 		[ -f "$VAL/$c.bin" ] || "$VAL/swdraw" --bios "$VAL/$c.bin" $c
-		for v in bda nobda noscalar no8 notimeline nosubgroupsize noindexing all; do
+		for v in $variants; do
 			case $v in
 				bda)      hide= ;;
 				nobda)    hide=VK_KHR_buffer_device_address ;;
@@ -1156,7 +1165,7 @@ else
 			env ${hide:+VN_HIDE_EXT=$hide} \
 			VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 VN_VERBOSE=1 VK_LOADER_LAYERS_ENABLE='*validation*' \
 			VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT \
-			VN_EXPECT_RUN=$expect VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/$c.bin" VN_RENDERER=paraLLEl-GS \
+			VN_EXPECT_RUN=$expect VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/$c.bin" VN_RENDERER=paraLLEl-GS ${frames:+VN_FRAMES=$frames} \
 				timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/$c.$v.log" 2>&1 || true
 			# No extension hidden is enabled; with none hidden, BDA is.
 			shown=0

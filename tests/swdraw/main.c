@@ -1651,6 +1651,46 @@ static void case_many_textures(void)
 	s_expect_run[3] = 0x00808080ul;
 }
 
+/* Sixteen 8x8 PSMCT16 textures of one grey each, drawn as sixteen sprites
+ * every frame: a render pass of sixteen textures a frame, which goes
+ * through a pool of 16384 bindless descriptors every 1024 frames, so that
+ * run for 8200 the renderer hands exhausted pools back once the GPU is
+ * past them, and takes them again, seven times. */
+static void case_many_textures_loop(void)
+{
+	unsigned i, w, draw;
+	for (i = 0; i < 16; i++)
+	{
+		const unsigned g = (i + 1) | ((i + 1) << 5) | ((i + 1) << 10);
+		stream_image(0x1000u + i * 0x20u, 1, 2, 0, 0, 8, 8, 8);
+		for (w = 0; w < 8; w++)
+			qw(g | (g << 16), g | (g << 16), g | (g << 16), g | (g << 16));
+	}
+	kick(0, s_qw_count, 0);
+	draw = s_qw_count;
+	stream_draw_setup(2 + 16 * 6, 0);
+	qw((1u << 16) | (1u << 17), 0, GS_TEST_1, 0);
+	qw(0, 0, GS_TEX1_1, 0);
+	for (i = 0; i < 16; i++)
+	{
+		qw((0x1000u + i * 0x20u) | (1u << 14) | (2u << 20) | (3u << 26) | (3u << 30), /* CT16, TW 3, TH 3 */
+			(1u << 2) | (1u << 3), GS_TEX0_1, 0);                                  /* TCC, decal */
+		qw(6 | 0x10 | 0x100, 0, GS_PRIM, 0);
+		qw(0, 0, GS_UV, 0);
+		qw((unsigned)XY(i * 8, 0), 0, GS_XYZ2, 0);
+		qw((8u << 4) | ((8u << 4) << 16), 0, GS_UV, 0);
+		qw((unsigned)XY(i * 8 + 8, 8), 0, GS_XYZ2, 0);
+	}
+	s_loop = 1;
+	s_loop_kick = s_kick_count;
+	kick(draw, s_qw_count - draw, 1);
+	s_run_frames    = 8200;
+	s_expect_run[0] = 0x00080808ul;
+	s_expect_run[1] = 0x00404040ul;
+	s_expect_run[2] = 0x00686868ul;
+	s_expect_run[3] = 0x00808080ul;
+}
+
 /* A 1024x120 PSMCT32 texture (480 KB, what one IMAGE GIFtag carries) at
  * page 128 streamed six times every frame, and a sprite reading its first
  * 34x113 through a region clamp (an extent a hardware renderer keeps a
@@ -3542,6 +3582,7 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "upload_busy",     case_upload_busy,   "1" },
 	{ "upload_busy_blocks", case_upload_busy_blocks, "1" },
 	{ "many_textures",   case_many_textures, "1" },
+	{ "many_textures_loop", case_many_textures_loop, "1" },
 	{ "readback_t4hh",   case_readback_t4hh, "1" },
 	{ "dest_alpha",      case_dest_alpha,    "1" },
 	{ "feedback_chain",  case_feedback_chain, "1" },
