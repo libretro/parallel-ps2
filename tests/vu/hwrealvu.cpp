@@ -521,6 +521,49 @@ static int run_clip(int* total)
 	return pass != n;
 }
 
+/* VMUL and VMULx as the console ran them (see hwmul.c for the record and
+ * its provenance): the instruction words themselves, 4BE208EA and
+ * 4BE208D8, through the upper dispatch table, each source register
+ * holding its value in every lane, all four lanes of vf3 checked. */
+static int run_mul(int* total)
+{
+	static const u32 kPairs[7][3] = {
+		{ 0x3F800000u, 0x40000000u, 0x40000000u },
+		{ 0x3F800000u, 0x43018000u, 0x43017FFFu },
+		{ 0x3F800001u, 0x3F808000u, 0x3F808001u },
+		{ 0x3F800040u, 0x3F800020u, 0x3F800060u },
+		{ 0x3F800100u, 0x3F800008u, 0x3F800108u },
+		{ 0x3F808000u, 0x3F800001u, 0x3F808001u },
+		{ 0x43018000u, 0x3F800000u, 0x43018000u },
+	};
+	static const u32 kWords[2] = { 0x4BE208EAu, 0x4BE208D8u };
+	int i, k, lane, pass = 0, n = 0, shown = 0;
+
+	for (k = 0; k < 2; k++)
+		for (i = 0; i < 7; i++)
+		{
+			memset(&vuRegs[0], 0, sizeof(vuRegs[0]));
+			for (lane = 0; lane < 4; lane++)
+			{
+				vuRegs[0].VF[1].UL[lane] = kPairs[i][0];
+				vuRegs[0].VF[2].UL[lane] = kPairs[i][1];
+			}
+			vuRegs[0].code = kWords[k];
+			VU0_UPPER_OPCODE[vuRegs[0].code & 0x3f]();
+			for (lane = 0; lane < 4; lane++, n++)
+			{
+				if (vuRegs[0].VF[3].UL[lane] == kPairs[i][2]) pass++;
+				else if (shown++ < 4)
+					printf("  %s %08x * %08x lane %d: console %08x  ours %08x\n",
+					       k ? "VMULx" : "VMUL ", kPairs[i][0], kPairs[i][1], lane,
+					       kPairs[i][2], vuRegs[0].VF[3].UL[lane]);
+			}
+		}
+	*total += n;
+	printf("mul     %2d/%-3d console cases\n", pass, n);
+	return pass != n;
+}
+
 /* ---- VU0 macro mode --------------------------------------------------
  *
  * The same integer ops again, but reached the way the EE reaches them: as
@@ -787,6 +830,7 @@ int main(int argc, char** argv)
 	}
 	failures += run_random(&total);
 	failures += run_clip(&total);
+	failures += run_mul(&total);
 	{
 		/* vu0_macro sits beside vu/lower in the checkout. */
 		char mdir[512];

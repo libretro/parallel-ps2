@@ -7,6 +7,9 @@
 # hwrandom scores RINIT/RXOR/RGET/RNEXT against
 # tests/vu/lower/random.expected, also with values inlined.
 #
+# hwmul scores ps2f_mul against VMUL and VMULx run on a physical console,
+# values inlined.
+#
 # hwint scores the integer lower ops against tests/vu/lower/integer.expected
 # and reads that file directly, so point PS2AUTOTESTS at a checkout:
 #   git clone https://github.com/unknownbrackets/ps2autotests
@@ -26,6 +29,12 @@ echo "== VU CLIP vs console =="
 echo "== VU random unit vs console =="
 "$CC" -O1 -g -Wall $SANFLAGS -o "$DIR/vu_hwrandom" "$DIR/hwrandom.c"
 "$DIR/vu_hwrandom"
+
+echo "== VU VMUL and VMULx vs a physical console =="
+# Values inlined, with which come off the photographed screen and which
+# from the test program's own cross-checks (see hwmul.c).
+"$CC" -O1 -g -Wall $SANFLAGS -I "$ROOT/pcsx2" -o "$DIR/vu_hwmul" "$DIR/hwmul.c" "$ROOT/pcsx2/ps2float.c" -lm
+"$DIR/vu_hwmul"
 
 echo "== VU integer ops vs console =="
 EXPECTED="${PS2AUTOTESTS:-}/tests/vu/lower/integer.expected"
