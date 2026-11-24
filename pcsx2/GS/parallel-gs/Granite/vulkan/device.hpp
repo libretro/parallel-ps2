@@ -53,17 +53,9 @@ struct retro_spsc; /* libretro-common's retro_spsc.h */
 
 namespace Vulkan
 {
-struct HostReference
-{
-	const void *data;
-	size_t size;
-};
-
 struct InitialImageBuffer
 {
-	// Either buffer or host is used. Ideally host is used so that host image copy can be used for uploads.
 	BufferHandle buffer;
-	HostReference host;
 	Util::SmallVector<VkBufferImageCopy, 32> blits;
 };
 

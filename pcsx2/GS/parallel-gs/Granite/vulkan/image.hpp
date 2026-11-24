@@ -55,11 +55,10 @@ static inline VkFormatFeatureFlags image_usage_to_features(VkImageUsageFlags usa
 	return flags;
 }
 
+/* A level's texels, tightly packed. */
 struct ImageInitialData
 {
 	const void *data;
-	unsigned row_length;
-	unsigned image_height;
 };
 
 enum ImageMiscFlagBits

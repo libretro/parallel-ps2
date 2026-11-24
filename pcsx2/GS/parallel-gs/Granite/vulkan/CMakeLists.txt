@@ -20,8 +20,7 @@ add_granite_internal_lib(granite-vulkan
         format.hpp
         limits.hpp
         quirks.hpp
-        vulkan_common.hpp
-        texture/texture_format.cpp texture/texture_format.hpp)
+        vulkan_common.hpp)
 
 target_include_directories(granite-vulkan PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 

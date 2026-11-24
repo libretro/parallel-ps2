@@ -25,7 +25,7 @@ INC="-I$ROOT -I$ROOT/3rdparty -I$ROOT/3rdparty/include -isystem $ROOT/3rdparty/v
 -I$ROOT/pcsx2 -I$ROOT/pcsx2/x86 -I$G/application/global -I$G/util -I$G/vulkan -I$ROOT/pcsx2/GS/parallel-gs/gs"
 GINC="-I$G/vulkan -I$G/util -I$ROOT/libretro/libretro-common/include -isystem $ROOT/3rdparty/vulkan-headers/include"
 FAIL=0
-for f in "$G"/vulkan/*.cpp "$G"/vulkan/texture/*.cpp "$G"/util/*.cpp; do
+for f in "$G"/vulkan/*.cpp "$G"/util/*.cpp; do
 	if ! "$CXX" -std=c++17 -fsyntax-only -w $DEFS $GINC "$f"; then
 		echo "granitedebug: FAIL: $f with Granite's include paths alone"
 		FAIL=1

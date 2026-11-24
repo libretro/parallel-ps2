@@ -2286,92 +2286,47 @@ private:
 
 InitialImageBuffer Device::create_image_staging_buffer(const ImageCreateInfo &info, const ImageInitialData *initial)
 {
+	/* Initial data is for 2D images of one layer and uncompressed texels,
+	 * each of the levels asked for tightly packed: all the renderer makes. */
 	InitialImageBuffer result = {};
-	TextureFormatLayout layout;
+	const uint32_t texel = format_texel_size(info.format);
+	VkDeviceSize size = 0;
 
-	unsigned copy_levels;
-	if (info.levels == 0)
-		copy_levels = TextureFormatLayout::num_miplevels(info.width, info.height, info.depth);
-	else
-		copy_levels = info.levels;
-
-	switch (info.type)
+	if (!texel || info.type != VK_IMAGE_TYPE_2D || info.layers != 1 || info.levels == 0)
 	{
-	case VK_IMAGE_TYPE_1D:
-		layout.set_1d(info.format, info.width, info.layers, copy_levels);
-		break;
-	case VK_IMAGE_TYPE_2D:
-		layout.set_2d(info.format, info.width, info.height, info.layers, copy_levels);
-		break;
-	case VK_IMAGE_TYPE_3D:
-		layout.set_3d(info.format, info.width, info.height, info.depth, copy_levels);
-		break;
-	default:
-		return {};
-	}
-
-	if (copy_levels == 1 && info.layers == 1)
-	{
-		result.host = { initial[0].data, layout.get_required_size() };
-		layout.build_buffer_image_copies(result.blits);
-		auto &blit = result.blits.front();
-		const auto &mip_info = layout.get_mip_info(0);
-
-		// Adjust the blit in case it's not tightly packed.
-		uint32_t src_row_length =
-				initial[0].row_length ? initial[0].row_length : mip_info.row_length;
-		uint32_t src_array_height =
-				initial[0].image_height ? initial[0].image_height : mip_info.image_height;
-
-		result.host.size = format_get_layer_size(
-				info.format, blit.imageSubresource.aspectMask, src_row_length, src_array_height, info.depth);
-
-		blit.bufferOffset = 0;
-		blit.bufferRowLength = src_row_length;
-		blit.bufferImageHeight = src_array_height;
+		LOGE("Initial data is only taken for 2D images of one layer and known levels.\n");
 		return result;
 	}
 
+	for (unsigned level = 0; level < info.levels; level++)
+		size += VkDeviceSize(texel) * std::max(info.width >> level, 1u) * std::max(info.height >> level, 1u);
+
 	BufferCreateInfo buffer_info = {};
 	buffer_info.domain = BufferDomain::Host;
-	buffer_info.size = layout.get_required_size();
+	buffer_info.size = size;
 	buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	result.buffer = create_buffer(buffer_info, nullptr);
+	if (!result.buffer)
+		return result;
 	set_name(*result.buffer, "image-upload-staging-buffer");
 
-	// And now, do the actual copy.
 	auto *mapped = static_cast<uint8_t *>(map_host_buffer(*result.buffer, MEMORY_ACCESS_WRITE_BIT));
-	unsigned index = 0;
-
-	layout.set_buffer(mapped, layout.get_required_size());
-
-	for (unsigned level = 0; level < copy_levels; level++)
+	VkDeviceSize offset = 0;
+	for (unsigned level = 0; level < info.levels; level++)
 	{
-		const auto &mip_info = layout.get_mip_info(level);
-		uint32_t dst_height_stride = layout.get_layer_size(level);
-		size_t row_size = layout.get_row_size(level);
-
-		for (unsigned layer = 0; layer < info.layers; layer++, index++)
-		{
-			uint32_t src_row_length =
-					initial[index].row_length ? initial[index].row_length : mip_info.row_length;
-			uint32_t src_array_height =
-					initial[index].image_height ? initial[index].image_height : mip_info.image_height;
-
-			uint32_t src_row_stride = layout.row_byte_stride(src_row_length);
-			uint32_t src_height_stride = layout.layer_byte_stride(src_array_height, src_row_stride);
-
-			auto *dst = static_cast<uint8_t *>(layout.data(layer, level));
-			const auto *src = static_cast<const uint8_t *>(initial[index].data);
-
-			for (uint32_t z = 0; z < mip_info.depth; z++)
-				for (uint32_t y = 0; y < mip_info.block_image_height; y++)
-					memcpy(dst + z * dst_height_stride + y * row_size, src + z * src_height_stride + y * src_row_stride, row_size);
-		}
+		const uint32_t width = std::max(info.width >> level, 1u);
+		const uint32_t height = std::max(info.height >> level, 1u);
+		VkBufferImageCopy blit = {};
+		memcpy(mapped + offset, initial[level].data, size_t(texel) * width * height);
+		blit.bufferOffset = offset;
+		blit.imageSubresource.aspectMask = format_to_aspect_mask(info.format);
+		blit.imageSubresource.mipLevel = level;
+		blit.imageSubresource.layerCount = 1;
+		blit.imageExtent = { width, height, 1 };
+		result.blits.push_back(blit);
+		offset += VkDeviceSize(texel) * width * height;
 	}
-
 	unmap_host_buffer(*result.buffer, MEMORY_ACCESS_WRITE_BIT);
-	layout.build_buffer_image_copies(result.blits);
 	return result;
 }
 
@@ -2569,22 +2524,8 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	if (staging_buffer)
 	{
 		auto *buffer = staging_buffer->buffer.get();
-		BufferHandle scratch_buffer;
 		if (!buffer)
-		{
-			if (staging_buffer->host.size == 0)
-			{
-				LOGE("Must specifiy either host scratch or buffer.\n");
-				return ImageHandle(nullptr);
-			}
-
-			BufferCreateInfo scratch_info = {};
-			scratch_info.domain = BufferDomain::Host;
-			scratch_info.size = staging_buffer->host.size;
-			scratch_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-			scratch_buffer = create_buffer(scratch_info, staging_buffer->host.data);
-			buffer = scratch_buffer.get();
-		}
+			return ImageHandle(nullptr);
 
 		VK_ASSERT(create_info.initial_layout != VK_IMAGE_LAYOUT_UNDEFINED);
 

@@ -27,6 +27,7 @@
 #include "vulkan_headers.hpp"
 #include "image.hpp"
 #include "render_pass.hpp"
+#include "small_vector.hpp"
 #include "sampler.hpp"
 #include "shader.hpp"
 #include "vulkan_common.hpp"

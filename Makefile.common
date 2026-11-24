@@ -608,8 +608,7 @@ SOURCES_CXX += \
 	$(GRANITE_DIR)/vulkan/sampler.cpp \
 	$(GRANITE_DIR)/vulkan/semaphore.cpp \
 	$(GRANITE_DIR)/vulkan/semaphore_manager.cpp \
-	$(GRANITE_DIR)/vulkan/shader.cpp \
-	$(GRANITE_DIR)/vulkan/texture/texture_format.cpp
+	$(GRANITE_DIR)/vulkan/shader.cpp
 endif
 
 # ============================================================================
