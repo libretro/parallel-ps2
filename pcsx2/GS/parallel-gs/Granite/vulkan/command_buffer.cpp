@@ -197,7 +197,7 @@ void CommandBuffer::image_barrier(const Image &image,
 	b.oldLayout = old_layout;
 	b.newLayout = new_layout;
 	b.image = image.get_image();
-	b.subresourceRange.aspectMask = format_to_aspect_mask(image.get_create_info().format);
+	b.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	b.subresourceRange.levelCount = image.get_create_info().levels;
 	b.subresourceRange.layerCount = image.get_create_info().layers;
 	b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;

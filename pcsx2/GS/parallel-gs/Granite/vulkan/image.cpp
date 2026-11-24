@@ -34,19 +34,6 @@ ImageView::ImageView(Device *device_, const CachedImageView &view_, const ImageV
 {
 }
 
-const CachedImageView &ImageView::get_render_target_view(unsigned layer) const
-{
-	VK_ASSERT(layer < get_create_info().layers);
-
-	if (render_target_views.empty())
-		return view;
-	else
-	{
-		VK_ASSERT(layer < render_target_views.size());
-		return render_target_views[layer];
-	}
-}
-
 const CachedImageView &ImageView::get_mip_view(unsigned level) const
 {
 	VK_ASSERT(level < get_create_info().levels);
@@ -71,22 +58,18 @@ void ImageView::free_cached_view(CachedImageView &cached)
 ImageView::~ImageView()
 {
 	free_cached_view(view);
-	free_cached_view(unorm_view);
-	free_cached_view(srgb_view);
-	for (auto &v : render_target_views)
-		free_cached_view(v);
 	for (auto &v : mip_views)
 		free_cached_view(v);
 }
 
 unsigned ImageView::get_view_width() const
 {
-	return info.image->get_width(info.base_level);
+	return info.image->get_width();
 }
 
 unsigned ImageView::get_view_height() const
 {
-	return info.image->get_height(info.base_level);
+	return info.image->get_height();
 }
 
 Image::Image(Device *device_, VkImage image_, const CachedImageView &default_view, const DeviceAllocation &alloc_,
@@ -103,9 +86,7 @@ Image::Image(Device *device_, VkImage image_, const CachedImageView &default_vie
 		info.image = this;
 		info.view_type = view_type;
 		info.format = create_info.format;
-		info.base_level = 0;
 		info.levels = create_info.levels;
-		info.base_layer = 0;
 		info.layers = create_info.layers;
 		view = ImageViewHandle(device->handle_pool.image_views.allocate(device, default_view, info));
 	}
@@ -113,15 +94,12 @@ Image::Image(Device *device_, VkImage image_, const CachedImageView &default_vie
 
 Image::~Image()
 {
-	if (owns_image)
-	{
-		if (internal_sync)
-			device->destroy_image_nolock(image);
-		else
-			device->destroy_image(image);
-	}
+	if (internal_sync)
+		device->destroy_image_nolock(image);
+	else
+		device->destroy_image(image);
 
-	if (alloc.get_memory() && owns_memory_allocation)
+	if (alloc.get_memory())
 	{
 		if (internal_sync)
 			device->free_memory_nolock(alloc);

@@ -37,8 +37,6 @@ enum class BufferDomain
 	LinkedDeviceHostPreferDevice, // Prefer device local of host visible.
 	Host, // Host-only, needs to be synced to GPU. Might be device local as well on iGPUs.
 	CachedHost,
-	CachedCoherentHostPreferCoherent, // Aim for both cached and coherent, but prefer COHERENT
-	CachedCoherentHostPreferCached, // Aim for both cached and coherent, but prefer CACHED
 	UMACachedCoherentPreferDevice, // Aim for DEVICE | CACHED | COHERENT, but fallback to plain DEVICE if not supported.
 };
 
@@ -55,8 +53,6 @@ struct BufferCreateInfo
 	VkDeviceSize size = 0;
 	VkBufferUsageFlags usage = 0;
 	BufferMiscFlags misc = 0;
-	VkMemoryRequirements allocation_requirements = {};
-	void *pnext = nullptr;
 };
 
 class Buffer;

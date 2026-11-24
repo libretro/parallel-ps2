@@ -560,10 +560,6 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 		return false;
 	}
 
-	// XXX: This assumes timestamp valid bits is the same for all queue types.
-	queue_info.timestamp_valid_bits =
-			queue_props[queue_info.family_indices[QUEUE_INDEX_GRAPHICS]].queueFamilyProperties.timestampValidBits;
-
 	// Prefer standalone compute queue. If not, fall back to another graphics queue.
 	if (!find_vacant_queue(queue_info.family_indices[QUEUE_INDEX_COMPUTE], queue_indices[QUEUE_INDEX_COMPUTE],
 	                       VK_QUEUE_COMPUTE_BIT, VK_QUEUE_GRAPHICS_BIT, 0.5f) &&
@@ -615,15 +611,7 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface)
 			return false;
 		}
 		enabled_extensions.push_back(VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME);
-
-		if (has_extension(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME))
-		{
-			ext.supports_image_format_list = true;
-			enabled_extensions.push_back(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME);
-		}
 	}
-	else
-		ext.supports_image_format_list = true;
 
 	// Physical device functionality.
 	ext.supports_format_feature_flags2 = ext.device_api_core_version >= VK_API_VERSION_1_3 ||

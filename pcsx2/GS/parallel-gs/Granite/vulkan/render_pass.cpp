@@ -115,7 +115,7 @@ unsigned Framebuffer::setup_raw_views(VkImageView *views, const RenderPassInfo &
 	for (unsigned i = 0; i < info.num_color_attachments; i++)
 	{
 		VK_ASSERT(info.color_attachments[i]);
-		views[i] = info.color_attachments[i]->get_render_target_view(0).view;
+		views[i] = info.color_attachments[i]->get_view().view;
 	}
 	return info.num_color_attachments;
 }

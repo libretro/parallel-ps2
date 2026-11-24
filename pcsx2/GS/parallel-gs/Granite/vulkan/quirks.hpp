@@ -27,6 +27,5 @@ namespace Vulkan
 struct ImplementationWorkarounds
 {
 	bool broken_pipeline_cache_control = false;
-	bool force_host_cached = false;
 };
 }

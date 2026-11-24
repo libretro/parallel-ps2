@@ -879,7 +879,7 @@ void GSRendererPGS::VSync(u32 field, bool registers_written)
 
 			retro_vulkan_image &vkimage = vsync_descs[sync_index];
 			vkimage = {};
-			vkimage.image_view = vsync.image->get_view().get_unorm_view().view;
+			vkimage.image_view = vsync.image->get_view().get_view().view;
 			vkimage.image_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			vkimage.create_info = {
 				VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, nullptr, 0,

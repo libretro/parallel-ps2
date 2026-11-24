@@ -1712,7 +1712,16 @@ static int vn_state_file(const char* path, int save, retro_serialize_size_t* siz
 	return ok;
 }
 
-#define VN_FAIL(...) do { fprintf(stderr, "vknegotiate: " __VA_ARGS__); fputc('\n', stderr); return 1; } while (0)
+/* A failure ends the process without exit()'s teardown: the core is still
+ * loaded, and its threads must not run on while the loader and layers
+ * unload under them. */
+static int vn_fail_now(void)
+{
+	fflush(NULL);
+	_exit(1);
+	return 1;
+}
+#define VN_FAIL(...) do { fprintf(stderr, "vknegotiate: " __VA_ARGS__); fputc('\n', stderr); return vn_fail_now(); } while (0)
 
 /* VN_LATENCY: tests/latency's case on this frontend (LRPS2_BIOS is the
  * image tests/latency writes with --bios). Before a retro_run the host

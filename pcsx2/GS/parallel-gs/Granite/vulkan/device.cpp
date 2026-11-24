@@ -722,23 +722,6 @@ void Device::init_workarounds()
 			LOGI("    Name: %s\n", t.name);
 			LOGI("    Description: %s\n", t.description);
 			LOGI("    Version: %s\n", t.version);
-			if ((t.purposes & VK_TOOL_PURPOSE_TRACING_BIT_EXT) != 0 &&
-			    (t.purposes & VK_TOOL_PURPOSE_PROFILING_BIT) == 0)
-			{
-				// Workaround a now-fixed RenderDoc where using ReBAR memory
-				// causes horrible performance.
-				if (strcmp(t.name, "RenderDoc") == 0)
-				{
-					unsigned major = 0, minor = 0;
-					int tokens = sscanf(t.version, "v%d.%d", &major, &minor);
-					if (tokens == 2 && major * 1000 + minor < 1042)
-					{
-						LOGI("Detected non-profiling tracing tool, forcing host cached memory types for performance.\n");
-						workarounds.force_host_cached = true;
-					}
-				}
-			}
-
 			if (!debug_marker_sensitive && (t.purposes & VK_TOOL_PURPOSE_DEBUG_MARKERS_BIT_EXT) != 0)
 			{
 				LOGI("Detected tool which cares about debug markers.\n");
@@ -1918,26 +1901,6 @@ uint32_t Device::find_memory_type(BufferDomain domain, uint32_t mask) const
 {
 	uint32_t prio[3] = {};
 
-	// Optimize for tracing apps by not allocating host memory that is uncached.
-	if (workarounds.force_host_cached)
-	{
-		switch (domain)
-		{
-		case BufferDomain::LinkedDeviceHostPreferDevice:
-			domain = BufferDomain::Device;
-			break;
-
-		case BufferDomain::LinkedDeviceHost:
-		case BufferDomain::Host:
-		case BufferDomain::CachedCoherentHostPreferCoherent:
-			domain = BufferDomain::CachedCoherentHostPreferCached;
-			break;
-
-		default:
-			break;
-		}
-	}
-
 	switch (domain)
 	{
 	case BufferDomain::Device:
@@ -1966,18 +1929,6 @@ uint32_t Device::find_memory_type(BufferDomain domain, uint32_t mask) const
 		prio[0] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
 		prio[1] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 		prio[2] = prio[1];
-		break;
-
-	case BufferDomain::CachedCoherentHostPreferCached:
-		prio[0] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		prio[1] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-		prio[2] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-		break;
-
-	case BufferDomain::CachedCoherentHostPreferCoherent:
-		prio[0] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		prio[1] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		prio[2] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 		break;
 
 	case BufferDomain::UMACachedCoherentPreferDevice:
@@ -2009,62 +1960,13 @@ uint32_t Device::find_memory_type(BufferDomain domain, uint32_t mask) const
 	return UINT32_MAX;
 }
 
-static inline VkImageViewType get_image_view_type(const ImageCreateInfo &create_info, const ImageViewCreateInfo *view)
+/* Images are 2D, so the view is 2D or a 2D array. */
+static inline VkImageViewType get_image_view_type(const ImageCreateInfo &create_info)
 {
-	unsigned layers = view ? view->layers : create_info.layers;
-	unsigned base_layer = view ? view->base_layer : 0;
-
-	if (layers == VK_REMAINING_ARRAY_LAYERS)
-		layers = create_info.layers - base_layer;
-
-	bool force_array =
-	    view ? (view->misc & IMAGE_VIEW_MISC_FORCE_ARRAY_BIT) : (create_info.misc & IMAGE_MISC_FORCE_ARRAY_BIT);
-
-	switch (create_info.type)
-	{
-	case VK_IMAGE_TYPE_1D:
-		VK_ASSERT(create_info.width >= 1);
-		VK_ASSERT(create_info.height == 1);
-		VK_ASSERT(create_info.depth == 1);
-		VK_ASSERT(create_info.samples == VK_SAMPLE_COUNT_1_BIT);
-
-		if (layers > 1 || force_array)
-			return VK_IMAGE_VIEW_TYPE_1D_ARRAY;
-		else
-			return VK_IMAGE_VIEW_TYPE_1D;
-
-	case VK_IMAGE_TYPE_2D:
-		VK_ASSERT(create_info.width >= 1);
-		VK_ASSERT(create_info.height >= 1);
-		VK_ASSERT(create_info.depth == 1);
-
-		if ((create_info.flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) && (layers % 6) == 0)
-		{
-			VK_ASSERT(create_info.width == create_info.height);
-
-			if (layers > 6 || force_array)
-				return VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
-			else
-				return VK_IMAGE_VIEW_TYPE_CUBE;
-		}
-		else
-		{
-			if (layers > 1 || force_array)
-				return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-			else
-				return VK_IMAGE_VIEW_TYPE_2D;
-		}
-
-	case VK_IMAGE_TYPE_3D:
-		VK_ASSERT(create_info.width >= 1);
-		VK_ASSERT(create_info.height >= 1);
-		VK_ASSERT(create_info.depth >= 1);
-		return VK_IMAGE_VIEW_TYPE_3D;
-
-	default:
-		VK_ASSERT(0 && "bogus");
-		return VK_IMAGE_VIEW_TYPE_MAX_ENUM;
-	}
+	VK_ASSERT(create_info.type == VK_IMAGE_TYPE_2D && create_info.depth == 1);
+	if (create_info.layers > 1 || (create_info.misc & IMAGE_MISC_FORCE_ARRAY_BIT))
+		return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+	return VK_IMAGE_VIEW_TYPE_2D;
 }
 
 BufferViewHandle Device::create_buffer_view(const BufferViewCreateInfo &view_info)
@@ -2094,15 +1996,10 @@ public:
 	const VulkanDeviceTable &table;
 
 	VkImage image = VK_NULL_HANDLE;
-	VkDeviceMemory memory = VK_NULL_HANDLE;
 	CachedImageView image_view = {};
-	CachedImageView unorm_view = {};
-	CachedImageView srgb_view = {};
 	VkImageViewType default_view_type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
-	std::vector<CachedImageView> rt_views;
 	std::vector<CachedImageView> mip_views;
 	DeviceAllocation allocation;
-	DeviceAllocator *allocator = nullptr;
 	bool owned = true;
 
 	VkImageViewType get_default_view_type() const
@@ -2130,104 +2027,27 @@ public:
 		return true;
 	}
 
-	bool create_default_views(const ImageCreateInfo &create_info, const VkImageViewCreateInfo *view_info,
-	                          bool create_unorm_srgb_views = false, bool create_mip_level_views = false,
-	                          const VkFormat *view_formats = nullptr)
+	bool create_default_views(const ImageCreateInfo &create_info, bool create_mip_level_views)
 	{
-		if ((create_info.usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-		                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) == 0)
-		{
-			LOGE("Cannot create image view unless certain usage flags are present.\n");
-			return false;
-		}
-
-		VkImageViewCreateInfo default_view_info = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+		VkImageViewCreateInfo view_info = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
 		VkImageUsageFlags view_usage = 0;
 
-		if (!view_info)
-		{
-			default_view_info.image = image;
-			default_view_info.format = create_info.format;
-			default_view_info.components = create_info.swizzle;
-			default_view_info.subresourceRange.aspectMask = format_to_aspect_mask(default_view_info.format);
-			default_view_info.viewType = get_image_view_type(create_info, nullptr);
-			default_view_info.subresourceRange.baseMipLevel = 0;
-			default_view_info.subresourceRange.baseArrayLayer = 0;
-			default_view_info.subresourceRange.levelCount = create_info.levels;
-			default_view_info.subresourceRange.layerCount = create_info.layers;
+		view_info.image = image;
+		view_info.format = create_info.format;
+		view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		view_info.viewType = get_image_view_type(create_info);
+		view_info.subresourceRange.levelCount = create_info.levels;
+		view_info.subresourceRange.layerCount = create_info.layers;
+		default_view_type = view_info.viewType;
 
-			default_view_type = default_view_info.viewType;
-		}
-		else
-			default_view_info = *view_info;
-
-		view_info = &default_view_info;
-
-		if (!setup_view_usage_info(default_view_info, create_info.usage, view_usage))
+		if (!setup_view_usage_info(view_info, create_info.usage, view_usage))
 			return false;
 
-		if (!create_render_target_views(*view_info, view_usage))
+		if (!create_default_view(view_info, view_usage))
 			return false;
 
-		if (!create_default_view(*view_info, view_usage))
+		if (create_mip_level_views && !create_mip_views(view_info, view_usage))
 			return false;
-
-		if (create_unorm_srgb_views)
-		{
-			auto info = *view_info;
-			auto srgb_unorm_usage = view_usage;
-
-			if (create_info.usage & VK_IMAGE_USAGE_STORAGE_BIT)
-				srgb_unorm_usage |= VK_IMAGE_USAGE_STORAGE_BIT;
-			info.format = view_formats[0];
-			if (!device->managers.views.create_image_view(info, srgb_unorm_usage, unorm_view))
-				return false;
-
-			srgb_unorm_usage &= ~VK_IMAGE_USAGE_STORAGE_BIT;
-			info.format = view_formats[1];
-			if (!device->managers.views.create_image_view(info, srgb_unorm_usage, srgb_view))
-				return false;
-		}
-
-		if (create_mip_level_views && !create_mip_views(*view_info, view_usage))
-			return false;
-
-		return true;
-	}
-
-private:
-	bool create_render_target_views(const VkImageViewCreateInfo &info, VkImageUsageFlags view_usage)
-	{
-		if (info.viewType == VK_IMAGE_VIEW_TYPE_3D)
-			return true;
-
-		constexpr VkImageUsageFlags render_target_usage =
-				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-				VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-
-		// If we have a render target, and non-trivial case (layers = 1, levels = 1),
-		// create an array of render targets which correspond to each layer (mip 0).
-		if ((view_usage & render_target_usage) != 0 &&
-		    ((info.subresourceRange.levelCount > 1) || (info.subresourceRange.layerCount > 1)))
-		{
-			rt_views.reserve(info.subresourceRange.layerCount);
-			view_usage &= render_target_usage;
-
-			auto view_info = info;
-			view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			view_info.subresourceRange.baseMipLevel = info.subresourceRange.baseMipLevel;
-			for (uint32_t layer = 0; layer < info.subresourceRange.layerCount; layer++)
-			{
-				view_info.subresourceRange.levelCount = 1;
-				view_info.subresourceRange.layerCount = 1;
-				view_info.subresourceRange.baseArrayLayer = layer + info.subresourceRange.baseArrayLayer;
-
-				CachedImageView rt_view = {};
-				if (!device->managers.views.create_image_view(view_info, view_usage, rt_view))
-					return false;
-				rt_views.push_back(rt_view);
-			}
-		}
 
 		return true;
 	}
@@ -2266,10 +2086,6 @@ private:
 	{
 		auto &m = device->managers.views;
 		m.free_image_view(image_view);
-		m.free_image_view(unorm_view);
-		m.free_image_view(srgb_view);
-		for (auto &view : rt_views)
-			m.free_image_view(view);
 		for (auto &view : mip_views)
 			m.free_image_view(view);
 
@@ -2277,10 +2093,6 @@ private:
 
 		if (image)
 			table.vkDestroyImage(vkdevice, image, nullptr);
-		if (memory)
-			table.vkFreeMemory(vkdevice, memory, nullptr);
-		if (allocator)
-			allocation.free_immediate(*allocator);
 	}
 };
 
@@ -2319,7 +2131,7 @@ InitialImageBuffer Device::create_image_staging_buffer(const ImageCreateInfo &in
 		VkBufferImageCopy blit = {};
 		memcpy(mapped + offset, initial[level].data, size_t(texel) * width * height);
 		blit.bufferOffset = offset;
-		blit.imageSubresource.aspectMask = format_to_aspect_mask(info.format);
+		blit.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		blit.imageSubresource.mipLevel = level;
 		blit.imageSubresource.layerCount = 1;
 		blit.imageExtent = { width, height, 1 };
@@ -2409,7 +2221,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	info.mipLevels = create_info.levels;
 	info.arrayLayers = create_info.layers;
 	info.samples = create_info.samples;
-	info.pNext = create_info.pnext;
 	info.tiling = VK_IMAGE_TILING_OPTIMAL;
 	info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	info.usage = create_info.usage;
@@ -2418,32 +2229,6 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 
 	if (info.mipLevels == 0)
 		info.mipLevels = image_num_miplevels(info.extent);
-
-	VkImageFormatListCreateInfo format_info = { VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO };
-	VkFormat view_formats[2];
-	format_info.pViewFormats = view_formats;
-	format_info.viewFormatCount = 2;
-	bool create_unorm_srgb_views = false;
-
-	if (create_info.misc & IMAGE_MISC_MUTABLE_SRGB_BIT)
-	{
-		format_info.viewFormatCount = ImageCreateInfo::compute_view_formats(create_info, view_formats);
-		if (format_info.viewFormatCount != 0)
-		{
-			create_unorm_srgb_views = true;
-
-			const auto *input_format_list = static_cast<const VkBaseInStructure *>(info.pNext);
-			while (input_format_list && input_format_list->sType != VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO)
-				input_format_list = static_cast<const VkBaseInStructure *>(input_format_list->pNext);
-
-			if (ext.supports_image_format_list && !input_format_list)
-			{
-				format_info.pNext = info.pNext;
-				info.pNext = &format_info;
-			}
-		}
-		info.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
-	}
 
 	/* An upload goes through the transfer queue, so the image is shared
 	 * by every queue that may use it. */
@@ -2494,8 +2279,7 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 	VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
 	if (has_view)
 	{
-		if (!holder.create_default_views(tmpinfo, nullptr,
-		                                 create_unorm_srgb_views, create_mip_views, view_formats))
+		if (!holder.create_default_views(tmpinfo, create_mip_views))
 		{
 			LOCK_MEMORY();
 			holder.allocation.free_immediate(managers.memory);
@@ -2511,10 +2295,7 @@ ImageHandle Device::create_image_from_staging_buffer(const ImageCreateInfo &crea
 		holder.owned = false;
 		if (has_view)
 		{
-			handle->get_view().set_render_target_views(holder.rt_views);
 			handle->get_view().set_mip_views(holder.mip_views);
-			handle->get_view().set_unorm_view(holder.unorm_view);
-			handle->get_view().set_srgb_view(holder.srgb_view);
 		}
 	}
 
@@ -2671,7 +2452,6 @@ BufferHandle Device::create_buffer(const BufferCreateInfo &create_info, const vo
 	if (get_device_features().vk12_features.bufferDeviceAddress)
 		info.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	info.pNext = create_info.pnext;
 
 	uint32_t sharing_indices[QUEUE_INDEX_COUNT];
 	fill_buffer_sharing_indices(info, sharing_indices);
@@ -2687,16 +2467,6 @@ BufferHandle Device::create_buffer(const BufferCreateInfo &create_info, const vo
 	reqs.memoryRequirements.alignment = std::max<uint32_t>(reqs.memoryRequirements.alignment, gpu_props.limits.nonCoherentAtomSize);
 	// For BDA purposes
 	reqs.memoryRequirements.alignment = std::max<uint32_t>(reqs.memoryRequirements.alignment, 16u);
-
-	if (create_info.allocation_requirements.size)
-	{
-		reqs.memoryRequirements.memoryTypeBits &=
-				create_info.allocation_requirements.memoryTypeBits;
-		reqs.memoryRequirements.size =
-				std::max<VkDeviceSize>(reqs.memoryRequirements.size, create_info.allocation_requirements.size);
-		reqs.memoryRequirements.alignment =
-				std::max<VkDeviceSize>(reqs.memoryRequirements.alignment, create_info.allocation_requirements.alignment);
-	}
 
 	uint32_t memory_type = find_memory_type(create_info.domain, reqs.memoryRequirements.memoryTypeBits);
 	if (memory_type == UINT32_MAX)

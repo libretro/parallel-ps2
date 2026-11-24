@@ -26,67 +26,7 @@
 
 namespace Vulkan
 {
-static inline bool format_has_depth_aspect(VkFormat format)
-{
-	switch (format)
-	{
-	case VK_FORMAT_D16_UNORM:
-	case VK_FORMAT_D16_UNORM_S8_UINT:
-	case VK_FORMAT_D24_UNORM_S8_UINT:
-	case VK_FORMAT_D32_SFLOAT:
-	case VK_FORMAT_X8_D24_UNORM_PACK32:
-	case VK_FORMAT_D32_SFLOAT_S8_UINT:
-		return true;
-
-	default:
-		return false;
-	}
-}
-
-static inline bool format_has_stencil_aspect(VkFormat format)
-{
-	switch (format)
-	{
-	case VK_FORMAT_D16_UNORM_S8_UINT:
-	case VK_FORMAT_D24_UNORM_S8_UINT:
-	case VK_FORMAT_D32_SFLOAT_S8_UINT:
-	case VK_FORMAT_S8_UINT:
-		return true;
-
-	default:
-		return false;
-	}
-}
-
-static inline bool format_has_depth_or_stencil_aspect(VkFormat format)
-{
-	return format_has_depth_aspect(format) || format_has_stencil_aspect(format);
-}
-
-static inline VkImageAspectFlags format_to_aspect_mask(VkFormat format)
-{
-	switch (format)
-	{
-	case VK_FORMAT_UNDEFINED:
-		return 0;
-
-	case VK_FORMAT_S8_UINT:
-		return VK_IMAGE_ASPECT_STENCIL_BIT;
-
-	case VK_FORMAT_D16_UNORM_S8_UINT:
-	case VK_FORMAT_D24_UNORM_S8_UINT:
-	case VK_FORMAT_D32_SFLOAT_S8_UINT:
-		return VK_IMAGE_ASPECT_STENCIL_BIT | VK_IMAGE_ASPECT_DEPTH_BIT;
-
-	case VK_FORMAT_D16_UNORM:
-	case VK_FORMAT_D32_SFLOAT:
-	case VK_FORMAT_X8_D24_UNORM_PACK32:
-		return VK_IMAGE_ASPECT_DEPTH_BIT;
-
-	default:
-		return VK_IMAGE_ASPECT_COLOR_BIT;
-	}
-}
+/* Every image is colour: no depth or stencil format is made. */
 
 /* Bytes a texel of an uncompressed colour format takes; 0 for any other. */
 static inline uint32_t format_texel_size(VkFormat format)

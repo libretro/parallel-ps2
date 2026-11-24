@@ -64,16 +64,9 @@ struct ImageInitialData
 enum ImageMiscFlagBits
 {
 	IMAGE_MISC_FORCE_ARRAY_BIT = 1 << 1,
-	IMAGE_MISC_MUTABLE_SRGB_BIT = 1 << 2,
 	IMAGE_MISC_CREATE_PER_MIP_LEVEL_VIEWS_BIT = 1 << 14
 };
 using ImageMiscFlags = uint32_t;
-
-enum ImageViewMiscFlagBits
-{
-	IMAGE_VIEW_MISC_FORCE_ARRAY_BIT = 1 << 0
-};
-using ImageViewMiscFlags = uint32_t;
 
 class Image;
 
@@ -81,16 +74,9 @@ struct ImageViewCreateInfo
 {
 	const Image *image = nullptr;
 	VkFormat format = VK_FORMAT_UNDEFINED;
-	unsigned base_level = 0;
-	unsigned levels = VK_REMAINING_MIP_LEVELS;
-	unsigned base_layer = 0;
-	unsigned layers = VK_REMAINING_ARRAY_LAYERS;
+	unsigned levels = 1;
+	unsigned layers = 1;
 	VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
-	ImageViewMiscFlags misc = 0;
-	VkComponentMapping swizzle = {
-		VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
-	};
-	VkImageAspectFlags aspect = 0;
 };
 
 class ImageView;
@@ -110,44 +96,19 @@ public:
 
 	~ImageView();
 
-	void set_render_target_views(std::vector<CachedImageView> views)
-	{
-		VK_ASSERT(render_target_views.empty());
-		render_target_views = std::move(views);
-	}
-
 	void set_mip_views(std::vector<CachedImageView> views)
 	{
 		VK_ASSERT(mip_views.empty());
 		mip_views = std::move(views);
 	}
 
-	void set_unorm_view(const CachedImageView &view_)
-	{
-		VK_ASSERT(unorm_view.view == VK_NULL_HANDLE);
-		unorm_view = view_;
-	}
-
-	void set_srgb_view(const CachedImageView &view_)
-	{
-		VK_ASSERT(srgb_view.view == VK_NULL_HANDLE);
-		srgb_view = view_;
-	}
-
-	// By default, gets a combined view which includes all aspects in the image.
-	// This would be used mostly for render targets.
+	/* Every level and layer: what attachments and plain sampling use. */
 	const CachedImageView &get_view() const
 	{
 		return view;
 	}
 
-	const CachedImageView &get_render_target_view(unsigned layer) const;
 	const CachedImageView &get_mip_view(unsigned level) const;
-
-	const CachedImageView &get_unorm_view() const
-	{
-		return unorm_view.view != VK_NULL_HANDLE ? unorm_view : view;
-	}
 
 	VkFormat get_format() const
 	{
@@ -170,10 +131,7 @@ public:
 private:
 	Device *device;
 	CachedImageView view = {};
-	std::vector<CachedImageView> render_target_views;
 	std::vector<CachedImageView> mip_views;
-	CachedImageView unorm_view = {};
-	CachedImageView srgb_view = {};
 	ImageViewCreateInfo info;
 
 	void free_cached_view(CachedImageView &cached);
@@ -195,10 +153,6 @@ struct ImageCreateInfo
 	VkImageCreateFlags flags = 0;
 	ImageMiscFlags misc = 0;
 	VkImageLayout initial_layout = VK_IMAGE_LAYOUT_GENERAL;
-	VkComponentMapping swizzle = {
-		VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
-	};
-	void *pnext = nullptr;
 
 	static ImageCreateInfo immutable_2d_image(unsigned width, unsigned height, VkFormat format)
 	{
@@ -227,8 +181,7 @@ struct ImageCreateInfo
 		info.format = format;
 		info.type = VK_IMAGE_TYPE_2D;
 		info.layers = 1;
-		info.usage = (format_has_depth_or_stencil_aspect(format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT :
-		              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) |
+		info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
 		             VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
 		info.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -236,36 +189,6 @@ struct ImageCreateInfo
 		info.misc = 0;
 		info.initial_layout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
 		return info;
-	}
-
-	static uint32_t compute_view_formats(const ImageCreateInfo &info, VkFormat *formats)
-	{
-		if ((info.misc & IMAGE_MISC_MUTABLE_SRGB_BIT) == 0)
-			return 0;
-
-		switch (info.format)
-		{
-		case VK_FORMAT_R8G8B8A8_UNORM:
-		case VK_FORMAT_R8G8B8A8_SRGB:
-			formats[0] = VK_FORMAT_R8G8B8A8_UNORM;
-			formats[1] = VK_FORMAT_R8G8B8A8_SRGB;
-			return 2;
-
-		case VK_FORMAT_B8G8R8A8_UNORM:
-		case VK_FORMAT_B8G8R8A8_SRGB:
-			formats[0] = VK_FORMAT_B8G8R8A8_UNORM;
-			formats[1] = VK_FORMAT_B8G8R8A8_SRGB;
-			return 2;
-
-		case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
-		case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
-			formats[0] = VK_FORMAT_A8B8G8R8_UNORM_PACK32;
-			formats[1] = VK_FORMAT_A8B8G8R8_SRGB_PACK32;
-			return 2;
-
-		default:
-			return 0;
-		}
 	}
 };
 
@@ -342,9 +265,6 @@ private:
 	ImageViewHandle view;
 	DeviceAllocation alloc;
 	ImageCreateInfo create_info;
-
-	bool owns_image = true;
-	bool owns_memory_allocation = true;
 };
 
 using ImageHandle = Util::IntrusivePtr<Image>;

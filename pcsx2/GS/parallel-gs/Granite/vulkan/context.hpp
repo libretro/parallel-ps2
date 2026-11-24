@@ -36,7 +36,6 @@ struct DeviceFeatures
 	bool supports_memory_budget = false;
 	bool supports_format_feature_flags2 = false;
 	bool supports_tooling_info = false;
-	bool supports_image_format_list = false;
 
 	VkPhysicalDeviceFeatures enabled_features = {};
 
@@ -91,7 +90,6 @@ struct QueueInfo
 	VkQueue queues[QUEUE_INDEX_COUNT] = {};
 	uint32_t family_indices[QUEUE_INDEX_COUNT];
 	uint32_t counts[QUEUE_INDEX_COUNT] = {};
-	uint32_t timestamp_valid_bits = 0;
 };
 
 struct InstanceFactory
