@@ -1229,6 +1229,23 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "disabled"
    },
    {
+      "pcsx2_analog_combo1",
+      "Input > Port 1 > Analog Button Combo",
+      "Port 1 > Analog Button Combo",
+      "Pressing these buttons together presses the controller's ANALOG button, switching between digital and analog. For games that turn analog off at boot (e.g. Ridge Racer V) and then wait for the ANALOG button. Games that lock the controller mode are unaffected.",
+      NULL,
+      "input",
+      {
+         { "disabled", NULL },
+         { "L1 + R1 + Select", NULL },
+         { "L1 + R1 + Start", NULL },
+         { "L1 + R1 + L3 + R3", NULL },
+         { "L3 + R3", NULL },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
       "pcsx2_analog_mode1",
       "Input > Port 1 > Start in Analog Mode",
       "Port 1 > Start in Analog Mode",
@@ -1322,6 +1339,23 @@ struct retro_core_option_v2_definition option_defs_us[] = {
          { "x_axis", "Left/Right" },
          { "y_axis", "Up/Down" },
          { "all", "Up/Down and Left/Right" },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
+      "pcsx2_analog_combo2",
+      "Input > Port 2 > Analog Button Combo",
+      "Port 2 > Analog Button Combo",
+      "Pressing these buttons together presses the controller's ANALOG button, switching between digital and analog. For games that turn analog off at boot (e.g. Ridge Racer V) and then wait for the ANALOG button. Games that lock the controller mode are unaffected.",
+      NULL,
+      "input",
+      {
+         { "disabled", NULL },
+         { "L1 + R1 + Select", NULL },
+         { "L1 + R1 + Start", NULL },
+         { "L1 + R1 + L3 + R3", NULL },
+         { "L3 + R3", NULL },
          { NULL, NULL },
       },
       "disabled"

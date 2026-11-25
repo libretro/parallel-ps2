@@ -172,10 +172,18 @@ struct pad_input
 	u8  analog[12];
 	u8  keys[RETROK_LAST / 8 + 1];
 	u8  mouse_buttons;
+	/* Counts the presses of the analog_combo; each one the EE has not
+	 * seen yet is a press of the ANALOG button. */
+	u8  analog_toggles;
 };
 /* Indexed by SIO pad (sioConvertPortAndSlotToPad); see pad_for_port. */
 static struct pad_input pad_staged[NUM_CONTROLLER_PORTS];
 static struct pad_input pad_live[NUM_CONTROLLER_PORTS];
+/* Whether each pad's analog_combo was held at the last update (the
+ * frontend's thread), and the last analog_toggles a read acted on (the EE
+ * thread). */
+static u8 analog_combo_held[NUM_CONTROLLER_PORTS];
+static u8 analog_toggles_seen[NUM_CONTROLLER_PORTS];
 
 /* The pcsx2_multitap option as it was when the content loaded: bit 0 a
  * multitap in console port 1, bit 1 one in console port 2. It changes
@@ -255,7 +263,7 @@ static int16_t pad_latched_input(unsigned port, unsigned device, unsigned index,
 
 static int pad_type[NUM_CONTROLLER_PORTS] = { -1, -1, -1, -1, -1, -1, -1, -1 };
 
-#define PAD_SETTINGS_DEFAULT { 133u * 65536u / 100u, Q8_ONE, 1, 1, 1, 1, 0, 0, false }
+#define PAD_SETTINGS_DEFAULT { 133u * 65536u / 100u, Q8_ONE, 1, 1, 1, 1, 0, 0, false, 0 }
 PadSettings pad_settings[2] = { PAD_SETTINGS_DEFAULT, PAD_SETTINGS_DEFAULT };
 
 static int keymap[] =
@@ -495,6 +503,15 @@ void pad_input_update(void)
 		sioConvertPadToPortAndSlot(pad, &con_port, &con_slot);
 		conf = &pad_settings[con_port];
 
+		/* The combo going down is one press of the ANALOG button. */
+		{
+			const u8 held = conf->analog_combo &&
+			                (mask & conf->analog_combo) == conf->analog_combo;
+			if (held && !analog_combo_held[pad])
+				pad_staged[pad].analog_toggles++;
+			analog_combo_held[pad] = held;
+		}
+
 		for (i = 0; i < 16; ++i)
 		{
 			/* Select, Start, L3 and R3 are not pressure sensitive */
@@ -731,6 +748,10 @@ s32 PADinit(void)
 	for (port = 0; port < 2; port++)
 		slots[port] = 0;
 
+	/* A combo pressed before the reset is not a press after it. */
+	for (port = 0; port < NUM_CONTROLLER_PORTS; port++)
+		analog_toggles_seen[port] = pad_live[port].analog_toggles;
+
 	return 0;
 }
 
@@ -875,6 +896,7 @@ u8 PADpoll(u8 value)
 				{
 					const u32 ext_port = sioConvertPortAndSlotToPad(query.port, query.slot);
 					const u32 buttons  = pad_live[ext_port].buttons;
+					bool analog_press;
 					query.response[2] = 0x5A;
 
 					/* Start in analog mode: on the first read after reset a
@@ -889,7 +911,14 @@ u8 PADpoll(u8 value)
 							pad->mode = MODE_ANALOG;
 					}
 
-					if (!TEST_BIT(buttons, PAD_ANALOG) && !pad->modeLock)
+					analog_press = !TEST_BIT(buttons, PAD_ANALOG);
+					if (pad_live[ext_port].analog_toggles != analog_toggles_seen[ext_port])
+					{
+						analog_toggles_seen[ext_port] = pad_live[ext_port].analog_toggles;
+						analog_press = true;
+					}
+
+					if (analog_press && !pad->modeLock)
 					{
 						switch (pad->mode)
 						{

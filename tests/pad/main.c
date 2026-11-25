@@ -1,5 +1,5 @@
-/* pcsx2/PAD/PAD.c, the real unit: its save state block, and what a
- * state's bus query is let do. A query is restored as it was saved, and
+/* pcsx2/PAD/PAD.c, the real unit: its save state block, what a state's
+ * bus query is let do, and the ANALOG button combo (issue #172). A query is restored as it was saved, and
  * PADpoll indexes the pads by its port and slot and writes a vibration
  * toggle's bytes up to its byte count -- so a state with a slot past the
  * fourth, or a toggle longer than its nine bytes, wrote past the pads.
@@ -29,6 +29,46 @@ u32 sioConvertPortAndSlotToPad(u32 port, u32 slot)
 	if (slot == 0)
 		return port;
 	return port == 0 ? slot + 1 : slot + 4;
+}
+
+/* The frontend's joypad: the buttons held, a RETRO_DEVICE_ID_JOYPAD bit
+ * each. */
+static int16_t s_mask;
+static void poll(void) { }
+static int16_t input(unsigned port, unsigned device, unsigned index, unsigned id)
+{
+	(void)index;
+	if (port != 0 || device != RETRO_DEVICE_JOYPAD)
+		return 0;
+	if (id == RETRO_DEVICE_ID_JOYPAD_MASK)
+		return s_mask;
+	return (int16_t)((s_mask >> id) & 1);
+}
+
+/* One frame of input, held as mask, then a read of pad 1 as a game makes
+ * it: its mode (0x41 digital, 0x73 analog). */
+static u8 frame_and_read(int16_t mask)
+{
+	u8 mode;
+	int i;
+	s_mask = mask;
+	pad_input_update();
+	pad_input_latch();
+	PADstartPoll(0, 0);
+	mode = PADpoll(0x42);
+	for (i = 0; i < 24; i++)
+		PADpoll(0);
+	return mode;
+}
+static u8 read_again(void)
+{
+	u8 mode;
+	int i;
+	PADstartPoll(0, 0);
+	mode = PADpoll(0x42);
+	for (i = 0; i < 24; i++)
+		PADpoll(0);
+	return mode;
 }
 
 static int failures;
@@ -95,6 +135,33 @@ int main(void)
 	 * offered (the sanitizer lanes see any write past the pads). */
 	for (i = 0; i < 64; i++)
 		PADpoll(0x4D);
+
+	/* The ANALOG button by L1 + R1 + Select, pad 1 starting digital. */
+	{
+		const int16_t l1r1 = (1 << RETRO_DEVICE_ID_JOYPAD_L) | (1 << RETRO_DEVICE_ID_JOYPAD_R);
+		const int16_t combo = l1r1 | (1 << RETRO_DEVICE_ID_JOYPAD_SELECT);
+		retro_set_input_poll(poll);
+		retro_set_input_state(input);
+		pad_settings[0].rumble_scale_q8 = 0;
+		pad_settings[0].force_analog    = false;
+		pad_settings[0].analog_combo    = 0;
+		PADinit();
+		check(frame_and_read(0) == 0x41, "the pad starts digital");
+		check(frame_and_read(combo) == 0x41, "with no combo set, L1 + R1 + Select is just buttons");
+		pad_settings[0].analog_combo = (u16)combo;
+		frame_and_read(0);
+		check(frame_and_read(l1r1) == 0x41, "part of the combo is not ANALOG");
+		check(frame_and_read(combo) == 0x73, "the whole combo switches it to analog");
+		check(read_again() == 0x73, "once: a second read that frame leaves it");
+		check(frame_and_read(combo) == 0x73, "held into the next frame, still one press");
+		check(frame_and_read(0) == 0x73 && frame_and_read(combo) == 0x41, "let go and pressed again, back to digital");
+		frame_and_read(0);
+		s_mask = combo;
+		pad_input_update();
+		pad_input_latch();
+		PADinit();
+		check(read_again() == 0x41, "a press not yet read when the pads reset is gone with the reset");
+	}
 
 	printf(failures ? "pad: FAILED\n" : "pad: ok\n");
 	return failures ? 1 : 0;

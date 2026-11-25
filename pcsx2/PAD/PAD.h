@@ -81,6 +81,10 @@ typedef struct PadSettings
 	 * boot it digital and turn analog on only at the ANALOG button, which
 	 * libretro has no spare input for. */
 	bool force_analog;
+	/* The RETRO_DEVICE_ID_JOYPAD buttons (a bit each) whose press together
+	 * is the ANALOG button, or 0 for none: a game that turns analog off
+	 * at boot (Ridge Racer V) can be switched back in play. */
+	u16 analog_combo;
 } PadSettings;
 
 extern PadSettings pad_settings[2];

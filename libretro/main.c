@@ -1650,6 +1650,24 @@ static void check_variables(bool first_run)
 		snprintf(input_settings, sizeof(input_settings), "pcsx2_analog_mode%d", i + 1);
 		if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
 			pad_settings[i].force_analog = !strcmp(var.value, "enabled");
+
+		/* The buttons that press ANALOG together. */
+		snprintf(input_settings, sizeof(input_settings), "pcsx2_analog_combo%d", i + 1);
+		if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+		{
+			const u16 l1r1 = (1u << RETRO_DEVICE_ID_JOYPAD_L) | (1u << RETRO_DEVICE_ID_JOYPAD_R);
+			const u16 l3r3 = (1u << RETRO_DEVICE_ID_JOYPAD_L3) | (1u << RETRO_DEVICE_ID_JOYPAD_R3);
+			if (!strcmp(var.value, "L1 + R1 + Select"))
+				pad_settings[i].analog_combo = l1r1 | (1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
+			else if (!strcmp(var.value, "L1 + R1 + Start"))
+				pad_settings[i].analog_combo = l1r1 | (1u << RETRO_DEVICE_ID_JOYPAD_START);
+			else if (!strcmp(var.value, "L1 + R1 + L3 + R3"))
+				pad_settings[i].analog_combo = l1r1 | l3r3;
+			else if (!strcmp(var.value, "L3 + R3"))
+				pad_settings[i].analog_combo = l3r3;
+			else
+				pad_settings[i].analog_combo = 0;
+		}
 	}
 
 	update_option_visibility();
