@@ -1,6 +1,5 @@
 SOURCES_CXX :=
 SOURCES_C   :=
-SOURCES_CC  :=
 SOURCES_ASM :=
 
 # ----------------------------------------------------------------------------
@@ -66,26 +65,6 @@ endif
 
 ifeq ($(FRONTEND_SUPPORTS_RGB565), 1)
 	FLAGS += -DFRONTEND_SUPPORTS_RGB565
-endif
-
-# ----------------------------------------------------------------------------
-# AArch64 (arm64) recompiler backend (PR #143)
-# ----------------------------------------------------------------------------
-# VIXL is the AArch64 code emitter (aarch64 target only). The arm64 recompiler
-# TUs include its headers, so its include dir and the two VIXL config defines
-# must be visible to the whole core, not just the VIXL objects -- cmake sets
-# them PUBLIC on the vixl target for exactly this reason.
-ifeq ($(IS_ARM64), 1)
-	INCFLAGS += -I$(DEPS_DIR)/vixl/src
-	FLAGS    += -D_ARCH_64=1 \
-	            -DVIXL_INCLUDE_TARGET_AARCH64
-	# The staging buffer grows via mremap() on Linux; Darwin has no mremap,
-	# so it uses VIXL's realloc backend there, same as upstream VIXL on Mac.
-	ifneq (,$(filter osx ios% tvos%,$(platform)))
-		FLAGS += -DVIXL_CODE_BUFFER_MALLOC
-	else
-		FLAGS += -DVIXL_CODE_BUFFER_MMAP
-	endif
 endif
 
 CFLAGS   += $(FLAGS)
@@ -297,7 +276,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/HostFS.c \
 
 # common/emitter is the x86-only JIT code emitter. On aarch64 the recompilers
-# that use it are gated out (VIXL is the arm64 emitter instead), so exclude it
+# that use it are gated out (arm64/a64emit.c is the arm64 emitter), so exclude it
 # stays on both (it has an __aarch64__ path).
 # The reference emitter implementation lives with the verification harness in
 # tests/emitter/reference: it is what the byte oracles compare the C89 core
@@ -424,7 +403,8 @@ ifeq ($(IS_ARM64), 1)
 # pcsx2/CMakeLists.txt already keeps it in the arm64 list for this reason.
 SOURCES_C += \
 	$(LRPS2_DIR)/x86/CpuState.c \
-	$(LRPS2_DIR)/x86/JitHash.c
+	$(LRPS2_DIR)/x86/JitHash.c \
+	$(LRPS2_DIR)/arm64/a64emit.c
 SOURCES_CXX += \
 	$(LRPS2_DIR)/arm64/recR3000A_arm64.cpp \
 	$(LRPS2_DIR)/arm64/recR5900_arm64.cpp \
@@ -658,19 +638,6 @@ SOURCES_C += \
 # four codecs are named here.
 FLAGS += -DHAVE_RCHD_DEFLATE -DHAVE_RCHD_LZMA \
          -DHAVE_RCHD_FLAC -DHAVE_RCHD_ZSTD
-
-# ----------------------------------------------------------------------------
-# VIXL - vendored aarch64-only subset (3rdparty/vixl); the AArch64 code emitter
-# backing the arm64 recompiler. Built only on aarch64. Sources are .cc, so they
-# live in SOURCES_CC; -w is applied to their objects in the top Makefile (third
-# party -- matches cmake's `-w` on the vixl target). Globbed to match cmake's
-# file(GLOB) so a VIXL bump doesn't need this list touched.
-# ----------------------------------------------------------------------------
-ifeq ($(IS_ARM64), 1)
-SOURCES_CC += \
-	$(wildcard $(DEPS_DIR)/vixl/src/*.cc) \
-	$(wildcard $(DEPS_DIR)/vixl/src/aarch64/*.cc)
-endif
 
 # glad (OpenGL)
 ifeq ($(HAVE_OPENGL), 1)

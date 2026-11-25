@@ -15,7 +15,7 @@
 // What changed vs the x86 original:
 //   * VF registers live in NEON v-regs (q view, 128-bit) instead of x86 xmm.
 //   * VI registers live in ARM64 w-regs instead of x86 GPRs.
-//   * The x86 emitter (absolute-address ptr[...] loads/stores) becomes VIXL
+//   * The x86 emitter (absolute-address ptr[...] loads/stores) becomes
 //     base+offset addressing against a designated VU-state pointer register
 //     (RVUSTATE = x19 = &vuRegs[index]).
 //   * The COP2 / macro-mode path (`regAllocCOP2`, `_allocVFtoXMMreg`,
@@ -37,7 +37,6 @@
 
 #include <array>
 
-namespace a64 = vixl::aarch64;
 
 //------------------------------------------------------------------
 // ARM64 microVU host register map (provisional — see header note)
@@ -45,7 +44,7 @@ namespace a64 = vixl::aarch64;
 // NEON (VF):
 //   v0 .. v(mVU_VF_TOTAL-1)  — the VF allocation pool (slot i == host v_i)
 //   v24                      — PQ latency reg (Q/P instances), reserved
-//   v29/v30/v31              — shared VIXL scratch (AsmHelpers RQSCRATCH*), reserved
+//   v29/v30/v31              — shared emitter scratch (AsmHelpers RQSCRATCH*), reserved
 //
 // GPR (VI + scratch):
 //   x19  RVUSTATE  — &vuRegs[index]; base for all VF/VI/ACC/I memory access
@@ -61,8 +60,8 @@ static constexpr int mVU_T1 = 9;
 static constexpr int mVU_T2 = 10;
 static constexpr int mVU_F0 = 23, mVU_F1 = 24, mVU_F2 = 25, mVU_F3 = 26;
 
-#define RVUSTATE a64::x19 // base ptr = &vuRegs[index]
-#define RVUADDR a64::x17  // transient address scratch
+#define RVUSTATE A64_X(19) // base ptr = &vuRegs[index]
+#define RVUADDR A64_X(17)  // transient address scratch
 // C.74: &mVU, pinned by the micro-mode dispatchers (AB and CD prologues) for the
 // life of the JIT session. C.78: valid in macro (COP2) mode too -- x27 is an EE
 // GPR cache slot there, but the cache is retired+reset before every macro op,
@@ -70,7 +69,7 @@ static constexpr int mVU_F0 = 23, mVU_F1 = 24, mVU_F2 = 25, mVU_F3 = 26;
 // setup..end bracket (hoisted to once per macro run) and the EE cache simply
 // refills the slot when it next allocates it. Outside the VI allocator's
 // tracked pool (w0..w26), callee-saved, so helper C calls preserve it.
-#define RVUMVU a64::x27   // base ptr = &mVU
+#define RVUMVU A64_X(27)   // base ptr = &mVU
 
 // C.74: pick the cheapest addressing for a VU-state global. Priority:
 //   1. &mVU.* field within the scaled-immediate window of the pinned x27
@@ -82,35 +81,33 @@ static constexpr int mVU_F0 = 23, mVU_F1 = 24, mVU_F2 = 25, mVU_F3 = 26;
 //      heap pointers).
 // The emit-time gate reads compile-time state (mVU.cop2), matching what the
 // registers will hold when the emitted code runs.
-static inline a64::MemOperand mvuAbsMem(microVU& mVU, const void* addr, unsigned size)
+static inline a64_mem mvuAbsMem(microVU& mVU, const void* addr, unsigned size)
 {
 	const uintptr_t moff = reinterpret_cast<uintptr_t>(addr) - reinterpret_cast<uintptr_t>(&mVU);
 	if (moff < sizeof(microVU) && (moff % size) == 0 && (moff / size) <= 0xFFFu)
-		return a64::MemOperand(RVUMVU, static_cast<int64_t>(moff));
+		return a64_mem_off(RVUMVU, static_cast<int64_t>(moff));
 	const uintptr_t roff = reinterpret_cast<uintptr_t>(addr) - reinterpret_cast<uintptr_t>(&mVU.regs());
 	if (roff < sizeof(VURegs) && (roff % size) == 0 && (roff / size) <= 0xFFFu)
-		return a64::MemOperand(RVUSTATE, static_cast<int64_t>(roff));
+		return a64_mem_off(RVUSTATE, static_cast<int64_t>(roff));
 	return armAbsMemOperand(RSCRATCHADDR, addr, size);
 }
 
 
 // Named host registers for the emit layer (x86: microVU_Misc.h #defines gprT1..
-// /gprF0..). VIXL predefined W-register objects matching the index constants
-// above; getFlagReg() (aVU_Alloc.inl) indexes gprF0..gprF3.
-#define gprT1 a64::w9  // emit scratch temp
-#define gprT2 a64::w10 // emit scratch temp
-#define gprF0 a64::w23 // Status flag instance 0
-#define gprF1 a64::w24 // Status flag instance 1
-#define gprF2 a64::w25 // Status flag instance 2
-#define gprF3 a64::w26 // Status flag instance 3
+// /gprF0..). W registers matching the index constants above; getFlagReg() (aVU_Alloc.inl) indexes gprF0..gprF3.
+#define gprT1 A64_W(9)  // emit scratch temp
+#define gprT2 A64_W(10) // emit scratch temp
+#define gprF0 A64_W(23) // Status flag instance 0
+#define gprF1 A64_W(24) // Status flag instance 1
+#define gprF2 A64_W(25) // Status flag instance 2
+#define gprF3 A64_W(26) // Status flag instance 3
 
 // PQ latency NEON register.
-static const a64::VRegister mVU_xmmPQ = a64::VRegister(24, 128);
+static const a64r mVU_xmmPQ = a64_vreg(24, 128, 1);
 
-// Sentinel "no register" for optional NEON params (x86: xEmptyReg). VIXL's
-// default-constructed VRegister reports IsNone(); ported callers test reg.IsNone()
-// where the x86 original tested reg.IsEmpty().
-static const a64::VRegister xEmptyReg;
+// Sentinel "no register" for optional NEON params (x86: xEmptyReg): the
+// zero a64r, which A64_ISREG rejects. Its code reads as 0.
+static const a64r xEmptyReg = {0};
 
 // Emit-layer NEON temp registers (x86: microVU_Misc.h xmmT1=xmm0/xmmT2=xmm1, the
 // regAlloc temps). On ARM64 the VF allocation pool is v0-v23, so these instead map
@@ -122,7 +119,7 @@ static const a64::VRegister xEmptyReg;
 // x86 xSHUF.PS(dst, src, imm) — arbitrary 4-lane (32-bit) permute: out lane i takes
 // src lane ((imm >> (2*i)) & 3). NEON has no immediate 4-lane shuffle, so copy src
 // into a scratch (q29) and Ins each selected lane. Safe when dst == src.
-static inline void mVUshufflePS(const a64::VRegister& dst, const a64::VRegister& src, u8 imm)
+static inline void mVUshufflePS(const a64r& dst, const a64r& src, u8 imm)
 {
 	// C.73: the naive form is copy + 4 Ins (5 instructions) for EVERY permute.
 	// Most microVU shuffles are broadcasts, 64-bit-half moves, rotations or
@@ -132,42 +129,42 @@ static inline void mVUshufflePS(const a64::VRegister& dst, const a64::VRegister&
 	const int l[4] = {imm & 3, (imm >> 2) & 3, (imm >> 4) & 3, (imm >> 6) & 3};
 	if (l[0] == l[1] && l[1] == l[2] && l[2] == l[3]) // broadcast
 	{
-		armAsm->Dup(dst.V4S(), src.V4S(), l[0]);
+		a64_dup_elem(armAsm, a64_as(dst, A64K_4S), a64_as(src, A64K_4S), l[0]);
 		return;
 	}
 	switch (imm)
 	{
 		case 0xE4: // identity
-			if (dst.GetCode() != src.GetCode())
-				armAsm->Mov(dst.V16B(), src.V16B());
+			if (A64_CODE(dst) != A64_CODE(src))
+				a64_mov(armAsm, a64_as(dst, A64K_16B), a64_as(src, A64K_16B));
 			return;
-		case 0x44: armAsm->Dup(dst.V2D(), src.V2D(), 0); return;   // [0,1,0,1]
-		case 0xEE: armAsm->Dup(dst.V2D(), src.V2D(), 1); return;   // [2,3,2,3]
-		case 0xB1: armAsm->Rev64(dst.V4S(), src.V4S()); return;    // [1,0,3,2]
-		case 0x4E: armAsm->Ext(dst.V16B(), src.V16B(), src.V16B(), 8); return;  // [2,3,0,1]
-		case 0x39: armAsm->Ext(dst.V16B(), src.V16B(), src.V16B(), 4); return;  // [1,2,3,0]
-		case 0x93: armAsm->Ext(dst.V16B(), src.V16B(), src.V16B(), 12); return; // [3,0,1,2]
+		case 0x44: a64_dup_elem(armAsm, a64_as(dst, A64K_2D), a64_as(src, A64K_2D), 0); return;   // [0,1,0,1]
+		case 0xEE: a64_dup_elem(armAsm, a64_as(dst, A64K_2D), a64_as(src, A64K_2D), 1); return;   // [2,3,2,3]
+		case 0xB1: a64_rev64(armAsm, a64_as(dst, A64K_4S), a64_as(src, A64K_4S)); return;    // [1,0,3,2]
+		case 0x4E: a64_ext(armAsm, a64_as(dst, A64K_16B), a64_as(src, A64K_16B), a64_as(src, A64K_16B), 8); return;  // [2,3,0,1]
+		case 0x39: a64_ext(armAsm, a64_as(dst, A64K_16B), a64_as(src, A64K_16B), a64_as(src, A64K_16B), 4); return;  // [1,2,3,0]
+		case 0x93: a64_ext(armAsm, a64_as(dst, A64K_16B), a64_as(src, A64K_16B), a64_as(src, A64K_16B), 12); return; // [3,0,1,2]
 		case 0x1B: // full reverse [3,2,1,0]
-			armAsm->Rev64(dst.V4S(), src.V4S());
-			armAsm->Ext(dst.V16B(), dst.V16B(), dst.V16B(), 8);
+			a64_rev64(armAsm, a64_as(dst, A64K_4S), a64_as(src, A64K_4S));
+			a64_ext(armAsm, a64_as(dst, A64K_16B), a64_as(dst, A64K_16B), a64_as(dst, A64K_16B), 8);
 			return;
 		default:
 			break;
 	}
-	if (dst.GetCode() != src.GetCode())
+	if (A64_CODE(dst) != A64_CODE(src))
 	{
 		// src is a distinct register and stays intact: copy, then patch the
 		// moved lanes straight from src -- no scratch needed.
-		armAsm->Mov(dst.V16B(), src.V16B());
+		a64_mov(armAsm, a64_as(dst, A64K_16B), a64_as(src, A64K_16B));
 		for (int i = 0; i < 4; i++)
 			if (l[i] != i)
-				armAsm->Ins(dst.V4S(), i, src.V4S(), l[i]);
+				a64_ins_elem(armAsm, a64_as(dst, A64K_4S), i, a64_as(src, A64K_4S), l[i]);
 		return;
 	}
-	armAsm->Mov(RQSCRATCH3.V16B(), src.V16B());
+	a64_mov(armAsm, a64_as(RQSCRATCH3, A64K_16B), a64_as(src, A64K_16B));
 	for (int i = 0; i < 4; i++)
 		if (l[i] != i)
-			armAsm->Ins(dst.V4S(), i, RQSCRATCH3.V4S(), l[i]);
+			a64_ins_elem(armAsm, a64_as(dst, A64K_4S), i, a64_as(RQSCRATCH3, A64K_4S), l[i]);
 }
 
 // Lane0-preserving scalar FP ops on the PQ latency reg (mVU_xmmPQ). AArch64 scalar
@@ -179,20 +176,20 @@ static inline void mVUshufflePS(const a64::VRegister& dst, const a64::VRegister&
 // geometry, e.g. MGS2's broken polygons). Compute into a scratch and merge only
 // lane0 back. q31 (RQSCRATCH2) is outside the regalloc pool (v0..v23) and not used
 // by the EFU sequences (which use q30 via mVUclampedArith / q29 via mVUshufflePS).
-static inline void mVUscalarSqrtKeep(const a64::VRegister& dst, const a64::VRegister& src)
+static inline void mVUscalarSqrtKeep(const a64r& dst, const a64r& src)
 {
-	armAsm->Fsqrt(RQSCRATCH2.S(), src.S());
-	armAsm->Ins(dst.V4S(), 0, RQSCRATCH2.V4S(), 0);
+	a64_fsqrt(armAsm, a64_as(RQSCRATCH2, A64K_S), a64_as(src, A64K_S));
+	a64_ins_elem(armAsm, a64_as(dst, A64K_4S), 0, a64_as(RQSCRATCH2, A64K_4S), 0);
 }
-static inline void mVUscalarAddKeep(const a64::VRegister& dst, const a64::VRegister& a, const a64::VRegister& b)
+static inline void mVUscalarAddKeep(const a64r& dst, const a64r& a, const a64r& b)
 {
-	armAsm->Fadd(RQSCRATCH2.S(), a.S(), b.S());
-	armAsm->Ins(dst.V4S(), 0, RQSCRATCH2.V4S(), 0);
+	a64_fadd(armAsm, a64_as(RQSCRATCH2, A64K_S), a64_as(a, A64K_S), a64_as(b, A64K_S));
+	a64_ins_elem(armAsm, a64_as(dst, A64K_4S), 0, a64_as(RQSCRATCH2, A64K_4S), 0);
 }
-static inline void mVUscalarMulKeep(const a64::VRegister& dst, const a64::VRegister& a, const a64::VRegister& b)
+static inline void mVUscalarMulKeep(const a64r& dst, const a64r& a, const a64r& b)
 {
-	armAsm->Fmul(RQSCRATCH2.S(), a.S(), b.S());
-	armAsm->Ins(dst.V4S(), 0, RQSCRATCH2.V4S(), 0);
+	a64_fmul(armAsm, a64_as(RQSCRATCH2, A64K_S), a64_as(a, A64K_S), a64_as(b, A64K_S));
+	a64_ins_elem(armAsm, a64_as(dst, A64K_4S), 0, a64_as(RQSCRATCH2, A64K_4S), 0);
 }
 
 //------------------------------------------------------------------
@@ -219,23 +216,23 @@ static inline bool mVU_isSS(int xyzw) // exactly one subvector selected
 // xPSHUF.D with a constant splat pattern — 0x00=XXXX, 0x55=YYYY, 0xaa=ZZZZ,
 // 0xff=WWWW). The unpack index 0..3 selects lane X/Y/Z/W directly, so NEON Dup
 // from that lane is a one-to-one translation.
-static inline void mVUunpack_xyzw(const a64::VRegister& dstreg, const a64::VRegister& srcreg, int xyzw)
+static inline void mVUunpack_xyzw(const a64r& dstreg, const a64r& srcreg, int xyzw)
 {
-	armAsm->Dup(dstreg.V4S(), srcreg.V4S(), xyzw & 3);
+	a64_dup_elem(armAsm, a64_as(dstreg, A64K_4S), a64_as(srcreg, A64K_4S), xyzw & 3);
 }
 
 // Load VF/ACC reg bytes at `off` (from RVUSTATE) into `reg`. Single-subvector
 // masks load that one 32-bit lane into lane0 (zero-extending the rest, like
 // xMOVSSZX); anything else loads the full 128 bits.
-static inline void mVUloadReg(const a64::VRegister& reg, u32 off, int xyzw)
+static inline void mVUloadReg(const a64r& reg, u32 off, int xyzw)
 {
 	switch (xyzw)
 	{
-		case 8:  armAsm->Ldr(reg.S(), a64::MemOperand(RVUSTATE, off + 0));  break; // X
-		case 4:  armAsm->Ldr(reg.S(), a64::MemOperand(RVUSTATE, off + 4));  break; // Y
-		case 2:  armAsm->Ldr(reg.S(), a64::MemOperand(RVUSTATE, off + 8));  break; // Z
-		case 1:  armAsm->Ldr(reg.S(), a64::MemOperand(RVUSTATE, off + 12)); break; // W
-		default: armAsm->Ldr(reg.Q(), a64::MemOperand(RVUSTATE, off));      break;
+		case 8:  a64_ldr(armAsm, a64_as(reg, A64K_S), a64_mem_off(RVUSTATE, off + 0));  break; // X
+		case 4:  a64_ldr(armAsm, a64_as(reg, A64K_S), a64_mem_off(RVUSTATE, off + 4));  break; // Y
+		case 2:  a64_ldr(armAsm, a64_as(reg, A64K_S), a64_mem_off(RVUSTATE, off + 8));  break; // Z
+		case 1:  a64_ldr(armAsm, a64_as(reg, A64K_S), a64_mem_off(RVUSTATE, off + 12)); break; // W
+		default: a64_ldr(armAsm, a64_as(reg, A64K_Q), a64_mem_off(RVUSTATE, off));      break;
 	}
 }
 
@@ -243,11 +240,11 @@ static inline void mVUloadReg(const a64::VRegister& reg, u32 off, int xyzw)
 // modXYZW: when true the value of a single-subvector (Y/Z/W) result lives in
 // lane0 (microVU produces SS results pre-shuffled into lane0); when false the
 // lanes are in their natural positions. Multi-lane masks are always natural.
-static inline void mVUsaveReg(const a64::VRegister& reg, u32 off, int xyzw, bool modXYZW)
+static inline void mVUsaveReg(const a64r& reg, u32 off, int xyzw, bool modXYZW)
 {
 	if (xyzw == 0xf)
 	{
-		armAsm->Str(reg.Q(), a64::MemOperand(RVUSTATE, off));
+		a64_str(armAsm, a64_as(reg, A64K_Q), a64_mem_off(RVUSTATE, off));
 		return;
 	}
 
@@ -255,7 +252,7 @@ static inline void mVUsaveReg(const a64::VRegister& reg, u32 off, int xyzw, bool
 	if (modXYZW && (xyzw == 4 || xyzw == 2 || xyzw == 1))
 	{
 		const u32 coff = (xyzw == 4) ? 4u : (xyzw == 2) ? 8u : 12u;
-		armAsm->Str(reg.S(), a64::MemOperand(RVUSTATE, off + coff));
+		a64_str(armAsm, a64_as(reg, A64K_S), a64_mem_off(RVUSTATE, off + coff));
 		return;
 	}
 
@@ -263,48 +260,48 @@ static inline void mVUsaveReg(const a64::VRegister& reg, u32 off, int xyzw, bool
 	// store with an immediate offset; Y/Z/W need an explicit address because
 	// NEON single-lane stores can't carry an immediate offset.
 	if (xyzw & 8)
-		armAsm->Str(reg.S(), a64::MemOperand(RVUSTATE, off + 0));
+		a64_str(armAsm, a64_as(reg, A64K_S), a64_mem_off(RVUSTATE, off + 0));
 	if (xyzw & 4)
 	{
-		armAsm->Add(RVUADDR, RVUSTATE, off + 4);
-		armAsm->St1(reg.V4S(), 1, a64::MemOperand(RVUADDR));
+		a64_add_imm(armAsm, RVUADDR, RVUSTATE, off + 4);
+		a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 1, a64_mem_off(RVUADDR, 0));
 	}
 	if (xyzw & 2)
 	{
-		armAsm->Add(RVUADDR, RVUSTATE, off + 8);
-		armAsm->St1(reg.V4S(), 2, a64::MemOperand(RVUADDR));
+		a64_add_imm(armAsm, RVUADDR, RVUSTATE, off + 8);
+		a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 2, a64_mem_off(RVUADDR, 0));
 	}
 	if (xyzw & 1)
 	{
-		armAsm->Add(RVUADDR, RVUSTATE, off + 12);
-		armAsm->St1(reg.V4S(), 3, a64::MemOperand(RVUADDR));
+		a64_add_imm(armAsm, RVUADDR, RVUSTATE, off + 12);
+		a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 3, a64_mem_off(RVUADDR, 0));
 	}
 }
 
 // Merge the selected lanes of `src` into `dest`. Same modXYZW convention.
-static inline void mVUmergeRegs(const a64::VRegister& dest, const a64::VRegister& src, int xyzw, bool modXYZW)
+static inline void mVUmergeRegs(const a64r& dest, const a64r& src, int xyzw, bool modXYZW)
 {
 	xyzw &= 0xf;
-	if ((dest.GetCode() == src.GetCode()) || (xyzw == 0))
+	if ((A64_CODE(dest) == A64_CODE(src)) || (xyzw == 0))
 		return;
 
 	if (xyzw == 0xf)
 	{
-		armAsm->Mov(dest.V16B(), src.V16B());
+		a64_mov(armAsm, a64_as(dest, A64K_16B), a64_as(src, A64K_16B));
 		return;
 	}
 
 	if (modXYZW && (xyzw == 4 || xyzw == 2 || xyzw == 1))
 	{
 		const int lane = (xyzw == 4) ? 1 : (xyzw == 2) ? 2 : 3;
-		armAsm->Ins(dest.V4S(), lane, src.V4S(), 0);
+		a64_ins_elem(armAsm, a64_as(dest, A64K_4S), lane, a64_as(src, A64K_4S), 0);
 		return;
 	}
 
-	if (xyzw & 8) armAsm->Ins(dest.V4S(), 0, src.V4S(), 0);
-	if (xyzw & 4) armAsm->Ins(dest.V4S(), 1, src.V4S(), 1);
-	if (xyzw & 2) armAsm->Ins(dest.V4S(), 2, src.V4S(), 2);
-	if (xyzw & 1) armAsm->Ins(dest.V4S(), 3, src.V4S(), 3);
+	if (xyzw & 8) a64_ins_elem(armAsm, a64_as(dest, A64K_4S), 0, a64_as(src, A64K_4S), 0);
+	if (xyzw & 4) a64_ins_elem(armAsm, a64_as(dest, A64K_4S), 1, a64_as(src, A64K_4S), 1);
+	if (xyzw & 2) a64_ins_elem(armAsm, a64_as(dest, A64K_4S), 2, a64_as(src, A64K_4S), 2);
+	if (xyzw & 1) a64_ins_elem(armAsm, a64_as(dest, A64K_4S), 3, a64_as(src, A64K_4S), 3);
 }
 
 //------------------------------------------------------------------
@@ -348,25 +345,25 @@ protected:
 	__fi VECTOR& getVF(uint reg) const { return regs().VF[reg]; }
 
 	// Host register objects by allocator index.
-	static a64::VRegister vfReg(int i) { return a64::VRegister(i, 128); }
-	static const a64::Register& gprW(int i) { return armWRegister(i); }
+	static a64r vfReg(int i) { return a64_vreg(i, 128, 1); }
+	static a64r gprW(int i) { return armWRegister(i); }
 
-	__ri void loadIreg(const a64::VRegister& reg, int xyzw)
+	__ri void loadIreg(const a64r& reg, int xyzw)
 	{
 		for (int i = 0; i < gprTotal; i++)
 		{
 			if (gprMap[i].VIreg == REG_I)
 			{
-				armAsm->Fmov(reg.S(), gprW(i)); // GPR32 -> lane0, zero rest (xMOVDZX)
+				a64_fmov(armAsm, a64_as(reg, A64K_S), gprW(i)); // GPR32 -> lane0, zero rest (xMOVDZX)
 				if (!mVU_isSS(xyzw))
-					armAsm->Dup(reg.V4S(), reg.V4S(), 0);
+					a64_dup_elem(armAsm, a64_as(reg, A64K_4S), a64_as(reg, A64K_4S), 0);
 				return;
 			}
 		}
 
-		armAsm->Ldr(reg.S(), a64::MemOperand(RVUSTATE, mVUoffI));
+		a64_ldr(armAsm, a64_as(reg, A64K_S), a64_mem_off(RVUSTATE, mVUoffI));
 		if (!mVU_isSS(xyzw))
-			armAsm->Dup(reg.V4S(), reg.V4S(), 0);
+			a64_dup_elem(armAsm, a64_as(reg, A64K_4S), a64_as(reg, A64K_4S), 0);
 	}
 
 	int findFreeRegRec(int startIdx)
@@ -427,11 +424,11 @@ protected:
 		return x;
 	}
 
-	void writeVIBackup(const a64::Register& reg)
+	void writeVIBackup(const a64r& reg)
 	{
 		microVU& mVU = index ? microVU1 : microVU0;
 		armMoveAddressToReg(RVUADDR, &mVU.VIbackup);
-		armAsm->Str(reg.W(), a64::MemOperand(RVUADDR));
+		a64_str(armAsm, a64_asw(reg), a64_mem_off(RVUADDR, 0));
 	}
 
 public:
@@ -608,7 +605,7 @@ public:
 			if ((mapX.VFreg > 0) && mapX.xyzw) // Reg was modified and not Temp or vf0
 			{
 				if (mapX.VFreg == 33)
-					armAsm->Str(vfReg(i).S(), a64::MemOperand(RVUSTATE, mVUoffI));
+					a64_str(armAsm, a64_as(vfReg(i), A64K_S), a64_mem_off(RVUSTATE, mVUoffI));
 				else if (mapX.VFreg == 32)
 					mVUsaveReg(vfReg(i), mVUoffACC, mapX.xyzw, true);
 				else
@@ -622,7 +619,7 @@ public:
 
 	bool checkVFClamp(int regId)
 	{
-		if (regId != static_cast<int>(mVU_xmmPQ.GetCode()) && ((xmmMap[regId].VFreg == 33 && !EmuConfig.Gamefixes.IbitHack) || xmmMap[regId].isZero))
+		if (regId != static_cast<int>(A64_CODE(mVU_xmmPQ)) && ((xmmMap[regId].VFreg == 33 && !EmuConfig.Gamefixes.IbitHack) || xmmMap[regId].isZero))
 			return false;
 		else
 			return true;
@@ -644,7 +641,7 @@ public:
 			return false;
 	}
 
-	void clearReg(const a64::VRegister& reg) { clearReg(reg.GetCode()); }
+	void clearReg(const a64r& reg) { clearReg(A64_CODE(reg)); }
 	void clearReg(int regId)
 	{
 		microMapXMM& clear = xmmMap[regId];
@@ -663,14 +660,14 @@ public:
 	// Writes back modified reg to memory.
 	// If all vectors modified, then keeps the VF reg cached in the xmm register.
 	// If reg was not modified, then keeps the VF reg cached in the xmm register.
-	void writeBackReg(const a64::VRegister& reg, bool invalidateRegs = true)
+	void writeBackRegV(const a64r& reg, bool invalidateRegs)
 	{
-		microMapXMM& mapX = xmmMap[reg.GetCode()];
+		microMapXMM& mapX = xmmMap[A64_CODE(reg)];
 
 		if ((mapX.VFreg > 0) && mapX.xyzw) // Reg was modified and not Temp or vf0
 		{
 			if (mapX.VFreg == 33)
-				armAsm->Str(reg.S(), a64::MemOperand(RVUSTATE, mVUoffI));
+				a64_str(armAsm, a64_as(reg, A64K_S), a64_mem_off(RVUSTATE, mVUoffI));
 			else if (mapX.VFreg == 32)
 				mVUsaveReg(reg, mVUoffACC, mapX.xyzw, true);
 			else
@@ -682,7 +679,7 @@ public:
 				{
 					microMapXMM& mapI = xmmMap[i];
 
-					if ((i == static_cast<int>(reg.GetCode())) || mapI.isNeeded)
+					if ((i == static_cast<int>(A64_CODE(reg))) || mapI.isNeeded)
 						continue;
 
 					if (mapI.VFreg == mapX.VFreg)
@@ -713,9 +710,9 @@ public:
 	// This is to guarantee proper merging between registers... When a written-to reg is cleared,
 	// it invalidates other cached registers of the same VF reg, and merges partial-vector
 	// writes into them.
-	void clearNeeded(const a64::VRegister& reg)
+	void clearNeededV(const a64r& reg)
 	{
-		const int rid = reg.GetCode();
+		const int rid = A64_CODE(reg);
 		if ((rid < 0) || (rid >= xmmTotal)) // Sometimes mVU_xmmPQ hits this
 			return;
 
@@ -768,7 +765,7 @@ public:
 	// To load a temp reg use the default param values, vfLoadReg = -1 and vfWriteReg = -1.
 	// To load a full reg which won't be modified and you want cached, specify vfLoadReg >= 0 and vfWriteReg = -1
 	// To load a reg which you don't want written back or cached, specify vfLoadReg >= 0 and vfWriteReg = 0
-	const a64::VRegister allocReg(int vfLoadReg = -1, int vfWriteReg = -1, int xyzw = 0, bool cloneWrite = true)
+	const a64r allocReg(int vfLoadReg = -1, int vfWriteReg = -1, int xyzw = 0, bool cloneWrite = true)
 	{
 		counter++;
 		if (vfLoadReg >= 0) // Search For Cached Regs
@@ -786,17 +783,17 @@ public:
 						if (cloneWrite) // Clone Reg so as not to use the same Cached Reg
 						{
 							z = findFreeReg(vfWriteReg);
-							const a64::VRegister xmmZ = vfReg(z);
+							const a64r xmmZ = vfReg(z);
 							writeBackReg(xmmZ);
 
 							if (xyzw == 4)
-								armAsm->Dup(xmmZ.V4S(), vfReg(i).V4S(), 1); // Y -> lane0
+								a64_dup_elem(armAsm, a64_as(xmmZ, A64K_4S), a64_as(vfReg(i), A64K_4S), 1); // Y -> lane0
 							else if (xyzw == 2)
-								armAsm->Dup(xmmZ.V4S(), vfReg(i).V4S(), 2); // Z -> lane0
+								a64_dup_elem(armAsm, a64_as(xmmZ, A64K_4S), a64_as(vfReg(i), A64K_4S), 2); // Z -> lane0
 							else if (xyzw == 1)
-								armAsm->Dup(xmmZ.V4S(), vfReg(i).V4S(), 3); // W -> lane0
+								a64_dup_elem(armAsm, a64_as(xmmZ, A64K_4S), a64_as(vfReg(i), A64K_4S), 3); // W -> lane0
 							else if (z != i)
-								armAsm->Mov(xmmZ.V16B(), vfReg(i).V16B());
+								a64_mov(armAsm, a64_as(xmmZ, A64K_16B), a64_as(vfReg(i), A64K_16B));
 
 							mapI.count = counter; // Reg i was used, so update counter
 						}
@@ -806,11 +803,11 @@ public:
 								writeBackReg(vfReg(i));
 
 							if (xyzw == 4)
-								armAsm->Dup(vfReg(i).V4S(), vfReg(i).V4S(), 1);
+								a64_dup_elem(armAsm, a64_as(vfReg(i), A64K_4S), a64_as(vfReg(i), A64K_4S), 1);
 							else if (xyzw == 2)
-								armAsm->Dup(vfReg(i).V4S(), vfReg(i).V4S(), 2);
+								a64_dup_elem(armAsm, a64_as(vfReg(i), A64K_4S), a64_as(vfReg(i), A64K_4S), 2);
 							else if (xyzw == 1)
-								armAsm->Dup(vfReg(i).V4S(), vfReg(i).V4S(), 3);
+								a64_dup_elem(armAsm, a64_as(vfReg(i), A64K_4S), a64_as(vfReg(i), A64K_4S), 3);
 						}
 						xmmMap[z].VFreg = vfWriteReg;
 						xmmMap[z].xyzw = xyzw;
@@ -823,13 +820,13 @@ public:
 			}
 		}
 		int x = findFreeReg((vfWriteReg >= 0) ? vfWriteReg : vfLoadReg);
-		const a64::VRegister xmmX = vfReg(x);
+		const a64r xmmX = vfReg(x);
 		writeBackReg(xmmX);
 
 		if (vfWriteReg >= 0) // Reg Will Be Modified (allow partial reg loading)
 		{
 			if ((vfLoadReg == 0) && !(xyzw & 1))
-				armAsm->Eor(xmmX.V16B(), xmmX.V16B(), xmmX.V16B());
+				a64_eor(armAsm, a64_as(xmmX, A64K_16B), a64_as(xmmX, A64K_16B), a64_as(xmmX, A64K_16B));
 			else if (vfLoadReg == 33)
 				loadIreg(xmmX, xyzw);
 			else if (vfLoadReg == 32)
@@ -845,9 +842,9 @@ public:
 			if (vfLoadReg == 33)
 				loadIreg(xmmX, 0xf);
 			else if (vfLoadReg == 32)
-				armAsm->Ldr(xmmX.Q(), a64::MemOperand(RVUSTATE, mVUoffACC));
+				a64_ldr(armAsm, a64_as(xmmX, A64K_Q), a64_mem_off(RVUSTATE, mVUoffACC));
 			else if (vfLoadReg >= 0)
-				armAsm->Ldr(xmmX.Q(), a64::MemOperand(RVUSTATE, mVUoffVF(vfLoadReg)));
+				a64_ldr(armAsm, a64_as(xmmX, A64K_Q), a64_mem_off(RVUSTATE, mVUoffVF(vfLoadReg)));
 
 			xmmMap[x].VFreg = vfLoadReg;
 			xmmMap[x].xyzw  = 0;
@@ -858,7 +855,7 @@ public:
 		return xmmX;
 	}
 
-	void clearGPR(const a64::Register& reg) { clearGPR(reg.GetCode()); }
+	void clearGPR(const a64r& reg) { clearGPR(A64_CODE(reg)); }
 
 	void clearGPR(int regId)
 	{
@@ -870,25 +867,42 @@ public:
 		clear.isZeroExtended = false;
 	}
 
-	void writeBackReg(const a64::Register& reg, bool clearDirty)
+	void writeBackRegG(const a64r& reg, bool clearDirty)
 	{
-		microMapGPR& mapX = gprMap[reg.GetCode()];
+		microMapGPR& mapX = gprMap[A64_CODE(reg)];
 		pxAssert(mapX.usable || !mapX.dirty);
 		if (mapX.dirty)
 		{
 			pxAssert(mapX.VIreg > 0);
 			if (mapX.VIreg < 16)
-				armAsm->Strh(reg.W(), a64::MemOperand(RVUSTATE, mVUoffVI(mapX.VIreg)));
+				a64_strh(armAsm, a64_asw(reg), a64_mem_off(RVUSTATE, mVUoffVI(mapX.VIreg)));
 			if (clearDirty)
 				mapX.dirty = false;
 		}
 	}
 
-	void clearNeeded(const a64::Register& reg)
+	void clearNeededG(const a64r& reg)
 	{
-		pxAssert(reg.GetCode() < gprTotal);
-		microMapGPR& clear = gprMap[reg.GetCode()];
+		pxAssert(A64_CODE(reg) < gprTotal);
+		microMapGPR& clear = gprMap[A64_CODE(reg)];
 		clear.isNeeded = false;
+	}
+
+	// A VI register (W/X) or a VF one (anything else, xEmptyReg included)
+	static bool isGPR(const a64r& reg) { return A64_KIND(reg) >= A64K_W && A64_KIND(reg) <= A64K_SP; }
+	void writeBackReg(const a64r& reg, bool flag = true)
+	{
+		if (isGPR(reg))
+			writeBackRegG(reg, flag);
+		else
+			writeBackRegV(reg, flag);
+	}
+	void clearNeeded(const a64r& reg)
+	{
+		if (isGPR(reg))
+			clearNeededG(reg);
+		else
+			clearNeededV(reg);
 	}
 
 	void unbindAnyVIAllocations(int reg, bool& backup)
@@ -927,7 +941,7 @@ public:
 		}
 	}
 
-	const a64::Register allocGPR(int viLoadReg = -1, int viWriteReg = -1, bool backup = false, bool zext_if_dirty = false)
+	const a64r allocGPR(int viLoadReg = -1, int viWriteReg = -1, bool backup = false, bool zext_if_dirty = false)
 	{
 		// TODO: When load != write, we should check whether load is used later, and if so, copy it.
 		const int this_counter = counter++;
@@ -937,9 +951,9 @@ public:
 			if (viWriteReg == 0)
 			{
 				int x = findFreeGPR(-1);
-				const a64::Register gprX = gprW(x);
+				const a64r gprX = gprW(x);
 				writeBackReg(gprX, true);
-				armAsm->Mov(gprX.W(), a64::wzr);
+				a64_mov(armAsm, a64_asw(gprX), A64_WZR);
 				gprMap[x].VIreg = -1;
 				gprMap[x].dirty = false;
 				gprMap[x].count = this_counter;
@@ -968,22 +982,22 @@ public:
 
 							// allocate a new register for writing to
 							int x = findFreeGPR(viWriteReg);
-							const a64::Register gprX = gprW(x);
+							const a64r gprX = gprW(x);
 
 							writeBackReg(gprX, true);
 
 							// writeReg not cached, needs backing up
 							if (backup && gprMap[x].VIreg != viWriteReg)
 							{
-								armAsm->Ldrh(gprX.W(), a64::MemOperand(RVUSTATE, mVUoffVI(viWriteReg)));
+								a64_ldrh(armAsm, a64_asw(gprX), a64_mem_off(RVUSTATE, mVUoffVI(viWriteReg)));
 								writeVIBackup(gprX);
 								backup = false;
 							}
 
 							if (zext_if_dirty)
-								armAsm->Uxth(gprX.W(), gprW(i).W());
+								a64_uxth(armAsm, a64_asw(gprX), a64_asw(gprW(i)));
 							else
-								armAsm->Mov(gprX.W(), gprW(i).W());
+								a64_mov(armAsm, a64_asw(gprX), a64_asw(gprW(i)));
 							gprMap[x].isZeroExtended = zext_if_dirty;
 							std::swap(x, i);
 						}
@@ -998,7 +1012,7 @@ public:
 					}
 					else if (zext_if_dirty && !gprMap[i].isZeroExtended)
 					{
-						armAsm->Uxth(gprW(i).W(), gprW(i).W());
+						a64_uxth(armAsm, a64_asw(gprW(i)), a64_asw(gprW(i)));
 						gprMap[i].isZeroExtended = true;
 					}
 
@@ -1016,7 +1030,7 @@ public:
 			unbindAnyVIAllocations(viWriteReg, backup);
 
 		int x = findFreeGPR(viLoadReg);
-		const a64::Register gprX = gprW(x);
+		const a64r gprX = gprW(x);
 		writeBackReg(gprX, true);
 
 		// Special case: we need to back up the destination register, but it might not have already
@@ -1024,15 +1038,15 @@ public:
 		// it's going to get lost when we eventually write this register back.
 		if (backup && viLoadReg >= 0 && viWriteReg > 0 && viLoadReg != viWriteReg)
 		{
-			armAsm->Ldrh(gprX.W(), a64::MemOperand(RVUSTATE, mVUoffVI(viWriteReg)));
+			a64_ldrh(armAsm, a64_asw(gprX), a64_mem_off(RVUSTATE, mVUoffVI(viWriteReg)));
 			writeVIBackup(gprX);
 			backup = false;
 		}
 
 		if (viLoadReg > 0)
-			armAsm->Ldrh(gprX.W(), a64::MemOperand(RVUSTATE, mVUoffVI(viLoadReg)));
+			a64_ldrh(armAsm, a64_asw(gprX), a64_mem_off(RVUSTATE, mVUoffVI(viLoadReg)));
 		else if (viLoadReg == 0)
-			armAsm->Mov(gprX.W(), a64::wzr);
+			a64_mov(armAsm, a64_asw(gprX), A64_WZR);
 
 		gprMap[x].VIreg = viLoadReg;
 		gprMap[x].isZeroExtended = true;
@@ -1045,7 +1059,7 @@ public:
 			if (backup)
 			{
 				if (viLoadReg < 0 && viWriteReg > 0)
-					armAsm->Ldrh(gprX.W(), a64::MemOperand(RVUSTATE, mVUoffVI(viWriteReg)));
+					a64_ldrh(armAsm, a64_asw(gprX), a64_mem_off(RVUSTATE, mVUoffVI(viWriteReg)));
 
 				writeVIBackup(gprX);
 			}
@@ -1057,21 +1071,21 @@ public:
 		return gprX;
 	}
 
-	void moveVIToGPR(const a64::Register& reg, int vi, bool signext = false)
+	void moveVIToGPR(const a64r& reg, int vi, bool signext = false)
 	{
 		pxAssert(vi >= 0);
 		if (vi == 0)
 		{
-			armAsm->Mov(reg.W(), a64::wzr);
+			a64_mov(armAsm, a64_asw(reg), A64_WZR);
 			return;
 		}
 
 		// TODO: Check liveness/usedness before allocating.
-		const a64::Register srcreg = allocGPR(vi);
+		const a64r srcreg = allocGPR(vi);
 		if (signext)
-			armAsm->Sxth(reg.W(), srcreg.W());
+			a64_sxth(armAsm, a64_asw(reg), a64_asw(srcreg));
 		else
-			armAsm->Uxth(reg.W(), srcreg.W());
+			a64_uxth(armAsm, a64_asw(reg), a64_asw(srcreg));
 		clearNeeded(srcreg);
 	}
 

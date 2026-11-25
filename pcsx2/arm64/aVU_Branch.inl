@@ -7,7 +7,7 @@
 
 // ARM64 microVU recompiler — branch / program-exit emission (Phase 7, task 7.7).
 //
-// VIXL port of pcsx2/x86/microVU_Branch.inl. This slice brings up the two
+// AArch64 port of pcsx2/x86/microVU_Branch.inl. This slice brings up the two
 // *program-exit* emitters first, because they make NO opcode-table calls
 // (mVUopU/mVUopL) and so compile standalone ahead of the Tables/Compile big-bang:
 //
@@ -21,7 +21,7 @@
 // (mVUsetupBranch / normBranch{,Compile} / normJump{,Compile} / condBranch) come
 // over with the Tables + Compile slice and are NOT in this file yet.
 //
-// x86 -> VIXL emit translations used here:
+// x86 -> a64emit translations used here:
 //   xMOVSS(ptr32[a], xmmPQ)   -> Str(mVU_xmmPQ.S(), [a])          (store P/Q lane0)
 //   xPSHUF.D(xmmPQ,xmmPQ,imm) -> mVUshufflePS(mVU_xmmPQ, …, imm)  (lane permute)
 //   xMOVAPS(xmm, ptr128[a])   -> Ldr(xmm.Q(), [a]) / Str          (128-bit move)
@@ -163,15 +163,15 @@ void mVUDTendProgram(mV, microFlagCycles* mFC, int isEbit)
 	else // Flush flag instances
 	{
 		mvuLdrSS(mVU, xmmT1, &mVU.regs().VI[REG_CLIP_FLAG].UL);
-		armAsm->Dup(xmmT1.V4S(), xmmT1.V4S(), 0);
+		a64_dup_elem(armAsm, a64_as(xmmT1, A64K_4S), a64_as(xmmT1, A64K_4S), 0);
 		mvuStrQ(mVU, &mVU.regs().micro_clipflags, xmmT1);
 
 		mvuLdrSS(mVU, xmmT1, &mVU.regs().VI[REG_MAC_FLAG].UL);
-		armAsm->Dup(xmmT1.V4S(), xmmT1.V4S(), 0);
+		a64_dup_elem(armAsm, a64_as(xmmT1, A64K_4S), a64_as(xmmT1, A64K_4S), 0);
 		mvuStrQ(mVU, &mVU.regs().micro_macflags, xmmT1);
 
-		armAsm->Fmov(xmmT1.S(), getFlagReg(fStatus));
-		armAsm->Dup(xmmT1.V4S(), xmmT1.V4S(), 0);
+		a64_fmov(armAsm, a64_as(xmmT1, A64K_S), getFlagReg(fStatus));
+		a64_dup_elem(armAsm, a64_as(xmmT1, A64K_4S), a64_as(xmmT1, A64K_4S), 0);
 		mvuStrQ(mVU, &mVU.regs().micro_statusflags, xmmT1);
 	}
 
@@ -287,15 +287,15 @@ void mVUendProgram(mV, microFlagCycles* mFC, int isEbit)
 	else // Flush flag instances
 	{
 		mvuLdrSS(mVU, xmmT1, &mVU.regs().VI[REG_CLIP_FLAG].UL);
-		armAsm->Dup(xmmT1.V4S(), xmmT1.V4S(), 0);
+		a64_dup_elem(armAsm, a64_as(xmmT1, A64K_4S), a64_as(xmmT1, A64K_4S), 0);
 		mvuStrQ(mVU, &mVU.regs().micro_clipflags, xmmT1);
 
 		mvuLdrSS(mVU, xmmT1, &mVU.regs().VI[REG_MAC_FLAG].UL);
-		armAsm->Dup(xmmT1.V4S(), xmmT1.V4S(), 0);
+		a64_dup_elem(armAsm, a64_as(xmmT1, A64K_4S), a64_as(xmmT1, A64K_4S), 0);
 		mvuStrQ(mVU, &mVU.regs().micro_macflags, xmmT1);
 
-		armAsm->Fmov(xmmT1.S(), getFlagReg(fStatus));
-		armAsm->Dup(xmmT1.V4S(), xmmT1.V4S(), 0);
+		a64_fmov(armAsm, a64_as(xmmT1, A64K_S), getFlagReg(fStatus));
+		a64_dup_elem(armAsm, a64_as(xmmT1, A64K_4S), a64_as(xmmT1, A64K_4S), 0);
 		mvuStrQ(mVU, &mVU.regs().micro_statusflags, xmmT1);
 	}
 
@@ -359,16 +359,16 @@ template <int vuIndex> void* mVUcompileJIT(u32 startPC, uptr ptr);
 // against 0 with signed conditions (IBLTZ/IBGEZ/IBGTZ/IBLEZ → lt/ge/gt/le), so
 // it must mirror x86's 16-bit *signed* `xCMP(ptr16[&mVU.branch], 0)` — a VI value
 // with bit15 set is negative. (eq/ne for IBEQ/IBNE are unaffected by the extend.)
-static inline void mvuLdrsh16(microVU& mVU, const a64::Register& wreg, const void* addr)
+static inline void mvuLdrsh16(microVU& mVU, const a64r& wreg, const void* addr)
 {
-	armAsm->Ldrsh(wreg.W(), mvuAbsMem(mVU, addr, 2));
+	a64_ldrsh(armAsm, a64_asw(wreg), mvuAbsMem(mVU, addr, 2));
 }
 // xTEST(ptr32[addr], imm) + xForwardJump32(Jcc_Zero): load, test, branch-if-zero.
-static inline void mvuTestMemBranchZero(microVU& mVU, const void* addr, u32 imm, a64::Label& tgt, const a64::Register& tmp)
+static inline void mvuTestMemBranchZero(microVU& mVU, const void* addr, u32 imm, a64_label& tgt, const a64r& tmp)
 {
 	mvuLdr32(mVU, tmp, addr);
-	armAsm->Tst(tmp.W(), imm);
-	armAsm->B(&tgt, a64::eq); // ZF set == (val & imm) == 0
+	a64_tst_imm(armAsm, a64_asw(tmp), imm);
+	a64_b_cond(armAsm, &tgt, A64_EQ); // ZF set == (val & imm) == 0
 }
 
 void normBranchCompile(microVU& mVU, u32 branchPC)
@@ -423,7 +423,7 @@ void normJumpCompile(mV, microFlagCycles& mFC, bool isEvilJump)
 		armEmitCall(reinterpret_cast<const void*>(&mVUcompileJIT<1>));
 
 	mVUrestoreRegs(mVU);
-	armAsm->Br(RXRET); // Jump to rec-code address (returned in x0)
+	a64_br(armAsm, RXRET); // Jump to rec-code address (returned in x0)
 }
 
 void normBranch(mV, microFlagCycles& mFC)
@@ -435,7 +435,7 @@ void normBranch(mV, microFlagCycles& mFC)
 		mVU.regAlloc->flushAll(false);
 
 		u32 tempPC = iPC;
-		a64::Label eJMP;
+		a64_label eJMP = A64_LABEL_INIT;
 		mvuTestMemBranchZero(mVU, (mVU.index && THREAD_VU1) ? (const void*)&vu1Thread.vuFBRST : (const void*)&VU0.VI[REG_FBRST].UL,
 			(isVU1 ? 0x400 : 0x4), eJMP, gprT1);
 		if (!mVU.index || !THREAD_VU1)
@@ -445,7 +445,7 @@ void normBranch(mV, microFlagCycles& mFC)
 		}
 		iPC = branchAddr(mVU) / 4;
 		mVUDTendProgram(mVU, &mFC, 1);
-		armAsm->Bind(&eJMP);
+		a64_bind(armAsm, &eJMP);
 		iPC = tempPC;
 	}
 	if (mVUup.tBit)
@@ -454,7 +454,7 @@ void normBranch(mV, microFlagCycles& mFC)
 		mVU.regAlloc->flushAll(false);
 
 		u32 tempPC = iPC;
-		a64::Label eJMP;
+		a64_label eJMP = A64_LABEL_INIT;
 		mvuTestMemBranchZero(mVU, (mVU.index && THREAD_VU1) ? (const void*)&vu1Thread.vuFBRST : (const void*)&VU0.VI[REG_FBRST].UL,
 			(isVU1 ? 0x800 : 0x8), eJMP, gprT1);
 		if (!mVU.index || !THREAD_VU1)
@@ -464,7 +464,7 @@ void normBranch(mV, microFlagCycles& mFC)
 		}
 		iPC = branchAddr(mVU) / 4;
 		mVUDTendProgram(mVU, &mFC, 1);
-		armAsm->Bind(&eJMP);
+		a64_bind(armAsm, &eJMP);
 		iPC = tempPC;
 	}
 	if (mVUup.mBit)
@@ -500,7 +500,7 @@ void normBranch(mV, microFlagCycles& mFC)
 	normBranchCompile(mVU, branchAddr(mVU));
 }
 
-void condBranch(mV, microFlagCycles& mFC, a64::Condition JMPcc)
+void condBranch(mV, microFlagCycles& mFC, unsigned JMPcc)
 {
 	mVUsetupBranch(mVU, mFC);
 
@@ -508,7 +508,7 @@ void condBranch(mV, microFlagCycles& mFC, a64::Condition JMPcc)
 	{
 		log_cb(RETRO_LOG_WARN, "T-Bit on branch, please report if broken\n");
 		u32 tempPC = iPC;
-		a64::Label eJMP;
+		a64_label eJMP = A64_LABEL_INIT;
 		mvuTestMemBranchZero(mVU, (mVU.index && THREAD_VU1) ? (const void*)&vu1Thread.vuFBRST : (const void*)&VU0.VI[REG_FBRST].UL,
 			(isVU1 ? 0x800 : 0x8), eJMP, gprT1);
 		if (!mVU.index || !THREAD_VU1)
@@ -518,28 +518,28 @@ void condBranch(mV, microFlagCycles& mFC, a64::Condition JMPcc)
 		}
 		mVUDTendProgram(mVU, &mFC, 2);
 		mvuLdrsh16(mVU, gprT1, &mVU.branch);
-		armAsm->Cmp(gprT1.W(), 0);
-		a64::Label tJMP;
-		armAsm->B(&tJMP, a64::InvertCondition(JMPcc));
+		a64_cmp_imm(armAsm, a64_asw(gprT1), 0);
+		a64_label tJMP = A64_LABEL_INIT;
+		a64_b_cond(armAsm, &tJMP, A64_INVERT(JMPcc));
 			incPC(4); // Set PC to First instruction of Non-Taken Side
 			mvuStrImm32(mVU, &mVU.regs().VI[REG_TPC].UL, xPC, gprT1);
 			if (mVU.index && THREAD_VU1)
 				armEmitCall(reinterpret_cast<const void*>(mVUTBit));
 			armEmitJmp(mVU.exitFunct);
-		armAsm->Bind(&tJMP);
+		a64_bind(armAsm, &tJMP);
 		incPC(-4); // Go Back to Branch Opcode to get branchAddr
 		iPC = branchAddr(mVU) / 4;
 		mvuStrImm32(mVU, &mVU.regs().VI[REG_TPC].UL, xPC, gprT1);
 		if (mVU.index && THREAD_VU1)
 			armEmitCall(reinterpret_cast<const void*>(mVUTBit));
 		armEmitJmp(mVU.exitFunct);
-		armAsm->Bind(&eJMP);
+		a64_bind(armAsm, &eJMP);
 		iPC = tempPC;
 	}
 	if (mVUup.dBit && doDBitHandling)
 	{
 		u32 tempPC = iPC;
-		a64::Label eJMP;
+		a64_label eJMP = A64_LABEL_INIT;
 		mvuTestMemBranchZero(mVU, (mVU.index && THREAD_VU1) ? (const void*)&vu1Thread.vuFBRST : (const void*)&VU0.VI[REG_FBRST].UL,
 			(isVU1 ? 0x400 : 0x4), eJMP, gprT1);
 		if (!mVU.index || !THREAD_VU1)
@@ -549,18 +549,18 @@ void condBranch(mV, microFlagCycles& mFC, a64::Condition JMPcc)
 		}
 		mVUDTendProgram(mVU, &mFC, 2);
 		mvuLdrsh16(mVU, gprT1, &mVU.branch);
-		armAsm->Cmp(gprT1.W(), 0);
-		a64::Label dJMP;
-		armAsm->B(&dJMP, a64::InvertCondition(JMPcc));
+		a64_cmp_imm(armAsm, a64_asw(gprT1), 0);
+		a64_label dJMP = A64_LABEL_INIT;
+		a64_b_cond(armAsm, &dJMP, A64_INVERT(JMPcc));
 			incPC(4); // Set PC to First instruction of Non-Taken Side
 			mvuStrImm32(mVU, &mVU.regs().VI[REG_TPC].UL, xPC, gprT1);
 			armEmitJmp(mVU.exitFunct);
-		armAsm->Bind(&dJMP);
+		a64_bind(armAsm, &dJMP);
 		incPC(-4); // Go Back to Branch Opcode to get branchAddr
 		iPC = branchAddr(mVU) / 4;
 		mvuStrImm32(mVU, &mVU.regs().VI[REG_TPC].UL, xPC, gprT1);
 		armEmitJmp(mVU.exitFunct);
-		armAsm->Bind(&eJMP);
+		a64_bind(armAsm, &eJMP);
 		iPC = tempPC;
 	}
 	if (mVUup.mBit)
@@ -573,15 +573,15 @@ void condBranch(mV, microFlagCycles& mFC, a64::Condition JMPcc)
 
 		mVUendProgram(mVU, &mFC, 3);
 		mvuLdrsh16(mVU, gprT1, &mVU.branch);
-		armAsm->Cmp(gprT1.W(), 0);
-		a64::Label dJMP;
-		armAsm->B(&dJMP, JMPcc);
+		a64_cmp_imm(armAsm, a64_asw(gprT1), 0);
+		a64_label dJMP = A64_LABEL_INIT;
+		a64_b_cond(armAsm, &dJMP, JMPcc);
 		incPC(4); // Set PC to First instruction of Non-Taken Side
 		mvuStrImm32(mVU, &mVU.regs().VI[REG_TPC].UL, xPC, gprT1);
 		if (mVU.index && THREAD_VU1)
 			armEmitCall(reinterpret_cast<const void*>(mVUEBit));
 		armEmitJmp(mVU.exitFunct);
-		armAsm->Bind(&dJMP);
+		a64_bind(armAsm, &dJMP);
 		incPC(-4); // Go Back to Branch Opcode to get branchAddr
 		iPC = branchAddr(mVU) / 4;
 		mvuStrImm32(mVU, &mVU.regs().VI[REG_TPC].UL, xPC, gprT1);
@@ -597,17 +597,17 @@ void condBranch(mV, microFlagCycles& mFC, a64::Condition JMPcc)
 
 		mVUendProgram(mVU, &mFC, 2);
 		mvuLdrsh16(mVU, gprT1, &mVU.branch);
-		armAsm->Cmp(gprT1.W(), 0);
+		a64_cmp_imm(armAsm, a64_asw(gprT1), 0);
 
 		incPC(3);
-		a64::Label eJMP;
-		armAsm->B(&eJMP, JMPcc);
+		a64_label eJMP = A64_LABEL_INIT;
+		a64_b_cond(armAsm, &eJMP, JMPcc);
 			incPC(1); // Set PC to First instruction of Non-Taken Side
 			mvuStrImm32(mVU, &mVU.regs().VI[REG_TPC].UL, xPC, gprT1);
 			if (mVU.index && THREAD_VU1)
 				armEmitCall(reinterpret_cast<const void*>(mVUEBit));
 			armEmitJmp(mVU.exitFunct);
-		armAsm->Bind(&eJMP);
+		a64_bind(armAsm, &eJMP);
 		incPC(-4); // Go Back to Branch Opcode to get branchAddr
 
 		iPC = branchAddr(mVU) / 4;
@@ -620,7 +620,7 @@ void condBranch(mV, microFlagCycles& mFC, a64::Condition JMPcc)
 	else // Normal Conditional Branch
 	{
 		mvuLdrsh16(mVU, gprT1, &mVU.branch);
-		armAsm->Cmp(gprT1.W(), 0);
+		a64_cmp_imm(armAsm, a64_asw(gprT1), 0);
 
 		incPC(3);
 		microBlock* bBlock;
@@ -630,14 +630,14 @@ void condBranch(mV, microFlagCycles& mFC, a64::Condition JMPcc)
 		incPC2(-1);
 		if (bBlock) // Branch non-taken has already been compiled
 		{
-			armEmitCondBranch(a64::InvertCondition(JMPcc), bBlock->codeStart);
+			armEmitCondBranch(A64_INVERT(JMPcc), bBlock->codeStart);
 			incPC(-3); // Go back to branch opcode (to get branch imm addr)
 			normBranchCompile(mVU, branchAddr(mVU));
 		}
 		else
 		{
-			a64::Label takenLabel;
-			armAsm->B(&takenLabel, JMPcc);
+			a64_label takenLabel = A64_LABEL_INIT;
+			a64_b_cond(armAsm, &takenLabel, JMPcc);
 			u32 bPC = iPC; // mVUcompile can modify iPC, mVUpBlock, and mVUregs so back them up
 
 			microRegInfo regBackup;
@@ -648,7 +648,7 @@ void condBranch(mV, microFlagCycles& mFC, a64::Condition JMPcc)
 
 			iPC = bPC;
 			incPC(-3); // Go back to branch opcode (to get branch imm addr)
-			armAsm->Bind(&takenLabel);
+			a64_bind(armAsm, &takenLabel);
 			u8* const beforeFetch = armGetCurrentCodePointer();
 			void* jumpAddr = mVUblockFetch(mVU, branchAddr(mVU), (uptr)&regBackup);
 			// If mVUblockFetch found an existing block (emitted nothing), bridge to
@@ -683,7 +683,7 @@ void normJump(mV, microFlagCycles& mFC)
 		// Flush register cache early to avoid double flush on both paths
 		mVU.regAlloc->flushAll(false);
 
-		a64::Label eJMP;
+		a64_label eJMP = A64_LABEL_INIT;
 		mvuTestMemBranchZero(mVU, THREAD_VU1 ? (const void*)&vu1Thread.vuFBRST : (const void*)&VU0.VI[REG_FBRST].UL,
 			(isVU1 ? 0x400 : 0x4), eJMP, gprT1);
 		if (!mVU.index || !THREAD_VU1)
@@ -695,14 +695,14 @@ void normJump(mV, microFlagCycles& mFC)
 		mvuLdr32(mVU, gprT1, &mVU.branch);
 		mvuStr32(mVU, &mVU.regs().VI[REG_TPC].UL, gprT1);
 		armEmitJmp(mVU.exitFunct);
-		armAsm->Bind(&eJMP);
+		a64_bind(armAsm, &eJMP);
 	}
 	if (mVUup.tBit)
 	{
 		// Flush register cache early to avoid double flush on both paths
 		mVU.regAlloc->flushAll(false);
 
-		a64::Label eJMP;
+		a64_label eJMP = A64_LABEL_INIT;
 		mvuTestMemBranchZero(mVU, (mVU.index && THREAD_VU1) ? (const void*)&vu1Thread.vuFBRST : (const void*)&VU0.VI[REG_FBRST].UL,
 			(isVU1 ? 0x800 : 0x8), eJMP, gprT1);
 		if (!mVU.index || !THREAD_VU1)
@@ -716,7 +716,7 @@ void normJump(mV, microFlagCycles& mFC)
 		if (mVU.index && THREAD_VU1)
 			armEmitCall(reinterpret_cast<const void*>(mVUTBit));
 		armEmitJmp(mVU.exitFunct);
-		armAsm->Bind(&eJMP);
+		a64_bind(armAsm, &eJMP);
 	}
 	if (mVUup.eBit) // E-bit Jump
 	{

@@ -12,7 +12,7 @@
  *  A wide store to a u32 field overwrites the field after it.
  *
  *  This reads the field types out of a register-file struct declaration
- *  and checks every Ldr/Str through RegsField(&<var>.<field>) in a
+ *  and checks every a64_ldr/a64_str through RegsField(&<var>.<field>) in a
  *  recompiler against them. Only top-level fields are checked; accesses
  *  into nested members (CP0.n.Status, GPR.r[n]) are skipped.
  *
@@ -220,16 +220,26 @@ int main(int argc, char** argv)
 				break;
 		if (c + 1 < p)
 			continue;
-		/* the nearest load or store opening before the operand */
+		/* the nearest load or store opening before the operand; its
+		 * register follows the emitter argument */
 		op = NULL;
-		for (c = p; c - ls >= 4 && !op; c--)
-			if (!strncmp(c - 4, "Ldr(", 4) || !strncmp(c - 4, "Str(", 4))
-				op = c - 4;
+		for (c = p; c - ls >= 8 && !op; c--)
+			if (!strncmp(c - 8, "a64_ldr(", 8) || !strncmp(c - 8, "a64_str(", 8))
+				op = c - 8;
 		if (!op)
 			continue; /* not a load or store: an address computation */
-		r = op + 4;
+		r = op + 8;
+		while (r < p && *r != ',')
+			r++;
+		if (r < p)
+			r++;
 		while (*r == ' ')
 			r++;
+		/* A64_W(n)/A64_X(n), or a register variable named w.../x... */
+		if (!strncmp(r, "A64_W(", 6))
+			r = "w";
+		else if (!strncmp(r, "A64_X(", 6))
+			r = "x";
 		for (c = src; c < p; c++)
 			if (*c == '\n')
 				line++;

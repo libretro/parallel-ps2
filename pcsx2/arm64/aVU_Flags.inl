@@ -12,7 +12,7 @@
 //     mVUstatusFlagOp/mVUsetFlags — these compute which of the 4 live flag
 //     instances each instruction reads/writes for accurate block linking. They
 //     operate only on the IR (microFlagCycles / mVUinfo) so they port verbatim.
-//   * Emit helpers (VIXL): mVUdivSet (FDIV flag merge into Status) and
+//   * Emit helpers: mVUdivSet (FDIV flag merge into Status) and
 //     mVUsetupFlags (shuffle the 4 Status instances into gprF0-3 + permute the
 //     mac/clip flag arrays for the next block). x86 emit translations:
 //       - xMOV(gpr, gpr)         -> armAsm->Mov  (W regs; same-reg movs are no-ops)
@@ -30,11 +30,11 @@ __fi void mVUdivSet(mV)
 	if (mVUinfo.doDivFlag)
 	{
 		if (!sFLAG.doFlag)
-			armAsm->Mov(getFlagReg(sFLAG.write), getFlagReg(sFLAG.lastWrite));
-		armAsm->And(getFlagReg(sFLAG.write), getFlagReg(sFLAG.write), 0xfff3ffff);
+			a64_mov(armAsm, getFlagReg(sFLAG.write), getFlagReg(sFLAG.lastWrite));
+		a64_and_imm(armAsm, getFlagReg(sFLAG.write), getFlagReg(sFLAG.write), 0xfff3ffff);
 		// xOR(getFlagReg(sFLAG.write), ptr32[&mVU.divFlag]);
-		armAsm->Ldr(gprT1, mvuAbsMem(mVU, &mVU.divFlag, 4));
-		armAsm->Orr(getFlagReg(sFLAG.write), getFlagReg(sFLAG.write), gprT1);
+		a64_ldr(armAsm, gprT1, mvuAbsMem(mVU, &mVU.divFlag, 4));
+		a64_orr(armAsm, getFlagReg(sFLAG.write), getFlagReg(sFLAG.write), gprT1);
 	}
 }
 
@@ -299,39 +299,39 @@ __fi void mVUsetupFlags(mV, microFlagCycles& mFC)
 		// Note: Emitter will optimize out mov(reg1, reg1) cases...
 		if (sortRegs == 1)
 		{
-			armAsm->Mov(gprF0, getFlagReg(bStatus[0]));
-			armAsm->Mov(gprF1, getFlagReg(bStatus[1]));
-			armAsm->Mov(gprF2, getFlagReg(bStatus[2]));
-			armAsm->Mov(gprF3, getFlagReg(bStatus[3]));
+			a64_mov(armAsm, gprF0, getFlagReg(bStatus[0]));
+			a64_mov(armAsm, gprF1, getFlagReg(bStatus[1]));
+			a64_mov(armAsm, gprF2, getFlagReg(bStatus[2]));
+			a64_mov(armAsm, gprF3, getFlagReg(bStatus[3]));
 		}
 		else if (sortRegs == 2)
 		{
-			armAsm->Mov(gprT1, getFlagReg (bStatus[3]));
-			armAsm->Mov(gprF0, getFlagReg (bStatus[0]));
-			armAsm->Mov(gprF1, getFlagReg2(bStatus[1]));
-			armAsm->Mov(gprF2, getFlagReg2(bStatus[2]));
-			armAsm->Mov(gprF3, gprT1);
+			a64_mov(armAsm, gprT1, getFlagReg (bStatus[3]));
+			a64_mov(armAsm, gprF0, getFlagReg (bStatus[0]));
+			a64_mov(armAsm, gprF1, getFlagReg2(bStatus[1]));
+			a64_mov(armAsm, gprF2, getFlagReg2(bStatus[2]));
+			a64_mov(armAsm, gprF3, gprT1);
 		}
 		else if (sortRegs == 3)
 		{
 			int gFlag = (bStatus[0] == bStatus[1]) ? bStatus[2] : bStatus[1];
-			armAsm->Mov(gprT1, getFlagReg (gFlag));
-			armAsm->Mov(gprT2, getFlagReg (bStatus[3]));
-			armAsm->Mov(gprF0, getFlagReg (bStatus[0]));
-			armAsm->Mov(gprF1, getFlagReg3(bStatus[1]));
-			armAsm->Mov(gprF2, getFlagReg4(bStatus[2]));
-			armAsm->Mov(gprF3, gprT2);
+			a64_mov(armAsm, gprT1, getFlagReg (gFlag));
+			a64_mov(armAsm, gprT2, getFlagReg (bStatus[3]));
+			a64_mov(armAsm, gprF0, getFlagReg (bStatus[0]));
+			a64_mov(armAsm, gprF1, getFlagReg3(bStatus[1]));
+			a64_mov(armAsm, gprF2, getFlagReg4(bStatus[2]));
+			a64_mov(armAsm, gprF3, gprT2);
 		}
 		else
 		{
-			const a64::Register temp3 = mVU.regAlloc->allocGPR();
-			armAsm->Mov(gprT1, getFlagReg(bStatus[0]));
-			armAsm->Mov(gprT2, getFlagReg(bStatus[1]));
-			armAsm->Mov(temp3, getFlagReg(bStatus[2]));
-			armAsm->Mov(gprF3, getFlagReg(bStatus[3]));
-			armAsm->Mov(gprF0, gprT1);
-			armAsm->Mov(gprF1, gprT2);
-			armAsm->Mov(gprF2, temp3);
+			const a64r temp3 = mVU.regAlloc->allocGPR();
+			a64_mov(armAsm, gprT1, getFlagReg(bStatus[0]));
+			a64_mov(armAsm, gprT2, getFlagReg(bStatus[1]));
+			a64_mov(armAsm, temp3, getFlagReg(bStatus[2]));
+			a64_mov(armAsm, gprF3, getFlagReg(bStatus[3]));
+			a64_mov(armAsm, gprF0, gprT1);
+			a64_mov(armAsm, gprF1, gprT2);
+			a64_mov(armAsm, gprF2, temp3);
 			mVU.regAlloc->clearNeeded(temp3);
 		}
 	}
@@ -342,10 +342,10 @@ __fi void mVUsetupFlags(mV, microFlagCycles& mFC)
 			log_cb(RETRO_LOG_DEBUG, "mVU%d - Mac Flag\n", mVU.index);
 		int bMac[4];
 		sortFlag(mFC.xMac, bMac, mFC.cycles);
-		const a64::MemOperand mac_mem = mvuAbsMem(mVU, &mVU.macFlag[0], 16);
-		armAsm->Ldr(xmmT1.Q(), mac_mem);
+		const a64_mem mac_mem = mvuAbsMem(mVU, &mVU.macFlag[0], 16);
+		a64_ldr(armAsm, a64_as(xmmT1, A64K_Q), mac_mem);
 		mVUshufflePS(xmmT1, xmmT1, shuffleMac);
-		armAsm->Str(xmmT1.Q(), mac_mem);
+		a64_str(armAsm, a64_as(xmmT1, A64K_Q), mac_mem);
 	}
 
 	if (doCFlagInsts && __Clip)
@@ -354,10 +354,10 @@ __fi void mVUsetupFlags(mV, microFlagCycles& mFC)
 			log_cb(RETRO_LOG_DEBUG, "mVU%d - Clip Flag\n", mVU.index);
 		int bClip[4];
 		sortFlag(mFC.xClip, bClip, mFC.cycles);
-		const a64::MemOperand clip_mem = mvuAbsMem(mVU, &mVU.clipFlag[0], 16);
-		armAsm->Ldr(xmmT2.Q(), clip_mem);
+		const a64_mem clip_mem = mvuAbsMem(mVU, &mVU.clipFlag[0], 16);
+		a64_ldr(armAsm, a64_as(xmmT2, A64K_Q), clip_mem);
 		mVUshufflePS(xmmT2, xmmT2, shuffleClip);
-		armAsm->Str(xmmT2.Q(), clip_mem);
+		a64_str(armAsm, a64_as(xmmT2, A64K_Q), clip_mem);
 	}
 }
 

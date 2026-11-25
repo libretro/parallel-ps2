@@ -6,7 +6,7 @@
 
 // ARM64 microVU — Upper (FMAC float-vector) opcode handlers (Phase 7, task 7.5a).
 //
-// VIXL port of pcsx2/x86/microVU_Upper.inl. The Upper pipe is the VU's float
+// AArch64 port of pcsx2/x86/microVU_Upper.inl. The Upper pipe is the VU's float
 // vector ALU: ADD/SUB/MUL/MADD/MSUB + ACC variants, MAX/MINI, FTOI/ITOF, ABS,
 // OPMULA/OPMSUB, CLIP, NOP. The arithmetic primitives live in aVU_Misc.inl
 // (SSE_*); this file wires them to the VU register model + the Status/Mac/Clip
@@ -34,7 +34,7 @@
 	do { \
 		if (_XYZW_SS && modXYZW && !_W) \
 		{ \
-			armAsm->Lsl(gprReg.W(), gprReg.W(), ADD_XYZW); \
+			a64_lsl_imm(armAsm, a64_asw(gprReg), a64_asw(gprReg), ADD_XYZW); \
 		} \
 	} while (0)
 
@@ -48,33 +48,33 @@ alignas(16) static const u32 mVUmovemaskBit[4] = {1, 2, 4, 8};
 
 // dst.W = 4-bit sign mask of the four float lanes of src (x86: MOVMSKPS).
 // bit i = sign of lane i (lane0 = X = bit0). Clobbers RQSCRATCH/RQSCRATCH2.
-static void mVUmovemask(const a64::Register& dst, const a64::VRegister& src)
+static void mVUmovemask(const a64r& dst, const a64r& src)
 {
-	armAsm->Sshr(RQSCRATCH.V4S(), src.V4S(), 31); // lane -> 0xFFFFFFFF if sign set, else 0
-	armAsm->Ldr(RQSCRATCH2.Q(), armAbsMemOperand(RSCRATCHADDR, mVUmovemaskBit, 16));
-	armAsm->And(RQSCRATCH.V16B(), RQSCRATCH.V16B(), RQSCRATCH2.V16B());
-	armAsm->Addv(RQSCRATCH.S(), RQSCRATCH.V4S());
-	armAsm->Fmov(dst.W(), RQSCRATCH.S());
+	a64_sshr(armAsm, a64_as(RQSCRATCH, A64K_4S), a64_as(src, A64K_4S), 31); // lane -> 0xFFFFFFFF if sign set, else 0
+	a64_ldr(armAsm, a64_as(RQSCRATCH2, A64K_Q), armAbsMemOperand(RSCRATCHADDR, mVUmovemaskBit, 16));
+	a64_and(armAsm, a64_as(RQSCRATCH, A64K_16B), a64_as(RQSCRATCH, A64K_16B), a64_as(RQSCRATCH2, A64K_16B));
+	a64_addv(armAsm, a64_as(RQSCRATCH, A64K_S), a64_as(RQSCRATCH, A64K_4S));
+	a64_fmov(armAsm, a64_asw(dst), a64_as(RQSCRATCH, A64K_S));
 }
 
 // Note: If modXYZW is true, then it adjusts XYZW for Single Scalar operations
-static void mVUupdateFlags(mV, const a64::VRegister& reg, const a64::VRegister& regT1in = xEmptyReg, const a64::VRegister& regT2in = xEmptyReg, bool modXYZW = true)
+static void mVUupdateFlags(mV, const a64r& reg, const a64r& regT1in = xEmptyReg, const a64r& regT2in = xEmptyReg, bool modXYZW = true)
 {
-	const a64::Register mReg = gprT1;
-	const a64::Register sReg = getFlagReg(sFLAG.write);
-	bool regT1b = regT1in.IsNone(), regT2b = false;
+	const a64r mReg = gprT1;
+	const a64r sReg = getFlagReg(sFLAG.write);
+	bool regT1b = !A64_ISREG(regT1in), regT2b = false;
 	static const u16 flipMask[16] = {0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15};
 
 	if (!sFLAG.doFlag && !mFLAG.doFlag)
 		return;
 
-	const a64::VRegister regT1 = regT1b ? mVU.regAlloc->allocReg() : regT1in;
+	const a64r regT1 = regT1b ? mVU.regAlloc->allocReg() : regT1in;
 
-	a64::VRegister regT2 = reg;
+	a64r regT2 = reg;
 	if ((mFLAG.doFlag && !(_XYZW_SS && modXYZW)))
 	{
 		regT2 = regT2in;
-		if (regT2.IsNone())
+		if (!A64_ISREG(regT2))
 		{
 			regT2 = mVU.regAlloc->allocReg();
 			regT2b = true;
@@ -88,23 +88,23 @@ static void mVUupdateFlags(mV, const a64::VRegister& reg, const a64::VRegister& 
 	{
 		mVUallocSFLAGa(sReg, sFLAG.lastWrite); // Get Prev Status Flag
 		if (sFLAG.doNonSticky)
-			armAsm->And(sReg, sReg, 0xfffc00ff); // Clear O,U,S,Z flags
+			a64_and_imm(armAsm, sReg, sReg, 0xfffc00ff); // Clear O,U,S,Z flags
 	}
 
 	//-------------------------Check for Signed flags------------------------------
 
 	mVUmovemask(mReg, regT2);                       // Move the Sign Bits of the t2reg
-	armAsm->Eor(regT1.V16B(), regT1.V16B(), regT1.V16B()); // Clear regT1
-	armAsm->Fcmeq(regT1.V4S(), regT2.V4S(), 0.0);   // Set all F's if each vector is zero
+	a64_eor(armAsm, a64_as(regT1, A64K_16B), a64_as(regT1, A64K_16B), a64_as(regT1, A64K_16B)); // Clear regT1
+	a64_fcmeq_zero(armAsm, a64_as(regT1, A64K_4S), a64_as(regT2, A64K_4S));   // Set all F's if each vector is zero
 	mVUmovemask(gprT2, regT1);                      // Used for Zero Flag Calculation
 
-	armAsm->And(mReg, mReg, AND_XYZW); // Grab "Is Signed" bits from the previous calculation
-	armAsm->Lsl(mReg, mReg, 4);
+	a64_and_imm(armAsm, mReg, mReg, AND_XYZW); // Grab "Is Signed" bits from the previous calculation
+	a64_lsl_imm(armAsm, mReg, mReg, 4);
 
 	//-------------------------Check for Zero flags------------------------------
 
-	armAsm->And(gprT2, gprT2, AND_XYZW); // Grab "Is Zero" bits from the previous calculation
-	armAsm->Orr(mReg, mReg, gprT2);
+	a64_and_imm(armAsm, gprT2, gprT2, AND_XYZW); // Grab "Is Zero" bits from the previous calculation
+	a64_orr(armAsm, mReg, mReg, gprT2);
 
 	//-------------------------Overflow Flags-----------------------------------
 	// We can't really do this because of the limited range of host floats and the value MIGHT
@@ -121,24 +121,24 @@ static void mVUupdateFlags(mV, const a64::VRegister& reg, const a64::VRegister& 
 	 * is x86-only for now (arm64 accuracy-parity ledger). */
 	if (sFLAG.doFlag && mVU.ovfDetectOK)
 	{
-		a64::Label oJMP;
+		a64_label oJMP = A64_LABEL_INIT;
 		// Calculate overflow
 		mvuLdrQ(mVU, RQSCRATCH, &mVU_sse4_compvals[1][0]);
-		armAsm->And(regT1.V16B(), regT2.V16B(), RQSCRATCH.V16B()); // Remove sign flags (we don't care)
+		a64_and(armAsm, a64_as(regT1, A64K_16B), a64_as(regT2, A64K_16B), a64_as(RQSCRATCH, A64K_16B)); // Remove sign flags (we don't care)
 		mvuLdrQ(mVU, RQSCRATCH, &mVU_sse4_compvals[0][0]);
-		armAsm->Fcmge(regT1.V4S(), regT1.V4S(), RQSCRATCH.V4S());  // Compare if T1 >= FLT_MAX
+		a64_fcmge(armAsm, a64_as(regT1, A64K_4S), a64_as(regT1, A64K_4S), a64_as(RQSCRATCH, A64K_4S));  // Compare if T1 >= FLT_MAX
 		mVUmovemask(gprT2, regT1);                                 // Grab sign bits for equal results
-		armAsm->And(gprT2, gprT2, AND_XYZW); // Grab "Is FLT_MAX" bits from the previous calculation
-		armAsm->Cbz(gprT2, &oJMP);
+		a64_and_imm(armAsm, gprT2, gprT2, AND_XYZW); // Grab "Is FLT_MAX" bits from the previous calculation
+		a64_cbz(armAsm, gprT2, &oJMP);
 
-		armAsm->Orr(sReg, sReg, 0x820000);
+		a64_orr_imm(armAsm, sReg, sReg, 0x820000);
 		if (mFLAG.doFlag)
 		{
-			armAsm->Lsl(gprT2, gprT2, 12); // Add the results to the MAC Flag
-			armAsm->Orr(mReg, mReg, gprT2);
+			a64_lsl_imm(armAsm, gprT2, gprT2, 12); // Add the results to the MAC Flag
+			a64_orr(armAsm, mReg, mReg, gprT2);
 		}
 
-		armAsm->Bind(&oJMP);
+		a64_bind(armAsm, &oJMP);
 	}
 
 	//-------------------------Write back flags------------------------------
@@ -149,12 +149,12 @@ static void mVUupdateFlags(mV, const a64::VRegister& reg, const a64::VRegister& 
 	}
 	if (sFLAG.doFlag)
 	{
-		armAsm->And(mReg, mReg, 0xFF); // Ignore overflow bits, they're handled separately
-		armAsm->Orr(sReg, sReg, mReg);
+		a64_and_imm(armAsm, mReg, mReg, 0xFF); // Ignore overflow bits, they're handled separately
+		a64_orr(armAsm, sReg, sReg, mReg);
 		if (sFLAG.doNonSticky)
 		{
-			armAsm->Lsl(mReg, mReg, 8);
-			armAsm->Orr(sReg, sReg, mReg);
+			a64_lsl_imm(armAsm, mReg, mReg, 8);
+			a64_orr(armAsm, sReg, sReg, mReg);
 		}
 	}
 	if (regT1b)
@@ -167,7 +167,7 @@ static void mVUupdateFlags(mV, const a64::VRegister& reg, const a64::VRegister& 
 // Helper Macros and Functions
 //------------------------------------------------------------------
 
-static void (*const SSE_PS[])(mV, const a64::VRegister&, const a64::VRegister&, const a64::VRegister&, const a64::VRegister&) = {
+static void (*const SSE_PS[])(mV, const a64r&, const a64r&, const a64r&, const a64r&) = {
 	SSE_ADDPS, // 0
 	SSE_SUBPS, // 1
 	SSE_MULPS, // 2
@@ -176,7 +176,7 @@ static void (*const SSE_PS[])(mV, const a64::VRegister&, const a64::VRegister&, 
 	SSE_ADD2PS // 5
 };
 
-static void (*const SSE_SS[])(mV, const a64::VRegister&, const a64::VRegister&, const a64::VRegister&, const a64::VRegister&) = {
+static void (*const SSE_SS[])(mV, const a64r&, const a64r&, const a64r&, const a64r&) = {
 	SSE_ADDSS, // 0
 	SSE_SUBSS, // 1
 	SSE_MULSS, // 2
@@ -221,8 +221,8 @@ static bool doSafeSub(microVU& mVU, int opCase, int opType, bool isACC)
 	{
 		if ((opType == 1) && (_Ft_ == _Fs_) && (opCase == 1)) // Don't do this with BC's!
 		{
-			const a64::VRegister Fs = mVU.regAlloc->allocReg(-1, isACC ? 32 : _Fd_, _X_Y_Z_W);
-			armAsm->Eor(Fs.V16B(), Fs.V16B(), Fs.V16B()); // Set to Positive 0
+			const a64r Fs = mVU.regAlloc->allocReg(-1, isACC ? 32 : _Fd_, _X_Y_Z_W);
+			a64_eor(armAsm, a64_as(Fs, A64K_16B), a64_as(Fs, A64K_16B), a64_as(Fs, A64K_16B)); // Set to Positive 0
 			mVUupdateFlags(mVU, Fs);
 			mVU.regAlloc->clearNeeded(Fs);
 			return true;
@@ -239,7 +239,7 @@ static bool doSafeSub(microVU& mVU, int opCase, int opType, bool isACC)
 // caller's multiply step must fold the lane select into a by-element FMUL on that
 // lane. Only set when canLaneFold (the sole Ft consumer is the multiply step) and no
 // Ft clamp will be emitted.
-static void setupFtReg(microVU& mVU, a64::VRegister& Ft, a64::VRegister& tempFt, int opCase, int clampType, int& bcLane, bool canLaneFold)
+static void setupFtReg(microVU& mVU, a64r& Ft, a64r& tempFt, int opCase, int clampType, int& bcLane, bool canLaneFold)
 {
 	bcLane = -1;
 	opCase1
@@ -308,7 +308,7 @@ static void mVU_FMACa(microVU& mVU, int recPass, int opCase, int opType, bool is
 		if (doSafeSub(mVU, opCase, opType, isACC))
 			return;
 
-		a64::VRegister Fs, Ft, ACC, tempFt;
+		a64r Fs, Ft, ACC, tempFt;
 		int bcLane = -1;
 		mVU.ovfDetectOK = (opType == 2);
 		setupFtReg(mVU, Ft, tempFt, opCase, clampType, bcLane, opType == 2);
@@ -329,8 +329,8 @@ static void mVU_FMACa(microVU& mVU, int recPass, int opCase, int opType, bool is
 		if (clampType & cFs)                 mVUclamp2(mVU, Fs, xEmptyReg, _X_Y_Z_W);
 
 		// Lane-fold (bcLane>=0) == Dup + SSE_PS[2] under the no-clamp gate; opType==2
-		// (MUL) is the only foldable FMACa op. vm MUST be the scalar .S() view — vixl's
-		// by-element Fmul keys element size off vm's format; a V4S vm selects fp16.
+		// (MUL) is the only foldable FMACa op. vm MUST be the scalar S view — the
+		// by-element FMUL keys element size off vm's format.
 		// vf0 identities first, mirroring the x86 dispatch: add/sub of a
 		// broadcast +0.0 and multiply by a vf0 lane skip their pipelines.
 		if ((opType <= 1) && (CHECK_VU_ACC_ADDSUB || CHECK_VUADDSUBHACK) && (opCase == 2) && (_Ft_ == 0) && (_bc_ != 3))
@@ -338,14 +338,14 @@ static void mVU_FMACa(microVU& mVU, int recPass, int opCase, int opType, bool is
 		else if ((opType == 2) && CHECK_VU_EXACTMUL && mVUexactMulVF0(mVU, Fs, opCase, _XYZW_SS))
 		{
 		}
-		else if (bcLane >= 0)   armAsm->Fmul(Fs.V4S(), Fs.V4S(), Ft.S(), bcLane);
+		else if (bcLane >= 0)   a64_fmul_elem(armAsm, a64_as(Fs, A64K_4S), a64_as(Fs, A64K_4S), a64_as(Ft, A64K_S), bcLane);
 		else if (_XYZW_SS) SSE_SS[opType](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
 		else               SSE_PS[opType](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
 
 		if (isACC)
 		{
 			if (_XYZW_SS)
-				armAsm->Ins(ACC.V4S(), 0, Fs.V4S(), 0); // xMOVSS(ACC, Fs)
+				a64_ins_elem(armAsm, a64_as(ACC, A64K_4S), 0, a64_as(Fs, A64K_4S), 0); // xMOVSS(ACC, Fs)
 			else
 				mVUmergeRegs(ACC, Fs, _X_Y_Z_W, false);
 			mVUupdateFlags(mVU, ACC, Fs, tempFt);
@@ -374,7 +374,7 @@ static void mVU_FMACb(microVU& mVU, int recPass, int opCase, int opType, microOp
 	pass1 { setupPass1(mVU, opCase, true, false); }
 	pass2
 	{
-		a64::VRegister Fs, Ft, ACC, tempFt;
+		a64r Fs, Ft, ACC, tempFt;
 		int bcLane = -1;
 		mVU.ovfDetectOK = true;
 		setupFtReg(mVU, Ft, tempFt, opCase, clampType, bcLane, true);
@@ -392,7 +392,7 @@ static void mVU_FMACb(microVU& mVU, int recPass, int opCase, int opType, microOp
 		if (CHECK_VU_EXACTMUL && mVUexactMulVF0(mVU, Fs, opCase, _XYZW_SS))
 		{
 		}
-		else if (bcLane >= 0)   armAsm->Fmul(Fs.V4S(), Fs.V4S(), Ft.S(), bcLane);
+		else if (bcLane >= 0)   a64_fmul_elem(armAsm, a64_as(Fs, A64K_4S), a64_as(Fs, A64K_4S), a64_as(Ft, A64K_S), bcLane);
 		else if (_XYZW_SS) SSE_SS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
 		else               SSE_PS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
 
@@ -406,8 +406,8 @@ static void mVU_FMACb(microVU& mVU, int recPass, int opCase, int opType, microOp
 		}
 		else
 		{
-			const a64::VRegister tempACC = mVU.regAlloc->allocReg();
-			armAsm->Mov(tempACC.V16B(), ACC.V16B());
+			const a64r tempACC = mVU.regAlloc->allocReg();
+			a64_mov(armAsm, a64_as(tempACC, A64K_16B), a64_as(ACC, A64K_16B));
 			SSE_PS[opType](mVU, tempACC, Fs, tempFt, xEmptyReg);
 			mVUmergeRegs(ACC, tempACC, _X_Y_Z_W, false);
 			mVUupdateFlags(mVU, ACC, Fs, tempFt);
@@ -429,7 +429,7 @@ static void mVU_FMACc(microVU& mVU, int recPass, int opCase, microOpcode opEnum,
 	pass1 { setupPass1(mVU, opCase, false, false); }
 	pass2
 	{
-		a64::VRegister Fs, Ft, ACC, tempFt;
+		a64r Fs, Ft, ACC, tempFt;
 		int bcLane = -1;
 		setupFtReg(mVU, Ft, tempFt, opCase, clampType, bcLane, true);
 
@@ -453,7 +453,7 @@ static void mVU_FMACc(microVU& mVU, int recPass, int opCase, microOpcode opEnum,
 		else if (_XYZW_SS) { SSE_SS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg); SSE_SS[0](mVU, Fs, ACC, tempFt, xEmptyReg); }
 		else
 		{
-			if (bcLane >= 0) armAsm->Fmul(Fs.V4S(), Fs.V4S(), Ft.S(), bcLane);
+			if (bcLane >= 0) a64_fmul_elem(armAsm, a64_as(Fs, A64K_4S), a64_as(Fs, A64K_4S), a64_as(Ft, A64K_S), bcLane);
 			else             SSE_PS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
 			SSE_PS[0](mVU, Fs, ACC, tempFt, xEmptyReg);
 		}
@@ -478,7 +478,7 @@ static void mVU_FMACd(microVU& mVU, int recPass, int opCase, microOpcode opEnum,
 	pass1 { setupPass1(mVU, opCase, false, false); }
 	pass2
 	{
-		a64::VRegister Fs, Ft, Fd, tempFt;
+		a64r Fs, Ft, Fd, tempFt;
 		int bcLane = -1;
 		setupFtReg(mVU, Ft, tempFt, opCase, clampType, bcLane, true);
 
@@ -499,7 +499,7 @@ static void mVU_FMACd(microVU& mVU, int recPass, int opCase, microOpcode opEnum,
 		else if (_XYZW_SS) { SSE_SS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg); SSE_SS[1](mVU, Fd, Fs, tempFt, xEmptyReg); }
 		else
 		{
-			if (bcLane >= 0) armAsm->Fmul(Fs.V4S(), Fs.V4S(), Ft.S(), bcLane);
+			if (bcLane >= 0) a64_fmul_elem(armAsm, a64_as(Fs, A64K_4S), a64_as(Fs, A64K_4S), a64_as(Ft, A64K_S), bcLane);
 			else             SSE_PS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
 			SSE_PS[1](mVU, Fd, Fs, tempFt, xEmptyReg);
 		}
@@ -523,9 +523,9 @@ mVUop(mVU_ABS)
 	{
 		if (!_Ft_)
 			return;
-		const a64::VRegister Fs = mVU.regAlloc->allocReg(_Fs_, _Ft_, _X_Y_Z_W, !((_Fs_ == _Ft_) && (_X_Y_Z_W == 0xf)));
+		const a64r Fs = mVU.regAlloc->allocReg(_Fs_, _Ft_, _X_Y_Z_W, !((_Fs_ == _Ft_) && (_X_Y_Z_W == 0xf)));
 		mvuLdrQ(mVU, RQSCRATCH, mVU.glob.absclip);
-		armAsm->And(Fs.V16B(), Fs.V16B(), RQSCRATCH.V16B());
+		a64_and(armAsm, a64_as(Fs, A64K_16B), a64_as(Fs, A64K_16B), a64_as(RQSCRATCH, A64K_16B));
 		mVU.regAlloc->clearNeeded(Fs);
 		mVU.profiler.EmitOp(opABS);
 	}
@@ -543,8 +543,8 @@ mVUop(mVU_OPMULA)
 	pass2
 	{
 		mVU.ovfDetectOK = true;
-		const a64::VRegister Ft = mVU.regAlloc->allocReg(_Ft_, 0, _X_Y_Z_W);
-		const a64::VRegister Fs = mVU.regAlloc->allocReg(_Fs_, 32, _X_Y_Z_W);
+		const a64r Ft = mVU.regAlloc->allocReg(_Ft_, 0, _X_Y_Z_W);
+		const a64r Fs = mVU.regAlloc->allocReg(_Fs_, 32, _X_Y_Z_W);
 
 		mVUshufflePS(Fs, Fs, 0xC9); // WXZY
 		mVUshufflePS(Ft, Ft, 0xD2); // WYXZ
@@ -570,9 +570,9 @@ mVUop(mVU_OPMSUB)
 	pass2
 	{
 		mVU.ovfDetectOK = true;
-		const a64::VRegister Ft = mVU.regAlloc->allocReg(_Ft_, 0, 0xf);
-		const a64::VRegister Fs = mVU.regAlloc->allocReg(_Fs_, 0, 0xf);
-		const a64::VRegister ACC = mVU.regAlloc->allocReg(32, _Fd_, _X_Y_Z_W);
+		const a64r Ft = mVU.regAlloc->allocReg(_Ft_, 0, 0xf);
+		const a64r Fs = mVU.regAlloc->allocReg(_Fs_, 0, 0xf);
+		const a64r ACC = mVU.regAlloc->allocReg(32, _Fd_, _X_Y_Z_W);
 
 		mVUshufflePS(Fs, Fs, 0xC9); // WXZY
 		mVUshufflePS(Ft, Ft, 0xD2); // WYXZ
@@ -601,8 +601,8 @@ static void mVU_FTOIx(mP, const float* addr, microOpcode opEnum)
 	{
 		if (!_Ft_)
 			return;
-		const a64::VRegister Fs = mVU.regAlloc->allocReg(_Fs_, _Ft_, _X_Y_Z_W, !((_Fs_ == _Ft_) && (_X_Y_Z_W == 0xf)));
-		const a64::VRegister t1 = mVU.regAlloc->allocReg();
+		const a64r Fs = mVU.regAlloc->allocReg(_Fs_, _Ft_, _X_Y_Z_W, !((_Fs_ == _Ft_) && (_X_Y_Z_W == 0xf)));
+		const a64r t1 = mVU.regAlloc->allocReg();
 
 		// NEON Fcvtzs saturates finite/inf overflow correctly (pos -> 0x7fffffff,
 		// neg -> 0x80000000), but converts NaN to 0. The PS2 has no NaNs: an
@@ -613,14 +613,14 @@ static void mVU_FTOIx(mP, const float* addr, microOpcode opEnum)
 		if (addr)
 		{
 			mvuLdrQ(mVU, RQSCRATCH, addr);
-			armAsm->Fmul(Fs.V4S(), Fs.V4S(), RQSCRATCH.V4S());
+			a64_fmul(armAsm, a64_as(Fs, A64K_4S), a64_as(Fs, A64K_4S), a64_as(RQSCRATCH, A64K_4S));
 		}
-		armAsm->Fcmeq(t1.V4S(), Fs.V4S(), Fs.V4S());           // ~0 on non-NaN lanes
-		armAsm->Sshr(RQSCRATCH.V4S(), Fs.V4S(), 31);           // ~0 on negative lanes
-		armAsm->Mvni(RQSCRATCH2.V4S(), 0x80, a64::LSL, 24);    // 0x7fffffff
-		armAsm->Eor(RQSCRATCH.V16B(), RQSCRATCH.V16B(), RQSCRATCH2.V16B()); // pos -> 0x7fffffff, neg -> 0x80000000
-		armAsm->Fcvtzs(Fs.V4S(), Fs.V4S());
-		armAsm->Bif(Fs.V16B(), RQSCRATCH.V16B(), t1.V16B());   // NaN lanes <- sign-saturated
+		a64_fcmeq(armAsm, a64_as(t1, A64K_4S), a64_as(Fs, A64K_4S), a64_as(Fs, A64K_4S));           // ~0 on non-NaN lanes
+		a64_sshr(armAsm, a64_as(RQSCRATCH, A64K_4S), a64_as(Fs, A64K_4S), 31);           // ~0 on negative lanes
+		a64_mvni(armAsm, a64_as(RQSCRATCH2, A64K_4S), 0x80, A64_LSL, 24);    // 0x7fffffff
+		a64_eor(armAsm, a64_as(RQSCRATCH, A64K_16B), a64_as(RQSCRATCH, A64K_16B), a64_as(RQSCRATCH2, A64K_16B)); // pos -> 0x7fffffff, neg -> 0x80000000
+		a64_fcvtzs(armAsm, a64_as(Fs, A64K_4S), a64_as(Fs, A64K_4S));
+		a64_bif(armAsm, a64_as(Fs, A64K_16B), a64_as(RQSCRATCH, A64K_16B), a64_as(t1, A64K_16B));   // NaN lanes <- sign-saturated
 
 		mVU.regAlloc->clearNeeded(t1);
 		mVU.regAlloc->clearNeeded(Fs);
@@ -641,13 +641,13 @@ static void mVU_ITOFx(mP, const float* addr, microOpcode opEnum)
 	{
 		if (!_Ft_)
 			return;
-		const a64::VRegister Fs = mVU.regAlloc->allocReg(_Fs_, _Ft_, _X_Y_Z_W, !((_Fs_ == _Ft_) && (_X_Y_Z_W == 0xf)));
+		const a64r Fs = mVU.regAlloc->allocReg(_Fs_, _Ft_, _X_Y_Z_W, !((_Fs_ == _Ft_) && (_X_Y_Z_W == 0xf)));
 
-		armAsm->Scvtf(Fs.V4S(), Fs.V4S());
+		a64_scvtf(armAsm, a64_as(Fs, A64K_4S), a64_as(Fs, A64K_4S));
 		if (addr)
 		{
 			mvuLdrQ(mVU, RQSCRATCH, addr);
-			armAsm->Fmul(Fs.V4S(), Fs.V4S(), RQSCRATCH.V4S());
+			a64_fmul(armAsm, a64_as(Fs, A64K_4S), a64_as(Fs, A64K_4S), a64_as(RQSCRATCH, A64K_4S));
 		}
 		//mVUclamp2(Fs, xmmT1, 15); // Clamp (not sure if this is needed)
 
@@ -673,37 +673,37 @@ mVUop(mVU_CLIP)
 	pass1 { mVUanalyzeFMAC4(mVU, _Fs_, _Ft_); }
 	pass2
 	{
-		const a64::VRegister Fs = mVU.regAlloc->allocReg(_Fs_, 0, 0xf);
-		const a64::VRegister Ft = mVU.regAlloc->allocReg(_Ft_, 0, 0x1);
-		const a64::VRegister t1 = mVU.regAlloc->allocReg();
-		const a64::VRegister t2 = mVU.regAlloc->allocReg();
+		const a64r Fs = mVU.regAlloc->allocReg(_Fs_, 0, 0xf);
+		const a64r Ft = mVU.regAlloc->allocReg(_Ft_, 0, 0x1);
+		const a64r t1 = mVU.regAlloc->allocReg();
+		const a64r t2 = mVU.regAlloc->allocReg();
 
 		mVUunpack_xyzw(Ft, Ft, 0);
 		mVUallocCFLAGa(mVU, gprT1, cFLAG.lastWrite);
-		armAsm->Lsl(gprT1, gprT1, 6);
+		a64_lsl_imm(armAsm, gprT1, gprT1, 6);
 
 		mvuLdrQ(mVU, RQSCRATCH, mVU.glob.exponent);
-		armAsm->And(t1.V16B(), Fs.V16B(), RQSCRATCH.V16B());
-		armAsm->Eor(t2.V16B(), t2.V16B(), t2.V16B());
-		armAsm->Cmeq(t1.V4S(), t1.V4S(), t2.V4S()); // Denormal check
-		armAsm->Bic(t1.V16B(), Fs.V16B(), t1.V16B()); // If denormal, set to zero (x86 PANDN)
+		a64_and(armAsm, a64_as(t1, A64K_16B), a64_as(Fs, A64K_16B), a64_as(RQSCRATCH, A64K_16B));
+		a64_eor(armAsm, a64_as(t2, A64K_16B), a64_as(t2, A64K_16B), a64_as(t2, A64K_16B));
+		a64_cmeq(armAsm, a64_as(t1, A64K_4S), a64_as(t1, A64K_4S), a64_as(t2, A64K_4S)); // Denormal check
+		a64_bic(armAsm, a64_as(t1, A64K_16B), a64_as(Fs, A64K_16B), a64_as(t1, A64K_16B)); // If denormal, set to zero (x86 PANDN)
 		mvuLdrQ(mVU, RQSCRATCH, mVU.glob.absclip);
-		armAsm->And(Ft.V16B(), Ft.V16B(), RQSCRATCH.V16B());
+		a64_and(armAsm, a64_as(Ft, A64K_16B), a64_as(Ft, A64K_16B), a64_as(RQSCRATCH, A64K_16B));
 
 		mvuLdrQ(mVU, RQSCRATCH, mVU.glob.signbit);
-		armAsm->Eor(Fs.V16B(), t1.V16B(), RQSCRATCH.V16B()); // Negate
-		armAsm->Cmgt(t1.V4S(), t1.V4S(), Ft.V4S()); // +w, +z, +y, +x
-		armAsm->Cmgt(Fs.V4S(), Fs.V4S(), Ft.V4S()); // -w, -z, -y, -x
+		a64_eor(armAsm, a64_as(Fs, A64K_16B), a64_as(t1, A64K_16B), a64_as(RQSCRATCH, A64K_16B)); // Negate
+		a64_cmgt(armAsm, a64_as(t1, A64K_4S), a64_as(t1, A64K_4S), a64_as(Ft, A64K_4S)); // +w, +z, +y, +x
+		a64_cmgt(armAsm, a64_as(Fs, A64K_4S), a64_as(Fs, A64K_4S), a64_as(Ft, A64K_4S)); // -w, -z, -y, -x
 
 		mvuLdrQ(mVU, RQSCRATCH, mVU_clipLoHalf);
-		armAsm->Bit(Fs.V16B(), t1.V16B(), RQSCRATCH.V16B()); // Squish: lo16<-t1, hi16<-Fs
+		a64_bit(armAsm, a64_as(Fs, A64K_16B), a64_as(t1, A64K_16B), a64_as(RQSCRATCH, A64K_16B)); // Squish: lo16<-t1, hi16<-Fs
 		mvuLdrQ(mVU, RQSCRATCH, mVU_clipWeights);
-		armAsm->And(Fs.V16B(), Fs.V16B(), RQSCRATCH.V16B()); // each halfword -> its weight or 0
-		armAsm->Addv(Fs.H(), Fs.V8H());                      // horizontal sum -> 8-bit mask
-		armAsm->Umov(gprT2.W(), Fs.V8H(), 0);
-		armAsm->And(gprT2, gprT2, 0x3f);  // Mask unused stuff
-		armAsm->And(gprT1, gprT1, 0xffffff);
-		armAsm->Orr(gprT1, gprT1, gprT2);
+		a64_and(armAsm, a64_as(Fs, A64K_16B), a64_as(Fs, A64K_16B), a64_as(RQSCRATCH, A64K_16B)); // each halfword -> its weight or 0
+		a64_addv(armAsm, a64_as(Fs, A64K_H), a64_as(Fs, A64K_8H));                      // horizontal sum -> 8-bit mask
+		a64_umov(armAsm, a64_asw(gprT2), a64_as(Fs, A64K_8H), 0);
+		a64_and_imm(armAsm, gprT2, gprT2, 0x3f);  // Mask unused stuff
+		a64_and_imm(armAsm, gprT1, gprT1, 0xffffff);
+		a64_orr(armAsm, gprT1, gprT1, gprT2);
 
 		mVUallocCFLAGb(mVU, gprT1, cFLAG.write);
 		mVU.regAlloc->clearNeeded(Fs);

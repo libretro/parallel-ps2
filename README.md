@@ -339,5 +339,5 @@ instructions at the cost of a memory access, tends to lose.
 ## Project Details
 
 Upstream PCSX2: https://pcsx2.net/ — this core inherits its GPL/LGPL licensing;
-see the source headers. The arm64 AArch64 emitter is [VIXL](https://github.com/Linaro/vixl)
-(vendored under `3rdparty/vixl`).
+see the source headers. The arm64 recompilers emit through `pcsx2/arm64/a64emit.c`,
+an AArch64 code emitter in C89.

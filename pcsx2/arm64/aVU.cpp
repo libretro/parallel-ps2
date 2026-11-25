@@ -96,13 +96,13 @@ static void mVUcacheProg(microVU& mVU, microProgram& prog);
 #include "arm64/aVU_Analyze.inl"
 
 // Pass-2 flag allocators (task 7.4/7.5) — the emit-coupled getFlagReg + the
-// Status/Mac/Clip flag normalize/denormalize helpers. These DO make VIXL calls
+// Status/Mac/Clip flag normalize/denormalize helpers. These DO make emitter calls
 // (the first emit-backend slice); mVUallocFlagCheck below odr-uses them so the
 // bodies are compiled now even though their drivers (mVUsetupFlags/Branch/Lower)
 // are later 7.5 slices.
 #include "arm64/aVU_Alloc.inl"
 
-// Operand/result clamp helpers (task 7.5) — VIXL min/max range + sign-overflow
+// Operand/result clamp helpers (task 7.5) — NEON min/max range + sign-overflow
 // clamps used by every VU FMAC arithmetic op. Emit-coupled; mVUclampCheck below
 // odr-uses them so the bodies compile ahead of the Upper/Lower opcode handlers.
 #include "arm64/aVU_Clamp.inl"
@@ -138,7 +138,7 @@ static void mVUcacheProg(microVU& mVU, microProgram& prog);
 // Status/Mac/Clip flag pipeline (task 7.5/7.6) — flag-instance analysis +
 // mVUdivSet/mVUsetupFlags emit. The opcode-table-dependent flag read-scan
 // (_mVUflagPass/mVUsetFlagInfo) is deferred to the Branch/Compile slice.
-// mVUflagCheck below odr-uses the emit helpers so their VIXL bodies compile now.
+// mVUflagCheck below odr-uses the emit helpers so their emitter bodies compile now.
 #include "arm64/aVU_Flags.inl"
 
 // Branch / program-exit emission (task 7.7) — the two program-exit emitters
@@ -162,7 +162,7 @@ static void mVUcacheProg(microVU& mVU, microProgram& prog);
 // The emit-coupled neighbours in microVU_Compile.inl (doUpperOp/doLowerOp/
 // doSwapOp/doIbit/mVUexecuteInstruction, mVUtestCycles, mVUDoDBit/mVUDoTBit,
 // mvuPreloadRegisters, handleBadOp, mVUdebugPrintBlocks, and mVUcompile itself)
-// are deliberately NOT ported here — they make VIXL/regAlloc calls and come over
+// are deliberately NOT ported here — they make emitter/regAlloc calls and come over
 // with the 7.4 compile driver.
 
 // Used by mVUsetupRange — re-cache the program if the guest micro memory changed.
@@ -564,7 +564,7 @@ void mVUreset(microVU& mVU, bool resetReserve)
 		VU0.VI[REG_VPU_STAT].UL &= ~0x100;
 	}
 
-	// Point the VIXL emitter at mVU.cache and emit the dispatchers + helper thunks
+	// Point the emitter at mVU.cache and emit the dispatchers + helper thunks
 	// at the start of the cache (x86: x86Ptr = (u8*)(mVU.cache) + the five generate calls).
 	// Also sets mVU.prog.codeStart / codePtr just past the emitted dispatchers.
 	mVUgenerateDispatchers(mVU);
@@ -1006,15 +1006,15 @@ bool vuJITFreeze(SaveStateBase *s)
 // iteration's shift-shift-blend, Tbl is the mask lookup, two
 // immediate Bics are the & 7, and Ext does the unpairing.
 //------------------------------------------------------------------
-static void emitAdd3(const a64::VRegister& x, const a64::VRegister& y, const a64::VRegister& z,
-	const a64::VRegister& lo, const a64::VRegister& hi, const a64::VRegister& w1, const a64::VRegister& w2)
+static void emitAdd3(const a64r& x, const a64r& y, const a64r& z,
+	const a64r& lo, const a64r& hi, const a64r& w1, const a64r& w2)
 {
-	armAsm->Eor(w1.V16B(), x.V16B(), y.V16B());        // u
-	armAsm->And(w2.V16B(), x.V16B(), y.V16B());
-	armAsm->And(hi.V16B(), w1.V16B(), z.V16B());       // u & z
-	armAsm->Orr(hi.V16B(), hi.V16B(), w2.V16B());
-	armAsm->Shl(hi.V8H(), hi.V8H(), 1);
-	armAsm->Eor(lo.V16B(), w1.V16B(), z.V16B());
+	a64_eor(armAsm, a64_as(w1, A64K_16B), a64_as(x, A64K_16B), a64_as(y, A64K_16B));        // u
+	a64_and(armAsm, a64_as(w2, A64K_16B), a64_as(x, A64K_16B), a64_as(y, A64K_16B));
+	a64_and(armAsm, a64_as(hi, A64K_16B), a64_as(w1, A64K_16B), a64_as(z, A64K_16B));       // u & z
+	a64_orr(armAsm, a64_as(hi, A64K_16B), a64_as(hi, A64K_16B), a64_as(w2, A64K_16B));
+	a64_shl(armAsm, a64_as(hi, A64K_8H), a64_as(hi, A64K_8H), 1);
+	a64_eor(armAsm, a64_as(lo, A64K_16B), a64_as(w1, A64K_16B), a64_as(z, A64K_16B));
 }
 
 static void mVUemitExactMulStub(microVU& mVU)
@@ -1025,126 +1025,126 @@ static void mVUemitExactMulStub(microVU& mVU)
 
 	mVU.exactMulStub = armGetCurrentCodePointer();
 	for (i = 0; i < 16; i++)
-		mvuStrQ(mVU, &mVU.exactMulSave[i][0], a64::VRegister(i, 128));
+		mvuStrQ(mVU, &mVU.exactMulSave[i][0], a64_vreg(i, 128, 1));
 
 	// v0 = aP, v1 = b16: load, narrow to 4H, duplicate, pre-shift high half
-	mvuLdrQ(mVU, a64::v0, &buf[0]);
-	armAsm->Xtn(a64::v0.V4H(), a64::v0.V4S());
-	armAsm->Ins(a64::v0.V2D(), 1, a64::v0.V2D(), 0);
-	mvuLdrQ(mVU, a64::v14, &mVU.glob.tPackCnt[0]);
-	armAsm->Ushl(a64::v0.V8H(), a64::v0.V8H(), a64::v14.V8H());
-	mvuLdrQ(mVU, a64::v1, &buf[4]);
-	armAsm->Xtn(a64::v1.V4H(), a64::v1.V4S());
-	armAsm->Ins(a64::v1.V2D(), 1, a64::v1.V2D(), 0);
+	mvuLdrQ(mVU, A64_Q(0), &buf[0]);
+	a64_xtn(armAsm, a64_as(A64_Q(0), A64K_4H), a64_as(A64_Q(0), A64K_4S));
+	a64_ins_elem(armAsm, a64_as(A64_Q(0), A64K_2D), 1, a64_as(A64_Q(0), A64K_2D), 0);
+	mvuLdrQ(mVU, A64_Q(14), &mVU.glob.tPackCnt[0]);
+	a64_ushl(armAsm, a64_as(A64_Q(0), A64K_8H), a64_as(A64_Q(0), A64K_8H), a64_as(A64_Q(14), A64K_8H));
+	mvuLdrQ(mVU, A64_Q(1), &buf[4]);
+	a64_xtn(armAsm, a64_as(A64_Q(1), A64K_4H), a64_as(A64_Q(1), A64K_4S));
+	a64_ins_elem(armAsm, a64_as(A64_Q(1), A64K_2D), 1, a64_as(A64_Q(1), A64K_2D), 0);
 
 	// LUT tables resident
-	mvuLdrQ(mVU, a64::v9,  &mVU.glob.tLUTdbl[0]);
-	mvuLdrQ(mVU, a64::v10, &mVU.glob.tLUTneg[0]);
-	mvuLdrQ(mVU, a64::v11, &mVU.glob.tLUTany[0]);
+	mvuLdrQ(mVU, A64_Q(9),  &mVU.glob.tLUTdbl[0]);
+	mvuLdrQ(mVU, A64_Q(10), &mVU.glob.tLUTneg[0]);
+	mvuLdrQ(mVU, A64_Q(11), &mVU.glob.tLUTany[0]);
 
 	// booth loop; regs: v0 aP, v1 b16, v2-5 d0-3, v6-8 n1-3, v13 x, v14 t, v15 work
 	for (k = 0; k < 4; k++)
 	{
-		const a64::VRegister dk = a64::VRegister(2 + k, 128);
-		mvuLdrQ(mVU, a64::v15, cnts[k]);
-		armAsm->Ushl(a64::v14.V8H(), a64::v1.V8H(), a64::v15.V8H());
-		armAsm->Bic(a64::v14.V8H(), 0xf8, 0);
-		armAsm->Bic(a64::v14.V8H(), 0xff, 8);          // t = shifted & 7
-		armAsm->Shl(a64::v15.V8H(), a64::v14.V8H(), 8);
-		armAsm->Orr(a64::v14.V16B(), a64::v14.V16B(), a64::v15.V16B()); // both bytes
-		if (k) armAsm->Shl(a64::v13.V8H(), a64::v0.V8H(), k * 2);
-		else   armAsm->Mov(a64::v13.V16B(), a64::v0.V16B());            // x = aP << 2k
-		armAsm->Tbl(a64::v15.V16B(), a64::v9.V16B(), a64::v14.V16B());  // dbl
-		armAsm->And(a64::v15.V16B(), a64::v15.V16B(), a64::v13.V16B());
-		armAsm->Add(a64::v13.V8H(), a64::v13.V8H(), a64::v15.V8H());
-		armAsm->Tbl(a64::v15.V16B(), a64::v10.V16B(), a64::v14.V16B()); // neg
+		const a64r dk = a64_vreg(2 + k, 128, 1);
+		mvuLdrQ(mVU, A64_Q(15), cnts[k]);
+		a64_ushl(armAsm, a64_as(A64_Q(14), A64K_8H), a64_as(A64_Q(1), A64K_8H), a64_as(A64_Q(15), A64K_8H));
+		a64_bic_vimm(armAsm, a64_as(A64_Q(14), A64K_8H), 0xf8, 0);
+		a64_bic_vimm(armAsm, a64_as(A64_Q(14), A64K_8H), 0xff, 8);          // t = shifted & 7
+		a64_shl(armAsm, a64_as(A64_Q(15), A64K_8H), a64_as(A64_Q(14), A64K_8H), 8);
+		a64_orr(armAsm, a64_as(A64_Q(14), A64K_16B), a64_as(A64_Q(14), A64K_16B), a64_as(A64_Q(15), A64K_16B)); // both bytes
+		if (k) a64_shl(armAsm, a64_as(A64_Q(13), A64K_8H), a64_as(A64_Q(0), A64K_8H), k * 2);
+		else   a64_mov(armAsm, a64_as(A64_Q(13), A64K_16B), a64_as(A64_Q(0), A64K_16B));            // x = aP << 2k
+		a64_tbl(armAsm, a64_as(A64_Q(15), A64K_16B), a64_as(A64_Q(9), A64K_16B), a64_as(A64_Q(14), A64K_16B));  // dbl
+		a64_and(armAsm, a64_as(A64_Q(15), A64K_16B), a64_as(A64_Q(15), A64K_16B), a64_as(A64_Q(13), A64K_16B));
+		a64_add(armAsm, a64_as(A64_Q(13), A64K_8H), a64_as(A64_Q(13), A64K_8H), a64_as(A64_Q(15), A64K_8H));
+		a64_tbl(armAsm, a64_as(A64_Q(15), A64K_16B), a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(14), A64K_16B)); // neg
 		if (k >= 1)
 		{
-			const a64::VRegister nk = a64::VRegister(5 + k, 128);
+			const a64r nk = a64_vreg(5 + k, 128, 1);
 			mvuLdrQ(mVU, dk, &mVU.glob.tOneP[0]);
-			armAsm->Shl(dk.V8H(), dk.V8H(), k * 2);
-			armAsm->And(nk.V16B(), a64::v15.V16B(), dk.V16B());        // n[k]
+			a64_shl(armAsm, a64_as(dk, A64K_8H), a64_as(dk, A64K_8H), k * 2);
+			a64_and(armAsm, a64_as(nk, A64K_16B), a64_as(A64_Q(15), A64K_16B), a64_as(dk, A64K_16B));        // n[k]
 		}
 		mvuLdrQ(mVU, dk, &mVU.glob.tOnesP[0]);
-		if (k) armAsm->Shl(dk.V8H(), dk.V8H(), k * 2);
-		armAsm->And(dk.V16B(), a64::v15.V16B(), dk.V16B());
-		armAsm->Eor(a64::v13.V16B(), a64::v13.V16B(), dk.V16B());      // x ^= neg & (onesP<<2k)
-		armAsm->Tbl(a64::v15.V16B(), a64::v11.V16B(), a64::v14.V16B()); // any
-		armAsm->And(dk.V16B(), a64::v13.V16B(), a64::v15.V16B());       // d[k]
+		if (k) a64_shl(armAsm, a64_as(dk, A64K_8H), a64_as(dk, A64K_8H), k * 2);
+		a64_and(armAsm, a64_as(dk, A64K_16B), a64_as(A64_Q(15), A64K_16B), a64_as(dk, A64K_16B));
+		a64_eor(armAsm, a64_as(A64_Q(13), A64K_16B), a64_as(A64_Q(13), A64K_16B), a64_as(dk, A64K_16B));      // x ^= neg & (onesP<<2k)
+		a64_tbl(armAsm, a64_as(A64_Q(15), A64K_16B), a64_as(A64_Q(11), A64K_16B), a64_as(A64_Q(14), A64K_16B)); // any
+		a64_and(armAsm, a64_as(dk, A64K_16B), a64_as(A64_Q(13), A64K_16B), a64_as(A64_Q(15), A64K_16B));       // d[k]
 	}
 
 	// unpair; v0, v1, v9-15 free now
-	armAsm->Ext(a64::v9.V16B(),  a64::v2.V16B(), a64::v2.V16B(), 8);   // d4
-	armAsm->Ext(a64::v10.V16B(), a64::v3.V16B(), a64::v3.V16B(), 8);   // d5
-	armAsm->Ext(a64::v11.V16B(), a64::v4.V16B(), a64::v4.V16B(), 8);   // d6
-	armAsm->Ext(a64::v12.V16B(), a64::v5.V16B(), a64::v5.V16B(), 8);   // d7
-	armAsm->Ext(a64::v13.V16B(), a64::v6.V16B(), a64::v6.V16B(), 8);   // n5
+	a64_ext(armAsm, a64_as(A64_Q(9), A64K_16B), a64_as(A64_Q(2), A64K_16B), a64_as(A64_Q(2), A64K_16B), 8);   // d4
+	a64_ext(armAsm, a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(3), A64K_16B), a64_as(A64_Q(3), A64K_16B), 8);   // d5
+	a64_ext(armAsm, a64_as(A64_Q(11), A64K_16B), a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(4), A64K_16B), 8);   // d6
+	a64_ext(armAsm, a64_as(A64_Q(12), A64K_16B), a64_as(A64_Q(5), A64K_16B), a64_as(A64_Q(5), A64K_16B), 8);   // d7
+	a64_ext(armAsm, a64_as(A64_Q(13), A64K_16B), a64_as(A64_Q(6), A64K_16B), a64_as(A64_Q(6), A64K_16B), 8);   // n5
 
 	// b7 into v12 ; then d5&0x800 into v13 ; mask d4/d5
-	mvuLdrQ(mVU, a64::v14, &mVU.glob.t0400[0]);
-	armAsm->And(a64::v14.V16B(), a64::v10.V16B(), a64::v14.V16B());
-	armAsm->Add(a64::v14.V8H(), a64::v14.V8H(), a64::v13.V8H());
-	armAsm->Orr(a64::v12.V16B(), a64::v12.V16B(), a64::v14.V16B());
-	mvuLdrQ(mVU, a64::v13, &mVU.glob.t0800[0]);
-	armAsm->And(a64::v13.V16B(), a64::v10.V16B(), a64::v13.V16B());
-	mvuLdrQ(mVU, a64::v14, &mVU.glob.tF800[0]);
-	armAsm->And(a64::v9.V16B(), a64::v9.V16B(), a64::v14.V16B());
-	mvuLdrQ(mVU, a64::v14, &mVU.glob.tF000[0]);
-	armAsm->And(a64::v10.V16B(), a64::v10.V16B(), a64::v14.V16B());
+	mvuLdrQ(mVU, A64_Q(14), &mVU.glob.t0400[0]);
+	a64_and(armAsm, a64_as(A64_Q(14), A64K_16B), a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(14), A64K_16B));
+	a64_add(armAsm, a64_as(A64_Q(14), A64K_8H), a64_as(A64_Q(14), A64K_8H), a64_as(A64_Q(13), A64K_8H));
+	a64_orr(armAsm, a64_as(A64_Q(12), A64K_16B), a64_as(A64_Q(12), A64K_16B), a64_as(A64_Q(14), A64K_16B));
+	mvuLdrQ(mVU, A64_Q(13), &mVU.glob.t0800[0]);
+	a64_and(armAsm, a64_as(A64_Q(13), A64K_16B), a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(13), A64K_16B));
+	mvuLdrQ(mVU, A64_Q(14), &mVU.glob.tF800[0]);
+	a64_and(armAsm, a64_as(A64_Q(9), A64K_16B), a64_as(A64_Q(9), A64K_16B), a64_as(A64_Q(14), A64K_16B));
+	mvuLdrQ(mVU, A64_Q(14), &mVU.glob.tF000[0]);
+	a64_and(armAsm, a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(14), A64K_16B));
 
 	// t0 = add3(d1,d2,d3) -> lo v14, hi v15 (w: v1, v0)
-	emitAdd3(a64::v3, a64::v4, a64::v5, a64::v14, a64::v15, a64::v1, a64::v0);
+	emitAdd3(A64_Q(3), A64_Q(4), A64_Q(5), A64_Q(14), A64_Q(15), A64_Q(1), A64_Q(0));
 	// t1 = add3(d4m,d5m,d6) -> lo v3, hi v4 ; then |= n6 | (d5&0x800)
-	emitAdd3(a64::v9, a64::v10, a64::v11, a64::v3, a64::v4, a64::v5, a64::v0);
-	armAsm->Ext(a64::v5.V16B(), a64::v7.V16B(), a64::v7.V16B(), 8);    // n6
-	armAsm->Orr(a64::v4.V16B(), a64::v4.V16B(), a64::v5.V16B());
-	armAsm->Orr(a64::v4.V16B(), a64::v4.V16B(), a64::v13.V16B());
+	emitAdd3(A64_Q(9), A64_Q(10), A64_Q(11), A64_Q(3), A64_Q(4), A64_Q(5), A64_Q(0));
+	a64_ext(armAsm, a64_as(A64_Q(5), A64K_16B), a64_as(A64_Q(7), A64K_16B), a64_as(A64_Q(7), A64K_16B), 8);    // n6
+	a64_orr(armAsm, a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(5), A64K_16B));
+	a64_orr(armAsm, a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(13), A64K_16B));
 	// t2 = add3(d0,t0l,t0h) -> lo v9, hi v10
-	emitAdd3(a64::v2, a64::v14, a64::v15, a64::v9, a64::v10, a64::v11, a64::v0);
+	emitAdd3(A64_Q(2), A64_Q(14), A64_Q(15), A64_Q(9), A64_Q(10), A64_Q(11), A64_Q(0));
 	// t3 = add3(b7,t1l,t1h) -> lo v13, hi v14
-	emitAdd3(a64::v12, a64::v3, a64::v4, a64::v13, a64::v14, a64::v15, a64::v0);
+	emitAdd3(A64_Q(12), A64_Q(3), A64_Q(4), A64_Q(13), A64_Q(14), A64_Q(15), A64_Q(0));
 	// t4 = add3(t2h,t3l,t3h) -> lo v2, hi v3
-	emitAdd3(a64::v10, a64::v13, a64::v14, a64::v2, a64::v3, a64::v4, a64::v0);
+	emitAdd3(A64_Q(10), A64_Q(13), A64_Q(14), A64_Q(2), A64_Q(3), A64_Q(4), A64_Q(0));
 	// t5 = add3(t2l,t4l,t4h) -> lo v5, hi v10
-	emitAdd3(a64::v9, a64::v2, a64::v3, a64::v5, a64::v10, a64::v11, a64::v0);
+	emitAdd3(A64_Q(9), A64_Q(2), A64_Q(3), A64_Q(5), A64_Q(10), A64_Q(11), A64_Q(0));
 	// t5h += n7 ; sum ; tb
-	armAsm->Ext(a64::v11.V16B(), a64::v8.V16B(), a64::v8.V16B(), 8);   // n7
-	armAsm->Add(a64::v10.V8H(), a64::v10.V8H(), a64::v11.V8H());
-	mvuLdrQ(mVU, a64::v11, &mVU.glob.t8000[0]);
-	armAsm->And(a64::v5.V16B(), a64::v5.V16B(), a64::v11.V16B());
-	armAsm->And(a64::v10.V16B(), a64::v10.V16B(), a64::v11.V16B());
-	armAsm->Add(a64::v5.V8H(), a64::v5.V8H(), a64::v10.V8H());
-	armAsm->Ushr(a64::v5.V8H(), a64::v5.V8H(), 15);                    // tb 4H lanes 0-3
+	a64_ext(armAsm, a64_as(A64_Q(11), A64K_16B), a64_as(A64_Q(8), A64K_16B), a64_as(A64_Q(8), A64K_16B), 8);   // n7
+	a64_add(armAsm, a64_as(A64_Q(10), A64K_8H), a64_as(A64_Q(10), A64K_8H), a64_as(A64_Q(11), A64K_8H));
+	mvuLdrQ(mVU, A64_Q(11), &mVU.glob.t8000[0]);
+	a64_and(armAsm, a64_as(A64_Q(5), A64K_16B), a64_as(A64_Q(5), A64K_16B), a64_as(A64_Q(11), A64K_16B));
+	a64_and(armAsm, a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(11), A64K_16B));
+	a64_add(armAsm, a64_as(A64_Q(5), A64K_8H), a64_as(A64_Q(5), A64K_8H), a64_as(A64_Q(10), A64K_8H));
+	a64_ushr(armAsm, a64_as(A64_Q(5), A64K_8H), a64_as(A64_Q(5), A64K_8H), 15);                    // tb 4H lanes 0-3
 
 	// correction: p -= ((tb ^ ((p >> 15) & 1)) << 15) per 64-bit lane
-	armAsm->Uxtl(a64::v5.V4S(), a64::v5.V4H());                        // {b0,b1,b2,b3}
-	armAsm->Uxtl (a64::v6.V2D(), a64::v5.V2S());                       // {b0,b1}
-	armAsm->Uxtl2(a64::v7.V2D(), a64::v5.V4S());                       // {b2,b3}
-	mvuLdrQ(mVU, a64::v1, &buf[8]);
-	mvuLdrQ(mVU, a64::v2, &buf[12]);
-	mvuLdrQ(mVU, a64::v8, &mVU.glob.t64one[0]);
-	armAsm->Ushr(a64::v3.V2D(), a64::v1.V2D(), 15);
-	armAsm->And(a64::v3.V16B(), a64::v3.V16B(), a64::v8.V16B());
-	armAsm->Ushr(a64::v4.V2D(), a64::v2.V2D(), 15);
-	armAsm->And(a64::v4.V16B(), a64::v4.V16B(), a64::v8.V16B());
-	armAsm->Eor(a64::v6.V16B(), a64::v6.V16B(), a64::v3.V16B());
-	armAsm->Eor(a64::v7.V16B(), a64::v7.V16B(), a64::v4.V16B());
-	armAsm->Shl(a64::v6.V2D(), a64::v6.V2D(), 15);
-	armAsm->Shl(a64::v7.V2D(), a64::v7.V2D(), 15);
-	armAsm->Sub(a64::v1.V2D(), a64::v1.V2D(), a64::v6.V2D());
-	armAsm->Sub(a64::v2.V2D(), a64::v2.V2D(), a64::v7.V2D());
-	mvuStrQ(mVU, &buf[8], a64::v1);
-	mvuStrQ(mVU, &buf[12], a64::v2);
+	a64_ushll(armAsm, a64_as(A64_Q(5), A64K_4S), a64_as(A64_Q(5), A64K_4H), 0);                        // {b0,b1,b2,b3}
+	a64_ushll(armAsm, a64_as(A64_Q(6), A64K_2D), a64_as(A64_Q(5), A64K_2S), 0);                       // {b0,b1}
+	a64_ushll(armAsm, a64_as(A64_Q(7), A64K_2D), a64_as(A64_Q(5), A64K_4S), 0);                       // {b2,b3}
+	mvuLdrQ(mVU, A64_Q(1), &buf[8]);
+	mvuLdrQ(mVU, A64_Q(2), &buf[12]);
+	mvuLdrQ(mVU, A64_Q(8), &mVU.glob.t64one[0]);
+	a64_ushr(armAsm, a64_as(A64_Q(3), A64K_2D), a64_as(A64_Q(1), A64K_2D), 15);
+	a64_and(armAsm, a64_as(A64_Q(3), A64K_16B), a64_as(A64_Q(3), A64K_16B), a64_as(A64_Q(8), A64K_16B));
+	a64_ushr(armAsm, a64_as(A64_Q(4), A64K_2D), a64_as(A64_Q(2), A64K_2D), 15);
+	a64_and(armAsm, a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(8), A64K_16B));
+	a64_eor(armAsm, a64_as(A64_Q(6), A64K_16B), a64_as(A64_Q(6), A64K_16B), a64_as(A64_Q(3), A64K_16B));
+	a64_eor(armAsm, a64_as(A64_Q(7), A64K_16B), a64_as(A64_Q(7), A64K_16B), a64_as(A64_Q(4), A64K_16B));
+	a64_shl(armAsm, a64_as(A64_Q(6), A64K_2D), a64_as(A64_Q(6), A64K_2D), 15);
+	a64_shl(armAsm, a64_as(A64_Q(7), A64K_2D), a64_as(A64_Q(7), A64K_2D), 15);
+	a64_sub(armAsm, a64_as(A64_Q(1), A64K_2D), a64_as(A64_Q(1), A64K_2D), a64_as(A64_Q(6), A64K_2D));
+	a64_sub(armAsm, a64_as(A64_Q(2), A64K_2D), a64_as(A64_Q(2), A64K_2D), a64_as(A64_Q(7), A64K_2D));
+	mvuStrQ(mVU, &buf[8], A64_Q(1));
+	mvuStrQ(mVU, &buf[12], A64_Q(2));
 
 	for (i = 0; i < 16; i++)
-		mvuLdrQ(mVU, a64::VRegister(i, 128), &mVU.exactMulSave[i][0]);
-	armAsm->Ret();
+		mvuLdrQ(mVU, a64_vreg(i, 128, 1), &mVU.exactMulSave[i][0]);
+	a64_ret(armAsm);
 }
 
 //------------------------------------------------------------------
 // ARM64 port of microVU_Execute.inl 23-315. This pins the final ARM64 microVU
 // ABI. All five generators below emit into the armAsm opened by
-// mVUgenerateDispatchers (one MacroAssembler session for the whole dispatcher
+// mVUgenerateDispatchers (one emitter session for the whole dispatcher
 // block, finalised once). microVU is still unselected on ARM64 (VMManager pins
 // CpuIntVU0/1), so the emitted code is not executed yet — but it compiles for
 // real and pins the register/entry contract every later Phase-7 task builds on.
@@ -1175,8 +1175,8 @@ static bool mvuNeedsFPCRUpdate(microVU& mVU)
 // Uses x16/x17 scratch only (never the block-entry x0 the AB dispatcher holds).
 static void mVUemitSetHostFPCR(const void* bitmaskPtr)
 {
-	armAsm->Ldr(RXVIXLSCRATCH, armAbsMemOperand(RSCRATCHADDR, bitmaskPtr, 8)); // x16 = bitmask
-	armAsm->Msr(a64::FPCR, RXVIXLSCRATCH);
+	a64_ldr(armAsm, RXSCRATCH, armAbsMemOperand(RSCRATCHADDR, bitmaskPtr, 8)); // x16 = bitmask
+	a64_msr_fpcr(armAsm, RXSCRATCH);
 }
 
 // Generates the code for entering/exiting recompiled blocks.
@@ -1203,35 +1203,35 @@ static void mVUdispatcherAB(microVU& mVU)
 	// Build the PQ latency register (v24). Final lane layout matches the x86 rec:
 	//   VU0: [Q, pending_q, P, P]   VU1: [Q, pending_q, P, pending_p]
 	// (NEON V4S lane0 = lowest 32 bits = X, same order as xmm.) v25 is a free
-	// scratch (not in the VF pool v0-v23, not PQ, not VIXL scratch v31).
-	const a64::VRegister vtmp = a64::VRegister(25, 128);
-	armAsm->Ldr(mVU_xmmPQ.S(), a64::MemOperand(RVUSTATE, mVUoffVI(REG_Q)));      // lane0 = Q
-	armAsm->Ldr(vtmp.S(),      a64::MemOperand(RVUSTATE, offsetof(VURegs, pending_q)));
-	armAsm->Ins(mVU_xmmPQ.V4S(), 1, vtmp.V4S(), 0);                              // lane1 = pending_q
-	armAsm->Ldr(vtmp.S(),      a64::MemOperand(RVUSTATE, mVUoffVI(REG_P)));      // vtmp = P
-	armAsm->Ins(mVU_xmmPQ.V4S(), 2, vtmp.V4S(), 0);                             // lane2 = P
+	// scratch (not in the VF pool v0-v23, not PQ, not the emitter's scratch v31).
+	const a64r vtmp = a64_vreg(25, 128, 1);
+	a64_ldr(armAsm, a64_as(mVU_xmmPQ, A64K_S), a64_mem_off(RVUSTATE, mVUoffVI(REG_Q)));      // lane0 = Q
+	a64_ldr(armAsm, a64_as(vtmp, A64K_S), a64_mem_off(RVUSTATE, offsetof(VURegs, pending_q)));
+	a64_ins_elem(armAsm, a64_as(mVU_xmmPQ, A64K_4S), 1, a64_as(vtmp, A64K_4S), 0);                              // lane1 = pending_q
+	a64_ldr(armAsm, a64_as(vtmp, A64K_S), a64_mem_off(RVUSTATE, mVUoffVI(REG_P)));      // vtmp = P
+	a64_ins_elem(armAsm, a64_as(mVU_xmmPQ, A64K_4S), 2, a64_as(vtmp, A64K_4S), 0);                             // lane2 = P
 	if (isVU1)
 	{
-		armAsm->Ldr(vtmp.S(), a64::MemOperand(RVUSTATE, offsetof(VURegs, pending_p)));
-		armAsm->Ins(mVU_xmmPQ.V4S(), 3, vtmp.V4S(), 0);                         // lane3 = pending_p
+		a64_ldr(armAsm, a64_as(vtmp, A64K_S), a64_mem_off(RVUSTATE, offsetof(VURegs, pending_p)));
+		a64_ins_elem(armAsm, a64_as(mVU_xmmPQ, A64K_4S), 3, a64_as(vtmp, A64K_4S), 0);                         // lane3 = pending_p
 	}
 	else
 	{
-		armAsm->Ins(mVU_xmmPQ.V4S(), 3, vtmp.V4S(), 0);                         // lane3 = P (vtmp still = P)
+		a64_ins_elem(armAsm, a64_as(mVU_xmmPQ, A64K_4S), 3, a64_as(vtmp, A64K_4S), 0);                         // lane3 = P (vtmp still = P)
 	}
 
 	// Copy the mac/clip flag instances into the microVU's working storage.
-	armAsm->Ldr(vtmp.Q(), a64::MemOperand(RVUSTATE, offsetof(VURegs, micro_macflags)));
-	armAsm->Str(vtmp.Q(), mvuAbsMem(mVU, &mVU.macFlag[0], 16));
-	armAsm->Ldr(vtmp.Q(), a64::MemOperand(RVUSTATE, offsetof(VURegs, micro_clipflags)));
-	armAsm->Str(vtmp.Q(), mvuAbsMem(mVU, &mVU.clipFlag[0], 16));
+	a64_ldr(armAsm, a64_as(vtmp, A64K_Q), a64_mem_off(RVUSTATE, offsetof(VURegs, micro_macflags)));
+	a64_str(armAsm, a64_as(vtmp, A64K_Q), mvuAbsMem(mVU, &mVU.macFlag[0], 16));
+	a64_ldr(armAsm, a64_as(vtmp, A64K_Q), a64_mem_off(RVUSTATE, offsetof(VURegs, micro_clipflags)));
+	a64_str(armAsm, a64_as(vtmp, A64K_Q), mvuAbsMem(mVU, &mVU.clipFlag[0], 16));
 
 	// Load the 4 status-flag instances into gprF0-gprF3 (w23-w26).
 	for (int i = 0; i < 4; i++)
-		armAsm->Ldr(armWRegister(mVU_F0 + i), a64::MemOperand(RVUSTATE, offsetof(VURegs, micro_statusflags) + i * 4));
+		a64_ldr(armAsm, armWRegister(mVU_F0 + i), a64_mem_off(RVUSTATE, offsetof(VURegs, micro_statusflags) + i * 4));
 
 	// Jump to the recompiled code block (entry still in x0).
-	armAsm->Br(RXRET);
+	a64_br(armAsm, RXRET);
 
 	// --- exit path: the block jumps here when done ---
 	mVU.exitFunct = armGetCurrentCodePointer();
@@ -1243,7 +1243,7 @@ static void mVUdispatcherAB(microVU& mVU)
 	armEmitCall(reinterpret_cast<const void*>(isVU1 ? mVUcleanUpVU1 : mVUcleanUpVU0));
 
 	armEndStackFrame(true);
-	armAsm->Ret();
+	a64_ret(armAsm);
 }
 
 // Generates the code for resuming/exiting xgkick.
@@ -1261,15 +1261,15 @@ static void mVUdispatcherCD(microVU& mVU)
 		mVUemitSetHostFPCR(isVU1 ? &EmuConfig.Cpu.VU1FPCR.bitmask : &EmuConfig.Cpu.VU0FPCR.bitmask);
 
 	// mVUrestoreRegs(): reload the PQ reg from its XGKICK backup slot.
-	armAsm->Ldr(mVU_xmmPQ.Q(), mvuAbsMem(mVU, &mVU.vecBackup[mVU_xmmPQ.GetCode()][0], 16));
+	a64_ldr(armAsm, a64_as(mVU_xmmPQ, A64K_Q), mvuAbsMem(mVU, &mVU.vecBackup[A64_CODE(mVU_xmmPQ)][0], 16));
 
 	armMoveAddressToReg(RVUSTATE, &::vuRegs[mVU.index]);
 	for (int i = 0; i < 4; i++)
-		armAsm->Ldr(armWRegister(mVU_F0 + i), a64::MemOperand(RVUSTATE, offsetof(VURegs, micro_statusflags) + i * 4));
+		a64_ldr(armAsm, armWRegister(mVU_F0 + i), a64_mem_off(RVUSTATE, offsetof(VURegs, micro_statusflags) + i * 4));
 
 	// Jump to the recompiled code position to resume xgkick.
-	armAsm->Ldr(RSCRATCHADDR, armAbsMemOperand(RSCRATCHADDR, &mVU.resumePtrXG, 8));
-	armAsm->Br(RSCRATCHADDR);
+	a64_ldr(armAsm, RSCRATCHADDR, armAbsMemOperand(RSCRATCHADDR, &mVU.resumePtrXG, 8));
+	a64_br(armAsm, RSCRATCHADDR);
 
 	// --- exit path ---
 	mVU.exitFunctXG = armGetCurrentCodePointer();
@@ -1277,14 +1277,14 @@ static void mVUdispatcherCD(microVU& mVU)
 	// Back up the status flags (the other regs were backed up on xgkick).
 	armMoveAddressToReg(RVUSTATE, &::vuRegs[mVU.index]);
 	for (int i = 0; i < 4; i++)
-		armAsm->Str(armWRegister(mVU_F0 + i), a64::MemOperand(RVUSTATE, offsetof(VURegs, micro_statusflags) + i * 4));
+		a64_str(armAsm, armWRegister(mVU_F0 + i), a64_mem_off(RVUSTATE, offsetof(VURegs, micro_statusflags) + i * 4));
 
 	// Restore the EE's FPCR state.
 	if (mvuNeedsFPCRUpdate(mVU))
 		mVUemitSetHostFPCR(&EmuConfig.Cpu.FPUFPCR.bitmask);
 
 	armEndStackFrame(true);
-	armAsm->Ret();
+	a64_ret(armAsm);
 }
 
 // The C helper called by the waitMTVU thunk (x86: microVU_Misc.inl mVUwaitMTVU).
@@ -1316,26 +1316,26 @@ static void mVUGenerateWaitMTVU(microVU& mVU)
 	// reaches the thread stack guard (~41 iterations) and SIGBUSes.
 	constexpr int frameTotal = frame + 16;
 
-	armAsm->Sub(a64::sp, a64::sp, frameTotal);
+	a64_sub_imm(armAsm, A64_SP, A64_SP, frameTotal);
 	for (int i = 0; i < kGprSave; i += 2)
-		armAsm->Stp(armXRegister(i), armXRegister(i + 1), a64::MemOperand(a64::sp, i * 8));
+		a64_stp(armAsm, armXRegister(i), armXRegister(i + 1), a64_mem_off(A64_SP, i * 8));
 	int voff = gprBytes;
 	for (int i = 0; i < kVecSave - 1; i += 2, voff += 32)
-		armAsm->Stp(armQRegister(i), armQRegister(i + 1), a64::MemOperand(a64::sp, voff));
-	armAsm->Str(armQRegister(kVecSave - 1), a64::MemOperand(a64::sp, voff));
+		a64_stp(armAsm, armQRegister(i), armQRegister(i + 1), a64_mem_off(A64_SP, voff));
+	a64_str(armAsm, armQRegister(kVecSave - 1), a64_mem_off(A64_SP, voff));
 
-	armAsm->Str(a64::x30, a64::MemOperand(a64::sp, frame));
+	a64_str(armAsm, A64_X(30), a64_mem_off(A64_SP, frame));
 	armEmitCall(reinterpret_cast<const void*>(mVUwaitMTVU));
-	armAsm->Ldr(a64::x30, a64::MemOperand(a64::sp, frame));
+	a64_ldr(armAsm, A64_X(30), a64_mem_off(A64_SP, frame));
 
 	voff = gprBytes;
 	for (int i = 0; i < kVecSave - 1; i += 2, voff += 32)
-		armAsm->Ldp(armQRegister(i), armQRegister(i + 1), a64::MemOperand(a64::sp, voff));
-	armAsm->Ldr(armQRegister(kVecSave - 1), a64::MemOperand(a64::sp, voff));
+		a64_ldp(armAsm, armQRegister(i), armQRegister(i + 1), a64_mem_off(A64_SP, voff));
+	a64_ldr(armAsm, armQRegister(kVecSave - 1), a64_mem_off(A64_SP, voff));
 	for (int i = 0; i < kGprSave; i += 2)
-		armAsm->Ldp(armXRegister(i), armXRegister(i + 1), a64::MemOperand(a64::sp, i * 8));
-	armAsm->Add(a64::sp, a64::sp, frameTotal);
-	armAsm->Ret();
+		a64_ldp(armAsm, armXRegister(i), armXRegister(i + 1), a64_mem_off(A64_SP, i * 8));
+	a64_add_imm(armAsm, A64_SP, A64_SP, frameTotal);
+	a64_ret(armAsm);
 }
 
 // Copies the 96-byte pipeline state from [x0] (source pState, supplied by the
@@ -1347,11 +1347,11 @@ static void mVUGenerateCopyPipelineState(microVU& mVU)
 	armMoveAddressToReg(RXARG2, &mVU.prog.lpState); // x1 = dest
 	for (int i = 0; i < 6; i++)
 	{
-		const a64::VRegister v = a64::VRegister(i, 128);
-		armAsm->Ldr(v.Q(), a64::MemOperand(RXARG1, i * 16));
-		armAsm->Str(v.Q(), a64::MemOperand(RXARG2, i * 16));
+		const a64r v = a64_vreg(i, 128, 1);
+		a64_ldr(armAsm, a64_as(v, A64K_Q), a64_mem_off(RXARG1, i * 16));
+		a64_str(armAsm, a64_as(v, A64K_Q), a64_mem_off(RXARG2, i * 16));
 	}
-	armAsm->Ret();
+	a64_ret(armAsm);
 }
 
 // Custom optimised block-search comparator: compares the two 96-byte
@@ -1364,28 +1364,28 @@ static void mVUGenerateCompareState(microVU& mVU)
 	// 6 x 128-bit lanewise equality compares (0xffffffff per equal 32-bit lane),
 	// AND-reduced into v0.
 	auto cmp16 = [&](int off, int dst, int t0, int t1) {
-		const a64::VRegister a = a64::VRegister(t0, 128), b = a64::VRegister(t1, 128);
-		armAsm->Ldr(a.Q(), a64::MemOperand(RXARG1, off));
-		armAsm->Ldr(b.Q(), a64::MemOperand(RXARG2, off));
-		armAsm->Cmeq(a64::VRegister(dst, 128).V4S(), a.V4S(), b.V4S());
+		const a64r a = a64_vreg(t0, 128, 1), b = a64_vreg(t1, 128, 1);
+		a64_ldr(armAsm, a64_as(a, A64K_Q), a64_mem_off(RXARG1, off));
+		a64_ldr(armAsm, a64_as(b, A64K_Q), a64_mem_off(RXARG2, off));
+		a64_cmeq(armAsm, a64_as(a64_vreg(dst, 128, 1), A64K_4S), a64_as(a, A64K_4S), a64_as(b, A64K_4S));
 	};
 	cmp16(0x00, 0, 0, 1);
 	cmp16(0x10, 2, 2, 3);
 	cmp16(0x20, 4, 4, 5);
 	cmp16(0x30, 6, 6, 7);
-	armAsm->And(a64::VRegister(0, 128).V16B(), a64::VRegister(0, 128).V16B(), a64::VRegister(2, 128).V16B());
-	armAsm->And(a64::VRegister(4, 128).V16B(), a64::VRegister(4, 128).V16B(), a64::VRegister(6, 128).V16B());
+	a64_and(armAsm, a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(2, 128, 1), A64K_16B));
+	a64_and(armAsm, a64_as(a64_vreg(4, 128, 1), A64K_16B), a64_as(a64_vreg(4, 128, 1), A64K_16B), a64_as(a64_vreg(6, 128, 1), A64K_16B));
 	cmp16(0x40, 2, 2, 3);
 	cmp16(0x50, 6, 6, 7);
-	armAsm->And(a64::VRegister(2, 128).V16B(), a64::VRegister(2, 128).V16B(), a64::VRegister(6, 128).V16B());
-	armAsm->And(a64::VRegister(0, 128).V16B(), a64::VRegister(0, 128).V16B(), a64::VRegister(4, 128).V16B());
-	armAsm->And(a64::VRegister(0, 128).V16B(), a64::VRegister(0, 128).V16B(), a64::VRegister(2, 128).V16B());
+	a64_and(armAsm, a64_as(a64_vreg(2, 128, 1), A64K_16B), a64_as(a64_vreg(2, 128, 1), A64K_16B), a64_as(a64_vreg(6, 128, 1), A64K_16B));
+	a64_and(armAsm, a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(4, 128, 1), A64K_16B));
+	a64_and(armAsm, a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(2, 128, 1), A64K_16B));
 
 	// v0 is all-ones iff every byte matched. Reduce: min byte == 0xff iff equal.
-	armAsm->Uminv(a64::VRegister(1, 128).B(), a64::VRegister(0, 128).V16B());
-	armAsm->Umov(RWRET, a64::VRegister(1, 128).V16B(), 0);
-	armAsm->Eor(RWRET, RWRET, 0xff); // 0 iff equal
-	armAsm->Ret();
+	a64_uminv(armAsm, a64_as(a64_vreg(1, 128, 1), A64K_B), a64_as(a64_vreg(0, 128, 1), A64K_16B));
+	a64_umov(armAsm, RWRET, a64_as(a64_vreg(1, 128, 1), A64K_16B), 0);
+	a64_eor_imm(armAsm, RWRET, RWRET, 0xff); // 0 iff equal
+	a64_ret(armAsm);
 }
 
 // Emit the dispatchers + helper thunks at the start of the VU's code cache, then
@@ -1432,8 +1432,8 @@ static void* mVUexecute(u32 startPC, u32 cycles)
 
 	// Fast path: if the microprogram + block for this (start_pc, startPC, pipeline
 	// state) is already compiled, return its host entry directly and skip the emit
-	// session below. armStartBlock/armEndBlock allocate+finalize a VIXL
-	// MacroAssembler, toggle W^X (Begin/EndCodeWrite), and flush the icache *on every
+	// session below. armStartBlock/armEndBlock open and close an emitter
+	// session, toggle W^X (Begin/EndCodeWrite), and flush the icache *on every
 	// VU dispatch* -- pure overhead when nothing is emitted (x86 just bumps its global
 	// emit cursor here, which is free). VU0-heavy titles (e.g. Ratchet & Clank)
 	// dispatch VU constantly with the cache already warm, so this wrapping dominated
@@ -1459,7 +1459,7 @@ static void* mVUexecute(u32 startPC, u32 cycles)
 		}
 	}
 
-	// Cold/compile path: open one MacroAssembler session at the program cursor for the
+	// Cold/compile path: open one emitter session at the program cursor for the
 	// whole search/compile (the recursive mVUcompile/normBranch calls append into it);
 	// armEndBlock finalises + flushes the icache so the freshly emitted code is safe to
 	// branch into when the dispatcher does `br x0`. If the search still turns out to be
@@ -1543,7 +1543,7 @@ static_assert(alignof(microBlock) == 16, "microBlock must stay 16-byte aligned")
 // Force the register allocator's emission paths to be compiled. microRegAlloc's
 // emission members (allocReg/flushAll/...) are not reached by the cache-management
 // code above (the block compiler/dispatcher call them — tasks 7.2d onward), so
-// without an explicit use their VIXL bodies would never be instantiated and any
+// without an explicit use their emitter bodies would never be instantiated and any
 // emission error would go undetected. This function is never called.
 [[maybe_unused]] static void mVUallocCompileCheck()
 {
@@ -1635,9 +1635,9 @@ static_assert(alignof(microBlock) == 16, "microBlock must stay 16-byte aligned")
 }
 
 // Force the Pass-2 flag allocators (aVU_Alloc.inl) to be compiled. These are the
-// first emit-backend helpers that actually call VIXL; their drivers
+// first emit-backend helpers that actually call the emitter; their drivers
 // (mVUsetupFlags/mVUdivSet, the Branch/Lower opcode handlers) are later 7.5
-// slices, so without an explicit odr-use their VIXL bodies — and any emission
+// slices, so without an explicit odr-use their emitter bodies — and any emission
 // error — would never be instantiated. Never called: it emits into no open
 // assembler, it exists only to type-check + codegen the bodies.
 [[maybe_unused]] static void mVUallocFlagCheck()
@@ -1655,21 +1655,21 @@ static_assert(alignof(microBlock) == 16, "microBlock must stay 16-byte aligned")
 	mVUallocCFLAGa(mVU, gprT1, 1);
 	mVUallocCFLAGb(mVU, gprT1, 1);
 
-	const a64::VRegister t = a64::VRegister(0, 128);
+	const a64r t = a64_vreg(0, 128, 1);
 	getPreg(mVU, t);       // uses mVUinfo.readP (mVU in scope)
 	getQreg(t, 0);
 	writeQreg(t, 1);
 }
 
 // Force the clamp helpers (aVU_Clamp.inl) to be compiled. Same rationale as
-// mVUallocFlagCheck: they emit VIXL but their callers (the FMAC arithmetic
+// mVUallocFlagCheck: they emit code but their callers (the FMAC arithmetic
 // opcode handlers) are a later 7.5 slice, so without an explicit odr-use their
 // bodies — and any emission error — would never be instantiated. Never called.
 [[maybe_unused]] static void mVUclampCheck()
 {
 	microVU& mVU = microVU0;
-	const a64::VRegister reg = a64::VRegister(1, 128);
-	const a64::VRegister tmp = a64::VRegister(2, 128);
+	const a64r reg = a64_vreg(1, 128, 1);
+	const a64r tmp = a64_vreg(2, 128, 1);
 	mVUclamp1(mVU, reg, tmp, 0xf);
 	mVUclamp2(mVU, reg, tmp, 0x8);
 	mVUclamp3(mVU, reg, tmp, 0xf);
@@ -1680,7 +1680,7 @@ static_assert(alignof(microBlock) == 16, "microBlock must stay 16-byte aligned")
 [[maybe_unused]] static void mVUmiscCheck()
 {
 	microVU& mVU = microVU0;
-	mVUaddrFix(mVU, a64::x9, a64::x10);
+	mVUaddrFix(mVU, A64_X(9), A64_X(10));
 }
 
 // (mVUcompileEmitCheck / mVUtablesCheck removed: the compile helpers + the
@@ -1691,7 +1691,7 @@ static_assert(alignof(microBlock) == 16, "microBlock must stay 16-byte aligned")
 // (findFlagInst/sortFlag/sortFullFlag/mVUstatusFlagOp/mVUsetFlags) have external
 // linkage and codegen regardless, but the emit helpers (mVUdivSet/mVUsetupFlags)
 // are __fi and have no live caller until the Branch/Compile slice — without this
-// odr-use their VIXL bodies, and any emission error, would never be instantiated.
+// odr-use their emitter bodies, and any emission error, would never be instantiated.
 // Never called: it touches mVU.prog.cur (null here), it exists only to compile.
 [[maybe_unused]] static void mVUflagCheck()
 {
@@ -1709,7 +1709,7 @@ static_assert(alignof(microBlock) == 16, "microBlock must stay 16-byte aligned")
 
 // Force the branch/program-exit emitters (aVU_Branch.inl) to be compiled. The two
 // mVUendProgram/mVUDTendProgram emitters are the only non-static, never-yet-called
-// emit functions in this slice; odr-use them so their VIXL bodies (and any
+// emit functions in this slice; odr-use them so their emitter bodies (and any
 // emission error) are instantiated now. Never called.
 [[maybe_unused]] static void mVUbranchCheck()
 {

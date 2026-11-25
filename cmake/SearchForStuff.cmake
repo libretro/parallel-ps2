@@ -34,12 +34,6 @@ endif()
 # decodes through rchd, ZIP members and CSO/gz through rinflate, all in
 # libretro-common (see libretro/CMakeLists.txt for the source list).
 
-# arm64 recompiler port (Phase C): VIXL is the AArch64 code emitter. x86 builds
-# use the in-tree x86 emitter (common/emitter) instead, so this is arm64-only.
-if(NOT _M_X86)
-	add_subdirectory(3rdparty/vixl EXCLUDE_FROM_ALL)
-endif()
-
 if(USE_OPENGL)
 	add_subdirectory(3rdparty/glad EXCLUDE_FROM_ALL)
 endif()

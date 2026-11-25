@@ -50,7 +50,7 @@ static const char branchSTR[16][8] = {
 //------------------------------------------------------------------
 // Emit-constant table (x86: microVU_Misc.h mVU_Globals / mVUglob)
 //------------------------------------------------------------------
-// Arch-neutral constant data consumed by the VIXL emit layer (clamp range
+// Arch-neutral constant data consumed by the emit layer (clamp range
 // bounds, FTOI/ITOF scales, the polynomial coefficients for the EFU estimates).
 // Loaded into NEON regs via armMoveAddressToReg + Ldr(.Q()). `static constexpr`
 // gives each including TU its own copy, exactly like x86.

@@ -31,10 +31,7 @@
 #include <vector>
 #include <sys/mman.h>
 
-#include "aarch64/macro-assembler-aarch64.h"
-
-
-using namespace vixl::aarch64;
+#include "arm64/a64emit.h"
 
 extern "C" void iopRunBasicBlock_arm64(void);
 
@@ -86,20 +83,21 @@ namespace
 			s_covered[w >> 3] |= 1u << (w & 7);
 	}
 
-	bool VixlEmitSelfTest()
+	bool EmitSelfTest()
 	{
-		// Emit into a real code page: VIXL's own buffer is malloc'd on Darwin
-		// (VIXL_CODE_BUFFER_MALLOC), where SetExecutable() is a no-op.
+		// Emit into a real code page and run it: the code cache's W^X
+		// switching works on this host.
 		constexpr size_t kPage = 16384;
 		u8* page = (u8*)memjit_alloc(kPage);
 		if (!page)
 			return false;
 		memjit_write_begin();
 		{
-			MacroAssembler masm(page, kPage, PositionDependentCode);
-			masm.Add(x0, x0, 1);
-			masm.Ret();
-			masm.FinalizeCode();
+			a64_emit masm_e;
+			a64_emit* const masm = &masm_e;
+			a64_init(masm, page, kPage);
+			a64_add_imm(masm, A64_X(0), A64_X(0), 1);
+			a64_ret(masm);
 		}
 		memjit_write_end();
 		memsync(page, page + 8);
@@ -120,7 +118,7 @@ namespace
 	// snapshot -- and the interpreter-handoff tail, whose callee does read
 	// and write GPR memory).
 	constexpr int kIopCacheSlots = 6; // w22..w27
-	inline Register IopCacheW(int slot) { return WRegister(22 + slot); }
+	inline a64r IopCacheW(int slot) { return A64_W(22 + slot); }
 	struct IopRegCache
 	{
 		int8_t host_of[32];
@@ -133,13 +131,13 @@ namespace
 			for (int i = 0; i < kIopCacheSlots; i++) { guest_of[i] = -1; dirty[i] = false; }
 			rr = 0;
 		}
-		int Alloc(MacroAssembler& m, const Register& gpr, u32 g)
+		int Alloc(a64_emit* m, const a64r& gpr, u32 g)
 		{
 			const int s = rr;
 			rr = (u8)((rr + 1) % kIopCacheSlots);
 			if (guest_of[s] >= 0)
 			{
-				if (dirty[s]) m.Str(IopCacheW(s), MemOperand(gpr, (u32)guest_of[s] * 4));
+				if (dirty[s]) a64_str(m, IopCacheW(s), a64_mem_off(gpr, (u32)guest_of[s] * 4));
 				host_of[(int)guest_of[s]] = -1;
 				dirty[s] = false;
 			}
@@ -147,36 +145,36 @@ namespace
 			host_of[g] = (int8_t)s;
 			return s;
 		}
-		void FlushDirty(MacroAssembler& m, const Register& gpr)
+		void FlushDirty(a64_emit* m, const a64r& gpr)
 		{
 			for (int s = 0; s < kIopCacheSlots; s++)
 				if (guest_of[s] >= 0 && dirty[s])
 				{
-					m.Str(IopCacheW(s), MemOperand(gpr, (u32)guest_of[s] * 4));
+					a64_str(m, IopCacheW(s), a64_mem_off(gpr, (u32)guest_of[s] * 4));
 					dirty[s] = false;
 				}
 		}
 	};
 	IopRegCache s_irc;
-	inline void LoadGpr(MacroAssembler& m, const Register& wd, const Register& gpr, u32 idx)
+	inline void LoadGpr(a64_emit* m, const a64r& wd, const a64r& gpr, u32 idx)
 	{
-		if (idx == 0) { m.Mov(wd, 0); return; }
+		if (idx == 0) { a64_mov_imm(m, wd, 0); return; }
 		int s = s_irc.host_of[idx];
-		if (s >= 0) { m.Mov(wd, IopCacheW(s)); return; }
-		m.Ldr(wd, MemOperand(gpr, idx * 4));
+		if (s >= 0) { a64_mov(m, wd, IopCacheW(s)); return; }
+		a64_ldr(m, wd, a64_mem_off(gpr, idx * 4));
 		s = s_irc.Alloc(m, gpr, idx);
-		m.Mov(IopCacheW(s), wd);
+		a64_mov(m, IopCacheW(s), wd);
 	}
-	inline void StoreGpr(MacroAssembler& m, const Register& ws, const Register& gpr, u32 idx)
+	inline void StoreGpr(a64_emit* m, const a64r& ws, const a64r& gpr, u32 idx)
 	{
 		if (idx == 0)
 		{
-			m.Str(ws, MemOperand(gpr, idx * 4));
+			a64_str(m, ws, a64_mem_off(gpr, idx * 4));
 			return;
 		}
 		int s = s_irc.host_of[idx];
 		if (s < 0) s = s_irc.Alloc(m, gpr, idx);
-		m.Mov(IopCacheW(s), ws);
+		a64_mov(m, IopCacheW(s), ws);
 		s_irc.dirty[s] = true;
 	}
 
@@ -189,7 +187,7 @@ namespace
 	// Translate one side-effect-light instruction (ALU + aligned load/store) to
 	// native AArch64. Returns false (emitting nothing) for control flow and
 	// anything not covered. gpr (x19) is callee-saved so it survives mem helpers.
-	bool EmitSimple(MacroAssembler& m, const Register& gpr, u32 insn)
+	bool EmitSimple(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		const u32 op = insn >> 26;
 		const u32 rs = (insn >> 21) & 31, rt = (insn >> 16) & 31, rd = (insn >> 11) & 31, sa = (insn >> 6) & 31;
@@ -202,80 +200,80 @@ namespace
 			case 0x00:
 				switch (funct)
 				{
-					case 0x00: if (rd) { LoadGpr(m, w0, gpr, rt); m.Lsl(w0, w0, sa); StoreGpr(m, w0, gpr, rd); } return true;
-					case 0x02: if (rd) { LoadGpr(m, w0, gpr, rt); m.Lsr(w0, w0, sa); StoreGpr(m, w0, gpr, rd); } return true;
-					case 0x03: if (rd) { LoadGpr(m, w0, gpr, rt); m.Asr(w0, w0, sa); StoreGpr(m, w0, gpr, rd); } return true;
-					case 0x04: if (rd) { LoadGpr(m, w0, gpr, rt); LoadGpr(m, w1, gpr, rs); m.Lsl(w0, w0, w1); StoreGpr(m, w0, gpr, rd); } return true;
-					case 0x06: if (rd) { LoadGpr(m, w0, gpr, rt); LoadGpr(m, w1, gpr, rs); m.Lsr(w0, w0, w1); StoreGpr(m, w0, gpr, rd); } return true;
-					case 0x07: if (rd) { LoadGpr(m, w0, gpr, rt); LoadGpr(m, w1, gpr, rs); m.Asr(w0, w0, w1); StoreGpr(m, w0, gpr, rd); } return true;
+					case 0x00: if (rd) { LoadGpr(m, A64_W(0), gpr, rt); a64_lsl_imm(m, A64_W(0), A64_W(0), sa); StoreGpr(m, A64_W(0), gpr, rd); } return true;
+					case 0x02: if (rd) { LoadGpr(m, A64_W(0), gpr, rt); a64_lsr_imm(m, A64_W(0), A64_W(0), sa); StoreGpr(m, A64_W(0), gpr, rd); } return true;
+					case 0x03: if (rd) { LoadGpr(m, A64_W(0), gpr, rt); a64_asr_imm(m, A64_W(0), A64_W(0), sa); StoreGpr(m, A64_W(0), gpr, rd); } return true;
+					case 0x04: if (rd) { LoadGpr(m, A64_W(0), gpr, rt); LoadGpr(m, A64_W(1), gpr, rs); a64_lsl(m, A64_W(0), A64_W(0), A64_W(1)); StoreGpr(m, A64_W(0), gpr, rd); } return true;
+					case 0x06: if (rd) { LoadGpr(m, A64_W(0), gpr, rt); LoadGpr(m, A64_W(1), gpr, rs); a64_lsr(m, A64_W(0), A64_W(0), A64_W(1)); StoreGpr(m, A64_W(0), gpr, rd); } return true;
+					case 0x07: if (rd) { LoadGpr(m, A64_W(0), gpr, rt); LoadGpr(m, A64_W(1), gpr, rs); a64_asr(m, A64_W(0), A64_W(0), A64_W(1)); StoreGpr(m, A64_W(0), gpr, rd); } return true;
 					case 0x20: PCSX2_FALLTHROUGH; // ADD == ADDU (C.68)
-					case 0x21: if (rd) { LoadGpr(m, w0, gpr, rs); LoadGpr(m, w1, gpr, rt); m.Add(w0, w0, w1); StoreGpr(m, w0, gpr, rd); } return true;
+					case 0x21: if (rd) { LoadGpr(m, A64_W(0), gpr, rs); LoadGpr(m, A64_W(1), gpr, rt); a64_add(m, A64_W(0), A64_W(0), A64_W(1)); StoreGpr(m, A64_W(0), gpr, rd); } return true;
 					case 0x22: PCSX2_FALLTHROUGH; // SUB == SUBU (C.68)
-					case 0x23: if (rd) { LoadGpr(m, w0, gpr, rs); LoadGpr(m, w1, gpr, rt); m.Sub(w0, w0, w1); StoreGpr(m, w0, gpr, rd); } return true;
-					case 0x24: if (rd) { LoadGpr(m, w0, gpr, rs); LoadGpr(m, w1, gpr, rt); m.And(w0, w0, w1); StoreGpr(m, w0, gpr, rd); } return true;
-					case 0x25: if (rd) { LoadGpr(m, w0, gpr, rs); LoadGpr(m, w1, gpr, rt); m.Orr(w0, w0, w1); StoreGpr(m, w0, gpr, rd); } return true;
-					case 0x26: if (rd) { LoadGpr(m, w0, gpr, rs); LoadGpr(m, w1, gpr, rt); m.Eor(w0, w0, w1); StoreGpr(m, w0, gpr, rd); } return true;
-					case 0x27: if (rd) { LoadGpr(m, w0, gpr, rs); LoadGpr(m, w1, gpr, rt); m.Orr(w0, w0, w1); m.Mvn(w0, w0); StoreGpr(m, w0, gpr, rd); } return true;
-					case 0x2a: if (rd) { LoadGpr(m, w0, gpr, rs); LoadGpr(m, w1, gpr, rt); m.Cmp(w0, w1); m.Cset(w0, lt); StoreGpr(m, w0, gpr, rd); } return true;
-					case 0x2b: if (rd) { LoadGpr(m, w0, gpr, rs); LoadGpr(m, w1, gpr, rt); m.Cmp(w0, w1); m.Cset(w0, lo); StoreGpr(m, w0, gpr, rd); } return true;
+					case 0x23: if (rd) { LoadGpr(m, A64_W(0), gpr, rs); LoadGpr(m, A64_W(1), gpr, rt); a64_sub(m, A64_W(0), A64_W(0), A64_W(1)); StoreGpr(m, A64_W(0), gpr, rd); } return true;
+					case 0x24: if (rd) { LoadGpr(m, A64_W(0), gpr, rs); LoadGpr(m, A64_W(1), gpr, rt); a64_and(m, A64_W(0), A64_W(0), A64_W(1)); StoreGpr(m, A64_W(0), gpr, rd); } return true;
+					case 0x25: if (rd) { LoadGpr(m, A64_W(0), gpr, rs); LoadGpr(m, A64_W(1), gpr, rt); a64_orr(m, A64_W(0), A64_W(0), A64_W(1)); StoreGpr(m, A64_W(0), gpr, rd); } return true;
+					case 0x26: if (rd) { LoadGpr(m, A64_W(0), gpr, rs); LoadGpr(m, A64_W(1), gpr, rt); a64_eor(m, A64_W(0), A64_W(0), A64_W(1)); StoreGpr(m, A64_W(0), gpr, rd); } return true;
+					case 0x27: if (rd) { LoadGpr(m, A64_W(0), gpr, rs); LoadGpr(m, A64_W(1), gpr, rt); a64_orr(m, A64_W(0), A64_W(0), A64_W(1)); a64_mvn(m, A64_W(0), A64_W(0)); StoreGpr(m, A64_W(0), gpr, rd); } return true;
+					case 0x2a: if (rd) { LoadGpr(m, A64_W(0), gpr, rs); LoadGpr(m, A64_W(1), gpr, rt); a64_cmp(m, A64_W(0), A64_W(1)); a64_cset(m, A64_W(0), A64_LT); StoreGpr(m, A64_W(0), gpr, rd); } return true;
+					case 0x2b: if (rd) { LoadGpr(m, A64_W(0), gpr, rs); LoadGpr(m, A64_W(1), gpr, rt); a64_cmp(m, A64_W(0), A64_W(1)); a64_cset(m, A64_W(0), A64_LO); StoreGpr(m, A64_W(0), gpr, rd); } return true;
 					// ---- C.33: HI/LO pipeline. hi=GPR.r[32], lo=GPR.r[33]
 					// (offsets 128/132); accessed directly, never through the
 					// register cache (host_of[] only spans guest 0..31).
-					case 0x10: if (rd) { m.Ldr(w0, MemOperand(gpr, 32 * 4)); StoreGpr(m, w0, gpr, rd); } return true; // MFHI
-					case 0x11: { LoadGpr(m, w0, gpr, rs); m.Str(w0, MemOperand(gpr, 32 * 4)); } return true;          // MTHI
-					case 0x12: if (rd) { m.Ldr(w0, MemOperand(gpr, 33 * 4)); StoreGpr(m, w0, gpr, rd); } return true; // MFLO
-					case 0x13: { LoadGpr(m, w0, gpr, rs); m.Str(w0, MemOperand(gpr, 33 * 4)); } return true;          // MTLO
+					case 0x10: if (rd) { a64_ldr(m, A64_W(0), a64_mem_off(gpr, 32 * 4)); StoreGpr(m, A64_W(0), gpr, rd); } return true; // MFHI
+					case 0x11: { LoadGpr(m, A64_W(0), gpr, rs); a64_str(m, A64_W(0), a64_mem_off(gpr, 32 * 4)); } return true;          // MTHI
+					case 0x12: if (rd) { a64_ldr(m, A64_W(0), a64_mem_off(gpr, 33 * 4)); StoreGpr(m, A64_W(0), gpr, rd); } return true; // MFLO
+					case 0x13: { LoadGpr(m, A64_W(0), gpr, rs); a64_str(m, A64_W(0), a64_mem_off(gpr, 33 * 4)); } return true;          // MTLO
 					case 0x18: // MULT
 					case 0x19: // MULTU
 					{
-						LoadGpr(m, w0, gpr, rs); LoadGpr(m, w1, gpr, rt);
-						if (funct == 0x18) m.Smull(x0, w0, w1);
-						else               m.Umull(x0, w0, w1);
-						m.Str(w0, MemOperand(gpr, 33 * 4)); // lo
-						m.Lsr(x0, x0, 32);
-						m.Str(w0, MemOperand(gpr, 32 * 4)); // hi
+						LoadGpr(m, A64_W(0), gpr, rs); LoadGpr(m, A64_W(1), gpr, rt);
+						if (funct == 0x18) a64_smull(m, A64_X(0), A64_W(0), A64_W(1));
+						else               a64_umull(m, A64_X(0), A64_W(0), A64_W(1));
+						a64_str(m, A64_W(0), a64_mem_off(gpr, 33 * 4)); // lo
+						a64_lsr_imm(m, A64_X(0), A64_X(0), 32);
+						a64_str(m, A64_W(0), a64_mem_off(gpr, 32 * 4)); // hi
 						return true;
 					}
 					case 0x1a: // DIV (psxDIV semantics)
 					{
-						LoadGpr(m, w0, gpr, rs); LoadGpr(m, w1, gpr, rt);
-						m.Sdiv(w2, w0, w1);      // rt==0 -> 0 (fixed below); INT_MIN/-1 -> INT_MIN (= psxDIV's x86-overflow lo)
-						m.Msub(w3, w2, w1, w0);  // hi = rs - lo*rt; rt==0 -> rs, overflow -> 0: both match psxDIV
-						m.Cmp(w0, 0);
-						m.Mov(w4, 1);
-						m.Mov(w5, -1);
-						m.Csel(w4, w4, w5, lt);  // div-by-0 lo: rs<0 ? 1 : 0xFFFFFFFF
-						m.Cmp(w1, 0);
-						m.Csel(w2, w2, w4, ne);
-						m.Str(w2, MemOperand(gpr, 33 * 4)); // lo
-						m.Str(w3, MemOperand(gpr, 32 * 4)); // hi
+						LoadGpr(m, A64_W(0), gpr, rs); LoadGpr(m, A64_W(1), gpr, rt);
+						a64_sdiv(m, A64_W(2), A64_W(0), A64_W(1));      // rt==0 -> 0 (fixed below); INT_MIN/-1 -> INT_MIN (= psxDIV's x86-overflow lo)
+						a64_msub(m, A64_W(3), A64_W(2), A64_W(1), A64_W(0));  // hi = rs - lo*rt; rt==0 -> rs, overflow -> 0: both match psxDIV
+						a64_cmp_imm(m, A64_W(0), 0);
+						a64_mov_imm(m, A64_W(4), 1);
+						a64_mov_imm(m, A64_W(5), -1);
+						a64_csel(m, A64_W(4), A64_W(4), A64_W(5), A64_LT);  // div-by-0 lo: rs<0 ? 1 : 0xFFFFFFFF
+						a64_cmp_imm(m, A64_W(1), 0);
+						a64_csel(m, A64_W(2), A64_W(2), A64_W(4), A64_NE);
+						a64_str(m, A64_W(2), a64_mem_off(gpr, 33 * 4)); // lo
+						a64_str(m, A64_W(3), a64_mem_off(gpr, 32 * 4)); // hi
 						return true;
 					}
 					case 0x1b: // DIVU (psxDIVU semantics)
 					{
-						LoadGpr(m, w0, gpr, rs); LoadGpr(m, w1, gpr, rt);
-						m.Udiv(w2, w0, w1);
-						m.Msub(w3, w2, w1, w0);  // rt==0 -> hi=rs
-						m.Cmp(w1, 0);
-						m.Csinv(w2, w2, wzr, ne); // rt==0 -> lo=0xFFFFFFFF
-						m.Str(w2, MemOperand(gpr, 33 * 4)); // lo
-						m.Str(w3, MemOperand(gpr, 32 * 4)); // hi
+						LoadGpr(m, A64_W(0), gpr, rs); LoadGpr(m, A64_W(1), gpr, rt);
+						a64_udiv(m, A64_W(2), A64_W(0), A64_W(1));
+						a64_msub(m, A64_W(3), A64_W(2), A64_W(1), A64_W(0));  // rt==0 -> hi=rs
+						a64_cmp_imm(m, A64_W(1), 0);
+						a64_csinv(m, A64_W(2), A64_W(2), A64_WZR, A64_NE); // rt==0 -> lo=0xFFFFFFFF
+						a64_str(m, A64_W(2), a64_mem_off(gpr, 33 * 4)); // lo
+						a64_str(m, A64_W(3), a64_mem_off(gpr, 32 * 4)); // hi
 						return true;
 					}
 					default: return false;
 				}
 			case 0x08: PCSX2_FALLTHROUGH; // ADDI == ADDIU (C.68)
-			case 0x09: if (rt) { LoadGpr(m, w0, gpr, rs); m.Add(w0, w0, simm); StoreGpr(m, w0, gpr, rt); } return true;
-			case 0x0a: if (rt) { LoadGpr(m, w0, gpr, rs); m.Mov(w1, (u32)simm); m.Cmp(w0, w1); m.Cset(w0, lt); StoreGpr(m, w0, gpr, rt); } return true;
-			case 0x0b: if (rt) { LoadGpr(m, w0, gpr, rs); m.Mov(w1, (u32)simm); m.Cmp(w0, w1); m.Cset(w0, lo); StoreGpr(m, w0, gpr, rt); } return true;
-			case 0x0c: if (rt) { LoadGpr(m, w0, gpr, rs); m.Mov(w1, zimm); m.And(w0, w0, w1); StoreGpr(m, w0, gpr, rt); } return true;
-			case 0x0d: if (rt) { LoadGpr(m, w0, gpr, rs); m.Mov(w1, zimm); m.Orr(w0, w0, w1); StoreGpr(m, w0, gpr, rt); } return true;
-			case 0x0e: if (rt) { LoadGpr(m, w0, gpr, rs); m.Mov(w1, zimm); m.Eor(w0, w0, w1); StoreGpr(m, w0, gpr, rt); } return true;
-			case 0x0f: if (rt) { m.Mov(w0, zimm << 16); StoreGpr(m, w0, gpr, rt); } return true;
+			case 0x09: if (rt) { LoadGpr(m, A64_W(0), gpr, rs); a64_add_imm(m, A64_W(0), A64_W(0), simm); StoreGpr(m, A64_W(0), gpr, rt); } return true;
+			case 0x0a: if (rt) { LoadGpr(m, A64_W(0), gpr, rs); a64_mov_imm(m, A64_W(1), (u32)simm); a64_cmp(m, A64_W(0), A64_W(1)); a64_cset(m, A64_W(0), A64_LT); StoreGpr(m, A64_W(0), gpr, rt); } return true;
+			case 0x0b: if (rt) { LoadGpr(m, A64_W(0), gpr, rs); a64_mov_imm(m, A64_W(1), (u32)simm); a64_cmp(m, A64_W(0), A64_W(1)); a64_cset(m, A64_W(0), A64_LO); StoreGpr(m, A64_W(0), gpr, rt); } return true;
+			case 0x0c: if (rt) { LoadGpr(m, A64_W(0), gpr, rs); a64_mov_imm(m, A64_W(1), zimm); a64_and(m, A64_W(0), A64_W(0), A64_W(1)); StoreGpr(m, A64_W(0), gpr, rt); } return true;
+			case 0x0d: if (rt) { LoadGpr(m, A64_W(0), gpr, rs); a64_mov_imm(m, A64_W(1), zimm); a64_orr(m, A64_W(0), A64_W(0), A64_W(1)); StoreGpr(m, A64_W(0), gpr, rt); } return true;
+			case 0x0e: if (rt) { LoadGpr(m, A64_W(0), gpr, rs); a64_mov_imm(m, A64_W(1), zimm); a64_eor(m, A64_W(0), A64_W(0), A64_W(1)); StoreGpr(m, A64_W(0), gpr, rt); } return true;
+			case 0x0f: if (rt) { a64_mov_imm(m, A64_W(0), zimm << 16); StoreGpr(m, A64_W(0), gpr, rt); } return true;
 
 			case 0x20: case 0x24: case 0x21: case 0x25: case 0x23:
 			{
-				LoadGpr(m, w0, gpr, rs); m.Add(w0, w0, simm);
+				LoadGpr(m, A64_W(0), gpr, rs); a64_add_imm(m, A64_W(0), A64_W(0), simm);
 				const uint64_t fn = (op == 0x23) ? reinterpret_cast<uint64_t>(&iopMemRead32)
 				            : (op == 0x21 || op == 0x25) ? reinterpret_cast<uint64_t>(&iopMemRead16)
 				            : reinterpret_cast<uint64_t>(&iopMemRead8);
@@ -289,56 +287,56 @@ namespace
 				// constant. The read happens even for rt==0 (IO side effects
 				// on the slow path), matching the interpreter.
 				const bool fast = iopMem != nullptr;
-				Label slow, done;
+				a64_label slow = A64_LABEL_INIT, done = A64_LABEL_INIT;
 				if (fast)
 				{
-					m.And(w1, w0, 0x1fffffff);           // physical address
-					m.Cmp(w1, 0x00800000);
-					m.B(&slow, hs);
-					m.And(w1, w1, 0x1fffff);             // 2MB mirror fold
-					m.Mov(x2, reinterpret_cast<uint64_t>(iopMem->Main));
+					a64_and_imm(m, A64_W(1), A64_W(0), 0x1fffffff);           // physical address
+					a64_cmp_imm(m, A64_W(1), 0x00800000);
+					a64_b_cond(m, &slow, A64_HS);
+					a64_and_imm(m, A64_W(1), A64_W(1), 0x1fffff);             // 2MB mirror fold
+					a64_mov_imm(m, A64_X(2), reinterpret_cast<uint64_t>(iopMem->Main));
 					switch (op)
 					{
-						case 0x20: m.Ldrsb(w0, MemOperand(x2, x1)); break;
-						case 0x24: m.Ldrb (w0, MemOperand(x2, x1)); break;
-						case 0x21: m.Ldrsh(w0, MemOperand(x2, x1)); break;
-						case 0x25: m.Ldrh (w0, MemOperand(x2, x1)); break;
-						default:   m.Ldr  (w0, MemOperand(x2, x1)); break;
+						case 0x20: a64_ldrsb(m, A64_W(0), a64_mem_reg(A64_X(2), A64_X(1), 0)); break;
+						case 0x24: a64_ldrb(m, A64_W(0), a64_mem_reg(A64_X(2), A64_X(1), 0)); break;
+						case 0x21: a64_ldrsh(m, A64_W(0), a64_mem_reg(A64_X(2), A64_X(1), 0)); break;
+						case 0x25: a64_ldrh(m, A64_W(0), a64_mem_reg(A64_X(2), A64_X(1), 0)); break;
+						default:   a64_ldr(m, A64_W(0), a64_mem_reg(A64_X(2), A64_X(1), 0)); break;
 					}
-					m.B(&done);
-					m.Bind(&slow);
+					a64_b(m, &done);
+					a64_bind(m, &slow);
 				}
-				m.Mov(x16, fn); m.Blr(x16);
+				a64_mov_imm(m, A64_X(16), fn); a64_blr(m, A64_X(16));
 				switch (op) // helpers return u8/u16; normalize like the fast path
 				{
-					case 0x20: m.Sxtb(w0, w0); break;
-					case 0x24: m.Uxtb(w0, w0); break;
-					case 0x21: m.Sxth(w0, w0); break;
-					case 0x25: m.Uxth(w0, w0); break;
+					case 0x20: a64_sxtb(m, A64_W(0), A64_W(0)); break;
+					case 0x24: a64_uxtb(m, A64_W(0), A64_W(0)); break;
+					case 0x21: a64_sxth(m, A64_W(0), A64_W(0)); break;
+					case 0x25: a64_uxth(m, A64_W(0), A64_W(0)); break;
 					default: break;
 				}
 				if (fast)
-					m.Bind(&done);
+					a64_bind(m, &done);
 				if (rt)
-					StoreGpr(m, w0, gpr, rt);
+					StoreGpr(m, A64_W(0), gpr, rt);
 				return true;
 			}
 			case 0x28: case 0x29: case 0x2b:
 			{
-				LoadGpr(m, w0, gpr, rs); m.Add(w0, w0, simm);
-				LoadGpr(m, w1, gpr, rt);
+				LoadGpr(m, A64_W(0), gpr, rs); a64_add_imm(m, A64_W(0), A64_W(0), simm);
+				LoadGpr(m, A64_W(1), gpr, rt);
 #if defined(__APPLE__)
 				// iopMemWrite8/16 take u8/u16. Apple's arm64 ABI makes the caller
 				// extend narrow arguments to 32 bits and the callee relies on it,
 				// so pass the value already truncated. AAPCS64 elsewhere has the
 				// callee extend, so the plain register is correct there as is.
-				if (op == 0x28) m.Uxtb(w1, w1);
-				else if (op == 0x29) m.Uxth(w1, w1);
+				if (op == 0x28) a64_uxtb(m, A64_W(1), A64_W(1));
+				else if (op == 0x29) a64_uxth(m, A64_W(1), A64_W(1));
 #endif
 				uint64_t fn = (op == 0x2b) ? reinterpret_cast<uint64_t>(&iopMemWrite32)
 				            : (op == 0x29) ? reinterpret_cast<uint64_t>(&iopMemWrite16)
 				            : reinterpret_cast<uint64_t>(&iopMemWrite8);
-				m.Mov(x16, fn); m.Blr(x16);
+				a64_mov_imm(m, A64_X(16), fn); a64_blr(m, A64_X(16));
 				return true;
 			}
 
@@ -351,26 +349,26 @@ namespace
 			// LSLV/LSRV mod-32 semantics never bite.
 			case 0x22: case 0x26:
 			{
-				LoadGpr(m, w0, gpr, rs); m.Add(w0, w0, simm);
-				m.And(w0, w0, 0xfffffffc);
-				m.Mov(x16, reinterpret_cast<uint64_t>(&iopMemRead32)); m.Blr(x16);
+				LoadGpr(m, A64_W(0), gpr, rs); a64_add_imm(m, A64_W(0), A64_W(0), simm);
+				a64_and_imm(m, A64_W(0), A64_W(0), 0xfffffffc);
+				a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&iopMemRead32)); a64_blr(m, A64_X(16));
 				if (!rt) return true;
-				LoadGpr(m, w1, gpr, rs); m.Add(w1, w1, simm);
-				m.And(w1, w1, 3); m.Lsl(w1, w1, 3); // shift
-				LoadGpr(m, w2, gpr, rt);            // old rt
+				LoadGpr(m, A64_W(1), gpr, rs); a64_add_imm(m, A64_W(1), A64_W(1), simm);
+				a64_and_imm(m, A64_W(1), A64_W(1), 3); a64_lsl_imm(m, A64_W(1), A64_W(1), 3); // shift
+				LoadGpr(m, A64_W(2), gpr, rt);            // old rt
 				if (op == 0x22) // LWL: rt = (rt & (0x00ffffff >> shift)) | (mem << (24-shift))
 				{
-					m.Mov(w3, 0x00ffffffu); m.Lsr(w3, w3, w1); m.And(w2, w2, w3);
-					m.Mov(w4, 24); m.Sub(w4, w4, w1); m.Lsl(w0, w0, w4);
+					a64_mov_imm(m, A64_W(3), 0x00ffffffu); a64_lsr(m, A64_W(3), A64_W(3), A64_W(1)); a64_and(m, A64_W(2), A64_W(2), A64_W(3));
+					a64_mov_imm(m, A64_W(4), 24); a64_sub(m, A64_W(4), A64_W(4), A64_W(1)); a64_lsl(m, A64_W(0), A64_W(0), A64_W(4));
 				}
 				else // LWR: rt = (rt & (0xffffff00 << (24-shift))) | (mem >> shift)
 				{
-					m.Mov(w3, 0xffffff00u); m.Mov(w4, 24); m.Sub(w4, w4, w1);
-					m.Lsl(w3, w3, w4); m.And(w2, w2, w3);
-					m.Lsr(w0, w0, w1);
+					a64_mov_imm(m, A64_W(3), 0xffffff00u); a64_mov_imm(m, A64_W(4), 24); a64_sub(m, A64_W(4), A64_W(4), A64_W(1));
+					a64_lsl(m, A64_W(3), A64_W(3), A64_W(4)); a64_and(m, A64_W(2), A64_W(2), A64_W(3));
+					a64_lsr(m, A64_W(0), A64_W(0), A64_W(1));
 				}
-				m.Orr(w0, w0, w2);
-				StoreGpr(m, w0, gpr, rt);
+				a64_orr(m, A64_W(0), A64_W(0), A64_W(2));
+				StoreGpr(m, A64_W(0), gpr, rt);
 				return true;
 			}
 
@@ -378,27 +376,27 @@ namespace
 			// word, psxSWL/psxSWR semantics; two helper calls).
 			case 0x2a: case 0x2e:
 			{
-				LoadGpr(m, w0, gpr, rs); m.Add(w0, w0, simm);
-				m.And(w0, w0, 0xfffffffc);
-				m.Mov(x16, reinterpret_cast<uint64_t>(&iopMemRead32)); m.Blr(x16);
-				LoadGpr(m, w1, gpr, rs); m.Add(w1, w1, simm);
-				m.And(w1, w1, 3); m.Lsl(w1, w1, 3); // shift
-				LoadGpr(m, w2, gpr, rt);
+				LoadGpr(m, A64_W(0), gpr, rs); a64_add_imm(m, A64_W(0), A64_W(0), simm);
+				a64_and_imm(m, A64_W(0), A64_W(0), 0xfffffffc);
+				a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&iopMemRead32)); a64_blr(m, A64_X(16));
+				LoadGpr(m, A64_W(1), gpr, rs); a64_add_imm(m, A64_W(1), A64_W(1), simm);
+				a64_and_imm(m, A64_W(1), A64_W(1), 3); a64_lsl_imm(m, A64_W(1), A64_W(1), 3); // shift
+				LoadGpr(m, A64_W(2), gpr, rt);
 				if (op == 0x2a) // SWL: mem' = (rt >> (24-shift)) | (mem & (0xffffff00 << shift))
 				{
-					m.Mov(w3, 24); m.Sub(w3, w3, w1); m.Lsr(w2, w2, w3);
-					m.Mov(w4, 0xffffff00u); m.Lsl(w4, w4, w1); m.And(w0, w0, w4);
+					a64_mov_imm(m, A64_W(3), 24); a64_sub(m, A64_W(3), A64_W(3), A64_W(1)); a64_lsr(m, A64_W(2), A64_W(2), A64_W(3));
+					a64_mov_imm(m, A64_W(4), 0xffffff00u); a64_lsl(m, A64_W(4), A64_W(4), A64_W(1)); a64_and(m, A64_W(0), A64_W(0), A64_W(4));
 				}
 				else // SWR: mem' = (rt << shift) | (mem & (0x00ffffff >> (24-shift)))
 				{
-					m.Lsl(w2, w2, w1);
-					m.Mov(w3, 24); m.Sub(w3, w3, w1);
-					m.Mov(w4, 0x00ffffffu); m.Lsr(w4, w4, w3); m.And(w0, w0, w4);
+					a64_lsl(m, A64_W(2), A64_W(2), A64_W(1));
+					a64_mov_imm(m, A64_W(3), 24); a64_sub(m, A64_W(3), A64_W(3), A64_W(1));
+					a64_mov_imm(m, A64_W(4), 0x00ffffffu); a64_lsr(m, A64_W(4), A64_W(4), A64_W(3)); a64_and(m, A64_W(0), A64_W(0), A64_W(4));
 				}
-				m.Orr(w1, w0, w2); // value
-				LoadGpr(m, w0, gpr, rs); m.Add(w0, w0, simm);
-				m.And(w0, w0, 0xfffffffc);
-				m.Mov(x16, reinterpret_cast<uint64_t>(&iopMemWrite32)); m.Blr(x16);
+				a64_orr(m, A64_W(1), A64_W(0), A64_W(2)); // value
+				LoadGpr(m, A64_W(0), gpr, rs); a64_add_imm(m, A64_W(0), A64_W(0), simm);
+				a64_and_imm(m, A64_W(0), A64_W(0), 0xfffffffc);
+				a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&iopMemWrite32)); a64_blr(m, A64_X(16));
 				return true;
 			}
 
@@ -411,13 +409,13 @@ namespace
 				const u32 rs_field = rs;
 				if (rs_field == 0x00 || rs_field == 0x02) // MFC0/CFC0
 				{
-					if (rt) { m.Ldr(w0, MemOperand(gpr, 136 + rd * 4)); StoreGpr(m, w0, gpr, rt); }
+					if (rt) { a64_ldr(m, A64_W(0), a64_mem_off(gpr, 136 + rd * 4)); StoreGpr(m, A64_W(0), gpr, rt); }
 					return true;
 				}
 				if (rs_field == 0x04 || rs_field == 0x06) // MTC0/CTC0
 				{
-					LoadGpr(m, w0, gpr, rt);
-					m.Str(w0, MemOperand(gpr, 136 + rd * 4));
+					LoadGpr(m, A64_W(0), gpr, rt);
+					a64_str(m, A64_W(0), a64_mem_off(gpr, 136 + rd * 4));
 					return true;
 				}
 				// C.68: RFE. psxCOP0 dispatches on the rs field alone (psxCP0[16]
@@ -425,16 +423,16 @@ namespace
 				// Status = (Status & ~0xf) | ((Status & 0x3c) >> 2), Status = CP0.r[12].
 				if (rs_field == 0x10)
 				{
-					m.Ldr(w0, MemOperand(gpr, 136 + 12 * 4));
-					m.And(w1, w0, 0x3c);
-					m.And(w0, w0, 0xfffffff0);
-					m.Orr(w0, w0, Operand(w1, LSR, 2));
-					m.Str(w0, MemOperand(gpr, 136 + 12 * 4));
+					a64_ldr(m, A64_W(0), a64_mem_off(gpr, 136 + 12 * 4));
+					a64_and_imm(m, A64_W(1), A64_W(0), 0x3c);
+					a64_and_imm(m, A64_W(0), A64_W(0), 0xfffffff0);
+					a64_orr_shift(m, A64_W(0), A64_W(0), A64_W(1), A64_LSR, 2);
+					a64_str(m, A64_W(0), a64_mem_off(gpr, 136 + 12 * 4));
 					// An interrupt left pending while IEc was clear is raised
 					// now, as rpsxRFE does: iopTestIntc pulls the next event
 					// test to within two cycles.
-					m.Mov(x16, reinterpret_cast<uint64_t>(&iopTestIntc));
-					m.Blr(x16);
+					a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&iopTestIntc));
+					a64_blr(m, A64_X(16));
 					return true;
 				}
 				return false;
@@ -485,94 +483,94 @@ namespace
 	// materializing a 64-bit absolute address (4 instructions) per access. The
 	// block tail touches pc/cycle/iopCycleEE/iopNextEventCycle several times
 	// each, so this is most of the tail's code size. Offsets are well inside the
-	// ldr/str immediate window; if one ever isn't, the MacroAssembler falls back
+	// ldr/str immediate window; if one ever isn't, the emitter falls back
 	// to a scratch register on its own, so this stays correct by construction.
-	inline MemOperand RegsField(const void* field)
+	inline a64_mem RegsField(const void* field)
 	{
 		const intptr_t off = reinterpret_cast<intptr_t>(field) -
 		                     reinterpret_cast<intptr_t>(&psxRegs.GPR.r[0]);
-		return MemOperand(x19, static_cast<int64_t>(off));
+		return a64_mem_off(A64_X(19), static_cast<int64_t>(off));
 	}
 
 	// cycle += count ; iopCycleEE -= (ICFG&8 ? 9 : 8) * count
-	void EmitCycleBookkeeping(MacroAssembler& m, int count)
+	void EmitCycleBookkeeping(a64_emit* m, int count)
 	{
-		m.Ldr(w0, RegsField(&psxRegs.cycle)); m.Add(w0, w0, count); m.Str(w0, RegsField(&psxRegs.cycle));
-		m.Mov(x10, reinterpret_cast<uint64_t>(&psxHu32(HW_ICFG)));
-		m.Ldr(w1, MemOperand(x10));
-		m.Mov(w2, 9 * count); m.Mov(w3, 8 * count);
-		m.Tst(w1, 8);
-		m.Csel(w2, w2, w3, ne);
-		m.Ldr(w0, RegsField(&psxRegs.iopCycleEE)); m.Sub(w0, w0, w2); m.Str(w0, RegsField(&psxRegs.iopCycleEE));
+		a64_ldr(m, A64_W(0), RegsField(&psxRegs.cycle)); a64_add_imm(m, A64_W(0), A64_W(0), count); a64_str(m, A64_W(0), RegsField(&psxRegs.cycle));
+		a64_mov_imm(m, A64_X(10), reinterpret_cast<uint64_t>(&psxHu32(HW_ICFG)));
+		a64_ldr(m, A64_W(1), a64_mem_off(A64_X(10), 0));
+		a64_mov_imm(m, A64_W(2), 9 * count); a64_mov_imm(m, A64_W(3), 8 * count);
+		a64_tst_imm(m, A64_W(1), 8);
+		a64_csel(m, A64_W(2), A64_W(2), A64_W(3), A64_NE);
+		a64_ldr(m, A64_W(0), RegsField(&psxRegs.iopCycleEE)); a64_sub(m, A64_W(0), A64_W(0), A64_W(2)); a64_str(m, A64_W(0), RegsField(&psxRegs.iopCycleEE));
 	}
 
 	// Restore the frame, then tail-chain straight to the next block via the RAM LUT
 	// (staying in JIT code). IOP has a cycle budget, so only chain while
 	// iopCycleEE > 0; otherwise (budget spent / LUT miss / non-RAM pc) return to
 	// recExecuteBlock. x30 propagates so the final ret unwinds to the dispatcher.
-	void EmitEpilogue(MacroAssembler& m)
+	void EmitEpilogue(a64_emit* m)
 	{
 		// C.41: dispatch FIRST with the frame (and x19) still live; the
 		// successor's chain entry skips its prologue. Only the return to
 		// recExecuteBlock pops the frame.
-		Label ret_path;
-		m.Ldr(w0, RegsField(&psxRegs.iopCycleEE));
-		m.Cmp(w0, 0);
-		m.B(&ret_path, le);                  // budget exhausted -> return to dispatcher
-		m.Ldr(w1, RegsField(&psxRegs.pc));
-		m.And(w2, w1, 0x1fffffff);
-		m.Mov(w3, kRamBytes);
-		m.Cmp(w2, w3);
-		m.B(&ret_path, hs);                  // not RAM -> return
-		m.Mov(x0, reinterpret_cast<uint64_t>(&s_lut));
-		m.Ldr(x0, MemOperand(x0));
-		m.Lsr(w2, w2, 2);
-		m.Ldr(x3, MemOperand(x0, w2, UXTW, 3));
-		m.Cbz(x3, &ret_path);
-		m.Add(x3, x3, kChainEntryOffset);    // skip the successor's prologue
-		m.Br(x3);
-		m.Bind(&ret_path);
-		m.Ldp(x19, x20, MemOperand(sp, 0));
-		m.Ldp(x21, x30, MemOperand(sp, 16));
-		m.Ldp(x22, x23, MemOperand(sp, 32));
-		m.Ldp(x24, x25, MemOperand(sp, 48));
-		m.Ldp(x26, x27, MemOperand(sp, 64));
-		m.Add(sp, sp, 80);
-		m.Ret();
+		a64_label ret_path = A64_LABEL_INIT;
+		a64_ldr(m, A64_W(0), RegsField(&psxRegs.iopCycleEE));
+		a64_cmp_imm(m, A64_W(0), 0);
+		a64_b_cond(m, &ret_path, A64_LE);                  // budget exhausted -> return to dispatcher
+		a64_ldr(m, A64_W(1), RegsField(&psxRegs.pc));
+		a64_and_imm(m, A64_W(2), A64_W(1), 0x1fffffff);
+		a64_mov_imm(m, A64_W(3), kRamBytes);
+		a64_cmp(m, A64_W(2), A64_W(3));
+		a64_b_cond(m, &ret_path, A64_HS);                  // not RAM -> return
+		a64_mov_imm(m, A64_X(0), reinterpret_cast<uint64_t>(&s_lut));
+		a64_ldr(m, A64_X(0), a64_mem_off(A64_X(0), 0));
+		a64_lsr_imm(m, A64_W(2), A64_W(2), 2);
+		a64_ldr(m, A64_X(3), a64_mem_ext(A64_X(0), A64_W(2), A64_UXTW, 3));
+		a64_cbz(m, A64_X(3), &ret_path);
+		a64_add_imm(m, A64_X(3), A64_X(3), kChainEntryOffset);    // skip the successor's prologue
+		a64_br(m, A64_X(3));
+		a64_bind(m, &ret_path);
+		a64_ldp(m, A64_X(19), A64_X(20), a64_mem_off(A64_SP, 0));
+		a64_ldp(m, A64_X(21), A64_X(30), a64_mem_off(A64_SP, 16));
+		a64_ldp(m, A64_X(22), A64_X(23), a64_mem_off(A64_SP, 32));
+		a64_ldp(m, A64_X(24), A64_X(25), a64_mem_off(A64_SP, 48));
+		a64_ldp(m, A64_X(26), A64_X(27), a64_mem_off(A64_SP, 64));
+		a64_add_imm(m, A64_SP, A64_SP, 80);
+		a64_ret(m);
 	}
 
-	inline void StorePC(MacroAssembler& m, const Register& wsrc)
+	inline void StorePC(a64_emit* m, const a64r& wsrc)
 	{
-		m.Str(wsrc, RegsField(&psxRegs.pc));
+		a64_str(m, wsrc, RegsField(&psxRegs.pc));
 	}
 
 	// Translate a branch/jump (ending the block). Returns false, emitting nothing,
 	// if it can't be handled (then the caller hands the rest to the interpreter).
-	bool EmitBranch(MacroAssembler& m, const Register& gpr, u32 bpc, u32 insn, int n_leading)
+	bool EmitBranch(a64_emit* m, const a64r& gpr, u32 bpc, u32 insn, int n_leading)
 	{
 		const u32 op = insn >> 26, rs = (insn >> 21) & 31, rt = (insn >> 16) & 31, funct = insn & 0x3f;
 		const int32_t simm = (int16_t)(insn & 0xffff);
 
 		bool uncond = false, is_jr = false, two = false, one = false;
 		int  link = -1;
-		Condition cond = al;
+		unsigned cond = A64_AL;
 		u32  tconst = 0;
 
 		if      (op == 0x00 && funct == 0x08) { uncond = true; is_jr = true; }
 		else if (op == 0x00 && funct == 0x09) { uncond = true; is_jr = true; link = (int)((insn >> 11) & 31); }
 		else if (op == 0x03) { uncond = true; link = 31; tconst = (((bpc + 4) & 0xf0000000) | ((insn & 0x3ffffff) << 2)); } // JAL
 		else if (op == 0x02) { uncond = true; tconst = (((bpc + 4) & 0xf0000000) | ((insn & 0x3ffffff) << 2)); } // J (C.38; import-stub form filtered below)
-		else if (op == 0x04) { two = true; cond = eq; tconst = bpc + 4 + simm * 4; } // BEQ
-		else if (op == 0x05) { two = true; cond = ne; tconst = bpc + 4 + simm * 4; } // BNE
-		else if (op == 0x06) { one = true; cond = le; tconst = bpc + 4 + simm * 4; } // BLEZ
-		else if (op == 0x07) { one = true; cond = gt; tconst = bpc + 4 + simm * 4; } // BGTZ
+		else if (op == 0x04) { two = true; cond = A64_EQ; tconst = bpc + 4 + simm * 4; } // BEQ
+		else if (op == 0x05) { two = true; cond = A64_NE; tconst = bpc + 4 + simm * 4; } // BNE
+		else if (op == 0x06) { one = true; cond = A64_LE; tconst = bpc + 4 + simm * 4; } // BLEZ
+		else if (op == 0x07) { one = true; cond = A64_GT; tconst = bpc + 4 + simm * 4; } // BGTZ
 		else if (op == 0x01)
 		{
 			const u32 t = bpc + 4 + simm * 4;
-			if      (rt == 0x00) { one = true; cond = lt; tconst = t; }            // BLTZ
-			else if (rt == 0x01) { one = true; cond = ge; tconst = t; }            // BGEZ
-			else if (rt == 0x10) { one = true; cond = lt; tconst = t; link = 31; } // BLTZAL
-			else if (rt == 0x11) { one = true; cond = ge; tconst = t; link = 31; } // BGEZAL
+			if      (rt == 0x00) { one = true; cond = A64_LT; tconst = t; }            // BLTZ
+			else if (rt == 0x01) { one = true; cond = A64_GE; tconst = t; }            // BGEZ
+			else if (rt == 0x10) { one = true; cond = A64_LT; tconst = t; link = 31; } // BLTZAL
+			else if (rt == 0x11) { one = true; cond = A64_GE; tconst = t; link = 31; } // BGEZAL
 			else return false;
 		}
 		else return false;
@@ -599,14 +597,14 @@ namespace
 		// _cpuEventTest_Shared still calls iopEventTest unconditionally.
 		const auto EmitIopEventTest = [&m]()
 		{
-			Label skip;
-			m.Ldr(w0, RegsField(&psxRegs.cycle));
-			m.Ldr(w1, RegsField(&psxRegs.iopNextEventCycle));
-			m.Subs(w0, w0, w1); // (s32)(cycle - iopNextEventCycle)
-			m.B(&skip, mi);     // not due yet
-			m.Mov(x16, reinterpret_cast<uint64_t>(&iopEventTest));
-			m.Blr(x16);
-			m.Bind(&skip);
+			a64_label skip = A64_LABEL_INIT;
+			a64_ldr(m, A64_W(0), RegsField(&psxRegs.cycle));
+			a64_ldr(m, A64_W(1), RegsField(&psxRegs.iopNextEventCycle));
+			a64_subs(m, A64_W(0), A64_W(0), A64_W(1)); // (s32)(cycle - iopNextEventCycle)
+			a64_b_cond(m, &skip, A64_MI);     // not due yet
+			a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&iopEventTest));
+			a64_blr(m, A64_X(16));
+			a64_bind(m, &skip);
 		};
 
 		// C.47: the IOP kernel idle loop is a block that is nothing but `j <self>`
@@ -622,44 +620,44 @@ namespace
 		if (op == 0x02 && n_leading == 0 && ds == 0 && tconst == bpc)
 		{
 			// k = EE cycles charged per iteration = (ICFG & 8 ? 9 : 8) * 2 insns
-			m.Mov(x10, reinterpret_cast<uint64_t>(&psxHu32(HW_ICFG)));
-			m.Ldr(w5, MemOperand(x10));
-			m.Mov(w6, 9 * 2); m.Mov(w7, 8 * 2);
-			m.Tst(w5, 8);
-			m.Csel(w5, w6, w7, ne);                       // w5 = k
+			a64_mov_imm(m, A64_X(10), reinterpret_cast<uint64_t>(&psxHu32(HW_ICFG)));
+			a64_ldr(m, A64_W(5), a64_mem_off(A64_X(10), 0));
+			a64_mov_imm(m, A64_W(6), 9 * 2); a64_mov_imm(m, A64_W(7), 8 * 2);
+			a64_tst_imm(m, A64_W(5), 8);
+			a64_csel(m, A64_W(5), A64_W(6), A64_W(7), A64_NE);                       // w5 = k
 
-			m.Ldr(w0, RegsField(&psxRegs.cycle));             // w0 = cycle
-			m.Ldr(w1, RegsField(&psxRegs.iopNextEventCycle)); // w1 = next event
-			m.Ldr(w4, RegsField(&psxRegs.iopCycleEE));        // w4 = budget (> 0 on entry)
+			a64_ldr(m, A64_W(0), RegsField(&psxRegs.cycle));             // w0 = cycle
+			a64_ldr(m, A64_W(1), RegsField(&psxRegs.iopNextEventCycle)); // w1 = next event
+			a64_ldr(m, A64_W(4), RegsField(&psxRegs.iopCycleEE));        // w4 = budget (> 0 on entry)
 
 			// iterations until the event gate fires: ceil((s32)(next - cycle) / 2),
 			// which is <= 0 when the event is already due.
-			m.Sub(w6, w1, w0);
-			m.Add(w6, w6, 1);
-			m.Asr(w6, w6, 1);
+			a64_sub(m, A64_W(6), A64_W(1), A64_W(0));
+			a64_add_imm(m, A64_W(6), A64_W(6), 1);
+			a64_asr_imm(m, A64_W(6), A64_W(6), 1);
 
 			// iterations until the budget is spent: ceil(budget / k). The epilogue
 			// stops chaining once iopCycleEE <= 0, so this is where the spin ends.
-			m.Add(w7, w4, w5);
-			m.Sub(w7, w7, 1);
-			m.Udiv(w7, w7, w5);
+			a64_add(m, A64_W(7), A64_W(4), A64_W(5));
+			a64_sub_imm(m, A64_W(7), A64_W(7), 1);
+			a64_udiv(m, A64_W(7), A64_W(7), A64_W(5));
 
 			// n = max(min(n_evt, n_bud), 1): always make at least one iteration of
 			// progress, so a due-but-not-yet-tested event cannot livelock the loop.
-			m.Cmp(w6, w7);
-			m.Csel(w2, w6, w7, lt);
-			m.Mov(w3, 1);
-			m.Cmp(w2, 1);
-			m.Csel(w2, w2, w3, gt);
+			a64_cmp(m, A64_W(6), A64_W(7));
+			a64_csel(m, A64_W(2), A64_W(6), A64_W(7), A64_LT);
+			a64_mov_imm(m, A64_W(3), 1);
+			a64_cmp_imm(m, A64_W(2), 1);
+			a64_csel(m, A64_W(2), A64_W(2), A64_W(3), A64_GT);
 
-			m.Add(w0, w0, Operand(w2, LSL, 1));           // cycle += 2n
-			m.Str(w0, RegsField(&psxRegs.cycle));
-			m.Mul(w3, w2, w5);                            // k * n
-			m.Sub(w4, w4, w3);                            // iopCycleEE -= k*n
-			m.Str(w4, RegsField(&psxRegs.iopCycleEE));
+			a64_add_shift(m, A64_W(0), A64_W(0), A64_W(2), A64_LSL, 1);           // cycle += 2n
+			a64_str(m, A64_W(0), RegsField(&psxRegs.cycle));
+			a64_mul(m, A64_W(3), A64_W(2), A64_W(5));                            // k * n
+			a64_sub(m, A64_W(4), A64_W(4), A64_W(3));                            // iopCycleEE -= k*n
+			a64_str(m, A64_W(4), RegsField(&psxRegs.iopCycleEE));
 
-			m.Mov(w0, tconst);
-			StorePC(m, w0);
+			a64_mov_imm(m, A64_W(0), tconst);
+			StorePC(m, A64_W(0));
 			EmitIopEventTest();
 			EmitEpilogue(m);
 			return true;
@@ -667,13 +665,13 @@ namespace
 
 		// JR/JALR target: read before the link is written -- `jalr rd, rs`
 		// with rd == rs jumps to the old rs (psxJALR)
-		if (is_jr) { LoadGpr(m, w21, gpr, rs); }
+		if (is_jr) { LoadGpr(m, A64_W(21), gpr, rs); }
 		// link (before the delay slot, unconditionally); the BxxZAL condition
 		// below reads rs after it, as psxBGEZAL/psxBLTZAL do
-		if (link > 0) { m.Mov(w0, bpc + 8); StoreGpr(m, w0, gpr, (u32)link); }
+		if (link > 0) { a64_mov_imm(m, A64_W(0), bpc + 8); StoreGpr(m, A64_W(0), gpr, (u32)link); }
 		// snapshot condition operands before the delay slot can clobber them
-		if (two)   { LoadGpr(m, w20, gpr, rs); LoadGpr(m, w21, gpr, rt); }
-		else if (one) { LoadGpr(m, w20, gpr, rs); }
+		if (two)   { LoadGpr(m, A64_W(20), gpr, rs); LoadGpr(m, A64_W(21), gpr, rt); }
+		else if (one) { LoadGpr(m, A64_W(20), gpr, rs); }
 		// the always-executed delay slot
 		EmitSimple(m, gpr, ds);
 		// time: n_leading native ops + the branch + the delay slot
@@ -685,21 +683,21 @@ namespace
 
 		if (uncond)
 		{
-			if (is_jr) StorePC(m, w21);
-			else { m.Mov(w0, tconst); StorePC(m, w0); }
+			if (is_jr) StorePC(m, A64_W(21));
+			else { a64_mov_imm(m, A64_W(0), tconst); StorePC(m, A64_W(0)); }
 			EmitIopEventTest();
 		}
 		else
 		{
-			if (two) m.Cmp(w20, w21);
-			else     m.Cmp(w20, 0);
-			m.Mov(w0, tconst); m.Mov(w1, bpc + 8);
-			m.Csel(w0, w0, w1, cond);
-			StorePC(m, w0);
-			Label not_taken;
-			m.B(&not_taken, InvertCondition(cond));
+			if (two) a64_cmp(m, A64_W(20), A64_W(21));
+			else     a64_cmp_imm(m, A64_W(20), 0);
+			a64_mov_imm(m, A64_W(0), tconst); a64_mov_imm(m, A64_W(1), bpc + 8);
+			a64_csel(m, A64_W(0), A64_W(0), A64_W(1), cond);
+			StorePC(m, A64_W(0));
+			a64_label not_taken = A64_LABEL_INIT;
+			a64_b_cond(m, &not_taken, A64_INVERT(cond));
 			EmitIopEventTest();
-			m.Bind(&not_taken);
+			a64_bind(m, &not_taken);
 		}
 		EmitEpilogue(m);
 		return true;
@@ -717,27 +715,28 @@ namespace
 		}
 
 		u8* start = s_code + s_code_pos;
-		memjit_write_begin(); // W^X: code cache writable on this thread until FinalizeCode
-		MacroAssembler masm(start, kCodeCacheSize - s_code_pos, PositionDependentCode);
+		memjit_write_begin(); // W^X: code cache writable on this thread until the block is emitted
+		a64_emit masm_e;
+		a64_emit* const masm = &masm_e;
+		a64_init(masm, start, kCodeCacheSize - s_code_pos);
 		s_irc.Reset(); // fresh per-block register-cache state (C.32)
 
-		const Register gpr = x19;
+		const a64r gpr = A64_X(19);
 		// Uniform 80-byte frame across all blocks (tail-chaining: any block's
 		// epilogue must match any successor's prologue). x22..x27 = C.32 cache.
-		masm.Sub(sp, sp, 80);
-		masm.Stp(x19, x20, MemOperand(sp, 0));
-		masm.Stp(x21, x30, MemOperand(sp, 16));
-		masm.Stp(x22, x23, MemOperand(sp, 32));
-		masm.Stp(x24, x25, MemOperand(sp, 48));
-		masm.Stp(x26, x27, MemOperand(sp, 64));
+		a64_sub_imm(masm, A64_SP, A64_SP, 80);
+		a64_stp(masm, A64_X(19), A64_X(20), a64_mem_off(A64_SP, 0));
+		a64_stp(masm, A64_X(21), A64_X(30), a64_mem_off(A64_SP, 16));
+		a64_stp(masm, A64_X(22), A64_X(23), a64_mem_off(A64_SP, 32));
+		a64_stp(masm, A64_X(24), A64_X(25), a64_mem_off(A64_SP, 48));
+		a64_stp(masm, A64_X(26), A64_X(27), a64_mem_off(A64_SP, 64));
 		{
 			// Exactly 4 instructions so kChainEntryOffset stays constant.
 			const uint64_t gv = reinterpret_cast<uint64_t>(&psxRegs.GPR.r[0]);
-			vixl::ExactAssemblyScope scope(&masm, 4 * kInstructionSize);
-			masm.movz(gpr, gv & 0xffff);
-			masm.movk(gpr, (gv >> 16) & 0xffff, 16);
-			masm.movk(gpr, (gv >> 32) & 0xffff, 32);
-			masm.movk(gpr, (gv >> 48) & 0xffff, 48);
+			a64_movz(masm, gpr, gv & 0xffff, -1);
+			a64_movk(masm, gpr, (gv >> 16) & 0xffff, 16);
+			a64_movk(masm, gpr, (gv >> 32) & 0xffff, 32);
+			a64_movk(masm, gpr, (gv >> 48) & 0xffff, 48);
 		}
 
 		u32 p = pc;
@@ -759,8 +758,8 @@ namespace
 		// sitting at position 64 were the residual IOP handoff breakers).
 		if (!done && n == kMaxInsns)
 		{
-			masm.Mov(w0, p);
-			StorePC(masm, w0);
+			a64_mov_imm(masm, A64_W(0), p);
+			StorePC(masm, A64_W(0));
 			EmitCycleBookkeeping(masm, n);
 			s_irc.FlushDirty(masm, gpr);
 			EmitEpilogue(masm);
@@ -771,20 +770,19 @@ namespace
 		{
 			if (n > 0)
 			{
-				masm.Ldr(w0, RegsField(&psxRegs.pc)); masm.Add(w0, w0, 4 * n); masm.Str(w0, RegsField(&psxRegs.pc));
+				a64_ldr(masm, A64_W(0), RegsField(&psxRegs.pc)); a64_add_imm(masm, A64_W(0), A64_W(0), 4 * n); a64_str(masm, A64_W(0), RegsField(&psxRegs.pc));
 				EmitCycleBookkeeping(masm, n);
 			}
 			// The interpreter tail reads AND writes guest GPR memory.
 			s_irc.FlushDirty(masm, gpr);
-			masm.Mov(x16, reinterpret_cast<uint64_t>(&iopRunBasicBlock_arm64));
-			masm.Blr(x16);
+			a64_mov_imm(masm, A64_X(16), reinterpret_cast<uint64_t>(&iopRunBasicBlock_arm64));
+			a64_blr(masm, A64_X(16));
 			s_irc.Reset();
 			EmitEpilogue(masm);
 		}
 
-		masm.FinalizeCode();
 		memjit_write_end();
-		const size_t sz = masm.GetSizeOfCodeGenerated();
+		const size_t sz = a64_offset(masm);
 		memsync(reinterpret_cast<void*>(start), (u8*)(reinterpret_cast<void*>(start)) + (sz));
 		s_code_pos += (sz + 15) & ~size_t(15);
 
@@ -828,7 +826,7 @@ namespace
 
 static void recReserve(void)
 {
-	s_ok = VixlEmitSelfTest();
+	s_ok = EmitSelfTest();
 	if (!s_code)
 	{
 		s_code = (u8*)memjit_alloc(kCodeCacheSize);

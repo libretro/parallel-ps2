@@ -6,7 +6,7 @@
 
 // ARM64 microVU — opcode dispatch tables (Phase 7, Tables/Compile big-bang).
 //
-// VIXL port of pcsx2/x86/microVU_Tables.inl, but **minimal**: only the handlers
+// AArch64 port of pcsx2/x86/microVU_Tables.inl, but **minimal**: only the handlers
 // that exist today (NOP in the Upper, B/BAL in the Lower) are wired; every other
 // table slot routes to mVUunknown. As the real opcode handlers land (7.5a Upper,
 // 7.5b Lower) their table slots get swapped from mVUunknown to the real fn, and

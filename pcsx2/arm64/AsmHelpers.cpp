@@ -12,77 +12,10 @@
 
 #include "common/General.h"
 
-const vixl::aarch64::Register& armWRegister(int n)
-{
-	using namespace vixl::aarch64;
-	static constexpr const Register* regs[32] = {&w0, &w1, &w2, &w3, &w4, &w5, &w6, &w7, &w8, &w9, &w10,
-		&w11, &w12, &w13, &w14, &w15, &w16, &w17, &w18, &w19, &w20, &w21, &w22, &w23, &w24, &w25, &w26, &w27, &w28,
-		&w29, &w30, &w31};
-	pxAssert(static_cast<size_t>(n) < std::size(regs));
-	return *regs[n];
-}
-
-const vixl::aarch64::Register& armXRegister(int n)
-{
-	using namespace vixl::aarch64;
-	static constexpr const Register* regs[32] = {&x0, &x1, &x2, &x3, &x4, &x5, &x6, &x7, &x8, &x9, &x10,
-		&x11, &x12, &x13, &x14, &x15, &x16, &x17, &x18, &x19, &x20, &x21, &x22, &x23, &x24, &x25, &x26, &x27, &x28,
-		&x29, &x30, &x31};
-	pxAssert(static_cast<size_t>(n) < std::size(regs));
-	return *regs[n];
-}
-
-const vixl::aarch64::VRegister& armSRegister(int n)
-{
-	using namespace vixl::aarch64;
-	static constexpr const VRegister* regs[32] = {&s0, &s1, &s2, &s3, &s4, &s5, &s6, &s7, &vixl::aarch64::s8, &s9, &s10,
-		&s11, &s12, &s13, &s14, &s15, &vixl::aarch64::s16, &s17, &s18, &s19, &s20, &s21, &s22, &s23, &s24, &s25, &s26, &s27, &s28,
-		&s29, &s30, &s31};
-	pxAssert(static_cast<size_t>(n) < std::size(regs));
-	return *regs[n];
-}
-
-const vixl::aarch64::VRegister& armDRegister(int n)
-{
-	using namespace vixl::aarch64;
-	static constexpr const VRegister* regs[32] = {&d0, &d1, &d2, &d3, &d4, &d5, &d6, &d7, &d8, &d9, &d10,
-		&d11, &d12, &d13, &d14, &d15, &d16, &d17, &d18, &d19, &d20, &d21, &d22, &d23, &d24, &d25, &d26, &d27, &d28,
-		&d29, &d30, &d31};
-	pxAssert(static_cast<size_t>(n) < std::size(regs));
-	return *regs[n];
-}
-
-const vixl::aarch64::VRegister& armQRegister(int n)
-{
-	using namespace vixl::aarch64;
-	static constexpr const VRegister* regs[32] = {&q0, &q1, &q2, &q3, &q4, &q5, &q6, &q7, &q8, &q9, &q10,
-		&q11, &q12, &q13, &q14, &q15, &q16, &q17, &q18, &q19, &q20, &q21, &q22, &q23, &q24, &q25, &q26, &q27, &q28,
-		&q29, &q30, &q31};
-	pxAssert(static_cast<size_t>(n) < std::size(regs));
-	return *regs[n];
-}
-
-
-//#define INCLUDE_DISASSEMBLER
-
-#ifdef INCLUDE_DISASSEMBLER
-#include "aarch64/disasm-aarch64.h"
-#endif
-
-namespace a64 = vixl::aarch64;
-
-thread_local a64::MacroAssembler* armAsm PCSX2_TLS_INITIAL_EXEC;
+thread_local a64_emit* armAsm PCSX2_TLS_INITIAL_EXEC;
 thread_local u8* armAsmPtr PCSX2_TLS_INITIAL_EXEC;
 thread_local size_t armAsmCapacity PCSX2_TLS_INITIAL_EXEC;
 thread_local ArmConstantPool* armConstantPool PCSX2_TLS_INITIAL_EXEC;
-
-#ifdef INCLUDE_DISASSEMBLER
-/* One per thread that dumps code, as armAsm is: the EE and the VU1 worker
- * each compile, and neither shares the other's decoder. A debug build's
- * dump, made once per thread and kept for the thread's life. */
-static thread_local a64::PrintDisassembler* armDisasm;
-static thread_local a64::Decoder* armDisasmDecoder;
-#endif
 
 void armSetAsmPtr(void* ptr, size_t capacity, ArmConstantPool* pool)
 {
@@ -102,13 +35,9 @@ void armAlignAsmPtr()
 	armAsmPtr = new_ptr;
 }
 
-// Placement-new the per-block MacroAssembler into a thread_local buffer instead of
-// heap new/delete per JIT block: one fewer alloc/free pair on every block compile, and
-// it sidesteps heap tag/header corruption seen on this exact pattern (ARMSX2, Tyler
-// Bochard, 1c1d0b880; via yaps2 810020d8). The pxAssert(!armAsm) single-active-per-thread
-// invariant (armAsm itself is thread_local — MTVU compiles VU1 on its own thread) makes
-// the single buffer safe. The mVU's persistent jitAsm is a different object, untouched.
-alignas(vixl::aarch64::MacroAssembler) static thread_local u8 s_armAsmStorage[sizeof(vixl::aarch64::MacroAssembler)];
+// The block's emitter lives in thread_local storage: armAsm is one per thread
+// (MTVU compiles VU1 on its own thread), one block at a time.
+static thread_local a64_emit s_armAsmStorage;
 
 u8* armStartBlock()
 {
@@ -117,9 +46,10 @@ u8* armStartBlock()
 	memjit_write_begin();
 
 	pxAssert(!armAsm);
-	armAsm = new (s_armAsmStorage) vixl::aarch64::MacroAssembler(static_cast<vixl::byte*>(armAsmPtr), armAsmCapacity);
-	armAsm->GetScratchVRegisterList()->Remove(31);
-	armAsm->GetScratchRegisterList()->Remove(RSCRATCHADDR.GetCode());
+	armAsm = &s_armAsmStorage;
+	a64_init(armAsm, armAsmPtr, armAsmCapacity);
+	armAsm->vscratch &= ~(1u << 31);
+	armAsm->scratch &= ~(1u << A64_CODE(RSCRATCHADDR));
 	return armAsmPtr;
 }
 
@@ -127,12 +57,9 @@ u8* armEndBlock()
 {
 	pxAssert(armAsm);
 
-	armAsm->FinalizeCode();
-
-	const u32 size = static_cast<u32>(armAsm->GetSizeOfCodeGenerated());
+	const u32 size = static_cast<u32>(a64_offset(armAsm));
 	pxAssert(size < armAsmCapacity);
 
-	armAsm->~MacroAssembler();
 	armAsm = nullptr;
 
 	memjit_write_end();
@@ -144,139 +71,106 @@ u8* armEndBlock()
 	return armAsmPtr;
 }
 
-void armDisassembleAndDumpCode(const void* ptr, size_t size)
-{
-#ifdef INCLUDE_DISASSEMBLER
-	if (!armDisasm)
-	{
-		armDisasm        = new a64::PrintDisassembler(stderr);
-		armDisasmDecoder = new a64::Decoder();
-		armDisasmDecoder->AppendVisitor(armDisasm);
-	}
-
-	armDisasmDecoder->Decode(static_cast<const vixl::aarch64::Instruction*>(ptr), static_cast<const vixl::aarch64::Instruction*>(ptr) + size);
-#else
-	log_cb(RETRO_LOG_ERROR, "Not compiled with INCLUDE_DISASSEMBLER\n");
-#endif
-}
-
 void armEmitJmp(const void* ptr, bool force_inline)
 {
 	s64 displacement = GetPCDisplacement(armGetCurrentCodePointer(), ptr);
-	bool use_blr = !vixl::IsInt26(displacement);
+	bool use_blr = !a64_is_int(displacement, 26);
 	if (use_blr && armConstantPool && !force_inline)
 	{
 		if (u8* trampoline = armConstantPool->GetJumpTrampoline(ptr); trampoline)
 		{
 			displacement = GetPCDisplacement(armGetCurrentCodePointer(), trampoline);
-			use_blr = !vixl::IsInt26(displacement);
+			use_blr = !a64_is_int(displacement, 26);
 		}
 	}
 
 	if (use_blr)
 	{
-		armAsm->Mov(RXVIXLSCRATCH, reinterpret_cast<uintptr_t>(ptr));
-		armAsm->Br(RXVIXLSCRATCH);
+		a64_mov_imm(armAsm, RXSCRATCH, reinterpret_cast<uintptr_t>(ptr));
+		a64_br(armAsm, RXSCRATCH);
 	}
 	else
-	{
-		a64::SingleEmissionCheckScope guard(armAsm);
-		armAsm->b(displacement);
-	}
+		a64_b_disp(armAsm, displacement);
 }
 
 void armEmitCall(const void* ptr, bool force_inline)
 {
 	s64 displacement = GetPCDisplacement(armGetCurrentCodePointer(), ptr);
-	bool use_blr = !vixl::IsInt26(displacement);
+	bool use_blr = !a64_is_int(displacement, 26);
 	if (use_blr && armConstantPool && !force_inline)
 	{
 		if (u8* trampoline = armConstantPool->GetJumpTrampoline(ptr); trampoline)
 		{
 			displacement = GetPCDisplacement(armGetCurrentCodePointer(), trampoline);
-			use_blr = !vixl::IsInt26(displacement);
+			use_blr = !a64_is_int(displacement, 26);
 		}
 	}
 
 	if (use_blr)
 	{
-		armAsm->Mov(RXVIXLSCRATCH, reinterpret_cast<uintptr_t>(ptr));
-		armAsm->Blr(RXVIXLSCRATCH);
+		a64_mov_imm(armAsm, RXSCRATCH, reinterpret_cast<uintptr_t>(ptr));
+		a64_blr(armAsm, RXSCRATCH);
 	}
 	else
-	{
-		a64::SingleEmissionCheckScope guard(armAsm);
-		armAsm->bl(displacement);
-	}
+		a64_bl_disp(armAsm, displacement);
 }
 
 void armEmitJmpPtr(void* code_address, const void* target, bool flush_icache)
 {
 	const s64 displacement = GetPCDisplacement(code_address, target);
-	pxAssert(vixl::IsInt26(displacement));
-
-	// ARM64 B (unconditional branch): 0b000101 | imm26
-	u32 insn = 0x14000000u | (static_cast<u32>(displacement) & 0x03FFFFFFu);
+	pxAssert(a64_is_int(displacement, 26));
 
 	memjit_write_begin();
-	std::memcpy(code_address, &insn, sizeof(insn));
+	a64_patch_b(code_address, target);
 	memjit_write_end();
 
 	if (flush_icache)
 		memsync(code_address, (u8*)(code_address) + (4));
 }
 
-void armEmitCbnz(const vixl::aarch64::Register& reg, const void* ptr)
+void armEmitCbnz(a64r reg, const void* ptr)
 {
 	const s64 jump_distance =
 		static_cast<s64>(reinterpret_cast<intptr_t>(ptr) - reinterpret_cast<intptr_t>(armGetCurrentCodePointer()));
 	//pxAssert(pcsx2_is_aligned_u32(jump_distance, 4));
-	if (a64::Instruction::IsValidImmPCOffset(a64::CompareBranchType, jump_distance >> 2))
-	{
-		a64::SingleEmissionCheckScope guard(armAsm);
-		armAsm->cbnz(reg, jump_distance >> 2);
-	}
+	if (a64_is_int(jump_distance >> 2, 19))
+		a64_cbnz_disp(armAsm, reg, jump_distance >> 2);
 	else
 	{
-		a64::MacroEmissionCheckScope guard(armAsm);
-		a64::Label branch_not_taken;
-		armAsm->cbz(reg, &branch_not_taken);
+		a64_label branch_not_taken = A64_LABEL_INIT;
+		a64_cbz(armAsm, reg, &branch_not_taken);
 
 		const s64 new_jump_distance =
 			static_cast<s64>(reinterpret_cast<intptr_t>(ptr) - reinterpret_cast<intptr_t>(armGetCurrentCodePointer()));
-		armAsm->b(new_jump_distance >> 2);
-		armAsm->bind(&branch_not_taken);
+		a64_b_disp(armAsm, new_jump_distance >> 2);
+		a64_bind(armAsm, &branch_not_taken);
 	}
 }
 
-void armEmitCondBranch(a64::Condition cond, const void* ptr)
+void armEmitCondBranch(unsigned cond, const void* ptr)
 {
 	const s64 jump_distance =
 		static_cast<s64>(reinterpret_cast<intptr_t>(ptr) - reinterpret_cast<intptr_t>(armGetCurrentCodePointer()));
 	//pxAssert(pcsx2_is_aligned_u32(jump_distance, 4));
 
-	if (a64::Instruction::IsValidImmPCOffset(a64::CondBranchType, jump_distance >> 2))
-	{
-		a64::SingleEmissionCheckScope guard(armAsm);
-		armAsm->b(jump_distance >> 2, cond);
-	}
+	if (a64_is_int(jump_distance >> 2, 19))
+		a64_b_cond_disp(armAsm, jump_distance >> 2, cond);
 	else
 	{
-		a64::MacroEmissionCheckScope guard(armAsm);
-		a64::Label branch_not_taken;
-		armAsm->b(&branch_not_taken, a64::InvertCondition(cond));
+		a64_label branch_not_taken = A64_LABEL_INIT;
+		a64_b_cond(armAsm, &branch_not_taken, A64_INVERT(cond));
 
 		const s64 new_jump_distance =
 			static_cast<s64>(reinterpret_cast<intptr_t>(ptr) - reinterpret_cast<intptr_t>(armGetCurrentCodePointer()));
-		armAsm->b(new_jump_distance >> 2);
-		armAsm->bind(&branch_not_taken);
+		a64_b_disp(armAsm, new_jump_distance >> 2);
+		a64_bind(armAsm, &branch_not_taken);
 	}
 }
 
-void armMoveAddressToReg(const vixl::aarch64::Register& reg, const void* addr)
+void armMoveAddressToReg(a64r reg, const void* addr)
 {
 	// psxAsm->Mov(reg, static_cast<u64>(reinterpret_cast<uintptr_t>(addr)));
-	pxAssert(reg.IsX());
+	pxAssert(a64_is_x(reg));
 
 	const void* current_code_ptr_page = reinterpret_cast<const void*>(
 		reinterpret_cast<uintptr_t>(armGetCurrentCodePointer()) & ~static_cast<uintptr_t>(0xFFF));
@@ -284,26 +178,18 @@ void armMoveAddressToReg(const vixl::aarch64::Register& reg, const void* addr)
 		reinterpret_cast<const void*>(reinterpret_cast<uintptr_t>(addr) & ~static_cast<uintptr_t>(0xFFF));
 	const s64 page_displacement = GetPCDisplacement(current_code_ptr_page, ptr_page) >> 10;
 	const u32 page_offset = static_cast<u32>(reinterpret_cast<uintptr_t>(addr) & 0xFFFu);
-	if (vixl::IsInt21(page_displacement) && a64::Assembler::IsImmAddSub(page_offset))
+	if (a64_is_int(page_displacement, 21) && a64_is_addsub_imm(page_offset))
 	{
-		{
-			a64::SingleEmissionCheckScope guard(armAsm);
-			armAsm->adrp(reg, page_displacement);
-		}
-		armAsm->Add(reg, reg, page_offset);
+		a64_adrp(armAsm, reg, page_displacement);
+		a64_add_imm(armAsm, reg, reg, page_offset);
 	}
-	else if (vixl::IsInt21(page_displacement) && a64::Assembler::IsImmLogical(page_offset, 64))
+	else if (a64_is_int(page_displacement, 21) && a64_is_logical_imm(page_offset, 64))
 	{
-		{
-			a64::SingleEmissionCheckScope guard(armAsm);
-			armAsm->adrp(reg, page_displacement);
-		}
-		armAsm->Orr(reg, reg, page_offset);
+		a64_adrp(armAsm, reg, page_displacement);
+		a64_orr_imm(armAsm, reg, reg, page_offset);
 	}
 	else
-	{
-		armAsm->Mov(reg, reinterpret_cast<uintptr_t>(addr));
-	}
+		a64_mov_imm(armAsm, reg, reinterpret_cast<uintptr_t>(addr));
 }
 
 // C.72: address an absolute global for a load/store of `size` bytes. When the
@@ -313,9 +199,9 @@ void armMoveAddressToReg(const vixl::aarch64::Register& reg, const void* addr)
 // armMoveAddressToReg + [scratch], and repeated accesses through the same
 // materialization (ldr+op+str patterns) reuse the one adrp. Falls back to the
 // full materialization otherwise; the fallback keeps offset 0 so it encodes
-// unconditionally (the folded form never needs a second VIXL scratch either --
-// important since `scratch` here is usually x17 from VIXL's own temp pool).
-a64::MemOperand armAbsMemOperand(const a64::Register& scratch, const void* addr, unsigned size)
+// unconditionally (the folded form never needs a second scratch from the
+// emitter either -- `scratch` here is usually x17).
+a64_mem armAbsMemOperand(a64r scratch, const void* addr, unsigned size)
 {
 	const void* current_code_ptr_page = reinterpret_cast<const void*>(
 		reinterpret_cast<uintptr_t>(armGetCurrentCodePointer()) & ~static_cast<uintptr_t>(0xFFF));
@@ -323,44 +209,41 @@ a64::MemOperand armAbsMemOperand(const a64::Register& scratch, const void* addr,
 		reinterpret_cast<const void*>(reinterpret_cast<uintptr_t>(addr) & ~static_cast<uintptr_t>(0xFFF));
 	const s64 page_displacement = GetPCDisplacement(current_code_ptr_page, ptr_page) >> 10;
 	const u32 page_offset = static_cast<u32>(reinterpret_cast<uintptr_t>(addr) & 0xFFFu);
-	if (vixl::IsInt21(page_displacement) && size && (page_offset % size) == 0)
+	if (a64_is_int(page_displacement, 21) && size && (page_offset % size) == 0)
 	{
-		{
-			a64::SingleEmissionCheckScope guard(armAsm);
-			armAsm->adrp(scratch, page_displacement);
-		}
-		return a64::MemOperand(scratch, page_offset);
+		a64_adrp(armAsm, scratch, page_displacement);
+		return a64_mem_off(scratch, page_offset);
 	}
 	armMoveAddressToReg(scratch, addr);
-	return a64::MemOperand(scratch);
+	return a64_mem_off(scratch, 0);
 }
 
-void armLoadPtr(const vixl::aarch64::CPURegister& reg, const void* addr)
+void armLoadPtr(a64r reg, const void* addr)
 {
-	armAsm->Ldr(reg, armAbsMemOperand(RSCRATCHADDR, addr, reg.GetSizeInBytes()));
+	a64_ldr(armAsm, reg, armAbsMemOperand(RSCRATCHADDR, addr, a64_size_bytes(reg)));
 }
 
-void armStorePtr(const vixl::aarch64::CPURegister& reg, const void* addr)
+void armStorePtr(a64r reg, const void* addr)
 {
-	armAsm->Str(reg, armAbsMemOperand(RSCRATCHADDR, addr, reg.GetSizeInBytes()));
+	a64_str(armAsm, reg, armAbsMemOperand(RSCRATCHADDR, addr, a64_size_bytes(reg)));
 }
 
 void armBeginStackFrame(bool save_fpr)
 {
 	// save x19 through x28, x29 could also be used
-	armAsm->Sub(a64::sp, a64::sp, save_fpr ? 192 : 144);
-	armAsm->Stp(a64::x19, a64::x20, a64::MemOperand(a64::sp, 32));
-	armAsm->Stp(a64::x21, a64::x22, a64::MemOperand(a64::sp, 48));
-	armAsm->Stp(a64::x23, a64::x24, a64::MemOperand(a64::sp, 64));
-	armAsm->Stp(a64::x25, a64::x26, a64::MemOperand(a64::sp, 80));
-	armAsm->Stp(a64::x27, a64::x28, a64::MemOperand(a64::sp, 96));
-	armAsm->Stp(a64::x29, a64::lr, a64::MemOperand(a64::sp, 112));
+	a64_sub_imm(armAsm, A64_SP, A64_SP, save_fpr ? 192 : 144);
+	a64_stp(armAsm, A64_X(19), A64_X(20), a64_mem_off(A64_SP, 32));
+	a64_stp(armAsm, A64_X(21), A64_X(22), a64_mem_off(A64_SP, 48));
+	a64_stp(armAsm, A64_X(23), A64_X(24), a64_mem_off(A64_SP, 64));
+	a64_stp(armAsm, A64_X(25), A64_X(26), a64_mem_off(A64_SP, 80));
+	a64_stp(armAsm, A64_X(27), A64_X(28), a64_mem_off(A64_SP, 96));
+	a64_stp(armAsm, A64_X(29), A64_LR, a64_mem_off(A64_SP, 112));
 	if (save_fpr)
 	{
-		armAsm->Stp(a64::d8, a64::d9, a64::MemOperand(a64::sp, 128));
-		armAsm->Stp(a64::d10, a64::d11, a64::MemOperand(a64::sp, 144));
-		armAsm->Stp(a64::d12, a64::d13, a64::MemOperand(a64::sp, 160));
-		armAsm->Stp(a64::d14, a64::d15, a64::MemOperand(a64::sp, 176));
+		a64_stp(armAsm, A64_D(8), A64_D(9), a64_mem_off(A64_SP, 128));
+		a64_stp(armAsm, A64_D(10), A64_D(11), a64_mem_off(A64_SP, 144));
+		a64_stp(armAsm, A64_D(12), A64_D(13), a64_mem_off(A64_SP, 160));
+		a64_stp(armAsm, A64_D(14), A64_D(15), a64_mem_off(A64_SP, 176));
 	}
 }
 
@@ -368,18 +251,18 @@ void armEndStackFrame(bool save_fpr)
 {
 	if (save_fpr)
 	{
-		armAsm->Ldp(a64::d14, a64::d15, a64::MemOperand(a64::sp, 176));
-		armAsm->Ldp(a64::d12, a64::d13, a64::MemOperand(a64::sp, 160));
-		armAsm->Ldp(a64::d10, a64::d11, a64::MemOperand(a64::sp, 144));
-		armAsm->Ldp(a64::d8, a64::d9, a64::MemOperand(a64::sp, 128));
+		a64_ldp(armAsm, A64_D(14), A64_D(15), a64_mem_off(A64_SP, 176));
+		a64_ldp(armAsm, A64_D(12), A64_D(13), a64_mem_off(A64_SP, 160));
+		a64_ldp(armAsm, A64_D(10), A64_D(11), a64_mem_off(A64_SP, 144));
+		a64_ldp(armAsm, A64_D(8), A64_D(9), a64_mem_off(A64_SP, 128));
 	}
-	armAsm->Ldp(a64::x29, a64::lr, a64::MemOperand(a64::sp, 112));
-	armAsm->Ldp(a64::x27, a64::x28, a64::MemOperand(a64::sp, 96));
-	armAsm->Ldp(a64::x25, a64::x26, a64::MemOperand(a64::sp, 80));
-	armAsm->Ldp(a64::x23, a64::x24, a64::MemOperand(a64::sp, 64));
-	armAsm->Ldp(a64::x21, a64::x22, a64::MemOperand(a64::sp, 48));
-	armAsm->Ldp(a64::x19, a64::x20, a64::MemOperand(a64::sp, 32));
-	armAsm->Add(a64::sp, a64::sp, save_fpr ? 192 : 144);
+	a64_ldp(armAsm, A64_X(29), A64_LR, a64_mem_off(A64_SP, 112));
+	a64_ldp(armAsm, A64_X(27), A64_X(28), a64_mem_off(A64_SP, 96));
+	a64_ldp(armAsm, A64_X(25), A64_X(26), a64_mem_off(A64_SP, 80));
+	a64_ldp(armAsm, A64_X(23), A64_X(24), a64_mem_off(A64_SP, 64));
+	a64_ldp(armAsm, A64_X(21), A64_X(22), a64_mem_off(A64_SP, 48));
+	a64_ldp(armAsm, A64_X(19), A64_X(20), a64_mem_off(A64_SP, 32));
+	a64_add_imm(armAsm, A64_SP, A64_SP, save_fpr ? 192 : 144);
 }
 
 bool armIsCalleeSavedRegister(int reg)
@@ -388,42 +271,34 @@ bool armIsCalleeSavedRegister(int reg)
 	return (reg >= 19);
 }
 
-vixl::aarch64::MemOperand armOffsetMemOperand(const vixl::aarch64::MemOperand& op, s64 offset)
+a64_mem armOffsetMemOperand(const a64_mem& op, s64 offset)
 {
-	pxAssert(op.GetBaseRegister().IsValid() && op.GetAddrMode() == vixl::aarch64::Offset && op.GetShift() == vixl::aarch64::NO_SHIFT);
-	return vixl::aarch64::MemOperand(op.GetBaseRegister(), op.GetOffset() + offset, op.GetAddrMode());
+	pxAssert(A64_ISREG(op.base) && op.mode == A64_OFFSET);
+	return a64_mem_off(op.base, op.offset + offset);
 }
 
-void armGetMemOperandInRegister(const vixl::aarch64::Register& addr_reg, const vixl::aarch64::MemOperand& op, s64 extra_offset /*= 0*/)
+void armGetMemOperandInRegister(a64r addr_reg, const a64_mem& op, s64 extra_offset /*= 0*/)
 {
-	pxAssert(addr_reg.IsX());
-	pxAssert(op.GetBaseRegister().IsValid() && op.GetAddrMode() == vixl::aarch64::Offset && op.GetShift() == vixl::aarch64::NO_SHIFT);
-	armAsm->Add(addr_reg, op.GetBaseRegister(), op.GetOffset() + extra_offset);
+	pxAssert(a64_is_x(addr_reg));
+	pxAssert(A64_ISREG(op.base) && op.mode == A64_OFFSET);
+	a64_add_imm(armAsm, addr_reg, op.base, op.offset + extra_offset);
 }
 
-void armLoadConstant128(const vixl::aarch64::VRegister& reg, const void* ptr)
+void armEmitVTBL(a64r dst, a64r src1, a64r src2, a64r tbl)
 {
-	u64 low, high;
-	memcpy(&low, ptr, sizeof(low));
-	memcpy(&high, static_cast<const u8*>(ptr) + sizeof(low), sizeof(high));
-	armAsm->Ldr(reg, high, low);
-}
-
-void armEmitVTBL(const vixl::aarch64::VRegister& dst, const vixl::aarch64::VRegister& src1, const vixl::aarch64::VRegister& src2, const vixl::aarch64::VRegister& tbl)
-{
-	pxAssert(src1.GetCode() != RQSCRATCH.GetCode() && src2.GetCode() != RQSCRATCH2.GetCode());
-	pxAssert(tbl.GetCode() != RQSCRATCH.GetCode() && tbl.GetCode() != RQSCRATCH2.GetCode());
+	pxAssert(A64_CODE(src1) != A64_CODE(RQSCRATCH) && A64_CODE(src2) != A64_CODE(RQSCRATCH2));
+	pxAssert(A64_CODE(tbl) != A64_CODE(RQSCRATCH) && A64_CODE(tbl) != A64_CODE(RQSCRATCH2));
 
 	// must be consecutive
-	if (src2.GetCode() == (src1.GetCode() + 1))
+	if (A64_CODE(src2) == (A64_CODE(src1) + 1))
 	{
-		armAsm->Tbl(dst.V16B(), src1.V16B(), src2.V16B(), tbl.V16B());
+		a64_tbl2(armAsm, a64_as(dst, A64K_16B), a64_as(src1, A64K_16B), a64_as(src2, A64K_16B), a64_as(tbl, A64K_16B));
 		return;
 	}
 
-	armAsm->Mov(RQSCRATCH.Q(), src1.Q());
-	armAsm->Mov(RQSCRATCH2.Q(), src2.Q());
-	armAsm->Tbl(dst.V16B(), RQSCRATCH.V16B(), RQSCRATCH2.V16B(), tbl.V16B());
+	a64_mov(armAsm, a64_as(RQSCRATCH, A64K_Q), a64_as(src1, A64K_Q));
+	a64_mov(armAsm, a64_as(RQSCRATCH2, A64K_Q), a64_as(src2, A64K_Q));
+	a64_tbl2(armAsm, a64_as(dst, A64K_16B), a64_as(RQSCRATCH, A64K_16B), a64_as(RQSCRATCH2, A64K_16B), a64_as(tbl, A64K_16B));
 }
 
 
@@ -433,7 +308,6 @@ void ArmConstantPool::Init(void* ptr, u32 capacity)
 	m_capacity = capacity;
 	m_used = 0;
 	m_jump_targets.clear();
-	m_literals.clear();
 }
 
 void ArmConstantPool::Destroy()
@@ -442,14 +316,12 @@ void ArmConstantPool::Destroy()
 	m_capacity = 0;
 	m_used = 0;
 	m_jump_targets.clear();
-	m_literals.clear();
 }
 
 void ArmConstantPool::Reset()
 {
 	m_used = 0;
 	m_jump_targets.clear();
-	m_literals.clear();
 }
 
 u8* ArmConstantPool::GetJumpTrampoline(const void* target)
@@ -468,53 +340,18 @@ u8* ArmConstantPool::GetJumpTrampoline(const void* target)
 		return nullptr;
 	}
 
-	a64::MacroAssembler masm(static_cast<vixl::byte*>(m_base_ptr + offset), m_capacity - offset);
-	masm.Mov(RXVIXLSCRATCH, reinterpret_cast<intptr_t>(target));
-	masm.Br(RXVIXLSCRATCH);
-	masm.FinalizeCode();
+	a64_emit masm;
+	a64_init(&masm, m_base_ptr + offset, m_capacity - offset);
+	a64_mov_imm(&masm, RXSCRATCH, reinterpret_cast<intptr_t>(target));
+	a64_br(&masm, RXSCRATCH);
 
-	pxAssert(masm.GetSizeOfCodeGenerated() < 20);
+	pxAssert(a64_offset(&masm) < 20);
 	m_jump_targets.emplace(target, offset);
-	m_used = offset + static_cast<u32>(masm.GetSizeOfCodeGenerated());
+	m_used = offset + static_cast<u32>(a64_offset(&masm));
 
 	memsync(reinterpret_cast<void*>(m_base_ptr + offset), (u8*)(reinterpret_cast<void*>(m_base_ptr + offset)) + (m_used - offset));
 
 	return m_base_ptr + offset;
-}
-
-u8* ArmConstantPool::GetLiteral(u64 value)
-{
-	u128 v; v.lo = value; v.hi = 0;
-	return GetLiteral(v);
-}
-
-u8* ArmConstantPool::GetLiteral(const u128& value)
-{
-	auto it = m_literals.find(value);
-	if (it != m_literals.end())
-		return m_base_ptr + it->second;
-
-	if (GetRemainingCapacity() < 8)
-		return nullptr;
-
-	const u32 offset = pcsx2_align_up_pow2_u32(m_used, 16);
-	std::memcpy(&m_base_ptr[offset], &value, sizeof(value));
-	m_used = offset + sizeof(value);
-	return m_base_ptr + offset;
-}
-
-u8* ArmConstantPool::GetLiteral(const u8* bytes, size_t len)
-{
-	pxAssertMsg(len <= 16, "literal length is less than 16 bytes");
-	u128 table_u128 = {};
-	std::memcpy(table_u128._u8, bytes, len);
-	return GetLiteral(table_u128);
-}
-
-void ArmConstantPool::EmitLoadLiteral(const vixl::aarch64::CPURegister& reg, const u8* literal) const
-{
-	armMoveAddressToReg(RXVIXLSCRATCH, literal);
-	armAsm->Ldr(reg, a64::MemOperand(RXVIXLSCRATCH));
 }
 
 // Definitions for the common/Perf.h stub (see that header).

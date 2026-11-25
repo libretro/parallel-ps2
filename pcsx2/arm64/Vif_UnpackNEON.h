@@ -11,12 +11,12 @@
 #include "Vif_Unpack.h" // nVifT
 #include "arm64/AsmHelpers.h" // lrps2: minimal ARMSX2-compatible subset
 
-#define xmmCol0 vixl::aarch64::q2
-#define xmmCol1 vixl::aarch64::q3
-#define xmmCol2 vixl::aarch64::q4
-#define xmmCol3 vixl::aarch64::q5
-#define xmmRow vixl::aarch64::q6
-#define xmmTemp vixl::aarch64::q7
+#define xmmCol0 A64_Q(2)
+#define xmmCol1 A64_Q(3)
+#define xmmCol2 A64_Q(4)
+#define xmmCol3 A64_Q(5)
+#define xmmRow A64_Q(6)
+#define xmmTemp A64_Q(7)
 
 // --------------------------------------------------------------------------------------
 //  VifUnpackSSE_Base
@@ -32,11 +32,11 @@ public:
 
 
 protected:
-	vixl::aarch64::MemOperand dstIndirect;
-	vixl::aarch64::MemOperand srcIndirect;
-	vixl::aarch64::VRegister workReg;
-	vixl::aarch64::VRegister destReg;
-	vixl::aarch64::WRegister workGprW;
+	a64_mem dstIndirect;
+	a64_mem srcIndirect;
+	a64r workReg;
+	a64r destReg;
+	a64r workGprW;
 
 public:
 	VifUnpackNEON_Base();
@@ -49,11 +49,11 @@ public:
 	virtual void xMovDest() const;
 
 protected:
-	virtual void doMaskWrite(const vixl::aarch64::VRegister& regX) const = 0;
+	virtual void doMaskWrite(const a64r& regX) const = 0;
 
-	virtual void xShiftR(const vixl::aarch64::VRegister& regX, int n) const;
-	virtual void xPMOVXX8(const vixl::aarch64::VRegister& regX) const;
-	virtual void xPMOVXX16(const vixl::aarch64::VRegister& regX) const;
+	virtual void xShiftR(const a64r& regX, int n) const;
+	virtual void xPMOVXX8(const a64r& regX) const;
+	virtual void xPMOVXX16(const a64r& regX) const;
 
 	virtual void xUPK_S_32() const;
 	virtual void xUPK_S_16() const;
@@ -92,7 +92,7 @@ public:
 	virtual bool IsUnmaskedOp() const { return !doMask; }
 
 protected:
-	virtual void doMaskWrite(const vixl::aarch64::VRegister& regX) const;
+	virtual void doMaskWrite(const a64r& regX) const;
 };
 
 // --------------------------------------------------------------------------------------
@@ -135,7 +135,7 @@ public:
 	void CompileRoutine();
 
 protected:
-	virtual void doMaskWrite(const vixl::aarch64::VRegister& regX) const;
+	virtual void doMaskWrite(const a64r& regX) const;
 	void SetMasks(int cS) const;
 	void writeBackRow() const;
 

@@ -6,7 +6,7 @@
 
 #include <optional>
 
-// ARM64 microVU — misc emit helpers (Phase 7, task 7.5). VIXL port of the
+// ARM64 microVU — misc emit helpers (Phase 7, task 7.5). AArch64 port of the
 // emit-coupled tail of pcsx2/x86/microVU_Misc.inl.
 //
 // Already ported elsewhere:
@@ -37,56 +37,56 @@ static inline u32 branchAddr(const mV)
 // so the value regs passed in must never be x16/x17 (callers use w9/w10 or the
 // flag GPRs / NEON scratch).
 
-static inline void mvuStr32(microVU& mVU, const void* addr, const a64::Register& wreg)
+static inline void mvuStr32(microVU& mVU, const void* addr, const a64r& wreg)
 {
-	armAsm->Str(wreg.W(), mvuAbsMem(mVU, addr, 4));
+	a64_str(armAsm, a64_asw(wreg), mvuAbsMem(mVU, addr, 4));
 }
 
-static inline void mvuLdr32(microVU& mVU, const a64::Register& wreg, const void* addr)
+static inline void mvuLdr32(microVU& mVU, const a64r& wreg, const void* addr)
 {
-	armAsm->Ldr(wreg.W(), mvuAbsMem(mVU, addr, 4));
+	a64_ldr(armAsm, a64_asw(wreg), mvuAbsMem(mVU, addr, 4));
 }
 
-static inline void mvuStrImm32(microVU& mVU, const void* addr, u32 imm, const a64::Register& tmp)
+static inline void mvuStrImm32(microVU& mVU, const void* addr, u32 imm, const a64r& tmp)
 {
-	armAsm->Mov(tmp.W(), imm);
+	a64_mov_imm(armAsm, a64_asw(tmp), imm);
 	mvuStr32(mVU, addr, tmp);
 }
 
-static inline void mvuStrSS(microVU& mVU, const void* addr, const a64::VRegister& vreg)
+static inline void mvuStrSS(microVU& mVU, const void* addr, const a64r& vreg)
 {
-	armAsm->Str(vreg.S(), mvuAbsMem(mVU, addr, 4));
+	a64_str(armAsm, a64_as(vreg, A64K_S), mvuAbsMem(mVU, addr, 4));
 }
 
-static inline void mvuLdrSS(microVU& mVU, const a64::VRegister& vreg, const void* addr)
+static inline void mvuLdrSS(microVU& mVU, const a64r& vreg, const void* addr)
 {
-	armAsm->Ldr(vreg.S(), mvuAbsMem(mVU, addr, 4));
+	a64_ldr(armAsm, a64_as(vreg, A64K_S), mvuAbsMem(mVU, addr, 4));
 }
 
-static inline void mvuLdrQ(microVU& mVU, const a64::VRegister& vreg, const void* addr)
+static inline void mvuLdrQ(microVU& mVU, const a64r& vreg, const void* addr)
 {
-	armAsm->Ldr(vreg.Q(), mvuAbsMem(mVU, addr, 16));
+	a64_ldr(armAsm, a64_as(vreg, A64K_Q), mvuAbsMem(mVU, addr, 16));
 }
 
-static inline void mvuStrQ(microVU& mVU, const void* addr, const a64::VRegister& vreg)
+static inline void mvuStrQ(microVU& mVU, const void* addr, const a64r& vreg)
 {
-	armAsm->Str(vreg.Q(), mvuAbsMem(mVU, addr, 16));
+	a64_str(armAsm, a64_as(vreg, A64K_Q), mvuAbsMem(mVU, addr, 16));
 }
 
-static inline void mvuMemAndImm32(microVU& mVU, const void* addr, u32 imm, const a64::Register& tmp)
+static inline void mvuMemAndImm32(microVU& mVU, const void* addr, u32 imm, const a64r& tmp)
 {
-	const a64::MemOperand m = mvuAbsMem(mVU, addr, 4);
-	armAsm->Ldr(tmp.W(), m);
-	armAsm->And(tmp.W(), tmp.W(), imm);
-	armAsm->Str(tmp.W(), m);
+	const a64_mem m = mvuAbsMem(mVU, addr, 4);
+	a64_ldr(armAsm, a64_asw(tmp), m);
+	a64_and_imm(armAsm, a64_asw(tmp), a64_asw(tmp), imm);
+	a64_str(armAsm, a64_asw(tmp), m);
 }
 
-static inline void mvuMemOrImm32(microVU& mVU, const void* addr, u32 imm, const a64::Register& tmp)
+static inline void mvuMemOrImm32(microVU& mVU, const void* addr, u32 imm, const a64r& tmp)
 {
-	const a64::MemOperand m = mvuAbsMem(mVU, addr, 4);
-	armAsm->Ldr(tmp.W(), m);
-	armAsm->Orr(tmp.W(), tmp.W(), imm);
-	armAsm->Str(tmp.W(), m);
+	const a64_mem m = mvuAbsMem(mVU, addr, 4);
+	a64_ldr(armAsm, a64_asw(tmp), m);
+	a64_orr_imm(armAsm, a64_asw(tmp), a64_asw(tmp), imm);
+	a64_str(armAsm, a64_asw(tmp), m);
 }
 
 //------------------------------------------------------------------
@@ -112,18 +112,18 @@ __fi void mVUbackupRegs(microVU& mVU, bool toMemory = false, bool onlyNeeded = f
 	(void)onlyNeeded;
 	if (toMemory)
 	{
-		armAsm->Sub(a64::sp, a64::sp, kBakFrame);
+		a64_sub_imm(armAsm, A64_SP, A64_SP, kBakFrame);
 		for (int i = 0; i < kBakGprSave; i += 2)
-			armAsm->Stp(armXRegister(i), armXRegister(i + 1), a64::MemOperand(a64::sp, i * 8));
+			a64_stp(armAsm, armXRegister(i), armXRegister(i + 1), a64_mem_off(A64_SP, i * 8));
 		int voff = kBakGprBytes;
 		for (int i = 0; i < kBakVecSave - 1; i += 2, voff += 32)
-			armAsm->Stp(armQRegister(i), armQRegister(i + 1), a64::MemOperand(a64::sp, voff));
-		armAsm->Str(armQRegister(kBakVecSave - 1), a64::MemOperand(a64::sp, voff));
+			a64_stp(armAsm, armQRegister(i), armQRegister(i + 1), a64_mem_off(A64_SP, voff));
+		a64_str(armAsm, armQRegister(kBakVecSave - 1), a64_mem_off(A64_SP, voff));
 	}
 	else
 	{
 		mVU.regAlloc->flushAll(); // Flush Regalloc
-		armAsm->Str(mVU_xmmPQ.Q(), mvuAbsMem(mVU, &mVU.vecBackup[mVU_xmmPQ.GetCode()][0], 16));
+		a64_str(armAsm, a64_as(mVU_xmmPQ, A64K_Q), mvuAbsMem(mVU, &mVU.vecBackup[A64_CODE(mVU_xmmPQ)][0], 16));
 	}
 }
 
@@ -134,15 +134,15 @@ __fi void mVUrestoreRegs(microVU& mVU, bool fromMemory = false, bool onlyNeeded 
 	{
 		int voff = kBakGprBytes;
 		for (int i = 0; i < kBakVecSave - 1; i += 2, voff += 32)
-			armAsm->Ldp(armQRegister(i), armQRegister(i + 1), a64::MemOperand(a64::sp, voff));
-		armAsm->Ldr(armQRegister(kBakVecSave - 1), a64::MemOperand(a64::sp, voff));
+			a64_ldp(armAsm, armQRegister(i), armQRegister(i + 1), a64_mem_off(A64_SP, voff));
+		a64_ldr(armAsm, armQRegister(kBakVecSave - 1), a64_mem_off(A64_SP, voff));
 		for (int i = 0; i < kBakGprSave; i += 2)
-			armAsm->Ldp(armXRegister(i), armXRegister(i + 1), a64::MemOperand(a64::sp, i * 8));
-		armAsm->Add(a64::sp, a64::sp, kBakFrame);
+			a64_ldp(armAsm, armXRegister(i), armXRegister(i + 1), a64_mem_off(A64_SP, i * 8));
+		a64_add_imm(armAsm, A64_SP, A64_SP, kBakFrame);
 	}
 	else
 	{
-		armAsm->Ldr(mVU_xmmPQ.Q(), mvuAbsMem(mVU, &mVU.vecBackup[mVU_xmmPQ.GetCode()][0], 16));
+		a64_ldr(armAsm, a64_as(mVU_xmmPQ, A64K_Q), mvuAbsMem(mVU, &mVU.vecBackup[A64_CODE(mVU_xmmPQ)][0], 16));
 	}
 }
 
@@ -151,36 +151,36 @@ __fi void mVUrestoreRegs(microVU& mVU, bool fromMemory = false, bool onlyNeeded 
 // x86: mVUaddrFix. Modifies gprReg in place (and tmpReg on the far-offset path).
 // gprReg/tmpReg are 64-bit (X) registers; the masking steps use the 32-bit view
 // (W-writes zero bits [63:32], matching the x86 32-bit AND).
-__fi void mVUaddrFix(mV, const a64::Register& gprReg, const a64::Register& tmpReg)
+__fi void mVUaddrFix(mV, const a64r& gprReg, const a64r& tmpReg)
 {
 	if (isVU1)
 	{
-		armAsm->And(gprReg.W(), gprReg.W(), 0x3ff); // wrap around (1024 quadwords)
-		armAsm->Lsl(gprReg.W(), gprReg.W(), 4);     // * 16 -> byte offset
+		a64_and_imm(armAsm, a64_asw(gprReg), a64_asw(gprReg), 0x3ff); // wrap around (1024 quadwords)
+		a64_lsl_imm(armAsm, a64_asw(gprReg), a64_asw(gprReg), 4);     // * 16 -> byte offset
 	}
 	else
 	{
-		a64::Label jmpA, jmpB;
-		armAsm->Tst(gprReg.W(), 0x400);
-		armAsm->B(&jmpA, a64::ne); // if (addr & 0x400): reads VU1's VF/VI regs
-			armAsm->And(gprReg.W(), gprReg.W(), 0xff); // else wrap (256 quadwords)
-			armAsm->B(&jmpB);
-		armAsm->Bind(&jmpA);
+		a64_label jmpA = A64_LABEL_INIT, jmpB = A64_LABEL_INIT;
+		a64_tst_imm(armAsm, a64_asw(gprReg), 0x400);
+		a64_b_cond(armAsm, &jmpA, A64_NE); // if (addr & 0x400): reads VU1's VF/VI regs
+			a64_and_imm(armAsm, a64_asw(gprReg), a64_asw(gprReg), 0xff); // else wrap (256 quadwords)
+			a64_b(armAsm, &jmpB);
+		a64_bind(armAsm, &jmpA);
 			if (THREAD_VU1)
 				armEmitCall(reinterpret_cast<const void*>(mVU.waitMTVU));
-			armAsm->And(gprReg.W(), gprReg.W(), 0x3f); // ToDo: VU0 may override VU1's VF0/VI0
+			a64_and_imm(armAsm, a64_asw(gprReg), a64_asw(gprReg), 0x3f); // ToDo: VU0 may override VU1's VF0/VI0
 			const sptr offset = (u128*)VU1.VF - (u128*)VU0.Mem;
 			if (offset == static_cast<s32>(offset))
 			{
-				armAsm->Add(gprReg, gprReg, static_cast<s32>(offset));
+				a64_add_imm(armAsm, gprReg, gprReg, static_cast<s32>(offset));
 			}
 			else
 			{
-				armAsm->Mov(tmpReg, offset);
-				armAsm->Add(gprReg, gprReg, tmpReg);
+				a64_mov_imm(armAsm, tmpReg, offset);
+				a64_add(armAsm, gprReg, gprReg, tmpReg);
 			}
-		armAsm->Bind(&jmpB);
-		armAsm->Lsl(gprReg, gprReg, 4); // * 16 -> byte offset (64-bit)
+		a64_bind(armAsm, &jmpB);
+		a64_lsl_imm(armAsm, gprReg, gprReg, 4); // * 16 -> byte offset (64-bit)
 	}
 }
 
@@ -217,7 +217,7 @@ __fi std::optional<const void*> mVUoptimizeConstantAddr(mV, u32 srcreg, s32 offs
 //------------------------------------------------------------------
 // Micro VU - Custom SSE Instructions (x86: microVU_Misc.inl SSE_*)
 //------------------------------------------------------------------
-// VIXL port of the VU FMAC arithmetic primitives. The VU's MIN/MAX are NOT IEEE
+// AArch64 port of the VU FMAC arithmetic primitives. The VU's MIN/MAX are NOT IEEE
 // min/max — they're a signed-magnitude *integer* compare on the float bit pattern,
 // so MIN_MAX_PS uses the integer-comparison path (the x86 `if (0)` double path is
 // dropped). MIN_MAX_SS keeps the double-precision trick (it has no integer form):
@@ -234,55 +234,55 @@ alignas(16) static const u32 mVU_MIN_MAX_2[4] = {0x00000000, 0x40000000, 0x00000
 alignas(16) static const u32 mVU_ADD_SS[4]    = {0x80000000, 0xffffffff, 0xffffffff, 0xffffffff};
 
 // Warning: Modifies t1 and t2
-static void MIN_MAX_PS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1in, const a64::VRegister& t2in, bool min)
+static void MIN_MAX_PS(mV, const a64r& to, const a64r& from, const a64r& t1in, const a64r& t2in, bool min)
 {
-	const bool t1b = t1in.IsNone();
-	const bool t2b = t2in.IsNone();
-	const a64::VRegister t1 = t1b ? mVU.regAlloc->allocReg() : t1in;
-	const a64::VRegister t2 = t2b ? mVU.regAlloc->allocReg() : t2in;
+	const bool t1b = !A64_ISREG(t1in);
+	const bool t2b = !A64_ISREG(t2in);
+	const a64r t1 = t1b ? mVU.regAlloc->allocReg() : t1in;
+	const a64r t2 = t2b ? mVU.regAlloc->allocReg() : t2in;
 
 	// integer comparison (signed-magnitude transform of the float bit pattern)
-	const a64::VRegister& c1 = min ? t2 : t1;
-	const a64::VRegister& c2 = min ? t1 : t2;
+	const a64r& c1 = min ? t2 : t1;
+	const a64r& c2 = min ? t1 : t2;
 
-	armAsm->Mov (t1.V16B(), to.V16B());
-	armAsm->Sshr(t1.V4S(), t1.V4S(), 31);
-	armAsm->Ushr(t1.V4S(), t1.V4S(), 1);
-	armAsm->Eor (t1.V16B(), t1.V16B(), to.V16B());
+	a64_mov(armAsm, a64_as(t1, A64K_16B), a64_as(to, A64K_16B));
+	a64_sshr(armAsm, a64_as(t1, A64K_4S), a64_as(t1, A64K_4S), 31);
+	a64_ushr(armAsm, a64_as(t1, A64K_4S), a64_as(t1, A64K_4S), 1);
+	a64_eor(armAsm, a64_as(t1, A64K_16B), a64_as(t1, A64K_16B), a64_as(to, A64K_16B));
 
-	armAsm->Mov (t2.V16B(), from.V16B());
-	armAsm->Sshr(t2.V4S(), t2.V4S(), 31);
-	armAsm->Ushr(t2.V4S(), t2.V4S(), 1);
-	armAsm->Eor (t2.V16B(), t2.V16B(), from.V16B());
+	a64_mov(armAsm, a64_as(t2, A64K_16B), a64_as(from, A64K_16B));
+	a64_sshr(armAsm, a64_as(t2, A64K_4S), a64_as(t2, A64K_4S), 31);
+	a64_ushr(armAsm, a64_as(t2, A64K_4S), a64_as(t2, A64K_4S), 1);
+	a64_eor(armAsm, a64_as(t2, A64K_16B), a64_as(t2, A64K_16B), a64_as(from, A64K_16B));
 
-	armAsm->Cmgt(c1.V4S(), c1.V4S(), c2.V4S());      // c1 = (c1 > c2) ? -1 : 0 (signed)
-	armAsm->And (to.V16B(), to.V16B(), c1.V16B());
-	armAsm->Bic (c1.V16B(), from.V16B(), c1.V16B()); // c1 = from & ~c1 (x86 PANDN)
-	armAsm->Orr (to.V16B(), to.V16B(), c1.V16B());
+	a64_cmgt(armAsm, a64_as(c1, A64K_4S), a64_as(c1, A64K_4S), a64_as(c2, A64K_4S));      // c1 = (c1 > c2) ? -1 : 0 (signed)
+	a64_and(armAsm, a64_as(to, A64K_16B), a64_as(to, A64K_16B), a64_as(c1, A64K_16B));
+	a64_bic(armAsm, a64_as(c1, A64K_16B), a64_as(from, A64K_16B), a64_as(c1, A64K_16B)); // c1 = from & ~c1 (x86 PANDN)
+	a64_orr(armAsm, a64_as(to, A64K_16B), a64_as(to, A64K_16B), a64_as(c1, A64K_16B));
 
 	if (t1b) mVU.regAlloc->clearNeeded(t1);
 	if (t2b) mVU.regAlloc->clearNeeded(t2);
 }
 
 // Warning: Modifies to's upper 3 vectors, and t1
-static void MIN_MAX_SS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1in, bool min)
+static void MIN_MAX_SS(mV, const a64r& to, const a64r& from, const a64r& t1in, bool min)
 {
-	const bool t1b = t1in.IsNone();
-	const a64::VRegister t1 = t1b ? mVU.regAlloc->allocReg() : t1in;
+	const bool t1b = !A64_ISREG(t1in);
+	const a64r t1 = t1b ? mVU.regAlloc->allocReg() : t1in;
 
 	// to = { to0, to0, from0, from0 }  (x86 xSHUF.PS(to, from, 0))
-	armAsm->Ins(to.V4S(), 1, to.V4S(), 0);
-	armAsm->Ins(to.V4S(), 2, from.V4S(), 0);
-	armAsm->Ins(to.V4S(), 3, from.V4S(), 0);
+	a64_ins_elem(armAsm, a64_as(to, A64K_4S), 1, a64_as(to, A64K_4S), 0);
+	a64_ins_elem(armAsm, a64_as(to, A64K_4S), 2, a64_as(from, A64K_4S), 0);
+	a64_ins_elem(armAsm, a64_as(to, A64K_4S), 3, a64_as(from, A64K_4S), 0);
 
 	mvuLdrQ(mVU, RQSCRATCH, mVU_MIN_MAX_1);
-	armAsm->And(to.V16B(), to.V16B(), RQSCRATCH.V16B());
+	a64_and(armAsm, a64_as(to, A64K_16B), a64_as(to, A64K_16B), a64_as(RQSCRATCH, A64K_16B));
 	mvuLdrQ(mVU, RQSCRATCH, mVU_MIN_MAX_2);
-	armAsm->Orr(to.V16B(), to.V16B(), RQSCRATCH.V16B());
+	a64_orr(armAsm, a64_as(to, A64K_16B), a64_as(to, A64K_16B), a64_as(RQSCRATCH, A64K_16B));
 
 	mVUshufflePS(t1, to, 0xee); // t1 = { to2, to3, to2, to3 }
-	if (min) armAsm->Fmin(to.V2D(), to.V2D(), t1.V2D());
-	else     armAsm->Fmax(to.V2D(), to.V2D(), t1.V2D());
+	if (min) a64_fmin(armAsm, a64_as(to, A64K_2D), a64_as(to, A64K_2D), a64_as(t1, A64K_2D));
+	else     a64_fmax(armAsm, a64_as(to, A64K_2D), a64_as(to, A64K_2D), a64_as(t1, A64K_2D));
 
 	if (t1b) mVU.regAlloc->clearNeeded(t1);
 }
@@ -310,81 +310,81 @@ static void MIN_MAX_SS(mV, const a64::VRegister& to, const a64::VRegister& from,
  * need, and Bic folds the select into one op. Fixed scratch
  * registers, zero allocator pressure. Broadcast forms only - the
  * census puts the whole measured class there. */
-static void mVUaddSubVF0(microVU& mVU, const a64::VRegister& reg, bool isSub, bool isSS)
+static void mVUaddSubVF0(microVU& mVU, const a64r& reg, bool isSub, bool isSS)
 {
-	const a64::VRegister& T = RQSCRATCH;
-	armAsm->Shl (T.V4S(), reg.V4S(), 1);
-	armAsm->Ushr(T.V4S(), T.V4S(), 24);
-	armAsm->Cmeq(T.V4S(), T.V4S(), 0);
+	const a64r& T = RQSCRATCH;
+	a64_shl(armAsm, a64_as(T, A64K_4S), a64_as(reg, A64K_4S), 1);
+	a64_ushr(armAsm, a64_as(T, A64K_4S), a64_as(T, A64K_4S), 24);
+	a64_cmeq_zero(armAsm, a64_as(T, A64K_4S), a64_as(T, A64K_4S));
 	if (isSub)
-		armAsm->Ushr(T.V4S(), T.V4S(), 1);
+		a64_ushr(armAsm, a64_as(T, A64K_4S), a64_as(T, A64K_4S), 1);
 	if (isSS)
 	{
-		const a64::VRegister& U = RQSCRATCH2;
-		armAsm->Bic(U.V16B(), reg.V16B(), T.V16B());
-		armAsm->Ins(reg.V4S(), 0, U.V4S(), 0);
+		const a64r& U = RQSCRATCH2;
+		a64_bic(armAsm, a64_as(U, A64K_16B), a64_as(reg, A64K_16B), a64_as(T, A64K_16B));
+		a64_ins_elem(armAsm, a64_as(reg, A64K_4S), 0, a64_as(U, A64K_4S), 0);
 	}
 	else
-		armAsm->Bic(reg.V16B(), reg.V16B(), T.V16B());
+		a64_bic(armAsm, a64_as(reg, A64K_16B), a64_as(reg, A64K_16B), a64_as(T, A64K_16B));
 }
 
-static bool mVUexactMulVF0(microVU& mVU, const a64::VRegister& reg, int opCase, bool isSS)
+static bool mVUexactMulVF0(microVU& mVU, const a64r& reg, int opCase, bool isSS)
 {
 	if (opCase != 2 || _Ft_ != 0)
 		return false;
-	const a64::VRegister& T = RQSCRATCH;
+	const a64r& T = RQSCRATCH;
 	if (_bc_ != 3)
 	{
-		armAsm->Movi(T.V4S(), 0x80, a64::LSL, 24);
+		a64_movi_shift(armAsm, a64_as(T, A64K_4S), 0x80, A64_LSL, 24);
 		if (isSS)
 		{
-			const a64::VRegister& U = RQSCRATCH2;
-			armAsm->And(U.V16B(), reg.V16B(), T.V16B());
-			armAsm->Ins(reg.V4S(), 0, U.V4S(), 0);
+			const a64r& U = RQSCRATCH2;
+			a64_and(armAsm, a64_as(U, A64K_16B), a64_as(reg, A64K_16B), a64_as(T, A64K_16B));
+			a64_ins_elem(armAsm, a64_as(reg, A64K_4S), 0, a64_as(U, A64K_4S), 0);
 		}
 		else
-			armAsm->And(reg.V16B(), reg.V16B(), T.V16B());
+			a64_and(armAsm, a64_as(reg, A64K_16B), a64_as(reg, A64K_16B), a64_as(T, A64K_16B));
 		return true;
 	}
-	armAsm->Shl (T.V4S(), reg.V4S(), 1);
-	armAsm->Ushr(T.V4S(), T.V4S(), 24);
-	armAsm->Cmeq(T.V4S(), T.V4S(), 0);
-	armAsm->Ushr(T.V4S(), T.V4S(), 1);
+	a64_shl(armAsm, a64_as(T, A64K_4S), a64_as(reg, A64K_4S), 1);
+	a64_ushr(armAsm, a64_as(T, A64K_4S), a64_as(T, A64K_4S), 24);
+	a64_cmeq_zero(armAsm, a64_as(T, A64K_4S), a64_as(T, A64K_4S));
+	a64_ushr(armAsm, a64_as(T, A64K_4S), a64_as(T, A64K_4S), 1);
 	if (isSS)
 	{
-		const a64::VRegister& U = RQSCRATCH2;
-		armAsm->Bic(U.V16B(), reg.V16B(), T.V16B());
-		armAsm->Ins(reg.V4S(), 0, U.V4S(), 0);
+		const a64r& U = RQSCRATCH2;
+		a64_bic(armAsm, a64_as(U, A64K_16B), a64_as(reg, A64K_16B), a64_as(T, A64K_16B));
+		a64_ins_elem(armAsm, a64_as(reg, A64K_4S), 0, a64_as(U, A64K_4S), 0);
 	}
 	else
-		armAsm->Bic(reg.V16B(), reg.V16B(), T.V16B());
+		a64_bic(armAsm, a64_as(reg, A64K_16B), a64_as(reg, A64K_16B), a64_as(T, A64K_16B));
 	return true;
 }
 
-static void mVUmaskAddSubPS(mV, const a64::VRegister& a, const a64::VRegister& b,
-	const a64::VRegister& vc, const a64::VRegister& vm, const a64::VRegister& vs)
+static void mVUmaskAddSubPS(mV, const a64r& a, const a64r& b,
+	const a64r& vc, const a64r& vm, const a64r& vs)
 {
-	armAsm->Shl (vc.V4S(), a.V4S(), 1);
-	armAsm->Ushr(vc.V4S(), vc.V4S(), 24);
-	armAsm->Shl (vs.V4S(), b.V4S(), 1);
-	armAsm->Ushr(vs.V4S(), vs.V4S(), 24);
-	armAsm->Sub (vc.V4S(), vc.V4S(), vs.V4S());     // d
-	armAsm->Abs (vs.V4S(), vc.V4S());
-	armAsm->Movi(vm.V4S(), 1);
-	armAsm->Sub (vs.V4S(), vs.V4S(), vm.V4S());     // c = |d| - 1
-	armAsm->Movi(vm.V16B(), 0xff);
-	armAsm->Ushl(vm.V4S(), vm.V4S(), vs.V4S());     // keep = ~0 << c
-	armAsm->Orr (vm.V4S(), 0x80, 24);               // keep' (sign survives garbage)
-	armAsm->Movi(a64::v0.V4S(), 24);
-	armAsm->Cmgt(a64::v0.V4S(), a64::v0.V4S(), vs.V4S()); // 24 > c
-	armAsm->Orr (a64::v0.V4S(), 0x80, 24);
-	armAsm->And (vm.V16B(), vm.V16B(), a64::v0.V16B());   // M
-	armAsm->Cmge(a64::v0.V4S(), vc.V4S(), 0);       // d >= 0: a side inactive
-	armAsm->Orr (a64::v0.V16B(), a64::v0.V16B(), vm.V16B());
-	armAsm->And (a.V16B(), a.V16B(), a64::v0.V16B());
-	armAsm->Cmle(a64::v0.V4S(), vc.V4S(), 0);       // d <= 0: b side inactive
-	armAsm->Orr (a64::v0.V16B(), a64::v0.V16B(), vm.V16B());
-	armAsm->And (vc.V16B(), b.V16B(), a64::v0.V16B());    // masked b copy
+	a64_shl(armAsm, a64_as(vc, A64K_4S), a64_as(a, A64K_4S), 1);
+	a64_ushr(armAsm, a64_as(vc, A64K_4S), a64_as(vc, A64K_4S), 24);
+	a64_shl(armAsm, a64_as(vs, A64K_4S), a64_as(b, A64K_4S), 1);
+	a64_ushr(armAsm, a64_as(vs, A64K_4S), a64_as(vs, A64K_4S), 24);
+	a64_sub(armAsm, a64_as(vc, A64K_4S), a64_as(vc, A64K_4S), a64_as(vs, A64K_4S));     // d
+	a64_abs(armAsm, a64_as(vs, A64K_4S), a64_as(vc, A64K_4S));
+	a64_movi(armAsm, a64_as(vm, A64K_4S), 1);
+	a64_sub(armAsm, a64_as(vs, A64K_4S), a64_as(vs, A64K_4S), a64_as(vm, A64K_4S));     // c = |d| - 1
+	a64_movi(armAsm, a64_as(vm, A64K_16B), 0xff);
+	a64_ushl(armAsm, a64_as(vm, A64K_4S), a64_as(vm, A64K_4S), a64_as(vs, A64K_4S));     // keep = ~0 << c
+	a64_orr_vimm(armAsm, a64_as(vm, A64K_4S), 0x80, 24);               // keep' (sign survives garbage)
+	a64_movi(armAsm, a64_as(A64_Q(0), A64K_4S), 24);
+	a64_cmgt(armAsm, a64_as(A64_Q(0), A64K_4S), a64_as(A64_Q(0), A64K_4S), a64_as(vs, A64K_4S)); // 24 > c
+	a64_orr_vimm(armAsm, a64_as(A64_Q(0), A64K_4S), 0x80, 24);
+	a64_and(armAsm, a64_as(vm, A64K_16B), a64_as(vm, A64K_16B), a64_as(A64_Q(0), A64K_16B));   // M
+	a64_cmge_zero(armAsm, a64_as(A64_Q(0), A64K_4S), a64_as(vc, A64K_4S));       // d >= 0: a side inactive
+	a64_orr(armAsm, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(0), A64K_16B), a64_as(vm, A64K_16B));
+	a64_and(armAsm, a64_as(a, A64K_16B), a64_as(a, A64K_16B), a64_as(A64_Q(0), A64K_16B));
+	a64_cmle_zero(armAsm, a64_as(A64_Q(0), A64K_4S), a64_as(vc, A64K_4S));       // d <= 0: b side inactive
+	a64_orr(armAsm, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(0), A64K_16B), a64_as(vm, A64K_16B));
+	a64_and(armAsm, a64_as(vc, A64K_16B), a64_as(b, A64K_16B), a64_as(A64_Q(0), A64K_16B));    // masked b copy
 }
 
 
@@ -393,9 +393,9 @@ static void mVUmaskAddSubPS(mV, const a64::VRegister& a, const a64::VRegister& b
 // single-scalar. t1 is the caller-provided clamp scratch (xEmptyReg ⇒ RQSCRATCH).
 enum mVUarithOp { mVU_ADD_OP, mVU_SUB_OP, mVU_MUL_OP, mVU_DIV_OP };
 
-static void mVUclampedArith(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1, int op, bool isPS)
+static void mVUclampedArith(mV, const a64r& to, const a64r& from, const a64r& t1, int op, bool isPS)
 {
-	const a64::VRegister ct = t1.IsNone() ? RQSCRATCH : t1;
+	const a64r ct = !A64_ISREG(t1) ? RQSCRATCH : t1;
 	const int xyzw = isPS ? 0xf : 0x8;
 	const bool isAddSub = (op == mVU_ADD_OP) || (op == mVU_SUB_OP);
 	mVUclamp3(mVU, to, ct, xyzw);
@@ -407,17 +407,17 @@ static void mVUclampedArith(mV, const a64::VRegister& to, const a64::VRegister& 
 			// the fused mask leaves the masked copy in RQSCRATCH and
 			// never touches the cached source register.
 			mVUmaskAddSubPS(mVU, to, from, RQSCRATCH, RQSCRATCH2, RQSCRATCH3);
-			if (op == mVU_SUB_OP) armAsm->Fsub(to.V4S(), to.V4S(), RQSCRATCH.V4S());
-			else                  armAsm->Fadd(to.V4S(), to.V4S(), RQSCRATCH.V4S());
+			if (op == mVU_SUB_OP) a64_fsub(armAsm, a64_as(to, A64K_4S), a64_as(to, A64K_4S), a64_as(RQSCRATCH, A64K_4S));
+			else                  a64_fadd(armAsm, a64_as(to, A64K_4S), a64_as(to, A64K_4S), a64_as(RQSCRATCH, A64K_4S));
 			mVUclamp4(mVU, to, ct, xyzw);
 			return;
 		}
 		switch (op)
 		{
-			case mVU_ADD_OP: armAsm->Fadd(to.V4S(), to.V4S(), from.V4S()); break;
-			case mVU_SUB_OP: armAsm->Fsub(to.V4S(), to.V4S(), from.V4S()); break;
-			case mVU_MUL_OP: armAsm->Fmul(to.V4S(), to.V4S(), from.V4S()); break;
-			case mVU_DIV_OP: armAsm->Fdiv(to.V4S(), to.V4S(), from.V4S()); break;
+			case mVU_ADD_OP: a64_fadd(armAsm, a64_as(to, A64K_4S), a64_as(to, A64K_4S), a64_as(from, A64K_4S)); break;
+			case mVU_SUB_OP: a64_fsub(armAsm, a64_as(to, A64K_4S), a64_as(to, A64K_4S), a64_as(from, A64K_4S)); break;
+			case mVU_MUL_OP: a64_fmul(armAsm, a64_as(to, A64K_4S), a64_as(to, A64K_4S), a64_as(from, A64K_4S)); break;
+			case mVU_DIV_OP: a64_fdiv(armAsm, a64_as(to, A64K_4S), a64_as(to, A64K_4S), a64_as(from, A64K_4S)); break;
 		}
 	}
 	else if (isAddSub && (CHECK_VU_ACC_ADDSUB || CHECK_VUADDSUBHACK))
@@ -427,13 +427,13 @@ static void mVUclampedArith(mV, const a64::VRegister& to, const a64::VRegister& 
 		// GPRs anywhere - the x86 rework's GPR scalar path broke
 		// rendering through a mechanism never identified, and the
 		// empirical boundary applies here too.
-		armAsm->Mov(a64::v1.V16B(), to.V16B());
-		mVUmaskAddSubPS(mVU, a64::v1, from, RQSCRATCH, RQSCRATCH2, RQSCRATCH3);
-		if (op == mVU_SUB_OP) armAsm->Fsub(a64::v1.S(), a64::v1.S(), RQSCRATCH.S());
-		else                  armAsm->Fadd(a64::v1.S(), a64::v1.S(), RQSCRATCH.S());
+		a64_mov(armAsm, a64_as(A64_Q(1), A64K_16B), a64_as(to, A64K_16B));
+		mVUmaskAddSubPS(mVU, A64_Q(1), from, RQSCRATCH, RQSCRATCH2, RQSCRATCH3);
+		if (op == mVU_SUB_OP) a64_fsub(armAsm, a64_as(A64_Q(1), A64K_S), a64_as(A64_Q(1), A64K_S), a64_as(RQSCRATCH, A64K_S));
+		else                  a64_fadd(armAsm, a64_as(A64_Q(1), A64K_S), a64_as(A64_Q(1), A64K_S), a64_as(RQSCRATCH, A64K_S));
 		/* not ct: with no caller scratch ct aliases RQSCRATCH */
-		mVUclamp4(mVU, a64::v1, RQSCRATCH2, 0x8);
-		armAsm->Ins(to.V4S(), 0, a64::v1.V4S(), 0);
+		mVUclamp4(mVU, A64_Q(1), RQSCRATCH2, 0x8);
+		a64_ins_elem(armAsm, a64_as(to, A64K_4S), 0, a64_as(A64_Q(1), A64K_4S), 0);
 		return;
 	}
 	else
@@ -445,34 +445,34 @@ static void mVUclampedArith(mV, const a64::VRegister& to, const a64::VRegister& 
 		// other lanes surviving (e.g. mVU_FMACb's MADDAw.z accumulates into ACC.z
 		// while ACC.x/.y must be preserved). Writing `to.S()` in place would wipe
 		// them. Compute into a scratch and insert only lane0 of `to`.
-		const a64::VRegister sres = RQSCRATCH;
+		const a64r sres = RQSCRATCH;
 		switch (op)
 		{
-			case mVU_ADD_OP: armAsm->Fadd(sres.S(), to.S(), from.S()); break;
-			case mVU_SUB_OP: armAsm->Fsub(sres.S(), to.S(), from.S()); break;
-			case mVU_MUL_OP: armAsm->Fmul(sres.S(), to.S(), from.S()); break;
-			case mVU_DIV_OP: armAsm->Fdiv(sres.S(), to.S(), from.S()); break;
+			case mVU_ADD_OP: a64_fadd(armAsm, a64_as(sres, A64K_S), a64_as(to, A64K_S), a64_as(from, A64K_S)); break;
+			case mVU_SUB_OP: a64_fsub(armAsm, a64_as(sres, A64K_S), a64_as(to, A64K_S), a64_as(from, A64K_S)); break;
+			case mVU_MUL_OP: a64_fmul(armAsm, a64_as(sres, A64K_S), a64_as(to, A64K_S), a64_as(from, A64K_S)); break;
+			case mVU_DIV_OP: a64_fdiv(armAsm, a64_as(sres, A64K_S), a64_as(to, A64K_S), a64_as(from, A64K_S)); break;
 		}
-		armAsm->Ins(to.V4S(), 0, sres.V4S(), 0);
+		a64_ins_elem(armAsm, a64_as(to, A64K_4S), 0, a64_as(sres, A64K_4S), 0);
 	}
 	mVUclamp4(mVU, to, ct, xyzw);
 }
 
-static void SSE_MAXPS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg) { MIN_MAX_PS(mVU, to, from, t1, t2, false); }
-static void SSE_MINPS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg) { MIN_MAX_PS(mVU, to, from, t1, t2, true); }
-static void SSE_MAXSS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg) { MIN_MAX_SS(mVU, to, from, t1, false); }
-static void SSE_MINSS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg) { MIN_MAX_SS(mVU, to, from, t1, true); }
+static void SSE_MAXPS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg) { MIN_MAX_PS(mVU, to, from, t1, t2, false); }
+static void SSE_MINPS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg) { MIN_MAX_PS(mVU, to, from, t1, t2, true); }
+static void SSE_MAXSS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg) { MIN_MAX_SS(mVU, to, from, t1, false); }
+static void SSE_MINSS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg) { MIN_MAX_SS(mVU, to, from, t1, true); }
 /* The TriAce ADDi hack is gone: the exponent-distance mask reproduces the
  * discard it approximated, for every distance. */
-static void SSE_ADD2SS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg)
+static void SSE_ADD2SS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg)
 {
 	mVUclampedArith(mVU, to, from, t1, mVU_ADD_OP, false);
 }
-static void SSE_ADD2PS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_ADD_OP, true); }
-static void SSE_ADDPS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_ADD_OP, true); }
-static void SSE_ADDSS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_ADD_OP, false); }
-static void SSE_SUBPS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_SUB_OP, true); }
-static void SSE_SUBSS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_SUB_OP, false); }
+static void SSE_ADD2PS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_ADD_OP, true); }
+static void SSE_ADDPS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_ADD_OP, true); }
+static void SSE_ADDSS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_ADD_OP, false); }
+static void SSE_SUBPS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_SUB_OP, true); }
+static void SSE_SUBSS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_SUB_OP, false); }
 
 //------------------------------------------------------------------
 // Hardware-exact multiply (x86: mVUexactMulPS). Same architecture:
@@ -490,130 +490,130 @@ static void SSE_SUBSS(mV, const a64::VRegister& to, const a64::VRegister& from, 
 // path carries no stores at all.
 //------------------------------------------------------------------
 
-static void mVUexactMulPS(mV, const a64::VRegister& dst, const a64::VRegister& to, const a64::VRegister& from)
+static void mVUexactMulPS(mV, const a64r& dst, const a64r& to, const a64r& from)
 {
-	const a64::VRegister vA = a64::v0;
-	const a64::VRegister vB = a64::v1;
-	const a64::VRegister vC = RQSCRATCH;
-	const a64::VRegister vD = RQSCRATCH2;
-	const a64::VRegister vE = RQSCRATCH3;
+	const a64r vA = A64_Q(0);
+	const a64r vB = A64_Q(1);
+	const a64r vC = RQSCRATCH;
+	const a64r vD = RQSCRATCH2;
+	const a64r vE = RQSCRATCH3;
 	u32* buf = mVU.exactMulBuf;
-	a64::Label slow, pack, done;
+	a64_label slow = A64_LABEL_INIT, pack = A64_LABEL_INIT, done = A64_LABEL_INIT;
 
 	// mantissas with implicit bit: vA = ma, vB = mb
-	armAsm->Movi(vC.V4S(), 0x80, a64::LSL, 16);   // implicit
-	armAsm->Movi(vD.V4S(), 1);
-	armAsm->Sub (vD.V4S(), vC.V4S(), vD.V4S());   // mantissa mask
-	armAsm->And (vA.V16B(), to.V16B(), vD.V16B());
-	armAsm->Orr (vA.V16B(), vA.V16B(), vC.V16B());
-	armAsm->And (vB.V16B(), from.V16B(), vD.V16B());
-	armAsm->Orr (vB.V16B(), vB.V16B(), vC.V16B());
+	a64_movi_shift(armAsm, a64_as(vC, A64K_4S), 0x80, A64_LSL, 16);   // implicit
+	a64_movi(armAsm, a64_as(vD, A64K_4S), 1);
+	a64_sub(armAsm, a64_as(vD, A64K_4S), a64_as(vC, A64K_4S), a64_as(vD, A64K_4S));   // mantissa mask
+	a64_and(armAsm, a64_as(vA, A64K_16B), a64_as(to, A64K_16B), a64_as(vD, A64K_16B));
+	a64_orr(armAsm, a64_as(vA, A64K_16B), a64_as(vA, A64K_16B), a64_as(vC, A64K_16B));
+	a64_and(armAsm, a64_as(vB, A64K_16B), a64_as(from, A64K_16B), a64_as(vD, A64K_16B));
+	a64_orr(armAsm, a64_as(vB, A64K_16B), a64_as(vB, A64K_16B), a64_as(vC, A64K_16B));
 
 	// products: vC = p01 (lanes 0,1), vA = p23
-	armAsm->Umull (vC.V2D(), vA.V2S(), vB.V2S());
-	armAsm->Umull2(vA.V2D(), vA.V4S(), vB.V4S());
+	a64_umull(armAsm, a64_as(vC, A64K_2D), a64_as(vA, A64K_2S), a64_as(vB, A64K_2S));
+	a64_umull(armAsm, a64_as(vA, A64K_2D), a64_as(vA, A64K_4S), a64_as(vB, A64K_4S));
 
 	// guard: low words narrowed, bits 22:15 tested constant-free
-	armAsm->Xtn (vB.V2S(), vC.V2D());
-	armAsm->Xtn2(vB.V4S(), vA.V2D());
-	armAsm->Ushr(vB.V4S(), vB.V4S(), 15);
-	armAsm->Shl (vB.V4S(), vB.V4S(), 24);
-	armAsm->Cmeq(vB.V4S(), vB.V4S(), 0);
+	a64_xtn(armAsm, a64_as(vB, A64K_2S), a64_as(vC, A64K_2D));
+	a64_xtn(armAsm, a64_as(vB, A64K_4S), a64_as(vA, A64K_2D));
+	a64_ushr(armAsm, a64_as(vB, A64K_4S), a64_as(vB, A64K_4S), 15);
+	a64_shl(armAsm, a64_as(vB, A64K_4S), a64_as(vB, A64K_4S), 24);
+	a64_cmeq_zero(armAsm, a64_as(vB, A64K_4S), a64_as(vB, A64K_4S));
 	/* zero-operand lanes are decided by the final select whatever the
 	 * product says; with the implicit bit forced on, 0.0 times anything
 	 * zeroes the guard field, and game data is full of zeros. */
-	armAsm->Shl (vD.V4S(), to.V4S(), 1);
-	armAsm->Ushr(vD.V4S(), vD.V4S(), 24);
-	armAsm->Cmeq(vD.V4S(), vD.V4S(), 0);
-	armAsm->Shl (vE.V4S(), from.V4S(), 1);
-	armAsm->Ushr(vE.V4S(), vE.V4S(), 24);
-	armAsm->Cmeq(vE.V4S(), vE.V4S(), 0);
-	armAsm->Orr (vD.V16B(), vD.V16B(), vE.V16B());
+	a64_shl(armAsm, a64_as(vD, A64K_4S), a64_as(to, A64K_4S), 1);
+	a64_ushr(armAsm, a64_as(vD, A64K_4S), a64_as(vD, A64K_4S), 24);
+	a64_cmeq_zero(armAsm, a64_as(vD, A64K_4S), a64_as(vD, A64K_4S));
+	a64_shl(armAsm, a64_as(vE, A64K_4S), a64_as(from, A64K_4S), 1);
+	a64_ushr(armAsm, a64_as(vE, A64K_4S), a64_as(vE, A64K_4S), 24);
+	a64_cmeq_zero(armAsm, a64_as(vE, A64K_4S), a64_as(vE, A64K_4S));
+	a64_orr(armAsm, a64_as(vD, A64K_16B), a64_as(vD, A64K_16B), a64_as(vE, A64K_16B));
 	/* sixteen or more trailing zeros in the recoded mantissa empty the
 	 * whole low half of the recode, so the tree is exact and the fast
 	 * path already right - oracle-proven at that threshold with zero
 	 * violations and measurably unsound below it (the partial-source
 	 * side is not sound at any threshold and is not excluded). */
-	armAsm->Movi(vE.V4S(), 0xff, a64::LSL, 8);
-	armAsm->Orr (vE.V4S(), 0xff);
-	armAsm->And (vE.V16B(), from.V16B(), vE.V16B());
-	armAsm->Cmeq(vE.V4S(), vE.V4S(), 0);
-	armAsm->Orr (vD.V16B(), vD.V16B(), vE.V16B());
-	armAsm->Bic (vB.V16B(), vB.V16B(), vD.V16B());
-	armAsm->Umaxv(a64::s2, vB.V4S());             // v2 low used transiently
-	armAsm->Fmov(gprT1, a64::s2);
-	armAsm->Cbnz(gprT1, &slow);
+	a64_movi_shift(armAsm, a64_as(vE, A64K_4S), 0xff, A64_LSL, 8);
+	a64_orr_vimm(armAsm, a64_as(vE, A64K_4S), 0xff, 0);
+	a64_and(armAsm, a64_as(vE, A64K_16B), a64_as(from, A64K_16B), a64_as(vE, A64K_16B));
+	a64_cmeq_zero(armAsm, a64_as(vE, A64K_4S), a64_as(vE, A64K_4S));
+	a64_orr(armAsm, a64_as(vD, A64K_16B), a64_as(vD, A64K_16B), a64_as(vE, A64K_16B));
+	a64_bic(armAsm, a64_as(vB, A64K_16B), a64_as(vB, A64K_16B), a64_as(vD, A64K_16B));
+	a64_umaxv(armAsm, A64_S(2), a64_as(vB, A64K_4S));             // v2 low used transiently
+	a64_fmov(armAsm, gprT1, A64_S(2));
+	a64_cbnz(armAsm, gprT1, &slow);
 
 	// ---- shared pack (fast path falls in; slow path branches back) ----
-	armAsm->Bind(&pack);
+	a64_bind(armAsm, &pack);
 	// rm merged: (p >> 23) narrowed into 4S
-	armAsm->Shrn (vB.V2S(), vC.V2D(), 23);
-	armAsm->Shrn2(vB.V4S(), vA.V2D(), 23);
+	a64_shrn(armAsm, a64_as(vB, A64K_2S), a64_as(vC, A64K_2D), 23);
+	a64_shrn(armAsm, a64_as(vB, A64K_4S), a64_as(vA, A64K_2D), 23);
 	// carry-normalize with a per-lane negative shift
-	armAsm->Ushr(vC.V4S(), vB.V4S(), 24);         // carry
-	armAsm->Neg (vD.V4S(), vC.V4S());
-	armAsm->Ushl(vB.V4S(), vB.V4S(), vD.V4S());
+	a64_ushr(armAsm, a64_as(vC, A64K_4S), a64_as(vB, A64K_4S), 24);         // carry
+	a64_neg(armAsm, a64_as(vD, A64K_4S), a64_as(vC, A64K_4S));
+	a64_ushl(armAsm, a64_as(vB, A64K_4S), a64_as(vB, A64K_4S), a64_as(vD, A64K_4S));
 	// e = expA + expB - 127 + carry
-	armAsm->Shl (vD.V4S(), to.V4S(), 1);
-	armAsm->Ushr(vD.V4S(), vD.V4S(), 24);
-	armAsm->Add (vD.V4S(), vD.V4S(), vC.V4S());
-	armAsm->Shl (vC.V4S(), from.V4S(), 1);
-	armAsm->Ushr(vC.V4S(), vC.V4S(), 24);
-	armAsm->Add (vD.V4S(), vD.V4S(), vC.V4S());
-	armAsm->Movi(vC.V4S(), 127);
-	armAsm->Sub (vD.V4S(), vD.V4S(), vC.V4S());   // e
+	a64_shl(armAsm, a64_as(vD, A64K_4S), a64_as(to, A64K_4S), 1);
+	a64_ushr(armAsm, a64_as(vD, A64K_4S), a64_as(vD, A64K_4S), 24);
+	a64_add(armAsm, a64_as(vD, A64K_4S), a64_as(vD, A64K_4S), a64_as(vC, A64K_4S));
+	a64_shl(armAsm, a64_as(vC, A64K_4S), a64_as(from, A64K_4S), 1);
+	a64_ushr(armAsm, a64_as(vC, A64K_4S), a64_as(vC, A64K_4S), 24);
+	a64_add(armAsm, a64_as(vD, A64K_4S), a64_as(vD, A64K_4S), a64_as(vC, A64K_4S));
+	a64_movi(armAsm, a64_as(vC, A64K_4S), 127);
+	a64_sub(armAsm, a64_as(vD, A64K_4S), a64_as(vD, A64K_4S), a64_as(vC, A64K_4S));   // e
 	// sign
-	armAsm->Eor (vE.V16B(), to.V16B(), from.V16B());
-	armAsm->Ushr(vE.V4S(), vE.V4S(), 31);
-	armAsm->Shl (vE.V4S(), vE.V4S(), 31);         // sign
+	a64_eor(armAsm, a64_as(vE, A64K_16B), a64_as(to, A64K_16B), a64_as(from, A64K_16B));
+	a64_ushr(armAsm, a64_as(vE, A64K_4S), a64_as(vE, A64K_4S), 31);
+	a64_shl(armAsm, a64_as(vE, A64K_4S), a64_as(vE, A64K_4S), 31);         // sign
 	// normal result in vA
-	armAsm->Bic (vB.V4S(), 0xff, 24);            // rm &= 0x007fffff
-	armAsm->Bic (vB.V4S(), 0x80, 16);
-	armAsm->Shl (vA.V4S(), vD.V4S(), 23);
-	armAsm->Orr (vA.V16B(), vA.V16B(), vB.V16B());
-	armAsm->Orr (vA.V16B(), vA.V16B(), vE.V16B());
+	a64_bic_vimm(armAsm, a64_as(vB, A64K_4S), 0xff, 24);            // rm &= 0x007fffff
+	a64_bic_vimm(armAsm, a64_as(vB, A64K_4S), 0x80, 16);
+	a64_shl(armAsm, a64_as(vA, A64K_4S), a64_as(vD, A64K_4S), 23);
+	a64_orr(armAsm, a64_as(vA, A64K_16B), a64_as(vA, A64K_16B), a64_as(vB, A64K_16B));
+	a64_orr(armAsm, a64_as(vA, A64K_16B), a64_as(vA, A64K_16B), a64_as(vE, A64K_16B));
 	// overflow: e > 255 -> sign | 0x7fffffff
-	armAsm->Movi(vC.V4S(), 255);
-	armAsm->Cmgt(vC.V4S(), vD.V4S(), vC.V4S());   // mo
-	armAsm->Mvni(vB.V4S(), 0x80, a64::LSL, 24);   // 0x7fffffff
-	armAsm->Orr (vB.V16B(), vB.V16B(), vE.V16B());
-	armAsm->Bsl (vC.V16B(), vB.V16B(), vA.V16B()); // mo ? clamp : normal
+	a64_movi(armAsm, a64_as(vC, A64K_4S), 255);
+	a64_cmgt(armAsm, a64_as(vC, A64K_4S), a64_as(vD, A64K_4S), a64_as(vC, A64K_4S));   // mo
+	a64_mvni(armAsm, a64_as(vB, A64K_4S), 0x80, A64_LSL, 24);   // 0x7fffffff
+	a64_orr(armAsm, a64_as(vB, A64K_16B), a64_as(vB, A64K_16B), a64_as(vE, A64K_16B));
+	a64_bsl(armAsm, a64_as(vC, A64K_16B), a64_as(vB, A64K_16B), a64_as(vA, A64K_16B)); // mo ? clamp : normal
 	// underflow (e < 1) or a zero-exponent operand -> sign
-	armAsm->Cmlt(vD.V4S(), vD.V4S(), 0);          // e <= 0
-	armAsm->Shl (vB.V4S(), to.V4S(), 1);
-	armAsm->Ushr(vB.V4S(), vB.V4S(), 24);
-	armAsm->Cmeq(vB.V4S(), vB.V4S(), 0);
-	armAsm->Orr (vD.V16B(), vD.V16B(), vB.V16B());
-	armAsm->Shl (vB.V4S(), from.V4S(), 1);
-	armAsm->Ushr(vB.V4S(), vB.V4S(), 24);
-	armAsm->Cmeq(vB.V4S(), vB.V4S(), 0);
-	armAsm->Orr (vD.V16B(), vD.V16B(), vB.V16B());
-	armAsm->Bsl (vD.V16B(), vE.V16B(), vC.V16B()); // mzu ? sign : selected
-	armAsm->Mov (dst.V16B(), vD.V16B());
-	armAsm->B   (&done);
+	a64_cmlt_zero(armAsm, a64_as(vD, A64K_4S), a64_as(vD, A64K_4S));          // e <= 0
+	a64_shl(armAsm, a64_as(vB, A64K_4S), a64_as(to, A64K_4S), 1);
+	a64_ushr(armAsm, a64_as(vB, A64K_4S), a64_as(vB, A64K_4S), 24);
+	a64_cmeq_zero(armAsm, a64_as(vB, A64K_4S), a64_as(vB, A64K_4S));
+	a64_orr(armAsm, a64_as(vD, A64K_16B), a64_as(vD, A64K_16B), a64_as(vB, A64K_16B));
+	a64_shl(armAsm, a64_as(vB, A64K_4S), a64_as(from, A64K_4S), 1);
+	a64_ushr(armAsm, a64_as(vB, A64K_4S), a64_as(vB, A64K_4S), 24);
+	a64_cmeq_zero(armAsm, a64_as(vB, A64K_4S), a64_as(vB, A64K_4S));
+	a64_orr(armAsm, a64_as(vD, A64K_16B), a64_as(vD, A64K_16B), a64_as(vB, A64K_16B));
+	a64_bsl(armAsm, a64_as(vD, A64K_16B), a64_as(vE, A64K_16B), a64_as(vC, A64K_16B)); // mzu ? sign : selected
+	a64_mov(armAsm, a64_as(dst, A64K_16B), a64_as(vD, A64K_16B));
+	a64_b(armAsm, &done);
 
 	// ---- slow path: hand the products to the tree stub, take the
 	// corrected ones back, and rejoin the pack. The stub saves every
 	// vector register itself, so nothing here needs a flush. ----
-	armAsm->Bind(&slow);
+	a64_bind(armAsm, &slow);
 	// The stub narrows its two operand words with Xtn and never reads
 	// above bit 15, and setting the implicit bit only touches bit 23, so
 	// the raw operands serve where the mantissas used to: the stores that
 	// were on every multiply now happen only here. `to` and `from` are
 	// both still live -- the pack below reads them, and dst is not
 	// written until the very end.
-	armAsm->Str(to,   armAbsMemOperand(RSCRATCHADDR, &buf[0], 128));
-	armAsm->Str(from, armAbsMemOperand(RSCRATCHADDR, &buf[4], 128));
-	armAsm->Str(vC, armAbsMemOperand(RSCRATCHADDR, &buf[8], 128));
-	armAsm->Str(vA, armAbsMemOperand(RSCRATCHADDR, &buf[12], 128));
+	a64_str(armAsm, to, armAbsMemOperand(RSCRATCHADDR, &buf[0], 128));
+	a64_str(armAsm, from, armAbsMemOperand(RSCRATCHADDR, &buf[4], 128));
+	a64_str(armAsm, vC, armAbsMemOperand(RSCRATCHADDR, &buf[8], 128));
+	a64_str(armAsm, vA, armAbsMemOperand(RSCRATCHADDR, &buf[12], 128));
 	armEmitCall(reinterpret_cast<const void*>(mVU.exactMulStub));
-	armAsm->Ldr(vC, armAbsMemOperand(RSCRATCHADDR, &buf[8], 128));
-	armAsm->Ldr(vA, armAbsMemOperand(RSCRATCHADDR, &buf[12], 128));
-	armAsm->B(&pack);
-	armAsm->Bind(&done);
+	a64_ldr(armAsm, vC, armAbsMemOperand(RSCRATCHADDR, &buf[8], 128));
+	a64_ldr(armAsm, vA, armAbsMemOperand(RSCRATCHADDR, &buf[12], 128));
+	a64_b(armAsm, &pack);
+	a64_bind(armAsm, &done);
 }
 
-static void SSE_MULPS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg)
+static void SSE_MULPS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg)
 {
 	if (CHECK_VU_EXACTMUL)
 	{
@@ -622,18 +622,18 @@ static void SSE_MULPS(mV, const a64::VRegister& to, const a64::VRegister& from, 
 	}
 	mVUclampedArith(mVU, to, from, t1, mVU_MUL_OP, true);
 }
-static void SSE_MULSS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg)
+static void SSE_MULSS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg)
 {
 	if (CHECK_VU_EXACTMUL)
 	{
 		/* lane 0 through the same pipeline into a scratch, then insert:
 		 * the upper lanes of the destination must survive. v2 is free
 		 * here alongside the pipeline's own scratch. */
-		mVUexactMulPS(mVU, a64::v2, to, from);
-		armAsm->Ins(to.V4S(), 0, a64::v2.V4S(), 0);
+		mVUexactMulPS(mVU, A64_Q(2), to, from);
+		a64_ins_elem(armAsm, a64_as(to, A64K_4S), 0, a64_as(A64_Q(2), A64K_4S), 0);
 		return;
 	}
 	mVUclampedArith(mVU, to, from, t1, mVU_MUL_OP, false);
 }
-static void SSE_DIVPS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_DIV_OP, true); }
-static void SSE_DIVSS(mV, const a64::VRegister& to, const a64::VRegister& from, const a64::VRegister& t1 = xEmptyReg, const a64::VRegister& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_DIV_OP, false); }
+static void SSE_DIVPS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_DIV_OP, true); }
+static void SSE_DIVSS(mV, const a64r& to, const a64r& from, const a64r& t1 = xEmptyReg, const a64r& t2 = xEmptyReg) { mVUclampedArith(mVU, to, from, t1, mVU_DIV_OP, false); }

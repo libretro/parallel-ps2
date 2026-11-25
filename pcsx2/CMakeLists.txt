@@ -912,13 +912,9 @@ if(NOT _M_X86)
 	# JitHash.c is portable: on non-x86 it compiles to the exported
 	# pcsx2_jithash_dump stub that libretro/main.c calls unconditionally
 	# from retro_deinit. Dropping it from this list is an aarch64 link error.
-	set(pcsx2x86Sources x86/CpuState.c x86/JitHash.c arm64/recR3000A_arm64.cpp arm64/recR5900_arm64.cpp arm64/aVU.cpp
-		arm64/AsmHelpers.cpp arm64/Vif_UnpackNEON.cpp arm64/Vif_Dynarec_arm64.cpp)
+	set(pcsx2x86Sources x86/CpuState.c x86/JitHash.c arm64/a64emit.c arm64/recR3000A_arm64.cpp arm64/recR5900_arm64.cpp
+		arm64/aVU.cpp arm64/AsmHelpers.cpp arm64/Vif_UnpackNEON.cpp arm64/Vif_Dynarec_arm64.cpp)
 	set(pcsx2x86Headers)
-	# VIXL is the AArch64 code emitter, the foundation for the arm64 recompiler
-	# (Phase C). Wire it through the flags interface (like parallel-gs/glad above)
-	# so its PUBLIC include dir and static lib reach both PCSX2 and PCSX2_LTO.
-	target_link_libraries(PCSX2_FLAGS INTERFACE vixl)
 endif()
 
 # These ones benefit a lot from LTO

@@ -90,8 +90,7 @@ echo "C++ objects: $(ls "$TMP/cxx" | wc -l)"
 mkdir -p "$TMP/a64"
 if command -v aarch64-linux-gnu-g++ >/dev/null 2>&1; then
 	for f in $(find "$ROOT/pcsx2/arm64" -name '*.cpp' | sort); do
-		aarch64-linux-gnu-g++ -O0 -DNDEBUG -std=c++17 -DPCSX2_CORE -D_ARCH_64=1 \
-		    -DVIXL_INCLUDE_TARGET_AARCH64 -I"$ROOT/3rdparty/vixl/src" $INC \
+		aarch64-linux-gnu-g++ -O0 -DNDEBUG -std=c++17 -DPCSX2_CORE $INC \
 		    -c "$f" -o "$TMP/a64/$(obj "$f")" 2>/dev/null ||
 			{ echo "FAIL: $f does not cross-compile for aarch64"; exit 1; }
 	done

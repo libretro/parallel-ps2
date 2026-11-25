@@ -6,7 +6,7 @@
 
 // ARM64 microVU recompiler — operand/result clamp helpers (Phase 7, task 7.5).
 //
-// VIXL port of pcsx2/x86/microVU_Clamp.inl (mVUclamp1..4). The VU recs clamp
+// AArch64 port of pcsx2/x86/microVU_Clamp.inl (mVUclamp1..4). The VU recs clamp
 // float operands/results into the representable single-precision range to mirror
 // the PS2 VU's saturation behaviour. Two clamp flavours:
 //   * range clamp (mVUclamp1) — MIN/MAX against ±0x7f7fffff (largest finite
@@ -39,15 +39,15 @@ alignas(16) static const u32 sse4_maxvals[2][4] = {
 };
 
 // Result clamping. NaN sign is not preserved (collapses to +fmax).
-static void mVUclamp1(mV, const a64::VRegister& reg, const a64::VRegister& regT1in, int xyzw, bool bClampE = false)
+static void mVUclamp1(mV, const a64r& reg, const a64r& regT1in, int xyzw, bool bClampE = false)
 {
-	if (((!clampE && CHECK_VU_OVERFLOW(mVU.index)) || (clampE && bClampE)) && mVU.regAlloc->checkVFClamp(reg.GetCode()))
+	if (((!clampE && CHECK_VU_OVERFLOW(mVU.index)) || (clampE && bClampE)) && mVU.regAlloc->checkVFClamp(A64_CODE(reg)))
 	{
 		// The constant must be loaded into a real NEON scratch. Unlike x86 (which
 		// folds ±fmax as a memory operand), ARM64 needs a register. Callers may pass
 		// xEmptyReg, so fall back to the reserved scratch (RQSCRATCH) — using a bogus
 		// register here aliased the value reg and collapsed it to -FLT_MAX.
-		const a64::VRegister regT1 = regT1in.IsNone() ? RQSCRATCH : regT1in;
+		const a64r regT1 = !A64_ISREG(regT1in) ? RQSCRATCH : regT1in;
 		const bool ss = (xyzw == 1) || (xyzw == 2) || (xyzw == 4) || (xyzw == 8);
 
 		// AArch64 scalar FP (Fminnm/Fmaxnm on .S()) writes Sd and ZEROES Vd[127:32]. For a
@@ -57,37 +57,37 @@ static void mVUclamp1(mV, const a64::VRegister& reg, const a64::VRegister& regT1
 		// wiped them (SC2 matrix MADDA under VU0 clamp mode 2 zeroed ACC.x → wrong EE-side
 		// rotation). Clamp lane0 in a scratch and merge it back, preserving the upper lanes
 		// (matches the mVUclampedArith SS fix and x86 xMIN.SS, which preserves them).
-		armAsm->Ldr(regT1.Q(), mvuAbsMem(mVU, mVU.glob.maxvals, 16));
+		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, mVU.glob.maxvals, 16));
 		if (ss)
-			armAsm->Fminnm(RQSCRATCH2.S(), reg.S(), regT1.S());
+			a64_fminnm(armAsm, a64_as(RQSCRATCH2, A64K_S), a64_as(reg, A64K_S), a64_as(regT1, A64K_S));
 		else
-			armAsm->Fminnm(reg.V4S(), reg.V4S(), regT1.V4S());
+			a64_fminnm(armAsm, a64_as(reg, A64K_4S), a64_as(reg, A64K_4S), a64_as(regT1, A64K_4S));
 
-		armAsm->Ldr(regT1.Q(), mvuAbsMem(mVU, mVU.glob.minvals, 16));
+		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, mVU.glob.minvals, 16));
 		if (ss)
 		{
-			armAsm->Fmaxnm(RQSCRATCH2.S(), RQSCRATCH2.S(), regT1.S());
-			armAsm->Ins(reg.V4S(), 0, RQSCRATCH2.V4S(), 0); // merge lane0; reg's upper lanes survive
+			a64_fmaxnm(armAsm, a64_as(RQSCRATCH2, A64K_S), a64_as(RQSCRATCH2, A64K_S), a64_as(regT1, A64K_S));
+			a64_ins_elem(armAsm, a64_as(reg, A64K_4S), 0, a64_as(RQSCRATCH2, A64K_4S), 0); // merge lane0; reg's upper lanes survive
 		}
 		else
-			armAsm->Fmaxnm(reg.V4S(), reg.V4S(), regT1.V4S());
+			a64_fmaxnm(armAsm, a64_as(reg, A64K_4S), a64_as(reg, A64K_4S), a64_as(regT1, A64K_4S));
 	}
 }
 
 // Operand clamping (sign-preserving when sign-overflow clamp is enabled).
-static void mVUclamp2(mV, const a64::VRegister& reg, const a64::VRegister& regT1in, int xyzw, bool bClampE = false)
+static void mVUclamp2(mV, const a64r& reg, const a64r& regT1in, int xyzw, bool bClampE = false)
 {
-	if (((!clampE && CHECK_VU_SIGN_OVERFLOW(mVU.index)) || (clampE && bClampE && CHECK_VU_SIGN_OVERFLOW(mVU.index))) && mVU.regAlloc->checkVFClamp(reg.GetCode()))
+	if (((!clampE && CHECK_VU_SIGN_OVERFLOW(mVU.index)) || (clampE && bClampE && CHECK_VU_SIGN_OVERFLOW(mVU.index))) && mVU.regAlloc->checkVFClamp(A64_CODE(reg)))
 	{
 		// See mVUclamp1: a real scratch is required for the constant load.
-		const a64::VRegister regT1 = regT1in.IsNone() ? RQSCRATCH : regT1in;
+		const a64r regT1 = !A64_ISREG(regT1in) ? RQSCRATCH : regT1in;
 		const int i = ((xyzw == 1) || (xyzw == 2) || (xyzw == 4) || (xyzw == 8)) ? 0 : 1;
 
-		armAsm->Ldr(regT1.Q(), mvuAbsMem(mVU, &mVU.sse4Max[i][0], 16));
-		armAsm->Smin(reg.V4S(), reg.V4S(), regT1.V4S());
+		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, &mVU.sse4Max[i][0], 16));
+		a64_smin(armAsm, a64_as(reg, A64K_4S), a64_as(reg, A64K_4S), a64_as(regT1, A64K_4S));
 
-		armAsm->Ldr(regT1.Q(), mvuAbsMem(mVU, &mVU.sse4Min[i][0], 16));
-		armAsm->Umin(reg.V4S(), reg.V4S(), regT1.V4S());
+		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, &mVU.sse4Min[i][0], 16));
+		a64_umin(armAsm, a64_as(reg, A64K_4S), a64_as(reg, A64K_4S), a64_as(regT1, A64K_4S));
 		return;
 	}
 	else
@@ -95,16 +95,16 @@ static void mVUclamp2(mV, const a64::VRegister& reg, const a64::VRegister& regT1
 }
 
 // Operand clamp on every SSE-equivalent arithmetic instruction (add/sub/mul/div).
-static void mVUclamp3(mV, const a64::VRegister& reg, const a64::VRegister& regT1, int xyzw)
+static void mVUclamp3(mV, const a64r& reg, const a64r& regT1, int xyzw)
 {
-	if (clampE && mVU.regAlloc->checkVFClamp(reg.GetCode()))
+	if (clampE && mVU.regAlloc->checkVFClamp(A64_CODE(reg)))
 		mVUclamp2(mVU, reg, regT1, xyzw, true);
 }
 
 // Result clamp on every SSE-equivalent arithmetic instruction. Disabled in
 // "preserve sign" mode (operands already clamped by mVUclamp3); precaution only.
-static void mVUclamp4(mV, const a64::VRegister& reg, const a64::VRegister& regT1, int xyzw)
+static void mVUclamp4(mV, const a64r& reg, const a64r& regT1, int xyzw)
 {
-	if (clampE && !CHECK_VU_SIGN_OVERFLOW(mVU.index) && mVU.regAlloc->checkVFClamp(reg.GetCode()))
+	if (clampE && !CHECK_VU_SIGN_OVERFLOW(mVU.index) && mVU.regAlloc->checkVFClamp(A64_CODE(reg)))
 		mVUclamp1(mVU, reg, regT1, xyzw, true);
 }

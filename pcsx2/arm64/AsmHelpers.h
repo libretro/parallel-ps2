@@ -6,64 +6,63 @@
 
 #include "common/Pcsx2Defs.h"
 #include "arm64/ArmCompat.h"
-#include "GS/Renderers/Common/GSKeyHash.h"
-
-#include "aarch64/constants-aarch64.h"
-#include "aarch64/macro-assembler-aarch64.h"
+#include "arm64/a64emit.h"
 
 #include <unordered_map>
 
-#define RWRET vixl::aarch64::w0
-#define RXRET vixl::aarch64::x0
-#define RQRET vixl::aarch64::q0
+#define RWRET A64_W(0)
+#define RXRET A64_X(0)
+#define RQRET A64_Q(0)
 
-#define RWARG1 vixl::aarch64::w0
-#define RWARG2 vixl::aarch64::w1
-#define RWARG3 vixl::aarch64::w2
-#define RWARG4 vixl::aarch64::w3
-#define RXARG1 vixl::aarch64::x0
-#define RXARG2 vixl::aarch64::x1
-#define RXARG3 vixl::aarch64::x2
-#define RXARG4 vixl::aarch64::x3
+#define RWARG1 A64_W(0)
+#define RWARG2 A64_W(1)
+#define RWARG3 A64_W(2)
+#define RWARG4 A64_W(3)
+#define RXARG1 A64_X(0)
+#define RXARG2 A64_X(1)
+#define RXARG3 A64_X(2)
+#define RXARG4 A64_X(3)
 
-#define RXVIXLSCRATCH vixl::aarch64::x16
-#define RWVIXLSCRATCH vixl::aarch64::w16
-#define RSCRATCHADDR vixl::aarch64::x17
+/* x16: the emitter's scratch (its macro forms synthesize into it); x17:
+ * address materialization, kept out of the emitter's list */
+#define RXSCRATCH A64_X(16)
+#define RWSCRATCH A64_W(16)
+#define RSCRATCHADDR A64_X(17)
 
-#define RQSCRATCH vixl::aarch64::q30
-#define RDSCRATCH vixl::aarch64::d30
-#define RSSCRATCH vixl::aarch64::s30
-#define RQSCRATCH2 vixl::aarch64::q31
-#define RDSCRATCH2 vixl::aarch64::d31
-#define RSSCRATCH2 vixl::aarch64::s31
-#define RQSCRATCH3 vixl::aarch64::q29
-#define RDSCRATCH3 vixl::aarch64::d29
-#define RSSCRATCH3 vixl::aarch64::s29
+#define RQSCRATCH A64_Q(30)
+#define RDSCRATCH A64_D(30)
+#define RSSCRATCH A64_S(30)
+#define RQSCRATCH2 A64_Q(31)
+#define RDSCRATCH2 A64_D(31)
+#define RSSCRATCH2 A64_S(31)
+#define RQSCRATCH3 A64_Q(29)
+#define RDSCRATCH3 A64_D(29)
+#define RSSCRATCH3 A64_S(29)
 
-#define RQSCRATCHI vixl::aarch64::VRegister(30, 128, 16)
-#define RQSCRATCHF vixl::aarch64::VRegister(30, 128, 4)
-#define RQSCRATCHD vixl::aarch64::VRegister(30, 128, 2)
+#define RQSCRATCHI A64_V16B(30)
+#define RQSCRATCHF A64_V4S(30)
+#define RQSCRATCHD A64_V2D(30)
 
-#define RQSCRATCH2I vixl::aarch64::VRegister(31, 128, 16)
-#define RQSCRATCH2F vixl::aarch64::VRegister(31, 128, 4)
-#define RQSCRATCH2D vixl::aarch64::VRegister(31, 128, 2)
+#define RQSCRATCH2I A64_V16B(31)
+#define RQSCRATCH2F A64_V4S(31)
+#define RQSCRATCH2D A64_V2D(31)
 
 static inline s64 GetPCDisplacement(const void* current, const void* target)
 {
 	return static_cast<s64>((reinterpret_cast<ptrdiff_t>(target) - reinterpret_cast<ptrdiff_t>(current)) >> 2);
 }
 
-const vixl::aarch64::Register& armWRegister(int n);
-const vixl::aarch64::Register& armXRegister(int n);
-const vixl::aarch64::VRegister& armSRegister(int n);
-const vixl::aarch64::VRegister& armDRegister(int n);
-const vixl::aarch64::VRegister& armQRegister(int n);
+static __fi a64r armWRegister(int n) { return A64_W(n); }
+static __fi a64r armXRegister(int n) { return A64_X(n); }
+static __fi a64r armSRegister(int n) { return A64_S(n); }
+static __fi a64r armDRegister(int n) { return A64_D(n); }
+static __fi a64r armQRegister(int n) { return A64_Q(n); }
 
 class ArmConstantPool;
 
 static const u32 SP_SCRATCH_OFFSET = 0;
 
-extern thread_local vixl::aarch64::MacroAssembler* armAsm PCSX2_TLS_INITIAL_EXEC;
+extern thread_local a64_emit* armAsm PCSX2_TLS_INITIAL_EXEC;
 extern thread_local u8* armAsmPtr PCSX2_TLS_INITIAL_EXEC;
 extern thread_local size_t armAsmCapacity PCSX2_TLS_INITIAL_EXEC;
 extern thread_local ArmConstantPool* armConstantPool PCSX2_TLS_INITIAL_EXEC;
@@ -75,7 +74,7 @@ static __fi bool armHasBlock()
 
 static __fi u8* armGetCurrentCodePointer()
 {
-	return static_cast<u8*>(armAsmPtr) + armAsm->GetCursorOffset();
+	return a64_cursor(armAsm);
 }
 
 __fi static u8* armGetAsmPtr()
@@ -88,7 +87,6 @@ void armAlignAsmPtr();
 u8* armStartBlock();
 u8* armEndBlock();
 
-void armDisassembleAndDumpCode(const void* ptr, size_t size);
 void armEmitJmp(const void* ptr, bool force_inline = false);
 void armEmitCall(const void* ptr, bool force_inline = false);
 // In-place patch: overwrite the 4-byte B at `code_address` with a branch to
@@ -97,28 +95,24 @@ void armEmitCall(const void* ptr, bool force_inline = false);
 // `code_address` must already hold a single 4-byte instruction; target must be
 // within +/-128 MB (B imm26 range).
 void armEmitJmpPtr(void* code_address, const void* target, bool flush_icache = true);
-void armEmitCbnz(const vixl::aarch64::Register& reg, const void* ptr);
-void armEmitCondBranch(vixl::aarch64::Condition cond, const void* ptr);
-void armMoveAddressToReg(const vixl::aarch64::Register& reg, const void* addr);
-void armLoadPtr(const vixl::aarch64::CPURegister& reg, const void* addr);
-void armStorePtr(const vixl::aarch64::CPURegister& reg, const void* addr);
-// C.72: emit an adrp into `scratch` and return a MemOperand with the page
+void armEmitCbnz(a64r reg, const void* ptr);
+void armEmitCondBranch(unsigned cond, const void* ptr);
+void armMoveAddressToReg(a64r reg, const void* addr);
+void armLoadPtr(a64r reg, const void* addr);
+void armStorePtr(a64r reg, const void* addr);
+// C.72: emit an adrp into `scratch` and return a memory operand with the page
 // offset folded in (or a full materialization fallback). `size` = access size
 // in bytes; the folded form is used only when the offset encodes for it.
-vixl::aarch64::MemOperand armAbsMemOperand(const vixl::aarch64::Register& scratch, const void* addr, unsigned size);
+a64_mem armAbsMemOperand(a64r scratch, const void* addr, unsigned size);
 void armBeginStackFrame(bool save_fpr);
 void armEndStackFrame(bool save_fpr);
 bool armIsCalleeSavedRegister(int reg);
 
-vixl::aarch64::MemOperand armOffsetMemOperand(const vixl::aarch64::MemOperand& op, s64 offset);
-void armGetMemOperandInRegister(const vixl::aarch64::Register& addr_reg,
-	const vixl::aarch64::MemOperand& op, s64 extra_offset = 0);
-
-void armLoadConstant128(const vixl::aarch64::VRegister& reg, const void* ptr);
+a64_mem armOffsetMemOperand(const a64_mem& op, s64 offset);
+void armGetMemOperandInRegister(a64r addr_reg, const a64_mem& op, s64 extra_offset = 0);
 
 // may clobber RSCRATCH/RSCRATCH2. they shouldn't be inputs.
-void armEmitVTBL(const vixl::aarch64::VRegister& dst, const vixl::aarch64::VRegister& src1,
-	const vixl::aarch64::VRegister& src2, const vixl::aarch64::VRegister& tbl);
+void armEmitVTBL(a64r dst, a64r src1, a64r src2, a64r tbl);
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -130,25 +124,9 @@ public:
 	void Reset();
 
 	u8* GetJumpTrampoline(const void* target);
-	u8* GetLiteral(u64 value);
-	u8* GetLiteral(const u128& value);
-	u8* GetLiteral(const u8* bytes, size_t len);
-
-	void EmitLoadLiteral(const vixl::aarch64::CPURegister& reg, const u8* literal) const;
 
 private:
-	__fi u32 GetRemainingCapacity() const { return m_capacity - m_used; }
-
-	struct u128_hash
-	{
-		std::size_t operator()(const u128& v) const
-		{
-			return gs_key_hash(&v, sizeof(v));
-		}
-	};
-
 	std::unordered_map<const void*, u32> m_jump_targets;
-	std::unordered_map<u128, u32, u128_hash> m_literals;
 
 	u8* m_base_ptr = nullptr;
 	u32 m_capacity = 0;

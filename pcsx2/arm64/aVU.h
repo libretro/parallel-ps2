@@ -303,7 +303,7 @@ struct microProgManager
 	u8*                codePtr;            // Pointer to program's recompilation code  (x86: x86ptr)
 	u8*                codeStart;          // Start of program's rec-cache             (x86: x86start)
 	u8*                codeEnd;            // Reset threshold (x86: x86end) — 3MB short of the physical end so a single in-flight compile can spill into the safe-zone and be caught afterward
-	u8*                codeReserveEnd;     // Physical end of the rec-cache reserve — the hard capacity handed to VIXL (x86 has no equivalent: it writes raw bytes with no buffer cap)
+	u8*                codeReserveEnd;     // Physical end of the rec-cache reserve — the hard capacity handed to the emitter (x86 has no equivalent: it writes raw bytes with no buffer cap)
 	microRegInfo       lpState;            // Pipeline state from where program left off (useful for continuing execution)
 };
 

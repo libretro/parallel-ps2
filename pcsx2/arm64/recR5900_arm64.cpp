@@ -4,7 +4,7 @@
 // arm64 EE (R5900) recompiler -- Phase C.3-2: native integer ALU translation.
 //
 // Builds on the C.3-1 code cache + dispatch. Each block now natively translates
-// the leading run of simple integer ALU instructions to AArch64 via VIXL, then
+// the leading run of simple integer ALU instructions to AArch64 (a64emit), then
 // hands the rest of the basic block to the interpreter (eeRunBasicBlock_arm64),
 // which keeps branch-delay-slot, memory, FPU/MMI/VU and exception semantics
 // exact. The EE GPRs are 128-bit; integer ops touch only the low 64 bits
@@ -36,8 +36,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
-
-#include "aarch64/macro-assembler-aarch64.h"
+#include "arm64/a64emit.h"
 
 // C.30-2: native COP2 macro emission -- the vendored aVU_Macro entry points
 // (aVU.cpp TU) + the AsmHelpers thread-locals its emitters write through, and
@@ -52,7 +51,6 @@ bool recVUMacroEmitMode0(u32 op); // aVU_Macro.inl (emit via microVU0 single-op 
 extern bool g_cop2MacroFirst;     // aVU_Macro.inl (C.78: run-hoisted macro bracket --
 extern bool g_cop2MacroLast;      //   first op materializes x19/x27, last op restores x19)
 
-using namespace vixl::aarch64;
 
 #include "arm64/aR5900Glue.h" // the interpreter half: memory paths, loop hooks
 
@@ -79,7 +77,7 @@ namespace
 	// the fault unprotects it, further writes to the page don't fault, so any
 	// surviving block would go stale silently). That page-granular clear made
 	// code/data-sharing pages recompile their blocks on every data write
-	// (~8-12% of GT3 attract time inside vixl emission). Instead of erasing,
+	// (~8-12% of GT3 attract time inside code emission). Instead of erasing,
 	// Clear marks blocks dead; the next dispatch revalidates the snapshot
 	// against live memory and, when the code bytes are unchanged (the common
 	// case -- the write hit data), reinstalls the existing native code and
@@ -158,7 +156,7 @@ namespace
 	// x28 is free: the microVU allocator only tracks w0..w26 (mVU_GPR_TOTAL),
 	// helper calls preserve it (AAPCS64 callee-saved), and the EE block cache
 	// owns x21..x27.
-	const Register vmapbase = x28;
+	const a64r vmapbase = A64_X(28);
 
 	inline u32  Norm(u32 a)  { return a & 0x1fffffff; }
 	inline bool InRam(u32 np) { return np < kRamBytes; }
@@ -169,29 +167,30 @@ namespace
 	// through it instead of materializing a 64-bit absolute address (4
 	// instructions) per access. Block tails touch pc/cycle/nextEventCycle
 	// repeatedly, so this is a large part of their code size. An offset outside
-	// the window would only make the MacroAssembler fall back to a scratch
+	// the window would only make the emitter fall back to a scratch
 	// register, so this stays correct by construction.
-	inline MemOperand RegsField(const void* field)
+	inline a64_mem RegsField(const void* field)
 	{
 		const intptr_t off = reinterpret_cast<intptr_t>(field) -
 		                     reinterpret_cast<intptr_t>(&cpuRegs.GPR.r[0]);
-		return MemOperand(x19, static_cast<int64_t>(off));
+		return a64_mem_off(A64_X(19), static_cast<int64_t>(off));
 	}
 
-	bool VixlEmitSelfTest()
+	bool EmitSelfTest()
 	{
-		// Emit into a real code page: VIXL's own buffer is malloc'd on Darwin
-		// (VIXL_CODE_BUFFER_MALLOC), where SetExecutable() is a no-op.
+		// Emit into a real code page and run it: the code cache's W^X
+		// switching works on this host.
 		constexpr size_t kPage = 16384;
 		u8* page = (u8*)memjit_alloc(kPage);
 		if (!page)
 			return false;
 		memjit_write_begin();
 		{
-			MacroAssembler masm(page, kPage, PositionDependentCode);
-			masm.Add(x0, x0, 1);
-			masm.Ret();
-			masm.FinalizeCode();
+			a64_emit masm_e;
+			a64_emit* const masm = &masm_e;
+			a64_init(masm, page, kPage);
+			a64_add_imm(masm, A64_X(0), A64_X(0), 1);
+			a64_ret(masm);
 		}
 		memjit_write_end();
 		memsync(page, page + 8);
@@ -218,12 +217,12 @@ namespace
 	// the vmap path would have sent to the wrapper too.
 	inline bool InlineVmapEnabled();
 
-	inline void EmitVmapLookup(MacroAssembler& m, Label* slow)
+	inline void EmitVmapLookup(a64_emit* m, a64_label* slow)
 	{
-		m.Lsr(w11, w0, 12);
-		m.Ldr(x10, MemOperand(vmapbase, x11, LSL, 3)); // vmv.value
-		m.Add(x10, x10, x0);                           // + guest addr
-		m.Tbnz(x10, 63, slow);                         // sign bit = handler
+		a64_lsr_imm(m, A64_W(11), A64_W(0), 12);
+		a64_ldr(m, A64_X(10), a64_mem_reg(vmapbase, A64_X(11), 3)); // vmv.value
+		a64_add(m, A64_X(10), A64_X(10), A64_X(0));                           // + guest addr
+		a64_tbnz(m, A64_X(10), 63, slow);                         // sign bit = handler
 	}
 
 	// ---- C.50: fastmem ----
@@ -252,7 +251,7 @@ namespace
 	// is then just the access itself -- no `b` over the stub, and no ~6 dead
 	// instructions of wrapper call sitting in the middle of the hot instruction
 	// stream. Sites of the block being emitted are collected here (absolute
-	// addresses only exist after FinalizeCode) and their stubs are emitted, in
+	// addresses only exist once the block is placed) and their stubs are emitted, in
 	// order, right before it.
 	//   kind 0: args are already live (w0 = addr, x1 = store value)
 	//   kind 1: 128-bit wrapper, needs x1 = &GPR[rt] first
@@ -264,12 +263,12 @@ namespace
 		uint64_t fn;         // wrapper to call
 		int      kind;
 		u32      rt;
-		Label*   resume;     // where the stub jumps back to (bound after the fast path)
+		a64_label*   resume;     // where the stub jumps back to (bound after the fast path)
 	};
 	static std::vector<FmPending> s_fm_pending;
-	// Labels outlive their block's emission (VIXL Labels are neither copyable nor
-	// movable, and a deque never relocates what it holds).
-	static std::deque<Label> s_fm_labels;
+	// Labels outlive their block's emission: pending stubs point at them, and a
+	// deque never relocates what it holds.
+	static std::deque<a64_label> s_fm_labels;
 
 	// Guest pc of the op being emitted (compilation is EE-thread-only, like s_rc).
 	u32 s_emit_pc = 0;
@@ -291,14 +290,13 @@ namespace
 		return FastmemMode() &&
 		       !std::binary_search(s_fm_faulting.begin(), s_fm_faulting.end(), guest_pc);
 	}
-	// Emits the patchable access as EXACTLY one instruction (ExactAssemblyScope
-	// keeps VIXL from expanding it or dropping a literal pool in the middle).
+	// Emits the patchable access as EXACTLY one instruction (the fault handler
+	// patches that one word).
 	template <typename EmitAccess>
-	inline void EmitFastmemAccess(MacroAssembler& m, EmitAccess emit_access)
+	inline void EmitFastmemAccess(a64_emit* m, EmitAccess emit_access)
 	{
-		const size_t site_off = m.GetBuffer()->GetCursorOffset();
+		const size_t site_off = a64_offset(m);
 		{
-			vixl::ExactAssemblyScope scope(&m, kInstructionSize);
 			emit_access();
 		}
 		s_fm_pending.push_back({site_off, 0, s_emit_pc, 0, 0, 0, nullptr});
@@ -307,25 +305,25 @@ namespace
 	// fast path -- for LQ that includes the Str into the guest register, which a
 	// patched access must skip because the 128-bit wrapper writes GPR[rt] itself)
 	// and queues the out-of-line stub.
-	inline void DeferFastmemStub(MacroAssembler& m, uint64_t fn, int kind, u32 rt)
+	inline void DeferFastmemStub(a64_emit* m, uint64_t fn, int kind, u32 rt)
 	{
 		s_fm_labels.emplace_back();
-		Label* resume = &s_fm_labels.back();
-		m.Bind(resume);
+		a64_label* resume = &s_fm_labels.back();
+		a64_bind(m, resume);
 		FmPending& p = s_fm_pending.back();
 		p.fn = fn; p.kind = kind; p.rt = rt; p.resume = resume;
 	}
 	// Emitted once per block, after the epilogue: nothing falls through into it.
-	inline void EmitFastmemStubs(MacroAssembler& m)
+	inline void EmitFastmemStubs(a64_emit* m)
 	{
 		for (FmPending& p : s_fm_pending)
 		{
-			p.stub_off = m.GetBuffer()->GetCursorOffset();
+			p.stub_off = a64_offset(m);
 			if (p.kind == 1)
-				m.Add(x1, x19, p.rt * 16); // x1 = &GPR[rt] (x19 = guest-reg base)
-			m.Mov(x16, p.fn);
-			m.Blr(x16);
-			m.B(p.resume);
+				a64_add_imm(m, A64_X(1), A64_X(19), p.rt * 16); // x1 = &GPR[rt] (x19 = guest-reg base)
+			a64_mov_imm(m, A64_X(16), p.fn);
+			a64_blr(m, A64_X(16));
+			a64_b(m, p.resume);
 		}
 	}
 
@@ -344,8 +342,8 @@ namespace
 	// HI/LO live at byte offsets >= 512 and are never cached. Compilation is
 	// EE-thread-only, so the compile-time state can be a plain static.
 	constexpr int kCacheSlots = 7; // x21..x27
-	inline Register CacheX(int slot) { return XRegister(21 + slot); }
-	inline Register CacheW(int slot) { return WRegister(21 + slot); }
+	inline a64r CacheX(int slot) { return A64_X(21 + slot); }
+	inline a64r CacheW(int slot) { return A64_W(21 + slot); }
 	struct RegCache
 	{
 		int8_t host_of[32];           // guest reg -> slot (-1 = uncached)
@@ -372,7 +370,7 @@ namespace
 		// victim. Slots pinned by the current op (live Register handles from
 		// SrcGpr/DstGpr) are skipped -- an op pins at most 3 of the 7 slots,
 		// so the scan always terminates.
-		int Alloc(MacroAssembler& m, const Register& gpr, u32 g)
+		int Alloc(a64_emit* m, const a64r& gpr, u32 g)
 		{
 			int s;
 			do
@@ -382,7 +380,7 @@ namespace
 			} while (pinned & (1u << s));
 			if (guest_of[s] >= 0)
 			{
-				if (dirty[s]) m.Str(CacheX(s), MemOperand(gpr, (u32)guest_of[s] * 16));
+				if (dirty[s]) a64_str(m, CacheX(s), a64_mem_off(gpr, (u32)guest_of[s] * 16));
 				host_of[(int)guest_of[s]] = -1;
 				dirty[s] = false;
 			}
@@ -391,32 +389,32 @@ namespace
 			return s;
 		}
 		// Write one guest reg back to memory if dirty (mapping stays, now clean).
-		void FlushReg(MacroAssembler& m, const Register& gpr, u32 g)
+		void FlushReg(a64_emit* m, const a64r& gpr, u32 g)
 		{
 			if (g >= 32 || host_of[g] < 0) return;
 			const int s = host_of[g];
 			if (!dirty[s]) return;
-			m.Str(CacheX(s), MemOperand(gpr, g * 16));
+			a64_str(m, CacheX(s), a64_mem_off(gpr, g * 16));
 			dirty[s] = false;
 		}
 		// Write all dirty regs back (mappings stay, now clean).
-		void FlushDirty(MacroAssembler& m, const Register& gpr)
+		void FlushDirty(a64_emit* m, const a64r& gpr)
 		{
 			for (int s = 0; s < kCacheSlots; s++)
 				if (guest_of[s] >= 0 && dirty[s])
 				{
-					m.Str(CacheX(s), MemOperand(gpr, (u32)guest_of[s] * 16));
+					a64_str(m, CacheX(s), a64_mem_off(gpr, (u32)guest_of[s] * 16));
 					dirty[s] = false;
 				}
 		}
 		// Emit write-backs WITHOUT touching compile-time state: for cold paths
 		// (misalign -> eeCancelInstruction fastjmp) that leave the block while
 		// the fall-through continuation keeps using the dirty state.
-		void FlushDirtyColdPath(MacroAssembler& m, const Register& gpr)
+		void FlushDirtyColdPath(a64_emit* m, const a64r& gpr)
 		{
 			for (int s = 0; s < kCacheSlots; s++)
 				if (guest_of[s] >= 0 && dirty[s])
-					m.Str(CacheX(s), MemOperand(gpr, (u32)guest_of[s] * 16));
+					a64_str(m, CacheX(s), a64_mem_off(gpr, (u32)guest_of[s] * 16));
 		}
 	};
 	RegCache s_rc;
@@ -432,38 +430,38 @@ namespace
 	// only `Tst; B.ne <stub>` in the stream. The cold path never returns, so it
 	// needs no resume point -- but it does need the register-cache state as it
 	// was AT THE ACCESS, so snapshot that (RegCache is a plain value).
-	struct MaPending { Label* label; RegCache state; };
+	struct MaPending { a64_label* label; RegCache state; };
 	static std::vector<MaPending> s_ma_pending;
-	static std::deque<Label>      s_ma_labels;
+	static std::deque<a64_label>      s_ma_labels;
 
 	// C.54: per-block exit state -- the event-due stubs and the single return tail.
-	struct ExitPending { Label* slow; uint64_t evt; };
+	struct ExitPending { a64_label* slow; uint64_t evt; };
 	static std::vector<ExitPending> s_exit_pending;
-	static std::deque<Label>        s_exit_labels;
-	static Label*                   s_stale = nullptr; // C.60: manual block failed its check
+	static std::deque<a64_label>        s_exit_labels;
+	static a64_label*                   s_stale = nullptr; // C.60: manual block failed its check
 	static u32                      s_stale_pc = 0;
 	struct BlockRec;
 	extern "C" u32 eeBlockValidate_arm64(BlockRec* r, u32 pc);
-	static Label*                   s_blk_ret = nullptr;
+	static a64_label*                   s_blk_ret = nullptr;
 
-	inline void EmitMisalignGuard(MacroAssembler& m, u32 amask)
+	inline void EmitMisalignGuard(a64_emit* m, u32 amask)
 	{
 		if (!amask)
 			return;
 		s_ma_labels.emplace_back();
-		Label* l = &s_ma_labels.back();
-		m.Tst(w0, amask);
-		m.B(l, ne);
+		a64_label* l = &s_ma_labels.back();
+		a64_tst_imm(m, A64_W(0), amask);
+		a64_b_cond(m, l, A64_NE);
 		s_ma_pending.push_back({l, s_rc});
 	}
-	inline void EmitMisalignStubs(MacroAssembler& m, const Register& gpr)
+	inline void EmitMisalignStubs(a64_emit* m, const a64r& gpr)
 	{
 		for (MaPending& p : s_ma_pending)
 		{
-			m.Bind(p.label);
+			a64_bind(m, p.label);
 			p.state.FlushDirtyColdPath(m, gpr);
-			m.Mov(x16, reinterpret_cast<uint64_t>(&eeCancelInstruction_arm64));
-			m.Blr(x16); // fastjmps out of the block; never returns
+			a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&eeCancelInstruction_arm64));
+			a64_blr(m, A64_X(16)); // fastjmps out of the block; never returns
 		}
 	}
 
@@ -475,30 +473,30 @@ namespace
 	// EE GPRs are 128-bit; integer ops use the low 64 bits at byte offset idx*16.
 	// A cached guest reg reads as a reg-reg Mov; a miss loads from memory and
 	// fills a slot (the extra Mov is far cheaper than the next avoided load).
-	inline void LoadGpr(MacroAssembler& m, const Register& xd, const Register& gpr, u32 idx)
+	inline void LoadGpr(a64_emit* m, const a64r& xd, const a64r& gpr, u32 idx)
 	{
-		if (idx == 0) { m.Mov(xd, 0); return; }
-		if (!RegCacheOn()) { m.Ldr(xd, MemOperand(gpr, idx * 16)); return; }
+		if (idx == 0) { a64_mov_imm(m, xd, 0); return; }
+		if (!RegCacheOn()) { a64_ldr(m, xd, a64_mem_off(gpr, idx * 16)); return; }
 		int s = s_rc.host_of[idx];
-		if (s >= 0) { m.Mov(xd, CacheX(s)); return; }
-		m.Ldr(xd, MemOperand(gpr, idx * 16));
+		if (s >= 0) { a64_mov(m, xd, CacheX(s)); return; }
+		a64_ldr(m, xd, a64_mem_off(gpr, idx * 16));
 		s = s_rc.Alloc(m, gpr, idx);
-		m.Mov(CacheX(s), xd);
+		a64_mov(m, CacheX(s), xd);
 	}
 
 	// Dirty write-back (C.27-2): the store lands only in the cache slot; memory
 	// is written at the flush points (block exits, helper calls that observe
 	// GPR memory, dirty-slot eviction, and the cold misalign-cancel paths).
-	inline void StoreGpr(MacroAssembler& m, const Register& xs, const Register& gpr, u32 idx)
+	inline void StoreGpr(a64_emit* m, const a64r& xs, const a64r& gpr, u32 idx)
 	{
 		if (!RegCacheOn() || idx == 0)
 		{
-			m.Str(xs, MemOperand(gpr, idx * 16));
+			a64_str(m, xs, a64_mem_off(gpr, idx * 16));
 			return;
 		}
 		int s = s_rc.host_of[idx];
 		if (s < 0) s = s_rc.Alloc(m, gpr, idx);
-		m.Mov(CacheX(s), xs);
+		a64_mov(m, CacheX(s), xs);
 		s_rc.dirty[s] = true;
 	}
 
@@ -518,28 +516,28 @@ namespace
 	// RULES for converted emitters: acquire all Srcs before the Dst; the
 	// instruction that writes Dst must be the last reader of the Srcs (Dst
 	// may alias a Src when the cache is off, or when rd==rs/rt).
-	inline Register SrcGpr(MacroAssembler& m, const Register& gpr, u32 idx, const Register& scratch)
+	inline a64r SrcGpr(a64_emit* m, const a64r& gpr, u32 idx, const a64r& scratch)
 	{
 		// r0 materializes as Mov scratch,0 -- NOT xzr: register 31 in the Rn
 		// position of immediate/extended ADD/SUB/CMP encodes SP, so handing
 		// out xzr would be a silent footgun for converted emitters.
-		if (idx == 0) { m.Mov(scratch, 0); return scratch; }
+		if (idx == 0) { a64_mov_imm(m, scratch, 0); return scratch; }
 		if (!RegCacheOn())
 		{
-			m.Ldr(scratch, MemOperand(gpr, idx * 16));
+			a64_ldr(m, scratch, a64_mem_off(gpr, idx * 16));
 			return scratch;
 		}
 		int s = s_rc.host_of[idx];
 		if (s < 0)
 		{
 			s = s_rc.Alloc(m, gpr, idx);
-			m.Ldr(CacheX(s), MemOperand(gpr, idx * 16));
+			a64_ldr(m, CacheX(s), a64_mem_off(gpr, idx * 16));
 		}
 		s_rc.pinned |= (u8)(1u << s);
 		return CacheX(s);
 	}
 	// idx must be nonzero (callers guard r0 like they always have).
-	inline Register DstGpr(MacroAssembler& m, const Register& gpr, u32 idx, const Register& scratch)
+	inline a64r DstGpr(a64_emit* m, const a64r& gpr, u32 idx, const a64r& scratch)
 	{
 		if (!RegCacheOn())
 			return scratch;
@@ -549,10 +547,10 @@ namespace
 		s_rc.pinned |= (u8)(1u << s);
 		return CacheX(s);
 	}
-	inline void FinishDst(MacroAssembler& m, const Register& gpr, u32 idx, const Register& d)
+	inline void FinishDst(a64_emit* m, const a64r& gpr, u32 idx, const a64r& d)
 	{
 		if (!RegCacheOn())
-			m.Str(d, MemOperand(gpr, idx * 16));
+			a64_str(m, d, a64_mem_off(gpr, idx * 16));
 	}
 
 	// COP1 (FPU) register sub-ops that are bit-exact and safe to translate
@@ -633,66 +631,66 @@ namespace
 	// silently flushed by the host before we can inspect them.
 
 	// Clamp a raw single bit pattern per fpuDouble(). wtmp is scratch.
-	inline void EmitFpuClampBits(MacroAssembler& m, const Register& wd, const Register& wtmp)
+	inline void EmitFpuClampBits(a64_emit* m, const a64r& wd, const a64r& wtmp)
 	{
-		Label notZero, done;
-		m.And(wtmp, wd, 0x7f800000);      // exponent field
-		m.Cbnz(wtmp, &notZero);
-		m.And(wd, wd, 0x80000000);        // exp==0 (zero/denormal) -> signed zero
-		m.B(&done);
-		m.Bind(&notZero);
-		m.Cmp(wtmp, 0x7f800000);
-		m.B(&done, ne);                   // normal finite -> untouched
-		m.And(wtmp, wd, 0x80000000);
-		m.Orr(wd, wtmp, 0x7f7fffff);      // exp==0xff -> signed posFmax
-		m.Bind(&done);
+		a64_label notZero = A64_LABEL_INIT, done = A64_LABEL_INIT;
+		a64_and_imm(m, wtmp, wd, 0x7f800000);      // exponent field
+		a64_cbnz(m, wtmp, &notZero);
+		a64_and_imm(m, wd, wd, 0x80000000);        // exp==0 (zero/denormal) -> signed zero
+		a64_b(m, &done);
+		a64_bind(m, &notZero);
+		a64_cmp_imm(m, wtmp, 0x7f800000);
+		a64_b_cond(m, &done, A64_NE);                   // normal finite -> untouched
+		a64_and_imm(m, wtmp, wd, 0x80000000);
+		a64_orr_imm(m, wd, wtmp, 0x7f7fffff);      // exp==0xff -> signed posFmax
+		a64_bind(m, &done);
 	}
 
 	// checkOverflow(wd, O|SO) then, only if no overflow, checkUnderflow(wd, U|SU) --
 	// exact mirror of pcsx2/FPU.c for the ADD_S/SUB_S/MUL_S family. wd holds the
 	// raw result bits (updated in place with the clamped value); xfbase must hold
 	// &fpuRegs. Scratch: w2, w3.
-	inline void EmitFpuOverflowUnderflow(MacroAssembler& m, const Register& wd, const Register& xfbase)
+	inline void EmitFpuOverflowUnderflow(a64_emit* m, const a64r& wd, const a64r& xfbase)
 	{
-		Label overflow, notDenormal, done;
+		a64_label overflow = A64_LABEL_INIT, notDenormal = A64_LABEL_INIT, done = A64_LABEL_INIT;
 
-		m.And(w2, wd, 0x7fffffff);
-		m.Cmp(w2, 0x7f800000);
-		m.B(&overflow, eq);
+		a64_and_imm(m, A64_W(2), wd, 0x7fffffff);
+		a64_cmp_imm(m, A64_W(2), 0x7f800000);
+		a64_b_cond(m, &overflow, A64_EQ);
 
 		// no overflow: checkOverflow's else-branch clears FPUflagO only.
-		m.Ldr(w3, MemOperand(xfbase, 252));
-		m.Bic(w3, w3, 0x8000);
-		m.Str(w3, MemOperand(xfbase, 252));
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_bic_imm(m, A64_W(3), A64_W(3), 0x8000);
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
 
 		// checkUnderflow: exp==0 && mantissa!=0 (true denormal) -> flush + U|SU;
 		// else clear U only (exact zero is NOT underflow).
-		m.And(w2, wd, 0x7f800000);
-		m.Cbnz(w2, &notDenormal);
-		m.And(w2, wd, 0x7fffff);
-		m.Cbz(w2, &notDenormal);
-		m.And(wd, wd, 0x80000000);        // flush to signed zero
-		m.Ldr(w3, MemOperand(xfbase, 252));
-		m.Orr(w3, w3, 0x4000);
-		m.Orr(w3, w3, 0x8);
-		m.Str(w3, MemOperand(xfbase, 252));
-		m.B(&done);
+		a64_and_imm(m, A64_W(2), wd, 0x7f800000);
+		a64_cbnz(m, A64_W(2), &notDenormal);
+		a64_and_imm(m, A64_W(2), wd, 0x7fffff);
+		a64_cbz(m, A64_W(2), &notDenormal);
+		a64_and_imm(m, wd, wd, 0x80000000);        // flush to signed zero
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x4000);
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x8);
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_b(m, &done);
 
-		m.Bind(&notDenormal);
-		m.Ldr(w3, MemOperand(xfbase, 252));
-		m.Bic(w3, w3, 0x4000);
-		m.Str(w3, MemOperand(xfbase, 252));
-		m.B(&done);
+		a64_bind(m, &notDenormal);
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_bic_imm(m, A64_W(3), A64_W(3), 0x4000);
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_b(m, &done);
 
-		m.Bind(&overflow);
-		m.And(w3, wd, 0x80000000);
-		m.Orr(wd, w3, 0x7f7fffff);        // signed posFmax
-		m.Ldr(w2, MemOperand(xfbase, 252));
-		m.Orr(w2, w2, 0x8000);
-		m.Orr(w2, w2, 0x10);
-		m.Str(w2, MemOperand(xfbase, 252));
+		a64_bind(m, &overflow);
+		a64_and_imm(m, A64_W(3), wd, 0x80000000);
+		a64_orr_imm(m, wd, A64_W(3), 0x7f7fffff);        // signed posFmax
+		a64_ldr(m, A64_W(2), a64_mem_off(xfbase, 252));
+		a64_orr_imm(m, A64_W(2), A64_W(2), 0x8000);
+		a64_orr_imm(m, A64_W(2), A64_W(2), 0x10);
+		a64_str(m, A64_W(2), a64_mem_off(xfbase, 252));
 
-		m.Bind(&done);
+		a64_bind(m, &done);
 	}
 
 	// The ACC accumulator lives right after fpr[32] (128 B) + fprc[32] (128 B).
@@ -705,23 +703,23 @@ namespace
 	// interpreter's ADDA/SUBA/MULA are line-identical to ADD/SUB/MUL apart
 	// from the destination, and none of them touch ACCflag -- that field is
 	// x86-recompiler-internal).
-	void EmitFpuBinaryS(MacroAssembler& m, const Register& xfbase, u32 op, u32 dst_off, u32 fs, u32 ft)
+	void EmitFpuBinaryS(a64_emit* m, const a64r& xfbase, u32 op, u32 dst_off, u32 fs, u32 ft)
 	{
-		m.Ldr(w0, MemOperand(xfbase, fs * 4));
-		EmitFpuClampBits(m, w0, w4);
-		m.Fmov(s0, w0);
-		m.Ldr(w0, MemOperand(xfbase, ft * 4));
-		EmitFpuClampBits(m, w0, w4);
-		m.Fmov(s1, w0);
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, fs * 4));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_fmov(m, A64_S(0), A64_W(0));
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, ft * 4));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_fmov(m, A64_S(1), A64_W(0));
 		switch (op)
 		{
-			case 0:  m.Fadd(s0, s0, s1); break;
-			case 1:  m.Fsub(s0, s0, s1); break;
-			default: m.Fmul(s0, s0, s1); break; // 2
+			case 0:  a64_fadd(m, A64_S(0), A64_S(0), A64_S(1)); break;
+			case 1:  a64_fsub(m, A64_S(0), A64_S(0), A64_S(1)); break;
+			default: a64_fmul(m, A64_S(0), A64_S(0), A64_S(1)); break; // 2
 		}
-		m.Fmov(w0, s0);
-		EmitFpuOverflowUnderflow(m, w0, xfbase);
-		m.Str(w0, MemOperand(xfbase, dst_off));
+		a64_fmov(m, A64_W(0), A64_S(0));
+		EmitFpuOverflowUnderflow(m, A64_W(0), xfbase);
+		a64_str(m, A64_W(0), a64_mem_off(xfbase, dst_off));
 	}
 
 
@@ -741,138 +739,138 @@ namespace
 	// wrong, exponent-255 operands and guard-bit discard both.
 	// Scratch: w0/w2-w7 (+ x aliases), d0/d1.
 	// Core of the exact pipeline: operands already loaded, a in w0, b in w2.
-	void EmitFpuAddSubExactCore(MacroAssembler& m, const Register& xfbase, bool issub, u32 dst_off)
+	void EmitFpuAddSubExactCore(a64_emit* m, const a64r& xfbase, bool issub, u32 dst_off)
 	{
-		Label mask_done, big_a, big_b, chk_neg;
-		Label a_zero, a_done, b_zero, b_done;
-		Label zero_res, of, uf, done;
+		a64_label mask_done = A64_LABEL_INIT, big_a = A64_LABEL_INIT, big_b = A64_LABEL_INIT, chk_neg = A64_LABEL_INIT;
+		a64_label a_zero = A64_LABEL_INIT, a_done = A64_LABEL_INIT, b_zero = A64_LABEL_INIT, b_done = A64_LABEL_INIT;
+		a64_label zero_res = A64_LABEL_INIT, of = A64_LABEL_INIT, uf = A64_LABEL_INIT, done = A64_LABEL_INIT;
 
 		// signed exponent difference
-		m.Ubfx(w3, w0, 23, 8);
-		m.Ubfx(w4, w2, 23, 8);
-		m.Sub(w3, w3, w4);
+		a64_ubfx(m, A64_W(3), A64_W(0), 23, 8);
+		a64_ubfx(m, A64_W(4), A64_W(2), 23, 8);
+		a64_sub(m, A64_W(3), A64_W(3), A64_W(4));
 
-		m.Cmp(w3, 25);
-		m.B(&big_a, ge);                  // d >= 25: b -> sign only
-		m.Cmp(w3, 1);
-		m.B(&chk_neg, lt);
-		m.Sub(w4, w3, 1);                 // 1..24: b &= ~0 << (d-1)
-		m.Mov(w5, 0xffffffff);
-		m.Lsl(w5, w5, w4);
-		m.And(w2, w2, w5);
-		m.B(&mask_done);
-		m.Bind(&chk_neg);
-		m.Cbz(w3, &mask_done);            // d == 0: no mask
-		m.Cmp(w3, -24);
-		m.B(&big_b, lt);                  // d <= -25: a -> sign only
-		m.Neg(w4, w3);                    // -24..-1: a &= ~0 << (-d-1)
-		m.Sub(w4, w4, 1);
-		m.Mov(w5, 0xffffffff);
-		m.Lsl(w5, w5, w4);
-		m.And(w0, w0, w5);
-		m.B(&mask_done);
-		m.Bind(&big_a);
-		m.And(w2, w2, 0x80000000);
-		m.B(&mask_done);
-		m.Bind(&big_b);
-		m.And(w0, w0, 0x80000000);
-		m.Bind(&mask_done);
+		a64_cmp_imm(m, A64_W(3), 25);
+		a64_b_cond(m, &big_a, A64_GE);                  // d >= 25: b -> sign only
+		a64_cmp_imm(m, A64_W(3), 1);
+		a64_b_cond(m, &chk_neg, A64_LT);
+		a64_sub_imm(m, A64_W(4), A64_W(3), 1);                 // 1..24: b &= ~0 << (d-1)
+		a64_mov_imm(m, A64_W(5), 0xffffffff);
+		a64_lsl(m, A64_W(5), A64_W(5), A64_W(4));
+		a64_and(m, A64_W(2), A64_W(2), A64_W(5));
+		a64_b(m, &mask_done);
+		a64_bind(m, &chk_neg);
+		a64_cbz(m, A64_W(3), &mask_done);            // d == 0: no mask
+		a64_cmp_imm(m, A64_W(3), -24);
+		a64_b_cond(m, &big_b, A64_LT);                  // d <= -25: a -> sign only
+		a64_neg(m, A64_W(4), A64_W(3));                    // -24..-1: a &= ~0 << (-d-1)
+		a64_sub_imm(m, A64_W(4), A64_W(4), 1);
+		a64_mov_imm(m, A64_W(5), 0xffffffff);
+		a64_lsl(m, A64_W(5), A64_W(5), A64_W(4));
+		a64_and(m, A64_W(0), A64_W(0), A64_W(5));
+		a64_b(m, &mask_done);
+		a64_bind(m, &big_a);
+		a64_and_imm(m, A64_W(2), A64_W(2), 0x80000000);
+		a64_b(m, &mask_done);
+		a64_bind(m, &big_b);
+		a64_and_imm(m, A64_W(0), A64_W(0), 0x80000000);
+		a64_bind(m, &mask_done);
 
 		// a -> d0 with PS2-normal semantics (denormal -> signed zero)
-		m.Ubfx(w4, w0, 23, 8);
-		m.Cbz(w4, &a_zero);
-		m.Add(w4, w4, 896);
-		m.Lsl(x4, x4, 52);
-		m.And(w6, w0, 0x7fffff);
-		m.Lsl(x6, x6, 29);
-		m.Orr(x6, x6, x4);
-		m.Lsr(w5, w0, 31);
-		m.Lsl(x5, x5, 63);
-		m.Orr(x6, x6, x5);
-		m.B(&a_done);
-		m.Bind(&a_zero);
-		m.Lsr(w5, w0, 31);
-		m.Lsl(x6, x5, 63);
-		m.Bind(&a_done);
-		m.Fmov(d0, x6);
+		a64_ubfx(m, A64_W(4), A64_W(0), 23, 8);
+		a64_cbz(m, A64_W(4), &a_zero);
+		a64_add_imm(m, A64_W(4), A64_W(4), 896);
+		a64_lsl_imm(m, A64_X(4), A64_X(4), 52);
+		a64_and_imm(m, A64_W(6), A64_W(0), 0x7fffff);
+		a64_lsl_imm(m, A64_X(6), A64_X(6), 29);
+		a64_orr(m, A64_X(6), A64_X(6), A64_X(4));
+		a64_lsr_imm(m, A64_W(5), A64_W(0), 31);
+		a64_lsl_imm(m, A64_X(5), A64_X(5), 63);
+		a64_orr(m, A64_X(6), A64_X(6), A64_X(5));
+		a64_b(m, &a_done);
+		a64_bind(m, &a_zero);
+		a64_lsr_imm(m, A64_W(5), A64_W(0), 31);
+		a64_lsl_imm(m, A64_X(6), A64_X(5), 63);
+		a64_bind(m, &a_done);
+		a64_fmov(m, A64_D(0), A64_X(6));
 
 		// b -> d1
-		m.Ubfx(w4, w2, 23, 8);
-		m.Cbz(w4, &b_zero);
-		m.Add(w4, w4, 896);
-		m.Lsl(x4, x4, 52);
-		m.And(w6, w2, 0x7fffff);
-		m.Lsl(x6, x6, 29);
-		m.Orr(x6, x6, x4);
-		m.Lsr(w5, w2, 31);
-		m.Lsl(x5, x5, 63);
-		m.Orr(x6, x6, x5);
-		m.B(&b_done);
-		m.Bind(&b_zero);
-		m.Lsr(w5, w2, 31);
-		m.Lsl(x6, x5, 63);
-		m.Bind(&b_done);
-		m.Fmov(d1, x6);
+		a64_ubfx(m, A64_W(4), A64_W(2), 23, 8);
+		a64_cbz(m, A64_W(4), &b_zero);
+		a64_add_imm(m, A64_W(4), A64_W(4), 896);
+		a64_lsl_imm(m, A64_X(4), A64_X(4), 52);
+		a64_and_imm(m, A64_W(6), A64_W(2), 0x7fffff);
+		a64_lsl_imm(m, A64_X(6), A64_X(6), 29);
+		a64_orr(m, A64_X(6), A64_X(6), A64_X(4));
+		a64_lsr_imm(m, A64_W(5), A64_W(2), 31);
+		a64_lsl_imm(m, A64_X(5), A64_X(5), 63);
+		a64_orr(m, A64_X(6), A64_X(6), A64_X(5));
+		a64_b(m, &b_done);
+		a64_bind(m, &b_zero);
+		a64_lsr_imm(m, A64_W(5), A64_W(2), 31);
+		a64_lsl_imm(m, A64_X(6), A64_X(5), 63);
+		a64_bind(m, &b_done);
+		a64_fmov(m, A64_D(1), A64_X(6));
 
 		if (issub)
-			m.Fsub(d0, d0, d1);
+			a64_fsub(m, A64_D(0), A64_D(0), A64_D(1));
 		else
-			m.Fadd(d0, d0, d1);
+			a64_fadd(m, A64_D(0), A64_D(0), A64_D(1));
 
 		// chop-pack to PS2 single
-		m.Fmov(x6, d0);
-		m.And(x7, x6, 0x7fffffffffffffffull);
-		m.Lsr(x5, x6, 63);
-		m.Lsl(w5, w5, 31);                // sign << 31
-		m.Cbz(x7, &zero_res);             // exact zero
-		m.Lsr(x4, x6, 52);
-		m.And(w4, w4, 0x7ff);
-		m.Sub(w4, w4, 896);               // PS2 exponent
-		m.Cmp(w4, 255);
-		m.B(&of, gt);
-		m.Cmp(w4, 1);
-		m.B(&uf, lt);
-		m.Lsr(x6, x6, 29);
-		m.And(w6, w6, 0x7fffff);
-		m.Orr(w0, w5, w6);
-		m.Orr(w0, w0, Operand(w4, LSL, 23));
-		m.Ldr(w3, MemOperand(xfbase, 252)); // clear O, clear U
-		m.Bic(w3, w3, 0x8000);
-		m.Bic(w3, w3, 0x4000);
-		m.Str(w3, MemOperand(xfbase, 252));
-		m.B(&done);
+		a64_fmov(m, A64_X(6), A64_D(0));
+		a64_and_imm(m, A64_X(7), A64_X(6), 0x7fffffffffffffffull);
+		a64_lsr_imm(m, A64_X(5), A64_X(6), 63);
+		a64_lsl_imm(m, A64_W(5), A64_W(5), 31);                // sign << 31
+		a64_cbz(m, A64_X(7), &zero_res);             // exact zero
+		a64_lsr_imm(m, A64_X(4), A64_X(6), 52);
+		a64_and_imm(m, A64_W(4), A64_W(4), 0x7ff);
+		a64_sub_imm(m, A64_W(4), A64_W(4), 896);               // PS2 exponent
+		a64_cmp_imm(m, A64_W(4), 255);
+		a64_b_cond(m, &of, A64_GT);
+		a64_cmp_imm(m, A64_W(4), 1);
+		a64_b_cond(m, &uf, A64_LT);
+		a64_lsr_imm(m, A64_X(6), A64_X(6), 29);
+		a64_and_imm(m, A64_W(6), A64_W(6), 0x7fffff);
+		a64_orr(m, A64_W(0), A64_W(5), A64_W(6));
+		a64_orr_shift(m, A64_W(0), A64_W(0), A64_W(4), A64_LSL, 23);
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252)); // clear O, clear U
+		a64_bic_imm(m, A64_W(3), A64_W(3), 0x8000);
+		a64_bic_imm(m, A64_W(3), A64_W(3), 0x4000);
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_b(m, &done);
 
-		m.Bind(&zero_res);
-		m.Mov(w0, w5);
-		m.Ldr(w3, MemOperand(xfbase, 252));
-		m.Bic(w3, w3, 0x8000);
-		m.Bic(w3, w3, 0x4000);
-		m.Str(w3, MemOperand(xfbase, 252));
-		m.B(&done);
+		a64_bind(m, &zero_res);
+		a64_mov(m, A64_W(0), A64_W(5));
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_bic_imm(m, A64_W(3), A64_W(3), 0x8000);
+		a64_bic_imm(m, A64_W(3), A64_W(3), 0x4000);
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_b(m, &done);
 
-		m.Bind(&of);
-		m.Orr(w0, w5, 0x7fffffff);        // true PS2 MAX, exponent 255
-		m.Ldr(w3, MemOperand(xfbase, 252));
-		m.Orr(w3, w3, 0x8000);
-		m.Orr(w3, w3, 0x10);
-		m.Str(w3, MemOperand(xfbase, 252));
-		m.B(&done);
+		a64_bind(m, &of);
+		a64_orr_imm(m, A64_W(0), A64_W(5), 0x7fffffff);        // true PS2 MAX, exponent 255
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x8000);
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x10);
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_b(m, &done);
 
-		m.Bind(&uf);
-		m.Mov(w0, w5);
-		m.Ldr(w3, MemOperand(xfbase, 252));
-		m.Orr(w3, w3, 0x4000);
-		m.Orr(w3, w3, 0x8);
-		m.Str(w3, MemOperand(xfbase, 252));
+		a64_bind(m, &uf);
+		a64_mov(m, A64_W(0), A64_W(5));
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x4000);
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x8);
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
 
-		m.Bind(&done);
-		m.Str(w0, MemOperand(xfbase, dst_off));
+		a64_bind(m, &done);
+		a64_str(m, A64_W(0), a64_mem_off(xfbase, dst_off));
 	}
 
-	void EmitFpuAddSubExact(MacroAssembler& m, const Register& xfbase, bool issub, u32 dst_off, u32 fs, u32 ft)
+	void EmitFpuAddSubExact(a64_emit* m, const a64r& xfbase, bool issub, u32 dst_off, u32 fs, u32 ft)
 	{
-		m.Ldr(w0, MemOperand(xfbase, fs * 4)); // a
-		m.Ldr(w2, MemOperand(xfbase, ft * 4)); // b
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, fs * 4)); // a
+		a64_ldr(m, A64_W(2), a64_mem_off(xfbase, ft * 4)); // b
 		EmitFpuAddSubExactCore(m, xfbase, issub, dst_off);
 	}
 
@@ -890,18 +888,18 @@ namespace
 	// multiply needs the Booth tree, and until then a product that
 	// overflows clamps like the old interpreter instead of forcing the
 	// mul-signed MAX the model's exception ladder produces.
-	void EmitFpuMaddS(MacroAssembler& m, const Register& xfbase, u32 fd, u32 fs, u32 ft, bool sub)
+	void EmitFpuMaddS(a64_emit* m, const a64r& xfbase, u32 fd, u32 fs, u32 ft, bool sub)
 	{
-		m.Ldr(w0, MemOperand(xfbase, fs * 4));
-		EmitFpuClampBits(m, w0, w4);
-		m.Fmov(s0, w0);
-		m.Ldr(w0, MemOperand(xfbase, ft * 4));
-		EmitFpuClampBits(m, w0, w4);
-		m.Fmov(s1, w0);
-		m.Fmul(s0, s0, s1);
-		m.Fmov(w2, s0);
-		EmitFpuClampBits(m, w2, w4);   // fpuDouble(temp.UL)
-		m.Ldr(w0, MemOperand(xfbase, kFpuAcc)); // raw ACC: the core handles it
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, fs * 4));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_fmov(m, A64_S(0), A64_W(0));
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, ft * 4));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_fmov(m, A64_S(1), A64_W(0));
+		a64_fmul(m, A64_S(0), A64_S(0), A64_S(1));
+		a64_fmov(m, A64_W(2), A64_S(0));
+		EmitFpuClampBits(m, A64_W(2), A64_W(4));   // fpuDouble(temp.UL)
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, kFpuAcc)); // raw ACC: the core handles it
 		EmitFpuAddSubExactCore(m, xfbase, sub, fd * 4);
 	}
 
@@ -910,18 +908,18 @@ namespace
 	// the interpreter moved to the soft model, where the A forms are the
 	// same fused chain with the accumulator as destination. Same shape as
 	// EmitFpuMaddS: clamped single product, raw ACC, exact-core accumulate.
-	void EmitFpuMaddaS(MacroAssembler& m, const Register& xfbase, u32 fs, u32 ft, bool sub)
+	void EmitFpuMaddaS(a64_emit* m, const a64r& xfbase, u32 fs, u32 ft, bool sub)
 	{
-		m.Ldr(w0, MemOperand(xfbase, fs * 4));
-		EmitFpuClampBits(m, w0, w4);
-		m.Fmov(s0, w0);
-		m.Ldr(w0, MemOperand(xfbase, ft * 4));
-		EmitFpuClampBits(m, w0, w4);
-		m.Fmov(s1, w0);
-		m.Fmul(s0, s0, s1);
-		m.Fmov(w2, s0);
-		EmitFpuClampBits(m, w2, w4);
-		m.Ldr(w0, MemOperand(xfbase, kFpuAcc));
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, fs * 4));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_fmov(m, A64_S(0), A64_W(0));
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, ft * 4));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_fmov(m, A64_S(1), A64_W(0));
+		a64_fmul(m, A64_S(0), A64_S(0), A64_S(1));
+		a64_fmov(m, A64_W(2), A64_S(0));
+		EmitFpuClampBits(m, A64_W(2), A64_W(4));
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, kFpuAcc));
 		EmitFpuAddSubExactCore(m, xfbase, sub, kFpuAcc);
 	}
 
@@ -930,22 +928,22 @@ namespace
 	// value-clamped exactly like EmitFpuOverflowUnderflow but FCR31 is NEVER
 	// touched (neither set nor cleared) -- a real ground-truth quirk, not an
 	// oversight, so no fbase param here.
-	inline void EmitFpuClampOutValueOnly(MacroAssembler& m, const Register& wd)
+	inline void EmitFpuClampOutValueOnly(a64_emit* m, const a64r& wd)
 	{
-		Label overflow, done;
-		m.And(w2, wd, 0x7fffffff);
-		m.Cmp(w2, 0x7f800000);
-		m.B(&overflow, eq);
-		m.And(w2, wd, 0x7f800000);
-		m.Cbnz(w2, &done);
-		m.And(w2, wd, 0x7fffff);
-		m.Cbz(w2, &done);
-		m.And(wd, wd, 0x80000000);
-		m.B(&done);
-		m.Bind(&overflow);
-		m.And(w3, wd, 0x80000000);
-		m.Orr(wd, w3, 0x7f7fffff);
-		m.Bind(&done);
+		a64_label overflow = A64_LABEL_INIT, done = A64_LABEL_INIT;
+		a64_and_imm(m, A64_W(2), wd, 0x7fffffff);
+		a64_cmp_imm(m, A64_W(2), 0x7f800000);
+		a64_b_cond(m, &overflow, A64_EQ);
+		a64_and_imm(m, A64_W(2), wd, 0x7f800000);
+		a64_cbnz(m, A64_W(2), &done);
+		a64_and_imm(m, A64_W(2), wd, 0x7fffff);
+		a64_cbz(m, A64_W(2), &done);
+		a64_and_imm(m, wd, wd, 0x80000000);
+		a64_b(m, &done);
+		a64_bind(m, &overflow);
+		a64_and_imm(m, A64_W(3), wd, 0x80000000);
+		a64_orr_imm(m, wd, A64_W(3), 0x7f7fffff);
+		a64_bind(m, &done);
 	}
 
 	// funct 0x03 DIV.S: checkDivideByZero(fd, Ft, Fs, D|SD, I|SI) first -- if Ft's
@@ -953,48 +951,48 @@ namespace
 	// exponent field is ALSO 0 (0/0); fd = sign(Ft^Fs) | posFmax; EARLY RETURN, no
 	// overflow/underflow check at all. Otherwise fd = fpuDouble(Fs)/fpuDouble(Ft),
 	// then checkOverflow(0)/checkUnderflow(0) (value-clamp only, no flags).
-	void EmitDivS(MacroAssembler& m, const Register& xfbase, u32 fd, u32 fs, u32 ft)
+	void EmitDivS(a64_emit* m, const a64r& xfbase, u32 fd, u32 fs, u32 ft)
 	{
-		Label divByZero, done;
+		a64_label divByZero = A64_LABEL_INIT, done = A64_LABEL_INIT;
 
-		m.Ldr(w5, MemOperand(xfbase, ft * 4)); // raw Ft: divisor sign + zero-check
-		m.And(w2, w5, 0x7f800000);
-		m.Cbz(w2, &divByZero);
+		a64_ldr(m, A64_W(5), a64_mem_off(xfbase, ft * 4)); // raw Ft: divisor sign + zero-check
+		a64_and_imm(m, A64_W(2), A64_W(5), 0x7f800000);
+		a64_cbz(m, A64_W(2), &divByZero);
 
-		m.Ldr(w0, MemOperand(xfbase, fs * 4));
-		EmitFpuClampBits(m, w0, w4);
-		m.Fmov(s0, w0);
-		m.Mov(w0, w5);
-		EmitFpuClampBits(m, w0, w4);
-		m.Fmov(s1, w0);
-		m.Fdiv(s0, s0, s1);
-		m.Fmov(w0, s0);
-		EmitFpuClampOutValueOnly(m, w0);
-		m.Str(w0, MemOperand(xfbase, fd * 4));
-		m.B(&done);
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, fs * 4));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_fmov(m, A64_S(0), A64_W(0));
+		a64_mov(m, A64_W(0), A64_W(5));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_fmov(m, A64_S(1), A64_W(0));
+		a64_fdiv(m, A64_S(0), A64_S(0), A64_S(1));
+		a64_fmov(m, A64_W(0), A64_S(0));
+		EmitFpuClampOutValueOnly(m, A64_W(0));
+		a64_str(m, A64_W(0), a64_mem_off(xfbase, fd * 4));
+		a64_b(m, &done);
 
-		m.Bind(&divByZero);
+		a64_bind(m, &divByZero);
 		{
-			Label zeroFs, flagsDone;
-			m.Ldr(w6, MemOperand(xfbase, fs * 4)); // raw Fs: 0/0 check + result sign
-			m.Ldr(w3, MemOperand(xfbase, 252));
-			m.And(w2, w6, 0x7f800000);
-			m.Cbz(w2, &zeroFs);
-			m.Orr(w3, w3, 0x10000); // D
-			m.Orr(w3, w3, 0x20);    // SD
-			m.B(&flagsDone);
-			m.Bind(&zeroFs);
-			m.Orr(w3, w3, 0x20000); // I
-			m.Orr(w3, w3, 0x40);    // SI
-			m.Bind(&flagsDone);
-			m.Str(w3, MemOperand(xfbase, 252));
-			m.Eor(w0, w5, w6);
-			m.And(w0, w0, 0x80000000);
-			m.Orr(w0, w0, 0x7f7fffff);
-			m.Str(w0, MemOperand(xfbase, fd * 4));
+			a64_label zeroFs = A64_LABEL_INIT, flagsDone = A64_LABEL_INIT;
+			a64_ldr(m, A64_W(6), a64_mem_off(xfbase, fs * 4)); // raw Fs: 0/0 check + result sign
+			a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+			a64_and_imm(m, A64_W(2), A64_W(6), 0x7f800000);
+			a64_cbz(m, A64_W(2), &zeroFs);
+			a64_orr_imm(m, A64_W(3), A64_W(3), 0x10000); // D
+			a64_orr_imm(m, A64_W(3), A64_W(3), 0x20);    // SD
+			a64_b(m, &flagsDone);
+			a64_bind(m, &zeroFs);
+			a64_orr_imm(m, A64_W(3), A64_W(3), 0x20000); // I
+			a64_orr_imm(m, A64_W(3), A64_W(3), 0x40);    // SI
+			a64_bind(m, &flagsDone);
+			a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
+			a64_eor(m, A64_W(0), A64_W(5), A64_W(6));
+			a64_and_imm(m, A64_W(0), A64_W(0), 0x80000000);
+			a64_orr_imm(m, A64_W(0), A64_W(0), 0x7f7fffff);
+			a64_str(m, A64_W(0), a64_mem_off(xfbase, fd * 4));
 		}
 
-		m.Bind(&done);
+		a64_bind(m, &done);
 	}
 
 	// funct 0x04 SQRT.S: single operand in the Ft field (not Fs -- matches the
@@ -1004,46 +1002,46 @@ namespace
 	// fd = +sqrt(|fpuDouble(Ft)|) (positive magnitude only -- sqrt of a negative
 	// does NOT reapply the sign); Ft positive -> fd = sqrt(fpuDouble(Ft)). No
 	// overflow/underflow clamp at all in any path (ground truth has none).
-	void EmitSqrtS(MacroAssembler& m, const Register& xfbase, u32 fd, u32 ft)
+	void EmitSqrtS(a64_emit* m, const a64r& xfbase, u32 fd, u32 ft)
 	{
-		Label isZero, isNeg, done;
+		a64_label isZero = A64_LABEL_INIT, isNeg = A64_LABEL_INIT, done = A64_LABEL_INIT;
 
-		m.Ldr(w3, MemOperand(xfbase, 252));
-		m.Bic(w3, w3, 0x30000); // clear I|D unconditionally
-		m.Str(w3, MemOperand(xfbase, 252));
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_bic_imm(m, A64_W(3), A64_W(3), 0x30000); // clear I|D unconditionally
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
 
-		m.Ldr(w0, MemOperand(xfbase, ft * 4));
-		m.And(w2, w0, 0x7f800000);
-		m.Cbz(w2, &isZero);
-		m.Tst(w0, 0x80000000);
-		m.B(&isNeg, ne);
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, ft * 4));
+		a64_and_imm(m, A64_W(2), A64_W(0), 0x7f800000);
+		a64_cbz(m, A64_W(2), &isZero);
+		a64_tst_imm(m, A64_W(0), 0x80000000);
+		a64_b_cond(m, &isNeg, A64_NE);
 
 		// positive, nonzero-exp
-		EmitFpuClampBits(m, w0, w4);
-		m.Fmov(s0, w0);
-		m.Fsqrt(s0, s0);
-		m.Fmov(w0, s0);
-		m.Str(w0, MemOperand(xfbase, fd * 4));
-		m.B(&done);
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_fmov(m, A64_S(0), A64_W(0));
+		a64_fsqrt(m, A64_S(0), A64_S(0));
+		a64_fmov(m, A64_W(0), A64_S(0));
+		a64_str(m, A64_W(0), a64_mem_off(xfbase, fd * 4));
+		a64_b(m, &done);
 
-		m.Bind(&isNeg);
-		m.Ldr(w3, MemOperand(xfbase, 252));
-		m.Orr(w3, w3, 0x20000); // I
-		m.Orr(w3, w3, 0x40);    // SI
-		m.Str(w3, MemOperand(xfbase, 252));
-		EmitFpuClampBits(m, w0, w4);
-		m.And(w0, w0, 0x7fffffff); // fabs
-		m.Fmov(s0, w0);
-		m.Fsqrt(s0, s0);
-		m.Fmov(w0, s0);
-		m.Str(w0, MemOperand(xfbase, fd * 4));
-		m.B(&done);
+		a64_bind(m, &isNeg);
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x20000); // I
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x40);    // SI
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_and_imm(m, A64_W(0), A64_W(0), 0x7fffffff); // fabs
+		a64_fmov(m, A64_S(0), A64_W(0));
+		a64_fsqrt(m, A64_S(0), A64_S(0));
+		a64_fmov(m, A64_W(0), A64_S(0));
+		a64_str(m, A64_W(0), a64_mem_off(xfbase, fd * 4));
+		a64_b(m, &done);
 
-		m.Bind(&isZero);
-		m.And(w0, w0, 0x80000000);
-		m.Str(w0, MemOperand(xfbase, fd * 4));
+		a64_bind(m, &isZero);
+		a64_and_imm(m, A64_W(0), A64_W(0), 0x80000000);
+		a64_str(m, A64_W(0), a64_mem_off(xfbase, fd * 4));
 
-		m.Bind(&done);
+		a64_bind(m, &done);
 	}
 
 	// funct 0x16 RSQRT.S: fd = Fs / rsqrt-source(Ft). Unconditionally clears D|I,
@@ -1056,98 +1054,98 @@ namespace
 	// real asymmetry vs the negative path; replicate both exactly, do not
 	// "simplify" to match). Both non-early-return paths fall through to
 	// checkOverflow(0)/checkUnderflow(0) (value-clamp only, no flags).
-	void EmitRsqrtS(MacroAssembler& m, const Register& xfbase, u32 fd, u32 fs, u32 ft)
+	void EmitRsqrtS(a64_emit* m, const a64r& xfbase, u32 fd, u32 fs, u32 ft)
 	{
-		Label isZero, isNeg, compute, done;
+		a64_label isZero = A64_LABEL_INIT, isNeg = A64_LABEL_INIT, compute = A64_LABEL_INIT, done = A64_LABEL_INIT;
 
-		m.Ldr(w3, MemOperand(xfbase, 252));
-		m.Bic(w3, w3, 0x30000); // clear D|I unconditionally
-		m.Str(w3, MemOperand(xfbase, 252));
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_bic_imm(m, A64_W(3), A64_W(3), 0x30000); // clear D|I unconditionally
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
 
-		m.Ldr(w5, MemOperand(xfbase, ft * 4)); // raw Ft
-		m.And(w2, w5, 0x7f800000);
-		m.Cbz(w2, &isZero);
-		m.Tst(w5, 0x80000000);
-		m.B(&isNeg, ne);
+		a64_ldr(m, A64_W(5), a64_mem_off(xfbase, ft * 4)); // raw Ft
+		a64_and_imm(m, A64_W(2), A64_W(5), 0x7f800000);
+		a64_cbz(m, A64_W(2), &isZero);
+		a64_tst_imm(m, A64_W(5), 0x80000000);
+		a64_b_cond(m, &isNeg, A64_NE);
 
 		// positive, nonzero-exp: s1 = sqrt(fpuDouble(Ft)), NOT re-clamped
-		m.Mov(w0, w5);
-		EmitFpuClampBits(m, w0, w4);
-		m.Fmov(s1, w0);
-		m.Fsqrt(s1, s1);
-		m.B(&compute);
+		a64_mov(m, A64_W(0), A64_W(5));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_fmov(m, A64_S(1), A64_W(0));
+		a64_fsqrt(m, A64_S(1), A64_S(1));
+		a64_b(m, &compute);
 
-		m.Bind(&isNeg);
-		m.Ldr(w3, MemOperand(xfbase, 252));
-		m.Orr(w3, w3, 0x20000); // I
-		m.Orr(w3, w3, 0x40);    // SI
-		m.Str(w3, MemOperand(xfbase, 252));
-		m.Mov(w0, w5);
-		EmitFpuClampBits(m, w0, w4);
-		m.And(w0, w0, 0x7fffffff); // fabs
-		m.Fmov(s1, w0);
-		m.Fsqrt(s1, s1);
-		m.Fmov(w0, s1);
-		EmitFpuClampBits(m, w0, w4); // re-clamp temp.UL before dividing
-		m.Fmov(s1, w0);
-		m.B(&compute);
+		a64_bind(m, &isNeg);
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x20000); // I
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x40);    // SI
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_mov(m, A64_W(0), A64_W(5));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_and_imm(m, A64_W(0), A64_W(0), 0x7fffffff); // fabs
+		a64_fmov(m, A64_S(1), A64_W(0));
+		a64_fsqrt(m, A64_S(1), A64_S(1));
+		a64_fmov(m, A64_W(0), A64_S(1));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4)); // re-clamp temp.UL before dividing
+		a64_fmov(m, A64_S(1), A64_W(0));
+		a64_b(m, &compute);
 
-		m.Bind(&compute);
-		m.Ldr(w0, MemOperand(xfbase, fs * 4));
-		EmitFpuClampBits(m, w0, w4);
-		m.Fmov(s0, w0);
-		m.Fdiv(s0, s0, s1);
-		m.Fmov(w0, s0);
-		EmitFpuClampOutValueOnly(m, w0);
-		m.Str(w0, MemOperand(xfbase, fd * 4));
-		m.B(&done);
+		a64_bind(m, &compute);
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, fs * 4));
+		EmitFpuClampBits(m, A64_W(0), A64_W(4));
+		a64_fmov(m, A64_S(0), A64_W(0));
+		a64_fdiv(m, A64_S(0), A64_S(0), A64_S(1));
+		a64_fmov(m, A64_W(0), A64_S(0));
+		EmitFpuClampOutValueOnly(m, A64_W(0));
+		a64_str(m, A64_W(0), a64_mem_off(xfbase, fd * 4));
+		a64_b(m, &done);
 
-		m.Bind(&isZero);
-		m.Ldr(w3, MemOperand(xfbase, 252));
-		m.Orr(w3, w3, 0x10000); // D
-		m.Orr(w3, w3, 0x20);    // SD
-		m.Str(w3, MemOperand(xfbase, 252));
-		m.And(w0, w5, 0x80000000);
-		m.Orr(w0, w0, 0x7f7fffff);
-		m.Str(w0, MemOperand(xfbase, fd * 4));
+		a64_bind(m, &isZero);
+		a64_ldr(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x10000); // D
+		a64_orr_imm(m, A64_W(3), A64_W(3), 0x20);    // SD
+		a64_str(m, A64_W(3), a64_mem_off(xfbase, 252));
+		a64_and_imm(m, A64_W(0), A64_W(5), 0x80000000);
+		a64_orr_imm(m, A64_W(0), A64_W(0), 0x7f7fffff);
+		a64_str(m, A64_W(0), a64_mem_off(xfbase, fd * 4));
 
-		m.Bind(&done);
+		a64_bind(m, &done);
 	}
 
 	// funct 0x24 CVT.W.S: if the exponent field of the RAW single (no fpuDouble
 	// clamp!) is <= 0x4E800000, fd = (s32)Fs.f (C cast = truncate toward zero,
 	// exactly Fcvtzs); else out-of-range: positive -> 0x7fffffff, negative ->
 	// 0x80000000. Denormals/zero have exp 0 -> in-range -> truncate to 0.
-	void EmitCvtW(MacroAssembler& m, const Register& xfbase, u32 fd, u32 fs)
+	void EmitCvtW(a64_emit* m, const a64r& xfbase, u32 fd, u32 fs)
 	{
-		Label outOfRange, done;
-		m.Ldr(w0, MemOperand(xfbase, fs * 4));
-		m.And(w2, w0, 0x7f800000);
-		m.Mov(w3, 0x4E800000);
-		m.Cmp(w2, w3);
-		m.B(&outOfRange, hi);
-		m.Fmov(s0, w0);
-		m.Fcvtzs(w2, s0);
-		m.Str(w2, MemOperand(xfbase, fd * 4));
-		m.B(&done);
-		m.Bind(&outOfRange);
-		m.Mov(w2, 0x7fffffff);
-		m.Mov(w3, 0x80000000);
-		m.Tst(w0, 0x80000000);
-		m.Csel(w2, w3, w2, ne);
-		m.Str(w2, MemOperand(xfbase, fd * 4));
-		m.Bind(&done);
+		a64_label outOfRange = A64_LABEL_INIT, done = A64_LABEL_INIT;
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, fs * 4));
+		a64_and_imm(m, A64_W(2), A64_W(0), 0x7f800000);
+		a64_mov_imm(m, A64_W(3), 0x4E800000);
+		a64_cmp(m, A64_W(2), A64_W(3));
+		a64_b_cond(m, &outOfRange, A64_HI);
+		a64_fmov(m, A64_S(0), A64_W(0));
+		a64_fcvtzs(m, A64_W(2), A64_S(0));
+		a64_str(m, A64_W(2), a64_mem_off(xfbase, fd * 4));
+		a64_b(m, &done);
+		a64_bind(m, &outOfRange);
+		a64_mov_imm(m, A64_W(2), 0x7fffffff);
+		a64_mov_imm(m, A64_W(3), 0x80000000);
+		a64_tst_imm(m, A64_W(0), 0x80000000);
+		a64_csel(m, A64_W(2), A64_W(3), A64_W(2), A64_NE);
+		a64_str(m, A64_W(2), a64_mem_off(xfbase, fd * 4));
+		a64_bind(m, &done);
 	}
 
 	// rs=0x14 (W format) funct 0x20 CVT.S.W: fd = (float)Fs.SL -- plain signed
 	// int32 -> single conversion (Scvtf, round-to-nearest = host default FPCR,
 	// which EE blocks always run under). No flags, no clamps.
-	void EmitCvtS(MacroAssembler& m, const Register& xfbase, u32 fd, u32 fs)
+	void EmitCvtS(a64_emit* m, const a64r& xfbase, u32 fd, u32 fs)
 	{
-		m.Ldr(w0, MemOperand(xfbase, fs * 4));
-		m.Scvtf(s0, w0);
-		m.Fmov(w0, s0);
-		m.Str(w0, MemOperand(xfbase, fd * 4));
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, fs * 4));
+		a64_scvtf(m, A64_S(0), A64_W(0));
+		a64_fmov(m, A64_W(0), A64_S(0));
+		a64_str(m, A64_W(0), a64_mem_off(xfbase, fd * 4));
 	}
 
 	// funct 0x30 C.F / 0x32 C.EQ / 0x34 C.LT / 0x36 C.LE: the compares are
@@ -1157,35 +1155,35 @@ namespace
 	// replaces collapsed distinct same-signed exponent-255 values, which
 	// are ordinary numbers to the PS2, onto one clamp value and misordered
 	// them. C.F unconditionally clears the C flag (0x00800000).
-	void EmitFpuCmpS(MacroAssembler& m, const Register& xfbase, u32 funct, u32 fs, u32 ft)
+	void EmitFpuCmpS(a64_emit* m, const a64r& xfbase, u32 funct, u32 fs, u32 ft)
 	{
 		if (funct == 0x30) // C.F: clear C only
 		{
-			m.Ldr(w2, MemOperand(xfbase, 252));
-			m.Bic(w2, w2, 0x00800000);
-			m.Str(w2, MemOperand(xfbase, 252));
+			a64_ldr(m, A64_W(2), a64_mem_off(xfbase, 252));
+			a64_bic_imm(m, A64_W(2), A64_W(2), 0x00800000);
+			a64_str(m, A64_W(2), a64_mem_off(xfbase, 252));
 			return;
 		}
-		m.Ldr(w0, MemOperand(xfbase, fs * 4));
-		m.Ldr(w2, MemOperand(xfbase, ft * 4));
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, fs * 4));
+		a64_ldr(m, A64_W(2), a64_mem_off(xfbase, ft * 4));
 		// flush denormals: exponent field zero -> +0
-		m.Tst(w0, 0x7f800000);
-		m.Csel(w0, wzr, w0, eq);
-		m.Tst(w2, 0x7f800000);
-		m.Csel(w2, wzr, w2, eq);
+		a64_tst_imm(m, A64_W(0), 0x7f800000);
+		a64_csel(m, A64_W(0), A64_WZR, A64_W(0), A64_EQ);
+		a64_tst_imm(m, A64_W(2), 0x7f800000);
+		a64_csel(m, A64_W(2), A64_WZR, A64_W(2), A64_EQ);
 		// sign-fold onto two's-complement order
-		m.Asr(w4, w0, 31);
-		m.Lsr(w4, w4, 1);
-		m.Eor(w0, w0, w4);
-		m.Asr(w4, w2, 31);
-		m.Lsr(w4, w4, 1);
-		m.Eor(w2, w2, w4);
-		m.Cmp(w0, w2);
-		m.Cset(w0, funct == 0x32 ? eq : (funct == 0x34 ? lt : le));
-		m.Ldr(w2, MemOperand(xfbase, 252));
-		m.Bic(w2, w2, 0x00800000);
-		m.Orr(w2, w2, Operand(w0, LSL, 23));
-		m.Str(w2, MemOperand(xfbase, 252));
+		a64_asr_imm(m, A64_W(4), A64_W(0), 31);
+		a64_lsr_imm(m, A64_W(4), A64_W(4), 1);
+		a64_eor(m, A64_W(0), A64_W(0), A64_W(4));
+		a64_asr_imm(m, A64_W(4), A64_W(2), 31);
+		a64_lsr_imm(m, A64_W(4), A64_W(4), 1);
+		a64_eor(m, A64_W(2), A64_W(2), A64_W(4));
+		a64_cmp(m, A64_W(0), A64_W(2));
+		a64_cset(m, A64_W(0), funct == 0x32 ? A64_EQ : (funct == 0x34 ? A64_LT : A64_LE));
+		a64_ldr(m, A64_W(2), a64_mem_off(xfbase, 252));
+		a64_bic_imm(m, A64_W(2), A64_W(2), 0x00800000);
+		a64_orr_shift(m, A64_W(2), A64_W(2), A64_W(0), A64_LSL, 23);
+		a64_str(m, A64_W(2), a64_mem_off(xfbase, 252));
 	}
 
 	// funct 0x28 MAX.S / 0x29 MIN.S: pure signed-int32 comparison on the raw
@@ -1196,26 +1194,26 @@ namespace
 	// used as a value register here -- the C.24 crash was exactly that
 	// (`Ldr(w1, [x1, ...])` zeroed the base, sending the result store to
 	// ~NULL); values live in w0/w2..w5 instead.
-	void EmitMaxMinS(MacroAssembler& m, const Register& xfbase, u32 fd, u32 fs, u32 ft, bool isMax)
+	void EmitMaxMinS(a64_emit* m, const a64r& xfbase, u32 fd, u32 fs, u32 ft, bool isMax)
 	{
-		m.Ldr(w0, MemOperand(xfbase, fs * 4));
-		m.Ldr(w2, MemOperand(xfbase, ft * 4));
-		m.Cmp(w0, w2);           // signed s32 compare
-		m.Csel(w3, w0, w2, gt);  // w3 = max(fs,ft)
-		m.Csel(w4, w0, w2, lt);  // w4 = min(fs,ft)
-		m.And(w5, w0, w2);
-		m.Tst(w5, 0x80000000);   // both negative?
-		if (isMax) m.Csel(w0, w4, w3, ne); // bothNeg -> min, else -> max
-		else       m.Csel(w0, w3, w4, ne); // bothNeg -> max, else -> min
-		m.Str(w0, MemOperand(xfbase, fd * 4));
-		m.Ldr(w2, MemOperand(xfbase, 252));
-		m.Bic(w2, w2, 0xC000); // clear O|U
-		m.Str(w2, MemOperand(xfbase, 252));
+		a64_ldr(m, A64_W(0), a64_mem_off(xfbase, fs * 4));
+		a64_ldr(m, A64_W(2), a64_mem_off(xfbase, ft * 4));
+		a64_cmp(m, A64_W(0), A64_W(2));           // signed s32 compare
+		a64_csel(m, A64_W(3), A64_W(0), A64_W(2), A64_GT);  // w3 = max(fs,ft)
+		a64_csel(m, A64_W(4), A64_W(0), A64_W(2), A64_LT);  // w4 = min(fs,ft)
+		a64_and(m, A64_W(5), A64_W(0), A64_W(2));
+		a64_tst_imm(m, A64_W(5), 0x80000000);   // both negative?
+		if (isMax) a64_csel(m, A64_W(0), A64_W(4), A64_W(3), A64_NE); // bothNeg -> min, else -> max
+		else       a64_csel(m, A64_W(0), A64_W(3), A64_W(4), A64_NE); // bothNeg -> max, else -> min
+		a64_str(m, A64_W(0), a64_mem_off(xfbase, fd * 4));
+		a64_ldr(m, A64_W(2), a64_mem_off(xfbase, 252));
+		a64_bic_imm(m, A64_W(2), A64_W(2), 0xC000); // clear O|U
+		a64_str(m, A64_W(2), a64_mem_off(xfbase, 252));
 	}
 
 	// fpuRegisters layout: FPRreg fpr[32] (4 bytes each) at offset 0; u32 fprc[32]
 	// at offset 128 -> FCR31 (the status/cause reg) at offset 128 + 31*4 = 252.
-	void EmitCop1Reg(MacroAssembler& m, const Register& gpr, u32 insn)
+	void EmitCop1Reg(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		const u32 rs    = (insn >> 21) & 31;
 		const u32 rt    = (insn >> 16) & 31;   // GPR for MFC1/MTC1
@@ -1226,12 +1224,12 @@ namespace
 
 		if (rs == 0x00) // MFC1 rt, fs : GPR[rt] = sign_extend_32_to_64(fpr[fs].UL)
 		{
-			if (rt) { m.Mov(x1, fbase); m.Ldr(w0, MemOperand(x1, fs * 4)); m.Sxtw(x0, w0); StoreGpr(m, x0, gpr, rt); }
+			if (rt) { a64_mov_imm(m, A64_X(1), fbase); a64_ldr(m, A64_W(0), a64_mem_off(A64_X(1), fs * 4)); a64_sxtw(m, A64_X(0), A64_W(0)); StoreGpr(m, A64_X(0), gpr, rt); }
 			return;
 		}
 		if (rs == 0x04) // MTC1 rt, fs : fpr[fs].UL = GPR[rt].UL[0]
 		{
-			m.Mov(x1, fbase); LoadGpr(m, x0, gpr, rt); m.Str(w0, MemOperand(x1, fs * 4));
+			a64_mov_imm(m, A64_X(1), fbase); LoadGpr(m, A64_X(0), gpr, rt); a64_str(m, A64_W(0), a64_mem_off(A64_X(1), fs * 4));
 			return;
 		}
 		// C.65: the control-register moves. fs is a compile-time constant, so
@@ -1251,77 +1249,77 @@ namespace
 		{
 			if (rt)
 			{
-				m.Mov(x1, fbase);
+				a64_mov_imm(m, A64_X(1), fbase);
 				if (fs & 0x10)
 				{
-					m.Ldr(w0, MemOperand(x1, 252));
-					m.And(w0, w0, 0x0083c078);
-					m.Orr(w0, w0, 0x01000001);
-					m.Sxtw(x0, w0);
+					a64_ldr(m, A64_W(0), a64_mem_off(A64_X(1), 252));
+					a64_and_imm(m, A64_W(0), A64_W(0), 0x0083c078);
+					a64_orr_imm(m, A64_W(0), A64_W(0), 0x01000001);
+					a64_sxtw(m, A64_X(0), A64_W(0));
 				}
 				else
 				{
-					m.Ldr(w0, MemOperand(x1, 128));
-					m.Sxtw(x0, w0);
+					a64_ldr(m, A64_W(0), a64_mem_off(A64_X(1), 128));
+					a64_sxtw(m, A64_X(0), A64_W(0));
 				}
-				StoreGpr(m, x0, gpr, rt);
+				StoreGpr(m, A64_X(0), gpr, rt);
 			}
 			return;
 		}
 		if (rs == 0x06) // CTC1 rt, fs : only FCR31 is writable
 		{
-			if (fs == 31) { m.Mov(x1, fbase); LoadGpr(m, x0, gpr, rt); m.Str(w0, MemOperand(x1, 252)); }
+			if (fs == 31) { a64_mov_imm(m, A64_X(1), fbase); LoadGpr(m, A64_X(0), gpr, rt); a64_str(m, A64_W(0), a64_mem_off(A64_X(1), 252)); }
 			return;
 		}
 		if (rs == 0x14) // W format: CVT.S.W only
 		{
-			m.Mov(x1, fbase);
-			EmitCvtS(m, x1, fd, fs);
+			a64_mov_imm(m, A64_X(1), fbase);
+			EmitCvtS(m, A64_X(1), fd, fs);
 			return;
 		}
 		// rs == 0x10 single-precision ops
 		const u32 ft = (insn >> 16) & 31;
-		m.Mov(x1, fbase);
+		a64_mov_imm(m, A64_X(1), fbase);
 		if (funct == 0x00 || funct == 0x01 || funct == 0x02) // ADD.S/SUB.S/MUL.S
 		{
 			if (funct <= 1)
-				EmitFpuAddSubExact(m, x1, funct == 1, fd * 4, fs, ft);
+				EmitFpuAddSubExact(m, A64_X(1), funct == 1, fd * 4, fs, ft);
 			else
-				EmitFpuBinaryS(m, x1, funct, fd * 4, fs, ft);
+				EmitFpuBinaryS(m, A64_X(1), funct, fd * 4, fs, ft);
 			return;
 		}
 		if (funct == 0x18 || funct == 0x19 || funct == 0x1a) // ADDA.S/SUBA.S/MULA.S
 		{
 			if ((funct & 3) <= 1)
-				EmitFpuAddSubExact(m, x1, (funct & 3) == 1, kFpuAcc, fs, ft);
+				EmitFpuAddSubExact(m, A64_X(1), (funct & 3) == 1, kFpuAcc, fs, ft);
 			else
-				EmitFpuBinaryS(m, x1, funct & 3, kFpuAcc, fs, ft);
+				EmitFpuBinaryS(m, A64_X(1), funct & 3, kFpuAcc, fs, ft);
 			return;
 		}
-		if (funct == 0x03) { EmitDivS(m, x1, fd, fs, ft); return; }   // DIV.S
-		if (funct == 0x04) { EmitSqrtS(m, x1, fd, ft); return; }     // SQRT.S (source is Ft, not Fs)
-		if (funct == 0x16) { EmitRsqrtS(m, x1, fd, fs, ft); return; } // RSQRT.S
-		if (funct == 0x1c) { EmitFpuMaddS(m, x1, fd, fs, ft, false); return; } // MADD.S
-		if (funct == 0x1d) { EmitFpuMaddS(m, x1, fd, fs, ft, true); return; }  // MSUB.S
-		if (funct == 0x1e) { EmitFpuMaddaS(m, x1, fs, ft, false); return; }    // MADDA.S
-		if (funct == 0x1f) { EmitFpuMaddaS(m, x1, fs, ft, true); return; }     // MSUBA.S
-		if (funct == 0x24) { EmitCvtW(m, x1, fd, fs); return; }               // CVT.W.S
-		if (funct == 0x28) { EmitMaxMinS(m, x1, fd, fs, ft, true); return; }  // MAX.S
-		if (funct == 0x29) { EmitMaxMinS(m, x1, fd, fs, ft, false); return; } // MIN.S
+		if (funct == 0x03) { EmitDivS(m, A64_X(1), fd, fs, ft); return; }   // DIV.S
+		if (funct == 0x04) { EmitSqrtS(m, A64_X(1), fd, ft); return; }     // SQRT.S (source is Ft, not Fs)
+		if (funct == 0x16) { EmitRsqrtS(m, A64_X(1), fd, fs, ft); return; } // RSQRT.S
+		if (funct == 0x1c) { EmitFpuMaddS(m, A64_X(1), fd, fs, ft, false); return; } // MADD.S
+		if (funct == 0x1d) { EmitFpuMaddS(m, A64_X(1), fd, fs, ft, true); return; }  // MSUB.S
+		if (funct == 0x1e) { EmitFpuMaddaS(m, A64_X(1), fs, ft, false); return; }    // MADDA.S
+		if (funct == 0x1f) { EmitFpuMaddaS(m, A64_X(1), fs, ft, true); return; }     // MSUBA.S
+		if (funct == 0x24) { EmitCvtW(m, A64_X(1), fd, fs); return; }               // CVT.W.S
+		if (funct == 0x28) { EmitMaxMinS(m, A64_X(1), fd, fs, ft, true); return; }  // MAX.S
+		if (funct == 0x29) { EmitMaxMinS(m, A64_X(1), fd, fs, ft, false); return; } // MIN.S
 		if (funct == 0x30 || funct == 0x32 || funct == 0x34 || funct == 0x36) // C.F/C.EQ/C.LT/C.LE
 		{
-			EmitFpuCmpS(m, x1, funct, fs, ft);
+			EmitFpuCmpS(m, A64_X(1), funct, fs, ft);
 			return;
 		}
-		m.Ldr(w0, MemOperand(x1, fs * 4));
-		if (funct == 0x06) { m.Str(w0, MemOperand(x1, fd * 4)); return; } // MOV.S
-		if (funct == 0x05) m.And(w0, w0, 0x7fffffff);                     // ABS.S
-		else               m.Eor(w0, w0, 0x80000000);                    // NEG.S
-		m.Str(w0, MemOperand(x1, fd * 4));
+		a64_ldr(m, A64_W(0), a64_mem_off(A64_X(1), fs * 4));
+		if (funct == 0x06) { a64_str(m, A64_W(0), a64_mem_off(A64_X(1), fd * 4)); return; } // MOV.S
+		if (funct == 0x05) a64_and_imm(m, A64_W(0), A64_W(0), 0x7fffffff);                     // ABS.S
+		else               a64_eor_imm(m, A64_W(0), A64_W(0), 0x80000000);                    // NEG.S
+		a64_str(m, A64_W(0), a64_mem_off(A64_X(1), fd * 4));
 		// clear the O|U cause flags in FCR31 (ABS.S/NEG.S do clearFPUFlags(O|U))
-		m.Ldr(w0, MemOperand(x1, 252));
-		m.Bic(w0, w0, 0xC000);
-		m.Str(w0, MemOperand(x1, 252));
+		a64_ldr(m, A64_W(0), a64_mem_off(A64_X(1), 252));
+		a64_bic_imm(m, A64_W(0), A64_W(0), 0xC000);
+		a64_str(m, A64_W(0), a64_mem_off(A64_X(1), 252));
 	}
 
 	// ---- MMI (opcode 0x1C): 128-bit parallel integer ops -> ARM NEON ----
@@ -1420,13 +1418,13 @@ namespace
 	bool MmiSupported(u32 insn) { int f; return MmiAction(insn, &f) >= 0; }
 
 	// Load a full 128-bit GPR into a NEON Q-register (r0 reads as all-zero).
-	void LoadQ(MacroAssembler& m, const VRegister& q, const Register& gpr, u32 idx)
+	void LoadQ(a64_emit* m, const a64r& q, const a64r& gpr, u32 idx)
 	{
-		if (idx == 0) m.Movi(q.V2D(), (uint64_t)0);
-		else          m.Ldr(q, MemOperand(gpr, idx * 16));
+		if (idx == 0) a64_movi(m, a64_as(q, A64K_2D), (uint64_t)0);
+		else          a64_ldr(m, q, a64_mem_off(gpr, idx * 16));
 	}
 
-	void EmitMmi(MacroAssembler& m, const Register& gpr, u32 insn)
+	void EmitMmi(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		int fmt;
 		const int act = MmiAction(insn, &fmt);
@@ -1435,48 +1433,48 @@ namespace
 
 		s_rc.FlushReg(m, gpr, rs); // 128-bit sources are read from memory
 		s_rc.FlushReg(m, gpr, rt);
-		LoadQ(m, q1, gpr, rs); // rs -> v1
-		LoadQ(m, q2, gpr, rt); // rt -> v2
-		VRegister d, n, o;     // n = rs(v1), o = rt(v2)
+		LoadQ(m, A64_Q(1), gpr, rs); // rs -> v1
+		LoadQ(m, A64_Q(2), gpr, rt); // rt -> v2
+		a64r d, n, o;     // n = rs(v1), o = rt(v2)
 		switch (fmt)
 		{
-			case 0:  d = v0.V16B(); n = v1.V16B(); o = v2.V16B(); break;
-			case 1:  d = v0.V8H();  n = v1.V8H();  o = v2.V8H();  break;
-			case 2:  d = v0.V4S();  n = v1.V4S();  o = v2.V4S();  break;
-			default: d = v0.V2D();  n = v1.V2D();  o = v2.V2D();  break;
+			case 0:  d = a64_as(A64_Q(0), A64K_16B); n = a64_as(A64_Q(1), A64K_16B); o = a64_as(A64_Q(2), A64K_16B); break;
+			case 1:  d = a64_as(A64_Q(0), A64K_8H);  n = a64_as(A64_Q(1), A64K_8H);  o = a64_as(A64_Q(2), A64K_8H);  break;
+			case 2:  d = a64_as(A64_Q(0), A64K_4S);  n = a64_as(A64_Q(1), A64K_4S);  o = a64_as(A64_Q(2), A64K_4S);  break;
+			default: d = a64_as(A64_Q(0), A64K_2D);  n = a64_as(A64_Q(1), A64K_2D);  o = a64_as(A64_Q(2), A64K_2D);  break;
 		}
 		// Immediate shift amount: PS*H uses sa & 0xf, PS*W the full 5-bit sa.
 		const int shamt = (int)((insn >> 6) & (fmt == 1 ? 0xf : 0x1f));
 		switch (act)
 		{
-			case M_ADD:   m.Add(d, n, o);   break;
-			case M_SUB:   m.Sub(d, n, o);   break;
-			case M_SQADD: m.Sqadd(d, n, o); break;
-			case M_UQADD: m.Uqadd(d, n, o); break;
-			case M_SQSUB: m.Sqsub(d, n, o); break;
-			case M_UQSUB: m.Uqsub(d, n, o); break;
-			case M_AND:   m.And(d, n, o);   break;
-			case M_ORR:   m.Orr(d, n, o);   break;
-			case M_EOR:   m.Eor(d, n, o);   break;
-			case M_NOR:   m.Orr(d, n, o); m.Mvn(d, d); break;
-			case M_CMGT:  m.Cmgt(d, n, o);  break;
-			case M_CMEQ:  m.Cmeq(d, n, o);  break;
-			case M_SMAX:  m.Smax(d, n, o);  break;
-			case M_SMIN:  m.Smin(d, n, o);  break;
-			case M_ZIP1:  m.Zip1(d, o, n);  break; // PEXTL: interleave rt then rs
-			case M_ZIP2:  m.Zip2(d, o, n);  break; // PEXTU
+			case M_ADD:   a64_add(m, d, n, o);   break;
+			case M_SUB:   a64_sub(m, d, n, o);   break;
+			case M_SQADD: a64_sqadd(m, d, n, o); break;
+			case M_UQADD: a64_uqadd(m, d, n, o); break;
+			case M_SQSUB: a64_sqsub(m, d, n, o); break;
+			case M_UQSUB: a64_uqsub(m, d, n, o); break;
+			case M_AND:   a64_and(m, d, n, o);   break;
+			case M_ORR:   a64_orr(m, d, n, o);   break;
+			case M_EOR:   a64_eor(m, d, n, o);   break;
+			case M_NOR:   a64_orr(m, d, n, o); a64_mvn(m, d, d); break;
+			case M_CMGT:  a64_cmgt(m, d, n, o);  break;
+			case M_CMEQ:  a64_cmeq(m, d, n, o);  break;
+			case M_SMAX:  a64_smax(m, d, n, o);  break;
+			case M_SMIN:  a64_smin(m, d, n, o);  break;
+			case M_ZIP1:  a64_zip1(m, d, o, n);  break; // PEXTL: interleave rt then rs
+			case M_ZIP2:  a64_zip2(m, d, o, n);  break; // PEXTU
 			// NEON USHR/SSHR immediates encode 1..lanebits only; shift 0 is a copy.
-			case M_SLLI:  m.Shl(d, o, shamt); break;                                      // PSLLH/PSLLW
-			case M_SRLI:  if (shamt) m.Ushr(d, o, shamt); else m.Mov(v0.V16B(), v2.V16B()); break; // PSRLH/PSRLW
-			case M_SRAI:  if (shamt) m.Sshr(d, o, shamt); else m.Mov(v0.V16B(), v2.V16B()); break; // PSRAH/PSRAW
-			case M_PACK:  m.Uzp1(d, o, n);  break; // PPAC*: rt evens -> low, rs evens -> high
-			case M_CPYLD: m.Zip1(d, o, n);  break; // PCPYLD: rd = {rt.UD[0], rs.UD[0]}
-			case M_CPYUD: m.Zip2(d, n, o);  break; // PCPYUD: rd = {rs.UD[1], rt.UD[1]}
+			case M_SLLI:  a64_shl(m, d, o, shamt); break;                                      // PSLLH/PSLLW
+			case M_SRLI:  if (shamt) a64_ushr(m, d, o, shamt); else a64_mov(m, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(2), A64K_16B)); break; // PSRLH/PSRLW
+			case M_SRAI:  if (shamt) a64_sshr(m, d, o, shamt); else a64_mov(m, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(2), A64K_16B)); break; // PSRAH/PSRAW
+			case M_PACK:  a64_uzp1(m, d, o, n);  break; // PPAC*: rt evens -> low, rs evens -> high
+			case M_CPYLD: a64_zip1(m, d, o, n);  break; // PCPYLD: rd = {rt.UD[0], rs.UD[0]}
+			case M_CPYUD: a64_zip2(m, d, n, o);  break; // PCPYUD: rd = {rs.UD[1], rt.UD[1]}
 			// PREVH: rd.US[0..3] = rt.US[3..0], rd.US[4..7] = rt.US[7..4] -- exactly
 			// what REV64 does on a .8H view (reverse halfwords within each 64 bits).
-			case M_REVH:  m.Rev64(d, o);    break;
+			case M_REVH:  a64_rev64(m, d, o);    break;
 		}
-		m.Str(q0, MemOperand(gpr, rd * 16));
+		a64_str(m, A64_Q(0), a64_mem_off(gpr, rd * 16));
 		s_rc.Invalidate(rd); // 128-bit write bypasses StoreGpr
 	}
 
@@ -1544,7 +1542,7 @@ namespace
 		return MP_NONE;
 	}
 
-	void EmitMmiPerm(MacroAssembler& m, const Register& gpr, u32 insn)
+	void EmitMmiPerm(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		const int act = MmiPermAction(insn);
 		const u32 rd = (insn >> 11) & 31, rs = (insn >> 21) & 31, rt = (insn >> 16) & 31;
@@ -1565,14 +1563,14 @@ namespace
 			for (i = 0; i < 2; i++)
 			{
 				const u32 word = (u32)(i * 2);
-				m.Ldr(w0, MemOperand(gpr, rt * 16 + word * 4));
-				m.Ldr(w1, MemOperand(gpr, rs * 16 + word * 4));
-				m.And(w1, w1, 0x1f);
-				if      (act == MP_PSLLVW) m.Lsl(w2, w0, w1);
-				else if (act == MP_PSRLVW) m.Lsr(w2, w0, w1);
-				else                       m.Asr(w2, w0, w1);
-				m.Sxtw(x2, w2);
-				m.Str(x2, MemOperand(gpr, rd * 16 + (u32)(i * 8)));
+				a64_ldr(m, A64_W(0), a64_mem_off(gpr, rt * 16 + word * 4));
+				a64_ldr(m, A64_W(1), a64_mem_off(gpr, rs * 16 + word * 4));
+				a64_and_imm(m, A64_W(1), A64_W(1), 0x1f);
+				if      (act == MP_PSLLVW) a64_lsl(m, A64_W(2), A64_W(0), A64_W(1));
+				else if (act == MP_PSRLVW) a64_lsr(m, A64_W(2), A64_W(0), A64_W(1));
+				else                       a64_asr(m, A64_W(2), A64_W(0), A64_W(1));
+				a64_sxtw(m, A64_X(2), A64_W(2));
+				a64_str(m, A64_X(2), a64_mem_off(gpr, rd * 16 + (u32)(i * 8)));
 			}
 			s_rc.Invalidate(rd);
 			return;
@@ -1584,12 +1582,12 @@ namespace
 		{
 			s_rc.FlushReg(m, gpr, rs);
 			s_rc.FlushReg(m, gpr, rt);
-			LoadQ(m, q1, gpr, rs);
-			LoadQ(m, q2, gpr, rt);
-			m.Sub(v3.V8H(), v1.V8H(), v2.V8H());
-			m.Add(v4.V8H(), v1.V8H(), v2.V8H());
-			m.Ins(v3.V2D(), 1, v4.V2D(), 1); // keep sub low, add high
-			m.Str(q3, MemOperand(gpr, rd * 16));
+			LoadQ(m, A64_Q(1), gpr, rs);
+			LoadQ(m, A64_Q(2), gpr, rt);
+			a64_sub(m, a64_as(A64_Q(3), A64K_8H), a64_as(A64_Q(1), A64K_8H), a64_as(A64_Q(2), A64K_8H));
+			a64_add(m, a64_as(A64_Q(4), A64K_8H), a64_as(A64_Q(1), A64K_8H), a64_as(A64_Q(2), A64K_8H));
+			a64_ins_elem(m, a64_as(A64_Q(3), A64K_2D), 1, a64_as(A64_Q(4), A64K_2D), 1); // keep sub low, add high
+			a64_str(m, A64_Q(3), a64_mem_off(gpr, rd * 16));
 			s_rc.Invalidate(rd);
 			return;
 		}
@@ -1599,19 +1597,19 @@ namespace
 		if (act == MP_PEXT5)
 		{
 			s_rc.FlushReg(m, gpr, rt);
-			LoadQ(m, q1, gpr, rt);
-			m.Movi(v4.V4S(), 0x1f);
-			m.Shl(v5.V4S(), v4.V4S(), 5);   // 0x3e0
-			m.Shl(v6.V4S(), v4.V4S(), 10);  // 0x7c00
-			m.Movi(v7.V4S(), 0x80, LSL, 8); // 0x8000
-			m.And(v0.V16B(), v1.V16B(), v4.V16B()); m.Shl(v0.V4S(), v0.V4S(), 3);
-			m.And(v2.V16B(), v1.V16B(), v5.V16B()); m.Shl(v2.V4S(), v2.V4S(), 6);
-			m.Orr(v0.V16B(), v0.V16B(), v2.V16B());
-			m.And(v2.V16B(), v1.V16B(), v6.V16B()); m.Shl(v2.V4S(), v2.V4S(), 9);
-			m.Orr(v0.V16B(), v0.V16B(), v2.V16B());
-			m.And(v2.V16B(), v1.V16B(), v7.V16B()); m.Shl(v2.V4S(), v2.V4S(), 16);
-			m.Orr(v0.V16B(), v0.V16B(), v2.V16B());
-			m.Str(q0, MemOperand(gpr, rd * 16));
+			LoadQ(m, A64_Q(1), gpr, rt);
+			a64_movi(m, a64_as(A64_Q(4), A64K_4S), 0x1f);
+			a64_shl(m, a64_as(A64_Q(5), A64K_4S), a64_as(A64_Q(4), A64K_4S), 5);   // 0x3e0
+			a64_shl(m, a64_as(A64_Q(6), A64K_4S), a64_as(A64_Q(4), A64K_4S), 10);  // 0x7c00
+			a64_movi_shift(m, a64_as(A64_Q(7), A64K_4S), 0x80, A64_LSL, 8); // 0x8000
+			a64_and(m, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(1), A64K_16B), a64_as(A64_Q(4), A64K_16B)); a64_shl(m, a64_as(A64_Q(0), A64K_4S), a64_as(A64_Q(0), A64K_4S), 3);
+			a64_and(m, a64_as(A64_Q(2), A64K_16B), a64_as(A64_Q(1), A64K_16B), a64_as(A64_Q(5), A64K_16B)); a64_shl(m, a64_as(A64_Q(2), A64K_4S), a64_as(A64_Q(2), A64K_4S), 6);
+			a64_orr(m, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(2), A64K_16B));
+			a64_and(m, a64_as(A64_Q(2), A64K_16B), a64_as(A64_Q(1), A64K_16B), a64_as(A64_Q(6), A64K_16B)); a64_shl(m, a64_as(A64_Q(2), A64K_4S), a64_as(A64_Q(2), A64K_4S), 9);
+			a64_orr(m, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(2), A64K_16B));
+			a64_and(m, a64_as(A64_Q(2), A64K_16B), a64_as(A64_Q(1), A64K_16B), a64_as(A64_Q(7), A64K_16B)); a64_shl(m, a64_as(A64_Q(2), A64K_4S), a64_as(A64_Q(2), A64K_4S), 16);
+			a64_orr(m, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(2), A64K_16B));
+			a64_str(m, A64_Q(0), a64_mem_off(gpr, rd * 16));
 			s_rc.Invalidate(rd);
 			return;
 		}
@@ -1619,10 +1617,10 @@ namespace
 		if (act == MP_PABSW || act == MP_PABSH)
 		{
 			s_rc.FlushReg(m, gpr, rt);
-			LoadQ(m, q1, gpr, rt);
-			if (act == MP_PABSW) m.Sqabs(v0.V4S(), v1.V4S());
-			else                 m.Sqabs(v0.V8H(), v1.V8H());
-			m.Str(q0, MemOperand(gpr, rd * 16));
+			LoadQ(m, A64_Q(1), gpr, rt);
+			if (act == MP_PABSW) a64_sqabs(m, a64_as(A64_Q(0), A64K_4S), a64_as(A64_Q(1), A64K_4S));
+			else                 a64_sqabs(m, a64_as(A64_Q(0), A64K_8H), a64_as(A64_Q(1), A64K_8H));
+			a64_str(m, A64_Q(0), a64_mem_off(gpr, rd * 16));
 			s_rc.Invalidate(rd); // 128-bit write bypasses StoreGpr
 			return;
 		}
@@ -1649,7 +1647,7 @@ namespace
 		                       (act == MP_PEXCH)  ? kPexch  :
 		                       (act == MP_PINTH)  ? kPinth  : kPinteh;
 		// w0..w7 hold the gathered elements; count is 4 or 8, so they fit.
-		const Register src[8] = { w0, w1, w2, w3, w4, w5, w6, w7 };
+		const a64r src[8] = { A64_W(0), A64_W(1), A64_W(2), A64_W(3), A64_W(4), A64_W(5), A64_W(6), A64_W(7) };
 
 		s_rc.FlushReg(m, gpr, rt);
 		if (two)
@@ -1661,14 +1659,14 @@ namespace
 			const bool from = (e >= 8);            // two-source: 8.. selects rs
 			const u32  base = (from ? rs : rt) * 16;
 			const u32  off  = base + (u32)((from ? e - 8 : e) * size);
-			if (word) m.Ldr(src[i], MemOperand(gpr, off));
-			else      m.Ldrh(src[i], MemOperand(gpr, off));
+			if (word) a64_ldr(m, src[i], a64_mem_off(gpr, off));
+			else      a64_ldrh(m, src[i], a64_mem_off(gpr, off));
 		}
 		for (i = 0; i < count; i++)
 		{
 			const u32 off = rd * 16 + (u32)(i * size);
-			if (word) m.Str(src[i], MemOperand(gpr, off));
-			else      m.Strh(src[i], MemOperand(gpr, off));
+			if (word) a64_str(m, src[i], a64_mem_off(gpr, off));
+			else      a64_strh(m, src[i], a64_mem_off(gpr, off));
 		}
 		s_rc.Invalidate(rd); // 128-bit write bypasses StoreGpr
 	}
@@ -1704,7 +1702,7 @@ namespace
 		return MH_NONE;
 	}
 
-	void EmitMmiHmacc(MacroAssembler& m, const Register& gpr, u32 insn)
+	void EmitMmiHmacc(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		const int  act  = MmiHmaccAction(insn);
 		const u32  rd   = (insn >> 11) & 31, rs = (insn >> 21) & 31, rt = (insn >> 16) & 31;
@@ -1722,13 +1720,13 @@ namespace
 			for (i = 0; i < 8; i++)
 			{
 				const u32 dest = (kToLo[i] ? kLO : kHI) + (u32)(kWord[i] * 4);
-				m.Ldrsh(w0, MemOperand(gpr, rs * 16 + (u32)(i * 2)));
-				m.Ldrsh(w1, MemOperand(gpr, rt * 16 + (u32)(i * 2)));
-				m.Mul(w2, w0, w1);
-				m.Ldr(w3, MemOperand(gpr, dest));
-				if (add) m.Add(w2, w3, w2);
-				else     m.Sub(w2, w3, w2);
-				m.Str(w2, MemOperand(gpr, dest));
+				a64_ldrsh(m, A64_W(0), a64_mem_off(gpr, rs * 16 + (u32)(i * 2)));
+				a64_ldrsh(m, A64_W(1), a64_mem_off(gpr, rt * 16 + (u32)(i * 2)));
+				a64_mul(m, A64_W(2), A64_W(0), A64_W(1));
+				a64_ldr(m, A64_W(3), a64_mem_off(gpr, dest));
+				if (add) a64_add(m, A64_W(2), A64_W(3), A64_W(2));
+				else     a64_sub(m, A64_W(2), A64_W(3), A64_W(2));
+				a64_str(m, A64_W(2), a64_mem_off(gpr, dest));
 			}
 		}
 		else
@@ -1741,31 +1739,31 @@ namespace
 			for (i = 0; i < 4; i++)
 			{
 				const u32 base = (kToLo[i] ? kLO : kHI);
-				m.Ldrsh(w0, MemOperand(gpr, rs * 16 + (u32)((kN[i] + 1) * 2)));
-				m.Ldrsh(w1, MemOperand(gpr, rt * 16 + (u32)((kN[i] + 1) * 2)));
-				m.Mul(w2, w0, w1);                      // firsttemp
-				m.Ldrsh(w0, MemOperand(gpr, rs * 16 + (u32)(kN[i] * 2)));
-				m.Ldrsh(w1, MemOperand(gpr, rt * 16 + (u32)(kN[i] * 2)));
-				m.Mul(w3, w0, w1);
-				if (add) m.Add(w1, w2, w3);
-				else     m.Sub(w1, w2, w3);
-				m.Str(w1, MemOperand(gpr, base + (u32)(kDd[i] * 4)));
+				a64_ldrsh(m, A64_W(0), a64_mem_off(gpr, rs * 16 + (u32)((kN[i] + 1) * 2)));
+				a64_ldrsh(m, A64_W(1), a64_mem_off(gpr, rt * 16 + (u32)((kN[i] + 1) * 2)));
+				a64_mul(m, A64_W(2), A64_W(0), A64_W(1));                      // firsttemp
+				a64_ldrsh(m, A64_W(0), a64_mem_off(gpr, rs * 16 + (u32)(kN[i] * 2)));
+				a64_ldrsh(m, A64_W(1), a64_mem_off(gpr, rt * 16 + (u32)(kN[i] * 2)));
+				a64_mul(m, A64_W(3), A64_W(0), A64_W(1));
+				if (add) a64_add(m, A64_W(1), A64_W(2), A64_W(3));
+				else     a64_sub(m, A64_W(1), A64_W(2), A64_W(3));
+				a64_str(m, A64_W(1), a64_mem_off(gpr, base + (u32)(kDd[i] * 4)));
 				if (!add)
-					m.Mvn(w2, w2);                      // ~firsttemp
-				m.Str(w2, MemOperand(gpr, base + (u32)((kDd[i] + 1) * 4)));
+					a64_mvn(m, A64_W(2), A64_W(2));                      // ~firsttemp
+				a64_str(m, A64_W(2), a64_mem_off(gpr, base + (u32)((kDd[i] + 1) * 4)));
 			}
 		}
 
 		if (rd)
 		{
-			m.Ldr(w0, MemOperand(gpr, kLO + 0));
-			m.Ldr(w1, MemOperand(gpr, kHI + 0));
-			m.Ldr(w2, MemOperand(gpr, kLO + 8));
-			m.Ldr(w3, MemOperand(gpr, kHI + 8));
-			m.Str(w0, MemOperand(gpr, rd * 16 + 0));
-			m.Str(w1, MemOperand(gpr, rd * 16 + 4));
-			m.Str(w2, MemOperand(gpr, rd * 16 + 8));
-			m.Str(w3, MemOperand(gpr, rd * 16 + 12));
+			a64_ldr(m, A64_W(0), a64_mem_off(gpr, kLO + 0));
+			a64_ldr(m, A64_W(1), a64_mem_off(gpr, kHI + 0));
+			a64_ldr(m, A64_W(2), a64_mem_off(gpr, kLO + 8));
+			a64_ldr(m, A64_W(3), a64_mem_off(gpr, kHI + 8));
+			a64_str(m, A64_W(0), a64_mem_off(gpr, rd * 16 + 0));
+			a64_str(m, A64_W(1), a64_mem_off(gpr, rd * 16 + 4));
+			a64_str(m, A64_W(2), a64_mem_off(gpr, rd * 16 + 8));
+			a64_str(m, A64_W(3), a64_mem_off(gpr, rd * 16 + 12));
 			s_rc.Invalidate(rd);
 		}
 	}
@@ -1792,7 +1790,7 @@ namespace
 		return MA_NONE;
 	}
 
-	void EmitMmiMacc(MacroAssembler& m, const Register& gpr, u32 insn)
+	void EmitMmiMacc(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		const int  act  = MmiMaccAction(insn);
 		const u32  rd   = (insn >> 11) & 31, rs = (insn >> 21) & 31, rt = (insn >> 16) & 31;
@@ -1810,41 +1808,41 @@ namespace
 			if (act == MA_PMADDUW)
 			{
 				// tempu = (LO.UL[ss] | HI.UL[ss] << 32) + rs.UL[ss] * rt.UL[ss]
-				m.Ldr(w0, MemOperand(gpr, rs * 16 + ss * 4));
-				m.Ldr(w1, MemOperand(gpr, rt * 16 + ss * 4));
-				m.Umull(x2, w0, w1);
-				m.Ldr(w3, MemOperand(gpr, kLO + ss * 4));
-				m.Ldr(w4, MemOperand(gpr, kHI + ss * 4));
-				m.Orr(x3, x3, Operand(x4, LSL, 32));
-				m.Add(x2, x2, x3);
-				m.Sxtw(x5, w2);                     // LO = sign-extended low
-				m.Lsr(x6, x2, 32); m.Sxtw(x6, w6);  // HI = sign-extended high
-				m.Str(x5, MemOperand(gpr, kLO + lane));
-				m.Str(x6, MemOperand(gpr, kHI + lane));
+				a64_ldr(m, A64_W(0), a64_mem_off(gpr, rs * 16 + ss * 4));
+				a64_ldr(m, A64_W(1), a64_mem_off(gpr, rt * 16 + ss * 4));
+				a64_umull(m, A64_X(2), A64_W(0), A64_W(1));
+				a64_ldr(m, A64_W(3), a64_mem_off(gpr, kLO + ss * 4));
+				a64_ldr(m, A64_W(4), a64_mem_off(gpr, kHI + ss * 4));
+				a64_orr_shift(m, A64_X(3), A64_X(3), A64_X(4), A64_LSL, 32);
+				a64_add(m, A64_X(2), A64_X(2), A64_X(3));
+				a64_sxtw(m, A64_X(5), A64_W(2));                     // LO = sign-extended low
+				a64_lsr_imm(m, A64_X(6), A64_X(2), 32); a64_sxtw(m, A64_X(6), A64_W(6));  // HI = sign-extended high
+				a64_str(m, A64_X(5), a64_mem_off(gpr, kLO + lane));
+				a64_str(m, A64_X(6), a64_mem_off(gpr, kHI + lane));
 				if (rd)
-					m.Str(x2, MemOperand(gpr, rd * 16 + lane)); // rd = whole sum
+					a64_str(m, A64_X(2), a64_mem_off(gpr, rd * 16 + lane)); // rd = whole sum
 				continue;
 			}
 
 			// product = (s64)rs.SL[ss] * rt.SL[ss]
-			m.Ldr(w0, MemOperand(gpr, rs * 16 + ss * 4));
-			m.Ldr(w1, MemOperand(gpr, rt * 16 + ss * 4));
-			m.Smull(x2, w0, w1);
+			a64_ldr(m, A64_W(0), a64_mem_off(gpr, rs * 16 + ss * 4));
+			a64_ldr(m, A64_W(1), a64_mem_off(gpr, rt * 16 + ss * 4));
+			a64_smull(m, A64_X(2), A64_W(0), A64_W(1));
 			// acc = LO.UL[ss] | HI.UL[ss] << 32, as one 64-bit value
-			m.Ldr(w3, MemOperand(gpr, kLO + ss * 4));
-			m.Ldr(w4, MemOperand(gpr, kHI + ss * 4));
-			m.Orr(x3, x3, Operand(x4, LSL, 32));
-			if (madd) m.Add(x2, x3, x2);
-			else      m.Sub(x2, x3, x2);
-			m.Sxtw(x5, w2);                      // LO = sign-extended low
-			m.Lsr(x6, x2, 32); m.Sxtw(x6, w6);   // HI = sign-extended high
-			m.Str(x5, MemOperand(gpr, kLO + lane));
-			m.Str(x6, MemOperand(gpr, kHI + lane));
+			a64_ldr(m, A64_W(3), a64_mem_off(gpr, kLO + ss * 4));
+			a64_ldr(m, A64_W(4), a64_mem_off(gpr, kHI + ss * 4));
+			a64_orr_shift(m, A64_X(3), A64_X(3), A64_X(4), A64_LSL, 32);
+			if (madd) a64_add(m, A64_X(2), A64_X(3), A64_X(2));
+			else      a64_sub(m, A64_X(2), A64_X(3), A64_X(2));
+			a64_sxtw(m, A64_X(5), A64_W(2));                      // LO = sign-extended low
+			a64_lsr_imm(m, A64_X(6), A64_X(2), 32); a64_sxtw(m, A64_X(6), A64_W(6));   // HI = sign-extended high
+			a64_str(m, A64_X(5), a64_mem_off(gpr, kLO + lane));
+			a64_str(m, A64_X(6), a64_mem_off(gpr, kHI + lane));
 			if (rd)
 			{
 				// rd word dd*2 takes LO's low word, dd*2+1 takes HI's,
 				// which together are the 64-bit result.
-				m.Str(x2, MemOperand(gpr, rd * 16 + lane));
+				a64_str(m, A64_X(2), a64_mem_off(gpr, rd * 16 + lane));
 			}
 		}
 		if (rd)
@@ -1876,7 +1874,7 @@ namespace
 		return MM_NONE;
 	}
 
-	void EmitMmiMul(MacroAssembler& m, const Register& gpr, u32 insn)
+	void EmitMmiMul(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		const int act = MmiMulAction(insn);
 		const u32 rd = (insn >> 11) & 31, rs = (insn >> 21) & 31, rt = (insn >> 16) & 31;
@@ -1896,25 +1894,24 @@ namespace
 
 			for (i = 0; i < 8; i++)
 			{
-				m.Ldrsh(w0, MemOperand(gpr, rs * 16 + (u32)(i * 2)));
-				m.Ldrsh(w1, MemOperand(gpr, rt * 16 + (u32)(i * 2)));
-				m.Mul(w2, w0, w1);
-				m.Str(w2, MemOperand(gpr,
-					(kToLo[i] ? kLO : kHI) + (u32)(kWord[i] * 4)));
+				a64_ldrsh(m, A64_W(0), a64_mem_off(gpr, rs * 16 + (u32)(i * 2)));
+				a64_ldrsh(m, A64_W(1), a64_mem_off(gpr, rt * 16 + (u32)(i * 2)));
+				a64_mul(m, A64_W(2), A64_W(0), A64_W(1));
+				a64_str(m, A64_W(2), a64_mem_off(gpr, (kToLo[i] ? kLO : kHI) + (u32)(kWord[i] * 4)));
 			}
 			if (rd)
 			{
 				// rd takes LO word 0, HI word 0, LO word 2, HI word 2, read
 				// back after every product is in place exactly as the
 				// interpreter assigns them.
-				m.Ldr(w0, MemOperand(gpr, kLO + 0));
-				m.Ldr(w1, MemOperand(gpr, kHI + 0));
-				m.Ldr(w2, MemOperand(gpr, kLO + 8));
-				m.Ldr(w3, MemOperand(gpr, kHI + 8));
-				m.Str(w0, MemOperand(gpr, rd * 16 + 0));
-				m.Str(w1, MemOperand(gpr, rd * 16 + 4));
-				m.Str(w2, MemOperand(gpr, rd * 16 + 8));
-				m.Str(w3, MemOperand(gpr, rd * 16 + 12));
+				a64_ldr(m, A64_W(0), a64_mem_off(gpr, kLO + 0));
+				a64_ldr(m, A64_W(1), a64_mem_off(gpr, kHI + 0));
+				a64_ldr(m, A64_W(2), a64_mem_off(gpr, kLO + 8));
+				a64_ldr(m, A64_W(3), a64_mem_off(gpr, kHI + 8));
+				a64_str(m, A64_W(0), a64_mem_off(gpr, rd * 16 + 0));
+				a64_str(m, A64_W(1), a64_mem_off(gpr, rd * 16 + 4));
+				a64_str(m, A64_W(2), a64_mem_off(gpr, rd * 16 + 8));
+				a64_str(m, A64_W(3), a64_mem_off(gpr, rd * 16 + 12));
 				s_rc.Invalidate(rd);
 			}
 			return;
@@ -1924,16 +1921,16 @@ namespace
 		{
 			const u32 word = (u32)(i * 2);
 			const u32 lane = (u32)(i * 8);
-			m.Ldr(w0, MemOperand(gpr, rs * 16 + word * 4));
-			m.Ldr(w1, MemOperand(gpr, rt * 16 + word * 4));
-			if (act == MM_PMULTW) m.Smull(x2, w0, w1);
-			else                  m.Umull(x2, w0, w1);
-			m.Sxtw(x3, w2);                      // LO = sign-extended low half
-			m.Lsr(x4, x2, 32); m.Sxtw(x4, w4);   // HI = sign-extended high half
-			m.Str(x3, MemOperand(gpr, kLO + lane));
-			m.Str(x4, MemOperand(gpr, kHI + lane));
+			a64_ldr(m, A64_W(0), a64_mem_off(gpr, rs * 16 + word * 4));
+			a64_ldr(m, A64_W(1), a64_mem_off(gpr, rt * 16 + word * 4));
+			if (act == MM_PMULTW) a64_smull(m, A64_X(2), A64_W(0), A64_W(1));
+			else                  a64_umull(m, A64_X(2), A64_W(0), A64_W(1));
+			a64_sxtw(m, A64_X(3), A64_W(2));                      // LO = sign-extended low half
+			a64_lsr_imm(m, A64_X(4), A64_X(2), 32); a64_sxtw(m, A64_X(4), A64_W(4));   // HI = sign-extended high half
+			a64_str(m, A64_X(3), a64_mem_off(gpr, kLO + lane));
+			a64_str(m, A64_X(4), a64_mem_off(gpr, kHI + lane));
 			if (rd)
-				m.Str(x2, MemOperand(gpr, rd * 16 + lane)); // whole product
+				a64_str(m, A64_X(2), a64_mem_off(gpr, rd * 16 + lane)); // whole product
 		}
 		if (rd)
 			s_rc.Invalidate(rd);
@@ -1965,7 +1962,7 @@ namespace
 		return MD_NONE;
 	}
 
-	void EmitMmiDiv(MacroAssembler& m, const Register& gpr, u32 insn)
+	void EmitMmiDiv(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		const int  act   = MmiDivAction(insn);
 		const u32  rs    = (insn >> 21) & 31, rt = (insn >> 16) & 31;
@@ -1983,66 +1980,66 @@ namespace
 		// by every lane. Reading it signed also makes the -1 test below work
 		// on the same register the division uses.
 		if (bw)
-			m.Ldrsh(w1, MemOperand(gpr, rt * 16));
+			a64_ldrsh(m, A64_W(1), a64_mem_off(gpr, rt * 16));
 
 		for (i = 0; i < lanes; i++)
 		{
-			Label zero, normal, store;
+			a64_label zero = A64_LABEL_INIT, normal = A64_LABEL_INIT, store = A64_LABEL_INIT;
 			const int word = bw ? i : i * 2;                 // word index within rs
 			const u32 loo  = kLO + (u32)(bw ? i * 4 : i * 8);
 			const u32 hio  = kHI + (u32)(bw ? i * 4 : i * 8);
 
-			m.Ldr(w0, MemOperand(gpr, rs * 16 + word * 4));
+			a64_ldr(m, A64_W(0), a64_mem_off(gpr, rs * 16 + word * 4));
 			if (!bw)
-				m.Ldr(w1, MemOperand(gpr, rt * 16 + word * 4));
+				a64_ldr(m, A64_W(1), a64_mem_off(gpr, rt * 16 + word * 4));
 
 			if (uw)
 			{
 				// PDIVUW is unsigned and has no overflow case: the only
 				// result the divider would get wrong is division by zero,
 				// which the EE defines as quotient -1 remainder dividend.
-				m.Cbz(w1, &zero);
-				m.Udiv(w2, w0, w1); m.Msub(w3, w2, w1, w0);
-				m.B(&store);
-				m.Bind(&zero);
-				m.Mov(w2, -1); m.Mov(w3, w0);
-				m.Bind(&store);
-				m.Sxtw(x2, w2); m.Sxtw(x3, w3);
-				m.Str(x2, MemOperand(gpr, loo));
-				m.Str(x3, MemOperand(gpr, hio));
+				a64_cbz(m, A64_W(1), &zero);
+				a64_udiv(m, A64_W(2), A64_W(0), A64_W(1)); a64_msub(m, A64_W(3), A64_W(2), A64_W(1), A64_W(0));
+				a64_b(m, &store);
+				a64_bind(m, &zero);
+				a64_mov_imm(m, A64_W(2), -1); a64_mov(m, A64_W(3), A64_W(0));
+				a64_bind(m, &store);
+				a64_sxtw(m, A64_X(2), A64_W(2)); a64_sxtw(m, A64_X(3), A64_W(3));
+				a64_str(m, A64_X(2), a64_mem_off(gpr, loo));
+				a64_str(m, A64_X(3), a64_mem_off(gpr, hio));
 				continue;
 			}
 
-			m.Cbz(w1, &zero);                                       // divisor == 0
-			m.Mov(w5, 0x80000000); m.Cmp(w0, w5); m.B(&normal, ne); // dividend == INT_MIN
-			m.Cmn(w1, 1); m.B(&normal, ne);                         // && divisor == -1
-			m.Mov(w2, 0x80000000); m.Mov(w3, wzr); m.B(&store);     // -> INT_MIN rem 0
+			a64_cbz(m, A64_W(1), &zero);                                       // divisor == 0
+			a64_mov_imm(m, A64_W(5), 0x80000000); a64_cmp(m, A64_W(0), A64_W(5)); a64_b_cond(m, &normal, A64_NE); // dividend == INT_MIN
+			a64_cmn_imm(m, A64_W(1), 1); a64_b_cond(m, &normal, A64_NE);                         // && divisor == -1
+			a64_mov_imm(m, A64_W(2), 0x80000000); a64_mov(m, A64_W(3), A64_WZR); a64_b(m, &store);     // -> INT_MIN rem 0
 
-			m.Bind(&normal);
-			m.Sdiv(w2, w0, w1); m.Msub(w3, w2, w1, w0);             // q, rem = rs - q*rt
-			m.B(&store);
+			a64_bind(m, &normal);
+			a64_sdiv(m, A64_W(2), A64_W(0), A64_W(1)); a64_msub(m, A64_W(3), A64_W(2), A64_W(1), A64_W(0));             // q, rem = rs - q*rt
+			a64_b(m, &store);
 
-			m.Bind(&zero);
-			m.Mov(w6, 1); m.Mov(w7, -1); m.Cmp(w0, 0);
-			m.Csel(w2, w6, w7, lt);                                 // q = (rs < 0) ? 1 : -1
-			m.Mov(w3, w0);                                          // rem = rs
+			a64_bind(m, &zero);
+			a64_mov_imm(m, A64_W(6), 1); a64_mov_imm(m, A64_W(7), -1); a64_cmp_imm(m, A64_W(0), 0);
+			a64_csel(m, A64_W(2), A64_W(6), A64_W(7), A64_LT);                                 // q = (rs < 0) ? 1 : -1
+			a64_mov(m, A64_W(3), A64_W(0));                                          // rem = rs
 
-			m.Bind(&store);
+			a64_bind(m, &store);
 			if (bw)
 			{
-				m.Str(w2, MemOperand(gpr, loo));
-				m.Str(w3, MemOperand(gpr, hio));
+				a64_str(m, A64_W(2), a64_mem_off(gpr, loo));
+				a64_str(m, A64_W(3), a64_mem_off(gpr, hio));
 			}
 			else
 			{
-				m.Sxtw(x2, w2); m.Sxtw(x3, w3);
-				m.Str(x2, MemOperand(gpr, loo));
-				m.Str(x3, MemOperand(gpr, hio));
+				a64_sxtw(m, A64_X(2), A64_W(2)); a64_sxtw(m, A64_X(3), A64_W(3));
+				a64_str(m, A64_X(2), a64_mem_off(gpr, loo));
+				a64_str(m, A64_X(3), a64_mem_off(gpr, hio));
 			}
 		}
 	}
 
-	void EmitMmiHiLo(MacroAssembler& m, const Register& gpr, u32 insn)
+	void EmitMmiHiLo(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		const int act = MmiHiLoAction(insn);
 		const u32 rd = (insn >> 11) & 31, rs = (insn >> 21) & 31, rt = (insn >> 16) & 31;
@@ -2050,33 +2047,33 @@ namespace
 		{
 			case HL_PMFHI: case HL_PMFLO: // rd = HI / LO (full 128 bits)
 				if (!rd) return;
-				m.Ldr(q0, MemOperand(gpr, act == HL_PMFHI ? kHI : kLO));
-				m.Str(q0, MemOperand(gpr, rd * 16));
+				a64_ldr(m, A64_Q(0), a64_mem_off(gpr, act == HL_PMFHI ? kHI : kLO));
+				a64_str(m, A64_Q(0), a64_mem_off(gpr, rd * 16));
 				s_rc.Invalidate(rd); // 128-bit write bypasses StoreGpr
 				return;
 
 			case HL_PMTHI: case HL_PMTLO: // HI / LO = rs (full 128 bits)
 				s_rc.FlushReg(m, gpr, rs); // rs low half may be dirty in the cache
-				LoadQ(m, q0, gpr, rs);     // rs (r0 reads as zero)
-				m.Str(q0, MemOperand(gpr, act == HL_PMTHI ? kHI : kLO));
+				LoadQ(m, A64_Q(0), gpr, rs);     // rs (r0 reads as zero)
+				a64_str(m, A64_Q(0), a64_mem_off(gpr, act == HL_PMTHI ? kHI : kLO));
 				return;
 
 			case HL_PPAC5: // rd.UL[n] = RGB1555 pack of rt.UL[n], for each of the 4 words
 			{
 				if (!rd) return;
 				s_rc.FlushReg(m, gpr, rt);
-				LoadQ(m, q1, gpr, rt); // rt -> v1
+				LoadQ(m, A64_Q(1), gpr, rt); // rt -> v1
 				// Field masks, splat across the 4 words (matches the interpreter's
 				// shifts/masks exactly: 0x1f, 0x3e0, 0x7c00, 0x8000).
-				m.Movi(v4.V4S(), 0x1f);
-				m.Shl(v5.V4S(), v4.V4S(), 5);   // 0x3e0
-				m.Shl(v6.V4S(), v4.V4S(), 10);  // 0x7c00
-				m.Movi(v7.V4S(), 0x80, LSL, 8); // 0x8000
-				m.Ushr(v0.V4S(), v1.V4S(), 3);  m.And(v0.V16B(), v0.V16B(), v4.V16B());
-				m.Ushr(v2.V4S(), v1.V4S(), 6);  m.And(v2.V16B(), v2.V16B(), v5.V16B()); m.Orr(v0.V16B(), v0.V16B(), v2.V16B());
-				m.Ushr(v2.V4S(), v1.V4S(), 9);  m.And(v2.V16B(), v2.V16B(), v6.V16B()); m.Orr(v0.V16B(), v0.V16B(), v2.V16B());
-				m.Ushr(v2.V4S(), v1.V4S(), 16); m.And(v2.V16B(), v2.V16B(), v7.V16B()); m.Orr(v0.V16B(), v0.V16B(), v2.V16B());
-				m.Str(q0, MemOperand(gpr, rd * 16));
+				a64_movi(m, a64_as(A64_Q(4), A64K_4S), 0x1f);
+				a64_shl(m, a64_as(A64_Q(5), A64K_4S), a64_as(A64_Q(4), A64K_4S), 5);   // 0x3e0
+				a64_shl(m, a64_as(A64_Q(6), A64K_4S), a64_as(A64_Q(4), A64K_4S), 10);  // 0x7c00
+				a64_movi_shift(m, a64_as(A64_Q(7), A64K_4S), 0x80, A64_LSL, 8); // 0x8000
+				a64_ushr(m, a64_as(A64_Q(0), A64K_4S), a64_as(A64_Q(1), A64K_4S), 3);  a64_and(m, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(4), A64K_16B));
+				a64_ushr(m, a64_as(A64_Q(2), A64K_4S), a64_as(A64_Q(1), A64K_4S), 6);  a64_and(m, a64_as(A64_Q(2), A64K_16B), a64_as(A64_Q(2), A64K_16B), a64_as(A64_Q(5), A64K_16B)); a64_orr(m, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(2), A64K_16B));
+				a64_ushr(m, a64_as(A64_Q(2), A64K_4S), a64_as(A64_Q(1), A64K_4S), 9);  a64_and(m, a64_as(A64_Q(2), A64K_16B), a64_as(A64_Q(2), A64K_16B), a64_as(A64_Q(6), A64K_16B)); a64_orr(m, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(2), A64K_16B));
+				a64_ushr(m, a64_as(A64_Q(2), A64K_4S), a64_as(A64_Q(1), A64K_4S), 16); a64_and(m, a64_as(A64_Q(2), A64K_16B), a64_as(A64_Q(2), A64K_16B), a64_as(A64_Q(7), A64K_16B)); a64_orr(m, a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(0), A64K_16B), a64_as(A64_Q(2), A64K_16B));
+				a64_str(m, A64_Q(0), a64_mem_off(gpr, rd * 16));
 				s_rc.Invalidate(rd);
 				return;
 			}
@@ -2090,73 +2087,73 @@ namespace
 	// (the mult/div path uses only their low 64 bits).
 
 	// Load the low 32 bits of a GPR into a w-register (r0 reads as zero).
-	inline void LoadW(MacroAssembler& m, const Register& wd, const Register& gpr, u32 idx)
+	inline void LoadW(a64_emit* m, const a64r& wd, const a64r& gpr, u32 idx)
 	{
-		if (idx == 0) { m.Mov(wd, 0); return; }
+		if (idx == 0) { a64_mov_imm(m, wd, 0); return; }
 		if (RegCacheOn())
 		{
 			// A cached 64-bit value's W view is exactly the guest low 32 bits;
 			// on a miss just load (no fill -- we only have half the value).
 			const int s = s_rc.host_of[idx];
-			if (s >= 0) { m.Mov(wd, CacheW(s)); return; }
+			if (s >= 0) { a64_mov(m, wd, CacheW(s)); return; }
 		}
-		m.Ldr(wd, MemOperand(gpr, idx * 16));
+		a64_ldr(m, wd, a64_mem_off(gpr, idx * 16));
 	}
 
 	// off = 0 for the SPECIAL (pipeline 0) forms, 8 for the MMI pipeline-1
 	// forms (MULT1/DIV1/MFHI1/...): HI1/LO1 are the upper 64 bits of HI/LO,
 	// and the funct encodings line up exactly between the two op spaces.
-	void EmitMulDiv(MacroAssembler& m, const Register& gpr, u32 funct, u32 rs, u32 rt, u32 rd, u32 off = 0)
+	void EmitMulDiv(a64_emit* m, const a64r& gpr, u32 funct, u32 rs, u32 rt, u32 rd, u32 off = 0)
 	{
 		const u32 kHIo = kHI + off, kLOo = kLO + off;
 		switch (funct)
 		{
-			case 0x10: if (rd) { m.Ldr(x0, MemOperand(gpr, kHIo)); StoreGpr(m, x0, gpr, rd); } return; // MFHI
-			case 0x12: if (rd) { m.Ldr(x0, MemOperand(gpr, kLOo)); StoreGpr(m, x0, gpr, rd); } return; // MFLO
-			case 0x11: LoadGpr(m, x0, gpr, rs); m.Str(x0, MemOperand(gpr, kHIo)); return;              // MTHI
-			case 0x13: LoadGpr(m, x0, gpr, rs); m.Str(x0, MemOperand(gpr, kLOo)); return;              // MTLO
+			case 0x10: if (rd) { a64_ldr(m, A64_X(0), a64_mem_off(gpr, kHIo)); StoreGpr(m, A64_X(0), gpr, rd); } return; // MFHI
+			case 0x12: if (rd) { a64_ldr(m, A64_X(0), a64_mem_off(gpr, kLOo)); StoreGpr(m, A64_X(0), gpr, rd); } return; // MFLO
+			case 0x11: LoadGpr(m, A64_X(0), gpr, rs); a64_str(m, A64_X(0), a64_mem_off(gpr, kHIo)); return;              // MTHI
+			case 0x13: LoadGpr(m, A64_X(0), gpr, rs); a64_str(m, A64_X(0), a64_mem_off(gpr, kLOo)); return;              // MTLO
 
 			case 0x18: // MULT (signed)
 			case 0x19: // MULTU (unsigned)
 			{
-				LoadW(m, w0, gpr, rs); LoadW(m, w1, gpr, rt);
-				if (funct == 0x18) m.Smull(x0, w0, w1); else m.Umull(x0, w0, w1);
-				m.Sxtw(x2, w0);                // LO = (s32)(res & 0xffffffff)
-				m.Lsr(x3, x0, 32); m.Sxtw(x3, w3); // HI = (s32)(res >> 32)
-				m.Str(x2, MemOperand(gpr, kLOo));
-				m.Str(x3, MemOperand(gpr, kHIo));
-				if (rd) StoreGpr(m, x2, gpr, rd); // rd = LO.UD[0]
+				LoadW(m, A64_W(0), gpr, rs); LoadW(m, A64_W(1), gpr, rt);
+				if (funct == 0x18) a64_smull(m, A64_X(0), A64_W(0), A64_W(1)); else a64_umull(m, A64_X(0), A64_W(0), A64_W(1));
+				a64_sxtw(m, A64_X(2), A64_W(0));                // LO = (s32)(res & 0xffffffff)
+				a64_lsr_imm(m, A64_X(3), A64_X(0), 32); a64_sxtw(m, A64_X(3), A64_W(3)); // HI = (s32)(res >> 32)
+				a64_str(m, A64_X(2), a64_mem_off(gpr, kLOo));
+				a64_str(m, A64_X(3), a64_mem_off(gpr, kHIo));
+				if (rd) StoreGpr(m, A64_X(2), gpr, rd); // rd = LO.UD[0]
 				return;
 			}
 			case 0x1a: // DIV (signed)
 			{
-				LoadW(m, w0, gpr, rs); LoadW(m, w1, gpr, rt);
-				Label zero, normal, store;
-				m.Cbz(w1, &zero);
-				m.Mov(w5, 0x80000000); m.Cmp(w0, w5); m.B(&normal, ne); // overflow: rs==INT_MIN
-				m.Cmn(w1, 1); m.B(&normal, ne);                         // && rt==-1
-				m.Mov(x2, (uint64_t)(int64_t)(s32)0x80000000); m.Mov(x3, 0); m.B(&store);
-				m.Bind(&normal);
-				m.Sdiv(w2, w0, w1); m.Msub(w4, w2, w1, w0);             // q, rem=rs-q*rt
-				m.Sxtw(x2, w2); m.Sxtw(x3, w4); m.B(&store);
-				m.Bind(&zero);                                          // div by 0
-				m.Mov(w6, 1); m.Mov(w7, -1); m.Cmp(w0, 0); m.Csel(w2, w6, w7, lt); // LO=(rs<0)?1:-1
-				m.Sxtw(x2, w2); m.Sxtw(x3, w0);                        // HI=sext(rs)
-				m.Bind(&store);
-				m.Str(x2, MemOperand(gpr, kLOo)); m.Str(x3, MemOperand(gpr, kHIo));
+				LoadW(m, A64_W(0), gpr, rs); LoadW(m, A64_W(1), gpr, rt);
+				a64_label zero = A64_LABEL_INIT, normal = A64_LABEL_INIT, store = A64_LABEL_INIT;
+				a64_cbz(m, A64_W(1), &zero);
+				a64_mov_imm(m, A64_W(5), 0x80000000); a64_cmp(m, A64_W(0), A64_W(5)); a64_b_cond(m, &normal, A64_NE); // overflow: rs==INT_MIN
+				a64_cmn_imm(m, A64_W(1), 1); a64_b_cond(m, &normal, A64_NE);                         // && rt==-1
+				a64_mov_imm(m, A64_X(2), (uint64_t)(int64_t)(s32)0x80000000); a64_mov_imm(m, A64_X(3), 0); a64_b(m, &store);
+				a64_bind(m, &normal);
+				a64_sdiv(m, A64_W(2), A64_W(0), A64_W(1)); a64_msub(m, A64_W(4), A64_W(2), A64_W(1), A64_W(0));             // q, rem=rs-q*rt
+				a64_sxtw(m, A64_X(2), A64_W(2)); a64_sxtw(m, A64_X(3), A64_W(4)); a64_b(m, &store);
+				a64_bind(m, &zero);                                          // div by 0
+				a64_mov_imm(m, A64_W(6), 1); a64_mov_imm(m, A64_W(7), -1); a64_cmp_imm(m, A64_W(0), 0); a64_csel(m, A64_W(2), A64_W(6), A64_W(7), A64_LT); // LO=(rs<0)?1:-1
+				a64_sxtw(m, A64_X(2), A64_W(2)); a64_sxtw(m, A64_X(3), A64_W(0));                        // HI=sext(rs)
+				a64_bind(m, &store);
+				a64_str(m, A64_X(2), a64_mem_off(gpr, kLOo)); a64_str(m, A64_X(3), a64_mem_off(gpr, kHIo));
 				return;
 			}
 			case 0x1b: // DIVU (unsigned)
 			{
-				LoadW(m, w0, gpr, rs); LoadW(m, w1, gpr, rt);
-				Label zero, store;
-				m.Cbz(w1, &zero);
-				m.Udiv(w2, w0, w1); m.Msub(w4, w2, w1, w0);
-				m.Sxtw(x2, w2); m.Sxtw(x3, w4); m.B(&store);
-				m.Bind(&zero);
-				m.Mov(x2, (uint64_t)-1); m.Sxtw(x3, w0);              // LO=-1, HI=sext(rs)
-				m.Bind(&store);
-				m.Str(x2, MemOperand(gpr, kLOo)); m.Str(x3, MemOperand(gpr, kHIo));
+				LoadW(m, A64_W(0), gpr, rs); LoadW(m, A64_W(1), gpr, rt);
+				a64_label zero = A64_LABEL_INIT, store = A64_LABEL_INIT;
+				a64_cbz(m, A64_W(1), &zero);
+				a64_udiv(m, A64_W(2), A64_W(0), A64_W(1)); a64_msub(m, A64_W(4), A64_W(2), A64_W(1), A64_W(0));
+				a64_sxtw(m, A64_X(2), A64_W(2)); a64_sxtw(m, A64_X(3), A64_W(4)); a64_b(m, &store);
+				a64_bind(m, &zero);
+				a64_mov_imm(m, A64_X(2), (uint64_t)-1); a64_sxtw(m, A64_X(3), A64_W(0));              // LO=-1, HI=sext(rs)
+				a64_bind(m, &store);
+				a64_str(m, A64_X(2), a64_mem_off(gpr, kLOo)); a64_str(m, A64_X(3), a64_mem_off(gpr, kHIo));
 				return;
 			}
 		}
@@ -2166,20 +2163,20 @@ namespace
 	// the 64-bit {HI.low32, LO.low32} accumulator, split back sign-extended.
 	// Mirrors MMI.c MADD: temp = (u64)LO.UL[0] | ((u64)HI.UL[0]<<32) + rs*rt;
 	// LO.SD = sext(temp[31:0]); HI.SD = sext(temp[63:32]); rd = LO.SD[0].
-	void EmitMadd(MacroAssembler& m, const Register& gpr, bool is_unsigned, u32 rs, u32 rt, u32 rd, u32 off = 0)
+	void EmitMadd(a64_emit* m, const a64r& gpr, bool is_unsigned, u32 rs, u32 rt, u32 rd, u32 off = 0)
 	{
 		const u32 kHIo = kHI + off, kLOo = kLO + off;
-		m.Ldr(w0, MemOperand(gpr, kLOo));            // acc[31:0]  = LO.UL[0] (zero-ext)
-		m.Ldr(w1, MemOperand(gpr, kHIo));            // acc[63:32] = HI.UL[0]
-		m.Orr(x0, x0, Operand(x1, LSL, 32));         // acc
-		LoadW(m, w2, gpr, rs); LoadW(m, w3, gpr, rt);
-		if (is_unsigned) m.Umull(x2, w2, w3); else m.Smull(x2, w2, w3);
-		m.Add(x0, x0, x2);                           // temp = acc + rs*rt
-		m.Sxtw(x1, w0);                              // LO = sext(temp[31:0])
-		m.Lsr(x2, x0, 32); m.Sxtw(x2, w2);           // HI = sext(temp[63:32])
-		m.Str(x1, MemOperand(gpr, kLOo));
-		m.Str(x2, MemOperand(gpr, kHIo));
-		if (rd) StoreGpr(m, x1, gpr, rd);            // rd = LO.SD[0]
+		a64_ldr(m, A64_W(0), a64_mem_off(gpr, kLOo));            // acc[31:0]  = LO.UL[0] (zero-ext)
+		a64_ldr(m, A64_W(1), a64_mem_off(gpr, kHIo));            // acc[63:32] = HI.UL[0]
+		a64_orr_shift(m, A64_X(0), A64_X(0), A64_X(1), A64_LSL, 32);         // acc
+		LoadW(m, A64_W(2), gpr, rs); LoadW(m, A64_W(3), gpr, rt);
+		if (is_unsigned) a64_umull(m, A64_X(2), A64_W(2), A64_W(3)); else a64_smull(m, A64_X(2), A64_W(2), A64_W(3));
+		a64_add(m, A64_X(0), A64_X(0), A64_X(2));                           // temp = acc + rs*rt
+		a64_sxtw(m, A64_X(1), A64_W(0));                              // LO = sext(temp[31:0])
+		a64_lsr_imm(m, A64_X(2), A64_X(0), 32); a64_sxtw(m, A64_X(2), A64_W(2));           // HI = sext(temp[63:32])
+		a64_str(m, A64_X(1), a64_mem_off(gpr, kLOo));
+		a64_str(m, A64_X(2), a64_mem_off(gpr, kHIo));
+		if (rd) StoreGpr(m, A64_X(1), gpr, rd);            // rd = LO.SD[0]
 	}
 
 	// Per-opcode cycle cost, mirroring R5900OpcodeTables.c exactly (Cycles::*):
@@ -2263,15 +2260,15 @@ namespace
 	// and no reads of cpuRegs.pc or cpuBlockCycles (MFC0's Count uses
 	// cpuRegs.cycle, which advances at branch boundaries identically in both
 	// execution modes, so mid-block reads match the interpreter handoff).
-	void EmitInterpOpCall(MacroAssembler& m, const Register& gpr, u32 insn, void (*fn)())
+	void EmitInterpOpCall(a64_emit* m, const a64r& gpr, u32 insn, void (*fn)())
 	{
 		// The interp op body reads guest GPRs from memory (MTC0 rt, QFSRV
 		// rs/rt) -- write the dirty cache back first...
 		s_rc.FlushDirty(m, gpr);
-		m.Mov(w0, insn);
-		m.Str(w0, RegsField(&cpuRegs.code));
-		m.Mov(x16, reinterpret_cast<uint64_t>(fn));
-		m.Blr(x16);
+		a64_mov_imm(m, A64_W(0), insn);
+		a64_str(m, A64_W(0), RegsField(&cpuRegs.code));
+		a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(fn));
+		a64_blr(m, A64_X(16));
 		// ...and it may also write any guest GPR directly (MFC0 rt, QFSRV rd):
 		// drop the whole cache afterwards.
 		s_rc.Reset();
@@ -2284,23 +2281,22 @@ namespace
 	// address is the buffer start plus the cursor. Falls back to the full
 	// materialization when the page displacement does not encode or the page
 	// offset is not size-aligned.
-	MemOperand AbsMem(MacroAssembler& m, const Register& scratch, const void* addr, unsigned size)
+	a64_mem AbsMem(a64_emit* m, const a64r& scratch, const void* addr, unsigned size)
 	{
-		const uintptr_t cur = reinterpret_cast<uintptr_t>(m.GetBuffer()->GetStartAddress<u8*>()) +
-		                      m.GetBuffer()->GetCursorOffset();
+		const uintptr_t cur = reinterpret_cast<uintptr_t>(a64_start(m)) +
+		                      a64_offset(m);
 		const s64 page_disp = (static_cast<s64>(reinterpret_cast<uintptr_t>(addr) & ~uintptr_t(0xFFF)) -
 		                       static_cast<s64>(cur & ~uintptr_t(0xFFF))) >> 12;
 		const u32 page_off = static_cast<u32>(reinterpret_cast<uintptr_t>(addr) & 0xFFFu);
-		if (vixl::IsInt21(page_disp) && size && (page_off % size) == 0)
+		if (a64_is_int(page_disp, 21) && size && (page_off % size) == 0)
 		{
 			{
-				vixl::aarch64::SingleEmissionCheckScope guard(&m);
-				m.adrp(scratch, page_disp);
+				a64_adrp(m, scratch, page_disp);
 			}
-			return MemOperand(scratch, page_off);
+			return a64_mem_off(scratch, page_off);
 		}
-		m.Mov(scratch, reinterpret_cast<uint64_t>(addr));
-		return MemOperand(scratch);
+		a64_mov_imm(m, scratch, reinterpret_cast<uint64_t>(addr));
+		return a64_mem_off(scratch, 0);
 	}
 
 	// C.30-2: native COP2 macro emission. The vendored aVU_Macro emitters gate
@@ -2562,9 +2558,9 @@ namespace {
 		return true;
 	}
 
-	void EmitUnalignedPair(MacroAssembler& m, const Register& gpr, const UPair& u)
+	void EmitUnalignedPair(a64_emit* m, const a64r& gpr, const UPair& u)
 	{
-		{ const Register a = SrcGpr(m, gpr, u.rs, x0); m.Add(w0, a.W(), u.off); }
+		{ const a64r a = SrcGpr(m, gpr, u.rs, A64_X(0)); a64_add_imm(m, A64_W(0), a64_asw(a), u.off); }
 		if (u.load)
 		{
 			const uint64_t fn = u.is64 ? reinterpret_cast<uint64_t>(&eeReadU64_arm64)
@@ -2572,30 +2568,30 @@ namespace {
 			if (FastmemOk(s_emit_pc))
 			{
 				EmitFastmemAccess(m, [&] {
-					if (u.is64) m.ldr(x0, MemOperand(vmapbase, w0, UXTW));
-					else        m.ldr(w0, MemOperand(vmapbase, w0, UXTW));
+					if (u.is64) a64_ldr(m, A64_X(0), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0));
+					else        a64_ldr(m, A64_W(0), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0));
 				});
 				DeferFastmemStub(m, fn, 0, 0);
 			}
-			else { m.Mov(x16, fn); m.Blr(x16); }
+			else { a64_mov_imm(m, A64_X(16), fn); a64_blr(m, A64_X(16)); }
 			if (!u.is64)
-				m.Sxtw(x0, w0); // LWL/LWR pairs sign-extend, exactly like LW
-			StoreGpr(m, x0, gpr, u.rt);
+				a64_sxtw(m, A64_X(0), A64_W(0)); // LWL/LWR pairs sign-extend, exactly like LW
+			StoreGpr(m, A64_X(0), gpr, u.rt);
 		}
 		else
 		{
-			LoadGpr(m, x1, gpr, u.rt);
+			LoadGpr(m, A64_X(1), gpr, u.rt);
 			const uint64_t fn = u.is64 ? reinterpret_cast<uint64_t>(&eeWriteU64_arm64)
 			                           : reinterpret_cast<uint64_t>(&eeWriteU32_arm64);
 			if (FastmemOk(s_emit_pc))
 			{
 				EmitFastmemAccess(m, [&] {
-					if (u.is64) m.str(x1, MemOperand(vmapbase, w0, UXTW));
-					else        m.str(w1, MemOperand(vmapbase, w0, UXTW));
+					if (u.is64) a64_str(m, A64_X(1), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0));
+					else        a64_str(m, A64_W(1), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0));
 				});
 				DeferFastmemStub(m, fn, 0, 0);
 			}
-			else { m.Mov(x16, fn); m.Blr(x16); }
+			else { a64_mov_imm(m, A64_X(16), fn); a64_blr(m, A64_X(16)); }
 		}
 	}
 
@@ -2611,16 +2607,16 @@ namespace {
 	// emission, which the shared predicate (Cop2NativeMacroAlu vs the gates
 	// below) is supposed to rule out. Invalidate the run so the next macro op
 	// re-analyzes and re-opens a fresh bracket (with its VU0 sync).
-	void Cop2CloseHold(MacroAssembler& m, const Register& gpr)
+	void Cop2CloseHold(a64_emit* m, const a64r& gpr)
 	{
 		if (!s_x19HeldVu)
 			return;
-		m.Mov(gpr, reinterpret_cast<uint64_t>(&cpuRegs));
+		a64_mov_imm(m, gpr, reinterpret_cast<uint64_t>(&cpuRegs));
 		s_x19HeldVu = false;
 		Cop2RunInvalidate();
 	}
 
-	bool EmitCop2Macro(MacroAssembler& m, const Register& gpr, u32 insn)
+	bool EmitCop2Macro(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		if (!recVUMacroIsMode0(insn))
 			{ Cop2CloseHold(m, gpr); return false; } // CALLMS/CALLMSR/unknown -> C.29-1 interp call
@@ -2683,21 +2679,21 @@ namespace {
 		// C.78: once per run (see above).
 		if (first)
 		{
-			Label vu0_idle;
-			m.Ldr(w0, AbsMem(m, x10, &vuRegs[0].VI[REG_VPU_STAT].UL, 4)); // C.78: adrp fold
-			m.Tbz(w0, 0, &vu0_idle); // VPU_STAT bit0 = VU0 running
-			m.Mov(x16, reinterpret_cast<uint64_t>(&_vu0FinishMicro));
-			m.Blr(x16);
-			m.Bind(&vu0_idle);
+			a64_label vu0_idle = A64_LABEL_INIT;
+			a64_ldr(m, A64_W(0), AbsMem(m, A64_X(10), &vuRegs[0].VI[REG_VPU_STAT].UL, 4)); // C.78: adrp fold
+			a64_tbz(m, A64_W(0), 0, &vu0_idle); // VPU_STAT bit0 = VU0 running
+			a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&_vu0FinishMicro));
+			a64_blr(m, A64_X(16));
+			a64_bind(m, &vu0_idle);
 		}
 		cpuRegs.code = insn; // emit-time input: the emitters' _Fs_/_Ft_/... macros read it
 
-		MacroAssembler* saved_asm = armAsm;
+		a64_emit* saved_asm = armAsm;
 		u8* saved_ptr = armAsmPtr;
 		size_t saved_cap = armAsmCapacity;
-		armAsm = &m;
-		armAsmPtr = m.GetBuffer()->GetStartAddress<u8*>();
-		armAsmCapacity = m.GetBuffer()->GetCapacity();
+		armAsm = m;
+		armAsmPtr = a64_start(m);
+		armAsmCapacity = a64_capacity(m);
 
 		const bool ok = recVUMacroEmitMode0(insn);
 
@@ -2755,7 +2751,7 @@ namespace {
 		return true;
 	}
 
-	bool EmitCop2Transfer(MacroAssembler& m, const Register& gpr, u32 insn)
+	bool EmitCop2Transfer(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		if (!Cop2XferSupported(insn))
 			return false;
@@ -2767,49 +2763,49 @@ namespace {
 
 		const bool is_read = (rs == 0x01 || rs == 0x02); // QMFC2 / CFC2
 
-		m.Mov(x16, reinterpret_cast<uint64_t>(&vu0Sync));
-		m.Blr(x16);
+		a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&vu0Sync));
+		a64_blr(m, A64_X(16));
 		if (interlock)
 		{
-			m.Mov(x16, is_read ? reinterpret_cast<uint64_t>(&_vu0FinishMicro)
+			a64_mov_imm(m, A64_X(16), is_read ? reinterpret_cast<uint64_t>(&_vu0FinishMicro)
 			                   : reinterpret_cast<uint64_t>(&_vu0WaitMicro));
-			m.Blr(x16);
+			a64_blr(m, A64_X(16));
 		}
 
 		switch (rs)
 		{
 			case 0x01: // QMFC2 rt, fs: GPR[rt].UQ = VF[fs].UQ
 				if (!rt) return true;
-				m.Ldr(q0, AbsMem(m, x10, &vuRegs[0].VF[fs], 16)); // C.78: adrp fold
-				m.Str(q0, MemOperand(gpr, rt * 16));
+				a64_ldr(m, A64_Q(0), AbsMem(m, A64_X(10), &vuRegs[0].VF[fs], 16)); // C.78: adrp fold
+				a64_str(m, A64_Q(0), a64_mem_off(gpr, rt * 16));
 				s_rc.Invalidate(rt); // 128-bit write bypasses StoreGpr
 				return true;
 
 			case 0x05: // QMTC2 rt, fs: VF[fs].UQ = GPR[rt].UQ  (fs == 0 is a no-op)
 				if (!fs) return true;
 				s_rc.FlushReg(m, gpr, rt); // the 128-bit source is read from memory
-				m.Ldr(q0, MemOperand(gpr, rt * 16));
-				m.Str(q0, AbsMem(m, x10, &vuRegs[0].VF[fs], 16)); // C.78: adrp fold
+				a64_ldr(m, A64_Q(0), a64_mem_off(gpr, rt * 16));
+				a64_str(m, A64_Q(0), AbsMem(m, A64_X(10), &vuRegs[0].VF[fs], 16)); // C.78: adrp fold
 				return true;
 
 			case 0x02: // CFC2 rt, fs
 			{
 				if (!rt) return true;
-				m.Ldr(w0, AbsMem(m, x10, &vuRegs[0].VI[fs], 4)); // C.78: adrp fold
+				a64_ldr(m, A64_W(0), AbsMem(m, A64_X(10), &vuRegs[0].VI[fs], 4)); // C.78: adrp fold
 				s_rc.FlushReg(m, gpr, rt); // read-modify-write of GPR memory below
 				if (fs == REG_R)
 				{
 					// UL[0] = VI[R] & 0x7fffff; UL[1] untouched.
-					m.And(w0, w0, 0x7fffff);
-					m.Ldr(x1, MemOperand(gpr, rt * 16));
-					m.Bfi(x1, x0, 0, 32);
-					m.Str(x1, MemOperand(gpr, rt * 16));
+					a64_and_imm(m, A64_W(0), A64_W(0), 0x7fffff);
+					a64_ldr(m, A64_X(1), a64_mem_off(gpr, rt * 16));
+					a64_bfi(m, A64_X(1), A64_X(0), 0, 32);
+					a64_str(m, A64_X(1), a64_mem_off(gpr, rt * 16));
 				}
 				else
 				{
 					// UL[0] = VI[fs]; UL[1] = sign of it -- a 64-bit signed store.
-					m.Sxtw(x0, w0);
-					m.Str(x0, MemOperand(gpr, rt * 16));
+					a64_sxtw(m, A64_X(0), A64_W(0));
+					a64_str(m, A64_X(0), a64_mem_off(gpr, rt * 16));
 				}
 				s_rc.Invalidate(rt);
 				return true;
@@ -2820,17 +2816,17 @@ namespace {
 				if (!fs) return true;
 				if (fs == REG_MAC_FLAG || fs == REG_TPC || fs == REG_VPU_STAT)
 					return true; // read-only: the syncs above are the whole op
-				const Register src = SrcGpr(m, gpr, rt, x0);
-				const MemOperand vi = AbsMem(m, x10, &vuRegs[0].VI[fs], 4); // C.78: adrp fold
+				const a64r src = SrcGpr(m, gpr, rt, A64_X(0));
+				const a64_mem vi = AbsMem(m, A64_X(10), &vuRegs[0].VI[fs], 4); // C.78: adrp fold
 				if (fs == REG_R)
 				{
-					m.And(w1, src.W(), 0x7fffff);
-					m.Orr(w1, w1, 0x3f800000);
-					m.Str(w1, vi);
+					a64_and_imm(m, A64_W(1), a64_asw(src), 0x7fffff);
+					a64_orr_imm(m, A64_W(1), A64_W(1), 0x3f800000);
+					a64_str(m, A64_W(1), vi);
 				}
 				else
 				{
-					m.Str(src.W(), vi);
+					a64_str(m, a64_asw(src), vi);
 				}
 				return true;
 			}
@@ -2845,7 +2841,7 @@ namespace {
 	inline bool IsQfsrv(u32 insn) { return (insn & 0x3f) == 0x28 && ((insn >> 6) & 0x1f) == 0x1b; }
 	inline bool IsPcpyh(u32 insn) { return (insn & 0x3f) == 0x29 && ((insn >> 6) & 0x1f) == 0x1b; }
 
-	bool EmitSimple(MacroAssembler& m, const Register& gpr, u32 insn)
+	bool EmitSimple(a64_emit* m, const a64r& gpr, u32 insn)
 	{
 		s_rc.pinned = 0; // new op: previous op's Register handles are dead
 		const u32 op = insn >> 26;
@@ -2861,26 +2857,26 @@ namespace {
 				switch (funct)
 				{
 					// 32-bit shifts -> sign-extend to 64 (direct-to-cache, C.27-3)
-					case 0x00: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), d = DstGpr(m, gpr, rd, x0); m.Lsl(d.W(), a.W(), sa); m.Sxtw(d, d.W()); FinishDst(m, gpr, rd, d); } return true; // SLL
-					case 0x02: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), d = DstGpr(m, gpr, rd, x0); m.Lsr(d.W(), a.W(), sa); m.Sxtw(d, d.W()); FinishDst(m, gpr, rd, d); } return true; // SRL
-					case 0x03: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), d = DstGpr(m, gpr, rd, x0); m.Asr(d.W(), a.W(), sa); m.Sxtw(d, d.W()); FinishDst(m, gpr, rd, d); } return true; // SRA
-					case 0x04: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), b = SrcGpr(m, gpr, rs, x1), d = DstGpr(m, gpr, rd, x0); m.Lsl(d.W(), a.W(), b.W()); m.Sxtw(d, d.W()); FinishDst(m, gpr, rd, d); } return true; // SLLV
-					case 0x06: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), b = SrcGpr(m, gpr, rs, x1), d = DstGpr(m, gpr, rd, x0); m.Lsr(d.W(), a.W(), b.W()); m.Sxtw(d, d.W()); FinishDst(m, gpr, rd, d); } return true; // SRLV
-					case 0x07: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), b = SrcGpr(m, gpr, rs, x1), d = DstGpr(m, gpr, rd, x0); m.Asr(d.W(), a.W(), b.W()); m.Sxtw(d, d.W()); FinishDst(m, gpr, rd, d); } return true; // SRAV
+					case 0x00: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_lsl_imm(m, a64_asw(d), a64_asw(a), sa); a64_sxtw(m, d, a64_asw(d)); FinishDst(m, gpr, rd, d); } return true; // SLL
+					case 0x02: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_lsr_imm(m, a64_asw(d), a64_asw(a), sa); a64_sxtw(m, d, a64_asw(d)); FinishDst(m, gpr, rd, d); } return true; // SRL
+					case 0x03: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_asr_imm(m, a64_asw(d), a64_asw(a), sa); a64_sxtw(m, d, a64_asw(d)); FinishDst(m, gpr, rd, d); } return true; // SRA
+					case 0x04: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), b = SrcGpr(m, gpr, rs, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_lsl(m, a64_asw(d), a64_asw(a), a64_asw(b)); a64_sxtw(m, d, a64_asw(d)); FinishDst(m, gpr, rd, d); } return true; // SLLV
+					case 0x06: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), b = SrcGpr(m, gpr, rs, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_lsr(m, a64_asw(d), a64_asw(a), a64_asw(b)); a64_sxtw(m, d, a64_asw(d)); FinishDst(m, gpr, rd, d); } return true; // SRLV
+					case 0x07: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), b = SrcGpr(m, gpr, rs, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_asr(m, a64_asw(d), a64_asw(a), a64_asw(b)); a64_sxtw(m, d, a64_asw(d)); FinishDst(m, gpr, rd, d); } return true; // SRAV
 					// 32-bit add/sub -> sign-extend to 64
 					// ADD/SUB trap on signed overflow; the x86 rec does not emulate that
 					// exception and neither do we for ADDI/DADDI, so they are ADDU/SUBU.
 					case 0x20:
-					case 0x21: if (rd) { const Register a = SrcGpr(m, gpr, rs, x0), b = SrcGpr(m, gpr, rt, x1), d = DstGpr(m, gpr, rd, x0); m.Add(d.W(), a.W(), b.W()); m.Sxtw(d, d.W()); FinishDst(m, gpr, rd, d); } return true; // ADD/ADDU
+					case 0x21: if (rd) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), b = SrcGpr(m, gpr, rt, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_add(m, a64_asw(d), a64_asw(a), a64_asw(b)); a64_sxtw(m, d, a64_asw(d)); FinishDst(m, gpr, rd, d); } return true; // ADD/ADDU
 					case 0x22:
-					case 0x23: if (rd) { const Register a = SrcGpr(m, gpr, rs, x0), b = SrcGpr(m, gpr, rt, x1), d = DstGpr(m, gpr, rd, x0); m.Sub(d.W(), a.W(), b.W()); m.Sxtw(d, d.W()); FinishDst(m, gpr, rd, d); } return true; // SUB/SUBU
+					case 0x23: if (rd) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), b = SrcGpr(m, gpr, rt, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_sub(m, a64_asw(d), a64_asw(a), a64_asw(b)); a64_sxtw(m, d, a64_asw(d)); FinishDst(m, gpr, rd, d); } return true; // SUB/SUBU
 					// 64-bit logic / set / add / sub
-					case 0x24: if (rd) { const Register a = SrcGpr(m, gpr, rs, x0), b = SrcGpr(m, gpr, rt, x1), d = DstGpr(m, gpr, rd, x0); m.And(d, a, b); FinishDst(m, gpr, rd, d); } return true; // AND
-					case 0x25: if (rd) { const Register a = SrcGpr(m, gpr, rs, x0), b = SrcGpr(m, gpr, rt, x1), d = DstGpr(m, gpr, rd, x0); m.Orr(d, a, b); FinishDst(m, gpr, rd, d); } return true; // OR
-					case 0x26: if (rd) { const Register a = SrcGpr(m, gpr, rs, x0), b = SrcGpr(m, gpr, rt, x1), d = DstGpr(m, gpr, rd, x0); m.Eor(d, a, b); FinishDst(m, gpr, rd, d); } return true; // XOR
-					case 0x27: if (rd) { const Register a = SrcGpr(m, gpr, rs, x0), b = SrcGpr(m, gpr, rt, x1), d = DstGpr(m, gpr, rd, x0); m.Orr(d, a, b); m.Mvn(d, d); FinishDst(m, gpr, rd, d); } return true; // NOR
-					case 0x2a: if (rd) { const Register a = SrcGpr(m, gpr, rs, x0), b = SrcGpr(m, gpr, rt, x1), d = DstGpr(m, gpr, rd, x0); m.Cmp(a, b); m.Cset(d, lt); FinishDst(m, gpr, rd, d); } return true; // SLT
-					case 0x2b: if (rd) { const Register a = SrcGpr(m, gpr, rs, x0), b = SrcGpr(m, gpr, rt, x1), d = DstGpr(m, gpr, rd, x0); m.Cmp(a, b); m.Cset(d, lo); FinishDst(m, gpr, rd, d); } return true; // SLTU
+					case 0x24: if (rd) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), b = SrcGpr(m, gpr, rt, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_and(m, d, a, b); FinishDst(m, gpr, rd, d); } return true; // AND
+					case 0x25: if (rd) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), b = SrcGpr(m, gpr, rt, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_orr(m, d, a, b); FinishDst(m, gpr, rd, d); } return true; // OR
+					case 0x26: if (rd) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), b = SrcGpr(m, gpr, rt, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_eor(m, d, a, b); FinishDst(m, gpr, rd, d); } return true; // XOR
+					case 0x27: if (rd) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), b = SrcGpr(m, gpr, rt, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_orr(m, d, a, b); a64_mvn(m, d, d); FinishDst(m, gpr, rd, d); } return true; // NOR
+					case 0x2a: if (rd) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), b = SrcGpr(m, gpr, rt, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_cmp(m, a, b); a64_cset(m, d, A64_LT); FinishDst(m, gpr, rd, d); } return true; // SLT
+					case 0x2b: if (rd) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), b = SrcGpr(m, gpr, rt, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_cmp(m, a, b); a64_cset(m, d, A64_LO); FinishDst(m, gpr, rd, d); } return true; // SLTU
 					// funct map: 0x2c=DADD 0x2d=DADDU 0x2e=DSUB 0x2f=DSUBU (the
 					// interpreter's DADD/DSUB don't trap on overflow, so both
 					// pairs emit the same Add/Sub). 0x2d used to emit Sub --
@@ -2888,20 +2884,20 @@ namespace {
 					// because `move rd,rs` == `daddu rd,rs,$zero` where rs-0 is
 					// accidentally correct (MMX7 post-logo stall, C.9).
 					case 0x2c:
-					case 0x2d: if (rd) { const Register a = SrcGpr(m, gpr, rs, x0), b = SrcGpr(m, gpr, rt, x1), d = DstGpr(m, gpr, rd, x0); m.Add(d, a, b); FinishDst(m, gpr, rd, d); } return true; // DADD/DADDU
+					case 0x2d: if (rd) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), b = SrcGpr(m, gpr, rt, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_add(m, d, a, b); FinishDst(m, gpr, rd, d); } return true; // DADD/DADDU
 					case 0x2e:
-					case 0x2f: if (rd) { const Register a = SrcGpr(m, gpr, rs, x0), b = SrcGpr(m, gpr, rt, x1), d = DstGpr(m, gpr, rd, x0); m.Sub(d, a, b); FinishDst(m, gpr, rd, d); } return true; // DSUB/DSUBU
+					case 0x2f: if (rd) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), b = SrcGpr(m, gpr, rt, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_sub(m, d, a, b); FinishDst(m, gpr, rd, d); } return true; // DSUB/DSUBU
 					// 64-bit shifts (variable)
-					case 0x14: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), b = SrcGpr(m, gpr, rs, x1), d = DstGpr(m, gpr, rd, x0); m.Lsl(d, a, b); FinishDst(m, gpr, rd, d); } return true; // DSLLV
-					case 0x16: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), b = SrcGpr(m, gpr, rs, x1), d = DstGpr(m, gpr, rd, x0); m.Lsr(d, a, b); FinishDst(m, gpr, rd, d); } return true; // DSRLV
-					case 0x17: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), b = SrcGpr(m, gpr, rs, x1), d = DstGpr(m, gpr, rd, x0); m.Asr(d, a, b); FinishDst(m, gpr, rd, d); } return true; // DSRAV
+					case 0x14: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), b = SrcGpr(m, gpr, rs, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_lsl(m, d, a, b); FinishDst(m, gpr, rd, d); } return true; // DSLLV
+					case 0x16: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), b = SrcGpr(m, gpr, rs, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_lsr(m, d, a, b); FinishDst(m, gpr, rd, d); } return true; // DSRLV
+					case 0x17: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), b = SrcGpr(m, gpr, rs, A64_X(1)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_asr(m, d, a, b); FinishDst(m, gpr, rd, d); } return true; // DSRAV
 					// 64-bit shifts (immediate)
-					case 0x38: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), d = DstGpr(m, gpr, rd, x0); m.Lsl(d, a, sa);      FinishDst(m, gpr, rd, d); } return true; // DSLL
-					case 0x3a: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), d = DstGpr(m, gpr, rd, x0); m.Lsr(d, a, sa);      FinishDst(m, gpr, rd, d); } return true; // DSRL
-					case 0x3b: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), d = DstGpr(m, gpr, rd, x0); m.Asr(d, a, sa);      FinishDst(m, gpr, rd, d); } return true; // DSRA
-					case 0x3c: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), d = DstGpr(m, gpr, rd, x0); m.Lsl(d, a, sa + 32); FinishDst(m, gpr, rd, d); } return true; // DSLL32
-					case 0x3e: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), d = DstGpr(m, gpr, rd, x0); m.Lsr(d, a, sa + 32); FinishDst(m, gpr, rd, d); } return true; // DSRL32
-					case 0x3f: if (rd) { const Register a = SrcGpr(m, gpr, rt, x0), d = DstGpr(m, gpr, rd, x0); m.Asr(d, a, sa + 32); FinishDst(m, gpr, rd, d); } return true; // DSRA32
+					case 0x38: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_lsl_imm(m, d, a, sa);      FinishDst(m, gpr, rd, d); } return true; // DSLL
+					case 0x3a: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_lsr_imm(m, d, a, sa);      FinishDst(m, gpr, rd, d); } return true; // DSRL
+					case 0x3b: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_asr_imm(m, d, a, sa);      FinishDst(m, gpr, rd, d); } return true; // DSRA
+					case 0x3c: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_lsl_imm(m, d, a, sa + 32); FinishDst(m, gpr, rd, d); } return true; // DSLL32
+					case 0x3e: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_lsr_imm(m, d, a, sa + 32); FinishDst(m, gpr, rd, d); } return true; // DSRL32
+					case 0x3f: if (rd) { const a64r a = SrcGpr(m, gpr, rt, A64_X(0)), d = DstGpr(m, gpr, rd, A64_X(0)); a64_asr_imm(m, d, a, sa + 32); FinishDst(m, gpr, rd, d); } return true; // DSRA32
 					// HI/LO moves + integer mult/div (bit-exact, sign-extended results)
 					case 0x10: case 0x11: case 0x12: case 0x13: // MFHI/MTHI/MFLO/MTLO
 					case 0x18: case 0x19: case 0x1a: case 0x1b: // MULT/MULTU/DIV/DIVU
@@ -2915,17 +2911,17 @@ namespace {
 					case 0x28:
 						if (rd)
 						{
-							const Register d = DstGpr(m, gpr, rd, x0);
-							m.Ldr(d.W(), RegsField(&cpuRegs.sa)); // 32-bit load zero-extends
+							const a64r d = DstGpr(m, gpr, rd, A64_X(0));
+							a64_ldr(m, a64_asw(d), RegsField(&cpuRegs.sa)); // 32-bit load zero-extends
 							FinishDst(m, gpr, rd, d);
 						}
 						return true;
 					case 0x29:
 						// MTSA: sa is four bits (a byte count for QFSRV), so
 						// mask like recMTSA and the interpreter do.
-						LoadGpr(m, x0, gpr, rs);
-						m.And(w0, w0, 0xf);
-						m.Str(w0, RegsField(&cpuRegs.sa));
+						LoadGpr(m, A64_X(0), gpr, rs);
+						a64_and_imm(m, A64_W(0), A64_W(0), 0xf);
+						a64_str(m, A64_W(0), RegsField(&cpuRegs.sa));
 						return true;
 					// MOVZ/MOVN: rd = rs when rt ==/!= 0 (full 64-bit compare),
 					// rd unchanged otherwise.
@@ -2933,12 +2929,12 @@ namespace {
 					case 0x0b:
 						if (rd)
 						{
-							const Register a = SrcGpr(m, gpr, rs, x0);
-							const Register b = SrcGpr(m, gpr, rt, x1);
-							const Register dold = SrcGpr(m, gpr, rd, x2); // OLD rd value
-							const Register d = DstGpr(m, gpr, rd, x2);    // same slot / same scratch
-							m.Cmp(b, 0);
-							m.Csel(d, a, dold, funct == 0x0a ? eq : ne);
+							const a64r a = SrcGpr(m, gpr, rs, A64_X(0));
+							const a64r b = SrcGpr(m, gpr, rt, A64_X(1));
+							const a64r dold = SrcGpr(m, gpr, rd, A64_X(2)); // OLD rd value
+							const a64r d = DstGpr(m, gpr, rd, A64_X(2));    // same slot / same scratch
+							a64_cmp_imm(m, b, 0);
+							a64_csel(m, d, a, dold, funct == 0x0a ? A64_EQ : A64_NE);
 							FinishDst(m, gpr, rd, d);
 						}
 						return true;
@@ -2949,7 +2945,7 @@ namespace {
 			// never checks overflow -- no game relies on the exception). So they are
 			// emitted identically to ADDIU/DADDIU. C.42.
 			case 0x08: // ADDI
-			// C.57: fold the immediate into the add (VIXL materializes a scratch
+			// C.57: fold the immediate into the add (the emitter materializes a scratch
 			// itself if it doesn't fit an add/sub imm, i.e. never worse), and skip
 			// the add entirely when rs is r0 -- `li` is everywhere and cost three
 			// instructions: a zero into a scratch, the immediate into another, then
@@ -2960,20 +2956,20 @@ namespace {
 				// NB: the source must be claimed BEFORE the destination -- for the
 				// very common rs == rt form, DstGpr would otherwise hand back a
 				// slot it never loaded and SrcGpr would read garbage out of it.
-				if (!rs) { const Register d = DstGpr(m, gpr, rt, x0); m.Mov(d, static_cast<int64_t>(simm)); FinishDst(m, gpr, rt, d); }
-				else { const Register a = SrcGpr(m, gpr, rs, x0), d = DstGpr(m, gpr, rt, x0); m.Add(d.W(), a.W(), simm); m.Sxtw(d, d.W()); FinishDst(m, gpr, rt, d); }
+				if (!rs) { const a64r d = DstGpr(m, gpr, rt, A64_X(0)); a64_mov_imm(m, d, static_cast<int64_t>(simm)); FinishDst(m, gpr, rt, d); }
+				else { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), d = DstGpr(m, gpr, rt, A64_X(0)); a64_add_imm(m, a64_asw(d), a64_asw(a), simm); a64_sxtw(m, d, a64_asw(d)); FinishDst(m, gpr, rt, d); }
 				} return true; // ADDIU
 			case 0x18: // DADDI
 			case 0x19: if (rt) { // C.57 (same source-before-destination rule as ADDIU)
-				if (!rs) { const Register d = DstGpr(m, gpr, rt, x0); m.Mov(d, simm64); FinishDst(m, gpr, rt, d); }
-				else { const Register a = SrcGpr(m, gpr, rs, x0), d = DstGpr(m, gpr, rt, x0); m.Add(d, a, simm64); FinishDst(m, gpr, rt, d); }
+				if (!rs) { const a64r d = DstGpr(m, gpr, rt, A64_X(0)); a64_mov_imm(m, d, simm64); FinishDst(m, gpr, rt, d); }
+				else { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), d = DstGpr(m, gpr, rt, A64_X(0)); a64_add_imm(m, d, a, simm64); FinishDst(m, gpr, rt, d); }
 				} return true; // DADDIU
-			case 0x0a: if (rt) { const Register a = SrcGpr(m, gpr, rs, x0), d = DstGpr(m, gpr, rt, x0); m.Mov(x1, simm64); m.Cmp(a, x1); m.Cset(d, lt); FinishDst(m, gpr, rt, d); } return true; // SLTI
-			case 0x0b: if (rt) { const Register a = SrcGpr(m, gpr, rs, x0), d = DstGpr(m, gpr, rt, x0); m.Mov(x1, simm64); m.Cmp(a, x1); m.Cset(d, lo); FinishDst(m, gpr, rt, d); } return true; // SLTIU
-			case 0x0c: if (rt) { const Register a = SrcGpr(m, gpr, rs, x0), d = DstGpr(m, gpr, rt, x0); m.Mov(x1, (uint64_t)zimm); m.And(d, a, x1); FinishDst(m, gpr, rt, d); } return true; // ANDI
-			case 0x0d: if (rt) { const Register a = SrcGpr(m, gpr, rs, x0), d = DstGpr(m, gpr, rt, x0); m.Mov(x1, (uint64_t)zimm); m.Orr(d, a, x1); FinishDst(m, gpr, rt, d); } return true; // ORI
-			case 0x0e: if (rt) { const Register a = SrcGpr(m, gpr, rs, x0), d = DstGpr(m, gpr, rt, x0); m.Mov(x1, (uint64_t)zimm); m.Eor(d, a, x1); FinishDst(m, gpr, rt, d); } return true; // XORI
-			case 0x0f: if (rt) { const Register d = DstGpr(m, gpr, rt, x0); m.Mov(d.W(), zimm << 16); m.Sxtw(d, d.W()); FinishDst(m, gpr, rt, d); } return true; // LUI
+			case 0x0a: if (rt) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), d = DstGpr(m, gpr, rt, A64_X(0)); a64_mov_imm(m, A64_X(1), simm64); a64_cmp(m, a, A64_X(1)); a64_cset(m, d, A64_LT); FinishDst(m, gpr, rt, d); } return true; // SLTI
+			case 0x0b: if (rt) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), d = DstGpr(m, gpr, rt, A64_X(0)); a64_mov_imm(m, A64_X(1), simm64); a64_cmp(m, a, A64_X(1)); a64_cset(m, d, A64_LO); FinishDst(m, gpr, rt, d); } return true; // SLTIU
+			case 0x0c: if (rt) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), d = DstGpr(m, gpr, rt, A64_X(0)); a64_mov_imm(m, A64_X(1), (uint64_t)zimm); a64_and(m, d, a, A64_X(1)); FinishDst(m, gpr, rt, d); } return true; // ANDI
+			case 0x0d: if (rt) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), d = DstGpr(m, gpr, rt, A64_X(0)); a64_mov_imm(m, A64_X(1), (uint64_t)zimm); a64_orr(m, d, a, A64_X(1)); FinishDst(m, gpr, rt, d); } return true; // ORI
+			case 0x0e: if (rt) { const a64r a = SrcGpr(m, gpr, rs, A64_X(0)), d = DstGpr(m, gpr, rt, A64_X(0)); a64_mov_imm(m, A64_X(1), (uint64_t)zimm); a64_eor(m, d, a, A64_X(1)); FinishDst(m, gpr, rt, d); } return true; // XORI
+			case 0x0f: if (rt) { const a64r d = DstGpr(m, gpr, rt, A64_X(0)); a64_mov_imm(m, a64_asw(d), zimm << 16); a64_sxtw(m, d, a64_asw(d)); FinishDst(m, gpr, rt, d); } return true; // LUI
 
 			// REGIMM (0x01): only MTSAB/MTSAH here -- the branches (BLTZ/BGEZ/
 			// B*ZAL/likely) are handled by EmitBranch. MTSAB/MTSAH write the
@@ -2983,17 +2979,17 @@ namespace {
 				const u32 rtf = (insn >> 16) & 31;
 				if (rtf == 0x18) // MTSAB: sa = (rs.UL[0] & 0xF) ^ (imm & 0xF)
 				{
-					LoadGpr(m, x0, gpr, rs); m.And(w0, w0, 0xF);
-					m.Eor(w0, w0, (u32)(zimm & 0xF));
-					m.Str(w0, RegsField(&cpuRegs.sa));
+					LoadGpr(m, A64_X(0), gpr, rs); a64_and_imm(m, A64_W(0), A64_W(0), 0xF);
+					a64_eor_imm(m, A64_W(0), A64_W(0), (u32)(zimm & 0xF));
+					a64_str(m, A64_W(0), RegsField(&cpuRegs.sa));
 					return true;
 				}
 				if (rtf == 0x19) // MTSAH: sa = ((rs.UL[0] & 0x7) ^ (imm & 0x7)) << 1
 				{
-					LoadGpr(m, x0, gpr, rs); m.And(w0, w0, 0x7);
-					m.Eor(w0, w0, (u32)(zimm & 0x7));
-					m.Lsl(w0, w0, 1);
-					m.Str(w0, RegsField(&cpuRegs.sa));
+					LoadGpr(m, A64_X(0), gpr, rs); a64_and_imm(m, A64_W(0), A64_W(0), 0x7);
+					a64_eor_imm(m, A64_W(0), A64_W(0), (u32)(zimm & 0x7));
+					a64_lsl_imm(m, A64_W(0), A64_W(0), 1);
+					a64_str(m, A64_W(0), RegsField(&cpuRegs.sa));
 					return true;
 				}
 				return false; // branches -> EmitBranch
@@ -3005,7 +3001,7 @@ namespace {
 			// the EE vtlb wrappers. gpr (x19) is callee-saved across the calls.
 			case 0x20: case 0x24: case 0x21: case 0x25: case 0x23: case 0x27: case 0x37:
 			{
-				{ const Register a = SrcGpr(m, gpr, rs, x0); m.Add(w0, a.W(), simm); }
+				{ const a64r a = SrcGpr(m, gpr, rs, A64_X(0)); a64_add_imm(m, A64_W(0), a64_asw(a), simm); }
 				const u32 amask = (op == 0x37) ? 7 : (op == 0x23 || op == 0x27) ? 3 : (op == 0x21 || op == 0x25) ? 1 : 0;
 				EmitMisalignGuard(m, amask); // C.53: cold path lives out of line
 				uint64_t fn = (op == 0x37) ? reinterpret_cast<uint64_t>(&eeRead64_arm64)
@@ -3021,10 +3017,10 @@ namespace {
 					EmitFastmemAccess(m, [&] {
 						switch (op)
 						{
-							case 0x20: case 0x24: m.ldrb(w0, MemOperand(vmapbase, w0, UXTW)); break; // LB/LBU
-							case 0x21: case 0x25: m.ldrh(w0, MemOperand(vmapbase, w0, UXTW)); break; // LH/LHU
-							case 0x23: case 0x27: m.ldr (w0, MemOperand(vmapbase, w0, UXTW)); break; // LW/LWU
-							default:              m.ldr (x0, MemOperand(vmapbase, w0, UXTW)); break; // LD
+							case 0x20: case 0x24: a64_ldrb(m, A64_W(0), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); break; // LB/LBU
+							case 0x21: case 0x25: a64_ldrh(m, A64_W(0), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); break; // LH/LHU
+							case 0x23: case 0x27: a64_ldr(m, A64_W(0), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); break; // LW/LWU
+							default:              a64_ldr(m, A64_X(0), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); break; // LD
 						}
 					});
 					DeferFastmemStub(m, fn, 0, 0);
@@ -3035,31 +3031,31 @@ namespace {
 					// the wrapper call. Same value semantics: Ldrb/Ldrh/Ldr w0
 					// zero-extend into x0 exactly like the u32-returning
 					// wrappers.
-					Label slow, done;
+					a64_label slow = A64_LABEL_INIT, done = A64_LABEL_INIT;
 					EmitVmapLookup(m, &slow);
 					switch (op)
 					{
-						case 0x20: case 0x24: m.Ldrb(w0, MemOperand(x10)); break; // LB/LBU
-						case 0x21: case 0x25: m.Ldrh(w0, MemOperand(x10)); break; // LH/LHU
-						case 0x23: case 0x27: m.Ldr (w0, MemOperand(x10)); break; // LW/LWU
-						default:              m.Ldr (x0, MemOperand(x10)); break; // LD
+						case 0x20: case 0x24: a64_ldrb(m, A64_W(0), a64_mem_off(A64_X(10), 0)); break; // LB/LBU
+						case 0x21: case 0x25: a64_ldrh(m, A64_W(0), a64_mem_off(A64_X(10), 0)); break; // LH/LHU
+						case 0x23: case 0x27: a64_ldr(m, A64_W(0), a64_mem_off(A64_X(10), 0)); break; // LW/LWU
+						default:              a64_ldr(m, A64_X(0), a64_mem_off(A64_X(10), 0)); break; // LD
 					}
-					m.B(&done);
-					m.Bind(&slow);
-					m.Mov(x16, fn); m.Blr(x16);
-					m.Bind(&done);
+					a64_b(m, &done);
+					a64_bind(m, &slow);
+					a64_mov_imm(m, A64_X(16), fn); a64_blr(m, A64_X(16));
+					a64_bind(m, &done);
 				}
-				else { m.Mov(x16, fn); m.Blr(x16); } // result in x0 (u32 returns are zero-extended in x0)
+				else { a64_mov_imm(m, A64_X(16), fn); a64_blr(m, A64_X(16)); } // result in x0 (u32 returns are zero-extended in x0)
 				if (rt)
 				{
 					switch (op)
 					{
-						case 0x20: m.Sxtb(x0, w0); break; // LB
-						case 0x21: m.Sxth(x0, w0); break; // LH
-						case 0x23: m.Sxtw(x0, w0); break; // LW
+						case 0x20: a64_sxtb(m, A64_X(0), A64_W(0)); break; // LB
+						case 0x21: a64_sxth(m, A64_X(0), A64_W(0)); break; // LH
+						case 0x23: a64_sxtw(m, A64_X(0), A64_W(0)); break; // LW
 						default: break;                   // LBU/LHU/LWU (zero-extended), LD (full 64)
 					}
-					StoreGpr(m, x0, gpr, rt);
+					StoreGpr(m, A64_X(0), gpr, rt);
 				}
 				return true;
 			}
@@ -3070,14 +3066,14 @@ namespace {
 			// interpreted ops / 10500 frames).
 			case 0x22: case 0x26: case 0x1a: case 0x1b:
 			{
-				{ const Register a = SrcGpr(m, gpr, rs, x0); m.Add(w0, a.W(), simm); }
-				m.Mov(w1, rt);
+				{ const a64r a = SrcGpr(m, gpr, rs, A64_X(0)); a64_add_imm(m, A64_W(0), a64_asw(a), simm); }
+				a64_mov_imm(m, A64_W(1), rt);
 				s_rc.FlushReg(m, gpr, rt); // the helper READS GPR[rt] for the merge
 				const uint64_t fn = (op == 0x22) ? reinterpret_cast<uint64_t>(&eeLWL_arm64)
 				                  : (op == 0x26) ? reinterpret_cast<uint64_t>(&eeLWR_arm64)
 				                  : (op == 0x1a) ? reinterpret_cast<uint64_t>(&eeLDL_arm64)
 				                  :                reinterpret_cast<uint64_t>(&eeLDR_arm64);
-				m.Mov(x16, fn); m.Blr(x16);
+				a64_mov_imm(m, A64_X(16), fn); a64_blr(m, A64_X(16));
 				s_rc.Invalidate(rt); // ...and then writes it directly
 				return true;
 			}
@@ -3085,23 +3081,23 @@ namespace {
 			// aligned word/dword, same helper-call pattern.
 			case 0x2a: case 0x2e: case 0x2c: case 0x2d:
 			{
-				{ const Register a = SrcGpr(m, gpr, rs, x0); m.Add(w0, a.W(), simm); }
-				m.Mov(w1, rt);
+				{ const a64r a = SrcGpr(m, gpr, rs, A64_X(0)); a64_add_imm(m, A64_W(0), a64_asw(a), simm); }
+				a64_mov_imm(m, A64_W(1), rt);
 				s_rc.FlushReg(m, gpr, rt); // the helper reads GPR[rt] from memory
 				const uint64_t fn = (op == 0x2a) ? reinterpret_cast<uint64_t>(&eeSWL_arm64)
 				                  : (op == 0x2e) ? reinterpret_cast<uint64_t>(&eeSWR_arm64)
 				                  : (op == 0x2c) ? reinterpret_cast<uint64_t>(&eeSDL_arm64)
 				                  :                reinterpret_cast<uint64_t>(&eeSDR_arm64);
-				m.Mov(x16, fn); m.Blr(x16);
+				a64_mov_imm(m, A64_X(16), fn); a64_blr(m, A64_X(16));
 				return true;
 			}
 			// Stores (SB/SH/SW/SD).
 			case 0x28: case 0x29: case 0x2b: case 0x3f:
 			{
-				{ const Register a = SrcGpr(m, gpr, rs, x0); m.Add(w0, a.W(), simm); }
+				{ const a64r a = SrcGpr(m, gpr, rs, A64_X(0)); a64_add_imm(m, A64_W(0), a64_asw(a), simm); }
 				const u32 amask = (op == 0x3f) ? 7 : (op == 0x2b) ? 3 : (op == 0x29) ? 1 : 0;
 				EmitMisalignGuard(m, amask); // C.53: cold path lives out of line
-				LoadGpr(m, x1, gpr, rt); // value (low bits used by the wrapper)
+				LoadGpr(m, A64_X(1), gpr, rt); // value (low bits used by the wrapper)
 				uint64_t fn = (op == 0x3f) ? reinterpret_cast<uint64_t>(&eeWrite64_arm64)
 				            : (op == 0x2b) ? reinterpret_cast<uint64_t>(&eeWrite32_arm64)
 				            : (op == 0x29) ? reinterpret_cast<uint64_t>(&eeWrite16_arm64)
@@ -3117,10 +3113,10 @@ namespace {
 					EmitFastmemAccess(m, [&] {
 						switch (op)
 						{
-							case 0x28: m.strb(w1, MemOperand(vmapbase, w0, UXTW)); break; // SB
-							case 0x29: m.strh(w1, MemOperand(vmapbase, w0, UXTW)); break; // SH
-							case 0x2b: m.str (w1, MemOperand(vmapbase, w0, UXTW)); break; // SW
-							default:   m.str (x1, MemOperand(vmapbase, w0, UXTW)); break; // SD
+							case 0x28: a64_strb(m, A64_W(1), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); break; // SB
+							case 0x29: a64_strh(m, A64_W(1), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); break; // SH
+							case 0x2b: a64_str(m, A64_W(1), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); break; // SW
+							default:   a64_str(m, A64_X(1), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); break; // SD
 						}
 					});
 					DeferFastmemStub(m, fn, 0, 0);
@@ -3132,21 +3128,21 @@ namespace {
 					// PageFaultHandler -> mmap_ClearCpuBlock unprotects and
 					// drops the stale blocks -> the kernel retries this Str;
 					// identical flow to interpreter stores.
-					Label slow, done;
+					a64_label slow = A64_LABEL_INIT, done = A64_LABEL_INIT;
 					EmitVmapLookup(m, &slow);
 					switch (op)
 					{
-						case 0x28: m.Strb(w1, MemOperand(x10)); break; // SB
-						case 0x29: m.Strh(w1, MemOperand(x10)); break; // SH
-						case 0x2b: m.Str (w1, MemOperand(x10)); break; // SW
-						default:   m.Str (x1, MemOperand(x10)); break; // SD
+						case 0x28: a64_strb(m, A64_W(1), a64_mem_off(A64_X(10), 0)); break; // SB
+						case 0x29: a64_strh(m, A64_W(1), a64_mem_off(A64_X(10), 0)); break; // SH
+						case 0x2b: a64_str(m, A64_W(1), a64_mem_off(A64_X(10), 0)); break; // SW
+						default:   a64_str(m, A64_X(1), a64_mem_off(A64_X(10), 0)); break; // SD
 					}
-					m.B(&done);
-					m.Bind(&slow);
-					m.Mov(x16, fn); m.Blr(x16);
-					m.Bind(&done);
+					a64_b(m, &done);
+					a64_bind(m, &slow);
+					a64_mov_imm(m, A64_X(16), fn); a64_blr(m, A64_X(16));
+					a64_bind(m, &done);
 				}
-				else { m.Mov(x16, fn); m.Blr(x16); }
+				else { a64_mov_imm(m, A64_X(16), fn); a64_blr(m, A64_X(16)); }
 				return true;
 			}
 			// PREF (0x33): the interpreter's PREF() body is empty (like SYNC),
@@ -3160,9 +3156,9 @@ namespace {
 			case 0x1e: // LQ
 			{
 				if (!rt) return false; // rt==0: rare, leave to interp
-				{ const Register a = SrcGpr(m, gpr, rs, x0); m.Add(w0, a.W(), simm); }
-				m.And(w0, w0, 0xfffffff0);
-				Label slow, done;
+				{ const a64r a = SrcGpr(m, gpr, rs, A64_X(0)); a64_add_imm(m, A64_W(0), a64_asw(a), simm); }
+				a64_and_imm(m, A64_W(0), A64_W(0), 0xfffffff0);
+				a64_label slow = A64_LABEL_INIT, done = A64_LABEL_INIT;
 				if (FastmemOk(s_emit_pc))
 				{
 					// Only the fastmem load can fault; patching it into `b stub`
@@ -3170,8 +3166,8 @@ namespace {
 					// GPR[rt] itself (x1 = &GPR[rt]), so the result lands in the
 					// same place either way -- which is why the resume point is
 					// AFTER the Str.
-					EmitFastmemAccess(m, [&] { m.ldr(q0, MemOperand(vmapbase, w0, UXTW)); });
-					m.Str(q0, MemOperand(gpr, rt * 16));
+					EmitFastmemAccess(m, [&] { a64_ldr(m, A64_Q(0), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); });
+					a64_str(m, A64_Q(0), a64_mem_off(gpr, rt * 16));
 					DeferFastmemStub(m, reinterpret_cast<uint64_t>(&eeRead128_arm64), 1, rt);
 				}
 				else
@@ -3179,30 +3175,30 @@ namespace {
 					if (InlineVmapEnabled())
 					{
 						EmitVmapLookup(m, &slow);
-						m.Ldr(q0, MemOperand(x10));
-						m.Str(q0, MemOperand(gpr, rt * 16));
-						m.B(&done);
-						m.Bind(&slow);
+						a64_ldr(m, A64_Q(0), a64_mem_off(A64_X(10), 0));
+						a64_str(m, A64_Q(0), a64_mem_off(gpr, rt * 16));
+						a64_b(m, &done);
+						a64_bind(m, &slow);
 					}
-					m.Add(x1, gpr, rt * 16);
-					m.Mov(x16, reinterpret_cast<uint64_t>(&eeRead128_arm64)); m.Blr(x16);
-					m.Bind(&done);
+					a64_add_imm(m, A64_X(1), gpr, rt * 16);
+					a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&eeRead128_arm64)); a64_blr(m, A64_X(16));
+					a64_bind(m, &done);
 				}
 				s_rc.Invalidate(rt); // 128-bit write bypasses StoreGpr (both paths)
 				return true;
 			}
 			case 0x1f: // SQ
 			{
-				{ const Register a = SrcGpr(m, gpr, rs, x0); m.Add(w0, a.W(), simm); }
-				m.And(w0, w0, 0xfffffff0);
+				{ const a64r a = SrcGpr(m, gpr, rs, A64_X(0)); a64_add_imm(m, A64_W(0), a64_asw(a), simm); }
+				a64_and_imm(m, A64_W(0), A64_W(0), 0xfffffff0);
 				s_rc.FlushReg(m, gpr, rt); // the 128-bit source is read from memory
-				Label slow, done;
+				a64_label slow = A64_LABEL_INIT, done = A64_LABEL_INIT;
 				if (FastmemOk(s_emit_pc))
 				{
 					// The GPR-side load can't fault; the fastmem store is the
 					// patch site (the wrapper re-reads GPR[rt] via x1).
-					m.Ldr(q0, MemOperand(gpr, rt * 16)); // GPR.r[0] is kept zero
-					EmitFastmemAccess(m, [&] { m.str(q0, MemOperand(vmapbase, w0, UXTW)); });
+					a64_ldr(m, A64_Q(0), a64_mem_off(gpr, rt * 16)); // GPR.r[0] is kept zero
+					EmitFastmemAccess(m, [&] { a64_str(m, A64_Q(0), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); });
 					DeferFastmemStub(m, reinterpret_cast<uint64_t>(&eeWrite128_arm64), 1, rt);
 				}
 				else
@@ -3210,14 +3206,14 @@ namespace {
 					if (InlineVmapEnabled())
 					{
 						EmitVmapLookup(m, &slow);
-						m.Ldr(q0, MemOperand(gpr, rt * 16)); // GPR.r[0] is kept zero
-						m.Str(q0, MemOperand(x10));
-						m.B(&done);
-						m.Bind(&slow);
+						a64_ldr(m, A64_Q(0), a64_mem_off(gpr, rt * 16)); // GPR.r[0] is kept zero
+						a64_str(m, A64_Q(0), a64_mem_off(A64_X(10), 0));
+						a64_b(m, &done);
+						a64_bind(m, &slow);
 					}
-					m.Add(x1, gpr, rt * 16);
-					m.Mov(x16, reinterpret_cast<uint64_t>(&eeWrite128_arm64)); m.Blr(x16);
-					m.Bind(&done);
+					a64_add_imm(m, A64_X(1), gpr, rt * 16);
+					a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&eeWrite128_arm64)); a64_blr(m, A64_X(16));
+					a64_bind(m, &done);
 				}
 				return true;
 			}
@@ -3266,13 +3262,13 @@ namespace {
 					const u32 rd = (insn >> 11) & 31, rs = (insn >> 21) & 31;
 					if (rd)
 					{
-						const Register a = SrcGpr(m, gpr, rs, x0);
-						m.Cls(w1, a.W());        // low word
-						m.Lsr(x2, a, 32);
-						m.Cls(w2, w2);           // high word
-						m.Bfi(x1, x2, 32, 32);   // rd = lo | (hi << 32)
-						const Register d = DstGpr(m, gpr, rd, x0);
-						m.Mov(d, x1);
+						const a64r a = SrcGpr(m, gpr, rs, A64_X(0));
+						a64_cls(m, A64_W(1), a64_asw(a));        // low word
+						a64_lsr_imm(m, A64_X(2), a, 32);
+						a64_cls(m, A64_W(2), A64_W(2));           // high word
+						a64_bfi(m, A64_X(1), A64_X(2), 32, 32);   // rd = lo | (hi << 32)
+						const a64r d = DstGpr(m, gpr, rd, A64_X(0));
+						a64_mov(m, d, A64_X(1));
 						FinishDst(m, gpr, rd, d);
 					}
 					return true;
@@ -3291,13 +3287,13 @@ namespace {
 					if (rd)
 					{
 						s_rc.FlushReg(m, gpr, rt); // low half is read from memory
-						m.Ldrh(w0, MemOperand(gpr, rt * 16));     // rt.US[0] (r0 memory kept zero)
-						m.Ldrh(w1, MemOperand(gpr, rt * 16 + 8)); // rt.US[4]
-						m.Mov(x2, 0x0001000100010001ull);
-						m.Mul(x0, x0, x2);
-						m.Mul(x1, x1, x2);
-						m.Str(x0, MemOperand(gpr, rd * 16));
-						m.Str(x1, MemOperand(gpr, rd * 16 + 8));
+						a64_ldrh(m, A64_W(0), a64_mem_off(gpr, rt * 16));     // rt.US[0] (r0 memory kept zero)
+						a64_ldrh(m, A64_W(1), a64_mem_off(gpr, rt * 16 + 8)); // rt.US[4]
+						a64_mov_imm(m, A64_X(2), 0x0001000100010001ull);
+						a64_mul(m, A64_X(0), A64_X(0), A64_X(2));
+						a64_mul(m, A64_X(1), A64_X(1), A64_X(2));
+						a64_str(m, A64_X(0), a64_mem_off(gpr, rd * 16));
+						a64_str(m, A64_X(1), a64_mem_off(gpr, rd * 16 + 8));
 						s_rc.Invalidate(rd); // direct write bypasses StoreGpr
 					}
 					return true;
@@ -3378,11 +3374,11 @@ namespace {
 					}
 					if (rd_ == 24)
 						return true;              // reads nothing
-					m.Ldr(w0, RegsField(&cpuRegs.CP0.r[rd_]));
+					a64_ldr(m, A64_W(0), RegsField(&cpuRegs.CP0.r[rd_]));
 					if (rd_ == 12)
-						m.And(w0, w0, 0xf0c79c1f);
-					m.Sxtw(x0, w0);
-					StoreGpr(m, x0, gpr, rt);
+						a64_and_imm(m, A64_W(0), A64_W(0), 0xf0c79c1f);
+					a64_sxtw(m, A64_X(0), A64_W(0));
+					StoreGpr(m, A64_X(0), gpr, rt);
 					return true;
 				}
 				if (rs == 0x04) { EmitInterpOpCall(m, gpr, insn, &intMTC0); return true; }
@@ -3404,9 +3400,9 @@ namespace {
 			// the interpreter's `if (addr & 3) return;`.
 			case 0x31:
 			{
-				{ const Register a = SrcGpr(m, gpr, rs, x0); m.Add(w0, a.W(), simm); }
-				Label skip;
-				m.Tst(w0, 3); m.B(&skip, ne);
+				{ const a64r a = SrcGpr(m, gpr, rs, A64_X(0)); a64_add_imm(m, A64_W(0), a64_asw(a), simm); }
+				a64_label skip = A64_LABEL_INIT;
+				a64_tst_imm(m, A64_W(0), 3); a64_b_cond(m, &skip, A64_NE);
 				// C.56: the FP loads/stores were the last memory ops still paying a
 				// full wrapper call (a 4-instruction address materialization plus
 				// the blr) on every access -- they never even used the old inline
@@ -3415,28 +3411,28 @@ namespace {
 				// the call.
 				if (FastmemOk(s_emit_pc))
 				{
-					EmitFastmemAccess(m, [&] { m.ldr(w0, MemOperand(vmapbase, w0, UXTW)); });
+					EmitFastmemAccess(m, [&] { a64_ldr(m, A64_W(0), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); });
 					DeferFastmemStub(m, reinterpret_cast<uint64_t>(&eeRead32_arm64), 0, 0);
 				}
-				else { m.Mov(x16, reinterpret_cast<uint64_t>(&eeRead32_arm64)); m.Blr(x16); }
-				m.Mov(x1, reinterpret_cast<uint64_t>(&fpuRegs)); m.Str(w0, MemOperand(x1, rt * 4));
-				m.Bind(&skip);
+				else { a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&eeRead32_arm64)); a64_blr(m, A64_X(16)); }
+				a64_mov_imm(m, A64_X(1), reinterpret_cast<uint64_t>(&fpuRegs)); a64_str(m, A64_W(0), a64_mem_off(A64_X(1), rt * 4));
+				a64_bind(m, &skip);
 				return true;
 			}
 			// SWC1 ft, off(base): write32(addr, fpr[ft].UL); misalign silently skipped.
 			case 0x39:
 			{
-				{ const Register a = SrcGpr(m, gpr, rs, x0); m.Add(w0, a.W(), simm); }
-				Label skip;
-				m.Tst(w0, 3); m.B(&skip, ne);
-				m.Mov(x1, reinterpret_cast<uint64_t>(&fpuRegs)); m.Ldr(w1, MemOperand(x1, rt * 4));
+				{ const a64r a = SrcGpr(m, gpr, rs, A64_X(0)); a64_add_imm(m, A64_W(0), a64_asw(a), simm); }
+				a64_label skip = A64_LABEL_INIT;
+				a64_tst_imm(m, A64_W(0), 3); a64_b_cond(m, &skip, A64_NE);
+				a64_mov_imm(m, A64_X(1), reinterpret_cast<uint64_t>(&fpuRegs)); a64_ldr(m, A64_W(1), a64_mem_off(A64_X(1), rt * 4));
 				if (FastmemOk(s_emit_pc)) // C.56
 				{
-					EmitFastmemAccess(m, [&] { m.str(w1, MemOperand(vmapbase, w0, UXTW)); });
+					EmitFastmemAccess(m, [&] { a64_str(m, A64_W(1), a64_mem_ext(vmapbase, A64_W(0), A64_UXTW, 0)); });
 					DeferFastmemStub(m, reinterpret_cast<uint64_t>(&eeWrite32_arm64), 0, 0);
 				}
-				else { m.Mov(x16, reinterpret_cast<uint64_t>(&eeWrite32_arm64)); m.Blr(x16); }
-				m.Bind(&skip);
+				else { a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&eeWrite32_arm64)); a64_blr(m, A64_X(16)); }
+				a64_bind(m, &skip);
 				return true;
 			}
 
@@ -3460,19 +3456,19 @@ namespace {
 			case 0x36: // LQC2
 			{
 				static u128 s_lqc2_sink; // ft == 0: the read happens, the value doesn't land
-				m.Mov(x16, reinterpret_cast<uint64_t>(&vu0Sync)); m.Blr(x16);
-				{ const Register a = SrcGpr(m, gpr, rs, x0); m.Add(w0, a.W(), simm); }
-				m.Mov(x1, rt ? reinterpret_cast<uint64_t>(&vuRegs[0].VF[rt])
+				a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&vu0Sync)); a64_blr(m, A64_X(16));
+				{ const a64r a = SrcGpr(m, gpr, rs, A64_X(0)); a64_add_imm(m, A64_W(0), a64_asw(a), simm); }
+				a64_mov_imm(m, A64_X(1), rt ? reinterpret_cast<uint64_t>(&vuRegs[0].VF[rt])
 				             : reinterpret_cast<uint64_t>(&s_lqc2_sink));
-				m.Mov(x16, reinterpret_cast<uint64_t>(&eeRead128_arm64)); m.Blr(x16);
+				a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&eeRead128_arm64)); a64_blr(m, A64_X(16));
 				return true;
 			}
 			case 0x3e: // SQC2
 			{
-				m.Mov(x16, reinterpret_cast<uint64_t>(&vu0Sync)); m.Blr(x16);
-				{ const Register a = SrcGpr(m, gpr, rs, x0); m.Add(w0, a.W(), simm); }
-				m.Mov(x1, reinterpret_cast<uint64_t>(&vuRegs[0].VF[rt])); // VF[0] is the (0,0,0,1) constant
-				m.Mov(x16, reinterpret_cast<uint64_t>(&eeWrite128_arm64)); m.Blr(x16);
+				a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&vu0Sync)); a64_blr(m, A64_X(16));
+				{ const a64r a = SrcGpr(m, gpr, rs, A64_X(0)); a64_add_imm(m, A64_W(0), a64_asw(a), simm); }
+				a64_mov_imm(m, A64_X(1), reinterpret_cast<uint64_t>(&vuRegs[0].VF[rt])); // VF[0] is the (0,0,0,1) constant
+				a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&eeWrite128_arm64)); a64_blr(m, A64_X(16));
 				return true;
 			}
 			default: return false;
@@ -3485,7 +3481,7 @@ namespace {
 	// non-RAM pc) it returns to the dispatcher, which compiles it and re-enters.
 	// x30 (the original return address into eeJitRunBlock) propagates through the
 	// chain, so the final `ret` returns to the C++ caller.
-	void EmitChainEpilogue(MacroAssembler& m)
+	void EmitChainEpilogue(a64_emit* m)
 	{
 		// C.40: try to chain FIRST, with the frame (and x19) still live --
 		// the successor's chain entry skips its prologue, so back-to-back
@@ -3505,29 +3501,29 @@ namespace {
 		// 15 instructions and 3 loads -> 12 instructions and 2 loads, on every
 		// block exit -- the hot EE loops are many tiny blocks, so their tails are
 		// a real part of what they execute.
-		m.Ldr(w1, RegsField(&cpuRegs.pc));      // pc (may have been redirected by the event test)
-		m.Tst(w1, 0x1e000000);                  // outside the 32 MB RAM window?
-		m.B(s_blk_ret, ne);                     // -> return to the dispatcher
-		m.Mov(x0, reinterpret_cast<uint64_t>(s_lut)); // the LUT base itself, materialized
-		m.Ubfx(w2, w1, 2, 23);                  // idx = (pc & 0x01ffffff) >> 2
-		m.Ldr(x3, MemOperand(x0, w2, UXTW, 3)); // fn = s_lut[idx]
-		m.Cbz(x3, s_blk_ret);                   // uncompiled -> return
-		m.Add(x3, x3, kChainEntryOffset);       // skip the successor's prologue
-		m.Br(x3);                               // tail-jump to next block's body
+		a64_ldr(m, A64_W(1), RegsField(&cpuRegs.pc));      // pc (may have been redirected by the event test)
+		a64_tst_imm(m, A64_W(1), 0x1e000000);                  // outside the 32 MB RAM window?
+		a64_b_cond(m, s_blk_ret, A64_NE);                     // -> return to the dispatcher
+		a64_mov_imm(m, A64_X(0), reinterpret_cast<uint64_t>(s_lut)); // the LUT base itself, materialized
+		a64_ubfx(m, A64_W(2), A64_W(1), 2, 23);                  // idx = (pc & 0x01ffffff) >> 2
+		a64_ldr(m, A64_X(3), a64_mem_ext(A64_X(0), A64_W(2), A64_UXTW, 3)); // fn = s_lut[idx]
+		a64_cbz(m, A64_X(3), s_blk_ret);                   // uncompiled -> return
+		a64_add_imm(m, A64_X(3), A64_X(3), kChainEntryOffset);       // skip the successor's prologue
+		a64_br(m, A64_X(3));                               // tail-jump to next block's body
 	}
 
 	// C.54: the frame pop + ret, emitted ONCE per block in the stub area (every
 	// exit used to carry its own copy: 8 instructions each, inline, cold).
-	void EmitFrameRet(MacroAssembler& m)
+	void EmitFrameRet(a64_emit* m)
 	{
-		m.Ldp(x19, x20, MemOperand(sp, 0));
-		m.Ldp(x21, x30, MemOperand(sp, 16));
-		m.Ldp(x22, x23, MemOperand(sp, 32));
-		m.Ldp(x24, x25, MemOperand(sp, 48));
-		m.Ldp(x26, x27, MemOperand(sp, 64));
-		m.Ldr(x28, MemOperand(sp, 80));
-		m.Add(sp, sp, 96);
-		m.Ret();
+		a64_ldp(m, A64_X(19), A64_X(20), a64_mem_off(A64_SP, 0));
+		a64_ldp(m, A64_X(21), A64_X(30), a64_mem_off(A64_SP, 16));
+		a64_ldp(m, A64_X(22), A64_X(23), a64_mem_off(A64_SP, 32));
+		a64_ldp(m, A64_X(24), A64_X(25), a64_mem_off(A64_SP, 48));
+		a64_ldp(m, A64_X(26), A64_X(27), a64_mem_off(A64_SP, 64));
+		a64_ldr(m, A64_X(28), a64_mem_off(A64_SP, 80));
+		a64_add_imm(m, A64_SP, A64_SP, 96);
+		a64_ret(m);
 	}
 
 	// C.54: exit to a compile-time-known successor.
@@ -3542,41 +3538,41 @@ namespace {
 	// computation. The due path (call the event test, then chain generically off
 	// the possibly-redirected pc) is deferred to the block's stub area, so the
 	// hot stream carries none of it -- same reasoning as C.51/C.53.
-	void EmitKnownExit(MacroAssembler& m, u32 target_pc, uint64_t evt)
+	void EmitKnownExit(a64_emit* m, u32 target_pc, uint64_t evt)
 	{
 		const u32 np = Norm(target_pc);
 		// A target outside RAM has no LUT slot -> fall back to the generic tail.
 		if (!s_lut || !InRam(np))
 		{
-			if (evt) { m.Mov(x16, evt); m.Blr(x16); }
+			if (evt) { a64_mov_imm(m, A64_X(16), evt); a64_blr(m, A64_X(16)); }
 			EmitChainEpilogue(m);
 			return;
 		}
 		if (evt)
 		{
 			s_exit_labels.emplace_back();
-			Label* slow = &s_exit_labels.back();
-			m.Ldr(x0, RegsField(&cpuRegs.cycle));
-			m.Ldr(x1, RegsField(&cpuRegs.nextEventCycle));
-			m.Subs(x0, x0, x1);   // (s64)(cycle - nextEventCycle)
-			m.B(slow, pl);        // event due -> out-of-line stub
+			a64_label* slow = &s_exit_labels.back();
+			a64_ldr(m, A64_X(0), RegsField(&cpuRegs.cycle));
+			a64_ldr(m, A64_X(1), RegsField(&cpuRegs.nextEventCycle));
+			a64_subs(m, A64_X(0), A64_X(0), A64_X(1));   // (s64)(cycle - nextEventCycle)
+			a64_b_cond(m, slow, A64_PL);        // event due -> out-of-line stub
 			s_exit_pending.push_back({slow, evt});
 		}
 		// Not due (or no test at all): pc == target_pc, guaranteed.
-		m.Mov(x3, reinterpret_cast<uint64_t>(&s_lut[np >> 2])); // the LUT slot itself
-		m.Ldr(x3, MemOperand(x3));
-		m.Cbz(x3, s_blk_ret);             // uncompiled -> return to the dispatcher
-		m.Add(x3, x3, kChainEntryOffset); // skip the successor's prologue
-		m.Br(x3);
+		a64_mov_imm(m, A64_X(3), reinterpret_cast<uint64_t>(&s_lut[np >> 2])); // the LUT slot itself
+		a64_ldr(m, A64_X(3), a64_mem_off(A64_X(3), 0));
+		a64_cbz(m, A64_X(3), s_blk_ret);             // uncompiled -> return to the dispatcher
+		a64_add_imm(m, A64_X(3), A64_X(3), kChainEntryOffset); // skip the successor's prologue
+		a64_br(m, A64_X(3));
 	}
 	// Deferred: the event-due tails, then the block's single return path.
-	void EmitExitStubs(MacroAssembler& m)
+	void EmitExitStubs(a64_emit* m)
 	{
 		for (ExitPending& e : s_exit_pending)
 		{
-			m.Bind(e.slow);
-			m.Mov(x16, e.evt);
-			m.Blr(x16);           // may redirect pc (exception/interrupt)
+			a64_bind(m, e.slow);
+			a64_mov_imm(m, A64_X(16), e.evt);
+			a64_blr(m, A64_X(16));           // may redirect pc (exception/interrupt)
 			EmitChainEpilogue(m); // ... so chain off the pc it left behind
 		}
 		// C.60: the manual block's source changed under it. It has just been
@@ -3584,12 +3580,12 @@ namespace {
 		// back to the dispatcher, which compiles it again from live memory.
 		if (s_stale)
 		{
-			m.Bind(s_stale);
-			m.Mov(w0, s_stale_pc);
-			m.Str(w0, RegsField(&cpuRegs.pc));
-			m.B(s_blk_ret);
+			a64_bind(m, s_stale);
+			a64_mov_imm(m, A64_W(0), s_stale_pc);
+			a64_str(m, A64_W(0), RegsField(&cpuRegs.pc));
+			a64_b(m, s_blk_ret);
 		}
-		m.Bind(s_blk_ret);
+		a64_bind(m, s_blk_ret);
 		EmitFrameRet(m);
 	}
 
@@ -3683,60 +3679,60 @@ namespace {
 	// each round-tripping the value through memory. Fuse them: one
 	// materialization, one load, one store, and the non-default-rate path (which
 	// calls the helper) is a stub, not inline.
-	void EmitTailCycles(MacroAssembler& m, int cyc, bool with_update)
+	void EmitTailCycles(a64_emit* m, int cyc, bool with_update)
 	{
 		const uint64_t upd = reinterpret_cast<uint64_t>(&eeUpdateCycles_arm64);
-		m.Mov(x10, reinterpret_cast<uint64_t>(&cpuBlockCycles)); // once, for both halves
-		m.Ldr(w1, RegsField(&cpuRegs.CP0.n.Config));
-		m.Mov(w2, cyc); m.Mov(w3, cyc * 2);
-		m.Tst(w1, 1u << 18);
-		m.Csel(w2, w2, w3, ne);
-		m.Ldr(w0, MemOperand(x10));
-		m.Add(w0, w0, w2); // cpuBlockCycles += cyc * (2 - CP0.Config[18])
+		a64_mov_imm(m, A64_X(10), reinterpret_cast<uint64_t>(&cpuBlockCycles)); // once, for both halves
+		a64_ldr(m, A64_W(1), RegsField(&cpuRegs.CP0.n.Config));
+		a64_mov_imm(m, A64_W(2), cyc); a64_mov_imm(m, A64_W(3), cyc * 2);
+		a64_tst_imm(m, A64_W(1), 1u << 18);
+		a64_csel(m, A64_W(2), A64_W(2), A64_W(3), A64_NE);
+		a64_ldr(m, A64_W(0), a64_mem_off(A64_X(10), 0));
+		a64_add(m, A64_W(0), A64_W(0), A64_W(2)); // cpuBlockCycles += cyc * (2 - CP0.Config[18])
 
 		if (!with_update)
 		{
-			m.Str(w0, MemOperand(x10));
-			if (with_update) { m.Mov(x16, upd); m.Blr(x16); }
+			a64_str(m, A64_W(0), a64_mem_off(A64_X(10), 0));
+			if (with_update) { a64_mov_imm(m, A64_X(16), upd); a64_blr(m, A64_X(16)); }
 			return;
 		}
 		// Default cycle rate: cycle += max(1, cpuBlockCycles >> 3); bc &= 7.
-		Label slow, done;
-		m.Mov(x11, reinterpret_cast<uint64_t>(&EmuConfig.Speedhacks.EECycleRate));
-		m.Ldrsb(w1, MemOperand(x11));
-		m.Cbnz(w1, &slow);
-		m.Lsr(w2, w0, 3);
-		m.Cmp(w2, 0);
-		m.Csinc(w2, w2, wzr, ne); // max(1, bc >> 3)
+		a64_label slow = A64_LABEL_INIT, done = A64_LABEL_INIT;
+		a64_mov_imm(m, A64_X(11), reinterpret_cast<uint64_t>(&EmuConfig.Speedhacks.EECycleRate));
+		a64_ldrsb(m, A64_W(1), a64_mem_off(A64_X(11), 0));
+		a64_cbnz(m, A64_W(1), &slow);
+		a64_lsr_imm(m, A64_W(2), A64_W(0), 3);
+		a64_cmp_imm(m, A64_W(2), 0);
+		a64_csinc(m, A64_W(2), A64_W(2), A64_WZR, A64_NE); // max(1, bc >> 3)
 		// cpuRegs.cycle is 64 bits wide; the add has to carry out of the
 		// low word or the clock steps back 2^32 cycles when it crosses it.
-		m.Ldr(x3, RegsField(&cpuRegs.cycle));
-		m.Add(x3, x3, Operand(w2, UXTW));
-		m.Str(x3, RegsField(&cpuRegs.cycle));
-		m.And(w0, w0, 7);
-		m.Str(w0, MemOperand(x10));
-		m.B(&done);
-		m.Bind(&slow);
-		m.Str(w0, MemOperand(x10)); // the helper reads cpuBlockCycles from memory
-		m.Mov(x16, upd);
-		m.Blr(x16);
-		m.Bind(&done);
+		a64_ldr(m, A64_X(3), RegsField(&cpuRegs.cycle));
+		a64_add_ext(m, A64_X(3), A64_X(3), A64_W(2), A64_UXTW, 0);
+		a64_str(m, A64_X(3), RegsField(&cpuRegs.cycle));
+		a64_and_imm(m, A64_W(0), A64_W(0), 7);
+		a64_str(m, A64_W(0), a64_mem_off(A64_X(10), 0));
+		a64_b(m, &done);
+		a64_bind(m, &slow);
+		a64_str(m, A64_W(0), a64_mem_off(A64_X(10), 0)); // the helper reads cpuBlockCycles from memory
+		a64_mov_imm(m, A64_X(16), upd);
+		a64_blr(m, A64_X(16));
+		a64_bind(m, &done);
 	}
 
-	void EmitCycleBookkeeping(MacroAssembler& m, int cyc) { EmitTailCycles(m, cyc, false); }
+	void EmitCycleBookkeeping(a64_emit* m, int cyc) { EmitTailCycles(m, cyc, false); }
 
-	inline void StorePC(MacroAssembler& m, const Register& wsrc)
+	inline void StorePC(a64_emit* m, const a64r& wsrc)
 	{
-		m.Str(wsrc, RegsField(&cpuRegs.pc));
+		a64_str(m, wsrc, RegsField(&cpuRegs.pc));
 	}
-	inline void StorePCImm(MacroAssembler& m, u32 v) { m.Mov(w0, v); StorePC(m, w0); }
+	inline void StorePCImm(a64_emit* m, u32 v) { a64_mov_imm(m, A64_W(0), v); StorePC(m, A64_W(0)); }
 
 
 	// Translate a branch/jump (ends the block via the chaining epilogue). EE: the
 	// delay slot runs only when taken; intEventTest() runs on both paths; not-taken
 	// continues at bpc+4. Likely branches / Goemon-HLE JAL / untranslatable delay
 	// slot -> false (interpreter finishes the basic block).
-	bool EmitBranch(MacroAssembler& m, const Register& gpr, u32 bpc, u32 insn, int cyc_leading)
+	bool EmitBranch(a64_emit* m, const a64r& gpr, u32 bpc, u32 insn, int cyc_leading)
 	{
 		s_rc.pinned = 0; // new op: previous op's Register handles are dead
 		const u32 op = insn >> 26, rs = (insn >> 21) & 31, rt = (insn >> 16) & 31, funct = insn & 0x3f;
@@ -3747,7 +3743,7 @@ namespace {
 		bool bc1 = false; // condition = FCR31 C flag (0x00800000), tested inline
 		bool bc2 = false; // condition = CP2COND (VPU_STAT VU0-busy bit 0x100), tested inline
 		int  link = -1;
-		Condition cond = al;
+		unsigned cond = A64_AL;
 		u32  tconst = 0;
 		const u32 jtarget = (((bpc + 4) & 0xf0000000) | ((insn & 0x3ffffff) << 2));
 
@@ -3756,26 +3752,26 @@ namespace {
 		else if (op == 0x02) { uncond = true; tconst = jtarget; }
 		else if (op == 0x03) { uncond = true; link = 31; tconst = jtarget;
 			if (jtarget == 0x3563b8 || jtarget == 0x35d628 || jtarget == 0x35c118) return false; }
-		else if (op == 0x04) { two = true; cond = eq; tconst = bpc + 4 + simm * 4; }
-		else if (op == 0x05) { two = true; cond = ne; tconst = bpc + 4 + simm * 4; }
-		else if (op == 0x06) { one = true; cond = le; tconst = bpc + 4 + simm * 4; }
-		else if (op == 0x07) { one = true; cond = gt; tconst = bpc + 4 + simm * 4; }
+		else if (op == 0x04) { two = true; cond = A64_EQ; tconst = bpc + 4 + simm * 4; }
+		else if (op == 0x05) { two = true; cond = A64_NE; tconst = bpc + 4 + simm * 4; }
+		else if (op == 0x06) { one = true; cond = A64_LE; tconst = bpc + 4 + simm * 4; }
+		else if (op == 0x07) { one = true; cond = A64_GT; tconst = bpc + 4 + simm * 4; }
 		// Likely branches: taken == normal (delay slot inline); not-taken SKIPS
 		// the delay slot (continue at bpc+8) and, like the interpreter's
 		// BEQL/BNEL/BLEZL/BGTZL/BLTZL/BGEZL, calls intEventTest there.
-		else if (op == 0x14) { two = true; cond = eq; tconst = bpc + 4 + simm * 4; likely = true; }
-		else if (op == 0x15) { two = true; cond = ne; tconst = bpc + 4 + simm * 4; likely = true; }
-		else if (op == 0x16) { one = true; cond = le; tconst = bpc + 4 + simm * 4; likely = true; }
-		else if (op == 0x17) { one = true; cond = gt; tconst = bpc + 4 + simm * 4; likely = true; }
+		else if (op == 0x14) { two = true; cond = A64_EQ; tconst = bpc + 4 + simm * 4; likely = true; }
+		else if (op == 0x15) { two = true; cond = A64_NE; tconst = bpc + 4 + simm * 4; likely = true; }
+		else if (op == 0x16) { one = true; cond = A64_LE; tconst = bpc + 4 + simm * 4; likely = true; }
+		else if (op == 0x17) { one = true; cond = A64_GT; tconst = bpc + 4 + simm * 4; likely = true; }
 		else if (op == 0x01)
 		{
 			const u32 t = bpc + 4 + simm * 4;
-			if      (rt == 0x00) { one = true; cond = lt; tconst = t; }
-			else if (rt == 0x01) { one = true; cond = ge; tconst = t; }
-			else if (rt == 0x02) { one = true; cond = lt; tconst = t; likely = true; } // BLTZL
-			else if (rt == 0x03) { one = true; cond = ge; tconst = t; likely = true; } // BGEZL
-			else if (rt == 0x10) { one = true; cond = lt; tconst = t; link = 31; }
-			else if (rt == 0x11) { one = true; cond = ge; tconst = t; link = 31; }
+			if      (rt == 0x00) { one = true; cond = A64_LT; tconst = t; }
+			else if (rt == 0x01) { one = true; cond = A64_GE; tconst = t; }
+			else if (rt == 0x02) { one = true; cond = A64_LT; tconst = t; likely = true; } // BLTZL
+			else if (rt == 0x03) { one = true; cond = A64_GE; tconst = t; likely = true; } // BGEZL
+			else if (rt == 0x10) { one = true; cond = A64_LT; tconst = t; link = 31; }
+			else if (rt == 0x11) { one = true; cond = A64_GE; tconst = t; link = 31; }
 			else return false;
 		}
 		// BC0F/BC0T(+L): branch on CPCOND0 == 0/1 (COP0.c: DMAC CIS|~CPC
@@ -3785,10 +3781,10 @@ namespace {
 		else if (op == 0x10 && rs == 0x08)
 		{
 			const u32 t = bpc + 4 + simm * 4;
-			if      (rt == 0x00) { bc0 = true; cond = eq; tconst = t; }                // BC0F
-			else if (rt == 0x01) { bc0 = true; cond = ne; tconst = t; }                // BC0T
-			else if (rt == 0x02) { bc0 = true; cond = eq; tconst = t; likely = true; } // BC0FL
-			else if (rt == 0x03) { bc0 = true; cond = ne; tconst = t; likely = true; } // BC0TL
+			if      (rt == 0x00) { bc0 = true; cond = A64_EQ; tconst = t; }                // BC0F
+			else if (rt == 0x01) { bc0 = true; cond = A64_NE; tconst = t; }                // BC0T
+			else if (rt == 0x02) { bc0 = true; cond = A64_EQ; tconst = t; likely = true; } // BC0FL
+			else if (rt == 0x03) { bc0 = true; cond = A64_NE; tconst = t; likely = true; } // BC0TL
 			else return false;
 		}
 		// BC1F/BC1T(+L): branch on the FCR31 C flag (0x00800000) clear/set.
@@ -3798,10 +3794,10 @@ namespace {
 		else if (op == 0x11 && rs == 0x08)
 		{
 			const u32 t = bpc + 4 + simm * 4;
-			if      (rt == 0x00) { bc1 = true; cond = eq; tconst = t; }                // BC1F
-			else if (rt == 0x01) { bc1 = true; cond = ne; tconst = t; }                // BC1T
-			else if (rt == 0x02) { bc1 = true; cond = eq; tconst = t; likely = true; } // BC1FL
-			else if (rt == 0x03) { bc1 = true; cond = ne; tconst = t; likely = true; } // BC1TL
+			if      (rt == 0x00) { bc1 = true; cond = A64_EQ; tconst = t; }                // BC1F
+			else if (rt == 0x01) { bc1 = true; cond = A64_NE; tconst = t; }                // BC1T
+			else if (rt == 0x02) { bc1 = true; cond = A64_EQ; tconst = t; likely = true; } // BC1FL
+			else if (rt == 0x03) { bc1 = true; cond = A64_NE; tconst = t; likely = true; } // BC1TL
 			else return false;
 		}
 		// BC2F/BC2T(+L): branch on CP2COND = VPU_STAT's VU0-busy bit (0x100).
@@ -3811,10 +3807,10 @@ namespace {
 		else if (op == 0x12 && rs == 0x08)
 		{
 			const u32 t = bpc + 4 + simm * 4;
-			if      (rt == 0x00) { bc2 = true; cond = eq; tconst = t; }                // BC2F
-			else if (rt == 0x01) { bc2 = true; cond = ne; tconst = t; }                // BC2T
-			else if (rt == 0x02) { bc2 = true; cond = eq; tconst = t; likely = true; } // BC2FL
-			else if (rt == 0x03) { bc2 = true; cond = ne; tconst = t; likely = true; } // BC2TL
+			if      (rt == 0x00) { bc2 = true; cond = A64_EQ; tconst = t; }                // BC2F
+			else if (rt == 0x01) { bc2 = true; cond = A64_NE; tconst = t; }                // BC2T
+			else if (rt == 0x02) { bc2 = true; cond = A64_EQ; tconst = t; likely = true; } // BC2FL
+			else if (rt == 0x03) { bc2 = true; cond = A64_NE; tconst = t; likely = true; } // BC2TL
 			else return false;
 		}
 		else return false;
@@ -3848,14 +3844,14 @@ namespace {
 		// the next due branch, not the current one) for upstream-rec timing.
 		const auto EmitEventTest = [&m, evt]()
 		{
-			Label skip;
-			m.Ldr(x0, RegsField(&cpuRegs.cycle));
-			m.Ldr(x1, RegsField(&cpuRegs.nextEventCycle));
-			m.Subs(x0, x0, x1); // (s64)(cycle - nextEventCycle)
-			m.B(&skip, mi);     // not due yet
-			m.Mov(x16, evt);
-			m.Blr(x16);
-			m.Bind(&skip);
+			a64_label skip = A64_LABEL_INIT;
+			a64_ldr(m, A64_X(0), RegsField(&cpuRegs.cycle));
+			a64_ldr(m, A64_X(1), RegsField(&cpuRegs.nextEventCycle));
+			a64_subs(m, A64_X(0), A64_X(0), A64_X(1)); // (s64)(cycle - nextEventCycle)
+			a64_b_cond(m, &skip, A64_MI);     // not due yet
+			a64_mov_imm(m, A64_X(16), evt);
+			a64_blr(m, A64_X(16));
+			a64_bind(m, &skip);
 		};
 
 		// C.39: inline the default-cycle-rate body of intUpdateCPUCycles
@@ -3876,28 +3872,28 @@ namespace {
 			&& ((tconst & 0x1fffffff) == 0x00081fc0);
 		const auto EmitIdleSkip = [&m]()
 		{
-			m.Ldr(x0, RegsField(&cpuRegs.cycle));
-			m.Ldr(x1, RegsField(&cpuRegs.nextEventCycle));
-			m.Cmp(x1, x0);
-			m.Csel(x0, x1, x0, gt); // (s64)(nextEventCycle - cycle) > 0
-			m.Str(x0, RegsField(&cpuRegs.cycle));
+			a64_ldr(m, A64_X(0), RegsField(&cpuRegs.cycle));
+			a64_ldr(m, A64_X(1), RegsField(&cpuRegs.nextEventCycle));
+			a64_cmp(m, A64_X(1), A64_X(0));
+			a64_csel(m, A64_X(0), A64_X(1), A64_X(0), A64_GT); // (s64)(nextEventCycle - cycle) > 0
+			a64_str(m, A64_X(0), RegsField(&cpuRegs.cycle));
 		};
 
 		// JR/JALR target first: `jalr rd, rs` with rd == rs jumps to the old
 		// rs (JALR() in Interpreter.c reads it before _SetLink).
-		if (is_jr) LoadGpr(m, x20, gpr, rs);
+		if (is_jr) LoadGpr(m, A64_X(20), gpr, rs);
 		// Link value is ZERO-extended to match the interpreter's _SetLink
 		// (R5900.h: UD[0] = u32 pc+4) -- NOT sign-extended as real MIPS64 would.
 		// Kernel return addresses (0x8xxxxxxx) otherwise get 0xffffffff upper
 		// halves that the interpreter path never produces.
-		if (link > 0) { m.Mov(w0, bpc + 8); StoreGpr(m, x0, gpr, (u32)link); }
+		if (link > 0) { a64_mov_imm(m, A64_W(0), bpc + 8); StoreGpr(m, A64_X(0), gpr, (u32)link); }
 
 		if (uncond)
 		{
 			s_emit_pc = bpc + 4; // delay slot
 			Cop2RunInvalidate(); s_emit_budget = 1; // C.66
 			EmitSimple(m, gpr, ds);
-			if (is_jr) StorePC(m, w20); else StorePCImm(m, tconst);
+			if (is_jr) StorePC(m, A64_W(20)); else StorePCImm(m, tconst);
 			s_rc.FlushDirty(m, gpr); // block exit: the next block reads GPR memory
 			EmitTailCycles(m, cyc_taken, true); // C.55 (bookkeeping + update, fused)
 			if (idle_skip) EmitIdleSkip();
@@ -3909,30 +3905,30 @@ namespace {
 		if (bc0)
 		{
 			// CPCOND0 is a plain int() reading dmacRegs; call it directly.
-			m.Mov(x16, reinterpret_cast<uint64_t>(&intCPCOND0));
-			m.Blr(x16);
-			m.Cmp(w0, 0); // eq -> CPCOND0()==0 (BC0F taken), ne -> ==1 (BC0T taken)
+			a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&intCPCOND0));
+			a64_blr(m, A64_X(16));
+			a64_cmp_imm(m, A64_W(0), 0); // eq -> CPCOND0()==0 (BC0F taken), ne -> ==1 (BC0T taken)
 		}
 		else if (bc1)
 		{
 			// FCR31 lives at fpuRegs.fprc[31] (byte offset 252).
-			m.Mov(x10, reinterpret_cast<uint64_t>(&fpuRegs));
-			m.Ldr(w0, MemOperand(x10, 252));
-			m.Tst(w0, 0x00800000); // eq -> C clear (BC1F taken), ne -> C set (BC1T taken)
+			a64_mov_imm(m, A64_X(10), reinterpret_cast<uint64_t>(&fpuRegs));
+			a64_ldr(m, A64_W(0), a64_mem_off(A64_X(10), 252));
+			a64_tst_imm(m, A64_W(0), 0x00800000); // eq -> C clear (BC1F taken), ne -> C set (BC1T taken)
 		}
 		else if (bc2)
 		{
-			m.Mov(x10, reinterpret_cast<uint64_t>(&vuRegs[0].VI[REG_VPU_STAT].UL));
-			m.Ldr(w0, MemOperand(x10));
-			m.Tst(w0, 0x100); // eq -> VU0 idle (BC2F taken), ne -> busy (BC2T taken)
+			a64_mov_imm(m, A64_X(10), reinterpret_cast<uint64_t>(&vuRegs[0].VI[REG_VPU_STAT].UL));
+			a64_ldr(m, A64_W(0), a64_mem_off(A64_X(10), 0));
+			a64_tst_imm(m, A64_W(0), 0x100); // eq -> VU0 idle (BC2F taken), ne -> busy (BC2T taken)
 		}
 		else
 		{
-			const Register a = SrcGpr(m, gpr, rs, x0);
+			const a64r a = SrcGpr(m, gpr, rs, A64_X(0));
 			// C.57: beqz/bnez (rt == r0) is the common form -- compare against the
 			// immediate zero instead of materializing a zero into a scratch first.
-			if (two && rt) { const Register b = SrcGpr(m, gpr, rt, x1); m.Cmp(a, b); }
-			else m.Cmp(a, 0);
+			if (two && rt) { const a64r b = SrcGpr(m, gpr, rt, A64_X(1)); a64_cmp(m, a, b); }
+			else a64_cmp_imm(m, a, 0);
 		}
 		// The taken/not-taken paths fork the compile-time cache state: the
 		// delay slot is only EXECUTED on the taken path, so its cache fills,
@@ -3940,8 +3936,8 @@ namespace {
 		// Snapshot here, emit the taken path (mutating), then restore for the
 		// not-taken path. Both paths flush before their chain epilogue.
 		const RegCache fork_state = s_rc;
-		Label not_taken;
-		m.B(&not_taken, InvertCondition(cond));
+		a64_label not_taken = A64_LABEL_INIT;
+		a64_b_cond(m, &not_taken, A64_INVERT(cond));
 		if (ds_interp)
 		{
 			// C.64: hand the taken path to the INTERPRETER at the branch itself --
@@ -3952,8 +3948,8 @@ namespace {
 			StorePCImm(m, bpc);
 			EmitCycleBookkeeping(m, cyc_leading);
 			s_rc.FlushDirty(m, gpr);
-			m.Mov(x16, reinterpret_cast<uint64_t>(&eeRunBasicBlock_arm64));
-			m.Blr(x16);
+			a64_mov_imm(m, A64_X(16), reinterpret_cast<uint64_t>(&eeRunBasicBlock_arm64));
+			a64_blr(m, A64_X(16));
 			s_rc.Reset();
 			EmitChainEpilogue(m); // continue from wherever the interpreter left pc
 		}
@@ -3969,7 +3965,7 @@ namespace {
 			EmitKnownExit(m, tconst, evt); // C.54
 		}
 		s_rc = fork_state;
-		m.Bind(&not_taken);
+		a64_bind(m, &not_taken);
 		EmitCycleBookkeeping(m, cyc_nt);
 		// Likely branches skip their delay slot when not taken.
 		StorePCImm(m, bpc + (likely ? 8 : 4));
@@ -4006,31 +4002,31 @@ namespace {
 	// cpuRegs.pc like JR. TLBR/TLBWI/TLBP and the rest of the CO space stay
 	// interpreter handoffs (rare, TLB state machine). intSetBranch() is
 	// interpreter-loop bookkeeping and has no JIT equivalent to mirror.
-	bool EmitEret(MacroAssembler& m, const Register& gpr, u32 insn, int cyc_leading)
+	bool EmitEret(a64_emit* m, const a64r& gpr, u32 insn, int cyc_leading)
 	{
 		if ((insn >> 26) != 0x10 || ((insn >> 21) & 31) != 0x10 || (insn & 0x3f) != 0x18)
 			return false;
 		s_rc.pinned = 0; // new op: previous op's Register handles are dead
-		m.Ldr(w0, RegsField(&cpuRegs.CP0.n.Status));
-		m.Ldr(w1, RegsField(&cpuRegs.CP0.n.ErrorEPC));
-		m.Ldr(w2, RegsField(&cpuRegs.CP0.n.EPC));
-		m.Tst(w0, 1u << 2); // Status.ERL
-		m.Csel(w1, w1, w2, ne); // pc = ERL ? ErrorEPC : EPC
-		StorePC(m, w1);
-		m.Bic(w2, w0, 1u << 2); // Status & ~ERL
-		m.Bic(w3, w0, 1u << 1); // Status & ~EXL
-		m.Csel(w0, w2, w3, ne);
-		m.Str(w0, RegsField(&cpuRegs.CP0.n.Status));
+		a64_ldr(m, A64_W(0), RegsField(&cpuRegs.CP0.n.Status));
+		a64_ldr(m, A64_W(1), RegsField(&cpuRegs.CP0.n.ErrorEPC));
+		a64_ldr(m, A64_W(2), RegsField(&cpuRegs.CP0.n.EPC));
+		a64_tst_imm(m, A64_W(0), 1u << 2); // Status.ERL
+		a64_csel(m, A64_W(1), A64_W(1), A64_W(2), A64_NE); // pc = ERL ? ErrorEPC : EPC
+		StorePC(m, A64_W(1));
+		a64_bic_imm(m, A64_W(2), A64_W(0), 1u << 2); // Status & ~ERL
+		a64_bic_imm(m, A64_W(3), A64_W(0), 1u << 1); // Status & ~EXL
+		a64_csel(m, A64_W(0), A64_W(2), A64_W(3), A64_NE);
+		a64_str(m, A64_W(0), RegsField(&cpuRegs.CP0.n.Status));
 		// if ((int)(nextEventCycle - cycle) > 4) nextEventCycle = cycle + 4
-		Label no_pull;
-		m.Ldr(x0, RegsField(&cpuRegs.cycle));
-		m.Ldr(x1, RegsField(&cpuRegs.nextEventCycle));
-		m.Sub(w2, w1, w0);
-		m.Cmp(w2, 4);
-		m.B(&no_pull, le);
-		m.Add(x0, x0, 4);
-		m.Str(x0, RegsField(&cpuRegs.nextEventCycle));
-		m.Bind(&no_pull);
+		a64_label no_pull = A64_LABEL_INIT;
+		a64_ldr(m, A64_X(0), RegsField(&cpuRegs.cycle));
+		a64_ldr(m, A64_X(1), RegsField(&cpuRegs.nextEventCycle));
+		a64_sub(m, A64_W(2), A64_W(1), A64_W(0));
+		a64_cmp_imm(m, A64_W(2), 4);
+		a64_b_cond(m, &no_pull, A64_LE);
+		a64_add_imm(m, A64_X(0), A64_X(0), 4);
+		a64_str(m, A64_X(0), RegsField(&cpuRegs.nextEventCycle));
+		a64_bind(m, &no_pull);
 		s_rc.FlushDirty(m, gpr); // block exit: the next block reads GPR memory
 		// NO cycle flush and NO event test here -- mirror the interpreter
 		// handoff this replaces exactly: eeRunBasicBlock_arm64 is a plain
@@ -4109,36 +4105,37 @@ namespace {
 		s_exit_labels.clear();
 		s_exit_labels.emplace_back();
 		s_blk_ret = &s_exit_labels.front(); // the block's one return tail
-		memjit_write_begin(); // W^X: code cache writable on this thread until FinalizeCode
-		MacroAssembler masm(start, kCodeCacheSize - s_code_pos, PositionDependentCode);
+		memjit_write_begin(); // W^X: code cache writable on this thread until the block is emitted
+		a64_emit masm_e;
+		a64_emit* const masm = &masm_e;
+		a64_init(masm, start, kCodeCacheSize - s_code_pos);
 		// The aVU macro emitters (C.30-2) hold RSCRATCHADDR (x17) and q31 across
-		// vixl macro expansions -- keep the assembler from synthesizing into them
+		// the emitter's macro expansions -- keep it from synthesizing into them
 		// (mirrors armStartBlock in AsmHelpers.cpp).
-		masm.GetScratchRegisterList()->Remove(17);
-		masm.GetScratchVRegisterList()->Remove(31);
+		masm->scratch &= ~(1u << 17);
+		masm->vscratch &= ~(1u << 31);
 
-		const Register gpr = x19;
+		const a64r gpr = A64_X(19);
 		s_rc.Reset(); // fresh per-block register-cache state (C.27)
 		// Uniform 96-byte frame across ALL blocks (the chain epilogue of any
 		// block must match any successor's prologue): x19/x20 (gpr base, jr
 		// target), x21..x27 (GPR register cache), x28 (vmap base), x30 (chain
 		// return).
-		masm.Sub(sp, sp, 96);
-		masm.Stp(x19, x20, MemOperand(sp, 0));
-		masm.Stp(x21, x30, MemOperand(sp, 16));
-		masm.Stp(x22, x23, MemOperand(sp, 32));
-		masm.Stp(x24, x25, MemOperand(sp, 48));
-		masm.Stp(x26, x27, MemOperand(sp, 64));
-		masm.Str(x28, MemOperand(sp, 80));
+		a64_sub_imm(masm, A64_SP, A64_SP, 96);
+		a64_stp(masm, A64_X(19), A64_X(20), a64_mem_off(A64_SP, 0));
+		a64_stp(masm, A64_X(21), A64_X(30), a64_mem_off(A64_SP, 16));
+		a64_stp(masm, A64_X(22), A64_X(23), a64_mem_off(A64_SP, 32));
+		a64_stp(masm, A64_X(24), A64_X(25), a64_mem_off(A64_SP, 48));
+		a64_stp(masm, A64_X(26), A64_X(27), a64_mem_off(A64_SP, 64));
+		a64_str(masm, A64_X(28), a64_mem_off(A64_SP, 80));
 		{
 			// Exactly 4 instructions so kChainEntryOffset stays constant
-			// (VIXL's Mov would shrink the sequence for compressible values).
+			// (a64_mov_imm would shrink the sequence for compressible values).
 			const uint64_t gv = reinterpret_cast<uint64_t>(&cpuRegs.GPR.r[0]);
-			vixl::ExactAssemblyScope scope(&masm, 4 * kInstructionSize);
-			masm.movz(gpr, gv & 0xffff);
-			masm.movk(gpr, (gv >> 16) & 0xffff, 16);
-			masm.movk(gpr, (gv >> 32) & 0xffff, 32);
-			masm.movk(gpr, (gv >> 48) & 0xffff, 48);
+			a64_movz(masm, gpr, gv & 0xffff, -1);
+			a64_movk(masm, gpr, (gv >> 16) & 0xffff, 16);
+			a64_movk(masm, gpr, (gv >> 32) & 0xffff, 32);
+			a64_movk(masm, gpr, (gv >> 48) & 0xffff, 48);
 		}
 		{
 			// x28 = the fastmem area base (C.50) or, when fastmem is off, the
@@ -4151,12 +4148,11 @@ namespace {
 			const uint64_t vv = FastmemMode()
 				? reinterpret_cast<uint64_t>(&vtlbdata.fastmem_base)
 				: reinterpret_cast<uint64_t>(&vtlbdata.vmap);
-			vixl::ExactAssemblyScope scope(&masm, 5 * kInstructionSize);
-			masm.movz(vmapbase, vv & 0xffff);
-			masm.movk(vmapbase, (vv >> 16) & 0xffff, 16);
-			masm.movk(vmapbase, (vv >> 32) & 0xffff, 32);
-			masm.movk(vmapbase, (vv >> 48) & 0xffff, 48);
-			masm.ldr(vmapbase, MemOperand(vmapbase));
+			a64_movz(masm, vmapbase, vv & 0xffff, -1);
+			a64_movk(masm, vmapbase, (vv >> 16) & 0xffff, 16);
+			a64_movk(masm, vmapbase, (vv >> 32) & 0xffff, 32);
+			a64_movk(masm, vmapbase, (vv >> 48) & 0xffff, 48);
+			a64_ldr(masm, vmapbase, a64_mem_off(vmapbase, 0));
 		}
 
 		// C.60: a block on a manual page is not protected by anything -- check its
@@ -4167,13 +4163,13 @@ namespace {
 		if (manual)
 		{
 			s_stale_pc = pc;
-			masm.Mov(x0, reinterpret_cast<uint64_t>(rec_ptr)); // C.61: no lookup
-			masm.Mov(w1, pc);
-			masm.Mov(x16, reinterpret_cast<uint64_t>(&eeBlockValidate_arm64));
-			masm.Blr(x16);
+			a64_mov_imm(masm, A64_X(0), reinterpret_cast<uint64_t>(rec_ptr)); // C.61: no lookup
+			a64_mov_imm(masm, A64_W(1), pc);
+			a64_mov_imm(masm, A64_X(16), reinterpret_cast<uint64_t>(&eeBlockValidate_arm64));
+			a64_blr(masm, A64_X(16));
 			s_exit_labels.emplace_back();
 			s_stale = &s_exit_labels.back();
-			masm.Cbz(w0, s_stale); // source changed -> discarded, back to dispatcher
+			a64_cbz(masm, A64_W(0), s_stale); // source changed -> discarded, back to dispatcher
 		}
 
 		int n = 0;
@@ -4233,15 +4229,15 @@ namespace {
 		{
 			if (n > 0)
 			{
-				masm.Ldr(w0, RegsField(&cpuRegs.pc)); masm.Add(w0, w0, 4 * n); masm.Str(w0, RegsField(&cpuRegs.pc));
+				a64_ldr(masm, A64_W(0), RegsField(&cpuRegs.pc)); a64_add_imm(masm, A64_W(0), A64_W(0), 4 * n); a64_str(masm, A64_W(0), RegsField(&cpuRegs.pc));
 				EmitCycleBookkeeping(masm, cyc);
 			}
 			// The interpreter tail reads AND writes guest GPR memory: flush the
 			// dirty cache before the call, and treat everything as unknown after
 			// (the block ends right away, but keep the invariant explicit).
 			s_rc.FlushDirty(masm, gpr);
-			masm.Mov(x16, reinterpret_cast<uint64_t>(&eeRunBasicBlock_arm64));
-			masm.Blr(x16);
+			a64_mov_imm(masm, A64_X(16), reinterpret_cast<uint64_t>(&eeRunBasicBlock_arm64));
+			a64_blr(masm, A64_X(16));
 			s_rc.Reset();
 			EmitChainEpilogue(masm);
 		}
@@ -4249,10 +4245,9 @@ namespace {
 		EmitFastmemStubs(masm);       // C.51: out of line, past the epilogue -- nothing falls into it
 		EmitMisalignStubs(masm, gpr); // C.53: same, for the misalign cancels
 		EmitExitStubs(masm);          // C.54: event-due tails + the block's single return path
-		masm.FinalizeCode();
 		memjit_write_end();
 
-		const size_t sz = masm.GetSizeOfCodeGenerated();
+		const size_t sz = a64_offset(masm);
 		memsync(reinterpret_cast<void*>(start), (u8*)(reinterpret_cast<void*>(start)) + (sz));
 
 		// C.50: buffer offsets -> absolute addresses. Blocks are emitted at
@@ -4366,7 +4361,7 @@ namespace {
 
 void eeJitReserve_arm64(void)
 {
-	s_ok = VixlEmitSelfTest();
+	s_ok = EmitSelfTest();
 	if (!s_code)
 	{
 		s_code = (u8*)memjit_alloc(kCodeCacheSize);

@@ -14,7 +14,6 @@
 #include <sys/mman.h>
 #include <memmap.h>
 
-namespace a64 = vixl::aarch64;
 
 // =====================================================================================================
 //  VifUnpackSSE_Base Section
@@ -25,11 +24,11 @@ VifUnpackNEON_Base::VifUnpackNEON_Base()
 	, UnpkLoopIteration(0)
 	, UnpkNoOfIterations(0)
 	, IsAligned(0)
-	, dstIndirect(a64::MemOperand(RXARG1))
-	, srcIndirect(a64::MemOperand(RXARG2))
-	, workReg(a64::q1)
-	, destReg(a64::q0)
-	, workGprW(a64::w4)
+	, dstIndirect(a64_mem_off(RXARG1, 0))
+	, srcIndirect(a64_mem_off(RXARG2, 0))
+	, workReg(A64_Q(1))
+	, destReg(A64_Q(0))
+	, workGprW(A64_W(4))
 {
 }
 
@@ -38,51 +37,51 @@ void VifUnpackNEON_Base::xMovDest() const
 	if (!IsWriteProtectedOp())
 	{
 		if (IsUnmaskedOp())
-			armAsm->Str(destReg, dstIndirect);
+			a64_str(armAsm, destReg, dstIndirect);
 		else
 			doMaskWrite(destReg);
 	}
 }
 
-void VifUnpackNEON_Base::xShiftR(const vixl::aarch64::VRegister& regX, int n) const
+void VifUnpackNEON_Base::xShiftR(const a64r& regX, int n) const
 {
 	if (usn)
-		armAsm->Ushr(regX.V4S(), regX.V4S(), n);
+		a64_ushr(armAsm, a64_as(regX, A64K_4S), a64_as(regX, A64K_4S), n);
 	else
-		armAsm->Sshr(regX.V4S(), regX.V4S(), n);
+		a64_sshr(armAsm, a64_as(regX, A64K_4S), a64_as(regX, A64K_4S), n);
 }
 
-void VifUnpackNEON_Base::xPMOVXX8(const vixl::aarch64::VRegister& regX) const
+void VifUnpackNEON_Base::xPMOVXX8(const a64r& regX) const
 {
 	// TODO(Stenzek): Check this
-	armAsm->Ldr(regX.S(), srcIndirect);
+	a64_ldr(armAsm, a64_as(regX, A64K_S), srcIndirect);
 
 	if (usn)
 	{
-		armAsm->Ushll(regX.V8H(), regX.V8B(), 0);
-		armAsm->Ushll(regX.V4S(), regX.V4H(), 0);
+		a64_ushll(armAsm, a64_as(regX, A64K_8H), a64_as(regX, A64K_8B), 0);
+		a64_ushll(armAsm, a64_as(regX, A64K_4S), a64_as(regX, A64K_4H), 0);
 	}
 	else
 	{
-		armAsm->Sshll(regX.V8H(), regX.V8B(), 0);
-		armAsm->Sshll(regX.V4S(), regX.V4H(), 0);
+		a64_sshll(armAsm, a64_as(regX, A64K_8H), a64_as(regX, A64K_8B), 0);
+		a64_sshll(armAsm, a64_as(regX, A64K_4S), a64_as(regX, A64K_4H), 0);
 	}
 }
 
-void VifUnpackNEON_Base::xPMOVXX16(const vixl::aarch64::VRegister& regX) const
+void VifUnpackNEON_Base::xPMOVXX16(const a64r& regX) const
 {
-	armAsm->Ldr(regX.D(), srcIndirect);
+	a64_ldr(armAsm, a64_as(regX, A64K_D), srcIndirect);
 
 	if (usn)
-		armAsm->Ushll(regX.V4S(), regX.V4H(), 0);
+		a64_ushll(armAsm, a64_as(regX, A64K_4S), a64_as(regX, A64K_4H), 0);
 	else
-		armAsm->Sshll(regX.V4S(), regX.V4H(), 0);
+		a64_sshll(armAsm, a64_as(regX, A64K_4S), a64_as(regX, A64K_4H), 0);
 }
 
 void VifUnpackNEON_Base::xUPK_S_32() const
 {
 	if (UnpkLoopIteration == 0)
-		armAsm->Ldr(workReg, srcIndirect);
+		a64_ldr(armAsm, workReg, srcIndirect);
 
 	if (IsInputMasked())
 		return;
@@ -90,16 +89,16 @@ void VifUnpackNEON_Base::xUPK_S_32() const
 	switch (UnpkLoopIteration)
 	{
 		case 0:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 0);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 0);
 			break;
 		case 1:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 1);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 1);
 			break;
 		case 2:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 2);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 2);
 			break;
 		case 3:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 3);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 3);
 			break;
 	}
 }
@@ -115,16 +114,16 @@ void VifUnpackNEON_Base::xUPK_S_16() const
 	switch (UnpkLoopIteration)
 	{
 		case 0:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 0);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 0);
 			break;
 		case 1:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 1);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 1);
 			break;
 		case 2:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 2);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 2);
 			break;
 		case 3:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 3);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 3);
 			break;
 	}
 }
@@ -140,16 +139,16 @@ void VifUnpackNEON_Base::xUPK_S_8() const
 	switch (UnpkLoopIteration)
 	{
 		case 0:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 0);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 0);
 			break;
 		case 1:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 1);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 1);
 			break;
 		case 2:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 2);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 2);
 			break;
 		case 3:
-			armAsm->Dup(destReg.V4S(), workReg.V4S(), 3);
+			a64_dup_elem(armAsm, a64_as(destReg, A64K_4S), a64_as(workReg, A64K_4S), 3);
 			break;
 	}
 }
@@ -163,23 +162,23 @@ void VifUnpackNEON_Base::xUPK_V2_32() const
 {
 	if (UnpkLoopIteration == 0)
 	{
-		armAsm->Ldr(workReg, srcIndirect);
+		a64_ldr(armAsm, workReg, srcIndirect);
 
 		if (IsInputMasked())
 			return;
 
-		armAsm->Dup(destReg.V2D(), workReg.V2D(), 0); //v1v0v1v0
+		a64_dup_elem(armAsm, a64_as(destReg, A64K_2D), a64_as(workReg, A64K_2D), 0); //v1v0v1v0
 		if (IsAligned)
-			armAsm->Ins(destReg.V4S(), 3, a64::wzr); //zero last word - tested on ps2
+			a64_ins(armAsm, a64_as(destReg, A64K_4S), 3, A64_WZR); //zero last word - tested on ps2
 	}
 	else
 	{
 		if (IsInputMasked())
 			return;
 
-		armAsm->Dup(destReg.V2D(), workReg.V2D(), 1); //v3v2v3v2
+		a64_dup_elem(armAsm, a64_as(destReg, A64K_2D), a64_as(workReg, A64K_2D), 1); //v3v2v3v2
 		if (IsAligned)
-			armAsm->Ins(destReg.V4S(), 3, a64::wzr); //zero last word - tested on ps2
+			a64_ins(armAsm, a64_as(destReg, A64K_4S), 3, A64_WZR); //zero last word - tested on ps2
 	}
 }
 
@@ -192,14 +191,14 @@ void VifUnpackNEON_Base::xUPK_V2_16() const
 		if (IsInputMasked())
 			return;
 
-		armAsm->Dup(destReg.V2D(), workReg.V2D(), 0); //v1v0v1v0
+		a64_dup_elem(armAsm, a64_as(destReg, A64K_2D), a64_as(workReg, A64K_2D), 0); //v1v0v1v0
 	}
 	else
 	{
 		if (IsInputMasked())
 			return;
 
-		armAsm->Dup(destReg.V2D(), workReg.V2D(), 1); //v3v2v3v2
+		a64_dup_elem(armAsm, a64_as(destReg, A64K_2D), a64_as(workReg, A64K_2D), 1); //v3v2v3v2
 	}
 }
 
@@ -212,14 +211,14 @@ void VifUnpackNEON_Base::xUPK_V2_8() const
 		if (IsInputMasked())
 			return;
 
-		armAsm->Dup(destReg.V2D(), workReg.V2D(), 0); //v1v0v1v0
+		a64_dup_elem(armAsm, a64_as(destReg, A64K_2D), a64_as(workReg, A64K_2D), 0); //v1v0v1v0
 	}
 	else
 	{
 		if (IsInputMasked())
 			return;
 
-		armAsm->Dup(destReg.V2D(), workReg.V2D(), 1); //v3v2v3v2
+		a64_dup_elem(armAsm, a64_as(destReg, A64K_2D), a64_as(workReg, A64K_2D), 1); //v3v2v3v2
 	}
 }
 
@@ -228,9 +227,9 @@ void VifUnpackNEON_Base::xUPK_V3_32() const
 	if (IsInputMasked())
 		return;
 
-	armAsm->Ldr(destReg, srcIndirect);
+	a64_ldr(armAsm, destReg, srcIndirect);
 	if (UnpkLoopIteration != IsAligned)
-		armAsm->Ins(destReg.V4S(), 3, a64::wzr);
+		a64_ins(armAsm, a64_as(destReg, A64K_4S), 3, A64_WZR);
 }
 
 void VifUnpackNEON_Base::xUPK_V3_16() const
@@ -247,7 +246,7 @@ void VifUnpackNEON_Base::xUPK_V3_16() const
 	int result = (((UnpkLoopIteration / 4) + 1 + (4 - IsAligned)) & 0x3);
 
 	if ((UnpkLoopIteration & 0x1) == 0 && result == 0)
-		armAsm->Ins(destReg.V4S(), 3, a64::wzr); //zero last word on QW boundary if whole 32bit word is used - tested on ps2
+		a64_ins(armAsm, a64_as(destReg, A64K_4S), 3, A64_WZR); //zero last word on QW boundary if whole 32bit word is used - tested on ps2
 }
 
 void VifUnpackNEON_Base::xUPK_V3_8() const
@@ -257,7 +256,7 @@ void VifUnpackNEON_Base::xUPK_V3_8() const
 
 	xPMOVXX8(destReg);
 	if (UnpkLoopIteration != IsAligned)
-		armAsm->Ins(destReg.V4S(), 3, a64::wzr);
+		a64_ins(armAsm, a64_as(destReg, A64K_4S), 3, A64_WZR);
 }
 
 void VifUnpackNEON_Base::xUPK_V4_32() const
@@ -265,7 +264,7 @@ void VifUnpackNEON_Base::xUPK_V4_32() const
 	if (IsInputMasked())
 		return;
 
-	armAsm->Ldr(destReg.Q(), a64::MemOperand(srcIndirect));
+	a64_ldr(armAsm, a64_as(destReg, A64K_Q), srcIndirect);
 }
 
 void VifUnpackNEON_Base::xUPK_V4_16() const
@@ -289,20 +288,20 @@ void VifUnpackNEON_Base::xUPK_V4_5() const
 	if (IsInputMasked())
 		return;
 
-	armAsm->Ldrh(workGprW, srcIndirect);
-	armAsm->Lsl(workGprW, workGprW, 3); // ABG|R5.000
-	armAsm->Dup(destReg.V4S(), workGprW); // x|x|x|R
-	armAsm->Lsr(workGprW, workGprW, 8); // ABG
-	armAsm->Lsl(workGprW, workGprW, 3); // AB|G5.000
-	armAsm->Ins(destReg.V4S(), 1, workGprW); // x|x|G|R
-	armAsm->Lsr(workGprW, workGprW, 8); // AB
-	armAsm->Lsl(workGprW, workGprW, 3); // A|B5.000
-	armAsm->Ins(destReg.V4S(), 2, workGprW); // x|B|G|R
-	armAsm->Lsr(workGprW, workGprW, 8); // A
-	armAsm->Lsl(workGprW, workGprW, 7); // A.0000000
-	armAsm->Ins(destReg.V4S(), 3, workGprW); // A|B|G|R
-	armAsm->Shl(destReg.V4S(), destReg.V4S(), 24); // can optimize to
-	armAsm->Ushr(destReg.V4S(), destReg.V4S(), 24); // single AND...
+	a64_ldrh(armAsm, workGprW, srcIndirect);
+	a64_lsl_imm(armAsm, workGprW, workGprW, 3); // ABG|R5.000
+	a64_dup(armAsm, a64_as(destReg, A64K_4S), workGprW); // x|x|x|R
+	a64_lsr_imm(armAsm, workGprW, workGprW, 8); // ABG
+	a64_lsl_imm(armAsm, workGprW, workGprW, 3); // AB|G5.000
+	a64_ins(armAsm, a64_as(destReg, A64K_4S), 1, workGprW); // x|x|G|R
+	a64_lsr_imm(armAsm, workGprW, workGprW, 8); // AB
+	a64_lsl_imm(armAsm, workGprW, workGprW, 3); // A|B5.000
+	a64_ins(armAsm, a64_as(destReg, A64K_4S), 2, workGprW); // x|B|G|R
+	a64_lsr_imm(armAsm, workGprW, workGprW, 8); // A
+	a64_lsl_imm(armAsm, workGprW, workGprW, 7); // A.0000000
+	a64_ins(armAsm, a64_as(destReg, A64K_4S), 3, workGprW); // A|B|G|R
+	a64_shl(armAsm, a64_as(destReg, A64K_4S), a64_as(destReg, A64K_4S), 24); // can optimize to
+	a64_ushr(armAsm, a64_as(destReg, A64K_4S), a64_as(destReg, A64K_4S), 24); // single AND...
 }
 
 void VifUnpackNEON_Base::xUnpack(int upknum) const
@@ -374,20 +373,20 @@ VifUnpackNEON_Simple::VifUnpackNEON_Simple(bool usn_, bool domask_, int curCycle
 	IsAligned = true;
 }
 
-void VifUnpackNEON_Simple::doMaskWrite(const vixl::aarch64::VRegister& regX) const
+void VifUnpackNEON_Simple::doMaskWrite(const a64r& regX) const
 {
-	armAsm->Ldr(a64::q7, dstIndirect);
+	a64_ldr(armAsm, A64_Q(7), dstIndirect);
 
 	int offX = std::min(curCycle, 3);
-	armMoveAddressToReg(RXVIXLSCRATCH, nVifMask);
-	armAsm->Ldr(a64::q29, a64::MemOperand(RXVIXLSCRATCH, reinterpret_cast<const u8*>(nVifMask[0][offX]) - reinterpret_cast<const u8*>(nVifMask)));
-	armAsm->Ldr(a64::q30, a64::MemOperand(RXVIXLSCRATCH, reinterpret_cast<const u8*>(nVifMask[1][offX]) - reinterpret_cast<const u8*>(nVifMask)));
-	armAsm->Ldr(a64::q31, a64::MemOperand(RXVIXLSCRATCH, reinterpret_cast<const u8*>(nVifMask[2][offX]) - reinterpret_cast<const u8*>(nVifMask)));
-	armAsm->And(regX.V16B(), regX.V16B(), a64::q29.V16B());
-	armAsm->And(a64::q7.V16B(), a64::q7.V16B(), a64::q30.V16B());
-	armAsm->Orr(regX.V16B(), regX.V16B(), a64::q31.V16B());
-	armAsm->Orr(regX.V16B(), regX.V16B(), a64::q7.V16B());
-	armAsm->Str(regX, dstIndirect);
+	armMoveAddressToReg(RXSCRATCH, nVifMask);
+	a64_ldr(armAsm, A64_Q(29), a64_mem_off(RXSCRATCH, reinterpret_cast<const u8*>(nVifMask[0][offX]) - reinterpret_cast<const u8*>(nVifMask)));
+	a64_ldr(armAsm, A64_Q(30), a64_mem_off(RXSCRATCH, reinterpret_cast<const u8*>(nVifMask[1][offX]) - reinterpret_cast<const u8*>(nVifMask)));
+	a64_ldr(armAsm, A64_Q(31), a64_mem_off(RXSCRATCH, reinterpret_cast<const u8*>(nVifMask[2][offX]) - reinterpret_cast<const u8*>(nVifMask)));
+	a64_and(armAsm, a64_as(regX, A64K_16B), a64_as(regX, A64K_16B), a64_as(A64_Q(29), A64K_16B));
+	a64_and(armAsm, a64_as(A64_Q(7), A64K_16B), a64_as(A64_Q(7), A64K_16B), a64_as(A64_Q(30), A64K_16B));
+	a64_orr(armAsm, a64_as(regX, A64K_16B), a64_as(regX, A64K_16B), a64_as(A64_Q(31), A64K_16B));
+	a64_orr(armAsm, a64_as(regX, A64K_16B), a64_as(regX, A64K_16B), a64_as(A64_Q(7), A64K_16B));
+	a64_str(armAsm, regX, dstIndirect);
 }
 
 // ecx = dest, edx = src
@@ -409,7 +408,7 @@ static void nVifGen(int usn, int mask, int curCycle)
 		ucall = (nVifCall)armStartBlock();
 		vpugen.xUnpack(i);
 		vpugen.xMovDest();
-		armAsm->Ret();
+		a64_ret(armAsm);
 		armEndBlock();
 	}
 }

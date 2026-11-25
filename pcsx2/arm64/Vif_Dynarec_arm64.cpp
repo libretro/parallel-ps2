@@ -21,34 +21,33 @@
 #include <memmap.h>
 #include "../Config.h"
 
-namespace a64 = vixl::aarch64;
 
-static void mVUmergeRegs(const vixl::aarch64::VRegister& dest, const vixl::aarch64::VRegister& src, int xyzw, bool modXYZW = false, bool canModifySrc = false)
+static void mVUmergeRegs(const a64r& dest, const a64r& src, int xyzw, bool modXYZW = false, bool canModifySrc = false)
 {
 	xyzw &= 0xf;
-	if ((dest.GetCode() != src.GetCode()) && (xyzw != 0))
+	if ((A64_CODE(dest) != A64_CODE(src)) && (xyzw != 0))
 	{
 		if (xyzw == 0x8)
-			armAsm->Mov(dest.V4S(), 0, src.V4S(), 0);
+			a64_ins_elem(armAsm, a64_as(dest, A64K_4S), 0, a64_as(src, A64K_4S), 0);
 		else if (xyzw == 0xf)
-			armAsm->Mov(dest.Q(), src.Q());
+			a64_mov(armAsm, a64_as(dest, A64K_Q), a64_as(src, A64K_Q));
 		else
 		{
 			if (modXYZW)
 			{
 				if (xyzw == 1)
 				{
-					armAsm->Ins(dest.V4S(), 3, src.V4S(), 0);
+					a64_ins_elem(armAsm, a64_as(dest, A64K_4S), 3, a64_as(src, A64K_4S), 0);
 					return;
 				}
 				else if (xyzw == 2)
 				{
-					armAsm->Ins(dest.V4S(), 2, src.V4S(), 0);
+					a64_ins_elem(armAsm, a64_as(dest, A64K_4S), 2, a64_as(src, A64K_4S), 0);
 					return;
 				}
 				else if (xyzw == 4)
 				{
-					armAsm->Ins(dest.V4S(), 1, src.V4S(), 0);
+					a64_ins_elem(armAsm, a64_as(dest, A64K_4S), 1, a64_as(src, A64K_4S), 0);
 					return;
 				}
 			}
@@ -57,14 +56,14 @@ static void mVUmergeRegs(const vixl::aarch64::VRegister& dest, const vixl::aarch
 				return;
 			if (xyzw == 15)
 			{
-				armAsm->Mov(dest, src);
+				a64_mov(armAsm, dest, src);
 				return;
 			}
 			if (xyzw == 14 && canModifySrc)
 			{
 				// xyz - we can get rid of the mov if we swap the RA around
-				armAsm->Mov(src.V4S(), 3, dest.V4S(), 3);
-				armAsm->Mov(dest.V16B(), src.V16B());
+				a64_ins_elem(armAsm, a64_as(src, A64K_4S), 3, a64_as(dest, A64K_4S), 3);
+				a64_mov(armAsm, a64_as(dest, A64K_16B), a64_as(src, A64K_16B));
 				return;
 			}
 
@@ -74,13 +73,13 @@ static void mVUmergeRegs(const vixl::aarch64::VRegister& dest, const vixl::aarch
 			if ((xyzw & 3) == 3)
 			{
 				// xy
-				armAsm->Mov(dest.V2D(), 0, src.V2D(), 0);
+				a64_ins_elem(armAsm, a64_as(dest, A64K_2D), 0, a64_as(src, A64K_2D), 0);
 				xyzw &= ~3;
 			}
 			else if ((xyzw & 12) == 12)
 			{
 				// zw
-				armAsm->Mov(dest.V2D(), 1, src.V2D(), 1);
+				a64_ins_elem(armAsm, a64_as(dest, A64K_2D), 1, a64_as(src, A64K_2D), 1);
 				xyzw &= ~12;
 			}
 
@@ -88,88 +87,88 @@ static void mVUmergeRegs(const vixl::aarch64::VRegister& dest, const vixl::aarch
 			for (u32 i = 0; i < 4; i++)
 			{
 				if (xyzw & (1u << i))
-					armAsm->Mov(dest.V4S(), i, src.V4S(), i);
+					a64_ins_elem(armAsm, a64_as(dest, A64K_4S), i, a64_as(src, A64K_4S), i);
 			}
 		}
 	}
 }
 
-static void maskedVecWrite(const a64::VRegister& reg, const a64::MemOperand& addr, int xyzw)
+static void maskedVecWrite(const a64r& reg, const a64_mem& addr, int xyzw)
 {
 	switch (xyzw)
 	{
 		case 5: // YW
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 4);
-			armAsm->St1(reg.V4S(), 1, a64::MemOperand(RSCRATCHADDR)); // Y
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 1, a64_mem_off(RSCRATCHADDR, 0)); // Y
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 12);
-			armAsm->St1(reg.V4S(), 3, a64::MemOperand(RSCRATCHADDR)); // W
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 3, a64_mem_off(RSCRATCHADDR, 0)); // W
 			break;
 
 		case 9: // XW
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 12);
-			armAsm->Str(reg.S(), addr); // X
-			armAsm->St1(reg.V4S(), 3, a64::MemOperand(RSCRATCHADDR)); // W
+			a64_str(armAsm, a64_as(reg, A64K_S), addr); // X
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 3, a64_mem_off(RSCRATCHADDR, 0)); // W
 			break;
 
 		case 10: //XZ
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 8);
-			armAsm->Str(reg.S(), addr); // X
-			armAsm->St1(reg.V4S(), 2, a64::MemOperand(RSCRATCHADDR)); // Z
+			a64_str(armAsm, a64_as(reg, A64K_S), addr); // X
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 2, a64_mem_off(RSCRATCHADDR, 0)); // Z
 			break;
 
 		case 3: // ZW
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 8);
-			armAsm->St1(reg.V2D(), 1, a64::MemOperand(RSCRATCHADDR));
+			a64_st1_lane(armAsm, a64_as(reg, A64K_2D), 1, a64_mem_off(RSCRATCHADDR, 0));
 			break;
 
 		case 11: //XZW
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 8);
-			armAsm->Str(reg.S(), addr); // X
-			armAsm->St1(reg.V2D(), 1, a64::MemOperand(RSCRATCHADDR)); // ZW
+			a64_str(armAsm, a64_as(reg, A64K_S), addr); // X
+			a64_st1_lane(armAsm, a64_as(reg, A64K_2D), 1, a64_mem_off(RSCRATCHADDR, 0)); // ZW
 			break;
 
 		case 13: // XYW
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 12);
-			armAsm->Str(reg.D(), addr);
-			armAsm->St1(reg.V4S(), 3, a64::MemOperand(RSCRATCHADDR));
+			a64_str(armAsm, a64_as(reg, A64K_D), addr);
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 3, a64_mem_off(RSCRATCHADDR, 0));
 			break;
 
 		case 6: // YZ
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 4);
-			armAsm->St1(reg.V4S(), 1, a64::MemOperand(RSCRATCHADDR, 4, a64::PostIndex));
-			armAsm->St1(reg.V4S(), 2, a64::MemOperand(RSCRATCHADDR));
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 1, a64_mem_post(RSCRATCHADDR, 4));
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 2, a64_mem_off(RSCRATCHADDR, 0));
 			break;
 
 		case 7: // YZW
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 4);
-			armAsm->St1(reg.V4S(), 1, a64::MemOperand(RSCRATCHADDR, 4, a64::PostIndex));
-			armAsm->St1(reg.V2D(), 1, a64::MemOperand(RSCRATCHADDR));
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 1, a64_mem_post(RSCRATCHADDR, 4));
+			a64_st1_lane(armAsm, a64_as(reg, A64K_2D), 1, a64_mem_off(RSCRATCHADDR, 0));
 			break;
 
 		case 12: // XY
-			armAsm->Str(reg.D(), addr);
+			a64_str(armAsm, a64_as(reg, A64K_D), addr);
 			break;
 
 		case 14: // XYZ
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 8);
-			armAsm->Str(reg.D(), addr);
-			armAsm->St1(reg.V4S(), 2, a64::MemOperand(RSCRATCHADDR)); // Z
+			a64_str(armAsm, a64_as(reg, A64K_D), addr);
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 2, a64_mem_off(RSCRATCHADDR, 0)); // Z
 			break;
 
 		case 4:
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 4);
-			armAsm->St1(reg.V4S(), 1, a64::MemOperand(RSCRATCHADDR));
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 1, a64_mem_off(RSCRATCHADDR, 0));
 			break; // Y
 		case 2:
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 8);
-			armAsm->St1(reg.V4S(), 2, a64::MemOperand(RSCRATCHADDR));
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 2, a64_mem_off(RSCRATCHADDR, 0));
 			break; // Z
 		case 1:
 			armGetMemOperandInRegister(RSCRATCHADDR, addr, 12);
-			armAsm->St1(reg.V4S(), 3, a64::MemOperand(RSCRATCHADDR));
+			a64_st1_lane(armAsm, a64_as(reg, A64K_4S), 3, a64_mem_off(RSCRATCHADDR, 0));
 			break; // W
 		case 8:
-			armAsm->Str(reg.S(), addr);
+			a64_str(armAsm, a64_as(reg, A64K_S), addr);
 			break; // X
 
 		case 0:
@@ -177,7 +176,7 @@ static void maskedVecWrite(const a64::VRegister& reg, const a64::MemOperand& add
 			break;
 
 		default:
-			armAsm->Str(reg.Q(), addr);
+			a64_str(armAsm, a64_as(reg, A64K_Q), addr);
 			break; // XYZW
 	}
 }
@@ -264,17 +263,17 @@ __fi void VifUnpackNEON_Dynarec::SetMasks(int cS) const
 	{
 		armLoadPtr(xmmCol0, &vif.MaskCol);
 		if ((cS >= 2) && (m3 & 0x0000ff00))
-			armAsm->Dup(xmmCol1.V4S(), xmmCol0.V4S(), 1);
+			a64_dup_elem(armAsm, a64_as(xmmCol1, A64K_4S), a64_as(xmmCol0, A64K_4S), 1);
 		if ((cS >= 3) && (m3 & 0x00ff0000))
-			armAsm->Dup(xmmCol2.V4S(), xmmCol0.V4S(), 2);
+			a64_dup_elem(armAsm, a64_as(xmmCol2, A64K_4S), a64_as(xmmCol0, A64K_4S), 2);
 		if ((cS >= 4) && (m3 & 0xff000000))
-			armAsm->Dup(xmmCol3.V4S(), xmmCol0.V4S(), 3);
+			a64_dup_elem(armAsm, a64_as(xmmCol3, A64K_4S), a64_as(xmmCol0, A64K_4S), 3);
 		if ((cS >= 1) && (m3 & 0x000000ff))
-			armAsm->Dup(xmmCol0.V4S(), xmmCol0.V4S(), 0);
+			a64_dup_elem(armAsm, a64_as(xmmCol0, A64K_4S), a64_as(xmmCol0, A64K_4S), 0);
 	}
 }
 
-void VifUnpackNEON_Dynarec::doMaskWrite(const vixl::aarch64::VRegister& regX) const
+void VifUnpackNEON_Dynarec::doMaskWrite(const a64r& regX) const
 {
 	const int cc = std::min(vCL, 3);
 	u32 m0 = (vB.f.mask >> (cc * 8)) & 0xff; //The actual mask example 0xE4 (protect, col, row, clear)
@@ -293,7 +292,7 @@ void VifUnpackNEON_Dynarec::doMaskWrite(const vixl::aarch64::VRegister& regX) co
 
 	if (doMask && m3) // Merge MaskCol
 	{
-		mVUmergeRegs(regX, armQRegister(xmmCol0.GetCode() + cc), m3);
+		mVUmergeRegs(regX, armQRegister(A64_CODE(xmmCol0) + cc), m3);
 	}
 
 	if (doMode)
@@ -305,7 +304,7 @@ void VifUnpackNEON_Dynarec::doMaskWrite(const vixl::aarch64::VRegister& regX) co
 
 		if (m5 < 0xf)
 		{
-			armAsm->Movi(xmmTemp.V4S(), 0);
+			a64_movi(armAsm, a64_as(xmmTemp, A64K_4S), 0);
 			if (doMode == 3)
 			{
 				mVUmergeRegs(xmmRow, regX, m5, false, false);
@@ -313,7 +312,7 @@ void VifUnpackNEON_Dynarec::doMaskWrite(const vixl::aarch64::VRegister& regX) co
 			else
 			{
 				mVUmergeRegs(xmmTemp, xmmRow, m5, false, false);
-				armAsm->Add(regX.V4S(), regX.V4S(), xmmTemp.V4S());
+				a64_add(armAsm, a64_as(regX, A64K_4S), a64_as(regX, A64K_4S), a64_as(xmmTemp, A64K_4S));
 				if (doMode == 2)
 					mVUmergeRegs(xmmRow, regX, m5, false, false);
 			}
@@ -322,14 +321,14 @@ void VifUnpackNEON_Dynarec::doMaskWrite(const vixl::aarch64::VRegister& regX) co
 		{
 			if (doMode == 3)
 			{
-				armAsm->Mov(xmmRow, regX);
+				a64_mov(armAsm, xmmRow, regX);
 			}
 			else
 			{
-				armAsm->Add(regX.V4S(), regX.V4S(), xmmRow.V4S());
+				a64_add(armAsm, a64_as(regX, A64K_4S), a64_as(regX, A64K_4S), a64_as(xmmRow, A64K_4S));
 				if (doMode == 2)
 				{
-					armAsm->Mov(xmmRow, regX);
+					a64_mov(armAsm, xmmRow, regX);
 				}
 			}
 		}
@@ -338,7 +337,7 @@ void VifUnpackNEON_Dynarec::doMaskWrite(const vixl::aarch64::VRegister& regX) co
 	if (doMask && m4)
 		maskedVecWrite(regX, dstIndirect, m4 ^ 0xf);
 	else
-		armAsm->Str(regX, dstIndirect);
+		a64_str(armAsm, regX, dstIndirect);
 }
 
 void VifUnpackNEON_Dynarec::writeBackRow() const
@@ -487,7 +486,7 @@ void VifUnpackNEON_Dynarec::CompileRoutine()
 	if (doMode >= 2)
 		writeBackRow();
 
-	armAsm->Ret();
+	a64_ret(armAsm);
 }
 
 static u16 dVifComputeLength(uint cl, uint wl, u8 num, bool isFill)

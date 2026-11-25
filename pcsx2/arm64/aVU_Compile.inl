@@ -7,12 +7,12 @@
 #include <cstring>
 
 // ARM64 microVU — emit-coupled compile-driver helpers (Phase 7, Tables/Compile
-// big-bang). VIXL port of the emit half of pcsx2/x86/microVU_Compile.inl.
+// big-bang). AArch64 port of the emit half of pcsx2/x86/microVU_Compile.inl.
 //
 // The arch-neutral helpers from microVU_Compile.inl (mVUsetupRange/mVUincCycles/
 // mVUsetCycles/mVUoptimizePipeState/cmpVFregs/startLoop/mVUinitFirstPass/
 // mVUcheckBadOp/branchWarning/eBitPass1/eBitWarning/mVUcheckIsSame) are already in
-// aVU.cpp (tasks 7.3/7.4). This file holds the pieces that emit VIXL:
+// aVU.cpp (tasks 7.3/7.4). This file holds the pieces that emit code:
 //   * the per-instruction executors (doUpperOp/doLowerOp/doSwapOp/doIbit/
 //     mVUexecuteInstruction);
 //   * D/T-bit early-exit emitters (mVUDoDBit/mVUDoTBit);
@@ -22,7 +22,7 @@
 // mVUcompile itself + the block entry points (mVUentryGet/mVUblockFetch/
 // mVUcompileJIT) and the branch drivers (aVU_Branch.inl) are the cross-referencing
 // core and come in the next slice. Until then mVUcompileEmitCheck (in aVU.cpp)
-// odr-uses the static helpers here so their VIXL bodies compile.
+// odr-uses the static helpers here so their emitter bodies compile.
 
 //------------------------------------------------------------------
 // Messages Called at Execution Time...
@@ -128,25 +128,25 @@ void doSwapOp(mV)
 		log_cb(RETRO_LOG_DEBUG, "microVU%d: Backing Up VF Reg [%04x]\n", getIndex, xPC);
 
 		// Allocate t1 first for better chance of reg-alloc
-		const a64::VRegister t1 = mVU.regAlloc->allocReg(mVUlow.VF_write.reg);
-		const a64::VRegister t2 = mVU.regAlloc->allocReg();
-		armAsm->Mov(t2.V16B(), t1.V16B()); // Backup VF reg
+		const a64r t1 = mVU.regAlloc->allocReg(mVUlow.VF_write.reg);
+		const a64r t2 = mVU.regAlloc->allocReg();
+		a64_mov(armAsm, a64_as(t2, A64K_16B), a64_as(t1, A64K_16B)); // Backup VF reg
 		mVU.regAlloc->clearNeeded(t1);
 
 		mVUopL(mVU, 1);
 		mVUtrackVIConst(mVU);
 
-		const a64::VRegister t3 = mVU.regAlloc->allocReg(mVUlow.VF_write.reg, mVUlow.VF_write.reg, 0xf, false);
-		armAsm->Eor(t2.V16B(), t2.V16B(), t3.V16B()); // Swap new and old values of the register
-		armAsm->Eor(t3.V16B(), t3.V16B(), t2.V16B()); // Uses xor swap trick...
-		armAsm->Eor(t2.V16B(), t2.V16B(), t3.V16B());
+		const a64r t3 = mVU.regAlloc->allocReg(mVUlow.VF_write.reg, mVUlow.VF_write.reg, 0xf, false);
+		a64_eor(armAsm, a64_as(t2, A64K_16B), a64_as(t2, A64K_16B), a64_as(t3, A64K_16B)); // Swap new and old values of the register
+		a64_eor(armAsm, a64_as(t3, A64K_16B), a64_as(t3, A64K_16B), a64_as(t2, A64K_16B)); // Uses xor swap trick...
+		a64_eor(armAsm, a64_as(t2, A64K_16B), a64_as(t2, A64K_16B), a64_as(t3, A64K_16B));
 		mVU.regAlloc->clearNeeded(t3);
 
 		incPC(1);
 		doUpperOp(mVU);
 
-		const a64::VRegister t4 = mVU.regAlloc->allocReg(-1, mVUlow.VF_write.reg, 0xf);
-		armAsm->Mov(t4.V16B(), t2.V16B());
+		const a64r t4 = mVU.regAlloc->allocReg(-1, mVUlow.VF_write.reg, 0xf);
+		a64_mov(armAsm, a64_as(t4, A64K_16B), a64_as(t2, A64K_16B));
 		mVU.regAlloc->clearNeeded(t4);
 		mVU.regAlloc->clearNeeded(t2);
 	}
@@ -195,8 +195,8 @@ __fi void handleBadOp(mV, int count)
 	if (mVUinfo.isBadOp)
 	{
 		mVUbackupRegs(mVU, true);
-		armAsm->Mov(RWARG1, mVU.prog.cur->idx);
-		armAsm->Mov(RWARG2, xPC);
+		a64_mov_imm(armAsm, RWARG1, mVU.prog.cur->idx);
+		a64_mov_imm(armAsm, RWARG2, xPC);
 		armEmitCall(reinterpret_cast<const void*>(isVU1 ? mVUbadOp1 : mVUbadOp0));
 		mVUrestoreRegs(mVU, true);
 	}
@@ -210,7 +210,7 @@ void mVUdebugPrintBlocks(microVU& mVU, bool isEndPC)
 	if (mVUdebugNow)
 	{
 		mVUbackupRegs(mVU, true);
-		armAsm->Mov(RWARG1, xPC);
+		a64_mov_imm(armAsm, RWARG1, xPC);
 		armEmitCall(reinterpret_cast<const void*>(isEndPC ? mVUprintPC2 : mVUprintPC1));
 		mVUrestoreRegs(mVU, true);
 	}
@@ -222,13 +222,13 @@ void mVUdebugPrintBlocks(microVU& mVU, bool isEndPC)
 
 void mVUDoDBit(microVU& mVU, microFlagCycles* mFC)
 {
-	a64::Label eJMP;
+	a64_label eJMP = A64_LABEL_INIT;
 	if (mVU.index && THREAD_VU1)
 		mvuLdr32(mVU, gprT1, &vu1Thread.vuFBRST);
 	else
 		mvuLdr32(mVU, gprT1, &VU0.VI[REG_FBRST].UL);
-	armAsm->Tst(gprT1, (isVU1 ? 0x400 : 0x4));
-	armAsm->B(&eJMP, a64::eq);
+	a64_tst_imm(armAsm, gprT1, (isVU1 ? 0x400 : 0x4));
+	a64_b_cond(armAsm, &eJMP, A64_EQ);
 	if (!isVU1 || !THREAD_VU1)
 	{
 		mvuMemOrImm32(mVU, &VU0.VI[REG_VPU_STAT].UL, (isVU1 ? 0x200 : 0x2), gprT1);
@@ -237,18 +237,18 @@ void mVUDoDBit(microVU& mVU, microFlagCycles* mFC)
 	incPC(1);
 	mVUDTendProgram(mVU, mFC, 1);
 	incPC(-1);
-	armAsm->Bind(&eJMP);
+	a64_bind(armAsm, &eJMP);
 }
 
 void mVUDoTBit(microVU& mVU, microFlagCycles* mFC)
 {
-	a64::Label eJMP;
+	a64_label eJMP = A64_LABEL_INIT;
 	if (mVU.index && THREAD_VU1)
 		mvuLdr32(mVU, gprT1, &vu1Thread.vuFBRST);
 	else
 		mvuLdr32(mVU, gprT1, &VU0.VI[REG_FBRST].UL);
-	armAsm->Tst(gprT1, (isVU1 ? 0x800 : 0x8));
-	armAsm->B(&eJMP, a64::eq);
+	a64_tst_imm(armAsm, gprT1, (isVU1 ? 0x800 : 0x8));
+	a64_b_cond(armAsm, &eJMP, A64_EQ);
 	if (!isVU1 || !THREAD_VU1)
 	{
 		mvuMemOrImm32(mVU, &VU0.VI[REG_VPU_STAT].UL, (isVU1 ? 0x400 : 0x4), gprT1);
@@ -258,7 +258,7 @@ void mVUDoTBit(microVU& mVU, microFlagCycles* mFC)
 	mVUDTendProgram(mVU, mFC, 1);
 	incPC(-1);
 
-	armAsm->Bind(&eJMP);
+	a64_bind(armAsm, &eJMP);
 }
 
 void mVUSaveFlags(microVU& mVU, microFlagCycles& mFC, microFlagCycles& mFCBackup)
@@ -302,12 +302,12 @@ void mVUtestCycles(microVU& mVU, microFlagCycles& mFC)
 
 	mvuLdr32(mVU, gprT1, &mVU.cycles);
 	if (EmuConfig.Gamefixes.VUSyncHack)
-		armAsm->Subs(gprT1.W(), gprT1.W(), mVUcycles); // Running behind, make sure we have time to run the block
+		a64_subs_imm(armAsm, a64_asw(gprT1), a64_asw(gprT1), mVUcycles); // Running behind, make sure we have time to run the block
 	else
-		armAsm->Subs(gprT1.W(), gprT1.W(), 1); // Running ahead, make sure cycles left are above 0
+		a64_subs_imm(armAsm, a64_asw(gprT1), a64_asw(gprT1), 1); // Running ahead, make sure cycles left are above 0
 
-	a64::Label skip;
-	armAsm->B(&skip, a64::pl); // jump if result >= 0 (x86 xForwardJNS32)
+	a64_label skip = A64_LABEL_INIT;
+	a64_b_cond(armAsm, &skip, A64_PL); // jump if result >= 0 (x86 xForwardJNS32)
 
 	armMoveAddressToReg(RXARG1, &mVUpBlock->pState);
 	armEmitCall(mVU.copyPLState);
@@ -316,13 +316,13 @@ void mVUtestCycles(microVU& mVU, microFlagCycles& mFC)
 		mvuStrImm32(mVU, &mVU.regs().nextBlockCycles, mVUcycles, gprT1);
 	mVUendProgram(mVU, &mFC, 0);
 
-	armAsm->Bind(&skip);
+	a64_bind(armAsm, &skip);
 
 	// xSUB(ptr32[&mVU.cycles], mVUcycles)
-	const a64::MemOperand cycles_mem = mvuAbsMem(mVU, &mVU.cycles, 4);
-	armAsm->Ldr(gprT1.W(), cycles_mem);
-	armAsm->Sub(gprT1.W(), gprT1.W(), mVUcycles);
-	armAsm->Str(gprT1.W(), cycles_mem);
+	const a64_mem cycles_mem = mvuAbsMem(mVU, &mVU.cycles, 4);
+	a64_ldr(armAsm, a64_asw(gprT1), cycles_mem);
+	a64_sub_imm(armAsm, a64_asw(gprT1), a64_asw(gprT1), mVUcycles);
+	a64_str(armAsm, a64_asw(gprT1), cycles_mem);
 }
 
 //------------------------------------------------------------------
@@ -692,22 +692,22 @@ void* mVUcompile(microVU& mVU, u32 startPC, uptr pState)
 					normJump(mVU, mFC);
 					goto perf_and_return;
 				case 3: // IBEQ
-					condBranch(mVU, mFC, a64::eq);
+					condBranch(mVU, mFC, A64_EQ);
 					goto perf_and_return;
 				case 4: // IBGEZ
-					condBranch(mVU, mFC, a64::ge);
+					condBranch(mVU, mFC, A64_GE);
 					goto perf_and_return;
 				case 5: // IBGTZ
-					condBranch(mVU, mFC, a64::gt);
+					condBranch(mVU, mFC, A64_GT);
 					goto perf_and_return;
 				case 6: // IBLEQ
-					condBranch(mVU, mFC, a64::le);
+					condBranch(mVU, mFC, A64_LE);
 					goto perf_and_return;
 				case 7: // IBLTZ
-					condBranch(mVU, mFC, a64::lt);
+					condBranch(mVU, mFC, A64_LT);
 					goto perf_and_return;
 				case 8: // IBNEQ
-					condBranch(mVU, mFC, a64::ne);
+					condBranch(mVU, mFC, A64_NE);
 					goto perf_and_return;
 			}
 		}
