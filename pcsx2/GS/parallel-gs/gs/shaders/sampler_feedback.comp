@@ -4,7 +4,9 @@
 // SPDX-License-Identifier: LGPL-3.0+
 
 #extension GL_EXT_buffer_reference : require
+#ifndef PGS_NO_16BIT
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#endif
 #extension GL_EXT_spirv_intrinsics : require
 
 #define PRIMITIVE_SETUP_QUALIFIER readonly
@@ -98,7 +100,7 @@ bool compute_tex_index_and_damage_region(uint index, out uint tex_index, out ive
     if (index >= registers.num_primitives)
         return false;
 
-    ivec4 bb = ivec4(primitive_attr.data[index].bb) << PGS_RASTER_SUBSAMPLE_BITS;
+    ivec4 bb = ivec4(pgs_bb16(primitive_attr.data[index].bb)) << PGS_RASTER_SUBSAMPLE_BITS;
     if (bb.x > bb.z || bb.y > bb.w)
         return false;
 

@@ -21,18 +21,48 @@ layout(set = 0, binding = BINDING_VRAM, std430) buffer VRAM24
 } vram24;
 #endif
 
+#ifndef PGS_NO_16BIT
 layout(set = 0, binding = BINDING_VRAM, std430) buffer VRAM16
 {
 	uint16_t data[];
 } vram16;
+#define pgs_vram16_load(i) uint(vram16.data[i])
+#define pgs_vram16_store(i, v) vram16.data[i] = uint16_t(v)
+#define pgs_vram16_store_flag(i, b) vram16.data[i] = (b) ? 0xffffus : 0us
+#else
+// Without 16-bit storage a halfword is half of a VRAM32 word.
+uint pgs_vram16_load(uint i)
+{
+	return bitfieldExtract(vram32.data[i >> 1u], int((i & 1u) << 4u), 16);
+}
+
+// The other half is a neighbouring pixel's, so both steps are atomic.
+void pgs_vram16_store(uint i, uint v)
+{
+	uint shamt = (i & 1u) << 4u;
+	atomicAnd(vram32.data[i >> 1u], ~(0xffffu << shamt));
+	atomicOr(vram32.data[i >> 1u], (v & 0xffffu) << shamt);
+}
+#define pgs_vram16_store_flag(i, b) pgs_vram16_store(i, (b) ? 0xffffu : 0u)
+#endif
 #endif
 
 #ifdef NEED_PRIMITIVE_LIST
 layout(set = 0, binding = BINDING_COARSE_TILE_LIST, std430)
 PRIMITIVE_LIST_QUALIFIER buffer CoarseTileList
 {
+#ifdef PGS_NO_16BIT
+	// A word per entry: the renderer sizes the list to match.
+	uint data[];
+#else
 	uint16_t data[];
+#endif
 } coarse_primitive_list;
+#ifdef PGS_NO_16BIT
+#define pgs_list_entry(v) uint(v)
+#else
+#define pgs_list_entry(v) uint16_t(v)
+#endif
 #endif
 
 #ifdef NEED_CONSTANTS

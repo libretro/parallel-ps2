@@ -8,8 +8,10 @@
 #extension GL_KHR_shader_subgroup_basic : require
 #extension GL_KHR_shader_subgroup_ballot : require
 #extension GL_KHR_shader_subgroup_vote : require
+#ifndef PGS_NO_16BIT
 #extension GL_EXT_shader_16bit_storage : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#endif
 layout(local_size_x_id = 0) in;
 
 #define CONSTEXPR const
@@ -232,7 +234,7 @@ void main()
                     uint ballot_bit = subgroupBallotExclusiveBitCount(ballot);
                     uint total = subgroupBallotBitCount(ballot);
                     if (binned)
-                        coarse_primitive_list.data[coarse_primitive_list_offset + write_offset + ballot_bit] = uint16_t(primitive_index);
+                        coarse_primitive_list.data[coarse_primitive_list_offset + write_offset + ballot_bit] = pgs_list_entry(primitive_index);
                     write_offset += total;
                 }
             }
@@ -264,7 +266,7 @@ void main()
             uint ballot_bit = subgroupBallotExclusiveBitCount(ballot);
             uint total = subgroupBallotBitCount(ballot);
             if (binned)
-                coarse_primitive_list.data[coarse_primitive_list_offset + write_offset + ballot_bit] = uint16_t(primitive_index);
+                coarse_primitive_list.data[coarse_primitive_list_offset + write_offset + ballot_bit] = pgs_list_entry(primitive_index);
             write_offset += total;
         }
     }

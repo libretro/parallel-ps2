@@ -5,7 +5,9 @@
 
 #version 450
 
+#ifndef PGS_NO_16BIT
 #extension GL_EXT_shader_16bit_storage : require
+#endif
 #extension GL_EXT_samplerless_texture_functions : require
 #include "data_structures.h"
 #include "swizzle_utils.h"
@@ -21,10 +23,16 @@ layout(set = 0, binding = 0) readonly buffer VRAM32
     uint data[];
 } vram32;
 
+#ifdef PGS_NO_16BIT
+// Without 16-bit storage a halfword is read out of its word.
+#define VRAM16_LOAD(addr) bitfieldExtract(vram32.data[(addr) >> 1u], int(((addr) & 1u) << 4u), 16)
+#else
 layout(set = 0, binding = 0) readonly buffer VRAM16
 {
     uint16_t data[];
 } vram16;
+#define VRAM16_LOAD(addr) uint(vram16.data[addr])
+#endif
 #endif
 
 layout(push_constant) uniform Registers
@@ -55,7 +63,7 @@ vec4 sample_vram(uint addr, uint slice)
 
     if (is_tex_16bit)
     {
-        payload = rgba16_to_rgba32(uint(vram16.data[addr + slice * (VRAM_MASK + 1) / 2]), 0, 0x0, 0xff);
+        payload = rgba16_to_rgba32(VRAM16_LOAD(addr + slice * (VRAM_MASK + 1) / 2), 0, 0x0, 0xff);
     }
     else
     {
@@ -80,7 +88,7 @@ bool super_sample_is_valid(uint addr)
 
     if (is_tex_16bit)
     {
-        is_valid = uint(vram16.data[addr + (VRAM_MASK + 1) / 2]) == 0xffff;
+        is_valid = VRAM16_LOAD(addr + (VRAM_MASK + 1) / 2) == 0xffff;
     }
     else
     {

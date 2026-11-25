@@ -33,6 +33,15 @@ struct Shaders
 	Program ubershader_no8[1][1] = {};
 	Program ubershader_noindex[1][1] = {};
 	Program ubershader_no8_noindex[1][1] = {};
+	Program binning_no16 = {};
+	Program triangle_setup_no16 = {};
+	Program single_sample_heuristic_no16 = {};
+	Program clut_write_no16 = {};
+	Program upload_no16[2] = {};
+	Program vram_copy_nobda_no16 = {};
+	Program ubershader_no16[1][1] = {};
+	Program ubershader_no16_noindex[1][1] = {};
+	Shader sample_circuit_no16[1] = {};
 	Shaders() = default;
 
 	template <typename Device, typename Layout, typename Resolver>

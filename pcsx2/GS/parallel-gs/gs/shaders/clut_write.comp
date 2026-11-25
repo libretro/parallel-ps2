@@ -5,7 +5,9 @@
 // SPDX-FileContributor: Runar Heyer
 // SPDX-License-Identifier: LGPL-3.0+
 
+#ifndef PGS_NO_16BIT
 #extension GL_EXT_shader_16bit_storage : require
+#endif
 layout(local_size_x = 256) in;
 layout(constant_id = 0) const uint VRAM_MASK = 4 * 1024 * 1024 - 1;
 
@@ -17,20 +19,31 @@ layout(std430, set = 0, binding = 0) readonly buffer VRAM32
 	uint data[];
 } vram32;
 
+#ifndef PGS_NO_16BIT
 layout(std430, set = 0, binding = 0) readonly buffer VRAM16
 {
 	uint16_t data[];
 } vram16;
+#endif
 
 layout(std140, set = 0, binding = 1) uniform CLUTDesc
 {
 	CLUTDescriptor data[1024];
 } cluts;
 
+#ifdef PGS_NO_16BIT
+// Without 16-bit storage the CLUT is read and written a word (two
+// entries) per invocation.
+layout(std430, set = 0, binding = BINDING_CLUT) buffer CLUT32
+{
+	uint data[];
+} clut32;
+#else
 layout(std430, set = 0, binding = BINDING_CLUT) buffer CLUT16
 {
 	uint16_t data[];
 } clut16;
+#endif
 
 layout(push_constant) uniform Registers
 {
@@ -48,9 +61,15 @@ void main()
 	if (registers.read_index != ~0u)
 	{
 		// Copy from previous instance to allow a CLUT entry to be partially overwritten and used later
+#ifdef PGS_NO_16BIT
+		uint word = clut32.data[registers.read_index * (PGS_CLUT_SIZE_16 / 2u) + gl_LocalInvocationIndex];
+		tmp_clut[2u * gl_LocalInvocationIndex] = word & 0xffffu;
+		tmp_clut[2u * gl_LocalInvocationIndex + 1u] = word >> 16u;
+#else
 		uint read_index = registers.read_index * PGS_CLUT_SIZE_16 + gl_LocalInvocationIndex;
 		tmp_clut[gl_LocalInvocationIndex] = uint(clut16.data[read_index]);
 		tmp_clut[gl_LocalInvocationIndex + 256u] = uint(clut16.data[read_index + 256u]);
+#endif
 		barrier();
 	}
 
@@ -145,17 +164,26 @@ void main()
 			else
 			{
 				uint vram_addr = swizzle_PS2(coord.x, coord.y, clut.base_pointer, clut.cbw, clut.format, VRAM_MASK);
+#ifdef PGS_NO_16BIT
+				uint lo_16 = bitfieldExtract(vram32.data[vram_addr >> 1u], int((vram_addr & 1u) << 4u), 16);
+#else
 				uint lo_16 = uint(vram16.data[vram_addr]);
+#endif
 				tmp_clut[write_coord] = lo_16;
 			}
 		}
 
 		// Flush current CLUT state.
 		barrier();
+#ifdef PGS_NO_16BIT
+		clut32.data[gl_LocalInvocationIndex + clut.instance * (PGS_CLUT_SIZE_16 / 2u)] =
+			(tmp_clut[2u * gl_LocalInvocationIndex] & 0xffffu) | (tmp_clut[2u * gl_LocalInvocationIndex + 1u] << 16u);
+#else
 		clut16.data[gl_LocalInvocationIndex + clut.instance * PGS_CLUT_SIZE_16] =
 			uint16_t(tmp_clut[gl_LocalInvocationIndex]);
 		clut16.data[gl_LocalInvocationIndex + clut.instance * PGS_CLUT_SIZE_16 + 256u] =
 			uint16_t(tmp_clut[gl_LocalInvocationIndex + 256u]);
+#endif
 		barrier();
 	}
 }

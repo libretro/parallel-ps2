@@ -373,6 +373,14 @@ private:
 	bool has_indexing = true;
 	Vulkan::ImageHandle blank_texture;
 	Vulkan::Program *upload_programs[2] = {};
+	/* Without 16-bit storage or shaderInt16, the _no16 variants, which also
+	 * go without 8-bit storage and BDA, and a word per primitive list
+	 * entry. */
+	bool has_16bit = true;
+	Vulkan::Program *binning_program = nullptr;
+	Vulkan::Program *triangle_setup_program = nullptr;
+	Vulkan::Program *single_sample_program = nullptr;
+	Vulkan::Program *clut_write_program = nullptr;
 
 	struct Scratch
 	{

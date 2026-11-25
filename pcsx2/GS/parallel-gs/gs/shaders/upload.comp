@@ -5,7 +5,9 @@
 // SPDX-FileContributor: Runar Heyer
 // SPDX-License-Identifier: LGPL-3.0+
 
+#ifndef PGS_NO_16BIT
 #extension GL_EXT_shader_16bit_storage : require
+#endif
 #ifndef PGS_NO_8BIT
 #extension GL_EXT_shader_8bit_storage : require
 #endif
@@ -24,10 +26,16 @@ layout(std430, set = 0, binding = 0) readonly buffer VRAM32
 	uint data[];
 } vram32;
 
+#ifdef PGS_NO_16BIT
+// Without 16-bit storage a halfword is read out of its word.
+#define VRAM16_LOAD(addr) bitfieldExtract(vram32.data[(addr) >> 1u], int(((addr) & 1u) << 4u), 16)
+#else
 layout(std430, set = 0, binding = 0) readonly buffer VRAM16
 {
 	uint16_t data[];
 } vram16;
+#define VRAM16_LOAD(addr) uint(vram16.data[addr])
+#endif
 
 #ifdef PGS_NO_8BIT
 // Without 8-bit storage a byte is read out of its word.
@@ -40,10 +48,19 @@ layout(std430, set = 0, binding = 0) readonly buffer VRAM8
 #define VRAM8_LOAD(addr) vram8.data[addr]
 #endif
 
+#ifdef PGS_NO_16BIT
+layout(std430, set = 0, binding = BINDING_CLUT) readonly buffer CLUT32
+{
+	uint data[];
+} clut32;
+#define CLUT16_LOAD(index) bitfieldExtract(clut32.data[(index) >> 1u], int(((index) & 1u) << 4u), 16)
+#else
 layout(std430, set = 0, binding = BINDING_CLUT) readonly buffer CLUT16
 {
 	uint16_t data[];
 } clut16;
+#define CLUT16_LOAD(index) uint(clut16.data[index])
+#endif
 
 #if SUPER_SAMPLED
 layout(rgba8, set = 0, binding = 1) writeonly uniform image2DArray uImage;
@@ -101,13 +118,13 @@ uint get_clut_color(uint index, uint offset)
 
 	if (is_clut_16bit)
 	{
-		uint pal_color = uint(clut16.data[buffer_index + instance_offset]);
+		uint pal_color = CLUT16_LOAD(buffer_index + instance_offset);
 		col = rgba16_to_rgba32(pal_color, registers.aem, registers.ta0, registers.ta1);
 	}
 	else
 	{
-		col = uint(clut16.data[buffer_index + instance_offset]);
-		col |= uint(clut16.data[buffer_index + instance_offset + 256u]) << 16u;
+		col = CLUT16_LOAD(buffer_index + instance_offset);
+		col |= CLUT16_LOAD(buffer_index + instance_offset + 256u) << 16u;
 	}
 
 	return col;
@@ -160,13 +177,13 @@ void main()
 	}
 	else if (is_tex_16bit)
 	{
-		uint col = uint(vram16.data[addr]);
+		uint col = VRAM16_LOAD(addr);
 #if SUPER_SAMPLED
 		if (sample_id != ~0u)
 		{
-			uint ref = uint(vram16.data[addr + VRAM_STRIDE_U16]);
+			uint ref = VRAM16_LOAD(addr + VRAM_STRIDE_U16);
 			if (ref == 0xffffu)
-				col = uint(vram16.data[addr + (2 + sample_id) * VRAM_STRIDE_U16]);
+				col = VRAM16_LOAD(addr + (2 + sample_id) * VRAM_STRIDE_U16);
 		}
 #endif
 		payload = rgba16_to_rgba32(col, registers.aem, registers.ta0, registers.ta1);

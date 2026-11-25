@@ -1133,7 +1133,9 @@ else
 	# storage, timeline semaphores (each submission's value then a fence)
 	# or subgroup size control (the device's one subgroup size taken where
 	# it is in range) or descriptor indexing (a render pass's textures a
-	# fixed array of PGS_FIXED_TEXTURES) - Vulkan 1.1, the extension
+	# fixed array of PGS_FIXED_TEXTURES), or 16-bit storage and shaderInt16
+	# (the _no16 modules: halfwords as masked words, a primitive list entry
+	# a word) - Vulkan 1.1, the extension or feature
 	# hidden; every host-visible
 	# allocation starting as 0xA5 bytes: the qword clears go as fills,
 	# sampler feedback is left off, copies read their source through
@@ -1147,7 +1149,7 @@ else
 	for c in upload_busy upload_busy_blocks copy_then_upload readback_t4hh readback_parts column_passes \
 	         many_copies alpha_under_depth blur_in_place many_textures many_textures_loop; do
 		frames=
-		variants="bda nobda noscalar no8 notimeline nosubgroupsize noindexing all"
+		variants="bda nobda noscalar no8 notimeline nosubgroupsize noindexing all no16 all16"
 		case $c in
 			upload_busy)        expect=78123456,58563412,9a563412 ;;
 			upload_busy_blocks) expect=78444444,78666666 ;;
@@ -1164,10 +1166,11 @@ else
 			# semaphore path, which takes far longer under validation, has
 			# its own descriptor timeline.
 			many_textures_loop) expect=00080808,00404040,00686868,00808080 frames=8200
-			                    variants="notimeline all" ;;
+			                    variants="notimeline all all16" ;;
 		esac
 		[ -f "$VAL/$c.bin" ] || "$VAL/swdraw" --bios "$VAL/$c.bin" $c
 		for v in $variants; do
+			no16=
 			case $v in
 				bda)      hide= ;;
 				nobda)    hide=VK_KHR_buffer_device_address ;;
@@ -1178,8 +1181,11 @@ else
 				noindexing) hide=VK_EXT_descriptor_indexing ;;
 				# All of them: Vulkan 1.1 with 16-bit storage alone.
 				all)      hide=VK_KHR_buffer_device_address,VK_EXT_scalar_block_layout,VK_KHR_8bit_storage,VK_KHR_timeline_semaphore,VK_EXT_subgroup_size_control,VK_EXT_descriptor_indexing ;;
+				# Neither shaderInt16 nor 16-bit storage: the _no16 modules.
+				no16)     hide= no16=1 ;;
+				all16)    hide=VK_KHR_buffer_device_address,VK_EXT_scalar_block_layout,VK_KHR_8bit_storage,VK_KHR_timeline_semaphore,VK_EXT_subgroup_size_control,VK_EXT_descriptor_indexing no16=1 ;;
 			esac
-			env ${hide:+VN_HIDE_EXT=$hide} \
+			env ${hide:+VN_HIDE_EXT=$hide} ${no16:+VN_NO_16BIT=1} \
 			VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 VN_VERBOSE=1 VK_LOADER_LAYERS_ENABLE='*validation*' \
 			VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT \
 			VN_EXPECT_RUN=$expect VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/$c.bin" VN_RENDERER=paraLLEl-GS ${frames:+VN_FRAMES=$frames} \
@@ -1201,8 +1207,8 @@ else
 		done
 	done
 	for hide in VK_KHR_buffer_device_address VK_EXT_scalar_block_layout VK_KHR_8bit_storage VK_KHR_timeline_semaphore \
-	            VK_EXT_subgroup_size_control VK_EXT_descriptor_indexing; do
-		VN_HIDE_EXT=$hide VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
+	            VK_EXT_subgroup_size_control VK_EXT_descriptor_indexing no16; do
+		env $( [ $hide = no16 ] && echo VN_NO_16BIT=1 || echo VN_HIDE_EXT=$hide ) VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
 		VK_LOADER_LAYERS_ENABLE='*validation*' VN_HASH_IMAGE=1 VN_FRAMES=60 VN_IDLE_BIOS=1 \
 		LRPS2_BIOS="$VAL/scan_field.bin" VN_RENDERER=paraLLEl-GS \
 			timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/pgs.$hide.log" 2>&1 || true
@@ -1219,9 +1225,10 @@ else
 	"$VAL/swdraw" --bios "$VAL/stream_t8.bin" stream_t8
 	for hide in none VK_KHR_buffer_device_address VK_EXT_scalar_block_layout VK_KHR_8bit_storage VK_KHR_timeline_semaphore \
 	            VK_EXT_subgroup_size_control VK_EXT_descriptor_indexing \
-	            VK_KHR_buffer_device_address,VK_EXT_scalar_block_layout,VK_KHR_8bit_storage,VK_KHR_timeline_semaphore,VK_EXT_subgroup_size_control,VK_EXT_descriptor_indexing; do
+	            VK_KHR_buffer_device_address,VK_EXT_scalar_block_layout,VK_KHR_8bit_storage,VK_KHR_timeline_semaphore,VK_EXT_subgroup_size_control,VK_EXT_descriptor_indexing \
+	            no16; do
 		mkdir -p "$VAL/st.$hide"
-		env $( [ $hide = none ] || echo VN_HIDE_EXT=$hide ) VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
+		env $( case $hide in none) ;; no16) echo VN_NO_16BIT=1 ;; *) echo VN_HIDE_EXT=$hide ;; esac ) VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
 		VN_FRAMES=120 VN_DUMP_STATE="$VAL/st.$hide.state" VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/stream_t8.bin" \
 		VN_RENDERER=paraLLEl-GS timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL/st.$hide" v2 >"$VAL/st.$hide.log" 2>&1 || true
 		[ $hide = none ] && continue
@@ -1237,7 +1244,32 @@ else
 			exit 1
 		fi
 	done
-	echo "  paraLLEl-GS without buffer device address, scalar block layout, 8-bit storage, timeline semaphores, subgroup size control or descriptor indexing: the same memory and picture, no validation error"
+	# Without 16-bit storage and shaderInt16, what goes through the _no16
+	# modules ends in the state the full run does: a PSMCT16 frame (halfwords
+	# stored as masked words), sixteen palettes (CLUT words), FST UVs and
+	# scissors (unpacked from words). Each case ends in one state run after
+	# run; frame_on_depth, its frame and Z overlapping, does not.
+	for c in stream_frame16 t4_many_palettes step_lines stream_ct32; do
+		"$VAL/swdraw" --bios "$VAL/$c.bin" $c
+		for v in full no16; do
+			mkdir -p "$VAL/s16.$v"
+			env $( [ $v = no16 ] && echo VN_NO_16BIT=1 ) VN_VULKAN_1_1=1 VN_POISON_MEMORY=1 \
+			VN_FRAMES=120 VN_DUMP_STATE="$VAL/s16.$c.$v.state" VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/$c.bin" \
+			VN_RENDERER=paraLLEl-GS timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL/s16.$v" v2 >"$VAL/s16.$c.$v.log" 2>&1 || true
+		done
+		f="$VAL/s16.$c.full.state"
+		g0=$(tag "$f" Gif); g1=$(tag "$f" GIFdma); c0=$(tag "$f" cdvd); c1=$(tag "$f" deci2)
+		n=$(cmp -l "$f" "$VAL/s16.$c.no16.state" 2>/dev/null | awk -v g0="$g0" -v g1="$g1" -v c0="$c0" -v c1="$c1" \
+			'{ o = $1 - 1; if (!((o >= g0 && o < g1) || (o >= c0 && o < c1))) n++ } END { print n + 0 }')
+		if [ -z "$g0" ] || [ -z "$c0" ] || [ ! -s "$VAL/s16.$c.no16.state" ] ||
+		   [ "$(wc -c < "$f")" != "$(wc -c < "$VAL/s16.$c.no16.state")" ] || [ "$n" != 0 ]; then
+			rm -rf "$VAL"
+			echo "  FAIL: $c without 16-bit storage ends in another state (${n:-?} bytes)"
+			exit 1
+		fi
+		rm -f "$f" "$VAL/s16.$c.no16.state"
+	done
+	echo "  paraLLEl-GS without buffer device address, scalar block layout, 8-bit storage, timeline semaphores, subgroup size control, descriptor indexing or 16-bit storage and shaderInt16: the same memory and picture, no validation error"
 	# The device lost at the 30th present with a palette the GPU drew in
 	# use, and reopened under the renderer: nothing of the old device is
 	# used or freed on the new one (the texture cache's download textures

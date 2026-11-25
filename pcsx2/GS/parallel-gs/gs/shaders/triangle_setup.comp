@@ -5,7 +5,9 @@
 // SPDX-FileContributor: Runar Heyer
 // SPDX-License-Identifier: LGPL-3.0+
 
+#ifndef PGS_NO_16BIT
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#endif
 
 //#extension GL_EXT_spirv_intrinsics : require
 //spirv_execution_mode(extensions = ["SPV_KHR_float_controls"], capabilities = [4467], 4462, 32);
@@ -110,7 +112,7 @@ ivec2 sub64(ivec2 a, ivec2 b)
     return ivec2(lsb, msb);
 }
 
-vec2 unpack_uv(u16vec2 uv)
+vec2 unpack_uv(PGS_UV uv)
 {
     return vec2(uv) / float(PGS_SUBPIXELS);
 }
@@ -151,7 +153,7 @@ void main_inner(uint index)
     uint za = v0.z;
     uint zb = v1.z;
     uint zc = v2.z;
-    ivec4 primitive_bb = ivec4(primitive_attr.data[index].bb);
+    ivec4 primitive_bb = ivec4(pgs_bb16(primitive_attr.data[index].bb));
 
     // Rough approximation of bresenham. We need to handle the case where primitives expect exit rule.
     // The simplest workaround is just to offset by one sub-pixel if we observe edge case.
@@ -379,10 +381,10 @@ void main_inner(uint index)
     }
     else
     {
-        stqf0 = vec4(unpack_uv(attr0.uv), attr0.q, attr0.fog);
-        stqf1 = vec4(unpack_uv(attr1.uv), attr1.q, attr1.fog);
+        stqf0 = vec4(unpack_uv(pgs_uv(attr0.uv)), attr0.q, attr0.fog);
+        stqf1 = vec4(unpack_uv(pgs_uv(attr1.uv)), attr1.q, attr1.fog);
         if (!sprite && !line)
-            stqf2 = vec4(unpack_uv(attr2.uv), attr2.q, attr2.fog);
+            stqf2 = vec4(unpack_uv(pgs_uv(attr2.uv)), attr2.q, attr2.fog);
     }
 
     // +U follows X, +V follows Y it seems ...
@@ -559,9 +561,9 @@ void main_inner(uint index)
 
         if (nearest && npot_area)
         {
-            ivec2 uv_delta0 = ivec2(attr0.uv) - a;
-            ivec2 uv_delta1 = ivec2(attr1.uv) - b;
-            ivec2 uv_delta2 = ivec2(attr2.uv) - c;
+            ivec2 uv_delta0 = ivec2(pgs_uv(attr0.uv)) - a;
+            ivec2 uv_delta1 = ivec2(pgs_uv(attr1.uv)) - b;
+            ivec2 uv_delta2 = ivec2(pgs_uv(attr2.uv)) - c;
 
             // UV and position must track each other 1:1.
             bool uv_delta_equal = all(equal(uv_delta0.xyxy, ivec4(uv_delta1, uv_delta2)));
@@ -620,7 +622,7 @@ void main_inner(uint index)
 
     ivec4 packed_bb = pack_bounding_box(a, b, c, d, multisample, line, SAMPLING_RATE_Y_LOG2);
 
-    packed_bb = clip_bounding_box(packed_bb, ivec4(primitive_attr.data[index].bb));
+    packed_bb = clip_bounding_box(packed_bb, ivec4(pgs_bb16(primitive_attr.data[index].bb)));
     primitive_setup.data[index].bb = packed_bb;
 
     if (sprite && !perspective)
@@ -629,8 +631,8 @@ void main_inner(uint index)
         // Detecting this is important since at least one game in the wild seems to barely touch the neighbor sub-texel
         // wreacking havok in channel shuffle effects.
         // Resolving this with pure interpolation requires near-infinite precision, which we don't have.
-        ivec2 uv_delta0 = ivec2(attr0.uv) - a;
-        ivec2 uv_delta1 = ivec2(attr1.uv) - d;
+        ivec2 uv_delta0 = ivec2(pgs_uv(attr0.uv)) - a;
+        ivec2 uv_delta1 = ivec2(pgs_uv(attr1.uv)) - d;
         ivec2 min_delta = min(uv_delta0, uv_delta1);
         ivec2 max_delta = max(uv_delta0, uv_delta1);
 
@@ -687,7 +689,7 @@ void main_inner(uint index)
         // texel. Anything else reads the texture single-sampled.
         if (SUPER_SAMPLED_COPIES_ONLY && (tex & (TEX_PER_SAMPLE_BIT | TEX_SAMPLE_MAPPING_BIT)) == TEX_PER_SAMPLE_BIT)
         {
-            ivec2 step_error = (ivec2(attr1.uv) - ivec2(attr0.uv)) - (d - a);
+            ivec2 step_error = (ivec2(pgs_uv(attr1.uv)) - ivec2(pgs_uv(attr0.uv))) - (d - a);
             bool is_copy = sprite && (state & (1u << STATE_BIT_PERSPECTIVE)) == 0 &&
                            (tex & TEX_SAMPLER_MAG_LINEAR_BIT) == 0 &&
                            all(lessThanEqual(abs(step_error), ivec2(1)));
@@ -701,7 +703,7 @@ void main_inner(uint index)
         // If we have already decided on sample mapping, just do that.
         if ((tex & (TEX_PER_SAMPLE_BIT | TEX_SAMPLE_MAPPING_BIT)) == TEX_PER_SAMPLE_BIT)
         {
-            ivec2 uv_delta = abs(ivec2(attr1.uv) - ivec2(attr0.uv));
+            ivec2 uv_delta = abs(ivec2(pgs_uv(attr1.uv)) - ivec2(pgs_uv(attr0.uv)));
             ivec2 dist = abs(d - a);
             bool is_perspective = (state & (1u << STATE_BIT_PERSPECTIVE)) != 0;
 
@@ -757,7 +759,7 @@ void main_inner(uint index)
                             // With nearest sampling, a game can use any phase within the texels and still expect
                             // the same result. Since we're promoting back to LINEAR we need to make
                             // sure we sample at texel centers on average to avoid phase shifts.
-                            ivec2 average_uv = (ivec2(attr0.uv) + ivec2(attr1.uv)) >> 1;
+                            ivec2 average_uv = (ivec2(pgs_uv(attr0.uv)) + ivec2(pgs_uv(attr1.uv))) >> 1;
                             ivec2 average_pos = (d + a) >> 1;
 
                             ivec2 phase = (average_uv - average_pos) & (PGS_SUBPIXELS - 1);

@@ -5,7 +5,9 @@
 // SPDX-FileContributor: Runar Heyer
 // SPDX-License-Identifier: LGPL-3.0+
 
+#ifndef PGS_NO_16BIT
 #extension GL_EXT_shader_16bit_storage : require
+#endif
 #ifndef PGS_NO_8BIT
 #extension GL_EXT_shader_8bit_storage : require
 #endif
@@ -52,10 +54,12 @@ layout(std430, set = 0, binding = 0) buffer VRAM24
 } vram24;
 #endif
 
+#ifndef PGS_NO_16BIT
 layout(std430, set = 0, binding = 0) buffer VRAM16
 {
 	uint16_t data[];
 } vram16;
+#endif
 
 #ifndef PGS_NO_8BIT
 layout(std430, set = 0, binding = 0) buffer VRAM8
@@ -499,9 +503,19 @@ void main()
 
 			if (has_exclusive)
 			{
+#ifdef PGS_NO_16BIT
+				// Without 16-bit storage: the dword is this thread's alone.
+				vram32.data[word_addr] = (vram32.data[word_addr] & ~target_write_mask) |
+					((write_word << shamt) & target_write_mask);
+				if (INVALIDATE_SUPER_SAMPLE)
+					vram32.data[word_addr + (VRAM_MASK + 1) / 4] =
+						(vram32.data[word_addr + (VRAM_MASK + 1) / 4] & ~target_write_mask) |
+						(((write_word & CONSTANT_ZERO) << shamt) & target_write_mask);
+#else
 				vram16.data[dest_addr] = uint16_t(write_word);
 				if (INVALIDATE_SUPER_SAMPLE)
 					vram16.data[dest_addr + (VRAM_MASK + 1) / 2] = uint16_t(write_word & CONSTANT_ZERO);
+#endif
 			}
 			else if (mask != 0u)
 			{

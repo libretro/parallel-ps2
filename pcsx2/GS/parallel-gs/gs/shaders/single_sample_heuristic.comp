@@ -5,7 +5,9 @@
 // SPDX-FileContributor: Runar Heyer
 // SPDX-License-Identifier: LGPL-3.0+
 
+#ifndef PGS_NO_16BIT
 #extension GL_EXT_shader_16bit_storage : require
+#endif
 layout(local_size_x_id = 0) in;
 
 layout(push_constant) uniform Registers

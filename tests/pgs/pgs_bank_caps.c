@@ -15,7 +15,10 @@
  * 8-bit storage for StorageBuffer8BitAccess: each such module has a
  * variant with _no8 or _nobda_no8 added to its name (before any
  * _noindex or index) that declares neither. And without descriptor indexing for
- * RuntimeDescriptorArray: a _noindex variant of each.
+ * RuntimeDescriptorArray: a _noindex variant of each. And without 16-bit
+ * storage or shaderInt16, for StorageBuffer16BitAccess or Int16: a variant
+ * with _no16 or _nobda_no16 in place of any _nobda/_no8 (and before any
+ * _noindex or index) that declares none of the four.
  *
  * Reads slangmosh.hpp, finds each module from its spirv_bank + N offset
  * and walks the capabilities at its head.
@@ -35,6 +38,8 @@
 #define CAP_BDA            5347UL
 #define CAP_STORAGE8       4448UL
 #define CAP_RUNTIME_ARRAY  5302UL
+#define CAP_STORAGE16      4433UL
+#define CAP_INT16          22UL
 #define MAX_MODULES        64
 #define MAX_NAME           64
 
@@ -83,7 +88,7 @@ int main(int argc, char **argv)
    size_t nwords = 0, cap = 1 << 16;
    int modules = 0, bad = 0, m, n;
    static char names[MAX_MODULES][MAX_NAME];
-   static int bda[MAX_MODULES], st8[MAX_MODULES], rda[MAX_MODULES];
+   static int bda[MAX_MODULES], st8[MAX_MODULES], rda[MAX_MODULES], st16[MAX_MODULES];
 
    if (argc < 2 || !(text = read_file(argv[1])))
    {
@@ -120,7 +125,7 @@ int main(int argc, char **argv)
       unsigned long off;
       char *call = strstr(p, "spirv_bank + ");
       size_t i, len = strcspn(p + 6, " =");
-      int needs_bda = 0, needs_8 = 0, needs_rda = 0;
+      int needs_bda = 0, needs_8 = 0, needs_rda = 0, needs_16 = 0;
 
       if (!call || modules == MAX_MODULES || len >= MAX_NAME)
          break;
@@ -150,10 +155,14 @@ int main(int argc, char **argv)
             needs_8 = 1;
          if (op == OP_CAPABILITY && i + 1 < nwords && words[i + 1] == CAP_RUNTIME_ARRAY)
             needs_rda = 1;
+         if (op == OP_CAPABILITY && i + 1 < nwords &&
+             (words[i + 1] == CAP_STORAGE16 || words[i + 1] == CAP_INT16))
+            needs_16 = 1;
          i += wc;
       }
       bda[modules] = needs_bda;
       st8[modules] = needs_8;
+      st16[modules] = needs_16;
       rda[modules++] = needs_rda;
    }
 
@@ -206,6 +215,42 @@ int main(int argc, char **argv)
             bad++;
          }
       }
+      /* Without 16-bit storage or shaderInt16: one variant going without
+       * all of 16-bit, 8-bit and BDA, keeping _noindex. A module the
+       * renderer goes without on a device without BDA needs none. */
+      found = 0;
+      for (n = 0; n < (int)(sizeof(no_bda_unused) / sizeof(no_bda_unused[0])); n++)
+         if (!strcmp(names[m], no_bda_unused[n]))
+            found = 1;
+      if (st16[m] && !found && !strstr(names[m], "_no16"))
+      {
+         const char *drop[3] = { "_nobda", "_no8", "_noindex" };
+         const char *mid[2] = { "_no16", "_nobda_no16" };
+         char stem[MAX_NAME];
+         size_t base = strcspn(names[m], "[");
+         int k, noindex = strstr(names[m], "_noindex") != NULL, ok = 0;
+         memcpy(stem, names[m], base);
+         stem[base] = '\0';
+         for (k = 0; k < 3; k++)
+         {
+            char *at = strstr(stem, drop[k]);
+            if (at)
+               memmove(at, at + strlen(drop[k]), strlen(at + strlen(drop[k])) + 1);
+         }
+         for (k = 0; k < 2; k++)
+         {
+            sprintf(want, "%s%s%s%s", stem, mid[k], noindex ? "_noindex" : "", names[m] + base);
+            for (n = 0; n < modules; n++)
+               if (!strcmp(names[n], want) && !st16[n] && !st8[n] && !bda[n] && !(noindex && rda[n]))
+                  ok = 1;
+         }
+         if (!ok)
+         {
+            printf("  FAIL %s needs 16-bit storage or shaderInt16 and has no _no16 variant\n", names[m]);
+            bad++;
+         }
+      }
+      found = 0;
       if (!bda[m])
          continue;
       for (n = 0; n < (int)(sizeof(no_bda_unused) / sizeof(no_bda_unused[0])); n++)
@@ -234,6 +279,6 @@ int main(int argc, char **argv)
       printf("pgs_bank_caps: %d failure(s)\n", bad);
       return 1;
    }
-   printf("pgs_bank_caps: %d module loads, no unchecked 16-bit capability, a no-BDA, no-8-bit and no-indexing path for each\n", modules);
+   printf("pgs_bank_caps: %d module loads, no unchecked 16-bit capability, a no-BDA, no-8-bit, no-indexing and no-16-bit path for each\n", modules);
    return 0;
 }

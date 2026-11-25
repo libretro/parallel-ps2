@@ -31,6 +31,7 @@
  * and VN_TIMING has the longest frame after the first reported.
  * VN_LOAD_PAUSE_MS leaves that long between the context reset and the
  * first frame, as a frontend's own loading does.
+ * VN_NO_16BIT hides shaderInt16 and the 16-bit storage features.
  * VN_VULKAN_1_1 has the loader report Vulkan 1.1 to the core; VN_HIDE_EXT
  * then hides the device extensions it lists, and VN_POISON_MEMORY fills
  * each host-visible allocation with 0xA5 before the core sees it.
@@ -782,6 +783,60 @@ static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_v11_gipa(VkInstance inst, con
 		return vn_hide_real ? (PFN_vkVoidFunction)vn_hide_enum : NULL;
 	}
 	return vn_v11_base(inst, name);
+}
+
+/* VN_NO_16BIT has the device report neither shaderInt16 nor any 16-bit
+ * storage feature, as a device without them does. */
+static PFN_vkGetInstanceProcAddr vn_no16_base;
+static PFN_vkGetPhysicalDeviceFeatures vn_no16_real1;
+static PFN_vkGetPhysicalDeviceFeatures2 vn_no16_real2;
+
+static void vn_no16_strip(VkPhysicalDeviceFeatures2 *f)
+{
+	VkBaseOutStructure *s;
+	f->features.shaderInt16 = VK_FALSE;
+	for (s = (VkBaseOutStructure *)f->pNext; s; s = s->pNext)
+	{
+		if (s->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES)
+		{
+			VkPhysicalDeviceVulkan11Features *v = (VkPhysicalDeviceVulkan11Features *)s;
+			v->storageBuffer16BitAccess = v->uniformAndStorageBuffer16BitAccess = VK_FALSE;
+			v->storagePushConstant16 = v->storageInputOutput16 = VK_FALSE;
+		}
+		else if (s->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES)
+		{
+			VkPhysicalDevice16BitStorageFeatures *v = (VkPhysicalDevice16BitStorageFeatures *)s;
+			v->storageBuffer16BitAccess = v->uniformAndStorageBuffer16BitAccess = VK_FALSE;
+			v->storagePushConstant16 = v->storageInputOutput16 = VK_FALSE;
+		}
+	}
+}
+
+static VKAPI_ATTR void VKAPI_CALL vn_no16_features(VkPhysicalDevice gpu, VkPhysicalDeviceFeatures *f)
+{
+	vn_no16_real1(gpu, f);
+	f->shaderInt16 = VK_FALSE;
+}
+
+static VKAPI_ATTR void VKAPI_CALL vn_no16_features2(VkPhysicalDevice gpu, VkPhysicalDeviceFeatures2 *f)
+{
+	vn_no16_real2(gpu, f);
+	vn_no16_strip(f);
+}
+
+static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vn_no16_gipa(VkInstance inst, const char *name)
+{
+	if (inst && !strcmp(name, "vkGetPhysicalDeviceFeatures"))
+	{
+		vn_no16_real1 = (PFN_vkGetPhysicalDeviceFeatures)vn_no16_base(inst, name);
+		return vn_no16_real1 ? (PFN_vkVoidFunction)vn_no16_features : NULL;
+	}
+	if (inst && (!strcmp(name, "vkGetPhysicalDeviceFeatures2") || !strcmp(name, "vkGetPhysicalDeviceFeatures2KHR")))
+	{
+		vn_no16_real2 = (PFN_vkGetPhysicalDeviceFeatures2)vn_no16_base(inst, name);
+		return vn_no16_real2 ? (PFN_vkVoidFunction)vn_no16_features2 : NULL;
+	}
+	return vn_no16_base(inst, name);
 }
 
 /* VN_QUEUE_FAMILIES, e.g. "gct:1,t:1,c:2", has the core see those queue
@@ -1960,6 +2015,11 @@ int main(int argc, char** argv)
 	{
 		vn_qf_base = core_gipa;
 		core_gipa = vn_qf_gipa;
+	}
+	if (getenv("VN_NO_16BIT"))
+	{
+		vn_no16_base = core_gipa;
+		core_gipa = vn_no16_gipa;
 	}
 
 	strcpy(s_system_dir, argv[2]);

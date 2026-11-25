@@ -34,10 +34,27 @@ struct vec2 { float x, y; };
 struct vec4 { float x, y, z, w; };
 struct u16vec2 { uint16_t x, y; };
 struct i16vec4 { int16_t x, y, z, w; };
+#define PGS_U16VEC2 u16vec2
+#define PGS_I16VEC4 i16vec4
 
 #else
 #define CONSTEXPR const
 #define VkDeviceAddress uvec2
+#ifdef PGS_NO_16BIT
+// The same bytes as words; pgs_uv() and pgs_bb16() unpack them to
+// uvec2 and ivec4.
+#define PGS_U16VEC2 uint
+#define PGS_I16VEC4 uvec2
+#define PGS_UV uvec2
+#define pgs_uv(v) uvec2((v) & 0xffffu, (v) >> 16u)
+#define pgs_bb16(v) ivec4(bitfieldExtract(ivec2(v), 0, 16), bitfieldExtract(ivec2(v), 16, 16)).xzyw
+#else
+#define PGS_U16VEC2 u16vec2
+#define PGS_I16VEC4 i16vec4
+#define PGS_UV u16vec2
+#define pgs_uv(v) (v)
+#define pgs_bb16(v) (v)
+#endif
 #endif
 
 CONSTEXPR int PGS_SUBPIXEL_BITS = 4;
@@ -87,13 +104,13 @@ struct VertexAttribute
 	float q;
 	uint rgba;
 	float fog;
-	u16vec2 uv;
+	PGS_U16VEC2 uv;
 };
 
 // Primitive attributes which affect the entire primitive like state index / texture indices / etc.
 struct PrimitiveAttribute
 {
-	i16vec4 bb; // Scissor
+	PGS_I16VEC4 bb; // Scissor
 	uint state;
 	uint tex;
 	uint tex2;

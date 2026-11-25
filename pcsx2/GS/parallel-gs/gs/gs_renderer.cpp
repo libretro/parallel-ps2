@@ -1053,7 +1053,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 	{
 		Vulkan::DeferredPipelineCompile deferred = {};
 		Vulkan::CommandBufferHandle cmd = device->request_command_buffer();
-		cmd->set_program(shaders.binning);
+		cmd->set_program(binning_program);
 		cmd->set_specialization_constant_mask(0x1f);
 		cmd->enable_subgroup_size_control(true);
 
@@ -1196,7 +1196,7 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 		unsigned r, a;
 
 		cmd->enable_subgroup_size_control(false);
-		cmd->set_program(shaders.triangle_setup);
+		cmd->set_program(triangle_setup_program);
 		cmd->set_specialization_constant_mask(0x1f);
 		for (r = 0; r < (rate ? 2u : 1u); r++)
 			for (a = 0; a < 5; a++)
@@ -1222,12 +1222,12 @@ void GSRenderer::kick_compilation_tasks(const GSOptions *options,
 		}
 
 		cmd->set_specialization_constant_mask(1);
-		cmd->set_program(shaders.single_sample_heuristic);
+		cmd->set_program(single_sample_program);
 		cmd->set_specialization_constant(
 				0, std::min<uint32_t>(512u, device->get_gpu_properties().limits.maxComputeWorkGroupSize[0]));
 		cmd->extract_pipeline_state(deferred);
 		small_tasks.push_back(deferred);
-		cmd->set_program(shaders.clut_write);
+		cmd->set_program(clut_write_program);
 		cmd->set_specialization_constant(0, vram_size - 1);
 		cmd->extract_pipeline_state(deferred);
 		small_tasks.push_back(deferred);
@@ -1422,25 +1422,28 @@ GSRenderer::GSRenderer(PageTracker &tracker_)
 /* Hands the bank's modules to the device, leaving out those declaring
  * PhysicalStorageBufferAddresses when the BDA paths are not taken, or
  * StorageBuffer8BitAccess without 8-bit storage, or RuntimeDescriptorArray
- * without descriptor indexing: such a module cannot be made there, and its
- * _nobda, _no8 or _noindex variant is used. */
+ * without descriptor indexing, or StorageBuffer16BitAccess or Int16 without
+ * both 16-bit features: such a module cannot be made there, and its
+ * _nobda, _no8, _noindex or _no16 variant is used. */
 struct BankDevice
 {
 	Vulkan::Device &device;
 	bool bda;
 	bool storage8;
 	bool indexing;
+	bool storage16;
 
 	bool usable(const uint32_t *code, size_t size) const
 	{
 		size_t i, n = size / sizeof(uint32_t);
-		for (i = 5; !(bda && storage8 && indexing) && i + 1 < n; i += code[i] >> 16)
+		for (i = 5; !(bda && storage8 && indexing && storage16) && i + 1 < n; i += code[i] >> 16)
 		{
 			uint32_t op = code[i] & 0xffffu;
 			if ((code[i] >> 16) == 0 || (op != 17 && op != 10))
 				break;
 			if (op == 17 && ((!bda && code[i + 1] == 5347) || (!storage8 && code[i + 1] == 4448) ||
-			                 (!indexing && code[i + 1] == 5302)))
+			                 (!indexing && code[i + 1] == 5302) ||
+			                 (!storage16 && (code[i + 1] == 4433 || code[i + 1] == 22))))
 				return false;
 		}
 		return true;
@@ -1462,22 +1465,31 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 	drain_compilation_tasks();
 	stop_variant_builder();
 
+	/* The _no16 variants go without 8-bit storage too. */
+	has_16bit = device_->get_device_features().vk11_features.storageBuffer16BitAccess &&
+	            device_->get_device_features().enabled_features.shaderInt16;
 	/* vram_copy's source reads through BDA are scalar laid out and 8-bit. */
-	has_8bit = device_->get_device_features().vk12_features.storageBuffer8BitAccess != VK_FALSE;
+	has_8bit = has_16bit && device_->get_device_features().vk12_features.storageBuffer8BitAccess != VK_FALSE;
 	use_bda = device_->get_device_features().vk12_features.bufferDeviceAddress &&
 	          device_->get_device_features().vk12_features.scalarBlockLayout && has_8bit;
 	Vulkan::ResourceLayout layout;
 	has_indexing = device_->get_device_features().vk12_features.descriptorIndexing != VK_FALSE;
-	BankDevice bank_device = { *device_, use_bda, has_8bit, has_indexing };
+	BankDevice bank_device = { *device_, use_bda, has_8bit, has_indexing, has_16bit };
 	shaders = Shaders<>(bank_device, layout, 0);
-	vram_copy_program = !has_8bit ? shaders.vram_copy_nobda_no8 :
+	vram_copy_program = !has_16bit ? shaders.vram_copy_nobda_no16 : !has_8bit ? shaders.vram_copy_nobda_no8 :
 	                    use_bda ? shaders.vram_copy : shaders.vram_copy_nobda;
-	if (has_indexing)
+	if (!has_16bit)
+		ubershader_program = has_indexing ? shaders.ubershader_no16[0][0] : shaders.ubershader_no16_noindex[0][0];
+	else if (has_indexing)
 		ubershader_program = has_8bit ? shaders.ubershader[0][0] : shaders.ubershader_no8[0][0];
 	else
 		ubershader_program = has_8bit ? shaders.ubershader_noindex[0][0] : shaders.ubershader_no8_noindex[0][0];
-	upload_programs[0] = has_8bit ? shaders.upload[0] : shaders.upload_no8[0];
-	upload_programs[1] = has_8bit ? shaders.upload[1] : shaders.upload_no8[1];
+	upload_programs[0] = !has_16bit ? shaders.upload_no16[0] : has_8bit ? shaders.upload[0] : shaders.upload_no8[0];
+	upload_programs[1] = !has_16bit ? shaders.upload_no16[1] : has_8bit ? shaders.upload[1] : shaders.upload_no8[1];
+	binning_program = has_16bit ? shaders.binning : shaders.binning_no16;
+	triangle_setup_program = has_16bit ? shaders.triangle_setup : shaders.triangle_setup_no16;
+	single_sample_program = has_16bit ? shaders.single_sample_heuristic : shaders.single_sample_heuristic_no16;
+	clut_write_program = has_16bit ? shaders.clut_write : shaders.clut_write_no16;
 	/* The ubershader's resources, with room for the variant pushed after
 	 * the descriptor. */
 	{
@@ -1492,10 +1504,16 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 			code = has_8bit ? pgs_ubershader_dynamic_noindex : pgs_ubershader_dynamic_no8_noindex;
 			size = has_8bit ? sizeof(pgs_ubershader_dynamic_noindex) : sizeof(pgs_ubershader_dynamic_no8_noindex);
 		}
+		if (!has_16bit)
+		{
+			code = has_indexing ? pgs_ubershader_dynamic_no16 : pgs_ubershader_dynamic_no16_noindex;
+			size = has_indexing ? sizeof(pgs_ubershader_dynamic_no16) : sizeof(pgs_ubershader_dynamic_no16_noindex);
+		}
 		ubershader_dynamic = device_->request_program(code, size, &dynamic_layout);
 	}
 	blit_quad = device_->request_program(shaders.quad, shaders.blit_circuit);
-	sample_quad[0] = device_->request_program(shaders.quad, shaders.sample_circuit[0]);
+	sample_quad[0] = device_->request_program(shaders.quad,
+	                                          has_16bit ? shaders.sample_circuit[0] : shaders.sample_circuit_no16[0]);
 	sample_quad[1] = device_->request_program(shaders.quad, shaders.sample_circuit[1]);
 	weave_quad = device_->request_program(shaders.quad, shaders.weave);
 
@@ -1509,15 +1527,11 @@ bool GSRenderer::init(Vulkan::Device *device_, const GSOptions &options)
 			VK_SUBGROUP_FEATURE_BASIC_BIT;
 
 	const Vulkan::DeviceFeatures &ext = device_->get_device_features();
-	if (	    !ext.vk11_features.storageBuffer16BitAccess ||
-	    !ext.enabled_features.shaderInt16 ||
-	    (ext.vk11_props.subgroupSupportedOperations & required_subgroup_flags) != required_subgroup_flags ||
+	if ((ext.vk11_props.subgroupSupportedOperations & required_subgroup_flags) != required_subgroup_flags ||
 	    !device_->supports_subgroup_size_log2(true, 2, 6) ||
 	    device_->get_gpu_properties().limits.maxComputeSharedMemorySize < 32 * 1024)
 	{
 		LOGE("Minimum requirements for parallel-gs are not met.\n");
-		LOGE("  - storageBuffer16BitAccess\n");
-		LOGE("  - shaderInt16\n");
 		LOGE("  - Arithmetic / Shuffle / Vote / Ballot / Basic subgroup operations\n");
 		LOGE("  - Subgroups of 4 to 64 invocations (any size in range with subgroup size control)\n");
 		LOGE("  - 32 KiB shared memory\n");
@@ -2615,7 +2629,8 @@ void GSRenderer::allocate_scratch_buffers_instanced(Vulkan::CommandBuffer &cmd, 
 
 	VkDeviceSize num_coarse_tiles = aligned_width * aligned_height;
 	VkDeviceSize primitive_count_size = num_coarse_tiles * sizeof(uint32_t);
-	VkDeviceSize primitive_list_size = num_coarse_tiles * num_primitives * sizeof(uint16_t);
+	/* Without 16-bit storage an entry is a word. */
+	VkDeviceSize primitive_list_size = num_coarse_tiles * num_primitives * (has_16bit ? sizeof(uint16_t) : sizeof(uint32_t));
 
 	VkDeviceSize primitive_count_offset = allocate_device_scratch(primitive_count_size, buffers.device_scratch, nullptr);
 	cmd.set_storage_buffer(0, BINDING_COARSE_PRIMITIVE_COUNT, *buffers.device_scratch.buffer,
@@ -2764,7 +2779,7 @@ void GSRenderer::dispatch_triangle_setup(Vulkan::CommandBuffer &cmd, const Rende
 	cmd.push_constants(&push, 0, sizeof(push));
 
 	cmd.enable_subgroup_size_control(false);
-	cmd.set_program(shaders.triangle_setup);
+	cmd.set_program(triangle_setup_program);
 	cmd.set_specialization_constant_mask(0x1f);
 	cmd.set_specialization_constant(0, sampling_rate_x_log2);
 	cmd.set_specialization_constant(1, sampling_rate_y_log2);
@@ -2780,7 +2795,7 @@ void GSRenderer::dispatch_single_sample_heuristic(Vulkan::CommandBuffer &cmd, co
 {
 	cmd.enable_subgroup_size_control(false);
 	cmd.set_specialization_constant_mask(1);
-	cmd.set_program(shaders.single_sample_heuristic);
+	cmd.set_program(single_sample_program);
 
 	cmd.set_specialization_constant(
 			0, std::min<uint32_t>(512u, device->get_gpu_properties().limits.maxComputeWorkGroupSize[0]));
@@ -2926,7 +2941,7 @@ void GSRenderer::dispatch_binning(Vulkan::CommandBuffer &cmd, const RenderPass &
 	};
 
 	cmd.push_constants(&push, 0, sizeof(push));
-	cmd.set_program(shaders.binning);
+	cmd.set_program(binning_program);
 
 	uint32_t tiles_x = align_coarse_tiles(inst.coarse_tiles_width, hier_binning) / hier_binning;
 	uint32_t tiles_y = align_coarse_tiles(inst.coarse_tiles_height, hier_binning) / hier_binning;
@@ -4317,7 +4332,7 @@ void GSRenderer::flush_palette_upload()
 
 	Vulkan::CommandBuffer &cmd = *direct_cmd;
 	cmd.enable_subgroup_size_control(false);
-	cmd.set_program(shaders.clut_write);
+	cmd.set_program(clut_write_program);
 	cmd.set_specialization_constant_mask(1);
 	cmd.set_specialization_constant(0, vram_size - 1);
 

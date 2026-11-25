@@ -75,6 +75,16 @@ vram_copy_nobda_no8|vram_copy.comp|compute|PGS_NO_8BIT PGS_NO_BDA|glslc
 ubershader_no8[0][0]|ubershader.comp|compute|PGS_NO_8BIT|glslc
 ubershader_noindex[0][0]|ubershader.comp|compute|PGS_NO_DESCRIPTOR_INDEXING|glslc
 ubershader_no8_noindex[0][0]|ubershader.comp|compute|PGS_NO_8BIT PGS_NO_DESCRIPTOR_INDEXING|glslc
+binning_no16|binning.comp|compute|PGS_NO_16BIT|glslc
+triangle_setup_no16|triangle_setup.comp|compute|PGS_NO_16BIT|glslc
+single_sample_heuristic_no16|single_sample_heuristic.comp|compute|PGS_NO_16BIT|glslc
+clut_write_no16|clut_write.comp|compute|PGS_NO_16BIT|glslc
+upload_no16[0]|upload.comp|compute|PGS_NO_16BIT PGS_NO_8BIT SUPER_SAMPLED=0|glslc
+upload_no16[1]|upload.comp|compute|PGS_NO_16BIT PGS_NO_8BIT SUPER_SAMPLED=1|glslc
+vram_copy_nobda_no16|vram_copy.comp|compute|PGS_NO_16BIT PGS_NO_8BIT PGS_NO_BDA|glslc
+ubershader_no16[0][0]|ubershader.comp|compute|PGS_NO_16BIT PGS_NO_8BIT|glslc
+ubershader_no16_noindex[0][0]|ubershader.comp|compute|PGS_NO_16BIT PGS_NO_8BIT PGS_NO_DESCRIPTOR_INDEXING|glslc
+sample_circuit_no16[0]|sample_circuit.frag|fragment|PGS_NO_16BIT PROMOTED=0|glslc
 EOF
 }
 

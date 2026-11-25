@@ -9,7 +9,9 @@
 #extension GL_KHR_shader_subgroup_vote : require
 #extension GL_KHR_shader_subgroup_arithmetic : require
 #extension GL_KHR_shader_subgroup_shuffle : require
+#ifndef PGS_NO_16BIT
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#endif
 #ifndef PGS_NO_8BIT
 #extension GL_EXT_shader_8bit_storage : require
 #endif
@@ -101,8 +103,17 @@ const bool HAS_TEXTURE_ARRAY = (VARIANT_FLAGS & VARIANT_FLAG_HAS_TEXTURE_ARRAY_B
 
 layout(std430, set = 0, binding = BINDING_CLUT) readonly buffer CLUT16
 {
+#ifdef PGS_NO_16BIT
+	uint data[];
+#else
 	uint16_t data[];
+#endif
 } clut16;
+#ifdef PGS_NO_16BIT
+#define pgs_clut16_load(i) bitfieldExtract(clut16.data[(i) >> 1u], int(((i) & 1u) << 4u), 16)
+#else
+#define pgs_clut16_load(i) uint(clut16.data[i])
+#endif
 
 layout(std430, set = DESCRIPTOR_SET_WORKGROUP_LIST, binding = 0) readonly buffer WorkgroupList
 {
@@ -458,18 +469,18 @@ void begin_tile()
 
 	if (is_fb_16bit)
 	{
-		uint col = uint(vram16.data[tile.fb_index]);
+		uint col = pgs_vram16_load(tile.fb_index);
 
 		if (SUPER_SAMPLE)
 		{
-			uint ref = uint(vram16.data[tile.fb_index + VRAM_SIZE_16]);
+			uint ref = pgs_vram16_load(tile.fb_index + VRAM_SIZE_16);
 
 
 			if (ref == 0xffff)
 			{
 				// Load super-sampled data instead.
 				uint vram_offset = (sample_index + 2u) * VRAM_SIZE_16;
-				col = uint(vram16.data[tile.fb_index + vram_offset]);
+				col = pgs_vram16_load(tile.fb_index + vram_offset);
 			}
 		}
 
@@ -503,16 +514,16 @@ void begin_tile()
 	{
 		if (is_zb_16bit)
 		{
-			fb_depth = uint(vram16.data[tile.fb_index_depth]);
+			fb_depth = pgs_vram16_load(tile.fb_index_depth);
 
 			if (SUPER_SAMPLE)
 			{
-				uint ref = uint(vram16.data[tile.fb_index_depth + VRAM_SIZE_16]);
+				uint ref = pgs_vram16_load(tile.fb_index_depth + VRAM_SIZE_16);
 				if (ref == 0xffff)
 				{
 					// Load super-sampled data instead.
 					uint vram_offset = (sample_index + 2u) * VRAM_SIZE_16;
-					fb_depth = uint(vram16.data[tile.fb_index_depth + vram_offset]);
+					fb_depth = pgs_vram16_load(tile.fb_index_depth + vram_offset);
 				}
 			}
 		}
@@ -612,7 +623,7 @@ void end_tile()
 				if (is_fb_16bit)
 				{
 					uint vram_offset = (sample_index + 2u) * VRAM_SIZE_16;
-					vram16.data[tile.fb_index + vram_offset] = uint16_t(rgba32_to_rgba16(fb_color));
+					pgs_vram16_store(tile.fb_index + vram_offset, rgba32_to_rgba16(fb_color));
 				}
 				else
 				{
@@ -652,7 +663,7 @@ void end_tile()
 				if (is_zb_16bit)
 				{
 					uint vram_offset = (sample_index + 2u) * VRAM_SIZE_16;
-					vram16.data[tile.fb_index_depth + vram_offset] = uint16_t(fb_depth);
+					pgs_vram16_store(tile.fb_index_depth + vram_offset, fb_depth);
 				}
 				else
 				{
@@ -687,8 +698,8 @@ void end_tile()
 		{
 			// Store reference, so we can detect per-pixel when data changed in single-sampled domain.
 			if (HAS_SUPER_SAMPLE_REFERENCE)
-				vram16.data[tile.fb_index + VRAM_SIZE_16] = super_sample_required_color ? 0xffffus : 0us;
-			vram16.data[tile.fb_index] = uint16_t(rgba32_to_rgba16(fb_color));
+				pgs_vram16_store_flag(tile.fb_index + VRAM_SIZE_16, super_sample_required_color);
+			pgs_vram16_store(tile.fb_index, rgba32_to_rgba16(fb_color));
 		}
 		else
 		{
@@ -706,8 +717,8 @@ void end_tile()
 			if (is_zb_16bit)
 			{
 				if (HAS_SUPER_SAMPLE_REFERENCE)
-					vram16.data[tile.fb_index_depth + VRAM_SIZE_16] = super_sample_required_depth ? 0xffffus : 0us;
-				vram16.data[tile.fb_index_depth] = uint16_t(fb_depth);
+					pgs_vram16_store_flag(tile.fb_index_depth + VRAM_SIZE_16, super_sample_required_depth);
+				pgs_vram16_store(tile.fb_index_depth, fb_depth);
 			}
 			else
 			{
@@ -952,8 +963,8 @@ vec4 feedback_texture(uint tex_index, uint tex2)
 
 		if (FEEDBACK_CPSM == PSMCT32)
 		{
-			uint lo = uint(clut16.data[color_index]);
-			uint hi = uint(clut16.data[color_index + 256u]);
+			uint lo = pgs_clut16_load(color_index);
+			uint hi = pgs_clut16_load(color_index + 256u);
 			color = unpack_color(lo | (hi << 16));
 		}
 		else
@@ -962,7 +973,7 @@ vec4 feedback_texture(uint tex_index, uint tex2)
 			uint ta0 = bitfieldExtract(tex2, TEX2_FEEDBACK_TA0_OFFSET, 8);
 			uint ta1 = bitfieldExtract(tex2, TEX2_FEEDBACK_TA1_OFFSET, 8);
 
-			uint lo = uint(clut16.data[color_index]);
+			uint lo = pgs_clut16_load(color_index);
 			color = unpack_color16(lo);
 			bool zero_alpha = aem != 0 && lo == 0;
 			color.w = zero_alpha ? 0 : (color.w == 0 ? int(ta0) : int(ta1));
