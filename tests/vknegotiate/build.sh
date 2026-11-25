@@ -1129,6 +1129,45 @@ else
 		exit 1
 	fi
 	echo "  paraLLEl-GS on Vulkan 1.1: through the extensions, no validation error, the same picture"
+	# The Deinterlacing option on a field-mode scanout whose fields differ
+	# every vsync (issue #130): Off hands over the field, half the height;
+	# Weave, Bob and Blend each give their own picture, none FastMAD's;
+	# Automatic and Adaptive are FastMAD; BFF moves the weave a line.
+	"$VAL/swdraw" --bios "$VAL/field_fade.bin" interlace_field_fade
+	for m in Automatic Off "Weave TFF" "Weave BFF" "Bob TFF" "Blend TFF" "Adaptive TFF"; do
+		t=$(echo "$m" | tr -d ' ')
+		VN_OPTIONS="pcsx2_deinterlace_mode=$m" \
+		VK_LOADER_LAYERS_ENABLE='*validation*' \
+		VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT \
+		VN_VERBOSE=1 VN_HASH_IMAGE=1 VN_FRAMES=61 VN_IDLE_BIOS=1 LRPS2_BIOS="$VAL/field_fade.bin" \
+		VN_RENDERER=paraLLEl-GS timeout 600 "$DIR/vknegotiate" "$CORE" "$VAL" v2 >"$VAL/di.$t.log" 2>&1 || true
+		if ! grep -q "vknegotiate v2: ok" "$VAL/di.$t.log" || grep -q "Validation Error" "$VAL/di.$t.log"; then
+			grep "Validation Error" "$VAL/di.$t.log" | sort | uniq -c | head -n 5
+			rm -rf "$VAL"
+			echo "  FAIL: paraLLEl-GS deinterlacing $m"
+			exit 1
+		fi
+		eval "di_$t=\"\$(sed -n 's/.*image: \(.*\)/\1/p' \"\$VAL/di.\$t.log\")\""
+	done
+	di_ok=1
+	case "$di_Automatic" in 640x448,*) ;; *) di_ok=0 ;; esac
+	case "$di_Off" in 640x224,*) ;; *) di_ok=0 ;; esac
+	[ "$di_AdaptiveTFF" = "$di_Automatic" ] || di_ok=0
+	for a in "$di_WeaveTFF" "$di_WeaveBFF" "$di_BobTFF" "$di_BlendTFF"; do
+		n=0
+		for b in "$di_Automatic" "$di_WeaveTFF" "$di_WeaveBFF" "$di_BobTFF" "$di_BlendTFF"; do
+			[ "$a" = "$b" ] && n=$((n + 1))
+		done
+		[ "$n" = 1 ] && case "$a" in 640x448,*) ;; *) false ;; esac || di_ok=0
+	done
+	if [ $di_ok = 0 ]; then
+		echo "    Automatic $di_Automatic, Off $di_Off, Adaptive $di_AdaptiveTFF"
+		echo "    Weave $di_WeaveTFF / $di_WeaveBFF, Bob $di_BobTFF, Blend $di_BlendTFF"
+		rm -rf "$VAL"
+		echo "  FAIL: paraLLEl-GS deinterlacing: the option does not pick the method"
+		exit 1
+	fi
+	echo "  paraLLEl-GS deinterlacing: Off the field, Weave, Bob and Blend each their own picture, Automatic and Adaptive FastMAD"
 	# And without buffer device address, scalar block layout, 8-bit
 	# storage, timeline semaphores (each submission's value then a fence)
 	# or subgroup size control (the device's one subgroup size taken where

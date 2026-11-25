@@ -5867,7 +5867,8 @@ Vulkan::ImageHandle GSRenderer::fastmad_deinterlace(Vulkan::CommandBuffer &cmd, 
 	{
 		uint32_t phase;
 		uint32_t height_minus_1;
-	} push = { vsync.phase, deinterlaced->get_height() - 1 };
+		uint32_t method;
+	} push = { vsync.phase, deinterlaced->get_height() - 1, uint32_t(vsync.deinterlace) };
 
 	cmd.push_constants(&push, 0, sizeof(push));
 

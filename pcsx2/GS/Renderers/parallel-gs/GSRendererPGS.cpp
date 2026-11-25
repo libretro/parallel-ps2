@@ -806,6 +806,31 @@ void GSRendererPGS::VSync(u32 field, bool registers_written)
 	if (GSConfig.InterlaceMode != GS_INTERLACE_AUTOMATIC)
 		info.phase ^= (static_cast<int>(GSConfig.InterlaceMode) - 2) & 1;
 
+	/* The Deinterlacing option: Off hands over the field as it is, the
+	 * other methods are the shader's, and Automatic and Adaptive are its
+	 * motion-adaptive FastMAD. */
+	switch (GSConfig.InterlaceMode)
+	{
+		case GS_INTERLACE_OFF:
+			info.skip_deinterlace = true;
+			break;
+		case GS_INTERLACE_WEAVE_TFF:
+		case GS_INTERLACE_WEAVE_BFF:
+			info.deinterlace = DeinterlaceMethod::Weave;
+			break;
+		case GS_INTERLACE_BOB_TFF:
+		case GS_INTERLACE_BOB_BFF:
+			info.deinterlace = DeinterlaceMethod::Bob;
+			break;
+		case GS_INTERLACE_BLEND_TFF:
+		case GS_INTERLACE_BLEND_BFF:
+			info.deinterlace = DeinterlaceMethod::Blend;
+			break;
+		default:
+			info.deinterlace = DeinterlaceMethod::FastMAD;
+			break;
+	}
+
 	info.anti_blur = GSConfig.PCRTCAntiBlur;
 	info.force_progressive = true;
 	info.overscan = GSConfig.PCRTCOverscan;

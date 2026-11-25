@@ -138,6 +138,19 @@ struct PromotedBackbuffer
 	Vulkan::ImageHandle img;
 };
 
+// How an interlaced scanout's fields become a frame (weave.frag's method).
+enum class DeinterlaceMethod : uint32_t
+{
+	// Motion-adaptive: weave where the fields agree, bob where they move.
+	FastMAD = 0,
+	// The other line from the previous field.
+	Weave = 1,
+	// The other line from the current field's lines around it.
+	Bob = 2,
+	// The last two fields line-doubled and averaged.
+	Blend = 3
+};
+
 struct VSyncInfo
 {
 	uint32_t phase;
@@ -198,6 +211,8 @@ struct VSyncInfo
 	// If using interlaced, defer any attempt to deinterlace and just return the raw output as-is with phase information.
 	// User is responsible for deinterlacing in whatever way is appropriate.
 	bool skip_deinterlace;
+	// Otherwise, how the fields are deinterlaced.
+	DeinterlaceMethod deinterlace;
 };
 
 struct GSOptions

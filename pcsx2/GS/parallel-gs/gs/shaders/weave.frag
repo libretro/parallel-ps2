@@ -17,6 +17,8 @@ layout(push_constant) uniform Registers
 {
     int phase;
     int height_minus_1;
+    // 0 FastMAD, 1 weave, 2 bob, 3 blend (DeinterlaceMethod).
+    int method;
 };
 
 // FastMAD algorithm with some minor tweaks.
@@ -32,10 +34,33 @@ const float BOB_FACTOR_HI = 0.06;
 void main()
 {
     ivec2 coord = ivec2(gl_FragCoord.xy);
-    if ((coord.y & 1) == phase)
+    if (method == 3)
+    {
+        // Blend: the last two fields, each line-doubled, averaged.
+        FragColor = vec4(0.5 * (texelFetch(uField0, ivec2(coord.x, coord.y >> 1), 0).rgb +
+                                texelFetch(uField1, ivec2(coord.x, coord.y >> 1), 0).rgb), 1.0);
+    }
+    else if ((coord.y & 1) == phase)
     {
         // If we have the pixel in current field, accept as-is.
         FragColor = texelFetch(uField0, ivec2(coord.x, coord.y >> 1), 0);
+    }
+    else if (method == 1)
+    {
+        // Weave: the other line from the previous field, always.
+        FragColor = texelFetch(uField1, ivec2(coord.x, coord.y >> 1), 0);
+    }
+    else if (method == 2 && (coord.y == 0 || coord.y == height_minus_1))
+    {
+        // Bob on the Y edge: the nearest line of the current field.
+        FragColor = texelFetch(uField0, ivec2(coord.x, coord.y >> 1), 0);
+    }
+    else if (method == 2)
+    {
+        // Bob: the other line from the current field's lines around it.
+        int up_y = (coord.y - 1) >> 1;
+        FragColor = vec4(0.5 * (texelFetch(uField0, ivec2(coord.x, up_y), 0).rgb +
+                                texelFetchOffset(uField0, ivec2(coord.x, up_y), 0, ivec2(0, 1)).rgb), 1.0);
     }
     else if (coord.y == 0 || coord.y == height_minus_1)
     {
