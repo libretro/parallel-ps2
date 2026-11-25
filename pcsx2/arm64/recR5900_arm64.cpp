@@ -4386,6 +4386,13 @@ void eeJitReset_arm64(void)
 {
 	s_blocks.clear();
 	s_page.clear();
+	// With the blocks gone, so is the protection RegisterPages put on their
+	// pages, as the x86 rec's reset does: a reset is what makes RAM
+	// writable for writers no fault handler serves, a state load or a
+	// machine reset on the frontend's thread among them. The pages that
+	// had gone manual start counting again.
+	mmap_ResetBlockTracking();
+	std::fill(s_page_clears.begin(), s_page_clears.end(), 0u);
 	LutClearAll();
 	s_code_pos = 0;
 	// C.50: the code these sites point at is about to be overwritten. Faulting

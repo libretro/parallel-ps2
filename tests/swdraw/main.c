@@ -67,6 +67,9 @@ static unsigned long s_expect_run[4];
 /* A case may ask for its frames to be run again from a savestate taken
  * partway, and to come out the same (see sl_rewind). */
 static int s_rewind;
+/* Or for retro_reset after them and as many frames again, the last
+ * picture the one before the reset. */
+static int s_reset_check;
 
 /* GetProcAddress already returns a function pointer; POSIX dlsym returns
  * an object pointer, copied across as lrps2_smoke does. */
@@ -184,6 +187,7 @@ static void sl_put32(unsigned char* p, unsigned v)
 #define SL_SLL(rd, rt, sa)    (0x00000000u | ((rt) << 16) | ((rd) << 11) | ((sa) << 6))
 #define SL_MTC0(rt, rd)       (0x40800000u | ((rt) << 16) | ((rd) << 11))
 #define SL_TLBWI              0x42000002u
+#define SL_JR(rs)             (0x00000008u | ((rs) << 21))
 
 static unsigned sl_emit(unsigned char* rom, unsigned pc, unsigned op)
 {
@@ -230,6 +234,10 @@ static unsigned      s_loop, s_loop_kick, s_bump_qw;
  * entry ten vsyncs on and, this many vsyncs after that, storing 64 words
  * through it (see case_tlb_store). */
 static unsigned      s_tlb_store;
+/* When set, the reset program spins in RAM instead: it maps 0x180000
+ * with a TLB entry, writes the loop there and jumps to it, so the EE runs
+ * code compiled from RAM, whose page a recompiler write-protects. */
+static unsigned      s_ram_spin;
 
 /* A case may instead lay out its own quadwords and send them in kicks,
  * each a run of them sent after waiting a number of vsyncs, and then
@@ -2401,6 +2409,27 @@ static void case_tlb_store(void)
 	s_run_frames = 90;
 }
 
+/* The frame drawn, then the EE spinning in RAM for the rest, its page
+ * write-protected: a savestate from another instance loaded over it
+ * (ram_code_rewind) and a reset (ram_code_reset), each resetting the
+ * recompilers and then writing that RAM from the frontend's thread,
+ * where no fault handler takes a protected page. */
+static void case_ram_code_rewind(void)
+{
+	case_present();
+	s_ram_spin = 1;
+	s_run_frames = 60;
+	s_rewind = 1;
+}
+
+static void case_ram_code_reset(void)
+{
+	case_present();
+	s_ram_spin = 1;
+	s_run_frames = 60;
+	s_reset_check = 1;
+}
+
 /* The destination alpha test in the middle of a scene: over a frame
  * whose left half has alpha bit 7 set and right half not, with Z cleared
  * by the same sprites, one shaded triangle, a small one with the test,
@@ -3657,6 +3686,8 @@ static const struct { const char* name; void (*build)(void); const char* scale; 
 	{ "clut_lines_ramps", case_clut_lines_ramps, "1" },
 	{ "clut_scales",     case_clut_scales,   "1" },
 	{ "tlb_store",       case_tlb_store,     "1" },
+	{ "ram_code_rewind", case_ram_code_rewind, "1" },
+	{ "ram_code_reset",  case_ram_code_reset, "1" },
 	{ "date_no_depth_full", case_date_no_depth_full, "1" },
 	{ "step_sprites",    case_step_sprites,  "1" },
 	{ "step_gradients",  case_step_gradients, "1" },
@@ -3901,6 +3932,34 @@ static int sl_write_bios(const char* path)
 		pc = sl_emit(rom, pc, SL_BNE(15, 0, (wait - (pc + 4)) >> 2));
 		pc = sl_emit(rom, pc, 0);
 	}
+	if (s_ram_spin)
+	{
+		/* TLB entry 1 maps 0x180000 onto itself, as a game's kernel
+		 * maps its RAM: the arm64 rec protects a page through that
+		 * virtual address. */
+		pc = sl_emit(rom, pc, SL_ORI(9, 0, 1));
+		pc = sl_emit(rom, pc, SL_MTC0(9, 0));                        /* Index 1                 */
+		pc = sl_emit(rom, pc, SL_MTC0(0, 5));                        /* PageMask 4KB            */
+		pc = sl_emit(rom, pc, SL_LUI(9, 0x0018));
+		pc = sl_emit(rom, pc, SL_MTC0(9, 10));                       /* EntryHi 0x180000        */
+		pc = sl_emit(rom, pc, SL_ORI(9, 0, 0x601Fu));
+		pc = sl_emit(rom, pc, SL_MTC0(9, 2));                        /* EntryLo0: 0x180000, CDVG */
+		pc = sl_emit(rom, pc, SL_ORI(9, 0, 0x605Fu));
+		pc = sl_emit(rom, pc, SL_MTC0(9, 3));                        /* EntryLo1: 0x181000      */
+		pc = sl_emit(rom, pc, 0);
+		pc = sl_emit(rom, pc, SL_TLBWI);
+		pc = sl_emit(rom, pc, 0);
+		pc = sl_emit(rom, pc, SL_LUI(9, 0x8018));                    /* t1 = 0x80180000         */
+		pc = sl_emit(rom, pc, SL_LUI(10, 0x256B));
+		pc = sl_emit(rom, pc, SL_ORI(10, 10, 0x0001));               /* addiu t3, t3, 1         */
+		pc = sl_emit(rom, pc, SL_SW(10, 0, 9));
+		pc = sl_emit(rom, pc, SL_LUI(10, 0x1000));
+		pc = sl_emit(rom, pc, SL_ORI(10, 10, 0xFFFE));               /* b -2                    */
+		pc = sl_emit(rom, pc, SL_SW(10, 4, 9));
+		pc = sl_emit(rom, pc, SL_SW(0, 8, 9));                       /* its delay slot: nop     */
+		pc = sl_emit(rom, pc, SL_JR(9));
+		pc = sl_emit(rom, pc, 0);
+	}
 	pc = sl_emit(rom, pc, SL_B(-1));                                 /* spin                    */
 	sl_emit(rom, pc, 0);
 	memcpy(rom + 0x1000, "RESET", 5);  sl_put32(rom + 0x1000 + 12, 0x1000);
@@ -4096,6 +4155,19 @@ int main(int argc, char** argv)
 	}
 	for (frame = 0; frame < s_run_frames; frame++)
 		run();
+	/* The loop's page write-protected, as a recompiler leaves a page it
+	 * compiled from: the arm64 EE is interpreted until a game runs, so
+	 * here that is done by hand. */
+	if (s_ram_spin)
+	{
+		void (*protect)(unsigned) = (void (*)(unsigned))sl_sym(h, "ps2_audit_ee_protect");
+		if (!protect)
+		{
+			fprintf(stderr, "swdraw: core is missing ps2_audit_ee_protect\n");
+			return 2;
+		}
+		protect(0x80180000u);
+	}
 	if (s_rewind)
 	{
 		retro_unserialize_t* unserialize = (retro_unserialize_t*)sl_sym(h, "retro_unserialize");
@@ -4103,6 +4175,25 @@ int main(int argc, char** argv)
 		{
 			fprintf(stderr, "swdraw: %s: the frames after a savestate load differ\n", s_cases[c].name);
 			return 6;
+		}
+	}
+	if (s_reset_check)
+	{
+		retro_simple_t* reset = (retro_simple_t*)sl_sym(h, "retro_reset");
+		const unsigned long before = s_hash;
+		if (!reset)
+		{
+			fprintf(stderr, "swdraw: core is missing retro_reset\n");
+			return 2;
+		}
+		reset();
+		for (frame = 0; frame < s_run_frames; frame++)
+			run();
+		if (s_hash != before)
+		{
+			fprintf(stderr, "swdraw: %s: the picture after the reset is %08lx, was %08lx\n",
+				s_cases[c].name, s_hash, before);
+			return 7;
 		}
 	}
 	for (i = 0; i < 4; i++)

@@ -721,6 +721,15 @@ void eeloadHook2(void)
  * -------------------------------------------------------------------------- */
 #define PS2_AUDIT_EE_SCRATCH 0x01000000u
 
+/* Write-protects the RAM page under vaddr as a recompiler does once it has
+ * compiled code from it. swdraw puts it on by hand: in its BIOS-only run
+ * the arm64 EE is still interpreted, and a CPU reset must take it off. */
+PS2_AUDIT_EXPORT
+void ps2_audit_ee_protect(unsigned vaddr)
+{
+	mmap_MarkCountedRamPage(vaddr);
+}
+
 extern void ps2_audit_ee_stepn(unsigned n); /* Interpreter.c */
 
 PS2_AUDIT_EXPORT
