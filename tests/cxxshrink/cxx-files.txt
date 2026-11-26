@@ -80,15 +80,3 @@ pcsx2/GS/parallel-gs/gs/page_tracker.cpp
 pcsx2/GS/parallel-gs/gs/page_tracker.hpp
 pcsx2/GS/parallel-gs/gs/shaders/slangmosh.hpp
 pcsx2/GS/parallel-gs/gs/shaders/slangmosh_iface.hpp
-pcsx2/arm64/aVU.cpp
-pcsx2/arm64/aVU_Alloc.inl
-pcsx2/arm64/aVU_Analyze.inl
-pcsx2/arm64/aVU_Branch.inl
-pcsx2/arm64/aVU_Clamp.inl
-pcsx2/arm64/aVU_Compile.inl
-pcsx2/arm64/aVU_Flags.inl
-pcsx2/arm64/aVU_Lower.inl
-pcsx2/arm64/aVU_Macro.inl
-pcsx2/arm64/aVU_Misc.inl
-pcsx2/arm64/aVU_Tables.inl
-pcsx2/arm64/aVU_Upper.inl

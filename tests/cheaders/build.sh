@@ -77,7 +77,8 @@ UNITS=$(find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP" | sort)
 FRAGMENTS='pcsx2/SPU2/interpolate_table.h pcsx2/SPU2/reg_write_table.h'
 # microVU is one unit built from microVU.h, microVU_IR.h and the .inl
 # files they pull in; those are pieces of microVU.c, checked through it.
-UNITY='^pcsx2/(x86/microVU(_IR)?\.h|x86/microVU_[A-Za-z]+\.inl|microVU/[A-Za-z_]+\.inl)$'
+# The arm64 one is the same: its .inl files are pieces of arm64/aVU.c.
+UNITY='^pcsx2/(x86/microVU(_IR)?\.h|x86/microVU_[A-Za-z]+\.inl|microVU/[A-Za-z_]+\.inl|arm64/aVU_[A-Za-z]+\.inl)$'
 
 # What the C units include, transitively, minus the system headers.
 HEADERS=$(for f in $UNITS; do

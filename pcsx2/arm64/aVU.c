@@ -1,0 +1,1555 @@
+/* SPDX-FileCopyrightText: 2026 isztld <https://isztld.com/>
+ * SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
+ * SPDX-License-Identifier: GPL-3.0+ */
+
+/* ARM64 microVU recompiler — recompiler shell (Phase 7, task 7.2c).
+ *
+ * This is the ARM64 counterpart to pcsx2/x86/microVU.c. It holds the
+ * arch-neutral recompiler housekeeping: the microVU0/1 globals and providers,
+ * program/block-cache management (mVUinit/mVUreset/mVUclose/mVUclear + the
+ * mVUcreateProg/mVUcacheProg/mVUcmpProg/mVUsearchProg cache search) and the
+ * the vuRegs[0]/1 recompiler providers.
+ *
+ * The dispatcher + helper-thunk codegen (mVUdispatcherAB/CD, mVUGenerateWaitMTVU/
+ * CopyPipelineState/CompareState — task 7.2d) lives further down, and the full
+ * block compiler (mVUcompile + entry points mVUblockFetch/mVUentryGet/
+ * mVUcompileJIT) is included from aVU_Compile.inl near the bottom. The microVU rec
+ * still stays *unselected* on ARM64 (VMManager pins CpuIntVU0/1) until 7.8, so the
+ * compiled block code is not executed yet — but it is fully emitted for real. */
+
+#include "arm64/aVU.h"
+#include "common/Pcsx2Defs.h"
+#include <memalign.h>
+#include "arm64/aVU_IR.h"
+#include "arm64/aVU_Misc.h" /* arch-neutral macro layer (task 7.3) */
+
+#include "VUmicro.h"
+#include "Memory.h"
+#include "Dmac.h"
+#include "SaveState.h"
+#include "Gif_Unit.h" /* gifUnit + GIF_TRANS_XGKICK (XGKICK GIF transfer, aVU_Lower.inl) */
+
+
+#include <sys/mman.h>
+#include <memmap.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+/* microVU rec contexts. Aligned at least as the type: mVU_Globals inside
+ * is 32-aligned for NEON ldp/stp of q-register pairs. */
+PCSX2_ALIGN(32) microVU microVU0;
+PCSX2_ALIGN(32) microVU microVU1;
+/* their register allocators */
+static microRegAlloc s_regAlloc[2];
+
+/* Whole-program comparison on search (matches the x86 default — off). Cloned here
+ * rather than pulled from the x86-coupled microVU_Misc.h. doConstProp lives in aVU.h. */
+#define doWholeProgCompare 0
+
+/* recCall function-pointer types (x86: microVU.h). startFunct/startFunctXG point at
+ * the dispatcher code emitted by 7.2d; the provider Execute paths call through these. */
+typedef void (*mVUrecCall)(u32, u32);
+typedef void (*mVUrecCallXG)(void);
+
+/* Program logging is compiled out by default (x86: microVU_Misc.h mVUlogProg). */
+
+/* --- dispatcher + helper-thunk codegen (task 7.2d) ----------------------------
+ * These emit into the already-open armAsm (mVUgenerateDispatchers opens it). */
+
+
+static void mVUdispatcherAB(microVU* mVU);
+static void mVUdispatcherCD(microVU* mVU);
+static void mVUGenerateWaitMTVU(microVU* mVU);
+static void mVUGenerateCopyPipelineState(microVU* mVU);
+static void mVUGenerateCompareState(microVU* mVU);
+static void mVUgenerateDispatchers(microVU* mVU);
+
+/* The C helper the waitMTVU thunk calls (x86: microVU_Misc.inl mVUwaitMTVU). */
+static void mVUwaitMTVU(void);
+
+/* The dispatcher (mVUdispatcherAB) calls these; defined later in this TU. */
+static void* mVUexecuteVU0(u32 startPC, u32 cycles);
+static void* mVUexecuteVU1(u32 startPC, u32 cycles);
+static void  mVUcleanUpVU0(void);
+static void  mVUcleanUpVU1(void);
+
+/* Block compiler entry points (later Phase 7 tasks): */
+static void* mVUblockFetch(microVU* mVU, u32 startPC, uptr pState);
+static void* mVUentryGet(microVU* mVU, microBlockManager* block, u32 startPC, uptr pState);
+
+/* Forward decls for the private cache helpers (mirrors microVU.c ordering). */
+static void mVUdeleteProg(microVU* mVU, microProgram** prog);
+static microProgram* mVUcreateProg(microVU* mVU, int startPC);
+static void mVUcacheProg(microVU* mVU, microProgram* prog);
+
+/* Pass-1 analysis (task 7.3) — arch-neutral, operates on the IR, no emitter calls.
+ * Currently compiled but not yet driven (the per-op pass1 handlers + tables are
+ * task 7.5+); mVUanalyzeCompileCheck below odr-uses every entry point so the bodies
+ * are type-checked and codegen'd now. */
+#include "arm64/aVU_Analyze.inl"
+
+/* Pass-2 flag allocators (task 7.4/7.5) — the emit-coupled getFlagReg + the
+ * Status/Mac/Clip flag normalize/denormalize helpers. These DO make emitter calls
+ * (the first emit-backend slice); mVUallocFlagCheck below odr-uses them so the
+ * bodies are compiled now even though their drivers (mVUsetupFlags/Branch/Lower)
+ * are later 7.5 slices. */
+#include "arm64/aVU_Alloc.inl"
+
+/* Operand/result clamp helpers (task 7.5) — NEON min/max range + sign-overflow
+ * clamps used by every VU FMAC arithmetic op. Emit-coupled; mVUclampCheck below
+ * odr-uses them so the bodies compile ahead of the Upper/Lower opcode handlers. */
+#include "arm64/aVU_Clamp.inl"
+
+/* Misc emit helpers (task 7.5) — the VU address-transform helper mVUaddrFix.
+ * Emit-coupled; mVUmiscCheck below odr-uses it so the body compiles ahead of the
+ * Lower load/store handlers. */
+#include "arm64/aVU_Misc.inl"
+
+/* Upper (FMAC float-vector) opcode handlers (task 7.5a) — the full Upper ISA
+ * (ADD/SUB/MUL/MADD/MSUB + ACC, MAX/MINI, FTOI/ITOF, ABS, OPMULA/OPMSUB, CLIP,
+ * NOP) + mVUupdateFlags. Included BEFORE aVU_Tables.inl, which wires these
+ * handlers into mVU_UPPER_OPCODE / the FD_xx sub-tables. */
+#include "arm64/aVU_Upper.inl"
+
+/* Lower (integer/load-store/EFU/flag/branch) opcode handlers (task 7.5b) — the
+ * full Lower ISA (setBranchA, IADD…, LQ/SQ…, DIV/EFU…, FCxxx/FMxxx/FSxxx, RINIT…,
+ * XGKICK, B/BAL/IBxx/JR/JALR) + the XGKICK GIF-transfer helpers. Included BEFORE
+ * aVU_Tables.inl, which wires these into mVULOWER_OPCODE / the T3_xx sub-tables. */
+#include "arm64/aVU_Lower.inl"
+
+/* Macro mode native COP2 ALU emission (Phase 7.9 / M5) — setupMacroOp/endMacroOp +
+ * the REC_COP2_mVU0 dispatch (recVUMacroEmitMode0) reusing the Upper/Lower single-op
+ * emitters above. Included after them (their mVU_* handlers are static to this TU);
+ * the EE rec (aR5900.cpp) calls recVUMacroEmitMode0() across the TU boundary. */
+#include "arm64/aVU_Macro.inl"
+
+/* Opcode dispatch tables (Tables/Compile big-bang) — mVUopU dispatches the full
+ * Upper ISA, mVUopL the full Lower ISA. Included BEFORE aVU_Flags.inl because the
+ * flag read-scan (_mVUflagPass) calls mVUopU/mVUopL. */
+#include "arm64/aVU_Tables.inl"
+
+/* Status/Mac/Clip flag pipeline (task 7.5/7.6) — flag-instance analysis +
+ * mVUdivSet/mVUsetupFlags emit. The opcode-table-dependent flag read-scan
+ * (_mVUflagPass/mVUsetFlagInfo) is deferred to the Branch/Compile slice.
+ * mVUflagCheck below odr-uses the emit helpers so their emitter bodies compile now. */
+#include "arm64/aVU_Flags.inl"
+
+/* Branch / program-exit emission (task 7.7) — the two program-exit emitters
+ * (mVUendProgram/mVUDTendProgram) + getLastFlagInst + the E/T-bit & lpState C
+ * thunks. They make NO opcode-table calls, so they compile standalone ahead of
+ * the Tables/Compile big-bang. mVUbranchCheck below odr-uses the emitters. */
+#include "arm64/aVU_Branch.inl"
+
+/* ------------------------------------------------------------------
+ * Pass-1 pipeline / cycle / range helpers (task 7.3 part 2)
+ * ------------------------------------------------------------------
+ * ARM64 clone of the *arch-neutral* helpers in pcsx2/x86/microVU_Compile.inl:
+ * program-range setup, per-instruction cycle/pipeline accounting, and the
+ * branch/E-bit/bad-op pass-1 bookkeeping. Like the analysis pass these operate
+ * purely on the IR (microOp/microIR/microRegInfo) + the program cache and make
+ * ZERO emitter calls, so they port near-verbatim onto the macro layer already in
+ * aVU_Misc.h. They are *driven* by the compile driver (mVUcompile) which is the
+ * emit-coupled task 7.4/7.5; until then mVUcompileHelpersCheck (below) odr-uses
+ * the non-inline ones so their bodies are compiled now.
+ *
+ * The emit-coupled neighbours in microVU_Compile.inl (doUpperOp/doLowerOp/
+ * doSwapOp/doIbit/mVUexecuteInstruction, mVUtestCycles, mVUDoDBit/mVUDoTBit,
+ * mvuPreloadRegisters, handleBadOp, mVUdebugPrintBlocks, and mVUcompile itself)
+ * are deliberately NOT ported here — they make emitter/regAlloc calls and come over
+ * with the 7.4 compile driver. */
+
+/* Used by mVUsetupRange — re-cache the program if the guest micro memory changed. */
+static __fi void mVUcheckIsSame(mV)
+{
+	if (mVU->prog.isSame == -1)
+	{
+		mVU->prog.isSame = !memcmp((u8*)mVUcurProg.data, vuRegs[mVU->index].Micro, mVU->microMemSize);
+	}
+	if (mVU->prog.isSame == 0)
+	{
+		mVUcacheProg(mVU, mVU->prog.cur);
+		mVU->prog.isSame = 1;
+	}
+}
+
+/* Sets up microProgram PC ranges based on whats been recompiled */
+static void mVUsetupRange(microVU* mVU, s32 pc, bool isStartPC)
+{
+	s32 cur_pc;
+	microRangeList* ranges = mVUcurProg.ranges;
+	if (pc > (s64)mVU->microMemSize)
+	{
+		log_cb(RETRO_LOG_ERROR, "microVU%d: PC outside of VU memory PC=0x%04x\n", mVU->index, pc);
+		pxFail("microVU: PC out of VU memory");
+	}
+
+	/* The PC handling will prewrap the PC so we need to set the end PC to the end of the micro memory, but only if it wraps, no more. */
+	cur_pc = (!isStartPC && mVUrange.start > pc && pc == 0) ? (s32)mVU->microMemSize : pc;
+
+	if (isStartPC) /* Check if startPC is already within a block we've recompiled */
+	{
+		u32 i;
+		for (i = 0; i < ranges->count; i++)
+		{
+			if ((cur_pc >= ranges->data[i].start) && (cur_pc <= ranges->data[i].end))
+			{
+				if (ranges->data[i].start != ranges->data[i].end)
+				{
+					const microRange mRange = ranges->data[i];
+					mvu_rangelist_erase(ranges, i);
+					mvu_rangelist_push_front(ranges, mRange);
+					return; /* new start PC is inside the range of another range */
+				}
+			}
+		}
+	}
+	else if (mVUrange.end >= cur_pc)
+	{
+		/* existing range covers more area than current PC so no need to process it */
+		return;
+	}
+
+	if (doWholeProgCompare)
+		mVUcheckIsSame(mVU);
+
+	if (isStartPC)
+	{
+		microRange mRange;
+		mRange.start = cur_pc;
+		mRange.end   = -1;
+		mvu_rangelist_push_front(ranges, mRange);
+		return;
+	}
+
+	if (mVUrange.start <= cur_pc)
+	{
+		u32 i;
+		s32 rStart, rEnd;
+		mVUrange.end = cur_pc;
+		rStart = mVUrange.start;
+		rEnd = mVUrange.end;
+		for (i = 1; i < ranges->count;)
+		{
+			if (((ranges->data[i].start >= rStart) && (ranges->data[i].start <= rEnd)) || ((ranges->data[i].end >= rStart) && (ranges->data[i].end <= rEnd))) /* Starts after this prog but starts before the end of current prog */
+			{
+				mVUrange.start = rStart = mVUmin(ranges->data[i].start, rStart); /* Choose the earlier start */
+				mVUrange.end = rEnd = mVUmax(ranges->data[i].end, rEnd);
+				mvu_rangelist_erase(ranges, i);
+			}
+			else
+				i++;
+		}
+	}
+	else
+	{
+		microRange mRange;
+		mVUrange.end = mVU->microMemSize;
+		log_cb(RETRO_LOG_DEBUG, "microVU%d: Prog Range Wrap [%04x] [%04x] PC %x\n", mVU->index, mVUrange.start, mVUrange.end, cur_pc);
+		mRange.start = 0;
+		mRange.end   = cur_pc;
+		mvu_rangelist_push_front(ranges, mRange);
+	}
+
+	if(!doWholeProgCompare)
+		mVUcacheProg(mVU, mVU->prog.cur);
+}
+
+/* ------------------------------------------------------------------
+ * Warnings / Errors / Illegal Instructions
+ * ------------------------------------------------------------------ */
+
+/* If 1st op in block is a bad opcode, then don't compile rest of block (Dawn of Mana Level 2) */
+static __fi void mVUcheckBadOp(mV)
+{
+
+	/* The BIOS writes upper and lower NOPs in reversed slots (bug)
+	 * So to prevent spamming we ignore these, however its possible the real VU will bomb out if
+	 * this happens, so we will bomb out without warning. */
+	if (mVUinfo.isBadOp && mVU->code != 0x8000033c)
+	{
+
+		mVUinfo.isEOB = true;
+		log_cb(RETRO_LOG_WARN, "microVU Warning: Block contains an illegal opcode...\n");
+	}
+}
+
+static __ri void branchWarning(mV)
+{
+	incPC(-2);
+	if (mVUup.eBit && mVUbranch)
+	{
+		incPC(2);
+		log_cb(RETRO_LOG_WARN, "microVU%d Warning: Branch in E-bit delay slot! [%04x]\n", mVU->index, xPC);
+		mVUlow.isNOP = true;
+	}
+	else
+		incPC(2);
+
+	if (mVUinfo.isBdelay && !mVUlow.evilBranch) /* Check if VI Reg Written to on Branch Delay Slot Instruction */
+	{
+		if (mVUlow.VI_write.reg && mVUlow.VI_write.used && !mVUlow.readFlags)
+		{
+			mVUlow.backupVI = true;
+			mVUregs.viBackUp = mVUlow.VI_write.reg;
+		}
+	}
+}
+
+static __fi void eBitPass1(mV, int* branch)
+{
+	if (mVUregs.blockType != 1)
+	{
+		(*branch) = 1;
+		mVUup.eBit = true;
+	}
+}
+
+static __ri void eBitWarning(mV)
+{
+	if (mVUpBlock->pState.blockType == 1)
+		log_cb(RETRO_LOG_ERROR, "microVU%d Warning: Branch, E-bit, Branch! [%04x]\n",  mVU->index, xPC);
+	if (mVUpBlock->pState.blockType == 2)
+		log_cb(RETRO_LOG_WARN, "microVU%d Warning: Branch, Branch, Branch! [%04x]\n", mVU->index, xPC);
+	incPC(2);
+	if (curI & _Ebit_)
+	{
+		log_cb(RETRO_LOG_WARN, "microVU%d: E-bit in Branch delay slot! [%04x]\n", mVU->index, xPC);
+		mVUregs.blockType = 1;
+	}
+	incPC(-2);
+}
+
+/* ------------------------------------------------------------------
+ * Cycles / Pipeline State
+ * ------------------------------------------------------------------ */
+__fi u8 optimizeReg(u8 rState) { return (rState == 1) ? 0 : rState; }
+__fi u8 calcCycles(u8 reg, u8 x) { return ((reg > x) ? (reg - x) : 0); }
+__fi u8 tCycles(u8 dest, u8 src) { return mVUmax(dest, src); }
+__fi void incP(mV) { mVU->p ^= 1; }
+__fi void incQ(mV) { mVU->q ^= 1; }
+
+/* Optimizes the End Pipeline State Removing Unnecessary Info
+ * If the cycles remaining is just '1', we don't have to transfer it to the next block
+ * because mVU automatically decrements this number at the start of its loop,
+ * so essentially '1' will be the same as '0'... */
+static void mVUoptimizePipeState(mV)
+{
+	int i;
+	for (i = 0; i < 32; i++)
+	{
+		mVUregs.VF[i].x = optimizeReg(mVUregs.VF[i].x);
+		mVUregs.VF[i].y = optimizeReg(mVUregs.VF[i].y);
+		mVUregs.VF[i].z = optimizeReg(mVUregs.VF[i].z);
+		mVUregs.VF[i].w = optimizeReg(mVUregs.VF[i].w);
+	}
+	for (i = 0; i < 16; i++)
+	{
+		mVUregs.VI[i] = optimizeReg(mVUregs.VI[i]);
+	}
+	if (mVUregs.q) { mVUregs.q = optimizeReg(mVUregs.q); if (!mVUregs.q) { incQ(mVU); } }
+	if (mVUregs.p) { mVUregs.p = optimizeReg(mVUregs.p); if (!mVUregs.p) { incP(mVU); } }
+	mVUregs.r = 0; /* There are no stalls on the R-reg, so its Safe to discard info */
+}
+
+static void mVUincCycles(mV, int x)
+{
+	int z;
+	mVUcycles += x;
+	/* VF[0] is a constant value (0.0 0.0 0.0 1.0) */
+	for (z = 31; z > 0; z--)
+	{
+		mVUregs.VF[z].x = calcCycles(mVUregs.VF[z].x, x);
+		mVUregs.VF[z].y = calcCycles(mVUregs.VF[z].y, x);
+		mVUregs.VF[z].z = calcCycles(mVUregs.VF[z].z, x);
+		mVUregs.VF[z].w = calcCycles(mVUregs.VF[z].w, x);
+	}
+	/* VI[0] is a constant value (0) */
+	for (z = 15; z > 0; z--)
+	{
+		mVUregs.VI[z] = calcCycles(mVUregs.VI[z], x);
+	}
+	if (mVUregs.q)
+	{
+		if (mVUregs.q > 4)
+		{
+			mVUregs.q = calcCycles(mVUregs.q, x);
+			if (mVUregs.q <= 4)
+			{
+				mVUinfo.doDivFlag = 1;
+			}
+		}
+		else
+		{
+			mVUregs.q = calcCycles(mVUregs.q, x);
+		}
+		if (!mVUregs.q)
+			incQ(mVU);
+	}
+	if (mVUregs.p)
+	{
+		mVUregs.p = calcCycles(mVUregs.p, x);
+		if (!mVUregs.p || mVUregsTemp.p)
+			incP(mVU);
+	}
+	if (mVUregs.xgkick)
+	{
+		mVUregs.xgkick = calcCycles(mVUregs.xgkick, x);
+		if (!mVUregs.xgkick)
+		{
+			mVUinfo.doXGKICK = 1;
+			mVUinfo.XGKICKPC = xPC;
+		}
+	}
+	mVUregs.r = calcCycles(mVUregs.r, x);
+}
+
+/* Helps check if upper/lower ops read/write to same regs... */
+static void cmpVFregs(microVFreg* VFreg1, microVFreg* VFreg2, bool* xVar)
+{
+	if (VFreg1->reg == VFreg2->reg)
+	{
+		if ((VFreg1->x && VFreg2->x) || (VFreg1->y && VFreg2->y)
+		 || (VFreg1->z && VFreg2->z) || (VFreg1->w && VFreg2->w))
+		{
+			(*xVar) = 1;
+		}
+	}
+}
+
+static void mVUsetCycles(mV)
+{
+	mVUincCycles(mVU, mVUstall);
+	/* If upper Op && lower Op write to same VF reg: */
+	if ((mVUregsTemp.VFreg[0] == mVUregsTemp.VFreg[1]) && mVUregsTemp.VFreg[0])
+	{
+		if (mVUregsTemp.r || mVUregsTemp.VI)
+			mVUlow.noWriteVF = true;
+		else
+			mVUlow.isNOP = true; /* If lower Op doesn't modify anything else, then make it a NOP */
+	}
+	/* If lower op reads a VF reg that upper Op writes to: */
+	if ((mVUlow.VF_read[0].reg || mVUlow.VF_read[1].reg) && mVUup.VF_write.reg)
+	{
+		cmpVFregs(&mVUup.VF_write, &mVUlow.VF_read[0], &mVUinfo.swapOps);
+		cmpVFregs(&mVUup.VF_write, &mVUlow.VF_read[1], &mVUinfo.swapOps);
+	}
+	/* If above case is true, and upper op reads a VF reg that lower Op Writes to: */
+	if (mVUinfo.swapOps && ((mVUup.VF_read[0].reg || mVUup.VF_read[1].reg) && mVUlow.VF_write.reg))
+	{
+		cmpVFregs(&mVUlow.VF_write, &mVUup.VF_read[0], &mVUinfo.backupVF);
+		cmpVFregs(&mVUlow.VF_write, &mVUup.VF_read[1], &mVUinfo.backupVF);
+	}
+
+	mVUregs.VF[mVUregsTemp.VFreg[0]].x = tCycles(mVUregs.VF[mVUregsTemp.VFreg[0]].x, mVUregsTemp.VF[0].x);
+	mVUregs.VF[mVUregsTemp.VFreg[0]].y = tCycles(mVUregs.VF[mVUregsTemp.VFreg[0]].y, mVUregsTemp.VF[0].y);
+	mVUregs.VF[mVUregsTemp.VFreg[0]].z = tCycles(mVUregs.VF[mVUregsTemp.VFreg[0]].z, mVUregsTemp.VF[0].z);
+	mVUregs.VF[mVUregsTemp.VFreg[0]].w = tCycles(mVUregs.VF[mVUregsTemp.VFreg[0]].w, mVUregsTemp.VF[0].w);
+
+	mVUregs.VF[mVUregsTemp.VFreg[1]].x = tCycles(mVUregs.VF[mVUregsTemp.VFreg[1]].x, mVUregsTemp.VF[1].x);
+	mVUregs.VF[mVUregsTemp.VFreg[1]].y = tCycles(mVUregs.VF[mVUregsTemp.VFreg[1]].y, mVUregsTemp.VF[1].y);
+	mVUregs.VF[mVUregsTemp.VFreg[1]].z = tCycles(mVUregs.VF[mVUregsTemp.VFreg[1]].z, mVUregsTemp.VF[1].z);
+	mVUregs.VF[mVUregsTemp.VFreg[1]].w = tCycles(mVUregs.VF[mVUregsTemp.VFreg[1]].w, mVUregsTemp.VF[1].w);
+
+	mVUregs.VI[mVUregsTemp.VIreg] = tCycles(mVUregs.VI[mVUregsTemp.VIreg], mVUregsTemp.VI);
+	mVUregs.q                     = tCycles(mVUregs.q,                     mVUregsTemp.q);
+	mVUregs.p                     = tCycles(mVUregs.p,                     mVUregsTemp.p);
+	mVUregs.r                     = tCycles(mVUregs.r,                     mVUregsTemp.r);
+	mVUregs.xgkick                = tCycles(mVUregs.xgkick,                mVUregsTemp.xgkick);
+}
+
+/* ------------------------------------------------------------------
+ * First-pass initialization (emitter-free)
+ * ------------------------------------------------------------------
+ * These set up the IR state at the start of mVUcompile's first pass. They make
+ * no emitter calls (memset/memcpy + block-manager add only), so they port
+ * verbatim from microVU_Compile.inl onto the cloned IR. mVUinitFirstPass takes
+ * the start-of-block host code pointer (x86 `x86Ptr` -> ARM64
+ * armGetCurrentCodePointer()) and stashes it in mVUblock.codeStart (renamed from
+ * x86ptrStart per the 7.2a struct rename). The emit-coupled compile driver that
+ * drives these (mVUcompile + pass-2) is the rest of task 7.4. */
+
+/* This gets run at the start of every loop of mVU's first pass */
+static __fi void startLoop(mV)
+{
+	if (curI & _Mbit_ && isVU0)
+		log_cb(RETRO_LOG_DEBUG, "microVU%d: M-bit set! PC = %x\n", getIndex, xPC);
+	if (curI & _Dbit_)
+		log_cb(RETRO_LOG_DEBUG, "microVU%d: D-bit set! PC = %x\n", getIndex, xPC);
+	if (curI & _Tbit_)
+		log_cb(RETRO_LOG_DEBUG, "microVU%d: T-bit set! PC = %x\n", getIndex, xPC);
+	memset(&mVUinfo, 0, sizeof(mVUinfo));
+	memset(&mVUregsTemp, 0, sizeof(mVUregsTemp));
+}
+
+/* Initialize VI Constants (vi15 propagates through blocks) */
+static __fi void mVUinitConstValues(microVU* mVU)
+{
+	int i;
+	for (i = 0; i < 16; i++)
+	{
+		mVUconstReg[i].isValid  = 0;
+		mVUconstReg[i].regValue = 0;
+	}
+	mVUconstReg[15].isValid = mVUregs.vi15v;
+	mVUconstReg[15].regValue = mVUregs.vi15v ? mVUregs.vi15 : 0;
+}
+
+/* Initialize Variables */
+static __fi void mVUinitFirstPass(microVU* mVU, uptr pState, u8* thisPtr)
+{
+	mVUstartPC = iPC; /* Block Start PC */
+	mVUbranch  = 0; /* Branch Type */
+	mVUcount   = 0; /* Number of instructions ran */
+	mVUcycles  = 0; /* Skips "M" phase, and starts counting cycles at "T" stage */
+	mVU->p      = 0; /* All blocks start at p index #0 */
+	mVU->q      = 0; /* All blocks start at q index #0 */
+	if ((uptr)&mVUregs != pState) /* Loads up Pipeline State Info */
+	{
+		memcpy((u8*)&mVUregs, (u8*)pState, sizeof(microRegInfo));
+	}
+	if (((uptr)&mVU->prog.lpState != pState))
+	{
+		memcpy((u8*)&mVU->prog.lpState, (u8*)pState, sizeof(microRegInfo));
+	}
+	mVUblock.codeStart = thisPtr;
+	mVUpBlock = mVUbm_add(mVUblocks[mVUstartPC / 2], mVU, &mVUblock); /* Add this block to block manager */
+	mVUregs.needExactMatch = (mVUpBlock->pState.blockType) ? 7 : 0; /* ToDo: Fix 1-Op block flag linking (MGS2:Demo/Sly Cooper) */
+	mVUregs.blockType = 0;
+	mVUregs.viBackUp  = 0;
+	mVUregs.flagInfo  = 0;
+	mVUsFlagHack = CHECK_VU_FLAGHACK;
+	mVUinitConstValues(mVU);
+}
+
+/* ------------------------------------------------------------------
+ * Micro VU - Main Functions
+ * ------------------------------------------------------------------ */
+
+static u8* s_mvu_cache[2];
+#define kMvuRecSize 0x4000000
+
+/* Only run this once per VU! ;) */
+static void mVUinit(microVU* mVU, uint vuIndex)
+{
+	memset(&mVU->prog, 0, sizeof(mVU->prog));
+	mVU->glob = mVUglob; /* C.75: x27-reachable copies of the emit constants */
+	memcpy(mVU->sse4Min, sse4_minvals, sizeof(mVU->sse4Min));
+	memcpy(mVU->sse4Max, sse4_maxvals, sizeof(mVU->sse4Max));
+
+	mVU->index        =  vuIndex;
+	mVU->cop2         =  0;
+	mVU->vuMemSize    = (mVU->index ? 0x4000 : 0x1000);
+	mVU->microMemSize = (mVU->index ? 0x4000 : 0x1000);
+	mVU->progSize     = (mVU->index ? 0x4000 : 0x1000) / 4;
+	mVU->mscalMemo    = (microMscalMemoA*)calloc(mVU->progSize / 2, sizeof(microMscalMemoA));
+	mVU->progMemMask  =  mVU->progSize-1;
+	/* The libretro fork has no fixed code-map arena; give each VU a
+	 * dedicated RWX mmap (same 64 MB budget as upstream's mVU0/1recSize). */
+	if (!s_mvu_cache[vuIndex])
+		s_mvu_cache[vuIndex] = (u8*)memjit_alloc(kMvuRecSize);
+	mVU->cache        = s_mvu_cache[vuIndex];
+	mVU->prog.codeReserveEnd = s_mvu_cache[vuIndex] + kMvuRecSize;
+	mVU->prog.codeEnd = mVU->prog.codeReserveEnd - (mVUcacheSafeZone * _1mb);
+
+	mVU->regAlloc = &s_regAlloc[mVU->index];
+	mVUra_init(mVU->regAlloc, mVU->index);
+}
+
+/* Resets Rec Data */
+static void mVUreset(microVU* mVU, bool resetReserve)
+{
+	u32 i;
+	if (THREAD_VU1)
+	{
+		log_cb(RETRO_LOG_WARN, "mVU Reset\n");
+		/* If MTVU is toggled on during gameplay we need to flush the running vuRegs[1] program, else it gets in a mess */
+		if (vuRegs[0].VI[REG_VPU_STAT].UL & 0x100)
+		{
+			CpuVU1->Execute(vu1RunCycles);
+		}
+		vuRegs[0].VI[REG_VPU_STAT].UL &= ~0x100;
+	}
+
+	/* Point the emitter at mVU->cache and emit the dispatchers + helper thunks
+	 * at the start of the cache (x86: x86Ptr = (u8*)(mVU->cache) + the five generate calls).
+	 * Also sets mVU->prog.codeStart / codePtr just past the emitted dispatchers. */
+	mVUgenerateDispatchers(mVU);
+
+	vuRegs[mVU->index].nextBlockCycles = 0;
+	memset(&mVU->prog.lpState, 0, sizeof(mVU->prog.lpState));
+
+	/* Program Variables */
+	mVU->prog.cleared  =  1;
+	mVU->prog.isSame   = -1;
+	mVU->prog.cur      = NULL;
+	mVU->prog.total    =  0;
+	mVU->prog.curFrame =  0;
+
+	/* (codeStart / codePtr were set by mVUgenerateDispatchers, just past the
+	 * emitted dispatchers — the x86 rec does this with x86Ptr.) */
+
+	for (i = 0; i < (mVU->progSize / 2); i++)
+	{
+		u32 j;
+		if (!mVU->prog.prog[i])
+		{
+			mVU->prog.prog[i] = mvu_proglist_new();
+			continue;
+		}
+		for (j = 0; j < mVU->prog.prog[i]->count; j++)
+			mVUdeleteProg(mVU, &mVU->prog.prog[i]->data[j]);
+		mvu_proglist_clear(mVU->prog.prog[i]);
+		mVU->prog.quick[i].block = NULL;
+		mVU->prog.quick[i].prog = NULL;
+	}
+}
+
+/* Free Allocated Resources */
+static void mVUclose(microVU* mVU)
+{
+	u32 i;
+	/* Delete Programs and Block Managers */
+	for (i = 0; i < (mVU->progSize / 2); i++)
+	{
+		u32 j;
+		if (!mVU->prog.prog[i])
+			continue;
+		for (j = 0; j < mVU->prog.prog[i]->count; j++)
+			mVUdeleteProg(mVU, &mVU->prog.prog[i]->data[j]);
+		mvu_proglist_delete(mVU->prog.prog[i]);
+		mVU->prog.prog[i] = NULL;
+	}
+	free(mVU->mscalMemo);
+	mVU->mscalMemo = NULL;
+}
+
+/* Clears Block Data in specified range */
+static void mVUclear(microVU* mVU, u32 addr, u32 size)
+{
+	if (!mVU->prog.cleared)
+	{
+		u32 i;
+		mVU->prog.cleared = 1; /* Next execution searches/creates a new microprogram */
+		memset(&mVU->prog.lpState, 0, sizeof(mVU->prog.lpState)); /* Clear pipeline state */
+		for (i = 0; i < (mVU->progSize / 2); i++)
+		{
+			mVU->prog.quick[i].block = NULL; /* Clear current quick-reference block */
+			mVU->prog.quick[i].prog = NULL; /* Clear current quick-reference prog */
+		}
+	}
+}
+
+/* ------------------------------------------------------------------
+ * Micro VU - Private Functions
+ * ------------------------------------------------------------------ */
+
+/* Deletes a program */
+static void mVUdeleteProg(microVU* mVU, microProgram** prog)
+{
+	u32 i;
+	for (i = 0; i < (mVU->progSize / 2); i++)
+	{
+		if ((*prog)->block[i])
+		{
+			mVUbm_destroy((*prog)->block[i]);
+			free((*prog)->block[i]);
+		}
+		(*prog)->block[i] = NULL;
+	}
+	mvu_rangelist_delete((*prog)->ranges);
+	(*prog)->ranges = NULL;
+	memalign_free(*prog);
+	*prog = NULL;
+}
+
+/* Creates a new Micro Program */
+static microProgram* mVUcreateProg(microVU* mVU, int startPC)
+{
+	double cacheSize;
+	double cacheUsed;
+	double cachePerc;
+	microProgram* prog = (microProgram*)memalign_alloc(64, sizeof(microProgram));
+	memset(prog, 0, sizeof(microProgram));
+	prog->idx = mVU->prog.total++;
+	prog->ranges = mvu_rangelist_new();
+	prog->startPC = startPC;
+	if (doWholeProgCompare)
+		mVUcacheProg(mVU, prog); /* Cache Micro Program */
+	cacheSize = (double)((uptr)mVU->prog.codeEnd - (uptr)mVU->prog.codeStart);
+	cacheUsed = ((double)((uptr)mVU->prog.codePtr - (uptr)mVU->prog.codeStart)) / (double)_1mb;
+	cachePerc = ((double)((uptr)mVU->prog.codePtr - (uptr)mVU->prog.codeStart)) / cacheSize * 100;
+	log_cb(RETRO_LOG_DEBUG, "microVU%d: Cached Prog = [%03d] [PC=%04x] [List=%02d] (Cache=%3.3f%%) [%3.1fmb]\n",
+		mVU->index, prog->idx, startPC * 8, mVU->prog.prog[startPC]->count + 1, cachePerc, cacheUsed);
+	return prog;
+}
+
+/* Caches Micro Program */
+static void mVUcacheProg(microVU* mVU, microProgram* prog)
+{
+	if (!doWholeProgCompare)
+	{
+		const microRange* range = &mVU->prog.cur->ranges->data[0];
+		memcpy((u8*)prog->data + range->start, (u8*)vuRegs[mVU->index].Micro + range->start, (range->end - range->start));
+	}
+	else
+	{
+		if (!mVU->index)
+			memcpy(prog->data, vuRegs[mVU->index].Micro, 0x1000);
+		else
+			memcpy(prog->data, vuRegs[mVU->index].Micro, 0x4000);
+	}
+}
+
+/* Generate Hash for partial program based on compiled ranges... */
+static u64 mVUrangesHash(microVU* mVU, microProgram* prog)
+{
+	union
+	{
+		u64 v64;
+		u32 v32[2];
+	} hash = {0};
+
+	u32 r;
+	for (r = 0; r < prog->ranges->count; r++)
+	{
+		int i;
+		const microRange* it = &prog->ranges->data[r];
+		if ((it->start < 0) || (it->end < 0))
+		{
+			log_cb(RETRO_LOG_ERROR, "microVU%d: Negative Range![%d][%d]\n", mVU->index, it->start, it->end);
+		}
+		for (i = it->start / 4; i < it->end / 4; i++)
+		{
+			hash.v32[0] -= prog->data[i];
+			hash.v32[1] ^= prog->data[i];
+		}
+	}
+	return hash.v64;
+}
+
+/* Compare Cached microProgram to vuRegs[mVU->index].Micro */
+static bool mVUcmpProg(microVU* mVU, microProgram* prog)
+{
+	if (doWholeProgCompare)
+	{
+		if (memcmp((u8*)prog->data, vuRegs[mVU->index].Micro, mVU->microMemSize))
+			return false;
+	}
+	else
+	{
+		u32 r;
+		for (r = 0; r < prog->ranges->count; r++)
+		{
+			const microRange* range = &prog->ranges->data[r];
+#if defined(PCSX2_DEVBUILD) || defined(_DEBUG)
+			if ((range->start < 0) || (range->end < 0))
+				log_cb(RETRO_LOG_ERROR, "microVU%d: Negative Range![%d][%d]\n", mVU->index, range->start, range->end);
+#endif
+			if (memcmp((u8*)prog->data + range->start, (u8*)vuRegs[mVU->index].Micro + range->start, (range->end - range->start)))
+				return false;
+		}
+	}
+	mVU->prog.cleared = 0;
+	mVU->prog.cur = prog;
+	mVU->prog.isSame = doWholeProgCompare ? 1 : -1;
+	return true;
+}
+
+/* Searches for Cached Micro Program and sets prog.cur to it (returns entry-point to program) */
+static void* mVUsearchProgUncached(int vuIndex, u32 startPC, uptr pState)
+{
+	microVU* mVU = vuIndex ? &microVU1 : &microVU0;
+	microProgramQuick* quick = &(mVU->prog.quick[vuRegs[mVU->index].start_pc / 8]);
+	microProgramList*  list  = mVU->prog.prog [vuRegs[mVU->index].start_pc / 8];
+
+	if (!quick->prog) /* If null, we need to search for new program */
+	{
+		void* entryPoint;
+		u32 it;
+		for (it = 0; it < list->count; it++)
+		{
+			bool b = mVUcmpProg(mVU, list->data[it]);
+
+			if (b)
+			{
+				quick->block = list->data[it]->block[startPC / 8];
+				quick->prog  = list->data[it];
+				mvu_proglist_erase(list, it);
+				mvu_proglist_push_front(list, quick->prog);
+
+				/* Sanity check, in case for some reason the program compilation aborted half way through (JALR for example) */
+				if (quick->block == NULL)
+				{
+					void* entryPoint = mVUblockFetch(mVU, startPC, pState);
+					return entryPoint;
+				}
+				return mVUentryGet(mVU, quick->block, startPC, pState);
+			}
+		}
+
+		/* If cleared and program not found, make a new program instance */
+		mVU->prog.cleared = 0;
+		mVU->prog.isSame  = 1;
+		mVU->prog.cur     = mVUcreateProg(mVU, vuRegs[mVU->index].start_pc/8);
+		entryPoint = mVUblockFetch(mVU,  startPC, pState);
+		quick->block      = mVU->prog.cur->block[startPC/8];
+		quick->prog       = mVU->prog.cur;
+		mvu_proglist_push_front(list, mVU->prog.cur);
+		/* mVUprintUniqueRatio(mVU); */
+		return entryPoint;
+	}
+
+	/* If list.quick, then we've already found and recompiled the program ;) */
+	mVU->prog.isSame = -1;
+	mVU->prog.cur = quick->prog;
+	/* Because the VU's can now run in sections and not whole programs at once
+	 * we need to set the current block so it gets the right program back */
+	quick->block = mVU->prog.cur->block[startPC / 8];
+
+	/* Sanity check, in case for some reason the program compilation aborted half way through */
+	if (quick->block == NULL)
+	{
+		void* entryPoint = mVUblockFetch(mVU, startPC, pState);
+		return entryPoint;
+	}
+	return mVUentryGet(mVU, quick->block, startPC, pState);
+}
+
+/* The invocation memo, arm64 twin: same keying as x86 after its trial
+ * by fire - live quick pointer, section PC, and the query state
+ * snapshotted before the search since lpState is a live variable the
+ * search itself can overwrite. The compare uses the C++ state compare
+ * rather than the emitted one, which also keeps Apple Silicon's
+ * MAP_JIT write-protect sessions out of the picture entirely. The hit
+ * replicates the quick path's side effects exactly. */
+static void* mVUsearchProg(int vuIndex, u32 startPC, uptr pState)
+{
+	microMscalMemoA* slot;
+	u32 idx;
+	microVU* mVU = vuIndex ? &microVU1 : &microVU0;
+	idx = vuRegs[mVU->index].start_pc / 8;
+	slot = &mVU->mscalMemo[idx];
+	if (slot->prog && slot->prog == mVU->prog.quick[idx].prog
+	 && slot->startPC == startPC
+	 && mVUcompareState((microRegInfo*)pState, &slot->state) == 0)
+	{
+		mVU->prog.isSame = -1;
+		mVU->prog.cur = slot->prog;
+		mVU->prog.quick[idx].block = slot->prog->block[startPC / 8];
+		return slot->entry;
+	}
+	{
+		void* entry;
+		microProgram* p;
+		microRegInfo queryState;
+		memcpy(&queryState, (void*)pState, sizeof(microRegInfo));
+		entry = mVUsearchProgUncached(vuIndex, startPC, pState);
+		p = mVU->prog.quick[idx].prog;
+		if (p && vuRegs[mVU->index].start_pc / 8 == idx)
+		{
+			slot->prog    = p;
+			slot->entry   = entry;
+			slot->startPC = startPC;
+			memcpy(&slot->state, &queryState, sizeof(microRegInfo));
+		}
+		return entry;
+	}
+}
+
+
+/* ------------------------------------------------------------------
+ * vuRegs[0] / vuRegs[1] recompiler providers
+ * ------------------------------------------------------------------
+ * The x86 side replaced the BaseVUmicroCPU class hierarchy with a
+ * VUmicroCpu struct of function pointers; this is the ARM64 half of the
+ * same thing. Names and behaviour are unchanged, only the dispatch. */
+
+static void rec_vu0_shutdown(void)
+{
+	mVUclose(&microVU0);
+}
+
+static void rec_vu1_shutdown(void)
+{
+	if (mtvu_is_open())
+		mtvu_wait_vu();
+	mVUclose(&microVU1);
+}
+
+static void rec_vu0_reset(void)
+{
+	mVUreset(&microVU0, true);
+}
+
+static void rec_vu1_reset(void)
+{
+	mtvu_wait_vu();
+	mtvu_get_changes();
+	mVUreset(&microVU1, true);
+}
+
+static void rec_vu0_set_start_pc(u32 startPC)
+{
+	vuRegs[0].start_pc = startPC;
+}
+
+static void rec_vu1_set_start_pc(u32 startPC)
+{
+	vuRegs[1].start_pc = startPC;
+}
+
+static void rec_vu0_execute(u32 cycles)
+{
+	vuRegs[0].flags &= ~VUFLAG_MFLAGSET;
+
+	if (!(vuRegs[0].VI[REG_VPU_STAT].UL & 1))
+		return;
+	vuRegs[0].VI[REG_TPC].UL <<= 3;
+
+	((mVUrecCall)microVU0.startFunct)(vuRegs[0].VI[REG_TPC].UL, cycles);
+	vuRegs[0].VI[REG_TPC].UL >>= 3;
+	if (vuRegs[0].flags & 0x4)
+	{
+		vuRegs[0].flags &= ~0x4;
+		hwIntcIrq(6);
+	}
+}
+
+static void rec_vu1_execute(u32 cycles)
+{
+	if (!THREAD_VU1)
+	{
+		if (!(vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
+			return;
+	}
+
+	vuRegs[1].VI[REG_TPC].UL <<= 3;
+	((mVUrecCall)microVU1.startFunct)(vuRegs[1].VI[REG_TPC].UL, cycles);
+	vuRegs[1].VI[REG_TPC].UL >>= 3;
+	if (vuRegs[1].flags & 0x4 && !THREAD_VU1)
+	{
+		vuRegs[1].flags &= ~0x4;
+		hwIntcIrq(7);
+	}
+}
+
+static void rec_vu0_clear(u32 addr, u32 size)
+{
+	mVUclear(&microVU0, addr, size);
+}
+
+static void rec_vu1_clear(u32 addr, u32 size)
+{
+	mVUclear(&microVU1, addr, size);
+}
+
+static void rec_vu1_resume_xgkick(void)
+{
+	if (!(vuRegs[0].VI[REG_VPU_STAT].UL & 0x100))
+		return;
+	((mVUrecCallXG)microVU1.startFunctXG)();
+}
+
+void vucpu_rec_vu0_reserve(void)
+{
+	mVUinit(&microVU0, 0);
+}
+
+void vucpu_rec_vu1_reserve(void)
+{
+	mVUinit(&microVU1, 1);
+	mtvu_open();
+}
+
+const struct VUmicroCpu vucpu_rec_vu0 =
+{
+	0, 0,
+	rec_vu0_shutdown, rec_vu0_reset, rec_vu0_set_start_pc,
+	rec_vu0_execute,  rec_vu0_clear, NULL
+};
+
+const struct VUmicroCpu vucpu_rec_vu1 =
+{
+	1, 0,
+	rec_vu1_shutdown, rec_vu1_reset, rec_vu1_set_start_pc,
+	rec_vu1_execute,  rec_vu1_clear, rec_vu1_resume_xgkick
+};
+
+bool vuJITFreeze(SaveStateBase *s)
+{
+	if (SaveState_IsSaving(s))
+		mtvu_wait_vu();
+
+	SaveState_Freeze(s, microVU0.prog.lpState);
+	SaveState_Freeze(s, microVU1.prog.lpState);
+	return SaveState_IsOkay(s);
+}
+
+/* ------------------------------------------------------------------
+ * Dispatcher / helper-thunk code generation (task 7.2d)
+ * ------------------------------------------------------------------
+ * Shared exact-multiply tree stub (x86: mVUemitExactMulStub). The
+ * harness-proven paired Booth/CSA tree, transcribed for NEON. Memory
+ * ABI through mVU->exactMulBuf: in [0..3] fs, [4..7] ft (the raw operand
+ * words -- only their low halfwords are read, which the implicit bit at
+ * 23 does not reach, so mantissas and raw words are interchangeable
+ * here); [8..11] p01 and [12..15] p23 are the Umull-pair products,
+ * corrected in place. Saves and restores every vector
+ * register it touches, so call sites need no flush. NEON shortens
+ * the x86 stub: one per-lane Ushl with a count vector replaces each
+ * iteration's shift-shift-blend, Tbl is the mask lookup, two
+ * immediate Bics are the & 7, and Ext does the unpairing.
+ * ------------------------------------------------------------------ */
+static void emitAdd3(a64r x, a64r y, a64r z,
+	a64r lo, a64r hi, a64r w1, a64r w2)
+{
+	a64_eor(armAsm, a64_as(w1, A64K_16B), a64_as(x, A64K_16B), a64_as(y, A64K_16B)); /* u */
+	a64_and(armAsm, a64_as(w2, A64K_16B), a64_as(x, A64K_16B), a64_as(y, A64K_16B));
+	a64_and(armAsm, a64_as(hi, A64K_16B), a64_as(w1, A64K_16B), a64_as(z, A64K_16B)); /* u & z */
+	a64_orr(armAsm, a64_as(hi, A64K_16B), a64_as(hi, A64K_16B), a64_as(w2, A64K_16B));
+	a64_shl(armAsm, a64_as(hi, A64K_8H), a64_as(hi, A64K_8H), 1);
+	a64_eor(armAsm, a64_as(lo, A64K_16B), a64_as(w1, A64K_16B), a64_as(z, A64K_16B));
+}
+
+static void mVUemitExactMulStub(microVU* mVU)
+{
+	u32* buf = mVU->exactMulBuf;
+	int i, k;
+	const u32* cnts[4];
+
+	cnts[0] = &mVU->glob.tCnt0[0];
+	cnts[1] = &mVU->glob.tCnt1[0];
+	cnts[2] = &mVU->glob.tCnt2[0];
+	cnts[3] = &mVU->glob.tCnt3[0];
+	mVU->exactMulStub = armGetCurrentCodePointer();
+	for (i = 0; i < 16; i++)
+		mvuStrQ(mVU, &mVU->exactMulSave[i][0], a64_vreg(i, 128, 1));
+
+	/* v0 = aP, v1 = b16: load, narrow to 4H, duplicate, pre-shift high half */
+	mvuLdrQ(mVU, A64_Q(0), &buf[0]);
+	a64_xtn(armAsm, a64_as(A64_Q(0), A64K_4H), a64_as(A64_Q(0), A64K_4S));
+	a64_ins_elem(armAsm, a64_as(A64_Q(0), A64K_2D), 1, a64_as(A64_Q(0), A64K_2D), 0);
+	mvuLdrQ(mVU, A64_Q(14), &mVU->glob.tPackCnt[0]);
+	a64_ushl(armAsm, a64_as(A64_Q(0), A64K_8H), a64_as(A64_Q(0), A64K_8H), a64_as(A64_Q(14), A64K_8H));
+	mvuLdrQ(mVU, A64_Q(1), &buf[4]);
+	a64_xtn(armAsm, a64_as(A64_Q(1), A64K_4H), a64_as(A64_Q(1), A64K_4S));
+	a64_ins_elem(armAsm, a64_as(A64_Q(1), A64K_2D), 1, a64_as(A64_Q(1), A64K_2D), 0);
+
+	/* LUT tables resident */
+	mvuLdrQ(mVU, A64_Q(9),  &mVU->glob.tLUTdbl[0]);
+	mvuLdrQ(mVU, A64_Q(10), &mVU->glob.tLUTneg[0]);
+	mvuLdrQ(mVU, A64_Q(11), &mVU->glob.tLUTany[0]);
+
+	/* booth loop; regs: v0 aP, v1 b16, v2-5 d0-3, v6-8 n1-3, v13 x, v14 t, v15 work */
+	for (k = 0; k < 4; k++)
+	{
+		const a64r dk = a64_vreg(2 + k, 128, 1);
+		mvuLdrQ(mVU, A64_Q(15), cnts[k]);
+		a64_ushl(armAsm, a64_as(A64_Q(14), A64K_8H), a64_as(A64_Q(1), A64K_8H), a64_as(A64_Q(15), A64K_8H));
+		a64_bic_vimm(armAsm, a64_as(A64_Q(14), A64K_8H), 0xf8, 0);
+		a64_bic_vimm(armAsm, a64_as(A64_Q(14), A64K_8H), 0xff, 8); /* t = shifted & 7 */
+		a64_shl(armAsm, a64_as(A64_Q(15), A64K_8H), a64_as(A64_Q(14), A64K_8H), 8);
+		a64_orr(armAsm, a64_as(A64_Q(14), A64K_16B), a64_as(A64_Q(14), A64K_16B), a64_as(A64_Q(15), A64K_16B)); /* both bytes */
+		if (k) a64_shl(armAsm, a64_as(A64_Q(13), A64K_8H), a64_as(A64_Q(0), A64K_8H), k * 2);
+		else   a64_mov(armAsm, a64_as(A64_Q(13), A64K_16B), a64_as(A64_Q(0), A64K_16B)); /* x = aP << 2k */
+		a64_tbl(armAsm, a64_as(A64_Q(15), A64K_16B), a64_as(A64_Q(9), A64K_16B), a64_as(A64_Q(14), A64K_16B)); /* dbl */
+		a64_and(armAsm, a64_as(A64_Q(15), A64K_16B), a64_as(A64_Q(15), A64K_16B), a64_as(A64_Q(13), A64K_16B));
+		a64_add(armAsm, a64_as(A64_Q(13), A64K_8H), a64_as(A64_Q(13), A64K_8H), a64_as(A64_Q(15), A64K_8H));
+		a64_tbl(armAsm, a64_as(A64_Q(15), A64K_16B), a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(14), A64K_16B)); /* neg */
+		if (k >= 1)
+		{
+			const a64r nk = a64_vreg(5 + k, 128, 1);
+			mvuLdrQ(mVU, dk, &mVU->glob.tOneP[0]);
+			a64_shl(armAsm, a64_as(dk, A64K_8H), a64_as(dk, A64K_8H), k * 2);
+			a64_and(armAsm, a64_as(nk, A64K_16B), a64_as(A64_Q(15), A64K_16B), a64_as(dk, A64K_16B)); /* n[k] */
+		}
+		mvuLdrQ(mVU, dk, &mVU->glob.tOnesP[0]);
+		if (k) a64_shl(armAsm, a64_as(dk, A64K_8H), a64_as(dk, A64K_8H), k * 2);
+		a64_and(armAsm, a64_as(dk, A64K_16B), a64_as(A64_Q(15), A64K_16B), a64_as(dk, A64K_16B));
+		a64_eor(armAsm, a64_as(A64_Q(13), A64K_16B), a64_as(A64_Q(13), A64K_16B), a64_as(dk, A64K_16B)); /* x ^= neg & (onesP<<2k) */
+		a64_tbl(armAsm, a64_as(A64_Q(15), A64K_16B), a64_as(A64_Q(11), A64K_16B), a64_as(A64_Q(14), A64K_16B)); /* any */
+		a64_and(armAsm, a64_as(dk, A64K_16B), a64_as(A64_Q(13), A64K_16B), a64_as(A64_Q(15), A64K_16B)); /* d[k] */
+	}
+
+	/* unpair; v0, v1, v9-15 free now */
+	a64_ext(armAsm, a64_as(A64_Q(9), A64K_16B), a64_as(A64_Q(2), A64K_16B), a64_as(A64_Q(2), A64K_16B), 8); /* d4 */
+	a64_ext(armAsm, a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(3), A64K_16B), a64_as(A64_Q(3), A64K_16B), 8); /* d5 */
+	a64_ext(armAsm, a64_as(A64_Q(11), A64K_16B), a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(4), A64K_16B), 8); /* d6 */
+	a64_ext(armAsm, a64_as(A64_Q(12), A64K_16B), a64_as(A64_Q(5), A64K_16B), a64_as(A64_Q(5), A64K_16B), 8); /* d7 */
+	a64_ext(armAsm, a64_as(A64_Q(13), A64K_16B), a64_as(A64_Q(6), A64K_16B), a64_as(A64_Q(6), A64K_16B), 8); /* n5 */
+
+	/* b7 into v12 ; then d5&0x800 into v13 ; mask d4/d5 */
+	mvuLdrQ(mVU, A64_Q(14), &mVU->glob.t0400[0]);
+	a64_and(armAsm, a64_as(A64_Q(14), A64K_16B), a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(14), A64K_16B));
+	a64_add(armAsm, a64_as(A64_Q(14), A64K_8H), a64_as(A64_Q(14), A64K_8H), a64_as(A64_Q(13), A64K_8H));
+	a64_orr(armAsm, a64_as(A64_Q(12), A64K_16B), a64_as(A64_Q(12), A64K_16B), a64_as(A64_Q(14), A64K_16B));
+	mvuLdrQ(mVU, A64_Q(13), &mVU->glob.t0800[0]);
+	a64_and(armAsm, a64_as(A64_Q(13), A64K_16B), a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(13), A64K_16B));
+	mvuLdrQ(mVU, A64_Q(14), &mVU->glob.tF800[0]);
+	a64_and(armAsm, a64_as(A64_Q(9), A64K_16B), a64_as(A64_Q(9), A64K_16B), a64_as(A64_Q(14), A64K_16B));
+	mvuLdrQ(mVU, A64_Q(14), &mVU->glob.tF000[0]);
+	a64_and(armAsm, a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(14), A64K_16B));
+
+	/* t0 = add3(d1,d2,d3) -> lo v14, hi v15 (w: v1, v0) */
+	emitAdd3(A64_Q(3), A64_Q(4), A64_Q(5), A64_Q(14), A64_Q(15), A64_Q(1), A64_Q(0));
+	/* t1 = add3(d4m,d5m,d6) -> lo v3, hi v4 ; then |= n6 | (d5&0x800) */
+	emitAdd3(A64_Q(9), A64_Q(10), A64_Q(11), A64_Q(3), A64_Q(4), A64_Q(5), A64_Q(0));
+	a64_ext(armAsm, a64_as(A64_Q(5), A64K_16B), a64_as(A64_Q(7), A64K_16B), a64_as(A64_Q(7), A64K_16B), 8); /* n6 */
+	a64_orr(armAsm, a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(5), A64K_16B));
+	a64_orr(armAsm, a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(13), A64K_16B));
+	/* t2 = add3(d0,t0l,t0h) -> lo v9, hi v10 */
+	emitAdd3(A64_Q(2), A64_Q(14), A64_Q(15), A64_Q(9), A64_Q(10), A64_Q(11), A64_Q(0));
+	/* t3 = add3(b7,t1l,t1h) -> lo v13, hi v14 */
+	emitAdd3(A64_Q(12), A64_Q(3), A64_Q(4), A64_Q(13), A64_Q(14), A64_Q(15), A64_Q(0));
+	/* t4 = add3(t2h,t3l,t3h) -> lo v2, hi v3 */
+	emitAdd3(A64_Q(10), A64_Q(13), A64_Q(14), A64_Q(2), A64_Q(3), A64_Q(4), A64_Q(0));
+	/* t5 = add3(t2l,t4l,t4h) -> lo v5, hi v10 */
+	emitAdd3(A64_Q(9), A64_Q(2), A64_Q(3), A64_Q(5), A64_Q(10), A64_Q(11), A64_Q(0));
+	/* t5h += n7 ; sum ; tb */
+	a64_ext(armAsm, a64_as(A64_Q(11), A64K_16B), a64_as(A64_Q(8), A64K_16B), a64_as(A64_Q(8), A64K_16B), 8); /* n7 */
+	a64_add(armAsm, a64_as(A64_Q(10), A64K_8H), a64_as(A64_Q(10), A64K_8H), a64_as(A64_Q(11), A64K_8H));
+	mvuLdrQ(mVU, A64_Q(11), &mVU->glob.t8000[0]);
+	a64_and(armAsm, a64_as(A64_Q(5), A64K_16B), a64_as(A64_Q(5), A64K_16B), a64_as(A64_Q(11), A64K_16B));
+	a64_and(armAsm, a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(10), A64K_16B), a64_as(A64_Q(11), A64K_16B));
+	a64_add(armAsm, a64_as(A64_Q(5), A64K_8H), a64_as(A64_Q(5), A64K_8H), a64_as(A64_Q(10), A64K_8H));
+	a64_ushr(armAsm, a64_as(A64_Q(5), A64K_8H), a64_as(A64_Q(5), A64K_8H), 15); /* tb 4H lanes 0-3 */
+
+	/* correction: p -= ((tb ^ ((p >> 15) & 1)) << 15) per 64-bit lane */
+	a64_ushll(armAsm, a64_as(A64_Q(5), A64K_4S), a64_as(A64_Q(5), A64K_4H), 0); /* {b0,b1,b2,b3} */
+	a64_ushll(armAsm, a64_as(A64_Q(6), A64K_2D), a64_as(A64_Q(5), A64K_2S), 0); /* {b0,b1} */
+	a64_ushll(armAsm, a64_as(A64_Q(7), A64K_2D), a64_as(A64_Q(5), A64K_4S), 0); /* {b2,b3} */
+	mvuLdrQ(mVU, A64_Q(1), &buf[8]);
+	mvuLdrQ(mVU, A64_Q(2), &buf[12]);
+	mvuLdrQ(mVU, A64_Q(8), &mVU->glob.t64one[0]);
+	a64_ushr(armAsm, a64_as(A64_Q(3), A64K_2D), a64_as(A64_Q(1), A64K_2D), 15);
+	a64_and(armAsm, a64_as(A64_Q(3), A64K_16B), a64_as(A64_Q(3), A64K_16B), a64_as(A64_Q(8), A64K_16B));
+	a64_ushr(armAsm, a64_as(A64_Q(4), A64K_2D), a64_as(A64_Q(2), A64K_2D), 15);
+	a64_and(armAsm, a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(4), A64K_16B), a64_as(A64_Q(8), A64K_16B));
+	a64_eor(armAsm, a64_as(A64_Q(6), A64K_16B), a64_as(A64_Q(6), A64K_16B), a64_as(A64_Q(3), A64K_16B));
+	a64_eor(armAsm, a64_as(A64_Q(7), A64K_16B), a64_as(A64_Q(7), A64K_16B), a64_as(A64_Q(4), A64K_16B));
+	a64_shl(armAsm, a64_as(A64_Q(6), A64K_2D), a64_as(A64_Q(6), A64K_2D), 15);
+	a64_shl(armAsm, a64_as(A64_Q(7), A64K_2D), a64_as(A64_Q(7), A64K_2D), 15);
+	a64_sub(armAsm, a64_as(A64_Q(1), A64K_2D), a64_as(A64_Q(1), A64K_2D), a64_as(A64_Q(6), A64K_2D));
+	a64_sub(armAsm, a64_as(A64_Q(2), A64K_2D), a64_as(A64_Q(2), A64K_2D), a64_as(A64_Q(7), A64K_2D));
+	mvuStrQ(mVU, &buf[8], A64_Q(1));
+	mvuStrQ(mVU, &buf[12], A64_Q(2));
+
+	for (i = 0; i < 16; i++)
+		mvuLdrQ(mVU, a64_vreg(i, 128, 1), &mVU->exactMulSave[i][0]);
+	a64_ret(armAsm);
+}
+
+/* ------------------------------------------------------------------
+ * ARM64 port of microVU_Execute.inl 23-315. This pins the final ARM64 microVU
+ * ABI. All five generators below emit into the armAsm opened by
+ * mVUgenerateDispatchers (one emitter session for the whole dispatcher
+ * block, finalised once). microVU is still unselected on ARM64 (VMManager pins
+ * CpuIntVU0/1), so the emitted code is not executed yet — but it compiles for
+ * real and pins the register/entry contract every later Phase-7 task builds on.
+ *
+ * Entry contract (mVUdispatcherAB = mVU->startFunct), called from C as
+ * ((void(*)(u32 startPC, u32 cycles))startFunct)(startPC, cycles):
+ * * startPC -> w0 (RWARG1), cycles -> w1 (RWARG2);
+ * * call mVUexecuteVU0/1(startPC, cycles); it returns the block entry in x0;
+ * * load the VU FPCR (if it differs from the EE's), set RVUSTATE = &vuRegs[i],
+ * load the PQ NEON reg + mac/clip flag instances + the 4 status-flag GPRs
+ * (gprF0-3 = w23-w26);
+ * * br x0 (into the compiled block); the block exits by jumping to
+ * mVU->exitFunct, which restores the EE FPCR and runs mVUcleanUpVU0/1. */
+
+/* Whether the dispatcher needs to swap FPCR on entry/exit (x86: mvuNeedsFPCRUpdate). */
+static bool mvuNeedsFPCRUpdate(microVU* mVU)
+{
+	/* Always update on the vuRegs[1] (MTVU) thread. */
+	if (mVU->index == 1 && THREAD_VU1)
+		return true;
+
+	/* Otherwise only when the VU's FPCR differs from the EE's. */
+	return EmuConfig.Cpu.FPUFPCR.bitmask !=
+		(mVU->index == 0 ? EmuConfig.Cpu.VU0FPCR.bitmask : EmuConfig.Cpu.VU1FPCR.bitmask);
+}
+
+/* Emit: load the u64 FPCR bitmask at `bitmaskPtr` and write it to the host FPCR.
+ * Uses x16/x17 scratch only (never the block-entry x0 the AB dispatcher holds). */
+static void mVUemitSetHostFPCR(const void* bitmaskPtr)
+{
+	a64_ldr(armAsm, RXSCRATCH, armAbsMemOperand(RSCRATCHADDR, bitmaskPtr, 8)); /* x16 = bitmask */
+	a64_msr_fpcr(armAsm, RXSCRATCH);
+}
+
+/* Generates the code for entering/exiting recompiled blocks. */
+static void mVUdispatcherAB(microVU* mVU)
+{
+	a64r vtmp;
+	int i;
+	mVU->startFunct = armGetCurrentCodePointer();
+
+	/* Save callee-saved GPRs (x19-x28, fp/lr) and the low halves of v8-v15. */
+	armBeginStackFrame(true);
+
+	/* Args (startPC, cycles) are already in w0/w1; mVUexecute returns entry in x0. */
+	armEmitCall(((const void*)(isVU1 ? mVUexecuteVU1 : mVUexecuteVU0)));
+
+	/* Load VU's FPCR state. */
+	if (mvuNeedsFPCRUpdate(mVU))
+		mVUemitSetHostFPCR(isVU1 ? &EmuConfig.Cpu.VU1FPCR.bitmask : &EmuConfig.Cpu.VU0FPCR.bitmask);
+
+	/* All VF/VI/flag loads address off RVUSTATE = &vuRegs[index]; mVU's own
+	 * fields (flag instances, cycles, branch state) address off RVUMVU = &mVU
+	 * (C.74). Both are callee-saved and survive helper C calls and block chains. */
+	armMoveAddressToReg(RVUSTATE, &vuRegs[mVU->index]);
+	armMoveAddressToReg(RVUMVU, mVU);
+
+	/* Build the PQ latency register (v24). Final lane layout matches the x86 rec:
+	 * vuRegs[0]: [Q, pending_q, P, P]   vuRegs[1]: [Q, pending_q, P, pending_p]
+	 * (NEON V4S lane0 = lowest 32 bits = X, same order as xmm.) v25 is a free
+	 * scratch (not in the VF pool v0-v23, not PQ, not the emitter's scratch v31). */
+	vtmp = a64_vreg(25, 128, 1);
+	a64_ldr(armAsm, a64_as(mVU_xmmPQ, A64K_S), a64_mem_off(RVUSTATE, mVUoffVI(REG_Q))); /* lane0 = Q */
+	a64_ldr(armAsm, a64_as(vtmp, A64K_S), a64_mem_off(RVUSTATE, offsetof(VURegs, pending_q)));
+	a64_ins_elem(armAsm, a64_as(mVU_xmmPQ, A64K_4S), 1, a64_as(vtmp, A64K_4S), 0); /* lane1 = pending_q */
+	a64_ldr(armAsm, a64_as(vtmp, A64K_S), a64_mem_off(RVUSTATE, mVUoffVI(REG_P))); /* vtmp = P */
+	a64_ins_elem(armAsm, a64_as(mVU_xmmPQ, A64K_4S), 2, a64_as(vtmp, A64K_4S), 0); /* lane2 = P */
+	if (isVU1)
+	{
+		a64_ldr(armAsm, a64_as(vtmp, A64K_S), a64_mem_off(RVUSTATE, offsetof(VURegs, pending_p)));
+		a64_ins_elem(armAsm, a64_as(mVU_xmmPQ, A64K_4S), 3, a64_as(vtmp, A64K_4S), 0); /* lane3 = pending_p */
+	}
+	else
+	{
+		a64_ins_elem(armAsm, a64_as(mVU_xmmPQ, A64K_4S), 3, a64_as(vtmp, A64K_4S), 0); /* lane3 = P (vtmp still = P) */
+	}
+
+	/* Copy the mac/clip flag instances into the microVU's working storage. */
+	a64_ldr(armAsm, a64_as(vtmp, A64K_Q), a64_mem_off(RVUSTATE, offsetof(VURegs, micro_macflags)));
+	a64_str(armAsm, a64_as(vtmp, A64K_Q), mvuAbsMem(mVU, &mVU->macFlag[0], 16));
+	a64_ldr(armAsm, a64_as(vtmp, A64K_Q), a64_mem_off(RVUSTATE, offsetof(VURegs, micro_clipflags)));
+	a64_str(armAsm, a64_as(vtmp, A64K_Q), mvuAbsMem(mVU, &mVU->clipFlag[0], 16));
+
+	/* Load the 4 status-flag instances into gprF0-gprF3 (w23-w26). */
+	for (i = 0; i < 4; i++)
+		a64_ldr(armAsm, armWRegister(mVU_F0 + i), a64_mem_off(RVUSTATE, offsetof(VURegs, micro_statusflags) + i * 4));
+
+	/* Jump to the recompiled code block (entry still in x0). */
+	a64_br(armAsm, RXRET);
+
+	/* --- exit path: the block jumps here when done --- */
+	mVU->exitFunct = armGetCurrentCodePointer();
+
+	/* Restore the EE's FPCR state. */
+	if (mvuNeedsFPCRUpdate(mVU))
+		mVUemitSetHostFPCR(&EmuConfig.Cpu.FPUFPCR.bitmask);
+
+	armEmitCall(((const void*)(isVU1 ? mVUcleanUpVU1 : mVUcleanUpVU0)));
+
+	armEndStackFrame(true);
+	a64_ret(armAsm);
+}
+
+/* Generates the code for resuming/exiting xgkick. */
+static void mVUdispatcherCD(microVU* mVU)
+{
+	int i;
+	mVU->startFunctXG = armGetCurrentCodePointer();
+
+	armBeginStackFrame(true);
+
+	/* C.74: pin &mVU before anything below (or in the resumed block) uses it. */
+	armMoveAddressToReg(RVUMVU, mVU);
+
+	/* Load VU's FPCR state. */
+	if (mvuNeedsFPCRUpdate(mVU))
+		mVUemitSetHostFPCR(isVU1 ? &EmuConfig.Cpu.VU1FPCR.bitmask : &EmuConfig.Cpu.VU0FPCR.bitmask);
+
+	/* mVUrestoreRegs(): reload the PQ reg from its XGKICK backup slot. */
+	a64_ldr(armAsm, a64_as(mVU_xmmPQ, A64K_Q), mvuAbsMem(mVU, &mVU->vecBackup[A64_CODE(mVU_xmmPQ)][0], 16));
+
+	armMoveAddressToReg(RVUSTATE, &vuRegs[mVU->index]);
+	for (i = 0; i < 4; i++)
+		a64_ldr(armAsm, armWRegister(mVU_F0 + i), a64_mem_off(RVUSTATE, offsetof(VURegs, micro_statusflags) + i * 4));
+
+	/* Jump to the recompiled code position to resume xgkick. */
+	a64_ldr(armAsm, RSCRATCHADDR, armAbsMemOperand(RSCRATCHADDR, &mVU->resumePtrXG, 8));
+	a64_br(armAsm, RSCRATCHADDR);
+
+	/* --- exit path --- */
+	mVU->exitFunctXG = armGetCurrentCodePointer();
+
+	/* Back up the status flags (the other regs were backed up on xgkick). */
+	armMoveAddressToReg(RVUSTATE, &vuRegs[mVU->index]);
+	for (i = 0; i < 4; i++)
+		a64_str(armAsm, armWRegister(mVU_F0 + i), a64_mem_off(RVUSTATE, offsetof(VURegs, micro_statusflags) + i * 4));
+
+	/* Restore the EE's FPCR state. */
+	if (mvuNeedsFPCRUpdate(mVU))
+		mVUemitSetHostFPCR(&EmuConfig.Cpu.FPUFPCR.bitmask);
+
+	armEndStackFrame(true);
+	a64_ret(armAsm);
+}
+
+/* The C helper called by the waitMTVU thunk (x86: microVU_Misc.inl mVUwaitMTVU). */
+static void mVUwaitMTVU(void)
+{
+	mtvu_wait_vu();
+}
+
+/* A transparent helper-thunk: the register allocator does not know this call
+ * happens, so it must preserve every caller-saved host reg that can hold live VU
+ * state — the VF/PQ NEON pool (v0-v24) and the caller-saved GPRs that can hold VI
+ * values (x0-x15). gprF0-3 (w23-w26) and callee-saved VI regs survive the inner C
+ * call automatically. Only reached under MTVU (vuRegs[1] thread). */
+static void mVUGenerateWaitMTVU(microVU* mVU)
+{
+	int i;
+	int voff;
+	mVU->waitMTVU = armGetCurrentCodePointer();
+
+#define kGprSave 16 /* x0..x15 */
+#define kVecSave 25 /* v0..v24 (VF pool + PQ) */
+#define gprBytes (kGprSave * 8)
+#define vecBytes (kVecSave * 16)
+#define frame (gprBytes + ((vecBytes + 15) & ~15)) /* 16-aligned, 0x210 */
+	/* 16 extra bytes at [sp+frame] to save/restore lr (x30) around the C call.
+	 * blr clobbers x30 with the instruction after the call site; without this save,
+	 * ret returns to the restore sequence itself instead of the VU block that called
+	 * the thunk, creating a loop that advances sp by frame each iteration until it
+	 * reaches the thread stack guard (~41 iterations) and SIGBUSes. */
+#define frameTotal (frame + 16)
+
+	a64_sub_imm(armAsm, A64_SP, A64_SP, frameTotal);
+	for (i = 0; i < kGprSave; i += 2)
+		a64_stp(armAsm, armXRegister(i), armXRegister(i + 1), a64_mem_off(A64_SP, i * 8));
+	voff = gprBytes;
+	for (i = 0; i < kVecSave - 1; i += 2, voff += 32)
+		a64_stp(armAsm, armQRegister(i), armQRegister(i + 1), a64_mem_off(A64_SP, voff));
+	a64_str(armAsm, armQRegister(kVecSave - 1), a64_mem_off(A64_SP, voff));
+
+	a64_str(armAsm, A64_X(30), a64_mem_off(A64_SP, frame));
+	armEmitCall(((const void*)(mVUwaitMTVU)));
+	a64_ldr(armAsm, A64_X(30), a64_mem_off(A64_SP, frame));
+
+	voff = gprBytes;
+	for (i = 0; i < kVecSave - 1; i += 2, voff += 32)
+		a64_ldp(armAsm, armQRegister(i), armQRegister(i + 1), a64_mem_off(A64_SP, voff));
+	a64_ldr(armAsm, armQRegister(kVecSave - 1), a64_mem_off(A64_SP, voff));
+	for (i = 0; i < kGprSave; i += 2)
+		a64_ldp(armAsm, armXRegister(i), armXRegister(i + 1), a64_mem_off(A64_SP, i * 8));
+	a64_add_imm(armAsm, A64_SP, A64_SP, frameTotal);
+	a64_ret(armAsm);
+#undef kGprSave
+#undef kVecSave
+#undef gprBytes
+#undef vecBytes
+#undef frame
+#undef frameTotal
+}
+
+/* Copies the 96-byte pipeline state from [x0] (source pState, supplied by the
+ * caller) into mVU->prog.lpState (x86: mVUGenerateCopyPipelineState). */
+static void mVUGenerateCopyPipelineState(microVU* mVU)
+{
+	int i;
+	mVU->copyPLState = armGetCurrentCodePointer();
+
+	armMoveAddressToReg(RXARG2, &mVU->prog.lpState); /* x1 = dest */
+	for (i = 0; i < 6; i++)
+	{
+		const a64r v = a64_vreg(i, 128, 1);
+		a64_ldr(armAsm, a64_as(v, A64K_Q), a64_mem_off(RXARG1, i * 16));
+		a64_str(armAsm, a64_as(v, A64K_Q), a64_mem_off(RXARG2, i * 16));
+	}
+	a64_ret(armAsm);
+}
+
+/* One 128-bit lanewise equality compare of the two states at off. */
+static void mVUcmpState16(int off, int dst, int t0, int t1)
+{
+	const a64r a = a64_vreg(t0, 128, 1), b = a64_vreg(t1, 128, 1);
+	a64_ldr(armAsm, a64_as(a, A64K_Q), a64_mem_off(RXARG1, off));
+	a64_ldr(armAsm, a64_as(b, A64K_Q), a64_mem_off(RXARG2, off));
+	a64_cmeq(armAsm, a64_as(a64_vreg(dst, 128, 1), A64K_4S), a64_as(a, A64K_4S), a64_as(b, A64K_4S));
+}
+
+/* Custom optimised block-search comparator: compares the two 96-byte
+ * microRegInfo blocks at x0 (lhs) and x1 (rhs); returns w0 = 0 iff fully equal
+ * (x86: mVUGenerateCompareState; the search treats 0 as a match). */
+static void mVUGenerateCompareState(microVU* mVU)
+{
+	mVU->compareStateF = armGetCurrentCodePointer();
+
+	/* 6 x 128-bit lanewise equality compares (0xffffffff per equal 32-bit lane),
+	 * AND-reduced into v0. */
+	mVUcmpState16(0x00, 0, 0, 1);
+	mVUcmpState16(0x10, 2, 2, 3);
+	mVUcmpState16(0x20, 4, 4, 5);
+	mVUcmpState16(0x30, 6, 6, 7);
+	a64_and(armAsm, a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(2, 128, 1), A64K_16B));
+	a64_and(armAsm, a64_as(a64_vreg(4, 128, 1), A64K_16B), a64_as(a64_vreg(4, 128, 1), A64K_16B), a64_as(a64_vreg(6, 128, 1), A64K_16B));
+	mVUcmpState16(0x40, 2, 2, 3);
+	mVUcmpState16(0x50, 6, 6, 7);
+	a64_and(armAsm, a64_as(a64_vreg(2, 128, 1), A64K_16B), a64_as(a64_vreg(2, 128, 1), A64K_16B), a64_as(a64_vreg(6, 128, 1), A64K_16B));
+	a64_and(armAsm, a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(4, 128, 1), A64K_16B));
+	a64_and(armAsm, a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(0, 128, 1), A64K_16B), a64_as(a64_vreg(2, 128, 1), A64K_16B));
+
+	/* v0 is all-ones iff every byte matched. Reduce: min byte == 0xff iff equal. */
+	a64_uminv(armAsm, a64_as(a64_vreg(1, 128, 1), A64K_B), a64_as(a64_vreg(0, 128, 1), A64K_16B));
+	a64_umov(armAsm, RWRET, a64_as(a64_vreg(1, 128, 1), A64K_16B), 0);
+	a64_eor_imm(armAsm, RWRET, RWRET, 0xff); /* 0 iff equal */
+	a64_ret(armAsm);
+}
+
+/* Emit the dispatchers + helper thunks at the start of the VU's code cache, then
+ * set codeStart/codePtr just past them (x86: x86Ptr = (u8*)(mVU->cache) + the five
+ * generate calls + xGetAlignedCallTarget in mVUreset). No constant pool: the
+ * dispatchers materialise addresses via adrp/mov and call C helpers via mov+blr. */
+static void mVUgenerateDispatchers(microVU* mVU)
+{
+	u8* end;
+	u8* const cacheEnd = mVU->prog.codeReserveEnd;
+	armSetAsmPtr(mVU->cache, ((size_t)(cacheEnd - mVU->cache)));
+	armStartBlock();
+
+	mVUdispatcherAB(mVU);
+	mVUdispatcherCD(mVU);
+	mVUemitExactMulStub(mVU);
+	mVUGenerateWaitMTVU(mVU);
+	mVUGenerateCopyPipelineState(mVU);
+	mVUGenerateCompareState(mVU);
+
+	memset(mVU->mscalMemo, 0, (mVU->progSize / 2) * sizeof(microMscalMemoA)); /* code region rebuilt: every memoized entry dies */
+	end = armEndBlock();
+	mVU->prog.codeStart = mVU->prog.codePtr =
+		((u8*)((((uintptr_t)(end)) + 15u) & ~((uintptr_t)(15))));
+}
+
+/* ------------------------------------------------------------------
+ * Execution / cleanup (microVU_Execute.inl 318-381)
+ * ------------------------------------------------------------------ */
+
+/* Executes for the given number of cycles: finds (compiling if needed) the
+ * microprogram for startPC and returns its host entry point. */
+static void* mVUexecute(int vuIndex, u32 startPC, u32 cycles)
+{
+	void* entry;
+	u32 vuLimit;
+	u32 spc;
+	microVU* mVU = vuIndex ? &microVU1 : &microVU0;
+	vuLimit = vuIndex ? 0x3ff8 : 0xff8;
+	if (startPC > vuLimit + 7)
+		log_cb(RETRO_LOG_WARN, "microVU%x Warning: startPC = 0x%x, cycles = 0x%x\n", vuIndex, startPC, cycles);
+
+	mVU->cycles = cycles;
+	mVU->totalCycles = cycles;
+
+	spc = startPC & vuLimit;
+
+	/* Fast path: if the microprogram + block for this (start_pc, startPC, pipeline
+	 * state) is already compiled, return its host entry directly and skip the emit
+	 * session below. armStartBlock/armEndBlock open and close an emitter
+	 * session, toggle W^X (Begin/EndCodeWrite), and flush the icache *on every
+	 * VU dispatch* -- pure overhead when nothing is emitted (x86 just bumps its global
+	 * emit cursor here, which is free). vuRegs[0]-heavy titles (e.g. Ratchet & Clank)
+	 * dispatch VU constantly with the cache already warm, so this wrapping dominated
+	 * the EE thread (profiled at ~50% of CPU-thread samples in armStartBlock/
+	 * armEndBlock, vs ~0 actually compiling). mVUclear/mVUreset NULL every
+	 * quick[i].prog, so a non-NULL quick.prog means the cache is valid; the slow path
+	 * populates it on the first (cold) lookup. Mirrors mVUsearchProg's quick-reference
+	 * hit path (and mVUentryGet's hit branch) exactly, minus the compile. */
+	{
+		microProgramQuick* quick = &(mVU->prog.quick[vuRegs[mVU->index].start_pc / 8]);
+		if (quick->prog && !mVU->prog.cleared)
+		{
+			microBlockManager* mgr = quick->prog->block[spc / 8];
+			if (mgr)
+			{
+				microBlock* b = mVUbm_search(mgr, mVU, (microRegInfo*)&mVU->prog.lpState);
+				if (b)
+				{
+					mVU->prog.isSame = -1;
+					mVU->prog.cur    = quick->prog;
+					quick->block     = mgr;
+					return b->codeStart;
+				}
+			}
+		}
+	}
+
+	/* Cold/compile path: open one emitter session at the program cursor for the
+	 * whole search/compile (the recursive mVUcompile/normBranch calls append into it);
+	 * armEndBlock finalises + flushes the icache so the freshly emitted code is safe to
+	 * branch into when the dispatcher does `br x0`. If the search still turns out to be
+	 * a hit, nothing is emitted and codePtr is unchanged (the fast path above usually
+	 * catches that case before paying for the session). */
+	armSetAsmPtr(mVU->prog.codePtr, mVU->prog.codeReserveEnd - mVU->prog.codePtr);
+	armStartBlock();
+	entry = mVUsearchProg(vuIndex, spc, (uptr)&mVU->prog.lpState);
+	mVU->prog.codePtr = armEndBlock();
+	return entry;
+}
+
+/* Post-execution bookkeeping: cache-limit reset + cycle accounting. */
+static void mVUcleanUp(int vuIndex)
+{
+	microVU* mVU = vuIndex ? &microVU1 : &microVU0;
+
+	/* The block compiler advanced mVU->prog.codePtr as it emitted; if it ran past
+	 * the cache limit, reset the program cache (x86 checks x86Ptr here). */
+	if ((mVU->prog.codePtr < mVU->prog.codeStart) || (mVU->prog.codePtr >= mVU->prog.codeEnd))
+	{
+		log_cb(RETRO_LOG_INFO, "microVU%d: Program cache limit reached.\n", mVU->index);
+		mVUreset(mVU, false);
+	}
+
+	mVU->cycles = mVU->totalCycles - mVUmax(0, mVU->cycles);
+	vuRegs[mVU->index].cycle += mVU->cycles;
+
+	if (!vuIndex || !THREAD_VU1)
+	{
+		u32 cycles_passed = mVUmin(mVU->cycles, 3000) * EmuConfig.Speedhacks.EECycleSkip;
+		if (cycles_passed > 0)
+		{
+			s64 vu0_offset = vuRegs[0].cycle - cpuRegs.cycle;
+			cpuRegs.cycle += cycles_passed;
+
+			/* vuRegs[0] needs to stay in sync with the CPU otherwise things get messy.
+			 * So we need to adjust when vuRegs[1] skips cycles also. */
+			if (!vuIndex)
+				vuRegs[0].cycle = cpuRegs.cycle + vu0_offset;
+			else
+				vuRegs[0].cycle += cycles_passed;
+		}
+	}
+}
+
+/* Caller wrappers (x86: microVU_Execute.inl 378-381) — the dispatcher branches
+ * to these by address. */
+static void* mVUexecuteVU0(u32 startPC, u32 cycles) { return mVUexecute(0, startPC, cycles); }
+static void* mVUexecuteVU1(u32 startPC, u32 cycles) { return mVUexecute(1, startPC, cycles); }
+static void  mVUcleanUpVU0(void) { mVUcleanUp(0); }
+static void  mVUcleanUpVU1(void) { mVUcleanUp(1); }
+
+/* ------------------------------------------------------------------
+ * Block compiler (Tables/Compile big-bang)
+ * ------------------------------------------------------------------
+ * The full emit-coupled compile driver: the per-instruction executors + D/T-bit /
+ * cycle-test early exits + register preloader + debug/bad-op emitters, then
+ * mVUcompile itself and the block entry points (mVUentryGet/mVUblockFetch/
+ * mVUcompileJIT). Included here — after the arch-neutral pass-1 helpers
+ * (mVUsetupRange/mVUincCycles/...) and mVUsearchProg above, which it calls — so
+ * every callee is already declared. The branch drivers it mutually recurses with
+ * live in aVU_Branch.inl (included earlier, with forward decls of mVUcompile).
+ * This replaces the former mVUblockFetch/mVUentryGet pxFailRel stubs. */
+#include "arm64/aVU_Compile.inl"
+#include "../Config.h"
+
+/* ------------------------------------------------------------------
+ * Build-time validation
+ * ------------------------------------------------------------------ */
+
+/* Layout the generated pipeline-state compare (compareStateF) relies on:
+ * the 96-byte microRegInfo is compared as six 16-byte vectors. */
+typedef char mVUregInfoSize[sizeof(microRegInfo) == 96 ? 1 : -1];

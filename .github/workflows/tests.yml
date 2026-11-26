@@ -161,7 +161,7 @@ jobs:
         run: |
           WINE=$(command -v wine || command -v wine64)
           export WINE
-          for t in a64emit baseblocks biosver dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d11device d3d11shadercache d3d11texture d3d12builders d3d12desc d3d12device d3d12shadercache d3d12stream d3d12texture d3dshader granitevk granitedebug gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics profiler ringheap settings swjit usbhid vkbuilders vkloader vkstream vktexture vtrace vuops; do
+          for t in a64emit a64vu baseblocks biosver dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d11device d3d11shadercache d3d11texture d3d12builders d3d12desc d3d12device d3d12shadercache d3d12stream d3d12texture d3dshader granitevk granitedebug gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics profiler ringheap settings swjit usbhid vkbuilders vkloader vkstream vktexture vtrace vuops; do
             echo "== $t"
             sh "tests/$t/build.sh"
           done
@@ -186,7 +186,7 @@ jobs:
           CC: aarch64-linux-gnu-gcc
           CXX: aarch64-linux-gnu-g++
         run: |
-          for t in a64emit baseblocks dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d12desc d3d12stream granitevk granitedebug gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics ringheap settings usbhid vkbuilders vkdevice vkloader vkstream vktexture vtrace; do
+          for t in a64emit a64vu baseblocks dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d12desc d3d12stream granitevk granitedebug gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics ringheap settings usbhid vkbuilders vkdevice vkloader vkstream vktexture vtrace; do
             echo "== $t"
             sh "tests/$t/build.sh"
           done

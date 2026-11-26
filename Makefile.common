@@ -410,9 +410,8 @@ SOURCES_C += \
 	$(LRPS2_DIR)/arm64/Vif_UnpackNEON.c \
 	$(LRPS2_DIR)/arm64/Vif_Dynarec_arm64.c \
 	$(LRPS2_DIR)/arm64/recR3000A_arm64.c \
-	$(LRPS2_DIR)/arm64/recR5900_arm64.c
-SOURCES_CXX += \
-	$(LRPS2_DIR)/arm64/aVU.cpp
+	$(LRPS2_DIR)/arm64/recR5900_arm64.c \
+	$(LRPS2_DIR)/arm64/aVU.c
 else
 # pcsx2/x86 (recompilers), all C.
 SOURCES_C += \

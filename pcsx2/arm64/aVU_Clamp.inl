@@ -1,92 +1,92 @@
-// SPDX-FileCopyrightText: 2026 isztld <https://isztld.com/>
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: GPL-3.0+
+/* SPDX-FileCopyrightText: 2026 isztld <https://isztld.com/>
+ * SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
+ * SPDX-License-Identifier: GPL-3.0+ */
 
 #pragma once
 
-// ARM64 microVU recompiler — operand/result clamp helpers (Phase 7, task 7.5).
-//
-// AArch64 port of pcsx2/x86/microVU_Clamp.inl (mVUclamp1..4). The VU recs clamp
-// float operands/results into the representable single-precision range to mirror
-// the PS2 VU's saturation behaviour. Two clamp flavours:
-//   * range clamp (mVUclamp1) — MIN/MAX against ±0x7f7fffff (largest finite
-//     magnitude). x86 MINPS/MAXPS return the *number* when one operand is NaN, so
-//     NaN results collapse to +fmax; the matching NEON op is FMINNM/FMAXNM (the
-//     IEEE minNum/maxNum that keep the number, unlike FMIN/FMAX which propagate
-//     NaN). Sign of NaN is deliberately not preserved (see x86 comment).
-//   * sign-preserving clamp (mVUclamp2) — integer PMINSD/PMINUD on the float bit
-//     pattern → NEON Smin/Umin (V4S). Preserves the sign of NaNs.
-//
-// Translations vs x86:
-//   * reg.Id -> reg.GetCode(); the regT1 param is the caller-provided NEON scratch
-//     used to hold the loaded constant vector (x86 folded it as a memory operand).
-//   * absolute `ptr128[&const]` -> armMoveAddressToReg(RSCRATCHADDR,..) + Ldr(.Q()).
-//   * single-subvector (SS) clamps operate on lane0 (.S()); in the microVU SS model
-//     the live value sits in lane0 and the upper lanes are scratch, so the NEON
-//     scalar-op upper-lane zeroing (vs x86 xMIN.SS preserving them) is benign.
+/* ARM64 microVU recompiler — operand/result clamp helpers (Phase 7, task 7.5).
+ *
+ * AArch64 port of pcsx2/x86/microVU_Clamp.inl (mVUclamp1..4). The VU recs clamp
+ * float operands/results into the representable single-precision range to mirror
+ * the PS2 VU's saturation behaviour. Two clamp flavours:
+ * * range clamp (mVUclamp1) — MIN/MAX against ±0x7f7fffff (largest finite
+ * magnitude). x86 MINPS/MAXPS return the *number* when one operand is NaN, so
+ * NaN results collapse to +fmax; the matching NEON op is FMINNM/FMAXNM (the
+ * IEEE minNum/maxNum that keep the number, unlike FMIN/FMAX which propagate
+ * NaN). Sign of NaN is deliberately not preserved (see x86 comment).
+ * * sign-preserving clamp (mVUclamp2) — integer PMINSD/PMINUD on the float bit
+ * pattern → NEON Smin/Umin (V4S). Preserves the sign of NaNs.
+ *
+ * Translations vs x86:
+ * * reg.Id -> reg.GetCode(); the regT1 param is the caller-provided NEON scratch
+ * used to hold the loaded constant vector (x86 folded it as a memory operand).
+ * * absolute `ptr128[&const]` -> armMoveAddressToReg(RSCRATCHADDR,..) + Ldr(.Q()).
+ * * single-subvector (SS) clamps operate on lane0 (.S()); in the microVU SS model
+ * the live value sits in lane0 and the upper lanes are scratch, so the NEON
+ * scalar-op upper-lane zeroing (vs x86 xMIN.SS preserving them) is benign. */
 
-//------------------------------------------------------------------
-// Sign-overflow clamp tables (x86: microVU_Clamp.inl sse4_min/maxvals).
-// [0] = 1000 (only lane0/X differs), [1] = 1111 (all lanes).
-//------------------------------------------------------------------
-alignas(16) static const u32 sse4_minvals[2][4] = {
-	{0xff7fffff, 0xffffffff, 0xffffffff, 0xffffffff}, //1000
-	{0xff7fffff, 0xff7fffff, 0xff7fffff, 0xff7fffff}, //1111
+/* ------------------------------------------------------------------
+ * Sign-overflow clamp tables (x86: microVU_Clamp.inl sse4_min/maxvals).
+ * [0] = 1000 (only lane0/X differs), [1] = 1111 (all lanes).
+ * ------------------------------------------------------------------ */
+PCSX2_ALIGN(16) static const u32 sse4_minvals[2][4] = {
+	{0xff7fffff, 0xffffffff, 0xffffffff, 0xffffffff}, /* 1000 */
+	{0xff7fffff, 0xff7fffff, 0xff7fffff, 0xff7fffff}, /* 1111 */
 };
-alignas(16) static const u32 sse4_maxvals[2][4] = {
-	{0x7f7fffff, 0x7fffffff, 0x7fffffff, 0x7fffffff}, //1000
-	{0x7f7fffff, 0x7f7fffff, 0x7f7fffff, 0x7f7fffff}, //1111
+PCSX2_ALIGN(16) static const u32 sse4_maxvals[2][4] = {
+	{0x7f7fffff, 0x7fffffff, 0x7fffffff, 0x7fffffff}, /* 1000 */
+	{0x7f7fffff, 0x7f7fffff, 0x7f7fffff, 0x7f7fffff}, /* 1111 */
 };
 
-// Result clamping. NaN sign is not preserved (collapses to +fmax).
-static void mVUclamp1(mV, const a64r& reg, const a64r& regT1in, int xyzw, bool bClampE = false)
+/* Result clamping. NaN sign is not preserved (collapses to +fmax). */
+static void mVUclamp1(mV, a64r reg, a64r regT1in, int xyzw, bool bClampE)
 {
-	if (((!clampE && CHECK_VU_OVERFLOW(mVU.index)) || (clampE && bClampE)) && mVU.regAlloc->checkVFClamp(A64_CODE(reg)))
+	if (((!clampE && CHECK_VU_OVERFLOW(mVU->index)) || (clampE && bClampE)) && mVUra_checkVFClamp(mVU->regAlloc, A64_CODE(reg)))
 	{
-		// The constant must be loaded into a real NEON scratch. Unlike x86 (which
-		// folds ±fmax as a memory operand), ARM64 needs a register. Callers may pass
-		// xEmptyReg, so fall back to the reserved scratch (RQSCRATCH) — using a bogus
-		// register here aliased the value reg and collapsed it to -FLT_MAX.
+		/* The constant must be loaded into a real NEON scratch. Unlike x86 (which
+		 * folds ±fmax as a memory operand), ARM64 needs a register. Callers may pass
+		 * xEmptyReg, so fall back to the reserved scratch (RQSCRATCH) — using a bogus
+		 * register here aliased the value reg and collapsed it to -FLT_MAX. */
 		const a64r regT1 = !A64_ISREG(regT1in) ? RQSCRATCH : regT1in;
 		const bool ss = (xyzw == 1) || (xyzw == 2) || (xyzw == 4) || (xyzw == 8);
 
-		// AArch64 scalar FP (Fminnm/Fmaxnm on .S()) writes Sd and ZEROES Vd[127:32]. For a
-		// plain SS op the upper lanes are scratch, but the macro/ACC SS accumulate path
-		// (mVU_FMACb/c) shuffles the active lane into lane0, so the upper lanes hold LIVE
-		// data — the other ACC lanes — which must survive. Doing the scalar clamp in place
-		// wiped them (SC2 matrix MADDA under VU0 clamp mode 2 zeroed ACC.x → wrong EE-side
-		// rotation). Clamp lane0 in a scratch and merge it back, preserving the upper lanes
-		// (matches the mVUclampedArith SS fix and x86 xMIN.SS, which preserves them).
-		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, mVU.glob.maxvals, 16));
+		/* AArch64 scalar FP (Fminnm/Fmaxnm on .S()) writes Sd and ZEROES Vd[127:32]. For a
+		 * plain SS op the upper lanes are scratch, but the macro/ACC SS accumulate path
+		 * (mVU_FMACb/c) shuffles the active lane into lane0, so the upper lanes hold LIVE
+		 * data — the other ACC lanes — which must survive. Doing the scalar clamp in place
+		 * wiped them (SC2 matrix MADDA under vuRegs[0] clamp mode 2 zeroed ACC.x → wrong EE-side
+		 * rotation). Clamp lane0 in a scratch and merge it back, preserving the upper lanes
+		 * (matches the mVUclampedArith SS fix and x86 xMIN.SS, which preserves them). */
+		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, mVU->glob.maxvals, 16));
 		if (ss)
 			a64_fminnm(armAsm, a64_as(RQSCRATCH2, A64K_S), a64_as(reg, A64K_S), a64_as(regT1, A64K_S));
 		else
 			a64_fminnm(armAsm, a64_as(reg, A64K_4S), a64_as(reg, A64K_4S), a64_as(regT1, A64K_4S));
 
-		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, mVU.glob.minvals, 16));
+		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, mVU->glob.minvals, 16));
 		if (ss)
 		{
 			a64_fmaxnm(armAsm, a64_as(RQSCRATCH2, A64K_S), a64_as(RQSCRATCH2, A64K_S), a64_as(regT1, A64K_S));
-			a64_ins_elem(armAsm, a64_as(reg, A64K_4S), 0, a64_as(RQSCRATCH2, A64K_4S), 0); // merge lane0; reg's upper lanes survive
+			a64_ins_elem(armAsm, a64_as(reg, A64K_4S), 0, a64_as(RQSCRATCH2, A64K_4S), 0); /* merge lane0; reg's upper lanes survive */
 		}
 		else
 			a64_fmaxnm(armAsm, a64_as(reg, A64K_4S), a64_as(reg, A64K_4S), a64_as(regT1, A64K_4S));
 	}
 }
 
-// Operand clamping (sign-preserving when sign-overflow clamp is enabled).
-static void mVUclamp2(mV, const a64r& reg, const a64r& regT1in, int xyzw, bool bClampE = false)
+/* Operand clamping (sign-preserving when sign-overflow clamp is enabled). */
+static void mVUclamp2(mV, a64r reg, a64r regT1in, int xyzw, bool bClampE)
 {
-	if (((!clampE && CHECK_VU_SIGN_OVERFLOW(mVU.index)) || (clampE && bClampE && CHECK_VU_SIGN_OVERFLOW(mVU.index))) && mVU.regAlloc->checkVFClamp(A64_CODE(reg)))
+	if (((!clampE && CHECK_VU_SIGN_OVERFLOW(mVU->index)) || (clampE && bClampE && CHECK_VU_SIGN_OVERFLOW(mVU->index))) && mVUra_checkVFClamp(mVU->regAlloc, A64_CODE(reg)))
 	{
-		// See mVUclamp1: a real scratch is required for the constant load.
+		/* See mVUclamp1: a real scratch is required for the constant load. */
 		const a64r regT1 = !A64_ISREG(regT1in) ? RQSCRATCH : regT1in;
 		const int i = ((xyzw == 1) || (xyzw == 2) || (xyzw == 4) || (xyzw == 8)) ? 0 : 1;
 
-		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, &mVU.sse4Max[i][0], 16));
+		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, &mVU->sse4Max[i][0], 16));
 		a64_smin(armAsm, a64_as(reg, A64K_4S), a64_as(reg, A64K_4S), a64_as(regT1, A64K_4S));
 
-		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, &mVU.sse4Min[i][0], 16));
+		a64_ldr(armAsm, a64_as(regT1, A64K_Q), mvuAbsMem(mVU, &mVU->sse4Min[i][0], 16));
 		a64_umin(armAsm, a64_as(reg, A64K_4S), a64_as(reg, A64K_4S), a64_as(regT1, A64K_4S));
 		return;
 	}
@@ -94,17 +94,17 @@ static void mVUclamp2(mV, const a64r& reg, const a64r& regT1in, int xyzw, bool b
 		mVUclamp1(mVU, reg, regT1in, xyzw, bClampE);
 }
 
-// Operand clamp on every SSE-equivalent arithmetic instruction (add/sub/mul/div).
-static void mVUclamp3(mV, const a64r& reg, const a64r& regT1, int xyzw)
+/* Operand clamp on every SSE-equivalent arithmetic instruction (add/sub/mul/div). */
+static void mVUclamp3(mV, a64r reg, a64r regT1, int xyzw)
 {
-	if (clampE && mVU.regAlloc->checkVFClamp(A64_CODE(reg)))
+	if (clampE && mVUra_checkVFClamp(mVU->regAlloc, A64_CODE(reg)))
 		mVUclamp2(mVU, reg, regT1, xyzw, true);
 }
 
-// Result clamp on every SSE-equivalent arithmetic instruction. Disabled in
-// "preserve sign" mode (operands already clamped by mVUclamp3); precaution only.
-static void mVUclamp4(mV, const a64r& reg, const a64r& regT1, int xyzw)
+/* Result clamp on every SSE-equivalent arithmetic instruction. Disabled in
+ * "preserve sign" mode (operands already clamped by mVUclamp3); precaution only. */
+static void mVUclamp4(mV, a64r reg, a64r regT1, int xyzw)
 {
-	if (clampE && !CHECK_VU_SIGN_OVERFLOW(mVU.index) && mVU.regAlloc->checkVFClamp(A64_CODE(reg)))
+	if (clampE && !CHECK_VU_SIGN_OVERFLOW(mVU->index) && mVUra_checkVFClamp(mVU->regAlloc, A64_CODE(reg)))
 		mVUclamp1(mVU, reg, regT1, xyzw, true);
 }

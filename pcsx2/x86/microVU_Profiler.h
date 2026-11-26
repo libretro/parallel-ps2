@@ -83,24 +83,7 @@ static const char microOpcodeName[][16] = {
 	"EEXP", "XITOP", "XTOP", "XGKICK"
 };
 
-/* The opcode profiler is a no-op, and has to be.
- *
- * Its counting variant emitted x86 instructions directly (add/adc to a pair
- * of counters, then a report at Print()), but this header is now included
- * only by pcsx2/arm64/aVU.h -- the x86 microVU struct has no profiler member
- * -- so defining mVUprofileProg would put x86 encodings into the aarch64
- * recompiler and fail to build. Rather than keep a variant that cannot
- * compile where it is used, the counters are gone and the interface stays.
- *
- * Restoring it means one arch-appropriate EmitOp (two increments against
- * opStats[op]) plus a profiler member on whichever microVU struct wants it;
- * microOpcodeName above is still here and is used by the arm64 disassembly
- * logger regardless.
- */
-typedef struct microProfiler
-{
-	__fi void Reset(int _index) {}
-	__fi void EmitOp(microOpcode op) {}
-	__fi void Print() {}
-} microProfiler;
+/* The opcode profiler's counters are gone (they emitted x86 instructions
+ * and this header is now read only by pcsx2/arm64/aVU.h); the opcode enum
+ * and microOpcodeName stay for the arm64 disassembly logger. */
 

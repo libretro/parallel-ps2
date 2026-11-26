@@ -1,48 +1,48 @@
-// SPDX-FileCopyrightText: 2026 isztld <https://isztld.com/>
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-License-Identifier: GPL-3.0+
+/* SPDX-FileCopyrightText: 2026 isztld <https://isztld.com/>
+ * SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
+ * SPDX-License-Identifier: GPL-3.0+ */
 
 #pragma once
 
-// ARM64 microVU — opcode dispatch tables (Phase 7, Tables/Compile big-bang).
-//
-// AArch64 port of pcsx2/x86/microVU_Tables.inl, but **minimal**: only the handlers
-// that exist today (NOP in the Upper, B/BAL in the Lower) are wired; every other
-// table slot routes to mVUunknown. As the real opcode handlers land (7.5a Upper,
-// 7.5b Lower) their table slots get swapped from mVUunknown to the real fn, and
-// the FD_xx / LowerOP / T3_xx sub-dispatch tables get filled in then.
-//
-// The two top-level dispatchers mVUopU / mVUopL are what the flag read-scan
-// (_mVUflagPass, aVU_Flags.inl) and the compile driver (doUpperOp/doLowerOp,
-// mVUcompile) call. They live in the same aVU.cpp TU, so static linkage is fine,
-// but this .inl must be #included *before* aVU_Flags.inl's read-scan.
+/* ARM64 microVU — opcode dispatch tables (Phase 7, Tables/Compile big-bang).
+ *
+ * AArch64 port of pcsx2/x86/microVU_Tables.inl, but **minimal**: only the handlers
+ * that exist today (NOP in the Upper, B/BAL in the Lower) are wired; every other
+ * table slot routes to mVUunknown. As the real opcode handlers land (7.5a Upper,
+ * 7.5b Lower) their table slots get swapped from mVUunknown to the real fn, and
+ * the FD_xx / LowerOP / T3_xx sub-dispatch tables get filled in then.
+ *
+ * The two top-level dispatchers mVUopU / mVUopL are what the flag read-scan
+ * (_mVUflagPass, aVU_Flags.inl) and the compile driver (doUpperOp/doLowerOp,
+ * mVUcompile) call. They live in the same aVU.c TU, so static linkage is fine,
+ * but this .inl must be #included *before* aVU_Flags.inl's read-scan. */
 
-//------------------------------------------------------------------
-// Implemented opcode handlers
-//------------------------------------------------------------------
-// The full Upper ISA (+ mVU_NOP) lives in aVU_Upper.inl and the full Lower ISA
-// (incl. setBranchA, mVU_B/mVU_BAL, the FMAC-table sub-dispatch, and every
-// integer/load-store/EFU/flag/branch handler) lives in aVU_Lower.inl — both are
-// #included before this file. This file only owns the dispatch tables.
+/* ------------------------------------------------------------------
+ * Implemented opcode handlers
+ * ------------------------------------------------------------------
+ * The full Upper ISA (+ mVU_NOP) lives in aVU_Upper.inl and the full Lower ISA
+ * (incl. setBranchA, mVU_B/mVU_BAL, the FMAC-table sub-dispatch, and every
+ * integer/load-store/EFU/flag/branch handler) lives in aVU_Lower.inl — both are
+ * #included before this file. This file only owns the dispatch tables. */
 
 mVUop(mVUunknown)
 {
 	pass1
 	{
-		if (mVU.code != 0x8000033c)
+		if (mVU->code != 0x8000033c)
 			mVUinfo.isBadOp = true;
 	}
 	pass2
 	{
-		if (mVU.code != 0x8000033c)
-			log_cb(RETRO_LOG_ERROR, "microVU%d: Unknown Micro VU opcode called (%x) [%04x]\n\n", getIndex, mVU.code, xPC);
+		if (mVU->code != 0x8000033c)
+			log_cb(RETRO_LOG_ERROR, "microVU%d: Unknown Micro VU opcode called (%x) [%04x]\n\n", getIndex, mVU->code, xPC);
 	}
-	pass3 { mVUlog("Unknown", mVU.code); }
+	pass3 {  }
 }
 
-//------------------------------------------------------------------
-// Sub-dispatch declarations
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------
+ * Sub-dispatch declarations
+ * ------------------------------------------------------------------ */
 mVUop(mVU_UPPER_FD_00);
 mVUop(mVU_UPPER_FD_01);
 mVUop(mVU_UPPER_FD_10);
@@ -53,9 +53,9 @@ mVUop(mVULowerOP_T3_01);
 mVUop(mVULowerOP_T3_10);
 mVUop(mVULowerOP_T3_11);
 
-//------------------------------------------------------------------
-// Opcode tables — every unimplemented slot is mVUunknown
-//------------------------------------------------------------------
+/* ------------------------------------------------------------------
+ * Opcode tables — every unimplemented slot is mVUunknown
+ * ------------------------------------------------------------------ */
 #define U mVUunknown
 
 static const Fnptr_mVUrecInst mVULOWER_OPCODE[128] = {
@@ -221,17 +221,17 @@ static const Fnptr_mVUrecInst mVU_UPPER_FD_11_TABLE[32] = {
 
 #undef U
 
-//------------------------------------------------------------------
-// Table dispatch functions
-//------------------------------------------------------------------
-mVUop(mVU_UPPER_FD_00) { mVU_UPPER_FD_00_TABLE[((mVU.code >> 6) & 0x1f)](mX); }
-mVUop(mVU_UPPER_FD_01) { mVU_UPPER_FD_01_TABLE[((mVU.code >> 6) & 0x1f)](mX); }
-mVUop(mVU_UPPER_FD_10) { mVU_UPPER_FD_10_TABLE[((mVU.code >> 6) & 0x1f)](mX); }
-mVUop(mVU_UPPER_FD_11) { mVU_UPPER_FD_11_TABLE[((mVU.code >> 6) & 0x1f)](mX); }
-mVUop(mVULowerOP)       { mVULowerOP_OPCODE       [ (mVU.code & 0x3f) ](mX); }
-mVUop(mVULowerOP_T3_00) { mVULowerOP_T3_00_OPCODE [((mVU.code >> 6) & 0x1f)](mX); }
-mVUop(mVULowerOP_T3_01) { mVULowerOP_T3_01_OPCODE [((mVU.code >> 6) & 0x1f)](mX); }
-mVUop(mVULowerOP_T3_10) { mVULowerOP_T3_10_OPCODE [((mVU.code >> 6) & 0x1f)](mX); }
-mVUop(mVULowerOP_T3_11) { mVULowerOP_T3_11_OPCODE [((mVU.code >> 6) & 0x1f)](mX); }
-mVUop(mVUopU)          { mVU_UPPER_OPCODE     [ (mVU.code & 0x3f) ](mX); } // Upper Opcode
-mVUop(mVUopL)          { mVULOWER_OPCODE      [ (mVU.code >>  25) ](mX); } // Lower Opcode
+/* ------------------------------------------------------------------
+ * Table dispatch functions
+ * ------------------------------------------------------------------ */
+mVUop(mVU_UPPER_FD_00) { mVU_UPPER_FD_00_TABLE[((mVU->code >> 6) & 0x1f)](mX); }
+mVUop(mVU_UPPER_FD_01) { mVU_UPPER_FD_01_TABLE[((mVU->code >> 6) & 0x1f)](mX); }
+mVUop(mVU_UPPER_FD_10) { mVU_UPPER_FD_10_TABLE[((mVU->code >> 6) & 0x1f)](mX); }
+mVUop(mVU_UPPER_FD_11) { mVU_UPPER_FD_11_TABLE[((mVU->code >> 6) & 0x1f)](mX); }
+mVUop(mVULowerOP)       { mVULowerOP_OPCODE       [ (mVU->code & 0x3f) ](mX); }
+mVUop(mVULowerOP_T3_00) { mVULowerOP_T3_00_OPCODE [((mVU->code >> 6) & 0x1f)](mX); }
+mVUop(mVULowerOP_T3_01) { mVULowerOP_T3_01_OPCODE [((mVU->code >> 6) & 0x1f)](mX); }
+mVUop(mVULowerOP_T3_10) { mVULowerOP_T3_10_OPCODE [((mVU->code >> 6) & 0x1f)](mX); }
+mVUop(mVULowerOP_T3_11) { mVULowerOP_T3_11_OPCODE [((mVU->code >> 6) & 0x1f)](mX); }
+mVUop(mVUopU)          { mVU_UPPER_OPCODE     [ (mVU->code & 0x3f) ](mX); } /* Upper Opcode */
+mVUop(mVUopL)          { mVULOWER_OPCODE      [ (mVU->code >>  25) ](mX); } /* Lower Opcode */

@@ -35,7 +35,7 @@
 #include "arm64/aBlocks.h"
 
 /* C.30-2: native COP2 macro emission -- the vendored aVU_Macro entry points
- * (aVU.cpp TU) + the AsmHelpers thread-locals its emitters write through, and
+ * (aVU.c TU) + the AsmHelpers thread-locals its emitters write through, and
  * the analysis-flag plumbing they gate on. */
 #include "arm64/AsmHelpers.h"
 #include "arm64/aR5900Analysis.h"

@@ -149,10 +149,10 @@ static bool EmitSelfTest(void)
 static INLINE a64r IopCacheW(int slot) { return A64_W(22 + slot); }
 typedef struct IopRegCache
 {
-	bool dirty[kIopCacheSlots];
-	u8 rr;
 	int8_t host_of[32];
 	int8_t guest_of[kIopCacheSlots];
+	bool   dirty[kIopCacheSlots];
+	u8 rr;
 } IopRegCache;
 static IopRegCache s_irc;
 static void IrcReset(void)

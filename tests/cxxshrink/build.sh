@@ -25,7 +25,14 @@ c_reach() {
 		xargs -0 -n 8 -P "${JOBS:-4}" ${CC:-gcc} -std=gnu89 -DNDEBUG -msse4.1 $FEAT $INC -MM -MG 2>/dev/null) |
 		tr ' \\' '\n\n' | grep -E '\.(h|inl)$' | grep -v '^/usr' |
 		xargs -r realpath -m --relative-to="$1" | cat - "$TMP/units" | LC_ALL=C sort -u |
-		while read -r f; do [ -f "$1/$f" ] && echo "$f"; done > "$TMP/reach"
+		existing "$1" > "$TMP/reach"
+}
+
+# The names on stdin that are files under $1. An if, not `[ ] && echo`:
+# that body hands the loop a failure whenever the last name is one -MG
+# made up, and set -e ends the run there without a word.
+existing() {
+	while read -r f; do if [ -f "$1/$f" ]; then echo "$f"; fi; done
 }
 
 # C++ sources: the C++ extensions, and .inl files no C unit includes.
@@ -86,13 +93,16 @@ if [ -n "$HITS" ]; then
 fi
 echo "  none"
 
-echo "== negative: a new C++ unit and a stale entry are caught =="
+echo "== negative: a new C++ unit and a stale entry are caught, a made-up name is not =="
 { cat "$TMP/found"; echo pcsx2/arm64/recR5900_arm64.cpp; } | LC_ALL=C sort > "$TMP/grown"
 if compare "$TMP/grown" "$LIST" > "$TMP/out"; then echo "  FAIL: a new .cpp passed"; exit 1; fi
 grep -q 'recR5900_arm64.cpp is C++' "$TMP/out" || { cat "$TMP/out"; exit 1; }
 sed 1d "$TMP/found" > "$TMP/shrunk"
 if compare "$TMP/shrunk" "$LIST" > "$TMP/out"; then echo "  FAIL: a stale entry passed"; exit 1; fi
 grep -q 'is gone' "$TMP/out" || { cat "$TMP/out"; exit 1; }
+printf 'pcsx2/Config.h\nzz/made-up-by-MG.h\n' > "$TMP/names"
+existing "$ROOT" < "$TMP/names" > "$TMP/kept" || { echo "  FAIL: a missing last name failed the filter"; exit 1; }
+[ "$(cat "$TMP/kept")" = pcsx2/Config.h ] || { echo "  FAIL: the filter kept $(cat "$TMP/kept")"; exit 1; }
 printf 'int a; /* ok // */\nconst char* s = "http://x";\nint b; // no\n' > "$TMP/t.c"
 line_comments "$TMP/t.c" | grep -q 't.c:3' || { echo "  FAIL: a // comment passed"; exit 1; }
 echo "  ok"
