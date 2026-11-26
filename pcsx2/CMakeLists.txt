@@ -912,8 +912,8 @@ if(NOT _M_X86)
 	# JitHash.c is portable: on non-x86 it compiles to the exported
 	# pcsx2_jithash_dump stub that libretro/main.c calls unconditionally
 	# from retro_deinit. Dropping it from this list is an aarch64 link error.
-	set(pcsx2x86Sources x86/CpuState.c x86/JitHash.c arm64/a64emit.c arm64/recR3000A_arm64.cpp arm64/recR5900_arm64.cpp
-		arm64/aVU.cpp arm64/AsmHelpers.cpp arm64/Vif_UnpackNEON.cpp arm64/Vif_Dynarec_arm64.cpp)
+	set(pcsx2x86Sources x86/CpuState.c x86/JitHash.c arm64/a64emit.c arm64/AsmHelpers.c arm64/aBlocks.c arm64/Vif_UnpackNEON.c arm64/Vif_Dynarec_arm64.c arm64/recR3000A_arm64.c arm64/recR5900_arm64.c
+		arm64/aVU.cpp)
 	set(pcsx2x86Headers)
 endif()
 

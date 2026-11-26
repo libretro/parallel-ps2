@@ -17,8 +17,8 @@
  *  into nested members (CP0.n.Status, GPR.r[n]) are skipped.
  *
  *  Usage: tests/ee/cyclewidth <header> <struct> <var> <recompiler.cpp>
- *    e.g. R5900.h cpuRegisters cpuRegs recR5900_arm64.cpp
- *         R3000A.h psxRegisters psxRegs recR3000A_arm64.cpp
+ *    e.g. R5900.h cpuRegisters cpuRegs recR5900_arm64.c
+ *         R3000A.h psxRegisters psxRegs recR3000A_arm64.c
  */
 
 #include <ctype.h>

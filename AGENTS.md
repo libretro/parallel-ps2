@@ -8,9 +8,11 @@ section that covers the code you touch before touching it.
 - **C89 for new code.** New code is C89 that MSVC compiles: `/* */`
   comments, declarations at the top of a block, no C99 or C11 in a C
   unit. C++ that new code plugs into is rewritten as C89 with it, and
-  the C++ in the core is going away. A header a C unit reaches compiles
-  as C89 and as C++ (`tests/cheaders`); C and C++ units agree on each
-  other's symbols (`tests/clinkage`).
+  the C++ in the core is going away: `tests/cxxshrink` lists what is
+  left, fails on a new C++ source and makes a conversion drop its line.
+  A header a C unit reaches compiles as C89 and as C++
+  (`tests/cheaders`); C and C++ units agree on each other's symbols
+  (`tests/clinkage`).
 - **No locks.** Threads hand work over through atomics, SPSC rings and
   eventcount park/wake. A mutex added to fix a race is the wrong fix:
   give the state one owner (see Ownership).

@@ -221,6 +221,9 @@ typedef struct VIFregistersMTVU {
 #define VIF_X(n)     ((n) ? &vif1 : &vif0)
 #define VIF_XCH(n)   ((n) ? &vif1ch : &vif0ch)
 #define VIF_XREGS(n) ((n) ? &vif1Regs : &vif0Regs)
+/* MTVU_VifX / MTVU_VifXRegs as pointers (needs MTVU.h). */
+#define MTVU_VIF_X(n)     ((n) ? ((THREAD_VU1) ? &vu1Thread.vif : &vif1) : &vif0)
+#define MTVU_VIF_XREGS(n) ((n) ? ((THREAD_VU1) ? &vu1Thread.vifRegs : &vif1Regs) : &vif0Regs)
 
 /* Vif0_Dma.cpp, Vif1_Dma.cpp; Dmac.c starts them. */
 #ifdef __cplusplus

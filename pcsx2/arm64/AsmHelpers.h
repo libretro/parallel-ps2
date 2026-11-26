@@ -1,14 +1,15 @@
-// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
-// SPDX-FileCopyrightText: 2026 isztld <https://isztld.com/>
-// SPDX-License-Identifier: GPL-3.0
+/* SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
+ * SPDX-FileCopyrightText: 2026 isztld <https://isztld.com/>
+ * SPDX-License-Identifier: GPL-3.0 */
 
-#pragma once
+#ifndef ARM64_ASMHELPERS_H
+#define ARM64_ASMHELPERS_H
+
+#include <stddef.h>
 
 #include "common/Pcsx2Defs.h"
 #include "arm64/ArmCompat.h"
 #include "arm64/a64emit.h"
-
-#include <unordered_map>
 
 #define RWRET A64_W(0)
 #define RXRET A64_X(0)
@@ -47,88 +48,67 @@
 #define RQSCRATCH2F A64_V4S(31)
 #define RQSCRATCH2D A64_V2D(31)
 
-static inline s64 GetPCDisplacement(const void* current, const void* target)
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+static INLINE s64 GetPCDisplacement(const void* current, const void* target)
 {
-	return static_cast<s64>((reinterpret_cast<ptrdiff_t>(target) - reinterpret_cast<ptrdiff_t>(current)) >> 2);
+	return (s64)(((ptrdiff_t)target - (ptrdiff_t)current) >> 2);
 }
 
-static __fi a64r armWRegister(int n) { return A64_W(n); }
-static __fi a64r armXRegister(int n) { return A64_X(n); }
-static __fi a64r armSRegister(int n) { return A64_S(n); }
-static __fi a64r armDRegister(int n) { return A64_D(n); }
-static __fi a64r armQRegister(int n) { return A64_Q(n); }
-
-class ArmConstantPool;
+static INLINE a64r armWRegister(int n) { return A64_W(n); }
+static INLINE a64r armXRegister(int n) { return A64_X(n); }
+static INLINE a64r armSRegister(int n) { return A64_S(n); }
+static INLINE a64r armDRegister(int n) { return A64_D(n); }
+static INLINE a64r armQRegister(int n) { return A64_Q(n); }
 
 static const u32 SP_SCRATCH_OFFSET = 0;
 
-extern thread_local a64_emit* armAsm PCSX2_TLS_INITIAL_EXEC;
-extern thread_local u8* armAsmPtr PCSX2_TLS_INITIAL_EXEC;
-extern thread_local size_t armAsmCapacity PCSX2_TLS_INITIAL_EXEC;
-extern thread_local ArmConstantPool* armConstantPool PCSX2_TLS_INITIAL_EXEC;
+/* The emitter of the block being compiled on this thread (MTVU compiles VU1
+ * on its own), and where the next block goes. */
+extern PCSX2_THREAD_LOCAL a64_emit* armAsm PCSX2_TLS_INITIAL_EXEC;
+extern PCSX2_THREAD_LOCAL u8* armAsmPtr PCSX2_TLS_INITIAL_EXEC;
+extern PCSX2_THREAD_LOCAL size_t armAsmCapacity PCSX2_TLS_INITIAL_EXEC;
 
-static __fi bool armHasBlock()
-{
-	return (armAsm != nullptr);
-}
+static INLINE bool armHasBlock(void) { return armAsm != NULL; }
+static INLINE u8* armGetCurrentCodePointer(void) { return a64_cursor(armAsm); }
+static INLINE u8* armGetAsmPtr(void) { return armAsmPtr; }
 
-static __fi u8* armGetCurrentCodePointer()
-{
-	return a64_cursor(armAsm);
-}
+void armSetAsmPtr(void* ptr, size_t capacity);
+void armAlignAsmPtr(void);
+u8* armStartBlock(void);
+u8* armEndBlock(void);
 
-__fi static u8* armGetAsmPtr()
-{
-	return armAsmPtr;
-}
-
-void armSetAsmPtr(void* ptr, size_t capacity, ArmConstantPool* pool);
-void armAlignAsmPtr();
-u8* armStartBlock();
-u8* armEndBlock();
-
-void armEmitJmp(const void* ptr, bool force_inline = false);
-void armEmitCall(const void* ptr, bool force_inline = false);
-// In-place patch: overwrite the 4-byte B at `code_address` with a branch to
-// `target`. Used by the fastmem SIGSEGV backpatch to redirect a faulting Ldr/Str
-// to its slow-path thunk (code_address is not tied to the current emit cursor).
-// `code_address` must already hold a single 4-byte instruction; target must be
-// within +/-128 MB (B imm26 range).
-void armEmitJmpPtr(void* code_address, const void* target, bool flush_icache = true);
+void armEmitJmp(const void* ptr);
+void armEmitCall(const void* ptr);
+/* In-place patch: overwrite the 4-byte B at code_address with a branch to
+ * target. Used by the fastmem SIGSEGV backpatch to redirect a faulting
+ * Ldr/Str to its slow-path thunk (code_address is not tied to the current
+ * emit cursor). code_address must already hold a single 4-byte instruction;
+ * target must be within +/-128 MB (B imm26 range). */
+void armEmitJmpPtr(void* code_address, const void* target, bool flush_icache);
 void armEmitCbnz(a64r reg, const void* ptr);
 void armEmitCondBranch(unsigned cond, const void* ptr);
 void armMoveAddressToReg(a64r reg, const void* addr);
 void armLoadPtr(a64r reg, const void* addr);
 void armStorePtr(a64r reg, const void* addr);
-// C.72: emit an adrp into `scratch` and return a memory operand with the page
-// offset folded in (or a full materialization fallback). `size` = access size
-// in bytes; the folded form is used only when the offset encodes for it.
+/* C.72: emit an adrp into scratch and return a memory operand with the page
+ * offset folded in (or a full materialization fallback). size = access size
+ * in bytes; the folded form is used only when the offset encodes for it. */
 a64_mem armAbsMemOperand(a64r scratch, const void* addr, unsigned size);
 void armBeginStackFrame(bool save_fpr);
 void armEndStackFrame(bool save_fpr);
 bool armIsCalleeSavedRegister(int reg);
 
-a64_mem armOffsetMemOperand(const a64_mem& op, s64 offset);
-void armGetMemOperandInRegister(a64r addr_reg, const a64_mem& op, s64 extra_offset = 0);
+a64_mem armOffsetMemOperand(a64_mem op, s64 offset);
+void armGetMemOperandInRegister(a64r addr_reg, a64_mem op, s64 extra_offset);
 
-// may clobber RSCRATCH/RSCRATCH2. they shouldn't be inputs.
+/* may clobber RSCRATCH/RSCRATCH2. they shouldn't be inputs. */
 void armEmitVTBL(a64r dst, a64r src1, a64r src2, a64r tbl);
 
-//////////////////////////////////////////////////////////////////////////
+#ifdef __cplusplus
+}
+#endif
 
-class ArmConstantPool
-{
-public:
-	void Init(void* ptr, u32 capacity);
-	void Destroy();
-	void Reset();
-
-	u8* GetJumpTrampoline(const void* target);
-
-private:
-	std::unordered_map<const void*, u32> m_jump_targets;
-
-	u8* m_base_ptr = nullptr;
-	u32 m_capacity = 0;
-	u32 m_used = 0;
-};
+#endif

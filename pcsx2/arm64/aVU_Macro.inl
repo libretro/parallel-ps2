@@ -5,6 +5,7 @@
 #pragma once
 
 #include "arm64/aR5900Analysis.h" // g_pCurInstInfo + the M1 EEINST_COP2_* flag bits
+#include "arm64/aVU_Macro.h"
 #include <cstring>
 
 // ARM64 microVU — macro mode native ALU emission (Phase 7.9 / M5).

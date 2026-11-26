@@ -28,7 +28,7 @@
  *  The arm64 EE recompiler is a third dispatch path and is not covered by
  *  either audit. It decodes with nested switch statements rather than
  *  tables -- roughly 190 case labels across switches on op, funct and rs
- *  in arm64/recR5900_arm64.cpp -- so there is no initialiser to read and
+ *  in arm64/recR5900_arm64.c -- so there is no initialiser to read and
  *  compare. A misplaced case there is the same class of bug as a swapped
  *  table entry, and nothing here would catch it.
  *

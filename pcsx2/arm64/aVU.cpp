@@ -29,7 +29,6 @@
 #include "SaveState.h"
 #include "Gif_Unit.h" // gifUnit + GIF_TRANS_XGKICK (XGKICK GIF transfer, aVU_Lower.inl)
 
-#include "common/Perf.h"
 
 #include <algorithm>
 #include <sys/mman.h>
@@ -1395,7 +1394,7 @@ static void mVUGenerateCompareState(microVU& mVU)
 static void mVUgenerateDispatchers(microVU& mVU)
 {
 	u8* const cacheEnd = mVU.prog.codeReserveEnd;
-	armSetAsmPtr(mVU.cache, static_cast<size_t>(cacheEnd - mVU.cache), nullptr);
+	armSetAsmPtr(mVU.cache, static_cast<size_t>(cacheEnd - mVU.cache));
 	armStartBlock();
 
 	mVUdispatcherAB(mVU);
@@ -1465,7 +1464,7 @@ static void* mVUexecute(u32 startPC, u32 cycles)
 	// branch into when the dispatcher does `br x0`. If the search still turns out to be
 	// a hit, nothing is emitted and codePtr is unchanged (the fast path above usually
 	// catches that case before paying for the session).
-	armSetAsmPtr(mVU.prog.codePtr, mVU.prog.codeReserveEnd - mVU.prog.codePtr, nullptr);
+	armSetAsmPtr(mVU.prog.codePtr, mVU.prog.codeReserveEnd - mVU.prog.codePtr);
 	armStartBlock();
 	void* const entry = mVUsearchProg<vuIndex>(spc, (uptr)&mVU.prog.lpState);
 	mVU.prog.codePtr = armEndBlock();

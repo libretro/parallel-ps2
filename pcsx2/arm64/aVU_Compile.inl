@@ -722,16 +722,6 @@ void* mVUcompile(microVU& mVU, u32 startPC, uptr pState)
 	mVUendProgram(mVU, &mFC, 1);
 
 perf_and_return:
-
-	if (mVU.regs().start_pc == startPC)
-	{
-		if (mVU.index)
-			Perf::vu1.RegisterPC(thisPtr, static_cast<u32>(armGetCurrentCodePointer() - thisPtr), startPC);
-		else
-			Perf::vu0.RegisterPC(thisPtr, static_cast<u32>(armGetCurrentCodePointer() - thisPtr), startPC);
-	}
-
-
 	return thisPtr;
 }
 
@@ -774,7 +764,7 @@ _mVUt void* mVUcompileJIT(u32 startPC, uptr ptr)
 			return jc.codeStart;
 	}
 
-	armSetAsmPtr(mVU.prog.codePtr, mVU.prog.codeReserveEnd - mVU.prog.codePtr, nullptr);
+	armSetAsmPtr(mVU.prog.codePtr, mVU.prog.codeReserveEnd - mVU.prog.codePtr);
 	armStartBlock();
 	void* result;
 

@@ -94,7 +94,15 @@ static int check(const char* path)
 		return 1;
 	}
 	fn = strstr(src, "bool EmitBranch(");
-	end = fn ? strstr(fn + 1, "\n\t}\n") : NULL;
+	/* The body ends at the closing brace indented like the definition. */
+	end = NULL;
+	if (fn)
+	{
+		const char* bol = fn;
+		while (bol > src && bol[-1] != '\n')
+			bol--;
+		end = strstr(fn + 1, *bol == '\t' ? "\n\t}\n" : "\n}\n");
+	}
 	if (!fn || !end)
 	{
 		printf("  %s: EmitBranch not found -- has it moved?\n", path);

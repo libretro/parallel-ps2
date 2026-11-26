@@ -69,7 +69,7 @@ obj() { echo "$1" | sed "s|^$ROOT/||" | tr '/' '_' | sed 's/\.[a-z]*$/.o/'; }
 
 # The front end's units are C too, and own the frontend callbacks and the
 # options the core reads.
-for f in $( (find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP"; find "$ROOT/libretro" -maxdepth 1 -name '*.c') | sort); do
+for f in $( (find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP|/pcsx2/arm64/"; find "$ROOT/libretro" -maxdepth 1 -name '*.c') | sort); do
 	gcc -O2 -DNDEBUG -std=gnu89 -msse4.1 -fno-strict-aliasing $INC \
 	    -c "$f" -o "$TMP/c/$(obj "$f")" 2>/dev/null ||
 		{ echo "FAIL: $f does not compile as C"; exit 1; }
@@ -84,19 +84,25 @@ while read -r f; do printf '%s\0%s\0' "$f" "$TMP/cxx/$(obj "$f")"; done |
 xargs -0 -n2 -P "$JOBS" sh -c 'g++ -O0 -DNDEBUG -std=c++17 -DPCSX2_CORE '"$INC"' -c "$1" -o "$2" 2>/dev/null || true' _
 echo "C++ objects: $(ls "$TMP/cxx" | wc -l)"
 
-# The arm64 recompiler units only build for aarch64. Their calls into C
-# are checked with everyone else's; their own definitions are not, since
-# nothing on the C side links against them on this host.
-mkdir -p "$TMP/a64"
+# The arm64 recompiler units only build for aarch64, where they take the
+# x86 recompilers' place: their C units are checked as a set with the C
+# units aarch64 builds, the C++ ones for their calls into C.
+mkdir -p "$TMP/a64" "$TMP/a64c"
 if command -v aarch64-linux-gnu-g++ >/dev/null 2>&1; then
+	for f in $(find "$ROOT/pcsx2/arm64" -name '*.c' | sort); do
+		aarch64-linux-gnu-gcc -O2 -DNDEBUG -std=gnu89 -fno-strict-aliasing $INC \
+		    -c "$f" -o "$TMP/a64c/$(obj "$f")" 2>/dev/null ||
+			{ echo "FAIL: $f does not cross-compile for aarch64"; exit 1; }
+	done
 	for f in $(find "$ROOT/pcsx2/arm64" -name '*.cpp' | sort); do
 		aarch64-linux-gnu-g++ -O0 -DNDEBUG -std=c++17 -DPCSX2_CORE $INC \
 		    -c "$f" -o "$TMP/a64/$(obj "$f")" 2>/dev/null ||
 			{ echo "FAIL: $f does not cross-compile for aarch64"; exit 1; }
 	done
+	echo "arm64 C    : $(ls "$TMP/a64c" | wc -l)"
 	echo "arm64 C++  : $(ls "$TMP/a64" | wc -l)"
 else
-	echo "arm64 C++  : skipped, no aarch64-linux-gnu-g++"
+	echo "arm64      : skipped, no aarch64-linux-gnu-g++"
 fi
 
 nm "$TMP"/c/*.o   | awk '$2 ~ /^[TDBRG]$/   { print $3 }' | sort    > "$TMP/def_c_all"
@@ -112,6 +118,27 @@ if [ -n "$dup" ]; then
 	exit 1
 fi
 echo "  ok"
+
+# The C set aarch64 links: the arm64 units in place of the x86
+# recompilers, which keep only the register state and the JitHash stub.
+if [ -n "$(ls "$TMP/a64c" 2>/dev/null)" ]; then
+	echo
+	echo "== aarch64: no global symbol defined by two C units =="
+	nm $(ls "$TMP"/c/*.o | grep -v '/pcsx2_x86_' ) "$TMP"/c/pcsx2_x86_CpuState.o "$TMP"/c/pcsx2_x86_JitHash.o \
+		"$TMP"/a64c/*.o | awk '$2 ~ /^[TDBRG]$/ { print $3 }' | sort > "$TMP/def_a64_all"
+	dup=$(uniq -d "$TMP/def_a64_all")
+	if [ -n "$dup" ]; then
+		echo "$dup" | sed 's/^/  FAIL: defined more than once: /'
+		exit 1
+	fi
+	echo "  ok"
+	nm "$TMP"/a64c/*.o | awk '$2 ~ /^[TDBRG]$/   { print $3 }' | sort -u >> "$TMP/def_c"
+	sort -u -o "$TMP/def_c" "$TMP/def_c"
+	nm "$TMP"/a64/*.o  | awk '$2 ~ /^[TDBRGWVi]$/ { print $3 }' | sort -u >> "$TMP/def_cxx"
+	sort -u -o "$TMP/def_cxx" "$TMP/def_cxx"
+	nm "$TMP"/a64c/*.o | awk '$1 == "U"          { print $2 }' | sort -u >> "$TMP/undef"
+	sort -u -o "$TMP/undef" "$TMP/undef"
+fi
 
 echo
 echo "== every symbol the C units need is spelled the way C spells it =="
@@ -139,7 +166,7 @@ echo "== every C function the C++ units call is declared extern \"C\" =="
 # A C++ reference to _Z<len><name>... where <name> is a C unit's function
 # and no C++ unit defines that mangled symbol: the declaration the caller
 # saw lacks extern "C". Nested (_ZN) names cannot be C functions.
-nm "$TMP"/c/*.o | awk '$2 ~ /^[TW]$/ { print $3 }' | sort -u > "$TMP/def_c_text"
+nm "$TMP"/c/*.o $(ls "$TMP"/a64c/*.o 2>/dev/null) | awk '$2 ~ /^[TW]$/ { print $3 }' | sort -u > "$TMP/def_c_text"
 nm "$TMP"/cxx/*.o $(ls "$TMP"/a64/*.o 2>/dev/null) | awk '$1 == "U" { print $2 }' |
 	grep '^_Z[0-9]' | sort -u > "$TMP/undef_cxx"
 nm "$TMP"/cxx/*.o $(ls "$TMP"/a64/*.o 2>/dev/null) | awk 'NF == 3 { print $3 }' | sort -u > "$TMP/def_cxx_any"
@@ -163,7 +190,7 @@ echo "== every variable the C units need is declared extern \"C\" =="
 # half is covered by the mangled-name check above; this is the half ELF
 # cannot show us.
 nm "$TMP"/c/*.o   | awk '$2 ~ /^[TDBGRW]$/ { print $3 }' | sort -u > "$TMP/def_c_data"
-nm "$TMP"/cxx/*.o | awk '$2 ~ /^[DBGRVdbgrv]$/ { print $3 }' | sort -u > "$TMP/def_cxx_data"
+nm "$TMP"/cxx/*.o $(ls "$TMP"/a64/*.o 2>/dev/null) | awk '$2 ~ /^[DBGRVdbgrv]$/ { print $3 }' | sort -u > "$TMP/def_cxx_data"
 datab=0
 comm -12 "$TMP/undef" "$TMP/def_cxx_data" | grep -v '^_' |
 	comm -23 - "$TMP/def_c_data" > "$TMP/crossdata"

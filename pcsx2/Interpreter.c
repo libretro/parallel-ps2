@@ -37,7 +37,7 @@ static u32 intLastBranchTo;
 /* arm64 EE recompiler hook: when set, the GAME_RUNNING loop runs
  * JIT-dispatched blocks instead of one interpreter instruction per
  * iteration; NULL interprets. The JIT cache lives in
- * arm64/recR5900_arm64.cpp; recCpu is assembled at the bottom of this file
+ * arm64/recR5900_arm64.c; recCpu is assembled at the bottom of this file
  * so it can reuse the static execute/exit/cancel helpers and intJmpBuf. */
 void (*g_ee_block_runner)(void) = NULL;
 #endif

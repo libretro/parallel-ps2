@@ -15,7 +15,7 @@
 
 #pragma once
 
-/* What the arm64 EE recompiler (recR5900_arm64.cpp) and the interpreter
+/* What the arm64 EE recompiler (recR5900_arm64.c) and the interpreter
  * (Interpreter.c) share: the interpreter's loop and memory paths, which
  * JIT blocks call into, and the JIT's lifecycle, which the interpreter
  * assembles recCpu from. */
@@ -67,7 +67,7 @@ u64  eeReadU64_arm64(u32 addr);
 void eeWriteU32_arm64(u32 addr, u32 val);
 void eeWriteU64_arm64(u32 addr, u64 val);
 
-/* recR5900_arm64.cpp */
+/* recR5900_arm64.c */
 void eeJitReserve_arm64(void);
 void eeJitShutdown_arm64(void);
 void eeJitReset_arm64(void);

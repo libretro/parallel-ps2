@@ -199,7 +199,7 @@ void ipu_dither(const macroblock_rgb32 *rgb32, macroblock_rgb16 *rgb16, const in
 	int j;
 	if (dte)
 	{
-		// I'm guessing values are rounded down when clamping.
+		/* I'm guessing values are rounded down when clamping. */
 		const int dither_coefficient[4][4] = {
 			{-4, 0, -3, 1},
 			{2, -2, 3, -1},

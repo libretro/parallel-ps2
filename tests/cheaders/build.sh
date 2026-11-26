@@ -186,7 +186,9 @@ echo
 if command -v "$MINGW" >/dev/null 2>&1; then
 	echo "=== every C unit, with <windows.h> ahead, as MSVC C includes it ==="
 	printf '#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n' > "$TMP/win.h"
-	for f in $UNITS; do
+	# The arm64 recompilers are not built for Windows, as the x86 ones
+	# are not for aarch64.
+	for f in $(echo "$UNITS" | grep -v '/pcsx2/arm64/'); do
 		printf '%-40s' "$(echo "$f" | sed "s|^$ROOT/||")"
 		check "mingw + windows.h" $MINGW $CFLAGS -msse4.1 $INC -include "$TMP/win.h" -fsyntax-only "$f" || continue
 		printf ' ok\n'

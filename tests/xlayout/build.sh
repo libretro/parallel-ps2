@@ -62,26 +62,35 @@ if compare "$TMP/neg.c" "$TMP/neg.cpp"; then
 fi
 echo "negative: caught"
 
-UNITS=$(find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP" | sort)
 FRAGMENTS='pcsx2/SPU2/interpolate_table.h pcsx2/SPU2/reg_write_table.h'
 # microVU.c's own pieces are not headers anyone else reads.
 UNITY='^pcsx2/(x86/microVU(_IR)?\.h|x86/microVU_[A-Za-z]+\.inl|microVU/[A-Za-z_]+\.inl)$'
-HEADERS=$(for f in $UNITS; do
-	gcc $CFLAGS $INC -MM "$f" 2>/dev/null | tr ' \\' '\n\n' |
-	grep -E '\.h$' | grep -v '^/usr' || true
-done | xargs -r realpath -m --relative-to="$ROOT" | sort -u)
-for frag in $FRAGMENTS; do HEADERS=$(echo "$HEADERS" | grep -vx "$frag"); done
-HEADERS=$(echo "$HEADERS" | grep -vE "$UNITY")
+headers_of() {
+	for f in "$@"; do
+		gcc $CFLAGS $INC -MM "$f" 2>/dev/null | tr ' \\' '\n\n' |
+		grep -E '\.h$' | grep -v '^/usr' || true
+	done | xargs -r realpath -m --relative-to="$ROOT" | sort -u | grep -vE "$UNITY" |
+	while read -r h; do case " $FRAGMENTS " in *" $h "*) ;; *) echo "$h" ;; esac; done
+}
+# probe <label> <headers>: one TU of them, C vs C++
+probe() {
+	label=$1; shift
+	: > "$TMP/all.c"
+	for h in "$@"; do printf '#include "%s"\n' "$ROOT/$h" >> "$TMP/all.c"; done
+	echo 'int xlayout_probe_anchor;' >> "$TMP/all.c"
+	cp "$TMP/all.c" "$TMP/all.cpp"
+	echo
+	echo "== $# headers reachable from $label C units, C vs C++ =="
+	if ! compare "$TMP/all.c" "$TMP/all.cpp"; then
+		echo "FAIL: a type shared by the C and C++ units is laid out differently"
+		exit 1
+	fi
+}
 
-: > "$TMP/all.c"
-for h in $HEADERS; do printf '#include "%s"\n' "$ROOT/$h" >> "$TMP/all.c"; done
-echo 'int xlayout_probe_anchor;' >> "$TMP/all.c"
-cp "$TMP/all.c" "$TMP/all.cpp"
-
-echo
-echo "== $(echo "$HEADERS" | wc -l) headers reachable from C units, C vs C++ =="
-if ! compare "$TMP/all.c" "$TMP/all.cpp"; then
-	echo "FAIL: a type shared by the C and C++ units is laid out differently"
-	exit 1
-fi
+# The arm64 recompilers and the x86 ones are never built together, and
+# their headers name the same things, so each set is a probe of its own.
+UNITS=$(find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP" | grep -v '/pcsx2/arm64/' | sort)
+probe x86 $(headers_of $UNITS)
+A64_UNITS=$(find "$ROOT/pcsx2/arm64" -name '*.c' | sort)
+probe arm64 $(headers_of $A64_UNITS)
 echo "PASS: every type both languages name has the same layout in each"
