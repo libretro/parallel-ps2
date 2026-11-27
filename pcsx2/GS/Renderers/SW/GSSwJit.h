@@ -1,14 +1,14 @@
 /*
  * The software renderer's generated code, in C: what the generators need
- * of the scanline environment (GSScanlineEnvironment.h) without its C++
- * types, and the generators themselves.
+ * of the scanline environment (GSScanlineEnvironment.h), and the
+ * generators themselves.
  *
  * The selector is read from its key by bit position. The per-primitive
  * data (GSScanlineLocalData) has two layouts: the AVX2 build's eight-pixel
  * one (GS_SL8_*) and the four-pixel one of the others (GS_SL4_*); the
  * global data's last fields likewise (GS_SLG8_*, GS_SLG4_*). Each tier's
- * generator shims include GSSwJitLayout.h, which holds these offsets to
- * the C++ structs'.
+ * GSDrawScanline.c includes GSSwJitLayout.h, which holds these offsets to
+ * the structs'.
  */
 
 #ifndef GS_SW_JIT_H
@@ -255,11 +255,11 @@ typedef struct gs_swj_target
 #define GS_SWJ_WIN64 0
 #endif
 
-/* The setup of a primitive's steps (GSSetupPrimCodeGenerator), generated
+/* The setup of a primitive's steps, generated
  * into room bytes at code: its size, or room when it did not fit */
 size_t gs_swj_setup_prim(const gs_swj_target* t, void* code, size_t room);
 
-/* A scanline's pixels (GSDrawScanlineCodeGenerator), likewise. Called as
+/* A scanline's pixels, likewise. Called as
  * void (*)(int pixels, int left, int top, const GSVertexSW* scan,
  * GSScanlineLocalData* local). */
 size_t gs_swj_draw_scanline(const gs_swj_target* t, void* code, size_t room);

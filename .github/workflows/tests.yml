@@ -161,7 +161,7 @@ jobs:
         run: |
           WINE=$(command -v wine || command -v wine64)
           export WINE
-          for t in a64emit a64vu baseblocks biosver dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d11device d3d11shadercache d3d11texture d3d12builders d3d12desc d3d12device d3d12shadercache d3d12stream d3d12texture d3dshader granitevk granitedebug gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstate gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics profiler ringheap settings swjit usbhid vkbuilders vkloader vkstream vktexture vtrace vuops; do
+          for t in a64emit a64vu baseblocks biosver dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d11device d3d11shadercache d3d11texture d3d12builders d3d12desc d3d12device d3d12shadercache d3d12stream d3d12texture d3dshader granitevk granitedebug gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsscanline gsrastio gsstate gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics profiler ringheap settings swjit usbhid vkbuilders vkloader vkstream vktexture vtrace vuops; do
             echo "== $t"
             sh "tests/$t/build.sh"
           done
@@ -186,15 +186,19 @@ jobs:
           CC: aarch64-linux-gnu-gcc
           CXX: aarch64-linux-gnu-g++
         run: |
-          for t in a64emit a64vu baseblocks dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d12desc d3d12stream granitevk granitedebug gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsrastio gsstate gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics ringheap settings usbhid vkbuilders vkdevice vkloader vkstream vktexture vtrace; do
+          for t in a64emit a64vu baseblocks dev9dhcp dirtyrects gsbuddy pgslog pgsreserve dev9dns dev9eeprom dev9net disklist emuoptions fastlist gldevice glpipeline glprogram glshadercache glshadersrc glstate glstream glvertexinput gltexture d3d12desc d3d12stream granitevk granitedebug gsalpha gsblock gsclutgpu gsdevchain gsdrawquery gshwconfig gslmpixel gsmerge gsmove gspcrtc gsdevsw gsraster gsrasterlist gsscanline gsrastio gsstate gsstatefile gslmxfer gstexcachesw gstexfmt gstexpool gstexsw gsutil pad perfmetrics ringheap settings usbhid vkbuilders vkdevice vkloader vkstream vktexture vtrace; do
             echo "== $t"
             sh "tests/$t/build.sh"
           done
 
+      - name: gs_vector against the class's NEON implementation
+        run: N=20000 sh tests/gsvec/build.sh --neon
+
   # The software renderer on an AArch64 core, on GitHub's arm64 runner:
-  # there no code is generated and it draws through GSDrawScanline's
-  # reference path, which no x86 build compiles. Its pictures are the
-  # x86 ones (swdraw holds the cases that must agree to each other).
+  # there no code is generated and it draws through GSDrawScanline.c's C
+  # rasterizer, which no x86 core draws with (tests/gsscanline builds it
+  # on x86 too). Its pictures are the x86 ones (swdraw holds the cases
+  # that must agree to each other).
   swdraw-aarch64:
     name: software renderer on AArch64
     runs-on: ubuntu-24.04-arm

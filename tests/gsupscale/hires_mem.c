@@ -5,7 +5,7 @@
  * the size, into a memory four times as large, through the same scanline
  * code as at native. That code finds a pixel as the sum of a row part and
  * a column part, and stores four (or eight) horizontally adjacent pixels
- * at the offsets they have in a native column (GSDrawScanline.cpp,
+ * at the offsets they have in a native column (GSDrawScanline.c,
  * s_offsets: 0, 2, 8, 10, 16, 18, 24, 26 sixteen-bit units). The 2x memory
  * lays a native page out as a square of four pages of the same swizzle.
  *

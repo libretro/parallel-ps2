@@ -646,17 +646,15 @@ endif
 # isa_native), exactly as before.
 MULTI_ISA_UNSHARED_SRC := \
 		$(LRPS2_DIR)/GS/Renderers/HW/GSRendererHWMultiISA.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanline.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSRasterizer.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSRendererSW.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
+	$(LRPS2_DIR)/GS/Renderers/SW/GSRendererSW.cpp
 
 # The C ones, which name their per-ISA functions after the tier rather
 # than taking a namespace.
 MULTI_ISA_UNSHARED_SRC_C := \
 	$(LRPS2_DIR)/GS/GSLocalMemoryMultiISA.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSVertexTraceFMM.c \
+	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanline.c \
+	$(LRPS2_DIR)/GS/Renderers/SW/GSRasterizer.c \
 	$(LRPS2_DIR)/IPU/IPU_MultiISA.c
 
 ifeq ($(IS_X86),1)

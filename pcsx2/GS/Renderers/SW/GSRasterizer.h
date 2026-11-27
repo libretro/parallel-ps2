@@ -13,29 +13,36 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
-#include "common/Pcsx2Defs.h"
+/* A draw for the rasterizers, the drawing threads' rasterizers (GSRaster.c)
+ * and the threads (GSRasterList.c) with the scanline code they draw with
+ * (GSDrawScanline.c). C89; GSRasterizer.c is compiled once a tier, so its
+ * functions are named after the tier (GS_SW). */
 
-#include "GSVertexSW.h"
+#ifndef GS_RASTERIZER_H
+#define GS_RASTERIZER_H
+
+#include "common/Pcsx2Defs.h"
 #include "GSDrawScanline.h"
 #include "GSRaster.h"
 #include "GSRasterList.h"
+#ifdef __cplusplus
+#include "GSVertexSW.h"
 #include "../../GSAlignedClass.h"
 #include "../../GSRingHeap.h"
-#include "../../MultiISA.h"
+#endif
 
-MULTI_ISA_UNSHARED_START
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-class GSDrawScanline;
-
-class alignas(32) GSRasterizerData : public GSAlignedClass<32>
+/* A draw: its rects, primitives and the scanline code's data for them */
+typedef struct PCSX2_ALIGN(32) gs_rasterizer_data
 {
-public:
-	GSVector4i scissor;
-	GSVector4i bbox;
+	GS_SL_V4I scissor;
+	GS_SL_V4I bbox;
 	GS_PRIM_CLASS primclass;
-	u8* buff;
-	GSVertexSW* vertex;
+	u8* buff; /* the vertices and indices, from the ring heap (GSRasterizerData frees it) */
+	struct GSVertexSW* vertex;
 	int vertex_count;
 	u16* index;
 	int index_count;
@@ -45,25 +52,71 @@ public:
 	 * one over the other, has rows far apart at one address, which the
 	 * threads' bands would write in no set order (GSRendererSW). */
 	bool whole;
-
 	GSScanlineGlobalData global;
+	gs_raster_setup_prim_fn setup_prim;
+	gs_raster_scanline_fn draw_scanline;
+	gs_raster_scanline_fn draw_edge;
+} gs_rasterizer_data;
 
-	GSDrawScanline::SetupPrimPtr setup_prim;
-	GSDrawScanline::DrawScanlinePtr draw_scanline;
-	GSDrawScanline::DrawScanlinePtr draw_edge;
+/* A drawing thread's rasterizer, with the scanline code's data for it */
+typedef struct PCSX2_ALIGN(32) gs_rasterizer
+{
+	gs_raster r;
+	gs_raster_fill fill;
+	GSScanlineLocalData local;
+} gs_rasterizer;
 
+/* What keeps a queued draw (a gs_rasterizer_data) while the threads have
+ * it: the draw's owner's */
+typedef struct gs_rasterizer_list_ops
+{
+	void (*retain)(void* data);
+	void (*release)(void* data);
+} gs_rasterizer_list_ops;
+
+/* The drawing threads, each with its rasterizer, and the scanline code
+ * they draw with; without threads, one rasterizer the caller draws on */
+typedef struct gs_rasterizer_list
+{
+	gs_draw_scanline ds;
+	gs_rasterizer** r;
+	int count;
+	gs_raster_list list;
+	gs_raster_list_ops list_ops; /* the draws, and the owner's retain and release */
+} gs_rasterizer_list;
+
+/* On threads threads (none: on the caller, and ops, which only queued
+ * draws need, may be NULL) */
+gs_rasterizer_list* GS_SW(gs_rasterizer_list_create)(int threads, const gs_rasterizer_list_ops* ops);
+void GS_SW(gs_rasterizer_list_destroy)(gs_rasterizer_list* rl);
+
+/* To the threads, which draw it when they come to it */
+void GS_SW(gs_rasterizer_list_queue)(gs_rasterizer_list* rl, gs_rasterizer_data* data);
+/* Now, on the caller: of one without threads */
+void GS_SW(gs_rasterizer_list_draw)(gs_rasterizer_list* rl, gs_rasterizer_data* data);
+void GS_SW(gs_rasterizer_list_sync)(gs_rasterizer_list* rl);
+bool GS_SW(gs_rasterizer_list_is_synced)(gs_rasterizer_list* rl);
+
+#ifdef __cplusplus
+}
+
+/* The renderer's draws, which the ring heap keeps (GSRingHeap::SharedPtr)
+ * until the last thread is done with them */
+class GSRasterizerData : public gs_rasterizer_data, public GSAlignedClass<32>
+{
+public:
 	GSRasterizerData()
-		: scissor(GSVector4i::zero())
-		, bbox(GSVector4i::zero())
-		, primclass(GS_INVALID_CLASS)
-		, buff(nullptr)
-		, vertex(NULL)
-		, vertex_count(0)
-		, index(NULL)
-		, index_count(0)
-		, scanmsk_value(0)
-		, whole(false)
 	{
+		scissor = GSVector4i::zero();
+		bbox = GSVector4i::zero();
+		primclass = GS_INVALID_CLASS;
+		buff = nullptr;
+		vertex = nullptr;
+		vertex_count = 0;
+		index = nullptr;
+		index_count = 0;
+		scanmsk_value = 0;
+		whole = false;
 	}
 
 	virtual ~GSRasterizerData()
@@ -72,54 +125,6 @@ public:
 			GSRingHeap::free(buff);
 	}
 };
+#endif
 
-/* A drawing thread's rasterizer (GSRaster.c), with the scanline code's
- * data for it */
-class alignas(32) GSRasterizer final : public GSVirtualAlignedClass<32>
-{
-protected:
-	gs_raster m_r;
-	gs_raster_fill m_fill = {};
-	GSScanlineLocalData m_local = {};
-
-	void Draw(GSRasterizerData& data, bool whole);
-
-public:
-	GSRasterizer(int id, int threads);
-	~GSRasterizer();
-
-	void Draw(GSRasterizerData& data) { Draw(data, false); }
-	/* Every row of it, on the calling thread, while no other thread
-	 * draws (GSRasterizerData::whole). */
-	void DrawWhole(GSRasterizerData& data) { Draw(data, true); }
-};
-
-/* The drawing threads (GSRasterList.c), each with its rasterizer, and
- * the scanline code they draw with; without threads, one rasterizer the
- * caller draws on */
-class GSRasterizerList final : public GSVirtualAlignedClass<32>
-{
-protected:
-	GSDrawScanline m_ds;
-	GSRasterizer** m_r = nullptr;
-	int m_count = 0;
-	gs_raster_list m_list = {};
-
-	GSRasterizerList() = default;
-	bool SetupDraw(GSRasterizerData& data);
-
-public:
-	~GSRasterizerList() override;
-
-	/* A rasterizer on threads threads (none: on the caller); the caller
-	 * deletes it. */
-	static GSRasterizerList* Create(int threads);
-
-	void Queue(const GSRingHeap::SharedPtr<GSRasterizerData>& data);
-	/* Now, on the caller: of one without threads */
-	void Draw(GSRasterizerData& data);
-	void Sync();
-	bool IsSynced();
-};
-
-MULTI_ISA_UNSHARED_END
+#endif

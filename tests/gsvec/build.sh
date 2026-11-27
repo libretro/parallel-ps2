@@ -95,4 +95,7 @@ if [ "$1" = "--neon" ]; then
 	aarch64-linux-gnu-gcc -O2 -std=c89 -pedantic -Wall -Wextra -Wno-long-long \
 	    $CINC -o "$TMP/oracle64" "$DIR/gs_vector_oracle.c"
 	qemu-aarch64 -L /usr/aarch64-linux-gnu "$TMP/oracle64" $((N / 4))
+	# and against the class's NEON implementation
+	aarch64-linux-gnu-g++ -O2 -std=c++17 -static $INC -o "$TMP/equiv64" "$DIR/gs_vector_equiv.cpp"
+	qemu-aarch64 -L /usr/aarch64-linux-gnu "$TMP/equiv64" $((N / 16))
 fi

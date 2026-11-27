@@ -152,7 +152,8 @@ GSRendererHW::~GSRendererHW()
 		gs_sw_texture_free(m_sw_texture[i]);
 		m_sw_texture[i] = nullptr;
 	}
-	delete m_sw_rasterizer;
+	if (m_sw_rasterizer)
+		m_sw_rasterizer_destroy(m_sw_rasterizer);
 	m_sw_rasterizer = nullptr;
 	delete g_texture_cache;
 	g_texture_cache = nullptr;

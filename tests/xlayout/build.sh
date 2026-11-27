@@ -93,4 +93,9 @@ UNITS=$(find "$ROOT/pcsx2" -name '*.c' | grep -vE "$SKIP" | grep -v '/pcsx2/arm6
 probe x86 $(headers_of $UNITS)
 A64_UNITS=$(find "$ROOT/pcsx2/arm64" -name '*.c' | sort)
 probe arm64 $(headers_of $A64_UNITS)
+# The software renderer's environment is laid out by tier: the AVX2 one
+# keeps eight lanes (GSScanlineEnvironment.h)
+CFLAGS="$CFLAGS -mavx -mavx2 -mfma"
+CXXFLAGS="$CXXFLAGS -mavx -mavx2 -mfma"
+probe "AVX2-tier software renderer" pcsx2/GS/Renderers/SW/GSRasterizer.h
 echo "PASS: every type both languages name has the same layout in each"

@@ -92,7 +92,7 @@ int main(int argc, char **argv)
 		chk("and",    gs_v4i_and(a, b),    A & B);
 		chk("or",     gs_v4i_or(a, b),     A | B);
 		chk("xor",    gs_v4i_xor(a, b),    A ^ B);
-		chk("andnot", gs_v4i_andnot(a, b), GSVector4i(_mm_andnot_si128(A, B)));
+		chk("andnot", gs_v4i_andnot(a, b), ~A & B);
 		chk("eq32",   gs_v4i_eq32(a, b),   A == B);
 		chk("gt32",   gs_v4i_gt32(a, b),   A > B);
 
@@ -185,6 +185,41 @@ int main(int argc, char **argv)
 		chk("F32_ONE", gs_v4i_set32(GS_V4I_F32_ONE), GSVector4i::cast(GSVector4::m_one));
 		chk("F32_MAX", gs_v4i_set32(GS_V4I_F32_MAX), GSVector4i::cast(GSVector4::m_max));
 		chk("F32_MIN_POS", gs_v4i_set32(GS_V4I_F32_MIN_POS), GSVector4i::cast(GSVector4(FLT_MIN)));
+
+		/* what the software rasterizer's scanline code takes */
+		{
+			const int n = (int)(rnd() % 40);
+			GSVector4 FA = GSVector4::cast(A), FB = GSVector4::cast(B);
+			alignas(16) double dd = (double)(int32_t)rnd() / 7.0;
+			chk("mul16l",  gs_v4i_mul16l(a, b),  A.mul16l(B));
+			chk("mul16hs", gs_v4i_mul16hs(a, b), A.mul16hs(B));
+			chk("max_i16", gs_v4i_max_i16(a, b), A.max_i16(B));
+			chk("min_i16", gs_v4i_min_i16(a, b), A.min_i16(B));
+			chk("addus8",  gs_v4i_addus8(a, b),  A.addus8(B));
+			chk("sra32n",  gs_v4i_sra32n(a, n),  A.sra32(n));
+			chk("srl32n",  gs_v4i_srl32n(a, n),  A.srl32(n));
+			chk("sll32n",  gs_v4i_sll32n(a, n),  A << n);
+			chk("srl16n",  gs_v4i_srl16n(a, n & 15), A.srl16(n & 15));
+			chk("xxzzlh",  GS_V4I_SHUFFLE16LH(a, 0xa0), A.xxzzlh());
+			chk("yywwlh",  GS_V4I_SHUFFLE16LH(a, 0xf5), A.yywwlh());
+			chk("zzzzh",   GS_V4I_SHUFFLE16H(a, 0xaa),  A.zzzzh());
+			chk("xxxxl",   GS_V4I_SHUFFLE16L(a, 0x00),  A.xxxxl());
+			chk("fadd",    gs_v4i_fadd(a, b), GSVector4i::cast(FA + FB));
+			chk("fmul",    gs_v4i_fmul(a, b), GSVector4i::cast(FA * FB));
+			chk("fdiv",    gs_v4i_fdiv(a, b), GSVector4i::cast(FA / FB));
+			chk("fsat",    gs_v4i_fsat(a, b, gs_v4i_fset(3.5f)), GSVector4i::cast(FA.sat(FB, GSVector4(3.5f))));
+			chk("cvt_f32", gs_v4i_cvt_f32(a), GSVector4i::cast(GSVector4(A)));
+			chk("cvtt_i32", gs_v4i_cvtt_i32(a), GSVector4i(FA));
+			chk("cvtn_i32", gs_v4i_cvtn_i32(a), GSVector4i(FA, false));
+			chk("fround",  gs_v4i_fround(a), GSVector4i::cast(FA.round<Round_NearestInt>()));
+			chk("f32to64", gs_v4i_f32to64(a), GSVector4i::cast(GSVector4::f32to64(FA)));
+			chk("f32to64p", gs_v4i_f32to64p((const float*)ra), GSVector4i::cast(GSVector4::f32to64(ra)));
+			chk("dbroadcast", gs_v4i_dbroadcast(&dd), GSVector4i::cast(GSVector4::broadcast64(&dd)));
+			chk("dadd",    gs_v4i_dadd(a, b), GSVector4i::cast(FA.add64(FB)));
+			chk("dmul",    gs_v4i_dmul(a, b), GSVector4i::cast(FA.mul64(FB)));
+			chk("f64toi32", gs_v4i_f64toi32(a, 1), FA.f64toi32());
+			chk("f64toi32 n", gs_v4i_f64toi32(a, 0), FA.f64toi32(false));
+		}
 
 		/* rect alignment and the high-half load, as GSDirtyRect uses them */
 		{

@@ -16,7 +16,6 @@
 #pragma once
 
 #include "GSTextureCache.h"
-#include "../Common/GSFunctionMap.h"
 #include "../Common/GSRenderer.h"
 #include "../SW/GSTextureCacheSW.h"
 #include "../../GSState.h"
@@ -402,7 +401,9 @@ private:
 	u32 m_sw_vertex_capacity = 0;
 	GSVertexSW* SWVertexBuffer(u32 count);
 	GSTextureCacheSW::Texture* m_sw_texture[7 + 1] = {};
-	GSVirtualAlignedClass<32>* m_sw_rasterizer = nullptr;
+	/* (made by the tier that draws with it, and destroyed by it) */
+	struct gs_rasterizer_list* m_sw_rasterizer = nullptr;
+	void (*m_sw_rasterizer_destroy)(struct gs_rasterizer_list* rl) = nullptr;
 
 public:
 	GSRendererHW();

@@ -24,6 +24,8 @@ rm -rf "$OBJ" && mkdir -p "$OBJ"
 "$CC" -w $DEFS $OPT $INC -c "$P/NearPlace.c" -o "$OBJ/NearPlace.o"
 "$CC" -w $DEFS $OPT $INC -c "$P/GS/Renderers/Common/GSCodeReserve.c" -o "$OBJ/GSCodeReserve.o"
 "$CC" -w $DEFS $OPT $INC -Dcalloc=gsjit_calloc -c "$P/GS/Renderers/Common/GSFlatMap.c" -o "$OBJ/GSFlatMap.o"
-"$CXX" -std=c++17 -w $DEFS $OPT $INC -o "$DIR/gsjit$EXE" "$DIR/glue.cpp" "$OBJ"/*.o $LIBS
+"$CC" -w $DEFS $OPT $INC -c "$P/GS/Renderers/Common/GSCodeMap.c" -o "$OBJ/GSCodeMap.o"
+"$CC" -std=c89 -pedantic -Wall -Wno-long-long $DEFS $OPT $INC -c "$DIR/glue.c" -o "$OBJ/glue.o"
+"$CC" $OPT -o "$DIR/gsjit$EXE" "$OBJ"/*.o $LIBS
 rm -rf "$OBJ"
 "$DIR/gsjit$EXE"

@@ -558,9 +558,12 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 	// The SW rasterizer isn't built into the HW renderer on arm64; the
 	// HW renderer's CPU-side draw fallback is unavailable there.
 	if (!hw.m_sw_rasterizer)
-		hw.m_sw_rasterizer = GSRasterizerList::Create(0);
+	{
+		hw.m_sw_rasterizer = GS_SW(gs_rasterizer_list_create)(0, NULL);
+		hw.m_sw_rasterizer_destroy = GS_SW(gs_rasterizer_list_destroy);
+	}
 
-	static_cast<GSRasterizerList*>(hw.m_sw_rasterizer)->Draw(data);
+	GS_SW(gs_rasterizer_list_draw)(hw.m_sw_rasterizer, &data);
 #endif
 
 	if (invalidate_tc)

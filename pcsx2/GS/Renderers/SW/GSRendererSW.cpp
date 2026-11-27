@@ -29,6 +29,25 @@ GSRenderer* CURRENT_ISA::makeGSRendererSW(int threads)
 	return new GSRendererSW(threads);
 }
 
+/* (GSRaster.c's view of the vertices) */
+static_assert(sizeof(GSVertexSW) == 4 * sizeof(gs_raster_lane) && alignof(GSVertexSW) == 32, "GSVertexSW layout");
+static_assert(offsetof(GSVertexSW, p) == 0 && offsetof(GSVertexSW, _pad) == 16 && offsetof(GSVertexSW, t) == 32
+	&& offsetof(GSVertexSW, c) == 48, "GSVertexSW layout");
+
+/* A queued draw, held by its ring heap reference while the drawing threads
+ * have it */
+static void rl_retain(void* job)
+{
+	GSRingHeap::SharedPtr<GSRasterizerData>::Retain(static_cast<GSRasterizerData*>(static_cast<gs_rasterizer_data*>(job)));
+}
+
+static void rl_release(void* job)
+{
+	GSRingHeap::SharedPtr<GSRasterizerData>::Release(static_cast<GSRasterizerData*>(static_cast<gs_rasterizer_data*>(job)));
+}
+
+static const gs_rasterizer_list_ops s_rl_ops = {rl_retain, rl_release};
+
 /* --- the table GSState calls this renderer through (gs_state_ops) -------
  * Every one of these was a virtual function. What this renderer has no
  * version of is NULL, and GSState does what it always did for those. */
@@ -138,7 +157,7 @@ GSRendererSW::GSRendererSW(int threads)
 	m_nativeres = true; // ignore ini, sw is always native
 
 	m_tc = new GSTextureCacheSW();
-	m_rl = GSRasterizerList::Create(threads);
+	m_rl = GS_SW(gs_rasterizer_list_create)(threads, &s_rl_ops);
 
 	m_output_size = 1024 * 1024 * sizeof(u32);
 	m_output      = (u8*)memalign_alloc(VECTOR_ALIGNMENT, m_output_size);
@@ -198,7 +217,7 @@ void GSRendererSW::Destroy()
 {
 	int i;
 	// Need to destroy worker queue first to stop any pending thread work
-	delete m_rl;
+	GS_SW(gs_rasterizer_list_destroy)(m_rl);
 	m_rl = nullptr;
 	delete m_tc;
 	m_tc = nullptr;
@@ -587,7 +606,7 @@ void GSRendererSW::Queue(GSRingHeap::SharedPtr<GSRasterizerData>& item)
 	if (sd->m_syncpoint == SharedData::SyncTarget)
 		Sync(5);
 
-	m_rl->Queue(item);
+	GS_SW(gs_rasterizer_list_queue)(m_rl, item.get());
 
 	// invalidate new parts rendered onto
 
@@ -604,7 +623,7 @@ void GSRendererSW::Queue(GSRingHeap::SharedPtr<GSRasterizerData>& item)
 
 void GSRendererSW::Sync(int reason)
 {
-	m_rl->Sync();
+	GS_SW(gs_rasterizer_list_sync)(m_rl);
 }
 
 void GSRendererSW::InvalidateVideoMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r)
@@ -614,7 +633,7 @@ void GSRendererSW::InvalidateVideoMem(const GIFRegBITBLTBUF& BITBLTBUF, const GS
 
 	// check if the changing pages either used as a texture or a target
 
-	if (!m_rl->IsSynced())
+	if (!GS_SW(gs_rasterizer_list_is_synced)(m_rl))
 	{
 		pages.loopPagesWithBreak([&](u32 page)
 		{
@@ -636,7 +655,7 @@ void GSRendererSW::InvalidateVideoMem(const GIFRegBITBLTBUF& BITBLTBUF, const GS
 
 void GSRendererSW::InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r, bool clut)
 {
-	if (!m_rl->IsSynced())
+	if (!GS_SW(gs_rasterizer_list_is_synced)(m_rl))
 	{
 		GSOffset off = m_mem.GetOffset(BITBLTBUF.SBP, BITBLTBUF.SBW, BITBLTBUF.SPSM);
 		GSOffset::PageLooper pages = off.pageLooperForRect(r);
@@ -698,7 +717,7 @@ void GSRendererSW::ReleasePages(const GSOffset::PageLooper& pages, const int typ
 
 bool GSRendererSW::CheckTargetPages(const GSOffset::PageLooper* fb_pages, const GSOffset::PageLooper* zb_pages, const GSVector4i& r)
 {
-	const bool synced = m_rl->IsSynced();
+	const bool synced = GS_SW(gs_rasterizer_list_is_synced)(m_rl);
 
 	const bool fb = fb_pages != NULL;
 	const bool zb = zb_pages != NULL;
@@ -852,7 +871,7 @@ bool GSRendererSW::CheckTargetPages(const GSOffset::PageLooper* fb_pages, const 
 
 bool GSRendererSW::CheckSourcePages(SharedData* sd)
 {
-	if (!m_rl->IsSynced())
+	if (!GS_SW(gs_rasterizer_list_is_synced)(m_rl))
 	{
 		for (size_t i = 0; sd->m_tex[i].t != NULL; i++)
 		{
@@ -1026,7 +1045,7 @@ void GSRendererSW::HiresRefresh(const GSOffset& off, u32 psm, const GSVector4i& 
 	const u32 key = HiresKey(psm);
 	int count = 0;
 	int i;
-	bool synced = m_rl->IsSynced();
+	bool synced = GS_SW(gs_rasterizer_list_is_synced)(m_rl);
 
 	LoopBlocksWrapped(off, r, [this, &count](u32 bn)
 	{
@@ -1353,7 +1372,7 @@ void GSRendererSW::DrawHires(SharedData* sd)
 	if (sd->global.sel.zwrite)
 		sd->m_zb_pages.loopPages([this](u32 page) { m_hr_gen[page]++; });
 
-	m_rl->Queue(data);
+	GS_SW(gs_rasterizer_list_queue)(m_rl, data.get());
 }
 
 bool GSRendererSW::GetScanlineGlobalData(SharedData* data)
@@ -1369,7 +1388,7 @@ bool GSRendererSW::GetScanlineGlobalData(SharedData* data)
 	/* (the pool was full: start it over once the queued draws are done) */
 	if (unlikely(!context->offset.fzb4))
 	{
-		m_rl->Sync();
+		GS_SW(gs_rasterizer_list_sync)(m_rl);
 		RefetchPixelOffsets();
 	}
 
@@ -1772,7 +1791,7 @@ bool GSRendererSW::GetScanlineGlobalData(SharedData* data)
 		 *
 		 * That is correct, because zoverflow selects a workaround only
 		 * x86 needs. The flag guards the unsigned-Z path in
-		 * GSDrawScanline.cpp, which exists because _mm_cvttpd_epi32 has
+		 * GSDrawScanline.c, which exists because _mm_cvttpd_epi32 has
 		 * no unsigned form. aarch64's f64toi32 converts to int64 and
 		 * narrows by truncation, so it is exact over the whole unsigned
 		 * 32-bit range and wants the direct path -- which is also the

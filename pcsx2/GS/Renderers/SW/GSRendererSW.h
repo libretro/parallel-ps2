@@ -82,7 +82,7 @@ public:
 	};
 
 public: /* called through gs_state_ops (GSRendererSW.cpp); these were protected virtuals */
-	GSRasterizerList* m_rl = nullptr;
+	gs_rasterizer_list* m_rl = nullptr;
 	GSTextureCacheSW* m_tc = nullptr;
 	GSRingHeap m_vertex_heap;
 	GSTexture *m_texture[3] = {};

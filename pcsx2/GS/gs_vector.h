@@ -1044,6 +1044,246 @@ static GS_VEC_INLINE gs_vec4i gs_v4i_replace_nan_f32(gs_vec4i v, gs_vec4i r)
 #endif
 }
 
+/* ------------------------------------------------------------------ */
+/* What the software rasterizer's scanline code takes besides: 16-bit   */
+/* products and limits, a saturating byte add, shifts by a count known  */
+/* only at run time, and 16-bit shuffles of one half.                   */
+/* ------------------------------------------------------------------ */
+
+/* The low 16 bits of each 16-bit product */
+static GS_VEC_INLINE gs_vec4i gs_v4i_mul16l(gs_vec4i a, gs_vec4i b)
+{
+#if defined(GS_VEC_X86)
+   return _mm_mullo_epi16(a, b);
+#else
+   return vreinterpretq_s32_s16(vmulq_s16(vreinterpretq_s16_s32(a), vreinterpretq_s16_s32(b)));
+#endif
+}
+
+/* The high 16 bits of each signed 16-bit product */
+static GS_VEC_INLINE gs_vec4i gs_v4i_mul16hs(gs_vec4i a, gs_vec4i b)
+{
+#if defined(GS_VEC_X86)
+   return _mm_mulhi_epi16(a, b);
+#else
+   int32x4_t l = vmull_s16(vget_low_s16(vreinterpretq_s16_s32(a)), vget_low_s16(vreinterpretq_s16_s32(b)));
+   int32x4_t h = vmull_s16(vget_high_s16(vreinterpretq_s16_s32(a)), vget_high_s16(vreinterpretq_s16_s32(b)));
+   return vreinterpretq_s32_s16(vcombine_s16(vshrn_n_s32(l, 16), vshrn_n_s32(h, 16)));
+#endif
+}
+
+static GS_VEC_INLINE gs_vec4i gs_v4i_max_i16(gs_vec4i a, gs_vec4i b)
+{
+#if defined(GS_VEC_X86)
+   return _mm_max_epi16(a, b);
+#else
+   return vreinterpretq_s32_s16(vmaxq_s16(vreinterpretq_s16_s32(a), vreinterpretq_s16_s32(b)));
+#endif
+}
+
+static GS_VEC_INLINE gs_vec4i gs_v4i_min_i16(gs_vec4i a, gs_vec4i b)
+{
+#if defined(GS_VEC_X86)
+   return _mm_min_epi16(a, b);
+#else
+   return vreinterpretq_s32_s16(vminq_s16(vreinterpretq_s16_s32(a), vreinterpretq_s16_s32(b)));
+#endif
+}
+
+/* Unsigned bytes added, saturating at 255 */
+static GS_VEC_INLINE gs_vec4i gs_v4i_addus8(gs_vec4i a, gs_vec4i b)
+{
+#if defined(GS_VEC_X86)
+   return _mm_adds_epu8(a, b);
+#else
+   return vreinterpretq_s32_u8(vqaddq_u8(vreinterpretq_u8_s32(a), vreinterpretq_u8_s32(b)));
+#endif
+}
+
+/* Shifts by n, n known at run time (a count past the lane's width: all
+ * sign bits for the arithmetic one, zero for the others) */
+static GS_VEC_INLINE gs_vec4i gs_v4i_sra32n(gs_vec4i v, int n)
+{
+#if defined(GS_VEC_X86)
+   return _mm_sra_epi32(v, _mm_cvtsi32_si128(n));
+#else
+   return vshlq_s32(v, vdupq_n_s32(-n));
+#endif
+}
+
+static GS_VEC_INLINE gs_vec4i gs_v4i_srl32n(gs_vec4i v, int n)
+{
+#if defined(GS_VEC_X86)
+   return _mm_srl_epi32(v, _mm_cvtsi32_si128(n));
+#else
+   return vreinterpretq_s32_u32(vshlq_u32(vreinterpretq_u32_s32(v), vdupq_n_s32(-n)));
+#endif
+}
+
+static GS_VEC_INLINE gs_vec4i gs_v4i_sll32n(gs_vec4i v, int n)
+{
+#if defined(GS_VEC_X86)
+   return _mm_sll_epi32(v, _mm_cvtsi32_si128(n));
+#else
+   return vshlq_s32(v, vdupq_n_s32(n));
+#endif
+}
+
+static GS_VEC_INLINE gs_vec4i gs_v4i_srl16n(gs_vec4i v, int n)
+{
+#if defined(GS_VEC_X86)
+   return _mm_srl_epi16(v, _mm_cvtsi32_si128(n));
+#else
+   return vreinterpretq_s32_u16(vshlq_u16(vreinterpretq_u16_s32(v), vdupq_n_s16((int16_t)-n)));
+#endif
+}
+
+/* The 16-bit lanes of the low half, or of the high half, shuffled by i
+ * as pshuflw and pshufhw do; the other half kept */
+#if defined(GS_VEC_X86)
+#define GS_V4I_SHUFFLE16L(v, i) _mm_shufflelo_epi16((v), (i))
+#define GS_V4I_SHUFFLE16H(v, i) _mm_shufflehi_epi16((v), (i))
+#else
+#define GS_V4I_SHUFFLE16L(v, i) \
+   vreinterpretq_s32_s16(__builtin_shufflevector( \
+      vreinterpretq_s16_s32(v), vreinterpretq_s16_s32(v), \
+      (i) & 3, ((i) >> 2) & 3, ((i) >> 4) & 3, ((i) >> 6) & 3, 4, 5, 6, 7))
+#define GS_V4I_SHUFFLE16H(v, i) \
+   vreinterpretq_s32_s16(__builtin_shufflevector( \
+      vreinterpretq_s16_s32(v), vreinterpretq_s16_s32(v), \
+      0, 1, 2, 3, 4 + ((i) & 3), 4 + (((i) >> 2) & 3), 4 + (((i) >> 4) & 3), 4 + (((i) >> 6) & 3)))
+#endif
+
+/* ------------------------------------------------------------------ */
+/* Floats, four to a vector, and doubles, two: carried in a gs_vec4i,   */
+/* as the class keeps GSVector4 next to GSVector4i. The conversions     */
+/* keep what each instruction set does with what does not fit (the     */
+/* class's choices: x86 gives 0x80000000; NEON saturates, and its       */
+/* rounding conversion is the unsigned one).                            */
+/* ------------------------------------------------------------------ */
+
+static GS_VEC_INLINE gs_vec4i gs_v4i_fset(float f)
+{
+#if defined(GS_VEC_X86)
+   return _mm_castps_si128(_mm_set1_ps(f));
+#else
+   return vreinterpretq_s32_f32(vdupq_n_f32(f));
+#endif
+}
+
+#if defined(GS_VEC_X86)
+#define GS_V4I_FBIN(name, sse, neon) \
+   static GS_VEC_INLINE gs_vec4i name(gs_vec4i a, gs_vec4i b) \
+   { return _mm_castps_si128(sse(_mm_castsi128_ps(a), _mm_castsi128_ps(b))); }
+#define GS_V4I_DBIN(name, sse, neon) \
+   static GS_VEC_INLINE gs_vec4i name(gs_vec4i a, gs_vec4i b) \
+   { return _mm_castpd_si128(sse(_mm_castsi128_pd(a), _mm_castsi128_pd(b))); }
+#else
+#define GS_V4I_FBIN(name, sse, neon) \
+   static GS_VEC_INLINE gs_vec4i name(gs_vec4i a, gs_vec4i b) \
+   { return vreinterpretq_s32_f32(neon(vreinterpretq_f32_s32(a), vreinterpretq_f32_s32(b))); }
+#define GS_V4I_DBIN(name, sse, neon) \
+   static GS_VEC_INLINE gs_vec4i name(gs_vec4i a, gs_vec4i b) \
+   { return vreinterpretq_s32_f64(neon(vreinterpretq_f64_s32(a), vreinterpretq_f64_s32(b))); }
+#endif
+
+GS_V4I_FBIN(gs_v4i_fadd, _mm_add_ps, vaddq_f32)
+GS_V4I_FBIN(gs_v4i_fmul, _mm_mul_ps, vmulq_f32)
+GS_V4I_FBIN(gs_v4i_fdiv, _mm_div_ps, vdivq_f32)
+GS_V4I_FBIN(gs_v4i_fmin, _mm_min_ps, vminq_f32)
+GS_V4I_FBIN(gs_v4i_fmax, _mm_max_ps, vmaxq_f32)
+GS_V4I_DBIN(gs_v4i_dadd, _mm_add_pd, vaddq_f64)
+GS_V4I_DBIN(gs_v4i_dmul, _mm_mul_pd, vmulq_f64)
+
+/* v clamped to [lo, hi], as GSVector4::sat */
+static GS_VEC_INLINE gs_vec4i gs_v4i_fsat(gs_vec4i v, gs_vec4i lo, gs_vec4i hi)
+{
+   return gs_v4i_fmin(gs_v4i_fmax(v, lo), hi);
+}
+
+/* The integers as floats */
+static GS_VEC_INLINE gs_vec4i gs_v4i_cvt_f32(gs_vec4i v)
+{
+#if defined(GS_VEC_X86)
+   return _mm_castps_si128(_mm_cvtepi32_ps(v));
+#else
+   return vreinterpretq_s32_f32(vcvtq_f32_s32(v));
+#endif
+}
+
+/* The floats as integers, truncated */
+static GS_VEC_INLINE gs_vec4i gs_v4i_cvtt_i32(gs_vec4i v)
+{
+#if defined(GS_VEC_X86)
+   return _mm_cvttps_epi32(_mm_castsi128_ps(v));
+#else
+   return vcvtq_s32_f32(vreinterpretq_f32_s32(v));
+#endif
+}
+
+/* The floats as integers, rounded to nearest */
+static GS_VEC_INLINE gs_vec4i gs_v4i_cvtn_i32(gs_vec4i v)
+{
+#if defined(GS_VEC_X86)
+   return _mm_cvtps_epi32(_mm_castsi128_ps(v));
+#else
+   return vreinterpretq_s32_u32(vcvtnq_u32_f32(vreinterpretq_f32_s32(v)));
+#endif
+}
+
+#if defined(GS_VEC_CAN_SSE41) || !defined(GS_VEC_X86)
+/* The floats rounded to the nearest integer, ties to even */
+static GS_VEC_INLINE gs_vec4i gs_v4i_fround(gs_vec4i v)
+{
+#if defined(GS_VEC_X86)
+   return _mm_castps_si128(_mm_round_ps(_mm_castsi128_ps(v), _MM_FROUND_TO_NEAREST_INT));
+#else
+   return vreinterpretq_s32_f32(vrndnq_f32(vreinterpretq_f32_s32(v)));
+#endif
+}
+#endif
+
+/* The low two floats of v, or the two at p, as doubles */
+static GS_VEC_INLINE gs_vec4i gs_v4i_f32to64(gs_vec4i v)
+{
+#if defined(GS_VEC_X86)
+   return _mm_castpd_si128(_mm_cvtps_pd(_mm_castsi128_ps(v)));
+#else
+   return vreinterpretq_s32_f64(vcvt_f64_f32(vget_low_f32(vreinterpretq_f32_s32(v))));
+#endif
+}
+
+static GS_VEC_INLINE gs_vec4i gs_v4i_f32to64p(const float *p)
+{
+#if defined(GS_VEC_X86)
+   return _mm_castpd_si128(_mm_cvtps_pd(_mm_castpd_ps(_mm_load_sd((const double *)p))));
+#else
+   return vreinterpretq_s32_f64(vcvt_f64_f32(vld1_f32(p)));
+#endif
+}
+
+/* The double at p, twice */
+static GS_VEC_INLINE gs_vec4i gs_v4i_dbroadcast(const double *p)
+{
+#if defined(GS_VEC_X86)
+   return _mm_castpd_si128(_mm_load1_pd(p));
+#else
+   return vreinterpretq_s32_f64(vld1q_dup_f64(p));
+#endif
+}
+
+/* The two doubles as integers in the low lanes, zero above: truncated,
+ * or rounded to nearest */
+static GS_VEC_INLINE gs_vec4i gs_v4i_f64toi32(gs_vec4i v, int truncate)
+{
+#if defined(GS_VEC_X86)
+   return truncate ? _mm_cvttpd_epi32(_mm_castsi128_pd(v)) : _mm_cvtpd_epi32(_mm_castsi128_pd(v));
+#else
+   int64x2_t r = truncate ? vcvtq_s64_f64(vreinterpretq_f64_s32(v)) : vcvtnq_s64_f64(vreinterpretq_f64_s32(v));
+   return vcombine_s32(vmovn_s64(r), vdup_n_s32(0));
+#endif
+}
+
 /* The bits of the floats the GIF path substitutes */
 #define GS_V4I_F32_ONE     0x3f800000 /* 1.0f */
 #define GS_V4I_F32_MAX     0x7f7fffff /* FLT_MAX */

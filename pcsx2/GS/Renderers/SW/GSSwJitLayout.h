@@ -1,7 +1,7 @@
 /*
- * GSSwJit.h's offsets held to the C++ structs of the tier that includes
- * this: a struct changed without them fails to build, in every tier.
- * C++, per tier (after GSScanlineEnvironment.h).
+ * GSSwJit.h's offsets held to the structs of the tier that includes this
+ * (GSDrawScanline.c): a struct changed without them fails to build, in
+ * every tier. C or C++, per tier (after GSScanlineEnvironment.h).
  */
 
 #pragma once
@@ -9,27 +9,31 @@
 #include <stddef.h>
 
 #include "GSScanlineEnvironment.h"
+#ifdef __cplusplus
 #include "GSVertexSW.h"
+#else
+#include "GSRaster.h"
+#endif
 #include "GSSwJit.h"
 
-#define GS_SWJ_AT(type, field, off) static_assert(offsetof(type, field) == (off), #type "." #field " is " #off)
+#define GS_SWJ_AT(type, field, off) PCSX2_STATIC_ASSERT(offsetof(type, field) == (off), #type "." #field " is " #off)
 
 GS_SWJ_AT(GSVertexSW, p, GS_VSW_P);
 GS_SWJ_AT(GSVertexSW, t, GS_VSW_T);
 GS_SWJ_AT(GSVertexSW, c, GS_VSW_C);
-static_assert(sizeof(GSVertexSW) == GS_VSW_SIZE, "GSVertexSW's size");
+PCSX2_STATIC_ASSERT(sizeof(GSVertexSW) == GS_VSW_SIZE, "GSVertexSW's size");
 
-static_assert(GS_POINT_CLASS == GS_SWJ_POINT_CLASS && GS_LINE_CLASS == GS_SWJ_LINE_CLASS
+PCSX2_STATIC_ASSERT(GS_POINT_CLASS == GS_SWJ_POINT_CLASS && GS_LINE_CLASS == GS_SWJ_LINE_CLASS
 	&& GS_TRIANGLE_CLASS == GS_SWJ_TRIANGLE_CLASS && GS_SPRITE_CLASS == GS_SWJ_SPRITE_CLASS, "the primitive classes");
-static_assert(TFX_MODULATE == GS_SWJ_TFX_MODULATE && TFX_DECAL == GS_SWJ_TFX_DECAL && TFX_HIGHLIGHT == GS_SWJ_TFX_HIGHLIGHT
+PCSX2_STATIC_ASSERT(TFX_MODULATE == GS_SWJ_TFX_MODULATE && TFX_DECAL == GS_SWJ_TFX_DECAL && TFX_HIGHLIGHT == GS_SWJ_TFX_HIGHLIGHT
 	&& TFX_HIGHLIGHT2 == GS_SWJ_TFX_HIGHLIGHT2 && TFX_NONE == GS_SWJ_TFX_NONE, "the TFX the generators test");
-static_assert(ZTST_GEQUAL == GS_SWJ_ZTST_GEQUAL && ZTST_GREATER == GS_SWJ_ZTST_GREATER, "ZTST");
-static_assert(ATST_NEVER == GS_SWJ_ATST_NEVER && ATST_ALWAYS == GS_SWJ_ATST_ALWAYS && ATST_LESS == GS_SWJ_ATST_LESS
+PCSX2_STATIC_ASSERT(ZTST_GEQUAL == GS_SWJ_ZTST_GEQUAL && ZTST_GREATER == GS_SWJ_ZTST_GREATER, "ZTST");
+PCSX2_STATIC_ASSERT(ATST_NEVER == GS_SWJ_ATST_NEVER && ATST_ALWAYS == GS_SWJ_ATST_ALWAYS && ATST_LESS == GS_SWJ_ATST_LESS
 	&& ATST_LEQUAL == GS_SWJ_ATST_LEQUAL && ATST_EQUAL == GS_SWJ_ATST_EQUAL && ATST_GEQUAL == GS_SWJ_ATST_GEQUAL
 	&& ATST_GREATER == GS_SWJ_ATST_GREATER && ATST_NOTEQUAL == GS_SWJ_ATST_NOTEQUAL, "ATST");
-static_assert(AFAIL_KEEP == GS_SWJ_AFAIL_KEEP && AFAIL_FB_ONLY == GS_SWJ_AFAIL_FB_ONLY && AFAIL_ZB_ONLY == GS_SWJ_AFAIL_ZB_ONLY
+PCSX2_STATIC_ASSERT(AFAIL_KEEP == GS_SWJ_AFAIL_KEEP && AFAIL_FB_ONLY == GS_SWJ_AFAIL_FB_ONLY && AFAIL_ZB_ONLY == GS_SWJ_AFAIL_ZB_ONLY
 	&& AFAIL_RGB_ONLY == GS_SWJ_AFAIL_RGB_ONLY, "AFAIL");
-static_assert(HALF_VM_SIZE == GS_SWJ_HALF_VM_SIZE, "HALF_VM_SIZE");
+PCSX2_STATIC_ASSERT(HALF_VM_SIZE == GS_SWJ_HALF_VM_SIZE, "HALF_VM_SIZE");
 
 GS_SWJ_AT(GSScanlineGlobalData, vm, GS_SLG_VM);
 GS_SWJ_AT(GSScanlineGlobalData, tex, GS_SLG_TEX);
@@ -61,7 +65,7 @@ GS_SWJ_AT(GSScanlineLocalData, d[0].q, GS_SL8_D_Q);
 GS_SWJ_AT(GSScanlineLocalData, d[0].rb, GS_SL8_D_RB);
 GS_SWJ_AT(GSScanlineLocalData, d[0].ga, GS_SL8_D_GA);
 GS_SWJ_AT(GSScanlineLocalData, d[0].f, GS_SL8_D_F);
-static_assert(sizeof(GSScanlineLocalData::skip) == GS_SL8_SKIP, "the eight-pixel skip");
+PCSX2_STATIC_ASSERT(sizeof(gs_sl_skip) == GS_SL8_SKIP, "the eight-pixel skip");
 GS_SWJ_AT(GSScanlineLocalData, d8.stq, GS_SL8_D8_STQ);
 GS_SWJ_AT(GSScanlineLocalData, d8.c, GS_SL8_D8_C);
 GS_SWJ_AT(GSScanlineLocalData, d8.p.z, GS_SL8_D8_P_Z);
@@ -109,7 +113,7 @@ GS_SWJ_AT(GSScanlineLocalData, d[0].q, GS_SL4_D_Q);
 GS_SWJ_AT(GSScanlineLocalData, d[0].rb, GS_SL4_D_RB);
 GS_SWJ_AT(GSScanlineLocalData, d[0].ga, GS_SL4_D_GA);
 GS_SWJ_AT(GSScanlineLocalData, d[0].f, GS_SL4_D_F);
-static_assert(sizeof(GSScanlineLocalData::skip) == GS_SL4_SKIP, "the four-pixel skip");
+PCSX2_STATIC_ASSERT(sizeof(gs_sl_skip) == GS_SL4_SKIP, "the four-pixel skip");
 GS_SWJ_AT(GSScanlineLocalData, d4.z, GS_SL4_D4_Z);
 GS_SWJ_AT(GSScanlineLocalData, d4.stq, GS_SL4_D4_STQ);
 GS_SWJ_AT(GSScanlineLocalData, d4.c, GS_SL4_D4_C);

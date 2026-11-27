@@ -318,22 +318,10 @@ set(pcsx2GSSourcesUnshared
 	GS/GSLocalMemoryMultiISA.c
 	GS/Renderers/Common/GSVertexTraceFMM.c
 	GS/Renderers/HW/GSRendererHWMultiISA.cpp
-	GS/Renderers/SW/GSDrawScanline.cpp
-	GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp
-	GS/Renderers/SW/GSRasterizer.cpp
+	GS/Renderers/SW/GSDrawScanline.c
+	GS/Renderers/SW/GSRasterizer.c
 	GS/Renderers/SW/GSRendererSW.cpp
-	GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
 )
-
-# The software renderer builds everywhere; only its code generators are
-# x86-only. Without them GSDrawScanline draws through its C++ reference path,
-# which tests/swdraw runs on AArch64 in CI.
-if(NOT _M_X86)
-	list(REMOVE_ITEM pcsx2GSSourcesUnshared
-		GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp
-		GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
-	)
-endif()
 
 set(pcsx2GSSources
 	GS/GSClutGPU.c
@@ -358,6 +346,7 @@ set(pcsx2GSSources
 	GS/Renderers/Common/GSPresent.c
 	GS/Renderers/Common/GSDirtyRect.c
 	GS/Renderers/Common/GSBuddy.c
+	GS/Renderers/Common/GSCodeMap.c
 	GS/Renderers/Common/GSCodeReserve.c
 	GS/Renderers/Common/GSRenderer.cpp
 	GS/Renderers/Common/GSVertexTrace.c
@@ -443,7 +432,7 @@ set(pcsx2GSHeaders
 	GS/Renderers/Common/GSStableMap.h
 	GS/GSPage2Tile.h
 	GS/Renderers/Common/GSCodeReserve.h
-	GS/Renderers/Common/GSFunctionMap.h
+	GS/Renderers/Common/GSCodeMap.h
 	GS/Renderers/Common/GSRenderer.h
 	GS/Renderers/Common/GSTexture.h
 	GS/Renderers/Common/GSTextureBase.h
@@ -458,14 +447,12 @@ set(pcsx2GSHeaders
 	GS/Renderers/HW/GSTextureCache.h
 	GS/Renderers/HW/GSVertexHW.h
 	GS/Renderers/SW/GSDeviceSW.h
-	GS/Renderers/SW/GSDrawScanlineCodeGenerator.h
 	GS/Renderers/SW/GSDrawScanline.h
 	GS/Renderers/SW/GSRaster.h
 	GS/Renderers/SW/GSRasterList.h
 	GS/Renderers/SW/GSRasterizer.h
 	GS/Renderers/SW/GSRendererSW.h
 	GS/Renderers/SW/GSScanlineEnvironment.h
-	GS/Renderers/SW/GSSetupPrimCodeGenerator.h
 	GS/Renderers/SW/GSJitX86.h
 	GS/Renderers/SW/GSSwJit.h
 	GS/Renderers/SW/GSSwJitLayout.h

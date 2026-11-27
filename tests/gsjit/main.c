@@ -1,5 +1,5 @@
 /* The software renderer's generated-code cache, on the real
- * GSFunctionMap.h and GSCodeReserve:
+ * GSCodeMap.c and GSCodeReserve:
  *   - functions are placed only where the reserve has room; once it is
  *     full a request gets NULL, never room past its end;
  *   - a function longer than the first room it is given is generated

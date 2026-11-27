@@ -134,6 +134,7 @@ SOURCES_C += \
 	$(LRPS2_DIR)/NearPlace.c \
 	$(LRPS2_DIR)/Memory.c \
 	$(LRPS2_DIR)/VirtualMemory.c \
+	$(LRPS2_DIR)/GS/Renderers/Common/GSCodeMap.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSCodeReserve.c \
 	$(LRPS2_DIR)/GS/Renderers/Common/GSScratch.c \
 	$(LRPS2_DIR)/GS/Renderers/DX12/GSD3D12Heap.c \
@@ -459,19 +460,18 @@ SOURCES_CXX += \
 # pcsx2/GS/Renderers/SW - the software renderer, on every architecture.
 SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDeviceSW.c \
+	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanline.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRaster.c \
+	$(LRPS2_DIR)/GS/Renderers/SW/GSRasterizer.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRasterList.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSTextureCacheSW.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSTextureSW.c
 
-# The rasterizer, the renderer and the scanline dispatcher are portable: they
-# are written against GSVector4/4i, which have NEON implementations. Only the
-# code generators are x86-only (below); without them GSDrawScanline draws
-# through its C++ reference path (CSetupPrim / CDrawScanline / CDrawEdge),
-# which tests/swdraw runs on AArch64 in CI.
+# The renderer is portable: it is written against GSVector4/4i and
+# gs_vector, which have NEON implementations. Only the code generators are
+# x86-only (below); without them GSDrawScanline.c draws through its C
+# rasterizer, which tests/swdraw runs on AArch64 in CI.
 SOURCES_CXX += \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanline.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSRasterizer.cpp \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSRendererSW.cpp
 
 ifneq ($(IS_ARM64), 1)
@@ -479,9 +479,6 @@ SOURCES_C += \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSJitX86.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimJit.c \
 	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineJit.c
-SOURCES_CXX += \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
 endif
 
 # pcsx2/GS/Renderers/OpenGL

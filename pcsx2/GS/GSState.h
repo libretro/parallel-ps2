@@ -40,7 +40,6 @@
 #include "Renderers/Common/GSVertex.h"
 #include "Renderers/SW/GSVertexSW.h"
 #include "Renderers/HW/GSVertexHW.h"
-#include "Renderers/Common/GSFunctionMap.h"
 #include "Renderers/Common/GSDevice.h"
 #include "GSVector.h"
 #endif

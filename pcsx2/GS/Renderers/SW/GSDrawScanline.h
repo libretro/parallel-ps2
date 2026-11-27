@@ -13,66 +13,69 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+/* The scanline code of a draw (GSDrawScanline.c): on x86 the functions
+ * generated for its selector (GSSwJit.h), kept by selector; elsewhere the
+ * C rasterizer below them. C89; compiled once a tier, so its functions
+ * are named after the tier (GS_SW). */
 
-#include "../../GSState.h"
-#ifdef ARCH_X86 /* the code generators; see ENABLE_JIT_RASTERIZER */
-#include "GSSetupPrimCodeGenerator.h"
-#include "GSDrawScanlineCodeGenerator.h"
-#endif
+#ifndef GS_DRAW_SCANLINE_H
+#define GS_DRAW_SCANLINE_H
 
-struct GSScanlineLocalData;
-
+#include "GSScanlineEnvironment.h"
 #include "GSRaster.h"
+#include "../Common/GSCodeMap.h"
 
-MULTI_ISA_UNSHARED_START
-
-class GSRasterizerData;
-
-#ifdef ARCH_X86
-class GSSetupPrimCodeGenerator;
-class GSDrawScanlineCodeGenerator;
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-class GSDrawScanline : public GSVirtualAlignedClass<32>
-{
-#ifdef ARCH_X86
-	friend GSSetupPrimCodeGenerator;
-	friend GSDrawScanlineCodeGenerator;
-#endif
-
-public:
-	GSDrawScanline();
-	~GSDrawScanline() override;
-
-	/// Function pointer types which we call back into.
-	using SetupPrimPtr = gs_raster_setup_prim_fn;
-	using DrawScanlinePtr = gs_raster_scanline_fn;
-
-	/// Flushes the code cache, forcing everything to be recompiled.
-	void ResetCodeCache();
-
-	/// Populates function pointers. If this returns false, we ran out of code space.
-	bool SetupDraw(GSRasterizerData& data);
-
-	/// Draw pre-calculations, computed per-thread.
-	static void BeginDraw(const GSRasterizerData& data, GSScanlineLocalData& local);
-
-
-private:
-#ifdef ARCH_X86
-	/* (made at start for more functions than a game makes: random
-	 * selectors average 0.3 to 0.7 KiB of setup and 1.1 to 1.3 KiB of
-	 * scanline, so the 64 MiB code reserve fills first) */
-	GSCodeGeneratorFunctionMap<GSSetupPrimCodeGenerator, u64, SetupPrimPtr, 2048> m_sp_map;
-	GSCodeGeneratorFunctionMap<GSDrawScanlineCodeGenerator, u64, DrawScanlinePtr, 8192> m_ds_map;
+/* A function of the tier this is compiled for */
+#ifdef MULTI_ISA_UNSHARED_COMPILATION
+#define GS_SW_ISA MULTI_ISA_UNSHARED_COMPILATION
 #else
-	/* The C++ rasterizer, where no code is generated. */
-	static void CSetupPrim(const GSVertexSW* vertex, const u16* index, const GSVertexSW* dscan, GSScanlineLocalData* local);
-	static void CDrawScanline(int pixels, int left, int top, const GSVertexSW* scan, GSScanlineLocalData* local);
-	static void CDrawEdge(int pixels, int left, int top, const GSVertexSW* scan, GSScanlineLocalData* local);
-	__ri static void CDrawScanline(int pixels, int left, int top, const GSVertexSW& scan, GSScanlineLocalData& local, GSScanlineSelector sel);
+#define GS_SW_ISA isa_native
 #endif
-};
+#define GS_SW_CAT_(a, b) a##_##b
+#define GS_SW_CAT(a, b) GS_SW_CAT_(a, b)
+#define GS_SW(name) GS_SW_CAT(name, GS_SW_ISA)
 
-MULTI_ISA_UNSHARED_END
+/* Generated code (x86), or the C rasterizer: GS_DS_INTERPRET asks for the
+ * latter anywhere (tests/gsscanline) */
+#if (defined(ARCH_X86) || defined(__x86_64__) || defined(_M_X64)) && !defined(GS_DS_INTERPRET)
+#define GS_DS_JIT 1
+#endif
+
+struct gs_rasterizer_data;
+
+typedef struct gs_draw_scanline
+{
+#ifdef GS_DS_JIT
+	/* The setup and scanline functions made, by selector: made at start
+	 * for more than a game makes (random selectors average 0.3 to 0.7 KiB
+	 * of setup and 1.1 to 1.3 KiB of scanline, so the 64 MiB code reserve
+	 * fills first) */
+	gs_code_map sp_map;
+	gs_code_map ds_map;
+#else
+	int unused;
+#endif
+} gs_draw_scanline;
+
+void GS_SW(gs_draw_scanline_init)(gs_draw_scanline* ds);
+void GS_SW(gs_draw_scanline_free)(gs_draw_scanline* ds);
+
+/* Forgets every function made, for a start of the code reserve again */
+void GS_SW(gs_draw_scanline_reset_code_cache)(gs_draw_scanline* ds);
+
+/* The draw's setup, scanline and edge functions; false when the code
+ * reserve or the maps are out of room */
+bool GS_SW(gs_draw_scanline_setup_draw)(gs_draw_scanline* ds, struct gs_rasterizer_data* data);
+
+/* What a thread works out of a draw before its primitives */
+void GS_SW(gs_draw_scanline_begin_draw)(const struct gs_rasterizer_data* data, GSScanlineLocalData* local);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

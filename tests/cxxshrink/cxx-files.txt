@@ -3,11 +3,7 @@ pcsx2/GS/Renderers/HW/GSHwHack.cpp
 pcsx2/GS/Renderers/HW/GSRendererHW.cpp
 pcsx2/GS/Renderers/HW/GSRendererHWMultiISA.cpp
 pcsx2/GS/Renderers/HW/GSTextureCache.cpp
-pcsx2/GS/Renderers/SW/GSDrawScanline.cpp
-pcsx2/GS/Renderers/SW/GSDrawScanlineCodeGenerator.cpp
-pcsx2/GS/Renderers/SW/GSRasterizer.cpp
 pcsx2/GS/Renderers/SW/GSRendererSW.cpp
-pcsx2/GS/Renderers/SW/GSSetupPrimCodeGenerator.cpp
 pcsx2/GS/Renderers/parallel-gs/GSRendererPGS.cpp
 pcsx2/GS/parallel-gs/Granite/util/aligned_alloc.hpp
 pcsx2/GS/parallel-gs/Granite/util/bitops.hpp
