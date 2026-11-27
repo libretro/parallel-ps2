@@ -107,20 +107,20 @@ static void Compare(const char* what, const u32* got, const RefVertex* want, con
 
 static void RunXYZF2(const u8* rec, u32 uv)
 {
-	alignas(16) GSVertexKernels::GSVertexNative out[2];
+	alignas(16) gs_vec4i out[2];
 	RefVertex want;
 
-	GSVertexKernels::ParsePackedSTQRGBAXYZF2((const GIFPackedReg*)rec, uv, out);
+	gs_vk_parse_stqrgbaxyzf2((const GIFPackedReg*)rec, uv, out);
 	want = RefParseXYZF2(rec, uv);
 	Compare("STQRGBAXYZF2", (const u32*)out, &want, rec);
 }
 
 static void RunXYZ2(const u8* rec, u64 uvfog)
 {
-	alignas(16) GSVertexKernels::GSVertexNative out[2];
+	alignas(16) gs_vec4i out[2];
 	RefVertex want;
 
-	GSVertexKernels::ParsePackedSTQRGBAXYZ2((const GIFPackedReg*)rec, &uvfog, out);
+	gs_vk_parse_stqrgbaxyz2((const GIFPackedReg*)rec, &uvfog, out);
 	want = RefParseXYZ2(rec, uvfog);
 	Compare("STQRGBAXYZ2", (const u32*)out, &want, rec);
 }
@@ -199,9 +199,9 @@ static u32 RefCullSkip(int prim, RefV v0, RefV v1, RefV v2, RefV cmin, RefV cmax
 	return outside ? 1u : 0u;
 }
 
-static GSVector4i FromRef(RefV v)
+static gs_vec4i FromRef(RefV v)
 {
-	return GSVector4i(v.x, v.y, v.z, v.w);
+	return gs_v4i_set4(v.x, v.y, v.z, v.w);
 }
 
 static unsigned long g_cull_checked;
@@ -210,11 +210,11 @@ static unsigned long g_cull_failed;
 template <u32 prim>
 static void RunCull(RefV v0, RefV v1, RefV v2, RefV cmin, RefV cmax, int nativeres)
 {
-	GSVector4i pmin, pmax;
+	gs_vec4i pmin, pmax;
 	u32 got, want;
 
-	GSVertexKernels::BuildPrimBBox<prim>(FromRef(v0), FromRef(v1), FromRef(v2), pmin, pmax);
-	got = GSVertexKernels::CullSkipTest<prim>(pmin, pmax, FromRef(v0), FromRef(v1), FromRef(v2),
+	gs_vk_prim_bbox(prim, FromRef(v0), FromRef(v1), FromRef(v2), &pmin, &pmax);
+	got = gs_vk_cull_skip(prim, pmin, pmax, FromRef(v0), FromRef(v1), FromRef(v2),
 		FromRef(cmin), FromRef(cmax), nativeres != 0) ? 1u : 0u;
 	want = RefCullSkip(prim, v0, v1, v2, cmin, cmax, nativeres);
 

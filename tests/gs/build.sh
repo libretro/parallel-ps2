@@ -37,8 +37,8 @@ g++ -O2 -std=c++17 -o "$DIR/gs_reg_index" "$DIR/gs_reg_index.cpp"
 "$DIR/gs_reg_index"
 
 # The savestate restore path re-applies what the register write handlers do.
-# The two Q scrubs are written with GSVector in GSState.cpp and re-done in
-# scalar code on the restore path, so this uses the real GSVector and
+# The two Q scrubs are written with gs_vector in GSState.c and re-done in
+# scalar code on the restore path, so this uses the real gs_vector and
 # runs the handler's own expression against the scalar one, bit pattern by
 # bit pattern -- negative zero being the case where a tidier scalar version
 # would silently disagree.
@@ -84,14 +84,14 @@ g++ $REALFLAGS -std=c++17 -msse4.1 -o "$DIR/gs_fmm_bench" "$DIR/gs_fmm_bench.cpp
     -I"$ROOT/libretro/libretro-common/include"
 "$DIR/gs_fmm_bench"
 
-# aarch64: the parse and cull kernels go through GSVector, which has its own
-# NEON spelling there. Only the oracle runs -- the benchmarks above measure
+# aarch64: the parse and cull kernels go through gs_vector, which has its
+# own NEON spelling there. Only the oracle runs -- the benchmarks above measure
 # this host, and a qemu figure would be the emulator's cost, not the
 # target's.
 if command -v aarch64-linux-gnu-g++ >/dev/null 2>&1 &&
    command -v qemu-aarch64 >/dev/null 2>&1; then
 	echo
-	echo "=== aarch64 (NEON GSVector) ==="
+	echo "=== aarch64 (NEON gs_vector) ==="
 	aarch64-linux-gnu-g++ -O2 -std=c++17 -static \
 	    -o "$DIR/gs_vertex_oracle64" "$DIR/gs_vertex_oracle.cpp" \
 	    -I"$ROOT" -I"$ROOT/common" -I"$ROOT/common/include" -I"$ROOT/pcsx2" \

@@ -111,6 +111,9 @@ struct gs_vertex_trace
 	struct { u32 value; } m_filter; /* bit 0 mmag, 1 mmin, 2 linear, 3 opt_linear */
 #endif
 	GS_VT_V2F m_lod; /* x = min, y = max */
+	/* The state whose registers an update reads (gs_state_vt_update);
+	 * set by that state, left by gs_vertex_trace_init */
+	const void* m_state;
 };
 
 /* Empty, with the min/max finders for this CPU and the provoking vertex
@@ -142,20 +145,13 @@ public:
 	typedef gs_vt_vertex Vertex;
 	typedef gs_vt_alpha VertexAlpha;
 
-	GSVertexTrace(const GSState* state, bool provoking_vertex_first)
-	{
-		/* (m_state may sit in the C struct's tail padding: set after) */
-		gs_vertex_trace_init(this, provoking_vertex_first);
-		m_state = state;
-	}
+	/* Made by the state it traces, in C (gs_state_init) */
+	GSVertexTrace() = default;
 
 	void Update(const void* vertex, const u16* index, int v_count, int i_count, GS_PRIM_CLASS primclass);
 
 	bool IsLinear() const { return m_filter.opt_linear; }
 	bool IsRealLinear() const { return m_filter.linear; }
-
-private:
-	const GSState* m_state;
 };
 
 static_assert(sizeof(GSVector4i) == 16 && sizeof(GSVector4) == 16 && sizeof(GSVector2) == 8,

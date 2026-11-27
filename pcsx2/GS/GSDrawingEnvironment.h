@@ -13,9 +13,12 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_DRAWING_ENVIRONMENT_H
+#define GS_DRAWING_ENVIRONMENT_H
 
-struct alignas(32) GSDrawingEnvironment
+#include "GSDrawingContext.h"
+
+typedef struct PCSX2_ALIGN(32) GSDrawingEnvironment
 {
 	GIFRegPRIM       PRIM;
 	GIFRegPRMODE     PRMODE;
@@ -32,5 +35,7 @@ struct alignas(32) GSDrawingEnvironment
 	GIFRegTRXDIR     TRXDIR;
 	GIFRegTRXPOS     TRXPOS;
 	GIFRegTRXREG     TRXREG;
-	GSDrawingContext CTXT[2];
-};
+	PCSX2_LANG_TYPE(GSDrawingContext, gs_drawing_context) CTXT[2];
+} GSDrawingEnvironment;
+
+#endif

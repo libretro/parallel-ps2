@@ -13,21 +13,20 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef GS_STATE_H
+#define GS_STATE_H
 
-#include "GS.h"
+#include "common/Pcsx2Defs.h"
+#include <boolean.h>
+#include "GSRegs.h"
 #include "GSLocalMemory.h"
+#include "GSClut.h"
 #include "GSDrawingContext.h"
 #include "GSDrawingEnvironment.h"
-#include "Renderers/Common/GSVertex.h"
-#include "MultiISA.h"
-#include "Renderers/SW/GSVertexSW.h"
-#include "Renderers/HW/GSVertexHW.h"
-#include "Renderers/Common/GSFunctionMap.h"
+#include "Renderers/Common/gs_vertex.h"
 #include "Renderers/Common/GSVertexTrace.h"
-#include "Renderers/Common/GSDevice.h"
 #include "Renderers/Common/GSArray.h"
-#include "GSVector.h"
+#include "gs_vector.h"
 #include "GSPCRTC.h"
 #include "GSDrawQuery.h"
 #include "GSTransfer.h"
@@ -35,281 +34,621 @@
 #include "GSBackend.h"
 #include "Renderers/Common/GSPresent.h"
 
+#ifdef __cplusplus
+#include "GS.h"
+#include "MultiISA.h"
+#include "Renderers/Common/GSVertex.h"
+#include "Renderers/SW/GSVertexSW.h"
+#include "Renderers/HW/GSVertexHW.h"
+#include "Renderers/Common/GSFunctionMap.h"
+#include "Renderers/Common/GSDevice.h"
+#include "GSVector.h"
+#endif
+
+/* The GS's state machine: the GIF register handlers, the vertex queue and
+ * its kicks, the transfers between the EE and local memory, the flush of a
+ * draw and the savestate. A C struct the GIF path (GSState.c) works on;
+ * the renderers are C++ classes deriving from GSState, which wraps it and
+ * names its members as they always were. Each member is typed as its own
+ * language spells it (PCSX2_LANG_TYPE), laid out alike in both. */
+
+#ifdef __cplusplus
+/* The PCRTC's read circuits, with the renderers' names for them */
+struct GSPCRTCRegs : gs_pcrtc
+{
+	typedef gs_pcrtc_display PCRTCDisplay;
+
+	bool IsAnalogue() const { return gs_pcrtc_is_analogue(this); }
+	void SetVideoMode(GSVideoMode mode) { gs_pcrtc_set_video_mode(this, static_cast<int>(mode)); }
+	void EnableDisplays(GSRegPMODE pmode, GSRegSMODE2 smode2, bool smodetoggle) { gs_pcrtc_enable_displays(this, pmode, smode2, smodetoggle); }
+	void CheckSameSource() { gs_pcrtc_check_same_source(this); }
+	bool FrameWrap() const { return gs_pcrtc_frame_wrap(this); }
+	/* Both reads start at the same place: one read does */
+	bool FrameRectMatch() const { return PCRTCSameSrc; }
+	GSVector2i GetResolution() const { const gs_point r = gs_pcrtc_resolution(this); return GSVector2i(r.x, r.y); }
+	GSVector4i GetFramebufferRect(int display) const
+	{
+		const gs_recti r = gs_pcrtc_framebuffer_rect(this, display);
+		return GSVector4i(r.x, r.y, r.z, r.w);
+	}
+	int GetFramebufferBitDepth() const { return gs_pcrtc_framebuffer_bit_depth(this); }
+	GSVector2i GetFramebufferSize(int display) const { const gs_point r = gs_pcrtc_framebuffer_size(this, display); return GSVector2i(r.x, r.y); }
+	void SetRects(int display, GSRegDISPLAY displayReg, GSRegDISPFB framebufferReg) { gs_pcrtc_set_rects(this, display, displayReg, framebufferReg); }
+	void CalculateFramebufferOffset(bool scanmask) { gs_pcrtc_calculate_framebuffer_offset(this, scanmask); }
+	void RemoveFramebufferOffset(int display) { gs_pcrtc_remove_framebuffer_offset(this, display); }
+	void CalculateDisplayOffset(bool scanmask) { gs_pcrtc_calculate_display_offset(this, scanmask); }
+	/* A display's rects as vectors */
+	GSVector4i DisplayRect(int i) const { return GS_V4I(&PCRTCDisplays[i].displayRect); }
+	GSVector4i FramebufferRect(int i) const { return GS_V4I(&PCRTCDisplays[i].framebufferRect); }
+};
+
+#endif
+
+struct gs_state;
+#ifdef __cplusplus
 class GSState;
+class GSTexture;
+typedef GSState gs_state_self;
+#define GS_STATE_V4I  GSVector4i
+#define GS_STATE_OPV4I GSVector4i
+#define GS_STATE_V2I  GSVector2i
+#define GS_STATE_TEX  GSTexture
+#define GS_STATE_VTX  GSVertex
+extern "C" {
+#else
+/* The renderers' functions take the C++ types; C hands them the same
+ * objects under those names (incomplete here), so the functions are
+ * called as the type they are. */
+struct GSState;
+struct GSVector4i;
+struct GSVector2i;
+struct GSTexture;
+typedef struct GSState gs_state_self;
+#define GS_STATE_V4I  gs_vec4i
+#define GS_STATE_OPV4I struct GSVector4i
+#define GS_STATE_V2I  struct GSVector2i
+#define GS_STATE_TEX  struct GSTexture
+#define GS_STATE_VTX  union gs_vertex
+#endif
 
 /* What the hardware and the software renderer answer differently, as a
  * table of plain functions; the renderer itself is the first argument.
- * This is what GSState's virtual functions used to be. Each renderer
- * fills one (GSRendererHW.cpp, GSRendererSW.cpp) and sets m_ops in its
- * constructor. A NULL entry means "what GSState does by default", which
- * for most of them is nothing. GSState's member functions of the same
- * names call through the table, so nothing that calls Draw() or VSync()
- * on a renderer had to change. */
+ * Each renderer fills one (GSRendererHW.cpp, GSRendererSW.cpp) and sets
+ * m_ops when it is made. A NULL entry means "what the state does by
+ * default", which for most of them is nothing. */
 struct gs_state_ops
 {
-	void       (*free)(GSState* gs);
-	void       (*destroy)(GSState* gs);
-	void       (*reset)(GSState* gs, bool hardware_reset);
-	void       (*update_settings)(GSState* gs, const EmuGSOptions* old_config);
-	void       (*update_render_fixes)(GSState* gs);
-	void       (*vsync)(GSState* gs, u32 field, bool registers_written, bool idle_frame);
-	void       (*draw)(GSState* gs);
-	void       (*move)(GSState* gs);
-	void       (*purge_texture_cache)(GSState* gs, bool sources, bool targets, bool hash_cache);
-	void       (*readback_texture_cache)(GSState* gs);
-	void       (*invalidate_video_mem)(GSState* gs, const GIFRegBITBLTBUF* BITBLTBUF, const GSVector4i* r);
-	void       (*invalidate_local_mem)(GSState* gs, const GIFRegBITBLTBUF* BITBLTBUF, const GSVector4i* r, bool clut);
-	bool       (*can_upscale)(GSState* gs);
-	float      (*get_upscale_multiplier)(GSState* gs);
-	float      (*get_texture_scale_factor)(GSState* gs);
-	GSTexture* (*lookup_palette_source)(GSState* gs, u32 CBP, u32 CPSM, u32 CBW, GSVector2i* offset, float* scale, float* sample, const GSVector2i* size);
-	GSTexture* (*get_output)(GSState* gs, int i, float* scale, int* y_offset);
-	GSTexture* (*get_feedback_output)(GSState* gs, float* scale);
+	void          (*free)(gs_state_self* gs);
+	void          (*destroy)(gs_state_self* gs);
+	void          (*reset)(gs_state_self* gs, bool hardware_reset);
+	void          (*update_settings)(gs_state_self* gs, const EmuGSOptions* old_config);
+	void          (*update_render_fixes)(gs_state_self* gs);
+	void          (*vsync)(gs_state_self* gs, u32 field, bool registers_written, bool idle_frame);
+	void          (*draw)(gs_state_self* gs);
+	void          (*move)(gs_state_self* gs);
+	void          (*purge_texture_cache)(gs_state_self* gs, bool sources, bool targets, bool hash_cache);
+	void          (*readback_texture_cache)(gs_state_self* gs);
+	void          (*invalidate_video_mem)(gs_state_self* gs, const GIFRegBITBLTBUF* BITBLTBUF, const GS_STATE_OPV4I* r);
+	void          (*invalidate_local_mem)(gs_state_self* gs, const GIFRegBITBLTBUF* BITBLTBUF, const GS_STATE_OPV4I* r, bool clut);
+	bool          (*can_upscale)(gs_state_self* gs);
+	float         (*get_upscale_multiplier)(gs_state_self* gs);
+	float         (*get_texture_scale_factor)(gs_state_self* gs);
+	GS_STATE_TEX* (*lookup_palette_source)(gs_state_self* gs, u32 CBP, u32 CPSM, u32 CBW, GS_STATE_V2I* offset, float* scale, float* sample, const GS_STATE_V2I* size);
+	GS_STATE_TEX* (*get_output)(gs_state_self* gs, int i, float* scale, int* y_offset);
+	GS_STATE_TEX* (*get_feedback_output)(gs_state_self* gs, float* scale);
 	/* The depth the picture in color, a texture get_output returned, was
 	 * drawn with, for the VR eyes (GSVR.h): the depth buffer itself, or
 	 * the bytes of its Z when *encoded, and the scale that takes those to
 	 * [0, 1]. NULL, or false, where there is none. */
-	bool       (*get_vr_depth)(GSState* gs, GSTexture* color, GSTexture** depth, bool* encoded, float* z_scale);
+	bool          (*get_vr_depth)(gs_state_self* gs, GS_STATE_TEX* color, GS_STATE_TEX** depth, bool* encoded, float* z_scale);
 	/* A savestate has replaced local memory: `changed` has a bit set for
 	 * each page (GS_MAX_PAGES) whose contents it changed. The others hold
 	 * what they held, so what a renderer made from them can stay. */
-	void       (*mem_restored)(GSState* gs, const u32* changed);
+	void          (*mem_restored)(gs_state_self* gs, const u32* changed);
 	/* A savestate taken in this instance (GSSnapshotSave): keep a copy
 	 * of what is drawn on the GPU under the key. */
-	void       (*snapshot_targets)(GSState* gs, u64 key);
+	void          (*snapshot_targets)(gs_state_self* gs, u64 key);
 	/* An auto-flushed batch split into segments: whether the renderer
 	 * draws it at once, each segment reading what the ones before it
 	 * drew (true), or is to be handed one segment at a time (false or
 	 * NULL). Asked with the vertex trace of the whole batch made. */
-	bool       (*can_draw_runs)(GSState* gs);
+	bool          (*can_draw_runs)(gs_state_self* gs);
 };
 
-class GSState : public GSAlignedClass<32>
+/* The registers a draw's flush tests for change since the draw began */
+enum
+{
+	GS_DIRTY_REG_ALPHA,
+	GS_DIRTY_REG_CLAMP,
+	GS_DIRTY_REG_COLCLAMP,
+	GS_DIRTY_REG_DIMX,
+	GS_DIRTY_REG_DTHE,
+	GS_DIRTY_REG_FBA,
+	GS_DIRTY_REG_FOGCOL,
+	GS_DIRTY_REG_FRAME,
+	GS_DIRTY_REG_MIPTBP1,
+	GS_DIRTY_REG_MIPTBP2,
+	GS_DIRTY_REG_PABE,
+	GS_DIRTY_REG_PRIM,
+	GS_DIRTY_REG_SCANMSK,
+	GS_DIRTY_REG_SCISSOR,
+	GS_DIRTY_REG_TEST,
+	GS_DIRTY_REG_TEX0,
+	GS_DIRTY_REG_TEX1,
+	GS_DIRTY_REG_TEXA,
+	GS_DIRTY_REG_XYOFFSET,
+	GS_DIRTY_REG_ZBUF
+};
+
+/* Why a draw was flushed, for the renderer to read while it draws */
+#define GS_FLUSH_UNKNOWN          (1 << 0)
+#define GS_FLUSH_RESET            (1 << 1)
+#define GS_FLUSH_CONTEXTCHANGE    (1 << 2)
+#define GS_FLUSH_CLUTCHANGE       (1 << 3)
+#define GS_FLUSH_GSTRANSFER       (1 << 4)
+#define GS_FLUSH_UPLOADDIRTYTEX   (1 << 5)
+#define GS_FLUSH_UPLOADDIRTYFRAME (1 << 6)
+#define GS_FLUSH_UPLOADDIRTYZBUF  (1 << 7)
+#define GS_FLUSH_LOCALTOLOCALMOVE (1 << 8)
+#define GS_FLUSH_DOWNLOADFIFO     (1 << 9)
+#define GS_FLUSH_SAVESTATE        (1 << 10)
+#define GS_FLUSH_LOADSTATE        (1 << 11)
+#define GS_FLUSH_AUTOFLUSH        (1 << 12)
+#define GS_FLUSH_VSYNC            (1 << 13)
+#define GS_FLUSH_GSREOPEN         (1 << 14)
+#define GS_FLUSH_VERTEXCOUNT      (1 << 15)
+
+#define GS_INVALID_ALPHA_MINMAX_STATE GS_INVALID_ALPHA_MINMAX
+
+/* The vertex queue: room for a full draw of the widest primitive and the
+ * transfers the targets made from them look back on */
+#define GS_STATE_VERTEX_CAPACITY    (0x10000 + 8)
+#define GS_STATE_DRAW_TRANSFERS_MAX 4096
+/* Where auto flush would have ended the batch, at most */
+#define GS_STATE_AF_MAX_SEGMENTS    64
+
+/* An EE transfer into local memory, kept for the targets made from it */
+typedef struct gs_upload_queue
+{
+	GIFRegBITBLTBUF blit;
+	GS_STATE_V4I rect;
+	int draw;
+	bool zero_clear;
+} gs_upload_queue;
+
+/* The GIF register handlers, by register */
+typedef void (*gs_gif_packed_fn)(struct gs_state* s, const GIFPackedReg* RESTRICT r);
+typedef void (*gs_gif_reg_fn)(struct gs_state* s, const GIFReg* RESTRICT r);
+typedef void (*gs_gif_packed_run_fn)(struct gs_state* s, const GIFPackedReg* RESTRICT r, u32 size);
+
+/* C's view of local memory as C++ wraps it: the palette after it */
+typedef struct PCSX2_ALIGN(32) gs_state_clut
+{
+	gs_clut m_c;
+} gs_state_clut;
+
+typedef struct gs_state_mem
+{
+	gs_local_memory lm;
+	gs_state_clut m_clut;
+} gs_state_mem;
+
+
+struct gs_state
+{
+	/* Each GIF register's handler: the vertex kicks' are swapped in by
+	 * primitive and by whether the draw reads its own target
+	 * (gs_state_update_vertex_kick) */
+	gs_gif_packed_fn     m_fpGIFPackedRegHandlers[16];
+	/* [plain, auto-flush][prim][XYZF2, XYZF3, XYZ2, XYZ3] */
+	gs_gif_packed_fn     m_fpGIFPackedRegHandlerXYZ[2][8][4];
+	gs_gif_reg_fn        m_fpGIFRegHandlers[256];
+	gs_gif_reg_fn        m_fpGIFRegHandlerXYZ[2][8][4];
+	gs_gif_packed_run_fn m_fpGIFPackedRegHandlersC[2];
+	gs_gif_packed_run_fn m_fpGIFPackedRegHandlerSTQRGBAXYZF2[2][8];
+	gs_gif_packed_run_fn m_fpGIFPackedRegHandlerSTQRGBAXYZ2[2][8];
+
+	gs_transfer m_tr;
+
+	GS_STATE_VTX m_v;
+	float m_q;
+	/* Hot per-vertex flags, in the alignment hole after m_q, so they
+	 * share a cache line with it and the scissor cull constants */
+	u32 m_dirty_gs_regs;
+	bool m_scissor_invalid;
+	bool m_nativeres;
+	GS_STATE_V4I m_scissor_cull_min;
+	GS_STATE_V4I m_scissor_cull_max;
+	GS_STATE_V4I m_xyof;
+
+	struct
+	{
+		GS_STATE_VTX* buff;
+		u32 head, tail, next; /* head: first vertex, tail: last vertex + 1, next: last indexed + 1 */
+		u32 xy_tail;
+		GS_STATE_V4I xy[4];
+		GS_STATE_V4I xyhead;
+	} m_vertex;
+
+	struct
+	{
+		u16* buff;
+		u32 tail;
+	} m_index;
+
+	/* Whether the draw state samples its own frame or Z buffer, so its
+	 * vertex kicks take the auto-flush handlers; re-chosen when it flips */
+	bool m_autoflush_kick;
+	/* The batch so far is all primitives reading only the pixels they
+	 * write, and an overlap auto flush would have flushed was let through
+	 * for the draw to take in place (tex-is-fb) */
+	bool m_af_pixel_batch;
+	bool m_af_skipped;
+	/* Where auto flush would have ended the batch: an index count each,
+	 * the start of a segment that reads what the ones before it drew.
+	 * The batch is drawn whole when the renderer can (can_draw_runs),
+	 * else one segment at a time; detection looks back to the current
+	 * segment's start, over its own draw rect */
+	u32 m_af_seg_start[GS_STATE_AF_MAX_SEGMENTS];
+	u32 m_af_seg_count;
+	GS_STATE_V4I m_af_seg_draw;
+	bool m_af_seg_fresh;
+	/* (where a batch is kept while it is drawn a segment at a time, made
+	 * with the buffers) */
+	u16* m_af_saved_index;
+	GS_STATE_VTX* m_af_saved_vertex;
+
+	PCSX2_LANG_TYPE(GSVertexTrace, struct gs_vertex_trace) m_vt;
+
+	GIFPath m_path[4];
+	const GIFRegPRIM* PRIM;
+	GSPrivRegSet* m_regs;
+	GSDrawingEnvironment m_env;
+	GSDrawingEnvironment m_prev_env;
+	const GSDrawingEnvironment* m_draw_env;
+	PCSX2_LANG_TYPE(GSDrawingContext, gs_drawing_context)* m_context;
+
+	/* The renderer takes draws reading only the pixels they write in
+	 * place (tex-is-fb), so auto flush leaves them in the batch */
+	bool m_pixel_feedback_ok;
+	GS_STATE_V4I temp_draw_rect;
+	/* Savestates restored: what a renderer made of local memory before
+	 * the count changed may be stale */
+	u32 m_mem_restores;
+	/* A savestate is being loaded: the reset it makes is the start of
+	 * that */
+	bool m_state_loading;
+
+	bool m_mipmap;
+	bool m_texflush_flag;
+	bool m_isPackedUV_HackFlag;
+	bool m_channel_shuffle;
+	u8 m_scanmask_used;
+	int m_backed_up_ctx;
+
+	/* The EE's transfers into local memory since the draws stopped
+	 * preloading them, in order (gs_upload_queue), for the targets made
+	 * from them: pushed, read back from the end, walked backwards and
+	 * cut at the front */
+	gs_array_t m_draw_transfers;
+
+	int m_primitive_covers_without_gaps; /* GS_GAPS_* */
+	GS_STATE_V4I m_r;
+	GS_STATE_V4I m_r_no_scissor;
+
+	int m_state_flush_reason; /* GS_FLUSH_* */
+	int m_prim_overlap;       /* GS_OVERLAP_* */
+
+	/* The sprites of a draw in runs that do not overlap, a count a run
+	 * (u32), for the device to draw a run at a time between barriers */
+	gs_array_t m_drawlist;
+
+	/* The PCRTC's two read circuits, as GSPCRTC.c keeps them */
+	PCSX2_LANG_TYPE(GSPCRTCRegs, gs_pcrtc) PCRTCDisplays;
+
+	const struct gs_state_ops* m_ops;
+
+	/* The merge, the VR eyes and the present at a vsync (GSPresent.c) */
+	gs_present m_present;
+
+	bool m_process_texture;
+	bool m_downscale_source;
+
+	/* Last: C++ makes it before anything else here is set (GSLocalMemory),
+	 * and gs_state_init clears everything before it */
+	PCSX2_LANG_TYPE(GSLocalMemory, gs_state_mem) m_mem;
+};
+
+/* The draw number and the transfer counts. Only the MTGS thread touches
+ * them. */
+extern int gs_state_n;
+extern int gs_state_last_transfer_draw_n;
+extern int gs_state_transfer_n;
+
+/* The members as the C code reads them, in either language */
+#define GS_STATE_LM(s)   ((gs_local_memory*)&(s)->m_mem)
+#define GS_STATE_CLUT(s) ((gs_clut*)&(s)->m_mem.m_clut)
+#define GS_STATE_VT(s)   ((struct gs_vertex_trace*)&(s)->m_vt)
+#define GS_STATE_CTX(s)  ((gs_drawing_context*)(s)->m_context)
+
+/* Everything but m_mem, which its owner has made (C++: GSLocalMemory's
+ * constructor) */
+void gs_state_init(struct gs_state* s);
+void gs_state_deinit(struct gs_state* s);
+
+void gs_state_reset_base(struct gs_state* s, bool hardware_reset);
+void gs_state_update_settings_base(struct gs_state* s, const EmuGSOptions* old_config);
+void gs_state_move_base(struct gs_state* s);
+void gs_state_reset_handlers(struct gs_state* s);
+void gs_state_refetch_pixel_offsets(struct gs_state* s);
+void gs_state_push_draw_transfer(struct gs_state* s, const gs_upload_queue* transfer);
+
+void gs_state_flush(struct gs_state* s, int reason);
+void gs_state_flush_write(struct gs_state* s);
+void gs_state_flush_prim(struct gs_state* s);
+bool gs_state_test_draw_changed(struct gs_state* s);
+void gs_state_check_write_overlap(struct gs_state* s, bool req_write, bool req_read);
+void gs_state_update_context(struct gs_state* s);
+void gs_state_update_scissor(struct gs_state* s);
+void gs_state_update_vertex_kick(struct gs_state* s);
+void gs_state_update_auto_flush_kick(struct gs_state* s);
+
+/* The EE's side: a transfer into local memory, a read out of it, the GIF
+ * packets and the savestate */
+void gs_state_transfer_write(struct gs_state* s, const u8* mem, int len);
+void gs_state_transfer_read(struct gs_state* s, u8* mem, int len);
+void gs_state_init_read_fifo(struct gs_state* s, u8* mem, int len);
+void gs_state_read_fifo(struct gs_state* s, u8* mem, int size);
+void gs_state_read_local_memory_unsync(struct gs_state* s, u8* mem, int qwc, GIFRegBITBLTBUF BITBLTBUF,
+	GIFRegTRXPOS TRXPOS, GIFRegTRXREG TRXREG);
+void gs_state_soft_reset(struct gs_state* s, u32 mask);
+void gs_state_transfer(struct gs_state* s, const u8* mem, u32 size);
+int  gs_state_freeze(struct gs_state* s, freezeData* fd, bool sizeonly);
+int  gs_state_defrost(struct gs_state* s, const freezeData* fd);
+
+/* The trace of the draw in hand, from the registers it was drawn with */
+void gs_state_vt_update(struct gs_state* s, const void* vertex, const u16* index, int v_count, int i_count,
+	GS_PRIM_CLASS primclass);
+
+/* The draw in hand's registers and trace, for GSDrawQuery.c */
+static INLINE gs_draw_query gs_state_draw_query(const struct gs_state* s)
+{
+	gs_draw_query q;
+	q.vt           = GS_STATE_VT(s);
+	q.prim         = s->PRIM;
+	q.ctx          = gs_ctx_regs(GS_STATE_CTX(s));
+	q.texa         = &s->m_draw_env->TEXA;
+	q.clut         = GS_STATE_CLUT(s);
+	q.vertex       = s->m_vertex.buff;
+	q.index        = s->m_index.buff;
+	q.vertex_count = s->m_vertex.next;
+	q.index_count  = s->m_index.tail;
+	q.r            = (const gs_recti*)&s->m_r;
+	q.r_no_scissor = (const gs_recti*)&s->m_r_no_scissor;
+	q.gaps_found   = s->m_primitive_covers_without_gaps == GS_GAPS_FOUND;
+	q.hw           = emu_gs_hardware_renderer(&GSConfig);
+	return q;
+}
+
+/* Where the savestate's parts live (GSStateFile.c) */
+static INLINE gs_state_parts gs_state_get_parts(struct gs_state* s)
+{
+	gs_state_parts p;
+	p.env    = (gs_env_regs*)&s->m_env;
+	p.ctx[0] = (gs_drawing_regs*)&s->m_env.CTXT[0];
+	p.ctx[1] = (gs_drawing_regs*)&s->m_env.CTXT[1];
+	p.v      = (union gs_vertex*)&s->m_v;
+	p.tr     = &s->m_tr;
+	p.vm     = GS_STATE_LM(s)->m_vm8;
+	p.path   = s->m_path;
+	p.q      = &s->m_q;
+	return p;
+}
+
+static INLINE gs_upload_queue* gs_state_draw_transfers(struct gs_state* s)
+{
+	return GS_ARRAY_ITEMS(&s->m_draw_transfers, gs_upload_queue);
+}
+
+static INLINE gs_upload_queue* gs_state_last_draw_transfer(struct gs_state* s)
+{
+	return &gs_state_draw_transfers(s)[s->m_draw_transfers.count - 1];
+}
+
+#ifdef __cplusplus
+}
+
+/* The state, with the renderers' names for what it does. Nothing here
+ * but the C struct: the renderers derive from it and the GIF path, in C,
+ * is handed them as a gs_state. */
+class GSState : public gs_state, public GSAlignedClass<32>
 {
 public:
 	GSState();
 	~GSState();
 
 	/* Deletes the renderer as what it really is: the destructor is not
-	 * virtual any more, so this is how one is disposed of. */
+	 * virtual, so this is how one is disposed of. */
 	void Free() { if (m_ops && m_ops->free) m_ops->free(this); }
 
-	static int GetSaveStateSize();
+	static int GetSaveStateSize() { return static_cast<int>(gs_state_size()); }
 
-private:
-	// RESTRICT prevents multiple loads of the same part of the register when accessing its bitfields (the compiler is happy to know that memory writes in-between will not go there)
+	typedef gs_upload_queue GSUploadQueue;
+	typedef ::GSPCRTCRegs GSPCRTCRegs;
 
-	typedef void (GSState::*GIFPackedRegHandler)(const GIFPackedReg* RESTRICT r);
-
-	GIFPackedRegHandler m_fpGIFPackedRegHandlers[16] = {};
-	/* [plain, auto-flush][prim][XYZF2, XYZF3, XYZ2, XYZ3] */
-	GIFPackedRegHandler m_fpGIFPackedRegHandlerXYZ[2][8][4] = {};
-
-	void CheckFlushes();
-
-	void GIFPackedRegHandlerNull(const GIFPackedReg* RESTRICT r);
-	void GIFPackedRegHandlerRGBA(const GIFPackedReg* RESTRICT r);
-	void GIFPackedRegHandlerSTQ(const GIFPackedReg* RESTRICT r);
-	void GIFPackedRegHandlerUV(const GIFPackedReg* RESTRICT r);
-	void GIFPackedRegHandlerUV_Hack(const GIFPackedReg* RESTRICT r);
-	template<u32 prim, u32 adc, bool auto_flush, bool index_swap> void GIFPackedRegHandlerXYZF2(const GIFPackedReg* RESTRICT r);
-	template<u32 prim, u32 adc, bool auto_flush, bool index_swap> void GIFPackedRegHandlerXYZ2(const GIFPackedReg* RESTRICT r);
-	void GIFPackedRegHandlerFOG(const GIFPackedReg* RESTRICT r);
-	void GIFPackedRegHandlerA_D(const GIFPackedReg* RESTRICT r);
-	void GIFPackedRegHandlerNOP(const GIFPackedReg* RESTRICT r);
-
-	typedef void (GSState::*GIFRegHandler)(const GIFReg* RESTRICT r);
-
-	GIFRegHandler m_fpGIFRegHandlers[256] = {};
-	GIFRegHandler m_fpGIFRegHandlerXYZ[2][8][4] = {};
-
-	typedef void (GSState::*GIFPackedRegHandlerC)(const GIFPackedReg* RESTRICT r, u32 size);
-
-	GIFPackedRegHandlerC m_fpGIFPackedRegHandlersC[2] = {};
-	GIFPackedRegHandlerC m_fpGIFPackedRegHandlerSTQRGBAXYZF2[2][8] = {};
-	GIFPackedRegHandlerC m_fpGIFPackedRegHandlerSTQRGBAXYZ2[2][8] = {};
-
-	template<u32 prim, bool auto_flush, bool index_swap> void GIFPackedRegHandlerSTQRGBAXYZF2(const GIFPackedReg* RESTRICT r, u32 size);
-	template<u32 prim, bool auto_flush, bool index_swap> void GIFPackedRegHandlerSTQRGBAXYZ2(const GIFPackedReg* RESTRICT r, u32 size);
-	void GIFPackedRegHandlerNOP(const GIFPackedReg* RESTRICT r, u32 size);
-
-	template<int i> void ApplyTEX0(GIFRegTEX0& TEX0);
-	void ApplyPRIM(u32 prim);
-
-	void GIFRegHandlerNull(const GIFReg* RESTRICT r);
-	void GIFRegHandlerPRIM(const GIFReg* RESTRICT r);
-	void GIFRegHandlerRGBAQ(const GIFReg* RESTRICT r);
-	void GIFRegHandlerST(const GIFReg* RESTRICT r);
-	void GIFRegHandlerUV(const GIFReg* RESTRICT r);
-	void GIFRegHandlerUV_Hack(const GIFReg* RESTRICT r);
-	template<u32 prim, u32 adc, bool auto_flush, bool index_swap> void GIFRegHandlerXYZF2(const GIFReg* RESTRICT r);
-	template<u32 prim, u32 adc, bool auto_flush, bool index_swap> void GIFRegHandlerXYZ2(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerTEX0(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerCLAMP(const GIFReg* RESTRICT r);
-	void GIFRegHandlerFOG(const GIFReg* RESTRICT r);
-	void GIFRegHandlerNOP(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerTEX1(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerTEX2(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerXYOFFSET(const GIFReg* RESTRICT r);
-	void GIFRegHandlerPRMODECONT(const GIFReg* RESTRICT r);
-	void GIFRegHandlerPRMODE(const GIFReg* RESTRICT r);
-	void GIFRegHandlerTEXCLUT(const GIFReg* RESTRICT r);
-	void GIFRegHandlerSCANMSK(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerMIPTBP1(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerMIPTBP2(const GIFReg* RESTRICT r);
-	void GIFRegHandlerTEXA(const GIFReg* RESTRICT r);
-	void GIFRegHandlerFOGCOL(const GIFReg* RESTRICT r);
-	void GIFRegHandlerTEXFLUSH(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerSCISSOR(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerALPHA(const GIFReg* RESTRICT r);
-	void GIFRegHandlerDIMX(const GIFReg* RESTRICT r);
-	void GIFRegHandlerDTHE(const GIFReg* RESTRICT r);
-	void GIFRegHandlerCOLCLAMP(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerTEST(const GIFReg* RESTRICT r);
-	void GIFRegHandlerPABE(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerFBA(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerFRAME(const GIFReg* RESTRICT r);
-	template<int i> void GIFRegHandlerZBUF(const GIFReg* RESTRICT r);
-	void GIFRegHandlerBITBLTBUF(const GIFReg* RESTRICT r);
-	void GIFRegHandlerTRXPOS(const GIFReg* RESTRICT r);
-	void GIFRegHandlerTRXREG(const GIFReg* RESTRICT r);
-	void GIFRegHandlerTRXDIR(const GIFReg* RESTRICT r);
-	void GIFRegHandlerHWREG(const GIFReg* RESTRICT r);
-
-	template<bool index_swap>
-	void SetPrimHandlers();
-
-	/* The EE's transfer in progress and its buffer (GSTransfer.c) */
-	struct GSTransferBuffer : gs_transfer
-	{
-		GSTransferBuffer();
-		~GSTransferBuffer();
-
-		void Init(int tx, int ty, const GIFRegBITBLTBUF& blit, bool is_write) { gs_transfer_init(this, tx, ty, &blit, is_write); }
-		bool Update(int tw, int th, int bpp, int& len) { return gs_transfer_update(this, tw, th, bpp, &len); }
-	} m_tr;
-
-protected:
 	static constexpr int INVALID_ALPHA_MINMAX = GS_INVALID_ALPHA_MINMAX;
+	enum { VERTEX_CAPACITY = GS_STATE_VERTEX_CAPACITY, DRAW_TRANSFERS_MAX = GS_STATE_DRAW_TRANSFERS_MAX };
+	enum { AF_MAX_SEGMENTS = GS_STATE_AF_MAX_SEGMENTS };
 
-	GSVertex m_v = {};
-	float m_q = 1.0f;
-	// Hot per-vertex/per-handler flags, placed in the alignment hole after m_q
-	// so they share a cache line with m_q and the scissor cull constants
-	// instead of living ~36KB away next to m_env/m_prev_env.
-	u32 m_dirty_gs_regs = 0;
-	bool m_scissor_invalid = false;
-	bool m_nativeres = false;
-	GSVector4i m_scissor_cull_min = {};
-	GSVector4i m_scissor_cull_max = {};
-	GSVector4i m_xyof = {};
-
-	/* The vertices a draw can hold, made once: a kick that is drawn flushes
-	 * at MaxVerticesForPrim's 0xFFFC at most, and the dead vertices of a
-	 * strip or fan whose primitives are all culled go when it reaches
-	 * that. Indices: six a vertex (points expanded in the vertex shader). */
-	enum { VERTEX_CAPACITY = 0x10000 + 8, DRAW_TRANSFERS_MAX = 4096 };
-
-	struct
+	enum NoGapsType
 	{
-		GSVertex* buff;
-		u32 head, tail, next; // head: first vertex, tail: last vertex + 1, next: last indexed + 1
-		u32 xy_tail;
-		GSVector4i xy[4];
-		GSVector4i xyhead;
-	} m_vertex = {};
+		Uninitialized = 0,
+		GapsFound     = GS_GAPS_FOUND,
+		SpriteNoGaps  = GS_GAPS_SPRITE_NONE,
+		FullCover     = GS_GAPS_FULL_COVER,
+	};
 
-	struct
+	enum REG_DIRTY
 	{
-		u16* buff;
-		u32 tail;
-	} m_index = {};
+		DIRTY_REG_ALPHA    = GS_DIRTY_REG_ALPHA,
+		DIRTY_REG_CLAMP    = GS_DIRTY_REG_CLAMP,
+		DIRTY_REG_COLCLAMP = GS_DIRTY_REG_COLCLAMP,
+		DIRTY_REG_DIMX     = GS_DIRTY_REG_DIMX,
+		DIRTY_REG_DTHE     = GS_DIRTY_REG_DTHE,
+		DIRTY_REG_FBA      = GS_DIRTY_REG_FBA,
+		DIRTY_REG_FOGCOL   = GS_DIRTY_REG_FOGCOL,
+		DIRTY_REG_FRAME    = GS_DIRTY_REG_FRAME,
+		DIRTY_REG_MIPTBP1  = GS_DIRTY_REG_MIPTBP1,
+		DIRTY_REG_MIPTBP2  = GS_DIRTY_REG_MIPTBP2,
+		DIRTY_REG_PABE     = GS_DIRTY_REG_PABE,
+		DIRTY_REG_PRIM     = GS_DIRTY_REG_PRIM,
+		DIRTY_REG_SCANMSK  = GS_DIRTY_REG_SCANMSK,
+		DIRTY_REG_SCISSOR  = GS_DIRTY_REG_SCISSOR,
+		DIRTY_REG_TEST     = GS_DIRTY_REG_TEST,
+		DIRTY_REG_TEX0     = GS_DIRTY_REG_TEX0,
+		DIRTY_REG_TEX1     = GS_DIRTY_REG_TEX1,
+		DIRTY_REG_TEXA     = GS_DIRTY_REG_TEXA,
+		DIRTY_REG_XYOFFSET = GS_DIRTY_REG_XYOFFSET,
+		DIRTY_REG_ZBUF     = GS_DIRTY_REG_ZBUF
+	};
 
-	void UpdateContext();
-	void UpdateScissor();
-
-	// Re-applies what the GIFRegHandler* functions do to a register on the
-	// way in. Defrost restores registers with a raw copy, so none of it
-	// happens there; see the definition for why that matters.
-	/* Where the savestate's parts live (GSStateFile.c) */
-	gs_state_parts StateParts()
+	enum GSFlushReason
 	{
-		gs_state_parts p;
-		p.env    = reinterpret_cast<gs_env_regs*>(&m_env);
-		p.ctx[0] = const_cast<gs_drawing_regs*>(m_env.CTXT[0].Regs());
-		p.ctx[1] = const_cast<gs_drawing_regs*>(m_env.CTXT[1].Regs());
-		p.v      = reinterpret_cast<union gs_vertex*>(&m_v);
-		p.tr     = &m_tr;
-		p.vm     = m_mem.m_vm8;
-		p.path   = m_path;
-		p.q      = &m_q;
-		return p;
+		UNKNOWN          = GS_FLUSH_UNKNOWN,
+		RESET            = GS_FLUSH_RESET,
+		CONTEXTCHANGE    = GS_FLUSH_CONTEXTCHANGE,
+		CLUTCHANGE       = GS_FLUSH_CLUTCHANGE,
+		GSTRANSFER       = GS_FLUSH_GSTRANSFER,
+		UPLOADDIRTYTEX   = GS_FLUSH_UPLOADDIRTYTEX,
+		UPLOADDIRTYFRAME = GS_FLUSH_UPLOADDIRTYFRAME,
+		UPLOADDIRTYZBUF  = GS_FLUSH_UPLOADDIRTYZBUF,
+		LOCALTOLOCALMOVE = GS_FLUSH_LOCALTOLOCALMOVE,
+		DOWNLOADFIFO     = GS_FLUSH_DOWNLOADFIFO,
+		SAVESTATE        = GS_FLUSH_SAVESTATE,
+		LOADSTATE        = GS_FLUSH_LOADSTATE,
+		AUTOFLUSH        = GS_FLUSH_AUTOFLUSH,
+		VSYNC            = GS_FLUSH_VSYNC,
+		GSREOPEN         = GS_FLUSH_GSREOPEN,
+		VERTEXCOUNT      = GS_FLUSH_VERTEXCOUNT,
+	};
+
+	enum PRIM_OVERLAP
+	{
+		PRIM_OVERLAP_UNKNOW,
+		PRIM_OVERLAP_YES = GS_OVERLAP_YES,
+		PRIM_OVERLAP_NO  = GS_OVERLAP_NO
+	};
+
+	static constexpr u32 STATE_VERSION = GS_STATE_VERSION;
+
+	/* (only the MTGS thread touches them) */
+	static inline int& s_n = gs_state_n;
+	static inline int& s_last_transfer_draw_n = gs_state_last_transfer_draw_n;
+	static inline int& s_transfer_n = gs_state_transfer_n;
+
+	/* --- the GIF path (GSState.c) --- */
+	void ResetBase(bool hardware_reset) { gs_state_reset_base(this, hardware_reset); }
+	void UpdateSettingsBase(const EmuGSOptions& old_config) { gs_state_update_settings_base(this, &old_config); }
+	void MoveBase() { gs_state_move_base(this); }
+	void VSyncBase(u32 field, bool registers_written, bool idle_frame) { gs_present_vsync(&m_present, field, registers_written, idle_frame); }
+	void ResetHandlers() { gs_state_reset_handlers(this); }
+	/* Both contexts' pixel offset tables again from an empty pool: when a
+	 * draw finds one NULL, once nothing reads the pool's (queued draws
+	 * done). */
+	void RefetchPixelOffsets() { gs_state_refetch_pixel_offsets(this); }
+
+	void Flush(GSFlushReason reason) { gs_state_flush(this, reason); }
+	void FlushPrim() { gs_state_flush_prim(this); }
+	bool TestDrawChanged() { return gs_state_test_draw_changed(this); }
+	void FlushWrite() { gs_state_flush_write(this); }
+	void CheckWriteOverlap(bool req_write, bool req_read) { gs_state_check_write_overlap(this, req_write, req_read); }
+	void Write(const u8* mem, int len) { gs_state_transfer_write(this, mem, len); }
+	void Read(u8* mem, int len) { gs_state_transfer_read(this, mem, len); }
+	void InitReadFIFO(u8* mem, int len) { gs_state_init_read_fifo(this, mem, len); }
+	void SoftReset(u32 mask) { gs_state_soft_reset(this, mask); }
+	void ReadFIFO(u8* mem, int size) { gs_state_read_fifo(this, mem, size); }
+	void ReadLocalMemoryUnsync(u8* mem, int qwc, GIFRegBITBLTBUF BITBLTBUF, GIFRegTRXPOS TRXPOS, GIFRegTRXREG TRXREG)
+	{
+		gs_state_read_local_memory_unsync(this, mem, qwc, BITBLTBUF, TRXPOS, TRXREG);
+	}
+	void Transfer(const u8* mem, u32 size) { gs_state_transfer(this, mem, size); }
+	int Freeze(freezeData* fd, bool sizeonly) { return gs_state_freeze(this, fd, sizeonly); }
+	int Defrost(const freezeData* fd) { return gs_state_defrost(this, fd); }
+
+	void UpdateContext() { gs_state_update_context(this); }
+	void UpdateScissor() { gs_state_update_scissor(this); }
+	void UpdateVertexKick() { gs_state_update_vertex_kick(this); }
+	void UpdateAutoFlushKick() { gs_state_update_auto_flush_kick(this); }
+
+	/* --- the renderer's own, through m_ops --- */
+	void Reset(bool hardware_reset)
+	{
+		if (m_ops && m_ops->reset) m_ops->reset(this, hardware_reset); else ResetBase(hardware_reset);
+	}
+	void UpdateSettings(const EmuGSOptions& old_config)
+	{
+		if (m_ops && m_ops->update_settings) m_ops->update_settings(this, &old_config); else UpdateSettingsBase(old_config);
 	}
 
-	void UpdateVertexKick();
-	/* Whether the draw state samples its own frame or Z buffer, so its
-	 * vertex kicks take the auto-flush handlers; re-chosen when it flips. */
-	bool m_autoflush_kick = false;
-	void UpdateAutoFlushKick();
-	/* The batch so far is all primitives reading only the pixels they
-	 * write, and an overlap auto flush would have flushed was let through
-	 * for the draw to take in place (tex-is-fb). */
-	bool m_af_pixel_batch = true;
-	bool m_af_skipped = false;
-	/* Where auto flush would have ended the batch: an index count each,
-	 * the start of a segment that reads what the ones before it drew.
-	 * The batch is drawn whole when the renderer can (can_draw_runs),
-	 * else one segment at a time; detection looks back to the current
-	 * segment's start, over its own draw rect. */
-	enum { AF_MAX_SEGMENTS = 64 };
-	u32 m_af_seg_start[AF_MAX_SEGMENTS] = {};
-	u32 m_af_seg_count = 0;
-	GSVector4i m_af_seg_draw = {};
-	bool m_af_seg_fresh = true;
-	void FlushSegments();
-	/* (where FlushSegments keeps the batch while it draws a segment at a
-	 * time, made with the buffers) */
-	u16* m_af_saved_index = nullptr;
-	GSVertex* m_af_saved_vertex = nullptr;
+	/* --- presentation ---------------------------------------------------
+	 * What used to be a class of its own between this one and the two
+	 * renderers, GSRenderer: the vsync, the merge of the two read
+	 * circuits, and the handful of things a renderer answers about
+	 * itself. GSRenderer is another name for this class
+	 * (Renderers/Common/GSRenderer.h). */
+	void Destroy()           { if (m_ops && m_ops->destroy) m_ops->destroy(this); }
+	void UpdateRenderFixes() { if (m_ops && m_ops->update_render_fixes) m_ops->update_render_fixes(this); }
+	void PurgePool() { gs_present_purge_pool(); }
+	void VSync(u32 field, bool registers_written, bool idle_frame)
+	{
+		if (m_ops && m_ops->vsync) m_ops->vsync(this, field, registers_written, idle_frame); else VSyncBase(field, registers_written, idle_frame);
+	}
+	bool  CanUpscale()            { return (m_ops && m_ops->can_upscale) ? m_ops->can_upscale(this) : false; }
+	float GetUpscaleMultiplier()  { return (m_ops && m_ops->get_upscale_multiplier) ? m_ops->get_upscale_multiplier(this) : 1.0f; }
+	float GetTextureScaleFactor() { return (m_ops && m_ops->get_texture_scale_factor) ? m_ops->get_texture_scale_factor(this) : 1.0f; }
+	GSTexture* LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, float* sample, const GSVector2i& size)
+	{
+		return (m_ops && m_ops->lookup_palette_source) ? m_ops->lookup_palette_source(this, CBP, CPSM, CBW, &offset, scale, sample, &size) : nullptr;
+	}
+	bool IsIdleFrame() const { return gs_present_idle_frame(&m_present); }
+
+	GSTexture* GetOutput(int i, float& scale, int& y_offset)
+	{
+		return (m_ops && m_ops->get_output) ? m_ops->get_output(this, i, &scale, &y_offset) : nullptr;
+	}
+	GSTexture* GetFeedbackOutput(float& scale)
+	{
+		return (m_ops && m_ops->get_feedback_output) ? m_ops->get_feedback_output(this, &scale) : nullptr;
+	}
+
+	void Draw() { if (m_ops && m_ops->draw) m_ops->draw(this); }
+	void PurgeTextureCache(bool sources, bool targets, bool hash_cache)
+	{
+		if (m_ops && m_ops->purge_texture_cache) m_ops->purge_texture_cache(this, sources, targets, hash_cache);
+	}
+	void ReadbackTextureCache() { if (m_ops && m_ops->readback_texture_cache) m_ops->readback_texture_cache(this); }
+	void InvalidateVideoMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r)
+	{
+		if (m_ops && m_ops->invalidate_video_mem) m_ops->invalidate_video_mem(this, &BITBLTBUF, &r);
+	}
+	void InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r, bool clut = false)
+	{
+		if (m_ops && m_ops->invalidate_local_mem) m_ops->invalidate_local_mem(this, &BITBLTBUF, &r, clut);
+	}
+	void Move() { if (m_ops && m_ops->move) m_ops->move(this); else MoveBase(); }
+
+	/* --- the draw in hand (GSDrawQuery.c) --- */
+	gs_draw_query DrawQuery() const { return gs_state_draw_query(this); }
+	gs_state_parts StateParts() { return gs_state_get_parts(this); }
+
 	bool IsPixelFeedbackPrim(u32 prim, const u32* buff, int n) const
 	{
 		const gs_draw_query q = DrawQuery();
 		return gs_draw_is_pixel_feedback_prim(&q, &m_v, prim, buff, n);
 	}
-	void AutoFlushOverlap(bool pixel);
-
-	void CompactSkippedVertices();
-	/* The draw state reads what it draws (GSDrawQuery.c) */
+	/* The draw state reads what it draws */
 	bool IsAutoFlushDraw() { const gs_draw_query q = DrawQuery(); return gs_draw_reads_own_target(&q); }
-	template<u32 prim, bool index_swap>
-	void HandleAutoFlush();
-	void CheckCLUTValidity(u32 prim);
 
-	template <u32 prim, bool auto_flush, bool index_swap>
-	void VertexKick(u32 skip);
-
-	// following functions need m_vt to be initialized
-
-	GSVertexTrace m_vt;
-	/* The draw in hand's registers and trace, for GSDrawQuery.c */
-	gs_draw_query DrawQuery() const
-	{
-		gs_draw_query q;
-		q.vt         = const_cast<GSVertexTrace*>(&m_vt);
-		q.prim       = PRIM;
-		q.ctx        = m_context->Regs();
-		q.texa       = &m_draw_env->TEXA;
-		q.clut       = const_cast<GSClut&>(m_mem.m_clut).C();
-		q.vertex     = m_vertex.buff;
-		q.index      = m_index.buff;
-		q.vertex_count = m_vertex.next;
-		q.index_count  = m_index.tail;
-		q.r            = reinterpret_cast<const gs_recti*>(&m_r);
-		q.r_no_scissor = reinterpret_cast<const gs_recti*>(&m_r_no_scissor);
-		q.gaps_found = m_primitive_covers_without_gaps == GapsFound;
-		q.hw         = emu_gs_hardware_renderer(&GSConfig);
-		return q;
-	}
 	GSVertexTrace::VertexAlpha& GetAlphaMinMax()
 	{
 		if (!m_vt.m_alpha.valid)
@@ -347,46 +686,6 @@ protected:
 	void CalcAlphaMinMax(const int tex_min, const int tex_max) { const gs_draw_query q = DrawQuery(); gs_draw_calc_alpha_min_max(&q, tex_min, tex_max); }
 	void CorrectATEAlphaMinMax(const u32 atst, const int aref) { const gs_draw_query q = DrawQuery(); gs_draw_correct_ate_alpha_min_max(&q, atst, aref); }
 
-public:
-	struct GSUploadQueue
-	{
-		GIFRegBITBLTBUF blit;
-		GSVector4i rect;
-		int draw;
-		bool zero_clear;
-	};
-
-	enum NoGapsType
-	{
-		Uninitialized = 0,
-		GapsFound,
-		SpriteNoGaps,
-		FullCover,
-	};
-
-	GIFPath m_path[4] = {};
-	const GIFRegPRIM* PRIM = nullptr;
-	GSPrivRegSet* m_regs = nullptr;
-	GSLocalMemory m_mem;
-	GSDrawingEnvironment m_env = {};
-	GSDrawingEnvironment m_prev_env = {};
-	const GSDrawingEnvironment* m_draw_env = &m_env;
-	GSDrawingContext* m_context = nullptr;
-	/* Set by a renderer that draws a primitive reading only its own pixels
-	 * correctly however the draw's primitives overlap (tex-is-fb with
-	 * barriers, or framebuffer fetch): auto flush then lets such overlaps
-	 * through. */
-	bool m_pixel_feedback_ok = false;
-	GSVector4i temp_draw_rect = {};
-	/* Counts the times a savestate replaced local memory as a whole. */
-	u32 m_mem_restores = 0;
-	/* Set for the reset a savestate load makes before it replaces local
-	 * memory, which it then reports through mem_restored. */
-	bool m_state_loading = false;
-
-	/* Quads (GSDrawQuery.c), for the texture shuffle's detection: a
-	 * sprite's two corners in v, the window rect and texture coordinates
-	 * of two corners, and the pixels a quad covers */
 	bool GetQuadCorners(const GSVertex* v, const u16* i, const GSVertex** v0, const GSVertex** v1) const
 	{
 		const gs_draw_query q = DrawQuery();
@@ -405,246 +704,6 @@ public:
 	static void GetQuadRasterizedPoints(GSVector4& xy, bool keep_order = true) { gs_draw_quad_rasterized_points(xy.v, NULL, keep_order); }
 	static void GetQuadRasterizedPoints(GSVector4& xy, GSVector4& tex, bool keep_order = true) { gs_draw_quad_rasterized_points(xy.v, tex.v, keep_order); }
 
-	bool m_mipmap = false;
-	bool m_texflush_flag = false;
-	bool m_isPackedUV_HackFlag = false;
-	bool m_channel_shuffle = false;
-	u8 m_scanmask_used = 0;
-	int m_backed_up_ctx = 0;
-	/* The EE's transfers into local memory since the draws stopped
-	 * preloading them, in order (GSUploadQueue), for the targets made
-	 * from them: pushed, read back from the end, walked backwards and
-	 * cut at the front. In a gs_array. */
-	gs_array_t m_draw_transfers;
-	__fi GSUploadQueue* DrawTransfers() { return GS_ARRAY_ITEMS(&m_draw_transfers, GSUploadQueue); }
-	__fi u32 DrawTransferCount() const { return static_cast<u32>(m_draw_transfers.count); }
-	__fi GSUploadQueue& LastDrawTransfer() { return DrawTransfers()[m_draw_transfers.count - 1]; }
-	__fi void PopDrawTransfer() { m_draw_transfers.count--; }
-	__fi void EraseDrawTransfer(u32 i) { gs_array_erase(&m_draw_transfers, i); }
-	__fi void ClearDrawTransfers() { m_draw_transfers.count = 0; }
-	void PushDrawTransfer(const GSUploadQueue& transfer);
-	NoGapsType m_primitive_covers_without_gaps;
-	GSVector4i m_r = {};
-	GSVector4i m_r_no_scissor = {};
-
-	// NOTE: These are only accessed from the MTGS thread; no synchronization needed.
-	static int s_n;
-	static int s_last_transfer_draw_n;
-	static int s_transfer_n;
-
-	static constexpr u32 STATE_VERSION = GS_STATE_VERSION;
-
-	enum REG_DIRTY
-	{
-		DIRTY_REG_ALPHA,
-		DIRTY_REG_CLAMP,
-		DIRTY_REG_COLCLAMP,
-		DIRTY_REG_DIMX,
-		DIRTY_REG_DTHE,
-		DIRTY_REG_FBA,
-		DIRTY_REG_FOGCOL,
-		DIRTY_REG_FRAME,
-		DIRTY_REG_MIPTBP1,
-		DIRTY_REG_MIPTBP2,
-		DIRTY_REG_PABE,
-		DIRTY_REG_PRIM,
-		DIRTY_REG_SCANMSK,
-		DIRTY_REG_SCISSOR,
-		DIRTY_REG_TEST,
-		DIRTY_REG_TEX0,
-		DIRTY_REG_TEX1,
-		DIRTY_REG_TEXA,
-		DIRTY_REG_XYOFFSET,
-		DIRTY_REG_ZBUF
-	};
-
-	enum GSFlushReason
-	{
-		UNKNOWN = 1 << 0,
-		RESET = 1 << 1,
-		CONTEXTCHANGE = 1 << 2,
-		CLUTCHANGE = 1 << 3,
-		GSTRANSFER = 1 << 4,
-		UPLOADDIRTYTEX = 1 << 5,
-		UPLOADDIRTYFRAME = 1 << 6,
-		UPLOADDIRTYZBUF = 1 << 7,
-		LOCALTOLOCALMOVE = 1 << 8,
-		DOWNLOADFIFO = 1 << 9,
-		SAVESTATE = 1 << 10,
-		LOADSTATE = 1 << 11,
-		AUTOFLUSH = 1 << 12,
-		VSYNC  = 1 << 13,
-		GSREOPEN = 1 << 14,
-		VERTEXCOUNT = 1 << 15,
-	};
-
-	GSFlushReason m_state_flush_reason = UNKNOWN;
-
-	enum PRIM_OVERLAP
-	{
-		PRIM_OVERLAP_UNKNOW,
-		PRIM_OVERLAP_YES,
-		PRIM_OVERLAP_NO
-	};
-
-	PRIM_OVERLAP m_prim_overlap = PRIM_OVERLAP_UNKNOW;
-	/* The sprites of a draw in runs that do not overlap, a count a run
-	 * (u32), for the device to draw a run at a time between barriers. */
-	gs_array_t m_drawlist;
-
-	/* The PCRTC's two read circuits, as GSPCRTC.c keeps them */
-	struct GSPCRTCRegs : gs_pcrtc
-	{
-		typedef gs_pcrtc_display PCRTCDisplay;
-		bool IsAnalogue() const { return gs_pcrtc_is_analogue(this); }
-		void SetVideoMode(GSVideoMode mode) { gs_pcrtc_set_video_mode(this, static_cast<int>(mode)); }
-		void EnableDisplays(GSRegPMODE pmode, GSRegSMODE2 smode2, bool smodetoggle) { gs_pcrtc_enable_displays(this, pmode, smode2, smodetoggle); }
-		void CheckSameSource() { gs_pcrtc_check_same_source(this); }
-		bool FrameWrap() const { return gs_pcrtc_frame_wrap(this); }
-		/* Both reads start at the same place: one read does */
-		bool FrameRectMatch() const { return PCRTCSameSrc; }
-		GSVector2i GetResolution() const { const gs_point r = gs_pcrtc_resolution(this); return GSVector2i(r.x, r.y); }
-		GSVector4i GetFramebufferRect(int display) const
-		{
-			const gs_recti r = gs_pcrtc_framebuffer_rect(this, display);
-			return GSVector4i(r.x, r.y, r.z, r.w);
-		}
-		int GetFramebufferBitDepth() const { return gs_pcrtc_framebuffer_bit_depth(this); }
-		GSVector2i GetFramebufferSize(int display) const { const gs_point r = gs_pcrtc_framebuffer_size(this, display); return GSVector2i(r.x, r.y); }
-		void SetRects(int display, GSRegDISPLAY displayReg, GSRegDISPFB framebufferReg) { gs_pcrtc_set_rects(this, display, displayReg, framebufferReg); }
-		void CalculateFramebufferOffset(bool scanmask) { gs_pcrtc_calculate_framebuffer_offset(this, scanmask); }
-		void RemoveFramebufferOffset(int display) { gs_pcrtc_remove_framebuffer_offset(this, display); }
-		void CalculateDisplayOffset(bool scanmask) { gs_pcrtc_calculate_display_offset(this, scanmask); }
-		/* A display's rects as vectors */
-		GSVector4i DisplayRect(int i) const { return GS_V4I(&PCRTCDisplays[i].displayRect); }
-		GSVector4i FramebufferRect(int i) const { return GS_V4I(&PCRTCDisplays[i].framebufferRect); }
-	} PCRTCDisplays;
-
-public:
-	/// Expands dither matrix, suitable for software renderer.
-	static void ExpandDIMX(GSVector4i* dimx, const GIFRegDIMX DIMX);
-
-	void ResetHandlers();
-	/* Both contexts' pixel offset tables again from an empty pool: when a
-	 * draw finds one NULL, once nothing reads the pool's (queued draws
-	 * done). */
-	void RefetchPixelOffsets();
-	void ResetPCRTC() { gs_pcrtc_reset(&PCRTCDisplays, m_regs); }
-
-	GSVideoMode GetVideoMode() { return static_cast<GSVideoMode>(gs_regs_video_mode(m_regs)); }
-
-	bool isinterlaced() { return gs_regs_interlaced(m_regs); }
-	bool isReallyInterlaced() { return gs_regs_really_interlaced(m_regs); }
-
-	float GetTvRefreshRate() { return gs_regs_tv_refresh_rate(m_regs); }
-
-	/* The table, and the functions that call through it. The *Base
-	 * functions are what GSState itself does; a renderer's own version
-	 * calls the Base one where it used to call GSRenderer::X(). */
-	const struct gs_state_ops* m_ops = nullptr;
-
-	void ResetBase(bool hardware_reset);
-	void UpdateSettingsBase(const EmuGSOptions& old_config);
-	void MoveBase();
-	void VSyncBase(u32 field, bool registers_written, bool idle_frame) { gs_present_vsync(&m_present, field, registers_written, idle_frame); }
-
-	void Reset(bool hardware_reset)
-	{
-		if (m_ops && m_ops->reset) m_ops->reset(this, hardware_reset); else ResetBase(hardware_reset);
-	}
-	void UpdateSettings(const EmuGSOptions& old_config)
-	{
-		if (m_ops && m_ops->update_settings) m_ops->update_settings(this, &old_config); else UpdateSettingsBase(old_config);
-	}
-
-	/* --- presentation ---------------------------------------------------
-	 * What used to be a class of its own between this one and the two
-	 * renderers, GSRenderer: the vsync, the merge of the two read
-	 * circuits, and the handful of things a renderer answers about
-	 * itself. It added nothing a renderer could be without, so it is part
-	 * of this class now and GSRenderer is another name for it
-	 * (Renderers/Common/GSRenderer.h). The definitions are still in
-	 * Renderers/Common/GSRenderer.cpp. */
-	void Destroy()           { if (m_ops && m_ops->destroy) m_ops->destroy(this); }
-	void UpdateRenderFixes() { if (m_ops && m_ops->update_render_fixes) m_ops->update_render_fixes(this); }
-	void PurgePool() { gs_present_purge_pool(); }
-	void VSync(u32 field, bool registers_written, bool idle_frame)
-	{
-		if (m_ops && m_ops->vsync) m_ops->vsync(this, field, registers_written, idle_frame); else VSyncBase(field, registers_written, idle_frame);
-	}
-	bool  CanUpscale()            { return (m_ops && m_ops->can_upscale) ? m_ops->can_upscale(this) : false; }
-	float GetUpscaleMultiplier()  { return (m_ops && m_ops->get_upscale_multiplier) ? m_ops->get_upscale_multiplier(this) : 1.0f; }
-	float GetTextureScaleFactor() { return (m_ops && m_ops->get_texture_scale_factor) ? m_ops->get_texture_scale_factor(this) : 1.0f; }
-	GSTexture* LookupPaletteSource(u32 CBP, u32 CPSM, u32 CBW, GSVector2i& offset, float* scale, float* sample, const GSVector2i& size)
-	{
-		return (m_ops && m_ops->lookup_palette_source) ? m_ops->lookup_palette_source(this, CBP, CPSM, CBW, &offset, scale, sample, &size) : nullptr;
-	}
-	bool IsIdleFrame() const { return gs_present_idle_frame(&m_present); }
-
-	/* The merge, the VR eyes and the present at a vsync (GSPresent.c) */
-	gs_present m_present;
-
-protected:
-	bool m_process_texture = false;
-	bool m_downscale_source = false;
-
-	GSTexture* GetOutput(int i, float& scale, int& y_offset)
-	{
-		return (m_ops && m_ops->get_output) ? m_ops->get_output(this, i, &scale, &y_offset) : nullptr;
-	}
-	GSTexture* GetFeedbackOutput(float& scale)
-	{
-		return (m_ops && m_ops->get_feedback_output) ? m_ops->get_feedback_output(this, &scale) : nullptr;
-	}
-
-public:
-
-	void Flush(GSFlushReason reason);
-	u32 CalcMask(int exp, int max_exp);
-	void FlushPrim();
-	bool TestDrawChanged();
-	void FlushWrite();
-	void Draw() { if (m_ops && m_ops->draw) m_ops->draw(this); }
-	void PurgeTextureCache(bool sources, bool targets, bool hash_cache)
-	{
-		if (m_ops && m_ops->purge_texture_cache) m_ops->purge_texture_cache(this, sources, targets, hash_cache);
-	}
-	void ReadbackTextureCache() { if (m_ops && m_ops->readback_texture_cache) m_ops->readback_texture_cache(this); }
-	void InvalidateVideoMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r)
-	{
-		if (m_ops && m_ops->invalidate_video_mem) m_ops->invalidate_video_mem(this, &BITBLTBUF, &r);
-	}
-	void InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r, bool clut = false)
-	{
-		if (m_ops && m_ops->invalidate_local_mem) m_ops->invalidate_local_mem(this, &BITBLTBUF, &r, clut);
-	}
-
-	void Move() { if (m_ops && m_ops->move) m_ops->move(this); else MoveBase(); }
-
-	GSVector4i GetTEX0Rect()
-	{
-		const gs_recti r = gs_transfer_tex0_rect(m_prev_env.CTXT[m_prev_env.PRIM.CTXT].Regs());
-		return GSVector4i(r.x, r.y, r.z, r.w);
-	}
-	void CheckWriteOverlap(bool req_write, bool req_read);
-	void Write(const u8* mem, int len);
-	void Read(u8* mem, int len);
-	void InitReadFIFO(u8* mem, int len);
-
-	void SoftReset(u32 mask);
-	void ReadFIFO(u8* mem, int size);
-	void ReadLocalMemoryUnsync(u8* mem, int qwc, GIFRegBITBLTBUF BITBLTBUF, GIFRegTRXPOS TRXPOS, GIFRegTRXREG TRXREG);
-	void Transfer(const u8* mem, u32 size);
-	int Freeze(freezeData* fd, bool sizeonly);
-	int Defrost(const freezeData* fd);
-
-	u8* GetRegsMem() const { return reinterpret_cast<u8*>(m_regs); }
-	void SetRegsMem(u8* basemem)
-	{
-		m_regs         = reinterpret_cast<GSPrivRegSet*>(basemem);
-		m_present.regs = m_regs;
-	}
-
 	bool TrianglesAreQuads(bool shuffle_check = false) const
 	{
 		const gs_draw_query q = DrawQuery();
@@ -659,10 +718,55 @@ public:
 	void CalculatePrimitiveCoversWithoutGaps()
 	{
 		const gs_draw_query q = DrawQuery();
-		m_primitive_covers_without_gaps = static_cast<NoGapsType>(gs_draw_covers_without_gaps(&q));
+		m_primitive_covers_without_gaps = gs_draw_covers_without_gaps(&q);
 	}
 	GIFRegTEX0 GetTex0Layer(u32 lod) { const gs_draw_query q = DrawQuery(); return gs_draw_tex0_layer(&q, lod); }
+
+	/* --- the EE's transfers since the draws stopped preloading them --- */
+	__fi GSUploadQueue* DrawTransfers() { return gs_state_draw_transfers(this); }
+	__fi u32 DrawTransferCount() const { return static_cast<u32>(m_draw_transfers.count); }
+	__fi GSUploadQueue& LastDrawTransfer() { return *gs_state_last_draw_transfer(this); }
+	__fi void PopDrawTransfer() { m_draw_transfers.count--; }
+	__fi void EraseDrawTransfer(u32 i) { gs_array_erase(&m_draw_transfers, i); }
+	__fi void ClearDrawTransfers() { m_draw_transfers.count = 0; }
+	void PushDrawTransfer(const GSUploadQueue& transfer) { gs_state_push_draw_transfer(this, &transfer); }
+
+	GSVector4i GetTEX0Rect()
+	{
+		const gs_recti r = gs_transfer_tex0_rect(m_prev_env.CTXT[m_prev_env.PRIM.CTXT].Regs());
+		return GSVector4i(r.x, r.y, r.z, r.w);
+	}
+
+	u8* GetRegsMem() const { return reinterpret_cast<u8*>(m_regs); }
+	void SetRegsMem(u8* basemem)
+	{
+		m_regs         = reinterpret_cast<GSPrivRegSet*>(basemem);
+		m_present.regs = m_regs;
+	}
+
+	/// Expands dither matrix, suitable for software renderer.
+	static void ExpandDIMX(GSVector4i* dimx, const GIFRegDIMX DIMX);
+	void ResetPCRTC() { gs_pcrtc_reset(&PCRTCDisplays, m_regs); }
+	GSVideoMode GetVideoMode() { return static_cast<GSVideoMode>(gs_regs_video_mode(m_regs)); }
+	bool isinterlaced() { return gs_regs_interlaced(m_regs); }
+	bool isReallyInterlaced() { return gs_regs_really_interlaced(m_regs); }
+	float GetTvRefreshRate() { return gs_regs_tv_refresh_rate(m_regs); }
 };
+
+inline GSState::GSState()
+{
+	gs_state_init(this);
+}
+
+inline GSState::~GSState()
+{
+	gs_state_deinit(this);
+}
+
+inline void GSVertexTrace::Update(const void* vertex, const u16* index, int v_count, int i_count, GS_PRIM_CLASS primclass)
+{
+	gs_state_vt_update(static_cast<gs_state*>(const_cast<void*>(m_state)), vertex, index, v_count, i_count, primclass);
+}
 
 static_assert(static_cast<int>(GSVideoMode::HDTV_1080I) == GS_VMODE_HDTV_1080I && static_cast<int>(GSVideoMode::SDTV_480P) == GS_VMODE_SDTV_480P
 	&& static_cast<int>(GSVideoMode::PAL) == GS_VMODE_PAL, "GSVideoMode is GS_VMODE_*");
@@ -672,8 +776,19 @@ static_assert(offsetof(GSDrawingEnvironment, TRXREG) == offsetof(gs_env_regs, TR
 	&& offsetof(GSDrawingEnvironment, PRMODECONT) == offsetof(gs_env_regs, PRMODECONT), "gs_env_regs is GSDrawingEnvironment's start");
 static_assert(sizeof(GIFRegRGBAQ) == 8 && sizeof(GIFRegST) == 8 && sizeof(GIFRegXYZ) == 8 && sizeof(GIFReg) == 8,
 	"the state's register sizes");
-static_assert(GSState::GapsFound == GS_GAPS_FOUND && GSState::SpriteNoGaps == GS_GAPS_SPRITE_NONE && GSState::FullCover == GS_GAPS_FULL_COVER
-	&& GSState::PRIM_OVERLAP_YES == GS_OVERLAP_YES && GSState::PRIM_OVERLAP_NO == GS_OVERLAP_NO, "GSDrawQuery.c's numbers");
+/* (GSLocalMemory has two bases, so offsetof on it is only conditionally
+ * supported; every compiler that builds the core supports it) */
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
+static_assert(sizeof(GSLocalMemory) == sizeof(gs_state_mem) && offsetof(GSLocalMemory, m_clut) == offsetof(gs_state_mem, m_clut)
+	&& sizeof(GSClut) == sizeof(gs_state_clut), "C's view of local memory");
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+static_assert(sizeof(GSVertexTrace) == sizeof(gs_vertex_trace), "GSVertexTrace adds no members");
+static_assert(sizeof(GSPCRTCRegs) == sizeof(gs_pcrtc), "GSPCRTCRegs adds no members");
 
 // We put this in the header because of Multi-ISA.
 inline void GSState::ExpandDIMX(GSVector4i* dimx, const GIFRegDIMX DIMX)
@@ -687,3 +802,10 @@ inline void GSState::ExpandDIMX(GSVector4i* dimx, const GIFRegDIMX DIMX)
 	dimx[7] = GSVector4i(DIMX.DM30, 0, DIMX.DM31, 0, DIMX.DM32, 0, DIMX.DM33, 0);
 	dimx[6] = dimx[7].xxzzlh();
 }
+
+#endif /* __cplusplus */
+
+#undef GS_STATE_V2I
+#undef GS_STATE_TEX
+
+#endif

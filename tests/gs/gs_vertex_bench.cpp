@@ -27,7 +27,7 @@
 
 typedef struct
 {
-	GSVector4i v0, v1, v2;
+	gs_vec4i v0, v1, v2;
 } PrimSet;
 
 static u64 g_seed = 0x9e3779b97f4a7c15ull;
@@ -116,15 +116,15 @@ int main(void)
 	static PrimSet prims[PRIM_COUNT];
 	static int scalar_v[PRIM_COUNT][3][4];
 	alignas(16) u8 rec[48];
-	GSVector4i cull_min, cull_max;
+	gs_vec4i cull_min, cull_max;
 	double t0, t1, vec_time, scl_time, parse_time;
 	unsigned long accum;
 	int i, k;
 	long it;
 	int disagreements;
 
-	cull_min = GSVector4i(0, 0, 0, 0);
-	cull_max = GSVector4i(640, 448, 640, 448);
+	cull_min = gs_v4i_set4(0, 0, 0, 0);
+	cull_max = gs_v4i_set4(640, 448, 640, 448);
 
 	/* A mix that resembles a real draw: most prims inside, some off-screen,
 	 * some degenerate. */
@@ -142,9 +142,9 @@ int main(void)
 		if ((i & 15) == 0)
 			for (j = 0; j < 3; j++) c[j][0] += 4000;     /* wholly off-screen */
 
-		prims[i].v0 = GSVector4i(c[0][0], c[0][1], c[0][2], c[0][3]);
-		prims[i].v1 = GSVector4i(c[1][0], c[1][1], c[1][2], c[1][3]);
-		prims[i].v2 = GSVector4i(c[2][0], c[2][1], c[2][2], c[2][3]);
+		prims[i].v0 = gs_v4i_set4(c[0][0], c[0][1], c[0][2], c[0][3]);
+		prims[i].v1 = gs_v4i_set4(c[1][0], c[1][1], c[1][2], c[1][3]);
+		prims[i].v2 = gs_v4i_set4(c[2][0], c[2][1], c[2][2], c[2][3]);
 		memcpy(scalar_v[i], c, sizeof(c));
 	}
 
@@ -152,13 +152,13 @@ int main(void)
 	disagreements = 0;
 	for (i = 0; i < PRIM_COUNT; i++)
 	{
-		GSVector4i pmin, pmax;
+		gs_vec4i pmin, pmax;
 		u32 a, b;
 		for (k = 0; k < 2; k++)
 		{
-			GSVertexKernels::BuildPrimBBox<GS_TRIANGLELIST>(prims[i].v0, prims[i].v1, prims[i].v2, pmin, pmax);
-			a = GSVertexKernels::CullSkipTest<GS_TRIANGLELIST>(pmin, pmax, prims[i].v0, prims[i].v1,
-				prims[i].v2, cull_min, cull_max, k != 0) ? 1u : 0u;
+			gs_vk_prim_bbox(GS_TRIANGLELIST, prims[i].v0, prims[i].v1, prims[i].v2, &pmin, &pmax);
+			a = gs_vk_cull_skip(GS_TRIANGLELIST, pmin, pmax, prims[i].v0, prims[i].v1,
+				prims[i].v2, cull_min, cull_max, k) ? 1u : 0u;
 			b = CullSkipScalarTri(scalar_v[i][0], scalar_v[i][1], scalar_v[i][2], 0, 0, 640, 448, k);
 			if (a != b)
 				disagreements++;
@@ -173,10 +173,10 @@ int main(void)
 	{
 		for (i = 0; i < PRIM_COUNT; i++)
 		{
-			GSVector4i pmin, pmax;
-			GSVertexKernels::BuildPrimBBox<GS_TRIANGLELIST>(prims[i].v0, prims[i].v1, prims[i].v2, pmin, pmax);
-			accum += GSVertexKernels::CullSkipTest<GS_TRIANGLELIST>(pmin, pmax, prims[i].v0, prims[i].v1,
-				prims[i].v2, cull_min, cull_max, true);
+			gs_vec4i pmin, pmax;
+			gs_vk_prim_bbox(GS_TRIANGLELIST, prims[i].v0, prims[i].v1, prims[i].v2, &pmin, &pmax);
+			accum += gs_vk_cull_skip(GS_TRIANGLELIST, pmin, pmax, prims[i].v0, prims[i].v1,
+				prims[i].v2, cull_min, cull_max, 1);
 		}
 	}
 	t1 = NowSeconds();
@@ -199,8 +199,8 @@ int main(void)
 	{
 		for (i = 0; i < PRIM_COUNT; i++)
 		{
-			alignas(16) GSVertexKernels::GSVertexNative out[2];
-			GSVertexKernels::ParsePackedSTQRGBAXYZF2((const GIFPackedReg*)rec, (u32)i, out);
+			alignas(16) gs_vec4i out[2];
+			gs_vk_parse_stqrgbaxyzf2((const GIFPackedReg*)rec, (u32)i, out);
 			accum += (unsigned long)((const u32*)out)[0];
 		}
 	}

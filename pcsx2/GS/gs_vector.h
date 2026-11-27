@@ -66,11 +66,17 @@
 #define GS_VEC_CAN_AVX 1
 #endif
 #endif
-typedef __m128i gs_vec4i;
+#ifndef GS_VEC4I_TYPEDEF
+#define GS_VEC4I_TYPEDEF
+typedef __m128i gs_vec4i; /* (gs_vertex.h's too: C89 takes one) */
+#endif
 #elif defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON)
 #define GS_VEC_NEON 1
 #include <arm_neon.h>
+#ifndef GS_VEC4I_TYPEDEF
+#define GS_VEC4I_TYPEDEF
 typedef int32x4_t gs_vec4i;
+#endif
 #else
 #error gs_vector requires SSE2 or NEON
 #endif
@@ -918,5 +924,129 @@ static GS_VEC_INLINE gs_vec4i gs_v4i_set64(uint64_t lo, uint64_t hi)
    return vreinterpretq_s32_u64(vcombine_u64(vcreate_u64(lo), vcreate_u64(hi)));
 #endif
 }
+
+/* ------------------------------------------------------------------ */
+/* What the GIF path (GSState.c) takes besides.                        */
+/* ------------------------------------------------------------------ */
+
+/* x into lane 0, zero above (movd) */
+static GS_VEC_INLINE gs_vec4i gs_v4i_load32(int32_t x)
+{
+#if defined(GS_VEC_X86)
+   return _mm_cvtsi32_si128(x);
+#else
+   return vsetq_lane_s32(x, vdupq_n_s32(0), 0);
+#endif
+}
+
+/* Eight bytes from lo, then eight from hi (movq, movhps) */
+static GS_VEC_INLINE gs_vec4i gs_v4i_loadlh(const void *lo, const void *hi)
+{
+#if defined(GS_VEC_X86)
+   return _mm_castps_si128(_mm_loadh_pi(_mm_castsi128_ps(
+         _mm_loadl_epi64((const __m128i *)lo)), (const __m64 *)hi));
+#else
+   return vreinterpretq_s32_s64(vcombine_s64(vld1_s64((const int64_t *)lo),
+                                             vld1_s64((const int64_t *)hi)));
+#endif
+}
+
+static GS_VEC_INLINE gs_vec4i gs_v4i_lt32(gs_vec4i a, gs_vec4i b)
+{
+#if defined(GS_VEC_X86)
+   return _mm_cmplt_epi32(a, b);
+#else
+   return vreinterpretq_s32_u32(vcltq_s32(a, b));
+#endif
+}
+
+/* pcmpeqq is SSE4.1: below it a 64-bit lane is equal when both its
+ * 32-bit halves are */
+static GS_VEC_INLINE gs_vec4i gs_v4i_eq64(gs_vec4i a, gs_vec4i b)
+{
+#if defined(GS_VEC_CAN_SSE41)
+   return _mm_cmpeq_epi64(a, b);
+#elif defined(GS_VEC_X86)
+   {
+      __m128i e = _mm_cmpeq_epi32(a, b);
+      return _mm_and_si128(e, _mm_shuffle_epi32(e, 0xb1));
+   }
+#else
+   return vreinterpretq_s32_u64(vceqq_s64(vreinterpretq_s64_s32(a),
+                                          vreinterpretq_s64_s32(b)));
+#endif
+}
+
+/* Each byte's top bit, byte 0 in bit 0 (pmovmskb) */
+static GS_VEC_INLINE int gs_v4i_mask(gs_vec4i v)
+{
+#if defined(GS_VEC_X86)
+   return _mm_movemask_epi8(v);
+#else
+   uint16x8_t h = vreinterpretq_u16_u8(vshrq_n_u8(vreinterpretq_u8_s32(v), 7));
+   uint32x4_t p16 = vreinterpretq_u32_u16(vsraq_n_u16(h, h, 7));
+   uint64x2_t p32 = vreinterpretq_u64_u32(vsraq_n_u32(p16, p16, 14));
+   uint8x16_t p64 = vreinterpretq_u8_u64(vsraq_n_u64(p32, p32, 28));
+   return (int)(vgetq_lane_u8(p64, 0) | ((int)vgetq_lane_u8(p64, 8) << 8));
+#endif
+}
+
+/* The low four 16-bit lanes widened to 32 bits */
+static GS_VEC_INLINE gs_vec4i gs_v4i_u16to32(gs_vec4i a)
+{
+#if defined(GS_VEC_CAN_SSE41)
+   return _mm_cvtepu16_epi32(a);
+#elif defined(GS_VEC_X86)
+   return _mm_unpacklo_epi16(a, _mm_setzero_si128());
+#else
+   return vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(vreinterpretq_u16_s32(a))));
+#endif
+}
+
+/* Every bit of a and b the same */
+static GS_VEC_INLINE int gs_v4i_eq(gs_vec4i a, gs_vec4i b)
+{
+#if defined(GS_VEC_CAN_SSE41)
+   __m128i t = _mm_xor_si128(a, b);
+   return _mm_testz_si128(t, t) != 0;
+#elif defined(GS_VEC_X86)
+   return _mm_movemask_epi8(_mm_cmpeq_epi8(a, b)) == 0xffff;
+#else
+   return vmaxvq_u32(vreinterpretq_u32_s32(veorq_s32(a, b))) == 0;
+#endif
+}
+
+/* A rect (left, top, right, bottom) with no area: not left < right and
+ * top < bottom both */
+static GS_VEC_INLINE int gs_v4i_rempty(gs_vec4i r)
+{
+#if defined(GS_VEC_X86)
+   return _mm_movemask_epi8(_mm_cmplt_epi32(r, _mm_shuffle_epi32(r, 0xee))) != 0x00ff;
+#else
+   return vminv_u32(vreinterpret_u32_s32(vget_low_s32(gs_v4i_lt32(r, GS_V4I_SHUFFLE32(r, 0xee))))) == 0;
+#endif
+}
+
+/* The four lanes as floats, a NaN one replaced by r's */
+static GS_VEC_INLINE gs_vec4i gs_v4i_replace_nan_f32(gs_vec4i v, gs_vec4i r)
+{
+#if defined(GS_VEC_X86)
+   __m128 f = _mm_castsi128_ps(v);
+   __m128 m = _mm_cmpeq_ps(f, f);
+#if defined(GS_VEC_CAN_SSE41)
+   return _mm_castps_si128(_mm_blendv_ps(_mm_castsi128_ps(r), f, m));
+#else
+   return _mm_castps_si128(_mm_or_ps(_mm_and_ps(m, f), _mm_andnot_ps(m, _mm_castsi128_ps(r))));
+#endif
+#else
+   float32x4_t f = vreinterpretq_f32_s32(v);
+   return vreinterpretq_s32_f32(vbslq_f32(vceqq_f32(f, f), f, vreinterpretq_f32_s32(r)));
+#endif
+}
+
+/* The bits of the floats the GIF path substitutes */
+#define GS_V4I_F32_ONE     0x3f800000 /* 1.0f */
+#define GS_V4I_F32_MAX     0x7f7fffff /* FLT_MAX */
+#define GS_V4I_F32_MIN_POS 0x00800000 /* FLT_MIN */
 
 #endif /* GS_VECTOR_H */

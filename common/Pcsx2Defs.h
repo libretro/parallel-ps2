@@ -102,6 +102,15 @@
 #define PCSX2_ALIGN(n)
 #endif
 
+/* A member's type as each language spells it, for a struct both read: the
+ * C++ wrapper class in C++, the C struct it wraps in C. The two must be
+ * laid out alike (tests/xlayout holds them to it). */
+#ifdef __cplusplus
+#define PCSX2_LANG_TYPE(cxx, c) cxx
+#else
+#define PCSX2_LANG_TYPE(cxx, c) c
+#endif
+
 /* -------------------------------------------------------------------------------------- */
 /*  Microsoft Visual Studio */
 /* -------------------------------------------------------------------------------------- */

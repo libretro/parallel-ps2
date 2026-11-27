@@ -26,7 +26,7 @@ static void fail(const char *what, const char *detail)
 
 /* GS.h: Unknown, NTSC, PAL, VESA, SDTV_480P, HDTV_720P, HDTV_1080I. */
 enum { VM_UNKNOWN = 0, VM_COUNT = 7 };
-/* GSState.cpp: VideoModeOffsets, VideoModeOffsetsOverscan, VideoModeDividers. */
+/* GSPCRTC.c: the video mode offsets, overscan offsets and dividers. */
 enum { VIDEO_MODE_ROWS = 6 };
 /* GSDevice.h: static const HWBlend m_blendMap[81]. */
 enum { BLEND_MAP_ENTRIES = 81 };

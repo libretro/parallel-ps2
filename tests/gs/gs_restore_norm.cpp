@@ -3,8 +3,8 @@
  * A savestate restores GS registers with a raw copy, so the normalisations
  * the GIFRegHandler* functions perform on the way in do not happen.
  * NormalizeRestoredRegs re-applies them. The risk in writing it was not
- * the idea but the transcription: the two Q scrubs in GSState.cpp are
- * written with GSVector, and the restore path reimplements them in scalar
+ * the idea but the transcription: the two Q scrubs in GSState.c are
+ * written with gs_vector, and the restore path reimplements them in scalar
  * code. If those two disagree on any input, the restore path produces a Q
  * the handler never would, which is the opposite of the point.
  *
@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <cfloat>
 
-#include "GS/GSVector.h"
+#include "GS/gs_vector.h"
 
 static int failures = 0;
 
@@ -27,35 +27,32 @@ static void fail(const char *what, const char *detail)
 	failures++;
 }
 
-/* ---- the handlers, as GSState.cpp writes them ------------------------ */
+/* ---- the handlers, as GSState.c writes them -------------------------- */
 
-/* GIFRegHandlerRGBAQ: zero -> 1.0f on the bit pattern, then NaN -> FLT_MAX.
- * The register's Q sits in lane 1, which is what .yyyy() selects. */
+/* gss_reg_rgbaq: zero -> 1.0f on the bit pattern, then NaN -> FLT_MAX.
+ * The register's Q sits in lane 1, which is what the 0x55 shuffle takes. */
 static float handler_rgbaq_q(float raw)
 {
-	GSVector4i rgbaq = GSVector4i::zero();
-	std::memcpy(reinterpret_cast<char *>(&rgbaq) + 4, &raw, 4);
-
-	GSVector4i q = rgbaq.blend8(GSVector4i::cast(GSVector4::m_one),
-	                            rgbaq == GSVector4i::zero()).yyyy();
-	q = GSVector4i::cast(GSVector4::cast(q).replace_nan(GSVector4::m_max));
-
+	uint64_t reg = 0;
+	gs_vec4i rgbaq, q;
 	float out;
+	std::memcpy(reinterpret_cast<char *>(&reg) + 4, &raw, 4);
+	rgbaq = gs_v4i_loadl(&reg);
+	q = (gs_vec4i)GS_V4I_SHUFFLE32(gs_v4i_blend8(rgbaq, gs_v4i_set32(GS_V4I_F32_ONE), gs_v4i_eq32(rgbaq, gs_v4i_zero())), 0x55);
+	q = gs_v4i_replace_nan_f32(q, gs_v4i_set32(GS_V4I_F32_MAX));
 	std::memcpy(&out, &q, 4);
 	return out;
 }
 
-/* GIFPackedRegHandlerSTQ: the same, with FLT_MIN as the substitute. */
+/* The packed STQ handler: the same, with FLT_MIN as the substitute. */
 static float handler_stq_q(float raw)
 {
-	GSVector4i q;
+	gs_vec4i q;
 	float tmp[4] = { raw, raw, raw, raw };
-	std::memcpy(&q, tmp, sizeof(q));
-
-	q = q.blend8(GSVector4i::cast(GSVector4(FLT_MIN)), q == GSVector4i::zero());
-	q = GSVector4i::cast(GSVector4::cast(q).replace_nan(GSVector4::m_max));
-
 	float out;
+	std::memcpy(&q, tmp, sizeof(q));
+	q = gs_v4i_blend8(q, gs_v4i_set32(GS_V4I_F32_MIN_POS), gs_v4i_eq32(q, gs_v4i_zero()));
+	q = gs_v4i_replace_nan_f32(q, gs_v4i_set32(GS_V4I_F32_MAX));
 	std::memcpy(&out, &q, 4);
 	return out;
 }

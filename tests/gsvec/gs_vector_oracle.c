@@ -429,6 +429,47 @@ int main(int argc, char **argv)
          memcpy(w, t, 16);
          chk("runion", gs_v4i_runion(a, b), w);
       }
+
+      /* ---- what the GIF path takes ---- */
+      w[0] = ra[0]; w[1] = w[2] = w[3] = 0;
+      chk("load32", gs_v4i_load32((int32_t)ra[0]), w);
+      w[0] = ra[0]; w[1] = ra[1]; w[2] = rb[2]; w[3] = rb[3];
+      chk("loadlh", gs_v4i_loadlh(ra, &rb[2]), w);
+      for (j = 0; j < 4; j++) w[j] = (int32_t)ra[j] < (int32_t)rb[j] ? 0xffffffffu : 0u;
+      chk("lt32", gs_v4i_lt32(a, b), w);
+      for (j = 0; j < 4; j += 2)
+         w[j] = w[j + 1] = (ra[j] == rb[j] && ra[j + 1] == rb[j + 1]) ? 0xffffffffu : 0u;
+      chk("eq64", gs_v4i_eq64(a, b), w);
+      {
+         uint32_t m[4];
+         m[0] = ra[0]; m[1] = rb[1]; m[2] = ra[2]; m[3] = ra[3] ^ (k & 1);
+         for (j = 0; j < 4; j += 2)
+            w[j] = w[j + 1] = (ra[j] == m[j] && ra[j + 1] == m[j + 1]) ? 0xffffffffu : 0u;
+         chk("eq64 (half equal)", gs_v4i_eq64(a, gs_v4i_loadu(m)), w);
+         chk_int("eq (one lane off)", gs_v4i_eq(a, gs_v4i_loadu(m)), !memcmp(ra, m, 16));
+      }
+      {
+         const uint8_t *pa = (const uint8_t *)ra;
+         int mk = 0;
+         for (j = 0; j < 16; j++) mk |= (pa[j] >> 7) << j;
+         chk_int("mask", gs_v4i_mask(a), mk);
+      }
+      {
+         const uint16_t *pa = (const uint16_t *)ra;
+         for (j = 0; j < 4; j++) w[j] = pa[j];
+         chk("u16to32", gs_v4i_u16to32(a), w);
+      }
+      chk_int("eq (self)", gs_v4i_eq(a, a), 1);
+      chk_int("eq", gs_v4i_eq(a, b), !memcmp(ra, rb, 16));
+      chk_int("rempty", gs_v4i_rempty(a),
+              !((int32_t)ra[0] < (int32_t)ra[2] && (int32_t)ra[1] < (int32_t)ra[3]));
+      for (j = 0; j < 4; j++)
+      {
+         float f;
+         memcpy(&f, &ra[j], 4);
+         w[j] = (f == f) ? ra[j] : rb[j];
+      }
+      chk("replace_nan_f32", gs_v4i_replace_nan_f32(a, b), w);
    }
 
    printf("%s: gs_vector oracle, %ld comparisons, %ld mismatches\n",

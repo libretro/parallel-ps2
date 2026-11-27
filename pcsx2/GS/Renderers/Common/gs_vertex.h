@@ -83,12 +83,18 @@
 #define GS_VERTEX_CAN_AVX 1
 #endif
 #endif
-typedef __m128i gs_vec4i;
+#ifndef GS_VEC4I_TYPEDEF
+#define GS_VEC4I_TYPEDEF
+typedef __m128i gs_vec4i; /* (gs_vector.h's too: C89 takes one) */
+#endif
 typedef __m128  gs_vec4f;
 #elif defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON)
 #define GS_VERTEX_NEON 1
 #include <arm_neon.h>
+#ifndef GS_VEC4I_TYPEDEF
+#define GS_VEC4I_TYPEDEF
 typedef int32x4_t   gs_vec4i;
+#endif
 typedef float32x4_t gs_vec4f;
 #else
 #define GS_VERTEX_SCALAR 1

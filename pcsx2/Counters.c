@@ -103,7 +103,7 @@ static bool IsInterlacedVideoMode(void)
 static bool IsProgressiveVideoMode(void)
 {
 	/* The FIELD register only flips if the CMOD field in SMODE1 is set to anything but 0 and Front Porch bottom bit in SYNCV is set. */
-	/* Also see "isReallyInterlaced()" in GSState.cpp */
+	/* Also see gs_regs_really_interlaced() in GS/GSPCRTC.c */
 	return !(*(u32*)PS2GS_BASE(GS_SYNCV) & 0x1) || !(*(u32*)PS2GS_BASE(GS_SMODE1) & 0x6000);
 }
 

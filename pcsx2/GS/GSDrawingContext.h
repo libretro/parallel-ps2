@@ -18,6 +18,7 @@
 
 #include "GSRegs.h"
 #include "gs_rect.h"
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -62,12 +63,16 @@ GIFRegTEX0 gs_ctx_size_fixed_tex0(const GIFRegTEX0* tex0, const GIFRegCLAMP* cla
 
 #ifdef __cplusplus
 }
+#endif
 
 #include "GSLocalMemory.h"
+#include "gs_vector.h"
 
-class alignas(32) GSDrawingContext
+/* A context's registers, its scissor as vectors and the offsets into local
+ * memory of its frame and Z buffer. The C++ renderers read it through
+ * GSDrawingContext, which only adds methods. */
+typedef struct PCSX2_ALIGN(32) gs_drawing_context
 {
-public:
 	GIFRegXYOFFSET XYOFFSET;
 	GIFRegTEX0     TEX0;
 	GIFRegTEX1     TEX1;
@@ -83,52 +88,56 @@ public:
 
 	struct
 	{
-		GSVector4i in;
-		GSVector4i cull;
-		GSVector4i xyof;
+		PCSX2_LANG_TYPE(GSVector4i, gs_vec4i) in;
+		PCSX2_LANG_TYPE(GSVector4i, gs_vec4i) cull;
+		PCSX2_LANG_TYPE(GSVector4i, gs_vec4i) xyof;
 	} scissor;
 
 	struct
 	{
-		GSOffset fb;
-		GSOffset zb;
-		GSPixelOffset4* fzb4; /* NULL: the pool was full (GSState::RefetchPixelOffsets) */
+		PCSX2_LANG_TYPE(GSOffset, gs_offset) fb;
+		PCSX2_LANG_TYPE(GSOffset, gs_offset) zb;
+		GSPixelOffset4* fzb4; /* NULL: the pool was full (gs_state_refetch_pixel_offsets) */
 		u32 fzbase[2];        /* the frame and Z buffer's bases, to add to fzb4's */
 	} offset;
+} gs_drawing_context;
 
-	void Reset()
-	{
-		memset(&XYOFFSET, 0, sizeof(XYOFFSET));
-		memset(&TEX0, 0, sizeof(TEX0));
-		memset(&TEX1, 0, sizeof(TEX1));
-		memset(&CLAMP, 0, sizeof(CLAMP));
-		memset(&MIPTBP1, 0, sizeof(MIPTBP1));
-		memset(&MIPTBP2, 0, sizeof(MIPTBP2));
-		memset(&SCISSOR, 0, sizeof(SCISSOR));
-		memset(&ALPHA, 0, sizeof(ALPHA));
-		memset(&TEST, 0, sizeof(TEST));
-		memset(&FBA, 0, sizeof(FBA));
-		memset(&FRAME, 0, sizeof(FRAME));
-		memset(&ZBUF, 0, sizeof(ZBUF));
-	}
+/* The registers back to zero; the scissor and offsets are left */
+static INLINE void gs_ctx_reset(gs_drawing_context* c)
+{
+	memset(c, 0, offsetof(gs_drawing_context, scissor));
+}
 
-	void UpdateScissor()
-	{
-		gs_ctx_scissor(&SCISSOR, &XYOFFSET, scissor.in.v, scissor.cull.v, scissor.xyof.v);
-	}
+static INLINE void gs_ctx_update_scissor(gs_drawing_context* c)
+{
+	gs_ctx_scissor(&c->SCISSOR, &c->XYOFFSET, (int*)&c->scissor.in, (int*)&c->scissor.cull, (int*)&c->scissor.xyof);
+}
+
+static INLINE const gs_drawing_regs* gs_ctx_regs(const gs_drawing_context* c)
+{
+	return (const gs_drawing_regs*)c;
+}
+
+#ifdef __cplusplus
+class GSDrawingContext : public gs_drawing_context
+{
+public:
+	void Reset() { gs_ctx_reset(this); }
+
+	void UpdateScissor() { gs_ctx_update_scissor(this); }
 
 	GIFRegTEX0 GetSizeFixedTEX0(const GSVector4& st, bool linear, bool mipmap = false) const
 	{
 		return gs_ctx_size_fixed_tex0(&TEX0, &CLAMP, st.v, linear, mipmap);
 	}
 
-	const gs_drawing_regs* Regs() const { return reinterpret_cast<const gs_drawing_regs*>(this); }
+	const gs_drawing_regs* Regs() const { return gs_ctx_regs(this); }
 };
 
 static_assert(offsetof(GSDrawingContext, ZBUF) == offsetof(gs_drawing_regs, ZBUF)
 	&& offsetof(GSDrawingContext, scissor) == offsetof(gs_drawing_regs, scissor)
 	&& sizeof(GSDrawingContext::scissor) == sizeof(gs_drawing_regs::scissor), "gs_drawing_regs is GSDrawingContext's start");
-
+static_assert(sizeof(GSDrawingContext) == sizeof(gs_drawing_context), "GSDrawingContext adds no members");
 #endif
 
 #endif

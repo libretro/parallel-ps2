@@ -11,6 +11,7 @@
 extern "C" {
 #include "GS/gs_vector.h"
 }
+#include <cfloat>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -165,6 +166,25 @@ int main(int argc, char **argv)
 		/* tests */
 		chk_int("alltrue",  gs_v4i_alltrue(a),  A.alltrue());
 		chk_int("allfalse", gs_v4i_allfalse(a), A.allfalse());
+
+		/* what the GIF path (GSState.c) takes */
+		chk("load32",  gs_v4i_load32(A.extract32<0>()), GSVector4i::load(A.extract32<0>()));
+		chk("loadlh",  gs_v4i_loadlh(ra, rb + 8),        GSVector4i::load(ra, rb + 8));
+		chk("lt32",    gs_v4i_lt32(a, b),                A.lt32(B));
+		chk("eq64",    gs_v4i_eq64(a, b),                A.eq64(B));
+		chk("eq64 a",  gs_v4i_eq64(a, a),                A.eq64(A));
+		chk("u16to32", gs_v4i_u16to32(a),                A.u16to32());
+		chk("xxxx",    GS_V4I_SHUFFLE32(a, 0x00),        A.xxxx());
+		chk("yyyy",    GS_V4I_SHUFFLE32(a, 0x55),        A.yyyy());
+		chk_int("mask",   gs_v4i_mask(a),   A.mask());
+		chk_int("eq",     gs_v4i_eq(a, b),  A.eq(B));
+		chk_int("eq a",   gs_v4i_eq(a, a),  A.eq(A));
+		chk_int("rempty", gs_v4i_rempty(a), A.rempty());
+		chk("replace_nan_f32", gs_v4i_replace_nan_f32(a, b),
+		    GSVector4i::cast(GSVector4::cast(A).replace_nan(GSVector4::cast(B))));
+		chk("F32_ONE", gs_v4i_set32(GS_V4I_F32_ONE), GSVector4i::cast(GSVector4::m_one));
+		chk("F32_MAX", gs_v4i_set32(GS_V4I_F32_MAX), GSVector4i::cast(GSVector4::m_max));
+		chk("F32_MIN_POS", gs_v4i_set32(GS_V4I_F32_MIN_POS), GSVector4i::cast(GSVector4(FLT_MIN)));
 
 		/* rect alignment and the high-half load, as GSDirtyRect uses them */
 		{
