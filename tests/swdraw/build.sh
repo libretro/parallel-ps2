@@ -65,7 +65,13 @@ CASES="aa1_small aa1_triangle aa1_triangle_2x aa1_line aa1_line_2x mip_tw8 mip_t
 	display_large display_large_2x frame_ct32 frame_after_t4 frame_ct32_2x frame_after_t4_2x copy_then_upload readback_t4hh dest_alpha many_copies upload_short upload_whole upload_split upload_clut_between upload_busy upload_busy_blocks many_textures many_textures_loop readback_parts column_passes alpha_under_depth alpha_under_depth_wide alpha_under_depth_strip alpha_under_depth_big mip_shaded alpha_dirtied_parked depth_narrowed width_overwritten blur_in_place palette_engulfed block_offset_read engulfed_alpha palette_bilinear palette_bilinear_drawn palette_shaded big_triangles culled_strip culled_fan many_sprites present points nine_frames fb_wrap uv_huge offset_reload vram_wrap_read frame_on_depth dirty_whole_target wrap_gradient depth_texture_far move_width_change frame_on_depth32 depth_states shuffle_left_of_offset split_clear_no_display frame_low frame_low_odd frame_low_odd_2x \
 	gif_nloop_past_data dual_blend date_no_depth_full t4_from_target t4_from_target_page t4_from_target_shaded texture_rewind draw_once \
 	feedback_chain feedback_own_pixel feedback_runs \
-	ram_code_rewind ram_code_reset"
+	ram_code_rewind ram_code_reset \
+	clut_lines clut_lines_ramps clut_scales date_mid_scene gif_split interlace_field_fade interlace_frame_fade \
+	readback_one_target readback_two_targets reset_readback reset_readback_one scan_alp scan_ct16s scan_fade \
+	scan_field scan_noninterlaced scan_src_alpha sibling_key_after_clut step_depth step_gradients step_gradients_2x \
+	step_lines step_sprites stream_clamped stream_ct24_aem stream_ct32 stream_frame16 stream_t8 stream_t8_flat \
+	stream_target_corners t4_many_palettes texture_alternate tlb_store \
+	sw_clamp sw_clamp_2x sw_clamp_mixed sw_clamp_mixed_2x sw_zclamp sw_fog_atest sw_fog_atest_2x sw_dither sw_dither_2x sw_mip_round sw_mip_tri sw_mip_lod"
 # (a few again on four rasterizers)
 MT="aa1_triangle mip_tw8 mip_shaded frame_ct32_2x display_large wrap_gradient"
 # Each case in a directory of its own, as many at a time as there are
@@ -93,6 +99,34 @@ for c in $MT; do
 		failed=1
 	fi
 done
+
+# Each case's last frame against the picture the renderer drew before
+# it was rewritten (golden-<arch>.txt: case and hash a line). The two
+# architectures round some draws differently, so each has its own file;
+# SWDRAW_GOLDEN_WRITE=1 writes this one's from the run instead.
+case "$("${CC:-cc}" -dumpmachine 2>/dev/null)" in
+	x86_64*linux*)  GOLDEN="$DIR/golden-x86_64.txt" ;;
+	aarch64*linux*) GOLDEN="$DIR/golden-aarch64.txt" ;;
+	*)              GOLDEN="" ;;
+esac
+if [ -n "$GOLDEN" ] && [ "${SWDRAW_GOLDEN_WRITE:-0}" = 1 ]; then
+	for c in $CASES; do
+		echo "$c $(sed -n 's/^swdraw: .* last \([0-9a-f]*\)$/\1/p' "$SCRATCH/$c.out")"
+	done > "$GOLDEN"
+	echo "wrote $GOLDEN"
+elif [ -n "$GOLDEN" ]; then
+	for c in $CASES; do
+		want=$(sed -n "s/^$c \([0-9a-f]*\)$/\1/p" "$GOLDEN")
+		got=$(sed -n 's/^swdraw: .* last \([0-9a-f]*\)$/\1/p' "$SCRATCH/$c.out")
+		if [ -z "$want" ]; then
+			echo "  FAIL: $c has no picture in $(basename "$GOLDEN")"
+			failed=1
+		elif [ "$want" != "$got" ]; then
+			echo "  FAIL: $c draws $got, not $want"
+			failed=1
+		fi
+	done
+fi
 
 # Pairs that must draw the same picture: the last frame's hash.
 same() {

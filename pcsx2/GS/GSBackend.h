@@ -89,7 +89,7 @@ struct gs_texture* gs_gsdx_lookup_palette_source(u32 cbp, u32 cpsm, u32 cbw, int
 const struct gs_renderer_ops* gs_pgs_open(u8* basemem);
 void gs_pgs_close(void);
 
-/* The software vertex's per-ISA tables (Renderers/SW/GSRendererSW.cpp) */
+/* The software vertex's per-ISA tables (Renderers/SW/GSRendererSW.c) */
 void gs_vertex_sw_init_static(void);
 
 #ifdef __cplusplus

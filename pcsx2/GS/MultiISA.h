@@ -76,9 +76,4 @@
 	#define MULTI_ISA_SELECT(fn) (isa_native::fn)
 #endif
 
-/* GSRenderer is another name for GSState now (Renderers/Common/GSRenderer.h),
- * so it is declared the way a typedef can be declared twice. */
-class GSState;
-typedef GSState GSRenderer;
-MULTI_ISA_DEF(GSRenderer* makeGSRendererSW(int threads);)
 

@@ -3581,7 +3581,211 @@ static void case_blur_in_place(void)
 	s_expect_run[0] = 0xFFFFFFFFul;
 }
 
+/* --- the software renderer's draw state, a feature a sprite ----------- */
+
+#define GS_DIMX     0x44
+#define GS_DTHE     0x45
+
+/* A 640x448 shaded triangle pair over the frame, alpha from 0 to 0x80:
+ * what the cases below sample and blend over. */
+static void sw_background(void)
+{
+	ad(GS_PRIM, 0, 4 | 0x08);                      /* strip, Gouraud */
+	ad(GS_RGBAQ, 0x3f800000ul, 0x000000ffu);
+	ad(GS_XYZ2, 0, XY(0, 0));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x8000ff00u);
+	ad(GS_XYZ2, 0, XY(640, 0));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x40ff0000u);
+	ad(GS_XYZ2, 0, XY(0, 448));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x20f0f0f0u);
+	ad(GS_XYZ2, 0, XY(640, 448));
+}
+
+/* CLAMP_1: WMS, WMT, MINU, MAXU, MINV, MAXV */
+static void sw_clamp(unsigned wms, unsigned wmt, unsigned minu, unsigned maxu, unsigned minv, unsigned maxv)
+{
+	ad(GS_CLAMP_1, (unsigned long)((minv >> 8) | (maxv << 2)),
+		(unsigned long)wms | ((unsigned long)wmt << 2) | ((unsigned long)minu << 4) | ((unsigned long)maxu << 14)
+			| ((unsigned long)(minv & 0xffu) << 24));
+}
+
+/* A sprite at x, 260 to x + 150, 400, its UVs from 0,0 to 600,400 */
+static void sw_uv_sprite(unsigned x, unsigned long tex1)
+{
+	ad(GS_TEX1_1, 0, tex1);
+	ad(GS_PRIM, 0, 6 | 0x10 | 0x100);              /* sprite, TME, FST */
+	ad(GS_UV, 0, XY(0, 0));
+	ad(GS_XYZ2, 0, XY(x, 260));
+	ad(GS_UV, 0, XY(600, 400));
+	ad(GS_XYZ2, 0, XY(x + 150, 400));
+}
+
+#define SW_BILINEAR ((1ul << 5) | (1ul << 6))     /* MMAG, MMIN linear */
+
+/* The frame's top as a 256x256 texture, under the four wrap modes, each
+ * on a sprite whose UVs run past it, nearest and bilinear, and on a
+ * bilinear triangle below them: the limits the rasterizer wraps texels
+ * by, and the half texel bilinear sampling moves UVs by. */
+static void case_sw_clamp(void)
+{
+	ad_common();
+	sw_background();
+	ad(GS_TEX0_1, 2ul | (1ul << 2) | (1ul << 3),     /* TH 8, TCC, TFX decal */
+		(10ul << 14) | (8ul << 26));                 /* TBP0 0, TBW 10, PSMCT32, TW 8 */
+	ad(GS_RGBAQ, 0x3f800000ul, 0x80808080ul);
+	sw_clamp(0, 0, 0, 0, 0, 0);                      /* repeat */
+	sw_uv_sprite(0, 0);
+	sw_clamp(1, 1, 0, 0, 0, 0);                      /* clamp */
+	sw_uv_sprite(160, SW_BILINEAR);
+	sw_clamp(2, 2, 10, 100, 20, 150);                /* region clamp */
+	sw_uv_sprite(320, SW_BILINEAR);
+	sw_clamp(3, 3, 0x3f, 0x10, 0x1f, 0x08);          /* region repeat */
+	sw_uv_sprite(480, 0);
+	sw_clamp(1, 1, 0, 0, 0, 0);
+	ad(GS_TEX1_1, 0, SW_BILINEAR);
+	ad(GS_PRIM, 0, 3 | 0x10 | 0x100);              /* triangle, TME, FST */
+	ad(GS_UV, 0, XY(3, 5));
+	ad(GS_XYZ2, 0, XY(0, 404));
+	ad(GS_UV, 0, XY(250, 17));
+	ad(GS_XYZ2, 0, XY(640, 410));
+	ad(GS_UV, 0, XY(40, 230));
+	ad(GS_XYZ2, 0, XY(100, 448));
+}
+
+/* The same with a different wrap mode across and down: each axis's own
+ * limits. */
+static void case_sw_clamp_mixed(void)
+{
+	ad_common();
+	sw_background();
+	ad(GS_TEX0_1, 2ul | (1ul << 2) | (1ul << 3), (10ul << 14) | (8ul << 26));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x80808080ul);
+	sw_clamp(0, 1, 0, 0, 0, 0);                      /* repeat, clamp */
+	sw_uv_sprite(0, 0);
+	sw_clamp(1, 2, 0, 0, 20, 150);                   /* clamp, region clamp */
+	sw_uv_sprite(160, SW_BILINEAR);
+	sw_clamp(2, 0, 10, 100, 0, 0);                   /* region clamp, repeat */
+	sw_uv_sprite(320, 0);
+	sw_clamp(3, 1, 0x3f, 0x10, 0, 0);                /* region repeat, clamp */
+	sw_uv_sprite(480, SW_BILINEAR);
+}
+
+/* Triangles into a 16-bit depth buffer at a depth past what it holds,
+ * which is written clamped, and nearer ones tested against it. */
+static void case_sw_zclamp(void)
+{
+	ad_common();
+	sw_background();
+	ad(GS_ZBUF_1, 0, 150ul | (2ul << 24));           /* ZBP 150, PSMZ16 */
+	ad(GS_TEST_1, 0, (1ul << 16) | (1ul << 17));     /* ZTE, always */
+	ad(GS_PRIM, 0, 3);
+	ad(GS_RGBAQ, 0x3f800000ul, 0x80ff4020ul);
+	ad(GS_XYZ2, 0x00030000ul, XY(0, 0));
+	ad(GS_XYZ2, 0x00030000ul, XY(640, 0));
+	ad(GS_XYZ2, 0x00030000ul, XY(0, 448));
+	ad(GS_TEST_1, 0, (1ul << 16) | (2ul << 17));     /* ZTE, GEQUAL */
+	ad(GS_PRIM, 0, 3 | 0x08);
+	ad(GS_RGBAQ, 0x3f800000ul, 0x802040ffu);
+	ad(GS_XYZ2, 0x00008000ul, XY(100, 50));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x8040ff20u);
+	ad(GS_XYZ2, 0x0000fffful, XY(600, 100));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x80ff2040u);
+	ad(GS_XYZ2, 0x00050000ul, XY(200, 440));
+}
+
+/* Fog on a sprite and on a shaded triangle, and the alpha tests that
+ * compare with one more or one less than AREF (LESS and GREATER) on
+ * triangles whose alpha crosses it. */
+static void case_sw_fog_atest(void)
+{
+	ad_common();
+	sw_background();
+	ad(GS_FOGCOL, 0, 0x00406080ul);
+	ad(GS_RGBAQ, 0x3f800000ul, 0x80ff8040ul);
+	ad(GS_PRIM, 0, 6 | 0x20);                      /* sprite, FGE */
+	ad(GS_XYZF2, 0x60000000ul, XY(20, 20));
+	ad(GS_XYZF2, 0x60000000ul, XY(200, 120));
+	ad(GS_PRIM, 0, 3 | 0x08 | 0x20);               /* triangle, Gouraud, FGE */
+	ad(GS_RGBAQ, 0x3f800000ul, 0x800080ffu);
+	ad(GS_XYZF2, 0x00000000ul, XY(220, 20));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x8080ff00u);
+	ad(GS_XYZF2, 0xff000000ul, XY(620, 40));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x80ff0080u);
+	ad(GS_XYZF2, 0x80000000ul, XY(300, 200));
+	/* ATE, LESS, AREF 0x40, AFAIL keep; ZTE, always */
+	ad(GS_TEST_1, 0, 1ul | (2ul << 1) | (0x40ul << 4) | (1ul << 16) | (1ul << 17));
+	ad(GS_PRIM, 0, 3 | 0x08);
+	ad(GS_RGBAQ, 0x3f800000ul, 0x00ffffffu);
+	ad(GS_XYZ2, 0, XY(0, 220));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x80ffff00u);
+	ad(GS_XYZ2, 0, XY(320, 220));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x40ff00ffu);
+	ad(GS_XYZ2, 0, XY(0, 440));
+	/* GREATER, AREF 0x30, AFAIL frame only */
+	ad(GS_TEST_1, 0, 1ul | (6ul << 1) | (0x30ul << 4) | (1ul << 12) | (1ul << 16) | (1ul << 17));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x00204060u);
+	ad(GS_XYZ2, 0, XY(320, 220));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x60602040u);
+	ad(GS_XYZ2, 0, XY(640, 220));
+	ad(GS_RGBAQ, 0x3f800000ul, 0x30406020u);
+	ad(GS_XYZ2, 0, XY(640, 440));
+}
+
+/* Shaded triangles into a 16-bit frame, dithered by a matrix whose rows
+ * all differ, on a 16-bit display. */
+static void case_sw_dither(void)
+{
+	ad_common();
+	ad(GS_FRAME_1, 0, (10ul << 16) | (0xAul << 24)); /* FBW 10, PSMCT16S */
+	ad(GS_DIMX, 0x60712435ul, 0x71603524ul);
+	ad(GS_DTHE, 0, 1);
+	sw_background();
+	s_disp_psm = 0xA;
+}
+
+/* A mipmapped triangle as mip_draw's at a constant LOD of 1.5: rounded
+ * to level 2 (nearest), or between 1 and 2 (trilinear); and at a LOD the
+ * rasterizer works out a pixel at a time from Q, whose triangle's Qs
+ * differ. */
+static void sw_mip(unsigned long tex1_lo, unsigned long k, unsigned long q1, unsigned long q2)
+{
+	ad_common();
+	sw_background();
+	ad(GS_TEX0_1, 0, (4ul << 14) | (8ul << 26) | (2ul << 30)); /* TBW 4, TW 8, TH 2 */
+	ad(GS_TEX1_1, k, tex1_lo);
+	ad(GS_MIPTBP1, 0, (0x800ul << 0) | (4ul << 14) | (0x1000ul << 20));
+	ad(GS_PRIM, 0, 3 | 0x10);                      /* triangle, TME, STQ */
+	ad(GS_ST, 0, 0);
+	ad(GS_RGBAQ, 0x3f800000ul, 0x80808080ul);
+	ad(GS_XYZ2, 0, XY(0, 0));
+	ad(GS_ST, 0, 0x3f800000ul);
+	ad(GS_RGBAQ, q1, 0x80808080ul);
+	ad(GS_XYZ2, 0, XY(640, 0));
+	ad(GS_ST, 0x3f800000ul, 0);
+	ad(GS_RGBAQ, q2, 0x80808080ul);
+	ad(GS_XYZ2, 0, XY(0, 448));
+}
+/* LCM, MXL 2, magnified bilinear, minified by nearest mipmap (round) and
+ * linear mipmap (tri), K 1.5 */
+static void case_sw_mip_round(void) { sw_mip(1ul | (2ul << 2) | (2ul << 6) | (1ul << 5), 0x18ul, 0x3f800000ul, 0x3f800000ul); }
+static void case_sw_mip_tri(void) { sw_mip(1ul | (2ul << 2) | (3ul << 6) | (1ul << 5), 0x18ul, 0x3f800000ul, 0x3f800000ul); }
+/* MXL 2, linear mipmap linear, L 1, K 0.5, Q 1, 2 and 0.5 */
+static void case_sw_mip_lod(void) { sw_mip((2ul << 2) | (5ul << 6) | (1ul << 5) | (1ul << 19), 0x08ul, 0x40000000ul, 0x3f000000ul); }
+
+
 static const struct { const char* name; void (*build)(void); const char* scale; } s_cases[] = {
+	{ "sw_clamp",        case_sw_clamp,      "1" },
+	{ "sw_clamp_2x",     case_sw_clamp,      "2" },
+	{ "sw_clamp_mixed",  case_sw_clamp_mixed, "1" },
+	{ "sw_clamp_mixed_2x", case_sw_clamp_mixed, "2" },
+	{ "sw_zclamp",       case_sw_zclamp,     "1" },
+	{ "sw_fog_atest",    case_sw_fog_atest,  "1" },
+	{ "sw_fog_atest_2x", case_sw_fog_atest,  "2" },
+	{ "sw_dither",       case_sw_dither,     "1" },
+	{ "sw_dither_2x",    case_sw_dither,     "2" },
+	{ "sw_mip_round",    case_sw_mip_round,  "1" },
+	{ "sw_mip_tri",      case_sw_mip_tri,    "1" },
+	{ "sw_mip_lod",      case_sw_mip_lod,    "1" },
 	{ "aa1_small",       case_aa1_small,    "1" },
 	{ "stream_ct32",     case_stream_ct32,  "1" },
 	{ "stream_clamped",  case_stream_clamped, "1" },

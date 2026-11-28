@@ -18,6 +18,7 @@
 #include "../../GSBackend.h"
 #include "../../MultiISA.h"
 #include "../SW/GSTextureCacheSW.h"
+#include "../SW/GSRendererSW.h"
 
 #include "../../../Config.h"
 
@@ -86,7 +87,16 @@ const struct gs_renderer_ops* gs_gsdx_open(GSRendererType renderer, u8* basemem)
 	if (s_gsdx_hw)
 		g_gs_renderer = new GSRendererHW();
 	else
-		g_gs_renderer = MULTI_ISA_SELECT(makeGSRendererSW)(GSConfig.SWExtraThreads);
+	{
+#ifdef MULTI_ISA_SHARED_COMPILATION
+		struct gs_state* sw = CPU_HAS_AVX2 ? gs_renderer_sw_create_isa_avx2(GSConfig.SWExtraThreads)
+			: CPU_HAS_AVX ? gs_renderer_sw_create_isa_avx(GSConfig.SWExtraThreads)
+			: gs_renderer_sw_create_isa_sse4(GSConfig.SWExtraThreads);
+#else
+		struct gs_state* sw = gs_renderer_sw_create_isa_native(GSConfig.SWExtraThreads);
+#endif
+		g_gs_renderer = static_cast<GSRenderer*>(sw);
+	}
 
 	g_gs_renderer->SetRegsMem(basemem);
 	g_gs_renderer->ResetPCRTC();

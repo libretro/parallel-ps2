@@ -207,6 +207,25 @@ static void gss_ctx_offsets(struct gs_state* s, gs_drawing_context* c, const GIF
 
 static void gss_reset_handlers_c(struct gs_state* s);
 
+/* Local memory and its palette as GSLocalMemory makes and drops them,
+ * for a state made in C */
+void gs_state_mem_init(struct gs_state* s)
+{
+	gs_state_mem* m = (gs_state_mem*)&s->m_mem;
+	gs_clut_init(&m->m_clut.m_c);
+	gs_clut_gpu_create(&m->m_clut.m_c);
+	gs_local_memory_init(&m->lm);
+	m->lm.m_clut32 = m->m_clut.m_c.buff32;
+}
+
+void gs_state_mem_deinit(struct gs_state* s)
+{
+	gs_state_mem* m = (gs_state_mem*)&s->m_mem;
+	gs_local_memory_deinit(&m->lm);
+	gs_clut_gpu_release(&m->m_clut.m_c);
+	gs_clut_deinit(&m->m_clut.m_c);
+}
+
 void gs_state_init(struct gs_state* s)
 {
 	/* Everything before local memory, which its owner has made */

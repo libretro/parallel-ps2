@@ -471,8 +471,8 @@ SOURCES_C += \
 # gs_vector, which have NEON implementations. Only the code generators are
 # x86-only (below); without them GSDrawScanline.c draws through its C
 # rasterizer, which tests/swdraw runs on AArch64 in CI.
-SOURCES_CXX += \
-	$(LRPS2_DIR)/GS/Renderers/SW/GSRendererSW.cpp
+SOURCES_C += \
+	$(LRPS2_DIR)/GS/Renderers/SW/GSRendererSW.c
 
 ifneq ($(IS_ARM64), 1)
 SOURCES_C += \

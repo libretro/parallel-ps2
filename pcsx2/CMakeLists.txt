@@ -320,7 +320,7 @@ set(pcsx2GSSourcesUnshared
 	GS/Renderers/HW/GSRendererHWMultiISA.cpp
 	GS/Renderers/SW/GSDrawScanline.c
 	GS/Renderers/SW/GSRasterizer.c
-	GS/Renderers/SW/GSRendererSW.cpp
+	GS/Renderers/SW/GSRendererSW.c
 )
 
 set(pcsx2GSSources

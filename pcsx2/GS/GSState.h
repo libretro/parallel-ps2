@@ -112,7 +112,7 @@ typedef struct GSState gs_state_self;
 
 /* What the hardware and the software renderer answer differently, as a
  * table of plain functions; the renderer itself is the first argument.
- * Each renderer fills one (GSRendererHW.cpp, GSRendererSW.cpp) and sets
+ * Each renderer fills one (GSRendererHW.cpp, GSRendererSW.c) and sets
  * m_ops when it is made. A NULL entry means "what the state does by
  * default", which for most of them is nothing. */
 struct gs_state_ops
@@ -372,6 +372,9 @@ extern int gs_state_transfer_n;
 
 /* Everything but m_mem, which its owner has made (C++: GSLocalMemory's
  * constructor) */
+/* m_mem made and dropped, around gs_state_init and gs_state_deinit */
+void gs_state_mem_init(struct gs_state* s);
+void gs_state_mem_deinit(struct gs_state* s);
 void gs_state_init(struct gs_state* s);
 void gs_state_deinit(struct gs_state* s);
 

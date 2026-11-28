@@ -320,7 +320,7 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 			{
 				// skip per pixel division if q is constant. Sprite uses flat
 				// q, so it's always constant by primitive.
-				// Note: the 'q' division was done in GSRendererSW::ConvertVertexBuffer
+				// Note: the 'q' division was done in gs_raster_convert_vertices
 				gd.sel.fst |= (vt.m_eq.q || primclass == GS_SPRITE_CLASS);
 
 				if (gd.sel.ltf && gd.sel.fst)
@@ -479,7 +479,7 @@ bool GSRendererHWFunctions::SwPrimRender(GSRendererHW& hw, bool invalidate_tc, b
 		gd.sel.zpsm = GSLocalMemory::m_psm[context->ZBUF.PSM].fmt;
 		gd.sel.ztst = ztest ? context->TEST.ZTST : (int)ZTST_ALWAYS;
 		gd.sel.zequal = !!vt.m_eq.z;
-		/* Host-dependent on purpose; see the note in GSRendererSW.cpp. */
+		/* Host-dependent on purpose; see the note in GSRendererSW.c. */
 		gd.sel.zoverflow = (u32)GSVector4i(vt.m_max.p).z == 0x80000000U;
 		gd.sel.zclamp = (u32)GSVector4i(vt.m_max.p).z > z_max;
 	}

@@ -197,8 +197,8 @@ jobs:
   # The software renderer on an AArch64 core, on GitHub's arm64 runner:
   # there no code is generated and it draws through GSDrawScanline.c's C
   # rasterizer, which no x86 core draws with (tests/gsscanline builds it
-  # on x86 too). Its pictures are the x86 ones (swdraw holds the cases
-  # that must agree to each other).
+  # on x86 too). Each case's picture is held to the one the renderer
+  # drew before it was written in C (tests/swdraw/golden-aarch64.txt).
   swdraw-aarch64:
     name: software renderer on AArch64
     runs-on: ubuntu-24.04-arm
