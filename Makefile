@@ -659,9 +659,10 @@ MULTI_ISA_UNSHARED_SRC_C := \
 
 ifeq ($(IS_X86),1)
 ifeq ($(ENABLE_MULTI_ISA),1)
-   # The shared build (everything that stays in SOURCES_CXX) needs to know it
-   # is the shared half of a multi-isa build.
+   # The shared build (everything that stays in SOURCES_CXX and SOURCES_C)
+   # needs to know it is the shared half of a multi-isa build.
    CXXFLAGS += -DMULTI_ISA_SHARED_COMPILATION
+   CFLAGS   += -DMULTI_ISA_SHARED_COMPILATION
 
    # Pull the unshared files out of the normal (single-compile) source list;
    # they are built per-tier below instead.
@@ -697,7 +698,7 @@ endef
 define MULTI_ISA_template_c
 $(1:.c=.$(2).o): MULTI_ISA_OBJ_FLAGS := $(MULTI_ISA_FLAGS_$(2)) -DMULTI_ISA_UNSHARED_COMPILATION=isa_$(2) -DMULTI_ISA_IS_FIRST=$(if $(filter $(2),$(MULTI_ISA_FIRST_TIER)),1,0)
 $(1:.c=.$(2).o): $(1)
-	$$(CC) -c $$(OBJOUT)$$@ $$< $$(CFLAGS) $$(MULTI_ISA_OBJ_FLAGS)
+	$$(CC) -c $$(OBJOUT)$$@ $$< $$(filter-out -DMULTI_ISA_SHARED_COMPILATION,$$(CFLAGS)) $$(MULTI_ISA_OBJ_FLAGS)
 MULTI_ISA_OBJECTS += $(1:.c=.$(2).o)
 endef
 

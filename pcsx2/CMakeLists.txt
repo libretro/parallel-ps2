@@ -348,7 +348,7 @@ set(pcsx2GSSources
 	GS/Renderers/Common/GSBuddy.c
 	GS/Renderers/Common/GSCodeMap.c
 	GS/Renderers/Common/GSCodeReserve.c
-	GS/Renderers/Common/GSRenderer.cpp
+	GS/Renderers/Common/GSRenderer.c
 	GS/Renderers/Common/GSVertexTrace.c
 	GS/Renderers/HW/GSHwHack.cpp
 	GS/Renderers/HW/GSRendererHW.cpp

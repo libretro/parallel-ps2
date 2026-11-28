@@ -65,7 +65,7 @@ struct gs_texture* gs_device_create_clut_target(int width);
 bool gs_device_update_clut_texture(struct gs_texture* src, float scale, float sample, u32 offset_x, u32 offset_y,
 	struct gs_texture* dst, u32 dst_offset, u32 dst_size);
 
-/* The GSdx renderers, hardware and software (Renderers/Common/GSRenderer.cpp) */
+/* The GSdx renderers, hardware and software (Renderers/Common/GSRenderer.c) */
 const struct gs_renderer_ops* gs_gsdx_open(GSRendererType renderer, u8* basemem);
 void gs_gsdx_close(void);
 bool gs_gsdx_is_open(void);

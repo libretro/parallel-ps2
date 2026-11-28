@@ -449,9 +449,10 @@ endif
 # ============================================================================
 # pcsx2/GS - common renderer code
 # ============================================================================
+SOURCES_C += \
+	$(LRPS2_DIR)/GS/Renderers/Common/GSRenderer.c
+
 SOURCES_CXX += \
-	$(LRPS2_DIR)/GS/Renderers/Common/GSRenderer.cpp \
-	\
 	$(LRPS2_DIR)/GS/Renderers/HW/GSHwHack.cpp \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSRendererHW.cpp \
 	$(LRPS2_DIR)/GS/Renderers/HW/GSRendererHWMultiISA.cpp \

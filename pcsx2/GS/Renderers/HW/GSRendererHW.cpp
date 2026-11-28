@@ -78,6 +78,16 @@ static const struct gs_state_ops s_hw_ops = {
 	hw_can_draw_runs
 };
 
+extern "C" struct gs_state* gs_renderer_hw_create(void)
+{
+	return new GSRendererHW();
+}
+
+extern "C" void gs_renderer_hw_release_device(void)
+{
+	g_texture_cache->ReleaseDevice();
+}
+
 GSRendererHW::GSRendererHW()
 	: GSRenderer()
 {

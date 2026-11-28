@@ -1,4 +1,3 @@
-pcsx2/GS/Renderers/Common/GSRenderer.cpp
 pcsx2/GS/Renderers/HW/GSHwHack.cpp
 pcsx2/GS/Renderers/HW/GSRendererHW.cpp
 pcsx2/GS/Renderers/HW/GSRendererHWMultiISA.cpp

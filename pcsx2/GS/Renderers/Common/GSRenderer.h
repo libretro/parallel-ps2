@@ -18,11 +18,24 @@
 
 #include "../../GSState.h"
 
+#ifdef __cplusplus
 /* GSRenderer was a class between GSState and the two renderers. What it
  * held is in GSState now; the name stays so that nothing that says
  * GSRenderer has to change. */
 typedef GSState GSRenderer;
+extern "C" {
+#endif
 
-/* The open GSdx renderer, or NULL. A plain pointer: a renderer is disposed
- * of with Free(), through its table, since its destructor is not virtual. */
-extern GSRenderer* g_gs_renderer;
+/* The open GSdx renderer, or NULL (GSRenderer.c). A renderer is disposed
+ * of through its table's free. */
+extern struct gs_state* g_gs_renderer_c;
+
+/* GSRendererHW, made and disposed of through its table, and the texture
+ * cache's hold on the device let go of (GSRendererHW.cpp) */
+struct gs_state* gs_renderer_hw_create(void);
+void gs_renderer_hw_release_device(void);
+
+#ifdef __cplusplus
+}
+#define g_gs_renderer (static_cast<GSRenderer*>(g_gs_renderer_c))
+#endif

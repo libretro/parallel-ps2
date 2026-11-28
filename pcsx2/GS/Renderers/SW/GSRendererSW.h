@@ -91,7 +91,7 @@ typedef struct gs_renderer_sw
 	u16 hr_touched[GS_HR_PAGES];    /* the pages with blocks asked for */
 } gs_renderer_sw;
 
-/* On threads extra drawing threads; what GS.c opens (GSRenderer.cpp) */
+/* On threads extra drawing threads; what GS.c opens (GSRenderer.c) */
 struct gs_state* GS_SW(gs_renderer_sw_create)(int threads);
 
 /* (each tier's, for the one the CPU takes) */

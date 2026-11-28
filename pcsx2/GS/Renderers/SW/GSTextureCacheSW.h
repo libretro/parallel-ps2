@@ -92,7 +92,7 @@ void gs_sw_texture_cache_remove_all(gs_sw_texture_cache* c);
 /* A frame on: textures not used in ten are freed */
 void gs_sw_texture_cache_inc_age(gs_sw_texture_cache* c);
 
-/* What it reads local memory through (GSRenderer.cpp): a block of psm at
+/* What it reads local memory through (GSRenderer.c): a block of psm at
  * bp, as the drawer takes it, and TEX0's page-to-tile map */
 void gs_sw_texture_read_block(u32 psm, u32 bp, u8* dst, int dstpitch, const GIFRegTEXA* TEXA);
 GSPage2TileMap* gs_sw_texture_page2tile(const GIFRegTEX0* TEX0);
